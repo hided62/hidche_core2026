@@ -158,7 +158,7 @@ onMounted(() => {
                 </div>
                 <div class="article-submit-row">
                     <div></div>
-                    <button id="submitArticle" class="legacy-button" type="button" @click="submitArticle">등록</button>
+                    <button id="submitArticle" class="legacy-button legacy-button--secondary" type="button" @click="submitArticle">등록</button>
                 </div>
             </section>
 

@@ -128,7 +128,7 @@ onMounted(async () => {
 }
 .legacy-table td,
 .legacy-table th {
-    border: 1px solid #777;
+    border: 1px solid gray;
     padding: 4px;
     font-weight: 400;
 }

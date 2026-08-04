@@ -91,7 +91,7 @@ onMounted(() => {
                         <table class="legacy-table chart-table legacy-bg0">
                             <thead>
                                 <tr>
-                                    <th colspan="4" class="legacy-bg2 chart-title">접 속 량</th>
+                                    <td colspan="4" class="legacy-bg2 chart-title">접 속 량</td>
                                 </tr>
                             </thead>
                             <tbody>
@@ -131,7 +131,7 @@ onMounted(() => {
                         <table class="legacy-table chart-table legacy-bg0">
                             <thead>
                                 <tr>
-                                    <th colspan="4" class="legacy-bg2 chart-title">접 속 자</th>
+                                    <td colspan="4" class="legacy-bg2 chart-title">접 속 자</td>
                                 </tr>
                             </thead>
                             <tbody>
@@ -173,7 +173,7 @@ onMounted(() => {
         <table v-if="data" class="legacy-table suspect-table legacy-bg0">
             <thead>
                 <tr>
-                    <th colspan="3" class="legacy-bg2 chart-title">주 의 대 상 자 (순간과도갱신)</th>
+                    <td colspan="3" class="legacy-bg2 chart-title">주 의 대 상 자 (순간과도갱신)</td>
                 </tr>
             </thead>
             <tbody>
@@ -234,27 +234,26 @@ onMounted(() => {
     font-size: 14px;
 }
 
+/*
+ * Ref's `.tb_layout td` sets no text alignment; the legacy markup centres
+ * individual cells with `align=center` instead.
+ */
 .legacy-table td,
 .legacy-table th {
     border: 1px solid gray;
     padding: 0;
-    text-align: center;
     font-weight: 400;
 }
 
-.legacy-bg0 {
-    background-color: #302016;
-    background-image: var(--sammo-texture-walnut);
-}
-
-.legacy-bg1 {
-    background-color: #423226;
-    background-image: var(--sammo-texture-blue);
-}
-
-.legacy-bg2 {
-    background-color: #14241b;
-    background-image: var(--sammo-texture-green);
+.chart-title,
+.period,
+.time,
+.separator,
+.spacer,
+.record,
+.suspect-table td,
+.suspect-table th {
+    text-align: center;
 }
 
 .title-table,

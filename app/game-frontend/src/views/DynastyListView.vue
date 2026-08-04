@@ -153,26 +153,30 @@ onMounted(loadDynasty);
 </template>
 
 <style scoped>
-:global(body) {
-    min-width: 1016px;
+:global(body:has(.dynasty-page)) {
+    /* Ref renders this page as a 1000px column, mobile included. */
+    min-width: 1000px;
 }
 
 .dynasty-page {
     width: 1000px;
     margin: 8px auto 0;
     color: #fff;
-    font-family: 'Times New Roman', serif;
-    font-size: 16px;
-    line-height: normal;
 }
 
+/* Ref `table.tb_layout` + `.tb_layout td`: collapsed 1px gray cell borders. */
 .legacy-table {
     width: 1000px;
-    border-spacing: 2px;
+    background-color: transparent;
+    border-collapse: collapse;
+    font-size: 14px;
+    word-break: break-all;
 }
 
 .legacy-table td {
-    padding: 1px;
+    border: 1px solid gray;
+    padding: 0;
+    word-break: break-all;
 }
 
 .spaced-table {

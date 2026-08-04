@@ -14,19 +14,36 @@ html {
     color-scheme: dark;
 }
 
+/*
+ * Ref's `html, body` contract: the page texture is centred and only tiles
+ * vertically, so a wide screen keeps one column of the texture.
+ */
 body {
     min-width: 320px;
     margin: 0;
     background: #000;
+    background-position: center;
+    background-repeat: repeat-y;
     color: #fff;
     font-family: var(--sammo-font-sans);
     font-size: 14px;
     line-height: 1.3;
 }
 
+/*
+ * Ref's in-game document never narrows below its 500px mobile column, so the
+ * app root keeps that floor. Previously this came from an unscoped `body` rule
+ * inside two ranking views, which also leaked their line-height everywhere.
+ */
+#app {
+    min-width: 500px;
+}
+
 body:has(.battle-page),
 body:has(.chief-page),
-body:has(.global-page) {
+body:has(.global-page),
+body:has(.main-page),
+body:has(.yearbook-page) {
     line-height: 1.5;
 }
 
@@ -37,17 +54,19 @@ textarea {
     font: inherit;
 }
 
+/*
+ * Ref's `.bg0/.bg1/.bg2` set a background image and nothing else, so the
+ * element stays transparent where the texture does not cover it. Adding a
+ * background colour here paints over whatever the parent shows through.
+ */
 .legacy-bg0 {
-    background-color: #302016;
     background-image: var(--sammo-texture-walnut);
 }
 
 .legacy-bg1 {
-    background-color: #14241b;
     background-image: var(--sammo-texture-green);
 }
 
 .legacy-bg2 {
-    background-color: #172a52;
     background-image: var(--sammo-texture-blue);
 }

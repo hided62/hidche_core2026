@@ -151,7 +151,7 @@ watch(
                 >
                     실시간 동기화: {{ realtimeLabel }}
                 </button>
-                <button class="game-shell__action" type="button" @click="loadMainData">갱 신</button>
+                <button class="game-shell__action game-shell__action--navigation" type="button" @click="loadMainData">갱 신</button>
                 <button class="game-shell__action" type="button" @click="moveLobby">로비로</button>
             </div>
         </header>
@@ -440,6 +440,10 @@ button {
     color: inherit;
 }
 
+/*
+ * Ref's main document does not clip horizontally; the map panel below manages
+ * its own overflow.
+ */
 .main-page {
     box-sizing: border-box;
     width: 100%;
@@ -448,7 +452,6 @@ button {
     margin: 0 auto;
     padding: 0;
     gap: 10px;
-    overflow-x: hidden;
     background-color: transparent;
     background-image: var(--sammo-texture-walnut);
 }
@@ -713,17 +716,28 @@ button {
     margin-top: 31px;
 }
 
+/*
+ * Ref renders these dashboard controls with the Lumen navigation family: no top
+ * border, 1px sides and a 4px bottom edge that shortens on hover and press
+ * while the control moves down.
+ */
 .desktop-action-controls .game-shell__action {
-    border: 1px solid transparent;
+    border-color: #004f28;
+    border-style: solid;
+    border-width: 0 1px 4px;
     background: #006b36;
     color: #fff;
 }
 
 .desktop-action-controls .game-shell__action:hover {
+    margin-top: 1px;
+    border-bottom-width: 3px;
     background: #00582c;
 }
 
 .desktop-action-controls .game-shell__action:active {
+    margin-top: 2px;
+    border-bottom-width: 2px;
     background: #005128;
 }
 

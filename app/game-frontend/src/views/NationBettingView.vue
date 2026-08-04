@@ -338,7 +338,7 @@ onMounted(() => {
     <main id="nation-betting-container" class="nation-betting-page legacy-bg0">
         <header class="legacy-top-bar">
             <RouterLink v-slot="{ navigate }" custom to="/">
-                <button class="legacy-nav-button" type="button" @click="navigate">돌아가기</button>
+                <button class="legacy-button legacy-button--navigation" type="button" @click="navigate">돌아가기</button>
             </RouterLink>
             <div></div>
             <h1>국가 베팅장</h1>
@@ -440,7 +440,7 @@ onMounted(() => {
         </section>
 
         <footer class="betting-footer">
-            <RouterLink class="legacy-nav-button" to="/">돌아가기</RouterLink>
+            <RouterLink class="legacy-button legacy-button--navigation" to="/">돌아가기</RouterLink>
         </footer>
     </main>
 </template>
@@ -454,7 +454,6 @@ onMounted(() => {
     font-family: Pretendard, 'Apple SD Gothic Neo', 'Noto Sans KR', 'Malgun Gothic';
     font-size: 14px;
     line-height: 1.5;
-    overflow-x: hidden;
 }
 
 .nation-betting-page.legacy-bg0 {

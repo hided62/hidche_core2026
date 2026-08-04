@@ -181,9 +181,9 @@ onMounted(loadOptions);
 </template>
 
 <style scoped>
-:global(body) {
+/* Ref's document does not clip; the page column stays 500px wide instead. */
+:global(body:has(.legacy-hall-page)) {
     min-width: 500px;
-    overflow-x: hidden;
 }
 
 .legacy-hall-page {
@@ -346,7 +346,7 @@ onMounted(loadOptions);
 }
 
 @media (min-width: 1000px) {
-    :global(body) {
+    :global(body:has(.legacy-hall-page)) {
         min-width: 1000px;
     }
 

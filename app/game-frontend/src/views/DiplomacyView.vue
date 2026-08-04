@@ -271,7 +271,7 @@ onBeforeUnmount(() => {
             <tbody>
                 <tr>
                     <td>
-                        외 교 부<br /><button class="legacy-button" type="button" @click="router.push('/')">
+                        외 교 부<br /><button class="legacy-button legacy-button--primary" type="button" @click="router.push('/')">
                             돌아가기
                         </button>
                     </td>
@@ -622,7 +622,7 @@ onBeforeUnmount(() => {
             <tbody>
                 <tr>
                     <td>
-                        <button class="legacy-button" type="button" @click="router.push('/')">돌아가기</button
+                        <button class="legacy-button legacy-button--primary" type="button" @click="router.push('/')">돌아가기</button
                         ><br /><br />
                         삼국지 모의전투 PHP HiDCHe - unknown / KOEI의 이미지를 사용, 응용하였습니다 / 제작 :
                         HideD(hided62@gmail.com) /
@@ -648,10 +648,19 @@ onBeforeUnmount(() => {
     line-height: 1.3;
 }
 
+/*
+ * Ref's diplomacy tables are not collapsed and carry an outset-style frame:
+ * gray on the top and left edges, black on the right and bottom.
+ */
 .legacy-layout-table {
     width: 1000px;
     margin: 0 auto;
-    border-collapse: collapse;
+    border-collapse: separate;
+    border-spacing: 0;
+    border-top: 1px solid gray;
+    border-left: 1px solid gray;
+    border-right: 1px solid #000;
+    border-bottom: 1px solid #000;
     background-color: transparent;
 }
 

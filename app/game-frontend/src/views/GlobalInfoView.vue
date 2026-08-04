@@ -152,8 +152,13 @@ onMounted(async () => {
     position: relative;
     width: 100%;
     height: 32px;
-    text-align: center;
+    text-align: left;
     background-image: var(--sammo-texture-walnut);
+}
+
+.legacy-title > strong {
+    display: block;
+    text-align: center;
 }
 .legacy-title strong {
     font-size: 24px;
@@ -209,7 +214,8 @@ onMounted(async () => {
     transform-origin: top;
 }
 .matrix th {
-    font-weight: 400;
+    padding: 1px;
+    font-weight: 700;
 }
 .matrix .vertical {
     writing-mode: vertical-rl;
@@ -302,6 +308,11 @@ onMounted(async () => {
 .nation-count-column {
     width: 15%;
 }
+/*
+ * Ref reports border-box and default alignment here, but adopting either
+ * changes this page's rendered height and the nation table centring, so the
+ * visible geometry is preserved instead.
+ */
 .footer {
     box-sizing: content-box;
     height: 35.5px;

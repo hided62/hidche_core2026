@@ -298,8 +298,9 @@ onMounted(loadDetail);
 </template>
 
 <style scoped>
-:global(body) {
-    min-width: 1016px;
+:global(body:has(.dynasty-page)) {
+    /* Ref renders this page as a 1000px column, mobile included. */
+    min-width: 1000px;
 }
 
 .dynasty-page {

@@ -196,12 +196,16 @@ th,
     text-align: center;
     font-weight: 400;
 }
+/* Ref Lumen primary: no top border, 1px sides, 4px bottom that shortens. */
 .close-button {
     height: 35.5px;
     padding: 5.25px 10.5px;
-    border: 1px solid transparent;
-    border-radius: 3.5px;
+    border-color: #325172;
+    border-style: solid;
+    border-width: 0 1px 4px;
+    border-radius: 5.25px;
     background: rgb(55, 90, 127);
+    vertical-align: middle;
     color: #fff;
     font-weight: 700;
     line-height: 21px;
@@ -212,6 +216,16 @@ th,
         border-color 0.15s,
         box-shadow 0.15s;
 }
+.close-button:not(:disabled):hover {
+    margin-top: 1px;
+    border-bottom-width: 3px;
+}
+
+.close-button:not(:disabled):active {
+    margin-top: 2px;
+    border-bottom-width: 2px;
+}
+
 input[type='submit'] {
     cursor: pointer;
     padding: 1px 6px;
@@ -245,10 +259,11 @@ select {
 .summary th {
     width: 120px;
 }
+/* Ref collapses this list table; `separate` shifted every row by the spacing. */
 .list {
     width: 974px;
     margin: 0 auto;
-    border-collapse: separate;
+    border-collapse: collapse;
     table-layout: auto;
 }
 .list th,

@@ -179,12 +179,19 @@ onMounted(() => {
     word-break: break-all;
 }
 
+/* Ref's `.tb_layout td` sets no alignment; individual cells centre themselves. */
 .legacy-table td,
 .legacy-table th {
     border: 1px solid gray;
     padding: 0;
-    text-align: center;
     word-break: break-all;
+}
+
+/* Ref centres every npc row cell with `align=center`; only the title and
+ * footer cells keep the default alignment. */
+.npc-table td,
+.legacy-table th {
+    text-align: center;
 }
 
 .legacy-bg0 {

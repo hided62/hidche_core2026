@@ -78,7 +78,7 @@ onMounted(load);
             <strong>세력 장수</strong>
             <span class="right-actions">
                 <span class="dropdown">
-                    <button class="top-button mode-button" @click="viewMenuOpen = !viewMenuOpen">보기 모드⌄</button>
+                    <button class="top-button mode-button" :aria-expanded="viewMenuOpen" @click="viewMenuOpen = !viewMenuOpen">보기 모드⌄</button>
                     <span v-if="viewMenuOpen" class="dropdown-menu">
                         <button
                             @click="
@@ -222,7 +222,6 @@ onMounted(load);
     max-width: 1000px;
     height: 100vh;
     margin: 0 auto;
-    overflow: hidden;
     font: 14px/21px var(--sammo-font-sans);
     color: #fff;
     background-color: transparent;
@@ -238,7 +237,7 @@ onMounted(load);
     justify-content: center;
     background-color: transparent;
     background-image: var(--sammo-texture-walnut);
-    border-bottom: 1px solid #42484a;
+    /* Ref's `.back_bar` has no bottom rule; the grid below draws its own. */
     font-size: 14px;
 }
 .top-bar strong {
@@ -258,6 +257,7 @@ onMounted(load);
 .right-actions {
     right: 0;
 }
+/* Ref Lumen primary: the bottom edge carries the pressed-state movement. */
 .top-button {
     display: inline-flex;
     height: 32px;
@@ -282,7 +282,16 @@ onMounted(load);
 }
 .mode-button {
     background: #375a7f;
+    border-bottom: 0 solid #325172;
 }
+
+/* Ref Lumen primary: a 3px bottom edge appears on hover and stays while open. */
+.mode-button:hover,
+.mode-button[aria-expanded='true'],
+.mode-button:active {
+    border-bottom-width: 3px;
+}
+
 .mode-button,
 .columns-button {
     width: 90px;

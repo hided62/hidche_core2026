@@ -129,7 +129,7 @@ onMounted(async () => {
             <strong>연 감</strong>
             <button class="legacy-button close-button" type="button" @click="closePage">창 닫기</button>
             <span class="settings-menu">
-                <button class="legacy-button" type="button" @click="settingsOpen = !settingsOpen">⚙ 설정⌄</button>
+                <button class="legacy-button legacy-button--navigation" type="button" @click="settingsOpen = !settingsOpen">⚙ 설정⌄</button>
                 <button v-if="settingsOpen" class="settings-item" type="button" @click="toggleRankingPosition">
                     국가 순서 위치 변경(모바일 전용)
                 </button>
@@ -139,7 +139,7 @@ onMounted(async () => {
         <section class="year-selector">
             <span>연월 선택:</span>
             <button
-                class="legacy-button"
+                class="legacy-button legacy-button--secondary"
                 type="button"
                 :disabled="selectedYearMonth === range?.firstYearMonth"
                 @click="moveMonth(-1)"
@@ -152,7 +152,7 @@ onMounted(async () => {
                 </option>
             </select>
             <button
-                class="legacy-button"
+                class="legacy-button legacy-button--secondary"
                 type="button"
                 :disabled="selectedYearMonth === range?.currentYearMonth"
                 @click="moveMonth(1)"
@@ -222,7 +222,7 @@ onMounted(async () => {
 </template>
 
 <style scoped>
-:global(body) {
+:global(body:has(.yearbook-page)) {
     min-width: 500px;
 }
 
@@ -236,12 +236,18 @@ onMounted(async () => {
     background-color: transparent;
 }
 
+/* Ref's `.back_bar` keeps default text alignment; only the heading centres. */
 .yearbook-title {
     position: relative;
     min-height: 32px;
-    text-align: center;
+    text-align: left;
     line-height: 21px;
     background-color: transparent;
+}
+
+.yearbook-title > strong {
+    display: block;
+    text-align: center;
 }
 
 .yearbook-title strong {
@@ -283,6 +289,7 @@ onMounted(async () => {
     border: 1px solid gray;
 }
 
+/* Ref's selector row is a `.center.row` with 1px gray rules above and below. */
 .year-selector {
     display: grid;
     grid-template-columns: 110px 110px minmax(220px, 1fr) 110px;
@@ -290,8 +297,10 @@ onMounted(async () => {
     align-items: center;
     gap: 4px;
     min-height: 37.5px;
+    border-top: 1px solid gray;
+    border-bottom: 1px solid gray;
     padding: 0;
-    text-align: right;
+    text-align: center;
 }
 
 .year-selector select {
@@ -352,7 +361,6 @@ onMounted(async () => {
 
 .history-log {
     grid-column: 1 / -1;
-    overflow: hidden;
 }
 .history-log:first-of-type {
     height: 128px;
