@@ -52,11 +52,26 @@ const archiveRows = [
         year: 219,
         month: 12,
         map: { year: 219, month: 12, startYear: 190, cityList: [], nationList: [] },
-        nations: [{ id: 1, name: '현재기수국', color: '#00FF00', level: 7, power: 1300, generalCount: 10, cities: ['낙양'] }],
+        nations: [
+            { id: 1, name: '현재기수국', color: '#00FF00', level: 7, power: 1300, generalCount: 10, cities: ['낙양'] },
+        ],
         globalHistory: ['저장된 현재 기수 과거 기록'],
         globalAction: ['저장된 현재 기수 과거 행동'],
         hash: 'current-archive',
         createdAt: new Date('2026-07-31T00:00:00.000Z'),
+    },
+    {
+        id: 4,
+        profileName: profile.id,
+        sourceId: 201,
+        year: 219,
+        month: 11,
+        map: { year: 219, month: 11, startYear: 190, cityList: [], nationList: [] },
+        nations: [],
+        globalHistory: ['레거시 프로필 별칭 기록'],
+        globalAction: [],
+        hash: 'legacy-profile-alias',
+        createdAt: new Date('2026-07-30T00:00:00.000Z'),
     },
 ];
 
@@ -75,14 +90,21 @@ const authFor = (userId: string): GameSessionTokenPayload => ({
     sanctions: {},
 });
 
-const buildContext = (auth: GameSessionTokenPayload | null, options: { hasGeneral?: boolean } = {}): GameApiContext => {
+const buildContext = (
+    auth: GameSessionTokenPayload | null,
+    options: { hasGeneral?: boolean; worldMeta?: unknown } = {}
+): GameApiContext => {
     const db = {
         general: {
             findFirst: async ({ where }: { where: { userId: string } }) =>
                 options.hasGeneral === false ? null : { id: where.userId === 'owner-a' ? 1 : 2, userId: where.userId },
         },
         worldState: {
-            findFirst: async () => ({ currentYear: 220, currentMonth: 1, meta: { serverId: currentServerId } }),
+            findFirst: async () => ({
+                currentYear: 220,
+                currentMonth: 1,
+                meta: options.worldMeta ?? { serverId: currentServerId },
+            }),
         },
         yearbookHistory: {
             findFirst: async (args: {
@@ -194,6 +216,16 @@ describe('historical yearbook access from dynasty', () => {
         expect(canonical).toEqual({
             firstYearMonth: 219 * 12 + 11,
             lastYearMonth: 219 * 12 + 11,
+            currentYearMonth: 220 * 12,
+        });
+    });
+
+    it('reads imported history under the short profile ID when world metadata has no server ID', async () => {
+        const caller = appRouter.createCaller(buildContext(authFor('owner-a'), { worldMeta: {} }));
+
+        await expect(caller.yearbook.getRange()).resolves.toEqual({
+            firstYearMonth: 219 * 12 + 10,
+            lastYearMonth: 219 * 12 + 10,
             currentYearMonth: 220 * 12,
         });
     });

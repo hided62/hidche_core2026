@@ -27,6 +27,8 @@ export const getBattleCenter = accessAuthedProcedure.query(async ({ ctx }) => {
             select: {
                 id: true,
                 name: true,
+                picture: true,
+                imageServer: true,
                 npcState: true,
                 officerLevel: true,
                 cityId: true,
@@ -43,6 +45,16 @@ export const getBattleCenter = accessAuthedProcedure.query(async ({ ctx }) => {
                 crew: true,
                 train: true,
                 atmos: true,
+                age: true,
+                crewTypeId: true,
+                weaponCode: true,
+                bookCode: true,
+                horseCode: true,
+                itemCode: true,
+                personalCode: true,
+                specialCode: true,
+                special2Code: true,
+                meta: true,
             },
             orderBy: { id: 'asc' },
         }),
@@ -79,29 +91,62 @@ export const getBattleCenter = accessAuthedProcedure.query(async ({ ctx }) => {
         }
     }
 
-    const generals = generalRows.map((general) => ({
-        id: general.id,
-        name: general.name,
-        npcState: general.npcState,
-        officerLevel: general.officerLevel,
-        cityId: general.cityId,
-        turnTime: formatDateTime(general.turnTime),
-        recentWar: formatDateTime(general.recentWarTime),
-        warnum: battleCountMap.get(general.id) ?? 0,
-        stats: {
-            leadership: general.leadership,
-            strength: general.strength,
-            intelligence: general.intel,
-        },
-        experience: general.experience,
-        dedication: general.dedication,
-        injury: general.injury,
-        gold: general.gold,
-        rice: general.rice,
-        crew: general.crew,
-        train: general.train,
-        atmos: general.atmos,
-    }));
+    const generals = generalRows.map((general) => {
+        const meta =
+            general.meta && typeof general.meta === 'object' && !Array.isArray(general.meta)
+                ? (general.meta as Record<string, unknown>)
+                : {};
+        const metaNumber = (key: string): number => {
+            const value = meta[key];
+            return typeof value === 'number' && Number.isFinite(value) ? value : 0;
+        };
+        return {
+            id: general.id,
+            name: general.name,
+            picture: general.picture,
+            imageServer: general.imageServer,
+            npcState: general.npcState,
+            officerLevel: general.officerLevel,
+            cityId: general.cityId,
+            turnTime: formatDateTime(general.turnTime),
+            recentWar: formatDateTime(general.recentWarTime),
+            warnum: battleCountMap.get(general.id) ?? 0,
+            stats: {
+                leadership: general.leadership,
+                strength: general.strength,
+                intelligence: general.intel,
+            },
+            experience: general.experience,
+            dedication: general.dedication,
+            injury: general.injury,
+            gold: general.gold,
+            rice: general.rice,
+            crew: general.crew,
+            train: general.train,
+            atmos: general.atmos,
+            age: general.age,
+            crewTypeId: general.crewTypeId,
+            equipment: {
+                weapon: general.weaponCode,
+                book: general.bookCode,
+                horse: general.horseCode,
+                item: general.itemCode,
+            },
+            traits: {
+                personal: general.personalCode,
+                specialDomestic: general.specialCode,
+                specialWar: general.special2Code,
+            },
+            battleStats: {
+                kills: metaNumber('rank_killnum') || metaNumber('killnum'),
+                deaths: metaNumber('deathnum'),
+                fire: metaNumber('firenum'),
+                killCrew: metaNumber('killcrew'),
+                deathCrew: metaNumber('deathcrew'),
+                dex: [1, 2, 3, 4, 5].map((index) => metaNumber(`dex${index}`)),
+            },
+        };
+    });
 
     return {
         me: {

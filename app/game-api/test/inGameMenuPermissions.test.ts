@@ -79,7 +79,7 @@ const createContext = (options: {
     nationMeta?: Record<string, unknown>;
     requestCommand?: ReturnType<typeof vi.fn>;
     accessToken?: string;
-    logs?: Array<{ id: number; text: string }>;
+    logs?: Array<{ id: number; text: string; year?: number; month?: number; createdAt?: Date }>;
 }) => {
     const me = options.me === undefined ? buildGeneral() : options.me;
     const targets = options.targets ?? (me ? [me] : []);
@@ -119,12 +119,24 @@ const createContext = (options: {
         },
         logEntry: {
             groupBy: vi.fn(async () => []),
-            findMany: vi.fn(async (query?: { where?: { id?: { lt?: number } }; take?: number }) => {
-                const source = options.logs ?? [{ id: 1, text: '기록' }];
-                const beforeId = query?.where?.id?.lt;
-                const filtered = beforeId ? source.filter((entry) => entry.id < beforeId) : source;
-                return query?.take ? filtered.slice(0, query.take) : filtered;
-            }),
+            findMany: vi.fn(
+                async (query?: {
+                    where?: { id?: { lt?: number } };
+                    take?: number;
+                    select?: { id?: boolean; text?: boolean };
+                }) => {
+                    const source = (options.logs ?? [{ id: 1, text: '기록' }]).map((entry) => ({
+                        year: 185,
+                        month: 1,
+                        createdAt: now,
+                        ...entry,
+                    }));
+                    const beforeId = query?.where?.id?.lt;
+                    const filtered = beforeId ? source.filter((entry) => entry.id < beforeId) : source;
+                    const selected = query?.select ? filtered.map(({ id, text }) => ({ id, text })) : filtered;
+                    return query?.take ? selected.slice(0, query.take) : selected;
+                }
+            ),
         },
     };
     const redisClient = { get: async () => null, set: async () => null };
@@ -405,6 +417,14 @@ describe('battle-center general and user permissions', () => {
         });
         await expect(appRouter.createCaller(tenured.context).nation.getBattleCenter()).resolves.toMatchObject({
             me: { id: 7, permissionLevel: 1 },
+            generals: [
+                {
+                    id: 7,
+                    picture: 'default.jpg',
+                    imageServer: 0,
+                    battleStats: { kills: 0, deaths: 0, fire: 0, killCrew: 0, deathCrew: 0, dex: [0, 0, 0, 0, 0] },
+                },
+            ],
         });
 
         const auditor = createContext({
@@ -430,6 +450,7 @@ describe('battle-center general and user permissions', () => {
 
         await expect(member.nation.getGeneralLog({ generalId: me.id, type: 'generalAction' })).resolves.toMatchObject({
             generalId: me.id,
+            logs: [{ id: 1, year: 185, month: 1, createdAt: '2026-01-01 00:00:00' }],
         });
         await expect(
             member.nation.getGeneralLog({ generalId: otherUser.id, type: 'generalAction' })

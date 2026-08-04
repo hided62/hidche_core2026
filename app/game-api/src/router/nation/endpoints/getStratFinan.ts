@@ -1,7 +1,14 @@
 import { TRPCError } from '@trpc/server';
 
 import { asRecord } from '@sammo-ts/common';
-import { getGoldIncome, getOutcome, getRiceIncome, getWallIncome, getWarGoldIncome, type NationIncomeContext } from '@sammo-ts/logic';
+import {
+    getGoldIncome,
+    getOutcome,
+    getRiceIncome,
+    getWallIncome,
+    getWarGoldIncome,
+    type NationIncomeContext,
+} from '@sammo-ts/logic';
 
 import { accessAuthedProcedure } from '../../../trpc.js';
 import { getMyGeneral } from '../../shared/general.js';
@@ -171,13 +178,7 @@ export const getStratFinan = accessAuthedProcedure.query(async ({ ctx }) => {
     const cityStatsByNation = new Map<number, { popSum: number; valueSum: number; maxSum: number }>();
     for (const city of cityRows) {
         const entry = cityStatsByNation.get(city.nationId) ?? { popSum: 0, valueSum: 0, maxSum: 0 };
-        const valueSum =
-            city.population +
-            city.agriculture +
-            city.commerce +
-            city.security +
-            city.wall +
-            city.defence;
+        const valueSum = city.population + city.agriculture + city.commerce + city.security + city.wall + city.defence;
         const maxSum =
             city.populationMax +
             city.agricultureMax +
@@ -222,22 +223,24 @@ export const getStratFinan = accessAuthedProcedure.query(async ({ ctx }) => {
         );
     }
 
-    const nationsList = nationRows.map((nationItem) => {
-        const diplomacy =
-            nationItem.id === nation.id
-                ? { state: 7, term: null }
-                : diplomacyMap.get(nationItem.id) ?? { state: 2, term: 0 };
-        return {
-            id: nationItem.id,
-            name: nationItem.name,
-            color: nationItem.color,
-            level: nationItem.level,
-            power: powerByNation.get(nationItem.id) ?? 0,
-            generalCount: generalCountMap.get(nationItem.id) ?? 0,
-            cityCount: cityCountMap.get(nationItem.id) ?? 0,
-            diplomacy,
-        };
-    });
+    const nationsList = nationRows
+        .filter((nationItem) => nationItem.id > 0)
+        .map((nationItem) => {
+            const diplomacy =
+                nationItem.id === nation.id
+                    ? { state: 7, term: null }
+                    : (diplomacyMap.get(nationItem.id) ?? { state: 2, term: 0 });
+            return {
+                id: nationItem.id,
+                name: nationItem.name,
+                color: nationItem.color,
+                level: nationItem.level,
+                power: powerByNation.get(nationItem.id) ?? 0,
+                generalCount: generalCountMap.get(nationItem.id) ?? 0,
+                cityCount: cityCountMap.get(nationItem.id) ?? 0,
+                diplomacy,
+            };
+        });
 
     const nationCities = cityRows.filter((city) => city.nationId === nation.id);
     const nationGenerals = generalRows.filter((general) => general.nationId === nation.id);

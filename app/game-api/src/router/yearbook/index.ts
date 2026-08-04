@@ -7,10 +7,7 @@ import { LogCategory, LogScope } from '@sammo-ts/infra';
 
 import type { GameApiContext } from '../../context.js';
 import { loadPublicMap, type BaseMapResult } from '../../maps/worldMap.js';
-import {
-    generalAccessEndpointWeights,
-    recordGeneralAccessWeight,
-} from '../../services/generalAccess.js';
+import { generalAccessEndpointWeights, recordGeneralAccessWeight } from '../../services/generalAccess.js';
 import { authedProcedure, router } from '../../trpc.js';
 import { getMyGeneral } from '../shared/general.js';
 
@@ -72,6 +69,7 @@ const parseYearbookNations = (value: unknown): YearbookNation[] => {
 
 const resolveArchiveTarget = (
     worldMeta: unknown,
+    profileId: string,
     profileName: string,
     requestedServerId?: string
 ): { archiveKey: string; legacyAlias: string | null; isCurrentProfile: boolean } => {
@@ -81,7 +79,12 @@ const resolveArchiveTarget = (
     const isCurrentProfile = requested === profileName || requested === canonicalServerId;
     return {
         archiveKey: isCurrentProfile ? canonicalServerId : requested,
-        legacyAlias: isCurrentProfile && canonicalServerId !== profileName ? profileName : null,
+        legacyAlias:
+            isCurrentProfile && canonicalServerId !== profileName
+                ? profileName
+                : isCurrentProfile && profileId !== canonicalServerId
+                  ? profileId
+                  : null,
         isCurrentProfile,
     };
 };
@@ -263,7 +266,7 @@ export const yearbookRouter = router({
                     message: 'World state is not initialized.',
                 });
             }
-            const target = resolveArchiveTarget(worldState.meta, ctx.profile.name, input?.serverID);
+            const target = resolveArchiveTarget(worldState.meta, ctx.profile.id, ctx.profile.name, input?.serverID);
 
             const findRange = async (profileName: string) =>
                 Promise.all([
@@ -278,10 +281,19 @@ export const yearbookRouter = router({
                         orderBy: [{ year: 'desc' as const }, { month: 'desc' as const }],
                     }),
                 ]);
-            let [firstRow, lastRow] = await findRange(target.archiveKey);
-            if ((!firstRow || !lastRow) && target.legacyAlias) {
-                [firstRow, lastRow] = await findRange(target.legacyAlias);
-            }
+            const ranges = await Promise.all(
+                [target.archiveKey, target.legacyAlias]
+                    .filter((value): value is string => Boolean(value))
+                    .map(findRange)
+            );
+            const firstRow = ranges
+                .map(([first]) => first)
+                .filter((row): row is NonNullable<typeof row> => Boolean(row))
+                .sort((a, b) => joinYearMonth(a.year, a.month) - joinYearMonth(b.year, b.month))[0];
+            const lastRow = ranges
+                .map(([, last]) => last)
+                .filter((row): row is NonNullable<typeof row> => Boolean(row))
+                .sort((a, b) => joinYearMonth(b.year, b.month) - joinYearMonth(a.year, a.month))[0];
 
             if (!target.isCurrentProfile && (!firstRow || !lastRow)) {
                 throw new TRPCError({ code: 'NOT_FOUND', message: '연감 범위를 찾을 수 없습니다.' });
@@ -314,7 +326,7 @@ export const yearbookRouter = router({
             if (!worldState) {
                 throw new TRPCError({ code: 'PRECONDITION_FAILED', message: 'World state is not initialized.' });
             }
-            const target = resolveArchiveTarget(worldState.meta, ctx.profile.name, input.serverID);
+            const target = resolveArchiveTarget(worldState.meta, ctx.profile.id, ctx.profile.name, input.serverID);
             const shouldRecordAfterHashCheck = target.isCurrentProfile && Boolean(input.hash);
             if (target.isCurrentProfile && !shouldRecordAfterHashCheck) {
                 await recordHistoryAccess(ctx);
