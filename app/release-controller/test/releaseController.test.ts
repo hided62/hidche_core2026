@@ -15,7 +15,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 
 import { resolveReleaseControllerConfig, type ReleaseControllerConfig } from '../src/config.js';
 import { buildGatewayProcessDefinitions, GatewayReleaseController } from '../src/releaseController.js';
-import { upgradeReleaseController } from '../src/selfUpgrade.js';
+import { buildReleaseControllerDefinition, upgradeReleaseController } from '../src/selfUpgrade.js';
 
 const SHA = '1111111111111111111111111111111111111111';
 const OLD_SHA = '2222222222222222222222222222222222222222';
@@ -124,6 +124,26 @@ it('runs Gateway preview from the frontend workspace dependency', () => {
     );
 });
 
+it('does not forward release-controller PM2 identity to Gateway processes', () => {
+    const definitions = buildGatewayProcessDefinitions('/srv/sammo/release', {
+        ...config,
+        baseEnv: {
+            DATABASE_URL: 'postgresql://integration.invalid/sammo',
+            GATEWAY_ROLE: 'orchestrator',
+            name: 'sammo:release-controller',
+            pm_id: '3',
+            pm_exec_path: '/srv/release-controller.js',
+        },
+    });
+
+    for (const definition of definitions) {
+        expect(definition.env).toMatchObject({ DATABASE_URL: 'postgresql://integration.invalid/sammo' });
+        expect(definition.env).not.toHaveProperty('pm_id');
+        expect(definition.env).not.toHaveProperty('pm_exec_path');
+        expect(definition.env).not.toHaveProperty('name');
+    }
+});
+
 describe('GatewayReleaseController', () => {
     it('builds, migrates, switches all gateway roles, verifies readiness, and publishes atomically', async () => {
         const workspace = await createReleaseWorkspace();
@@ -225,9 +245,44 @@ describe('resolveReleaseControllerConfig', () => {
 
         expect(new URL(resolved.gatewayDatabaseUrl).searchParams.get('schema')).toBe('gateway_release');
     });
+
+    it('removes PM2 metadata from the inherited controller environment', () => {
+        const resolved = resolveReleaseControllerConfig({
+            GATEWAY_DATABASE_URL: 'postgresql://user:pass@127.0.0.1:5432/sammo',
+            RELEASE_CONTROLLER_WORKSPACE_ROOT: '/srv/sammo/controller',
+            pm_id: '3',
+            name: 'sammo:release-controller',
+            axm_monitor: '{}',
+        });
+
+        expect(resolved.baseEnv).toMatchObject({
+            GATEWAY_DATABASE_URL: 'postgresql://user:pass@127.0.0.1:5432/sammo',
+            RELEASE_CONTROLLER_WORKSPACE_ROOT: '/srv/sammo/controller',
+        });
+        expect(resolved.baseEnv).not.toHaveProperty('pm_id');
+        expect(resolved.baseEnv).not.toHaveProperty('name');
+        expect(resolved.baseEnv).not.toHaveProperty('axm_monitor');
+    });
 });
 
 describe('upgradeReleaseController', () => {
+    it('does not forward the old controller PM2 identity to its replacement', () => {
+        const definition = buildReleaseControllerDefinition('/srv/sammo/release', {
+            ...config,
+            baseEnv: {
+                DATABASE_URL: 'postgresql://integration.invalid/sammo',
+                name: 'sammo:release-controller',
+                pm_id: '3',
+                pm_exec_path: '/srv/old-controller.js',
+            },
+        });
+
+        expect(definition.env).toMatchObject({ DATABASE_URL: 'postgresql://integration.invalid/sammo' });
+        expect(definition.env).not.toHaveProperty('pm_id');
+        expect(definition.env).not.toHaveProperty('pm_exec_path');
+        expect(definition.env).not.toHaveProperty('name');
+    });
+
     it('switches the controller daemon from a separately invoked CLI process', async () => {
         const workspace = await createReleaseWorkspace();
         const running = new Map([['sammo:release-controller', '/srv/sammo/old/app/release-controller']]);

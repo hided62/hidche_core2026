@@ -12,6 +12,7 @@ import {
     type ProcessDefinition,
     type ProcessManager,
     readReleaseManifest,
+    sanitizeManagedProcessEnv,
 } from '@sammo-ts/gateway-api';
 
 import type { ReleaseControllerConfig } from './config.js';
@@ -26,7 +27,7 @@ export const buildGatewayReleaseCommands = (
     config: ReleaseControllerConfig
 ): BuildCommand[] => {
     const env = {
-        ...config.baseEnv,
+        ...sanitizeManagedProcessEnv(config.baseEnv),
         VITE_APP_BASE_PATH: config.gatewayBasePath,
         VITE_GATEWAY_API_URL: `${config.gatewayBasePath}/api/trpc`,
         VITE_GAME_API_URL_TEMPLATE: '/{profile}/api/trpc',
@@ -49,7 +50,7 @@ export const buildGatewayMigrationCommand = (workspaceRoot: string, config: Rele
     args: ['--filter', '@sammo-ts/infra', 'prisma:migrate:deploy:gateway'],
     cwd: workspaceRoot,
     env: {
-        ...config.baseEnv,
+        ...sanitizeManagedProcessEnv(config.baseEnv),
         GATEWAY_DATABASE_URL: config.gatewayDatabaseUrl,
     },
 });
@@ -63,7 +64,7 @@ export const buildGatewayProcessDefinitions = (
     const apiScript = path.join(apiCwd, 'dist', 'index.js');
     const frontendScript = path.join(frontendCwd, 'node_modules', 'vite', 'bin', 'vite.js');
     const env = {
-        ...config.baseEnv,
+        ...sanitizeManagedProcessEnv(config.baseEnv),
         GATEWAY_API_HOST: '0.0.0.0',
         GATEWAY_API_PORT: String(config.gatewayApiPort),
         GATEWAY_DATABASE_URL: config.gatewayDatabaseUrl,
@@ -231,12 +232,19 @@ export class GatewayReleaseController {
             try {
                 const [api, frontend] = await Promise.all([this.fetchImpl(apiUrl), this.fetchImpl(frontendUrl)]);
                 const processes = await this.processManager.list();
-                const online = new Set(
-                    processes
-                        .filter((process) => process.status.toLowerCase() === 'online')
-                        .map((process) => process.name)
+                const expected = processes.filter((process) => PROCESS_NAMES.includes(process.name as (typeof PROCESS_NAMES)[number]));
+                const safe = expected.filter(
+                    (process) => process.status.toLowerCase() === 'online' && (process.restartCount ?? 0) === 0
                 );
-                if (api.ok && frontend.ok && PROCESS_NAMES.every((name) => online.has(name))) return;
+                if (
+                    api.ok &&
+                    frontend.ok &&
+                    expected.length === PROCESS_NAMES.length &&
+                    safe.length === PROCESS_NAMES.length &&
+                    new Set(safe.map((process) => process.name)).size === PROCESS_NAMES.length
+                ) {
+                    return;
+                }
             } catch {
                 // Retry until the bounded deadline.
             }

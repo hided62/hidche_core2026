@@ -32,6 +32,12 @@ profile 범위 권한과 별개인 전역 `admin.releases.manage` 권한이 필�
   `GAME_API_ROLE=server|*-worker`, turn daemon에
   `GAME_ENGINE_ROLE=turn-daemon`을 명시합니다. library import나 PM2 wrapper의
   argv만으로 실행 역할을 추론하지 않습니다.
+- PM2 child에서 상속된 `pm_id`, `name`, `pm_exec_path`, `NODE_APP_INSTANCE`와
+  `axm_*` 메타데이터는 새 definition에 전달하지 않습니다. 동일 process 이름은
+  시작 전에 제거하며 PM2 start는 남은 동일 이름을 거부합니다.
+- Runtime process는 10초 이전의 불안정 종료에 대해 최대 5회, 2초 간격으로만
+  자동 재시작합니다. Readiness는 예상 process 수가 정확하고 모든 restart count가
+  0일 때만 성공합니다.
 - migration 이후 이전 애플리케이션으로 돌아갈 때 schema 하위 호환성이
   유지됩니다.
 
@@ -61,7 +67,9 @@ profile 범위 권한과 별개인 전역 `admin.releases.manage` 권한이 필�
 사용합니다. Source와 scenario를 먼저 불러온 뒤 turn 간격, 가오픈·정식 오픈,
 NPC와 자동 진행 설정을 확인하고 요청해 주세요.
 
-이 모드는 build와 migration 후 scenario seeder를 실행합니다. 현 시즌의 장수,
+이 모드는 build와 migration 후 기존 season/tick metadata를 읽고 scenario seeder를 실행합니다.
+빈 profile schema도 migration을 먼저 적용하므로 최초 `world_state` 조회가
+table 부재로 실패하지 않습니다. 현 시즌의 장수,
 국가, 도시, command queue와 시장·경매 등은 새 scenario 기준으로 교체됩니다.
 다음 장기보존 자료는 reset 범위 밖에 있으므로 기수를 넘어 유지됩니다.
 
@@ -76,7 +84,7 @@ scenario 설정을 확인한 뒤 실행해 주세요.
 ### Profile 실패와 재시도
 
 Build는 현재 runtime을 멈추기 전에 수행합니다. Migration 또는 새 process
-readiness가 실패하면 작업은 `FAILED`가 되며 orchestrator는 이전 worktree의
+readiness가 실패하면 작업은 `FAILED`가 됩니다. DB 유지 배포는 이전 worktree의
 process 복구를 시도합니다. 관리자 화면의 오류와 PM2 process 상태를 확인한
 뒤 원인을 해결하고 실패한 작업을 재시도해 주세요. 재시도는 처음 고정된 commit을
 사용합니다.
@@ -159,7 +167,8 @@ pnpm --filter @sammo-ts/release-controller self-upgrade -- COMMIT <full-sha>
 배포 후:
 
 - 작업이 `SUCCEEDED`이고 고정 commit이 요청한 commit과 같은지 확인합니다.
-- PM2의 cwd와 script가 게시된 worktree를 가리키는지 확인합니다.
+- PM2 process 이름별 항목이 정확히 하나이고 restart count가 0이며, cwd와
+  script가 게시된 worktree를 가리키는지 확인합니다.
 - `/gateway/` 또는 대상 profile prefix에 직접 접속하고 새로고침합니다.
 - API health, tRPC, SSE와 정적 자산 경로를 확인합니다.
 - DB 유지 배포에서는 현재 season/scenario와 핵심 게임 상태가 유지됐는지

@@ -8,6 +8,7 @@ import {
     buildWorkspaceCommands,
     planProfileReconcile,
 } from '../src/orchestrator/gatewayOrchestrator.js';
+import { sanitizeManagedProcessEnv } from '../src/orchestrator/processManager.js';
 import type { GatewayProfileRecord } from '../src/orchestrator/profileRepository.js';
 
 const buildProfile = (buildWorkspace?: string): GatewayProfileRecord => ({
@@ -116,6 +117,9 @@ describe('buildProcessDefinitions', () => {
         const buildWorkspace = '/srv/sammo/worktrees/0123456789abcdef';
         const definitions = buildProcessDefinitions(buildProfile(buildWorkspace), processConfig);
 
+        expect(Object.values(definitions)).toHaveLength(6);
+        expect(new Set(Object.values(definitions).map((definition) => definition.name)).size).toBe(6);
+
         expect(definitions.frontend).toMatchObject({
             cwd: path.join(buildWorkspace, 'app', 'game-frontend'),
             script: path.join(buildWorkspace, 'app', 'game-frontend', 'node_modules', 'vite', 'bin', 'vite.js'),
@@ -166,6 +170,50 @@ describe('buildProcessDefinitions', () => {
         expect(definitions.auction.cwd).toBe(path.join(processConfig.workspaceRoot, 'app', 'game-api'));
         expect(definitions.battleSim.cwd).toBe(path.join(processConfig.workspaceRoot, 'app', 'game-api'));
         expect(definitions.tournament.cwd).toBe(path.join(processConfig.workspaceRoot, 'app', 'game-api'));
+    });
+
+    it('does not forward PM2 identity or parent runtime roles to profile processes', () => {
+        const definitions = buildProcessDefinitions(buildProfile(), {
+            ...processConfig,
+            baseEnv: {
+                DATABASE_URL: 'postgresql://integration.invalid/sammo',
+                GATEWAY_ROLE: 'orchestrator',
+                NODE_APP_INSTANCE: '2',
+                name: 'sammo:gateway-orchestrator',
+                pm_id: '2',
+                pm_exec_path: '/srv/controller.js',
+            },
+        });
+
+        for (const definition of Object.values(definitions)) {
+            expect(definition.env).toMatchObject({ DATABASE_URL: 'postgresql://integration.invalid/sammo' });
+            expect(definition.env).not.toHaveProperty('pm_id');
+            expect(definition.env).not.toHaveProperty('pm_exec_path');
+            expect(definition.env).not.toHaveProperty('name');
+            expect(definition.env).not.toHaveProperty('NODE_APP_INSTANCE');
+            expect(definition.env).not.toHaveProperty('GATEWAY_ROLE');
+        }
+    });
+});
+
+describe('sanitizeManagedProcessEnv', () => {
+    it('keeps application configuration while removing PM2 metadata and role selectors', () => {
+        expect(
+            sanitizeManagedProcessEnv({
+                DATABASE_URL: 'postgresql://integration.invalid/sammo',
+                PATH: '/usr/local/bin:/usr/bin',
+                GATEWAY_ROLE: 'orchestrator',
+                GAME_API_ROLE: 'server',
+                NODE_APP_INSTANCE: '2',
+                name: 'sammo:gateway-orchestrator',
+                pm_id: '2',
+                pm_cwd: '/srv/controller',
+                axm_monitor: '{}',
+            })
+        ).toEqual({
+            DATABASE_URL: 'postgresql://integration.invalid/sammo',
+            PATH: '/usr/local/bin:/usr/bin',
+        });
     });
 });
 

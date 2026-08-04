@@ -13,7 +13,7 @@ import {
 import { isRecord } from '@sammo-ts/common';
 
 import type { BuildCommand, BuildRunner } from './buildRunner.js';
-import type { ProcessManager } from './processManager.js';
+import { sanitizeManagedProcessEnv, type ProcessManager } from './processManager.js';
 import type {
     GatewayClaimedProfileUpdate,
     GatewayOperationRecord,
@@ -368,7 +368,7 @@ export const buildProcessDefinitions = (
     battleSim: { name: string; script: string; cwd: string; env: Record<string, string> };
     tournament: { name: string; script: string; cwd: string; env: Record<string, string> };
 } => {
-    const baseEnv = { ...(config.baseEnv ?? {}) };
+    const baseEnv = sanitizeManagedProcessEnv(config.baseEnv ?? {});
     const frontendName = buildProcessName(profile.profileName, 'frontend');
     const apiName = buildProcessName(profile.profileName, 'api');
     const daemonName = buildProcessName(profile.profileName, 'daemon');
@@ -1453,11 +1453,18 @@ export class GatewayOrchestrator implements GatewayOrchestratorHandle {
                 buildWorkspace: workspace.root,
             };
             const started = await this.startProfile(builtProfile, assertLease);
-            if (!started) {
-                await updateClaimedProfile({ status: 'STOPPED', lastError: 'Failed to start profile processes.' }, () =>
+            const ready = started && (await this.waitForProfileReadiness(builtProfile, assertLease));
+            if (!ready) {
+                if (started) {
+                    await this.stopProfile(builtProfile, assertLease);
+                }
+                const detail = started
+                    ? 'reset completed but profile processes failed readiness'
+                    : 'reset completed but profile processes failed to start';
+                await updateClaimedProfile({ status: 'STOPPED', lastError: detail }, () =>
                     this.repository.updateStatus(profile.profileName, 'STOPPED')
                 );
-                return { status: 'FAILED', detail: 'reset completed but profile processes failed to start' };
+                return { status: 'FAILED', detail };
             }
             await updateClaimedProfile({ lastError: null }, async () => {
                 await this.repository.updateLastError(profile.profileName, null);
@@ -1723,6 +1730,17 @@ export class GatewayOrchestrator implements GatewayOrchestratorHandle {
         ];
         const attemptedNames: string[] = [];
         try {
+            const expectedNames = new Set(orderedDefinitions.map((definition) => definition.name));
+            const existingNames = new Set(
+                (await this.processManager.list())
+                    .filter((process) => expectedNames.has(process.name))
+                    .map((process) => process.name)
+            );
+            for (const name of existingNames) {
+                await assertLease?.();
+                await this.processManager.delete(name);
+                await assertLease?.();
+            }
             for (const definition of orderedDefinitions) {
                 await assertLease?.();
                 attemptedNames.push(definition.name);
@@ -1774,12 +1792,17 @@ export class GatewayOrchestrator implements GatewayOrchestratorHandle {
                     this.fetchImpl(frontendUrl),
                     this.processManager.list(),
                 ]);
-                const online = new Set(
-                    processes
-                        .filter((process) => process.status.toLowerCase() === 'online')
-                        .map((process) => process.name)
+                const expectedProcesses = processes.filter((process) => expectedNames.includes(process.name));
+                const safeProcesses = expectedProcesses.filter(
+                    (process) => process.status.toLowerCase() === 'online' && (process.restartCount ?? 0) === 0
                 );
-                if (api.ok && frontend.ok && expectedNames.every((name) => online.has(name))) {
+                if (
+                    api.ok &&
+                    frontend.ok &&
+                    expectedProcesses.length === expectedNames.length &&
+                    safeProcesses.length === expectedNames.length &&
+                    new Set(safeProcesses.map((process) => process.name)).size === expectedNames.length
+                ) {
                     return true;
                 }
             } catch {
