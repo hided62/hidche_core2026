@@ -9,6 +9,7 @@ import type {
     UnitSetDefinition,
 } from '@sammo-ts/logic';
 import { getNextTurnAt } from '@sammo-ts/logic';
+import { GameClock, type GameClockMode } from '@sammo-ts/common';
 
 import type { TurnCheckpoint } from '../lifecycle/types.js';
 import type {
@@ -103,6 +104,14 @@ export interface InMemoryTurnWorldOptions {
     generalTurnHandler?: GeneralTurnHandler;
     calendarHandler?: TurnCalendarHandler;
     autoAdvanceDiplomacyMonth?: boolean;
+}
+
+export interface InMemoryGameClockState {
+    baseTime: Date;
+    tick: number;
+    mode: GameClockMode;
+    wallAnchor: Date;
+    lastTurnTick: number;
 }
 
 export interface TurnWorldChanges {
@@ -421,7 +430,36 @@ export class InMemoryTurnWorld {
     private state: TurnWorldState;
 
     constructor(state: TurnWorldState, snapshot: TurnWorldSnapshot, options: InMemoryTurnWorldOptions) {
-        this.state = { ...state };
+        const baseTime = new Date((state.clockBaseTime ?? state.lastTurnTime).getTime());
+        const mode = state.clockMode ?? 'manual';
+        const wallAnchor = new Date((state.clockWallAnchor ?? state.lastTurnTime).getTime());
+        const bootstrapClock = new GameClock({
+            baseTime,
+            tick: state.clockTick ?? 0,
+            mode,
+            wallAnchor,
+            turnSeconds: state.tickSeconds,
+        });
+        const lastTurnTick = state.lastTurnTick ?? bootstrapClock.dateToTick(state.lastTurnTime);
+        const clockTick = state.clockTick ?? lastTurnTick;
+        const gameClock = new GameClock({
+            baseTime,
+            tick: clockTick,
+            mode,
+            wallAnchor,
+            turnSeconds: state.tickSeconds,
+        });
+        const lastTurnTime = gameClock.tickToDate(lastTurnTick);
+        this.state = {
+            ...state,
+            clockBaseTime: baseTime,
+            clockTick,
+            clockMode: mode,
+            clockWallAnchor: wallAnchor,
+            lastTurnTick,
+            lastTurnTime,
+            meta: { ...state.meta, lastTurnTime: lastTurnTime.toISOString() },
+        };
         this.scenarioConfig = snapshot.scenarioConfig;
         this.unitSet = snapshot.unitSet;
         this.schedule = options.schedule;
@@ -435,7 +473,9 @@ export class InMemoryTurnWorld {
 
         const worldKillturn = resolveWorldKillturn(this.state.meta);
         for (const general of snapshot.generals) {
-            const normalized = normalizeGeneralTurnTime({ ...general }, this.state.lastTurnTime);
+            const normalized = this.normalizeGeneralClock(
+                normalizeGeneralTurnTime({ ...general }, this.state.lastTurnTime)
+            );
             const ensured = ensureGeneralKillturn(normalized, worldKillturn);
             this.generals.set(general.id, ensured);
         }
@@ -459,6 +499,67 @@ export class InMemoryTurnWorld {
             this.events.set(event.id, { ...event, meta: { ...event.meta } });
         }
         this.ensureDiplomacyMatrix();
+    }
+
+    private getGameClock(): GameClock {
+        return new GameClock({
+            baseTime: this.state.clockBaseTime ?? this.state.lastTurnTime,
+            tick: this.state.clockTick ?? this.state.lastTurnTick ?? 0,
+            mode: this.state.clockMode ?? 'manual',
+            wallAnchor: this.state.clockWallAnchor ?? this.state.lastTurnTime,
+            turnSeconds: this.state.tickSeconds,
+        });
+    }
+
+    private normalizeGeneralClock(general: TurnGeneral): TurnGeneral {
+        const clock = this.getGameClock();
+        const turnTick = general.turnTick ?? clock.dateToTick(general.turnTime);
+        const recentWarTick =
+            general.recentWarTick !== undefined
+                ? general.recentWarTick
+                : general.recentWarTime
+                  ? clock.dateToTick(general.recentWarTime)
+                  : null;
+        return {
+            ...general,
+            turnTick,
+            turnTime: clock.tickToDate(turnTick),
+            recentWarTick,
+            recentWarTime: recentWarTick === null ? null : clock.tickToDate(recentWarTick),
+        };
+    }
+
+    getGameClockState(): InMemoryGameClockState {
+        return {
+            baseTime: new Date((this.state.clockBaseTime ?? this.state.lastTurnTime).getTime()),
+            tick: this.state.clockTick ?? 0,
+            mode: this.state.clockMode ?? 'manual',
+            wallAnchor: new Date((this.state.clockWallAnchor ?? this.state.lastTurnTime).getTime()),
+            lastTurnTick: this.state.lastTurnTick ?? 0,
+        };
+    }
+
+    getGameNow(wallNow: Date): Date {
+        return this.getGameClock().now(wallNow);
+    }
+
+    dateToGameTick(date: Date): number {
+        return this.getGameClock().dateToTick(date);
+    }
+
+    gameTickToDate(tick: number): Date {
+        return this.getGameClock().tickToDate(tick);
+    }
+
+    advanceGameClockTo(target: Date, wallNow: Date): void {
+        const clock = this.getGameClock();
+        const targetTick = clock.dateToTick(target);
+        const nextTick = Math.max(clock.tick, targetTick);
+        this.state = {
+            ...this.state,
+            clockTick: nextTick,
+            clockWallAnchor: new Date(wallNow.getTime()),
+        };
     }
 
     captureState(): InMemoryTurnWorldStateSnapshot {
@@ -573,17 +674,31 @@ export class InMemoryTurnWorld {
         if (previousTickSeconds === nextTickSeconds) {
             return;
         }
+        const previousClock = this.getGameClock();
+        const anchorTick = this.state.clockTick ?? previousClock.tick;
+        const anchorDisplay = previousClock.tickToDate(anchorTick);
+        const nextBaseTime = GameClock.baseTimeForProjection(anchorDisplay, anchorTick, nextTickSeconds);
         const ratio = nextTickSeconds / previousTickSeconds;
         const baseTime = this.state.lastTurnTime.getTime();
-        for (const general of this.generals.values()) {
-            const nextTurnTime = new Date(baseTime + (general.turnTime.getTime() - baseTime) * ratio);
-            this.updateGeneral(general.id, { turnTime: nextTurnTime });
-        }
+        const nextGeneralTimes = new Map(
+            Array.from(this.generals.values(), (general) => [
+                general.id,
+                new Date(baseTime + (general.turnTime.getTime() - baseTime) * ratio),
+            ])
+        );
         this.schedule = { entries: [{ startMinute: 0, tickMinutes }] };
         this.state = {
             ...this.state,
             tickSeconds: nextTickSeconds,
+            clockBaseTime: nextBaseTime,
         };
+        for (const general of this.generals.values()) {
+            const nextTurnTime = nextGeneralTimes.get(general.id);
+            if (!nextTurnTime) {
+                throw new Error(`Missing projected turn time for general ${general.id}.`);
+            }
+            this.updateGeneral(general.id, { turnTime: nextTurnTime });
+        }
     }
 
     pushLog(entry: LogEntryDraft): void {
@@ -739,7 +854,15 @@ export class InMemoryTurnWorld {
         if (!target) {
             return null;
         }
-        const next = applyGeneralPatch(target, patch);
+        const next = this.normalizeGeneralClock(
+            applyGeneralPatch(target, {
+                ...patch,
+                ...(patch.turnTime && patch.turnTick === undefined ? { turnTick: undefined } : {}),
+                ...(patch.recentWarTime !== undefined && patch.recentWarTick === undefined
+                    ? { recentWarTick: undefined }
+                    : {}),
+            })
+        );
         this.generals.set(id, next);
         this.dirtyGeneralIds.add(id);
         return next;
@@ -750,7 +873,9 @@ export class InMemoryTurnWorld {
             return false;
         }
         const worldKillturn = resolveWorldKillturn(this.state.meta);
-        const normalized = normalizeGeneralTurnTime({ ...general }, this.state.lastTurnTime);
+        const normalized = this.normalizeGeneralClock(
+            normalizeGeneralTurnTime({ ...general }, this.state.lastTurnTime)
+        );
         const ensured = normalizeGeneralDatabaseIntegers(ensureGeneralKillturn(normalized, worldKillturn));
         this.generals.set(general.id, ensured);
         this.dirtyGeneralIds.add(general.id);
@@ -882,18 +1007,23 @@ export class InMemoryTurnWorld {
     }
 
     setLastTurnTime(turnTime: Date): void {
+        const clock = this.getGameClock();
+        const requestedTick = clock.dateToTick(turnTime);
+        const lastTurnTick = Math.max(this.state.lastTurnTick ?? requestedTick, requestedTick);
+        const projectedTime = clock.tickToDate(lastTurnTick);
         const meta = {
             ...this.state.meta,
-            lastTurnTime: turnTime.toISOString(),
+            lastTurnTime: projectedTime.toISOString(),
         };
         this.state = {
             ...this.state,
-            lastTurnTime: new Date(turnTime.getTime()),
+            lastTurnTick,
+            lastTurnTime: projectedTime,
             meta,
         };
     }
 
-    shiftSchedule(deltaMinutes: number): { shiftedGenerals: number; lastTurnTime: string } {
+    shiftSchedule(deltaMinutes: number, wallNow = new Date()): { shiftedGenerals: number; lastTurnTime: string } {
         if (!Number.isInteger(deltaMinutes) || deltaMinutes === 0) {
             throw new Error('Schedule shift must be a non-zero integer number of minutes.');
         }
@@ -931,7 +1061,27 @@ export class InMemoryTurnWorld {
             );
         };
 
-        const nextLastTurnTime = shiftDate(this.state.lastTurnTime);
+        const previousClock = this.getGameClock();
+        const generalTicks = new Map(
+            Array.from(this.generals.values(), (general) => [
+                general.id,
+                {
+                    turnTick: general.turnTick ?? previousClock.dateToTick(general.turnTime),
+                    recentWarTick:
+                        general.recentWarTick ??
+                        (general.recentWarTime ? previousClock.dateToTick(general.recentWarTime) : null),
+                },
+            ])
+        );
+        const nextBaseTime = shiftDate(previousClock.baseTime);
+        const shiftedClock = new GameClock({
+            baseTime: nextBaseTime,
+            tick: this.state.clockTick ?? 0,
+            mode: this.state.clockMode ?? 'manual',
+            wallAnchor: this.state.clockWallAnchor ?? this.state.lastTurnTime,
+            turnSeconds: this.state.tickSeconds,
+        });
+        const nextLastTurnTime = shiftedClock.tickToDate(this.state.lastTurnTick ?? 0);
         const nextMeta = {
             ...this.state.meta,
             lastTurnTime: nextLastTurnTime.toISOString(),
@@ -941,12 +1091,27 @@ export class InMemoryTurnWorld {
         };
         this.state = {
             ...this.state,
+            clockBaseTime: nextBaseTime,
+            // Rebasing is also the explicit resume checkpoint. Realtime mode
+            // must not replay the operational downtime after an administrator
+            // deliberately delays or accelerates the game schedule.
+            clockWallAnchor: new Date(wallNow.getTime()),
             lastTurnTime: nextLastTurnTime,
             meta: nextMeta,
         };
 
         for (const general of this.generals.values()) {
-            this.updateGeneral(general.id, { turnTime: shiftDate(general.turnTime) });
+            const ticks = generalTicks.get(general.id);
+            if (!ticks) {
+                throw new Error(`Missing captured game ticks for general ${general.id}.`);
+            }
+            const { turnTick, recentWarTick } = ticks;
+            this.updateGeneral(general.id, {
+                turnTick,
+                turnTime: shiftedClock.tickToDate(turnTick),
+                recentWarTick,
+                recentWarTime: recentWarTick === null ? null : shiftedClock.tickToDate(recentWarTick),
+            });
         }
         for (const auction of this.pendingNeutralAuctions) {
             auction.closeAt = shiftDate(auction.closeAt);
@@ -1055,10 +1220,13 @@ export class InMemoryTurnWorld {
 
         const nextTurnAt = result.nextTurnAt ?? getNextTurnAt(currentGeneral.turnTime, this.schedule);
         if (!result.deleted?.general) {
-            const nextGeneral = normalizeGeneralDatabaseIntegers({
-                ...(result.general ?? currentGeneral),
-                turnTime: nextTurnAt,
-            });
+            const nextGeneral = this.normalizeGeneralClock(
+                normalizeGeneralDatabaseIntegers({
+                    ...(result.general ?? currentGeneral),
+                    turnTime: nextTurnAt,
+                    turnTick: undefined,
+                })
+            );
             this.generals.set(nextGeneral.id, nextGeneral);
             this.dirtyGeneralIds.add(nextGeneral.id);
         }
@@ -1083,8 +1251,17 @@ export class InMemoryTurnWorld {
                 if (!target) {
                     continue;
                 }
-                const patched = applyGeneralPatch(target, patch.patch);
-                this.generals.set(patch.id, normalizeGeneralTurnTime(patched, this.state.lastTurnTime));
+                const patched = applyGeneralPatch(target, {
+                    ...patch.patch,
+                    ...(patch.patch.turnTime && patch.patch.turnTick === undefined ? { turnTick: undefined } : {}),
+                    ...(patch.patch.recentWarTime !== undefined && patch.patch.recentWarTick === undefined
+                        ? { recentWarTick: undefined }
+                        : {}),
+                });
+                this.generals.set(
+                    patch.id,
+                    this.normalizeGeneralClock(normalizeGeneralTurnTime(patched, this.state.lastTurnTime))
+                );
                 this.dirtyGeneralIds.add(patch.id);
             }
             for (const patch of result.patches.cities) {
@@ -1127,7 +1304,9 @@ export class InMemoryTurnWorld {
                     continue;
                 }
                 const worldKillturn = resolveWorldKillturn(this.state.meta);
-                const normalized = normalizeGeneralTurnTime({ ...createdGeneral }, this.state.lastTurnTime);
+                const normalized = this.normalizeGeneralClock(
+                    normalizeGeneralTurnTime({ ...createdGeneral }, this.state.lastTurnTime)
+                );
                 const ensured = normalizeGeneralDatabaseIntegers(ensureGeneralKillturn(normalized, worldKillturn));
                 this.generals.set(createdGeneral.id, ensured);
                 this.dirtyGeneralIds.add(createdGeneral.id);
@@ -1195,15 +1374,20 @@ export class InMemoryTurnWorld {
         };
         await this.calendarHandler?.beforeMonthChanged?.(context);
 
+        const clock = this.getGameClock();
+        const requestedTick = clock.dateToTick(turnTime);
+        const lastTurnTick = Math.max(this.state.lastTurnTick ?? requestedTick, requestedTick);
+        const lastTurnTime = clock.tickToDate(lastTurnTick);
         const meta = {
             ...this.state.meta,
-            lastTurnTime: turnTime.toISOString(),
+            lastTurnTime: lastTurnTime.toISOString(),
         };
         this.state = {
             ...this.state,
             currentYear: nextYear,
             currentMonth: nextMonth,
-            lastTurnTime: new Date(turnTime.getTime()),
+            lastTurnTick,
+            lastTurnTime,
             meta,
         };
 

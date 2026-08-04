@@ -24,9 +24,8 @@ import type {
 import { normalizeScenarioEffect } from '@sammo-ts/logic';
 import { projectItemSlots, readItemInventoryFromMeta } from '@sammo-ts/logic/items/index.js';
 import { z } from 'zod';
-import { asRecord, isRecord } from '@sammo-ts/common';
+import { GameClock, asRecord, isRecord, type GameClockMode } from '@sammo-ts/common';
 
-import { getNextTickTime } from '../lifecycle/getNextTickTime.js';
 import type { MapLoaderOptions } from '../scenario/mapLoader.js';
 import { loadMapDefinitionByName } from '../scenario/mapLoader.js';
 import type { UnitSetLoaderOptions } from '../scenario/unitSetLoader.js';
@@ -76,6 +75,21 @@ const readMetaNumber = (meta: Record<string, unknown>, key: string): number | nu
         }
     }
     return null;
+};
+
+const toSafeTick = (value: bigint, field: string): number => {
+    const tick = Number(value);
+    if (!Number.isSafeInteger(tick)) {
+        throw new Error(`${field} is outside the JavaScript safe integer range: ${value}`);
+    }
+    return tick;
+};
+
+const parseClockMode = (value: string): GameClockMode => {
+    if (value === 'realtime' || value === 'manual') {
+        return value;
+    }
+    throw new Error(`world_state.clock_mode is invalid: ${value}`);
 };
 
 const zScenarioStatBlock = z.object({
@@ -130,38 +144,29 @@ const parseScenarioMeta = (meta: JsonRecord): ScenarioMeta | undefined => {
     return parsed.success ? parsed.data : undefined;
 };
 
-const parseLastTurnTime = (meta: JsonRecord): Date | null => {
+const parseLegacyLastTurnTime = (meta: JsonRecord): Date | null => {
     const raw = meta.lastTurnTime;
     if (typeof raw !== 'string') {
         return null;
     }
     const parsed = new Date(raw);
-    if (Number.isNaN(parsed.getTime())) {
-        return null;
-    }
-    return parsed;
+    return Number.isNaN(parsed.getTime()) ? null : parsed;
 };
 
-const resolveFallbackTurnTimeBase = (generals: TurnGeneral[], updatedAt: Date | null): Date => {
-    let earliest: Date | null = null;
-    for (const general of generals) {
-        const turnTime = general.turnTime;
-        if (!earliest || turnTime.getTime() < earliest.getTime()) {
-            earliest = turnTime;
-        }
+const resolveLegacyTurnTime = (
+    generalRows: readonly TurnEngineGeneralRow[],
+    meta: JsonRecord,
+    updatedAt: Date | null | undefined
+): Date => {
+    const stored = parseLegacyLastTurnTime(meta);
+    if (stored) {
+        return stored;
     }
-    if (earliest) {
-        return earliest;
-    }
-    if (updatedAt) {
-        return updatedAt;
-    }
-    return new Date();
-};
-
-const alignToPreviousTick = (base: Date, tickMinutes: number): Date => {
-    const nextTick = getNextTickTime(base, tickMinutes);
-    return new Date(nextTick.getTime() - tickMinutes * 60_000);
+    const earliest = generalRows.reduce<Date | null>(
+        (result, row) => (!result || row.turnTime.getTime() < result.getTime() ? row.turnTime : result),
+        null
+    );
+    return earliest ?? updatedAt ?? new Date();
 };
 
 const mapScenarioConfig = (raw: JsonValue): ScenarioConfig => {
@@ -180,6 +185,7 @@ const mapScenarioConfig = (raw: JsonValue): ScenarioConfig => {
 
 const mapGeneralRow = (
     row: TurnEngineGeneralRow,
+    gameClock: GameClock,
     rankRows: readonly TurnEngineRankDataRow[],
     inheritanceRows: readonly TurnEngineInheritancePointRow[],
     accessRow?: TurnEngineGeneralAccessLogRow
@@ -248,8 +254,24 @@ const mapGeneralRow = (
         lastTurn: normalizeGeneralLastTurn(row.lastTurn),
         penalty: row.penalty,
         // meta는 상단에서 보장 처리됨.
-        turnTime: row.turnTime,
-        recentWarTime: row.recentWarTime ?? null,
+        turnTick:
+            row.turnTick === null
+                ? gameClock.dateToTick(row.turnTime)
+                : toSafeTick(row.turnTick, `general.turn_tick(${row.id})`),
+        turnTime:
+            row.turnTick === null
+                ? row.turnTime
+                : gameClock.tickToDate(toSafeTick(row.turnTick, `general.turn_tick(${row.id})`)),
+        recentWarTick:
+            row.recentWarTick === null
+                ? row.recentWarTime
+                    ? gameClock.dateToTick(row.recentWarTime)
+                    : null
+                : toSafeTick(row.recentWarTick, `general.recent_war_tick(${row.id})`),
+        recentWarTime:
+            row.recentWarTick === null
+                ? (row.recentWarTime ?? null)
+                : gameClock.tickToDate(toSafeTick(row.recentWarTick, `general.recent_war_tick(${row.id})`)),
         inheritancePoints,
         ...(accessRow ? { refreshScoreTotal: accessRow.refreshScoreTotal } : {}),
     };
@@ -376,6 +398,35 @@ export const loadTurnWorldFromDatabase = async (options: TurnWorldLoaderOptions)
             }),
         ]);
 
+        const meta = asRecord(worldState.meta);
+        const legacyLastTurnTime = resolveLegacyTurnTime(generalRows, meta, worldState.updatedAt);
+        const hasPersistedClock =
+            worldState.clockBaseTime !== null &&
+            worldState.clockTick !== null &&
+            worldState.clockWallAnchor !== null &&
+            worldState.lastTurnTick !== null;
+        const clockMode = hasPersistedClock ? parseClockMode(worldState.clockMode) : 'manual';
+        const clockBaseTime = worldState.clockBaseTime ?? legacyLastTurnTime;
+        const clockWallAnchor = worldState.clockWallAnchor ?? legacyLastTurnTime;
+        const bootstrapClock = new GameClock({
+            baseTime: clockBaseTime,
+            tick: 0,
+            mode: clockMode,
+            wallAnchor: clockWallAnchor,
+            turnSeconds: worldState.tickSeconds,
+        });
+        const legacyLastTurnTick = bootstrapClock.dateToTick(legacyLastTurnTime);
+        const gameClock = new GameClock({
+            baseTime: clockBaseTime,
+            tick:
+                worldState.clockTick === null
+                    ? legacyLastTurnTick
+                    : toSafeTick(worldState.clockTick, 'world_state.clock_tick'),
+            mode: clockMode,
+            wallAnchor: clockWallAnchor,
+            turnSeconds: worldState.tickSeconds,
+        });
+
         const ranksByGeneral = new Map<number, TurnEngineRankDataRow[]>();
         for (const row of rankRows) {
             const bucket = ranksByGeneral.get(row.generalId) ?? [];
@@ -396,6 +447,7 @@ export const loadTurnWorldFromDatabase = async (options: TurnWorldLoaderOptions)
             .map((row) =>
                 mapGeneralRow(
                     row,
+                    gameClock,
                     ranksByGeneral.get(row.id) ?? [],
                     row.userId ? (inheritanceByUser.get(row.userId) ?? []) : [],
                     accessByGeneral.get(row.id)
@@ -406,10 +458,7 @@ export const loadTurnWorldFromDatabase = async (options: TurnWorldLoaderOptions)
         const nations = nationRows.map(mapNationRow).sort((left, right) => left.id - right.id);
         const diplomacy = diplomacyRows
             .map(mapDiplomacyRow)
-            .sort(
-                (left, right) =>
-                    left.fromNationId - right.fromNationId || left.toNationId - right.toNationId
-            );
+            .sort((left, right) => left.fromNationId - right.fromNationId || left.toNationId - right.toNationId);
         const troops = troopRows.map(mapTroopRow).sort((left, right) => left.id - right.id);
 
         const worldConfig = asRecord(worldState.config);
@@ -419,12 +468,13 @@ export const loadTurnWorldFromDatabase = async (options: TurnWorldLoaderOptions)
         const unitSetName = scenarioConfig.environment?.unitSet ?? 'che';
         const unitSet = await loadUnitSetDefinitionByName(unitSetName, options.unitSetOptions);
 
-        const meta = asRecord(worldState.meta);
         const scenarioMeta = parseScenarioMeta(meta);
 
-        const tickMinutes = Math.max(1, Math.round(worldState.tickSeconds / 60));
-        const fallbackBase = resolveFallbackTurnTimeBase(generals, worldState.updatedAt ?? null);
-        const lastTurnTime = parseLastTurnTime(meta) ?? alignToPreviousTick(fallbackBase, tickMinutes);
+        const lastTurnTick =
+            worldState.lastTurnTick === null
+                ? legacyLastTurnTick
+                : toSafeTick(worldState.lastTurnTick, 'world_state.last_turn_tick');
+        const lastTurnTime = gameClock.tickToDate(lastTurnTick);
 
         const events = eventRows.filter((row) => row.targetCode !== 'initial').map(mapEventRow);
         const initialEvents = eventRows.filter((row) => row.targetCode === 'initial').map(mapEventRow);
@@ -436,6 +486,11 @@ export const loadTurnWorldFromDatabase = async (options: TurnWorldLoaderOptions)
                 currentMonth: worldState.currentMonth,
                 tickSeconds: worldState.tickSeconds,
                 lastTurnTime,
+                clockBaseTime: gameClock.baseTime,
+                clockTick: gameClock.tick,
+                clockMode,
+                clockWallAnchor: gameClock.wallAnchor,
+                lastTurnTick,
                 meta,
             },
             snapshot: {

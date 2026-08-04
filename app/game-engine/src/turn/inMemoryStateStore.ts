@@ -28,4 +28,15 @@ export class InMemoryTurnStateStore implements TurnStateStore {
     async saveCheckpoint(checkpoint?: TurnCheckpoint): Promise<void> {
         this.world.setCheckpoint(checkpoint);
     }
+
+    async loadGameClock(wallNow = new Date(Date.now())): Promise<{ mode: 'realtime' | 'manual'; now: Date }> {
+        return {
+            mode: this.world.getGameClockState().mode,
+            now: this.world.getGameNow(wallNow),
+        };
+    }
+
+    async advanceGameClockTo(target: Date, wallNow: Date): Promise<void> {
+        this.world.advanceGameClockTo(target, wallNow);
+    }
 }

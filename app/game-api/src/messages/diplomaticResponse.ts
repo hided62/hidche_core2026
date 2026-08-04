@@ -20,6 +20,7 @@ import {
 import type { DatabaseClient, GeneralRow, InputJsonValue, NationRow } from '../context.js';
 import { loadMapDefinitionByName } from '../maps/mapDefinition.js';
 import { resolveNationPermission } from '../router/nation/shared.js';
+import { loadCurrentGameTime } from '../services/gameClock.js';
 import { fetchMessageByIdForUpdate, insertMessage, invalidateMessages } from './store.js';
 
 const ACTION_NAMES: Record<InstantDiplomacyResponseAction, string> = {
@@ -186,7 +187,7 @@ export const respondToDiplomaticMessage = async (options: {
     if (!world) {
         throw new TRPCError({ code: 'PRECONDITION_FAILED', message: '게임 상태가 없습니다.' });
     }
-    const now = new Date();
+    const now = (await loadCurrentGameTime(db)).now;
     const action = parseAction(message.payload.option?.action);
     if (message.msgType !== 'diplomacy' || !action || message.payload.option?.used) {
         throw new TRPCError({ code: 'BAD_REQUEST', message: '응답할 수 없는 메시지입니다.' });

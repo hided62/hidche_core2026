@@ -192,7 +192,7 @@ export const createAuctionBidder = async (options: {
                     reason: '경매가 종료되었습니다.',
                 };
             }
-            const now = new Date();
+            const now = world.getGameNow(new Date());
             if (auction.closeAt.getTime() <= now.getTime()) {
                 return {
                     type: 'auctionBid',
@@ -379,6 +379,7 @@ export const createAuctionBidder = async (options: {
                         GamePrisma.sql`
                             UPDATE auction
                             SET close_at = ${nextCloseAt},
+                                close_tick = ${BigInt(world.dateToGameTick(nextCloseAt))},
                                 latest_event_id = ${eventId},
                                 latest_event_at = ${eventAt},
                                 updated_at = ${eventAt}

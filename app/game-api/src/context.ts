@@ -56,8 +56,17 @@ export const zWorldStateMeta = z.object({
 });
 export type WorldStateMeta = z.infer<typeof zWorldStateMeta>;
 
-export type WorldStateRow = GamePrisma.WorldStateGetPayload<Record<string, never>>;
-export type GeneralRow = GamePrisma.GeneralGetPayload<Record<string, never>>;
+type PrismaWorldStateRow = GamePrisma.WorldStateGetPayload<Record<string, never>>;
+type PrismaGeneralRow = GamePrisma.GeneralGetPayload<Record<string, never>>;
+type WorldClockFields = 'clockBaseTime' | 'clockTick' | 'clockMode' | 'clockWallAnchor' | 'lastTurnTick';
+type GeneralClockFields = 'turnTick' | 'recentWarTick';
+
+// Transitional API fixtures may still model the pre-clock row. Runtime Prisma
+// rows always include these nullable columns after migration.
+export type WorldStateRow = Omit<PrismaWorldStateRow, WorldClockFields> &
+    Partial<Pick<PrismaWorldStateRow, WorldClockFields>>;
+export type GeneralRow = Omit<PrismaGeneralRow, GeneralClockFields> &
+    Partial<Pick<PrismaGeneralRow, GeneralClockFields>>;
 export type GeneralTurnRow = GamePrisma.GeneralTurnGetPayload<Record<string, never>>;
 export type NationTurnRow = GamePrisma.NationTurnGetPayload<Record<string, never>>;
 export type CityRow = GamePrisma.CityGetPayload<Record<string, never>>;

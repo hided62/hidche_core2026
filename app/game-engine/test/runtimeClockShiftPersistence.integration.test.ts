@@ -1,6 +1,7 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 import { createGamePostgresConnector, type GamePrisma, type GamePrismaClient } from '@sammo-ts/infra';
+import { GAME_TICKS_PER_TURN } from '@sammo-ts/common';
 import { SystemClock } from '../src/lifecycle/clock.js';
 import { DatabaseTurnDaemonCommandQueue } from '../src/lifecycle/databaseCommandQueue.js';
 import { getNextTickTime } from '../src/lifecycle/getNextTickTime.js';
@@ -73,12 +74,14 @@ integration('runtime clock shift persistence', () => {
         await db.inputEvent.deleteMany({ where: { requestId } });
         await db.auction.deleteMany({ where: { hostGeneralId: { in: [...generalIds] } } });
         await db.general.deleteMany({ where: { id: { in: [...generalIds] } } });
+        await db.worldState.deleteMany({ where: { scenarioCode: 'runtime-clock-shift' } });
     });
 
     afterAll(async () => {
         await db.inputEvent.deleteMany({ where: { requestId } });
         await db.auction.deleteMany({ where: { hostGeneralId: { in: [...generalIds] } } });
         await db.general.deleteMany({ where: { id: { in: [...generalIds] } } });
+        await db.worldState.deleteMany({ where: { scenarioCode: 'runtime-clock-shift' } });
         await closeDb?.();
     });
 
@@ -90,6 +93,11 @@ integration('runtime clock shift persistence', () => {
                 currentYear: 190,
                 currentMonth: 1,
                 tickSeconds: 600,
+                clockBaseTime: base,
+                clockTick: 0,
+                clockMode: 'realtime',
+                clockWallAnchor: base,
+                lastTurnTick: 0,
                 config: {},
                 meta: {
                     lastTurnTime: base.toISOString(),
@@ -110,6 +118,7 @@ integration('runtime clock shift persistence', () => {
                 cityId: general.cityId,
                 troopId: general.troopId,
                 turnTime: general.turnTime,
+                turnTick: BigInt((general.id === generalIds[0] ? 1 : 2) * GAME_TICKS_PER_TURN),
             })),
         });
         const auctionRows = await Promise.all(
@@ -132,6 +141,11 @@ integration('runtime clock shift persistence', () => {
             currentMonth: 1,
             tickSeconds: 600,
             lastTurnTime: base,
+            clockBaseTime: base,
+            clockTick: 0,
+            clockMode: 'realtime',
+            clockWallAnchor: base,
+            lastTurnTick: 0,
             meta: row.meta as Record<string, unknown>,
         };
         const snapshot: TurnWorldSnapshot = {
@@ -229,13 +243,16 @@ integration('runtime clock shift persistence', () => {
             generalId: 0,
         });
         expect(lifecycle.getStatus().nextTurnTime).toBe('2099-07-30T09:55:00.000Z');
-        expect((await db.worldState.findUniqueOrThrow({ where: { id: row.id } })).meta).toMatchObject({
+        const storedWorld = await db.worldState.findUniqueOrThrow({ where: { id: row.id } });
+        expect(storedWorld.meta).toMatchObject({
             lastTurnTime: '2099-07-30T09:45:00.000Z',
             starttime: '2099-06-30 23:45:00',
         });
-        expect((await db.general.findUniqueOrThrow({ where: { id: generalIds[1] } })).turnTime.toISOString()).toBe(
-            '2099-07-30T10:05:00.000Z'
-        );
+        expect(storedWorld.clockTick).toBe(0n);
+        expect(storedWorld.lastTurnTick).toBe(0n);
+        const storedGeneral = await db.general.findUniqueOrThrow({ where: { id: generalIds[1] } });
+        expect(storedGeneral.turnTime.toISOString()).toBe('2099-07-30T10:05:00.000Z');
+        expect(storedGeneral.turnTick).toBe(BigInt(2 * GAME_TICKS_PER_TURN));
         const storedAuctions = await db.auction.findMany({
             where: { id: { in: auctionRows.map((auction) => auction.id) } },
         });

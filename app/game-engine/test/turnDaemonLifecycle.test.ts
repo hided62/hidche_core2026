@@ -14,6 +14,173 @@ import {
 const addMinutes = (time: Date, minutes: number): Date => new Date(time.getTime() + minutes * 60_000);
 
 describe('TurnDaemonLifecycle', () => {
+    it('runs manual game time to each monthly snapshot without waiting for wall time', async () => {
+        const wallNow = new Date('2026-01-01T00:00:00.000Z');
+        const operationalClock = new ManualClock(wallNow.getTime());
+        const queue = new InMemoryControlQueue();
+        let lastTurnTime = new Date('2042-01-01T00:00:00.000Z');
+        let gameNow = new Date(lastTurnTime);
+        const targets: string[] = [];
+        const lifecycle = new TurnDaemonLifecycle(
+            {
+                clock: operationalClock,
+                controlQueue: queue,
+                getNextTickTime: (value) => addMinutes(value, 60),
+                stateStore: {
+                    loadLastTurnTime: async () => lastTurnTime,
+                    loadNextGeneralTurnTime: async () => addMinutes(lastTurnTime, 30),
+                    saveLastTurnTime: async (value) => {
+                        lastTurnTime = value;
+                    },
+                    loadCheckpoint: async () => undefined,
+                    saveCheckpoint: async () => {},
+                    loadGameClock: async () => ({ mode: 'manual', now: gameNow }),
+                    advanceGameClockTo: async (target) => {
+                        gameNow = target;
+                    },
+                },
+                processor: {
+                    run: async (target): Promise<TurnRunResult> => {
+                        targets.push(target.toISOString());
+                        if (targets.length === 3) {
+                            queue.enqueue({ type: 'shutdown', reason: 'verified' });
+                        }
+                        return {
+                            lastTurnTime: target.toISOString(),
+                            processedGenerals: 0,
+                            processedTurns: 1,
+                            durationMs: 0,
+                            partial: false,
+                        };
+                    },
+                },
+            },
+            {
+                profile: 'manual-clock',
+                defaultBudget: { budgetMs: 100, maxGenerals: 1, catchUpCap: 1 },
+            }
+        );
+
+        await lifecycle.start();
+
+        expect(targets).toEqual(['2042-01-01T01:00:00.000Z', '2042-01-01T02:00:00.000Z', '2042-01-01T03:00:00.000Z']);
+        expect(operationalClock.nowMs()).toBe(wallNow.getTime());
+    });
+
+    it('drains restart-overdue generals without advancing or catching up a month', async () => {
+        const gameNow = new Date('2042-01-01T03:00:00.000Z');
+        const queue = new InMemoryControlQueue();
+        const observedTargets: Date[] = [];
+        const lifecycle = new TurnDaemonLifecycle(
+            {
+                clock: new ManualClock(new Date('2026-01-01T00:00:00.000Z').getTime()),
+                controlQueue: queue,
+                getNextTickTime: (value) => addMinutes(value, 60),
+                stateStore: {
+                    loadLastTurnTime: async () => gameNow,
+                    loadNextGeneralTurnTime: async () => addMinutes(gameNow, -30),
+                    saveLastTurnTime: async () => {},
+                    loadCheckpoint: async () => undefined,
+                    saveCheckpoint: async () => {},
+                    loadGameClock: async () => ({ mode: 'manual', now: gameNow }),
+                    advanceGameClockTo: async () => {},
+                },
+                processor: {
+                    run: async (target): Promise<TurnRunResult> => {
+                        observedTargets.push(target);
+                        queue.enqueue({ type: 'shutdown', reason: 'verified' });
+                        return {
+                            lastTurnTime: gameNow.toISOString(),
+                            processedGenerals: 1,
+                            processedTurns: 0,
+                            durationMs: 0,
+                            partial: false,
+                        };
+                    },
+                },
+            },
+            {
+                profile: 'manual-overdue',
+                defaultBudget: { budgetMs: 100, maxGenerals: 10, catchUpCap: 1 },
+            }
+        );
+
+        await lifecycle.start();
+
+        expect(observedTargets[0]?.toISOString()).toBe('2042-01-01T02:59:59.999Z');
+    });
+
+    it('produces the same command, RNG, and resource state in realtime and manual modes', async () => {
+        const start = new Date('2042-01-01T00:00:00.000Z');
+        const runMode = async (mode: 'realtime' | 'manual') => {
+            const operationalClock = new ManualClock(
+                mode === 'realtime' ? start.getTime() + 3 * 60 * 60_000 : start.getTime()
+            );
+            const queue = new InMemoryControlQueue();
+            let lastTurnTime = new Date(start);
+            let gameNow = new Date(start);
+            let rng = 17;
+            let resource = 100;
+            const commands: string[] = [];
+            const lifecycle = new TurnDaemonLifecycle(
+                {
+                    clock: operationalClock,
+                    controlQueue: queue,
+                    getNextTickTime: (value) => addMinutes(value, 60),
+                    stateStore: {
+                        loadLastTurnTime: async () => lastTurnTime,
+                        loadNextGeneralTurnTime: async () => null,
+                        saveLastTurnTime: async (value) => {
+                            lastTurnTime = value;
+                        },
+                        loadCheckpoint: async () => undefined,
+                        saveCheckpoint: async () => {},
+                        loadGameClock: async (wallNow) => ({
+                            mode,
+                            now:
+                                mode === 'manual'
+                                    ? gameNow
+                                    : new Date(start.getTime() + ((wallNow ?? start).getTime() - start.getTime())),
+                        }),
+                        advanceGameClockTo: async (target) => {
+                            gameNow = target;
+                        },
+                    },
+                    processor: {
+                        run: async (target): Promise<TurnRunResult> => {
+                            while (lastTurnTime.getTime() < target.getTime()) {
+                                lastTurnTime = addMinutes(lastTurnTime, 60);
+                                rng = (rng * 48_271) % 2_147_483_647;
+                                const command = rng % 2 === 0 ? 'develop' : 'train';
+                                commands.push(command);
+                                resource += command === 'develop' ? 7 : -3;
+                            }
+                            if (commands.length >= 3) {
+                                queue.enqueue({ type: 'shutdown', reason: `${mode} verified` });
+                            }
+                            return {
+                                lastTurnTime: lastTurnTime.toISOString(),
+                                processedGenerals: commands.length,
+                                processedTurns: commands.length,
+                                durationMs: 0,
+                                partial: false,
+                            };
+                        },
+                    },
+                },
+                {
+                    profile: `${mode}-equivalence`,
+                    defaultBudget: { budgetMs: 100, maxGenerals: 10, catchUpCap: 10 },
+                }
+            );
+
+            await lifecycle.start();
+            return { commands, rng, resource, lastTurnTime: lastTurnTime.toISOString() };
+        };
+
+        expect(await runMode('manual')).toEqual(await runMode('realtime'));
+    });
+
     it('restores engine state when a scheduled calculation throws', async () => {
         const now = new Date('2026-01-01T00:10:00.000Z');
         const queue = new InMemoryControlQueue();

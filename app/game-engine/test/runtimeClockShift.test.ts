@@ -36,7 +36,7 @@ const buildGeneral = (id: number, turnTime: string): TurnGeneral =>
         npcState: 0,
     }) as TurnGeneral;
 
-const buildWorld = (): InMemoryTurnWorld => {
+const buildWorld = (stateOverride: Partial<TurnWorldState> = {}): InMemoryTurnWorld => {
     const state: TurnWorldState = {
         id: 1,
         currentYear: 190,
@@ -50,6 +50,7 @@ const buildWorld = (): InMemoryTurnWorld => {
             tnmt_time: '2026-07-30 11:30:00',
             untouched: 'keep',
         },
+        ...stateOverride,
     };
     const snapshot: TurnWorldSnapshot = {
         generals: [buildGeneral(1, '2026-07-30T10:10:00.000Z'), buildGeneral(2, '2026-07-30T10:20:00.000Z')],
@@ -134,6 +135,29 @@ describe('runtime clock shift', () => {
             tnmt_time: '2026-07-30 11:15:00',
         });
     });
+
+    it('rebases after two years of downtime without catching up missed turns', () => {
+        const wallAnchor = new Date('2026-07-30T10:00:00.000Z');
+        const resumedAt = new Date('2028-07-29T10:00:00.000Z');
+        const deltaMinutes = 2 * 365 * 24 * 60;
+        const world = buildWorld({
+            clockBaseTime: wallAnchor,
+            clockTick: 0,
+            clockMode: 'realtime',
+            clockWallAnchor: wallAnchor,
+            lastTurnTick: 0,
+        });
+
+        const beforeTurnTick = world.getGeneralById(1)?.turnTick;
+        world.shiftSchedule(deltaMinutes, resumedAt);
+
+        expect(world.getGameNow(resumedAt).toISOString()).toBe('2028-07-29T10:00:00.000Z');
+        expect(world.getGameNow(new Date(resumedAt.getTime() + 10 * 60_000)).toISOString()).toBe(
+            '2028-07-29T10:10:00.000Z'
+        );
+        expect(world.getGeneralById(1)?.turnTick).toBe(beforeTurnTick);
+        expect(world.getGameClockState().wallAnchor).toEqual(resumedAt);
+    });
 });
 
 describe('runtime clock shift projection', () => {
@@ -186,7 +210,9 @@ describe('runtime clock shift projection', () => {
                 ),
             },
             auction: {
-                findMany: vi.fn(async () => [{ id: 7, closeAt: new Date('2026-07-30T11:45:00.000Z') }]),
+                findMany: vi.fn(async () => [
+                    { id: 7, closeAt: new Date('2026-07-30T11:45:00.000Z'), closeTick: null },
+                ]),
             },
         } as unknown as GamePrismaClient;
         const values = new Map<string, string>([

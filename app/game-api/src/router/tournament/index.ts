@@ -9,6 +9,7 @@ import { TournamentStore } from '../../tournament/store.js';
 import { buildTournamentKeys } from '../../tournament/keys.js';
 import { accessAuthedProcedure, authedProcedure, router } from '../../trpc.js';
 import { getMyGeneral } from '../shared/general.js';
+import { loadCurrentGameTime } from '../../services/gameClock.js';
 
 const hasAdminRole = (roles: string[], profileName: string): boolean => {
     if (roles.includes('superuser') || roles.includes('admin') || roles.includes('admin.superuser')) {
@@ -474,6 +475,7 @@ export const tournamentRouter = router({
 
             await Promise.all([store.setParticipants([]), store.setMatches([]), store.setBettingEntries([])]);
 
+            const gameTime = await loadCurrentGameTime(ctx.db);
             const nextState: TournamentState = {
                 ...state,
                 stage: 0,
@@ -484,7 +486,7 @@ export const tournamentRouter = router({
                 rewardSettled: false,
                 bettingCloseAt: undefined,
                 participantsLockedAt: undefined,
-                nextAt: new Date().toISOString(),
+                nextAt: gameTime.now.toISOString(),
             };
             await store.setState(nextState);
             return { ok: true };
@@ -506,7 +508,8 @@ export const tournamentRouter = router({
                     throw new TRPCError({ code: 'BAD_REQUEST', message: '베팅 기간이 아닙니다.' });
                 }
                 const closeAt = state.bettingCloseAt ? new Date(state.bettingCloseAt).getTime() : 0;
-                if (closeAt && closeAt <= Date.now()) {
+                const gameNow = (await loadCurrentGameTime(ctx.db)).now.getTime();
+                if (closeAt && closeAt <= gameNow) {
                     throw new TRPCError({ code: 'BAD_REQUEST', message: '베팅이 마감되었습니다.' });
                 }
 

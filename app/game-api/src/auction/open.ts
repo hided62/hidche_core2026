@@ -1,7 +1,9 @@
 import { TRPCError } from '@trpc/server';
 
 import type { GameApiContext } from '../context.js';
+import { loadCurrentGameTime } from '../services/gameClock.js';
 import { buildAuctionTimerKeys } from './keys.js';
+import { resolveAuctionTimerScore } from './scheduler.js';
 
 export type OpenAuctionInput =
     | {
@@ -36,7 +38,10 @@ export const openAuctionWithDaemon = async (
 
     const timerKeys = buildAuctionTimerKeys(ctx.profile.name);
     const closeAt = new Date(result.closeAt);
-    await ctx.redis.zAdd(timerKeys.timerKey, [{ score: closeAt.getTime(), value: String(result.auctionId) }]);
+    const gameTime = await loadCurrentGameTime(ctx.db);
+    await ctx.redis.zAdd(timerKeys.timerKey, [
+        { score: resolveAuctionTimerScore(gameTime, closeAt), value: String(result.auctionId) },
+    ]);
     return {
         auctionId: result.auctionId,
         closeAt: result.closeAt,

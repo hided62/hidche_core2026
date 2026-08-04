@@ -6,7 +6,7 @@ import {
     type InputJsonValue,
     type TurnEngineEventCreateManyInput,
 } from '@sammo-ts/infra';
-import { asNumber, asRecord } from '@sammo-ts/common';
+import { GameClock, asNumber, asRecord, type GameClockMode } from '@sammo-ts/common';
 import {
     buildScenarioBootstrap,
     resolveScenarioGeneralDeathMonth,
@@ -66,6 +66,7 @@ export interface ScenarioSeedOptions {
     resetTables?: boolean;
     now?: Date;
     tickSeconds?: number;
+    gameClockMode?: GameClockMode;
     installOptions?: ScenarioInstallOptions;
     includeNeutralNationInSeed?: boolean;
     defaultGeneralGold?: number;
@@ -217,6 +218,15 @@ export const seedScenarioToDatabase = async (options: ScenarioSeedOptions): Prom
     const turnTermMinutes = Math.max(1, Math.round(tickSeconds / 60));
     const sync = install?.sync ?? false;
     const startState = resolveStartState(scenario.startYear ?? null, now, turnTermMinutes, sync);
+    const gameClockMode = options.gameClockMode ?? 'realtime';
+    const initialClock = new GameClock({
+        baseTime: startState.startTime,
+        tick: 0,
+        mode: gameClockMode,
+        wallAnchor: now,
+        turnSeconds: tickSeconds,
+    });
+    const initialClockTick = initialClock.dateToTick(now);
 
     const { seed, warnings } = buildScenarioBootstrap({
         scenario: scenarioDefinition,
@@ -367,6 +377,11 @@ export const seedScenarioToDatabase = async (options: ScenarioSeedOptions): Prom
                         currentYear: startState.currentYear,
                         currentMonth: startState.currentMonth,
                         tickSeconds,
+                        clockBaseTime: initialClock.baseTime,
+                        clockTick: BigInt(initialClockTick),
+                        clockMode: gameClockMode,
+                        clockWallAnchor: now,
+                        lastTurnTick: BigInt(initialClockTick),
                         config: asJson({ ...scenarioConfig, ...worldConfig }),
                         meta: asJson(worldMeta),
                     },
@@ -522,6 +537,18 @@ export const seedScenarioToDatabase = async (options: ScenarioSeedOptions): Prom
                                             ? general.meta.initialTurnOffsetMicros
                                             : 0) / 1_000
                                     )
+                            ),
+                            turnTick: BigInt(
+                                initialClock.dateToTick(
+                                    new Date(
+                                        now.getTime() +
+                                            Math.floor(
+                                                (typeof general.meta.initialTurnOffsetMicros === 'number'
+                                                    ? general.meta.initialTurnOffsetMicros
+                                                    : 0) / 1_000
+                                            )
+                                    )
+                                )
                             ),
                             age: resolveGeneralAge(startState.currentYear, general.birthYear),
                             // Legacy GeneralBuilder leaves startage at the schema default on install.

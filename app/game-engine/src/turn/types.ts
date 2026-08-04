@@ -10,6 +10,7 @@ import type {
     WorldSnapshot,
     GeneralLastTurn,
 } from '@sammo-ts/logic';
+import type { GameClockMode } from '@sammo-ts/common';
 
 export interface TurnWorldState {
     id: number;
@@ -17,6 +18,11 @@ export interface TurnWorldState {
     currentMonth: number;
     tickSeconds: number;
     lastTurnTime: Date;
+    clockBaseTime?: Date;
+    clockTick?: number;
+    clockMode?: GameClockMode;
+    clockWallAnchor?: Date;
+    lastTurnTick?: number;
     meta: Record<string, unknown>;
 }
 
@@ -29,7 +35,9 @@ export interface TurnGeneral extends General {
     picture?: string | null;
     imageServer?: number;
     turnTime: Date;
+    turnTick?: number;
     recentWarTime?: Date | null;
+    recentWarTick?: number | null;
     lastTurn?: GeneralLastTurn;
     penalty?: unknown;
     inheritancePoints?: Record<string, number>;

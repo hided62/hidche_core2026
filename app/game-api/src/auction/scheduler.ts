@@ -3,6 +3,7 @@ import { GamePrisma } from '@sammo-ts/infra';
 import type { DatabaseClient } from '../context.js';
 import type { AuctionTimerRow } from './types.js';
 import type { AuctionTimerKeys } from './keys.js';
+import { loadCurrentGameTime, type CurrentGameTime } from '../services/gameClock.js';
 
 interface RedisSortedSetClient {
     zAdd(key: string, values: Array<{ score: number; value: string }>): Promise<number>;
@@ -16,6 +17,15 @@ export interface AuctionEventUpdate {
     eventAt: Date;
 }
 
+export const resolveAuctionTimerScore = (time: CurrentGameTime, closeAt: Date, closeTick?: bigint | null): number => {
+    if (closeTick !== null && closeTick !== undefined) {
+        const value = Number(closeTick);
+        if (!Number.isSafeInteger(value)) throw new Error(`Auction close tick is unsafe: ${closeTick}`);
+        return value;
+    }
+    return time.dateToTick(closeAt) ?? closeAt.getTime();
+};
+
 export const seedAuctionTimers = async (
     db: DatabaseClient,
     redis: RedisSortedSetClient,
@@ -23,7 +33,7 @@ export const seedAuctionTimers = async (
 ): Promise<number> => {
     const rows = await db.$queryRaw<AuctionTimerRow[]>(
         GamePrisma.sql`
-            SELECT id, close_at as "closeAt", status
+            SELECT id, close_at as "closeAt", close_tick as "closeTick", status
             FROM auction
             WHERE status IN ('OPEN', 'FINALIZING')
         `
@@ -32,7 +42,11 @@ export const seedAuctionTimers = async (
         return 0;
     }
 
-    const payload = rows.map((row) => ({ score: row.closeAt.getTime(), value: String(row.id) }));
+    const gameTime = await loadCurrentGameTime(db);
+    const payload = rows.map((row) => ({
+        score: resolveAuctionTimerScore(gameTime, row.closeAt, row.closeTick),
+        value: String(row.id),
+    }));
     await redis.zAdd(keys.timerKey, payload);
     return payload.length;
 };
@@ -44,10 +58,13 @@ export const applyAuctionEvent = async (
     event: AuctionEventUpdate
 ): Promise<boolean> => {
     const now = new Date();
+    const gameTime = await loadCurrentGameTime(db, now);
+    const closeTick = gameTime.dateToTick(event.closeAt);
     const updated = await db.$executeRaw(
         GamePrisma.sql`
             UPDATE auction
             SET close_at = ${event.closeAt},
+                close_tick = ${closeTick === null ? null : BigInt(closeTick)},
                 latest_event_id = ${event.eventId},
                 latest_event_at = ${event.eventAt},
                 updated_at = ${now}
@@ -61,7 +78,12 @@ export const applyAuctionEvent = async (
     );
 
     if (updated > 0) {
-        await redis.zAdd(keys.timerKey, [{ score: event.closeAt.getTime(), value: String(event.auctionId) }]);
+        await redis.zAdd(keys.timerKey, [
+            {
+                score: resolveAuctionTimerScore(gameTime, event.closeAt, closeTick === null ? null : BigInt(closeTick)),
+                value: String(event.auctionId),
+            },
+        ]);
         return true;
     }
 

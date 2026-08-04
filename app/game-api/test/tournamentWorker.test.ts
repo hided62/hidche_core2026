@@ -220,6 +220,25 @@ describe('tournament worker schedule compatibility', () => {
         expect(resolveNextAt(state)).toBe('2026-08-02T10:10:00.000Z');
         expect(resolveBettingCloseAt(state)).toBe('2026-08-02T11:00:00.000Z');
     });
+
+    it('uses the injected game clock, not the host wall clock, to close betting', async () => {
+        const redis = new MemoryRedis();
+        const store = new TournamentStore(redis, buildTournamentKeys('game-clock-deadline'));
+        const bettingCloseAt = '2099-01-01T00:00:00.000Z';
+        const state = createTournamentState({ stage: 6, bettingCloseAt, nextAt: bettingCloseAt });
+        await store.setState(state);
+
+        const next = await applyPreBattleStage(
+            store,
+            createPrismaMock({ baseSeed: 'clock-seed' }),
+            state,
+            'clock-seed',
+            createNoopDaemonTransport(),
+            () => new Date('2100-01-01T00:00:00.000Z').getTime()
+        );
+
+        expect(next).toMatchObject({ stage: 7, bettingCloseAt });
+    });
 });
 
 describe('tournament worker (in-memory)', () => {

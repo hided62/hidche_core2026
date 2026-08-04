@@ -55,6 +55,7 @@ export const runProfileSeedCli = async (env: NodeJS.ProcessEnv = process.env): P
         databaseUrl,
         scenarioId: request.scenarioId,
         tickSeconds: request.tickSeconds,
+        gameClockMode: process.env.GAME_CLOCK_MODE === 'manual' ? 'manual' : 'realtime',
         now: new Date(request.now),
         installOptions: request.installOptions
             ? {

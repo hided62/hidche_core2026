@@ -374,7 +374,10 @@ const buildGeneralUpdate = (
     penalty: asJson(general.penalty ?? {}),
     meta: buildPersistedGeneralMeta(general),
     turnTime: general.turnTime,
+    turnTick: BigInt(general.turnTick ?? 0),
     recentWarTime: general.recentWarTime ?? null,
+    recentWarTick:
+        general.recentWarTick === null || general.recentWarTick === undefined ? null : BigInt(general.recentWarTick),
 });
 
 const buildGeneralCreate = (
@@ -418,7 +421,10 @@ const buildGeneralCreate = (
     penalty: asJson(general.penalty ?? {}),
     meta: buildPersistedGeneralMeta(general),
     turnTime: general.turnTime,
+    turnTick: BigInt(general.turnTick ?? 0),
     recentWarTime: general.recentWarTime ?? null,
+    recentWarTick:
+        general.recentWarTick === null || general.recentWarTick === undefined ? null : BigInt(general.recentWarTick),
 });
 
 const buildCityUpdate = (
@@ -601,6 +607,11 @@ export const createDatabaseTurnHooks = async (
             currentYear: state.currentYear,
             currentMonth: state.currentMonth,
             tickSeconds: state.tickSeconds,
+            clockBaseTime: state.clockBaseTime ?? state.lastTurnTime,
+            clockTick: BigInt(state.clockTick ?? 0),
+            clockMode: state.clockMode ?? 'manual',
+            clockWallAnchor: state.clockWallAnchor ?? state.lastTurnTime,
+            lastTurnTick: BigInt(state.lastTurnTick ?? world.dateToGameTick(state.lastTurnTime)),
             meta: asJson(state.meta),
         };
         const persist = async (prisma: GamePrisma.TransactionClient): Promise<void> => {
@@ -649,7 +660,8 @@ export const createDatabaseTurnHooks = async (
                 prisma,
                 lifecycleEvents,
                 meta,
-                asRecord(world.getScenarioConfig().const)
+                asRecord(world.getScenarioConfig().const),
+                world.gameTickToDate(state.clockTick ?? state.lastTurnTick ?? 0)
             );
 
             if (inheritancePointAdjustments.length > 0) {
@@ -732,6 +744,8 @@ export const createDatabaseTurnHooks = async (
                         hostName: auction.hostName,
                         detail: asJson(auction.detail),
                         status: 'OPEN',
+                        openTick: BigInt(state.clockTick ?? world.dateToGameTick(state.lastTurnTime)),
+                        closeTick: BigInt(world.dateToGameTick(auction.closeAt)),
                         closeAt: auction.closeAt,
                     })),
                 });
@@ -959,15 +973,29 @@ export const createDatabaseTurnHooks = async (
                 await sendMessage(
                     {
                         insertMessage: async (draft: MessageRecordDraft) => {
+                            const toTickOrNull = (date: Date): bigint | null => {
+                                try {
+                                    return BigInt(world.dateToGameTick(date));
+                                } catch {
+                                    // Legacy messages may use year 9999 as an
+                                    // effectively-unbounded expiry, beyond the
+                                    // safe JavaScript tick range.
+                                    return null;
+                                }
+                            };
                             const rows = await prisma.$queryRaw<Array<{ id: number }>>`
-                                INSERT INTO message (mailbox, type, src, dest, time, valid_until, message)
+                                INSERT INTO message (
+                                    mailbox, type, src, dest, time, time_tick, valid_until, valid_until_tick, message
+                                )
                                 VALUES (
                                     ${draft.mailbox},
                                     ${draft.msgType},
                                     ${draft.srcId},
                                     ${draft.destId},
                                     ${draft.time},
+                                    ${toTickOrNull(draft.time)},
                                     ${draft.validUntil},
+                                    ${toTickOrNull(draft.validUntil)},
                                     CAST(${JSON.stringify(draft.payload)} AS jsonb)
                                 )
                                 RETURNING id

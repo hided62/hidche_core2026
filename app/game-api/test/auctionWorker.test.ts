@@ -14,7 +14,11 @@ const buildRedis = () => ({
 
 const buildDb = (options: {
     updated: number;
-    auction?: { status: 'OPEN' | 'FINALIZING' | 'FINISHED' | 'CANCELED'; closeAt: Date } | null;
+    auction?: {
+        status: 'OPEN' | 'FINALIZING' | 'FINISHED' | 'CANCELED';
+        closeAt: Date;
+        closeTick?: bigint | null;
+    } | null;
     existingEvents?: Array<{
         requestId: string;
         target: 'ENGINE';
@@ -67,6 +71,29 @@ describe('auction worker clock-shift race', () => {
         expect(redis.zAdd).toHaveBeenCalledTimes(1);
         expect(redis.zAdd).toHaveBeenCalledWith('timer', [{ score: closeAt.getTime(), value: '7' }]);
         expect(transaction.inputEvent.create).not.toHaveBeenCalled();
+    });
+
+    it('requeues a tick-backed auction using its logical deadline score', async () => {
+        const redis = buildRedis();
+        const closeAt = new Date('2099-01-01T00:00:00.000Z');
+        const { db } = buildDb({
+            updated: 0,
+            auction: { status: 'OPEN', closeAt, closeTick: 72_000_000n },
+        });
+
+        await expect(
+            processDueAuctionId({
+                db,
+                redis,
+                timerKey: 'timer',
+                historyKey: 'history',
+                id: '7',
+                nowMs: new Date('2042-01-01T00:00:00.000Z').getTime(),
+                nowTick: 36_000_000,
+            })
+        ).resolves.toBe('RESCHEDULED');
+
+        expect(redis.zAdd).toHaveBeenCalledWith('timer', [{ score: 72_000_000, value: '7' }]);
     });
 
     it('commits the FINALIZING transition and durable command in one transaction before recording history', async () => {

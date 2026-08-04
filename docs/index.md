@@ -32,6 +32,8 @@ features:
 [시간과 턴](./user/time-and-turns.md)과
 [커맨드 목록](./user/command-catalog.generated.md)을 확인해 주세요. Profile과
 Gateway 배포는 [릴리스 운영 매뉴얼](./release-operations.md)을 따라 주세요.
+게임 진행 시각과 운영 벽시계의 경계는
+[게임 시계](./architecture/game-clock.md)에 설명합니다.
 
 세부 문서는 다음 책임으로 나뉩니다.
 

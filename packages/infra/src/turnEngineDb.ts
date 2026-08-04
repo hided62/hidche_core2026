@@ -9,6 +9,11 @@ export interface TurnEngineWorldStateRow {
     currentYear: number;
     currentMonth: number;
     tickSeconds: number;
+    clockBaseTime: Date | null;
+    clockTick: bigint | null;
+    clockMode: string;
+    clockWallAnchor: Date | null;
+    lastTurnTick: bigint | null;
     config: JsonValue;
     meta: JsonValue;
     updatedAt?: Date | null;
@@ -53,7 +58,9 @@ export interface TurnEngineGeneralRow {
     meta: JsonValue;
     penalty: JsonValue;
     turnTime: Date;
+    turnTick: bigint | null;
     recentWarTime: Date | null;
+    recentWarTick: bigint | null;
 }
 
 export interface TurnEngineRankDataRow {
@@ -157,6 +164,11 @@ export interface TurnEngineWorldStateUpdateInput {
     currentYear: number;
     currentMonth: number;
     tickSeconds: number;
+    clockBaseTime: Date;
+    clockTick: bigint;
+    clockMode: string;
+    clockWallAnchor: Date;
+    lastTurnTick: bigint;
     meta: InputJsonValue;
 }
 
@@ -165,6 +177,11 @@ export interface TurnEngineWorldStateCreateInput {
     currentYear: number;
     currentMonth: number;
     tickSeconds: number;
+    clockBaseTime: Date;
+    clockTick: bigint;
+    clockMode: string;
+    clockWallAnchor: Date;
+    lastTurnTick: bigint;
     config: InputJsonValue;
     meta: InputJsonValue;
 }
@@ -207,7 +224,9 @@ export interface TurnEngineGeneralUpdateInput {
     penalty: InputJsonValue;
     meta: InputJsonValue;
     turnTime: Date;
+    turnTick: bigint;
     recentWarTime: Date | null;
+    recentWarTick: bigint | null;
 }
 
 export interface TurnEngineGeneralCreateManyInput {
@@ -241,7 +260,9 @@ export interface TurnEngineGeneralCreateManyInput {
     special2Code: string;
     meta: InputJsonValue;
     turnTime: Date;
+    turnTick: bigint;
     recentWarTime?: Date | null;
+    recentWarTick?: bigint | null;
     affinity?: number | null;
     bornYear?: number;
     deadYear?: number;

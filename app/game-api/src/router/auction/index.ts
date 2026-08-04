@@ -9,7 +9,8 @@ import { ItemLoader, isItemKey } from '@sammo-ts/logic';
 import { asNumber, asRecord } from '@sammo-ts/common';
 import { buildAuctionAlias } from '@sammo-ts/logic';
 import { openAuctionWithDaemon } from '../../auction/open.js';
-
+import { resolveAuctionTimerScore } from '../../auction/scheduler.js';
+import { loadCurrentGameTime } from '../../services/gameClock.js';
 
 const zBidInput = z.object({
     auctionId: z.number().int().positive(),
@@ -99,10 +100,7 @@ const ensureAuctionSeasonActive = async (db: DatabaseClient): Promise<void> => {
     }
 };
 
-const loadAuction = async (
-    db: DatabaseClient,
-    auctionId: number
-): Promise<AuctionRow | null> => {
+const loadAuction = async (db: DatabaseClient, auctionId: number): Promise<AuctionRow | null> => {
     const rows = (await db.$queryRaw(
         GamePrisma.sql`
             SELECT id,
@@ -190,10 +188,7 @@ export const auctionRouter = router({
         const [auctions, worldState, point, recentLogs] = await Promise.all([
             ctx.db.auction.findMany({
                 where: {
-                    OR: [
-                        { type: { in: ['BUY_RICE', 'SELL_RICE'] }, status: 'OPEN' },
-                        { type: 'UNIQUE_ITEM' },
-                    ],
+                    OR: [{ type: { in: ['BUY_RICE', 'SELL_RICE'] }, status: 'OPEN' }, { type: 'UNIQUE_ITEM' }],
                 },
                 orderBy: [{ status: 'asc' }, { id: 'desc' }],
                 take: 120,
@@ -238,7 +233,7 @@ export const auctionRouter = router({
         const hiddenSeed =
             typeof worldMeta.hiddenSeed === 'string' || typeof worldMeta.hiddenSeed === 'number'
                 ? worldMeta.hiddenSeed
-                : worldState?.id ?? 0;
+                : (worldState?.id ?? 0);
         const callerAlias = buildAuctionAlias(general.id, hiddenSeed, configConst);
 
         const mapped = auctions.map((auction) => {
@@ -252,8 +247,8 @@ export const auctionRouter = router({
                 status: auction.status,
                 hostGeneralId: isUnique ? null : auction.hostGeneralId,
                 hostName: isUnique
-                    ? auction.hostName ?? buildAuctionAlias(auction.hostGeneralId, hiddenSeed, configConst)
-                    : auction.hostName ?? names.get(auction.hostGeneralId) ?? '상인',
+                    ? (auction.hostName ?? buildAuctionAlias(auction.hostGeneralId, hiddenSeed, configConst))
+                    : (auction.hostName ?? names.get(auction.hostGeneralId) ?? '상인'),
                 isCallerHost: auction.hostGeneralId === general.id,
                 closeAt: auction.closeAt.toISOString(),
                 detail,
@@ -262,7 +257,7 @@ export const auctionRouter = router({
                           amount: highestBid.amount,
                           bidderName: isUnique
                               ? buildAuctionAlias(highestBid.generalId, hiddenSeed, configConst)
-                              : names.get(highestBid.generalId) ?? '상인',
+                              : (names.get(highestBid.generalId) ?? '상인'),
                           isCaller: highestBid.generalId === general.id,
                           eventAt: highestBid.eventAt.toISOString(),
                       }
@@ -305,14 +300,13 @@ export const auctionRouter = router({
             const hiddenSeed =
                 typeof worldMeta.hiddenSeed === 'string' || typeof worldMeta.hiddenSeed === 'number'
                     ? worldMeta.hiddenSeed
-                    : worldState?.id ?? 0;
+                    : (worldState?.id ?? 0);
             return {
                 auction: {
                     id: auction.id,
                     targetCode: auction.targetCode,
                     status: auction.status,
-                    hostName:
-                        auction.hostName ?? buildAuctionAlias(auction.hostGeneralId, hiddenSeed, configConst),
+                    hostName: auction.hostName ?? buildAuctionAlias(auction.hostGeneralId, hiddenSeed, configConst),
                     isCallerHost: auction.hostGeneralId === general.id,
                     closeAt: auction.closeAt.toISOString(),
                     detail: parseDetail(auction.detail),
@@ -362,7 +356,8 @@ export const auctionRouter = router({
             throw new TRPCError({ code: 'BAD_REQUEST', message: '경매가 종료되었습니다.' });
         }
 
-        const now = new Date();
+        const gameTime = await loadCurrentGameTime(ctx.db);
+        const { now } = gameTime;
         if (auction.closeAt <= now) {
             throw new TRPCError({ code: 'BAD_REQUEST', message: '경매가 종료되었습니다.' });
         }
@@ -418,7 +413,9 @@ export const auctionRouter = router({
 
         const timerKeys = buildAuctionTimerKeys(ctx.profile.name);
         const nextCloseAt = new Date(result.closeAt);
-        await ctx.redis.zAdd(timerKeys.timerKey, [{ score: nextCloseAt.getTime(), value: String(auction.id) }]);
+        await ctx.redis.zAdd(timerKeys.timerKey, [
+            { score: resolveAuctionTimerScore(gameTime, nextCloseAt), value: String(auction.id) },
+        ]);
 
         return { ok: true };
     }),
@@ -434,7 +431,8 @@ export const auctionRouter = router({
             throw new TRPCError({ code: 'BAD_REQUEST', message: '경매가 종료되었습니다.' });
         }
 
-        const now = new Date();
+        const gameTime = await loadCurrentGameTime(ctx.db);
+        const { now } = gameTime;
         if (auction.closeAt <= now) {
             throw new TRPCError({ code: 'BAD_REQUEST', message: '경매가 종료되었습니다.' });
         }
@@ -490,7 +488,9 @@ export const auctionRouter = router({
 
         const timerKeys = buildAuctionTimerKeys(ctx.profile.name);
         const nextCloseAt = new Date(result.closeAt);
-        await ctx.redis.zAdd(timerKeys.timerKey, [{ score: nextCloseAt.getTime(), value: String(auction.id) }]);
+        await ctx.redis.zAdd(timerKeys.timerKey, [
+            { score: resolveAuctionTimerScore(gameTime, nextCloseAt), value: String(auction.id) },
+        ]);
 
         return { ok: true };
     }),
@@ -506,7 +506,8 @@ export const auctionRouter = router({
             throw new TRPCError({ code: 'BAD_REQUEST', message: '경매가 종료되었습니다.' });
         }
 
-        const now = new Date();
+        const gameTime = await loadCurrentGameTime(ctx.db);
+        const { now } = gameTime;
         if (auction.closeAt <= now) {
             throw new TRPCError({ code: 'BAD_REQUEST', message: '경매가 종료되었습니다.' });
         }
@@ -586,7 +587,10 @@ export const auctionRouter = router({
                 }
                 const otherItem = await itemLoader.load(other.targetCode);
                 if (otherItem.slot === itemModule.slot) {
-                    throw new TRPCError({ code: 'BAD_REQUEST', message: '1순위 입찰자인 경매중에 같은 부위가 있습니다.' });
+                    throw new TRPCError({
+                        code: 'BAD_REQUEST',
+                        message: '1순위 입찰자인 경매중에 같은 부위가 있습니다.',
+                    });
                 }
             }
         }
@@ -620,7 +624,9 @@ export const auctionRouter = router({
 
         const timerKeys = buildAuctionTimerKeys(ctx.profile.name);
         const nextCloseAt = new Date(result.closeAt);
-        await ctx.redis.zAdd(timerKeys.timerKey, [{ score: nextCloseAt.getTime(), value: String(auction.id) }]);
+        await ctx.redis.zAdd(timerKeys.timerKey, [
+            { score: resolveAuctionTimerScore(gameTime, nextCloseAt), value: String(auction.id) },
+        ]);
 
         return { ok: true };
     }),

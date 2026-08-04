@@ -154,6 +154,25 @@ export class InMemoryReservedTurnStore {
         } satisfies InMemoryReservedTurnStateSnapshot);
     }
 
+    /**
+     * Hot-path transaction savepoint. Queue mutations replace complete turn
+     * arrays and journal sets instead of mutating captured entries in place,
+     * so retaining those immutable references is sufficient for rollback.
+     * Public inspection snapshots remain deep clones via captureState().
+     */
+    captureTransactionState(): InMemoryReservedTurnStateSnapshot {
+        return {
+            generalTurns: Array.from(this.generalTurns.entries()),
+            nationTurns: Array.from(this.nationTurns.entries()),
+            dirtyGeneralIds: Array.from(this.dirtyGeneralIds),
+            dirtyNationKeys: Array.from(this.dirtyNationKeys),
+            pendingGeneralInitializationIds: Array.from(this.pendingGeneralInitializationIds),
+            pendingNationInitializationKeys: Array.from(this.pendingNationInitializationKeys),
+            leasedGeneralIds: Array.from(this.leasedGeneralIds),
+            leasedNationKeys: Array.from(this.leasedNationKeys),
+        };
+    }
+
     restoreState(snapshot: InMemoryReservedTurnStateSnapshot): void {
         const restored = structuredClone(snapshot);
         this.replaceMap(this.generalTurns, restored.generalTurns);
@@ -232,11 +251,7 @@ export class InMemoryReservedTurnStore {
         let claimed = await revisionStore.updateMany({
             where: {
                 generalId,
-                OR: [
-                    { leaseOwner: this.leaseOwner },
-                    { leaseOwner: null },
-                    { leaseExpiresAt: { lte: now } },
-                ],
+                OR: [{ leaseOwner: this.leaseOwner }, { leaseOwner: null }, { leaseExpiresAt: { lte: now } }],
             },
             data: {
                 leaseOwner: this.leaseOwner,
@@ -252,11 +267,7 @@ export class InMemoryReservedTurnStore {
                 claimed = await revisionStore.updateMany({
                     where: {
                         generalId,
-                        OR: [
-                            { leaseOwner: this.leaseOwner },
-                            { leaseOwner: null },
-                            { leaseExpiresAt: { lte: now } },
-                        ],
+                        OR: [{ leaseOwner: this.leaseOwner }, { leaseOwner: null }, { leaseExpiresAt: { lte: now } }],
                     },
                     data: {
                         leaseOwner: this.leaseOwner,
@@ -282,11 +293,7 @@ export class InMemoryReservedTurnStore {
             where: {
                 nationId,
                 officerLevel,
-                OR: [
-                    { leaseOwner: this.leaseOwner },
-                    { leaseOwner: null },
-                    { leaseExpiresAt: { lte: now } },
-                ],
+                OR: [{ leaseOwner: this.leaseOwner }, { leaseOwner: null }, { leaseExpiresAt: { lte: now } }],
             },
             data: {
                 leaseOwner: this.leaseOwner,
@@ -303,11 +310,7 @@ export class InMemoryReservedTurnStore {
                     where: {
                         nationId,
                         officerLevel,
-                        OR: [
-                            { leaseOwner: this.leaseOwner },
-                            { leaseOwner: null },
-                            { leaseExpiresAt: { lte: now } },
-                        ],
+                        OR: [{ leaseOwner: this.leaseOwner }, { leaseOwner: null }, { leaseExpiresAt: { lte: now } }],
                     },
                     data: {
                         leaseOwner: this.leaseOwner,
@@ -525,10 +528,7 @@ export class InMemoryReservedTurnStore {
         }
     }
 
-    private async claimGeneralFlushLease(
-        prisma: ReservedTurnDatabaseClient,
-        generalId: number
-    ): Promise<boolean> {
+    private async claimGeneralFlushLease(prisma: ReservedTurnDatabaseClient, generalId: number): Promise<boolean> {
         const revisionStore = prisma.generalTurnRevision;
         if (!revisionStore) {
             return false;
@@ -538,11 +538,7 @@ export class InMemoryReservedTurnStore {
             ? { generalId, leaseOwner: this.leaseOwner }
             : {
                   generalId,
-                  OR: [
-                      { leaseOwner: this.leaseOwner },
-                      { leaseOwner: null },
-                      { leaseExpiresAt: { lte: new Date() } },
-                  ],
+                  OR: [{ leaseOwner: this.leaseOwner }, { leaseOwner: null }, { leaseExpiresAt: { lte: new Date() } }],
               };
         let claimed = await revisionStore.updateMany({
             where,
@@ -613,11 +609,7 @@ export class InMemoryReservedTurnStore {
             : {
                   nationId,
                   officerLevel,
-                  OR: [
-                      { leaseOwner: this.leaseOwner },
-                      { leaseOwner: null },
-                      { leaseExpiresAt: { lte: new Date() } },
-                  ],
+                  OR: [{ leaseOwner: this.leaseOwner }, { leaseOwner: null }, { leaseExpiresAt: { lte: new Date() } }],
               };
         let claimed = await revisionStore.updateMany({
             where,

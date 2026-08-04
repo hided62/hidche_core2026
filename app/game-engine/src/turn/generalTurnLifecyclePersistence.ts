@@ -157,7 +157,8 @@ const computeRate = (numerator: number, denominator: number): number => (denomin
 const settleHall = async (
     prisma: GamePrisma.TransactionClient,
     event: GeneralLifecycleEvent,
-    worldMeta: Record<string, unknown>
+    worldMeta: Record<string, unknown>,
+    gameNow: Date
 ): Promise<void> => {
     const isUnited = readWorldNumber(worldMeta, 'isUnited', readWorldNumber(worldMeta, 'isunited', 0));
     if (isUnited !== 0) {
@@ -207,7 +208,7 @@ const settleHall = async (
         bgColor: nation?.color ?? '#000000',
         fgColor: resolveLegacyTextColor(nation?.color ?? '#000000'),
         startTime: typeof worldMeta.starttime === 'string' ? worldMeta.starttime : null,
-        unitedTime: new Date().toISOString(),
+        unitedTime: gameNow.toISOString(),
         ownerDisplayName:
             typeof asRecord(event.before.meta).ownerDisplayName === 'string'
                 ? asRecord(event.before.meta).ownerDisplayName
@@ -329,7 +330,8 @@ export const persistGeneralLifecycleEvents = async (
     prisma: GamePrisma.TransactionClient,
     events: GeneralLifecycleEvent[],
     worldMeta: Record<string, unknown>,
-    configConst: Record<string, unknown>
+    configConst: Record<string, unknown>,
+    gameNow = new Date()
 ): Promise<void> => {
     if (events.length === 0) {
         return;
@@ -348,7 +350,7 @@ export const persistGeneralLifecycleEvents = async (
             await settleInheritance(prisma, event, worldMeta, false, configConst);
         }
         if (event.outcome === 'retired') {
-            await settleHall(prisma, event, worldMeta);
+            await settleHall(prisma, event, worldMeta, gameNow);
             await settleInheritance(prisma, event, worldMeta, true, configConst);
             await prisma.rankData.updateMany({
                 where: { generalId: event.generalId },
