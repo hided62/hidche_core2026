@@ -440,6 +440,10 @@ button {
     color: inherit;
 }
 
+/*
+ * Ref's main document does not clip horizontally; the map panel below manages
+ * its own overflow.
+ */
 .main-page {
     box-sizing: border-box;
     width: 100%;
@@ -448,7 +452,6 @@ button {
     margin: 0 auto;
     padding: 0;
     gap: 10px;
-    overflow-x: hidden;
     background-color: transparent;
     background-image: var(--sammo-texture-walnut);
 }

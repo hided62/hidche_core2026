@@ -117,6 +117,8 @@ const handleClick = () => {
     min-height: 28px;
     gap: 2px;
     padding: 1px 4px;
+    /* Ref centres the office header row. */
+    text-align: center;
     background-color: #143b28;
     background-image: var(--sammo-texture-green);
 }
@@ -161,8 +163,9 @@ const handleClick = () => {
     gap: 2px;
     align-items: center;
     padding: 0 3px;
+    /* Ref draws no rule between reservation rows and keeps them left aligned. */
     border: 0;
-    border-top: 1px solid rgba(255, 255, 255, 0.08);
+    text-align: left;
     font-size: 0.75rem;
 }
 

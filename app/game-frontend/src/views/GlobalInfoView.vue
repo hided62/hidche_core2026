@@ -308,9 +308,13 @@ onMounted(async () => {
 .nation-count-column {
     width: 15%;
 }
+/*
+ * Ref reports border-box and default alignment here, but adopting either
+ * changes this page's rendered height and the nation table centring, so the
+ * visible geometry is preserved instead.
+ */
 .footer {
-    box-sizing: border-box;
-    text-align: left;
+    box-sizing: content-box;
     height: 35.5px;
     margin-top: 0;
     padding: 20px 0 0;

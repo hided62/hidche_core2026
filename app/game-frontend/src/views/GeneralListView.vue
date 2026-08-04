@@ -226,14 +226,9 @@ onMounted(() => {
     padding: 0;
     word-break: break-all;
 }
-.title-table {
-    text-align: center;
-}
+/* Ref's title table keeps the default cell alignment and zero cell padding. */
 .directory-page > .title-table:first-child {
     height: 80.875px;
-}
-.title-table td {
-    padding: 1px;
 }
 .legacy-button {
     padding: 5px 10px;
