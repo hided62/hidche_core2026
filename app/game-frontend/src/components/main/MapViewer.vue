@@ -280,18 +280,11 @@ const selectCity = (cityId: number) => {
     <div class="map-viewer">
         <div class="map-top">
             <div class="map-title">{{ mapSummary }}</div>
-            <div class="map-controls">
-                <button class="map-toggle" :class="{ active: showCityName }" @click="mapStore.toggleCityName">
-                    도시명 표기 {{ showCityName ? '끄기' : '켜기' }}
-                </button>
-            </div>
         </div>
         <div v-if="props.loading">
             <SkeletonLines :lines="4" />
         </div>
-        <div v-else-if="!props.mapData || !props.mapLayout" class="map-empty">
-            지도 데이터를 불러오지 못했습니다.
-        </div>
+        <div v-else-if="!props.mapData || !props.mapLayout" class="map-empty">지도 데이터를 불러오지 못했습니다.</div>
         <div v-else ref="mapBody" class="map-body">
             <div
                 ref="mapArea"
@@ -324,14 +317,11 @@ const selectCity = (cityId: number) => {
                         {{ hoveredCity.nationName }} · {{ hoveredCity.regionName }} · {{ hoveredCity.levelName }}
                     </div>
                 </div>
-            </div>
-            <div class="map-meta">
-                <span>도시 {{ props.mapData.cityList.length }}</span>
-                <span>세력 {{ props.mapData.nationList.length }}</span>
-                <span>테마 {{ props.mapLayout.mapName }}</span>
-            </div>
-            <div class="map-footnote">
-                좌표/도시명은 시나리오 맵 레이아웃을 기준으로 표시됩니다.
+                <div class="map-controls">
+                    <button class="map-toggle" :class="{ active: showCityName }" @click="mapStore.toggleCityName">
+                        도시명 표기 {{ showCityName ? '끄기' : '켜기' }}
+                    </button>
+                </div>
             </div>
         </div>
     </div>
@@ -421,19 +411,6 @@ const selectCity = (cityId: number) => {
 
 .tooltip-body {
     color: rgba(232, 221, 196, 0.6);
-}
-
-.map-meta {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 12px;
-    font-size: 0.75rem;
-    color: rgba(232, 221, 196, 0.6);
-}
-
-.map-footnote {
-    font-size: 0.65rem;
-    color: rgba(232, 221, 196, 0.5);
 }
 
 .map-empty {

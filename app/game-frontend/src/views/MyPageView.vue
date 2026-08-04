@@ -386,20 +386,49 @@ onMounted(() => {
                             <dt>경험/공헌</dt>
                             <dd>{{ data.general.experience }} / {{ data.general.dedication }}</dd>
                         </div>
+                        <div>
+                            <dt>성격/특기</dt>
+                            <dd>
+                                {{ data.general.traits?.personal ?? '-' }} /
+                                {{ data.general.traits?.specialWar ?? '-' }}
+                            </dd>
+                        </div>
+                        <div>
+                            <dt>나이/다음턴</dt>
+                            <dd>{{ data.general.age ?? '-' }}세 / {{ data.general.turnTime?.slice(11, 16) ?? '-' }}</dd>
+                        </div>
                     </dl>
                 </div>
                 <div v-if="data" class="legacy-general-details">
                     <div>
-                        명망 <strong>약간 ({{ data.general.experience }})</strong> · 계급
-                        <strong>약간 ({{ data.general.dedication }})</strong>
+                        명망
+                        <strong
+                            >Lv {{ data.general.progression?.experienceLevel ?? 0 }} ({{
+                                data.general.experience
+                            }})</strong
+                        >
+                        · 계급
+                        <strong
+                            >Lv {{ data.general.progression?.dedicationLevel ?? 0 }} ({{
+                                data.general.dedication
+                            }})</strong
+                        >
                     </div>
                     <div>전투 0 · 계략 0 · 사관 7년</div>
                     <div>승률 0% · 승리 0 · 패배 0</div>
                     <div>살상률 0% · 사살 0 · 피살 0</div>
                     <div class="dexterity-title">숙련도</div>
-                    <div>보병 0.0K · 궁병 0.0K · 기병 0.0K · 귀병 0.0K · 차병 0.0K</div>
                     <div>
-                        병종 {{ data.general.crew ? '보병' : '-' }} · 부상 {{ data.general.injury }} · 부대 - · 벌점 -
+                        보병 {{ data.general.progression?.dex?.[0] ?? 0 }} · 궁병
+                        {{ data.general.progression?.dex?.[1] ?? 0 }} · 기병
+                        {{ data.general.progression?.dex?.[2] ?? 0 }} · 귀병
+                        {{ data.general.progression?.dex?.[3] ?? 0 }} · 차병
+                        {{ data.general.progression?.dex?.[4] ?? 0 }}
+                    </div>
+                    <div>
+                        병종 {{ data.general.crewTypeId || '-' }} · 내정특기
+                        {{ data.general.traits?.specialDomestic ?? '-' }} · 부상 {{ data.general.injury }} · 부대
+                        {{ data.general.troopId || '-' }} · 벌점 {{ penalties.length || '-' }}
                     </div>
                 </div>
             </div>

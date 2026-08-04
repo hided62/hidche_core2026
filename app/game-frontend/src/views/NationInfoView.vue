@@ -2,6 +2,7 @@
 import { computed, onMounted, ref } from 'vue';
 import { useRouter } from 'vue-router';
 import { formatLog } from '../utils/formatLog';
+import { legacyNationTextColor } from '../utils/legacyNationColor';
 import { trpc } from '../utils/trpc';
 
 type Result = Awaited<ReturnType<typeof trpc.nation.getNationInfo.query>>;
@@ -35,7 +36,11 @@ onMounted(async () => {
         <table v-if="data" class="legacy-table info-table legacy-bg2">
             <tbody>
                 <tr>
-                    <td colspan="8" class="nation-title" :style="{ backgroundColor: data.nation.color }">
+                    <td
+                        colspan="8"
+                        class="nation-title"
+                        :style="{ backgroundColor: data.nation.color, color: legacyNationTextColor(data.nation.color) }"
+                    >
                         【{{ data.nation.name }}】
                     </td>
                 </tr>

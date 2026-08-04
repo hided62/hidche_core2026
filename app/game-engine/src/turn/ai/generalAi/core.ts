@@ -50,6 +50,16 @@ const d징병 = 2;
 const d직전 = 3;
 const d전쟁 = 4;
 
+export const selectNpcMessageForTurn = (
+    message: unknown,
+    rng: Pick<RandUtil, 'nextBool'>,
+    frequencyPerDay: number,
+    turnTermMinutes: number
+): string | null => {
+    if (!message) return null;
+    return rng.nextBool((frequencyPerDay * turnTermMinutes) / (60 * 24)) ? String(message) : null;
+};
+
 export const resolveLegacyAiStats = (
     general: Pick<TurnGeneral, 'injury' | 'officerLevel' | 'stats'>,
     nation: Nation | null | undefined,
@@ -97,6 +107,7 @@ export class GeneralAI {
     public readonly env: ConstraintEnv;
     public readonly startYear: number;
     public readonly turnTermMinutes: number;
+    private pendingNpcMessage: string | null = null;
 
     public readonly aiConst: {
         baseGold: number;
@@ -213,9 +224,16 @@ export class GeneralAI {
                       return (...args: unknown[]) => {
                           const result = Reflect.apply(value, receiver, args);
                           if (
-                              ['nextFloat1', 'nextRangeInt', 'nextInt', 'nextBit', 'nextBool', 'choice', 'choiceUsingWeight', 'choiceUsingWeightPair'].includes(
-                                  String(property)
-                              )
+                              [
+                                  'nextFloat1',
+                                  'nextRangeInt',
+                                  'nextInt',
+                                  'nextBit',
+                                  'nextBool',
+                                  'choice',
+                                  'choiceUsingWeight',
+                                  'choiceUsingWeightPair',
+                              ].includes(String(property))
                           ) {
                               process.stdout.write(
                                   `AI_RNG_TRACE ${JSON.stringify({
@@ -330,11 +348,7 @@ export class GeneralAI {
                 // Ref refreshes the cached AI state after these selected nation
                 // commands, before choosing the general command with the same
                 // RNG. The refresh includes another mixed-general type draw.
-                if (
-                    ['유저장긴급포상', 'NPC긴급포상', '선전포고', '천도'].includes(
-                        actionName
-                    )
-                ) {
+                if (['유저장긴급포상', 'NPC긴급포상', '선전포고', '천도'].includes(actionName)) {
                     this.reqUpdateInstance = true;
                 }
                 return result;
@@ -377,6 +391,12 @@ export class GeneralAI {
         return { set, unset };
     }
 
+    consumeNpcMessage(): string | null {
+        const message = this.pendingNpcMessage;
+        this.pendingNpcMessage = null;
+        return message;
+    }
+
     chooseGeneralTurn(reservedTurn: ReservedTurnEntry): AiCommandCandidate | null {
         this.updateInstance();
         if (!this.worldRef) {
@@ -384,10 +404,12 @@ export class GeneralAI {
         }
 
         const generalMeta = asRecord(this.general.meta);
-        const npcMessage = generalMeta.npcmsg ?? generalMeta.text;
-        if (npcMessage && this.rng.nextBool((this.aiConst.npcMessageFreqByDay * this.turnTermMinutes) / (60 * 24))) {
-            // 메시지 영속화는 turn handler가 담당한다. 여기서는 레거시와 같은 RNG 소비를 보존한다.
-        }
+        this.pendingNpcMessage = selectNpcMessageForTurn(
+            generalMeta.npcmsg ?? generalMeta.text,
+            this.rng,
+            this.aiConst.npcMessageFreqByDay,
+            this.turnTermMinutes
+        );
 
         if (this.general.npcState >= 2) {
             this.general.meta = { ...this.general.meta, defence_train: 80 };

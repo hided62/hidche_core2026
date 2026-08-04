@@ -98,18 +98,8 @@ watch(selectedCategory, (value) => {
     }
 });
 
-const statusLabel = (command: CommandAvailability) => {
-    if (command.status === 'available') {
-        return '가능';
-    }
-    if (command.status === 'needsInput') {
-        return '입력 필요';
-    }
-    if (command.status === 'blocked') {
-        return '불가';
-    }
-    return '확인 필요';
-};
+const commandTitle = (command: CommandAvailability) =>
+    command.reason || (command.reqArg ? '대상을 선택하는 명령입니다.' : command.possible ? '실행 가능' : '실행 불가');
 </script>
 
 <template>
@@ -140,10 +130,10 @@ const statusLabel = (command: CommandAvailability) => {
                         command.status === 'blocked' ? 'blocked' : '',
                     ]"
                     :disabled="!command.possible"
+                    :title="commandTitle(command)"
                     @click="emit('select', command.key)"
                 >
                     <span class="command-name">{{ command.name }}</span>
-                    <span class="command-status">{{ statusLabel(command) }}</span>
                 </button>
             </div>
         </div>
@@ -154,59 +144,68 @@ const statusLabel = (command: CommandAvailability) => {
 .command-form {
     display: flex;
     flex-direction: column;
-    gap: 12px;
+    gap: 0;
+    border-top: 1px solid #666;
+    border-left: 1px solid #666;
 }
 
 .category-list {
     display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(90px, 1fr));
-    gap: 6px;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 0;
 }
 
 .category-btn {
-    border: 1px solid rgba(201, 164, 90, 0.4);
-    padding: 6px 8px;
-    font-size: 0.75rem;
+    min-height: 24px;
+    border: 0;
+    border-right: 1px solid #666;
+    border-bottom: 1px solid #666;
+    padding: 2px 4px;
+    background: #173d27;
+    color: #fff;
+    font-size: 12px;
     cursor: pointer;
 }
 
 .category-btn.active {
-    background: rgba(201, 164, 90, 0.2);
+    background: #28633f;
+    color: #ffe38a;
 }
 
 .command-grid {
     display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
-    gap: 6px;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 0;
 }
 
 .command-item {
-    border: 1px solid rgba(201, 164, 90, 0.3);
-    padding: 6px;
+    min-height: 24px;
+    border: 0;
+    border-right: 1px solid #666;
+    border-bottom: 1px solid #666;
+    padding: 2px 5px;
     display: flex;
-    flex-direction: column;
-    gap: 4px;
-    text-align: left;
-    font-size: 0.75rem;
+    align-items: center;
+    justify-content: center;
+    background: #302016 var(--sammo-texture-walnut);
+    color: #fff;
+    text-align: center;
+    font-size: 12px;
     cursor: pointer;
 }
 
 .command-item.ok {
-    border-color: rgba(201, 164, 90, 0.6);
+    color: #d9f7df;
 }
 
 .command-item.blocked {
-    opacity: 0.5;
+    color: #888;
+    opacity: 0.72;
     cursor: not-allowed;
 }
 
 .command-name {
     font-weight: 600;
-}
-
-.command-status {
-    font-size: 0.7rem;
-    color: rgba(232, 221, 196, 0.6);
 }
 
 .empty {

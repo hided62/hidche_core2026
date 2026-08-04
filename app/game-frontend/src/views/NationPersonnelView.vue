@@ -5,6 +5,7 @@ import { useRouter } from 'vue-router';
 import { resolveGeneralIconBackgroundImage } from '../utils/generalIcon';
 import { trpc } from '../utils/trpc';
 import { cityLevelMap, formatOfficerLevelText, getNationChiefLevel, regionMap } from '../utils/nationFormat';
+import { legacyNationTextColor } from '../utils/legacyNationColor';
 
 type PersonnelResponse = Awaited<ReturnType<typeof trpc.nation.getPersonnelInfo.query>>;
 type GeneralEntry = PersonnelResponse['generals'][number];
@@ -213,7 +214,10 @@ onMounted(() => void loadPersonnel());
                         <td
                             class="nation-heading"
                             colspan="6"
-                            :style="{ color: '#fff', backgroundColor: data.nation.color }"
+                            :style="{
+                                color: legacyNationTextColor(data.nation.color),
+                                backgroundColor: data.nation.color,
+                            }"
                         >
                             【 {{ data.nation.name }} 】
                         </td>
@@ -415,10 +419,22 @@ onMounted(() => void loadPersonnel());
                             <td colspan="5" class="region-heading">【 {{ regionMap[city.region] ?? '-' }} 】</td>
                         </tr>
                         <tr>
-                            <td class="nation-city" :style="{ backgroundColor: data.nation.color }">
+                            <td
+                                class="nation-city"
+                                :style="{
+                                    backgroundColor: data.nation.color,
+                                    color: legacyNationTextColor(data.nation.color),
+                                }"
+                            >
                                 【{{ cityLevelMap[city.level] ?? '-' }}】
                             </td>
-                            <td class="nation-city city-name" :style="{ backgroundColor: data.nation.color }">
+                            <td
+                                class="nation-city city-name"
+                                :style="{
+                                    backgroundColor: data.nation.color,
+                                    color: legacyNationTextColor(data.nation.color),
+                                }"
+                            >
                                 {{ city.name }}
                             </td>
                             <td

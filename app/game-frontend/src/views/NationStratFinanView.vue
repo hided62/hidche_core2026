@@ -3,6 +3,8 @@ import { computed, onMounted, reactive, ref } from 'vue';
 
 import { trpc } from '../utils/trpc';
 import { resolveDiplomacyInfo } from '../utils/diplomacy';
+import { legacyNationTextColor } from '../utils/legacyNationColor';
+import LegacyHtmlEditor from '../components/ui/LegacyHtmlEditor.vue';
 
 type StratFinanResponse = Awaited<ReturnType<typeof trpc.nation.getStratFinan.query>>;
 type NationEntry = StratFinanResponse['nationsList'][number];
@@ -194,7 +196,9 @@ onMounted(() => void loadStratFinan());
                     <div>종료 시점</div>
                 </div>
                 <div v-for="nation in nationsList" :key="nation.id" class="diplomacy-row">
-                    <div :style="{ backgroundColor: nation.color }">{{ nation.name }}</div>
+                    <div :style="{ backgroundColor: nation.color, color: legacyNationTextColor(nation.color) }">
+                        {{ nation.name }}
+                    </div>
                     <div>{{ formatNumber(nation.power) }}</div>
                     <div>{{ formatNumber(nation.generalCount) }}</div>
                     <div>{{ formatNumber(nation.cityCount) }}</div>
@@ -245,7 +249,7 @@ onMounted(() => void loadStratFinan());
                     </span>
                 </header>
                 <div v-if="!editingNationMsg" class="message-preview" v-html="nationMsg || '내용 없음'" />
-                <textarea v-else v-model="nationMsgDraft" aria-label="국가 방침" maxlength="16384" />
+                <LegacyHtmlEditor v-else v-model="nationMsgDraft" :max-length="16384" />
             </section>
             <section id="scout-message-form" class="message-form">
                 <header class="green-header">
@@ -279,7 +283,7 @@ onMounted(() => void loadStratFinan());
                 </header>
                 <div class="scout-limit">870px x 200px를 넘어서는 내용은 표시되지 않습니다.</div>
                 <div v-if="!editingScoutMsg" class="message-preview scout-preview" v-html="scoutMsg || '내용 없음'" />
-                <textarea v-else v-model="scoutMsgDraft" class="scout-editor" aria-label="임관 권유" maxlength="1000" />
+                <LegacyHtmlEditor v-else v-model="scoutMsgDraft" :max-length="1000" />
             </section>
 
             <div class="finance-title">예산&amp;정책</div>

@@ -230,6 +230,12 @@ export const generalRouter = router({
                 injury: true,
                 experience: true,
                 dedication: true,
+                age: true,
+                turnTime: true,
+                crewTypeId: true,
+                personalCode: true,
+                specialCode: true,
+                special2Code: true,
                 weaponCode: true,
                 horseCode: true,
                 bookCode: true,
@@ -309,6 +315,19 @@ export const generalRouter = router({
                 injury: general.injury,
                 experience: general.experience,
                 dedication: general.dedication,
+                age: general.age,
+                turnTime: general.turnTime.toISOString(),
+                crewTypeId: general.crewTypeId,
+                traits: {
+                    personal: general.personalCode,
+                    specialWar: general.specialCode,
+                    specialDomestic: general.special2Code,
+                },
+                progression: {
+                    experienceLevel: readNumber(metaRecord.explevel, 0),
+                    dedicationLevel: readNumber(metaRecord.dedlevel, 0),
+                    dex: [1, 2, 3, 4, 5].map((index) => readNumber(metaRecord[`dex${index}`], 0)),
+                },
                 items: {
                     horse: normalizeItemCode(general.horseCode),
                     weapon: normalizeItemCode(general.weaponCode),
@@ -468,12 +487,12 @@ export const generalRouter = router({
                 ctx.db.logEntry.findMany({
                     where: {
                         scope: LogScope.SYSTEM,
-                        category: LogCategory.SUMMARY,
+                        category: { in: [LogCategory.SUMMARY, LogCategory.ACTION] },
                         id: { gte: input.lastGeneralRecordId },
                     },
                     orderBy: { id: 'desc' },
                     take,
-                    select: { id: true, text: true },
+                    select: { id: true, text: true, createdAt: true },
                 }),
                 ctx.db.logEntry.findMany({
                     where: {
@@ -484,7 +503,7 @@ export const generalRouter = router({
                     },
                     orderBy: { id: 'desc' },
                     take,
-                    select: { id: true, text: true },
+                    select: { id: true, text: true, createdAt: true },
                 }),
                 ctx.db.logEntry.findMany({
                     where: {
@@ -494,7 +513,7 @@ export const generalRouter = router({
                     },
                     orderBy: { id: 'desc' },
                     take,
-                    select: { id: true, text: true },
+                    select: { id: true, text: true, createdAt: true },
                 }),
             ]);
 

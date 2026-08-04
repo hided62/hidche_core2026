@@ -7,6 +7,7 @@ import {
     type NationNavigationAccess,
 } from './mainNavigation';
 import { useMenuPopup } from './useMenuPopup';
+import { legacyNationTextColor } from '../../utils/legacyNationColor';
 
 const props = defineProps<{
     access: NationNavigationAccess;
@@ -23,6 +24,7 @@ const isActive = (link: MainNavigationLinkItem) => link.highlightStage === props
         :ref="setRoot"
         class="main-nation-menu"
         :style="{ '--nation-menu-color': nationColor || '#000000' }"
+        :class="{ 'dark-label': legacyNationTextColor(nationColor) === '#000000' }"
         aria-label="국가 메뉴"
     >
         <template v-for="entry in nationNavigation" :key="entry.id">
@@ -82,6 +84,10 @@ const isActive = (link: MainNavigationLinkItem) => link.highlightStage === props
     border-color: color-mix(in srgb, var(--nation-menu-color) 85%, #000);
     background-color: var(--nation-menu-color);
     background-image: none;
+}
+.main-nation-menu.dark-label :deep(.main-menu-link),
+.main-nation-menu.dark-label .main-menu-button {
+    color: #000;
 }
 
 .nation-menu-split {

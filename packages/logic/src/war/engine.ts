@@ -381,7 +381,7 @@ export const resolveWarBattle = <TriggerState extends GeneralTriggerState = Gene
     const attackerNationName = (attackerUnit.getNationVar('name') as string | null) ?? 'UNKNOWN';
     const attackerName = attackerUnit.getName();
     const cityName = cityUnit.getName();
-    const seedText = input.seed ? `(전투시드: ${input.seed})` : '';
+    const seedText = input.seed ? `<span class="hidden_but_copyable">(전투시드: ${input.seed})</span>` : '';
 
     const josaRo = JosaUtil.pick(cityName, '로');
     const josaYi = JosaUtil.pick(attackerName, '이');

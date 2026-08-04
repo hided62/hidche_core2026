@@ -150,8 +150,7 @@ const clearNationTurn = (index: number) => {
     emit('set-nation-turn', { index, action: '휴식', args: {} });
 };
 
-const canNationReserve = () =>
-    Boolean(props.general && props.general.nationId > 0 && props.general.officerLevel >= 5);
+const canNationReserve = () => Boolean(props.general && props.general.nationId > 0 && props.general.officerLevel >= 5);
 </script>
 
 <template>
@@ -160,7 +159,8 @@ const canNationReserve = () =>
             <div class="label">선택 도시</div>
             <div class="value">
                 <span v-if="props.selectedCity">
-                    {{ props.selectedCity.name }} · {{ props.selectedCity.nationName }} · {{ props.selectedCity.regionName }}
+                    {{ props.selectedCity.name }} · {{ props.selectedCity.nationName }} ·
+                    {{ props.selectedCity.regionName }}
                 </span>
                 <span v-else>선택된 도시 없음</span>
             </div>
@@ -260,24 +260,32 @@ const canNationReserve = () =>
 }
 
 .command-selection {
-    border: 1px solid rgba(201, 164, 90, 0.35);
-    padding: 6px 8px;
-    font-size: 0.75rem;
-    display: flex;
-    flex-direction: column;
-    gap: 4px;
+    display: grid;
+    grid-template-columns: 64px minmax(0, 1fr);
+    min-height: 24px;
+    border: 1px solid #666;
+    font-size: 12px;
 }
 
 .command-selection .label {
-    color: rgba(232, 221, 196, 0.6);
+    padding: 2px 5px;
+    background: #173d27;
+    color: #fff;
+    text-align: center;
+}
+.command-selection .value {
+    overflow: hidden;
+    padding: 2px 5px;
+    white-space: nowrap;
+    text-overflow: ellipsis;
 }
 
 .command-selected {
-    border: 1px solid rgba(201, 164, 90, 0.3);
-    padding: 8px;
+    border: 1px solid #666;
+    padding: 3px 5px;
     display: grid;
-    gap: 6px;
-    font-size: 0.75rem;
+    grid-template-columns: 64px minmax(0, 1fr);
+    font-size: 12px;
 }
 
 .command-selected .label {

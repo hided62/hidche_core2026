@@ -3,6 +3,7 @@ import { computed, onMounted, ref } from 'vue';
 import { useRouter } from 'vue-router';
 import MapViewer from '../components/main/MapViewer.vue';
 import { trpc } from '../utils/trpc';
+import { legacyNationTextColor } from '../utils/legacyNationColor';
 
 type Result = Awaited<ReturnType<typeof trpc.world.getGlobalInfo.query>>;
 type Layout = Awaited<ReturnType<typeof trpc.world.getMapLayout.query>>;
@@ -14,17 +15,9 @@ const goBack = () => router.push('/');
 const state = (value: number) => ({ 0: '★', 1: '▲', 2: '', 7: '@' })[value] ?? 'ㆍ';
 const stateClass = (value: number) => `state-${value}`;
 const nationMap = computed(() => new Map(data.value?.nations.map((nation) => [nation.id, nation]) ?? []));
-const isBrightColor = (color: string): boolean => {
-    const normalized = color.trim().replace(/^#/u, '');
-    if (!/^[0-9a-f]{6}$/iu.test(normalized)) return false;
-    const red = Number.parseInt(normalized.slice(0, 2), 16);
-    const green = Number.parseInt(normalized.slice(2, 4), 16);
-    const blue = Number.parseInt(normalized.slice(4, 6), 16);
-    return red * 0.299 + green * 0.587 + blue * 0.114 > 170;
-};
 const nationNameStyle = (color: string) => ({
     backgroundColor: color,
-    color: isBrightColor(color) ? '#000' : '#fff',
+    color: legacyNationTextColor(color),
 });
 onMounted(async () => {
     try {
@@ -55,7 +48,7 @@ onMounted(async () => {
                                 v-for="nation in data.nations"
                                 :key="nation.id"
                                 class="vertical"
-                                :style="{ backgroundColor: nation.color }"
+                                :style="nationNameStyle(nation.color)"
                             >
                                 {{ nation.name }}
                             </th>
@@ -63,7 +56,7 @@ onMounted(async () => {
                     </thead>
                     <tbody>
                         <tr v-for="me in data.nations" :key="me.id">
-                            <th :style="{ backgroundColor: me.color }">{{ me.name }}</th>
+                            <th :style="nationNameStyle(me.color)">{{ me.name }}</th>
                             <td
                                 v-for="you in data.nations"
                                 :key="you.id"
@@ -93,7 +86,7 @@ onMounted(async () => {
                 <strong>{{ conflict.cityName }}</strong>
                 <div>
                     <div v-for="(percent, id) in conflict.nations" :key="id" class="conflict-row">
-                        <span :style="{ backgroundColor: nationMap.get(Number(id))?.color }">{{
+                        <span :style="nationNameStyle(nationMap.get(Number(id))?.color ?? '#000000')">{{
                             nationMap.get(Number(id))?.name
                         }}</span
                         ><em>{{ percent.toFixed(1) }}%</em

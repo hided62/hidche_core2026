@@ -377,7 +377,8 @@ const forwardResponse = (messageId: number, response: boolean) => {
 }
 
 .empty-message {
-    min-height: 22px;
+    min-height: 0;
+    padding: 2px 7px;
 }
 
 .MessageList {
@@ -426,7 +427,7 @@ const forwardResponse = (messageId: number, response: boolean) => {
     }
 
     .MessageList {
-        height: 650px;
+        max-height: 650px;
         overflow-y: auto;
     }
 }

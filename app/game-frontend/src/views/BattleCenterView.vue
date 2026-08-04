@@ -457,7 +457,7 @@ onMounted(() => {
 .log-block {
     border: 1px solid #666;
     padding: 0;
-    background: #111;
+    background: #000;
     min-height: 0;
 }
 
@@ -469,7 +469,7 @@ onMounted(() => {
     justify-content: center;
     border-bottom: 1px solid #666;
     color: orange;
-    background: #252525;
+    background: #000;
     font-size: 1.3em;
     font-weight: 500;
 }
@@ -477,6 +477,11 @@ onMounted(() => {
 .log-line {
     padding: 2px 8px;
     border-bottom: 0;
+}
+
+.log-line :deep(.hidden_but_copyable) {
+    color: transparent !important;
+    font-size: 0;
 }
 
 .empty {

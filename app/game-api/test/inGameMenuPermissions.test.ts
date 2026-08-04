@@ -241,10 +241,10 @@ describe('in-game my information ownership', () => {
         expect(fixture.db.logEntry.findMany).toHaveBeenNthCalledWith(
             1,
             expect.objectContaining({
-                where: { scope: 'SYSTEM', category: 'SUMMARY', id: { gte: 0 } },
+                where: { scope: 'SYSTEM', category: { in: ['SUMMARY', 'ACTION'] }, id: { gte: 0 } },
                 orderBy: { id: 'desc' },
                 take: 16,
-                select: { id: true, text: true },
+                select: { id: true, text: true, createdAt: true },
             })
         );
         expect(fixture.db.logEntry.findMany).toHaveBeenNthCalledWith(
@@ -253,7 +253,7 @@ describe('in-game my information ownership', () => {
                 where: { scope: 'GENERAL', category: 'ACTION', generalId: 7, id: { gte: 0 } },
                 orderBy: { id: 'desc' },
                 take: 16,
-                select: { id: true, text: true },
+                select: { id: true, text: true, createdAt: true },
             })
         );
         expect(fixture.db.logEntry.findMany).toHaveBeenNthCalledWith(
@@ -262,7 +262,7 @@ describe('in-game my information ownership', () => {
                 where: { scope: 'SYSTEM', category: 'HISTORY', id: { gte: 0 } },
                 orderBy: { id: 'desc' },
                 take: 16,
-                select: { id: true, text: true },
+                select: { id: true, text: true, createdAt: true },
             })
         );
     });
