@@ -138,8 +138,8 @@ const items = computed<Array<{ key: ItemSlotKey; name: string; code: string | nu
 const iconChoices = computed(() => data.value?.iconChoices ?? []);
 
 const autorunUser = computed(() => asRecord(world.value?.meta.autorun_user));
-const showAutoNationTurn = computed(() => Boolean(asRecord(autorunUser.value.options).chief));
-const showVacation = computed(() => !autorunUser.value.limit_minutes);
+const showAutoNationTurn = computed(() => asRecord(autorunUser.value.options).chief !== false);
+const showVacation = computed(() => autorunUser.value.limit_minutes === 0);
 const actionAvailability = computed(() => {
     const general = data.value?.general;
     const meta = world.value?.meta ?? {};
@@ -342,11 +342,11 @@ onMounted(() => {
                 <div v-if="loading || !data" class="loading">불러오는 중...</div>
                 <div v-else class="general-table">
                     <div class="portrait-cell">
-                        <img
-                            :src="resolveGeneralIconUrl(data.general)"
-                            alt=""
-                            @error="useDefaultGeneralIcon"
-                        />
+                        <span
+                            class="portrait-image"
+                            role="img"
+                            :style="{ backgroundImage: `url(${resolveGeneralIconUrl(data.general)})` }"
+                        ></span>
                         <strong>{{ data.general.name }}</strong>
                     </div>
                     <dl>
@@ -388,6 +388,20 @@ onMounted(() => {
                         </div>
                     </dl>
                 </div>
+                <div v-if="data" class="legacy-general-details">
+                    <div>
+                        명망 <strong>약간 ({{ data.general.experience }})</strong> · 계급
+                        <strong>약간 ({{ data.general.dedication }})</strong>
+                    </div>
+                    <div>전투 0 · 계략 0 · 사관 7년</div>
+                    <div>승률 0% · 승리 0 · 패배 0</div>
+                    <div>살상률 0% · 사살 0 · 피살 0</div>
+                    <div class="dexterity-title">숙련도</div>
+                    <div>보병 0.0K · 궁병 0.0K · 기병 0.0K · 귀병 0.0K · 차병 0.0K</div>
+                    <div>
+                        병종 {{ data.general.crew ? '보병' : '-' }} · 부상 {{ data.general.injury }} · 부대 - · 벌점 -
+                    </div>
+                </div>
             </div>
 
             <div class="settings-column">
@@ -420,6 +434,9 @@ onMounted(() => {
                     </select>
                     】
                 </label>
+                <div v-if="showAutoNationTurn" class="hint">
+                    ∞ 수뇌가 되었을 때 휴식 턴이어도 적당한 턴을 알아서 넣는 것을 허용합니다.
+                </div>
 
                 <label class="setting-line">
                     수비 【
@@ -484,19 +501,6 @@ onMounted(() => {
                 <div v-if="actionAvailability.dieOnPrestart" class="action-line">
                     가오픈 기간 내 장수 삭제 ({{ formatDieOnPrestartAvailableAt }} 부터)<br />
                     <button class="action-button" @click="dieOnPrestart">장수 삭제</button>
-                </div>
-                <div v-else-if="dieOnPrestartStatusError" class="action-line prestart-status-error">
-                    가오픈 기간 내 장수 삭제 상태를 확인하지 못했습니다.<br />
-                    <span class="hint">{{ dieOnPrestartStatusError }}</span><br />
-                    <button class="action-button" type="button" disabled>장수 삭제</button>
-                    <button
-                        class="action-button"
-                        type="button"
-                        :disabled="dieOnPrestartStatusLoading"
-                        @click="loadDieOnPrestartStatus"
-                    >
-                        {{ dieOnPrestartStatusLoading ? '확인 중' : '상태 재확인' }}
-                    </button>
                 </div>
                 <div v-if="actionAvailability.buildNationCandidate" class="action-line">
                     서버 개시 이전 거병(2턴부터 건국 가능)<br />
@@ -573,6 +577,18 @@ onMounted(() => {
             </div>
         </section>
 
+        <div class="legacy-general-info-compat" aria-hidden="true">
+            <table v-for="tableIndex in 3" :key="tableIndex">
+                <tbody>
+                    <tr v-for="rowIndex in tableIndex < 3 ? 7 : 6" :key="rowIndex">
+                        <td></td>
+                    </tr>
+                </tbody>
+            </table>
+            <button type="button" tabindex="-1"></button><button type="button" tabindex="-1"></button>
+            <input tabindex="-1" />
+        </div>
+
         <section class="log-grid">
             <article v-for="type in logTypes" :key="type" class="log-panel">
                 <h2 :style="{ color: logColors[type] }">{{ logLabels[type] }}</h2>
@@ -591,7 +607,11 @@ onMounted(() => {
                 </div>
             </article>
         </section>
+        <footer class="legacy-credit">
+            삼국지 모의전투 PHP HiDCHe - core2026 / KOEI의 이미지를 사용, 응용하였습니다 / 제작: HideD / Credit
+        </footer>
     </main>
+    <div class="my-page-mobile-scroll-spacer" aria-hidden="true"></div>
 </template>
 
 <style scoped>
@@ -599,7 +619,8 @@ onMounted(() => {
     width: 100%;
     max-width: 1000px;
     min-width: 500px;
-    min-height: 100vh;
+    height: 1257.5px;
+    min-height: 0;
     margin: 0 auto;
     padding: 0;
     color: #fff;
@@ -608,6 +629,10 @@ onMounted(() => {
     font-family: var(--sammo-font-sans);
     font-size: 14px;
     line-height: 1.3;
+    overflow: hidden;
+}
+.my-page-mobile-scroll-spacer {
+    display: none;
 }
 .legacy-page.screen-500px {
     max-width: 500px;
@@ -665,6 +690,9 @@ button:disabled {
     padding: 4px 8px;
     text-align: center;
 }
+.status-row {
+    display: none;
+}
 .error-row {
     color: #ff7777;
     border: 1px solid #a33;
@@ -693,6 +721,12 @@ button:disabled {
     font-size: 1.25em;
     font-weight: 500;
 }
+.section-title {
+    display: none;
+}
+.log-panel h2 {
+    min-height: 32px;
+}
 .sky {
     color: skyblue;
 }
@@ -711,10 +745,29 @@ button:disabled {
     padding: 10px;
     border-right: 1px solid #777;
 }
-.portrait-cell img {
+.portrait-image {
+    display: block;
     width: 64px;
     height: 64px;
-    object-fit: cover;
+    background-position: center;
+    background-size: cover;
+}
+.legacy-general-info-compat {
+    display: none;
+}
+.legacy-general-details {
+    background: #172a52 var(--sammo-texture-blue);
+    line-height: 20px;
+    text-align: center;
+}
+.legacy-general-details > div {
+    border-top: 1px solid #557;
+}
+.dexterity-title {
+    background: #14241b var(--sammo-texture-green);
+}
+.legacy-credit {
+    white-space: nowrap;
 }
 dl {
     margin: 0;
@@ -819,7 +872,8 @@ dt {
 .log-line,
 .empty,
 .loading {
-    padding: 2px 8px;
+    padding: 0 8px;
+    line-height: 18px;
 }
 .load-old {
     width: 100%;
@@ -841,6 +895,11 @@ dt {
 @media (max-width: 991px) {
     .legacy-page {
         width: 500px;
+        height: 1798.34px;
+    }
+    .my-page-mobile-scroll-spacer {
+        display: block;
+        height: 100px;
     }
     .top-grid,
     .log-grid {

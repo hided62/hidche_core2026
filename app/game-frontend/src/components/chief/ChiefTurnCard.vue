@@ -26,6 +26,10 @@ const emit = defineEmits<{
 }>();
 
 const nameColor = computed(() => (props.npcState !== null ? getNpcColor(props.npcState) : undefined));
+const displayName = computed(() => {
+    const name = props.name ?? '-';
+    return (props.npcState ?? 0) > 0 && !/^[ⓜⓝ]/u.test(name) ? `ⓝ${name}` : name;
+});
 
 const handleClick = () => {
     if (props.clickable) {
@@ -45,7 +49,7 @@ const handleClick = () => {
                 <span
                     class="compact-name"
                     :style="{ color: nameColor, textDecoration: props.isMe ? 'underline' : undefined }"
-                    >{{ props.name ?? '-' }}</span
+                    >{{ displayName }}</span
                 >
                 <span class="compact-meta"
                     ><span>{{ props.officerLevelText }}</span
@@ -56,7 +60,7 @@ const handleClick = () => {
                 <div class="chief-title">
                     <span class="chief-level">{{ props.officerLevelText }}</span>
                     <span class="chief-name" :style="{ color: nameColor }">
-                        {{ props.name ?? '-' }}
+                        {{ displayName }}
                     </span>
                 </div>
                 <span v-if="props.isMe" class="chief-me">ME</span>

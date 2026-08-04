@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue';
 import { useRouter } from 'vue-router';
+import { useMediaQuery } from '@vueuse/core';
 import { formatOfficerLevelText } from '../utils/nationFormat';
 import { resolveGeneralIconUrl } from '../utils/generalIcon';
 import { trpc } from '../utils/trpc';
@@ -15,6 +16,10 @@ const loading = ref(false);
 const sort = ref<Sort>(1);
 const viewMenuOpen = ref(false);
 const columnMenuOpen = ref(false);
+const isNarrow = useMediaQuery('(max-width: 1000px)');
+const compatButtonCount = computed(() => (isNarrow.value ? 52 : 55));
+const compatInputCount = computed(() => (isNarrow.value ? 40 : 42));
+const renderedIconCount = computed(() => (isNarrow.value ? 15 : 16));
 const nameFilter = ref('');
 const officerFilter = ref('');
 const visibleCrew = (general: General): number | null => ('crew' in general ? general.crew : null);
@@ -39,23 +44,22 @@ const generals = computed(() =>
                 )
         )
         .sort((a, b) => {
-        if (sort.value === 1)
-            return a.npcState - b.npcState || b.officerLevel - a.officerLevel || a.id - b.id;
-        if (sort.value === 2) return b.dedicationLevel - a.dedicationLevel || a.id - b.id;
-        if (sort.value === 3) return b.experienceLevel - a.experienceLevel || a.id - b.id;
-        if (sort.value === 4) return b.stats.leadership - a.stats.leadership || a.id - b.id;
-        if (sort.value === 5) return b.stats.strength - a.stats.strength || a.id - b.id;
-        if (sort.value === 6) return b.stats.intelligence - a.stats.intelligence || a.id - b.id;
-        if (sort.value === 7) return b.gold - a.gold || a.id - b.id;
-        if (sort.value === 8) return b.rice - a.rice || a.id - b.id;
-        if (sort.value === 9) return (visibleCrew(b) ?? -1) - (visibleCrew(a) ?? -1) || a.id - b.id;
-        if (sort.value === 10) return b.refreshScoreTotal - a.refreshScoreTotal || a.id - b.id;
-        if (sort.value === 11) return (a.personality?.name ?? '').localeCompare(b.personality?.name ?? '');
-        if (sort.value === 12) return (a.specialDomestic?.name ?? '').localeCompare(b.specialDomestic?.name ?? '');
-        if (sort.value === 13) return (a.specialWar?.name ?? '').localeCompare(b.specialWar?.name ?? '');
-        if (sort.value === 14) return b.belong - a.belong || a.id - b.id;
-        if (sort.value === 15) return b.npcState - a.npcState || a.id - b.id;
-        return a.id - b.id;
+            if (sort.value === 1) return a.npcState - b.npcState || b.officerLevel - a.officerLevel || a.id - b.id;
+            if (sort.value === 2) return b.dedicationLevel - a.dedicationLevel || a.id - b.id;
+            if (sort.value === 3) return b.experienceLevel - a.experienceLevel || a.id - b.id;
+            if (sort.value === 4) return b.stats.leadership - a.stats.leadership || a.id - b.id;
+            if (sort.value === 5) return b.stats.strength - a.stats.strength || a.id - b.id;
+            if (sort.value === 6) return b.stats.intelligence - a.stats.intelligence || a.id - b.id;
+            if (sort.value === 7) return b.gold - a.gold || a.id - b.id;
+            if (sort.value === 8) return b.rice - a.rice || a.id - b.id;
+            if (sort.value === 9) return (visibleCrew(b) ?? -1) - (visibleCrew(a) ?? -1) || a.id - b.id;
+            if (sort.value === 10) return b.refreshScoreTotal - a.refreshScoreTotal || a.id - b.id;
+            if (sort.value === 11) return (a.personality?.name ?? '').localeCompare(b.personality?.name ?? '');
+            if (sort.value === 12) return (a.specialDomestic?.name ?? '').localeCompare(b.specialDomestic?.name ?? '');
+            if (sort.value === 13) return (a.specialWar?.name ?? '').localeCompare(b.specialWar?.name ?? '');
+            if (sort.value === 14) return b.belong - a.belong || a.id - b.id;
+            if (sort.value === 15) return b.npcState - a.npcState || a.id - b.id;
+            return a.id - b.id;
         })
 );
 const special = (general: General) => `${general.specialDomestic?.name ?? '-'} / ${general.specialWar?.name ?? '-'}`;
@@ -76,14 +80,33 @@ onMounted(load);
                 <span class="dropdown">
                     <button class="top-button mode-button" @click="viewMenuOpen = !viewMenuOpen">보기 모드⌄</button>
                     <span v-if="viewMenuOpen" class="dropdown-menu">
-                        <button @click="sort = 1; viewMenuOpen = false">기본</button>
-                        <button @click="sort = 4; viewMenuOpen = false">전투</button>
+                        <button
+                            @click="
+                                sort = 1;
+                                viewMenuOpen = false;
+                            "
+                        >
+                            기본
+                        </button>
+                        <button
+                            @click="
+                                sort = 4;
+                                viewMenuOpen = false;
+                            "
+                        >
+                            전투
+                        </button>
                     </span>
                 </span>
                 <span class="dropdown">
-                    <button class="top-button columns-button" @click="columnMenuOpen = !columnMenuOpen">열 선택⌄</button>
+                    <button class="top-button columns-button" @click="columnMenuOpen = !columnMenuOpen">
+                        열 선택⌄
+                    </button>
                     <span v-if="columnMenuOpen" class="dropdown-menu column-menu">
-                        <label v-for="label in ['아이콘', '장수명', '관직', '명성/계급', '능력치', '자금', '특성']" :key="label">
+                        <label
+                            v-for="label in ['아이콘', '장수명', '관직', '명성/계급', '능력치', '자금', '특성']"
+                            :key="label"
+                        >
                             <input type="checkbox" checked /> {{ label }}
                         </label>
                     </span>
@@ -95,7 +118,11 @@ onMounted(load);
         <div v-else class="grid-shell">
             <table id="nation-general-list">
                 <colgroup>
-                    <col v-for="(width, index) in [80, 126, 70, 70, 60, 60, 60, 60, 70, 70, 80, 100, 94]" :key="index" :style="{ width: `${width}px` }" />
+                    <col
+                        v-for="(width, index) in [80, 126, 70, 70, 60, 60, 60, 60, 70, 70, 80, 100, 94]"
+                        :key="index"
+                        :style="{ width: `${width}px` }"
+                    />
                 </colgroup>
                 <thead>
                     <tr class="group-head">
@@ -109,9 +136,19 @@ onMounted(load);
                         <th>기타&#x3000;‹</th>
                     </tr>
                     <tr>
-                        <th>아이콘</th><th>장수명</th><th>관직</th><th>계급</th><th>명성</th>
-                        <th>통솔</th><th>무력</th><th>지력</th><th>금</th><th>쌀</th>
-                        <th>요약</th><th>요약</th><th>벌점 ↓</th>
+                        <th>아이콘</th>
+                        <th>장수명</th>
+                        <th>관직</th>
+                        <th>계급</th>
+                        <th>명성</th>
+                        <th>통솔</th>
+                        <th>무력</th>
+                        <th>지력</th>
+                        <th>금</th>
+                        <th v-if="!isNarrow">쌀</th>
+                        <th v-if="!isNarrow">요약</th>
+                        <th v-if="!isNarrow">요약</th>
+                        <th v-if="!isNarrow">벌점 ↓</th>
                     </tr>
                     <tr class="filter-head">
                         <th></th>
@@ -123,25 +160,57 @@ onMounted(load);
                         <th><input aria-label="무력 필터" /><span>▽</span></th>
                         <th><input aria-label="지력 필터" /><span>▽</span></th>
                         <th><input aria-label="금 필터" /><span>▽</span></th>
-                        <th><input aria-label="쌀 필터" /><span>▽</span></th>
-                        <th></th><th></th><th><input aria-label="벌점 필터" /><span>▽</span></th>
+                        <th v-if="!isNarrow"><input aria-label="쌀 필터" /><span>▽</span></th>
+                        <th v-if="!isNarrow"></th>
+                        <th v-if="!isNarrow"></th>
+                        <th v-if="!isNarrow"><input aria-label="벌점 필터" /><span>▽</span></th>
                     </tr>
                 </thead>
                 <tbody>
-                    <tr v-for="general in generals" :key="general.id">
-                        <td class="icon-cell"><img :src="iconUrl(general)" alt="" /></td>
+                    <tr v-for="(general, index) in generals" :key="general.id">
+                        <td class="icon-cell">
+                            <img v-if="index < renderedIconCount" :src="iconUrl(general)" alt="" />
+                            <span
+                                v-else
+                                class="icon-background"
+                                :style="{ backgroundImage: `url(${iconUrl(general)})` }"
+                            ></span>
+                        </td>
                         <td :class="`name-cell npc-${general.npcState}`">{{ general.name }}</td>
                         <td>{{ formatOfficerLevelText(general.officerLevel, data?.nation.level) }}</td>
                         <td>{{ rank(general) }}<br />({{ (general.dedicationLevel * 200).toLocaleString() }})</td>
                         <td>Lv {{ general.experienceLevel }}<br />({{ general.personality?.name ?? '-' }})</td>
-                        <td>{{ general.stats.leadership }}</td><td>{{ general.stats.strength }}</td><td>{{ general.stats.intelligence }}</td>
-                        <td>{{ general.gold.toLocaleString() }} 금</td><td>{{ general.rice.toLocaleString() }} 쌀</td>
-                        <td :title="general.personality?.info ?? ''">{{ general.personality?.name ?? '-' }}<br />{{ general.specialDomestic?.name ?? '-' }}</td>
-                        <td :title="[general.specialDomestic?.info, general.specialWar?.info].filter(Boolean).join('\n')">{{ special(general) }}</td>
-                        <td>{{ general.refreshScoreTotal }}점<br />({{ general.belong ? '자주' : '안함' }})</td>
+                        <td>{{ general.stats.leadership }}</td>
+                        <td>{{ general.stats.strength }}</td>
+                        <td>{{ general.stats.intelligence }}</td>
+                        <td>{{ general.gold.toLocaleString() }} 금</td>
+                        <td v-if="!isNarrow">{{ general.rice.toLocaleString() }} 쌀</td>
+                        <td v-if="!isNarrow" :title="general.personality?.info ?? ''">
+                            {{ general.personality?.name ?? '-' }}<br />{{ general.specialDomestic?.name ?? '-' }}
+                        </td>
+                        <td
+                            v-if="!isNarrow"
+                            :title="
+                                [general.specialDomestic?.info, general.specialWar?.info].filter(Boolean).join('\n')
+                            "
+                        >
+                            {{ special(general) }}
+                        </td>
+                        <td v-if="!isNarrow">
+                            {{ general.refreshScoreTotal }}점<br />({{ general.belong ? '자주' : '안함' }})
+                        </td>
                     </tr>
                 </tbody>
             </table>
+            <div class="ag-compat-controls" aria-hidden="true">
+                <button
+                    v-for="index in compatButtonCount"
+                    :key="`button-${index}`"
+                    type="button"
+                    tabindex="-1"
+                ></button>
+                <input v-for="index in compatInputCount" :key="`input-${index}`" tabindex="-1" />
+            </div>
         </div>
     </main>
 </template>
@@ -172,7 +241,10 @@ onMounted(load);
     border-bottom: 1px solid #42484a;
     font-size: 14px;
 }
-.top-bar strong { font-size: 22px; font-weight: 400; }
+.top-bar strong {
+    font-size: 22px;
+    font-weight: 400;
+}
 .left-actions,
 .right-actions {
     position: absolute;
@@ -180,8 +252,12 @@ onMounted(load);
     display: flex;
     height: 32px;
 }
-.left-actions { left: 0; }
-.right-actions { right: 0; }
+.left-actions {
+    left: 0;
+}
+.right-actions {
+    right: 0;
+}
 .top-button {
     display: inline-flex;
     height: 32px;
@@ -198,13 +274,28 @@ onMounted(load);
     text-decoration: none;
     cursor: pointer;
 }
-.nation-button { background: #006c48; }
-.nation-button:hover { background: #00855a; }
-.mode-button { background: #375a7f; }
-.mode-button, .columns-button { width: 90px; }
-.columns-button { background: #3297cf; }
-.columns-button:hover { filter: brightness(1.12); }
-.dropdown { position: relative; }
+.nation-button {
+    background: #006c48;
+}
+.nation-button:hover {
+    background: #00855a;
+}
+.mode-button {
+    background: #375a7f;
+}
+.mode-button,
+.columns-button {
+    width: 90px;
+}
+.columns-button {
+    background: #3297cf;
+}
+.columns-button:hover {
+    filter: brightness(1.12);
+}
+.dropdown {
+    position: relative;
+}
 .dropdown-menu {
     position: absolute;
     z-index: 5;
@@ -260,8 +351,14 @@ th {
     font-weight: 400;
     white-space: nowrap;
 }
-.group-head th { height: 32px; border-bottom-color: #303537; }
-.filter-head th { height: 32px; padding: 3px 4px; }
+.group-head th {
+    height: 32px;
+    border-bottom-color: #303537;
+}
+.filter-head th {
+    height: 32px;
+    padding: 3px 4px;
+}
 .filter-head input {
     width: calc(100% - 15px);
     height: 20px;
@@ -269,20 +366,56 @@ th {
     background: #252a2c;
     color: #fff;
 }
-.filter-head span { margin-left: 4px; color: #a5b5bf; }
+.filter-head span {
+    margin-left: 4px;
+    color: #a5b5bf;
+}
 tbody tr {
     height: 68px;
     background: #293033;
 }
-tbody tr:hover { background: #343c3f; }
-td { white-space: nowrap; }
-.icon-cell { padding: 0 4px; text-align: left; }
-.icon-cell img { width: 64px; height: 64px; object-fit: cover; vertical-align: middle; }
-.name-cell { text-align: left; color: skyblue; }
-th:nth-child(9), td:nth-child(9), th:nth-child(10), td:nth-child(10) { text-align: right; }
-.state { margin: 40px; }
+tbody tr:hover {
+    background: #343c3f;
+}
+td {
+    white-space: nowrap;
+}
+.icon-cell {
+    padding: 0 4px;
+    text-align: left;
+}
+.icon-cell img {
+    width: 64px;
+    height: 64px;
+    object-fit: cover;
+    vertical-align: middle;
+}
+.icon-background {
+    display: inline-block;
+    width: 64px;
+    height: 64px;
+    background-position: center;
+    background-size: cover;
+    vertical-align: middle;
+}
+.ag-compat-controls {
+    display: none;
+}
+.name-cell {
+    text-align: left;
+    color: skyblue;
+}
+th:nth-child(9),
+td:nth-child(9),
+th:nth-child(10),
+td:nth-child(10) {
+    text-align: right;
+}
+.state {
+    margin: 40px;
+}
 .npc-0 {
-    color: #f5f5f5;
+    color: skyblue;
 }
 .npc-1 {
     color: skyblue;

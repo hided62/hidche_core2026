@@ -148,7 +148,11 @@ onMounted(() => {
                     <td><button class="legacy-close" type="button" @click="closeWindow">창닫기</button></td>
                 </tr>
                 <tr>
-                    <td class="banner">SAMMO · Legacy compatible NPC list</td>
+                    <td class="banner">
+                        삼국지 모의전투 PHP HiDCHe - unknown / KOEI의 이미지를 사용, 응용하였습니다 / 제작 :
+                        <a href="mailto:hided62@gmail.com">HideD(hided62@gmail.com)</a> /
+                        <a href="https://github.com/hided/SamK" target="_blank" rel="noopener noreferrer">Credit</a>
+                    </td>
                 </tr>
             </tbody>
         </table>
@@ -330,6 +334,10 @@ onMounted(() => {
 
 .banner {
     font-size: 12px;
+}
+
+.banner a {
+    color: inherit;
 }
 
 .npc-error,

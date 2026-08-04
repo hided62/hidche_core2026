@@ -55,16 +55,22 @@ const loadDirectory = async () => {
     }
 };
 
-const headerTextColor = (color: string): string =>
-    whiteTextColors.has(color.toLowerCase()) ? '#ffffff' : '#000000';
+const headerTextColor = (color: string): string => (whiteTextColors.has(color.toLowerCase()) ? '#ffffff' : '#000000');
 
 const officerName = (nation: Nation, officerLevel: number) =>
     nation.officers.find((officer) => officer.officerLevel === officerLevel)?.general;
+const displayGeneralName = (general: { name: string; npcState: number }) =>
+    general.npcState > 0 && !/^[ⓜⓝ㉥]/u.test(general.name) ? `ⓝ${general.name}` : general.name;
+const displayAmbassadorName = (nation: Nation, name: string) => {
+    const general = nation.generals.find((candidate) => candidate.name === name);
+    return general ? displayGeneralName(general) : name;
+};
 
 const roamingCityName = (nation: Nation): string => {
     const chief = officerName(nation, 12);
     return nation.cities.find((city) => city.id === chief?.cityId)?.name ?? '-';
 };
+const closeWindow = () => window.close();
 
 onMounted(() => {
     void loadDirectory();
@@ -76,7 +82,12 @@ onMounted(() => {
         <table class="directory-table title-table legacy-bg0">
             <tbody>
                 <tr>
-                    <td>세 력 일 람<br /><RouterLink class="legacy-button" to="/">창 닫기</RouterLink></td>
+                    <td>
+                        세 력 일 람<br /><button class="legacy-button" type="button" @click="closeWindow">
+                            창 닫기
+                        </button>
+                        <input type="button" value="장수 일람 연동" />
+                    </td>
                 </tr>
             </tbody>
         </table>
@@ -85,11 +96,7 @@ onMounted(() => {
         <p v-else-if="loading" class="directory-loading">불러오는 중...</p>
 
         <template v-for="nation in nations" :key="nation.id">
-            <table
-                v-if="nation.id !== 0"
-                class="directory-table nation-table legacy-bg2"
-                :data-nation-id="nation.id"
-            >
+            <table v-if="nation.id !== 0" class="directory-table nation-table legacy-bg2" :data-nation-id="nation.id">
                 <tbody>
                     <tr>
                         <td
@@ -124,7 +131,7 @@ onMounted(() => {
                                         ),
                                     }"
                                 >
-                                    {{ officerName(nation, 13 - ((row - 1) * 4 + column))?.name }}
+                                    {{ displayGeneralName(officerName(nation, 13 - ((row - 1) * 4 + column))!) }}
                                 </span>
                                 <template v-else>-</template>
                             </td>
@@ -132,7 +139,9 @@ onMounted(() => {
                     </tr>
                     <tr>
                         <td class="label-cell">외교권자</td>
-                        <td colspan="5">{{ nation.ambassadorNames.join(', ') }}</td>
+                        <td colspan="5">
+                            {{ nation.ambassadorNames.map((name) => displayAmbassadorName(nation, name)).join(', ') }}
+                        </td>
                         <td class="label-cell">조언자</td>
                         <td class="value-wide">{{ nation.auditorCount }}명</td>
                     </tr>
@@ -141,18 +150,24 @@ onMounted(() => {
                             <template v-if="nation.level > 0">
                                 속령 일람 :
                                 <template v-for="city in nation.cities" :key="city.id">
-                                    <span :class="{ capital: city.capital }">{{ city.capital ? `[${city.name}]` : city.name }}</span
+                                    <span :class="{ capital: city.capital }">{{
+                                        city.capital ? `[${city.name}]` : city.name
+                                    }}</span
                                     >,
                                 </template>
                             </template>
-                            <template v-else>현재 위치 : <span class="roaming-city">{{ roamingCityName(nation) }}</span></template>
+                            <template v-else
+                                >현재 위치 : <span class="roaming-city">{{ roamingCityName(nation) }}</span></template
+                            >
                         </td>
                     </tr>
                     <tr>
                         <td colspan="8">
                             장수 일람 :
                             <template v-for="general in nation.generals" :key="general.id">
-                                <span :style="{ color: getNpcColor(general.npcState) }">{{ general.name }}</span
+                                <span :style="{ color: getNpcColor(general.npcState) }">{{
+                                    displayGeneralName(general)
+                                }}</span
                                 >,
                             </template>
                         </td>
@@ -183,7 +198,9 @@ onMounted(() => {
                         <td colspan="5">
                             장수 일람 :
                             <template v-for="general in nation.generals" :key="general.id">
-                                <span :style="{ color: getNpcColor(general.npcState) }">{{ general.name }}</span
+                                <span :style="{ color: getNpcColor(general.npcState) }">{{
+                                    displayGeneralName(general)
+                                }}</span
                                 >,
                             </template>
                         </td>
@@ -192,13 +209,29 @@ onMounted(() => {
             </table>
         </template>
 
+        <div class="legacy-analysis-helper" aria-hidden="true">
+            <table>
+                <thead>
+                    <tr>
+                        <td v-for="column in 15" :key="column"></td>
+                    </tr>
+                </thead>
+            </table>
+        </div>
+
         <table class="directory-table title-table footer-table legacy-bg0">
             <tbody>
                 <tr>
-                    <td><RouterLink class="legacy-button" to="/">창 닫기</RouterLink></td>
+                    <td><button class="legacy-button" type="button" @click="closeWindow">창 닫기</button></td>
                 </tr>
                 <tr>
-                    <td><small>삼국지 모의전투 HiDCHe</small></td>
+                    <td>
+                        <small>
+                            삼국지 모의전투 PHP HiDCHe - unknown / KOEI의 이미지를 사용, 응용하였습니다 / 제작 :
+                            HideD(hided62@gmail.com) /
+                            <a href="https://github.com/hided/SamK" target="_blank" rel="noopener noreferrer">Credit</a>
+                        </small>
+                    </td>
                 </tr>
             </tbody>
         </table>
@@ -218,6 +251,7 @@ onMounted(() => {
     table-layout: auto;
     font-size: 14px;
     word-break: break-all;
+    background-color: transparent;
 }
 .directory-table td {
     border: 1px solid gray;
@@ -225,7 +259,7 @@ onMounted(() => {
     word-break: break-all;
 }
 .title-table {
-    text-align: center;
+    text-align: left;
 }
 .directory-page > .title-table:first-child {
     height: 55.6875px;
@@ -234,11 +268,15 @@ onMounted(() => {
     padding: 1px;
 }
 .legacy-button {
-    padding: 5px 10px;
+    border: 0;
+    border-radius: 5.25px;
+    padding: 5.25px 10.5px;
+    background-color: rgb(55 90 127);
+    color: #fff;
     font-size: 14px;
-}
-.nation-table {
-    background-color: #172a52;
+    font-weight: 700;
+    line-height: 21px;
+    cursor: pointer;
 }
 .nation-title {
     height: 19px;
@@ -280,6 +318,12 @@ onMounted(() => {
 }
 .footer-table {
     margin-top: 0;
+}
+.footer-table a {
+    color: inherit;
+}
+.legacy-analysis-helper {
+    display: none;
 }
 .directory-error,
 .directory-loading {

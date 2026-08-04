@@ -189,7 +189,7 @@ onMounted(loadOptions);
 .legacy-hall-page {
     width: 500px;
     min-height: 100vh;
-    margin: 0 auto 100px;
+    margin: 0 auto;
     color: #fff;
     font-family: var(--sammo-font-sans);
     font-size: 14px;
@@ -337,6 +337,12 @@ onMounted(loadOptions);
     box-sizing: border-box;
     padding: 3px 0;
     line-height: 13px;
+}
+
+@media (max-width: 999.98px) {
+    .legacy-hall-page {
+        margin-bottom: 100px;
+    }
 }
 
 @media (min-width: 1000px) {

@@ -5,7 +5,13 @@ import { LogCategory, LogScope } from '@sammo-ts/infra';
 
 import { authedProcedure } from '../../../trpc.js';
 import { getMyGeneral } from '../../shared/general.js';
-import { assertNationAccess, resolveNationPermission, zGeneralLogType, type GeneralLogType } from '../shared.js';
+import {
+    assertNationAccess,
+    formatDateTime,
+    resolveNationPermission,
+    zGeneralLogType,
+    type GeneralLogType,
+} from '../shared.js';
 
 export const getGeneralLog = authedProcedure
     .input(
@@ -75,6 +81,9 @@ export const getGeneralLog = authedProcedure
             logs: logs.map((entry) => ({
                 id: entry.id,
                 text: entry.text,
+                year: entry.year,
+                month: entry.month,
+                createdAt: formatDateTime(entry.createdAt),
             })),
         };
     });

@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue';
 import { useRouter } from 'vue-router';
+import { formatLog } from '../utils/formatLog';
 import { trpc } from '../utils/trpc';
 
 type Result = Awaited<ReturnType<typeof trpc.nation.getNationInfo.query>>;
@@ -95,9 +96,8 @@ onMounted(async () => {
                 <tr>
                     <th>국가열전</th>
                     <td colspan="7" class="history legacy-bg0">
-                        <div v-for="entry in data.history" :key="entry.id">
-                            {{ entry.year }}년 {{ entry.month }}월: {{ entry.text }}
-                        </div>
+                        <!-- eslint-disable-next-line vue/no-v-html -->
+                        <div v-for="entry in data.history" :key="entry.id" v-html="formatLog(entry.text)" />
                         <span v-if="!data.history.length">-</span>
                     </td>
                 </tr>
@@ -172,7 +172,9 @@ onMounted(async () => {
     color: #fff;
     cursor: pointer;
 }
-.credit { padding: 0 !important; }
+.credit {
+    padding: 0 !important;
+}
 .error {
     color: #ff7373;
     text-align: center;

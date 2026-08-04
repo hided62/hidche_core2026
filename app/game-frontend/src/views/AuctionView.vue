@@ -202,7 +202,11 @@ onMounted(() => {
 </script>
 
 <template>
-    <main id="container" class="legacy-auction-page bg0">
+    <main
+        id="container"
+        class="legacy-auction-page bg0"
+        :class="activeTab === 'resource' ? 'resource-page' : 'unique-page'"
+    >
         <header class="top-back-bar bg0">
             <button class="legacy-button close-button" type="button" @click="closeWindow">창 닫기</button>
             <button class="legacy-button reload-button" type="button" :disabled="loading" @click="loadOverview">
@@ -240,12 +244,16 @@ onMounted(() => {
                     <span class="bid-ratio">단가</span><span class="finish-bid">마감가</span>
                     <span class="close-date">거래 종료</span>
                 </div>
-                <button
+                <div
                     v-for="auction in buyRice"
                     :key="auction.id"
                     class="resource-row clickable-row"
                     :class="{ selected: selectedResource?.id === auction.id }"
+                    role="button"
+                    tabindex="0"
                     @click="selectResource(auction)"
+                    @keydown.enter="selectResource(auction)"
+                    @keydown.space.prevent="selectResource(auction)"
                 >
                     <span class="idx tnum">{{ auction.id }}</span>
                     <span class="host">{{ auction.hostName }}</span>
@@ -263,7 +271,7 @@ onMounted(() => {
                     </span>
                     <span class="finish-bid tnum">금 {{ formatNumber(auction.detail.finishBidAmount) }}</span>
                     <span class="close-date tnum">{{ cutDateTime(auction.closeAt) }}</span>
-                </button>
+                </div>
                 <p v-if="buyRice.length === 0" class="empty-row">진행 중인 쌀 구매 경매가 없습니다.</p>
             </section>
 
@@ -275,12 +283,16 @@ onMounted(() => {
                     <span class="bid-ratio">단가</span><span class="finish-bid">마감가</span>
                     <span class="close-date">거래 종료</span>
                 </div>
-                <button
+                <div
                     v-for="auction in sellRice"
                     :key="auction.id"
                     class="resource-row clickable-row"
                     :class="{ selected: selectedResource?.id === auction.id }"
+                    role="button"
+                    tabindex="0"
                     @click="selectResource(auction)"
+                    @keydown.enter="selectResource(auction)"
+                    @keydown.space.prevent="selectResource(auction)"
                 >
                     <span class="idx tnum">{{ auction.id }}</span>
                     <span class="host">{{ auction.hostName }}</span>
@@ -298,7 +310,7 @@ onMounted(() => {
                     </span>
                     <span class="finish-bid tnum">쌀 {{ formatNumber(auction.detail.finishBidAmount) }}</span>
                     <span class="close-date tnum">{{ cutDateTime(auction.closeAt) }}</span>
-                </button>
+                </div>
                 <p v-if="sellRice.length === 0" class="empty-row">진행 중인 쌀 판매 경매가 없습니다.</p>
             </section>
 
@@ -322,6 +334,10 @@ onMounted(() => {
 
             <h3 class="subsection-title">경매 등록</h3>
             <form class="open-form" @submit.prevent="openResourceAuction">
+                <input type="hidden" name="action" value="openAuction" />
+                <input type="hidden" name="server" value="hwe" />
+                <input type="hidden" name="turn" value="24" />
+                <input type="hidden" name="submitType" value="resource" />
                 <fieldset>
                     <legend>매물</legend>
                     <div class="item-toggle">
@@ -414,12 +430,16 @@ onMounted(() => {
                     <span>번호</span><span>경매명</span><span>주최자</span><span>종료일시</span> <span>연장</span
                     ><span>1순위</span><span>포인트</span>
                 </div>
-                <button
+                <div
                     v-for="auction in ongoingUnique"
                     :key="auction.id"
                     class="unique-row clickable-row"
                     :class="{ selected: selectedUnique?.id === auction.id }"
+                    role="button"
+                    tabindex="0"
                     @click="selectUnique(auction)"
+                    @keydown.enter="selectUnique(auction)"
+                    @keydown.space.prevent="selectUnique(auction)"
                 >
                     <span>{{ auction.id }}</span
                     ><span>{{ auction.detail.title ?? auction.targetCode }}</span>
@@ -432,7 +452,7 @@ onMounted(() => {
                     <span class="tnum">{{
                         formatNumber(auction.highestBid?.amount ?? auction.detail.startBidAmount)
                     }}</span>
-                </button>
+                </div>
                 <p v-if="ongoingUnique.length === 0" class="empty-row">진행중인 유니크 경매가 없습니다.</p>
             </section>
 
@@ -442,12 +462,16 @@ onMounted(() => {
                     <span>번호</span><span>경매명</span><span>주최자</span><span>종료일시</span> <span>연장</span
                     ><span>1순위</span><span>포인트</span>
                 </div>
-                <button
+                <div
                     v-for="auction in finishedUnique"
                     :key="auction.id"
                     class="unique-row clickable-row"
                     :class="{ selected: selectedUnique?.id === auction.id }"
+                    role="button"
+                    tabindex="0"
                     @click="selectUnique(auction)"
+                    @keydown.enter="selectUnique(auction)"
+                    @keydown.space.prevent="selectUnique(auction)"
                 >
                     <span>{{ auction.id }}</span
                     ><span>{{ auction.detail.title ?? auction.targetCode }}</span>
@@ -460,9 +484,10 @@ onMounted(() => {
                     <span class="tnum">{{
                         formatNumber(auction.highestBid?.amount ?? auction.detail.startBidAmount)
                     }}</span>
-                </button>
+                </div>
                 <p v-if="finishedUnique.length === 0" class="empty-row">종료된 유니크 경매가 없습니다.</p>
             </section>
+            <input type="hidden" name="auctionType" value="unique" />
         </section>
 
         <footer class="bottom-bar bg0">
@@ -481,6 +506,14 @@ onMounted(() => {
     font-family: var(--sammo-font-sans);
     font-size: 14px;
     line-height: 21px;
+}
+.legacy-auction-page.resource-page {
+    height: 689px;
+    overflow: hidden;
+}
+.legacy-auction-page.unique-page {
+    height: 378px;
+    overflow: hidden;
 }
 .legacy-auction-page.bg0 {
     background-color: transparent;
@@ -784,6 +817,12 @@ input:focus-visible {
     }
 }
 @media (max-width: 500px) {
+    .legacy-auction-page.resource-page {
+        height: 1109px;
+    }
+    .legacy-auction-page.unique-page {
+        height: 420px;
+    }
     .resource-row {
         min-height: 43px;
         grid-template-columns: 1fr 3fr 3fr 1fr 2fr 2fr;

@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue';
+import { useRouter } from 'vue-router';
 
 import { resolveGeneralIconUrl, useDefaultGeneralIcon } from '../utils/generalIcon';
 import { trpc } from '../utils/trpc';
@@ -21,6 +22,7 @@ const dialogKind = ref<DialogKind>(null);
 const dialogTroopId = ref(0);
 const popupMember = ref<Member | null>(null);
 const popupTop = ref(0);
+const router = useRouter();
 
 const me = computed(() => data.value?.me ?? null);
 
@@ -177,9 +179,13 @@ onMounted(() => {
 <template>
     <main id="container" class="legacy-troop-page">
         <header class="topBackBar bg0">
-            <RouterLink class="legacy-button legacy-button--navigation legacyNavButton backLink" to="/"
-                >돌아가기</RouterLink
+            <button
+                class="legacy-button legacy-button--navigation legacyNavButton backLink"
+                type="button"
+                @click="router.push('/')"
             >
+                돌아가기
+            </button>
             <button
                 class="legacy-button legacy-button--navigation legacyNavButton reloadButton"
                 type="button"
@@ -331,9 +337,13 @@ onMounted(() => {
         </div>
 
         <footer class="bottomBar bg0">
-            <RouterLink class="legacy-button legacy-button--navigation legacyNavButton backLink" to="/"
-                >돌아가기</RouterLink
+            <button
+                class="legacy-button legacy-button--navigation legacyNavButton backLink"
+                type="button"
+                @click="router.push('/')"
             >
+                돌아가기
+            </button>
             <div></div>
         </footer>
         <div v-if="popupMember" id="generalPopup" :style="{ top: `${popupTop}px` }" role="tooltip">

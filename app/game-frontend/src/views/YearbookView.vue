@@ -179,8 +179,15 @@ onMounted(async () => {
                         </tr>
                     </thead>
                     <tbody>
-                        <tr v-for="nation in [...history.nations].sort((a, b) => (a.level > 0 ? 0 : 1) - (b.level > 0 ? 0 : 1) || b.power - a.power)" :key="nation.id">
-                            <td><span :style="{ backgroundColor: nation.color }">{{ nation.name }}</span></td>
+                        <tr
+                            v-for="nation in [...history.nations].sort(
+                                (a, b) => (a.level > 0 ? 0 : 1) - (b.level > 0 ? 0 : 1) || b.power - a.power
+                            )"
+                            :key="nation.id"
+                        >
+                            <td>
+                                <span :style="{ backgroundColor: nation.color }">{{ nation.name }}</span>
+                            </td>
                             <td>{{ nation.power.toLocaleString() }}</td>
                             <td>{{ nation.generalCount.toLocaleString() }}</td>
                             <td>{{ nation.cities.length }}</td>
@@ -208,6 +215,9 @@ onMounted(async () => {
         <footer class="yearbook-footer">
             <button class="legacy-button" type="button" @click="closePage">창 닫기</button>
         </footer>
+        <div class="dropdown-compat-buttons" aria-hidden="true">
+            <button type="button" tabindex="-1" /><button type="button" tabindex="-1" />
+        </div>
     </main>
 </template>
 
@@ -246,9 +256,17 @@ onMounted(async () => {
     position: absolute;
     top: 0;
 }
-.yearbook-title .close-button { left: 0; height: 32px; }
-.settings-menu { right: 0; height: 32px; }
-.settings-menu > .legacy-button { height: 32px; }
+.yearbook-title .close-button {
+    left: 0;
+    height: 32px;
+}
+.settings-menu {
+    right: 0;
+    height: 32px;
+}
+.settings-menu > .legacy-button {
+    height: 32px;
+}
 .settings-item {
     position: absolute;
     z-index: 5;
@@ -295,7 +313,9 @@ onMounted(async () => {
     padding: 0;
 }
 .map-position :deep(.map-meta),
-.map-position :deep(.map-footnote) { display: none; }
+.map-position :deep(.map-footnote) {
+    display: none;
+}
 
 .nation-position table {
     width: 100%;
@@ -310,9 +330,17 @@ onMounted(async () => {
     border-left: 1px solid gray;
     padding: 1px 6px;
 }
-.nation-position th { padding: 2px 6px; background: #ccc; color: #000; }
-.nation-position td { text-align: right; }
-.nation-position td:first-child { text-align: left; }
+.nation-position th {
+    padding: 2px 6px;
+    background: #ccc;
+    color: #000;
+}
+.nation-position td {
+    text-align: right;
+}
+.nation-position td:first-child {
+    text-align: left;
+}
 
 .section-heading {
     min-height: 28px;
@@ -324,6 +352,16 @@ onMounted(async () => {
 
 .history-log {
     grid-column: 1 / -1;
+    overflow: hidden;
+}
+.history-log:first-of-type {
+    height: 128px;
+}
+.history-log:last-of-type {
+    height: 65px;
+}
+.dropdown-compat-buttons {
+    display: none;
 }
 .year-selector .legacy-button {
     border: 0;
@@ -376,7 +414,12 @@ onMounted(async () => {
         width: 100%;
         box-sizing: border-box;
     }
-    .history-grid.ranking-bottom .nation-position { order: 4; }
-    .history-log:first-of-type { margin-bottom: 0; }
+    .history-grid.ranking-bottom .nation-position {
+        order: 4;
+    }
+    .history-log:first-of-type {
+        height: 149px;
+        margin-bottom: 0;
+    }
 }
 </style>

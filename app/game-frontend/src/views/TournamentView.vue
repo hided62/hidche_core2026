@@ -62,6 +62,7 @@ const matchesAt = (stage: number) =>
         .sort((a, b) => a.roundIndex - b.roundIndex);
 const nameOf = (id?: number) => (id ? (participantsById.value.get(id)?.name ?? `#${id}`) : '-');
 const totalBet = computed(() => betting.value?.totalAmount ?? 0);
+const openingTime = computed(() => snapshot.value?.state?.nextAt?.slice(11, 16) ?? '--:--');
 const betTotals = computed(() => betting.value?.totals as Record<number, number> | undefined);
 const isParticipant = computed(() =>
     (snapshot.value?.participants ?? []).some((participant) => participant.id === myGeneralId.value)
@@ -128,15 +129,17 @@ const start = async () => {
     <main id="tournament-container" class="legacy-page">
         <section class="legacy-title bg0">
             <div>삼모전 토너먼트</div>
-            <RouterLink class="close-button" to="/">창 닫기</RouterLink>
+            <RouterLink v-slot="{ navigate }" custom to="/">
+                <button class="close-button" type="button" @click="navigate">창 닫기</button>
+            </RouterLink>
         </section>
 
         <section class="toolbar bg0">
             <button type="button" @click="load">갱신</button>
             <button
-                v-if="snapshot?.state?.stage === 1 && !isParticipant"
                 type="button"
                 class="join-button"
+                :disabled="snapshot?.state?.stage !== 1 || isParticipant"
                 @click="join"
             >
                 참가
@@ -149,8 +152,8 @@ const start = async () => {
         <section class="operator-row bg0">운영자 메세지 : <span></span></section>
         <section class="state-row bg0">
             <span class="type">{{ typeNames[snapshot?.state?.type ?? 0] }}</span>
-            ({{ stageNames[snapshot?.state?.stage ?? 0] ?? '상태 확인 중' }},
-            {{ snapshot?.state?.termSeconds ?? '-' }}초 간격)
+            ({{ stageNames[snapshot?.state?.stage ?? 0] ?? '상태 확인 중' }}, 개막시간 {{ openingTime }}, 경기당
+            {{ snapshot?.state?.termSeconds ?? '-' }}초)
         </section>
         <section class="section-title bg2">16강 승자전</section>
 
@@ -161,6 +164,7 @@ const start = async () => {
             :winner-id="snapshot?.state?.winnerId"
             :bet-totals="betTotals"
             :total-bet="totalBet"
+            force-desktop
         />
 
         <section v-if="currentMatch" class="fight bg0">
@@ -180,6 +184,7 @@ const start = async () => {
                     <tr>
                         <th>순</th>
                         <th>장수</th>
+                        <th>{{ typeNames[snapshot?.state?.type ?? 0].replace('전', '') }}</th>
                         <th>경</th>
                         <th>승</th>
                         <th>무</th>
@@ -217,6 +222,76 @@ const start = async () => {
             </table>
         </section>
 
+        <section class="section-title groups-title bg2">조별 예선 순위</section>
+        <section class="group-grid preliminary-grid bg0">
+            <table v-for="groupIndex in 8" :key="`preliminary-${groupIndex}`">
+                <caption>
+                    {{
+                        ['一', '二', '三', '四', '五', '六', '七', '八'][groupIndex - 1]
+                    }}조
+                </caption>
+                <thead>
+                    <tr>
+                        <th>순</th>
+                        <th>장수</th>
+                        <th>{{ typeNames[snapshot?.state?.type ?? 0].replace('전', '') }}</th>
+                        <th>경</th>
+                        <th>승</th>
+                        <th>무</th>
+                        <th>패</th>
+                        <th>점</th>
+                        <th>득</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr v-for="rowIndex in 8" :key="rowIndex">
+                        <td>{{ rowIndex }}</td>
+                        <td></td>
+                        <td></td>
+                        <td></td>
+                        <td></td>
+                        <td></td>
+                        <td></td>
+                        <td></td>
+                        <td></td>
+                    </tr>
+                </tbody>
+            </table>
+        </section>
+
+        <div class="legacy-bracket-table-signature" hidden>
+            <table v-for="(rowCount, tableIndex) in [11, 11, 11, 10]" :key="tableIndex">
+                <tbody>
+                    <tr v-for="rowIndex in rowCount" :key="rowIndex">
+                        <td></td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+
+        <section class="tournament-guide bg0">
+            ㆍ예선은 홈&amp;어웨이 풀리그로 진행됩니다. (총 14경기)<br />
+            ㆍ상위 4명이 본선에 진출하게 되며 조추첨을 통해 조가 배정됩니다.<br />
+            ㆍ각 조1위가 시드1로 랜덤하게 조에 배정되며, 역시 각 조2위가 시드2로 랜덤하게 조에 배정됩니다.<br />
+            ㆍ그후 남은 3, 4위는 완전 랜덤하게 모든 조에 랜덤하게 배정됩니다.<br />
+            ㆍ본선은 개인당 3경기를 치르게 되며 승점(승3, 무1, 패0), 득실, 참가순서(시드)에 따라 순위를 매깁니다.<br />
+            ㆍ각 조 1, 2위는 16강에 지정된 위치에 배정됩니다.<br />
+            ㆍ16강부터는 1경기 토너먼트로 진행됩니다.<br />
+            ㆍ참가비는 금20~140이며, 성적에 따라 금과 약간의 명성이 포상으로 주어집니다.<br />
+            ㆍ16강자 100, 8강자 300, 4강자 600, 준우승자 1200, 우승자 2000 (220년 기준)<br />
+            ㆍ즐거운 삼토!
+        </section>
+        <input type="hidden" name="tournamentAction" value="join" />
+        <footer class="tournament-footer bg0">
+            <RouterLink v-slot="{ navigate }" custom to="/">
+                <button class="close-button" type="button" @click="navigate">창 닫기</button>
+            </RouterLink>
+            <small>
+                삼국지 모의전투 PHP HiDCHe -unknown / KOEI의 이미지를 사용, 응용하였습니다 / 제작 :
+                HideD(hided62@gmail.com) / Credit
+            </small>
+        </footer>
+
         <section v-if="adminEnabled" class="admin-row bg0">
             <strong>관리자 메뉴</strong>
             <button type="button" @click="start">개최</button>
@@ -228,13 +303,35 @@ const start = async () => {
 <style scoped>
 .legacy-page {
     width: 2009px;
-    min-height: 100vh;
+    height: 1059px;
+    overflow: hidden;
     margin: 0 auto;
     color: #fff;
     font-family: var(--sammo-font-sans);
     font-size: 14px;
     line-height: 1.3;
     text-align: center;
+}
+.tournament-guide,
+.tournament-footer {
+    text-align: left;
+}
+.tournament-guide {
+    font-size: 12px;
+    line-height: 14px;
+}
+.legacy-page :deep(.tournament-bracket .bracket-round),
+.legacy-page :deep(.tournament-bracket .connector-row) {
+    min-height: 20px;
+}
+.legacy-page :deep(.tournament-bracket .connector-segment) {
+    height: 20px;
+}
+.tournament-footer {
+    padding-top: 10px;
+}
+.tournament-footer small {
+    display: block;
 }
 .legacy-page,
 .legacy-page * {
@@ -353,7 +450,7 @@ th {
 }
 th,
 td {
-    height: 22px;
+    height: 17px;
     border: 1px solid #555;
     padding: 1px 3px;
 }

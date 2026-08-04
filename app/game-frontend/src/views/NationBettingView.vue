@@ -337,7 +337,9 @@ onMounted(() => {
 <template>
     <main id="nation-betting-container" class="nation-betting-page legacy-bg0">
         <header class="legacy-top-bar">
-            <RouterLink class="legacy-nav-button" to="/">돌아가기</RouterLink>
+            <RouterLink v-slot="{ navigate }" custom to="/">
+                <button class="legacy-nav-button" type="button" @click="navigate">돌아가기</button>
+            </RouterLink>
             <div></div>
             <h1>국가 베팅장</h1>
             <div></div>

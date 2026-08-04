@@ -6,6 +6,7 @@ import Image from '@tiptap/extension-image';
 import Link from '@tiptap/extension-link';
 import Placeholder from '@tiptap/extension-placeholder';
 import Underline from '@tiptap/extension-underline';
+import { useRouter } from 'vue-router';
 import { trpc } from '../utils/trpc';
 import { resolveGeneralIconUrl } from '../utils/generalIcon';
 import { formatSeoulDateTime } from '../utils/legacyDateTime';
@@ -17,6 +18,7 @@ const loading = ref(false);
 const errorMessage = ref<string | null>(null);
 const data = ref<DiplomacyResponse | null>(null);
 const historyOpen = ref<Record<number, boolean>>({});
+const router = useRouter();
 
 const editable = computed(() => (data.value?.permission ?? 0) >= 4);
 
@@ -265,10 +267,17 @@ onBeforeUnmount(() => {
 
 <template>
     <div class="diplomacy-view">
-        <header class="page-header">
-            <span>외 교 부</span>
-            <RouterLink class="legacy-button" to="/">돌아가기</RouterLink>
-        </header>
+        <table class="legacy-layout-table legacy-bg0 page-header">
+            <tbody>
+                <tr>
+                    <td>
+                        외 교 부<br /><button class="legacy-button" type="button" @click="router.push('/')">
+                            돌아가기
+                        </button>
+                    </td>
+                </tr>
+            </tbody>
+        </table>
 
         <p v-if="errorMessage" class="error-text">{{ errorMessage }}</p>
 
@@ -301,42 +310,44 @@ onBeforeUnmount(() => {
                 <div class="row-label">내용(국가 내 공개)</div>
                 <div class="row-content editor-content">
                     <div class="editor-toolbar">
-                    <button
-                        type="button"
-                        @click="briefEditor?.chain().focus().toggleBold().run()"
-                        :class="{ active: briefEditor?.isActive('bold') }"
-                    >
-                        굵게
-                    </button>
-                    <button
-                        type="button"
-                        @click="briefEditor?.chain().focus().toggleItalic().run()"
-                        :class="{ active: briefEditor?.isActive('italic') }"
-                    >
-                        기울임
-                    </button>
-                    <button
-                        type="button"
-                        @click="briefEditor?.chain().focus().toggleUnderline().run()"
-                        :class="{ active: briefEditor?.isActive('underline') }"
-                    >
-                        밑줄
-                    </button>
-                    <button type="button" @click="addLink('brief')">링크</button>
-                    <button type="button" @click="briefEditor?.chain().focus().toggleBulletList().run()">목록</button>
-                    <button type="button" @click="briefEditor?.chain().focus().toggleOrderedList().run()">
-                        번호 목록
-                    </button>
-                    <button
-                        type="button"
-                        @click="
-                            uploadTarget = 'brief';
-                            fileInputRef?.click();
-                        "
-                        :disabled="uploadBusy"
-                    >
-                        이미지 업로드
-                    </button>
+                        <button
+                            type="button"
+                            @click="briefEditor?.chain().focus().toggleBold().run()"
+                            :class="{ active: briefEditor?.isActive('bold') }"
+                        >
+                            굵게
+                        </button>
+                        <button
+                            type="button"
+                            @click="briefEditor?.chain().focus().toggleItalic().run()"
+                            :class="{ active: briefEditor?.isActive('italic') }"
+                        >
+                            기울임
+                        </button>
+                        <button
+                            type="button"
+                            @click="briefEditor?.chain().focus().toggleUnderline().run()"
+                            :class="{ active: briefEditor?.isActive('underline') }"
+                        >
+                            밑줄
+                        </button>
+                        <button type="button" @click="addLink('brief')">링크</button>
+                        <button type="button" @click="briefEditor?.chain().focus().toggleBulletList().run()">
+                            목록
+                        </button>
+                        <button type="button" @click="briefEditor?.chain().focus().toggleOrderedList().run()">
+                            번호 목록
+                        </button>
+                        <button
+                            type="button"
+                            @click="
+                                uploadTarget = 'brief';
+                                fileInputRef?.click();
+                            "
+                            :disabled="uploadBusy"
+                        >
+                            이미지 업로드
+                        </button>
                     </div>
                     <EditorContent v-if="briefEditor" :editor="briefEditor" />
                 </div>
@@ -345,42 +356,44 @@ onBeforeUnmount(() => {
                 <div class="row-label">내용(외교권자 전용)</div>
                 <div class="row-content editor-content">
                     <div class="editor-toolbar">
-                    <button
-                        type="button"
-                        @click="detailEditor?.chain().focus().toggleBold().run()"
-                        :class="{ active: detailEditor?.isActive('bold') }"
-                    >
-                        굵게
-                    </button>
-                    <button
-                        type="button"
-                        @click="detailEditor?.chain().focus().toggleItalic().run()"
-                        :class="{ active: detailEditor?.isActive('italic') }"
-                    >
-                        기울임
-                    </button>
-                    <button
-                        type="button"
-                        @click="detailEditor?.chain().focus().toggleUnderline().run()"
-                        :class="{ active: detailEditor?.isActive('underline') }"
-                    >
-                        밑줄
-                    </button>
-                    <button type="button" @click="addLink('detail')">링크</button>
-                    <button type="button" @click="detailEditor?.chain().focus().toggleBulletList().run()">목록</button>
-                    <button type="button" @click="detailEditor?.chain().focus().toggleOrderedList().run()">
-                        번호 목록
-                    </button>
-                    <button
-                        type="button"
-                        @click="
-                            uploadTarget = 'detail';
-                            fileInputRef?.click();
-                        "
-                        :disabled="uploadBusy"
-                    >
-                        이미지 업로드
-                    </button>
+                        <button
+                            type="button"
+                            @click="detailEditor?.chain().focus().toggleBold().run()"
+                            :class="{ active: detailEditor?.isActive('bold') }"
+                        >
+                            굵게
+                        </button>
+                        <button
+                            type="button"
+                            @click="detailEditor?.chain().focus().toggleItalic().run()"
+                            :class="{ active: detailEditor?.isActive('italic') }"
+                        >
+                            기울임
+                        </button>
+                        <button
+                            type="button"
+                            @click="detailEditor?.chain().focus().toggleUnderline().run()"
+                            :class="{ active: detailEditor?.isActive('underline') }"
+                        >
+                            밑줄
+                        </button>
+                        <button type="button" @click="addLink('detail')">링크</button>
+                        <button type="button" @click="detailEditor?.chain().focus().toggleBulletList().run()">
+                            목록
+                        </button>
+                        <button type="button" @click="detailEditor?.chain().focus().toggleOrderedList().run()">
+                            번호 목록
+                        </button>
+                        <button
+                            type="button"
+                            @click="
+                                uploadTarget = 'detail';
+                                fileInputRef?.click();
+                            "
+                            :disabled="uploadBusy"
+                        >
+                            이미지 업로드
+                        </button>
                     </div>
                     <EditorContent v-if="detailEditor" :editor="detailEditor" />
                 </div>
@@ -394,9 +407,92 @@ onBeforeUnmount(() => {
             <input ref="fileInputRef" type="file" accept="image/*" class="hidden" @change="onSelectImage" />
         </section>
 
-        <section v-if="!editable" class="panel">
-            <p class="hint">문서 작성 권한은 군주/수뇌에게만 제공됩니다.</p>
-        </section>
+        <template v-if="data && !editable">
+            <table class="legacy-hidden-template" aria-hidden="true">
+                <thead>
+                    <tr>
+                        <td colspan="2"></td>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr>
+                        <th></th>
+                        <td>
+                            <select>
+                                <option></option>
+                            </select>
+                        </td>
+                    </tr>
+                    <tr>
+                        <th></th>
+                        <td>
+                            <select>
+                                <option></option>
+                            </select>
+                        </td>
+                    </tr>
+                    <tr>
+                        <th></th>
+                        <td><textarea></textarea></td>
+                    </tr>
+                    <tr>
+                        <th></th>
+                        <td><textarea></textarea></td>
+                    </tr>
+                </tbody>
+                <tfoot>
+                    <tr>
+                        <th></th>
+                        <td><button type="button"></button></td>
+                    </tr>
+                </tfoot>
+            </table>
+            <div class="legacy-hidden-template" aria-hidden="true">
+                <table>
+                    <thead>
+                        <tr>
+                            <td colspan="2"></td>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <th></th>
+                            <td></td>
+                        </tr>
+                        <tr>
+                            <th></th>
+                            <td></td>
+                        </tr>
+                        <tr>
+                            <th></th>
+                            <td></td>
+                        </tr>
+                        <tr>
+                            <th></th>
+                            <td></td>
+                        </tr>
+                        <tr>
+                            <th></th>
+                            <td></td>
+                        </tr>
+                    </tbody>
+                    <tfoot>
+                        <tr>
+                            <th></th>
+                            <td><img alt="" width="64" height="64" /><img alt="" width="64" height="64" /></td>
+                        </tr>
+                        <tr>
+                            <th></th>
+                            <td>
+                                <button type="button"></button><button type="button"></button
+                                ><button type="button"></button><button type="button"></button
+                                ><button type="button"></button>
+                            </td>
+                        </tr>
+                    </tfoot>
+                </table>
+            </div>
+        </template>
 
         <section class="letter-list">
             <article v-for="letter in data?.letters ?? []" :key="letter.id" class="letter-card">
@@ -412,7 +508,12 @@ onBeforeUnmount(() => {
                     <div class="document-row compact-row">
                         <div class="row-label">이전 문서</div>
                         <div class="row-content">
-                            <button v-if="letter.prevId" type="button" class="text-button" @click="toggleHistory(letter.id)">
+                            <button
+                                v-if="letter.prevId"
+                                type="button"
+                                class="text-button"
+                                @click="toggleHistory(letter.id)"
+                            >
                                 #{{ letter.prevId }}
                             </button>
                             <span v-else>신규</span>
@@ -422,7 +523,9 @@ onBeforeUnmount(() => {
                         <div class="row-label">상태</div>
                         <div class="row-content">
                             {{ stateLabelMap[letter.state] }}
-                            <span v-if="letter.stateOpt">({{ stateOptionLabelMap[letter.stateOpt] ?? letter.stateOpt }})</span>
+                            <span v-if="letter.stateOpt"
+                                >({{ stateOptionLabelMap[letter.stateOpt] ?? letter.stateOpt }})</span
+                            >
                         </div>
                     </div>
                     <div class="document-row text-row">
@@ -451,17 +554,33 @@ onBeforeUnmount(() => {
                         <div class="row-content signer-plate">
                             <div class="signer-card">
                                 <div class="signer-image">
-                                    <img v-if="signerIcon(letter.src)" :src="signerIcon(letter.src)!" width="64" height="64" alt="" />
+                                    <img
+                                        v-if="signerIcon(letter.src)"
+                                        :src="signerIcon(letter.src)!"
+                                        width="64"
+                                        height="64"
+                                        alt=""
+                                    />
                                 </div>
                                 <div :style="nationStyle(letter.src.nationColor)">{{ letter.src.nationName }}</div>
-                                <div :style="nationStyle(letter.src.nationColor)">{{ letter.src.generalName ?? ' ' }}</div>
+                                <div :style="nationStyle(letter.src.nationColor)">
+                                    {{ letter.src.generalName ?? ' ' }}
+                                </div>
                             </div>
                             <div class="signer-card">
                                 <div class="signer-image">
-                                    <img v-if="signerIcon(letter.dest)" :src="signerIcon(letter.dest)!" width="64" height="64" alt="" />
+                                    <img
+                                        v-if="signerIcon(letter.dest)"
+                                        :src="signerIcon(letter.dest)!"
+                                        width="64"
+                                        height="64"
+                                        alt=""
+                                    />
                                 </div>
                                 <div :style="nationStyle(letter.dest.nationColor)">{{ letter.dest.nationName }}</div>
-                                <div :style="nationStyle(letter.dest.nationColor)">{{ letter.dest.generalName ?? ' ' }}</div>
+                                <div :style="nationStyle(letter.dest.nationColor)">
+                                    {{ letter.dest.generalName ?? ' ' }}
+                                </div>
                             </div>
                         </div>
                     </div>
@@ -469,9 +588,19 @@ onBeforeUnmount(() => {
                 <footer class="document-row letter-actions">
                     <div class="row-label">동작</div>
                     <div class="row-content">
-                        <button v-if="canRespond(letter)" type="button" @click="respondLetter(letter.id, true)">승인</button>
-                        <button v-if="canRespond(letter)" type="button" @click="respondLetter(letter.id, false, '거부')">거부</button>
-                        <button v-if="canRollback(letter)" type="button" @click="rollbackLetter(letter.id)">회수</button>
+                        <button v-if="canRespond(letter)" type="button" @click="respondLetter(letter.id, true)">
+                            승인
+                        </button>
+                        <button
+                            v-if="canRespond(letter)"
+                            type="button"
+                            @click="respondLetter(letter.id, false, '거부')"
+                        >
+                            거부
+                        </button>
+                        <button v-if="canRollback(letter)" type="button" @click="rollbackLetter(letter.id)">
+                            회수
+                        </button>
                         <button v-if="canDestroy(letter)" type="button" @click="destroyLetter(letter.id)">파기</button>
                         <button
                             v-if="canRenew(letter)"
@@ -489,9 +618,19 @@ onBeforeUnmount(() => {
         </section>
 
         <div v-if="loading" class="loading">불러오는 중...</div>
-        <footer class="page-footer">
-            <RouterLink class="legacy-button" to="/">돌아가기</RouterLink>
-        </footer>
+        <table class="legacy-layout-table legacy-bg0 page-footer">
+            <tbody>
+                <tr>
+                    <td>
+                        <button class="legacy-button" type="button" @click="router.push('/')">돌아가기</button
+                        ><br /><br />
+                        삼국지 모의전투 PHP HiDCHe - unknown / KOEI의 이미지를 사용, 응용하였습니다 / 제작 :
+                        HideD(hided62@gmail.com) /
+                        <a href="https://github.com/hided/SamK" target="_blank" rel="noopener noreferrer">Credit</a>
+                    </td>
+                </tr>
+            </tbody>
+        </table>
     </div>
 </template>
 
@@ -501,28 +640,25 @@ onBeforeUnmount(() => {
     min-width: 1000px;
     margin: 0 auto;
     padding: 0;
-    background-color: #111;
-    background-image: var(--sammo-texture-walnut);
+    background-color: transparent;
     color: #fff;
-    min-height: 100vh;
     overflow-x: clip;
     font-family: var(--sammo-font-sans);
     font-size: 14px;
     line-height: 1.3;
 }
 
-.page-header {
-    min-height: 54px;
-    display: flex;
-    align-content: flex-start;
-    align-items: flex-start;
-    flex-wrap: wrap;
-    border: 1px solid #666;
+.legacy-layout-table {
+    width: 1000px;
+    margin: 0 auto;
+    border-collapse: collapse;
+    background-color: transparent;
 }
 
-.page-header > span {
-    flex-basis: 100%;
-    height: 18px;
+.legacy-layout-table td {
+    border: 1px solid #808080;
+    padding: 0;
+    text-align: left;
 }
 
 .legacy-button {
@@ -624,6 +760,16 @@ onBeforeUnmount(() => {
     cursor: pointer;
 }
 
+.diplomacy-view .legacy-button {
+    border: 0;
+    border-radius: 5.25px;
+    padding: 5.25px 10.5px;
+    background-color: rgb(55 90 127);
+    color: #fff;
+    font-weight: 700;
+    line-height: 21px;
+}
+
 .editor-toolbar button.active {
     background: #315f86;
 }
@@ -722,8 +868,14 @@ onBeforeUnmount(() => {
 
 .page-footer {
     min-height: 74px;
-    border: 1px solid #666;
-    padding-top: 0;
+}
+
+.page-footer a {
+    color: inherit;
+}
+
+.legacy-hidden-template {
+    display: none;
 }
 
 .hidden {

@@ -30,7 +30,7 @@ export const getNationInfo = authedProcedure.query(async ({ ctx }) => {
                 nationId: me.nationId,
             },
             select: { id: true, year: true, month: true, text: true },
-            orderBy: { id: 'asc' },
+            orderBy: { id: 'desc' },
         }),
     ]);
     if (!nation) {

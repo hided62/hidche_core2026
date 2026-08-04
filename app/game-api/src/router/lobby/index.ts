@@ -1,5 +1,7 @@
 import { TRPCError } from '@trpc/server';
 
+import { asRecord } from '@sammo-ts/common';
+
 import { zWorldStateConfig, zWorldStateMeta } from '../../context.js';
 import { isSelectionPoolWorld, resolveSelectionMaxGeneral } from '../../services/selectPool.js';
 import { procedure, router } from '../../trpc.js';
@@ -23,6 +25,7 @@ export const lobbyRouter = router({
         const userCnt = await ctx.db.general.count({ where: { npcState: { lt: 2 } } });
         const npcCnt = await ctx.db.general.count({ where: { npcState: { gte: 2 } } });
         const nationCnt = await ctx.db.nation.count({ where: { level: { gt: 0 } } });
+        const scenarioTitle = asRecord(asRecord(rawWorldState.meta).scenarioMeta).title;
 
         let myGeneral = null;
         if (ctx.auth?.user.id) {
@@ -55,6 +58,7 @@ export const lobbyRouter = router({
             isUnited: worldState.meta.isunited ?? worldState.meta.isUnited ?? 0,
             selectionPoolEnabled: isSelectionPoolWorld(rawWorldState),
             npcPossessionEnabled: worldState.config.npcMode === 1,
+            scenarioTitle: typeof scenarioTitle === 'string' ? scenarioTitle : '',
             myGeneral,
         };
     }),

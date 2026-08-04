@@ -143,9 +143,7 @@ export const getNationDirectory = authedProcedure.query(async ({ ctx }) => {
             const nationGenerals = generalsByNation.get(nation.id) ?? [];
             const nationCities = citiesByNation.get(nation.id) ?? [];
             const officers = Array.from({ length: 8 }, (_, index) => 12 - index).map((officerLevel) => {
-                const general = nationGenerals
-                    .filter((candidate) => candidate.officerLevel === officerLevel)
-                    .at(-1);
+                const general = nationGenerals.filter((candidate) => candidate.officerLevel === officerLevel).at(-1);
                 return {
                     officerLevel,
                     general: general
@@ -178,7 +176,7 @@ export const getNationDirectory = authedProcedure.query(async ({ ctx }) => {
                 },
                 power: readMetaNumber(nation.meta, 'power'),
                 capitalCityId: nation.capitalCityId ?? 0,
-                generalCount: nationGenerals.length,
+                generalCount: readMetaNumber(nation.meta, 'gennum', nationGenerals.length),
                 cityCount: nationCities.length,
                 officers,
                 ambassadorNames: secretPermissions
@@ -204,8 +202,8 @@ export const getNationDirectory = authedProcedure.query(async ({ ctx }) => {
         });
 });
 
-export const getGeneralDirectory = accessAuthedInputProcedure(z.object({ sort: zDirectorySort }).optional())
-    .query(async ({ ctx, input }) => {
+export const getGeneralDirectory = accessAuthedInputProcedure(z.object({ sort: zDirectorySort }).optional()).query(
+    async ({ ctx, input }) => {
         await getMyGeneral(ctx);
         const sort = input?.sort ?? 9;
         const [generals, nations, accessLogs, worldState] = await Promise.all([
@@ -365,4 +363,5 @@ export const getGeneralDirectory = accessAuthedInputProcedure(z.object({ sort: z
         });
 
         return { sort, generals: rows };
-    });
+    }
+);

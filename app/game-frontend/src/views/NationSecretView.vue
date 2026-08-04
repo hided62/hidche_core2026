@@ -31,6 +31,9 @@ const generals = computed(() =>
         return b.troopId - a.troopId || a.id - b.id;
     })
 );
+const closeWindow = () => window.close();
+const displayName = (general: { name: string; npcState: number }) =>
+    general.npcState > 0 && !/^[ⓜⓝ㉥]/u.test(general.name) ? `ⓝ${general.name}` : general.name;
 onMounted(load);
 </script>
 
@@ -39,7 +42,9 @@ onMounted(load);
         <table class="layout legacy-bg0 title">
             <tbody>
                 <tr>
-                    <td>암 행 부<br /><RouterLink to="/">창 닫기</RouterLink></td>
+                    <td>
+                        암 행 부<br /><button class="close-button" type="button" @click="closeWindow">창 닫기</button>
+                    </td>
                 </tr>
                 <tr>
                     <td>
@@ -49,7 +54,7 @@ onMounted(load);
                                 {{ label }}
                             </option>
                         </select>
-                        <button>정렬하기</button> <button :disabled="loading" @click="load">새로고침</button>
+                        <input type="submit" value="정렬하기" />
                     </td>
                 </tr>
             </tbody>
@@ -65,9 +70,23 @@ onMounted(load);
                         <th>전체 쌀</th>
                         <td>{{ data.summary.rice.toLocaleString() }}</td>
                         <th>평균 금</th>
-                        <td>{{ data.summary.averageGold.toFixed(2) }}</td>
+                        <td>
+                            {{
+                                data.summary.averageGold.toLocaleString(undefined, {
+                                    minimumFractionDigits: 2,
+                                    maximumFractionDigits: 2,
+                                })
+                            }}
+                        </td>
                         <th>평균 쌀</th>
-                        <td>{{ data.summary.averageRice.toFixed(2) }}</td>
+                        <td>
+                            {{
+                                data.summary.averageRice.toLocaleString(undefined, {
+                                    minimumFractionDigits: 2,
+                                    maximumFractionDigits: 2,
+                                })
+                            }}
+                        </td>
                     </tr>
                     <tr>
                         <th>전체 병력/장수</th>
@@ -86,34 +105,36 @@ onMounted(load);
             <table id="secret-general-list" class="layout list legacy-bg0">
                 <thead>
                     <tr>
-                        <th>이 름</th>
-                        <th>통무지</th>
-                        <th>부 대</th>
-                        <th>자 금</th>
-                        <th>군 량</th>
-                        <th>도시</th>
-                        <th>守</th>
-                        <th>병 종</th>
-                        <th>병 사</th>
-                        <th>훈련</th>
-                        <th>사기</th>
-                        <th class="commands">명 령</th>
-                        <th>삭턴</th>
-                        <th>턴</th>
+                        <th width="98">이 름</th>
+                        <th width="98">통무지</th>
+                        <th width="98">부 대</th>
+                        <th width="53">자 금</th>
+                        <th width="53">군 량</th>
+                        <th width="48">도시</th>
+                        <th width="28">守</th>
+                        <th width="58">병 종</th>
+                        <th width="63">병 사</th>
+                        <th width="38">훈련</th>
+                        <th width="38">사기</th>
+                        <th width="213">명 령</th>
+                        <th width="38">삭턴</th>
+                        <th width="48">턴</th>
                     </tr>
                 </thead>
                 <tbody>
                     <tr v-for="general in generals" :key="general.id">
-                        <td>{{ general.name }}<br />Lv {{ general.experienceLevel }}</td>
+                        <td>{{ displayName(general) }}<br />Lv {{ general.experienceLevel }}</td>
                         <td>
-                            {{ general.stats.leadership }}∥{{ general.stats.strength }}∥{{ general.stats.intelligence }}
+                            {{ general.stats.leadership
+                            }}<span v-if="general.leadershipBonus" class="bonus">+{{ general.leadershipBonus }}</span
+                            >∥{{ general.stats.strength }}∥{{ general.stats.intelligence }}
                         </td>
                         <td>{{ general.troopName ?? '-' }}</td>
                         <td>{{ general.gold }}</td>
                         <td>{{ general.rice }}</td>
                         <td>{{ general.cityName ?? '-' }}</td>
                         <td>{{ general.defenceTrainText }}</td>
-                        <td>{{ general.crewTypeId }}</td>
+                        <td>{{ general.crewTypeName }}</td>
                         <td>{{ general.crew }}</td>
                         <td>{{ general.train }}</td>
                         <td>{{ general.atmos }}</td>
@@ -126,7 +147,7 @@ onMounted(load);
                             >
                         </td>
                         <td>{{ general.killTurn }}</td>
-                        <td>{{ general.turnTime.slice(11, 16) }}</td>
+                        <td>{{ general.turnTime.slice(14, 19) }}</td>
                     </tr>
                 </tbody>
             </table>
@@ -134,7 +155,14 @@ onMounted(load);
         <table class="layout legacy-bg0 footer">
             <tbody>
                 <tr>
-                    <td><RouterLink to="/">창 닫기</RouterLink></td>
+                    <td><button class="close-button" type="button" @click="closeWindow">창 닫기</button></td>
+                </tr>
+                <tr>
+                    <td class="legacy-banner">
+                        삼국지 모의전투 PHP HiDCHe - unknown / KOEI의 이미지를 사용, 응용하였습니다 / 제작 :
+                        HideD(hided62@gmail.com) /
+                        <a href="https://github.com/hided/SamK" target="_blank" rel="noopener noreferrer">Credit</a>
+                    </td>
                 </tr>
             </tbody>
         </table>
@@ -143,11 +171,14 @@ onMounted(load);
 
 <style scoped>
 .secret-page {
-    width: 1000px;
-    margin: 8px auto 0;
+    width: auto;
+    margin: 0;
     font:
-        16px 'Times New Roman',
-        serif;
+        14px Pretendard,
+        'Apple SD Gothic Neo',
+        'Noto Sans KR',
+        'Malgun Gothic',
+        sans-serif;
     color: #fff;
 }
 .layout {
@@ -158,21 +189,54 @@ onMounted(load);
 td,
 th,
 .state {
-    border: 1px solid #777;
-    padding: 3px;
+    border: 1px solid gray;
+    padding: 0;
+    font-size: 14px;
+    word-break: break-all;
     text-align: center;
     font-weight: 400;
 }
-button,
-select {
-    border: 1px solid #888;
-    border-radius: 2px;
-    background: #222;
+.close-button {
+    height: 35.5px;
+    padding: 5.25px 10.5px;
+    border: 1px solid transparent;
+    border-radius: 3.5px;
+    background: rgb(55, 90, 127);
     color: #fff;
+    font-weight: 700;
+    line-height: 21px;
+    cursor: pointer;
+    transition:
+        color 0.15s,
+        background-color 0.15s,
+        border-color 0.15s,
+        box-shadow 0.15s;
+}
+input[type='submit'] {
+    cursor: pointer;
     padding: 1px 6px;
+    border: 2px outset #fff;
+    background: rgb(107, 107, 107);
+    color: #fff;
+}
+select {
+    padding: 0;
+    border: 1px solid rgb(133, 133, 133);
+    background: rgb(107, 107, 107);
+    color: #fff;
+}
+.legacy-bg0 {
+    background-color: transparent;
+}
+.legacy-banner a {
+    color: inherit;
 }
 .summary {
     margin: 5px auto;
+}
+.summary td,
+.summary th {
+    padding-block: 1px;
 }
 .summary th,
 .list th {
@@ -182,19 +246,27 @@ select {
     width: 120px;
 }
 .list {
-    width: 1000px;
-    margin-left: 0;
+    width: 974px;
+    margin: 0 auto;
     border-collapse: separate;
+    table-layout: auto;
+}
+.list th,
+.list td {
+    box-sizing: border-box;
+}
+.list tbody td {
+    padding-block: 0;
 }
 .list tbody tr {
-    height: 39px;
-}
-.commands {
-    width: 213px;
+    height: 36.36px;
 }
 .turns {
     text-align: left;
     font-size: 11px;
+}
+.bonus {
+    color: cyan;
 }
 .error {
     color: #ff7373;
@@ -202,9 +274,68 @@ select {
 .footer {
     margin-top: 5px;
 }
+.title,
+.footer {
+    margin-right: auto;
+    margin-left: auto;
+}
+.title td,
+.footer td {
+    text-align: left;
+}
 @media (max-width: 1000px) {
-    .secret-page {
-        margin: 8px 0 0;
+    .list {
+        width: 100vw;
+        margin-left: 0;
+        table-layout: fixed;
+    }
+    .list th,
+    .list td {
+        font-size: 14px;
+    }
+    .list tbody tr {
+        height: auto;
+    }
+    .list tbody td {
+        font-size: 12px;
+    }
+    .list :is(th, td):nth-child(1),
+    .list :is(th, td):nth-child(2) {
+        width: 34px;
+    }
+    .list :is(th, td):nth-child(3) {
+        width: 32px;
+    }
+    .list :is(th, td):nth-child(4) {
+        width: 22px;
+    }
+    .list :is(th, td):nth-child(5) {
+        width: 19px;
+    }
+    .list :is(th, td):nth-child(6) {
+        width: 21px;
+    }
+    .list :is(th, td):nth-child(7) {
+        width: 17px;
+    }
+    .list :is(th, td):nth-child(8) {
+        width: 22px;
+    }
+    .list :is(th, td):nth-child(9) {
+        width: 23px;
+    }
+    .list :is(th, td):nth-child(10),
+    .list :is(th, td):nth-child(11) {
+        width: 18px;
+    }
+    .list :is(th, td):nth-child(12) {
+        width: 54px;
+    }
+    .list :is(th, td):nth-child(13) {
+        width: 26px;
+    }
+    .list :is(th, td):nth-child(14) {
+        width: 22px;
     }
 }
 </style>

@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref, watch } from 'vue';
+import { useRouter } from 'vue-router';
 
 import { resolveGeneralIconBackgroundImage } from '../utils/generalIcon';
 import { trpc } from '../utils/trpc';
@@ -24,6 +25,7 @@ const cityDraft = reactive<Record<OfficerLevel, { cityId: number; generalId: num
 const kickTargetId = ref(0);
 const ambassadorSelection = ref<number[]>([]);
 const auditorSelection = ref<number[]>([]);
+const router = useRouter();
 
 const resolveErrorMessage = (value: unknown): string =>
     value instanceof Error ? value.message : typeof value === 'string' ? value : 'unknown_error';
@@ -183,7 +185,11 @@ onMounted(() => void loadPersonnel());
         <table class="legacy-table heading-table">
             <tbody>
                 <tr>
-                    <td>인 사 부<br /><RouterLink class="legacy-button" to="/">돌아가기</RouterLink></td>
+                    <td>
+                        인 사 부<br /><button class="legacy-button" type="button" @click="router.push('/')">
+                            돌아가기
+                        </button>
+                    </td>
                 </tr>
             </tbody>
         </table>
@@ -353,10 +359,10 @@ onMounted(() => void loadPersonnel());
                     <col class="city-officer-column" />
                 </colgroup>
                 <tbody>
+                    <tr>
+                        <td colspan="5" class="spacer" />
+                    </tr>
                     <template v-if="canManage">
-                        <tr>
-                            <td colspan="5" class="spacer" />
-                        </tr>
                         <tr>
                             <td colspan="5" class="section-title orange-bg">도 시 관 직 임 명</td>
                         </tr>
@@ -403,6 +409,9 @@ onMounted(() => void loadPersonnel());
                     </tr>
                     <template v-for="(city, index) in data.cityAssignments" :key="city.id">
                         <tr v-if="index === 0 || data.cityAssignments[index - 1]?.region !== city.region">
+                            <td colspan="5" class="region-spacer" />
+                        </tr>
+                        <tr v-if="index === 0 || data.cityAssignments[index - 1]?.region !== city.region">
                             <td colspan="5" class="region-heading">【 {{ regionMap[city.region] ?? '-' }} 】</td>
                         </tr>
                         <tr>
@@ -434,7 +443,7 @@ onMounted(() => void loadPersonnel());
                 </tbody>
             </table>
 
-            <table v-if="canManage" class="legacy-table kick-table">
+            <table class="legacy-table kick-table">
                 <colgroup>
                     <col class="kick-label-column" />
                     <col class="kick-control-column" />
@@ -464,7 +473,6 @@ onMounted(() => void loadPersonnel());
                                 </select>
                                 <button type="button" :disabled="kickTargetId === 0" @click="kickGeneral">추방</button>
                             </template>
-                            <template v-else>이번 분기에는 추방할 수 없습니다.</template>
                         </td>
                     </tr>
                 </tbody>
@@ -473,7 +481,16 @@ onMounted(() => void loadPersonnel());
             <table class="legacy-table footer-table">
                 <tbody>
                     <tr>
-                        <td><RouterLink class="legacy-button" to="/">돌아가기</RouterLink></td>
+                        <td><button class="legacy-button" type="button" @click="router.push('/')">돌아가기</button></td>
+                    </tr>
+                    <tr>
+                        <td class="legacy-banner">
+                            삼국지 모의전투 PHP HiDCHe - unknown / KOEI의 이미지를 사용, 응용하였습니다 / 제작 :
+                            HideD(hided62@gmail.com) /
+                            <a href="https://sam.hided.net/wiki/hidche/credit" target="_blank" rel="noreferrer"
+                                >Credit</a
+                            >
+                        </td>
                     </tr>
                 </tbody>
             </table>
@@ -504,6 +521,14 @@ onMounted(() => void loadPersonnel());
 .legacy-table td {
     border: 1px solid gray;
     padding: 0;
+}
+.region-spacer {
+    height: 3px;
+    background-image: var(--sammo-texture-green);
+}
+.legacy-banner a {
+    color: #fff;
+    text-decoration: underline;
 }
 .heading-table {
     height: 56px;

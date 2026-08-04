@@ -55,7 +55,7 @@ const onQuick = (item: QuickNavigationItem) => {
                 외부 메뉴
                 <span class="dropup-caret" aria-hidden="true"></span>
             </button>
-            <ul v-show="openId === 'global'" id="mobile-global-menu" class="bottom-popup" role="menu">
+            <ul v-if="openId === 'global'" id="mobile-global-menu" class="bottom-popup" role="menu">
                 <template v-for="entry in globalEntries" :key="entry.id">
                     <li v-if="entry.kind === 'link'" role="none">
                         <MainNavigationLink
@@ -122,7 +122,7 @@ const onQuick = (item: QuickNavigationItem) => {
                 국가 메뉴
                 <span class="dropup-caret" aria-hidden="true"></span>
             </button>
-            <ul v-show="openId === 'nation'" id="mobile-nation-menu" class="bottom-popup" role="menu">
+            <ul v-if="openId === 'nation'" id="mobile-nation-menu" class="bottom-popup" role="menu">
                 <template v-for="entry in nationNavigation" :key="entry.id">
                     <li v-if="entry.kind === 'link'" role="none">
                         <MainNavigationLink
@@ -163,7 +163,7 @@ const onQuick = (item: QuickNavigationItem) => {
                 빠른 이동
                 <span class="dropup-caret" aria-hidden="true"></span>
             </button>
-            <ul v-show="openId === 'quick'" id="mobile-quick-menu" class="bottom-popup" role="menu">
+            <ul v-if="openId === 'quick'" id="mobile-quick-menu" class="bottom-popup" role="menu">
                 <template v-for="item in quickNavigation" :key="item.id">
                     <template v-if="'kind' in item">
                         <li class="bottom-heading" role="presentation">{{ item.label }}</li>

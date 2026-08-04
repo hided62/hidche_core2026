@@ -2,6 +2,7 @@ import { TRPCError } from '@trpc/server';
 
 import { asRecord } from '@sammo-ts/common';
 
+import { loadUnitSetDefinitionByName } from '../../../battleSim/unitSetLoader.js';
 import { accessAuthedProcedure } from '../../../trpc.js';
 import { getMyGeneral } from '../../shared/general.js';
 import { assertNationAccess, resolveNationPermission } from '../shared.js';
@@ -41,7 +42,7 @@ export const getSecretGeneralList = accessAuthedProcedure.query(async ({ ctx }) 
         });
     }
 
-    const [cities, troops, generalRows] = await Promise.all([
+    const [cities, troops, generalRows, worldState] = await Promise.all([
         ctx.db.city.findMany({ select: { id: true, name: true } }),
         ctx.db.troop.findMany({
             where: { nationId: me.nationId },
@@ -51,7 +52,14 @@ export const getSecretGeneralList = accessAuthedProcedure.query(async ({ ctx }) 
             where: { nationId: me.nationId },
             orderBy: [{ turnTime: 'asc' }, { id: 'asc' }],
         }),
+        ctx.db.worldState.findFirst({ select: { config: true } }),
     ]);
+    const worldConfig = asRecord(worldState?.config);
+    const environment = asRecord(worldConfig.environment ?? worldConfig.map);
+    const unitSetName =
+        typeof environment.unitSet === 'string' && environment.unitSet.trim() ? environment.unitSet : ctx.profile.id;
+    const unitSet = await loadUnitSetDefinitionByName(unitSetName);
+    const crewTypeNames = new Map((unitSet.crewTypes ?? []).map((crewType) => [crewType.id, crewType.name]));
     const generalIds = generalRows.map((general) => general.id);
     const turns = generalIds.length
         ? await ctx.db.generalTurn.findMany({
@@ -92,6 +100,7 @@ export const getSecretGeneralList = accessAuthedProcedure.query(async ({ ctx }) 
             defenceTrain,
             defenceTrainText: defenceTrainText(defenceTrain),
             crewTypeId: general.crewTypeId,
+            crewTypeName: crewTypeNames.get(general.crewTypeId) ?? '-',
             crew: general.crew,
             train: general.train,
             atmos: general.atmos,
