@@ -15,4 +15,14 @@ describe('scenarioCatalog git ref support', () => {
         const sorted = [...ids].sort((a, b) => a - b);
         expect(ids).toEqual(sorted);
     });
+
+    it('rejects without crashing when git cannot be spawned', async () => {
+        const originalPath = process.env.PATH;
+        process.env.PATH = '/nonexistent';
+        try {
+            await expect(resolveGitCommitSha('HEAD')).rejects.toThrow('git ref not found.');
+        } finally {
+            process.env.PATH = originalPath;
+        }
+    });
 });

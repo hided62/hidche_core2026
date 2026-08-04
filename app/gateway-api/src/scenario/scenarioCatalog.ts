@@ -62,6 +62,9 @@ const runGit = (args: string[]): Promise<{ ok: boolean; output: string }> =>
         child.stderr.on('data', (chunk) => {
             output += chunk.toString();
         });
+        child.on('error', (error) => {
+            resolve({ ok: false, output: `${output}${error.message}` });
+        });
         child.on('close', (code) => {
             resolve({ ok: code === 0, output });
         });
@@ -308,7 +311,10 @@ export const listScenarioPreviews = async (options?: { gitRef?: string | null })
         return cached.data;
     }
     const ids = await listScenarioIdsFromGit(commitSha);
-    const previews = await Promise.all(ids.map((id) => buildScenarioPreviewFromGit(commitSha, id)));
+    const previews: ScenarioPreview[] = [];
+    for (const id of ids) {
+        previews.push(await buildScenarioPreviewFromGit(commitSha, id));
+    }
     previewCache.set(cacheKey, {
         loadedAt: Date.now(),
         data: previews,
