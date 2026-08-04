@@ -186,9 +186,14 @@ const zRevealMode = z.enum(['after_vote', 'after_end']);
 export const voteRouter = router({
     getVoteList: authedProcedure.query(async ({ ctx }) => {
         const worldState = await ctx.db.worldState.findFirst();
+        const worldMeta = asRecord(worldState?.meta ?? {});
         const config = asRecord(worldState?.config ?? {});
         const constValues = asRecord(config.const);
-        const develCost = resolveNumber(constValues, ['develCost', 'develcost', 'develrate'], 0);
+        const develCost = resolveNumber(
+            worldMeta,
+            ['develcost', 'develCost'],
+            resolveNumber(constValues, ['develCost', 'develcost', 'develrate'], 0)
+        );
         const voteReward = develCost * 5;
 
         const rows = await ctx.db.$queryRaw<VoteListRow[]>(GamePrisma.sql`
@@ -404,12 +409,16 @@ export const voteRouter = router({
                 throw new TRPCError({ code: 'PRECONDITION_FAILED', message: 'World state is not initialized.' });
             }
 
+            const worldMeta = asRecord(worldState.meta);
             const config = asRecord(worldState.config);
             const constValues = asRecord(config.const);
-            const develCost = resolveNumber(constValues, ['develCost', 'develcost', 'develrate'], 0);
+            const develCost = resolveNumber(
+                worldMeta,
+                ['develcost', 'develCost'],
+                resolveNumber(constValues, ['develCost', 'develcost', 'develrate'], 0)
+            );
             const voteReward = develCost * 5;
 
-            const worldMeta = asRecord(worldState.meta);
             const scenarioMeta = asRecord(worldMeta.scenarioMeta);
             const startYear = readMetaNumber(scenarioMeta, 'startYear', worldState.currentYear);
             const initYear = readMetaNumber(worldMeta, 'initYear', startYear);

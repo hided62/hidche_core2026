@@ -24,13 +24,13 @@ const auth: GameSessionTokenPayload = {
 type LogQuery = {
     where: {
         scope: LogScope;
-        category: LogCategory;
+        category: LogCategory | { in: LogCategory[] };
         generalId?: number;
         id: { gte: number };
     };
     orderBy: { id: 'desc' };
     take: number;
-    select: { id: true; text: true };
+    select: { id: true; text: true; createdAt: true };
 };
 
 const buildContext = (findMany: (query: LogQuery) => Promise<Array<{ id: number; text: string }>>) =>
@@ -56,7 +56,7 @@ describe('general.getRecentRecords', () => {
                     { id: 20, text: '개인 cursor' },
                 ];
             }
-            if (query.where.category === LogCategory.SUMMARY) {
+            if (typeof query.where.category === 'object' && query.where.category.in.includes(LogCategory.SUMMARY)) {
                 return [
                     { id: 32, text: '장수 최신' },
                     { id: 20, text: '장수 cursor' },
@@ -89,7 +89,7 @@ describe('general.getRecentRecords', () => {
             },
             orderBy: { id: 'desc' },
             take: 16,
-            select: { id: true, text: true },
+            select: { id: true, text: true, createdAt: true },
         });
     });
 

@@ -1048,7 +1048,10 @@ export const createReservedTurnHandler = async (options: {
                 }
                 const actionContext = specificContext ?? baseContext;
                 if ((process.env.CORE_AI_TRACE_GENERAL_IDS?.split(',') ?? []).includes(String(currentGeneral.id))) {
-                    const tracedContext = actionContext as ActionContextBase & { destCity?: City; destGeneral?: TurnGeneral };
+                    const tracedContext = actionContext as ActionContextBase & {
+                        destCity?: City;
+                        destGeneral?: TurnGeneral;
+                    };
                     process.stdout.write(
                         `AI_ACTION_INPUT_TRACE ${JSON.stringify({ generalId: currentGeneral.id, kind, actionKey, actionArgs, destCityId: tracedContext.destCity?.id, destGeneralId: tracedContext.destGeneral?.id })}\n`
                     );
@@ -1731,6 +1734,26 @@ export const createReservedTurnHandler = async (options: {
                         nationFallback,
                     });
                 const candidate = ai.chooseGeneralTurn(generalCommand);
+                const npcMessage = ai.consumeNpcMessage();
+                if (npcMessage) {
+                    const messageTarget = {
+                        generalId: currentGeneral.id,
+                        generalName: currentGeneral.name,
+                        nationId: currentGeneral.nationId,
+                        nationName: currentNation?.name ?? '재야',
+                        color: currentNation?.color ?? '#000000',
+                        icon: currentGeneral.picture ?? '',
+                    };
+                    messages.push({
+                        msgType: 'public',
+                        src: messageTarget,
+                        dest: messageTarget,
+                        text: npcMessage,
+                        time: new Date(context.world.lastTurnTime),
+                        validUntil: new Date('9999-12-31T00:00:00.000Z'),
+                        option: {},
+                    });
+                }
                 if (candidate) {
                     generalAutorunMode =
                         candidate.action !== generalCommand.action ||

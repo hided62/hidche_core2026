@@ -39,6 +39,9 @@ describe('formatLegacyLogHtml', () => {
         expect(formatLegacyLogHtml('<span class="unknown">미허용</span>')).toBe(
             '&lt;span class="unknown"&gt;미허용</span>'
         );
+        expect(formatLegacyLogHtml('<span class="hidden_but_copyable">(전투시드: fixed-seed)</span>')).toBe(
+            '<span class="hidden_but_copyable">(전투시드: fixed-seed)</span>'
+        );
     });
 
     it('keeps the fixed hex color form emitted by flag-change logs but rejects other inline CSS', () => {

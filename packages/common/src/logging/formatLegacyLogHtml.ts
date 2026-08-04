@@ -33,6 +33,7 @@ const safeSpanClasses = new Set([
     'war_type_attack',
     'war_type_defense',
     'war_type_siege',
+    'hidden_but_copyable',
 ]);
 
 const escapeText = (value: string): string =>

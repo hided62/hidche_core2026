@@ -92,6 +92,7 @@ const buildContext = (options: {
     voteRows?: Array<{ selection: number[]; cnt: number }>;
     pollRow?: typeof poll;
     configConst?: Record<string, unknown>;
+    metaDevelCost?: number;
     auctionTargets?: string[];
 }) => {
     const auth = options.auth === undefined ? buildAuth() : options.auth;
@@ -136,6 +137,7 @@ const buildContext = (options: {
                 tickSeconds: 3600,
                 config: { const: { develCost: 18, allItems: {}, ...(options.configConst ?? {}) } },
                 meta: {
+                    ...(options.metaDevelCost === undefined ? {} : { develcost: options.metaDevelCost }),
                     hiddenSeed: 'seed',
                     scenarioId: 200,
                     initYear: 180,
@@ -214,6 +216,16 @@ describe('vote router actor and permission boundaries', () => {
                 goldReward: 90,
             })
         );
+    });
+
+    it('uses the current world develcost for the legacy five-times survey reward', async () => {
+        const fixture = buildContext({ metaDevelCost: 30, configConst: { develCost: 0 } });
+
+        await expect(appRouter.createCaller(fixture.context).vote.getVoteList()).resolves.toMatchObject({
+            voteReward: 150,
+        });
+        await appRouter.createCaller(fixture.context).vote.submitVote({ voteId: 1, selection: [0] });
+        expect(fixture.requestCommand).toHaveBeenCalledWith(expect.objectContaining({ goldReward: 150 }));
     });
 
     it('includes active unique auctions in the API-side reward expectation', async () => {

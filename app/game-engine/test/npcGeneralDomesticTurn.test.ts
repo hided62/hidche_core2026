@@ -117,7 +117,7 @@ describe('NPC 일반 내정 턴', () => {
                     specialWar: null,
                 },
                 triggerState: { flags: {}, counters: {}, modifiers: {}, meta: {} },
-                meta: { killturn: 999 },
+                meta: { killturn: 999, text: '기부는 저처럼 돈 많은 사람들이 많이 하면 됩니다' },
                 officerLevel: 4,
                 experience: 0,
                 dedication: 0,
@@ -222,7 +222,7 @@ describe('NPC 일반 내정 턴', () => {
                 stat: { total: 300, min: 10, max: 100, npcTotal: 150, npcMax: 50, npcMin: 10, chiefMin: 70 },
                 iconPath: '',
                 map: {},
-                const: {},
+                const: { npcMessageFreqByDay: 144 },
                 environment: { mapName: 'npc_domestic_map', unitSet: 'default' },
             },
             scenarioMeta: {
@@ -291,5 +291,12 @@ describe('NPC 일반 내정 턴', () => {
             security: 1063,
         });
         expect(world.getGeneralById(1)!.turnTime.getTime()).toBe(addMinutes(mockDate, 10).getTime());
+        expect(world.peekDirtyState().messages).toContainEqual(
+            expect.objectContaining({
+                msgType: 'public',
+                text: '기부는 저처럼 돈 많은 사람들이 많이 하면 됩니다',
+                src: expect.objectContaining({ generalId: 1, generalName: 'NPC_무장', nationId: 1 }),
+            })
+        );
     });
 });
