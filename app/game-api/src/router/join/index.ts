@@ -15,6 +15,7 @@ import {
 } from '@sammo-ts/logic';
 import { readInheritancePoint, resolveInheritConstants } from '../../services/inheritance.js';
 import { loadAuthoritativeAccountIcon } from '../../services/accountIconSync.js';
+import { loadCurrentGameTime } from '../../services/gameClock.js';
 import { getSelectionPoolStatus, reserveSelectionPool, resolveSelectionMaxGeneral } from '../../services/selectPool.js';
 import {
     ConflictingTurnDaemonCommandError,
@@ -373,10 +374,12 @@ export const joinRouter = router({
                 message: 'World state is not initialized.',
             });
         }
+        const gameTime = await loadCurrentGameTime(ctx.db);
         return reserveSelectionPool({
             db: ctx.db,
             worldState,
             userId,
+            now: gameTime.now,
             seedOwnerIdentity: ctx.auth?.user.legacyMemberNo ?? userId,
         });
     }),
@@ -558,6 +561,7 @@ export const joinRouter = router({
                 });
             }
             try {
+                const gameTime = await loadCurrentGameTime(ctx.db);
                 return await reserveNpcPossessionCandidates({
                     db: ctx.db,
                     worldState,
@@ -565,6 +569,7 @@ export const joinRouter = router({
                     ownerIdentity: auth.user.legacyMemberNo ?? auth.user.id,
                     refresh: input.refresh,
                     keepIds: input.keepIds,
+                    now: gameTime.now,
                 });
             } catch (error) {
                 if (error instanceof NpcPossessionError) {

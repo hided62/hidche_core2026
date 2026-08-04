@@ -1,5 +1,5 @@
 import type { TurnSchedule } from '@sammo-ts/logic';
-import { parseOptionalBoolean, parseOptionalNumber } from '@sammo-ts/common';
+import { parseOptionalBoolean, parseOptionalNumber, type GameClockMode } from '@sammo-ts/common';
 
 import type { TurnRunBudget } from '../lifecycle/types.js';
 import { resolveDatabaseUrl } from '../scenario/databaseUrl.js';
@@ -16,6 +16,7 @@ export interface TurnDaemonCliOptions {
     budget?: Partial<TurnRunBudget>;
     enableDatabaseFlush?: boolean;
     adminActionIntervalMs?: number;
+    gameClockMode?: GameClockMode;
     env?: NodeJS.ProcessEnv;
 }
 
@@ -58,6 +59,11 @@ export const runTurnDaemonCli = async (options: TurnDaemonCliOptions = {}): Prom
     const enableDatabaseFlush = options.enableDatabaseFlush ?? parseOptionalBoolean(env.TURN_FLUSH_DB) ?? true;
     const pauseGateIntervalMs = parseOptionalNumber(env.TURN_PAUSE_GATE_MS);
     const adminActionIntervalMs = options.adminActionIntervalMs ?? parseOptionalNumber(env.TURN_ADMIN_ACTION_MS);
+    const rawGameClockMode = options.gameClockMode ?? env.GAME_CLOCK_MODE;
+    if (rawGameClockMode && rawGameClockMode !== 'realtime' && rawGameClockMode !== 'manual') {
+        throw new Error(`GAME_CLOCK_MODE must be realtime or manual: ${rawGameClockMode}`);
+    }
+    const gameClockMode = rawGameClockMode as GameClockMode | undefined;
 
     const runtime = await createTurnDaemonRuntime({
         profile,
@@ -70,6 +76,7 @@ export const runTurnDaemonCli = async (options: TurnDaemonCliOptions = {}): Prom
         enableDatabaseFlush,
         pauseGateIntervalMs,
         adminActionIntervalMs,
+        gameClockMode,
     });
 
     let closed = false;

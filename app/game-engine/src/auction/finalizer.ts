@@ -1,12 +1,5 @@
 import { createGamePostgresConnector, GamePrisma } from '@sammo-ts/infra';
-import {
-    ActionLogger,
-    ItemLoader,
-    LogFormat,
-    UserLogger,
-    isItemKey,
-    resolveUniqueConfig,
-} from '@sammo-ts/logic';
+import { ActionLogger, ItemLoader, LogFormat, UserLogger, isItemKey, resolveUniqueConfig } from '@sammo-ts/logic';
 import { cloneItemInventory, ensureItemInventory, equipNewItem } from '@sammo-ts/logic/items/index.js';
 import { asRecord, JosaUtil } from '@sammo-ts/common';
 
@@ -180,7 +173,7 @@ export const createAuctionFinalizer = async (options: {
             );
             const highestBid = bidRows[0] ?? null;
 
-            const now = new Date();
+            const now = world.getGameNow(new Date());
             const logs: LogEntryDraft[] = [];
             const globalLogger = new ActionLogger();
 
@@ -244,9 +237,7 @@ export const createAuctionFinalizer = async (options: {
                 const remainExtension = detail.remainCloseDateExtensionCnt ?? 0;
                 if (bidMeta.tryExtendCloseDate === true && remainExtension > 0) {
                     const turnMinutes = await resolveTurnMinutes(db);
-                    const nextCloseAt = new Date(
-                        auction.closeAt.getTime() + Math.max(5, turnMinutes) * 60_000
-                    );
+                    const nextCloseAt = new Date(auction.closeAt.getTime() + Math.max(5, turnMinutes) * 60_000);
                     const nextLatestBidCloseAt = new Date(
                         nextCloseAt.getTime() +
                             Math.max(MIN_EXTENSION_MINUTES_PER_BID, turnMinutes * COEFF_EXTENSION_MINUTES_PER_BID) *
@@ -263,6 +254,7 @@ export const createAuctionFinalizer = async (options: {
                             SET status = 'OPEN',
                                 detail = ${JSON.stringify(nextDetail)}::jsonb,
                                 close_at = ${nextCloseAt},
+                                close_tick = ${BigInt(world.dateToGameTick(nextCloseAt))},
                                 updated_at = ${now}
                             WHERE id = ${auctionId}
                         `
@@ -419,6 +411,7 @@ export const createAuctionFinalizer = async (options: {
                                 host_name = ${bidder.id === auction.hostGeneralId ? auction.hostName : '(상인)'},
                                 detail = ${JSON.stringify(nextDetail)}::jsonb,
                                 close_at = ${nextCloseAt},
+                                close_tick = ${BigInt(world.dateToGameTick(nextCloseAt))},
                                 updated_at = ${now}
                             WHERE id = ${auctionId}
                         `
@@ -449,10 +442,7 @@ export const createAuctionFinalizer = async (options: {
                         );
                         const nextLatestBidCloseAt = new Date(
                             nextCloseAt.getTime() +
-                                Math.max(
-                                    MIN_EXTENSION_MINUTES_PER_BID,
-                                    turnMinutes * COEFF_EXTENSION_MINUTES_PER_BID
-                                ) *
+                                Math.max(MIN_EXTENSION_MINUTES_PER_BID, turnMinutes * COEFF_EXTENSION_MINUTES_PER_BID) *
                                     60_000
                         );
                         const nextDetail = {
@@ -467,6 +457,7 @@ export const createAuctionFinalizer = async (options: {
                                     host_name = ${bidder.id === auction.hostGeneralId ? auction.hostName : '(상인)'},
                                     detail = ${JSON.stringify(nextDetail)}::jsonb,
                                     close_at = ${nextCloseAt},
+                                    close_tick = ${BigInt(world.dateToGameTick(nextCloseAt))},
                                     updated_at = ${now}
                                 WHERE id = ${auctionId}
                             `

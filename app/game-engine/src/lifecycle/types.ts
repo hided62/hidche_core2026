@@ -7,6 +7,7 @@ import type {
     TurnRunResult,
 } from '@sammo-ts/common';
 import type { GamePrisma } from '@sammo-ts/infra';
+import type { GameClockMode } from '@sammo-ts/common';
 
 export type {
     RunReason,
@@ -51,6 +52,8 @@ export interface TurnStateStore {
     saveLastTurnTime(turnTime: Date): Promise<void>;
     loadCheckpoint(): Promise<TurnCheckpoint | undefined>;
     saveCheckpoint(checkpoint?: TurnCheckpoint): Promise<void>;
+    loadGameClock?(wallNow?: Date): Promise<{ mode: GameClockMode; now: Date }>;
+    advanceGameClockTo?(target: Date, wallNow: Date): Promise<void>;
 }
 
 export interface TurnDaemonControlQueue {

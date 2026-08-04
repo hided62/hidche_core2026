@@ -47,15 +47,18 @@ const syncAuctionTimers = async (
 ): Promise<number> => {
     const auctions = await db.auction.findMany({
         where: { status: 'OPEN' },
-        select: { id: true, closeAt: true },
+        select: { id: true, closeAt: true, closeTick: true },
     });
     if (auctions.length > 0) {
         await redis.zAdd(
             `sammo:${profileName}:auction:timer`,
-            auctions.map((auction) => ({
-                score: auction.closeAt.getTime(),
-                value: String(auction.id),
-            }))
+            auctions.map((auction) => {
+                const score = auction.closeTick == null ? auction.closeAt.getTime() : Number(auction.closeTick);
+                if (!Number.isSafeInteger(score)) {
+                    throw new Error(`Auction ${auction.id} has an unsafe logical deadline: ${auction.closeTick}`);
+                }
+                return { score, value: String(auction.id) };
+            })
         );
     }
     return auctions.length;

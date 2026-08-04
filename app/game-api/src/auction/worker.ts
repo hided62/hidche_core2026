@@ -9,9 +9,10 @@ import {
 
 import { resolveGameApiConfigFromEnv } from '../config.js';
 import { createBestEffortResourceCloser } from '../services/bestEffortResourceCloser.js';
+import { loadCurrentGameTime } from '../services/gameClock.js';
 import { createPollingWorkerControl, waitForWorkerPoll } from '../services/pollingWorkerLifecycle.js';
 import { buildAuctionTimerKeys } from './keys.js';
-import { seedAuctionTimers } from './scheduler.js';
+import { resolveAuctionTimerScore, seedAuctionTimers } from './scheduler.js';
 
 interface RedisTimerClient {
     zRangeByScore(
@@ -86,8 +87,9 @@ export const processDueAuctionId = async (options: {
     historyKey: string;
     id: string;
     nowMs: number;
+    nowTick?: number | null;
 }): Promise<'FINALIZING' | 'RESCHEDULED' | 'IGNORED'> => {
-    const { db, redis, timerKey, historyKey, id, nowMs } = options;
+    const { db, redis, timerKey, historyKey, id, nowMs, nowTick = null } = options;
     const auctionId = Number(id);
     if (!Number.isSafeInteger(auctionId) || auctionId < 1) {
         return 'IGNORED';
@@ -102,13 +104,16 @@ export const processDueAuctionId = async (options: {
                     updated_at = ${now}
                 WHERE id = ${auctionId}
                   AND status = 'OPEN'
-                  AND close_at <= ${now}
+                  AND (
+                      (close_tick IS NOT NULL AND close_tick <= ${nowTick === null ? null : BigInt(nowTick)})
+                      OR (close_tick IS NULL AND close_at <= ${now})
+                  )
             `
         );
 
         const current = await transaction.auction.findUnique({
             where: { id: auctionId },
-            select: { status: true, closeAt: true },
+            select: { status: true, closeAt: true, closeTick: true },
         });
         if (!current) {
             if (updated > 0) {
@@ -117,7 +122,7 @@ export const processDueAuctionId = async (options: {
             return { status: 'IGNORED' as const };
         }
         if (current.status === 'OPEN') {
-            return { status: 'RESCHEDULED' as const, closeAt: current.closeAt };
+            return { status: 'RESCHEDULED' as const, closeAt: current.closeAt, closeTick: current.closeTick };
         }
         if (current.status !== 'FINALIZING') {
             return { status: 'IGNORED' as const };
@@ -159,7 +164,13 @@ export const processDueAuctionId = async (options: {
         return 'FINALIZING';
     }
     if (outcome.status === 'RESCHEDULED') {
-        await redis.zAdd(timerKey, [{ score: outcome.closeAt.getTime(), value: String(auctionId) }]);
+        const gameTime = await loadCurrentGameTime(db, now);
+        await redis.zAdd(timerKey, [
+            {
+                score: resolveAuctionTimerScore(gameTime, outcome.closeAt, outcome.closeTick),
+                value: String(auctionId),
+            },
+        ]);
         return 'RESCHEDULED';
     }
     return 'IGNORED';
@@ -188,17 +199,20 @@ export const runAuctionWorker = async (options: AuctionWorkerOptions = {}): Prom
 
     try {
         while (!control.signal.aborted) {
-            const nowMs = Date.now();
-            const historyTrimBefore = nowMs - config.auctionTimerRetentionSeconds * 1000;
+            const operationalNowMs = Date.now();
+            const gameTime = await loadCurrentGameTime(postgres.prisma, new Date(operationalNowMs));
+            const gameNowMs = gameTime.now.getTime();
+            const dueScore = gameTime.tick ?? gameNowMs;
+            const historyTrimBefore = operationalNowMs - config.auctionTimerRetentionSeconds * 1000;
             if (historyTrimBefore > 0) {
                 await redis.client.zRemRangeByScore(keys.historyKey, 0, historyTrimBefore);
             }
-            if (nowMs >= nextResyncAt) {
+            if (operationalNowMs >= nextResyncAt) {
                 await seedAuctionTimers(postgres.prisma, redis.client, keys);
-                nextResyncAt = nowMs + config.auctionTimerResyncMs;
+                nextResyncAt = operationalNowMs + config.auctionTimerResyncMs;
             }
 
-            const dueIds = await popDueAuctionIds(redis.client, keys.timerKey, nowMs, 100);
+            const dueIds = await popDueAuctionIds(redis.client, keys.timerKey, dueScore, 100);
             if (dueIds.length > 0) {
                 for (const id of dueIds) {
                     try {
@@ -208,7 +222,8 @@ export const runAuctionWorker = async (options: AuctionWorkerOptions = {}): Prom
                             timerKey: keys.timerKey,
                             historyKey: keys.historyKey,
                             id,
-                            nowMs,
+                            nowMs: gameNowMs,
+                            nowTick: gameTime.tick,
                         });
                     } catch (error) {
                         const message = error instanceof Error ? error.message : 'Unknown auction worker error';
@@ -233,9 +248,9 @@ export const runAuctionWorker = async (options: AuctionWorkerOptions = {}): Prom
 
             const nextDueMs = await getNextDueMs(redis.client, keys.timerKey);
             const waitMs =
-                nextDueMs === null
-                    ? config.auctionTimerPollMs
-                    : Math.max(0, Math.min(config.auctionTimerPollMs, nextDueMs - Date.now()));
+                gameTime.tick === null && nextDueMs !== null
+                    ? Math.max(0, Math.min(config.auctionTimerPollMs, nextDueMs - gameNowMs))
+                    : config.auctionTimerPollMs;
             await waitForWorkerPoll(control.signal, waitMs);
         }
     } finally {

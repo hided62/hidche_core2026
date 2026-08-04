@@ -1,5 +1,5 @@
 import { loadActionModuleBundle, type TurnCommandProfile, type TurnSchedule } from '@sammo-ts/logic';
-import { buildGameEventChannel, type RealtimeEvent } from '@sammo-ts/common';
+import { buildGameEventChannel, GameClock, type GameClockMode, type RealtimeEvent } from '@sammo-ts/common';
 import { createGamePostgresConnector, createRedisConnector, resolveRedisConfigFromEnv } from '@sammo-ts/infra';
 import { NATION_TRAIT_KEYS, NationTraitLoader, loadNationTraitModules } from '@sammo-ts/logic';
 
@@ -87,6 +87,7 @@ export interface TurnDaemonRuntimeOptions {
     gatewayDatabaseUrl?: string;
     defaultBudget?: TurnRunBudget;
     clock?: Clock;
+    gameClockMode?: GameClockMode;
     controlQueue?: TurnDaemonControlQueue;
     schedule?: TurnSchedule;
     tickMinutes?: number;
@@ -195,9 +196,31 @@ const createTurnDaemonRuntimeWithLease = async (
         databaseUrl: options.databaseUrl,
         mapOptions: options.mapOptions,
     });
+    const clock = options.clock ?? new SystemClock();
 
     const tickMinutes = resolveTickMinutes(state.tickSeconds, options.tickMinutes);
-    const resolvedState = options.tickMinutes ? { ...state, tickSeconds: tickMinutes * 60 } : state;
+    const nextTickSeconds = tickMinutes * 60;
+    const tickSecondsChanged = options.tickMinutes !== undefined && nextTickSeconds !== state.tickSeconds;
+    const clockBaseTime = tickSecondsChanged
+        ? GameClock.baseTimeForProjection(
+              new GameClock({
+                  baseTime: state.clockBaseTime ?? state.lastTurnTime,
+                  tick: state.clockTick ?? state.lastTurnTick ?? 0,
+                  mode: state.clockMode ?? 'manual',
+                  wallAnchor: state.clockWallAnchor ?? state.lastTurnTime,
+                  turnSeconds: state.tickSeconds,
+              }).tickToDate(state.clockTick ?? state.lastTurnTick ?? 0),
+              state.clockTick ?? state.lastTurnTick ?? 0,
+              nextTickSeconds
+          )
+        : state.clockBaseTime;
+    const modeChanged = options.gameClockMode !== undefined && options.gameClockMode !== state.clockMode;
+    const resolvedState = {
+        ...state,
+        ...(options.tickMinutes ? { tickSeconds: nextTickSeconds, clockBaseTime } : {}),
+        ...(options.gameClockMode ? { clockMode: options.gameClockMode } : {}),
+        ...(modeChanged ? { clockWallAnchor: new Date(clock.nowMs()) } : {}),
+    };
     const schedule = options.schedule ?? buildFixedSchedule(tickMinutes);
     const hasEventAction = (name: string): boolean =>
         snapshot.events.some(
@@ -219,6 +242,8 @@ const createTurnDaemonRuntimeWithLease = async (
             ? null
             : await createReservedTurnStore({
                   databaseUrl: options.databaseUrl,
+                  leaseOwner: options.leaseOwnerId,
+                  leaseDurationMs: options.leaseDurationMs,
               });
     const commandProfile =
         options.commandProfile ??
@@ -462,6 +487,7 @@ const createTurnDaemonRuntimeWithLease = async (
         getWorldConfig: () => snapshot.worldConfig ?? null,
         getNationPowerRollCount: () => monthlyNationPowerRollCount,
         getTournamentRollConsumed: () => monthlyTournamentRollConsumed,
+        now: () => worldRef?.getGameNow(new Date(clock.nowMs())) ?? new Date(clock.nowMs()),
     });
     const tournamentAutoStartHandler = createTournamentAutoStartHandler({
         profileName: options.profileName ?? options.profile,
@@ -475,7 +501,7 @@ const createTurnDaemonRuntimeWithLease = async (
         // Deterministic/manual runtimes must schedule the tournament from the
         // same clock that advances the game world. Production still falls
         // back to the system clock.
-        now: () => new Date(options.clock?.nowMs() ?? Date.now()),
+        now: () => worldRef?.getGameNow(new Date(clock.nowMs())) ?? new Date(clock.nowMs()),
     });
     const yearbookHandler = createYearbookHandler({
         profileName: options.profileName ?? options.profile,
@@ -537,7 +563,7 @@ const createTurnDaemonRuntimeWithLease = async (
     });
     if (reservedTurnStoreHandle) {
         stateManager.register('reservedTurns', {
-            capture: () => reservedTurnStoreHandle.store.captureState(),
+            capture: () => reservedTurnStoreHandle.store.captureTransactionState(),
             restore: (captured) => reservedTurnStoreHandle.store.restoreState(captured),
             inspect: () => reservedTurnStoreHandle.store.inspectState(),
         });
@@ -604,7 +630,6 @@ const createTurnDaemonRuntimeWithLease = async (
             : undefined,
     });
     const controlQueue = options.controlQueue ?? new InMemoryControlQueue();
-    const clock = options.clock ?? new SystemClock();
 
     let hooks: TurnDaemonHooks | undefined;
     let publishRealtimeEvent: ((event: RealtimeEvent) => Promise<void>) | null = null;
@@ -785,7 +810,11 @@ const createTurnDaemonRuntimeWithLease = async (
             pauseGate: async () => turnDaemonLease?.isLost() || ((await pauseGate?.()) ?? false),
             commandHandler,
             commandResponder: options.controlQueue ? undefined : (databaseCommandQueue ?? undefined),
-            stateManager,
+            // The exclusive fixture runner aborts the entire in-memory runtime
+            // on failure and has no concurrent writer. Avoid cloning the whole
+            // accumulated world before every due tick in that isolated mode;
+            // production and gateway-managed runtimes keep rollback savepoints.
+            stateManager: options.exclusiveFastForward ? undefined : stateManager,
         },
         { profile: options.profile, defaultBudget }
     );

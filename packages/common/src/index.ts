@@ -1,5 +1,6 @@
 export * from './rng.js';
 export * from './time/Clock.js';
+export * from './time/GameClock.js';
 export * from './util/BytesLike.js';
 export * from './util/convertBytesLikeToArrayBuffer.js';
 export * from './util/convertBytesLikeToUint8Array.js';

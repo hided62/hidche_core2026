@@ -257,7 +257,7 @@ describe('EngineStateManager', () => {
         store.replaceGeneralTurns(1, { action: '훈련', args: { amount: 10 } });
         const manager = new EngineStateManager();
         manager.register('reservedTurns', {
-            capture: () => store.captureState(),
+            capture: () => store.captureTransactionState(),
             restore: (snapshot) => store.restoreState(snapshot),
         });
         const before = store.captureState();

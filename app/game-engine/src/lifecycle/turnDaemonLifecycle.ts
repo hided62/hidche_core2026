@@ -165,17 +165,33 @@ export class TurnDaemonLifecycle {
             }
 
             const nowMs = this.clock.nowMs();
+            const gameClock = await this.stateStore.loadGameClock?.(new Date(nowMs));
+            if (gameClock?.mode === 'manual') {
+                // Ref observes all generals due before one monthly boundary in
+                // a single snapshot. Manual mode advances directly to that
+                // boundary instead of letting sub-minute general timestamps
+                // alter command/RNG order. After a restart, drain only turns
+                // strictly older than the persisted game time before moving on.
+                const gameNowMs = gameClock.now.getTime();
+                const hasOverdueGeneral = nextRunTime.getTime() < gameNowMs;
+                const targetTime = hasOverdueGeneral
+                    ? new Date(gameNowMs - 1)
+                    : this.getNextTickTime(new Date(this.status.lastTurnTime!));
+                await this.runOnce({ reason: 'schedule', targetTime });
+                continue;
+            }
+            const gameNowMs = gameClock?.now.getTime() ?? nowMs;
             const nextTurnMs = nextRunTime.getTime();
-            if (nowMs >= nextTurnMs) {
+            if (gameNowMs >= nextTurnMs) {
                 // Ref checkDelay() executes every turn due at the observed
                 // wall-clock time in one snapshot. Using only the oldest due
                 // timestamp lets generals created by that batch run before a
                 // monthly boundary, although Ref defers them to the next pass.
-                await this.runOnce({ reason: 'schedule', targetTime: new Date(nowMs) });
+                await this.runOnce({ reason: 'schedule', targetTime: new Date(gameNowMs) });
                 continue;
             }
 
-            const command = await this.controlQueue.waitUntil(nextTurnMs);
+            const command = await this.controlQueue.waitUntil(nowMs + (nextTurnMs - gameNowMs));
             if (command) {
                 await this.handleCommand(command);
             }
@@ -354,6 +370,7 @@ export class TurnDaemonLifecycle {
 
         try {
             const runAndFlush = async (): Promise<TurnRunResult> => {
+                await this.stateStore.advanceGameClockTo?.(targetTime, new Date(startMs));
                 const nextResult = await this.processor.run(targetTime, budget, checkpoint);
                 fallbackError = 'Unknown turn flush error.';
                 this.status.state = 'flushing';

@@ -1,6 +1,6 @@
 import { seedScenarioToDatabase, type ScenarioInstallOptions } from '@sammo-ts/game-engine';
 import type { GamePrisma } from '@sammo-ts/infra';
-import { asRecord } from '@sammo-ts/common';
+import { GameClock, asRecord, type GameClockMode } from '@sammo-ts/common';
 
 export interface AdminSeedUser {
     id: string;
@@ -12,6 +12,7 @@ export interface SeedProfileDatabaseOptions {
     databaseUrl: string;
     scenarioId: number;
     tickSeconds?: number;
+    gameClockMode?: GameClockMode;
     now?: Date;
     installOptions?: ScenarioInstallOptions;
     scenarioOptions?: Parameters<typeof seedScenarioToDatabase>[0]['scenarioOptions'];
@@ -105,6 +106,13 @@ const ensureAdminGeneral = async (prisma: GamePrisma.TransactionClient, adminUse
     const meta = asRecord(worldState.meta);
     const rawTurnTime = typeof meta.turntime === 'string' ? new Date(meta.turntime) : null;
     const turnTime = rawTurnTime && !Number.isNaN(rawTurnTime.getTime()) ? rawTurnTime : new Date();
+    const gameClock = new GameClock({
+        baseTime: worldState.clockBaseTime ?? turnTime,
+        tick: Number(worldState.clockTick ?? 0n),
+        mode: worldState.clockMode === 'manual' ? 'manual' : 'realtime',
+        wallAnchor: worldState.clockWallAnchor ?? turnTime,
+        turnSeconds: worldState.tickSeconds,
+    });
 
     await prisma.general.create({
         data: {
@@ -122,6 +130,7 @@ const ensureAdminGeneral = async (prisma: GamePrisma.TransactionClient, adminUse
             specialCode: 'None',
             special2Code: 'None',
             turnTime,
+            turnTick: BigInt(gameClock.dateToTick(turnTime)),
             meta: {
                 createdBy: 'admin-seed',
                 killturn: 24,
@@ -137,6 +146,7 @@ export const seedProfileDatabase = async (options: SeedProfileDatabaseOptions) =
         scenarioId: options.scenarioId,
         databaseUrl: options.databaseUrl,
         tickSeconds: options.tickSeconds,
+        gameClockMode: options.gameClockMode,
         now: options.now,
         installOptions: options.installOptions,
         scenarioOptions: options.scenarioOptions,

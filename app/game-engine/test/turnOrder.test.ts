@@ -170,6 +170,13 @@ describe('InMemoryTurnProcessor ordering', () => {
         expect(world.getNextGeneralId()).toBe(4);
         expect(world.getNextGeneralId()).toBe(5);
         expect(world.getState().meta).toMatchObject({ lastGeneralId: 5 });
+
+        const overdue = world.getGeneralById(1);
+        expect(overdue).toBeDefined();
+        overdue!.turnTime = addMinutes(baseTime, 5);
+        const overdueResult = await processor.run(addMinutes(baseTime, 5), budget);
+        expect(overdueResult.processedGenerals).toBe(1);
+        expect(executed.at(-1)).toBe(1);
     });
 
     it('stops catch-up immediately after a calendar handler finalizes unification', async () => {

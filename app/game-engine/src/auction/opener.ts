@@ -94,7 +94,7 @@ const openResourceAuction = async (
         return fail(`기본 ${hostResource === 'rice' ? '쌀' : '금'} ${minimumResource}은 거래할 수 없습니다.`);
     }
 
-    const now = new Date();
+    const now = world.getGameNow(new Date());
     const turnMinutes = Math.max(1, Math.round(world.getState().tickSeconds / 60));
     const closeAt = new Date(now.getTime() + closeTurnCnt * turnMinutes * 60_000);
     const auction = await db.auction.create({
@@ -113,6 +113,8 @@ const openResourceAuction = async (
             },
             status: 'OPEN',
             closeAt,
+            openTick: BigInt(world.dateToGameTick(now)),
+            closeTick: BigInt(world.dateToGameTick(closeAt)),
         },
     });
     world.updateGeneral(general.id, {
@@ -218,7 +220,7 @@ const openUniqueAuction = async (
 
     const state = world.getState();
     const turnMinutes = Math.max(1, Math.round(state.tickSeconds / 60));
-    const now = new Date();
+    const now = world.getGameNow(new Date());
     const closeMinutes = Math.max(MIN_AUCTION_CLOSE_MINUTES, turnMinutes * COEFF_AUCTION_CLOSE_MINUTES);
     const closeAt = new Date(now.getTime() + closeMinutes * 60_000);
     const extensionLimitMinutes = Math.max(
@@ -250,6 +252,8 @@ const openUniqueAuction = async (
             },
             status: 'OPEN',
             closeAt,
+            openTick: BigInt(world.dateToGameTick(now)),
+            closeTick: BigInt(world.dateToGameTick(closeAt)),
             latestEventId: eventId,
             latestEventAt: now,
             bids: {

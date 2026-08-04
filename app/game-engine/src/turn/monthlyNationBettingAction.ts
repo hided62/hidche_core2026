@@ -62,9 +62,7 @@ export const createOpenNationBettingHandler = (options: {
 
         const currentLastId = world.getState().meta.lastBettingId;
         const bettingId =
-            (typeof currentLastId === 'number' && Number.isFinite(currentLastId)
-                ? Math.trunc(currentLastId)
-                : 0) + 1;
+            (typeof currentLastId === 'number' && Number.isFinite(currentLastId) ? Math.trunc(currentLastId) : 0) + 1;
         world.updateWorldMeta({ lastBettingId: bettingId });
 
         const shortName = nationCount === 1 ? '천통국' : `최후 ${nationCount}국`;
@@ -88,10 +86,7 @@ export const createOpenNationBettingHandler = (options: {
                 targetCode: 'DESTROY_NATION',
                 priority: 1_000,
                 condition: ['RemainNation', '<=', nationCount],
-                action: [
-                    ['FinishNationBetting', bettingId],
-                    ['DeleteEvent'],
-                ],
+                action: [['FinishNationBetting', bettingId], ['DeleteEvent']],
                 meta: {},
             })
         ) {
@@ -109,7 +104,7 @@ export const createOpenNationBettingHandler = (options: {
         });
 
         const text = `새로운 ${shortName} 내기가 열렸습니다. 천통국 베팅란을 확인해주세요.`;
-        const now = new Date();
+        const now = new Date(environment.turnTime.getTime());
         for (const general of generals.filter((entry) => entry.npcState <= 1)) {
             const nation = world.getNationById(general.nationId);
             world.queueMessage({

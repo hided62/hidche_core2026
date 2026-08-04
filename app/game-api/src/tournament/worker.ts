@@ -11,6 +11,7 @@ import {
 import { resolveGameApiConfigFromEnv } from '../config.js';
 import { DatabaseTurnDaemonTransport } from '../daemon/databaseTransport.js';
 import { createBestEffortResourceCloser } from '../services/bestEffortResourceCloser.js';
+import { loadCurrentGameTime } from '../services/gameClock.js';
 import { createPollingWorkerControl, waitForWorkerPoll } from '../services/pollingWorkerLifecycle.js';
 import type { TurnDaemonTransport } from '../daemon/transport.js';
 import { buildTournamentKeys } from './keys.js';
@@ -161,7 +162,8 @@ export const applyPreBattleStage = async (
     prisma: TournamentPrismaClient,
     state: TournamentState,
     baseSeed: string,
-    daemonTransport: TurnDaemonTransport
+    daemonTransport: TurnDaemonTransport,
+    now: () => number = Date.now
 ): Promise<TournamentState> => {
     const participants = await store.getParticipants();
 
@@ -190,7 +192,7 @@ export const applyPreBattleStage = async (
             ...state,
             stage: 2,
             phase: 0,
-            participantsLockedAt: new Date().toISOString(),
+            participantsLockedAt: new Date(now()).toISOString(),
             nextAt: resolveNextAt(state),
         };
         await store.setState(nextState);
@@ -418,7 +420,7 @@ export const applyPreBattleStage = async (
             ...state,
             stage: 6,
             phase: 0,
-            bettingId: state.bettingId ?? Date.now(),
+            bettingId: state.bettingId ?? now(),
             bettingCloseAt: resolveBettingCloseAt(state),
             nextAt: resolveNextAt(state),
         };
@@ -430,7 +432,7 @@ export const applyPreBattleStage = async (
     if (state.stage === 6) {
         const bettingCloseAt = state.bettingCloseAt ?? resolveBettingCloseAt(state);
         const bettingCloseMs = new Date(bettingCloseAt).getTime();
-        if (Number.isFinite(bettingCloseMs) && bettingCloseMs > Date.now()) {
+        if (Number.isFinite(bettingCloseMs) && bettingCloseMs > now()) {
             const waitingState: TournamentState = {
                 ...state,
                 bettingCloseAt,
@@ -578,7 +580,7 @@ export const processTournamentTick = async (options: {
         if (isBattleStage(state.stage)) {
             nextState = await applyBattle(store, state, String(baseSeed), daemonTransport);
         } else if (isPreBattleStage(state.stage)) {
-            nextState = await applyPreBattleStage(store, prisma, state, String(baseSeed), daemonTransport);
+            nextState = await applyPreBattleStage(store, prisma, state, String(baseSeed), daemonTransport, now);
         }
         processedState =
             (await settleTournamentOutcome({
@@ -620,9 +622,9 @@ export const runTournamentWorker = async (options: TournamentWorkerOptions = {})
             }
 
             const nextAt = new Date(state.nextAt).getTime();
-            const now = Date.now();
-            if (state.auto && Number.isFinite(nextAt) && nextAt > now) {
-                await waitForWorkerPoll(control.signal, Math.min(config.tournamentPollMs, nextAt - now));
+            const gameNow = (await loadCurrentGameTime(postgres.prisma)).now.getTime();
+            if (state.auto && Number.isFinite(nextAt) && nextAt > gameNow) {
+                await waitForWorkerPoll(control.signal, Math.min(config.tournamentPollMs, nextAt - gameNow));
                 continue;
             }
 
@@ -631,6 +633,7 @@ export const runTournamentWorker = async (options: TournamentWorkerOptions = {})
                     store,
                     prisma: postgres.prisma,
                     daemonTransport,
+                    now: () => gameNow,
                 });
             } catch (error) {
                 const message = error instanceof Error ? error.message : 'Unknown error';

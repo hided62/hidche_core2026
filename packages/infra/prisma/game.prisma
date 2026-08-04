@@ -94,14 +94,19 @@ model TurnDaemonLease {
 }
 
 model WorldState {
-  id           Int      @id @default(autoincrement())
-  scenarioCode String   @map("scenario_code")
-  currentYear  Int      @map("current_year")
-  currentMonth Int      @map("current_month")
-  tickSeconds  Int      @map("tick_seconds")
-  config       Json     @default(dbgenerated("'{}'::jsonb"))
-  meta         Json     @default(dbgenerated("'{}'::jsonb"))
-  updatedAt    DateTime @updatedAt @map("updated_at")
+  id              Int       @id @default(autoincrement())
+  scenarioCode    String    @map("scenario_code")
+  currentYear     Int       @map("current_year")
+  currentMonth    Int       @map("current_month")
+  tickSeconds     Int       @map("tick_seconds")
+  clockBaseTime   DateTime? @map("clock_base_time")
+  clockTick       BigInt?   @map("clock_tick")
+  clockMode       String    @default("realtime") @map("clock_mode")
+  clockWallAnchor DateTime? @map("clock_wall_anchor")
+  lastTurnTick    BigInt?   @map("last_turn_tick")
+  config          Json      @default(dbgenerated("'{}'::jsonb"))
+  meta            Json      @default(dbgenerated("'{}'::jsonb"))
+  updatedAt       DateTime  @updatedAt @map("updated_at")
 
   trafficPeriods TrafficPeriod[]
 
@@ -183,7 +188,9 @@ model General {
   horseCode     String    @default("None") @map("horse_code")
   itemCode      String    @default("None") @map("item_code")
   turnTime      DateTime  @map("turn_time")
+  turnTick      BigInt?   @map("turn_tick")
   recentWarTime DateTime? @map("recent_war_time")
+  recentWarTick BigInt?   @map("recent_war_tick")
   age           Int       @default(20)
   startAge      Int       @default(20) @map("start_age")
   personalCode  String    @default("None") @map("personal_code")
@@ -199,12 +206,13 @@ model General {
 }
 
 model SelectPoolEntry {
-  id            Int       @id @default(autoincrement())
-  uniqueName    String    @unique @map("unique_name") @db.VarChar(20)
-  ownerUserId   String?   @map("owner_user_id")
-  generalId     Int?      @unique @map("general_id")
-  reservedUntil DateTime? @map("reserved_until")
-  info          Json
+  id                Int       @id @default(autoincrement())
+  uniqueName        String    @unique @map("unique_name") @db.VarChar(20)
+  ownerUserId       String?   @map("owner_user_id")
+  generalId         Int?      @unique @map("general_id")
+  reservedUntil     DateTime? @map("reserved_until")
+  reservedUntilTick BigInt?   @map("reserved_until_tick")
+  info              Json
 
   @@index([ownerUserId])
   @@index([reservedUntil, generalId])
@@ -212,13 +220,15 @@ model SelectPoolEntry {
 }
 
 model NpcSelectionToken {
-  ownerUserId  String   @id @map("owner_user_id")
-  validUntil   DateTime @map("valid_until")
-  pickMoreFrom DateTime @map("pick_more_from")
-  pickResult   Json     @map("pick_result")
-  nonce        Int
-  createdAt    DateTime @default(now()) @map("created_at")
-  updatedAt    DateTime @updatedAt @map("updated_at")
+  ownerUserId      String   @id @map("owner_user_id")
+  validUntil       DateTime @map("valid_until")
+  validUntilTick   BigInt?  @map("valid_until_tick")
+  pickMoreFrom     DateTime @map("pick_more_from")
+  pickMoreFromTick BigInt?  @map("pick_more_from_tick")
+  pickResult       Json     @map("pick_result")
+  nonce            Int
+  createdAt        DateTime @default(now()) @map("created_at")
+  updatedAt        DateTime @updatedAt @map("updated_at")
 
   @@index([validUntil])
   @@map("select_npc_token")
@@ -280,14 +290,16 @@ model MessageReadState {
 }
 
 model Message {
-  id         Int      @id @default(autoincrement())
-  mailbox    Int
-  type       String
-  src        Int
-  dest       Int
-  time       DateTime
-  validUntil DateTime @map("valid_until")
-  message    Json
+  id             Int      @id @default(autoincrement())
+  mailbox        Int
+  type           String
+  src            Int
+  dest           Int
+  time           DateTime
+  timeTick       BigInt?  @map("time_tick")
+  validUntil     DateTime @map("valid_until")
+  validUntilTick BigInt?  @map("valid_until_tick")
+  message        Json
 
   @@map("message")
 }
@@ -674,6 +686,8 @@ model Auction {
   detail        Json          @default(dbgenerated("'{}'::jsonb"))
   status        AuctionStatus @default(OPEN)
   closeAt       DateTime      @map("close_at")
+  openTick      BigInt?       @map("open_tick")
+  closeTick     BigInt?       @map("close_tick")
   latestEventId String        @default("") @map("latest_event_id")
   latestEventAt DateTime      @default(now()) @map("latest_event_at")
   finalizingAt  DateTime?     @map("finalizing_at")
@@ -770,7 +784,9 @@ model VotePoll {
   openerGeneralId Int       @map("opener_general_id")
   openerName      String    @map("opener_name")
   startAt         DateTime  @default(now()) @map("start_at")
+  startTick       BigInt?   @map("start_tick")
   endAt           DateTime? @map("end_at")
+  endTick         BigInt?   @map("end_tick")
   closedAt        DateTime? @map("closed_at")
   createdAt       DateTime  @default(now()) @map("created_at")
   updatedAt       DateTime  @updatedAt @map("updated_at")

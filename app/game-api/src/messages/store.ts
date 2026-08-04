@@ -1,6 +1,7 @@
 import type { MessagePayload, MessageRecordDraft, MessageType } from '@sammo-ts/logic';
 
 import type { DatabaseClient } from '../context.js';
+import { loadCurrentGameTime } from '../services/gameClock.js';
 
 export interface MessageView {
     id: number;
@@ -59,15 +60,26 @@ const toMessageView = (row: MessageRow): MessageView => {
 };
 
 export const insertMessage = async (db: DatabaseClient, draft: MessageRecordDraft): Promise<number> => {
+    const gameTime = await loadCurrentGameTime(db);
+    const toTickOrNull = (date: Date): bigint | null => {
+        try {
+            const tick = gameTime.dateToTick(date);
+            return tick === null ? null : BigInt(tick);
+        } catch {
+            return null;
+        }
+    };
     const rows = await db.$queryRaw<Array<{ id: number }>>`
-        INSERT INTO message (mailbox, type, src, dest, time, valid_until, message)
+        INSERT INTO message (mailbox, type, src, dest, time, time_tick, valid_until, valid_until_tick, message)
         VALUES (
             ${draft.mailbox},
             ${draft.msgType},
             ${draft.srcId},
             ${draft.destId},
             ${draft.time},
+            ${toTickOrNull(draft.time)},
             ${draft.validUntil},
+            ${toTickOrNull(draft.validUntil)},
             CAST(${JSON.stringify(draft.payload)} AS jsonb)
         )
         RETURNING id
@@ -87,12 +99,16 @@ export const fetchMessagesFromMailbox = async (params: {
     fromSeq: number;
 }): Promise<MessageView[]> => {
     const fromSeq = Math.max(params.fromSeq, 0);
+    const gameTime = await loadCurrentGameTime(params.db);
     const rows = await params.db.$queryRaw<MessageRow[]>`
         SELECT id, mailbox, type, src, dest, time, valid_until, message
         FROM message
         WHERE mailbox = ${params.mailbox}
             AND type = ${params.msgType}
-            AND valid_until > NOW()
+            AND (
+                (valid_until_tick IS NOT NULL AND valid_until_tick > ${gameTime.tick === null ? null : BigInt(gameTime.tick)})
+                OR (valid_until_tick IS NULL AND valid_until > ${gameTime.now})
+            )
             AND id >= ${fromSeq}
         ORDER BY id DESC
         LIMIT ${params.limit}
@@ -108,12 +124,16 @@ export const fetchOldMessagesFromMailbox = async (params: {
     toSeq: number;
     limit: number;
 }): Promise<MessageView[]> => {
+    const gameTime = await loadCurrentGameTime(params.db);
     const rows = await params.db.$queryRaw<MessageRow[]>`
         SELECT id, mailbox, type, src, dest, time, valid_until, message
         FROM message
         WHERE mailbox = ${params.mailbox}
             AND type = ${params.msgType}
-            AND valid_until > NOW()
+            AND (
+                (valid_until_tick IS NOT NULL AND valid_until_tick > ${gameTime.tick === null ? null : BigInt(gameTime.tick)})
+                OR (valid_until_tick IS NULL AND valid_until > ${gameTime.now})
+            )
             AND id < ${params.toSeq}
         ORDER BY id DESC
         LIMIT ${params.limit}
@@ -123,10 +143,15 @@ export const fetchOldMessagesFromMailbox = async (params: {
 };
 
 export const fetchMessageById = async (db: DatabaseClient, id: number): Promise<StoredMessage | null> => {
+    const gameTime = await loadCurrentGameTime(db);
     const rows = await db.$queryRaw<MessageRow[]>`
         SELECT id, mailbox, type, src, dest, time, valid_until, message
         FROM message
-        WHERE id = ${id} AND valid_until > NOW()
+        WHERE id = ${id}
+          AND (
+              (valid_until_tick IS NOT NULL AND valid_until_tick > ${gameTime.tick === null ? null : BigInt(gameTime.tick)})
+              OR (valid_until_tick IS NULL AND valid_until > ${gameTime.now})
+          )
         LIMIT 1
     `;
     const row = rows[0];
@@ -141,10 +166,15 @@ export const fetchMessageById = async (db: DatabaseClient, id: number): Promise<
 };
 
 export const fetchMessageByIdForUpdate = async (db: DatabaseClient, id: number): Promise<StoredMessage | null> => {
+    const gameTime = await loadCurrentGameTime(db);
     const rows = await db.$queryRaw<MessageRow[]>`
         SELECT id, mailbox, type, src, dest, time, valid_until, message
         FROM message
-        WHERE id = ${id} AND valid_until > NOW()
+        WHERE id = ${id}
+          AND (
+              (valid_until_tick IS NOT NULL AND valid_until_tick > ${gameTime.tick === null ? null : BigInt(gameTime.tick)})
+              OR (valid_until_tick IS NULL AND valid_until > ${gameTime.now})
+          )
         LIMIT 1
         FOR UPDATE
     `;
@@ -162,8 +192,12 @@ export const fetchMessageByIdForUpdate = async (db: DatabaseClient, id: number):
 export const invalidateMessages = async (db: DatabaseClient, ids: number[]): Promise<void> => {
     const uniqueIds = Array.from(new Set(ids.filter((id) => Number.isInteger(id) && id > 0)));
     if (uniqueIds.length === 0) return;
+    const gameTime = await loadCurrentGameTime(db);
     await db.message.updateMany({
         where: { id: { in: uniqueIds } },
-        data: { validUntil: new Date() },
+        data: {
+            validUntil: gameTime.now,
+            ...(gameTime.tick === null ? {} : { validUntilTick: BigInt(gameTime.tick) }),
+        },
     });
 };

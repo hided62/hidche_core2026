@@ -18,6 +18,7 @@ import {
 
 import { authedProcedure, router } from '../../trpc.js';
 import { getMyGeneral } from '../shared/general.js';
+import { loadCurrentGameTime, type CurrentGameTime } from '../../services/gameClock.js';
 
 const hasAdminRole = (roles: string[], profileName: string): boolean => {
     if (roles.includes('superuser') || roles.includes('admin') || roles.includes('admin.superuser')) {
@@ -133,7 +134,24 @@ type VotePollRow = {
     opener_name: string;
     start_at: Date;
     end_at: Date | null;
+    end_tick: bigint | null;
     closed_at: Date | null;
+};
+
+const hasPollEnded = (poll: Pick<VotePollRow, 'closed_at' | 'end_at' | 'end_tick'>, time: CurrentGameTime): boolean =>
+    Boolean(poll.closed_at) ||
+    (poll.end_tick !== null && time.tick !== null
+        ? poll.end_tick <= BigInt(time.tick)
+        : Boolean(poll.end_at && poll.end_at <= time.now));
+
+const toGameTickOrNull = (time: CurrentGameTime, date: Date | null): bigint | null => {
+    if (!date) return null;
+    try {
+        const tick = time.dateToTick(date);
+        return tick === null ? null : BigInt(tick);
+    } catch {
+        return null;
+    }
 };
 
 type VoteListRow = {
@@ -215,6 +233,7 @@ export const voteRouter = router({
                     opener_name,
                     start_at,
                     end_at,
+                    end_tick,
                     closed_at
                 FROM vote_poll
                 WHERE id = ${input.voteId}
@@ -226,7 +245,8 @@ export const voteRouter = router({
             }
 
             const options = parseOptions(row.options);
-            const pollEnded = Boolean(row.closed_at) || (row.end_at ? row.end_at <= new Date() : false);
+            const gameTime = await loadCurrentGameTime(ctx.db);
+            const pollEnded = hasPollEnded(row, gameTime);
 
             const userId = ctx.auth?.user.id;
             const general = userId ? await ctx.db.general.findFirst({ where: { userId }, select: { id: true } }) : null;
@@ -330,6 +350,7 @@ export const voteRouter = router({
                     opener_name,
                     start_at,
                     end_at,
+                    end_tick,
                     closed_at
                 FROM vote_poll
                 WHERE id = ${input.voteId}
@@ -339,7 +360,8 @@ export const voteRouter = router({
             if (!poll) {
                 throw new TRPCError({ code: 'NOT_FOUND', message: '설문조사가 없습니다.' });
             }
-            if (poll.closed_at || (poll.end_at && poll.end_at < new Date())) {
+            const gameTime = await loadCurrentGameTime(ctx.db);
+            if (hasPollEnded(poll, gameTime)) {
                 throw new TRPCError({ code: 'BAD_REQUEST', message: '설문조사가 종료되었습니다.' });
             }
 
@@ -536,7 +558,8 @@ export const voteRouter = router({
             if (endAt && Number.isNaN(endAt.getTime())) {
                 throw new TRPCError({ code: 'BAD_REQUEST', message: '종료일이 잘못되었습니다.' });
             }
-            if (endAt && endAt < new Date()) {
+            const gameTime = await loadCurrentGameTime(ctx.db);
+            if (endAt && endAt < gameTime.now) {
                 throw new TRPCError({ code: 'BAD_REQUEST', message: '종료일이 이미 지났습니다.' });
             }
 
@@ -551,7 +574,7 @@ export const voteRouter = router({
             if (input.closePrevious) {
                 await ctx.db.$queryRaw(GamePrisma.sql`
                     UPDATE vote_poll
-                    SET closed_at = NOW(), updated_at = NOW()
+                    SET closed_at = ${gameTime.now}, updated_at = NOW()
                     WHERE closed_at IS NULL
                 `);
             }
@@ -566,7 +589,9 @@ export const voteRouter = router({
                     opener_general_id,
                     opener_name,
                     start_at,
-                    end_at
+                    start_tick,
+                    end_at,
+                    end_tick
                 )
                 VALUES (
                     ${input.title},
@@ -576,8 +601,10 @@ export const voteRouter = router({
                     ${input.revealMode},
                     ${general.id},
                     ${general.name},
-                    NOW(),
-                    ${endAt}
+                    ${gameTime.now},
+                    ${gameTime.tick === null ? null : BigInt(gameTime.tick)},
+                    ${endAt},
+                    ${toGameTickOrNull(gameTime, endAt)}
                 )
             `);
 
@@ -608,6 +635,7 @@ export const voteRouter = router({
                     opener_name,
                     start_at,
                     end_at,
+                    end_tick,
                     closed_at
                 FROM vote_poll
                 WHERE id = ${input.voteId}
@@ -646,7 +674,8 @@ export const voteRouter = router({
             if (endAt && Number.isNaN(endAt.getTime())) {
                 throw new TRPCError({ code: 'BAD_REQUEST', message: '종료일이 잘못되었습니다.' });
             }
-            if (endAt && endAt < new Date()) {
+            const gameTime = await loadCurrentGameTime(ctx.db);
+            if (endAt && endAt < gameTime.now) {
                 throw new TRPCError({ code: 'BAD_REQUEST', message: '종료일이 이미 지났습니다.' });
             }
 
@@ -670,6 +699,7 @@ export const voteRouter = router({
                     multiple_options = COALESCE(${nextMultipleOptions}, multiple_options),
                     reveal_mode = COALESCE(${input.revealMode}, reveal_mode),
                     end_at = ${endAt ?? poll.end_at},
+                    end_tick = ${endAt ? toGameTickOrNull(gameTime, endAt) : poll.end_tick},
                     updated_at = NOW()
                 WHERE id = ${input.voteId}
             `);
@@ -681,7 +711,7 @@ export const voteRouter = router({
         .mutation(async ({ ctx, input }) => {
             const rows = await ctx.db.$queryRaw<Array<{ id: number }>>(GamePrisma.sql`
                 UPDATE vote_poll
-                SET closed_at = NOW(), updated_at = NOW()
+                SET closed_at = ${(await loadCurrentGameTime(ctx.db)).now}, updated_at = NOW()
                 WHERE id = ${input.voteId}
                 RETURNING id
             `);

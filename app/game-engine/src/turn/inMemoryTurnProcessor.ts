@@ -62,12 +62,12 @@ export class InMemoryTurnProcessor implements TurnProcessor {
         // Ref processes `turntime < monthlyBoundary` before the monthly turn. A
         // general exactly on the boundary therefore runs only after that month
         // has advanced, on the daemon's following pass.
-        const useStrictGeneralCutoff =
-            firstTickTime.getTime() === targetTime.getTime() || targetTime.getTime() <= previousLastTurnTime.getTime();
-        const generalCutoff =
-            useStrictGeneralCutoff
-                ? new Date(targetTime.getTime() - 1)
-                : targetTime;
+        // The monthly boundary itself stays strict (`turn_time < boundary`) like
+        // Ref. A manual clock may instead target an overdue general whose time
+        // is older than lastTurnTime; that exact general must be included or the
+        // daemon would repeatedly flush an empty run without advancing.
+        const useStrictGeneralCutoff = firstTickTime.getTime() === targetTime.getTime();
+        const generalCutoff = useStrictGeneralCutoff ? new Date(targetTime.getTime() - 1) : targetTime;
         const dueGenerals = this.world.listDueGenerals(generalCutoff, checkpoint);
         for (const general of dueGenerals) {
             if (processedGenerals >= budget.maxGenerals || isBudgetExpired()) {

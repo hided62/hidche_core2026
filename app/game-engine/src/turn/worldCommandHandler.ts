@@ -173,6 +173,26 @@ const resolveCommandAcceptedAt = async (
     return event.createdAt;
 };
 
+const resolveOperationalAcceptedAt = async (
+    db: DatabaseClient,
+    command: Pick<TurnDaemonCommand, 'type' | 'requestId'>
+): Promise<Date> => {
+    if (!command.requestId) {
+        return new Date();
+    }
+    const event = await db.inputEvent.findUnique({
+        where: { requestId: command.requestId },
+        select: { createdAt: true, target: true, eventType: true },
+    });
+    if (!event) {
+        throw new Error(`ENGINE input event ${command.requestId} is missing.`);
+    }
+    if (event.target !== 'ENGINE' || event.eventType !== command.type) {
+        throw new Error(`ENGINE input event type does not match ${command.type}.`);
+    }
+    return event.createdAt;
+};
+
 const assertImmediateGeneralActionActor = async (
     ctx: CommandHandlerContext,
     command: Extract<TurnDaemonCommand, { type: 'buildNationCandidate' | 'instantRetreat' }>,
@@ -208,7 +228,8 @@ async function handleJoinCreateGeneral(
     if (!worldState) {
         throw new Error('Join world state is missing.');
     }
-    const acceptedAt = await resolveCommandAcceptedAt(db, command);
+    const operationalAcceptedAt = await resolveCommandAcceptedAt(db, command);
+    const acceptedAt = ctx.world.getGameNow(operationalAcceptedAt);
     try {
         return {
             type: 'joinCreateGeneral',
@@ -272,7 +293,8 @@ async function handleNpcPossessGeneral(
     if (!worldState) {
         throw new Error('NPC possession world state is missing.');
     }
-    const acceptedAt = await resolveCommandAcceptedAt(db, command);
+    const operationalAcceptedAt = await resolveCommandAcceptedAt(db, command);
+    const acceptedAt = ctx.world.getGameNow(operationalAcceptedAt);
     try {
         return {
             type: 'npcPossessGeneral',
@@ -313,7 +335,8 @@ async function handleSelectPoolCreate(
     if (!worldState) {
         throw new Error('Selection-pool world state is missing.');
     }
-    const acceptedAt = await resolveCommandAcceptedAt(db, command);
+    const operationalAcceptedAt = await resolveCommandAcceptedAt(db, command);
+    const acceptedAt = ctx.world.getGameNow(operationalAcceptedAt);
     try {
         return {
             type: 'selectPoolCreate',
@@ -356,7 +379,8 @@ async function handleSelectPoolReselect(
     if (!worldState) {
         throw new Error('Selection-pool world state is missing.');
     }
-    const acceptedAt = await resolveCommandAcceptedAt(db, command);
+    const operationalAcceptedAt = await resolveCommandAcceptedAt(db, command);
+    const acceptedAt = ctx.world.getGameNow(operationalAcceptedAt);
     try {
         return {
             type: 'selectPoolReselect',
@@ -832,13 +856,54 @@ async function handleShiftSchedule(
         };
     }
 
-    const shifted = ctx.world.shiftSchedule(command.deltaMinutes);
+    const operationalAcceptedAt = await resolveOperationalAcceptedAt(ctx.commandDb, command);
+    const shifted = ctx.world.shiftSchedule(command.deltaMinutes, operationalAcceptedAt);
     const shiftedAuctions = await ctx.commandDb.$executeRaw(
         GamePrisma.sql`
             UPDATE auction
             SET close_at = close_at + (${command.deltaMinutes} * INTERVAL '1 minute'),
                 updated_at = NOW()
             WHERE status = 'OPEN'
+        `
+    );
+    await ctx.commandDb.$executeRaw(
+        GamePrisma.sql`
+            UPDATE select_pool
+            SET reserved_until = reserved_until + (${command.deltaMinutes} * INTERVAL '1 minute')
+            WHERE reserved_until IS NOT NULL
+        `
+    );
+    await ctx.commandDb.$executeRaw(
+        GamePrisma.sql`
+            UPDATE select_npc_token
+            SET valid_until = valid_until + (${command.deltaMinutes} * INTERVAL '1 minute'),
+                pick_more_from = pick_more_from + (${command.deltaMinutes} * INTERVAL '1 minute')
+        `
+    );
+    await ctx.commandDb.$executeRaw(
+        GamePrisma.sql`
+            UPDATE message
+            SET time = CASE WHEN time_tick IS NULL THEN time ELSE time + (${command.deltaMinutes} * INTERVAL '1 minute') END,
+                valid_until = CASE
+                    WHEN valid_until_tick IS NULL THEN valid_until
+                    ELSE valid_until + (${command.deltaMinutes} * INTERVAL '1 minute')
+                END
+            WHERE time_tick IS NOT NULL OR valid_until_tick IS NOT NULL
+        `
+    );
+    await ctx.commandDb.$executeRaw(
+        GamePrisma.sql`
+            UPDATE vote_poll
+            SET start_at = CASE WHEN start_tick IS NULL THEN start_at ELSE start_at + (${command.deltaMinutes} * INTERVAL '1 minute') END,
+                end_at = CASE
+                    WHEN end_tick IS NULL THEN end_at
+                    ELSE end_at + (${command.deltaMinutes} * INTERVAL '1 minute')
+                END,
+                closed_at = CASE
+                    WHEN closed_at IS NULL THEN NULL
+                    ELSE closed_at + (${command.deltaMinutes} * INTERVAL '1 minute')
+                END
+            WHERE start_tick IS NOT NULL OR end_tick IS NOT NULL OR closed_at IS NOT NULL
         `
     );
 
@@ -1809,7 +1874,7 @@ async function handleKick(
                 src: messageTarget,
                 dest: messageTarget,
                 text,
-                time: new Date(),
+                time: world.getGameNow(new Date()),
                 validUntil: new Date('9999-12-31T00:00:00.000Z'),
                 option: {},
             });
