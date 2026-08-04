@@ -32,7 +32,7 @@
         "es-toolkit": "^1.43.0"
     },
     "devDependencies": {
-        "tsdown": "^0.18.4",
+        "tsdown": "^0.22.14",
         "vitest": "^4.0.16"
     }
 }
