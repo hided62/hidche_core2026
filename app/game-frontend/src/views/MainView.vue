@@ -151,7 +151,7 @@ watch(
                 >
                     실시간 동기화: {{ realtimeLabel }}
                 </button>
-                <button class="game-shell__action" type="button" @click="loadMainData">갱 신</button>
+                <button class="game-shell__action game-shell__action--navigation" type="button" @click="loadMainData">갱 신</button>
                 <button class="game-shell__action" type="button" @click="moveLobby">로비로</button>
             </div>
         </header>

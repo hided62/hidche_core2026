@@ -181,7 +181,7 @@ onMounted(loadOptions);
 </template>
 
 <style scoped>
-:global(body) {
+:global(body:has(.legacy-hall-page)) {
     min-width: 500px;
     overflow-x: hidden;
 }
@@ -346,7 +346,7 @@ onMounted(loadOptions);
 }
 
 @media (min-width: 1000px) {
-    :global(body) {
+    :global(body:has(.legacy-hall-page)) {
         min-width: 1000px;
     }
 

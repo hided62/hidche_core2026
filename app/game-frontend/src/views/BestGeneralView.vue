@@ -165,7 +165,7 @@ watch(viewMode, () => {
 </template>
 
 <style scoped>
-:global(body) {
+:global(body:has(.legacy-ranking-page)) {
     min-width: 500px;
     overflow-x: hidden;
 }
@@ -348,7 +348,7 @@ watch(viewMode, () => {
 }
 
 @media (min-width: 1000px) {
-    :global(body) {
+    :global(body:has(.legacy-ranking-page)) {
         min-width: 1000px;
     }
 

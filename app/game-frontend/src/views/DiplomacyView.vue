@@ -271,7 +271,7 @@ onBeforeUnmount(() => {
             <tbody>
                 <tr>
                     <td>
-                        외 교 부<br /><button class="legacy-button" type="button" @click="router.push('/')">
+                        외 교 부<br /><button class="legacy-button legacy-button--primary" type="button" @click="router.push('/')">
                             돌아가기
                         </button>
                     </td>
@@ -622,7 +622,7 @@ onBeforeUnmount(() => {
             <tbody>
                 <tr>
                     <td>
-                        <button class="legacy-button" type="button" @click="router.push('/')">돌아가기</button
+                        <button class="legacy-button legacy-button--primary" type="button" @click="router.push('/')">돌아가기</button
                         ><br /><br />
                         삼국지 모의전투 PHP HiDCHe - unknown / KOEI의 이미지를 사용, 응용하였습니다 / 제작 :
                         HideD(hided62@gmail.com) /

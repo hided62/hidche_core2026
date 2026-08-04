@@ -129,7 +129,7 @@ onMounted(async () => {
             <strong>연 감</strong>
             <button class="legacy-button close-button" type="button" @click="closePage">창 닫기</button>
             <span class="settings-menu">
-                <button class="legacy-button" type="button" @click="settingsOpen = !settingsOpen">⚙ 설정⌄</button>
+                <button class="legacy-button legacy-button--navigation" type="button" @click="settingsOpen = !settingsOpen">⚙ 설정⌄</button>
                 <button v-if="settingsOpen" class="settings-item" type="button" @click="toggleRankingPosition">
                     국가 순서 위치 변경(모바일 전용)
                 </button>
@@ -139,7 +139,7 @@ onMounted(async () => {
         <section class="year-selector">
             <span>연월 선택:</span>
             <button
-                class="legacy-button"
+                class="legacy-button legacy-button--secondary"
                 type="button"
                 :disabled="selectedYearMonth === range?.firstYearMonth"
                 @click="moveMonth(-1)"
@@ -152,7 +152,7 @@ onMounted(async () => {
                 </option>
             </select>
             <button
-                class="legacy-button"
+                class="legacy-button legacy-button--secondary"
                 type="button"
                 :disabled="selectedYearMonth === range?.currentYearMonth"
                 @click="moveMonth(1)"
@@ -222,7 +222,7 @@ onMounted(async () => {
 </template>
 
 <style scoped>
-:global(body) {
+:global(body:has(.yearbook-page)) {
     min-width: 500px;
 }
 

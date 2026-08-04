@@ -558,19 +558,18 @@ const dropPriority = (event: DragEvent, section: PrioritySectionKey, bucket: Pri
 </template>
 
 <style scoped>
-:global(html),
-:global(body),
-:global(#app) {
+/*
+ * The document contract belongs to this page only. An unscoped html/body rule
+ * here leaked a 21px line-height and a 500px min-width onto every other screen.
+ */
+:global(html:has(#npc-policy-page)),
+:global(body:has(#npc-policy-page)),
+:global(#app:has(#npc-policy-page)) {
     min-width: 500px;
     margin: 0;
     background: #000;
     font-family: var(--sammo-font-sans);
     font-size: 14px;
-    line-height: 21px;
-}
-
-:global(body:has(#npc-policy-page)) {
-    min-width: 500px;
     line-height: 21px;
 }
 

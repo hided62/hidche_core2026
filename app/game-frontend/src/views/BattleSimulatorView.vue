@@ -1317,10 +1317,9 @@ const shouldShowUI = computed(() => !loading.value && !!options.value);
 
 .battle-simulator :deep(.panel-card) {
     border-color: rgba(0, 0, 0, 0.18);
-    border-radius: 5px;
+    border-radius: 5.25px;
     background: #303030;
     background-image: none;
-    overflow: hidden;
 }
 
 .battle-simulator :deep(.panel-header) {
@@ -1373,15 +1372,24 @@ button {
     color: inherit;
 }
 
+/*
+ * Ref uses the Bootstrap/Lumen family here: no top border, 1px sides and a 4px
+ * bottom that shortens on hover and active while the control moves down.
+ */
 .primary,
 .ghost {
-    border: 1px solid transparent;
-    border-radius: 5px;
+    --simulator-button-border: #d04436;
+
+    border-color: var(--simulator-button-border);
+    border-style: solid;
+    border-width: 0 1px 4px;
+    border-radius: 5.25px;
     padding: 5.25px 10.5px;
     color: #fff;
     font-size: 14px;
     font-weight: 700;
     line-height: 21px;
+    vertical-align: middle;
     cursor: pointer;
     transition:
         color 0.15s ease-in-out,
@@ -1394,6 +1402,18 @@ button {
     background: #e74c3c;
 }
 
+.primary:not(:disabled):hover,
+.ghost:not(:disabled):hover {
+    margin-top: 1px;
+    border-bottom-width: 3px;
+}
+
+.primary:not(:disabled):active,
+.ghost:not(:disabled):active {
+    margin-top: 2px;
+    border-bottom-width: 2px;
+}
+
 .primary:active {
     background: #b93d30;
 }
@@ -1404,14 +1424,20 @@ button {
 }
 
 .ghost {
+    --simulator-button-border: #2f89c5;
+
     background: #3498db;
 }
 
 .load-action {
+    --simulator-button-border: #26527d;
+
     background: #2c5d8f;
 }
 
 .add-action {
+    --simulator-button-border: #0da271;
+
     background: #10b981;
 }
 
@@ -1472,7 +1498,12 @@ button:disabled {
         box-shadow 0.15s ease-in-out;
 }
 
+.unit-after input[type='number'] {
+    text-align: right;
+}
+
 .repeat-field select {
+    border-radius: 0 5.25px 5.25px 0;
     padding-right: 31.5px;
     background-image: url('data:image/svg+xml,%3csvg xmlns=%27http://www.w3.org/2000/svg%27 viewBox=%270 0 16 16%27%3e%3cpath fill=%27none%27 stroke=%27%23303030%27 stroke-linecap=%27round%27 stroke-linejoin=%27round%27 stroke-width=%272%27 d=%27m2 5 6 6 6-6%27/%3e%3c/svg%3e');
     background-repeat: no-repeat;
@@ -1485,6 +1516,7 @@ button:disabled {
 .field input:focus,
 .field select:focus {
     border-color: #9badbf;
+    box-shadow: 0 0 0 3.5px rgba(55, 90, 127, 0.25);
     outline: 0;
 }
 
@@ -1557,19 +1589,32 @@ button:disabled {
 .summary-table {
     width: 100%;
     border-collapse: collapse;
+    vertical-align: top;
 }
 
+.summary-table tbody,
+.summary-table tr {
+    vertical-align: top;
+}
+
+/*
+ * Ref renders this as a Bootstrap table: 7px padding on every side, a #444
+ * bottom rule and the transparent accent inset shadow the framework always
+ * emits.
+ */
 .summary-table th,
 .summary-table td {
-    padding: 7px 8px;
-    border-bottom: 1px solid rgba(201, 164, 90, 0.2);
+    padding: 7px;
+    border-bottom: 1px solid #444;
+    box-shadow: inset 0 0 0 9999px rgba(0, 0, 0, 0);
     text-align: left;
+    vertical-align: top;
 }
 
 .summary-table th {
-    width: 18ch;
+    width: 180px;
     color: #fff;
-    font-weight: 600;
+    font-weight: 700;
 }
 
 .battle-summary-card :deep(.panel-body) {
