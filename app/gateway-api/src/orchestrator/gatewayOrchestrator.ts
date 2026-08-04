@@ -1353,23 +1353,9 @@ export class GatewayOrchestrator implements GatewayOrchestratorHandle {
                 return { status: 'FAILED', detail: 'selected workspace build failed' };
             }
             await this.assertProfileSeedCli(workspace.root);
-            const seedInfo = await this.resolveResetSeedInfo(
-                profile,
-                {
-                    scenarioId,
-                    tickSeconds: tickOverride,
-                },
-                profileDatabaseUrl
-            );
-            const profileMeta = normalizeMeta(profile.meta);
-            const nextSeasonIdx = readMetaNumber(profileMeta, 'nextSeasonIdx');
-            const baseSeason = readMetaNumber(normalizeMeta(seedInfo.meta), 'season');
-            const season = nextSeasonIdx ?? baseSeason ?? 1;
-            await updateClaimedProfile({ status: 'STOPPED' }, () =>
-                this.repository.updateStatus(profile.profileName, 'STOPPED')
-            );
-            await this.stopProfile(profile, assertLease);
-            await assertLease?.();
+            // A newly provisioned profile schema has no world_state row (or table) yet.
+            // Apply the selected release's migrations before reading optional prior-season
+            // metadata; existing profiles still expose the same season/tick values afterward.
             const migrationResult = await this.runProfileMigration(workspace.root, profileDatabaseUrl);
             await assertLease?.();
             if (!migrationResult.ok) {
@@ -1388,6 +1374,23 @@ export class GatewayOrchestrator implements GatewayOrchestratorHandle {
                 );
                 return { status: 'FAILED', detail: 'profile database migration failed' };
             }
+            const seedInfo = await this.resolveResetSeedInfo(
+                profile,
+                {
+                    scenarioId,
+                    tickSeconds: tickOverride,
+                },
+                profileDatabaseUrl
+            );
+            const profileMeta = normalizeMeta(profile.meta);
+            const nextSeasonIdx = readMetaNumber(profileMeta, 'nextSeasonIdx');
+            const baseSeason = readMetaNumber(normalizeMeta(seedInfo.meta), 'season');
+            const season = nextSeasonIdx ?? baseSeason ?? 1;
+            await updateClaimedProfile({ status: 'STOPPED' }, () =>
+                this.repository.updateStatus(profile.profileName, 'STOPPED')
+            );
+            await this.stopProfile(profile, assertLease);
+            await assertLease?.();
             const serverId = buildServerId(profile.profileName, seedTime, installOptions?.installOperationId);
             const seedResult = await this.runSelectedProfileSeed({
                 workspaceRoot: workspace.root,
