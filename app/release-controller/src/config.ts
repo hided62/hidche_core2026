@@ -1,5 +1,7 @@
 import path from 'node:path';
 
+import { sanitizeManagedProcessEnv } from '@sammo-ts/gateway-api';
+
 const parsePositiveInt = (value: string | undefined, fallback: number, name: string): number => {
     if (!value) return fallback;
     const parsed = Number(value);
@@ -49,8 +51,6 @@ export const resolveReleaseControllerConfig = (env: NodeJS.ProcessEnv = process.
             60000,
             'RELEASE_CONTROLLER_READINESS_TIMEOUT_MS'
         ),
-        baseEnv: Object.fromEntries(
-            Object.entries(env).filter((entry): entry is [string, string] => typeof entry[1] === 'string')
-        ),
+        baseEnv: sanitizeManagedProcessEnv(env),
     };
 };

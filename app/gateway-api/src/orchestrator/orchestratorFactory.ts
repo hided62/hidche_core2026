@@ -4,13 +4,13 @@ import type { GatewayOrchestratorConfig } from '../config.js';
 import { createGatewayProfileRepository } from './profileRepository.js';
 import { GatewayOrchestrator } from './gatewayOrchestrator.js';
 import { Pm2ProcessManager } from './pm2ProcessManager.js';
+import { sanitizeManagedProcessEnv } from './processManager.js';
 import { PnpmBuildRunner } from './buildRunner.js';
 import { resolveWorkspaceRoot } from './workspaceRoot.js';
 import { GitWorkspaceManager } from './workspaceManager.js';
 
 export const buildEnvMap = (env: NodeJS.ProcessEnv): Record<string, string> => {
-    const entries = Object.entries(env).filter((entry): entry is [string, string] => typeof entry[1] === 'string');
-    return Object.fromEntries(entries);
+    return sanitizeManagedProcessEnv(env);
 };
 
 export const createGatewayOrchestrator = (

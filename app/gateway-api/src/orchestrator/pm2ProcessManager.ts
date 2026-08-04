@@ -1,7 +1,12 @@
 import { createRequire } from 'node:module';
 
 import type * as Pm2 from 'pm2';
-import type { ProcessManager, ManagedProcessInfo, ProcessDefinition } from './processManager.js';
+import {
+    sanitizePm2IdentityEnv,
+    type ProcessManager,
+    type ManagedProcessInfo,
+    type ProcessDefinition,
+} from './processManager.js';
 
 type Pm2Module = typeof Pm2;
 
@@ -27,6 +32,20 @@ const withPm2 = async <T>(handler: (pm2: Pm2Module) => Promise<T>): Promise<T> =
     }
 };
 
+export const buildPm2StartOptions = (definition: ProcessDefinition) => ({
+    name: definition.name,
+    script: definition.script,
+    cwd: definition.cwd,
+    args: definition.args,
+    env: sanitizePm2IdentityEnv(definition.env ?? {}),
+    autorestart: true,
+    max_restarts: 5,
+    min_uptime: 10_000,
+    restart_delay: 2_000,
+    kill_timeout: 15_000,
+    time: true,
+});
+
 export class Pm2ProcessManager implements ProcessManager {
     async list(): Promise<ManagedProcessInfo[]> {
         return withPm2(
@@ -44,6 +63,7 @@ export class Pm2ProcessManager implements ProcessManager {
                                 pid: item.pid ?? undefined,
                                 cwd: item.pm2_env?.pm_cwd ?? undefined,
                                 script: item.pm2_env?.pm_exec_path ?? undefined,
+                                restartCount: item.pm2_env?.restart_time ?? 0,
                             })) ?? [];
                         resolve(normalized);
                     });
@@ -55,24 +75,26 @@ export class Pm2ProcessManager implements ProcessManager {
         await withPm2(
             (pm2) =>
                 new Promise<void>((resolve, reject) => {
-                    pm2.start(
-                        {
-                            name: definition.name,
-                            script: definition.script,
-                            cwd: definition.cwd,
-                            args: definition.args,
-                            env: definition.env,
-                            autorestart: true,
-                            time: true,
-                        },
-                        (error) => {
-                            if (error) {
-                                reject(error);
-                                return;
-                            }
-                            resolve();
+                    pm2.list((listError, list) => {
+                        if (listError) {
+                            reject(listError);
+                            return;
                         }
-                    );
+                        if (list?.some((item) => item.name === definition.name)) {
+                            reject(new Error(`PM2 process name already exists: ${definition.name}`));
+                            return;
+                        }
+                        pm2.start(
+                            buildPm2StartOptions(definition),
+                            (error) => {
+                                if (error) {
+                                    reject(error);
+                                    return;
+                                }
+                                resolve();
+                            }
+                        );
+                    });
                 })
         );
     }

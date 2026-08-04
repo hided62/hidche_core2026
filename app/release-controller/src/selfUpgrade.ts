@@ -8,6 +8,7 @@ import {
     type ProcessDefinition,
     type ProcessManager,
     readReleaseManifest,
+    sanitizeManagedProcessEnv,
 } from '@sammo-ts/gateway-api';
 
 import type { ReleaseControllerConfig } from './config.js';
@@ -20,7 +21,7 @@ export const buildReleaseControllerCommands = (
     needsInstall: boolean,
     config: ReleaseControllerConfig
 ): BuildCommand[] => {
-    const env = config.baseEnv;
+    const env = sanitizeManagedProcessEnv(config.baseEnv);
     return [
         ...(needsInstall ? [{ command: 'pnpm', args: ['install', '--frozen-lockfile'], cwd: workspaceRoot, env }] : []),
         { command: 'pnpm', args: ['--filter', '@sammo-ts/common', 'build'], cwd: workspaceRoot, env },
@@ -42,7 +43,7 @@ export const buildReleaseControllerDefinition = (
     cwd: path.join(workspaceRoot, 'app', 'release-controller'),
     args: ['daemon'],
     env: {
-        ...config.baseEnv,
+        ...sanitizeManagedProcessEnv(config.baseEnv),
         GATEWAY_DATABASE_URL: config.gatewayDatabaseUrl,
         GATEWAY_DB_SCHEMA: config.gatewayDbSchema,
         RELEASE_CONTROLLER_WORKSPACE_ROOT: workspaceRoot,
@@ -89,10 +90,16 @@ export const upgradeReleaseController = async (options: {
         await options.processManager.start(buildReleaseControllerDefinition(workspace.root, options.config));
         const deadline = Date.now() + (options.readinessTimeoutMs ?? options.config.readinessTimeoutMs);
         while (Date.now() < deadline) {
-            const active = (await options.processManager.list()).find(
-                (process) => process.name === CONTROLLER_PROCESS_NAME && process.status.toLowerCase() === 'online'
+            const matching = (await options.processManager.list()).filter(
+                (process) => process.name === CONTROLLER_PROCESS_NAME
             );
-            if (active) return { commitSha, workspace: workspace.root };
+            if (
+                matching.length === 1 &&
+                matching[0]?.status.toLowerCase() === 'online' &&
+                (matching[0]?.restartCount ?? 0) === 0
+            ) {
+                return { commitSha, workspace: workspace.root };
+            }
             await new Promise<void>((resolve) => setTimeout(resolve, 250));
         }
         throw new Error('Release controller did not become online before the timeout.');
