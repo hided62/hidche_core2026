@@ -14,7 +14,7 @@ import type {
 import { afterEach, describe, expect, it } from 'vitest';
 
 import { resolveReleaseControllerConfig, type ReleaseControllerConfig } from '../src/config.js';
-import { GatewayReleaseController } from '../src/releaseController.js';
+import { buildGatewayProcessDefinitions, GatewayReleaseController } from '../src/releaseController.js';
 import { upgradeReleaseController } from '../src/selfUpgrade.js';
 
 const SHA = '1111111111111111111111111111111111111111';
@@ -115,6 +115,14 @@ const createRepository = () => {
 };
 
 const gatewayNames = ['sammo:gateway-api', 'sammo:gateway-frontend', 'sammo:gateway-orchestrator'];
+
+it('runs Gateway preview from the frontend workspace dependency', () => {
+    const definitions = buildGatewayProcessDefinitions('/srv/sammo/release', config);
+    const frontend = definitions.find((definition) => definition.name === 'sammo:gateway-frontend');
+    expect(frontend?.script).toBe(
+        '/srv/sammo/release/app/gateway-frontend/node_modules/vite/bin/vite.js'
+    );
+});
 
 describe('GatewayReleaseController', () => {
     it('builds, migrates, switches all gateway roles, verifies readiness, and publishes atomically', async () => {

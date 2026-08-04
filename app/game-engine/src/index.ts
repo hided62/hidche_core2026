@@ -1,6 +1,3 @@
-import path from 'node:path';
-import { fileURLToPath } from 'node:url';
-
 import { runTurnDaemonCli } from './turn/cli.js';
 
 export * from './lifecycle/types.js';
@@ -29,17 +26,9 @@ export * from './turn/selectPoolService.js';
 export * from './turn/turnDaemon.js';
 export * from './turn/cli.js';
 
-const isMain = (): boolean => {
-    if (typeof process.env.NODE_APP_INSTANCE === 'string') {
-        return true;
-    }
-    if (!process.argv[1]) {
-        return false;
-    }
-    return fileURLToPath(import.meta.url) === path.resolve(process.argv[1]);
-};
+export const shouldRunTurnDaemon = (role: string | undefined): boolean => role === 'turn-daemon';
 
-if (isMain()) {
+if (shouldRunTurnDaemon(process.env.GAME_ENGINE_ROLE)) {
     runTurnDaemonCli().catch((error) => {
         console.error('[turn-daemon] failed to start', error);
         process.exitCode = 1;

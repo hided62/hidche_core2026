@@ -52,6 +52,7 @@ VITE_APP_BASE_PATH=/gateway \
 VITE_GATEWAY_API_URL=/gateway/api/trpc \
 VITE_GAME_API_URL_TEMPLATE='/{profile}/api/trpc' \
 VITE_GAME_WEB_URL_TEMPLATE='/{profile}/' \
+VITE_PREVIEW_ALLOWED_HOSTS=dev-sam-e2e.hided.net \
 pnpm --filter @sammo-ts/gateway-frontend build
 ```
 
@@ -61,6 +62,7 @@ Game frontend는 profile별 값으로 build합니다.
 VITE_APP_BASE_PATH=/che \
 VITE_GAME_API_URL=/che/api/trpc \
 VITE_GAME_SSE_URL=/che/api/events \
+VITE_PREVIEW_ALLOWED_HOSTS=dev-sam-e2e.hided.net \
 pnpm --filter @sammo-ts/game-frontend build
 ```
 

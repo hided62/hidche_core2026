@@ -118,7 +118,7 @@ describe('buildProcessDefinitions', () => {
 
         expect(definitions.frontend).toMatchObject({
             cwd: path.join(buildWorkspace, 'app', 'game-frontend'),
-            script: path.join(buildWorkspace, 'node_modules', 'vite', 'bin', 'vite.js'),
+            script: path.join(buildWorkspace, 'app', 'game-frontend', 'node_modules', 'vite', 'bin', 'vite.js'),
             args: [
                 'preview',
                 '--host',

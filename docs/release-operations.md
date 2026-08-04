@@ -25,6 +25,13 @@ profile 범위 권한과 별개인 전역 `admin.releases.manage` 권한이 필�
 - Gateway PostgreSQL, profile PostgreSQL, Redis와 PM2가 준비되어 있습니다.
 - controller가 `GATEWAY_DATABASE_URL`, `GATEWAY_DB_SCHEMA`, workspace와
   worktree 경로를 올바르게 읽습니다.
+- 공개 hostname을 쉼표로 구분한 `VITE_PREVIEW_ALLOWED_HOSTS`가 Gateway와
+  profile frontend build 환경에 전달됩니다. 신뢰된 reverse proxy 뒤가 아니라면
+  `*`를 사용하지 않습니다.
+- PM2 definition은 Gateway에 `GATEWAY_ROLE=api|orchestrator`, game API에
+  `GAME_API_ROLE=server|*-worker`, turn daemon에
+  `GAME_ENGINE_ROLE=turn-daemon`을 명시합니다. library import나 PM2 wrapper의
+  argv만으로 실행 역할을 추론하지 않습니다.
 - migration 이후 이전 애플리케이션으로 돌아갈 때 schema 하위 호환성이
   유지됩니다.
 

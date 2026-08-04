@@ -8,7 +8,7 @@
     "scripts": {
         "build": "tsdown -c ../../tsdown.config.ts -F @sammo-ts/game-engine",
         "dev": "tsdown -c ../../tsdown.config.ts -F @sammo-ts/game-engine --watch",
-        "start": "pnpm run build && node dist/index.js",
+        "start": "pnpm run build && GAME_ENGINE_ROLE=turn-daemon node dist/index.js",
         "lint": "eslint .",
         "lint:fix": "eslint . --fix",
         "profile:npc-unification-memory": "node scripts/profile-npc-unification-memory.mjs",

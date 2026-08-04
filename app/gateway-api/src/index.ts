@@ -1,6 +1,3 @@
-import path from 'node:path';
-import { fileURLToPath } from 'node:url';
-
 import { runGatewayApiServer } from './server.js';
 import { runGatewayOrchestrator } from './orchestrator/orchestratorServer.js';
 import { runProfileSeedCli } from './orchestrator/profileSeedCli.js';
@@ -33,15 +30,12 @@ export * from './auth/kakaoClient.js';
 export * from './auth/oauthSessionStore.js';
 export * from './auth/postgresUserRepository.js';
 
-const isMain = (): boolean => {
-    if (!process.argv[1]) {
-        return false;
-    }
-    return fileURLToPath(import.meta.url) === path.resolve(process.argv[1]);
-};
+const GATEWAY_ROLES = ['api', 'orchestrator', 'profile-seed'] as const;
+export const shouldRunGateway = (role: string | undefined): boolean =>
+    typeof role === 'string' && GATEWAY_ROLES.includes(role as (typeof GATEWAY_ROLES)[number]);
 
-if (isMain()) {
-    const role = process.env.GATEWAY_ROLE ?? 'api';
+if (shouldRunGateway(process.env.GATEWAY_ROLE)) {
+    const role = process.env.GATEWAY_ROLE;
     const run =
         role === 'orchestrator'
             ? runGatewayOrchestrator
