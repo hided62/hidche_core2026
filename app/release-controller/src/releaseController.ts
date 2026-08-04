@@ -61,7 +61,7 @@ export const buildGatewayProcessDefinitions = (
     const apiCwd = path.join(workspaceRoot, 'app', 'gateway-api');
     const frontendCwd = path.join(workspaceRoot, 'app', 'gateway-frontend');
     const apiScript = path.join(apiCwd, 'dist', 'index.js');
-    const frontendScript = path.join(workspaceRoot, 'node_modules', 'vite', 'bin', 'vite.js');
+    const frontendScript = path.join(frontendCwd, 'node_modules', 'vite', 'bin', 'vite.js');
     const env = {
         ...config.baseEnv,
         GATEWAY_API_HOST: '0.0.0.0',

@@ -11,6 +11,18 @@ const normalizeBasePath = (value: string | undefined): string => {
     return `/${pathValue.replace(/^\/+|\/+$/g, '')}/`;
 };
 
+const resolvePreviewAllowedHosts = (value: string | undefined): true | string[] => {
+    const normalized = value?.trim();
+    if (normalized === '*') {
+        return true;
+    }
+    const hosts = (normalized ?? 'dev-sam-e2e.hided.net')
+        .split(',')
+        .map((host) => host.trim())
+        .filter(Boolean);
+    return hosts;
+};
+
 // https://vitejs.dev/config/
 export default defineConfig(({ mode }) => {
     const env = loadEnv(mode, process.cwd(), '');
@@ -28,7 +40,7 @@ export default defineConfig(({ mode }) => {
         },
         preview: {
             host: '0.0.0.0',
-            allowedHosts: ['dev-sam-e2e.hided.net'],
+            allowedHosts: resolvePreviewAllowedHosts(env.VITE_PREVIEW_ALLOWED_HOSTS),
         },
     };
 });

@@ -1,6 +1,3 @@
-import path from 'node:path';
-import { fileURLToPath } from 'node:url';
-
 import { runGameApiServer } from './server.js';
 import { runBattleSimWorker } from './battleSim/worker.js';
 import { runAuctionWorker } from './auction/worker.js';
@@ -41,18 +38,12 @@ export type { TurnCommandTable } from './turns/commandTable.js';
 export type { ReservedTurnView } from './turns/reservedTurns.js';
 export type { JsonObject, JsonArray } from './context.js';
 
-const isMain = (): boolean => {
-    if (typeof process.env.NODE_APP_INSTANCE === 'string') {
-        return true;
-    }
-    if (!process.argv[1]) {
-        return false;
-    }
-    return fileURLToPath(import.meta.url) === path.resolve(process.argv[1]);
-};
+const GAME_API_ROLES = ['server', 'battle-sim-worker', 'auction-worker', 'tournament-worker'] as const;
+export const shouldRunGameApi = (role: string | undefined): boolean =>
+    typeof role === 'string' && GAME_API_ROLES.includes(role as (typeof GAME_API_ROLES)[number]);
 
-if (isMain()) {
-    const role = process.env.GAME_API_ROLE ?? 'server';
+if (shouldRunGameApi(process.env.GAME_API_ROLE)) {
+    const role = process.env.GAME_API_ROLE;
     const run =
         role === 'battle-sim-worker'
             ? runBattleSimWorker

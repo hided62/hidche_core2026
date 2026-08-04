@@ -164,6 +164,7 @@ docs/.vitepress/dist/
 docker-compose.override.yml
 
 .turbo/
+.pnpm-store/
 *_errors.txt
 docs/image-storage.md
 playwright-report/

@@ -378,13 +378,14 @@ export const buildProcessDefinitions = (
     const runtimeWorkspace = profile.buildWorkspace ?? config.workspaceRoot;
     const frontendCwd = path.join(runtimeWorkspace, 'app', 'game-frontend');
     const frontendOutDir = buildProfileFrontendOutDir(runtimeWorkspace, profile.profileName);
-    const frontendScript = path.join(runtimeWorkspace, 'node_modules', 'vite', 'bin', 'vite.js');
+    const frontendScript = path.join(frontendCwd, 'node_modules', 'vite', 'bin', 'vite.js');
     const apiCwd = path.join(runtimeWorkspace, 'app', 'game-api');
     const daemonCwd = path.join(runtimeWorkspace, 'app', 'game-engine');
     const apiScript = path.join(apiCwd, 'dist', 'index.js');
     const daemonScript = path.join(daemonCwd, 'dist', 'index.js');
     const apiEnv = {
         ...baseEnv,
+        GAME_API_ROLE: 'server',
         PROFILE: profile.profile,
         SCENARIO: profile.scenario,
         GAME_PROFILE_NAME: profile.profileName,
@@ -398,6 +399,7 @@ export const buildProcessDefinitions = (
     };
     const daemonEnv = {
         ...baseEnv,
+        GAME_ENGINE_ROLE: 'turn-daemon',
         TURN_PROFILE: profile.profile,
         PROFILE: profile.profile,
         SCENARIO: profile.scenario,
