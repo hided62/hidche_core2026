@@ -2,8 +2,12 @@ import { describe, expect, it } from 'vitest';
 import type { City, General, Nation } from '@sammo-ts/logic';
 import { createRefOrderedActionStack } from '@sammo-ts/logic/actionModules/bundle.js';
 
-import type { GeneralAI } from '../src/turn/ai/generalAi.js';
-import { resolveLegacyAiStats } from '../src/turn/ai/generalAi/core.js';
+import { GeneralAI } from '../src/turn/ai/generalAi.js';
+import {
+    calculateRecentWarTurn,
+    resolveLegacyAiStats,
+    resolveLegacyAiStatsWithModules,
+} from '../src/turn/ai/generalAi/core.js';
 import { withCanonicalArgumentAliases } from '../src/turn/ai/aiUtils.js';
 import { do일반내정, do전쟁내정 } from '../src/turn/ai/generalAi/general/devActions.js';
 import { do금쌀구매 } from '../src/turn/ai/generalAi/general/economyActions.js';
@@ -12,7 +16,12 @@ import { do징병 } from '../src/turn/ai/generalAi/general/recruitActions.js';
 import { do전투준비, do출병 } from '../src/turn/ai/generalAi/general/warActions.js';
 import { do내정워프, do전방워프, do집합, do후방워프 } from '../src/turn/ai/generalAi/general/warpActions.js';
 import { doNPC몰수, doNPC포상, do유저장포상 } from '../src/turn/ai/generalAi/nation/rewards.js';
-import { doNPC전방발령, doNPC후방발령 } from '../src/turn/ai/generalAi/nation/assignments/npcAssignments.js';
+import { do천도 } from '../src/turn/ai/generalAi/nation/capital.js';
+import {
+    doNPC구출발령,
+    doNPC전방발령,
+    doNPC후방발령,
+} from '../src/turn/ai/generalAi/nation/assignments/npcAssignments.js';
 
 type Candidate = {
     action: string;
@@ -123,6 +132,19 @@ const baseGeneral = (): General & { turnTime: Date } => ({
     turnTime: new Date('0190-01-01T00:00:00Z'),
     triggerState: { flags: {}, counters: {}, modifiers: {}, meta: {} },
     meta: { killturn: 100, fullLeadership: 70 },
+});
+
+describe('GeneralAI recent war clock parity', () => {
+    it('uses raw logical ticks at an exact turn boundary', () => {
+        const general = {
+            ...baseGeneral(),
+            turnTick: 72_000_099,
+            recentWarTick: 36_000_100,
+            recentWarTime: new Date('0189-12-31T23:50:00.000Z'),
+        } as ReturnType<typeof baseGeneral> & { turnTick: number; recentWarTick: number; recentWarTime: Date };
+
+        expect(calculateRecentWarTurn(general, 10)).toBe(0);
+    });
 });
 
 const baseCity = (): City => ({
@@ -376,6 +398,52 @@ const makeAi = (
  * selection and RNG-sensitive gates, not TypeScript implementation details.
  */
 describe('legacy NPC AI final-decision parity', () => {
+    it('blocks another officer from starting a capital move within half a turn', () => {
+        const base = makeAi({ general: { officerLevel: 10, turnTick: 36_000_100 } });
+        const ai = Object.assign(Object.create(GeneralAI.prototype), base, {
+            nation: { ...base.nation!, meta: { ...base.nation!.meta, lastCapitalMoveTrial: [12, 36_000_000] } },
+        }) as GeneralAI;
+
+        expect(do천도(ai)).toBeNull();
+    });
+
+    it('continues the same capital move and records the legacy trial tick', () => {
+        const base = makeAi({ general: { officerLevel: 12, turnTick: 72_000_100 } });
+        const ai = Object.assign(Object.create(GeneralAI.prototype), base, {
+            nation: {
+                ...base.nation!,
+                capitalCityId: 1,
+                meta: { ...base.nation!.meta, turn_last_12: { command: '천도', arg: { destCityID: 2 } } },
+            },
+            promotionPatches: [],
+            promotionNationMeta: null,
+        }) as GeneralAI;
+
+        expect(do천도(ai)).toMatchObject({ action: 'che_천도', args: { destCityID: 2 } });
+        expect(ai.consumePromotionPatches().nationMeta).toMatchObject({
+            lastCapitalMoveTrial: [12, 72_000_100],
+        });
+    });
+
+    it('persists the legacy last-attackable month through the nation meta patch channel', () => {
+        const ai = Object.assign(Object.create(GeneralAI.prototype), {
+            general: { ...baseGeneral(), nationId: 16 },
+            nation: { ...baseNation(), id: 16, meta: { last_attackable: 2234 } },
+            world: { currentYear: 187, currentMonth: 2, meta: {} },
+            worldRef: {
+                listDiplomacy: () => [{ fromNationId: 16, toNationId: 2, state: 0, term: 0 }],
+                listCities: () => [{ ...baseCity(), nationId: 16, frontState: 3 }],
+            },
+            startYear: 180,
+            promotionPatches: [],
+            promotionNationMeta: { last_attackable: 2234, chief_set: 3584 },
+        }) as GeneralAI;
+
+        (ai as unknown as { calcDiplomacyState: () => void }).calcDiplomacyState();
+
+        expect(ai.consumePromotionPatches().nationMeta).toMatchObject({ last_attackable: 2245, chief_set: 3584 });
+    });
+
     it('normalizes legacy uppercase destination IDs before AI constraint checks', () => {
         expect(
             withCanonicalArgumentAliases({
@@ -407,6 +475,32 @@ describe('legacy NPC AI final-decision parity', () => {
         expect(resolveLegacyAiStats({ ...ruler, officerLevel: 1 }, nation, 255)).toMatchObject({
             fullLeadership: 70,
             effectiveLeadership: 70,
+        });
+    });
+
+    it('applies active action modules to the full stats used by legacy AI recruitment', () => {
+        const general = {
+            ...baseGeneral(),
+            stats: { leadership: 68, strength: 40, intelligence: 60 },
+            meta: { killturn: 100 },
+        };
+        const leadershipTrait = {
+            onCalcStat: (context: { general: General }, statName: string, value: number): number =>
+                statName === 'leadership' ? value + context.general.stats.leadership * 0.25 : value,
+        };
+        const modules = singleActionModuleStack(leadershipTrait);
+        const world = {
+            id: 1,
+            currentYear: 189,
+            currentMonth: 1,
+            tickSeconds: 600,
+            lastTurnTime: new Date('0189-01-01T00:00:00Z'),
+            meta: {},
+        };
+
+        expect(resolveLegacyAiStatsWithModules(general, baseNation(), 100, modules, null, world, 180)).toMatchObject({
+            fullLeadership: 85,
+            effectiveLeadership: 85,
         });
     });
     it.each([
@@ -968,6 +1062,24 @@ describe('legacy NPC AI final-decision parity', () => {
 
         expect(doNPC후방발령(ai)).toBeNull();
         expect(rng.choices).toEqual([0, 0]);
+    });
+
+    it('draws a rescue city for every lost NPC before choosing the completed pair', () => {
+        const rng = makeRng([], [0, 1, 1]);
+        const first = { ...baseGeneral(), id: 2 };
+        const second = { ...baseGeneral(), id: 3 };
+        const ai = makeAi({ rng });
+        ai.lostGenerals = { 2: first, 3: second };
+        ai.supplyCities = {
+            40: { ...baseCity(), id: 40, dev: 1, important: 1 },
+            64: { ...baseCity(), id: 64, dev: 1, important: 1 },
+        };
+
+        expect(doNPC구출발령(ai)).toMatchObject({
+            action: 'che_발령',
+            args: { destGeneralId: 3, destCityId: 64 },
+        });
+        expect(rng.choices).toEqual([]);
     });
 
     it('draws the NPC front-assignment general before the weighted destination city', () => {

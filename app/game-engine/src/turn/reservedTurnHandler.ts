@@ -1760,6 +1760,18 @@ export const createReservedTurnHandler = async (options: {
                         nationFallback,
                     });
                 const candidate = ai.chooseGeneralTurn(generalCommand);
+                // Ref GeneralAI::calcDiplomacyState writes
+                // nation_env.last_attackable for ordinary generals too. The
+                // nation-turn path consumes this patch above, but most NPCs
+                // never execute a nation turn.
+                const generalAiNationState = ai.consumePromotionPatches();
+                if (generalAiNationState.nationMeta && currentNation) {
+                    currentNation = {
+                        ...currentNation,
+                        meta: generalAiNationState.nationMeta as Nation['meta'],
+                    };
+                    worldOverlay?.applyNationPatch(currentNation.id, { meta: currentNation.meta });
+                }
                 const npcMessage = ai.consumeNpcMessage();
                 if (npcMessage) {
                     const messageTarget = {

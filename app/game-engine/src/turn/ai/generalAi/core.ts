@@ -10,10 +10,11 @@ import type {
 } from '@sammo-ts/logic';
 import { evaluateConstraints } from '@sammo-ts/logic';
 import type { ConstraintContext } from '@sammo-ts/logic';
-import { LiteHashDRBG, RandUtil } from '@sammo-ts/common';
+import { GAME_TICKS_PER_TURN, LiteHashDRBG, RandUtil } from '@sammo-ts/common';
 import { simpleSerialize } from '@sammo-ts/logic/war/utils.js';
 import { resolveStartYear, resolveTurnTermMinutes } from '@sammo-ts/logic/actions/turn/actionContextHelpers.js';
 import { NATION_TRAIT_KEYS } from '@sammo-ts/logic/actionModules/traits/nation/index.js';
+import { GeneralActionPipeline } from '@sammo-ts/logic/actionModules/general.js';
 
 import type { ReservedTurnEntry } from '../../reservedTurnStore.js';
 import type { TurnGeneral, TurnWorldState } from '../../types.js';
@@ -50,6 +51,19 @@ const d징병 = 2;
 const d직전 = 3;
 const d전쟁 = 4;
 
+export const calculateRecentWarTurn = (general: TurnGeneral, turnTermMinutes: number): number => {
+    if (general.recentWarTick !== null && general.recentWarTick !== undefined && general.turnTick !== undefined) {
+        const tickDiff = general.turnTick - general.recentWarTick;
+        return tickDiff <= 0 ? 0 : Math.floor(tickDiff / GAME_TICKS_PER_TURN);
+    }
+    const recent = general.recentWarTime;
+    if (!recent) return 12000;
+    const diffMs = general.turnTime.getTime() - recent.getTime();
+    if (diffMs <= 0) return 0;
+    const turnMs = turnTermMinutes * 60 * 1000;
+    return turnMs > 0 ? Math.floor(diffMs / turnMs) : 12000;
+};
+
 export const selectNpcMessageForTurn = (
     message: unknown,
     rng: Pick<RandUtil, 'nextBool'>,
@@ -83,6 +97,66 @@ export const resolveLegacyAiStats = (
         effectiveLeadership: Math.trunc(leadershipWithBonus(injuredLeadership)),
         effectiveStrength: Math.trunc(clampStat(injuredStrength + Math.round(injuredIntelligence / 4))),
         effectiveIntelligence: Math.trunc(clampStat(injuredIntelligence + Math.round(injuredStrength / 4))),
+    };
+};
+
+export const resolveLegacyAiStatsWithModules = (
+    general: TurnGeneral,
+    nation: Nation | null | undefined,
+    maxStatLevel: number,
+    modules: TurnCommandEnv['generalActionModules'],
+    worldRef: AiWorldView | null,
+    world: TurnWorldState,
+    startYear: number
+) => {
+    const maxLevel = Math.max(1, maxStatLevel);
+    const clampStat = (value: number): number => Math.max(0, Math.min(value, maxLevel));
+    const pipeline = new GeneralActionPipeline(modules ?? []);
+    const context = {
+        general,
+        nation,
+        ...(worldRef
+            ? {
+                  worldView: {
+                      listGenerals: () => worldRef.listGenerals(),
+                      listGeneralsByCity: (cityId: number) =>
+                          worldRef.listGenerals().filter((candidate) => candidate.cityId === cityId),
+                      listNations: () => worldRef.listNations(),
+                  },
+              }
+            : {}),
+        time: {
+            year: world.currentYear,
+            month: world.currentMonth,
+            startYear,
+        },
+    };
+    const rawStat = (statName: 'leadership' | 'strength' | 'intelligence'): number => general.stats[statName];
+    const calculate = (
+        statName: 'leadership' | 'strength' | 'intelligence',
+        withInjury: boolean,
+        withStatAdjust: boolean,
+        truncate: boolean
+    ): number => {
+        const injuryRatio = withInjury ? (100 - Math.max(0, Math.min(general.injury, 100))) / 100 : 1;
+        let value = rawStat(statName) * injuryRatio;
+        if (withStatAdjust && statName === 'strength') {
+            value += Math.round(calculate('intelligence', withInjury, false, false) / 4);
+        } else if (withStatAdjust && statName === 'intelligence') {
+            value += Math.round(calculate('strength', withInjury, false, false) / 4);
+        }
+        value = clampStat(value);
+        value = clampStat(Number(pipeline.onCalcStat(context, statName, value)));
+        return truncate ? Math.trunc(value) : value;
+    };
+
+    return {
+        fullLeadership: calculate('leadership', false, true, true),
+        fullStrength: calculate('strength', false, true, true),
+        fullIntelligence: calculate('intelligence', false, true, true),
+        effectiveLeadership: calculate('leadership', true, true, true),
+        effectiveStrength: calculate('strength', true, true, true),
+        effectiveIntelligence: calculate('intelligence', true, true, true),
     };
 };
 
@@ -560,6 +634,28 @@ export class GeneralAI {
         return this.buildCandidate(this.nationDefinitions, this.nationFallback, action, args, reason);
     }
 
+    getLastNationTurn(): Record<string, unknown> {
+        return asRecord(asRecord(this.nation?.meta)[`turn_last_${this.general.officerLevel}`]);
+    }
+
+    getLastCapitalMoveTrial(): [number, number] | null {
+        const raw = asRecord(this.nation?.meta).lastCapitalMoveTrial;
+        if (!Array.isArray(raw) || raw.length < 2) return null;
+        const officerLevel = Number(raw[0]);
+        const turnTick = Number(raw[1]);
+        return Number.isFinite(officerLevel) && Number.isFinite(turnTick) ? [officerLevel, turnTick] : null;
+    }
+
+    markCapitalMoveTrial(): void {
+        if (!this.nation || this.general.turnTick === undefined) return;
+        const nextMeta = {
+            ...(this.promotionNationMeta ?? this.nation.meta),
+            lastCapitalMoveTrial: [this.general.officerLevel, this.general.turnTick],
+        };
+        this.nation = { ...this.nation, meta: nextMeta as Nation['meta'] };
+        this.promotionNationMeta = nextMeta;
+    }
+
     getReservedTurn(generalId: number): ReservedTurnEntry {
         return this.reservedTurnProvider.getGeneralTurn(generalId, 0);
     }
@@ -930,11 +1026,21 @@ export class GeneralAI {
     }
 
     private refreshLegacyFullStats(): void {
-        const stats = resolveLegacyAiStats(
-            this.general,
-            this.nation,
-            this.commandEnv.maxStatLevel ?? this.scenarioConfig.stat.max
-        );
+        const stats = this.commandEnv.generalActionModules
+            ? resolveLegacyAiStatsWithModules(
+                  this.general,
+                  this.nation,
+                  this.commandEnv.maxStatLevel ?? this.scenarioConfig.stat.max,
+                  this.commandEnv.generalActionModules,
+                  this.worldRef,
+                  this.world,
+                  this.startYear
+              )
+            : resolveLegacyAiStats(
+                  this.general,
+                  this.nation,
+                  this.commandEnv.maxStatLevel ?? this.scenarioConfig.stat.max
+              );
         this.general.meta = {
             ...this.general.meta,
             ...stats,
@@ -1129,6 +1235,15 @@ export class GeneralAI {
             lastAttackable = yearMonth;
             worldLastAttackable.set(nationId, yearMonth);
             this.nation!.meta = { ...this.nation!.meta, last_attackable: yearMonth };
+            // Ref writes nation_env.last_attackable while constructing each
+            // GeneralAI instance. Carry that side effect through the existing
+            // nation-meta patch channel even when no promotion was selected.
+            // Promotion runs first in quarter months, so preserve a chief_set
+            // patch already accumulated by choose*Promotion().
+            this.promotionNationMeta = {
+                ...(this.promotionNationMeta ?? this.nation!.meta),
+                last_attackable: yearMonth,
+            };
         };
 
         if (minWarTerm === null) {
@@ -1163,19 +1278,7 @@ export class GeneralAI {
     }
 
     private calcRecentWarTurn(general: TurnGeneral): number {
-        const recent = general.recentWarTime;
-        if (!recent) {
-            return 12000;
-        }
-        const diffMs = general.turnTime.getTime() - recent.getTime();
-        if (diffMs <= 0) {
-            return 0;
-        }
-        const turnMs = this.turnTermMinutes * 60 * 1000;
-        if (turnMs <= 0) {
-            return 12000;
-        }
-        return Math.floor(diffMs / turnMs);
+        return calculateRecentWarTurn(general, this.turnTermMinutes);
     }
 }
 

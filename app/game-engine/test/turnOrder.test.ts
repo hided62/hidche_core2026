@@ -42,7 +42,12 @@ describe('InMemoryTurnProcessor ordering', () => {
 
         const generals: TurnGeneral[] = [
             buildGeneral(1, addMinutes(baseTime, 20)),
-            buildGeneral(2, addMinutes(baseTime, 10)),
+            {
+                ...buildGeneral(2, addMinutes(baseTime, 10)),
+                turnTick: 6_000_004,
+                recentWarTime: null,
+                recentWarTick: null,
+            },
             buildGeneral(3, addMinutes(baseTime, 10)),
         ];
 
@@ -140,6 +145,11 @@ describe('InMemoryTurnProcessor ordering', () => {
 
         const world = new InMemoryTurnWorld(state, snapshot, {
             schedule: { entries: [{ startMinute: 0, tickMinutes: 10 }] },
+            generalTurnHandler: {
+                execute: ({ general }) => ({
+                    general: general.id === 2 ? { ...general, recentWarTime: new Date(baseTime.getTime()) } : general,
+                }),
+            },
         });
 
         const executed: number[] = [];
@@ -163,6 +173,9 @@ describe('InMemoryTurnProcessor ordering', () => {
         const tiedGeneralResult = await processor.run(new Date(addMinutes(baseTime, 10).getTime() + 1), budget);
         expect(tiedGeneralResult.processedTurns).toBe(0);
         expect(executed).toEqual([2, 3]);
+        expect(world.getGeneralById(2)?.recentWarTime?.getTime()).toBe(baseTime.getTime());
+        expect(world.getGeneralById(2)?.recentWarTick).not.toBeNull();
+        expect(Number(world.getGeneralById(2)?.turnTick) % 10).toBe(4);
 
         await processor.run(addMinutes(baseTime, 30), budget);
 

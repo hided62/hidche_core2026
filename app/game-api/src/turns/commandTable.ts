@@ -206,7 +206,7 @@ const buildCommandEnv = (worldState: WorldStateRow): CommandEnv => {
         defaultSpecialDomestic: resolveOptionalString(constValues, ['defaultSpecialDomestic']),
         defaultSpecialWar: resolveOptionalString(constValues, ['defaultSpecialWar']),
         initialNationGenLimit: resolveNumber(constValues, ['initialNationGenLimit'], 0),
-        maxTechLevel: resolveNumber(constValues, ['maxTechLevel'], 0),
+        maxTechLevel: resolveNumber(constValues, ['maxTechLevel'], 12),
         maxStatLevel: resolveNumber(constValues, ['maxLevel'], 255),
         techLevelIncYear: resolveNumber(constValues, ['techLevelIncYear'], 5),
         initialAllowedTechLevel: resolveNumber(constValues, ['initialAllowedTechLevel'], 1),

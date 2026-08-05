@@ -112,6 +112,8 @@ export interface WarUnitReport {
     isAttacker: boolean;
     killed: number;
     dead: number;
+    /** Number of battle phases consumed by this unit. */
+    phase?: number;
 }
 
 export interface WarBattleMetrics {

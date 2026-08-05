@@ -1,4 +1,4 @@
-import { LiteHashDRBG, RandUtil } from '@sammo-ts/common';
+import { GAME_TICKS_PER_TURN, LiteHashDRBG, RandUtil } from '@sammo-ts/common';
 import type { TurnCommandEnv } from '@sammo-ts/logic';
 import { simpleSerialize } from '@sammo-ts/logic/war/utils.js';
 
@@ -25,18 +25,24 @@ const resolveHiddenSeed = (world: InMemoryTurnWorld): string | number => {
     return typeof value === 'string' || typeof value === 'number' ? value : String(value);
 };
 
-const createTurnTime = (
+const createTurnClock = (
     rng: RandUtil,
     environment: MonthlyEventEnvironment,
-    tickSeconds: number
-): Date => {
+    world: InMemoryTurnWorld
+): { turnTime: Date; turnTick: number } => {
+    const tickSeconds = world.getState().tickSeconds;
     const turnMinutes = tickSeconds / 60;
     if (!(turnMinutes > 0) || !Number.isInteger(turnMinutes)) {
         throw new Error('ProvideNPCTroopLeader requires a positive integer turn term.');
     }
     const seconds = rng.nextRangeInt(0, turnMinutes * 60 - 1);
     const fraction = rng.nextRangeInt(0, 999_999);
-    return new Date(environment.turnTime.getTime() + seconds * 1_000 + Math.floor(fraction / 1_000));
+    const ticksPerSecond = GAME_TICKS_PER_TURN / tickSeconds;
+    const turnTick =
+        world.dateToGameTick(environment.turnTime) +
+        seconds * ticksPerSecond +
+        Math.floor((fraction * ticksPerSecond) / 1_000_000);
+    return { turnTime: world.gameTickToDate(turnTick), turnTick };
 };
 
 export const createProvideNpcTroopLeaderHandler = (options: {
@@ -51,9 +57,7 @@ export const createProvideNpcTroopLeaderHandler = (options: {
         }
         const currentLastId = world.getState().meta.lastNPCTroopLeaderID;
         let lastNpcTroopLeaderId =
-            typeof currentLastId === 'number' && Number.isFinite(currentLastId)
-                ? Math.trunc(currentLastId)
-                : 0;
+            typeof currentLastId === 'number' && Number.isFinite(currentLastId) ? Math.trunc(currentLastId) : 0;
 
         for (const nation of world.listNations().sort((left, right) => left.id - right.id)) {
             const maximum = MAX_LEADERS_BY_NATION_LEVEL[nation.level] ?? 0;
@@ -85,6 +89,7 @@ export const createProvideNpcTroopLeaderHandler = (options: {
                 const city = rng.choice(cityPool);
                 const id = world.getNextGeneralId();
                 const age = 20;
+                const turnClock = createTurnClock(rng, environment, world);
                 const general: TurnGeneral = {
                     id,
                     userId: null,
@@ -117,7 +122,7 @@ export const createProvideNpcTroopLeaderHandler = (options: {
                     picture: 'default.jpg',
                     triggerState: { flags: {}, counters: {}, modifiers: {}, meta: {} },
                     lastTurn: { command: '휴식' },
-                    turnTime: createTurnTime(rng, environment, world.getState().tickSeconds),
+                    ...turnClock,
                     recentWarTime: null,
                     meta: {
                         killturn: 70,

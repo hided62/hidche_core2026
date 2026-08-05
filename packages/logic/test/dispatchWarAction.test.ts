@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import type { City, General, Nation } from '../src/domain/entities.js';
 import { resolveGeneralAction } from '../src/actions/engine.js';
-import { ActionDefinition } from '../src/actions/turn/general/che_출병.js';
+import { ActionDefinition, orderDefenderGenerals } from '../src/actions/turn/general/che_출병.js';
 import type { DispatchResolveContext } from '../src/actions/turn/general/che_출병.js';
 import type { TurnSchedule } from '../src/turn/calendar.js';
 import type { WarAftermathConfig, WarEngineConfig } from '../src/war/types.js';
@@ -183,6 +183,7 @@ describe('che_출병', () => {
         const defenderCity = buildCity(2, defenderNation.id);
         const neutralCity = buildCity(3, 0);
         const attacker = buildGeneral(1, attackerNation.id, attackerCity.id);
+        attacker.turnTime = new Date('2000-01-01T00:00:00Z');
         const defender = buildGeneral(2, defenderNation.id, defenderCity.id);
         defender.crew = 0;
         defenderCity.defence = 0;
@@ -204,9 +205,36 @@ describe('che_출병', () => {
                 id: 'test-map',
                 name: 'test-map',
                 cities: [
-                    { id: 1, name: 'City1', level: 2, region: 1, position: { x: 0, y: 0 }, connections: [2, 3], max: { population: 1, agriculture: 1, commerce: 1, security: 1, defence: 1, wall: 1 }, initial: { population: 1, agriculture: 1, commerce: 1, security: 1, defence: 1, wall: 1 } },
-                    { id: 2, name: 'City2', level: 2, region: 1, position: { x: 1, y: 0 }, connections: [1], max: { population: 1, agriculture: 1, commerce: 1, security: 1, defence: 1, wall: 1 }, initial: { population: 1, agriculture: 1, commerce: 1, security: 1, defence: 1, wall: 1 } },
-                    { id: 3, name: 'City3', level: 2, region: 1, position: { x: 0, y: 1 }, connections: [1], max: { population: 1, agriculture: 1, commerce: 1, security: 1, defence: 1, wall: 1 }, initial: { population: 1, agriculture: 1, commerce: 1, security: 1, defence: 1, wall: 1 } },
+                    {
+                        id: 1,
+                        name: 'City1',
+                        level: 2,
+                        region: 1,
+                        position: { x: 0, y: 0 },
+                        connections: [2, 3],
+                        max: { population: 1, agriculture: 1, commerce: 1, security: 1, defence: 1, wall: 1 },
+                        initial: { population: 1, agriculture: 1, commerce: 1, security: 1, defence: 1, wall: 1 },
+                    },
+                    {
+                        id: 2,
+                        name: 'City2',
+                        level: 2,
+                        region: 1,
+                        position: { x: 1, y: 0 },
+                        connections: [1],
+                        max: { population: 1, agriculture: 1, commerce: 1, security: 1, defence: 1, wall: 1 },
+                        initial: { population: 1, agriculture: 1, commerce: 1, security: 1, defence: 1, wall: 1 },
+                    },
+                    {
+                        id: 3,
+                        name: 'City3',
+                        level: 2,
+                        region: 1,
+                        position: { x: 0, y: 1 },
+                        connections: [1],
+                        max: { population: 1, agriculture: 1, commerce: 1, security: 1, defence: 1, wall: 1 },
+                        initial: { population: 1, agriculture: 1, commerce: 1, security: 1, defence: 1, wall: 1 },
+                    },
                 ],
             },
             diplomacy: [
@@ -235,6 +263,7 @@ describe('che_출병', () => {
         );
 
         expect(resolution.logs.length).toBeGreaterThan(0);
+        expect(resolution.general.recentWarTime?.toISOString()).toBe(attacker.turnTime.toISOString());
         expect(resolution.patches?.generals.some((patch) => patch.id === defender.id)).toBe(true);
         expect(resolution.patches?.cities.some((patch) => patch.id === defenderCity.id)).toBe(true);
         expect({ city: resolution.city, patches: resolution.patches?.cities }).toMatchObject({
@@ -248,6 +277,13 @@ describe('che_출병', () => {
                     effect.destNationId === defenderNation.id
             )
         ).toBe(true);
+    });
+
+    it('orders equal-priority defender inputs by general number before the stable battle sort', () => {
+        const defender2 = buildGeneral(2, 2, 2);
+        const defender3 = buildGeneral(3, 2, 2);
+
+        expect(orderDefenderGenerals([defender3, defender2]).map((general) => general.id)).toEqual([2, 3]);
     });
 
     it('prefers an enemy on the shortest route layer before considering the next layer', () => {

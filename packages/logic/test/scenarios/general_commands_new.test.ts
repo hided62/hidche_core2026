@@ -20,6 +20,7 @@ import { commandSpec as destroySpec } from '../../src/actions/turn/general/che_�
 import { commandSpec as agitateSpec } from '../../src/actions/turn/general/che_선동.js';
 import { commandSpec as seizeSpec } from '../../src/actions/turn/general/che_탈취.js';
 import { commandSpec as fireSpec } from '../../src/actions/turn/general/che_화계.js';
+import { ActionDefinition as AppointmentAction } from '../../src/actions/turn/general/che_임관.js';
 import type { TurnCommandEnv } from '../../src/actions/turn/commandEnv.js';
 import {
     createItemActionModules,
@@ -42,6 +43,7 @@ import {
 import { readLegacyCityTrust, storeLegacyCityTrust } from '../../src/actions/turn/general/legacyCityTrust.js';
 import { roundLegacyRecruitCost } from '../../src/actions/turn/general/che_징병.js';
 import { resolveLegacyDomesticTrust } from '../../src/actions/turn/general/che_상업투자.js';
+import { traitModule as ambitiousPersonality } from '../../src/actionModules/traits/personality/che_출세.js';
 
 describe('General Commands New Scenario', () => {
     it('truncates generated NPC dex like GeneralBuilder integer arguments', () => {
@@ -75,6 +77,8 @@ describe('General Commands New Scenario', () => {
         expect(toLegacyStoredTech(value)).not.toBe(Number(Math.fround(value).toPrecision(6)));
         expect(readLegacyStoredTech(624.0966796875)).toBe(624.097);
         expect(addLegacyStoredTech(624.0966796875, 22.9)).toBe(Math.fround(624.097 + 22.9));
+        expect(readLegacyStoredTech(533.3125)).toBe(533.312);
+        expect(readLegacyStoredTech(533.4375)).toBe(533.438);
     });
 
     it('separates MariaDB FLOAT trust storage from its six-digit PHP read value', () => {
@@ -84,6 +88,7 @@ describe('General Commands New Scenario', () => {
         expect(stored).not.toBe(readLegacyCityTrust(stored));
         expect(readLegacyCityTrust(stored)).toBe(88.3068);
         expect(readLegacyCityTrust(storeLegacyCityTrust(readLegacyCityTrust(stored) + 10))).toBe(98.3068);
+        expect(readLegacyCityTrust(storeLegacyCityTrust(93.40625))).toBe(93.4062);
     });
 
     it('rounds recruitment cost across the PHP half boundary', () => {
@@ -98,6 +103,38 @@ describe('General Commands New Scenario', () => {
         expect(resolveLegacyDomesticTrust(44.5321)).toBe(50);
         expect(resolveLegacyDomesticTrust(80)).toBe(80);
         expect(resolveLegacyDomesticTrust(null)).toBe(50);
+    });
+
+    it('applies the personality experience modifier to appointment rewards', () => {
+        const action = new AppointmentAction({
+            initialNationGenLimit: 10,
+            generalActionModules: [ambitiousPersonality],
+        } as unknown as TurnCommandEnv);
+        const general = {
+            id: 1,
+            name: 'General',
+            experience: 1_000,
+            role: {
+                personality: 'che_출세',
+                specialDomestic: null,
+                specialWar: null,
+                items: { horse: null, weapon: null, book: null, item: null },
+            },
+            meta: {},
+        } as General;
+        const result = action.resolve(
+            {
+                general,
+                destNation: { id: 2, name: 'Nation', meta: {} } as Nation,
+                destNationGeneralCount: 10,
+                destCityId: 3,
+                addLog: () => undefined,
+            } as unknown as Parameters<typeof action.resolve>[0],
+            { destNationId: 2 }
+        );
+        const generalPatch = result.effects.find((effect) => effect.type === 'general:patch');
+
+        expect(generalPatch).toMatchObject({ patch: { experience: 1_110 } });
     });
 
     // 1. Setup Environment

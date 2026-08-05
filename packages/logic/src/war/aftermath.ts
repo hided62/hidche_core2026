@@ -494,7 +494,11 @@ export const resolveWarAftermath = <TriggerState extends GeneralTriggerState = G
         const defenderNation = input.defenderNation;
         const cityKilled = cityReport?.killed ?? 0;
 
-        if ((cityReport?.dead ?? 0) > 0) {
+        // Ref branches on WarUnitCity::getPhase(), not accumulated city
+        // casualties. A city can retain dead casualties from earlier battles
+        // while being conquered before its wall receives a phase.
+        const cityPhase = cityReport?.phase ?? ((cityReport?.dead ?? 0) > 0 ? 1 : 0);
+        if (cityPhase > 0) {
             const crewTypeIndex = buildCrewTypeIndex(input.unitSet);
             const crewType = crewTypeIndex.get(input.config.castleCrewTypeId);
             const riceCoef = crewType?.rice ?? 1;

@@ -157,6 +157,7 @@ const DEFAULT_WAR_CONFIG = {
 const DEFAULT_AFTER_CONFIG = {
     techLevelIncYear: 5,
     initialAllowedTechLevel: 1,
+    maxTechLevel: 12,
     defaultCityWall: 1000,
     baseGold: 0,
     baseRice: 2000,
@@ -235,7 +236,7 @@ export const buildWarAftermathConfig = (
             ['initialAllowedTechLevel'],
             DEFAULT_AFTER_CONFIG.initialAllowedTechLevel
         ),
-        maxTechLevel: resolveNumber(constValues, ['maxTechLevel'], 0),
+        maxTechLevel: resolveNumber(constValues, ['maxTechLevel'], DEFAULT_AFTER_CONFIG.maxTechLevel),
         defaultCityWall: resolveNumber(constValues, ['defaultCityWall'], DEFAULT_AFTER_CONFIG.defaultCityWall),
         baseGold: resolveNumber(constValues, ['baseGold', 'basegold'], DEFAULT_AFTER_CONFIG.baseGold),
         baseRice: resolveNumber(constValues, ['baseRice', 'baserice'], DEFAULT_AFTER_CONFIG.baseRice),

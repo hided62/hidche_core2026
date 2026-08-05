@@ -64,6 +64,10 @@ export interface DispatchResolveContext<
     aftermathConfig: WarAftermathConfig;
 }
 
+export const orderDefenderGenerals = <TriggerState extends GeneralTriggerState>(
+    generals: General<TriggerState>[]
+): General<TriggerState>[] => [...generals].sort((left, right) => left.id - right.id);
+
 const ACTION_NAME = '출병';
 const ARGS_SCHEMA = z.object({
     destCityId: z.number(),
@@ -86,7 +90,12 @@ const fixtureNumber = (value: unknown, fallback = 0): number =>
     typeof value === 'number' && Number.isFinite(value) ? value : fallback;
 
 const formatFixtureDate = (value: Date | undefined): string =>
-    value ? value.toISOString().replace('T', ' ').replace(/\.\d{3}Z$/u, '') : '1970-01-01 00:00:00';
+    value
+        ? value
+              .toISOString()
+              .replace('T', ' ')
+              .replace(/\.\d{3}Z$/u, '')
+        : '1970-01-01 00:00:00';
 
 const buildBattleGeneralFixture = <TriggerState extends GeneralTriggerState>(general: General<TriggerState>) => {
     const meta = general.meta;
@@ -105,9 +114,7 @@ const buildBattleGeneralFixture = <TriggerState extends GeneralTriggerState>(gen
                 inheritBuff = parsed;
             } else if (typeof parsed === 'object' && parsed !== null) {
                 inheritBuff = Object.fromEntries(
-                    Object.entries(parsed).filter(
-                        (entry): entry is [string, number] => typeof entry[1] === 'number'
-                    )
+                    Object.entries(parsed).filter((entry): entry is [string, number] => typeof entry[1] === 'number')
                 );
             }
         } catch {
@@ -556,12 +563,14 @@ export class ActionDefinition<
         defenderCity.meta.term = 3;
         const defenderNation = defenderCity.nationId > 0 ? (nationMap.get(defenderCity.nationId) ?? null) : null;
 
-        const defenderGenerals = generals.filter(
-            (general) =>
-                general.cityId === defenderCity.id &&
-                general.nationId === defenderCity.nationId &&
-                general.crew > 0 &&
-                (unitSet.crewTypes?.some((crewType) => crewType.id === general.crewTypeId) ?? false)
+        const defenderGenerals = orderDefenderGenerals(
+            generals.filter(
+                (general) =>
+                    general.cityId === defenderCity.id &&
+                    general.nationId === defenderCity.nationId &&
+                    general.crew > 0 &&
+                    (unitSet.crewTypes?.some((crewType) => crewType.id === general.crewTypeId) ?? false)
+            )
         );
         const traceGeneralIds = new Set(process.env.CORE_AI_TRACE_GENERAL_IDS?.split(',') ?? []);
         const shouldTraceWar =
@@ -647,9 +656,7 @@ export class ActionDefinition<
         // to deploy. Preserve that ordering before snapshotting city effects.
         let frontStatePatches: Array<{ id: number; frontState: number }> = [];
         if (battle.conquered && context.map && context.diplomacy) {
-            const connections = new Map(
-                context.map.cities.map((city) => [city.id, city.connections ?? []] as const)
-            );
+            const connections = new Map(context.map.cities.map((city) => [city.id, city.connections ?? []] as const));
             const nearbyCityIds = new Set([defenderCity.id, ...(connections.get(defenderCity.id) ?? [])]);
             const nearbyNationIds = new Set<number>([aftermath.conquest?.conquerNationId ?? attackerNation.id]);
             for (const city of cities) {

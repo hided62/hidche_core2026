@@ -1236,11 +1236,26 @@ export class InMemoryTurnWorld {
 
         const nextTurnAt = result.nextTurnAt ?? getNextTurnAt(currentGeneral.turnTime, this.schedule);
         if (!result.deleted?.general) {
+            const resolvedGeneral = result.general ?? currentGeneral;
+            const clock = this.getGameClock();
+            const currentTurnTick = currentGeneral.turnTick ?? clock.dateToTick(currentGeneral.turnTime);
+            const nextTurnTick =
+                currentTurnTick + (clock.dateToTick(nextTurnAt) - clock.dateToTick(currentGeneral.turnTime));
+            const recentWarTimeChanged =
+                (resolvedGeneral.recentWarTime?.getTime() ?? null) !==
+                (currentGeneral.recentWarTime?.getTime() ?? null);
+            const recentWarTickChanged = resolvedGeneral.recentWarTick !== currentGeneral.recentWarTick;
             const nextGeneral = this.normalizeGeneralClock(
                 normalizeGeneralDatabaseIntegers({
-                    ...(result.general ?? currentGeneral),
+                    ...resolvedGeneral,
                     turnTime: nextTurnAt,
-                    turnTick: undefined,
+                    // Ref advances the logical tick directly. Re-encoding the
+                    // millisecond Date would discard its sub-millisecond tail.
+                    turnTick: nextTurnTick,
+                    // A loaded row always carries recentWarTick (often null).
+                    // When battle logic changes recentWarTime, discard that
+                    // stale tick so normalizeGeneralClock derives the new one.
+                    ...(recentWarTimeChanged && !recentWarTickChanged ? { recentWarTick: undefined } : {}),
                 })
             );
             this.generals.set(nextGeneral.id, nextGeneral);
