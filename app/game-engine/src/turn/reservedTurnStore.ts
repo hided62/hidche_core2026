@@ -241,12 +241,20 @@ export class InMemoryReservedTurnStore {
         return new Date(Date.now() + this.leaseDurationMs);
     }
 
-    private async acquireGeneralLease(generalId: number): Promise<void> {
+    private async acquireGeneralLease(generalId: number): Promise<boolean> {
         const revisionStore = this.prisma.generalTurnRevision;
         if (!revisionStore) {
-            return;
+            return false;
         }
         const now = new Date();
+        const previous = (await revisionStore.findUnique({ where: { generalId } })) as {
+            leaseOwner: string | null;
+            leaseExpiresAt: Date | null;
+        } | null;
+        const retainedExistingLease =
+            previous?.leaseOwner === this.leaseOwner &&
+            previous.leaseExpiresAt !== null &&
+            previous.leaseExpiresAt.getTime() > now.getTime();
         const leaseExpiresAt = this.getLeaseExpiresAt();
         let claimed = await revisionStore.updateMany({
             where: {
@@ -280,14 +288,22 @@ export class InMemoryReservedTurnStore {
             throw new ReservedTurnLeaseConflictError(`general:${generalId}`);
         }
         this.leasedGeneralIds.add(generalId);
+        return !retainedExistingLease;
     }
 
-    private async acquireNationLease(nationId: number, officerLevel: number): Promise<void> {
+    private async acquireNationLease(nationId: number, officerLevel: number): Promise<boolean> {
         const revisionStore = this.prisma.nationTurnRevision;
         if (!revisionStore) {
-            return;
+            return false;
         }
         const now = new Date();
+        const previous = (await revisionStore.findUnique({
+            where: { nationId_officerLevel: { nationId, officerLevel } },
+        })) as { leaseOwner: string | null; leaseExpiresAt: Date | null } | null;
+        const retainedExistingLease =
+            previous?.leaseOwner === this.leaseOwner &&
+            previous.leaseExpiresAt !== null &&
+            previous.leaseExpiresAt.getTime() > now.getTime();
         const leaseExpiresAt = this.getLeaseExpiresAt();
         let claimed = await revisionStore.updateMany({
             where: {
@@ -323,6 +339,7 @@ export class InMemoryReservedTurnStore {
             throw new ReservedTurnLeaseConflictError(`nation:${nationId}:${officerLevel}`);
         }
         this.leasedNationKeys.add(buildNationKey(nationId, officerLevel));
+        return !retainedExistingLease;
     }
 
     private async releaseGeneralLease(generalId: number): Promise<void> {
@@ -348,23 +365,32 @@ export class InMemoryReservedTurnStore {
         const hadGeneralLease = this.leasedGeneralIds.has(generalId);
         const nationKey = nation ? buildNationKey(nation.nationId, nation.officerLevel) : null;
         const hadNationLease = nationKey ? this.leasedNationKeys.has(nationKey) : false;
+        let acquiredFreshGeneralLease = false;
+        let acquiredFreshNationLease = false;
         try {
-            await this.acquireGeneralLease(generalId);
+            acquiredFreshGeneralLease = await this.acquireGeneralLease(generalId);
             if (nation) {
-                await this.acquireNationLease(nation.nationId, nation.officerLevel);
+                acquiredFreshNationLease = await this.acquireNationLease(nation.nationId, nation.officerLevel);
             }
             await Promise.all([
                 // A newly acquired lease starts a fresh API/daemon ownership boundary.
                 // Re-read PostgreSQL even if a prior run left a stale dirty marker;
                 // repeated access under the same held lease keeps local mutations.
-                this.refreshGeneralTurns(generalId, !hadGeneralLease),
-                nation ? this.refreshNationTurns(nation.nationId, nation.officerLevel) : Promise.resolve(),
+                this.refreshGeneralTurns(generalId, acquiredFreshGeneralLease),
+                nation
+                    ? this.refreshNationTurns(nation.nationId, nation.officerLevel, acquiredFreshNationLease)
+                    : Promise.resolve(),
             ]);
         } catch (error) {
-            if (nation && nationKey !== null && !hadNationLease && this.leasedNationKeys.has(nationKey)) {
+            if (
+                nation &&
+                nationKey !== null &&
+                (!hadNationLease || acquiredFreshNationLease) &&
+                this.leasedNationKeys.has(nationKey)
+            ) {
                 await this.releaseNationLease(nation.nationId, nation.officerLevel);
             }
-            if (!hadGeneralLease && this.leasedGeneralIds.has(generalId)) {
+            if ((!hadGeneralLease || acquiredFreshGeneralLease) && this.leasedGeneralIds.has(generalId)) {
                 await this.releaseGeneralLease(generalId);
             }
             throw error;
@@ -406,9 +432,9 @@ export class InMemoryReservedTurnStore {
         }
     }
 
-    async refreshNationTurns(nationId: number, officerLevel: number): Promise<void> {
+    async refreshNationTurns(nationId: number, officerLevel: number, force = false): Promise<void> {
         const key = buildNationKey(nationId, officerLevel);
-        if (this.dirtyNationKeys.has(key) || this.pendingNationInitializationKeys.has(key)) {
+        if (!force && (this.dirtyNationKeys.has(key) || this.pendingNationInitializationKeys.has(key))) {
             return;
         }
         const rows = await this.prisma.nationTurn.findMany({

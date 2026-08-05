@@ -1,10 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import { asRecord } from '@sammo-ts/common';
 
-import {
-    InMemoryReservedTurnStore,
-    ReservedTurnLeaseConflictError,
-} from '../src/turn/reservedTurnStore.js';
+import { InMemoryReservedTurnStore, ReservedTurnLeaseConflictError } from '../src/turn/reservedTurnStore.js';
 
 interface RevisionRow {
     revision: number;
@@ -202,17 +199,20 @@ describe('reserved turn daemon lease', () => {
         });
     });
 
-    it('refreshes a stale dirty cache after acquiring a fresh lease but preserves mutations under the held lease', async () => {
+    it('refreshes after a durable flush whose in-memory lease acknowledgement was interrupted', async () => {
         const harness = buildHarness();
-        harness.store.setGeneralTurn(7, 0, { action: '휴식', args: {} });
+        await harness.store.prepareTurnsForExecution(7);
+        harness.store.shiftGeneralTurns(7, -1);
+        const changes = harness.store.peekDirtyState();
+        await harness.store.persistChanges(harness.prisma, changes);
+
+        expect(harness.store.getGeneralTurn(7, 0).action).toBe('휴식');
+        expect(harness.store.peekDirtyState()).toMatchObject({ generalIds: [7], generalLeaseIds: [7] });
+        expect(harness.getRevision()).toMatchObject({ revision: 1, leaseOwner: null });
 
         await harness.store.prepareTurnsForExecution(7);
         expect(harness.store.getGeneralTurn(7, 0).action).toBe('che_훈련');
-
-        harness.store.setGeneralTurn(7, 0, { action: 'che_사기진작', args: {} });
-        await harness.store.prepareTurnsForExecution(7);
-        expect(harness.store.getGeneralTurn(7, 0).action).toBe('che_사기진작');
-        expect(harness.generalFindMany).toHaveBeenCalledOnce();
+        expect(harness.generalFindMany).toHaveBeenCalledTimes(2);
     });
 
     it('rejects an active foreign lease before reading the queue', async () => {
@@ -222,9 +222,7 @@ describe('reserved turn daemon lease', () => {
             leaseExpiresAt: new Date(Date.now() + 60_000),
         });
 
-        await expect(harness.store.prepareTurnsForExecution(7)).rejects.toBeInstanceOf(
-            ReservedTurnLeaseConflictError
-        );
+        await expect(harness.store.prepareTurnsForExecution(7)).rejects.toBeInstanceOf(ReservedTurnLeaseConflictError);
         expect(harness.generalFindMany).not.toHaveBeenCalled();
     });
 
