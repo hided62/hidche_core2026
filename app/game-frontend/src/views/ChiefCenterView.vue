@@ -8,6 +8,7 @@ import ChiefTurnCard from '../components/chief/ChiefTurnCard.vue';
 import ChiefCommandEditor from '../components/chief/ChiefCommandEditor.vue';
 import { trpc } from '../utils/trpc';
 import { formatOfficerLevelText } from '../utils/nationFormat';
+import type { CommandPatternEntry } from '../components/command/types';
 
 type ChiefTurn = {
     index: number;
@@ -103,6 +104,9 @@ type TurnRow = {
     time: string;
     action: string;
     isRest: boolean;
+    args: unknown;
+    label: string;
+    actionCode: string;
 };
 
 const loading = ref(false);
@@ -243,6 +247,9 @@ const buildTurnRows = (chief: ChiefEntry): TurnRow[] => {
             index: turn.index,
             time: timeLabel,
             action: actionLabel,
+            label: actionLabel,
+            actionCode: turn.action,
+            args: turn.args,
             isRest: turn.action === '휴식',
         };
     });
@@ -296,14 +303,12 @@ const shiftTurns = async (amount: number) => {
     }
 };
 
-const reserveTurn = async (payload: { index: number; action: string; args: Record<string, unknown> }) => {
+const reserveTurns = async (entries: CommandPatternEntry[]) => {
     if (!data.value || !isEditingAllowed.value) return;
     try {
-        const result = await trpc.turns.reserved.setNation.mutate({
+        const result = await trpc.turns.reserved.setNationBulk.mutate({
             generalId: data.value.me.id,
-            turnIndex: payload.index,
-            action: payload.action,
-            args: payload.args,
+            entries,
             expectedRevision: selectedChief.value?.revision ?? 0,
         });
         updateMyTurns(result.turns, result.revision);
@@ -352,8 +357,10 @@ const repeatTurns = async (amount: number) => {
                 :rows="selectedChiefRows"
                 :command-table="commandTable"
                 :loading="commandLoading"
+                :general-id="data.me.id"
+                :officer-level="selectedChief.officerLevel"
                 :mobile="true"
-                @reserve="reserveTurn"
+                @reserve-bulk="reserveTurns"
                 @shift="shiftTurns"
                 @repeat="repeatTurns"
             />
@@ -411,7 +418,9 @@ const repeatTurns = async (amount: number) => {
                         :rows="chief.rows"
                         :command-table="commandTable"
                         :loading="commandLoading"
-                        @reserve="reserveTurn"
+                        :general-id="data.me.id"
+                        :officer-level="chief.officerLevel"
+                        @reserve-bulk="reserveTurns"
                         @shift="shiftTurns"
                         @repeat="repeatTurns"
                     />
