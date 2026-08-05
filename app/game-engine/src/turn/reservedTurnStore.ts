@@ -408,6 +408,17 @@ export class InMemoryReservedTurnStore {
             orderBy: [{ turnIdx: 'asc' }],
         });
         this.generalTurns.set(generalId, buildTurnListFromRows(rows, this.maxGeneralTurns));
+        if ((process.env.CORE_AI_TRACE_GENERAL_IDS?.split(',') ?? []).includes(String(generalId))) {
+            process.stdout.write(
+                `RESERVED_TURN_REFRESH_TRACE ${JSON.stringify({
+                    generalId,
+                    force,
+                    firstAction: rows.find((row) => row.turnIdx === 0)?.actionCode ?? DEFAULT_TURN_ACTION,
+                    dirty: this.dirtyGeneralIds.has(generalId),
+                    leased: this.leasedGeneralIds.has(generalId),
+                })}\n`
+            );
+        }
     }
 
     async prefetchGeneralTurns(generalIds: number[]): Promise<void> {

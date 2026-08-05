@@ -1714,6 +1714,14 @@ export const createReservedTurnHandler = async (options: {
             }
 
             let generalCommand = options.reservedTurns.getGeneralTurn(currentGeneral.id, 0);
+            if ((process.env.CORE_AI_TRACE_GENERAL_IDS?.split(',') ?? []).includes(String(currentGeneral.id))) {
+                process.stdout.write(
+                    `RESERVED_TURN_HANDLER_TRACE ${JSON.stringify({
+                        generalId: currentGeneral.id,
+                        action: generalCommand.action,
+                    })}\n`
+                );
+            }
             if (!isBlocked && generalCommand.action !== DEFAULT_ACTION) {
                 hasReservedTurn = true;
             }
