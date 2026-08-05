@@ -354,7 +354,10 @@ export class InMemoryReservedTurnStore {
                 await this.acquireNationLease(nation.nationId, nation.officerLevel);
             }
             await Promise.all([
-                this.refreshGeneralTurns(generalId),
+                // A newly acquired lease starts a fresh API/daemon ownership boundary.
+                // Re-read PostgreSQL even if a prior run left a stale dirty marker;
+                // repeated access under the same held lease keeps local mutations.
+                this.refreshGeneralTurns(generalId, !hadGeneralLease),
                 nation ? this.refreshNationTurns(nation.nationId, nation.officerLevel) : Promise.resolve(),
             ]);
         } catch (error) {
@@ -368,8 +371,8 @@ export class InMemoryReservedTurnStore {
         }
     }
 
-    async refreshGeneralTurns(generalId: number): Promise<void> {
-        if (this.dirtyGeneralIds.has(generalId)) {
+    async refreshGeneralTurns(generalId: number, force = false): Promise<void> {
+        if (!force && this.dirtyGeneralIds.has(generalId)) {
             return;
         }
         const rows = await this.prisma.generalTurn.findMany({

@@ -202,6 +202,19 @@ describe('reserved turn daemon lease', () => {
         });
     });
 
+    it('refreshes a stale dirty cache after acquiring a fresh lease but preserves mutations under the held lease', async () => {
+        const harness = buildHarness();
+        harness.store.setGeneralTurn(7, 0, { action: '휴식', args: {} });
+
+        await harness.store.prepareTurnsForExecution(7);
+        expect(harness.store.getGeneralTurn(7, 0).action).toBe('che_훈련');
+
+        harness.store.setGeneralTurn(7, 0, { action: 'che_사기진작', args: {} });
+        await harness.store.prepareTurnsForExecution(7);
+        expect(harness.store.getGeneralTurn(7, 0).action).toBe('che_사기진작');
+        expect(harness.generalFindMany).toHaveBeenCalledOnce();
+    });
+
     it('rejects an active foreign lease before reading the queue', async () => {
         const harness = buildHarness({
             revision: 4,
