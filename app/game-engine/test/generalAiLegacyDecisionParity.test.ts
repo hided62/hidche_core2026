@@ -629,6 +629,35 @@ describe('legacy NPC AI final-decision parity', () => {
         });
     });
 
+    it('uses the refillable same-type crew amount for the legacy gold-cost halving threshold', () => {
+        const ai = makeAi({
+            dipState: 2,
+            general: {
+                gold: 1_030,
+                rice: 970,
+                crew: 334,
+                crewTypeId: 1,
+                meta: {
+                    killturn: 100,
+                    fullLeadership: 70,
+                    rank_killcrew: 1_000,
+                    rank_deathcrew: 100,
+                },
+            },
+            generalActionModules: singleActionModuleStack({
+                eventHandlers: {},
+                onCalcDomestic: (_context, turnType, varType, value) =>
+                    turnType === '징병' && varType === 'cost' ? value * 1.2 : value,
+            }),
+            rng: makeRng([], [0, 0]),
+        });
+
+        // Ref prices only the 6,666 refillable soldiers: 800 gold, below the
+        // 820-gold reserve. It therefore keeps the full rice requirement and
+        // rejects recruitment, instead of halving both crew and rice cost.
+        expect(do징병(ai)).toBeNull();
+    });
+
     it.each([
         [0, 0],
         [0, 2000],

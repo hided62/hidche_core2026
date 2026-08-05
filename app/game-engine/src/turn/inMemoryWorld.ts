@@ -277,7 +277,7 @@ const normalizeGeneralMetaDatabaseIntegers = (meta: TurnGeneral['meta']): TurnGe
 // Keeping fractional action results in memory until the monthly flush changes
 // later aggregation (notably nation power), even if the eventual DB rows look
 // identical after they are rounded.
-const normalizeGeneralDatabaseIntegers = (general: TurnGeneral): TurnGeneral => ({
+export const normalizeGeneralDatabaseIntegers = (general: TurnGeneral): TurnGeneral => ({
     ...general,
     nationId: toLegacyDatabaseInt(general.nationId),
     cityId: toLegacyDatabaseInt(general.cityId),

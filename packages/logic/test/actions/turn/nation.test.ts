@@ -343,12 +343,22 @@ describe('Nation Actions', () => {
     });
 
     describe('che_천도 (Move Capital)', () => {
-        it('changes nation capital city', () => {
+        it('changes nation capital city and applies general reward modules', () => {
             const nation = buildNation(1);
             const city1 = buildCity(1, 1);
             const city2 = buildCity(2, 1);
             const general = buildGeneral(1, 1, 1);
-            const env = { develCost: 100, baseGold: 100, baseRice: 100 };
+            const env = {
+                develCost: 100,
+                baseGold: 100,
+                baseRice: 100,
+                generalActionModules: [
+                    {
+                        onCalcStat: (_context: unknown, statName: string, value: number) =>
+                            statName === 'experience' ? value * 0.9 : value,
+                    },
+                ],
+            };
             const definition = new MoveCapitalAction(env as any);
 
             const context = {
@@ -374,6 +384,8 @@ describe('Nation Actions', () => {
                     patch: expect.objectContaining({ capitalCityId: 2 }),
                 })
             );
+            expect(general.experience).toBe(113.5);
+            expect(general.dedication).toBe(115);
         });
     });
 
