@@ -177,6 +177,7 @@ describe('buildProcessDefinitions', () => {
             ...processConfig,
             baseEnv: {
                 DATABASE_URL: 'postgresql://integration.invalid/sammo',
+                VITE_APP_BASE_PATH: '/gateway',
                 GATEWAY_ROLE: 'orchestrator',
                 NODE_APP_INSTANCE: '2',
                 name: 'sammo:gateway-orchestrator',
@@ -193,6 +194,7 @@ describe('buildProcessDefinitions', () => {
             expect(definition.env).not.toHaveProperty('NODE_APP_INSTANCE');
             expect(definition.env).not.toHaveProperty('GATEWAY_ROLE');
         }
+        expect(definitions.frontend.env.VITE_APP_BASE_PATH).toBe('/che');
     });
 });
 

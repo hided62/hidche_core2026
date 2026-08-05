@@ -411,7 +411,10 @@ export const buildProcessDefinitions = (
             script: frontendScript,
             cwd: frontendCwd,
             args: ['preview', '--host', '0.0.0.0', '--port', String(profile.apiPort - 1), '--outDir', frontendOutDir],
-            env: baseEnv,
+            env: {
+                ...baseEnv,
+                VITE_APP_BASE_PATH: `/${profile.profile}`,
+            },
         },
         api: {
             name: apiName,
