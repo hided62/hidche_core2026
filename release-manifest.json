@@ -1,7 +1,7 @@
 {
     "formatVersion": 1,
     "controllerProtocol": 1,
-    "gatewaySchemaHead": "20260801000000_add_release_operations",
-    "gameSchemaHead": "20260731001000_add_unification_finalization",
+    "gatewaySchemaHead": "20260801000000_add_user_icon_library",
+    "gameSchemaHead": "20260803000000_add_logical_game_clock",
     "components": ["gateway-api", "gateway-frontend", "release-controller", "game-api", "game-engine", "game-frontend"]
 }

@@ -33,6 +33,15 @@ afterEach(async () => {
 });
 
 describe('readReleaseManifest', () => {
+    it('keeps the checked-in manifest aligned with the checked-in migration heads', async () => {
+        const workspaceRoot = path.resolve(import.meta.dirname, '../../..');
+
+        await expect(readReleaseManifest(workspaceRoot)).resolves.toMatchObject({
+            gatewaySchemaHead: '20260801000000_add_user_icon_library',
+            gameSchemaHead: '20260803000000_add_logical_game_clock',
+        });
+    });
+
     it('accepts a manifest whose schema heads match the selected workspace', async () => {
         const workspace = await createWorkspace('20260801000000_gateway', '20260801000000_game');
 
