@@ -170,3 +170,4 @@ docs/image-storage.md
 playwright-report/
 test-results/
 uploads/
+.release-dist/
