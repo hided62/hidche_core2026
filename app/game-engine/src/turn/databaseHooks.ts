@@ -26,7 +26,7 @@ import { asRecord } from '@sammo-ts/common';
 
 import type { TurnDaemonCommandResult, TurnDaemonHooks } from '../lifecycle/types.js';
 import type { InMemoryTurnWorld } from './inMemoryWorld.js';
-import type { InMemoryReservedTurnStore } from './reservedTurnStore.js';
+import type { InMemoryReservedTurnStore, ReservedTurnChanges } from './reservedTurnStore.js';
 import { buildDiplomacyMeta } from '@sammo-ts/logic';
 import { ensureItemInventory, withSerializedItemInventory } from '@sammo-ts/logic/items/index.js';
 import { persistGeneralLifecycleEvents } from './generalTurnLifecyclePersistence.js';
@@ -42,6 +42,26 @@ export interface DatabaseTurnHooks {
     hooks: TurnDaemonHooks;
     close(): Promise<void>;
 }
+
+export const excludeDeletedReservedTurnQueues = (
+    changes: ReservedTurnChanges,
+    deletedGeneralIds: readonly number[],
+    deletedNationIds: readonly number[]
+): ReservedTurnChanges => {
+    const deletedGenerals = new Set(deletedGeneralIds);
+    const deletedNations = new Set(deletedNationIds);
+    const keepGeneral = (generalId: number): boolean => !deletedGenerals.has(generalId);
+    const keepNation = (key: string): boolean => !deletedNations.has(Number(key.split(':', 1)[0]));
+
+    return {
+        generalIds: changes.generalIds.filter(keepGeneral),
+        generalInitializationIds: changes.generalInitializationIds.filter(keepGeneral),
+        generalLeaseIds: changes.generalLeaseIds.filter(keepGeneral),
+        nationKeys: changes.nationKeys.filter(keepNation),
+        nationInitializationKeys: changes.nationInitializationKeys.filter(keepNation),
+        nationLeaseKeys: changes.nationLeaseKeys.filter(keepNation),
+    };
+};
 
 const asJson = (value: unknown): InputJsonValue => value as InputJsonValue;
 const formatLegacyNumber = (value: number): string => Math.round(value).toLocaleString('en-US');
@@ -602,6 +622,9 @@ export const createDatabaseTurnHooks = async (
             pendingUnificationFinalizations,
         } = changes;
         const reservedTurnChanges = options?.reservedTurns?.peekDirtyState();
+        const persistedReservedTurnChanges = reservedTurnChanges
+            ? excludeDeletedReservedTurnQueues(reservedTurnChanges, deletedGenerals, deletedNations)
+            : undefined;
 
         const worldStateUpdate: TurnEngineWorldStateUpdateInput = {
             currentYear: state.currentYear,
@@ -1010,8 +1033,8 @@ export const createDatabaseTurnHooks = async (
                     message
                 );
             }
-            if (options?.reservedTurns && reservedTurnChanges) {
-                await options.reservedTurns.persistChanges(prisma, reservedTurnChanges);
+            if (options?.reservedTurns && persistedReservedTurnChanges) {
+                await options.reservedTurns.persistChanges(prisma, persistedReservedTurnChanges);
             }
             if (commandCompletion) {
                 await prisma.inputEvent.update({

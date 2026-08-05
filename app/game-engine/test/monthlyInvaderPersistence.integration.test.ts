@@ -524,6 +524,12 @@ integration('RaiseInvader database persistence', () => {
                 ).toBe(30);
             }
 
+            await reservedTurns.prepareTurnsForExecution(firstCreatedGeneralId, {
+                nationId: createdNationId,
+                officerLevel: 12,
+            });
+            reservedTurns.shiftGeneralTurns(firstCreatedGeneralId, -1);
+            reservedTurns.shiftNationTurns(createdNationId, 12, -1);
             for (const generalId of createdGeneralIds) {
                 expect(world.removeGeneral(generalId)).toBe(true);
             }
@@ -539,6 +545,20 @@ integration('RaiseInvader database persistence', () => {
             });
 
             expect(await db.event.findUnique({ where: { id: createdEventIds[1]! } })).toBeNull();
+            expect(await db.generalTurnRevision.findUnique({ where: { generalId: firstCreatedGeneralId } })).toBeNull();
+            expect(
+                await db.nationTurnRevision.findUnique({
+                    where: {
+                        nationId_officerLevel: { nationId: createdNationId, officerLevel: 12 },
+                    },
+                })
+            ).toBeNull();
+            expect(reservedTurns.inspectState()).toMatchObject({
+                dirtyGeneralIds: [],
+                dirtyNationKeys: [],
+                leasedGeneralIds: [],
+                leasedNationKeys: [],
+            });
             expect(await db.worldState.findUniqueOrThrow({ where: { id: stateRow.id } })).toMatchObject({
                 meta: expect.objectContaining({ isunited: 3, isUnited: 3, refreshLimit: 300 }),
             });
