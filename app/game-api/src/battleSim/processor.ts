@@ -134,11 +134,14 @@ const mapCityPayload = (payload: BattleSimJobPayload['attackerCity']): City => (
     },
 });
 
-const mapGeneralPayload = (payload: BattleSimJobPayload['attackerGeneral']): General => ({
+const mapGeneralPayload = (
+    payload: BattleSimJobPayload['attackerGeneral'],
+    currentCityId: number
+): General => ({
     id: payload.no,
     name: payload.name,
     nationId: payload.nation,
-    cityId: payload.officer_city,
+    cityId: payload.city ?? currentCityId,
     troopId: 0,
     stats: {
         leadership: payload.leadership,
@@ -184,10 +187,12 @@ const mapGeneralPayload = (payload: BattleSimJobPayload['attackerGeneral']): Gen
         dex3: payload.dex3,
         dex4: payload.dex4,
         dex5: payload.dex5,
-        intelExp: payload.intel_exp,
-        strengthExp: payload.strength_exp,
-        leadershipExp: payload.leadership_exp,
-        defenceTrain: payload.defence_train,
+        intel_exp: payload.intel_exp,
+        strength_exp: payload.strength_exp,
+        leadership_exp: payload.leadership_exp,
+        defence_train: payload.defence_train,
+        officerCity: payload.officer_city,
+        officer_city: payload.officer_city,
         rank_warnum: payload.warnum,
         rank_killnum: payload.killnum,
         rank_killcrew: payload.killcrew,
@@ -304,8 +309,8 @@ const resolveDefenderOrderPayload = (payload: BattleSimJobPayload): number[] => 
     const defenderNation = mapNationPayload(payload.defenderNation);
     const attackerCity = mapCityPayload(payload.attackerCity);
     const defenderCity = mapCityPayload(payload.defenderCity);
-    const attacker = mapGeneralPayload(payload.attackerGeneral);
-    const defenders = payload.defenderGenerals.map(mapGeneralPayload);
+    const attacker = mapGeneralPayload(payload.attackerGeneral, attackerCity.id);
+    const defenders = payload.defenderGenerals.map((general) => mapGeneralPayload(general, defenderCity.id));
     const warActionModules = buildWarActionModules(payload.unitSet, payload.scenarioEffect);
 
     return resolveDefenderOrder({
@@ -376,8 +381,10 @@ export const processBattleSimJob = (
         const defenderNation = mapNationPayload(payload.defenderNation);
         const attackerCity = mapCityPayload(payload.attackerCity);
         const defenderCity = mapCityPayload(payload.defenderCity);
-        const attackerGeneral = mapGeneralPayload(payload.attackerGeneral);
-        const defenderGenerals = payload.defenderGenerals.map(mapGeneralPayload);
+        const attackerGeneral = mapGeneralPayload(payload.attackerGeneral, attackerCity.id);
+        const defenderGenerals = payload.defenderGenerals.map((general) =>
+            mapGeneralPayload(general, defenderCity.id)
+        );
 
         const initialRice = new Map<number, number>();
         initialRice.set(attackerGeneral.id, attackerGeneral.rice);

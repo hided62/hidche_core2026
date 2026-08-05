@@ -51,7 +51,7 @@ export class che_계략시도 extends BaseWarUnitTrigger {
 
         const general = self.getGeneral();
         let trialProbability =
-            (self.getComputedStat('intelligence', general.stats.intelligence) / 100) *
+            (self.getComputedStat('intelligence', general.stats.intelligence, { truncate: false }) / 100) *
             self.getCrewType().magicCoef;
         trialProbability = self
             .getActionPipeline()

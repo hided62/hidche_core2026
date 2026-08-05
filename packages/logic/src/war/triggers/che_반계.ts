@@ -1,3 +1,4 @@
+import { JosaUtil } from '@sammo-ts/common';
 import { LogFormat } from '@sammo-ts/logic/logging/types.js';
 import { TriggerPriority } from '@sammo-ts/logic/triggers/core.js';
 import { BaseWarUnitTrigger } from '@sammo-ts/logic/war/triggers.js';
@@ -7,7 +8,7 @@ export class che_반계시도 extends BaseWarUnitTrigger {
     private readonly prob: number;
 
     constructor(unit: WarUnit, prob = 0.4) {
-        super(unit, TriggerPriority.Pre + 200);
+        super(unit, TriggerPriority.Body + 300);
         this.prob = prob;
     }
 
@@ -37,7 +38,7 @@ export class che_반계시도 extends BaseWarUnitTrigger {
 
 export class che_반계발동 extends BaseWarUnitTrigger {
     constructor(unit: WarUnit) {
-        super(unit, TriggerPriority.Post + 150);
+        super(unit, TriggerPriority.Post + 250);
     }
 
     protected actionWar(
@@ -56,12 +57,15 @@ export class che_반계발동 extends BaseWarUnitTrigger {
         }
 
         const [opposeMagic, damage] = magicData;
+        const particle = JosaUtil.pick(opposeMagic, '을');
 
         self.getLogger().pushGeneralBattleDetailLog(
-            `<C>반계</>로 상대의 <D>${opposeMagic}</>을 되돌렸다!`,
+            `<C>반계</>로 상대의 <D>${opposeMagic}</>${particle} 되돌렸다!`,
             LogFormat.PLAIN
         );
-        oppose.getLogger().pushGeneralBattleDetailLog(`<D>${opposeMagic}</>을 <R>역으로</> 당했다!`, LogFormat.PLAIN);
+        oppose
+            .getLogger()
+            .pushGeneralBattleDetailLog(`<D>${opposeMagic}</>${particle} <R>역으로</> 당했다!`, LogFormat.PLAIN);
 
         self.multiplyWarPowerMultiply(damage);
 

@@ -237,9 +237,9 @@ describe('battle sim processor', () => {
             datetime: '2026-01-01 00:00:00',
             avgWar: 1,
             phase: 2,
-            killed: 625,
-            maxKilled: 625,
-            minKilled: 625,
+            killed: 626,
+            maxKilled: 626,
+            minKilled: 626,
             dead: 1000,
             maxDead: 1000,
             minDead: 1000,
@@ -265,6 +265,30 @@ describe('battle sim processor', () => {
 
         expect(result.result).toBe(true);
         expect(result.order).toEqual([2]);
+    });
+
+    it('uses the legacy defence training threshold when ordering defenders', () => {
+        const payload = buildPayload('reorder');
+        payload.defenderGenerals[0]!.defence_train = 101;
+
+        const result = processBattleSimJob(payload);
+
+        expect(result.result).toBe(true);
+        expect(result.order).toEqual([]);
+    });
+
+    it('keeps current city separate from the officer assignment city', () => {
+        const localOfficer = buildPayload('battle');
+        localOfficer.attackerGeneral.city = localOfficer.attackerCity.city;
+        const remoteOfficer = buildPayload('battle');
+        remoteOfficer.attackerGeneral.city = remoteOfficer.attackerCity.city;
+        remoteOfficer.attackerGeneral.officer_city = 99;
+
+        const local = processBattleSimJob(localOfficer);
+        const remote = processBattleSimJob(remoteOfficer);
+
+        expect(local.killed).toBeGreaterThan(remote.killed ?? 0);
+        expect(local).not.toEqual(remote);
     });
 
     it('executes crew trigger handlers in simulator battles', () => {

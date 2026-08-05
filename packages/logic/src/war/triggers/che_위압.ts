@@ -47,8 +47,9 @@ export class che_위압발동 extends BaseWarUnitTrigger {
             return true;
         }
 
-        oppose.getLogger().pushGeneralBattleDetailLog('상대에게 <R>위압</>받았다!', LogFormat.PLAIN);
-        self.getLogger().pushGeneralBattleDetailLog('상대에게 <C>위압</>을 줬다!', LogFormat.PLAIN);
+        // Preserve Ref's historical extra closing marker in the rendered log.
+        oppose.getLogger().pushGeneralBattleDetailLog('상대에게 <R>위압</>받았다!</>', LogFormat.PLAIN);
+        self.getLogger().pushGeneralBattleDetailLog('상대에게 <C>위압</>을 줬다!</>', LogFormat.PLAIN);
         oppose.setWarPowerMultiply(0);
         if (canAddAtmos(oppose)) {
             oppose.addAtmos(-5);
