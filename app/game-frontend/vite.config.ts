@@ -2,6 +2,7 @@ import { defineConfig, loadEnv } from 'vite';
 import vue from '@vitejs/plugin-vue';
 import tailwindcss from '@tailwindcss/vite';
 import path from 'path';
+import { mergeViteEnv } from './src/config/viteEnv';
 
 const normalizeBasePath = (value: string | undefined): string => {
     const pathValue = (value ?? '/').trim();
@@ -22,14 +23,6 @@ const resolvePreviewAllowedHosts = (value: string | undefined): true | string[] 
         .filter(Boolean);
     return hosts;
 };
-
-export const mergeViteEnv = (
-    fileEnv: Record<string, string>,
-    runtimeEnv: NodeJS.ProcessEnv
-): Record<string, string | undefined> => ({
-    ...fileEnv,
-    ...runtimeEnv,
-});
 
 // https://vitejs.dev/config/
 export default defineConfig(({ mode }) => {

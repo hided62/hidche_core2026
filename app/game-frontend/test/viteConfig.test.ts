@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
-import { mergeViteEnv } from '../vite.config.ts';
+import { mergeViteEnv } from '../src/config/viteEnv.ts';
 
 void describe('game frontend Vite config', () => {
     void it('prefers managed runtime values over values loaded from env files', () => {
