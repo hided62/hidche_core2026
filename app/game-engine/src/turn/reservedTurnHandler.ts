@@ -766,6 +766,15 @@ export const createReservedTurnHandler = async (options: {
         commandProfile,
         defaultActionKey: DEFAULT_ACTION,
     });
+    if (process.env.CORE_AI_TRACE_GENERAL_IDS) {
+        process.stdout.write(
+            `RESERVED_TURN_DEFINITION_TRACE ${JSON.stringify({
+                profileHasAppointment: commandProfile.general.includes('che_임관'),
+                definitionHasAppointment: generalDefinitions.has('che_임관'),
+                generalDefinitionCount: generalDefinitions.size,
+            })}\n`
+        );
+    }
     const generalFallback = generalDefinitions.get(DEFAULT_ACTION)!;
     const nationFallback = nationDefinitions.get(DEFAULT_ACTION)!;
 
@@ -1719,6 +1728,9 @@ export const createReservedTurnHandler = async (options: {
                     `RESERVED_TURN_HANDLER_TRACE ${JSON.stringify({
                         generalId: currentGeneral.id,
                         action: generalCommand.action,
+                        actionLength: generalCommand.action.length,
+                        actionCodePoints: Array.from(generalCommand.action).map((value) => value.codePointAt(0)),
+                        hasDefinition: generalDefinitions.has(generalCommand.action),
                     })}\n`
                 );
             }
