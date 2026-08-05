@@ -20,6 +20,7 @@ import { formatLog } from '../utils/formatLog';
 import { useSessionStore } from '../stores/session';
 import { useMainDashboardStore } from '../stores/mainDashboard';
 import { trpc } from '../utils/trpc';
+import type { CommandPatternEntry } from '../components/command/types';
 
 const session = useSessionStore();
 const dashboard = useMainDashboardStore();
@@ -40,12 +41,10 @@ const {
     nation,
     worldMap,
     mapLayout,
-    selectedCity,
     commandTable,
     messages,
     boardAccess,
     reservedGeneralTurns,
-    reservedNationTurns,
     globalRecords,
     generalRecords,
     worldHistory,
@@ -94,20 +93,16 @@ onUnmounted(() => {
     }
 });
 
-const reserveGeneralTurn = (payload: { index: number; action: string; args: Record<string, unknown> }) => {
-    void dashboard.setGeneralTurn(payload.index, payload.action, payload.args);
-};
-
 const shiftGeneralTurns = (amount: number) => {
     void dashboard.shiftGeneralTurns(amount);
 };
 
-const reserveNationTurn = (payload: { index: number; action: string; args: Record<string, unknown> }) => {
-    void dashboard.setNationTurn(payload.index, payload.action, payload.args);
+const reserveGeneralTurns = (entries: CommandPatternEntry[]) => {
+    void dashboard.setGeneralTurns(entries);
 };
 
-const shiftNationTurns = (amount: number) => {
-    void dashboard.shiftNationTurns(amount);
+const repeatGeneralTurns = (amount: number) => {
+    void dashboard.repeatGeneralTurns(amount);
 };
 
 const loadMainData = async () => {
@@ -206,14 +201,14 @@ watch(
                     <CommandListPanel
                         :command-table="commandTable"
                         :loading="loading"
-                        :selected-city="selectedCity"
                         :reserved-general-turns="reservedGeneralTurns"
-                        :reserved-nation-turns="reservedNationTurns"
                         :general="general"
-                        @set-general-turn="reserveGeneralTurn"
+                        :current-year="lobbyInfo?.year"
+                        :current-month="lobbyInfo?.month"
+                        :turn-term-minutes="lobbyInfo?.turnTerm"
+                        @set-general-turns="reserveGeneralTurns"
                         @shift-general-turns="shiftGeneralTurns"
-                        @set-nation-turn="reserveNationTurn"
-                        @shift-nation-turns="shiftNationTurns"
+                        @repeat-general-turns="repeatGeneralTurns"
                     />
                 </PanelCard>
             </div>
@@ -329,14 +324,14 @@ watch(
                 <CommandListPanel
                     :command-table="commandTable"
                     :loading="loading"
-                    :selected-city="selectedCity"
                     :reserved-general-turns="reservedGeneralTurns"
-                    :reserved-nation-turns="reservedNationTurns"
                     :general="general"
-                    @set-general-turn="reserveGeneralTurn"
+                    :current-year="lobbyInfo?.year"
+                    :current-month="lobbyInfo?.month"
+                    :turn-term-minutes="lobbyInfo?.turnTerm"
+                    @set-general-turns="reserveGeneralTurns"
                     @shift-general-turns="shiftGeneralTurns"
-                    @set-nation-turn="reserveNationTurn"
-                    @shift-nation-turns="shiftNationTurns"
+                    @repeat-general-turns="repeatGeneralTurns"
                 />
             </PanelCard>
             <PanelCard title="도시 정보" data-main-target="city">

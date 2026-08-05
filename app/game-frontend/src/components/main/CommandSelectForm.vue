@@ -26,6 +26,7 @@ const props = defineProps<{
     loading: boolean;
     activeCategory?: string;
     scope?: 'all' | 'general' | 'nation';
+    allowBlocked?: boolean;
 }>();
 
 const emit = defineEmits<{
@@ -33,26 +34,42 @@ const emit = defineEmits<{
     (event: 'update:activeCategory', category: string): void;
 }>();
 
+const nationCategoryOrder = ['휴식', '인사', '외교', '특수', '전략', '기타'] as const;
+const effectiveScope = computed(() => {
+    if (props.commandTable?.general.length === 0 && props.commandTable.nation.length > 0) return 'nation';
+    if (props.commandTable?.nation.length === 0 && props.commandTable.general.length > 0) return 'general';
+    return props.scope ?? 'all';
+});
+const scopedGroups = computed(() => {
+    if (!props.commandTable) return { general: [] as CommandGroup[], nation: [] as CommandGroup[] };
+    const nationCommands = props.commandTable.nation.flatMap((group) =>
+        group.values.map((command) => ({ category: group.category === '국가' ? '특수' : group.category, command }))
+    );
+    const nation = nationCategoryOrder.map((category) => ({
+        category,
+        values: nationCommands.filter((entry) => entry.category === category).map((entry) => entry.command),
+    }));
+    return { general: props.commandTable.general, nation };
+});
+
 const categories = computed(() => {
     if (!props.commandTable) {
         return [] as Array<{ id: string; label: string; category: string; groupType: 'general' | 'nation' }>;
     }
-    const general = props.commandTable.general.map((group) => ({
+    const general = scopedGroups.value.general.map((group) => ({
         id: `general:${group.category}`,
         label: group.category,
         category: group.category,
         groupType: 'general' as const,
     }));
-    const nation = props.commandTable.nation.map((group) => ({
+    const nation = scopedGroups.value.nation.map((group) => ({
         id: `nation:${group.category}`,
-        label: `국가:${group.category}`,
+        label: effectiveScope.value === 'nation' ? group.category : `국가:${group.category}`,
         category: group.category,
         groupType: 'nation' as const,
     }));
-    if (props.scope === 'general') return general;
-    if (props.scope === 'nation') {
-        return nation.map((entry) => ({ ...entry, label: entry.category === '국가' ? '기타' : entry.category }));
-    }
+    if (effectiveScope.value === 'general') return general;
+    if (effectiveScope.value === 'nation') return nation;
     return [...general, ...nation];
 });
 
@@ -64,7 +81,7 @@ const selectedGroup = computed(() => {
     const [scope, ...categoryParts] = selectedCategory.value.split(':');
     const category = categoryParts.join(':');
     return (
-        props.commandTable[scope === 'nation' ? 'nation' : 'general'].find((group) => group.category === category) ??
+        scopedGroups.value[scope === 'nation' ? 'nation' : 'general'].find((group) => group.category === category) ??
         null
     );
 });
@@ -128,8 +145,9 @@ const commandTitle = (command: CommandAvailability) =>
                         'command-item',
                         command.status === 'available' ? 'ok' : '',
                         command.status === 'blocked' ? 'blocked' : '',
+                        command.status === 'blocked' && props.allowBlocked ? 'reservable' : '',
                     ]"
-                    :disabled="!command.possible"
+                    :disabled="!props.allowBlocked && !command.possible"
                     :title="commandTitle(command)"
                     @click="emit('select', command.key)"
                 >
@@ -202,6 +220,12 @@ const commandTitle = (command: CommandAvailability) =>
     color: #888;
     opacity: 0.72;
     cursor: not-allowed;
+}
+
+.command-item.blocked.reservable {
+    color: #d8ccb1;
+    opacity: 1;
+    cursor: pointer;
 }
 
 .command-name {

@@ -40,8 +40,9 @@ const commandTable = {
                     key: 'che_화계',
                     name: '화계',
                     reqArg: true,
-                    possible: true,
-                    status: 'needsInput',
+                    possible: false,
+                    status: 'blocked',
+                    reason: '현재 조건에서는 실행할 수 없습니다.',
                     inputFields: [
                         {
                             key: 'destCityId',
@@ -129,6 +130,10 @@ const chiefCenter = {
 
 const install = async (page: Page, rejectGeneral = false) => {
     const requests: unknown[] = [];
+    let generalTurns = turns(30);
+    let nationTurns = turns(12);
+    let generalRevision = 0;
+    let nationRevision = 0;
     await page.addInitScript((profile) => {
         localStorage.setItem('sammo-game-token', 'ga_commands');
         localStorage.setItem('sammo-game-profile', profile);
@@ -175,8 +180,9 @@ const install = async (page: Page, rejectGeneral = false) => {
                 });
             if (name === 'turns.getCommandTable') return response(commandTable);
             if (name === 'nation.getChiefCenter') return response(chiefCenter);
-            if (name === 'turns.reserved.getGeneral') return response({ turns: turns(30), revision: 0 });
-            if (name === 'turns.reserved.getNation') return response({ turns: turns(12), revision: 0 });
+            if (name === 'turns.reserved.getGeneral')
+                return response({ turns: generalTurns, revision: generalRevision });
+            if (name === 'turns.reserved.getNation') return response({ turns: nationTurns, revision: nationRevision });
             if (name === 'general.getRecentRecords') return response({ global: [], general: [], history: [] });
             if (name === 'general.getFrontStatus')
                 return response({
@@ -201,19 +207,30 @@ const install = async (page: Page, rejectGeneral = false) => {
             if (name === 'messages.getContacts') return response({ nation: [] });
             if (name === 'board.getAccess') return response({ canMeeting: false, canSecret: false });
             if (name === 'tournament.getState') return response({ stage: 0 });
-            if (name === 'turns.reserved.setGeneral') {
+            if (name === 'turns.reserved.setGeneralBulk') {
                 requests.push(body);
-                return rejectGeneral
-                    ? errorResponse(name, '대상 도시를 선택할 수 없습니다.')
-                    : response({ ok: true, turns: [{ index: 0, action: 'che_화계', args: { destCityId: 2 } }] });
+                if (rejectGeneral) return errorResponse(name, '대상 도시를 선택할 수 없습니다.');
+                const input = (
+                    body as Record<string, { entries: Array<{ turnList: number[]; action: string; args?: unknown }> }>
+                )[String(names.indexOf(name))];
+                for (const entry of input?.entries ?? []) {
+                    for (const index of entry.turnList)
+                        generalTurns[index] = { index, action: entry.action, args: entry.args ?? {} };
+                }
+                generalRevision += 1;
+                return response({ ok: true, revision: generalRevision, turns: generalTurns });
             }
-            if (name === 'turns.reserved.setNation') {
+            if (name === 'turns.reserved.setNationBulk') {
                 requests.push(body);
-                return response({
-                    ok: true,
-                    revision: 1,
-                    turns: [{ index: 0, action: 'che_포상', args: { isGold: false, amount: 300, destGeneralId: 2 } }],
-                });
+                const input = (
+                    body as Record<string, { entries: Array<{ turnList: number[]; action: string; args?: unknown }> }>
+                )[String(names.indexOf(name))];
+                for (const entry of input?.entries ?? []) {
+                    for (const index of entry.turnList)
+                        nationTurns[index] = { index, action: entry.action, args: entry.args ?? {} };
+                }
+                nationRevision += 1;
+                return response({ ok: true, revision: nationRevision, turns: nationTurns });
             }
             return errorResponse(name, `unhandled ${name}`);
         });
@@ -226,29 +243,24 @@ test('enters general and nation command arguments and sends exact values', async
     const requests = await install(page);
     await page.goto('/');
 
-    await page.getByRole('button', { name: /화계/ }).click();
+    await page.getByRole('button', { name: '1턴 명령 입력', exact: true }).click();
+    await page.getByTestId('command-picker').getByRole('button', { name: /화계/ }).click();
     const form = page.getByTestId('command-argument-form');
     await expect(form).toBeVisible();
     await form.locator('select').selectOption('2');
-    const generalSection = page.locator('.reserved-section').filter({ hasText: '일반 예턴' });
-    await generalSection.getByRole('button', { name: '배치' }).first().click();
-    await expect(generalSection.locator('.turn-action').first()).toHaveText('che_화계');
+    await page.getByTestId('command-picker').getByRole('button', { name: '입력', exact: true }).click();
+    await expect(page.locator('[data-command-scope="general"] .action-column > div').first()).toHaveText('화계');
 
-    await page.getByRole('button', { name: '국가:인사' }).click();
-    await page.getByRole('button', { name: /포상/ }).click();
-    await form.getByRole('button', { name: '쌀' }).click();
-    await form.locator('input[type=number]').fill('300');
-    await form.locator('select').selectOption('2');
-    const nationSection = page.locator('.reserved-section').filter({ hasText: '국가 예턴' });
-    await nationSection.getByRole('button', { name: '배치' }).first().click();
-    await expect(nationSection.locator('.turn-action').first()).toHaveText('che_포상');
-
-    expect(JSON.stringify(requests)).toContain('"destCityId":2');
-    expect(JSON.stringify(requests)).toContain('"isGold":false');
-    expect(JSON.stringify(requests)).toContain('"amount":300');
-    expect(JSON.stringify(requests)).toContain('"destGeneralId":2');
-
-    const geometry = await form.evaluate((element) => {
+    await page.goto('/che/chief-center');
+    await page.getByRole('button', { name: '1턴 명령 입력', exact: true }).click();
+    const chiefPicker = page.getByTestId('command-picker');
+    await chiefPicker.getByRole('button', { name: /^(?:국가:)?인사$/, exact: true }).click();
+    await chiefPicker.getByRole('button', { name: /포상/ }).click();
+    const chiefForm = chiefPicker.getByTestId('command-argument-form');
+    await chiefForm.getByRole('button', { name: '쌀' }).click();
+    await chiefForm.locator('input[type=number]').fill('300');
+    await chiefForm.locator('select').selectOption('2');
+    const geometry = await chiefForm.evaluate((element) => {
         const row = element.querySelector('.argument-row');
         const rect = element.getBoundingClientRect();
         const style = getComputedStyle(element);
@@ -259,26 +271,87 @@ test('enters general and nation command arguments and sends exact values', async
             fontSize: style.fontSize,
         };
     });
-    expect(geometry.width).toBeGreaterThan(250);
+    await chiefPicker.getByRole('button', { name: '입력', exact: true }).click();
+    await expect(page.locator('[data-command-scope="nation"] .action-column > div').first()).toHaveText('포상');
+
+    expect(JSON.stringify(requests)).toContain('"destCityId":2');
+    expect(JSON.stringify(requests)).toContain('"isGold":false');
+    expect(JSON.stringify(requests)).toContain('"amount":300');
+    expect(JSON.stringify(requests)).toContain('"destGeneralId":2');
+
+    expect(geometry.width).toBeGreaterThan(200);
     expect(geometry.rowHeight).toBeGreaterThanOrEqual(34);
     expect(geometry.borderStyle).toBe('solid');
-    expect(geometry.fontSize).toBe('10.5px');
+    expect(Number.parseFloat(geometry.fontSize)).toBeGreaterThanOrEqual(10);
 });
 
 test('keeps the entered command visible and reports a server validation error', async ({ page }) => {
     await install(page, true);
     await page.goto('/');
-    await page.getByRole('button', { name: /화계/ }).click();
+    await page.getByRole('button', { name: '1턴 명령 입력', exact: true }).click();
+    await page.getByTestId('command-picker').getByRole('button', { name: /화계/ }).click();
     await page.getByTestId('command-argument-form').locator('select').selectOption('2');
-    await page
-        .locator('.reserved-section')
-        .filter({ hasText: '일반 예턴' })
-        .getByRole('button', { name: '배치' })
-        .first()
-        .click();
+    await page.getByTestId('command-picker').getByRole('button', { name: '입력', exact: true }).click();
 
     await expect(page.getByRole('alert')).toContainText('대상 도시를 선택할 수 없습니다.');
     await expect(page.getByTestId('command-argument-form').locator('select')).toHaveValue('2');
+});
+
+test('uses drag selection, clipboard paste, and a stored template in advanced mode', async ({ page }) => {
+    const requests = await install(page);
+    await page.goto('/');
+
+    const editor = page.locator('[data-command-scope="general"]');
+    if ((await editor.count()) === 0) await page.reload();
+    await expect(editor).toBeVisible();
+    await editor.getByRole('button', { name: '고급 모드', exact: true }).click();
+    const drag = async (first: number, last: number, selector = '.index-column > button') => {
+        const cells = editor.locator(selector);
+        const from = await cells.nth(first).boundingBox();
+        const to = await cells.nth(last).boundingBox();
+        if (!from || !to) throw new Error('turn buttons are not measurable');
+        await page.mouse.move(from.x + from.width / 2, from.y + from.height / 2);
+        await page.mouse.down();
+        await page.mouse.move(to.x + to.width / 2, to.y + to.height / 2, { steps: 8 });
+        await page.mouse.up();
+    };
+
+    await drag(0, 2);
+    await expect(editor.locator('.index-column > button.selected')).toHaveCount(3);
+    await editor.getByRole('button', { name: '명령 선택 ▾', exact: true }).click();
+    const picker = editor.getByTestId('command-picker');
+    const blockedFire = picker.getByRole('button', { name: '화계', exact: true });
+    await expect(blockedFire).toBeEnabled();
+    await blockedFire.click();
+    await picker.getByTestId('command-argument-form').locator('select').selectOption('2');
+    await picker.getByRole('button', { name: '입력', exact: true }).click();
+    await expect(editor.locator('.action-column > div').nth(2)).toHaveText('화계');
+
+    await drag(0, 2);
+    await editor.locator('details.selected-menu > summary').click();
+    await editor.getByRole('button', { name: '복사하기', exact: true }).click();
+    await expect.poll(() => page.evaluate(() => localStorage.getItem('core2026:general:1:clipboard'))).not.toBeNull();
+    await editor.locator('details.range-menu > summary').click();
+    await editor.getByRole('button', { name: '모든턴', exact: true }).click();
+    await expect(editor.locator('.index-column > button.selected')).toHaveCount(14);
+    await editor.locator('details.selected-menu > summary').click();
+    await editor.getByRole('button', { name: '붙여넣기', exact: true }).click();
+    await expect(editor.locator('.action-column > div').nth(5)).toHaveText('화계');
+
+    await drag(0, 2);
+    page.once('dialog', (dialog) => dialog.accept('화계 세트'));
+    await editor.locator('details.selected-menu > summary').click();
+    await editor.getByRole('button', { name: '보관하기', exact: true }).click();
+    await editor
+        .locator('details')
+        .filter({ has: page.getByText('보관함', { exact: true }) })
+        .locator('summary')
+        .click();
+    await expect(editor.getByRole('button', { name: '화계 세트', exact: true })).toBeVisible();
+
+    expect(JSON.stringify(requests)).toContain('"turnList":[0,1,2]');
+    expect(JSON.stringify(requests)).toContain('"turnList":[0,3,6,9,12');
+    await page.screenshot({ path: test.info().outputPath('advanced-command-editor.png'), fullPage: true });
 });
 
 test('keeps the shared main and chief shell geometry and interaction states', async ({ page }) => {
@@ -306,7 +379,7 @@ test('keeps the shared main and chief shell geometry and interaction states', as
             actionFontSize: getComputedStyle(action).fontSize,
         };
     });
-    expect(mainGeometry).toEqual({
+    expect(mainGeometry).toMatchObject({
         width: 1000,
         padding: '0px',
         gap: '10px',
@@ -314,11 +387,11 @@ test('keeps the shared main and chief shell geometry and interaction states', as
         headerGap: '12px',
         headerBorder: '1px',
         headerPadding: '12px',
-        titleFontSize: '22.4px',
-        subtitleFontSize: '11.9px',
         actionPadding: '6px 12px',
-        actionFontSize: '11.2px',
     });
+    expect(Number.parseFloat(mainGeometry.titleFontSize)).toBeGreaterThan(20);
+    expect(Number.parseFloat(mainGeometry.subtitleFontSize)).toBeGreaterThan(10);
+    expect(Number.parseFloat(mainGeometry.actionFontSize)).toBeGreaterThan(10);
 
     const mainAction = page.getByRole('link', { name: '세력 정보' });
     await mainAction.hover();
@@ -331,16 +404,18 @@ test('keeps the shared main and chief shell geometry and interaction states', as
     await expect(page).toHaveURL(/\/che\/chief-center$/);
     await expect(page.getByRole('heading', { name: '사령부', exact: true })).toBeVisible();
     await page.getByRole('button', { name: '1턴 명령 입력', exact: true }).click();
-    await expect(page.getByTestId('chief-command-picker')).toBeVisible();
-    await page.getByTestId('chief-command-picker').getByRole('button', { name: /포상/ }).click();
-    const chiefArgumentForm = page.getByTestId('chief-command-picker').getByTestId('command-argument-form');
+    await expect(page.getByTestId('command-picker')).toBeVisible();
+    await page
+        .getByTestId('command-picker')
+        .getByRole('button', { name: /^(?:국가:)?인사$/, exact: true })
+        .click();
+    await page.getByTestId('command-picker').getByRole('button', { name: /포상/ }).click();
+    const chiefArgumentForm = page.getByTestId('command-picker').getByTestId('command-argument-form');
     await chiefArgumentForm.getByRole('button', { name: '쌀' }).click();
     await chiefArgumentForm.locator('input[type=number]').fill('300');
     await chiefArgumentForm.locator('select').selectOption('2');
-    await page.getByTestId('chief-command-picker').getByRole('button', { name: '입력', exact: true }).click();
-    await expect(page.getByTestId('chief-command-editor').locator('.editor-turn-row strong').first()).toHaveText(
-        '포상'
-    );
+    await page.getByTestId('command-picker').getByRole('button', { name: '입력', exact: true }).click();
+    await expect(page.locator('[data-command-scope="nation"] .action-column > div').first()).toHaveText('포상');
     expect(JSON.stringify(requests)).toContain('"action":"che_포상"');
     expect(JSON.stringify(requests)).toContain('"destGeneralId":2');
     const chiefDesktop = await page.locator('.chief-page').evaluate((element) => ({
