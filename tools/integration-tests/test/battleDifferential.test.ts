@@ -23,11 +23,20 @@ import {
 import { describe, expect, it } from 'vitest';
 
 import { processBattleSimJob } from '../../../app/game-api/src/battleSim/processor.js';
-import type { BattleSimJobPayload, BattleSimRequestPayload } from '../../../app/game-api/src/battleSim/types.js';
+import { convertLog } from '../../../app/game-api/src/battleSim/logFormatter.js';
+import type {
+    BattleSimGeneralPayload,
+    BattleSimJobPayload,
+    BattleSimRequestPayload,
+} from '../../../app/game-api/src/battleSim/types.js';
 
 interface ReferenceTrace {
     engine: 'ref';
     conquered: boolean;
+    defenderOrder?: {
+        before: Array<{ id: number; order: number }>;
+        after: Array<{ id: number; order: number }>;
+    };
     events: WarBattleTraceEvent[];
     rng: RandomCall[];
     logs: {
@@ -127,6 +136,28 @@ const findWorkspaceRoot = (start: string): string | null => {
 const readJson = <T>(filePath: string): T => JSON.parse(fs.readFileSync(filePath, 'utf8')) as T;
 
 const runReferenceTrace = (workspaceRoot: string, fixtureJson: string): ReferenceTrace => {
+    const compareContainer = process.env.REF_COMPARE_CONTAINER;
+    if (compareContainer) {
+        const stdout = execFileSync(
+            'docker',
+            [
+                'exec',
+                '-i',
+                compareContainer,
+                'php',
+                '-d',
+                'error_reporting=8191',
+                '/var/www/html/hwe/compare/battle_trace.php',
+                '-',
+            ],
+            {
+                input: fixtureJson,
+                encoding: 'utf8',
+                stdio: ['pipe', 'pipe', 'pipe'],
+            }
+        );
+        return JSON.parse(stdout) as ReferenceTrace;
+    }
     const compareSourceRoot = process.env.REF_COMPARE_SOURCE_ROOT;
     if (compareSourceRoot) {
         const resolvedCompareRoot = path.resolve(compareSourceRoot);
@@ -194,6 +225,117 @@ const runReferenceTrace = (workspaceRoot: string, fixtureJson: string): Referenc
     return JSON.parse(stdout) as ReferenceTrace;
 };
 
+const runReferenceTraceBatch = (workspaceRoot: string, fixtureLines: string[]): ReferenceTrace[] => {
+    const precomputedTracePath = process.env.BATTLE_REFERENCE_TRACE_PATH;
+    if (precomputedTracePath) {
+        const traces = fs
+            .readFileSync(path.resolve(precomputedTracePath), 'utf8')
+            .split(/\r?\n/u)
+            .filter(Boolean)
+            .map((line) => JSON.parse(line) as ReferenceTrace);
+        if (traces.length < fixtureLines.length) {
+            throw new Error(`precomputed ref corpus has ${traces.length} traces for ${fixtureLines.length} fixtures`);
+        }
+        return traces.slice(0, fixtureLines.length);
+    }
+    const compareContainer = process.env.REF_COMPARE_CONTAINER;
+    if (compareContainer) {
+        const stdout = execFileSync(
+            'docker',
+            [
+                'exec',
+                '-i',
+                compareContainer,
+                'php',
+                '-d',
+                'error_reporting=8191',
+                '/var/www/html/hwe/compare/battle_trace.php',
+                '--jsonl',
+            ],
+            {
+                input: `${fixtureLines.join('\n')}\n`,
+                encoding: 'utf8',
+                stdio: ['pipe', 'pipe', 'pipe'],
+                maxBuffer: 512 * 1024 * 1024,
+            }
+        );
+        return stdout
+            .split(/\r?\n/u)
+            .filter(Boolean)
+            .map((line) => JSON.parse(line) as ReferenceTrace);
+    }
+    const compareSourceRoot = process.env.REF_COMPARE_SOURCE_ROOT;
+    if (!compareSourceRoot) {
+        throw new Error('BATTLE_CORPUS_PATH requires REF_COMPARE_SOURCE_ROOT with the JSONL-capable ref harness.');
+    }
+    const resolvedCompareRoot = path.resolve(compareSourceRoot);
+    const runtimeRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'sammo-ref-battle-corpus-'));
+    fs.cpSync(resolvedCompareRoot, runtimeRoot, {
+        recursive: true,
+        filter: (source) => {
+            const relative = path.relative(resolvedCompareRoot, source);
+            return !(
+                relative === '.git' ||
+                relative.startsWith(`.git${path.sep}`) ||
+                relative === 'vendor' ||
+                relative.startsWith(`vendor${path.sep}`) ||
+                relative === 'd_log' ||
+                relative.startsWith(`d_log${path.sep}`) ||
+                relative === path.join('hwe', 'd_setting') ||
+                relative.startsWith(`${path.join('hwe', 'd_setting')}${path.sep}`)
+            );
+        },
+    });
+    fs.mkdirSync(path.join(runtimeRoot, 'd_log'));
+    try {
+        const traces: ReferenceTrace[] = [];
+        const chunkSize = 200;
+        for (let offset = 0; offset < fixtureLines.length; offset += chunkSize) {
+            const chunk = fixtureLines.slice(offset, offset + chunkSize);
+            const stdout = execFileSync(
+                'docker',
+                [
+                    'run',
+                    '--rm',
+                    '-i',
+                    '-v',
+                    `${runtimeRoot}:/var/www/html`,
+                    '-v',
+                    `${path.join(workspaceRoot, 'ref/sam/vendor')}:/var/www/html/vendor:ro`,
+                    '-v',
+                    `${path.join(workspaceRoot, 'ref/sam/hwe/d_setting')}:/var/www/html/hwe/d_setting:ro`,
+                    'sam-rebuild-ref-php:8.3',
+                    'php',
+                    '-d',
+                    'display_errors=0',
+                    '-d',
+                    'log_errors=0',
+                    '/var/www/html/hwe/compare/battle_trace.php',
+                    '--jsonl',
+                ],
+                {
+                    input: `${chunk.join('\n')}\n`,
+                    encoding: 'utf8',
+                    stdio: ['pipe', 'pipe', 'pipe'],
+                    maxBuffer: 512 * 1024 * 1024,
+                }
+            );
+            traces.push(
+                ...stdout
+                    .split(/\r?\n/u)
+                    .filter(Boolean)
+                    .map((line) => JSON.parse(line) as ReferenceTrace)
+            );
+        }
+        if (traces.length !== fixtureLines.length) {
+            throw new Error(`ref batch returned ${traces.length} traces for ${fixtureLines.length} fixtures`);
+        }
+        return traces;
+    } finally {
+        fs.rmSync(runtimeRoot, { recursive: true, force: true });
+    }
+};
+
 const runReferenceItemCatalog = (workspaceRoot: string, itemKeys: string[]): Record<string, ReferenceItemMetadata> => {
     const stdout = execFileSync(
         'docker',
@@ -229,7 +371,16 @@ const expectNearlyEqual = (actual: unknown, expected: unknown, label: string): v
         return;
     }
     const reference = expected as number;
-    const tolerance = Math.max(1, Math.abs(reference) * 0.01);
+    const configuredRelativeTolerance = Number.parseFloat(
+        process.env['BATTLE_TRACE_RELATIVE_TOLERANCE'] ?? '0.01'
+    );
+    if (!Number.isFinite(configuredRelativeTolerance) || configuredRelativeTolerance < 0) {
+        throw new Error('BATTLE_TRACE_RELATIVE_TOLERANCE must be a non-negative finite number');
+    }
+    const tolerance = Math.max(
+        Number.EPSILON * Math.max(1, Math.abs(reference)) * 8,
+        Math.abs(reference) * configuredRelativeTolerance
+    );
     expect(
         Math.abs((actual as number) - reference),
         `${label}: core=${String(actual)}, ref=${String(expected)}, tolerance=${tolerance}`
@@ -239,35 +390,112 @@ const expectNearlyEqual = (actual: unknown, expected: unknown, label: string): v
 const normalizeRandomArguments = (value: Record<string, unknown>): Record<string, unknown> =>
     Array.isArray(value) && value.length === 0 ? {} : value;
 
-const assertTraceParity = (
-    coreEvents: WarBattleTraceEvent[],
-    reference: ReferenceTrace,
-    coreRng: TracingRng | null
-): void => {
-    const coreEventNames = coreEvents.map((event) => event.event);
-    const referenceEventNames = reference.events.map((event) => event.event);
-    expect(
-        coreEventNames,
-        `event sequence\ncore=${JSON.stringify(coreEventNames)}\nref=${JSON.stringify(referenceEventNames)}`
-    ).toEqual(referenceEventNames);
-    expect(
+const describeSequenceDifference = (label: string, actual: unknown[], expected: unknown[]): string | null => {
+    const commonLength = Math.min(actual.length, expected.length);
+    for (let index = 0; index < commonLength; index += 1) {
+        if (JSON.stringify(actual[index]) !== JSON.stringify(expected[index])) {
+            const start = Math.max(0, index - 2);
+            const end = index + 3;
+            return `${label}[${index}]: core=${JSON.stringify(actual.slice(start, end))} ref=${JSON.stringify(expected.slice(start, end))}`;
+        }
+    }
+    if (actual.length !== expected.length) {
+        return `${label} length: core=${actual.length} ref=${expected.length}`;
+    }
+    return null;
+};
+
+const describeTextDifference = (actual: string | undefined, expected: string): string => {
+    const actualText = actual ?? '';
+    let index = 0;
+    while (index < actualText.length && index < expected.length && actualText[index] === expected[index]) {
+        index += 1;
+    }
+    const start = Math.max(0, index - 80);
+    const end = index + 160;
+    return `offset=${index} core=${JSON.stringify(actualText.slice(start, end))} ref=${JSON.stringify(expected.slice(start, end))}`;
+};
+
+const normalizeCapturedDefenders = (
+    fixtureLine: string,
+    defenders: BattleSimGeneralPayload[] | Record<string, BattleSimGeneralPayload>
+): BattleSimGeneralPayload[] => {
+    if (Array.isArray(defenders)) {
+        return defenders;
+    }
+    // JSON.parse enumerates integer-like object keys numerically, but PHP's
+    // associative array preserves their source order. Recover that order for
+    // old Ref corpus lines so stable sort ties replay the same defenders.
+    const source = /"defenderGenerals":\{([\s\S]*?)\},"defenderCity":/u.exec(fixtureLine)?.[1];
+    if (!source) {
+        return Object.values(defenders);
+    }
+    const ids = [...source.matchAll(/"(\d+)":\{/gu)].map((match) => match[1]!);
+    return ids.map((id) => defenders[id]).filter((general): general is BattleSimGeneralPayload => Boolean(general));
+};
+
+const assertRngParity = (reference: ReferenceTrace, coreRng: TracingRng | null): void => {
+    const normalizedCoreRng =
         coreRng?.calls.map(({ seq, operation, arguments: args, result }) => ({
             seq,
             operation,
             arguments: normalizeRandomArguments(args),
             result,
-        }))
-    ).toEqual(
-        reference.rng.map(({ seq, operation, arguments: args, result }) => ({
-            seq,
-            operation,
-            arguments: normalizeRandomArguments(args),
-            result,
-        }))
-    );
+        })) ?? [];
+    const normalizedReferenceRng = reference.rng.map(({ seq, operation, arguments: args, result }) => ({
+        seq,
+        operation,
+        arguments: normalizeRandomArguments(args),
+        result,
+    }));
+    const rngDifference = describeSequenceDifference('rng', normalizedCoreRng, normalizedReferenceRng);
+    if (rngDifference) {
+        throw new Error(rngDifference);
+    }
+};
+
+const assertTraceParity = (
+    coreEvents: WarBattleTraceEvent[],
+    reference: ReferenceTrace,
+    coreRng: TracingRng | null
+): void => {
+    const defenderOrderEvent = coreEvents[0]?.event === 'defender_order' ? coreEvents[0] : null;
+    const comparableCoreEvents = defenderOrderEvent ? coreEvents.slice(1) : coreEvents;
+    if (reference.defenderOrder) {
+        // Ref retains non-participating (order <= 0) defenders at the tail and
+        // stops when it reaches them. Core discards them before sorting. The
+        // effective ordered defender sequence is otherwise the same.
+        const effectiveReferenceOrder = {
+            before: reference.defenderOrder.before.filter(({ order }) => order > 0),
+            after: reference.defenderOrder.after.filter(({ order }) => order > 0),
+        };
+        const coreOrder = defenderOrderEvent?.details as typeof effectiveReferenceOrder | undefined;
+        expect(coreOrder?.before.map(({ id }) => id), 'defender order before IDs').toEqual(
+            effectiveReferenceOrder.before.map(({ id }) => id)
+        );
+        expect(coreOrder?.after.map(({ id }) => id), 'defender order after IDs').toEqual(
+            effectiveReferenceOrder.after.map(({ id }) => id)
+        );
+        for (const side of ['before', 'after'] as const) {
+            for (let index = 0; index < effectiveReferenceOrder[side].length; index += 1) {
+                expectNearlyEqual(
+                    coreOrder?.[side][index]?.order,
+                    effectiveReferenceOrder[side][index]?.order,
+                    `defender order ${side}[${index}]`
+                );
+            }
+        }
+    }
+    assertRngParity(reference, coreRng);
+    const coreEventNames = comparableCoreEvents.map((event) => event.event);
+    const referenceEventNames = reference.events.map((event) => event.event);
+    expect(
+        coreEventNames,
+        `event sequence\ncore=${JSON.stringify(coreEventNames)}\nref=${JSON.stringify(referenceEventNames)}`
+    ).toEqual(referenceEventNames);
 
     for (let index = 0; index < reference.events.length; index += 1) {
-        const core = coreEvents[index]!;
+        const core = comparableCoreEvents[index]!;
         const ref = reference.events[index]!;
         expectNearlyEqual(core.attacker.hp, ref.attacker.hp, `event ${index} attacker.hp`);
         expectNearlyEqual(core.attacker.warPower, ref.attacker.warPower, `event ${index} attacker.warPower`);
@@ -301,7 +529,157 @@ if (process.env.TURN_DIFFERENTIAL_REFERENCE === '1' && !workspaceRoot) {
 }
 const describeWithReference = workspaceRoot ? describe : describe.skip;
 
+const battleCorpusPath = process.env.BATTLE_CORPUS_PATH;
+const itWithBattleCorpus = battleCorpusPath ? it : it.skip;
+
 describeWithReference('ref ↔ core2026 battle differential', () => {
+    itWithBattleCorpus(
+        'replays a captured battle corpus with matching trace, RNG, skills, outcome, and attacker logs',
+        { timeout: 600_000 },
+        () => {
+            const requestedLimit = Number.parseInt(process.env.BATTLE_CORPUS_LIMIT ?? '', 10);
+            const fixtureLines = fs
+                .readFileSync(path.resolve(battleCorpusPath!), 'utf8')
+                .split(/\r?\n/u)
+                .filter(Boolean)
+                .slice(0, Number.isFinite(requestedLimit) && requestedLimit > 0 ? requestedLimit : undefined);
+            expect(fixtureLines.length, 'captured fixture count').toBeGreaterThan(0);
+
+            const referenceTraces = runReferenceTraceBatch(workspaceRoot!, fixtureLines);
+            const unitSet = readJson<UnitSetDefinition>(
+                path.resolve(process.cwd(), '../../resources/unitset/unitset_che.json')
+            );
+            const config: WarEngineConfig = {
+                armPerPhase: 500,
+                maxTrainByCommand: 100,
+                maxAtmosByCommand: 100,
+                maxTrainByWar: 110,
+                maxAtmosByWar: 150,
+                castleCrewTypeId: 1000,
+                armTypes: { footman: 1, archer: 2, cavalry: 3, wizard: 4, siege: 5, misc: 6, castle: 0 },
+            };
+            const failures: string[] = [];
+            const categoryCounts = new Map<string, number>();
+            const recordFailure = (category: string, index: number, fixture: BattleSimRequestPayload, detail: string) => {
+                categoryCounts.set(category, (categoryCounts.get(category) ?? 0) + 1);
+                if (failures.length < 40) {
+                    failures.push(
+                        `${category} fixture=${index + 1} ${fixture.year}-${String(fixture.month).padStart(2, '0')} attacker=${fixture.attackerGeneral.no} city=${fixture.defenderCity.city}: ${detail}`
+                    );
+                }
+            };
+
+            for (let index = 0; index < fixtureLines.length; index += 1) {
+                const capturedFixture = JSON.parse(fixtureLines[index]!) as Omit<
+                    BattleSimRequestPayload,
+                    'defenderGenerals'
+                > & {
+                    defenderGenerals: BattleSimGeneralPayload[] | Record<string, BattleSimGeneralPayload>;
+                    startYear: number;
+                    scenarioEffect?: string | null;
+                };
+                // Older captured Ref lines preserved numeric general IDs as
+                // JSON object keys. New captures are arrays, but normalize the
+                // historical corpus without changing its iteration order.
+                const fixture: BattleSimRequestPayload & {
+                    startYear: number;
+                    scenarioEffect?: string | null;
+                } = {
+                    ...capturedFixture,
+                    defenderGenerals: normalizeCapturedDefenders(
+                        fixtureLines[index]!,
+                        capturedFixture.defenderGenerals
+                    ),
+                };
+                const reference = referenceTraces[index]!;
+                const coreEvents: WarBattleTraceEvent[] = [];
+                let coreRng: TracingRng | null = null;
+                const coreResult = processBattleSimJob(
+                    {
+                        ...fixture,
+                        unitSet,
+                        config,
+                        time: { year: fixture.year, month: fixture.month, startYear: fixture.startYear },
+                        scenarioEffect: fixture.scenarioEffect,
+                    },
+                    {
+                        trace: (event) => coreEvents.push(event),
+                        rngFactory: (seed) => {
+                            coreRng = new TracingRng(LiteHashDRBG.build(seed));
+                            return new RandUtil(coreRng);
+                        },
+                    }
+                );
+
+                try {
+                    assertTraceParity(coreEvents, reference, coreRng);
+                } catch (error) {
+                    recordFailure('trace', index, fixture, error instanceof Error ? error.message : String(error));
+                }
+
+                const finalReference = reference.events.at(-1);
+                if (finalReference) {
+                    const outcome = {
+                        phase: coreResult.phase,
+                        killed: coreResult.killed,
+                        dead: coreResult.dead,
+                    };
+                    const expectedOutcome = {
+                        phase: finalReference.attacker.phase,
+                        killed: finalReference.attacker.killed,
+                        dead: finalReference.attacker.dead,
+                    };
+                    if (JSON.stringify(outcome) !== JSON.stringify(expectedOutcome)) {
+                        recordFailure(
+                            'outcome',
+                            index,
+                            fixture,
+                            `core=${JSON.stringify(outcome)} ref=${JSON.stringify(expectedOutcome)}`
+                        );
+                    }
+                    const coreSkills = coreResult.attackerSkills ?? {};
+                    const rawReferenceSkills = finalReference.attacker.activatedSkills;
+                    const referenceSkills = Array.isArray(rawReferenceSkills) ? {} : (rawReferenceSkills ?? {});
+                    if (JSON.stringify(coreSkills) !== JSON.stringify(referenceSkills)) {
+                        recordFailure(
+                            'skills',
+                            index,
+                            fixture,
+                            `core=${JSON.stringify(coreSkills)} ref=${JSON.stringify(referenceSkills)}`
+                        );
+                    }
+                }
+
+                const expectedBrief = convertLog(reference.logs.attacker.generalBattleResultLog.join('<br>'));
+                const expectedDetail = convertLog(reference.logs.attacker.generalBattleDetailLog.join('<br>'));
+                if (coreResult.lastWarLog?.generalBattleResultLog !== expectedBrief) {
+                    recordFailure(
+                        'brief-log',
+                        index,
+                        fixture,
+                        describeTextDifference(coreResult.lastWarLog?.generalBattleResultLog, expectedBrief)
+                    );
+                }
+                if (coreResult.lastWarLog?.generalBattleDetailLog !== expectedDetail) {
+                    recordFailure(
+                        'detail-log',
+                        index,
+                        fixture,
+                        describeTextDifference(coreResult.lastWarLog?.generalBattleDetailLog, expectedDetail)
+                    );
+                }
+            }
+
+            const summary = {
+                fixtures: fixtureLines.length,
+                failuresByCategory: Object.fromEntries([...categoryCounts.entries()].sort()),
+                sampledFailures: failures,
+            };
+            process.stdout.write(`BATTLE_CORPUS_SUMMARY ${JSON.stringify(summary)}\n`);
+            expect(failures, JSON.stringify(summary, null, 2)).toEqual([]);
+        }
+    );
+
     it('matches all scenario effects across general, direct-city, and fresh-defender combat', () => {
         const unitSet = readJson<UnitSetDefinition>(
             path.resolve(process.cwd(), '../../resources/unitset/unitset_che.json')
@@ -779,7 +1157,40 @@ describeWithReference('ref ↔ core2026 battle differential', () => {
                 Object.keys(event.attacker.activatedSkills).some((skill) => ['계략', '계략실패'].includes(skill))
             )
         ).toBe(true);
-        assertTraceParity(coreEvents, reference, coreRng);
+        assertRngParity(reference, coreRng);
+        const finalReference = reference.events.at(-1)!;
+        expect({ phase: result.phase, killed: result.killed }).toEqual({
+            phase: finalReference.attacker.phase,
+            killed: finalReference.attacker.killed,
+        });
+
+        // Ref keeps the injury-adjusted intelligence fraction here:
+        // (((81 * 0.63) + round((58 * 0.63) / 4)) / 100) * 0.5 + 0.2
+        // = 0.50015. Truncating the computed stat first turns this into 0.5
+        // and switches RandUtil from nextFloat1() to nextBits().
+        base.seed = 'battle-differential-magic-fractional-stat-v1';
+        base.attackerGeneral.leadership = 120;
+        base.attackerGeneral.strength = 58;
+        base.attackerGeneral.intel = 81;
+        base.attackerGeneral.injury = 37;
+        base.attackerGeneral.personal = 'None';
+        let fractionalCoreRng: TracingRng | null = null;
+        processBattleSimJob(
+            {
+                ...base,
+                unitSet,
+                config,
+                time: { year: base.year, month: base.month, startYear: base.startYear },
+            },
+            {
+                rngFactory: (seed) => {
+                    fractionalCoreRng = new TracingRng(LiteHashDRBG.build(seed));
+                    return new RandUtil(fractionalCoreRng);
+                },
+            }
+        );
+        const fractionalReference = runReferenceTrace(workspaceRoot!, JSON.stringify(base));
+        assertRngParity(fractionalReference, fractionalCoreRng);
     });
 
     it('matches cavalry, item, inherit-buff, and multiple-defender handling', () => {

@@ -163,6 +163,11 @@ const fireTriggers = (keys: string[], self: WarUnit, attacker: WarUnit, defender
 };
 
 describe('crew type catalog', () => {
+    it('uses the legacy display-width limit for battle log crew names', () => {
+        expect(new WarCrewType(crewType(1405, 4, '남귀병')).getShortName()).toBe('남귀');
+        expect(new WarCrewType(crewType(1, 1, 'AB한C')).getShortName()).toBe('AB한');
+    });
+
     it('compiles every shipped unit set and resolves all crew handlers', async () => {
         const unitSetDirectory = new URL('../../../resources/unitset/', import.meta.url);
         const fileNames = (await readdir(unitSetDirectory)).filter((fileName) => fileName.endsWith('.json'));

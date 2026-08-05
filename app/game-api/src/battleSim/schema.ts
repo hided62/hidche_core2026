@@ -6,6 +6,7 @@ export const zBattleSimGeneral = z.object({
     no: z.number().int().positive(),
     name: z.string().min(1),
     nation: z.number().int().positive(),
+    city: z.number().int().min(0).optional(),
     turntime: z.string().min(1),
     personal: z.string().nullable(),
     special: z.string().nullable().optional(),

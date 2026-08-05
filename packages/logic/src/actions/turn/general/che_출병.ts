@@ -82,6 +82,119 @@ const toHex = (bytes: Uint8Array): string =>
         .map((value) => value.toString(16).padStart(2, '0'))
         .join('');
 
+const fixtureNumber = (value: unknown, fallback = 0): number =>
+    typeof value === 'number' && Number.isFinite(value) ? value : fallback;
+
+const formatFixtureDate = (value: Date | undefined): string =>
+    value ? value.toISOString().replace('T', ' ').replace(/\.\d{3}Z$/u, '') : '1970-01-01 00:00:00';
+
+const buildBattleGeneralFixture = <TriggerState extends GeneralTriggerState>(general: General<TriggerState>) => {
+    const meta = general.meta;
+    const rawInheritBuff = general.triggerState.meta.inheritBuff;
+    let inheritBuff: Record<string, number> | number[] | undefined;
+    if (Array.isArray(rawInheritBuff) && rawInheritBuff.every((value) => typeof value === 'number')) {
+        inheritBuff = rawInheritBuff;
+    } else if (typeof rawInheritBuff === 'object' && rawInheritBuff !== null) {
+        inheritBuff = Object.fromEntries(
+            Object.entries(rawInheritBuff).filter((entry): entry is [string, number] => typeof entry[1] === 'number')
+        );
+    } else if (typeof rawInheritBuff === 'string') {
+        try {
+            const parsed: unknown = JSON.parse(rawInheritBuff);
+            if (Array.isArray(parsed) && parsed.every((value) => typeof value === 'number')) {
+                inheritBuff = parsed;
+            } else if (typeof parsed === 'object' && parsed !== null) {
+                inheritBuff = Object.fromEntries(
+                    Object.entries(parsed).filter(
+                        (entry): entry is [string, number] => typeof entry[1] === 'number'
+                    )
+                );
+            }
+        } catch {
+            // A malformed comparison-only projection must not affect the battle.
+        }
+    }
+    return {
+        no: general.id,
+        name: general.name,
+        nation: general.nationId,
+        city: general.cityId,
+        turntime: formatFixtureDate(general.turnTime),
+        personal: general.role.personality,
+        special: general.role.specialDomestic,
+        special2: general.role.specialWar,
+        crew: general.crew,
+        crewtype: general.crewTypeId,
+        atmos: general.atmos,
+        train: general.train,
+        intel: general.stats.intelligence,
+        intel_exp: fixtureNumber(meta.intel_exp),
+        book: general.role.items.book,
+        strength: general.stats.strength,
+        strength_exp: fixtureNumber(meta.strength_exp),
+        weapon: general.role.items.weapon,
+        injury: general.injury,
+        leadership: general.stats.leadership,
+        leadership_exp: fixtureNumber(meta.leadership_exp),
+        horse: general.role.items.horse,
+        item: general.role.items.item,
+        explevel: fixtureNumber(meta.explevel),
+        experience: general.experience,
+        dedication: general.dedication,
+        officer_level: general.officerLevel,
+        officer_city: fixtureNumber(meta.officer_city ?? meta.officerCity),
+        gold: general.gold,
+        rice: general.rice,
+        dex1: fixtureNumber(meta.dex1),
+        dex2: fixtureNumber(meta.dex2),
+        dex3: fixtureNumber(meta.dex3),
+        dex4: fixtureNumber(meta.dex4),
+        dex5: fixtureNumber(meta.dex5),
+        defence_train: fixtureNumber(meta.defence_train),
+        recent_war: general.recentWarTime ? formatFixtureDate(general.recentWarTime) : null,
+        warnum: fixtureNumber(meta.rank_warnum),
+        killnum: fixtureNumber(meta.rank_killnum),
+        killcrew: fixtureNumber(meta.rank_killcrew),
+        ...(inheritBuff ? { inheritBuff } : {}),
+    };
+};
+
+const buildBattleCityFixture = (city: City) => ({
+    city: city.id,
+    nation: city.nationId,
+    supply: city.supplyState,
+    name: city.name,
+    pop: city.population,
+    agri: city.agriculture,
+    comm: city.commerce,
+    secu: city.security,
+    def: city.defence,
+    wall: city.wall,
+    trust: fixtureNumber(city.meta.trust),
+    level: city.level,
+    pop_max: city.populationMax,
+    agri_max: city.agricultureMax,
+    comm_max: city.commerceMax,
+    secu_max: city.securityMax,
+    def_max: city.defenceMax,
+    wall_max: city.wallMax,
+    dead: fixtureNumber(city.meta.dead),
+    state: city.state,
+    conflict: JSON.stringify(city.conflict ?? {}),
+});
+
+const buildBattleNationFixture = (nation: Nation | null) => ({
+    type: nation?.typeCode ?? 'None',
+    tech: fixtureNumber(nation?.meta.tech),
+    level: nation?.level ?? 0,
+    capital: nation?.capitalCityId ?? 0,
+    nation: nation?.id ?? 0,
+    name: nation?.name ?? '재야',
+    gold: nation?.gold ?? 0,
+    rice: nation?.rice ?? 10000,
+    gennum: fixtureNumber(nation?.meta.gennum, 1),
+});
+
 const buildAllowedNationIds = (
     attackerNationId: number,
     diplomacy: Array<{ fromNationId: number; toNationId: number; state: number }>
@@ -454,6 +567,26 @@ export class ActionDefinition<
         const shouldTraceWar =
             traceGeneralIds.has(String(context.general.id)) ||
             defenderGenerals.some((general) => traceGeneralIds.has(String(general.id)));
+
+        if (process.env.CORE_BATTLE_FIXTURE_TRACE === '1') {
+            process.stdout.write(
+                `AI_WAR_FIXTURE_CORE ${JSON.stringify({
+                    action: 'battle',
+                    seed,
+                    repeatCnt: 1,
+                    year: time.year,
+                    month: time.month,
+                    startYear: time.startYear,
+                    scenarioEffect: null,
+                    attackerGeneral: buildBattleGeneralFixture(context.general),
+                    attackerCity: buildBattleCityFixture(attackerCity),
+                    attackerNation: buildBattleNationFixture(attackerNation),
+                    defenderGenerals: defenderGenerals.map(buildBattleGeneralFixture),
+                    defenderCity: buildBattleCityFixture(defenderCity),
+                    defenderNation: buildBattleNationFixture(defenderNation),
+                })}\n`
+            );
+        }
 
         const battle = resolveWarBattle({
             seed,

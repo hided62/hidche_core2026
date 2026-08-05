@@ -5,7 +5,7 @@ import type { WarUnit } from '@sammo-ts/logic/war/units.js';
 
 export class che_격노시도 extends BaseWarUnitTrigger {
     constructor(unit: WarUnit, raiseType: number = 0) {
-        super(unit, TriggerPriority.Pre + 300, raiseType);
+        super(unit, TriggerPriority.Body + 400, raiseType);
     }
 
     protected actionWar(
@@ -40,7 +40,7 @@ export class che_격노시도 extends BaseWarUnitTrigger {
 
 export class che_격노발동 extends BaseWarUnitTrigger {
     constructor(unit: WarUnit, raiseType: number = 0) {
-        super(unit, TriggerPriority.Post + 450, raiseType);
+        super(unit, TriggerPriority.Post + 600, raiseType);
     }
 
     protected actionWar(

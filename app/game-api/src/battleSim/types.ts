@@ -8,6 +8,8 @@ export interface BattleSimGeneralPayload {
     no: number;
     name: string;
     nation: number;
+    /** Current city. Older clients omit this; the surrounding city payload is authoritative then. */
+    city?: number;
     turntime: string;
     personal: string | null;
     special?: string | null;
