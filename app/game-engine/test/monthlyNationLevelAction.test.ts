@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import {
+    createItemInventoryFromSlots,
     ITEM_KEYS,
     LogCategory,
     LogScope,
@@ -244,6 +245,19 @@ describe('UpdateNationLevel monthly action', () => {
                 }),
             ])
         );
+    });
+
+    it('rewards a unique item when the persisted inventory snapshot is frozen', async () => {
+        const { world, handler } = await buildHarness(0, 2);
+        world.updateGeneral(1, {
+            itemInventory: createItemInventoryFromSlots({ horse: null, weapon: null, book: null, item: null }),
+        });
+
+        await expect(
+            handler([], { year: 193, month: 2, startyear: 190, currentEventID: 1, turnTime: new Date() }, event)
+        ).resolves.toBeUndefined();
+
+        expect(world.getGeneralById(1)?.role.items.horse).toBe(uniqueHorse.key);
     });
 
     it('does not downgrade or pay rewards when the qualifying city count is below the current level', async () => {

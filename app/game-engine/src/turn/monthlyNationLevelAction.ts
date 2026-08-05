@@ -3,8 +3,10 @@ import {
     LogCategory,
     LogFormat,
     LogScope,
+    cloneItemInventory,
     countOccupiedUniqueItems,
     createItemModuleRegistry,
+    ensureItemInventory,
     equipNewItem,
     resolveUniqueConfig,
     type ItemModule,
@@ -105,10 +107,15 @@ const giveRandomUniqueItem = (options: {
     }
 
     const item = options.rng.choiceUsingWeightPair(available);
-    const nextGeneral = options.world.getGeneralById(options.general.id);
-    if (!nextGeneral) {
+    const currentGeneral = options.world.getGeneralById(options.general.id);
+    if (!currentGeneral) {
         return false;
     }
+    const nextGeneral: TurnGeneral = {
+        ...currentGeneral,
+        role: { ...currentGeneral.role, items: { ...currentGeneral.role.items } },
+        itemInventory: cloneItemInventory(ensureItemInventory(currentGeneral)),
+    };
     equipNewItem(nextGeneral, item.slot, item.key, {
         ...(item.initialCharges === undefined ? {} : { charges: item.initialCharges }),
     });
