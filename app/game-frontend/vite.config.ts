@@ -23,9 +23,17 @@ const resolvePreviewAllowedHosts = (value: string | undefined): true | string[] 
     return hosts;
 };
 
+export const mergeViteEnv = (
+    fileEnv: Record<string, string>,
+    runtimeEnv: NodeJS.ProcessEnv
+): Record<string, string | undefined> => ({
+    ...fileEnv,
+    ...runtimeEnv,
+});
+
 // https://vitejs.dev/config/
 export default defineConfig(({ mode }) => {
-    const env = loadEnv(mode, process.cwd(), '');
+    const env = mergeViteEnv(loadEnv(mode, process.cwd(), ''), process.env);
     return {
         base: normalizeBasePath(env.VITE_APP_BASE_PATH),
         plugins: [vue(), tailwindcss()],
