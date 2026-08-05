@@ -106,7 +106,24 @@ describe('scenario bootstrap', () => {
                 },
             ],
             generalsEx: [],
-            generalsNeutral: [],
+            generalsNeutral: [
+                {
+                    affinity: 13,
+                    name: 'NeutralGeneral',
+                    picture: null,
+                    nation: null,
+                    city: 'Alpha',
+                    leadership: 50,
+                    strength: 50,
+                    intelligence: 50,
+                    officerLevel: 0,
+                    birthYear: 180,
+                    deathYear: 240,
+                    personality: 'Calm',
+                    special: '',
+                    text: null,
+                },
+            ],
             cities: [],
             events: [],
             initialEvents: [],
@@ -159,6 +176,18 @@ describe('scenario bootstrap', () => {
         expect(result.seed.cities[0]?.nationId).toBe(1);
         expect(result.snapshot.generals[0]?.cityId).toBe(1);
         expect(result.snapshot.generals[0]?.crewTypeId).toBe(1200);
+        expect(result.seed.generals.map((general) => general.name)).toEqual([
+            'ⓝTestGeneral',
+            'ⓝMedicalGeneral',
+            'ⓝChargeGeneral',
+            'ⓤNeutralGeneral',
+        ]);
+        expect(result.snapshot.generals.map((general) => general.name)).toEqual([
+            'ⓝTestGeneral',
+            'ⓝMedicalGeneral',
+            'ⓝChargeGeneral',
+            'ⓤNeutralGeneral',
+        ]);
         expect(result.snapshot.generals[0]?.role.specialDomestic).toBe('Special');
         expect(result.snapshot.generals[0]?.role.specialWar).toBeNull();
         expect(result.snapshot.generals[1]?.role).toMatchObject({
@@ -442,8 +471,8 @@ describe('scenario bootstrap', () => {
 
         const result = buildScenarioBootstrap({ scenario, map });
 
-        expect(result.seed.generals.map((row) => row.name)).toEqual(['현재']);
-        expect(result.snapshot.generals.map((row) => row.name)).toEqual(['현재']);
+        expect(result.seed.generals.map((row) => row.name)).toEqual(['ⓝ현재']);
+        expect(result.snapshot.generals.map((row) => row.name)).toEqual(['ⓝ현재']);
         expect(result.seed.events).toEqual([
             ['Month', 500, ['Date', '>=', 200, 1], ['Existing']],
             [

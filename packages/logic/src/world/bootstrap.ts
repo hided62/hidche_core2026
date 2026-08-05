@@ -97,6 +97,22 @@ const DEFAULT_CITY_TRADE = 100;
 const DEFAULT_CITY_SUPPLY_STATE = 1;
 const DEFAULT_CITY_FRONT_STATE = 0;
 
+// Ref Scenario\GeneralBuilder::build() decorates the persisted name after
+// setNPCType(); scenario JSON keeps the undecorated source name.
+const LEGACY_GENERAL_NAME_PREFIX_BY_NPC_TYPE: Readonly<Record<number, string>> = {
+    0: '',
+    1: 'ⓝ',
+    2: 'ⓝ',
+    3: 'ⓜ',
+    4: 'ⓖ',
+    5: '㉥',
+    6: 'ⓤ',
+    9: 'ⓞ',
+};
+
+const decorateLegacyGeneralName = (name: string, npcType: number): string =>
+    `${LEGACY_GENERAL_NAME_PREFIX_BY_NPC_TYPE[npcType] ?? 'ⓧ'}${name}`;
+
 const canonicalizeDomesticTrait = (raw: string | null | undefined): string | null => {
     if (!raw || raw === 'None') {
         return null;
@@ -484,6 +500,7 @@ const buildGeneralSeeds = (
     for (const row of rows) {
         const id = nextId;
         nextId += 1;
+        const name = decorateLegacyGeneralName(row.name, npcType);
 
         const nationId = resolveNationId(row.nation, nationNameToId, warnings, row.name);
         let cityId = resolveCityId(row.city, cityByName, warnings, row.name);
@@ -555,7 +572,7 @@ const buildGeneralSeeds = (
 
         const seed: GeneralSeed = {
             id,
-            name: row.name,
+            name,
             nationId,
             cityId,
             stats,
@@ -610,7 +627,7 @@ const buildGeneralSeeds = (
 
         generals.push({
             id,
-            name: row.name,
+            name,
             nationId,
             cityId,
             troopId: 0,
