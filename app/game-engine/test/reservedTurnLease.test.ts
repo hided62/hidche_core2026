@@ -215,6 +215,20 @@ describe('reserved turn daemon lease', () => {
         expect(harness.generalFindMany).toHaveBeenCalledTimes(2);
     });
 
+    it('re-reads a general queue while retaining its execution lease', async () => {
+        const harness = buildHarness();
+        await harness.store.prepareTurnsForExecution(7);
+        harness.store.shiftGeneralTurns(7, -1);
+
+        expect(harness.getRevision()).toMatchObject({ leaseOwner: 'daemon-1' });
+        expect(harness.store.getGeneralTurn(7, 0).action).toBe('휴식');
+
+        await harness.store.prepareTurnsForExecution(7);
+
+        expect(harness.store.getGeneralTurn(7, 0).action).toBe('che_훈련');
+        expect(harness.generalFindMany).toHaveBeenCalledTimes(2);
+    });
+
     it('rejects an active foreign lease before reading the queue', async () => {
         const harness = buildHarness({
             revision: 4,

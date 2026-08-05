@@ -373,10 +373,12 @@ export class InMemoryReservedTurnStore {
                 acquiredFreshNationLease = await this.acquireNationLease(nation.nationId, nation.officerLevel);
             }
             await Promise.all([
-                // A newly acquired lease starts a fresh API/daemon ownership boundary.
-                // Re-read PostgreSQL even if a prior run left a stale dirty marker;
-                // repeated access under the same held lease keeps local mutations.
-                this.refreshGeneralTurns(generalId, acquiredFreshGeneralLease),
+                // A general queue is owned by only this execution. Once its lease
+                // is held, PostgreSQL is authoritative even if an interrupted
+                // acknowledgement left stale dirty/lease markers in memory.
+                // Nation queues remain conditional because multiple officers can
+                // consume the same shared queue in one daemon batch.
+                this.refreshGeneralTurns(generalId, true),
                 nation
                     ? this.refreshNationTurns(nation.nationId, nation.officerLevel, acquiredFreshNationLease)
                     : Promise.resolve(),
