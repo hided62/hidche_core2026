@@ -8,6 +8,8 @@ import type { UnitSetDefinition } from '../src/world/types.js';
 import { resolveWarAftermath } from '../src/war/aftermath.js';
 import type { WarAftermathConfig } from '../src/war/types.js';
 import { LogFormat } from '../src/logging/types.js';
+import { buildWarAftermathConfig } from '../src/actions/turn/actionContextHelpers.js';
+import type { ScenarioConfig } from '../src/scenario/types.js';
 
 const buildUnitSet = (): UnitSetDefinition => ({
     id: 'test',
@@ -129,6 +131,12 @@ const buildGeneral = (id: number, nationId: number, cityId: number): General => 
 });
 
 describe('war aftermath', () => {
+    it('defaults the omitted legacy maximum tech level to 12', () => {
+        const config = buildWarAftermathConfig({ const: {} } as ScenarioConfig, 999);
+
+        expect(config.maxTechLevel).toBe(12);
+    });
+
     it('updates tech and diplomacy deltas', () => {
         const attackerNation = buildNation(1);
         const defenderNation = buildNation(2);
@@ -266,6 +274,51 @@ describe('war aftermath', () => {
                 '수뇌는 <G><b>City3</b></>으로 집합되었습니다.',
             ])
         );
+    });
+
+    it('uses the city battle phase, not retained casualties, for conquered supply-city rice', () => {
+        const attackerNation = buildNation(1);
+        const defenderNation = buildNation(2);
+        defenderNation.rice = 6000;
+        defenderNation.capitalCityId = 3;
+        const attackerCity = buildCity(1, 1);
+        const defenderCity = buildCity(2, 2);
+        const defenderCapital = buildCity(3, 2);
+        defenderCity.meta.supply = 1;
+        const attacker = buildGeneral(1, 1, 1);
+
+        resolveWarAftermath({
+            battle: {
+                attacker,
+                defenders: [],
+                defenderCity,
+                logs: [],
+                conquered: true,
+                reports: [
+                    {
+                        id: defenderCity.id,
+                        type: 'city',
+                        name: defenderCity.name,
+                        isAttacker: false,
+                        killed: 0,
+                        dead: 100,
+                        phase: 0,
+                    },
+                ],
+            },
+            attackerNation,
+            defenderNation,
+            attackerCity,
+            defenderCity,
+            nations: [attackerNation, defenderNation],
+            cities: [attackerCity, defenderCity, defenderCapital],
+            generals: [attacker],
+            unitSet: buildUnitSet(),
+            config: buildConfig(),
+            time: { year: 200, month: 1, startYear: 180 },
+        });
+
+        expect(defenderNation.rice).toBe(6500);
     });
 
     it('applies conquest collapse rewards', () => {

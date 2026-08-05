@@ -112,10 +112,6 @@ export class WarUnitGeneral<
         super.setOppose(oppose);
         increaseMetaNumber(this.general.meta, RANK_WARNUM, 1);
 
-        if (!oppose) {
-            return;
-        }
-
         const baseTurnTime = this.isAttacker()
             ? this.general.turnTime
             : oppose instanceof WarUnitGeneral
@@ -126,6 +122,16 @@ export class WarUnitGeneral<
         }
         const phase = clamp(this.getRealPhase(), 0, 99);
         this.general.recentWarTime = new Date(baseTurnTime.getTime());
+        const baseTurnTick = this.isAttacker()
+            ? this.general.turnTick
+            : oppose instanceof WarUnitGeneral
+              ? oppose.general.turnTick
+              : this.general.turnTick;
+        if (baseTurnTick !== undefined) {
+            this.general.recentWarTick = baseTurnTick - (baseTurnTick % 100) + phase;
+        } else {
+            delete this.general.recentWarTick;
+        }
         this.general.meta.recent_war_phase = phase;
     }
 

@@ -3,6 +3,8 @@
  * the value rounded to six significant decimal digits on the next read.
  * Keep those boundaries separate so later SQL expressions use binary32 state.
  */
-export const storeLegacyCityTrust = (value: number): number => Math.fround(value);
+import { readLegacyStoredFloat, toLegacyStoredFloat } from '@sammo-ts/logic/compat/legacyFloat.js';
 
-export const readLegacyCityTrust = (value: number): number => Number(Math.fround(value).toPrecision(6));
+export const storeLegacyCityTrust = (value: number): number => toLegacyStoredFloat(value);
+
+export const readLegacyCityTrust = (value: number): number => readLegacyStoredFloat(value);

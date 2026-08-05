@@ -101,7 +101,9 @@ export interface General<TriggerState extends GeneralTriggerState = GeneralTrigg
     meta: GeneralMeta;
     lastTurn?: GeneralLastTurn;
     turnTime?: Date;
+    turnTick?: number;
     recentWarTime?: Date | null;
+    recentWarTick?: number | null;
 }
 
 export interface City {

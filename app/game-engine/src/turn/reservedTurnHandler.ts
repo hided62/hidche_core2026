@@ -44,6 +44,7 @@ import { asRecord, JosaUtil, LEGACY_RANK_DATA_TYPES, LiteHashDRBG, RandUtil } fr
 import type { ConstraintContext, StateView } from '@sammo-ts/logic';
 
 import type { GeneralTurnHandler, GeneralTurnResult } from './inMemoryWorld.js';
+import { normalizeGeneralDatabaseIntegers } from './inMemoryWorld.js';
 import type { InMemoryTurnWorld } from './inMemoryWorld.js';
 import type { TurnDiplomacy, TurnGeneral, TurnWorldState } from './types.js';
 import type { ReservedTurnEntry } from './reservedTurnStore.js';
@@ -1691,6 +1692,12 @@ export const createReservedTurnHandler = async (options: {
                     nationAiState = ai.getDebugState();
                 }
                 const nationResult = runAction('nation', nationDefinitions, nationFallback, nationCommand, false);
+                // Ref persists a completed nation command before it chooses and
+                // executes the general command for the same turn. Preserve that
+                // MariaDB INT boundary so fractional rewards cannot leak into the
+                // following command or its AI refresh.
+                currentGeneral = normalizeGeneralDatabaseIntegers(currentGeneral);
+                worldOverlay?.syncGeneral(currentGeneral);
                 if (
                     worldView &&
                     (process.env.CORE_AI_TRACE_GENERAL_IDS?.split(',') ?? []).includes(String(currentGeneral.id))
@@ -1760,6 +1767,18 @@ export const createReservedTurnHandler = async (options: {
                         nationFallback,
                     });
                 const candidate = ai.chooseGeneralTurn(generalCommand);
+                // Ref GeneralAI::calcDiplomacyState writes
+                // nation_env.last_attackable for ordinary generals too. The
+                // nation-turn path consumes this patch above, but most NPCs
+                // never execute a nation turn.
+                const generalAiNationState = ai.consumePromotionPatches();
+                if (generalAiNationState.nationMeta && currentNation) {
+                    currentNation = {
+                        ...currentNation,
+                        meta: generalAiNationState.nationMeta as Nation['meta'],
+                    };
+                    worldOverlay?.applyNationPatch(currentNation.id, { meta: currentNation.meta });
+                }
                 const npcMessage = ai.consumeNpcMessage();
                 if (npcMessage) {
                     const messageTarget = {

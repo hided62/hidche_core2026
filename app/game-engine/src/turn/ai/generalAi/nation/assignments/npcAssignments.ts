@@ -121,12 +121,17 @@ export const doNPC구출발령 = (ai: GeneralAI) => {
     if (lostCandidates.length === 0) {
         return null;
     }
-    const destCityId = pickRandomCityId(ai, ai.supplyCities);
-    if (destCityId === null) {
+    const candidates = lostCandidates.flatMap((general) => {
+        const destCityId = pickRandomCityId(ai, ai.supplyCities);
+        return destCityId === null ? [] : [{ general, destCityId }];
+    });
+    if (candidates.length === 0) {
         return null;
     }
-    const destGeneral = ai.rng.choice(lostCandidates);
-    return buildAssignmentCandidate(ai, destGeneral.id, destCityId, 'NPC구출발령');
+    // Ref draws one destination city for every lost general, then chooses one
+    // completed (general, city) pair. The unused pairs still consume RNG.
+    const picked = ai.rng.choice(candidates);
+    return buildAssignmentCandidate(ai, picked.general.id, picked.destCityId, 'NPC구출발령');
 };
 
 export const doNPC전방발령 = (ai: GeneralAI) => {

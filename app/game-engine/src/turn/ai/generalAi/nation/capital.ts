@@ -1,4 +1,5 @@
 import type { GeneralAI } from '../core.js';
+import { GAME_TICKS_PER_TURN } from '@sammo-ts/common';
 import { calcCityDevRatio } from '../../aiUtils.js';
 import { searchAllDistanceByCityList } from '../../distance.js';
 
@@ -7,6 +8,33 @@ export const do천도 = (ai: GeneralAI) => {
         return null;
     }
     if (!ai.map) {
+        return null;
+    }
+
+    const lastTurn = ai.getLastNationTurn();
+    const lastArgs =
+        lastTurn.arg && typeof lastTurn.arg === 'object' ? (lastTurn.arg as Record<string, unknown>) : null;
+    const lastDestination = Number(lastArgs?.destCityID ?? lastArgs?.destCityId);
+    if (
+        lastTurn.command === '천도' &&
+        Number.isFinite(lastDestination) &&
+        lastDestination !== ai.nation.capitalCityId
+    ) {
+        const continuing = ai.buildNationCandidate('che_천도', { destCityID: lastDestination }, '천도');
+        if (continuing) {
+            ai.markCapitalMoveTrial();
+            return continuing;
+        }
+    }
+
+    const lastTrial = ai.getLastCapitalMoveTrial();
+    const currentTurnTick = ai.general.turnTick;
+    if (
+        lastTrial &&
+        currentTurnTick !== undefined &&
+        Math.abs(currentTurnTick - lastTrial[1]) < Math.floor(GAME_TICKS_PER_TURN / 2) &&
+        lastTrial[0] !== ai.general.officerLevel
+    ) {
         return null;
     }
     const nationCities = Object.values(ai.nationCities);
@@ -80,5 +108,7 @@ export const do천도 = (ai: GeneralAI) => {
         }
     }
 
-    return ai.buildNationCandidate('che_천도', { destCityID: targetCityId }, '천도');
+    const candidate = ai.buildNationCandidate('che_천도', { destCityID: targetCityId }, '천도');
+    if (candidate) ai.markCapitalMoveTrial();
+    return candidate;
 };

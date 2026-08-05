@@ -161,7 +161,7 @@ describe('monthly speciality and betrayal actions', () => {
 
         const logs = world.peekDirtyState().logs;
         expect(logs).toHaveLength(6);
-        expect(logs.slice(2, 4)).toEqual([
+        expect(logs.filter((log) => log.generalId === 3)).toEqual([
             expect.objectContaining({
                 generalId: 3,
                 category: LogCategory.HISTORY,
@@ -199,7 +199,7 @@ describe('monthly speciality and betrayal actions', () => {
         expect(world.getGeneralById(1)?.role.specialWar).not.toBeNull();
     });
 
-    it('persists creation scan order for speciality RNG across a reload', async () => {
+    it('uses general ID order instead of persisted Aria scan order', async () => {
         const world = buildWorld();
         const laterId = buildGeneral({
             id: 5,
@@ -249,7 +249,7 @@ describe('monthly speciality and betrayal actions', () => {
                 .peekDirtyState()
                 .logs.filter((log) => log.category === LogCategory.HISTORY)
                 .map((log) => log.generalId)
-        ).toEqual([1, 5, 4, 3, 2]);
+        ).toEqual([1, 4, 5, 2, 3]);
     });
 
     it('applies the two default scenario betrayal steps only to values within each threshold', async () => {

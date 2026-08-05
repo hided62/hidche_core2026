@@ -5,8 +5,8 @@ import {
     isCrewTypeAvailable,
 } from '@sammo-ts/logic/world/unitSet.js';
 import { buildWarConfig } from '@sammo-ts/logic/actions/turn/actionContextHelpers.js';
+import { CommandResolver as RecruitmentCommandResolver } from '@sammo-ts/logic/actions/turn/general/che_징병.js';
 import type { CrewTypeDefinition, General, WarArmTypes } from '@sammo-ts/logic';
-import { GeneralActionPipeline } from '@sammo-ts/logic/actionModules/general.js';
 
 import type { GeneralAI } from '../core.js';
 import { asRecord, readMetaNumber, roundTo } from '../../aiUtils.js';
@@ -106,19 +106,20 @@ export const do징병 = (ai: GeneralAI) => {
     }
     const armTypeWeights = forcedArmType > 0 ? [] : buildRecruitArmTypeWeights(ai.general, warConfig.armTypes);
     let armTypeDraw: number | null = null;
-    const armType = forcedArmType > 0
-        ? forcedArmType
-        : traceEnabled
-          ? (() => {
-                armTypeDraw = ai.rng.nextFloat1();
-                let cursor = armTypeDraw * armTypeWeights.reduce((sum, [, weight]) => sum + Math.max(0, weight), 0);
-                for (const [candidate, weight] of armTypeWeights) {
-                    if (cursor <= weight) return candidate;
-                    cursor -= Math.max(0, weight);
-                }
-                return armTypeWeights.at(-1)![0];
-            })()
-          : ai.rng.choiceUsingWeightPair(armTypeWeights);
+    const armType =
+        forcedArmType > 0
+            ? forcedArmType
+            : traceEnabled
+              ? (() => {
+                    armTypeDraw = ai.rng.nextFloat1();
+                    let cursor = armTypeDraw * armTypeWeights.reduce((sum, [, weight]) => sum + Math.max(0, weight), 0);
+                    for (const [candidate, weight] of armTypeWeights) {
+                        if (cursor <= weight) return candidate;
+                        cursor -= Math.max(0, weight);
+                    }
+                    return armTypeWeights.at(-1)![0];
+                })()
+              : ai.rng.choiceUsingWeightPair(armTypeWeights);
     trace('arm-type', { forcedArmType, armType, armTypeDraw, armTypeWeights });
 
     const candidates = (ai.unitSet?.crewTypes ?? [])
@@ -170,39 +171,31 @@ export const do징병 = (ai: GeneralAI) => {
     const crewTypeId = picked.id;
 
     let crewAmount = crewAmountBase;
-    const rawGoldCost = (picked.cost * getTechCost(tech) * crewAmount) / 100;
     // Ref asks the concrete che_징병 command for getCost() before deciding
-    // whether to halve the requested crew. That path includes personality,
-    // traits, items, and the final integer rounding; using the raw unit price
-    // makes che_출세 (+20% cost) recruit a full stack incorrectly.
-    const actionPipeline = new GeneralActionPipeline(ai.commandEnv.generalActionModules ?? []);
-    const goldCost = Math.round(
-        actionPipeline.onCalcDomestic(
-            {
-                general: ai.general,
-                nation,
-                ...(ai.worldRef
-                    ? {
-                          worldView: {
-                              listGenerals: () => ai.worldRef!.listGenerals(),
-                              listGeneralsByCity: (cityId: number) =>
-                                  ai.worldRef!.listGenerals().filter((candidate) => candidate.cityId === cityId),
-                              listNations: () => ai.worldRef!.listNations(),
-                          },
-                      }
-                    : {}),
-                time: {
-                    year: ai.world.currentYear,
-                    month: ai.world.currentMonth,
-                    startYear: ai.startYear,
-                },
-            },
-            '징병',
-            'cost',
-            rawGoldCost,
-            { armType: picked.armType }
-        )
-    );
+    // whether to halve the requested crew. In particular, that command caps
+    // the charge at the actually refillable amount when the selected type is
+    // already equipped, then applies traits/items and legacy rounding.
+    const recruitContext = {
+        general: ai.general,
+        nation,
+        ...(ai.worldRef
+            ? {
+                  worldView: {
+                      listGenerals: () => ai.worldRef!.listGenerals(),
+                      listGeneralsByCity: (cityId: number) =>
+                          ai.worldRef!.listGenerals().filter((candidate) => candidate.cityId === cityId),
+                      listNations: () => ai.worldRef!.listNations(),
+                  },
+              }
+            : {}),
+        time: {
+            year: ai.world.currentYear,
+            month: ai.world.currentMonth,
+            startYear: ai.startYear,
+        },
+    };
+    const recruitment = new RecruitmentCommandResolver(ai.commandEnv.generalActionModules ?? [], ai.commandEnv);
+    const goldCost = recruitment.getCost(recruitContext, crewTypeId, crewAmount, picked).gold;
     const killCrew = readMetaNumber(generalMeta, 'rank_killcrew', readMetaNumber(generalMeta, 'killcrew', 0));
     const deathCrew = readMetaNumber(generalMeta, 'rank_deathcrew', readMetaNumber(generalMeta, 'deathcrew', 0));
     const expectedCrewLoss = Math.floor((crewAmount * killCrew * 1.2) / Math.max(deathCrew, 1));

@@ -25,6 +25,7 @@ import type { NationTurnCommandSpec } from './index.js';
 import type { MapDefinition } from '@sammo-ts/logic/world/types.js';
 import { z } from 'zod';
 import { normalizeLegacyIntegerArg, parseArgsWithSchema } from '../parseArgs.js';
+import { GeneralActionPipeline } from '@sammo-ts/logic/actionModules/general.js';
 
 const ARGS_SCHEMA = z.object({
     destCityID: z.preprocess(normalizeLegacyIntegerArg, z.number()),
@@ -109,8 +110,11 @@ export class ActionDefinition<
     public readonly key = 'che_천도';
     public readonly name = ACTION_NAME;
     public readonly countsAsInheritanceActiveAction = true;
+    private readonly pipeline: GeneralActionPipeline<TriggerState>;
 
-    constructor(private readonly env: TurnCommandEnv) {}
+    constructor(private readonly env: TurnCommandEnv) {
+        this.pipeline = new GeneralActionPipeline(env.generalActionModules ?? []);
+    }
 
     parseArgs(raw: unknown): MoveCapitalArgs | null {
         return parseArgsWithSchema(ARGS_SCHEMA, raw);
@@ -256,8 +260,9 @@ export class ActionDefinition<
             }),
         ];
 
-        general.experience += 5 * (dist * 2 + 1);
-        general.dedication += 5 * (dist * 2 + 1);
+        const reward = 5 * (dist * 2 + 1);
+        general.experience += this.pipeline.onCalcStat(context, 'experience', reward);
+        general.dedication += this.pipeline.onCalcStat(context, 'dedication', reward);
 
         return { effects };
     }

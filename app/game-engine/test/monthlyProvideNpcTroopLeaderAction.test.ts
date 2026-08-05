@@ -146,11 +146,7 @@ describe('ProvideNPCTroopLeader monthly action', () => {
 
         const created = world.peekDirtyState().createdGenerals;
         expect(created).toHaveLength(3);
-        expect(created.map((general) => general.name)).toEqual([
-            '㉥부대장   9',
-            '㉥부대장  10',
-            '㉥부대장  11',
-        ]);
+        expect(created.map((general) => general.name)).toEqual(['㉥부대장   9', '㉥부대장  10', '㉥부대장  11']);
         expect(created[0]).toMatchObject({
             nationId: 1,
             cityId: process.env.REF_HIDDEN_SEED ? 2 : 1,
@@ -177,6 +173,9 @@ describe('ProvideNPCTroopLeader monthly action', () => {
             }))
         );
         for (const general of created) {
+            expect(general.turnTick).toBeTypeOf('number');
+            expect(general.turnTick! - world.dateToGameTick(general.turnTime)).toBeGreaterThanOrEqual(0);
+            expect(general.turnTick! - world.dateToGameTick(general.turnTime)).toBeLessThan(60);
             expect(reservedTurns.getGeneralTurns(general.id)).toEqual(
                 Array.from({ length: 30 }, () => ({ action: 'che_집합', args: {} }))
             );
@@ -186,11 +185,9 @@ describe('ProvideNPCTroopLeader monthly action', () => {
             const probe = new RandUtil(
                 new LiteHashDRBG(simpleSerialize(process.env.REF_HIDDEN_SEED, 'troopLeader', 200, 1, 1))
             );
-            expect([
-                probe.choice([1, 2]),
-                probe.nextRangeInt(0, 599),
-                probe.nextRangeInt(0, 999_999),
-            ]).toEqual([2, 567, 821_811]);
+            expect([probe.choice([1, 2]), probe.nextRangeInt(0, 599), probe.nextRangeInt(0, 999_999)]).toEqual([
+                2, 567, 821_811,
+            ]);
             expect(
                 created.map((general) => ({
                     cityId: general.cityId,

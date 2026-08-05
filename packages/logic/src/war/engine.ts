@@ -165,6 +165,7 @@ const resolveUnitReport = (unit: WarUnit): WarUnitReport => {
             isAttacker: unit.isAttacker(),
             killed: unit.getKilled(),
             dead: unit.getDead(),
+            phase: unit.getPhase(),
         };
     }
 
@@ -176,6 +177,7 @@ const resolveUnitReport = (unit: WarUnit): WarUnitReport => {
             isAttacker: unit.isAttacker(),
             killed: unit.getKilled(),
             dead: unit.getDead(),
+            phase: unit.getPhase(),
         };
     }
 
@@ -186,6 +188,7 @@ const resolveUnitReport = (unit: WarUnit): WarUnitReport => {
         isAttacker: unit.isAttacker(),
         killed: unit.getKilled(),
         dead: unit.getDead(),
+        phase: unit.getPhase(),
     };
 };
 

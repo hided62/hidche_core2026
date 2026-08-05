@@ -23,6 +23,7 @@ import { tryApplyUniqueLottery } from '@sammo-ts/logic/rewards/uniqueLottery.js'
 import type { GeneralTurnCommandSpec } from './index.js';
 import { parseArgsWithSchema } from '../parseArgs.js';
 import { JosaUtil } from '@sammo-ts/common';
+import { GeneralActionPipeline } from '@sammo-ts/logic/actionModules/general.js';
 
 const ACTION_NAME = '임관';
 const ARGS_SCHEMA = z.object({
@@ -43,7 +44,11 @@ export class ActionDefinition<
 > implements GeneralActionDefinition<TriggerState, AppointmentArgs> {
     public readonly key = 'che_임관';
     public readonly name = ACTION_NAME;
-    constructor(private readonly env: TurnCommandEnv) {}
+    private readonly pipeline: GeneralActionPipeline<TriggerState>;
+
+    constructor(private readonly env: TurnCommandEnv) {
+        this.pipeline = new GeneralActionPipeline(env.generalActionModules ?? []);
+    }
 
     getInheritanceActiveActionAmount(): number {
         return 1;
@@ -116,7 +121,11 @@ export class ActionDefinition<
                 troopId: 0,
                 experience:
                     context.general.experience +
-                    (context.destNationGeneralCount < this.env.initialNationGenLimit ? 700 : 100),
+                    this.pipeline.onCalcStat(
+                        context,
+                        'experience',
+                        context.destNationGeneralCount < this.env.initialNationGenLimit ? 700 : 100
+                    ),
                 meta: {
                     ...context.general.meta,
                     officer_city: 0,
