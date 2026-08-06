@@ -85,11 +85,15 @@ mount하고 다음 서버 전용 변수를 설정합니다.
 GATEWAY_IMAGE_UPLOAD_URL=https://sam-image.hided.net
 GATEWAY_IMAGE_UPLOAD_SECRET_FILE=/run/secrets/image_upload_core2026_secret
 GATEWAY_SHARED_ICON_PUBLIC_URL=https://sam-image.hided.net/icons
+GAME_IMAGE_UPLOAD_URL=https://sam-image.hided.net
+GAME_IMAGE_UPLOAD_SECRET_FILE=/run/secrets/image_upload_core2026_secret
+GAME_CONTENT_IMAGE_PUBLIC_URL=https://sam-image.hided.net/uploads/core2026
 ```
 
 Gateway가 인증과 50KB·크기·형식을 확인한 뒤 60초짜리 HMAC 요청으로 서버 간
-PUT을 수행합니다. 공유 비밀값은 `VITE_*`, 브라우저 응답 또는 Cloudflare로
-전달하지 않습니다.
+PUT을 수행합니다. game-api의 국방·외교·정찰 편집기 첨부 이미지도 같은 계약을
+사용하되 `/uploads/core2026/` bind 경로에 저장합니다. 공유 비밀값은 `VITE_*`,
+브라우저 응답 또는 Cloudflare로 전달하지 않습니다.
 
 ```sh
 cd ../docker_compose_files/development

@@ -16,6 +16,9 @@ export interface GameApiConfig {
     uploadPath: string;
     uploadDir: string;
     uploadPublicUrl: string | null;
+    imageUploadBaseUrl: string;
+    imageUploadSecretFile: string;
+    contentImagePublicUrl: string;
     profile: string;
     scenario: string;
     profileName: string;
@@ -50,6 +53,9 @@ export const resolveGameApiConfigFromEnv = (env: NodeJS.ProcessEnv = process.env
         uploadPath: env.GAME_UPLOAD_PATH ?? '/uploads',
         uploadDir: env.GAME_UPLOAD_DIR ?? 'uploads',
         uploadPublicUrl: env.GAME_UPLOAD_PUBLIC_URL ?? null,
+        imageUploadBaseUrl: env.GAME_IMAGE_UPLOAD_URL ?? 'https://sam-image.hided.net',
+        imageUploadSecretFile: env.GAME_IMAGE_UPLOAD_SECRET_FILE ?? '/run/secrets/image_upload_core2026_secret',
+        contentImagePublicUrl: env.GAME_CONTENT_IMAGE_PUBLIC_URL ?? 'https://sam-image.hided.net/uploads/core2026',
         profile,
         scenario,
         profileName,

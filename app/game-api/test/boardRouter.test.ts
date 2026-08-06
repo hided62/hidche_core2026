@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
+import sharp from 'sharp';
 
 import type { GameSessionTokenPayload } from '@sammo-ts/common/auth/gameToken';
 import type { RedisConnector } from '@sammo-ts/infra';
@@ -94,6 +95,7 @@ const buildContext = (options: {
         }>;
     }>;
     targetPost?: { id: number; isSecret: boolean } | null;
+    contentImageUpload?: GameApiContext['contentImageUpload'];
 }) => {
     const me = options.me ?? buildGeneral();
     const boardPostFindMany = vi.fn(async () => options.posts ?? []);
@@ -138,6 +140,7 @@ const buildContext = (options: {
         uploadDir: 'uploads',
         uploadPath: '/uploads',
         uploadPublicUrl: null,
+        ...(options.contentImageUpload ? { contentImageUpload: options.contentImageUpload } : {}),
         accessTokenStore,
         flushStore: new InMemoryFlushStore(),
         gameTokenSecret: 'test-secret',
@@ -258,6 +261,30 @@ describe('board router actor, nation, and secret permissions', () => {
             },
             select: { id: true },
         });
+    });
+
+    it('uploads normalized editor images through the remote bind store', async () => {
+        const upload = vi.fn(async ({ filename }: { filename: string }) => ({
+            publicUrl: `https://sam-image.hided.net/uploads/core2026/${filename}`,
+        }));
+        const fixture = buildContext({ contentImageUpload: { upload } });
+        const png = await sharp({
+            create: { width: 64, height: 48, channels: 4, background: '#224466' },
+        })
+            .png()
+            .toBuffer();
+
+        const result = await appRouter.createCaller(fixture.context).board.uploadImage({
+            dataUrl: `data:image/png;base64,${png.toString('base64')}`,
+        });
+
+        expect(result.url).toMatch(
+            /^https:\/\/sam-image\.hided\.net\/uploads\/core2026\/[a-f0-9]{32}\.webp$/
+        );
+        expect(upload).toHaveBeenCalledWith(
+            expect.objectContaining({ contentType: 'image/webp', body: expect.any(Buffer) })
+        );
+        expect(result).toMatchObject({ width: 64, height: 48, format: 'webp', animated: false });
     });
 
     it('does not reveal whether another nation owns a requested comment target', async () => {

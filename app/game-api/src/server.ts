@@ -2,6 +2,7 @@ import fastify, { type FastifyRequest } from 'fastify';
 import cors from '@fastify/cors';
 import fastifyStatic from '@fastify/static';
 import path from 'path';
+import fs from 'node:fs/promises';
 import { fastifyTRPCPlugin } from '@trpc/server/adapters/fastify';
 import { buildGameEventChannel } from '@sammo-ts/common';
 import type { GameSessionTokenPayload } from '@sammo-ts/common/auth/gameToken';
@@ -26,6 +27,7 @@ import { GatewayHttpAccountIconSource } from './auth/accountIconSource.js';
 import { createAdminProfileIconResetFlushHandler } from './services/accountIconSync.js';
 import { AccountIconResetReconciler } from './services/accountIconResetReconciler.js';
 import { createBestEffortResourceCloser } from './services/bestEffortResourceCloser.js';
+import { RemoteContentImageStore } from './services/remoteContentImageStore.js';
 
 const extractBearerToken = (value: string | string[] | undefined): string | null => {
     if (!value) {
@@ -63,6 +65,15 @@ const resolveAuthFromToken = async (
 
 export const createGameApiServer = async () => {
     const config = resolveGameApiConfigFromEnv();
+    const imageUploadSecret = (await fs.readFile(config.imageUploadSecretFile, 'utf8')).trim();
+    if (imageUploadSecret.length < 32) {
+        throw new Error('GAME_IMAGE_UPLOAD_SECRET_FILE must contain at least 32 characters.');
+    }
+    const contentImageUpload = new RemoteContentImageStore(
+        config.imageUploadBaseUrl,
+        config.contentImagePublicUrl,
+        imageUploadSecret
+    );
     const app = fastify({
         logger: true,
         routerOptions: {
@@ -195,6 +206,7 @@ export const createGameApiServer = async () => {
                     uploadDir: path.resolve(process.cwd(), config.uploadDir),
                     uploadPath: config.uploadPath,
                     uploadPublicUrl: config.uploadPublicUrl,
+                    contentImageUpload,
                     auth,
                     ...(auth && token ? { accessToken: token } : {}),
                     accessTokenStore,

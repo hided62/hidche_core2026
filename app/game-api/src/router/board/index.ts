@@ -1,8 +1,6 @@
 import { TRPCError } from '@trpc/server';
 import { z } from 'zod';
-import path from 'path';
-import { promises as fs } from 'fs';
-import { randomUUID } from 'crypto';
+import { randomBytes } from 'crypto';
 import sharp, { type WebpOptions } from 'sharp';
 
 import { accessAuthedInputProcedure, authedProcedure, router } from '../../trpc.js';
@@ -34,21 +32,6 @@ const getBoardActor = async (ctx: Parameters<typeof getMyGeneral>[0]) => {
             : null;
     const permission = resolveSecretPermission(general, nation?.meta ?? {}, true);
     return { general, permission };
-};
-
-const normalizeUploadPath = (value: string) => {
-    if (!value.startsWith('/')) {
-        return `/${value}`;
-    }
-    return value.replace(/\/$/, '');
-};
-
-const buildPublicImageUrl = (uploadPublicUrl: string | null, uploadPath: string, filename: string) => {
-    if (uploadPublicUrl) {
-        return `${uploadPublicUrl.replace(/\/$/, '')}/${filename}`;
-    }
-    const normalizedPath = normalizeUploadPath(uploadPath);
-    return `${normalizedPath}/${filename}`;
 };
 
 const parseDataUrl = (dataUrl: string): Buffer => {
@@ -274,15 +257,20 @@ export const boardRouter = router({
             }
         }
 
-        await fs.mkdir(ctx.uploadDir, { recursive: true });
-        const filename = `${randomUUID()}.${outputFormat}`;
-        await fs.writeFile(path.join(ctx.uploadDir, filename), outputBuffer);
+        if (!ctx.contentImageUpload) {
+            throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: '이미지 저장소가 설정되지 않았습니다.' });
+        }
+        const filename = `${randomBytes(16).toString('hex')}.${outputFormat}`;
+        const uploaded = await ctx.contentImageUpload.upload({
+            filename,
+            contentType: outputFormat === 'avif' ? 'image/avif' : 'image/webp',
+            body: outputBuffer,
+        });
 
         const outputMeta = await sharp(outputBuffer, { animated: true }).metadata();
-        const url = buildPublicImageUrl(ctx.uploadPublicUrl, ctx.uploadPath, filename);
 
         return {
-            url,
+            url: uploaded.publicUrl,
             width: outputMeta.width ?? metadata.width,
             height: outputMeta.height ?? metadata.height,
             format: outputFormat,

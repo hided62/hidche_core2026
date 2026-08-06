@@ -8,6 +8,7 @@ import type { BattleSimTransport } from './battleSim/transport.js';
 import type { FlushStore } from './auth/flushStore.js';
 import type { RedisAccessTokenStore } from './auth/accessTokenStore.js';
 import type { AccountIconSource } from './auth/accountIconSource.js';
+import type { ContentImageUploadStore } from './services/remoteContentImageStore.js';
 
 export interface GameProfile {
     id: string;
@@ -91,6 +92,7 @@ export interface GameApiContext {
     uploadDir: string;
     uploadPath: string;
     uploadPublicUrl: string | null;
+    contentImageUpload?: ContentImageUploadStore;
     auth: GameSessionTokenPayload | null;
     accessToken?: string;
     accessTokenStore: RedisAccessTokenStore;
@@ -109,6 +111,7 @@ export const createGameApiContext = (options: {
     uploadDir: string;
     uploadPath: string;
     uploadPublicUrl: string | null;
+    contentImageUpload?: ContentImageUploadStore;
     auth: GameSessionTokenPayload | null;
     accessToken?: string;
     accessTokenStore: RedisAccessTokenStore;
@@ -127,6 +130,7 @@ export const createGameApiContext = (options: {
         uploadDir: options.uploadDir,
         uploadPath: options.uploadPath,
         uploadPublicUrl: options.uploadPublicUrl,
+        ...(options.contentImageUpload ? { contentImageUpload: options.contentImageUpload } : {}),
         auth: options.auth,
         ...(options.accessToken ? { accessToken: options.accessToken } : {}),
         accessTokenStore: options.accessTokenStore,
