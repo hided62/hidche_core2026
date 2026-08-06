@@ -14,6 +14,7 @@ import type { GatewayPrismaClient } from '@sammo-ts/infra';
 import type { AdminAuthContext } from './adminAuth.js';
 import type { PasswordEnvelopeService } from './auth/passwordEnvelope.js';
 import { createAdminAuditStore, type AdminAuditStore } from './adminAudit.js';
+import type { UserIconUploadStore } from './account/remoteUserIconStore.js';
 
 export interface GatewayApiContext {
     users: UserRepository;
@@ -26,6 +27,8 @@ export interface GatewayApiContext {
     publicBaseUrl: string;
     userIconDir: string;
     userIconPublicUrl: string;
+    sharedIconPublicUrl: string;
+    userIconUpload?: UserIconUploadStore;
     adminLocalAccountEnabled: boolean;
     localRegistrationEnabled: boolean;
     localAccountGraceDays: number;
@@ -51,6 +54,8 @@ export const createGatewayApiContext = (options: {
     publicBaseUrl: string;
     userIconDir?: string;
     userIconPublicUrl?: string;
+    sharedIconPublicUrl?: string;
+    userIconUpload?: UserIconUploadStore;
     adminLocalAccountEnabled: boolean;
     localRegistrationEnabled: boolean;
     localAccountGraceDays: number;
@@ -73,6 +78,8 @@ export const createGatewayApiContext = (options: {
     publicBaseUrl: options.publicBaseUrl,
     userIconDir: options.userIconDir ?? 'uploads/user-icons',
     userIconPublicUrl: options.userIconPublicUrl ?? `${options.publicBaseUrl.replace(/\/$/, '')}/user-icons`,
+    sharedIconPublicUrl: options.sharedIconPublicUrl ?? 'https://sam-image.hided.net/icons',
+    userIconUpload: options.userIconUpload,
     adminLocalAccountEnabled: options.adminLocalAccountEnabled,
     localRegistrationEnabled: options.localRegistrationEnabled,
     localAccountGraceDays: options.localAccountGraceDays,

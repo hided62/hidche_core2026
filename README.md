@@ -76,6 +76,21 @@ CI=1 pnpm typecheck
 `../docker_compose_files/development/README.md`의 PostgreSQL·Redis stack을
 worktree별로 준비할 수 있습니다.
 
+Gateway 사용자 아이콘은 이미지 서비스의 Git checkout이 아니라 별도 bind
+저장소로 직접 업로드합니다. `gateway-api`에는 이미지 서비스와 같은
+`image_upload_core2026_secret`을 `/run/secrets/image_upload_core2026_secret`로
+mount하고 다음 서버 전용 변수를 설정합니다.
+
+```text
+GATEWAY_IMAGE_UPLOAD_URL=https://sam-image.hided.net
+GATEWAY_IMAGE_UPLOAD_SECRET_FILE=/run/secrets/image_upload_core2026_secret
+GATEWAY_SHARED_ICON_PUBLIC_URL=https://sam-image.hided.net/icons
+```
+
+Gateway가 인증과 50KB·크기·형식을 확인한 뒤 60초짜리 HMAC 요청으로 서버 간
+PUT을 수행합니다. 공유 비밀값은 `VITE_*`, 브라우저 응답 또는 Cloudflare로
+전달하지 않습니다.
+
 ```sh
 cd ../docker_compose_files/development
 ./scripts/prepare-instance.sh main 15433 16379 ../../core2026

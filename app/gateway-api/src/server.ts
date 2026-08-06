@@ -27,6 +27,7 @@ import { appRouter } from './router.js';
 import { RepositoryProfileStatusService } from './lobby/profileStatusService.js';
 import { registerAccountIconInternalRoute } from './auth/accountIconInternalRoute.js';
 import { installGatewayShutdownController } from './lifecycle/shutdownController.js';
+import { RemoteUserIconStore } from './account/remoteUserIconStore.js';
 
 export const createGatewayApiServer = async () => {
     const config = resolveGatewayApiConfigFromEnv();
@@ -39,6 +40,15 @@ export const createGatewayApiServer = async () => {
         ? await fs.readFile(config.passwordEncryptionPrivateKeyFile, 'utf8')
         : undefined;
     const passwordEnvelope = createPasswordEnvelopeService(privateKeyPem);
+    const imageUploadSecret = (await fs.readFile(config.imageUploadSecretFile, 'utf8')).trim();
+    if (imageUploadSecret.length < 32) {
+        throw new Error('GATEWAY_IMAGE_UPLOAD_SECRET_FILE must contain at least 32 characters.');
+    }
+    const userIconUpload = new RemoteUserIconStore(
+        config.imageUploadBaseUrl,
+        config.sharedIconPublicUrl,
+        imageUploadSecret
+    );
     const users = createPostgresUserRepository(
         postgres.prisma as GatewayPrismaClient,
         createPasswordHasher({ legacyGlobalSalt: config.legacyPasswordGlobalSalt })
@@ -103,6 +113,8 @@ export const createGatewayApiServer = async () => {
                     publicBaseUrl: config.publicBaseUrl,
                     userIconDir: path.resolve(process.cwd(), config.userIconDir),
                     userIconPublicUrl: config.userIconPublicUrl,
+                    sharedIconPublicUrl: config.sharedIconPublicUrl,
+                    userIconUpload,
                     adminLocalAccountEnabled: config.adminLocalAccountEnabled,
                     localRegistrationEnabled: config.localRegistrationEnabled,
                     localAccountGraceDays: config.localAccountGraceDays,

@@ -1,6 +1,4 @@
 import { randomBytes } from 'node:crypto';
-import fs from 'node:fs/promises';
-import path from 'node:path';
 
 import { TRPCError } from '@trpc/server';
 import sharp from 'sharp';
@@ -18,6 +16,13 @@ const MAX_ACTIVE_ICONS = 5;
 const ICON_UPLOAD_COOLDOWN_MS = 24 * 60 * 60 * 1000;
 const ICON_RETIRE_COOLDOWN_MS = 7 * 24 * 60 * 60 * 1000;
 const ALLOWED_ICON_FORMATS = new Set(['avif', 'webp', 'jpeg', 'png', 'gif']);
+const ICON_CONTENT_TYPES: Record<string, string> = {
+    avif: 'image/avif',
+    webp: 'image/webp',
+    jpg: 'image/jpeg',
+    png: 'image/png',
+    gif: 'image/gif',
+};
 
 const requireSessionUser = async (ctx: GatewayApiContext, sessionToken: string): Promise<UserRecord> => {
     const session = await ctx.sessions.getSession(sessionToken);
@@ -68,10 +73,17 @@ const hasActiveSanction = (sanctions: UserSanctions, now: Date): boolean => {
     );
 };
 
+const encodeIconPath = (picture: string): string => picture.split('/').map(encodeURIComponent).join('/');
+
+const buildPictureUrl = (ctx: GatewayApiContext, picture: string, imageServer: number): string =>
+    imageServer === 1
+        ? `${ctx.userIconPublicUrl.replace(/\/$/, '')}/${encodeURIComponent(picture)}`
+        : `${ctx.sharedIconPublicUrl.replace(/\/$/, '')}/${encodeIconPath(picture)}`;
+
 const buildIconUrl = (ctx: GatewayApiContext, user: UserRecord): string | null => {
     const icon = resolveEffectiveAccountIcon(user);
-    if (icon.imageServer !== 1 || icon.picture === 'default.jpg') return null;
-    return `${ctx.userIconPublicUrl.replace(/\/$/, '')}/${encodeURIComponent(icon.picture)}`;
+    if (icon.picture === 'default.jpg') return null;
+    return buildPictureUrl(ctx, icon.picture, icon.imageServer);
 };
 
 const buildLibraryIcon = (
@@ -83,7 +95,7 @@ const buildLibraryIcon = (
     imageServer: icon.imageServer,
     createdAt: icon.createdAt,
     retiredAt: icon.retiredAt ?? null,
-    url: `${ctx.userIconPublicUrl.replace(/\/$/, '')}/${encodeURIComponent(icon.picture)}`,
+    url: buildPictureUrl(ctx, icon.picture, icon.imageServer),
 });
 
 const listIconSyncProfiles = async (ctx: GatewayApiContext, userId: string) =>
@@ -211,24 +223,28 @@ export const accountRouter = router({
             }
             const extension = metadata.format === 'jpeg' ? 'jpg' : metadata.format;
             const filename = `${randomBytes(8).toString('hex')}.${extension}`;
-            await fs.mkdir(ctx.userIconDir, { recursive: true });
-            await fs.writeFile(path.join(ctx.userIconDir, filename), buffer, { flag: 'wx' });
+            if (!ctx.userIconUpload) {
+                throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: '이미지 저장소가 설정되지 않았습니다.' });
+            }
+            const uploaded = await ctx.userIconUpload.upload({
+                filename,
+                contentType: ICON_CONTENT_TYPES[extension]!,
+                body: buffer,
+            });
             let stored;
             try {
                 stored = await ctx.users.addIconForWindow(
                     user.id,
-                    filename,
-                    1,
+                    uploaded.picture,
+                    0,
                     now,
                     new Date(now.getTime() - ICON_UPLOAD_COOLDOWN_MS),
                     MAX_ACTIVE_ICONS
                 );
             } catch (error) {
-                await fs.rm(path.join(ctx.userIconDir, filename), { force: true });
                 throw error;
             }
             if (!stored.ok) {
-                await fs.rm(path.join(ctx.userIconDir, filename), { force: true });
                 if (stored.reason === 'LIMIT') {
                     throw new TRPCError({
                         code: 'PRECONDITION_FAILED',
@@ -243,7 +259,7 @@ export const accountRouter = router({
             const flushPublished = await publishIconFlush(ctx, user.id, 'account-icon-changed');
             return {
                 ok: true,
-                iconUrl: `${ctx.userIconPublicUrl.replace(/\/$/, '')}/${filename}`,
+                iconUrl: uploaded.publicUrl,
                 revision: stored.revision,
                 icon: buildLibraryIcon(ctx, stored.icon),
                 profiles,

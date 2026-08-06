@@ -19,6 +19,9 @@ export interface GatewayApiConfig {
     publicBaseUrl: string;
     userIconDir: string;
     userIconPublicUrl: string;
+    imageUploadBaseUrl: string;
+    imageUploadSecretFile: string;
+    sharedIconPublicUrl: string;
     adminLocalAccountEnabled: boolean;
     localRegistrationEnabled: boolean;
     localAccountGraceDays: number;
@@ -93,6 +96,10 @@ export const resolveGatewayApiConfigFromEnv = (env: NodeJS.ProcessEnv = process.
         publicBaseUrl,
         userIconDir: env.GATEWAY_USER_ICON_DIR ?? 'uploads/user-icons',
         userIconPublicUrl: env.GATEWAY_USER_ICON_PUBLIC_URL ?? `${publicBaseUrl.replace(/\/$/, '')}/user-icons`,
+        imageUploadBaseUrl: env.GATEWAY_IMAGE_UPLOAD_URL ?? 'https://sam-image.hided.net',
+        imageUploadSecretFile:
+            env.GATEWAY_IMAGE_UPLOAD_SECRET_FILE ?? '/run/secrets/image_upload_core2026_secret',
+        sharedIconPublicUrl: env.GATEWAY_SHARED_ICON_PUBLIC_URL ?? 'https://sam-image.hided.net/icons',
         adminLocalAccountEnabled: parseBooleanWithFallback(env.GATEWAY_ADMIN_LOCAL_ACCOUNT_ENABLED, false),
         localRegistrationEnabled: parseBooleanWithFallback(env.GATEWAY_LOCAL_REGISTRATION_ENABLED, true),
         localAccountGraceDays: parseNumberWithFallback(

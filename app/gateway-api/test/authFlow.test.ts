@@ -157,6 +157,12 @@ const buildCaller = (
     }
     const passwordEnvelope = createPasswordEnvelopeService();
     const requestHeaders: Record<string, string> = {};
+    const userIconUpload = {
+        upload: vi.fn(async ({ filename }: { filename: string }) => ({
+            picture: `users/core2026/${filename}`,
+            publicUrl: `https://sam-image.hided.net/icons/users/core2026/${filename}`,
+        })),
+    };
     const sealPassword = (password: string) => {
         const key = passwordEnvelope.getPublicKey();
         return {
@@ -183,6 +189,8 @@ const buildCaller = (
             publicBaseUrl: 'http://localhost',
             userIconDir: options.userIconDir,
             userIconPublicUrl: 'http://localhost/user-icons',
+            sharedIconPublicUrl: 'https://sam-image.hided.net/icons',
+            userIconUpload,
             adminLocalAccountEnabled: false,
             localRegistrationEnabled: true,
             localAccountGraceDays: options.localAccountGraceDays ?? 7,
@@ -204,6 +212,7 @@ const buildCaller = (
         users,
         sessions,
         flushPublisher,
+        userIconUpload,
         sealPassword,
         setSessionHeader: (sessionToken: string) => {
             requestHeaders['x-session-token'] = sessionToken;
@@ -686,7 +695,7 @@ describe('account self service', () => {
     it('validates and stores a legacy-sized account icon with a daily change limit', async () => {
         const iconDir = await fs.mkdtemp(path.join(os.tmpdir(), 'sammo-account-icon-'));
         try {
-            const { caller, users, sessions, flushPublisher } = buildCaller({
+            const { caller, users, sessions, flushPublisher, userIconUpload } = buildCaller({
                 userIconDir: iconDir,
             });
             const user = await users.createUser({
@@ -711,11 +720,13 @@ describe('account self service', () => {
             });
             const updated = await users.findById(user.id);
 
-            expect(result.iconUrl).toMatch(/^http:\/\/localhost\/user-icons\/[a-f0-9]{16}\.png$/);
+            expect(result.iconUrl).toMatch(/^https:\/\/sam-image\.hided\.net\/icons\/users\/core2026\/[a-f0-9]{16}\.png$/);
             expect(result.profiles.map((profile) => profile.profileName)).toEqual(['che:default', 'hwe:default']);
-            expect(updated?.imageServer).toBe(1);
+            expect(updated?.imageServer).toBe(0);
             expect(flushPublisher.publishUserFlush).toHaveBeenCalledWith(user.id, 'account-icon-changed');
-            expect(await fs.stat(path.join(iconDir, updated?.picture ?? 'missing'))).toBeTruthy();
+            expect(userIconUpload.upload).toHaveBeenCalledWith(
+                expect.objectContaining({ contentType: 'image/png', body: png })
+            );
             await expect(caller.account.deleteIcon({ sessionToken: session.sessionToken })).rejects.toMatchObject({
                 code: 'TOO_MANY_REQUESTS',
             });
@@ -754,7 +765,7 @@ describe('account self service', () => {
 
             expect(attempts.filter(({ status }) => status === 'fulfilled')).toHaveLength(1);
             expect(attempts.filter(({ status }) => status === 'rejected')).toHaveLength(1);
-            expect(await fs.readdir(iconDir)).toHaveLength(1);
+            expect(await users.listIcons(user.id)).toHaveLength(1);
         } finally {
             await fs.rm(iconDir, { recursive: true, force: true });
         }
@@ -893,7 +904,7 @@ describe('account self service', () => {
                 {
                     projection: {
                         revision: changed.revision,
-                        imageServer: 1,
+                        imageServer: 0,
                     },
                     profiles: [{ profileName: 'che:default' }, { profileName: 'hwe:default' }],
                 }
