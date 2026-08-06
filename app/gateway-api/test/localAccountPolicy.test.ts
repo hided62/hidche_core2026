@@ -89,4 +89,22 @@ describe('local account profile policy', () => {
             graceEndsAt: null,
         });
     });
+
+    it('extends account access with an administrator override without widening general creation grace', () => {
+        const user = buildLocalUser(new Date('2026-07-20T00:00:00.000Z'));
+        user.kakaoGraceUntil = '2026-08-20T00:00:00.000Z';
+        const policy = resolveLocalAccountProfilePolicy({
+            profile: 'che',
+            defaultGraceDays: 7,
+            user,
+            now: new Date('2026-08-01T00:00:00.000Z'),
+        });
+
+        expect(policy).toMatchObject({
+            accessAllowed: true,
+            canCreateGeneral: false,
+            graceEndsAt: '2026-08-20T00:00:00.000Z',
+            generalCreationGraceDays: 0,
+        });
+    });
 });

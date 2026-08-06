@@ -47,6 +47,10 @@ export const resolveLocalAccountProfilePolicy = (options: {
     const graceStartedAt = new Date(options.user.kakaoGraceStartedAt);
     const now = options.now ?? new Date();
     const accessEndsAt = new Date(graceStartedAt.getTime() + accessGraceDays * DAY_MS);
+    const adminGraceUntil = options.user.kakaoGraceUntil ? new Date(options.user.kakaoGraceUntil) : null;
+    if (adminGraceUntil && Number.isFinite(adminGraceUntil.getTime()) && adminGraceUntil > accessEndsAt) {
+        accessEndsAt.setTime(adminGraceUntil.getTime());
+    }
     const generalCreationEndsAt = new Date(graceStartedAt.getTime() + generalCreationGraceDays * DAY_MS);
     const accessAllowed = kakaoVerified || bypass || now < accessEndsAt;
     const canCreateGeneral = kakaoVerified || bypass || (accessAllowed && now < generalCreationEndsAt);

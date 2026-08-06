@@ -40,6 +40,9 @@ const installGatewayFixture = async (page: Page, roles: string[]) => {
             if (operation === 'admin.users.getLocalAccountStatus') {
                 return response({ enabled: true });
             }
+            if (operation === 'admin.capabilities.list') {
+                return response([]);
+            }
             throw new Error(`Unhandled tRPC operation: ${operation}`);
         });
         await route.fulfill({

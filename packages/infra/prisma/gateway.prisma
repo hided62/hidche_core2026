@@ -59,6 +59,12 @@ enum GatewayRuntimeActionStatus {
   IGNORED
 }
 
+enum AdminAuditOutcome {
+  STARTED
+  SUCCEEDED
+  FAILED
+}
+
 enum GatewaySourceMode {
   BRANCH
   COMMIT
@@ -87,6 +93,7 @@ model AppUser {
   privacyAcceptedAt   DateTime?  @map("privacy_accepted_at")
   kakaoVerifiedAt     DateTime?  @map("kakao_verified_at")
   kakaoGraceStartedAt DateTime   @default(now()) @map("kakao_grace_started_at")
+  kakaoGraceUntil     DateTime?  @map("kakao_grace_until")
   deleteAfter         DateTime?  @map("delete_after")
   createdAt           DateTime   @default(now()) @map("created_at")
   updatedAt           DateTime   @updatedAt @map("updated_at")
@@ -95,6 +102,33 @@ model AppUser {
   icons               UserIcon[]
 
   @@map("app_user")
+}
+
+model AdminAuditEvent {
+  id             String            @id @default(uuid())
+  correlationId  String            @map("correlation_id")
+  actorUserId    String            @map("actor_user_id")
+  actorUsername  String            @map("actor_username")
+  credentialKind String            @default("SESSION") @map("credential_kind")
+  capability     String?
+  scope          String?
+  action         String
+  targetType     String?           @map("target_type")
+  targetId       String?           @map("target_id")
+  profileName    String?           @map("profile_name")
+  reason         String?
+  outcome        AdminAuditOutcome
+  summary        Json              @default(dbgenerated("'{}'::jsonb"))
+  errorCode      String?           @map("error_code")
+  errorMessage   String?           @map("error_message")
+  createdAt      DateTime          @default(now()) @map("created_at")
+
+  @@index([correlationId, createdAt])
+  @@index([actorUserId, createdAt])
+  @@index([targetType, targetId, createdAt])
+  @@index([profileName, createdAt])
+  @@index([action, createdAt])
+  @@map("admin_audit_event")
 }
 
 model UserIcon {

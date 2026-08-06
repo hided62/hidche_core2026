@@ -18,6 +18,7 @@ import { createGatewayApiContext } from '../src/context.js';
 import { InMemoryProfileStatusService } from '../src/lobby/profileStatusService.js';
 import { appRouter } from '../src/router.js';
 import { createPasswordEnvelopeService } from '../src/auth/passwordEnvelope.js';
+import type { AdminAuditEventRecord, AdminAuditWrite } from '../src/adminAudit.js';
 
 const buildCaller = async (
     createOperation: GatewayProfileRepository['createOperation'],
@@ -50,6 +51,7 @@ const buildCaller = async (
     const flushes: Array<{ userId: string; reason?: string; iconRevision?: string }> = [];
     const updatedStatuses: GatewayProfileRecord['status'][] = [];
     const updatedMetas: Record<string, unknown>[] = [];
+    const auditEvents: AdminAuditEventRecord[] = [];
     let reconcileCount = 0;
     let storedNotice = options.initialNotice ?? '';
     const profile = {
@@ -162,6 +164,29 @@ const buildCaller = async (
             localRegistrationEnabled: true,
             localAccountGraceDays: 7,
             passwordEnvelope: createPasswordEnvelopeService(),
+            adminAudit: {
+                append: async (event: AdminAuditWrite) => {
+                    auditEvents.push({
+                        id: `audit-${auditEvents.length + 1}`,
+                        credentialKind: 'SESSION',
+                        createdAt: new Date(1_700_000_000_000 + auditEvents.length).toISOString(),
+                        summary: {},
+                        ...event,
+                    });
+                },
+                list: async (input = {}) =>
+                    auditEvents
+                        .filter(
+                            (event) =>
+                                (!input.actorUserId || event.actorUserId === input.actorUserId) &&
+                                (!input.targetType || event.targetType === input.targetType) &&
+                                (!input.targetId || event.targetId === input.targetId) &&
+                                (!input.profileName || event.profileName === input.profileName)
+                        )
+                        .slice()
+                        .reverse()
+                        .slice(0, input.limit ?? 100),
+            },
             profiles,
             releases,
             orchestrator: {
@@ -225,6 +250,7 @@ const buildCaller = async (
         flushes,
         updatedStatuses,
         updatedMetas,
+        auditEvents,
         getReconcileCount: () => reconcileCount,
         getStoredNotice: () => storedNotice,
         setStoredNotice: (notice: string) => {
@@ -653,6 +679,7 @@ describe('admin role non-escalation', () => {
                 userId: target.id,
                 roles: ['admin.survey.open:che:default'],
                 mode: 'grant',
+                reason: '권한 부여 테스트',
             })
         ).resolves.toMatchObject({
             roles: ['user', 'admin.survey.open:che:default'],
@@ -677,6 +704,7 @@ describe('admin role non-escalation', () => {
                     userId: target.id,
                     roles: [role],
                     mode: 'grant',
+                    reason: '권한 범위 거부 테스트',
                 })
             ).rejects.toMatchObject({ code: 'FORBIDDEN' });
         }
@@ -699,6 +727,7 @@ describe('admin role non-escalation', () => {
                 userId: target.id,
                 roles: ['user'],
                 mode: 'set',
+                reason: '권한 제거 거부 테스트',
             })
         ).rejects.toMatchObject({ code: 'FORBIDDEN' });
     });
@@ -714,6 +743,7 @@ describe('admin role non-escalation', () => {
                 userId: harness.admin.id,
                 roles: ['admin.survey.open:*'],
                 mode: 'grant',
+                reason: '자기 권한 상승 거부 테스트',
             })
         ).rejects.toMatchObject({ code: 'FORBIDDEN' });
         expect((await harness.users.findById(harness.admin.id))?.roles).toEqual([
@@ -736,6 +766,7 @@ describe('admin role non-escalation', () => {
                 userId: target.id,
                 roles: ['superuser'],
                 mode: 'grant',
+                reason: '최고 관리자 권한 부여 테스트',
             })
         ).resolves.toMatchObject({ roles: ['user', 'superuser'] });
     });
@@ -752,15 +783,18 @@ describe('admin role non-escalation', () => {
             userId: target.id,
             roles: ['admin.survey.open:che:default'],
             mode: 'grant',
+            reason: '세션 무효화 권한 테스트',
         });
         await harness.caller.admin.users.updateSanctions({
             userId: target.id,
             patch: { suspendedUntil: '2099-01-01T00:00:00.000Z' },
+            reason: '세션 무효화 제재 테스트',
         });
         await harness.caller.admin.users.setServerRestriction({
             userId: target.id,
             profile: 'che:default',
             restriction: { blockedFeatures: ['login'] },
+            reason: '세션 무효화 서버 제한 테스트',
         });
 
         expect(harness.flushes).toEqual([
@@ -793,7 +827,10 @@ describe('admin role non-escalation', () => {
             } as never)
         ).rejects.toMatchObject({ code: 'BAD_REQUEST' });
 
-        const result = await harness.caller.admin.users.resetProfileIcon({ userId: target.id });
+        const result = await harness.caller.admin.users.resetProfileIcon({
+            userId: target.id,
+            reason: '프로필 아이콘 초기화 테스트',
+        });
         expect(new Date(result.profileIconResetAt).getTime()).toBeGreaterThan(new Date(second!).getTime());
         expect((await harness.users.findById(target.id))?.profileIconResetAt).toBe(result.profileIconResetAt);
         expect(harness.flushes.at(-1)).toEqual({
@@ -801,5 +838,135 @@ describe('admin role non-escalation', () => {
             reason: 'admin-profile-icon-reset',
             iconRevision: result.profileIconResetAt,
         });
+    });
+});
+
+describe('Gateway administrator account controls', () => {
+    const unusedCreateOperation: GatewayProfileRepository['createOperation'] = async () => {
+        throw new Error('not used');
+    };
+
+    it('records sanitized STARTED and SUCCEEDED events and exposes target history', async () => {
+        const harness = await buildCaller(unusedCreateOperation);
+        const target = await harness.users.createUser({
+            username: 'audit-target',
+            password: 'secretpass',
+            displayName: 'Audit Target',
+        });
+
+        await harness.caller.admin.users.resetPassword({
+            userId: target.id,
+            newPassword: 'replacement-secret',
+            reason: '사용자 요청에 따른 복구',
+        });
+
+        expect(harness.auditEvents).toHaveLength(2);
+        expect(harness.auditEvents.map((event) => event.outcome)).toEqual(['STARTED', 'SUCCEEDED']);
+        expect(harness.auditEvents[0]).toMatchObject({
+            actorUserId: harness.admin.id,
+            capability: 'admin.users.manage',
+            targetType: 'USER',
+            targetId: target.id,
+            reason: '사용자 요청에 따른 복구',
+            summary: { newPassword: '[REDACTED]' },
+        });
+        const history = await harness.caller.admin.users.listHistory({ userId: target.id });
+        expect(history.map((event) => event.outcome)).toEqual(['SUCCEEDED', 'STARTED']);
+        await expect(harness.caller.admin.audit.list({ targetId: target.id })).resolves.toHaveLength(2);
+    });
+
+    it('records a FAILED terminal event when validation rejects an unknown capability', async () => {
+        const harness = await buildCaller(unusedCreateOperation);
+        const target = await harness.users.createUser({
+            username: 'failed-audit-target',
+            password: 'secretpass',
+            displayName: 'Failed Audit Target',
+        });
+
+        await expect(
+            harness.caller.admin.users.updateRoles({
+                userId: target.id,
+                roles: ['admin.unknown.manage'],
+                mode: 'grant',
+                reason: '알 수 없는 권한 거부 확인',
+            })
+        ).rejects.toMatchObject({ code: 'BAD_REQUEST' });
+        expect(harness.auditEvents.map((event) => event.outcome)).toEqual(['STARTED', 'FAILED']);
+        expect(harness.auditEvents.at(-1)).toMatchObject({ errorCode: 'BAD_REQUEST' });
+        expect((await harness.users.findById(target.id))?.roles).toEqual(['user']);
+    });
+
+    it('extends an unverified local account grace period and flushes active sessions', async () => {
+        const harness = await buildCaller(unusedCreateOperation);
+        const target = await harness.users.createUser({
+            username: 'grace-target',
+            password: 'secretpass',
+            displayName: 'Grace Target',
+        });
+        const until = new Date(Date.now() + 14 * 24 * 60 * 60 * 1000).toISOString();
+
+        await expect(
+            harness.caller.admin.users.updateKakaoGrace({
+                userId: target.id,
+                until,
+                reason: '고객센터 본인 확인 처리 중',
+            })
+        ).resolves.toEqual({ kakaoGraceUntil: until });
+        expect((await harness.users.findById(target.id))?.kakaoGraceUntil).toBe(until);
+        expect(harness.flushes).toContainEqual({ userId: target.id, reason: 'admin-kakao-grace-updated' });
+    });
+
+    it('schedules deletion with retention and prevents administrator self-deletion', async () => {
+        const harness = await buildCaller(unusedCreateOperation);
+        const target = await harness.users.createUser({
+            username: 'deletion-target',
+            password: 'secretpass',
+            displayName: 'Deletion Target',
+        });
+
+        const result = await harness.caller.admin.users.scheduleDeletion({
+            userId: target.id,
+            retentionDays: 30,
+            reason: '탈퇴 요청 증빙 확인 완료',
+        });
+        expect((await harness.users.findById(target.id))?.deleteAfter).toBe(result.deleteAfter);
+        await expect(
+            harness.caller.admin.users.scheduleDeletion({
+                userId: harness.admin.id,
+                retentionDays: 30,
+                reason: '관리자 자기 삭제 차단 확인',
+            })
+        ).rejects.toMatchObject({ code: 'FORBIDDEN' });
+    });
+
+    it('prevents a delegated administrator from changing a root administrator', async () => {
+        const harness = await buildCaller(unusedCreateOperation, {
+            adminRoles: ['user', 'admin.users.manage'],
+            firstUserIsAdmin: false,
+        });
+        const target = await harness.users.createUser({
+            username: 'root-target',
+            password: 'secretpass',
+            displayName: 'Root Target',
+        });
+        await harness.users.updateRoles(target.id, ['user', 'admin']);
+
+        await expect(
+            harness.caller.admin.users.updateSanctions({
+                userId: target.id,
+                patch: { suspendedUntil: '2099-01-01T00:00:00.000Z' },
+                reason: '루트 계정 보호 확인',
+            })
+        ).rejects.toMatchObject({ code: 'FORBIDDEN' });
+        expect((await harness.users.findById(target.id))?.sanctions).toEqual({});
+    });
+
+    it('keeps the global audit feed behind its dedicated capability', async () => {
+        const harness = await buildCaller(unusedCreateOperation, {
+            adminRoles: ['user', 'admin.users.manage'],
+            firstUserIsAdmin: false,
+        });
+
+        await expect(harness.caller.admin.audit.list()).rejects.toMatchObject({ code: 'FORBIDDEN' });
     });
 });

@@ -188,6 +188,7 @@ describe('admin security over HTTP transport', () => {
                 userId: harness.target.id,
                 roles: ['admin.survey.open:che:default'],
                 mode: 'grant',
+                reason: 'HTTP 권한 부여 테스트',
             },
             harness.adminSessionToken
         );
@@ -209,6 +210,7 @@ describe('admin security over HTTP transport', () => {
                 userId: harness.target.id,
                 roles: ['admin.survey.open:*'],
                 mode: 'grant',
+                reason: 'HTTP 권한 상승 거부 테스트',
             },
             harness.adminSessionToken
         );
@@ -233,6 +235,7 @@ describe('admin security over HTTP transport', () => {
             userId: harness.target.id,
             roles: ['admin.survey.open:che:default'],
             mode: 'grant',
+            reason: '미인증 권한 변경 거부 테스트',
         });
 
         expect(rejected.response.status).toBe(401);
@@ -256,6 +259,7 @@ describe('admin security over HTTP transport', () => {
                 userId: harness.admin.id,
                 roles: ['admin.survey.open:*'],
                 mode: 'grant',
+                reason: '자기 권한 상승 거부 테스트',
             },
             harness.adminSessionToken
         );
@@ -274,6 +278,7 @@ describe('admin security over HTTP transport', () => {
                 userId: harness.target.id,
                 roles: ['user'],
                 mode: 'set',
+                reason: '범위 밖 권한 제거 거부 테스트',
             },
             harness.adminSessionToken
         );
@@ -291,6 +296,7 @@ describe('admin security over HTTP transport', () => {
                 userId: harness.target.id,
                 roles: ['superuser'],
                 mode: 'grant',
+                reason: '최고 관리자 권한 부여 테스트',
             },
             harness.adminSessionToken
         );
@@ -310,6 +316,7 @@ describe('admin security over HTTP transport', () => {
                 patch: {
                     suspendedUntil: '2099-01-01T00:00:00.000Z',
                 },
+                reason: 'HTTP 제재 적용 테스트',
             },
             harness.adminSessionToken
         );

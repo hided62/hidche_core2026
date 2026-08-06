@@ -13,6 +13,7 @@ import type { GatewayProfileStatusService } from './lobby/profileStatusService.j
 import type { GatewayPrismaClient } from '@sammo-ts/infra';
 import type { AdminAuthContext } from './adminAuth.js';
 import type { PasswordEnvelopeService } from './auth/passwordEnvelope.js';
+import { createAdminAuditStore, type AdminAuditStore } from './adminAudit.js';
 
 export interface GatewayApiContext {
     users: UserRepository;
@@ -35,6 +36,7 @@ export interface GatewayApiContext {
     profileStatus: GatewayProfileStatusService;
     requestHeaders: Record<string, string | string[] | undefined>;
     prisma: GatewayPrismaClient;
+    adminAudit: AdminAuditStore;
     adminAuth?: AdminAuthContext;
 }
 
@@ -59,6 +61,7 @@ export const createGatewayApiContext = (options: {
     profileStatus: GatewayProfileStatusService;
     requestHeaders?: Record<string, string | string[] | undefined>;
     prisma: GatewayPrismaClient;
+    adminAudit?: AdminAuditStore;
 }): GatewayApiContext => ({
     users: options.users,
     sessions: options.sessions,
@@ -80,4 +83,5 @@ export const createGatewayApiContext = (options: {
     profileStatus: options.profileStatus,
     requestHeaders: options.requestHeaders ?? {},
     prisma: options.prisma,
+    adminAudit: options.adminAudit ?? createAdminAuditStore(options.prisma),
 });

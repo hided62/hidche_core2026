@@ -19,6 +19,7 @@ export interface UserRecord {
     privacyAcceptedAt?: string;
     kakaoVerifiedAt?: string;
     kakaoGraceStartedAt: string;
+    kakaoGraceUntil?: string;
     deleteAfter?: string;
     passwordHash: string;
     passwordSalt: string;
@@ -120,6 +121,7 @@ export interface UserRepository {
     ): Promise<UserRecord>;
     updateRoles(userId: string, roles: string[]): Promise<void>;
     updateSanctions(userId: string, sanctions: UserSanctions): Promise<void>;
+    updateKakaoGraceUntil(userId: string, until: Date | null): Promise<void>;
     updateIcon(userId: string, picture: string, imageServer: number, updatedAt: Date): Promise<void>;
     updateIconForDay(
         userId: string,

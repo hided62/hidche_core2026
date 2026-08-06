@@ -10,7 +10,15 @@ import { listScenarioPreviews, resolveGitBranchCommitSha, resolveGitCommitSha } 
 import type { UserSanctions, UserServerRestriction } from './auth/userRepository.js';
 import { toPublicUser } from './auth/userRepository.js';
 import type { AdminAuthContext } from './adminAuth.js';
+import { buildAdminAuditTarget, newAdminAuditCorrelationId, sanitizeAdminAuditValue } from './adminAudit.js';
+import {
+    ADMIN_CAPABILITIES,
+    getAdminCapability,
+    isProfileCapabilityPermission,
+    resolveAdminActionCapability,
+} from './adminCapabilities.js';
 import type { GatewayApiContext } from './context.js';
+import { resolveLocalAccountProfilePolicy } from './auth/localAccountPolicy.js';
 import { GATEWAY_BUILD_STATUSES, GATEWAY_PROFILE_STATUSES } from './orchestrator/profileRepository.js';
 import { purifyGatewayNoticeHtml } from './security/gatewayNoticeHtml.js';
 
@@ -41,6 +49,7 @@ const ROLE_ADMIN_USERS_CREATE = 'admin.users.create';
 const ROLE_ADMIN_PROFILES = 'admin.profiles.manage';
 const ROLE_ADMIN_RELEASES = 'admin.releases.manage';
 const ROLE_ADMIN_NOTICE = 'admin.notice.manage';
+const ROLE_ADMIN_AUDIT = 'admin.audit.read';
 const ROLE_RESET_SCHEDULE = 'admin.reset.schedule';
 const ROLE_RESUME_WHEN_STOPPED = 'admin.resume.when-stopped';
 const ROLE_SURVEY_OPEN = 'admin.survey.open';
@@ -171,6 +180,19 @@ const assertRoleChangesAllowed = (
         if (currentRoles.has(role) === nextRoles.has(role)) {
             continue;
         }
+        const parsed = splitRoleScope(role);
+        if (parsed.permission.startsWith(ADMIN_ROLE_PREFIX) && parsed.permission !== ADMIN_ROLE_SUPERUSER) {
+            const capability = getAdminCapability(parsed.permission);
+            if (!capability) {
+                throw new TRPCError({ code: 'BAD_REQUEST', message: `Unknown administrator capability: ${role}` });
+            }
+            if (capability.scope === 'GLOBAL' && parsed.scope !== undefined) {
+                throw new TRPCError({ code: 'BAD_REQUEST', message: `Capability does not accept a scope: ${role}` });
+            }
+            if (capability.scope === 'PROFILE' && parsed.scope === '') {
+                throw new TRPCError({ code: 'BAD_REQUEST', message: `Profile scope is empty: ${role}` });
+            }
+        }
         if (!canManageRole(adminAuth, role)) {
             throw new TRPCError({
                 code: 'FORBIDDEN',
@@ -190,8 +212,35 @@ const assertPermission = (adminAuth: AdminAuthContext, permission: string, profi
     });
 };
 
+const assertTargetUserManageable = (adminAuth: AdminAuthContext, target: { id: string; roles: string[] }): void => {
+    if (!adminAuth.isSuperuser && target.roles.some(isRootAdminRole)) {
+        throw new TRPCError({
+            code: 'FORBIDDEN',
+            message: 'Only a superuser can change a root administrator account.',
+        });
+    }
+};
+
+const assertNotSelfDestructiveAction = (adminAuth: AdminAuthContext, targetUserId: string): void => {
+    if (adminAuth.user.id === targetUserId) {
+        throw new TRPCError({
+            code: 'FORBIDDEN',
+            message: 'Use account self-service instead of an administrator destructive action on yourself.',
+        });
+    }
+};
+
 const canCreateLocalUser = (adminAuth: AdminAuthContext): boolean =>
     hasScopedPermission(adminAuth, ROLE_ADMIN_USERS_CREATE) || hasScopedPermission(adminAuth, ROLE_ADMIN_USERS);
+
+const canReadProfile = (adminAuth: AdminAuthContext, profileName: string): boolean => {
+    if (adminAuth.isSuperuser) return true;
+    return adminAuth.roles.some((role) => {
+        const parsed = splitRoleScope(role);
+        if (!isProfileCapabilityPermission(parsed.permission)) return false;
+        return parsed.scope === undefined || parsed.scope === '*' || parsed.scope === profileName;
+    });
+};
 
 // 로컬 계정 임의 생성은 환경 설정이 켜져 있을 때만 허용한다.
 const assertLocalAccountEnabled = (ctx: GatewayApiContext): void => {
@@ -204,7 +253,7 @@ const assertLocalAccountEnabled = (ctx: GatewayApiContext): void => {
     });
 };
 
-const adminProcedure = procedure.use(async ({ ctx, next }) => {
+const authenticatedAdminProcedure = procedure.use(async ({ ctx, next }) => {
     const adminAuth = await resolveAdminAuth(ctx as GatewayApiContext);
     return next({
         ctx: {
@@ -212,6 +261,65 @@ const adminProcedure = procedure.use(async ({ ctx, next }) => {
             adminAuth,
         },
     });
+});
+
+const adminProcedure = authenticatedAdminProcedure.use(async ({ ctx, type, path, getRawInput, next }) => {
+    if (type !== 'mutation') {
+        return next();
+    }
+    const adminAuth = requireAdminAuth(ctx);
+    const rawInput = await getRawInput().catch(() => undefined);
+    const target = buildAdminAuditTarget(rawInput);
+    const correlationId = newAdminAuditCorrelationId();
+    const action = path.startsWith('admin.') ? path : `admin.${path}`;
+    const capability = resolveAdminActionCapability(action, rawInput);
+    const baseEvent = {
+        correlationId,
+        actorUserId: adminAuth.user.id,
+        actorUsername: adminAuth.user.username,
+        ...(capability ? { capability } : {}),
+        action,
+        ...target,
+    };
+    // STARTED 기록 실패 시 mutation을 시작하지 않는 fail-closed 경계입니다.
+    await (ctx as GatewayApiContext).adminAudit.append({ ...baseEvent, outcome: 'STARTED' });
+    try {
+        const result = await next();
+        if (!result.ok) {
+            await (ctx as GatewayApiContext).adminAudit
+                .append({
+                    ...baseEvent,
+                    outcome: 'FAILED',
+                    errorCode: result.error.code,
+                    errorMessage: result.error.message.slice(0, 1000),
+                })
+                .catch(() => undefined);
+            return result;
+        }
+        // 업무 mutation은 이미 끝났으므로 terminal 기록 장애가 재시도/중복 mutation을
+        // 유발하지 않게 STARTED row를 남긴 채 원래 결과를 반환합니다.
+        await (ctx as GatewayApiContext).adminAudit
+            .append({
+                ...baseEvent,
+                outcome: 'SUCCEEDED',
+                summary: {
+                    request: target.summary,
+                    result: sanitizeAdminAuditValue(result.data),
+                },
+            })
+            .catch(() => undefined);
+        return result;
+    } catch (error) {
+        await (ctx as GatewayApiContext).adminAudit
+            .append({
+                ...baseEvent,
+                outcome: 'FAILED',
+                errorCode: error instanceof TRPCError ? error.code : 'INTERNAL_SERVER_ERROR',
+                errorMessage: error instanceof Error ? error.message.slice(0, 1000) : 'Unknown administrator error',
+            })
+            .catch(() => undefined);
+        throw error;
+    }
 });
 
 const noticeAdminProcedure = adminProcedure.use(({ ctx, next }) => {
@@ -246,6 +354,12 @@ const profileAdminProcedure = adminProcedure.use(({ ctx, next }) => {
 const releaseAdminProcedure = adminProcedure.use(({ ctx, next }) => {
     const adminAuth = requireAdminAuth(ctx);
     assertPermission(adminAuth, ROLE_ADMIN_RELEASES);
+    return next();
+});
+
+const auditAdminProcedure = adminProcedure.use(({ ctx, next }) => {
+    const adminAuth = requireAdminAuth(ctx);
+    assertPermission(adminAuth, ROLE_ADMIN_AUDIT);
     return next();
 });
 
@@ -402,6 +516,34 @@ const applyMetaPatch = (
 };
 
 export const adminRouter = router({
+    capabilities: router({
+        list: adminProcedure.query(({ ctx }) => {
+            const adminAuth = requireAdminAuth(ctx);
+            return ADMIN_CAPABILITIES.filter(
+                (entry) =>
+                    adminAuth.isSuperuser ||
+                    adminAuth.roles.some((role) => {
+                        const parsed = splitRoleScope(role);
+                        return parsed.permission === entry.permission;
+                    })
+            );
+        }),
+    }),
+    audit: router({
+        list: auditAdminProcedure
+            .input(
+                z
+                    .object({
+                        actorUserId: z.string().min(1).optional(),
+                        targetType: z.string().min(1).max(64).optional(),
+                        targetId: z.string().min(1).optional(),
+                        profileName: z.string().min(1).max(64).optional(),
+                        limit: z.number().int().min(1).max(200).optional(),
+                    })
+                    .optional()
+            )
+            .query(({ ctx, input }) => (ctx as GatewayApiContext).adminAudit.list(input)),
+    }),
     system: router({
         getNotice: adminProcedure.query(async ({ ctx }) => {
             const setting = await ctx.prisma.systemSetting.findUnique({
@@ -479,18 +621,89 @@ export const adminRouter = router({
                 oauthType: user.oauthType,
                 oauthId: user.oauthId,
                 email: user.email,
+                kakaoVerifiedAt: user.kakaoVerifiedAt,
+                kakaoGraceStartedAt: user.kakaoGraceStartedAt,
+                kakaoGraceUntil: user.kakaoGraceUntil,
                 profileIconResetAt: user.profileIconResetAt,
+                deleteAfter: user.deleteAfter,
                 createdAt: user.createdAt,
             };
         }),
+        getKakaoGracePolicies: userAdminProcedure
+            .input(z.object({ userId: z.string().min(1) }))
+            .query(async ({ ctx, input }) => {
+                const user = await ctx.users.findById(input.userId);
+                if (!user) {
+                    throw new TRPCError({ code: 'NOT_FOUND', message: 'User not found.' });
+                }
+                const profiles = await ctx.profiles.listProfiles();
+                return {
+                    kakaoVerified: user.oauthType === 'KAKAO' && Boolean(user.kakaoVerifiedAt),
+                    kakaoGraceStartedAt: user.kakaoGraceStartedAt,
+                    kakaoGraceUntil: user.kakaoGraceUntil ?? null,
+                    profiles: profiles.map((profile) => ({
+                        profileName: profile.profileName,
+                        ...resolveLocalAccountProfilePolicy({
+                            profile: profile.profile,
+                            profileMeta: readMetaObject(profile.meta),
+                            defaultGraceDays: (ctx as GatewayApiContext).localAccountGraceDays,
+                            user,
+                        }),
+                    })),
+                };
+            }),
+        updateKakaoGrace: userAdminProcedure
+            .input(
+                z.object({
+                    userId: z.string().min(1),
+                    until: z.string().datetime().nullable(),
+                    reason: z.string().trim().min(3).max(200),
+                })
+            )
+            .mutation(async ({ ctx, input }) => {
+                const user = await ctx.users.findById(input.userId);
+                if (!user) {
+                    throw new TRPCError({ code: 'NOT_FOUND', message: 'User not found.' });
+                }
+                const adminAuth = requireAdminAuth(ctx);
+                assertTargetUserManageable(adminAuth, user);
+                const until = input.until ? new Date(input.until) : null;
+                if (until && user.oauthType === 'KAKAO' && user.kakaoVerifiedAt) {
+                    throw new TRPCError({
+                        code: 'BAD_REQUEST',
+                        message: 'A verified Kakao account does not need a grace override.',
+                    });
+                }
+                if (until && until.getTime() <= Date.now()) {
+                    throw new TRPCError({ code: 'BAD_REQUEST', message: 'Grace extension must end in the future.' });
+                }
+                await ctx.users.updateKakaoGraceUntil(input.userId, until);
+                await ctx.flushPublisher.publishUserFlush(input.userId, 'admin-kakao-grace-updated');
+                return { kakaoGraceUntil: until?.toISOString() ?? null };
+            }),
+        listHistory: userAdminProcedure
+            .input(z.object({ userId: z.string().min(1), limit: z.number().int().min(1).max(200).optional() }))
+            .query(({ ctx, input }) =>
+                (ctx as GatewayApiContext).adminAudit.list({
+                    targetType: 'USER',
+                    targetId: input.userId,
+                    limit: input.limit,
+                })
+            ),
         resetPassword: userAdminProcedure
             .input(
                 z.object({
                     userId: z.string().min(1),
                     newPassword: z.string().min(6).max(128).optional(),
+                    reason: z.string().trim().min(3).max(200),
                 })
             )
             .mutation(async ({ ctx, input }) => {
+                const user = await ctx.users.findById(input.userId);
+                if (!user) {
+                    throw new TRPCError({ code: 'NOT_FOUND', message: 'User not found.' });
+                }
+                assertTargetUserManageable(requireAdminAuth(ctx), user);
                 const password = input.newPassword ?? buildAdminPassword();
                 await ctx.users.updatePassword(input.userId, password);
                 await ctx.flushPublisher.publishUserFlush(input.userId, 'admin-password-reset');
@@ -502,6 +715,7 @@ export const adminRouter = router({
                     userId: z.string().min(1),
                     roles: z.array(z.string().trim().min(1).max(128)).min(1),
                     mode: zUserRoleMode.optional(),
+                    reason: z.string().trim().min(3).max(200),
                 })
             )
             .mutation(async ({ ctx, input }) => {
@@ -530,6 +744,7 @@ export const adminRouter = router({
                     }
                 }
                 const adminAuth = requireAdminAuth(ctx);
+                assertTargetUserManageable(adminAuth, user);
                 assertRoleChangesAllowed(adminAuth, currentRoles, roles);
                 const nextRoles = Array.from(roles);
                 await ctx.users.updateRoles(input.userId, nextRoles);
@@ -541,6 +756,7 @@ export const adminRouter = router({
                 z.object({
                     userId: z.string().min(1),
                     patch: zSanctionsPatch,
+                    reason: z.string().trim().min(3).max(200),
                 })
             )
             .mutation(async ({ ctx, input }) => {
@@ -552,6 +768,7 @@ export const adminRouter = router({
                     });
                 }
                 const next = applySanctionsPatch(user.sanctions, input.patch);
+                assertTargetUserManageable(requireAdminAuth(ctx), user);
                 await ctx.users.updateSanctions(input.userId, next);
                 await ctx.flushPublisher.publishUserFlush(input.userId, 'admin-sanctions-updated');
                 return { sanctions: next };
@@ -562,6 +779,7 @@ export const adminRouter = router({
                     userId: z.string().min(1),
                     profile: z.string().min(1).max(64),
                     restriction: zServerRestriction.nullable(),
+                    reason: z.string().trim().min(3).max(200),
                 })
             )
             .mutation(async ({ ctx, input }) => {
@@ -577,6 +795,7 @@ export const adminRouter = router({
                         [input.profile]: input.restriction ?? null,
                     },
                 };
+                assertTargetUserManageable(requireAdminAuth(ctx), user);
                 const next = applySanctionsPatch(user.sanctions, patch);
                 await ctx.users.updateSanctions(input.userId, next);
                 await ctx.flushPublisher.publishUserFlush(input.userId, 'admin-server-restriction');
@@ -586,6 +805,7 @@ export const adminRouter = router({
             .input(
                 z.object({
                     userId: z.string().min(1),
+                    reason: z.string().trim().min(3).max(200),
                 })
             )
             .mutation(async ({ ctx, input }) => {
@@ -596,6 +816,7 @@ export const adminRouter = router({
                         message: 'User not found.',
                     });
                 }
+                assertTargetUserManageable(requireAdminAuth(ctx), user);
                 const profileIconResetAt = await ctx.users.resetProfileIcon(input.userId, new Date());
                 if (!profileIconResetAt) {
                     throw new TRPCError({
@@ -613,13 +834,48 @@ export const adminRouter = router({
                 }
                 return { profileIconResetAt, flushPublished };
             }),
+        scheduleDeletion: userAdminProcedure
+            .input(
+                z.object({
+                    userId: z.string().min(1),
+                    retentionDays: z.number().int().min(1).max(90).default(30),
+                    reason: z.string().trim().min(3).max(200),
+                })
+            )
+            .mutation(async ({ ctx, input }) => {
+                const user = await ctx.users.findById(input.userId);
+                if (!user) {
+                    throw new TRPCError({ code: 'NOT_FOUND', message: 'User not found.' });
+                }
+                const adminAuth = requireAdminAuth(ctx);
+                assertTargetUserManageable(adminAuth, user);
+                assertNotSelfDestructiveAction(adminAuth, input.userId);
+                const deleteAfter = new Date(Date.now() + input.retentionDays * 24 * 60 * 60 * 1000);
+                await ctx.users.scheduleDeletion(input.userId, deleteAfter);
+                await ctx.flushPublisher.publishUserFlush(input.userId, 'admin-scheduled-withdrawal');
+                return { ok: true, deleteAfter: deleteAfter.toISOString() };
+            }),
         forceDelete: userAdminProcedure
             .input(
                 z.object({
                     userId: z.string().min(1),
+                    confirmUsername: z.string().min(1),
+                    reason: z.string().trim().min(3).max(200),
                 })
             )
             .mutation(async ({ ctx, input }) => {
+                const adminAuth = requireAdminAuth(ctx);
+                if (!adminAuth.isSuperuser) {
+                    throw new TRPCError({ code: 'FORBIDDEN', message: 'Superuser permission is required.' });
+                }
+                assertNotSelfDestructiveAction(adminAuth, input.userId);
+                const user = await ctx.users.findById(input.userId);
+                if (!user) {
+                    throw new TRPCError({ code: 'NOT_FOUND', message: 'User not found.' });
+                }
+                if (input.confirmUsername !== user.username) {
+                    throw new TRPCError({ code: 'BAD_REQUEST', message: 'Username confirmation does not match.' });
+                }
                 await ctx.flushPublisher.publishUserFlush(input.userId, 'admin-force-withdraw');
                 await ctx.users.deleteUser(input.userId);
                 return { ok: true };
@@ -1005,7 +1261,10 @@ export const adminRouter = router({
     }),
     profiles: router({
         list: adminProcedure.query(async ({ ctx }) => {
-            const profiles = await ctx.profiles.listProfiles();
+            const adminAuth = requireAdminAuth(ctx);
+            const profiles = (await ctx.profiles.listProfiles()).filter((profile) =>
+                canReadProfile(adminAuth, profile.profileName)
+            );
             const profileNames = profiles.map((profile) => profile.profileName);
             const [runtimeActions, activeOperations] = await Promise.all([
                 ctx.prisma.gatewayRuntimeAction.findMany({
@@ -1140,6 +1399,7 @@ export const adminRouter = router({
                         localAccountAccessGraceDays: z.number().int().min(0).max(365).nullable().optional(),
                         localAccountGeneralCreationGraceDays: z.number().int().min(0).max(365).nullable().optional(),
                     }),
+                    reason: z.string().trim().min(3).max(200),
                 })
             )
             .mutation(async ({ ctx, input }) => {

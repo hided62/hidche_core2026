@@ -89,6 +89,17 @@ const installFixture = async (
             if (operation === 'admin.users.getLocalAccountStatus') {
                 return response({ enabled: true });
             }
+            if (operation === 'admin.capabilities.list') {
+                return response([
+                    {
+                        permission: 'admin.users.manage',
+                        label: '사용자·제재 관리',
+                        description: '계정 복구와 제재를 관리합니다.',
+                        risk: 'CRITICAL',
+                        scope: 'GLOBAL',
+                    },
+                ]);
+            }
             if (operation === 'admin.profiles.listScenarios') {
                 return response([
                     {

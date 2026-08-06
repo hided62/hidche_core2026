@@ -157,6 +157,15 @@ export const createInMemoryUserRepository = (hasher: PasswordHasher = createSimp
             }
             throw new Error('User not found.');
         },
+        async updateKakaoGraceUntil(userId: string, until: Date | null): Promise<void> {
+            for (const user of usersByName.values()) {
+                if (user.id === userId) {
+                    user.kakaoGraceUntil = until?.toISOString();
+                    return;
+                }
+            }
+            throw new Error('User not found.');
+        },
         async updateIcon(userId: string, picture: string, imageServer: number, updatedAt: Date): Promise<void> {
             for (const user of usersByName.values()) {
                 if (user.id === userId) {

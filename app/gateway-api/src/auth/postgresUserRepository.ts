@@ -59,6 +59,7 @@ const mapUser = (row: {
     privacyAcceptedAt: Date | null;
     kakaoVerifiedAt: Date | null;
     kakaoGraceStartedAt: Date;
+    kakaoGraceUntil: Date | null;
     deleteAfter: Date | null;
     createdAt: Date;
     legacyData: GatewayPrisma.JsonValue;
@@ -83,6 +84,7 @@ const mapUser = (row: {
     privacyAcceptedAt: row.privacyAcceptedAt?.toISOString(),
     kakaoVerifiedAt: row.kakaoVerifiedAt?.toISOString(),
     kakaoGraceStartedAt: row.kakaoGraceStartedAt.toISOString(),
+    kakaoGraceUntil: row.kakaoGraceUntil?.toISOString(),
     deleteAfter: row.deleteAfter?.toISOString(),
     passwordHash: row.passwordHash,
     passwordSalt: row.passwordSalt,
@@ -248,6 +250,12 @@ export const createPostgresUserRepository = (
                 data: {
                     sanctions: sanctions as GatewayPrisma.JsonObject,
                 },
+            });
+        },
+        async updateKakaoGraceUntil(userId: string, until: Date | null): Promise<void> {
+            await prisma.appUser.update({
+                where: { id: userId },
+                data: { kakaoGraceUntil: until },
             });
         },
         async updateIcon(userId: string, picture: string, imageServer: number, updatedAt: Date): Promise<void> {

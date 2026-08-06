@@ -48,8 +48,46 @@ type AdminUser = {
     oauthType: string;
     oauthId?: string;
     email?: string;
+    kakaoVerifiedAt?: string;
+    kakaoGraceStartedAt: string;
+    kakaoGraceUntil?: string;
     profileIconResetAt?: string;
+    deleteAfter?: string;
     createdAt: string;
+};
+
+type AdminCapability = {
+    permission: string;
+    label: string;
+    description: string;
+    risk: 'LOW' | 'MEDIUM' | 'HIGH' | 'CRITICAL';
+    scope: 'GLOBAL' | 'PROFILE';
+};
+
+type AdminAuditEvent = {
+    id: string;
+    correlationId: string;
+    actorUsername: string;
+    targetType?: string;
+    targetId?: string;
+    profileName?: string;
+    action: string;
+    outcome: 'STARTED' | 'SUCCEEDED' | 'FAILED';
+    reason?: string;
+    summary: Record<string, unknown>;
+    errorMessage?: string;
+    createdAt: string;
+};
+
+type KakaoGracePolicy = {
+    profileName: string;
+    requiresKakaoVerification: boolean;
+    kakaoVerified: boolean;
+    accessAllowed: boolean;
+    canCreateGeneral: boolean;
+    graceEndsAt: string | null;
+    generalCreationGraceDays: number;
+    accessGraceDays: number;
 };
 
 type AdminPublicUser = {
@@ -140,6 +178,12 @@ type AdminAction =
     'RESUME' | 'PAUSE' | 'STOP' | 'ACCELERATE' | 'DELAY' | 'RESET_NOW' | 'RESET_SCHEDULED' | 'OPEN_SURVEY' | 'SHUTDOWN';
 
 type AdminClient = {
+    capabilities: {
+        list: { query: () => Promise<AdminCapability[]> };
+    };
+    audit: {
+        list: { query: (input?: { limit?: number }) => Promise<AdminAuditEvent[]> };
+    };
     system: {
         getNotice: {
             query: () => Promise<{ notice: string }>;
@@ -162,20 +206,38 @@ type AdminClient = {
         lookup: {
             query: (input: { id?: string; username?: string; email?: string }) => Promise<AdminUser | null>;
         };
+        getKakaoGracePolicies: {
+            query: (input: { userId: string }) => Promise<{
+                kakaoVerified: boolean;
+                kakaoGraceStartedAt: string;
+                kakaoGraceUntil: string | null;
+                profiles: KakaoGracePolicy[];
+            }>;
+        };
+        updateKakaoGrace: {
+            mutate: (input: { userId: string; until: string | null; reason: string }) => Promise<{
+                kakaoGraceUntil: string | null;
+            }>;
+        };
+        listHistory: {
+            query: (input: { userId: string; limit?: number }) => Promise<AdminAuditEvent[]>;
+        };
         resetPassword: {
-            mutate: (input: { userId: string; newPassword?: string }) => Promise<{ password: string }>;
+            mutate: (input: { userId: string; newPassword?: string; reason: string }) => Promise<{ password: string }>;
         };
         updateRoles: {
             mutate: (input: {
                 userId: string;
                 roles: string[];
                 mode?: 'set' | 'grant' | 'revoke';
+                reason: string;
             }) => Promise<{ roles: string[] }>;
         };
         updateSanctions: {
             mutate: (input: {
                 userId: string;
                 patch: AdminSanctionsPatch;
+                reason: string;
             }) => Promise<{ sanctions: AdminUserSanctions }>;
         };
         setServerRestriction: {
@@ -188,16 +250,20 @@ type AdminClient = {
                     reason?: string | null;
                     notes?: string | null;
                 } | null;
+                reason: string;
             }) => Promise<{ sanctions: AdminUserSanctions }>;
         };
         resetProfileIcon: {
-            mutate: (input: { userId: string }) => Promise<{
+            mutate: (input: { userId: string; reason: string }) => Promise<{
                 profileIconResetAt: string;
                 flushPublished: boolean;
             }>;
         };
-        forceDelete: {
-            mutate: (input: { userId: string }) => Promise<{ ok: boolean }>;
+        scheduleDeletion: {
+            mutate: (input: { userId: string; retentionDays: number; reason: string }) => Promise<{
+                ok: boolean;
+                deleteAfter: string;
+            }>;
         };
     };
     profiles: {
@@ -216,7 +282,10 @@ type AdminClient = {
                     inGameNotice?: string | null;
                     profileImageUrl?: string | null;
                     nextSeasonIdx?: number | null;
+                    localAccountAccessGraceDays?: number | null;
+                    localAccountGeneralCreationGraceDays?: number | null;
                 };
+                reason: string;
             }) => Promise<AdminProfile | null>;
         };
         install: {
@@ -292,6 +361,9 @@ const profileEdits = ref<
             inGameNotice: string;
             profileImageUrl: string;
             nextSeasonIdx: string;
+            localAccountAccessGraceDays: string;
+            localAccountGeneralCreationGraceDays: string;
+            reason: string;
         }
     >
 >({});
@@ -371,6 +443,10 @@ const passwordStatus = ref('');
 const rolesInput = ref('');
 const rolesMode = ref<'set' | 'grant' | 'revoke'>('grant');
 const rolesStatus = ref('');
+const capabilities = ref<AdminCapability[]>([]);
+const selectedCapability = ref('');
+const capabilityProfile = ref('');
+const userActionReason = ref('');
 
 const banUntil = ref('');
 const banReason = ref('');
@@ -386,6 +462,13 @@ const restrictionNotes = ref('');
 const restrictionStatus = ref('');
 
 const forceDeleteStatus = ref('');
+const deletionRetentionDays = ref(30);
+const kakaoGraceUntil = ref('');
+const kakaoGraceStatus = ref('');
+const kakaoPolicies = ref<KakaoGracePolicy[]>([]);
+const userHistory = ref<AdminAuditEvent[]>([]);
+const globalAuditHistory = ref<AdminAuditEvent[]>([]);
+const globalAuditStatus = ref('');
 
 const hasUser = computed(() => Boolean(userResult.value));
 
@@ -441,6 +524,15 @@ const ensureProfileBuffers = (profile: AdminProfile) => {
                 typeof meta.nextSeasonIdx === 'number' && Number.isFinite(meta.nextSeasonIdx)
                     ? String(Math.floor(meta.nextSeasonIdx))
                     : '',
+            localAccountAccessGraceDays:
+                typeof meta.localAccountAccessGraceDays === 'number'
+                    ? String(Math.floor(meta.localAccountAccessGraceDays))
+                    : '',
+            localAccountGeneralCreationGraceDays:
+                typeof meta.localAccountGeneralCreationGraceDays === 'number'
+                    ? String(Math.floor(meta.localAccountGeneralCreationGraceDays))
+                    : '',
+            reason: '',
         };
     }
     if (!profileActions.value[profile.profileName]) {
@@ -711,17 +803,38 @@ const updateProfileMeta = async (profileName: string) => {
         };
         return;
     }
+    const readGraceDays = (value: string): number | null => {
+        if (!value.trim()) return null;
+        const parsed = Number(value);
+        return Number.isInteger(parsed) && parsed >= 0 && parsed <= 365 ? parsed : Number.NaN;
+    };
+    const accessGraceDays = readGraceDays(edit.localAccountAccessGraceDays);
+    const creationGraceDays = readGraceDays(edit.localAccountGeneralCreationGraceDays);
+    if (Number.isNaN(accessGraceDays) || Number.isNaN(creationGraceDays)) {
+        profileActionStatus.value = {
+            ...profileActionStatus.value,
+            [profileName]: 'Kakao 유예일은 0~365 사이 정수여야 합니다.',
+        };
+        return;
+    }
+    if (edit.reason.trim().length < 3) {
+        profileActionStatus.value = { ...profileActionStatus.value, [profileName]: '변경 사유를 입력하세요.' };
+        return;
+    }
     const patch = {
         korName: edit.korName.trim() || null,
         color: edit.color.trim() || null,
         inGameNotice: edit.inGameNotice.trim() || null,
         profileImageUrl: edit.profileImageUrl.trim() || null,
         nextSeasonIdx: nextSeasonIdx === null ? null : Math.floor(nextSeasonIdx),
+        localAccountAccessGraceDays: accessGraceDays,
+        localAccountGeneralCreationGraceDays: creationGraceDays,
     };
     try {
         const updated = await adminClient.profiles.updateMeta.mutate({
             profileName,
             patch,
+            reason: edit.reason.trim(),
         });
         profileActionStatus.value = {
             ...profileActionStatus.value,
@@ -890,6 +1003,13 @@ const lookupUser = async () => {
             return;
         }
         userResult.value = result;
+        const [grace, history] = await Promise.all([
+            adminClient.users.getKakaoGracePolicies.query({ userId: result.id }),
+            adminClient.users.listHistory.query({ userId: result.id, limit: 50 }),
+        ]);
+        kakaoPolicies.value = grace.profiles;
+        kakaoGraceUntil.value = grace.kakaoGraceUntil ? toLocalInputValue(grace.kakaoGraceUntil) : '';
+        userHistory.value = history;
     } catch (error) {
         userError.value = '조회 실패';
     } finally {
@@ -897,20 +1017,95 @@ const lookupUser = async () => {
     }
 };
 
+const requireUserActionReason = (): string | null => {
+    const reason = userActionReason.value.trim();
+    if (reason.length < 3) {
+        userError.value = '민감한 관리자 조치에는 3자 이상의 사유가 필요합니다.';
+        return null;
+    }
+    return reason;
+};
+
+const loadGlobalAudit = async () => {
+    if (!capabilities.value.some((entry) => entry.permission === 'admin.audit.read')) return;
+    try {
+        globalAuditHistory.value = await adminClient.audit.list.query({ limit: 100 });
+        globalAuditStatus.value = '';
+    } catch {
+        globalAuditStatus.value = '감사 원장을 불러오지 못했습니다.';
+    }
+};
+
+const refreshUserHistory = async () => {
+    if (!userResult.value) return;
+    userHistory.value = await adminClient.users.listHistory.query({ userId: userResult.value.id, limit: 50 });
+    await loadGlobalAudit();
+};
+
+const loadCapabilities = async () => {
+    try {
+        capabilities.value = await adminClient.capabilities.list.query();
+        selectedCapability.value = capabilities.value[0]?.permission ?? '';
+        await loadGlobalAudit();
+    } catch {
+        capabilities.value = [];
+    }
+};
+
+const applyCapabilitySelection = () => {
+    const capability = capabilities.value.find((entry) => entry.permission === selectedCapability.value);
+    if (!capability) return;
+    if (capability.scope === 'PROFILE' && !capabilityProfile.value.trim()) {
+        rolesStatus.value = 'Profile 범위를 입력하세요.';
+        return;
+    }
+    rolesInput.value =
+        capability.scope === 'PROFILE'
+            ? `${capability.permission}:${capabilityProfile.value.trim()}`
+            : capability.permission;
+};
+
+const updateKakaoGrace = async (clear = false) => {
+    if (!userResult.value) return;
+    const reason = requireUserActionReason();
+    if (!reason) return;
+    try {
+        const result = await adminClient.users.updateKakaoGrace.mutate({
+            userId: userResult.value.id,
+            until: clear || !kakaoGraceUntil.value ? null : new Date(kakaoGraceUntil.value).toISOString(),
+            reason,
+        });
+        userResult.value = {
+            ...userResult.value,
+            kakaoGraceUntil: result.kakaoGraceUntil ?? undefined,
+        };
+        kakaoGraceStatus.value = result.kakaoGraceUntil ? 'OAuth 유예 연장 완료' : '개별 유예 해제 완료';
+        const grace = await adminClient.users.getKakaoGracePolicies.query({ userId: userResult.value.id });
+        kakaoPolicies.value = grace.profiles;
+        await refreshUserHistory();
+    } catch {
+        kakaoGraceStatus.value = 'OAuth 유예 변경 실패';
+    }
+};
+
 const resetUserPassword = async () => {
     if (!userResult.value) {
         return;
     }
+    const reason = requireUserActionReason();
+    if (!reason) return;
     passwordStatus.value = '';
     passwordResult.value = '';
     try {
         const result = await adminClient.users.resetPassword.mutate({
             userId: userResult.value.id,
             newPassword: passwordInput.value.trim() || undefined,
+            reason,
         });
         passwordResult.value = result.password;
         passwordStatus.value = '초기화 완료';
         passwordInput.value = '';
+        await refreshUserHistory();
     } catch (error) {
         passwordStatus.value = '초기화 실패';
     }
@@ -920,6 +1115,8 @@ const updateUserRoles = async () => {
     if (!userResult.value) {
         return;
     }
+    const reason = requireUserActionReason();
+    if (!reason) return;
     const roles = rolesInput.value
         .split(',')
         .map((role) => role.trim())
@@ -934,9 +1131,11 @@ const updateUserRoles = async () => {
             userId: userResult.value.id,
             roles,
             mode: rolesMode.value,
+            reason,
         });
         userResult.value = { ...userResult.value, roles: result.roles };
         rolesStatus.value = '권한 업데이트 완료';
+        await refreshUserHistory();
     } catch (error) {
         rolesStatus.value = '권한 업데이트 실패';
     }
@@ -946,6 +1145,8 @@ const applyBan = async () => {
     if (!userResult.value) {
         return;
     }
+    const reason = requireUserActionReason();
+    if (!reason) return;
     const until = banUntil.value ? new Date(banUntil.value).toISOString() : null;
     const patch = {
         bannedUntil: until,
@@ -955,9 +1156,11 @@ const applyBan = async () => {
         const result = await adminClient.users.updateSanctions.mutate({
             userId: userResult.value.id,
             patch,
+            reason,
         });
         userResult.value = { ...userResult.value, sanctions: result.sanctions };
         banStatus.value = '차단 설정 완료';
+        await refreshUserHistory();
     } catch (error) {
         banStatus.value = '차단 설정 실패';
     }
@@ -967,13 +1170,17 @@ const clearBan = async () => {
     if (!userResult.value) {
         return;
     }
+    const reason = requireUserActionReason();
+    if (!reason) return;
     try {
         const result = await adminClient.users.updateSanctions.mutate({
             userId: userResult.value.id,
             patch: { bannedUntil: null },
+            reason,
         });
         userResult.value = { ...userResult.value, sanctions: result.sanctions };
         banStatus.value = '차단 해제 완료';
+        await refreshUserHistory();
     } catch (error) {
         banStatus.value = '차단 해제 실패';
     }
@@ -983,9 +1190,12 @@ const resetProfileIcon = async () => {
     if (!userResult.value) {
         return;
     }
+    const reason = requireUserActionReason();
+    if (!reason) return;
     try {
         const result = await adminClient.users.resetProfileIcon.mutate({
             userId: userResult.value.id,
+            reason,
         });
         userResult.value = {
             ...userResult.value,
@@ -994,6 +1204,7 @@ const resetProfileIcon = async () => {
         profileIconStatus.value = result.flushPublished
             ? '아이콘 초기화 요청 완료'
             : '아이콘은 초기화됐지만 실행 중 서버 알림에 실패했습니다. 다시 요청해 주세요.';
+        await refreshUserHistory();
     } catch (error) {
         profileIconStatus.value = '아이콘 초기화 실패';
     }
@@ -1003,6 +1214,8 @@ const applyRestriction = async () => {
     if (!userResult.value) {
         return;
     }
+    const reason = requireUserActionReason();
+    if (!reason) return;
     if (!restrictionProfile.value.trim()) {
         restrictionStatus.value = '서버 프로필명을 입력하세요.';
         return;
@@ -1022,9 +1235,11 @@ const applyRestriction = async () => {
             userId: userResult.value.id,
             profile: restrictionProfile.value.trim(),
             restriction,
+            reason,
         });
         userResult.value = { ...userResult.value, sanctions: result.sanctions };
         restrictionStatus.value = '서버 제재 적용 완료';
+        await refreshUserHistory();
     } catch (error) {
         restrictionStatus.value = '서버 제재 적용 실패';
     }
@@ -1034,6 +1249,8 @@ const clearRestriction = async () => {
     if (!userResult.value) {
         return;
     }
+    const reason = requireUserActionReason();
+    if (!reason) return;
     if (!restrictionProfile.value.trim()) {
         restrictionStatus.value = '서버 프로필명을 입력하세요.';
         return;
@@ -1043,30 +1260,39 @@ const clearRestriction = async () => {
             userId: userResult.value.id,
             profile: restrictionProfile.value.trim(),
             restriction: null,
+            reason,
         });
         userResult.value = { ...userResult.value, sanctions: result.sanctions };
         restrictionStatus.value = '서버 제재 해제 완료';
+        await refreshUserHistory();
     } catch (error) {
         restrictionStatus.value = '서버 제재 해제 실패';
     }
 };
 
-const forceDeleteUser = async () => {
+const scheduleDeleteUser = async () => {
     if (!userResult.value) {
         return;
     }
+    const reason = requireUserActionReason();
+    if (!reason) return;
     if (typeof window !== 'undefined') {
-        const confirmed = window.confirm('정말로 강제 탈퇴 처리하시겠습니까?');
+        const confirmed = window.confirm(`${deletionRetentionDays.value}일 보존 후 탈퇴하도록 예약하시겠습니까?`);
         if (!confirmed) {
             return;
         }
     }
     try {
-        await adminClient.users.forceDelete.mutate({ userId: userResult.value.id });
-        userResult.value = null;
-        forceDeleteStatus.value = '강제 탈퇴 완료';
+        const result = await adminClient.users.scheduleDeletion.mutate({
+            userId: userResult.value.id,
+            retentionDays: deletionRetentionDays.value,
+            reason,
+        });
+        userResult.value = { ...userResult.value, deleteAfter: result.deleteAfter };
+        forceDeleteStatus.value = `탈퇴 예약 완료: ${new Date(result.deleteAfter).toLocaleString('ko-KR')}`;
+        await refreshUserHistory();
     } catch (error) {
-        forceDeleteStatus.value = '강제 탈퇴 실패';
+        forceDeleteStatus.value = '탈퇴 예약 실패';
     }
 };
 
@@ -1109,6 +1335,7 @@ const createLocalAccount = async () => {
 };
 
 onMounted(() => {
+    void loadCapabilities();
     void loadLocalAccountStatus();
     void loadNotice();
     void loadProfiles();
@@ -1153,7 +1380,7 @@ onMounted(() => {
             </section>
 
             <div class="grid lg:grid-cols-2 gap-8">
-                <section class="space-y-6">
+                <section class="min-w-0 space-y-6">
                     <div class="bg-zinc-900 border border-zinc-800 rounded-lg p-5 space-y-4">
                         <h3 class="text-lg font-semibold">유저 관리</h3>
                         <form class="space-y-3" @submit.prevent="lookupUser">
@@ -1192,12 +1419,34 @@ onMounted(() => {
                             <div class="text-xs text-zinc-500">
                                 OAuth: {{ userResult.oauthType }} {{ userResult.email ?? '' }}
                             </div>
+                            <div class="text-xs text-zinc-500">
+                                Kakao 인증: {{ userResult.kakaoVerifiedAt ? '완료' : '미완료' }} · 유예 시작:
+                                {{ new Date(userResult.kakaoGraceStartedAt).toLocaleString('ko-KR') }}
+                            </div>
+                            <div v-if="userResult.kakaoGraceUntil" class="text-xs text-amber-300">
+                                관리자 유예: {{ new Date(userResult.kakaoGraceUntil).toLocaleString('ko-KR') }}까지
+                            </div>
+                            <div v-if="userResult.deleteAfter" class="text-xs text-red-300">
+                                탈퇴 예약: {{ new Date(userResult.deleteAfter).toLocaleString('ko-KR') }}
+                            </div>
                             <div class="text-xs text-zinc-500">가입일: {{ userResult.createdAt }}</div>
                             <div class="text-xs text-zinc-400 mt-2">제재 상태</div>
                             <pre class="text-[11px] text-zinc-400 bg-black/50 p-2 rounded whitespace-pre-wrap"
                                 >{{ JSON.stringify(userResult.sanctions, null, 2) }}
               </pre>
                         </div>
+                    </div>
+
+                    <div class="bg-zinc-900 border border-amber-800/70 rounded-lg p-5 space-y-3">
+                        <h4 class="text-base font-semibold">민감 조치 공통 사유</h4>
+                        <input
+                            v-model="userActionReason"
+                            type="text"
+                            maxlength="200"
+                            class="w-full bg-zinc-950 border border-zinc-700 rounded px-3 py-2 text-sm text-white"
+                            placeholder="권한·제재·복구·탈퇴 조치 사유 (필수)"
+                        />
+                        <div class="text-xs text-zinc-500">사유와 정화된 입력은 관리자 감사 원장에 기록됩니다.</div>
                     </div>
 
                     <div class="bg-zinc-900 border border-zinc-800 rounded-lg p-5 space-y-4">
@@ -1266,6 +1515,38 @@ onMounted(() => {
 
                     <div class="bg-zinc-900 border border-zinc-800 rounded-lg p-5 space-y-4">
                         <h4 class="text-base font-semibold">특수 권한 부여</h4>
+                        <div class="grid gap-2 md:grid-cols-[1fr_1fr_auto]">
+                            <select
+                                v-model="selectedCapability"
+                                class="bg-zinc-950 border border-zinc-700 rounded px-3 py-2 text-sm text-white"
+                                :disabled="!hasUser"
+                            >
+                                <option
+                                    v-for="capability in capabilities"
+                                    :key="capability.permission"
+                                    :value="capability.permission"
+                                >
+                                    {{ capability.label }} · {{ capability.risk }}
+                                </option>
+                            </select>
+                            <input
+                                v-model="capabilityProfile"
+                                type="text"
+                                class="bg-zinc-950 border border-zinc-700 rounded px-3 py-2 text-sm text-white"
+                                placeholder="Profile 범위 (예: che:default)"
+                                :disabled="!hasUser"
+                            />
+                            <button
+                                class="bg-zinc-700 hover:bg-zinc-600 px-3 py-2 rounded text-sm"
+                                :disabled="!hasUser"
+                                @click="applyCapabilitySelection"
+                            >
+                                선택 반영
+                            </button>
+                        </div>
+                        <div v-if="selectedCapability" class="text-xs text-zinc-500">
+                            {{ capabilities.find((item) => item.permission === selectedCapability)?.description }}
+                        </div>
                         <div class="flex flex-col md:flex-row gap-2">
                             <select
                                 v-model="rolesMode"
@@ -1292,6 +1573,68 @@ onMounted(() => {
                             </button>
                         </div>
                         <div class="text-xs text-zinc-500">{{ rolesStatus }}</div>
+                    </div>
+
+                    <div class="bg-zinc-900 border border-zinc-800 rounded-lg p-5 space-y-4">
+                        <h4 class="text-base font-semibold">Kakao 인증 유예</h4>
+                        <div class="text-xs text-zinc-500">
+                            기본·서버별 유예가 끝난 사용자를 예외적으로 더 허용할 때 사용합니다.
+                        </div>
+                        <div class="flex flex-col md:flex-row gap-2">
+                            <input
+                                v-model="kakaoGraceUntil"
+                                type="datetime-local"
+                                class="flex-1 bg-zinc-950 border border-zinc-700 rounded px-3 py-2 text-sm text-white"
+                                :disabled="!hasUser"
+                            />
+                            <button
+                                class="bg-yellow-600 hover:bg-yellow-500 text-black px-4 py-2 rounded"
+                                :disabled="!hasUser"
+                                @click="updateKakaoGrace(false)"
+                            >
+                                유예 연장
+                            </button>
+                            <button
+                                class="bg-zinc-700 hover:bg-zinc-600 px-4 py-2 rounded"
+                                :disabled="!hasUser"
+                                @click="updateKakaoGrace(true)"
+                            >
+                                개별 유예 해제
+                            </button>
+                        </div>
+                        <div class="text-xs text-zinc-500">{{ kakaoGraceStatus }}</div>
+                        <div class="overflow-x-auto">
+                            <table class="w-full min-w-[620px] text-xs">
+                                <thead class="text-zinc-500">
+                                    <tr>
+                                        <th class="p-2 text-left">Profile</th>
+                                        <th>접근</th>
+                                        <th>장수 생성</th>
+                                        <th>기본 접근 유예</th>
+                                        <th>종료</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    <tr
+                                        v-for="policy in kakaoPolicies"
+                                        :key="policy.profileName"
+                                        class="border-t border-zinc-800"
+                                    >
+                                        <td class="p-2">{{ policy.profileName }}</td>
+                                        <td class="text-center">{{ policy.accessAllowed ? '허용' : '차단' }}</td>
+                                        <td class="text-center">{{ policy.canCreateGeneral ? '허용' : '차단' }}</td>
+                                        <td class="text-center">{{ policy.accessGraceDays }}일</td>
+                                        <td class="text-center">
+                                            {{
+                                                policy.graceEndsAt
+                                                    ? new Date(policy.graceEndsAt).toLocaleString('ko-KR')
+                                                    : '-'
+                                            }}
+                                        </td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </div>
                     </div>
 
                     <div class="bg-zinc-900 border border-zinc-800 rounded-lg p-5 space-y-4">
@@ -1400,19 +1743,109 @@ onMounted(() => {
                     </div>
 
                     <div class="bg-zinc-900 border border-zinc-800 rounded-lg p-5 space-y-4">
-                        <h4 class="text-base font-semibold text-red-400">강제 탈퇴</h4>
+                        <h4 class="text-base font-semibold text-red-400">관리자 탈퇴 예약</h4>
+                        <input
+                            v-model.number="deletionRetentionDays"
+                            type="number"
+                            min="1"
+                            max="90"
+                            class="w-full bg-zinc-950 border border-zinc-700 rounded px-3 py-2 text-sm text-white"
+                            aria-label="탈퇴 전 보존 일수"
+                            :disabled="!hasUser"
+                        />
                         <button
                             class="bg-red-700 hover:bg-red-600 text-white font-semibold px-4 py-2 rounded"
                             :disabled="!hasUser"
-                            @click="forceDeleteUser"
+                            @click="scheduleDeleteUser"
                         >
-                            강제 탈퇴 처리
+                            보존 기간 후 탈퇴 예약
                         </button>
                         <div class="text-xs text-zinc-500">{{ forceDeleteStatus }}</div>
                     </div>
+
+                    <div class="bg-zinc-900 border border-zinc-800 rounded-lg p-5 space-y-4">
+                        <h4 class="text-base font-semibold">사용자 관리자 조치 이력</h4>
+                        <div v-if="!userHistory.length" class="text-xs text-zinc-500">기록이 없습니다.</div>
+                        <div v-else class="max-h-80 overflow-auto space-y-2">
+                            <div
+                                v-for="event in userHistory"
+                                :key="event.id"
+                                class="border border-zinc-800 rounded p-3 text-xs"
+                            >
+                                <div class="flex justify-between gap-3">
+                                    <span
+                                        :class="
+                                            event.outcome === 'FAILED'
+                                                ? 'text-red-300'
+                                                : event.outcome === 'SUCCEEDED'
+                                                  ? 'text-emerald-300'
+                                                  : 'text-amber-300'
+                                        "
+                                    >
+                                        {{ event.outcome }} · {{ event.action }}
+                                    </span>
+                                    <span class="text-zinc-500">{{
+                                        new Date(event.createdAt).toLocaleString('ko-KR')
+                                    }}</span>
+                                </div>
+                                <div class="text-zinc-400">
+                                    {{ event.actorUsername }} · {{ event.reason ?? '사유 없음' }}
+                                </div>
+                                <div v-if="event.errorMessage" class="text-red-300">{{ event.errorMessage }}</div>
+                                <pre class="mt-2 overflow-auto whitespace-pre-wrap text-[11px] text-zinc-500">{{
+                                    JSON.stringify(event.summary, null, 2)
+                                }}</pre>
+                            </div>
+                        </div>
+                    </div>
                 </section>
 
-                <section class="space-y-6">
+                <section class="min-w-0 space-y-6">
+                    <div
+                        v-if="capabilities.some((entry) => entry.permission === 'admin.audit.read')"
+                        class="bg-zinc-900 border border-zinc-800 rounded-lg p-5 space-y-4"
+                    >
+                        <div class="flex items-center justify-between gap-3">
+                            <h3 class="text-lg font-semibold">전체 관리자 감사 원장</h3>
+                            <button
+                                class="rounded bg-zinc-700 px-3 py-2 text-xs hover:bg-zinc-600"
+                                @click="loadGlobalAudit"
+                            >
+                                새로고침
+                            </button>
+                        </div>
+                        <div v-if="globalAuditStatus" class="text-xs text-red-400">{{ globalAuditStatus }}</div>
+                        <div v-if="!globalAuditHistory.length" class="text-xs text-zinc-500">기록이 없습니다.</div>
+                        <div v-else class="max-h-96 space-y-2 overflow-auto">
+                            <div
+                                v-for="event in globalAuditHistory"
+                                :key="event.id"
+                                class="rounded border border-zinc-800 p-3 text-xs"
+                            >
+                                <div class="flex justify-between gap-3">
+                                    <span
+                                        :class="
+                                            event.outcome === 'FAILED'
+                                                ? 'text-red-300'
+                                                : event.outcome === 'SUCCEEDED'
+                                                  ? 'text-emerald-300'
+                                                  : 'text-amber-300'
+                                        "
+                                    >
+                                        {{ event.outcome }} · {{ event.action }}
+                                    </span>
+                                    <span class="text-zinc-500">{{
+                                        new Date(event.createdAt).toLocaleString('ko-KR')
+                                    }}</span>
+                                </div>
+                                <div class="text-zinc-400">
+                                    {{ event.actorUsername }} · {{ event.targetType ?? '-' }}
+                                    {{ event.targetId ?? event.profileName ?? '' }} · {{ event.reason ?? '사유 없음' }}
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
                     <div class="bg-zinc-900 border border-zinc-800 rounded-lg p-5 space-y-4">
                         <div class="flex justify-between items-center">
                             <h3 class="text-lg font-semibold">서버 공지</h3>
@@ -1510,6 +1943,36 @@ onMounted(() => {
                                         placeholder="예: 12"
                                     />
                                     <div class="text-xs text-zinc-500">리셋 시 적용할 시즌 번호를 지정합니다.</div>
+                                    <label class="text-xs text-zinc-400">Kakao 미인증 접근 유예일</label>
+                                    <input
+                                        v-model="profileEdits[profile.profileName].localAccountAccessGraceDays"
+                                        type="number"
+                                        min="0"
+                                        max="365"
+                                        class="w-full bg-zinc-950 border border-zinc-700 rounded px-3 py-2 text-sm text-white"
+                                        placeholder="비우면 Gateway 기본값"
+                                    />
+                                    <label class="text-xs text-zinc-400">Kakao 미인증 장수 생성 유예일</label>
+                                    <input
+                                        v-model="profileEdits[profile.profileName].localAccountGeneralCreationGraceDays"
+                                        type="number"
+                                        min="0"
+                                        max="365"
+                                        class="w-full bg-zinc-950 border border-zinc-700 rounded px-3 py-2 text-sm text-white"
+                                        placeholder="비우면 서버 기본값"
+                                    />
+                                    <div class="text-xs text-zinc-500">
+                                        게임 규칙 자체가 아니라 Gateway가 game token을 발급할 때 적용하는 profile별 계정
+                                        정책입니다.
+                                    </div>
+                                    <label class="text-xs text-zinc-400">메타 변경 사유</label>
+                                    <input
+                                        v-model="profileEdits[profile.profileName].reason"
+                                        type="text"
+                                        maxlength="200"
+                                        class="w-full bg-zinc-950 border border-zinc-700 rounded px-3 py-2 text-sm text-white"
+                                        placeholder="변경 사유 (필수)"
+                                    />
                                     <button
                                         class="bg-emerald-600 hover:bg-emerald-500 text-black font-semibold px-4 py-2 rounded"
                                         @click="updateProfileMeta(profile.profileName)"
