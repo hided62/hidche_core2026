@@ -5,6 +5,8 @@ import type { RealtimeEvent } from '@sammo-ts/common';
 import { trpc } from '../utils/trpc';
 import { useMapViewerStore } from './mapViewer';
 import { useSessionStore } from './session';
+import { createLatestRefreshQueue } from '../utils/latestRefreshQueue';
+import { structurallyShare } from '../utils/structuralShare';
 
 const resolveErrorMessage = (value: unknown): string => {
     if (value instanceof Error) {
@@ -18,6 +20,7 @@ const resolveErrorMessage = (value: unknown): string => {
 
 export const useMainDashboardStore = defineStore('mainDashboard', () => {
     type GeneralContext = Awaited<ReturnType<typeof trpc.general.me.query>>;
+    type PresentGeneralContext = NonNullable<GeneralContext>;
     type LobbyInfo = Awaited<ReturnType<typeof trpc.lobby.info.query>>;
     type WorldMapResult = Awaited<ReturnType<typeof trpc.world.getMap.query>>;
     type MapLayout = Awaited<ReturnType<typeof trpc.world.getMapLayout.query>>;
@@ -30,13 +33,16 @@ export const useMainDashboardStore = defineStore('mainDashboard', () => {
     type FrontStatus = Awaited<ReturnType<typeof trpc.general.getFrontStatus.query>>;
 
     const loading = ref(false);
+    const refreshing = ref(false);
     const error = ref<string | null>(null);
     const recordsError = ref<string | null>(null);
     const frontStatusError = ref<string | null>(null);
     const realtimeEnabled = ref(true);
     const realtimeStatus = ref<'idle' | 'connected' | 'paused'>('idle');
 
-    const generalContext = ref<GeneralContext | null>(null);
+    const general = ref<PresentGeneralContext['general'] | null>(null);
+    const city = ref<PresentGeneralContext['city'] | null>(null);
+    const nation = ref<PresentGeneralContext['nation'] | null>(null);
     const lobbyInfo = ref<LobbyInfo | null>(null);
     const worldMap = ref<WorldMapResult | null>(null);
     const mapLayout = ref<MapLayout | null>(null);
@@ -54,14 +60,12 @@ export const useMainDashboardStore = defineStore('mainDashboard', () => {
     let lastGeneralRecordId = 0;
     let lastWorldHistoryId = 0;
     let recordGeneralId: number | null = null;
+    let initialized = false;
 
     const messageDraftText = ref('');
     const targetMailbox = ref<number>(MESSAGE_MAILBOX_PUBLIC);
     let initializedMailboxGeneralId: number | null = null;
 
-    const general = computed(() => generalContext.value?.general ?? null);
-    const city = computed(() => generalContext.value?.city ?? null);
-    const nation = computed(() => generalContext.value?.nation ?? null);
     const generalId = computed(() => general.value?.id ?? null);
     const nationId = computed(() => nation.value?.id ?? null);
     const mapViewer = useMapViewerStore();
@@ -114,7 +118,7 @@ export const useMainDashboardStore = defineStore('mainDashboard', () => {
             options: MailboxOption[];
         };
 
-        const ownNationId = general.value?.nationId ?? 0;
+        const ownNationId = nationId.value ?? 0;
         const ownMailbox = MESSAGE_MAILBOX_NATIONAL_BASE + ownNationId;
         const permission = messages.value?.permission ?? -1;
         const contacts = messageContacts.value?.nation ?? [];
@@ -204,7 +208,7 @@ export const useMainDashboardStore = defineStore('mainDashboard', () => {
     };
 
     const updateFrontStatus = (nextStatus: FrontStatus) => {
-        frontStatus.value = nextStatus;
+        frontStatus.value = structurallyShare(frontStatus.value, nextStatus);
         const latestVote = nextStatus.latestVote;
         if (!latestVote || latestVote.hasVoted || typeof window === 'undefined') {
             surveyNotice.value = null;
@@ -244,25 +248,29 @@ export const useMainDashboardStore = defineStore('mainDashboard', () => {
         surveyNotice.value = null;
     };
 
-    const loadMainData = async () => {
-        if (loading.value) {
-            return;
+    const refreshMainData = async () => {
+        const isInitialLoad = !initialized;
+        if (isInitialLoad) {
+            loading.value = true;
+        } else {
+            refreshing.value = true;
         }
-        loading.value = true;
         error.value = null;
         recordsError.value = null;
         frontStatusError.value = null;
 
         try {
             const context = await trpc.general.me.query();
-            generalContext.value = context;
 
             if (!context) {
+                general.value = null;
+                city.value = null;
+                nation.value = null;
                 reservedGeneralTurns.value = null;
                 reservedGeneralRevision.value = 0;
                 boardAccess.value = null;
                 resetRecentRecords(null);
-                loading.value = false;
+                initialized = true;
                 return;
             }
 
@@ -309,19 +317,34 @@ export const useMainDashboardStore = defineStore('mainDashboard', () => {
                 frontStatusPromise,
             ]);
 
-            mapLayout.value = layout;
-            lobbyInfo.value = lobby;
-            worldMap.value = map;
-            commandTable.value = commands;
-            messages.value = messageData;
-            messageContacts.value = contacts;
-            boardAccess.value = access;
-            reservedGeneralTurns.value = generalTurns.turns;
+            general.value = structurallyShare(general.value, context.general);
+            city.value = structurallyShare(city.value, context.city);
+            nation.value = structurallyShare(nation.value, context.nation);
+            mapLayout.value = structurallyShare(mapLayout.value, layout);
+            lobbyInfo.value = structurallyShare(lobbyInfo.value, lobby);
+            worldMap.value = structurallyShare(worldMap.value, map);
+            commandTable.value = structurallyShare(commandTable.value, commands);
+            messages.value = structurallyShare(messages.value, messageData);
+            messageContacts.value = structurallyShare(messageContacts.value, contacts);
+            boardAccess.value = structurallyShare(boardAccess.value, access);
+            reservedGeneralTurns.value = structurallyShare<unknown>(
+                reservedGeneralTurns.value,
+                generalTurns.turns
+            ) as ReservedTurnView[];
             reservedGeneralRevision.value = generalTurns.revision;
             if (records) {
-                globalRecords.value = mergeRecentRecords(globalRecords.value, records.global);
-                generalRecords.value = mergeRecentRecords(generalRecords.value, records.general);
-                worldHistory.value = mergeRecentRecords(worldHistory.value, records.history);
+                globalRecords.value = structurallyShare(
+                    globalRecords.value,
+                    mergeRecentRecords(globalRecords.value, records.global)
+                );
+                generalRecords.value = structurallyShare(
+                    generalRecords.value,
+                    mergeRecentRecords(generalRecords.value, records.general)
+                );
+                worldHistory.value = structurallyShare(
+                    worldHistory.value,
+                    mergeRecentRecords(worldHistory.value, records.history)
+                );
                 lastGeneralRecordId = Math.max(
                     lastGeneralRecordId,
                     records.global[0]?.id ?? 0,
@@ -336,12 +359,20 @@ export const useMainDashboardStore = defineStore('mainDashboard', () => {
                 targetMailbox.value = MESSAGE_MAILBOX_NATIONAL_BASE + context.general.nationId;
                 initializedMailboxGeneralId = id;
             }
+            initialized = true;
         } catch (err) {
             error.value = resolveErrorMessage(err);
         } finally {
-            loading.value = false;
+            if (isInitialLoad) {
+                loading.value = false;
+            } else {
+                refreshing.value = false;
+            }
         }
     };
+
+    const refreshQueue = createLatestRefreshQueue(refreshMainData);
+    const loadMainData = () => refreshQueue.request();
 
     const refreshMessages = async () => {
         const id = generalId.value;
@@ -349,7 +380,7 @@ export const useMainDashboardStore = defineStore('mainDashboard', () => {
             return;
         }
         try {
-            messages.value = await trpc.messages.getRecent.query({ generalId: id });
+            messages.value = structurallyShare(messages.value, await trpc.messages.getRecent.query({ generalId: id }));
         } catch (err) {
             error.value = resolveErrorMessage(err);
         }
@@ -695,12 +726,12 @@ export const useMainDashboardStore = defineStore('mainDashboard', () => {
 
     return {
         loading,
+        refreshing,
         error,
         recordsError,
         frontStatusError,
         realtimeEnabled,
         realtimeStatus,
-        generalContext,
         general,
         city,
         nation,
