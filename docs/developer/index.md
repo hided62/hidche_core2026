@@ -8,6 +8,7 @@
 | process·worker·daemon | [런타임 아키텍처](../architecture/runtime.md)                   | app server와 CLI               |
 | profile·Gateway 배포  | [릴리스 운영 매뉴얼](../release-operations.md)                  | Admin GUI와 release-controller |
 | 파일 위치             | [파일 지도](./code-map.md)                                      | router, handler, schema        |
+| package 의존 방향     | [패키지와 파일 경계](../architecture/package-boundaries.md)     | `packages/*`, `app/*`          |
 | 명령·전투·효과        | [도메인과 조립](./domain-and-classes.md)                        | `packages/logic`               |
 | mutation·flush        | [요청·턴·저장](./request-turn-persistence.md)                   | game API, game engine          |
 | action module         | [행동 모듈 프로토콜](../architecture/action-module-protocol.md) | `actionModules/`               |
@@ -16,6 +17,7 @@
 ## 경계
 
 - `packages/logic`은 계산과 규칙을 소유합니다.
+- runtime I/O는 logic의 port를 app/infra adapter가 구현해 주입합니다.
 - `app/game-engine`은 clock, queue, AI, 월간 순서, transaction과 flush를
   소유합니다.
 - `app/game-api`는 transport, 인증, input validation과 request acceptance를

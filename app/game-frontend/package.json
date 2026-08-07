@@ -27,8 +27,6 @@
     },
     "dependencies": {
         "@sammo-ts/common": "workspace:*",
-        "@sammo-ts/game-api": "workspace:*",
-        "@sammo-ts/gateway-api": "workspace:*",
         "@sammo-ts/logic": "workspace:*",
         "@tiptap/extension-image": "^3.5.0",
         "@tiptap/extension-link": "^3.5.0",
@@ -48,6 +46,10 @@
         "zod": "^4.3.5"
     },
     "devDependencies": {
+        "@sammo-ts/game-api": "workspace:*",
+        "@sammo-ts/game-engine": "workspace:*",
+        "@sammo-ts/gateway-api": "workspace:*",
+        "@sammo-ts/infra": "workspace:*",
         "@tailwindcss/vite": "^4.1.18",
         "@vitejs/plugin-vue": "^6.0.3",
         "autoprefixer": "^10.4.23",

@@ -39,6 +39,7 @@ import type { MapDefinition, UnitSetDefinition } from '@sammo-ts/logic/world/typ
 import type { ActionContextBuilder } from '@sammo-ts/logic/actions/turn/actionContext.js';
 import { tryApplyUniqueLottery } from '@sammo-ts/logic/rewards/uniqueLottery.js';
 import { buildNationFrontStatePatches } from '../../../diplomacy/frontState.js';
+import type { TracePort } from '../../../ports/trace.js';
 import { formatDestCityConstraintFailure } from '../constraintFailure.js';
 import {
     buildWarAftermathConfig,
@@ -380,7 +381,8 @@ export class ActionDefinition<
     constructor(
         modules: ReadonlyArray<WarActionModule<TriggerState> | null | undefined> = [],
         nationTraitModules: NationTraitModule[] = [],
-        generalModules: ReadonlyArray<GeneralActionModule<TriggerState> | null | undefined> = []
+        generalModules: ReadonlyArray<GeneralActionModule<TriggerState> | null | undefined> = [],
+        private readonly trace?: TracePort
     ) {
         this.warModules = modules.filter(Boolean) as ReadonlyArray<WarActionModule<TriggerState>>;
         this.nationTraitModules = new Map(nationTraitModules.map((module) => [module.key, module]));
@@ -572,29 +574,25 @@ export class ActionDefinition<
                     (unitSet.crewTypes?.some((crewType) => crewType.id === general.crewTypeId) ?? false)
             )
         );
-        const traceGeneralIds = new Set(process.env.CORE_AI_TRACE_GENERAL_IDS?.split(',') ?? []);
-        const shouldTraceWar =
-            traceGeneralIds.has(String(context.general.id)) ||
-            defenderGenerals.some((general) => traceGeneralIds.has(String(general.id)));
+        const battleGeneralIds = [context.general.id, ...defenderGenerals.map((general) => general.id)];
+        const shouldTraceWar = this.trace?.isEnabled('AI_WAR_TRACE', { generalIds: battleGeneralIds }) ?? false;
 
-        if (process.env.CORE_BATTLE_FIXTURE_TRACE === '1') {
-            process.stdout.write(
-                `AI_WAR_FIXTURE_CORE ${JSON.stringify({
-                    action: 'battle',
-                    seed,
-                    repeatCnt: 1,
-                    year: time.year,
-                    month: time.month,
-                    startYear: time.startYear,
-                    scenarioEffect: null,
-                    attackerGeneral: buildBattleGeneralFixture(context.general),
-                    attackerCity: buildBattleCityFixture(attackerCity),
-                    attackerNation: buildBattleNationFixture(attackerNation),
-                    defenderGenerals: defenderGenerals.map(buildBattleGeneralFixture),
-                    defenderCity: buildBattleCityFixture(defenderCity),
-                    defenderNation: buildBattleNationFixture(defenderNation),
-                })}\n`
-            );
+        if (this.trace?.isEnabled('AI_WAR_FIXTURE_CORE', { generalIds: battleGeneralIds })) {
+            this.trace.write('AI_WAR_FIXTURE_CORE', {
+                action: 'battle',
+                seed,
+                repeatCnt: 1,
+                year: time.year,
+                month: time.month,
+                startYear: time.startYear,
+                scenarioEffect: null,
+                attackerGeneral: buildBattleGeneralFixture(context.general),
+                attackerCity: buildBattleCityFixture(attackerCity),
+                attackerNation: buildBattleNationFixture(attackerNation),
+                defenderGenerals: defenderGenerals.map(buildBattleGeneralFixture),
+                defenderCity: buildBattleCityFixture(defenderCity),
+                defenderNation: buildBattleNationFixture(defenderNation),
+            });
         }
 
         const battle = resolveWarBattle({
@@ -619,9 +617,7 @@ export class ActionDefinition<
             ...(shouldTraceWar
                 ? {
                       trace: (event) => {
-                          process.stdout.write(
-                              `AI_WAR_TRACE ${JSON.stringify({ generalId: context.general.id, event })}\n`
-                          );
+                          this.trace?.write('AI_WAR_TRACE', { generalId: context.general.id, event });
                       },
                   }
                 : {}),
@@ -648,6 +644,7 @@ export class ActionDefinition<
                     baseGain
                 );
             },
+            ...(this.trace ? { trace: this.trace } : {}),
         });
 
         // Ref ConquerCity() recalculates the fronts of every nation around the
@@ -802,5 +799,10 @@ export const commandSpec: GeneralTurnCommandSpec = {
     availabilityArgs: { destCityId: 0 },
     argsSchema: ARGS_SCHEMA,
     createDefinition: (env: TurnCommandEnv) =>
-        new ActionDefinition(env.warActionModules ?? [], env.nationTraitModules ?? [], env.generalActionModules ?? []),
+        new ActionDefinition(
+            env.warActionModules ?? [],
+            env.nationTraitModules ?? [],
+            env.generalActionModules ?? [],
+            env.trace
+        ),
 };

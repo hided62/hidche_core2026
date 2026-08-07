@@ -28,6 +28,9 @@
 위치는 [개발자 핸드북](docs/developer/index.md)에서 확인해 주세요. ref entry
 point와 core 구현의 대응 근거는 상위 작업공간의
 `../docs/ref-core2026-mapping.md`에 있습니다.
+패키지 의존 방향과 파일 배치 규칙은
+[패키지와 파일 경계](docs/architecture/package-boundaries.md)에 고정되어 있으며
+`pnpm check:architecture`로 검사합니다.
 
 ## 런타임 경계
 

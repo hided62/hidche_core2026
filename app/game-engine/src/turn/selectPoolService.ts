@@ -1,11 +1,13 @@
 import { z } from 'zod';
 
 import { asNumber, asRecord, JosaUtil, LiteHashDRBG, RandUtil } from '@sammo-ts/common';
-import { GamePrisma, LogCategory, LogScope } from '@sammo-ts/infra';
+import { GamePrisma } from '@sammo-ts/infra';
 import {
     EventDomesticTraitLoader,
     isEventDomesticTraitKey,
     isPersonalityTraitKey,
+    LogCategory,
+    LogScope,
     PERSONALITY_TRAIT_KEYS,
     simpleSerialize,
 } from '@sammo-ts/logic';

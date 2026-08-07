@@ -2,7 +2,7 @@ import { TRPCError } from '@trpc/server';
 
 import { asRecord } from '@sammo-ts/common';
 
-import { loadUnitSetDefinitionByName } from '../../../battleSim/unitSetLoader.js';
+import { loadUnitSetDefinitionByName } from '@sammo-ts/game-engine/scenario/unitSetLoader.js';
 import { accessAuthedProcedure } from '../../../trpc.js';
 import { getMyGeneral } from '../../shared/general.js';
 import { assertNationAccess, resolveNationPermission } from '../shared.js';

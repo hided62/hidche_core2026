@@ -1,4 +1,4 @@
-import { seedScenarioToDatabase, type ScenarioInstallOptions } from '@sammo-ts/game-engine';
+import { seedScenarioToDatabase, type ScenarioInstallOptions } from '@sammo-ts/game-engine/scenario/scenarioSeeder.js';
 import type { GamePrisma } from '@sammo-ts/infra';
 import { GameClock, asRecord, type GameClockMode } from '@sammo-ts/common';
 

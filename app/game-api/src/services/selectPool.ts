@@ -9,4 +9,4 @@ export {
     type SelectPoolCandidateDto,
     type SelectPoolCandidateInfo,
     type SelectPoolReservationDto,
-} from '@sammo-ts/game-engine';
+} from '@sammo-ts/game-engine/turn/selectPoolService.js';

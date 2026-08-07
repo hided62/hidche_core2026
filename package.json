@@ -21,6 +21,8 @@
         "check:legacy:nation": "node tools/compare-command-constraints.mjs --include '^Nation/' --check && node tools/compare-command-logs.mjs --include '^Nation/' --mode action --check",
         "check:legacy:general": "node tools/compare-command-constraints.mjs --include '^General/' --check && node tools/compare-command-logs.mjs --include '^General/' --mode action --check && node tools/compare-general-turn-contracts.mjs --check",
         "check:ref-compat-markers": "node tools/check-ref-compat-markers.mjs",
+        "check:architecture": "node tools/check-package-boundaries.mjs",
+        "test:architecture": "node --test tools/check-package-boundaries.test.mjs",
         "test:e2e:frontend-legacy": "playwright test --config tools/frontend-legacy-parity/playwright.config.mjs --tsconfig tools/frontend-legacy-parity/tsconfig.json",
         "typecheck:e2e:frontend-legacy": "tsc -p tools/frontend-legacy-parity/tsconfig.json --noEmit",
         "test:e2e:main-front-status-live": "node tools/frontend-legacy-parity/run-main-front-status-live.mjs",

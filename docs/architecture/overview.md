@@ -76,6 +76,11 @@ persistence는 `app/game-engine`이 제공합니다.
 `src/gatewayPrisma.ts`, `src/gamePrisma.ts`, `src/postgres.ts`, `src/redis.ts`가
 연결과 client 생성을 담당합니다.
 
+구체적인 import 방향과 파일 배치 기준은
+[패키지와 파일 경계](./package-boundaries.md)를 따릅니다. 순수 거리 계산과
+도메인 로그 enum은 `packages/logic`, resource 파일 loader와 trace 출력은
+app/infra adapter가 소유합니다.
+
 ## 데이터 소유권
 
 | 데이터                        | 기준 저장소                          | 주요 접근 경로        |

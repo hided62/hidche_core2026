@@ -3,7 +3,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { createHash, randomBytes, randomUUID } from 'node:crypto';
 
-import { type ScenarioInstallOptions } from '@sammo-ts/game-engine';
+import type { ScenarioInstallOptions } from '@sammo-ts/game-engine/scenario/scenarioSeeder.js';
 import {
     createGamePostgresConnector,
     createRedisConnector,
@@ -1630,9 +1630,7 @@ export class GatewayOrchestrator implements GatewayOrchestratorHandle {
     }
 
     private async clearTournamentRuntimeStateFromRedis(profileName: string): Promise<void> {
-        const connector = createRedisConnector(
-            resolveRedisConfigFromEnv(this.processConfig.baseEnv ?? process.env)
-        );
+        const connector = createRedisConnector(resolveRedisConfigFromEnv(this.processConfig.baseEnv ?? process.env));
         await connector.connect();
         try {
             await clearTournamentRuntimeKeys(connector.client, profileName);

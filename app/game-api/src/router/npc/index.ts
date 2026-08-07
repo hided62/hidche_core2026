@@ -5,7 +5,7 @@ import { asRecord, isRecord } from '@sammo-ts/common';
 import { findCrewTypeById, getTechCost } from '@sammo-ts/logic/world/unitSet.js';
 
 import { accessAuthedInputProcedure, authedProcedure, router } from '../../trpc.js';
-import { loadUnitSetDefinitionByName } from '../../battleSim/unitSetLoader.js';
+import { loadUnitSetDefinitionByName } from '@sammo-ts/game-engine/scenario/unitSetLoader.js';
 import type { GameApiContext } from '../../context.js';
 import { getMyGeneral } from '../shared/general.js';
 import { resolveSecretPermission } from '../shared/secretPermission.js';

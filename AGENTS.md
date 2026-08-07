@@ -272,12 +272,16 @@ profile별 정확한 포트와 game frontend/API 변수는
 
 ```sh
 CI=1 pnpm typecheck
+pnpm check:architecture
 pnpm lint
 pnpm test
 pnpm build
 ```
 
 - 모든 코드 변경 후 `CI=1 pnpm typecheck`를 실행해 주세요.
+- package import나 파일 위치를 변경한 뒤 `pnpm check:architecture`를 실행해
+  주세요. `packages/logic`의 runtime I/O는 `ports/` interface와 app/infra
+  adapter로 분리합니다.
 - `pnpm test`의 skip 수를 pass처럼 보고하지 말아 주세요.
 - Vitest file/name filter는 package script 뒤에 불필요한 `--`를 넣지 말아 주세요.
   예: `pnpm --filter @sammo-ts/game-engine test monthlyCoreEventHandler.test.ts`

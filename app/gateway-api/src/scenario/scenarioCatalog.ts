@@ -3,11 +3,8 @@ import path from 'node:path';
 import { spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 
-import {
-    composeScenarioResource,
-    loadScenarioDefinitionById,
-    resolveScenarioDefaultsPath,
-} from '@sammo-ts/game-engine';
+import { composeScenarioResource } from '@sammo-ts/game-engine/scenario/scenarioComposition.js';
+import { loadScenarioDefinitionById } from '@sammo-ts/game-engine/scenario/scenarioLoader.js';
 import { parseScenarioDefaults, parseScenarioDefinition, type ScenarioDefaults } from '@sammo-ts/logic';
 import { resolveWorkspaceRoot } from '../orchestrator/workspaceRoot.js';
 
@@ -40,14 +37,12 @@ const SCENARIO_ROOT = path.join('resources', 'scenario');
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const REPO_ROOT = resolveWorkspaceRoot(process.env.GATEWAY_WORKSPACE_ROOT ?? __dirname);
+const SCENARIO_RESOURCE_ROOT = path.resolve(REPO_ROOT, SCENARIO_ROOT);
 
 const previewCache = new Map<string, { loadedAt: number; data: ScenarioPreview[] }>();
 const defaultsCache = new Map<string, ScenarioDefaults>();
 
-const resolveScenarioRoot = (): string => {
-    const defaultsPath = resolveScenarioDefaultsPath();
-    return path.dirname(defaultsPath);
-};
+const resolveScenarioRoot = (): string => SCENARIO_RESOURCE_ROOT;
 
 const runGit = (args: string[]): Promise<{ ok: boolean; output: string }> =>
     new Promise((resolve) => {
@@ -210,7 +205,7 @@ const countGeneralsByNation = (
 };
 
 const buildScenarioPreview = async (scenarioId: number): Promise<ScenarioPreview> => {
-    const scenario = await loadScenarioDefinitionById(scenarioId);
+    const scenario = await loadScenarioDefinitionById(scenarioId, { scenarioRoot: SCENARIO_RESOURCE_ROOT });
     const resolveNationId = buildNationIdResolver(scenario.nations);
 
     const baseCounts = new Map(scenario.nations.map((nation) => [nation.id, 0]));

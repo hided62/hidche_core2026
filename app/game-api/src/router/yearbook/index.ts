@@ -3,7 +3,7 @@ import { TRPCError } from '@trpc/server';
 import { z } from 'zod';
 
 import { asRecord, isRecord } from '@sammo-ts/common';
-import { LogCategory, LogScope } from '@sammo-ts/infra';
+import { LogCategory, LogScope } from '@sammo-ts/logic';
 
 import type { GameApiContext } from '../../context.js';
 import { loadPublicMap, type BaseMapResult } from '../../maps/worldMap.js';

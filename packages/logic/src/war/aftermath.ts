@@ -134,10 +134,21 @@ const applyNationTechGain = <TriggerState extends GeneralTriggerState>(
     // arithmetic starts from the stored binary32 value without a PHP text read.
     nation.meta.tech = Math.fround(currentTech + delta);
     // REF-COMPAT:END ref-mariadb-float-boundary
-    if ((process.env.CORE_WAR_TECH_TRACE_NATION_IDS?.split(',') ?? []).includes(String(nation.id))) {
-        process.stdout.write(
-            `WAR_TECH_TRACE ${JSON.stringify({ engine: 'core', nationId: nation.id, side: context.side, currentTech, baseGain, gain, total, effective, divisor, delta, storedTech: nation.meta.tech, attackerGeneralId: context.attackerReport.id })}\n`
-        );
+    if (input.trace?.isEnabled('WAR_TECH_TRACE', { nationIds: [nation.id] })) {
+        input.trace.write('WAR_TECH_TRACE', {
+            engine: 'core',
+            nationId: nation.id,
+            side: context.side,
+            currentTech,
+            baseGain,
+            gain,
+            total,
+            effective,
+            divisor,
+            delta,
+            storedTech: nation.meta.tech,
+            attackerGeneralId: context.attackerReport.id,
+        });
     }
 };
 

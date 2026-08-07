@@ -17,6 +17,7 @@ export * from './inheritance/inheritBuff.js';
 export * from './resources/index.js';
 export * from './ports/world.js';
 export * from './ports/worldSnapshot.js';
+export * from './ports/trace.js';
 export * from './scenario/index.js';
 export * from './triggers/index.js';
 export * from './turn/index.js';

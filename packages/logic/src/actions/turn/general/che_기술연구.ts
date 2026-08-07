@@ -124,20 +124,26 @@ export class ActionDefinition<
 
         const generalCount = Math.max(context.nationGeneralCount, this.env.initialNationGenLimit);
         if (
-            (process.env.CORE_AI_TRACE_GENERAL_IDS?.split(',') ?? []).includes(String(context.general.id)) ||
-            (process.env.CORE_AI_TRACE_NATION_IDS?.split(',') ?? []).includes(String(context.nation.id))
+            this.env.trace?.isEnabled('AI_ACTION_PATCH_TRACE', {
+                generalIds: [context.general.id],
+                nationIds: [context.nation.id],
+            })
         ) {
-            process.stdout.write(
-                `AI_ACTION_PATCH_TRACE ${JSON.stringify({ engine: 'core-tech', generalId: context.general.id, nationId: context.nation.id, currentTech, techScore, nationGeneralCount: context.nationGeneralCount, generalCount, delta: techScore / generalCount })}\n`
-            );
+            this.env.trace.write('AI_ACTION_PATCH_TRACE', {
+                engine: 'core-tech',
+                generalId: context.general.id,
+                nationId: context.nation.id,
+                currentTech,
+                techScore,
+                nationGeneralCount: context.nationGeneralCount,
+                generalCount,
+                delta: techScore / generalCount,
+            });
         }
 
         context.nation.meta = {
             ...context.nation.meta,
-            tech: addLegacyStoredTech(
-                currentTech,
-                techScore / generalCount
-            ),
+            tech: addLegacyStoredTech(currentTech, techScore / generalCount),
         };
         context.general.gold = Math.max(0, context.general.gold - result.costGold);
         context.general.experience += result.exp;

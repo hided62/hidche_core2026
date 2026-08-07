@@ -6,7 +6,7 @@ import { accessAuthedProcedure, authedProcedure, procedure, router } from '../..
 import { asRecord, isRecord } from '@sammo-ts/common';
 import { loadWorldMap } from '../../maps/worldMap.js';
 import { loadMapLayout } from '../../maps/mapLayout.js';
-import { loadUnitSetDefinitionByName } from '../../battleSim/unitSetLoader.js';
+import { loadUnitSetDefinitionByName } from '@sammo-ts/game-engine/scenario/unitSetLoader.js';
 import { getMyGeneral, getOwnedGeneral } from '../shared/general.js';
 import { getGeneralDirectory, getNationDirectory } from './directory.js';
 

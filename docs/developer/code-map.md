@@ -33,12 +33,14 @@ core2026/
 | turn daemon       | `app/game-engine/src/turn/turnDaemon.ts`                   | lifecycle, loader, handler, flush           |
 | daemon lease      | `app/game-engine/src/lifecycle/databaseTurnDaemonLease.ts` | `TurnDaemonLease`                           |
 | world load·flush  | `worldLoader.ts`, `databaseHooks.ts`                       | `EngineStateManager`, game Prisma           |
+| package 경계      | `tools/check-package-boundaries.mjs`                       | source import, manifest dependency          |
 | 장수·국가 명령    | `packages/logic/src/actions/turn`                          | constraint, command module, engine handler  |
 | 전투              | `packages/logic/src/war`                                   | action module, crew type, item, trait       |
+| 지도 거리 계산    | `packages/logic/src/world/distance.ts`                     | AI·명령이 공유하는 순수 BFS                 |
 | 월간 처리         | `app/game-engine/src/turn/monthly*.ts`                     | scenario event, world dirty state           |
 | frontend route    | `app/*-frontend/src/router/index.ts`                       | view, store, tRPC client                    |
 | schema            | `packages/infra/prisma/*.prisma`                           | migration, client, loader                   |
-| resource          | `resources/`                                               | scenario/map/unit-set loader                |
+| resource          | `resources/`                                               | `app/game-engine/src/scenario/*Loader.ts`   |
 
 ## 변경 단위
 
@@ -53,6 +55,9 @@ Router의 input schema, procedure, actor 해석, transaction과 error를 먼저
 ref entry point, SQL, RNG, log와 mutation 순서를 조사합니다. 순수 계산은
 `packages/logic`, 실행 context와 persistence는 `app/game-engine`에 둡니다.
 Fixed-seed unit, 실제 DB integration과 ref 차등 fixture를 함께 갱신합니다.
+새 package import나 파일 이동은
+[패키지 경계 문서](../architecture/package-boundaries.md)와
+`pnpm check:architecture`로 확인합니다.
 
 ### DB
 

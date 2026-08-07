@@ -4,6 +4,7 @@ import type { UnitSetDefinition } from '@sammo-ts/logic/world/types.js';
 import type { NationTraitModule } from '@sammo-ts/logic/actionModules/traits/nation/index.js';
 import type { RefOrderedActionStack } from '@sammo-ts/logic/actionModules/bundle.js';
 import type { ScenarioEffectKey } from '@sammo-ts/logic/scenario/scenarioEffect.js';
+import type { TracePort } from '@sammo-ts/logic/ports/trace.js';
 
 export interface TurnCommandItemCatalogEntry {
     slot: 'horse' | 'weapon' | 'book' | 'item';
@@ -17,6 +18,7 @@ export interface TurnCommandItemCatalogEntry {
 }
 
 export interface TurnCommandEnv {
+    trace?: TracePort;
     unitSet?: UnitSetDefinition;
     scenarioEffect?: ScenarioEffectKey | null;
     develCost: number;

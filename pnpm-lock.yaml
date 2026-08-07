@@ -158,12 +158,6 @@ importers:
       '@sammo-ts/common':
         specifier: workspace:*
         version: link:../../packages/common
-      '@sammo-ts/game-api':
-        specifier: workspace:*
-        version: link:../game-api
-      '@sammo-ts/gateway-api':
-        specifier: workspace:*
-        version: link:../gateway-api
       '@sammo-ts/logic':
         specifier: workspace:*
         version: link:../../packages/logic
@@ -216,6 +210,18 @@ importers:
         specifier: ^4.3.5
         version: 4.3.5
     devDependencies:
+      '@sammo-ts/game-api':
+        specifier: workspace:*
+        version: link:../game-api
+      '@sammo-ts/game-engine':
+        specifier: workspace:*
+        version: link:../game-engine
+      '@sammo-ts/gateway-api':
+        specifier: workspace:*
+        version: link:../gateway-api
+      '@sammo-ts/infra':
+        specifier: workspace:*
+        version: link:../../packages/infra
       '@tailwindcss/vite':
         specifier: ^4.1.18
         version: 4.1.18(vite@7.3.1(@types/node@26.1.1)(jiti@2.6.1)(lightningcss@1.30.2)(tsx@4.21.0))
@@ -310,15 +316,6 @@ importers:
       '@sammo-ts/common':
         specifier: workspace:*
         version: link:../../packages/common
-      '@sammo-ts/game-api':
-        specifier: workspace:*
-        version: link:../game-api
-      '@sammo-ts/gateway-api':
-        specifier: workspace:*
-        version: link:../gateway-api
-      '@sammo-ts/logic':
-        specifier: workspace:*
-        version: link:../../packages/logic
       '@trpc/client':
         specifier: ^11.8.1
         version: 11.8.1(@trpc/server@11.8.1(typescript@6.0.2))(typescript@6.0.2)
@@ -350,6 +347,21 @@ importers:
         specifier: ^4.3.5
         version: 4.3.5
     devDependencies:
+      '@sammo-ts/game-api':
+        specifier: workspace:*
+        version: link:../game-api
+      '@sammo-ts/game-engine':
+        specifier: workspace:*
+        version: link:../game-engine
+      '@sammo-ts/gateway-api':
+        specifier: workspace:*
+        version: link:../gateway-api
+      '@sammo-ts/infra':
+        specifier: workspace:*
+        version: link:../../packages/infra
+      '@sammo-ts/logic':
+        specifier: workspace:*
+        version: link:../../packages/logic
       '@tailwindcss/vite':
         specifier: ^4.1.18
         version: 4.1.18(vite@7.3.0(@types/node@26.1.1)(jiti@2.6.1)(lightningcss@1.30.2)(tsx@4.21.0))
@@ -421,6 +433,9 @@ importers:
       '@prisma/client-runtime-utils':
         specifier: ^7.2.0
         version: 7.2.0
+      '@sammo-ts/logic':
+        specifier: workspace:*
+        version: link:../logic
       es-toolkit:
         specifier: ^1.43.0
         version: 1.43.0

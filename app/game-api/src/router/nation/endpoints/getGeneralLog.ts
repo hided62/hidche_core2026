@@ -1,7 +1,7 @@
 import { TRPCError } from '@trpc/server';
 import { z } from 'zod';
 
-import { LogCategory, LogScope } from '@sammo-ts/infra';
+import { LogCategory, LogScope } from '@sammo-ts/logic';
 
 import { authedProcedure } from '../../../trpc.js';
 import { getMyGeneral } from '../../shared/general.js';

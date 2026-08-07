@@ -1,7 +1,7 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
 
-import type { ScenarioInstallOptions } from '@sammo-ts/game-engine';
+import type { ScenarioInstallOptions } from '@sammo-ts/game-engine/scenario/scenarioSeeder.js';
 
 import { seedProfileDatabase, type AdminSeedUser } from './seedProfileDatabase.js';
 

@@ -7,7 +7,7 @@ const hasWorkspaceMarker = (dir: string): boolean =>
     WORKSPACE_MARKERS.some((marker) => fs.existsSync(path.join(dir, marker)));
 
 export const resolveWorkspaceRoot = (
-    startDir: string = process.env.GATEWAY_WORKSPACE_ROOT ?? process.cwd(),
+    startDir: string = process.env.GAME_WORKSPACE_ROOT ?? process.env.GATEWAY_WORKSPACE_ROOT ?? process.cwd(),
     maxDepth = 6
 ): string => {
     let current = path.resolve(startDir);

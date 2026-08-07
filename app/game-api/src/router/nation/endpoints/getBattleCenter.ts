@@ -1,6 +1,6 @@
 import { TRPCError } from '@trpc/server';
 
-import { LogCategory } from '@sammo-ts/infra';
+import { LogCategory } from '@sammo-ts/logic';
 
 import { accessAuthedProcedure } from '../../../trpc.js';
 import { getMyGeneral } from '../../shared/general.js';

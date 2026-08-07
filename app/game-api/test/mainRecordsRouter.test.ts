@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 
 import type { GameSessionTokenPayload } from '@sammo-ts/common/auth/gameToken';
-import { LogCategory, LogScope } from '@sammo-ts/infra';
+import { LogCategory, LogScope } from '@sammo-ts/logic';
 
 import type { DatabaseClient, GameApiContext } from '../src/context.js';
 import { appRouter } from '../src/router.js';

@@ -4,6 +4,7 @@ import type { City, General, GeneralTriggerState, Nation } from '@sammo-ts/logic
 import type { GeneralActionModule } from '@sammo-ts/logic/actionModules/general.js';
 import type { ActionLogger } from '@sammo-ts/logic/logging/actionLogger.js';
 import type { LogEntryDraft } from '@sammo-ts/logic/logging/types.js';
+import type { TracePort } from '@sammo-ts/logic/ports/trace.js';
 import type { UnitSetDefinition } from '@sammo-ts/logic/world/types.js';
 import type { WarActionModule } from './actions.js';
 import type { WarTriggerRegistry } from './triggers.js';
@@ -194,6 +195,7 @@ export interface WarAftermathInput<TriggerState extends GeneralTriggerState = Ge
     rng?: RandUtil;
     generalActionModules?: ReadonlyArray<GeneralActionModule<TriggerState> | null | undefined>;
     calcNationTechGain?: (context: WarAftermathTechContext) => number;
+    trace?: TracePort;
 }
 
 export interface WarAftermathOutcome<TriggerState extends GeneralTriggerState = GeneralTriggerState> {

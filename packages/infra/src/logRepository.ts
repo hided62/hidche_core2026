@@ -1,4 +1,6 @@
-import { LogCategory, LogScope, type GamePrisma, type GamePrismaClient } from './gamePrisma.js';
+import { LogCategory, LogScope } from '@sammo-ts/logic';
+
+import type { GamePrisma, GamePrismaClient } from './gamePrisma.js';
 
 export interface LogQueryOptions {
     limit?: number;

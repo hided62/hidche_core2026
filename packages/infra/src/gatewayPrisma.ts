@@ -1,10 +1,5 @@
 import { PrismaClient as GatewayPrismaClient } from '../prisma/generated/gateway/index.js';
-export {
-    GatewayBuildStatus,
-    GatewayProfileStatus,
-    OAuthType,
-    Prisma as GatewayPrisma,
-} from '../prisma/generated/gateway/index.js';
+export { Prisma as GatewayPrisma } from '../prisma/generated/gateway/index.js';
 export type { PrismaClient as GatewayPrismaClient } from '../prisma/generated/gateway/index.js';
 
 import type { PostgresConfig, PostgresConnector } from './postgres.js';

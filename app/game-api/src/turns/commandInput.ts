@@ -7,7 +7,7 @@ import {
 import { asRecord, isRecord } from '@sammo-ts/common';
 import { z } from 'zod';
 
-import { loadTurnCommandProfile } from './turnCommandProfile.js';
+import { loadTurnCommandProfile } from '@sammo-ts/game-engine/turn/turnCommandProfile.js';
 
 export type TurnCommandOptionValue = string | number;
 

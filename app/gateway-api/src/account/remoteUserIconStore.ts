@@ -55,19 +55,14 @@ export class RemoteUserIconStore implements UserIconUploadStore {
                     input.body
                 ),
             },
-            body: input.body,
+            body: new Uint8Array(input.body),
         });
         if (!response.ok) {
             throw new Error(`Image repository upload failed with HTTP ${response.status}.`);
         }
         const picture = `users/core2026/${input.filename}`;
         const payload: unknown = await response.json();
-        if (
-            !payload ||
-            typeof payload !== 'object' ||
-            !('path' in payload) ||
-            payload.path !== `icons/${picture}`
-        ) {
+        if (!payload || typeof payload !== 'object' || !('path' in payload) || payload.path !== `icons/${picture}`) {
             throw new Error('Image repository returned an unexpected upload path.');
         }
         return { picture, publicUrl: `${this.publicBaseUrl.replace(/\/$/, '')}/${picture}` };

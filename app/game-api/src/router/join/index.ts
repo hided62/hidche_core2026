@@ -21,7 +21,7 @@ import {
     ConflictingTurnDaemonCommandError,
     RejectedNpcPossessionCommandError,
 } from '../../daemon/databaseTransport.js';
-import { NpcPossessionError, reserveNpcPossessionCandidates } from '@sammo-ts/game-engine';
+import { NpcPossessionError, reserveNpcPossessionCandidates } from '@sammo-ts/game-engine/turn/npcPossessionService.js';
 import { resolveNationScoutMessage } from '../nation/shared.js';
 
 const resolveSelectionCommandResult = (

@@ -1,7 +1,7 @@
 import type { GeneralAI } from '../core.js';
 import { GAME_TICKS_PER_TURN } from '@sammo-ts/common';
 import { calcCityDevRatio } from '../../aiUtils.js';
-import { searchAllDistanceByCityList } from '../../distance.js';
+import { searchAllDistanceByCityList } from '@sammo-ts/logic/world/distance.js';
 
 export const do천도 = (ai: GeneralAI) => {
     if (!ai.nation || !ai.nation.capitalCityId) {

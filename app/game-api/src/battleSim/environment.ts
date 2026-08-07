@@ -1,6 +1,6 @@
 import type { WorldStateRow } from '../context.js';
 import type { BattleSimJobPayload, BattleSimRequestPayload } from './types.js';
-import { loadUnitSetDefinitionByName } from './unitSetLoader.js';
+import { loadUnitSetDefinitionByName } from '@sammo-ts/game-engine/scenario/unitSetLoader.js';
 import { normalizeScenarioEffect, type ScenarioEffectKey, type WarEngineConfig } from '@sammo-ts/logic';
 import { asRecord } from '@sammo-ts/common';
 import type { UnitSetDefinition } from '@sammo-ts/logic';

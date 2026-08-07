@@ -1,6 +1,6 @@
 import { TRPCError } from '@trpc/server';
 import { asNumber, asRecord } from '@sammo-ts/common';
-import { LogCategory, LogScope } from '@sammo-ts/infra';
+import { LogCategory, LogScope } from '@sammo-ts/logic';
 import { z } from 'zod';
 
 import type { GameApiContext } from '../../context.js';

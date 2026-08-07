@@ -1,4 +1,6 @@
-import type { GamePrisma, LogCategory, LogScope } from './gamePrisma.js';
+import type { LogCategory, LogScope } from '@sammo-ts/logic';
+
+import type { GamePrisma } from './gamePrisma.js';
 
 export type JsonValue = GamePrisma.JsonValue;
 export type InputJsonValue = GamePrisma.InputJsonValue;

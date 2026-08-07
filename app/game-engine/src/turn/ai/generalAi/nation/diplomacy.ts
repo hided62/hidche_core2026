@@ -1,6 +1,6 @@
 import type { GeneralAI } from '../core.js';
 import { asRecord, joinYearMonth, parseYearMonth, readMetaNumber } from '../../aiUtils.js';
-import { isNeighbor } from '../../distance.js';
+import { isNeighbor } from '@sammo-ts/logic/world/distance.js';
 import { resolveNationIncome } from './helpers.js';
 
 const isTechLimited = (ai: GeneralAI, tech: number): boolean => {

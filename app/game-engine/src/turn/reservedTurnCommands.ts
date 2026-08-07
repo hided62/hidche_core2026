@@ -15,6 +15,7 @@ import {
     loadActionModuleBundle,
 } from '@sammo-ts/logic';
 import { asRecord } from '@sammo-ts/common';
+import { createRuntimeTrace } from './runtimeTrace.js';
 
 // legacy GameConstBase 기본값
 const DEFAULT_GENERAL_GOLD = 1000;
@@ -80,6 +81,7 @@ export const buildCommandEnv = (config: ScenarioConfig, unitSet?: UnitSetDefinit
     const constValues = asRecord(config.const);
 
     return {
+        trace: createRuntimeTrace(),
         ...(unitSet ? { unitSet } : {}),
         scenarioEffect: config.environment.scenarioEffect ?? null,
         develCost: resolveNumber(constValues, ['develCost', 'develcost', 'develrate'], 0),

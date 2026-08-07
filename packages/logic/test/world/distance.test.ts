@@ -1,5 +1,13 @@
 import { describe, expect, it } from 'vitest';
-import { getCityDistance, searchDistance, searchDistanceEntries } from '@sammo-ts/logic/world/distance.js';
+import {
+    getCityDistance,
+    isNeighbor,
+    searchAllDistanceByCityList,
+    searchAllDistanceByNationList,
+    searchDistance,
+    searchDistanceEntries,
+} from '@sammo-ts/logic/world/distance.js';
+import type { City } from '@sammo-ts/logic';
 import type { MapDefinition } from '@sammo-ts/logic/world/types.js';
 
 describe('World Distance', () => {
@@ -85,6 +93,29 @@ describe('World Distance', () => {
                 [10, 1],
                 [2, 1],
             ]);
+        });
+    });
+
+    describe('AI distance projections', () => {
+        const cities = [
+            { id: 1, nationId: 1, supplyState: 1 },
+            { id: 2, nationId: 2, supplyState: 1 },
+            { id: 3, nationId: 1, supplyState: 0 },
+        ] as City[];
+
+        it('projects pairwise distances only across the selected city set', () => {
+            expect(searchAllDistanceByCityList(mockMap, [1, 2, 4])).toEqual({
+                1: { 1: 0, 2: 1, 4: 2 },
+                2: { 1: 1, 2: 0, 4: 1 },
+                4: { 1: 2, 2: 1, 4: 0 },
+            });
+            expect(searchAllDistanceByNationList(mockMap, cities, [1], true)).toEqual({ 1: { 1: 0 } });
+        });
+
+        it('checks supplied and unsupplied borders with the requested policy', () => {
+            expect(isNeighbor(mockMap, cities, 1, 2, true)).toBe(true);
+            expect(isNeighbor(mockMap, cities, 1, 2, false)).toBe(true);
+            expect(isNeighbor(mockMap, cities, 1, 1, true)).toBe(false);
         });
     });
 });

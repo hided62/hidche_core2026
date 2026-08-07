@@ -1,8 +1,15 @@
 import { TRPCError } from '@trpc/server';
 
 import { asRecord } from '@sammo-ts/common';
-import { LogCategory, LogScope } from '@sammo-ts/infra';
-import { getGoldIncome, getOutcome, getRiceIncome, getWallIncome, getWarGoldIncome } from '@sammo-ts/logic';
+import {
+    getGoldIncome,
+    getOutcome,
+    getRiceIncome,
+    getWallIncome,
+    getWarGoldIncome,
+    LogCategory,
+    LogScope,
+} from '@sammo-ts/logic';
 
 import { authedProcedure } from '../../../trpc.js';
 import { getMyGeneral } from '../../shared/general.js';

@@ -1,5 +1,5 @@
 import { PrismaClient as GamePrismaClient } from '../prisma/generated/game/index.js';
-export { LogCategory, LogScope, Prisma as GamePrisma } from '../prisma/generated/game/index.js';
+export { Prisma as GamePrisma } from '../prisma/generated/game/index.js';
 export type { PrismaClient as GamePrismaClient } from '../prisma/generated/game/index.js';
 
 import type { PostgresConfig, PostgresConnector } from './postgres.js';

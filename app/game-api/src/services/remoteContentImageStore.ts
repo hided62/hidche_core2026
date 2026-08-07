@@ -37,7 +37,7 @@ export class RemoteContentImageStore implements ContentImageUploadStore {
                 'x-image-request-id': requestId,
                 'x-image-signature': signature,
             },
-            body: input.body,
+            body: new Uint8Array(input.body),
         });
         if (!response.ok) {
             throw new Error(`Image repository upload failed with HTTP ${response.status}.`);

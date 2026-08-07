@@ -30,7 +30,7 @@ import {
     valueFit,
     withCanonicalArgumentAliases,
 } from '../aiUtils.js';
-import { searchAllDistanceByNationList } from '../distance.js';
+import { searchAllDistanceByNationList } from '@sammo-ts/logic/world/distance.js';
 import { generalActionHandlers } from '../generalAiGeneralActions.js';
 import { nationActionHandlers } from '../generalAiNationActions.js';
 import { resolveConstraintEnv, type ConstraintEnv } from './constraint.js';
