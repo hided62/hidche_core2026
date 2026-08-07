@@ -9,6 +9,7 @@ const beginPattern = /REF-COMPAT:BEGIN ([a-z0-9]+(?:-[a-z0-9]+)*)/g;
 const endPattern = /REF-COMPAT:END ([a-z0-9]+(?:-[a-z0-9]+)*)/g;
 const inventoryPattern = /<!-- REF-COMPAT-ID: ([a-z0-9]+(?:-[a-z0-9]+)*) -->/g;
 const sourceExtensions = new Set(['.ts', '.tsx', '.vue', '.js', '.mjs', '.cjs']);
+const ignoredDirectories = new Set(['node_modules', 'dist', 'coverage', '.turbo']);
 
 const collectFiles = async (directory) => {
     const entries = await readdir(directory, { withFileTypes: true });
@@ -16,6 +17,9 @@ const collectFiles = async (directory) => {
     for (const entry of entries) {
         const absolute = path.join(directory, entry.name);
         if (entry.isDirectory()) {
+            if (ignoredDirectories.has(entry.name)) {
+                continue;
+            }
             files.push(...(await collectFiles(absolute)));
         } else if (sourceExtensions.has(path.extname(entry.name))) {
             files.push(absolute);
