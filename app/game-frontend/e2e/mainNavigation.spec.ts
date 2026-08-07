@@ -4,6 +4,7 @@ import { expect, test, type Page, type Route } from '@playwright/test';
 
 const response = (data: unknown) => ({ result: { data } });
 const artifactRoot = process.env.MAIN_NAVIGATION_ARTIFACT_DIR;
+const autoRefreshArtifactRoot = process.env.AUTO_REFRESH_ARTIFACT_DIR;
 const basePath = `/${(process.env.PLAYWRIGHT_GAME_BASE_PATH ?? 'che').replace(/^\/+|\/+$/g, '')}`;
 const gameProfile = process.env.PLAYWRIGHT_GAME_PROFILE ?? 'che:default';
 const operationNames = (route: Route) =>
@@ -17,6 +18,8 @@ type NavigationFixture = {
     npcMode: number;
     generalMeCalls: number;
     operations: string[];
+    generalName?: string;
+    refreshDelayMs?: number;
 };
 
 const emptyMessages = (permission: number) => ({
@@ -34,7 +37,7 @@ const emptyMessages = (permission: number) => ({
 const generalContext = (state: NavigationFixture) => ({
     general: {
         id: 7,
-        name: '메뉴검증장수',
+        name: state.generalName ?? '메뉴검증장수',
         nationId: 1,
         cityId: 1,
         troopId: 0,
@@ -124,6 +127,9 @@ const installFixture = async (page: Page, state: NavigationFixture) => {
     await page.route(`**${basePath}/api/trpc/**`, async (route) => {
         const operations = operationNames(route);
         state.operations.push(...operations);
+        if (operations.includes('general.me') && state.generalMeCalls > 0 && state.refreshDelayMs) {
+            await new Promise((resolve) => setTimeout(resolve, state.refreshDelayMs));
+        }
         const results = operations.map((operation) => {
             if (operation === 'auth.status') return response({ ok: true });
             if (operation === 'lobby.info') {
@@ -202,6 +208,36 @@ const installFixture = async (page: Page, state: NavigationFixture) => {
             status: 200,
             contentType: 'application/json',
             body: JSON.stringify(operations.length === 1 ? results[0] : results),
+        });
+    });
+};
+
+const installRealtimeHarness = async (page: Page) => {
+    await page.addInitScript(() => {
+        class TestEventSource extends EventTarget {
+            static latest: TestEventSource | null = null;
+            readonly url: string;
+
+            constructor(url: string | URL) {
+                super();
+                this.url = url.toString();
+                TestEventSource.latest = this;
+                queueMicrotask(() => this.dispatchEvent(new Event('open')));
+            }
+
+            close() {
+                if (TestEventSource.latest === this) TestEventSource.latest = null;
+            }
+        }
+
+        Object.defineProperty(window, 'EventSource', { configurable: true, value: TestEventSource });
+        Object.defineProperty(window, '__emitMainRealtime', {
+            configurable: true,
+            value: (type: string, payload: unknown) => {
+                TestEventSource.latest?.dispatchEvent(
+                    new MessageEvent(type, { data: JSON.stringify({ type, ...((payload as object) ?? {}) }) })
+                );
+            },
         });
     });
 };
@@ -475,4 +511,119 @@ test('mobile single document refreshes once and preserves tokens on lobby return
         profile: gameProfile,
     });
     expect(state.operations).not.toContain('auth.logout');
+});
+
+test('turn realtime refresh keeps rendered panels mounted and patches only changed state', async ({ page }) => {
+    const state: NavigationFixture = {
+        officerLevel: 5,
+        permission: 2,
+        nationLevel: 3,
+        stage: 0,
+        npcMode: 1,
+        generalMeCalls: 0,
+        operations: [],
+        refreshDelayMs: 300,
+    };
+    await installRealtimeHarness(page);
+    await installFixture(page, state);
+    await page.setViewportSize({ width: 1200, height: 900 });
+    await waitForMain(page);
+    await expect(page.locator('.general-title')).toContainText('메뉴검증장수');
+
+    await page.evaluate(() => {
+        const general = document.querySelector('[data-main-target="general"]');
+        const city = document.querySelector('[data-main-target="city"]');
+        if (!general || !city) throw new Error('refresh probe targets missing');
+        const probe = {
+            general,
+            city,
+            generalMutations: 0,
+            cityMutations: 0,
+            vueMeasures: [] as string[],
+        };
+        new MutationObserver((records) => (probe.generalMutations += records.length)).observe(general, {
+            childList: true,
+            subtree: true,
+            characterData: true,
+        });
+        new MutationObserver((records) => (probe.cityMutations += records.length)).observe(city, {
+            childList: true,
+            subtree: true,
+            characterData: true,
+        });
+        Object.defineProperty(window, '__mainRefreshProbe', { configurable: true, value: probe });
+        performance.clearMarks();
+        performance.clearMeasures();
+        new PerformanceObserver((entries) => {
+            probe.vueMeasures.push(...entries.getEntries().map((entry) => entry.name));
+        }).observe({ entryTypes: ['measure'] });
+    });
+
+    const callsBeforeRefresh = state.generalMeCalls;
+    state.generalName = '부드럽게갱신된장수';
+    await page.evaluate(() => {
+        const emit = (window as unknown as { __emitMainRealtime: (type: string, payload: unknown) => void })
+            .__emitMainRealtime;
+        emit('turnCompleted', { year: 185, month: 2, processedAt: new Date().toISOString() });
+        emit('turnCompleted', { year: 185, month: 2, processedAt: new Date().toISOString() });
+        emit('turnCompleted', { year: 185, month: 2, processedAt: new Date().toISOString() });
+    });
+
+    await expect.poll(() => state.generalMeCalls).toBe(callsBeforeRefresh + 1);
+    await expect(page.locator('[data-main-target="general"] .skeleton-line')).toHaveCount(0);
+    await expect(page.locator('[data-main-target="city"] .skeleton-line')).toHaveCount(0);
+    await expect(page.getByRole('button', { name: '갱 신' })).toHaveAttribute('aria-busy', 'true');
+    if (autoRefreshArtifactRoot) {
+        await mkdir(resolve(autoRefreshArtifactRoot), { recursive: true });
+        await page.screenshot({ path: resolve(autoRefreshArtifactRoot, 'auto-refresh-in-flight.png'), fullPage: true });
+    }
+
+    await expect.poll(() => state.generalMeCalls, { timeout: 5_000 }).toBe(callsBeforeRefresh + 2);
+    await expect(page.locator('.general-title')).toContainText('부드럽게갱신된장수');
+    await expect(page.getByRole('button', { name: '갱 신' })).toHaveAttribute('aria-busy', 'false');
+
+    const profile = await page.evaluate(() => {
+        const probe = (
+            window as unknown as {
+                __mainRefreshProbe: {
+                    general: Element;
+                    city: Element;
+                    generalMutations: number;
+                    cityMutations: number;
+                    vueMeasures: string[];
+                };
+            }
+        ).__mainRefreshProbe;
+        return {
+            generalMounted: probe.general === document.querySelector('[data-main-target="general"]'),
+            cityMounted: probe.city === document.querySelector('[data-main-target="city"]'),
+            generalMutations: probe.generalMutations,
+            cityMutations: probe.cityMutations,
+            vueMeasures: probe.vueMeasures.filter((name) => /render|patch/u.test(name)),
+        };
+    });
+    expect(profile.generalMounted).toBe(true);
+    expect(profile.cityMounted).toBe(true);
+    expect(profile.generalMutations).toBeGreaterThan(0);
+    expect(profile.cityMutations).toBe(0);
+    expect(profile.vueMeasures.some((name) => name.includes('GeneralBasicCard'))).toBe(true);
+    expect(profile.vueMeasures.some((name) => name.includes('CityBasicCard'))).toBe(false);
+    if (autoRefreshArtifactRoot) {
+        await Promise.all([
+            page.screenshot({ path: resolve(autoRefreshArtifactRoot, 'auto-refresh-complete.png'), fullPage: true }),
+            writeFile(
+                resolve(autoRefreshArtifactRoot, 'profile.json'),
+                `${JSON.stringify(
+                    {
+                        emittedTurnEvents: 3,
+                        refreshRequests: state.generalMeCalls - callsBeforeRefresh,
+                        inFlightSkeletons: { general: 0, city: 0 },
+                        ...profile,
+                    },
+                    null,
+                    2
+                )}\n`
+            ),
+        ]);
+    }
 });
