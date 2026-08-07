@@ -4,7 +4,9 @@ import { LogCategory, LogFormat, LogScope, type MapDefinition } from '@sammo-ts/
 import type { InMemoryTurnWorld } from './inMemoryWorld.js';
 import type { MonthlyEventActionHandler } from './monthlyEventHandler.js';
 
+// REF-COMPAT:BEGIN ref-int-column-write-rounding
 const roundLegacyIntegerColumn = (value: number): number => Math.round(value);
+// REF-COMPAT:END ref-int-column-write-rounding
 
 const resolveOfficerCity = (meta: Record<string, unknown>): number => {
     const camel = meta.officerCity;
@@ -82,9 +84,11 @@ export const createUpdateCitySupplyHandler = (options: {
                 wall: roundLegacyIntegerColumn(city.wall * 0.9),
                 meta: {
                     ...city.meta,
+                    // REF-COMPAT:BEGIN ref-mariadb-float-boundary
                     // 레거시 FLOAT column에 SQL 곱셈 결과가 먼저 저장된 뒤
                     // 민심 30 threshold를 판정하므로 float32 양자화를 보존한다.
                     trust: Math.fround(trust * 0.9),
+                    // REF-COMPAT:END ref-mariadb-float-boundary
                 },
             });
             if (damaged) {

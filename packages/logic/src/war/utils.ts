@@ -11,6 +11,7 @@ export const clampMin = (value: number, min: number): number => (value < min ? m
 
 export const clampMax = (value: number, max: number): number => (value > max ? max : value);
 
+// REF-COMPAT:BEGIN ref-php-half-rounding
 // PHP's round() compensates for small binary floating-point drift around a
 // half boundary and rounds halves away from zero. War state is persisted to
 // integer columns through legacy Util::round(), so Math.round() is not enough:
@@ -28,6 +29,7 @@ export const round = (value: number): number => {
     const corrected = value + Math.sign(value) * Number.EPSILON * Math.max(1, Math.abs(value)) * 4;
     return corrected < 0 ? Math.ceil(corrected - 0.5) : Math.floor(corrected + 0.5);
 };
+// REF-COMPAT:END ref-php-half-rounding
 
 export const getMetaNumber = (meta: Record<string, TriggerValue>, key: string, fallback = 0): number => {
     const value = meta[key];

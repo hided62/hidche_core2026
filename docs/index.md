@@ -34,6 +34,8 @@ features:
 Gateway 배포는 [릴리스 운영 매뉴얼](./release-operations.md)을 따라 주세요.
 게임 진행 시각과 운영 벽시계의 경계는
 [게임 시계](./architecture/game-clock.md)에 설명합니다.
+Ref 전용 수치·저장 표현 보정과 제거 절차는
+[Ref 호환 shim 인벤토리](./ref-compatibility-shims.md)에 모아 둡니다.
 
 세부 문서는 다음 책임으로 나뉩니다.
 

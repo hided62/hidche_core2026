@@ -7,10 +7,12 @@ import type { InMemoryTurnWorld, TurnCalendarHandler } from './inMemoryWorld.js'
 const MAX_AVAILABLE_WAR_SETTING_COUNT = 10;
 const MONTHLY_AVAILABLE_WAR_SETTING_INCREMENT = 2;
 
+// REF-COMPAT:BEGIN ref-decimal-half-stabilization
 export const roundLegacyNationPowerValue = (value: number): number => {
     const stabilized = Number(value.toPrecision(15));
     return stabilized >= 0 ? Math.floor(stabilized + 0.5) : Math.ceil(stabilized - 0.5);
 };
+// REF-COMPAT:END ref-decimal-half-stabilization
 
 const readNumber = (value: unknown, fallback = 0): number => {
     if (typeof value === 'number' && Number.isFinite(value)) {

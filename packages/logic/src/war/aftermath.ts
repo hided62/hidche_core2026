@@ -50,12 +50,14 @@ const findReport = (reports: WarUnitReport[], predicate: (report: WarUnitReport)
 
 const getDeadCounter = (city: City): number => getMetaNumber(city.meta, META_DEAD, 0);
 
+// REF-COMPAT:BEGIN ref-dead-split-int-binding
 const increaseDeadCounter = (city: City, delta: number): void => {
     // Ref binds each `dead + %i` increment as an integer before MariaDB adds
     // it. Truncate each 40/60 percent split independently; rounding the
     // accumulated counter changes monthly recovery and war income.
     city.meta[META_DEAD] = getDeadCounter(city) + Math.trunc(delta);
 };
+// REF-COMPAT:END ref-dead-split-int-binding
 
 const isSupplyCity = (city: City): boolean => {
     const raw = city.meta.supply;
@@ -127,9 +129,11 @@ const applyNationTechGain = <TriggerState extends GeneralTriggerState>(
     const divisor = Math.max(config.initialNationGenLimit, total);
     const currentTech = getMetaNumber(nation.meta, 'tech', 0);
     const delta = gain / divisor;
+    // REF-COMPAT:BEGIN ref-mariadb-float-boundary
     // Ref executes `tech + delta` inside MariaDB for battle gains, so the
     // arithmetic starts from the stored binary32 value without a PHP text read.
     nation.meta.tech = Math.fround(currentTech + delta);
+    // REF-COMPAT:END ref-mariadb-float-boundary
     if ((process.env.CORE_WAR_TECH_TRACE_NATION_IDS?.split(',') ?? []).includes(String(nation.id))) {
         process.stdout.write(
             `WAR_TECH_TRACE ${JSON.stringify({ engine: 'core', nationId: nation.id, side: context.side, currentTech, baseGain, gain, total, effective, divisor, delta, storedTech: nation.meta.tech, attackerGeneralId: context.attackerReport.id })}\n`

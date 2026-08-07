@@ -5,6 +5,8 @@
  */
 import { readLegacyStoredFloat, toLegacyStoredFloat } from '@sammo-ts/logic/compat/legacyFloat.js';
 
+// REF-COMPAT:BEGIN ref-mariadb-float-boundary
 export const storeLegacyCityTrust = (value: number): number => toLegacyStoredFloat(value);
 
 export const readLegacyCityTrust = (value: number): number => readLegacyStoredFloat(value);
+// REF-COMPAT:END ref-mariadb-float-boundary

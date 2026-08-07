@@ -67,7 +67,9 @@ const resolveHiddenSeed = (world: InMemoryTurnWorld): string | number => {
     return typeof rawSeed === 'string' || typeof rawSeed === 'number' ? rawSeed : String(rawSeed);
 };
 
+// REF-COMPAT:BEGIN ref-int-column-write-rounding
 const roundLegacyIntegerColumn = (value: number): number => Math.round(value);
+// REF-COMPAT:END ref-int-column-write-rounding
 
 export const createRaiseDisasterHandler = (options: {
     getWorld: () => InMemoryTurnWorld | null;
@@ -134,7 +136,9 @@ export const createRaiseDisasterHandler = (options: {
             const securityRatio = clamp(city.security / city.securityMax / 0.8, 0, 1);
             const affectRatio = isGood ? 1.01 + securityRatio * 0.04 : 0.8 + securityRatio * 0.15;
             const trust = typeof city.meta.trust === 'number' ? city.meta.trust : 0;
+            // REF-COMPAT:BEGIN ref-mariadb-float-boundary
             const storedTrust = Math.fround(isGood ? Math.min(trust * affectRatio, 100) : trust * affectRatio);
+            // REF-COMPAT:END ref-mariadb-float-boundary
             world.updateCity(city.id, {
                 state: picked.stateCode,
                 population: roundLegacyIntegerColumn(

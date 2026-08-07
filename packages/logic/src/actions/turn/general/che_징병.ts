@@ -60,12 +60,14 @@ const DEFAULT_MIN_POP = 30000;
 const DEFAULT_TRUST = 50;
 const MIN_CREW = 100;
 
+// REF-COMPAT:BEGIN ref-php-half-rounding
 // PHP round() compensates for the small binary drift around a half boundary.
 // Ref then converts the result to int through Util::round().
 export const roundLegacyRecruitCost = (value: number): number => {
     const corrected = value + Math.sign(value) * Number.EPSILON * Math.max(1, Math.abs(value));
     return corrected < 0 ? Math.ceil(corrected - 0.5) : Math.floor(corrected + 0.5);
 };
+// REF-COMPAT:END ref-php-half-rounding
 
 export const ARGS_SCHEMA = z.preprocess(
     (raw) => {

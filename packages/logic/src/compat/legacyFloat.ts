@@ -1,3 +1,4 @@
+// REF-COMPAT:BEGIN ref-mariadb-float-boundary
 // MariaDB FLOAT stores binary32, but its text protocol exposes only six
 // significant decimal digits. Ref reads that text into PHP before every
 // command/battle update, so both boundaries are part of the game state.
@@ -27,3 +28,4 @@ export const readLegacyStoredFloat = (value: number): number => {
 
 export const addLegacyStoredFloat = (current: number, delta: number): number =>
     toLegacyStoredFloat(readLegacyStoredFloat(current) + delta);
+// REF-COMPAT:END ref-mariadb-float-boundary

@@ -7,12 +7,14 @@ import { resolveAppliedNationRate } from './nationTaxRate.js';
 
 type SemiAnnualResource = 'gold' | 'rice';
 
+// REF-COMPAT:BEGIN ref-decimal-half-stabilization
 const roundLegacyIntegerColumn = (value: number): number => {
     // MariaDB evaluates the decimal rate expression before ROUND(). Binary
     // arithmetic can instead produce values such as 2029.4999999999998.
     const stabilized = Number(value.toPrecision(15));
     return stabilized >= 0 ? Math.floor(stabilized + 0.5) : Math.ceil(stabilized - 0.5);
 };
+// REF-COMPAT:END ref-decimal-half-stabilization
 
 const parseResource = (args: readonly unknown[]): SemiAnnualResource => {
     const resource = args[0];
@@ -29,7 +31,9 @@ const resolveBasePopulationIncrease = (world: InMemoryTurnWorld): number => {
 
 const decayDomesticValue = (value: number): number => roundLegacyIntegerColumn(value * 0.99);
 
+// REF-COMPAT:BEGIN ref-mariadb-float-boundary
 export const storeLegacySemiAnnualTrust = (value: number): number => Math.fround(Math.max(0, Math.min(100, value)));
+// REF-COMPAT:END ref-mariadb-float-boundary
 
 const applyResourceMaintenance = (value: number, ratios: readonly [number, number][]): number => {
     if (value <= 1_000) {

@@ -150,11 +150,13 @@ const processIncomeForNation = (
             : getRiceIncome(incomeContext, nationCities, officerCounts, nation.capitalCityId ?? 0, nation.level) +
               getWallIncome(incomeContext, nationCities, officerCounts, nation.capitalCityId ?? 0, nation.level);
 
+    // REF-COMPAT:BEGIN ref-income-preflush-fraction
     // Ref calculates the payout ratio from the pre-persistence income value.
     // Half-unit income (for example 943.5) is therefore not rounded before
     // salaries are distributed, even though the integer nation column is
     // rounded when the final state is flushed to MariaDB.
     const incomeValue = income;
+    // REF-COMPAT:END ref-income-preflush-fraction
     const originOutcome = getOutcome(100, nationGenerals);
     const bill = resolveNationBill(nation);
     const outcome = Math.round((bill / 100) * originOutcome);

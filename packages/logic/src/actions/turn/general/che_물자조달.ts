@@ -25,7 +25,9 @@ interface ProcureContext<
 const ACTION_NAME = '물자조달';
 const ACTION_KEY = 'che_물자조달';
 
+// REF-COMPAT:BEGIN ref-int-column-write-rounding
 export const roundLegacyAccumulatedInteger = (current: number, delta: number): number => Math.round(current + delta);
+// REF-COMPAT:END ref-int-column-write-rounding
 
 export const resolveLegacyExperienceLevel = (experience: number): number =>
     Math.max(

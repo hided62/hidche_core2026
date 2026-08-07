@@ -390,10 +390,12 @@ export class WarUnitGeneral<
             nextExp *= 0.9;
         }
         const adjustedExp = this.actionPipeline.onCalcStat(this.getActionContext(), 'addDex', nextExp, { armType });
+        // REF-COMPAT:BEGIN ref-meekrodb-sql-precision
         // PHP interpolates floats into MeekroDB SQL with precision=14 before
         // MariaDB rounds the integer dex column. Normalize this accumulated
         // battle value at the same boundary (for example ...499999999996 -> .5).
         this.general.meta[key] = Number((base + adjustedExp).toPrecision(14));
+        // REF-COMPAT:END ref-meekrodb-sql-precision
     }
 
     public calcRiceConsumption(damage: number): number {
