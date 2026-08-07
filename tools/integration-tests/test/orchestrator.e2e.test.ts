@@ -564,6 +564,7 @@ describe('pm2 orchestrator e2e', () => {
         });
         await gatewayClient.admin.profiles.updateMeta.mutate({
             profileName,
+            reason: 'integration test setup',
             patch: {
                 localAccountGeneralCreationGraceDays: 7,
             },

@@ -231,19 +231,14 @@ export const accountRouter = router({
                 contentType: ICON_CONTENT_TYPES[extension]!,
                 body: buffer,
             });
-            let stored;
-            try {
-                stored = await ctx.users.addIconForWindow(
-                    user.id,
-                    uploaded.picture,
-                    0,
-                    now,
-                    new Date(now.getTime() - ICON_UPLOAD_COOLDOWN_MS),
-                    MAX_ACTIVE_ICONS
-                );
-            } catch (error) {
-                throw error;
-            }
+            const stored = await ctx.users.addIconForWindow(
+                user.id,
+                uploaded.picture,
+                0,
+                now,
+                new Date(now.getTime() - ICON_UPLOAD_COOLDOWN_MS),
+                MAX_ACTIVE_ICONS
+            );
             if (!stored.ok) {
                 if (stored.reason === 'LIMIT') {
                     throw new TRPCError({

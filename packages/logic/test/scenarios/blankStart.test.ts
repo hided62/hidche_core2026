@@ -166,8 +166,8 @@ describe('Blank Start Scenario', () => {
         const world = new InMemoryWorld(snapshot);
         const runner = new TestGameRunner(world, 189, 1);
 
-        const gen0 = world.getAllGenerals().find((g) => g.name === 'General_0')!;
-        const gen1 = world.getAllGenerals().find((g) => g.name === 'General_1')!;
+        const gen0 = world.getAllGenerals().find((g) => g.name.endsWith('General_0'))!;
+        const gen1 = world.getAllGenerals().find((g) => g.name.endsWith('General_1'))!;
 
         const foundNationDef = foundNationSpec.createDefinition(systemEnv);
         const uprisingDef = uprisingSpec.createDefinition(systemEnv);
@@ -288,7 +288,7 @@ describe('Blank Start Scenario', () => {
             options: { includeNeutralNation: true, defaultGeneralGold: 1000, defaultGeneralRice: 1000 },
         });
         const world = new InMemoryWorld(bootstrapResult.snapshot);
-        const gen0 = world.getAllGenerals().find((g) => g.name === 'General_0')!;
+        const gen0 = world.getAllGenerals().find((g) => g.name.endsWith('General_0'))!;
 
         // Setup monarch in wandering nation but city level is 1 (수)
         const newNation: Nation = {
@@ -334,7 +334,7 @@ describe('Blank Start Scenario', () => {
             options: { includeNeutralNation: true },
         });
         const world = new InMemoryWorld(bootstrapResult.snapshot);
-        const gen0 = world.getAllGenerals().find((g) => g.name === 'General_0')!;
+        const gen0 = world.getAllGenerals().find((g) => g.name.endsWith('General_0'))!;
 
         const foundNationDef = foundNationSpec.createDefinition(systemEnv);
         // Setup monarch and enough generals

@@ -62,6 +62,7 @@ const candidates = computed(() =>
 );
 const totalAmount = computed(() => summary.value?.totalAmount ?? 0);
 const myAmount = computed(() => summary.value?.myAmount ?? 0);
+const betTotals = computed(() => summary.value?.totals as Record<number, number> | undefined);
 const ratio = (id: number) => {
     const totals = summary.value?.totals as Record<number, number> | undefined;
     const amount = totals?.[id] ?? 0;
@@ -125,7 +126,7 @@ const placeBet = async (targetId: number) => {
             :participants="snapshot?.participants ?? []"
             :matches="snapshot?.matches ?? []"
             :winner-id="snapshot?.state?.winnerId"
-            :bet-totals="summary?.totals as Record<number, number> | undefined"
+            :bet-totals="betTotals"
             :total-bet="totalAmount"
             :show-legend="false"
             force-desktop

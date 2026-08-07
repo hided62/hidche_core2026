@@ -278,6 +278,7 @@ describe('auction integration flow', () => {
         });
         await gatewayClient.admin.profiles.updateMeta.mutate({
             profileName: 'che:908',
+            reason: 'integration test setup',
             patch: {
                 localAccountGeneralCreationGraceDays: 7,
             },

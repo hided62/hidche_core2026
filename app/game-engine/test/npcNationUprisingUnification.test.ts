@@ -417,10 +417,17 @@ describe('NPC 건국/통일 장기 시뮬레이션', () => {
                 undefined,
                 observeProfileMonth
             );
-            memoryProfiler?.sample('all-cities-occupied');
-
+            await runUntil(
+                (current) =>
+                    world.listCities().every((city) => city.nationId > 0) ||
+                    current.currentYear > 184 ||
+                    (current.currentYear === 184 && current.currentMonth >= 6),
+                undefined,
+                observeProfileMonth
+            );
             const neutralCities = world.listCities().filter((city) => city.nationId <= 0);
             expect(neutralCities.length).toBe(0);
+            memoryProfiler?.sample('all-cities-occupied');
 
             const hasHighOfficer = world
                 .listGenerals()
@@ -569,6 +576,18 @@ describe('NPC 건국/통일 장기 시뮬레이션', () => {
                 prevNationCount = activeNationCount;
 
                 if (activeNationCount === 1 && !unifiedAt) {
+                    const currentState = world.getState();
+                    const currentMeta = currentState.meta as Record<string, unknown>;
+                    // The processor intentionally stops calendar advancement after unification.
+                    // Waiting for another month from this state would rerun due generals forever.
+                    if ((currentMeta.isUnited ?? currentMeta.isunited ?? 0) !== 0) {
+                        unifiedAt = {
+                            year: currentState.currentYear,
+                            month: currentState.currentMonth,
+                        };
+                        memoryProfiler?.sample('unified');
+                        break;
+                    }
                     const nextMonth = addMonths(world.getState().currentYear, world.getState().currentMonth, 1);
                     await runUntil(
                         (current) =>

@@ -130,8 +130,8 @@ const chiefCenter = {
 
 const install = async (page: Page, rejectGeneral = false) => {
     const requests: unknown[] = [];
-    let generalTurns = turns(30);
-    let nationTurns = turns(12);
+    const generalTurns = turns(30);
+    const nationTurns = turns(12);
     let generalRevision = 0;
     let nationRevision = 0;
     await page.addInitScript((profile) => {

@@ -265,9 +265,9 @@ describe('Reserved Turn Execution', () => {
 
         // 3. Define Reserved Turns
         // This is "Setting all generals' reserved turns"
-        const gen0 = world.getAllGenerals().find((g) => g.name === 'General_0')!;
-        const gen1 = world.getAllGenerals().find((g) => g.name === 'General_1')!;
-        const gen2 = world.getAllGenerals().find((g) => g.name === 'General_2')!;
+        const gen0 = world.getAllGenerals().find((g) => g.name.endsWith('General_0'))!;
+        const gen1 = world.getAllGenerals().find((g) => g.name.endsWith('General_1'))!;
+        const gen2 = world.getAllGenerals().find((g) => g.name.endsWith('General_2'))!;
 
         const reservedTurns: ReservedTurnMap = {
             [gen0.id]: [

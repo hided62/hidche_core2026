@@ -178,6 +178,7 @@ describe('CreateManyNPC monthly action', () => {
               "dex4": 0,
               "dex5": 0,
               "killturn": 323,
+              "legacyScanOrder": 1,
               "npcType": 3,
               "npc_org": 3,
               "specage": 27,

@@ -208,6 +208,7 @@ describe('actual tournament lifecycle', () => {
         });
         await gatewayClient.admin.profiles.updateMeta.mutate({
             profileName: 'che:908',
+            reason: 'integration test setup',
             patch: {
                 localAccountGeneralCreationGraceDays: 7,
             },

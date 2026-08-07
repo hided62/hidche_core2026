@@ -242,6 +242,7 @@ describe('integration initialization flow', () => {
         });
         await gatewayClient.admin.profiles.updateMeta.mutate({
             profileName: 'che:2',
+            reason: 'integration test setup',
             patch: {
                 localAccountGeneralCreationGraceDays: 7,
             },
