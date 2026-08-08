@@ -3,6 +3,7 @@ import { computed, onMounted, onUnmounted, ref, watch } from 'vue';
 import { RouterLink, useRoute, useRouter } from 'vue-router';
 import PanelCard from '../components/ui/PanelCard.vue';
 import SkeletonLines from '../components/ui/SkeletonLines.vue';
+import MapViewer from '../components/main/MapViewer.vue';
 import { trpc } from '../utils/trpc';
 import { useSessionStore } from '../stores/session';
 import { cityLevelMap, formatOfficerLevelText, regionMap } from '../utils/nationFormat';
@@ -15,6 +16,9 @@ type JoinInput = Parameters<typeof trpc.join.createGeneral.mutate>[0];
 type PossessReservation = Awaited<ReturnType<typeof trpc.join.listPossessCandidates.mutate>>;
 type PossessCandidate = PossessReservation['candidates'][number];
 type NpcGeneralList = Awaited<ReturnType<typeof trpc.public.getNpcList.query>>;
+type PublicMap = Awaited<ReturnType<typeof trpc.public.getCachedMap.query>>;
+type MapLayout = Awaited<ReturnType<typeof trpc.public.getMapLayout.query>>;
+type PublicGeneral = Awaited<ReturnType<typeof trpc.public.getGeneralList.query>>[number];
 type NpcGeneralRow = NpcGeneralList['generals'][number] & {
     reservationState: 0 | 1 | 2;
     keepCount: number | null;
@@ -45,6 +49,8 @@ const submitting = ref(false);
 const joinConfig = ref<JoinConfig | null>(null);
 const accountIcons = computed(() => joinConfig.value?.user.icons ?? []);
 const activeTab = ref<'create' | 'possess'>('create');
+const contextTab = ref<'invitation' | 'map' | 'generals'>('invitation');
+const inheritOpen = ref(false);
 const pendingJoinStorageKey = 'sammo-join-create-pending-action';
 const pendingPossessStorageKey = 'sammo-npc-possess-pending-action';
 
@@ -178,6 +184,16 @@ const npcGeneralList = ref<NpcGeneralList | null>(null);
 const npcGeneralListLoading = ref(false);
 const npcGeneralListError = ref('');
 const npcGeneralListVisibleCount = ref(50);
+const publicMap = ref<PublicMap | null>(null);
+const mapLayout = ref<MapLayout | null>(null);
+const mapLoaded = ref(false);
+const mapLoading = ref(false);
+const mapError = ref('');
+const publicGenerals = ref<PublicGeneral[]>([]);
+const publicGeneralsLoaded = ref(false);
+const publicGeneralsLoading = ref(false);
+const publicGeneralsError = ref('');
+const publicGeneralFilter = ref('');
 let npcTimer: number | null = null;
 
 const npcCandidates = computed<PossessCandidate[]>(() => npcReservation.value?.candidates ?? []);
@@ -225,6 +241,17 @@ const npcGeneralRows = computed<NpcGeneralRow[]>(() => {
         );
 });
 const visibleNpcGeneralRows = computed(() => npcGeneralRows.value.slice(0, npcGeneralListVisibleCount.value));
+const filteredPublicGenerals = computed(() => {
+    const keyword = publicGeneralFilter.value.trim().toLocaleLowerCase('ko-KR');
+    if (!keyword) {
+        return publicGenerals.value;
+    }
+    return publicGenerals.value.filter(
+        (general) =>
+            general.name.toLocaleLowerCase('ko-KR').includes(keyword) ||
+            general.nationName.toLocaleLowerCase('ko-KR').includes(keyword)
+    );
+});
 const npcValidColor = computed(() => {
     const remaining = npcValidUntilMs.value - nowMs.value;
     if (remaining > 30_000) return '#ffffff';
@@ -542,9 +569,55 @@ const loadNpcGeneralList = async () => {
     }
 };
 
+const loadPublicMap = async () => {
+    if (mapLoading.value || mapLoaded.value) {
+        return;
+    }
+    mapLoading.value = true;
+    mapError.value = '';
+    try {
+        const [map, layout] = await Promise.all([trpc.public.getCachedMap.query(), trpc.public.getMapLayout.query()]);
+        publicMap.value = map;
+        mapLayout.value = layout;
+        mapLoaded.value = true;
+    } catch (err) {
+        mapError.value = err instanceof Error ? err.message : 'public_map_failed';
+    } finally {
+        mapLoading.value = false;
+    }
+};
+
+const loadPublicGenerals = async () => {
+    if (publicGeneralsLoading.value || publicGeneralsLoaded.value) {
+        return;
+    }
+    publicGeneralsLoading.value = true;
+    publicGeneralsError.value = '';
+    try {
+        publicGenerals.value = await trpc.public.getGeneralList.query();
+        publicGeneralsLoaded.value = true;
+    } catch (err) {
+        publicGeneralsError.value = err instanceof Error ? err.message : 'public_general_list_failed';
+    } finally {
+        publicGeneralsLoading.value = false;
+    }
+};
+
+const onInheritanceToggle = (event: Event) => {
+    inheritOpen.value = (event.currentTarget as HTMLDetailsElement).open;
+};
+
 watch(activeTab, (value) => {
     if (value === 'possess' && !npcReservation.value) {
         void loadNpcCandidates(false);
+    }
+});
+
+watch(contextTab, (value) => {
+    if (value === 'map') {
+        void loadPublicMap();
+    } else if (value === 'generals') {
+        void loadPublicGenerals();
     }
 });
 
@@ -596,98 +669,105 @@ onUnmounted(() => {
             <SkeletonLines :lines="4" />
         </div>
 
-        <section v-else-if="activeTab === 'create'" class="join-grid">
-            <PanelCard title="국가 임관 권유">
-                <div v-if="nationList.length === 0" class="muted">국가 정보가 아직 준비되지 않았습니다.</div>
-                <div v-else class="nation-list">
-                    <div v-for="nation in nationList" :key="nation.id" class="nation-card">
-                        <div class="nation-name" :style="{ backgroundColor: nation.color }">{{ nation.name }}</div>
-                        <div class="nation-message">
-                            {{ nation.scoutMessage ?? '권유문 없음' }}
-                        </div>
-                    </div>
-                </div>
-            </PanelCard>
-
-            <PanelCard title="장수 기본 정보" subtitle="능력치와 성격을 지정합니다.">
-                <div class="form-grid">
-                    <label class="form-field">
-                        <span>장수명</span>
-                        <input
-                            v-if="joinConfig?.rules.allowCustomName"
-                            v-model="form.name"
-                            type="text"
-                            class="form-input"
-                        />
-                        <span v-else>무작위</span>
-                    </label>
-                    <label class="form-field">
-                        <span>성격</span>
-                        <select v-model="form.character" class="form-input">
-                            <option v-for="option in personalities" :key="option.key" :value="option.key">
-                                {{ option.name }}
-                            </option>
-                        </select>
-                        <small class="muted">{{ personalities.find((p) => p.key === form.character)?.info }}</small>
-                    </label>
-                </div>
-
-                <div class="stat-grid">
-                    <label class="form-field">
-                        <span>통솔</span>
-                        <input v-model.number="form.leadership" type="number" class="form-input" />
-                    </label>
-                    <label class="form-field">
-                        <span>무력</span>
-                        <input v-model.number="form.strength" type="number" class="form-input" />
-                    </label>
-                    <label class="form-field">
-                        <span>지력</span>
-                        <input v-model.number="form.intel" type="number" class="form-input" />
-                    </label>
-                </div>
-
-                <div v-if="accountIcons.length" class="icon-choice">
-                    <div class="bonus-title">전용 아이콘 선택</div>
-                    <label class="icon-option"> <input v-model="form.pic" type="checkbox" /> 전용 아이콘 사용 </label>
-                    <div v-if="form.pic" class="icon-list" role="radiogroup" aria-label="전용 아이콘 선택">
-                        <label v-for="icon in accountIcons" :key="icon.id" class="icon-card">
-                            <input v-model="form.iconId" type="radio" :value="icon.id" />
-                            <img
-                                :src="resolveGeneralIconUrl({ picture: icon.picture, imageServer: icon.imageServer })"
-                                width="64"
-                                height="64"
-                                alt=""
-                                @error="useDefaultGeneralIcon"
+        <section v-else-if="activeTab === 'create'" class="join-flow">
+            <PanelCard title="장수 기본 정보" subtitle="장수명과 성격, 통솔·무력·지력을 먼저 결정하세요.">
+                <form class="create-form" @submit.prevent="submitJoin">
+                    <div class="identity-grid">
+                        <label class="form-field primary-field">
+                            <span>장수명</span>
+                            <input
+                                v-if="joinConfig?.rules.allowCustomName"
+                                v-model="form.name"
+                                type="text"
+                                class="form-input"
                             />
+                            <span v-else>무작위</span>
+                        </label>
+                        <label class="form-field primary-field">
+                            <span>성격</span>
+                            <select v-model="form.character" class="form-input">
+                                <option v-for="option in personalities" :key="option.key" :value="option.key">
+                                    {{ option.name }}
+                                </option>
+                            </select>
+                            <small class="muted">{{ personalities.find((p) => p.key === form.character)?.info }}</small>
                         </label>
                     </div>
-                </div>
 
-                <div class="stat-actions">
-                    <button @click="applyRandomStats">랜덤형</button>
-                    <button @click="applyFocusedStats('leadership')">통솔형</button>
-                    <button @click="applyFocusedStats('strength')">무력형</button>
-                    <button @click="applyFocusedStats('intel')">지력형</button>
-                    <button @click="applyBalancedStats">균형형</button>
-                </div>
-
-                <div class="stat-summary">
-                    <div>능력치 합계: {{ statTotal }} / {{ statRules?.total ?? '-' }}</div>
-                    <div v-if="statErrors.length" class="stat-errors">
-                        <div v-for="item in statErrors" :key="item">{{ item }}</div>
+                    <div class="stat-grid">
+                        <label class="form-field primary-field">
+                            <span>통솔</span>
+                            <input v-model.number="form.leadership" type="number" class="form-input" />
+                        </label>
+                        <label class="form-field primary-field">
+                            <span>무력</span>
+                            <input v-model.number="form.strength" type="number" class="form-input" />
+                        </label>
+                        <label class="form-field primary-field">
+                            <span>지력</span>
+                            <input v-model.number="form.intel" type="number" class="form-input" />
+                        </label>
                     </div>
-                </div>
 
-                <div class="form-actions">
-                    <button :disabled="!canSubmit || submitting" @click="submitJoin">장수 생성</button>
-                    <button class="ghost" @click="applyBalancedStats">다시 입력</button>
-                </div>
+                    <div class="stat-actions" aria-label="능력치 빠른 설정">
+                        <button type="button" @click="applyRandomStats">랜덤형</button>
+                        <button type="button" @click="applyFocusedStats('leadership')">통솔형</button>
+                        <button type="button" @click="applyFocusedStats('strength')">무력형</button>
+                        <button type="button" @click="applyFocusedStats('intel')">지력형</button>
+                        <button type="button" @click="applyBalancedStats">균형형</button>
+                    </div>
+
+                    <div v-if="accountIcons.length" class="icon-choice">
+                        <div class="bonus-title">전용 아이콘 선택</div>
+                        <label class="icon-option">
+                            <input v-model="form.pic" type="checkbox" /> 전용 아이콘 사용
+                        </label>
+                        <div v-if="form.pic" class="icon-list" role="radiogroup" aria-label="전용 아이콘 선택">
+                            <label v-for="icon in accountIcons" :key="icon.id" class="icon-card">
+                                <input v-model="form.iconId" type="radio" :value="icon.id" />
+                                <img
+                                    :src="
+                                        resolveGeneralIconUrl({ picture: icon.picture, imageServer: icon.imageServer })
+                                    "
+                                    width="64"
+                                    height="64"
+                                    alt=""
+                                    @error="useDefaultGeneralIcon"
+                                />
+                            </label>
+                        </div>
+                    </div>
+
+                    <div class="stat-summary">
+                        <div>
+                            <strong>능력치 합계: {{ statTotal }}</strong> / {{ statRules?.total ?? '-' }}
+                        </div>
+                        <div v-if="statErrors.length" class="stat-errors">
+                            <div v-for="item in statErrors" :key="item">{{ item }}</div>
+                        </div>
+                    </div>
+
+                    <div class="form-actions">
+                        <button class="primary-action" type="submit" :disabled="!canSubmit || submitting">
+                            {{ submitting ? '생성 중...' : '장수 생성' }}
+                        </button>
+                        <button type="button" class="ghost" @click="applyBalancedStats">균형형으로 되돌리기</button>
+                    </div>
+                </form>
             </PanelCard>
 
-            <PanelCard title="유산 포인트 옵션" subtitle="보유 포인트를 사용해 시작 옵션을 지정합니다.">
-                <div v-if="!inheritConfig" class="muted">유산 포인트 정보를 불러오지 못했습니다.</div>
-                <div v-else class="inherit-panel">
+            <details class="advanced-options" :open="inheritOpen" @toggle="onInheritanceToggle">
+                <summary>
+                    <span class="advanced-title">
+                        <strong>고급 옵션 · 유산 포인트</strong>
+                        <small>시작 특기·도시·턴 시간과 보너스 능력치를 지정합니다.</small>
+                    </span>
+                    <span class="advanced-point-summary">
+                        보유 {{ inheritTotalPoint }} · 사용 {{ inheritRequiredPoint }}
+                    </span>
+                </summary>
+                <div v-if="!inheritConfig" class="advanced-body muted">유산 포인트 정보를 불러오지 못했습니다.</div>
+                <div v-else class="advanced-body inherit-panel">
                     <div class="inherit-summary">
                         <div>보유 포인트: {{ inheritTotalPoint }}</div>
                         <div>필요 포인트: {{ inheritRequiredPoint }}</div>
@@ -783,6 +863,122 @@ onUnmounted(() => {
 
                     <div v-if="inheritErrors.length" class="inherit-errors">
                         <div v-for="item in inheritErrors" :key="item">{{ item }}</div>
+                    </div>
+                </div>
+            </details>
+
+            <PanelCard title="현재 정보" subtitle="임관할 국가를 고를 때 필요한 정보만 확인하세요.">
+                <div class="context-tabs" role="tablist" aria-label="현재 정보 보기">
+                    <button
+                        id="context-tab-invitation"
+                        type="button"
+                        role="tab"
+                        :class="{ active: contextTab === 'invitation' }"
+                        :aria-selected="contextTab === 'invitation'"
+                        aria-controls="context-panel-invitation"
+                        @click="contextTab = 'invitation'"
+                    >
+                        임관 권유
+                    </button>
+                    <button
+                        id="context-tab-map"
+                        type="button"
+                        role="tab"
+                        :class="{ active: contextTab === 'map' }"
+                        :aria-selected="contextTab === 'map'"
+                        aria-controls="context-panel-map"
+                        @click="contextTab = 'map'"
+                    >
+                        현재 지도
+                    </button>
+                    <button
+                        id="context-tab-generals"
+                        type="button"
+                        role="tab"
+                        :class="{ active: contextTab === 'generals' }"
+                        :aria-selected="contextTab === 'generals'"
+                        aria-controls="context-panel-generals"
+                        @click="contextTab = 'generals'"
+                    >
+                        장수 목록
+                    </button>
+                </div>
+
+                <div
+                    v-if="contextTab === 'invitation'"
+                    id="context-panel-invitation"
+                    class="context-panel"
+                    role="tabpanel"
+                    aria-labelledby="context-tab-invitation"
+                >
+                    <div v-if="nationList.length === 0" class="muted">국가 정보가 아직 준비되지 않았습니다.</div>
+                    <div v-else class="nation-list">
+                        <article v-for="nation in nationList" :key="nation.id" class="nation-card">
+                            <h3 class="nation-name" :style="{ backgroundColor: nation.color }">{{ nation.name }}</h3>
+                            <p class="nation-message">{{ nation.scoutMessage ?? '권유문 없음' }}</p>
+                        </article>
+                    </div>
+                </div>
+
+                <div
+                    v-else-if="contextTab === 'map'"
+                    id="context-panel-map"
+                    class="context-panel map-context"
+                    role="tabpanel"
+                    aria-labelledby="context-tab-map"
+                >
+                    <div v-if="mapError" class="context-error" role="alert">{{ mapError }}</div>
+                    <MapViewer :map-data="publicMap" :map-layout="mapLayout" :loading="mapLoading" />
+                </div>
+
+                <div
+                    v-else
+                    id="context-panel-generals"
+                    class="context-panel"
+                    role="tabpanel"
+                    aria-labelledby="context-tab-generals"
+                >
+                    <div class="general-list-head">
+                        <label>
+                            <span class="sr-only">장수 또는 국가 검색</span>
+                            <input
+                                v-model="publicGeneralFilter"
+                                class="form-input"
+                                type="search"
+                                placeholder="장수명 또는 국가 검색"
+                            />
+                        </label>
+                        <span>총 {{ filteredPublicGenerals.length }}명</span>
+                    </div>
+                    <div v-if="publicGeneralsError" class="context-error" role="alert">
+                        {{ publicGeneralsError }}
+                    </div>
+                    <SkeletonLines v-if="publicGeneralsLoading" :lines="5" />
+                    <div v-else class="general-list-scroll">
+                        <table class="context-general-table">
+                            <thead>
+                                <tr>
+                                    <th>장수명</th>
+                                    <th>국가</th>
+                                    <th>통솔</th>
+                                    <th>무력</th>
+                                    <th>지력</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <tr v-for="general in filteredPublicGenerals" :key="general.id">
+                                    <td>
+                                        <span v-if="general.npcState > 0" class="npc-badge">NPC</span>
+                                        {{ general.name }}
+                                    </td>
+                                    <td>{{ general.nationName }}</td>
+                                    <td>{{ general.leadership }}</td>
+                                    <td>{{ general.strength }}</td>
+                                    <td>{{ general.intelligence }}</td>
+                                </tr>
+                            </tbody>
+                        </table>
+                        <div v-if="filteredPublicGenerals.length === 0" class="empty-list">표시할 장수가 없습니다.</div>
                     </div>
                 </div>
             </PanelCard>
@@ -1028,6 +1224,10 @@ onUnmounted(() => {
     gap: 16px;
 }
 
+:global(#app:has(.join-page)) {
+    min-width: 320px;
+}
+
 .join-header {
     display: flex;
     flex-wrap: wrap;
@@ -1076,10 +1276,12 @@ onUnmounted(() => {
     color: rgba(240, 150, 150, 0.9);
 }
 
-.join-grid {
-    display: grid;
+.join-flow {
+    width: min(100%, 1000px);
+    align-self: center;
+    display: flex;
+    flex-direction: column;
     gap: 16px;
-    grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
 }
 
 .nation-list {
@@ -1090,28 +1292,41 @@ onUnmounted(() => {
 
 .nation-card {
     border: 1px solid rgba(201, 164, 90, 0.25);
-    padding: 8px;
     display: grid;
     grid-template-columns: 120px 1fr;
-    gap: 8px;
+    align-items: stretch;
 }
 
 .nation-name {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin: 0;
     font-weight: 600;
-    padding: 4px 6px;
+    padding: 8px 6px;
     color: #101010;
     text-align: center;
 }
 
 .nation-message {
+    margin: 0;
+    padding: 8px;
     font-size: 0.75rem;
     color: rgba(232, 221, 196, 0.7);
 }
 
-.form-grid {
+.create-form {
+    display: flex;
+    flex-direction: column;
+}
+
+.identity-grid {
     display: grid;
     grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-    gap: 12px;
+    gap: 16px;
+    padding: 10px;
+    border: 1px solid rgba(201, 164, 90, 0.2);
+    background: rgba(0, 0, 0, 0.16);
 }
 
 .stat-grid {
@@ -1128,11 +1343,22 @@ onUnmounted(() => {
     font-size: 0.75rem;
 }
 
+.primary-field > span:first-child {
+    color: #f0d99e;
+    font-size: 0.85rem;
+    font-weight: 700;
+}
+
 .form-input {
     border: 1px solid rgba(201, 164, 90, 0.4);
     background: rgba(10, 10, 10, 0.8);
     padding: 6px 8px;
     color: inherit;
+}
+
+.primary-field > .form-input {
+    min-height: 36px;
+    font-size: 1rem;
 }
 
 .stat-actions {
@@ -1169,6 +1395,186 @@ onUnmounted(() => {
     border: 1px solid rgba(201, 164, 90, 0.4);
     padding: 6px 12px;
     font-size: 0.8rem;
+}
+
+.form-actions .primary-action {
+    min-width: 150px;
+    border-color: rgba(226, 190, 112, 0.8);
+    background: rgba(116, 81, 29, 0.75);
+    color: #fff6dc;
+    font-weight: 700;
+}
+
+.advanced-options {
+    border: 1px solid gray;
+    background-color: #302016;
+    background-image: var(--sammo-texture-walnut);
+}
+
+.advanced-options > summary {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+    padding: 8px 10px;
+    cursor: pointer;
+    list-style: none;
+    background-color: #14241b;
+    background-image: var(--sammo-texture-green);
+}
+
+.advanced-options > summary::-webkit-details-marker {
+    display: none;
+}
+
+.advanced-options > summary::before {
+    content: '＋';
+    flex: 0 0 auto;
+    color: #dcbf7a;
+    font-weight: 700;
+}
+
+.advanced-options[open] > summary::before {
+    content: '－';
+}
+
+.advanced-title {
+    display: flex;
+    flex: 1;
+    flex-direction: column;
+    gap: 2px;
+}
+
+.advanced-title small {
+    color: #ccc;
+    font-size: 0.7rem;
+    font-weight: 400;
+}
+
+.advanced-point-summary {
+    color: #ead8ac;
+    font-size: 0.75rem;
+    white-space: nowrap;
+}
+
+.advanced-body {
+    padding: 12px;
+    border-top: 1px solid gray;
+}
+
+.context-tabs {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    border-bottom: 1px solid rgba(201, 164, 90, 0.4);
+}
+
+.context-tabs button {
+    min-height: 38px;
+    border: 0;
+    border-right: 1px solid rgba(201, 164, 90, 0.25);
+    color: rgba(232, 221, 196, 0.68);
+    font-size: 0.8rem;
+}
+
+.context-tabs button:last-child {
+    border-right: 0;
+}
+
+.context-tabs button.active {
+    background: rgba(201, 164, 90, 0.18);
+    color: #fff2cf;
+    box-shadow: inset 0 -2px #d3ad60;
+    font-weight: 700;
+}
+
+.context-tabs button:focus-visible,
+.advanced-options > summary:focus-visible,
+.form-actions button:focus-visible {
+    outline: 2px solid #f0d58f;
+    outline-offset: -2px;
+}
+
+.context-panel {
+    padding-top: 10px;
+}
+
+.map-context {
+    overflow-x: auto;
+}
+
+.general-list-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    margin-bottom: 8px;
+    color: rgba(232, 221, 196, 0.75);
+    font-size: 0.75rem;
+}
+
+.general-list-head label {
+    flex: 1;
+}
+
+.general-list-head input {
+    width: min(100%, 320px);
+}
+
+.general-list-scroll {
+    max-height: 420px;
+    overflow: auto;
+}
+
+.context-general-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.75rem;
+}
+
+.context-general-table th,
+.context-general-table td {
+    border: 1px solid rgba(201, 164, 90, 0.28);
+    padding: 6px 8px;
+    text-align: center;
+}
+
+.context-general-table th {
+    position: sticky;
+    z-index: 1;
+    top: 0;
+    background: #14241b;
+}
+
+.context-general-table td:first-child,
+.context-general-table td:nth-child(2) {
+    text-align: left;
+}
+
+.npc-badge {
+    margin-right: 4px;
+    padding: 1px 3px;
+    background: rgba(111, 74, 141, 0.8);
+    color: #fff;
+    font-size: 0.6rem;
+}
+
+.context-error,
+.empty-list {
+    padding: 12px;
+    color: rgba(240, 150, 150, 0.9);
+    text-align: center;
+    font-size: 0.75rem;
+}
+
+.sr-only {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+    border: 0;
 }
 
 .inherit-panel {
@@ -1413,5 +1819,60 @@ onUnmounted(() => {
     display: flex;
     align-items: center;
     gap: 3px;
+}
+
+@media (max-width: 700px) {
+    .join-page {
+        padding: 12px;
+    }
+
+    .join-header,
+    .join-tabs {
+        width: 100%;
+    }
+
+    .join-tabs {
+        flex-wrap: wrap;
+    }
+
+    .join-tabs > * {
+        flex: 1 1 auto;
+        text-align: center;
+    }
+
+    .identity-grid {
+        grid-template-columns: 1fr;
+    }
+
+    .stat-grid {
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        gap: 8px;
+    }
+
+    .form-actions {
+        flex-direction: column;
+    }
+
+    .form-actions button {
+        min-height: 40px;
+    }
+
+    .advanced-options > summary {
+        align-items: flex-start;
+        gap: 8px;
+    }
+
+    .advanced-point-summary {
+        white-space: normal;
+        text-align: right;
+    }
+
+    .nation-card {
+        grid-template-columns: 90px 1fr;
+    }
+
+    .context-general-table {
+        min-width: 520px;
+    }
 }
 </style>

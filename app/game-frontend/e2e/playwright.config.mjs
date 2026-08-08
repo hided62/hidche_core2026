@@ -33,6 +33,7 @@ export default defineConfig({
         'mainNavigation.spec.ts',
         'session-auth.spec.ts',
         'npcPossession.spec.ts',
+        'joinLayout.spec.ts',
     ],
     fullyParallel: false,
     workers: 1,
