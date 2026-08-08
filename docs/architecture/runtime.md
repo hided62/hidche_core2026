@@ -43,7 +43,9 @@ Kakao 로그인은 URL 이름만으로 사용자를 연결하지 않습니다. `
 session을 발급하지 않습니다. 확인과 저장 사이에 email 또는 OAuth 소유자가
 바뀌면 다시 시작하도록 거부합니다.
 
-Kakao `/v1/user/signup`이 `already registered`를 반환했는데 stable ID와 email
+Kakao `/v1/user/signup`이 HTTP non-2xx의 `code=-102`,
+`msg=already registered`를 반환하면 transport 계층에서 예외 대신 복구 신호로
+정규화합니다. 다른 non-2xx signup 오류는 계속 실패합니다. stable ID와 email
 소유자가 모두 없으면 `account_recovery/rejoin`을 반환합니다. 사용자가 재가입을
 확인해야 별도의 `register` intent session을 발급하므로 기존 가입 mutation으로
 확인 단계를 우회할 수 없습니다. 반대로 provider 연결이 이번 요청에서 새로
