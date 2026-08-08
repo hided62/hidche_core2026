@@ -53,6 +53,13 @@ export const createInMemoryUserRepository = (hasher: PasswordHasher = createSimp
             if (usersByName.has(input.username)) {
                 throw new Error('User already exists.');
             }
+            if (
+                input.oauth &&
+                (usersByOauthId.has(`${input.oauth.type}:${input.oauth.id}`) ||
+                    usersByEmail.has(input.oauth.email.toLowerCase()))
+            ) {
+                throw new Error('Kakao account already linked.');
+            }
             for (const existing of usersByName.values()) {
                 if ((input.displayName ?? input.username) === existing.displayName) {
                     throw new Error('Display name already exists.');
@@ -116,6 +123,39 @@ export const createInMemoryUserRepository = (hasher: PasswordHasher = createSimp
                 if (user.id === userId) {
                     user.oauthInfo = oauthInfo;
                     return;
+                }
+            }
+            throw new Error('User not found.');
+        },
+        async syncKakaoIdentity(
+            userId: string,
+            email: string,
+            oauthInfo: UserRecord['oauthInfo']
+        ): Promise<UserRecord> {
+            const normalizedEmail = email.toLowerCase();
+            const owner = usersByEmail.get(normalizedEmail);
+            if (owner && owner.id !== userId) {
+                throw new Error('Kakao email already linked.');
+            }
+            for (const user of usersByName.values()) {
+                if (user.id !== userId) {
+                    continue;
+                }
+                if (user.email) {
+                    usersByEmail.delete(user.email.toLowerCase());
+                }
+                user.email = normalizedEmail;
+                user.oauthInfo = oauthInfo;
+                usersByEmail.set(normalizedEmail, user);
+                return user;
+            }
+            throw new Error('User not found.');
+        },
+        async markKakaoTalkVerified(userId: string, validUntil: Date): Promise<UserRecord> {
+            for (const user of usersByName.values()) {
+                if (user.id === userId) {
+                    user.kakaoTalkVerifiedUntil = validUntil.toISOString();
+                    return user;
                 }
             }
             throw new Error('User not found.');

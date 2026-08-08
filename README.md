@@ -41,6 +41,13 @@ orchestrator가 commit별 worktree와 PM2 process를 조정합니다.
 Gateway 자체 릴리스는 Gateway 프로세스 밖의 `release-controller`가 별도
 `GatewayReleaseOperation` queue를 처리합니다.
 
+Kakao 계정은 OAuth callback과 일반 비밀번호 로그인 모두에서 Kakao 고유 ID와
+현재 인증 이메일을 다시 확인합니다. 새 Kakao ID의 이메일이 기존 계정에 있거나
+기존 Kakao ID의 변경 이메일이 다른 계정에 있으면 로그인을 거부합니다. 확인된
+이메일은 `AppUser.email`에 동기화하며, 10일마다 `talk_message` scope로
+“나와의 채팅” 숫자 코드를 보내 소유 증명을 완료한 뒤에만 새 Gateway session을
+발급합니다.
+
 각 game profile은 별도 PostgreSQL schema를 사용합니다. `game-api`는 인증된
 요청을 검증하고 직접 처리할 mutation 또는 daemon 입력을
 `InputEvent`에 기록합니다. `game-engine`은 DB lease와 fencing token을 확보한

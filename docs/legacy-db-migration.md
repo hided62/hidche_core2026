@@ -28,10 +28,13 @@ Legacy member numbers map to deterministic UUIDs. Existing rows are updated by
 that UUID, so references such as `ng_old_generals.owner` remain stable even
 when an old account was deleted before the dump.
 
-Kakao members retain `oauth_id`, email and metadata. Cutover sets
-`kakao_verified_at` and `kakao_grace_started_at` to the migration time and starts
-the verification grace period there. Source rows without an OAuth ID retain
-their metadata, but the importer does not invent a provider identifier.
+Kakao members retain `oauth_id`, email and metadata. A parseable legacy
+`token_valid_until` is copied to `kakao_talk_verified_until`, preserving the
+remaining KakaoTalk ownership-proof interval instead of forcing an immediate
+message at cutover. Cutover also sets `kakao_verified_at` and
+`kakao_grace_started_at` to the migration time and starts the local-account
+verification grace period there. Source rows without an OAuth ID retain their
+metadata, but the importer does not invent a provider identifier.
 
 Legacy password hashes remain usable when gateway-api has
 `GATEWAY_LEGACY_PASSWORD_GLOBAL_SALT`; a successful login upgrades the stored
@@ -131,7 +134,7 @@ browser.
 5. Put the affected target in maintenance mode, take a PostgreSQL backup, then
    run the same commands with `--apply`.
 6. Repeat each apply. Counts must remain unchanged.
-7. Verify Kakao migration timestamps, password-hash shapes, archive ownership,
+7. Verify Kakao migration timestamps including `kakao_talk_verified_until`, password-hash shapes, archive ownership,
    old-nation/history duplicate preservation, `/past-plays` list/detail access,
    foreign-owner denial and the dynasty link.
 8. Retain the MariaDB dumps as rollback evidence. Rollback restores the

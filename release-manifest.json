@@ -1,7 +1,7 @@
 {
     "formatVersion": 1,
     "controllerProtocol": 1,
-    "gatewaySchemaHead": "20260806000000_add_admin_audit_and_kakao_grace",
+    "gatewaySchemaHead": "20260808000000_add_kakao_talk_verification",
     "gameSchemaHead": "20260803000000_add_logical_game_clock",
     "components": ["gateway-api", "gateway-frontend", "release-controller", "game-api", "game-engine", "game-frontend"]
 }

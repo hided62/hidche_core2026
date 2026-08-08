@@ -64,6 +64,10 @@ const mapMember = (row: SourceRow, migratedAt: Date, lastLoginAt: Date | null): 
         terms_accepted_at: null,
         privacy_accepted_at: null,
         kakao_verified_at: oauthType === 'KAKAO' ? migratedAt : null,
+        kakao_talk_verified_until:
+            oauthType === 'KAKAO'
+                ? toNullableDate(row.token_valid_until, `member.${memberNo}.token_valid_until`)
+                : null,
         kakao_grace_started_at: migratedAt,
         delete_after: toNullableDate(row.delete_after, `member.${memberNo}.delete_after`),
         created_at: toDate(row.REG_DATE, `member.${memberNo}.REG_DATE`),

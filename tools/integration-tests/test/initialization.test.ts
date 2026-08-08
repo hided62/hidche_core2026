@@ -231,6 +231,9 @@ describe('integration initialization flow', () => {
                 username: user.username,
                 credential: sealGatewayPassword(user.password, await gatewayClient.auth.passwordKey.query()),
             });
+            if (login.status !== 'login') {
+                throw new Error('Local integration fixture unexpectedly requires Kakao OTP.');
+            }
             expect(login.sessionToken).toBeTruthy();
         }
 
@@ -308,6 +311,9 @@ describe('integration initialization flow', () => {
                 username: user.username,
                 credential: sealGatewayPassword(user.password, await gatewayClient.auth.passwordKey.query()),
             });
+            if (login.status !== 'login') {
+                throw new Error('Local integration fixture unexpectedly requires Kakao OTP.');
+            }
             const gatewayToken = await gatewayClient.auth.issueGameSession.mutate({
                 sessionToken: login.sessionToken,
                 profile: 'che:2',
