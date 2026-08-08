@@ -134,14 +134,13 @@ const installFixture = async (page: Page) => {
 test('operates OAuth grace and scheduled deletion with reasoned audit history', async ({ page }, testInfo) => {
     const mutations = await installFixture(page);
     page.on('dialog', (dialog) => dialog.accept());
-    await page.goto('admin');
+    await page.goto('admin/users');
     await page.getByPlaceholder('검색 값 입력').fill('target');
     await page.getByRole('button', { name: '조회', exact: true }).click();
 
     await expect(page.getByText('Kakao 인증: 미완료')).toBeVisible();
     await expect(page.getByRole('cell', { name: 'che:default' })).toBeVisible();
     await expect(page.getByText('SUCCEEDED · admin.users.updateSanctions').first()).toBeVisible();
-    await expect(page.getByRole('heading', { name: '전체 관리자 감사 원장' })).toBeVisible();
     await page.screenshot({ path: testInfo.outputPath('gateway-admin-account-controls-desktop.png'), fullPage: true });
     const deletionButton = page.getByRole('button', { name: '보존 기간 후 탈퇴 예약', exact: true });
     const baseDeleteColor = await deletionButton.evaluate((button) => getComputedStyle(button).backgroundColor);
@@ -163,6 +162,11 @@ test('operates OAuth grace and scheduled deletion with reasoned audit history', 
     expect(mutations.some(({ operation }) => operation === 'admin.users.updateKakaoGrace')).toBe(true);
     expect(mutations.some(({ operation }) => operation === 'admin.users.scheduleDeletion')).toBe(true);
 
+    await page.getByRole('link', { name: '감사 로그' }).click();
+    await expect(page).toHaveURL(/\/gateway\/admin\/audit$/);
+    await expect(page.getByRole('heading', { name: '전체 관리자 감사 원장' })).toBeVisible();
+    await expect(page.getByText('SUCCEEDED · admin.users.updateKakaoGrace').first()).toBeVisible();
+
     await page.setViewportSize({ width: 390, height: 844 });
     const geometry = await page
         .getByRole('heading', { name: '전체 관리자 감사 원장' })
@@ -173,6 +177,9 @@ test('operates OAuth grace and scheduled deletion with reasoned audit history', 
         });
     expect(geometry.left).toBeGreaterThanOrEqual(0);
     expect(geometry.right).toBeLessThanOrEqual(geometry.viewportWidth);
-    await writeFile(testInfo.outputPath('gateway-admin-account-controls-mobile-geometry.json'), JSON.stringify(geometry));
+    await writeFile(
+        testInfo.outputPath('gateway-admin-account-controls-mobile-geometry.json'),
+        JSON.stringify(geometry)
+    );
     await page.screenshot({ path: testInfo.outputPath('gateway-admin-account-controls-mobile.png'), fullPage: true });
 });

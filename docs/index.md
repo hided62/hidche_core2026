@@ -15,6 +15,9 @@ hero:
         - theme: alt
           text: 릴리스 운영
           link: /release-operations
+        - theme: alt
+          text: 관리자 콘솔
+          link: /admin-console
 
 features:
     - title: 시스템 구조
@@ -32,6 +35,8 @@ features:
 [시간과 턴](./user/time-and-turns.md)과
 [커맨드 목록](./user/command-catalog.generated.md)을 확인해 주세요. Profile과
 Gateway 배포는 [릴리스 운영 매뉴얼](./release-operations.md)을 따라 주세요.
+관리자 화면의 메뉴와 권한·운영 경계는
+[관리자 콘솔](./admin-console.md)에서 확인할 수 있습니다.
 게임 진행 시각과 운영 벽시계의 경계는
 [게임 시계](./architecture/game-clock.md)에 설명합니다.
 [패키지와 파일 경계](./architecture/package-boundaries.md)는 source import와

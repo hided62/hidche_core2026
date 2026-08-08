@@ -12,7 +12,8 @@ Gateway 전체는 별도 release-controller가 처리합니다.
 | Gateway API·frontend·orchestrator | Gateway 관리자 화면 | 외부 release-controller | `GatewayReleaseOperation`, `GatewayReleaseState` |
 | release-controller 자체           | 별도 CLI process    | self-upgrade CLI        | PM2 `sammo:release-controller`                   |
 
-관리자 화면은 `/gateway/admin/server-operations`입니다. Profile 작업에는 해당
+관리자 화면은 `/gateway/admin/releases`입니다. 이전 경로
+`/gateway/admin/server-operations`는 호환성을 위해 새 화면으로 이동합니다. Profile 작업에는 해당
 profile의 `admin.profiles.manage` 권한이 필요합니다. Gateway 전체 릴리스에는
 profile 범위 권한과 별개인 전역 `admin.releases.manage` 권한이 필요합니다.
 일반 사용자와 권한이 없는 관리자는 Gateway 릴리스 영역을 사용할 수 없습니다.

@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue';
 
-import DefaultLayout from '../layouts/DefaultLayout.vue';
+import AdminConsoleLayout from '../layouts/AdminConsoleLayout.vue';
 import { trpc } from '../utils/trpc';
 
 const adminClient = trpc.admin;
@@ -427,26 +427,23 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-    <DefaultLayout>
-        <div class="max-w-7xl mx-auto px-4 py-8 space-y-6" data-testid="server-operations-page">
-            <header class="flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
-                <div>
-                    <p class="text-xs uppercase tracking-[0.25em] text-amber-400">Operations console</p>
-                    <h2 class="text-2xl font-bold text-white">서버 배포 · 시나리오 초기화</h2>
-                    <p class="mt-2 text-sm text-zinc-400">
-                        실행 소스, 초기화 옵션, 프로세스 상태와 작업 이력을 한 화면에서 관리합니다.
-                    </p>
-                </div>
-                <button
-                    class="rounded border border-zinc-700 bg-zinc-900 px-4 py-2 text-sm hover:border-zinc-500 disabled:opacity-50"
-                    :disabled="loading"
-                    data-testid="refresh-operations"
-                    @click="loadState()"
-                >
-                    상태 새로고침
-                </button>
-            </header>
+    <AdminConsoleLayout
+        title="버전 업데이트"
+        description="프로필 DB 유지·초기화 배포와 Gateway 릴리스, rollback 및 작업 이력을 관리합니다."
+        eyebrow="Release operations"
+    >
+        <template #actions>
+            <button
+                class="rounded border border-zinc-700 bg-zinc-900 px-4 py-2 text-sm hover:border-zinc-500 disabled:opacity-50"
+                :disabled="loading"
+                data-testid="refresh-operations"
+                @click="loadState()"
+            >
+                상태 새로고침
+            </button>
+        </template>
 
+        <div class="space-y-6" data-testid="server-operations-page">
             <div v-if="errorMessage" class="rounded border border-red-800 bg-red-950/50 px-4 py-3 text-sm text-red-200">
                 {{ errorMessage }}
             </div>
@@ -973,5 +970,5 @@ onBeforeUnmount(() => {
                 </div>
             </section>
         </div>
-    </DefaultLayout>
+    </AdminConsoleLayout>
 </template>
