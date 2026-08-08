@@ -143,79 +143,77 @@ export const boardRouter = router({
         }));
     }),
     writeArticle: accessAuthedInputProcedure(
-            z.object({
-                isSecret: z.boolean(),
-                title: z.string().trim().max(250),
-                content: z.string().trim().max(20000),
-            })
-        )
-        .mutation(async ({ ctx, input }) => {
-            const { general, permission } = await getBoardActor(ctx);
-            assertBoardAccess(permission, input.isSecret);
+        z.object({
+            isSecret: z.boolean(),
+            title: z.string().trim().max(250),
+            content: z.string().trim().max(20000),
+        })
+    ).mutation(async ({ ctx, input }) => {
+        const { general, permission } = await getBoardActor(ctx);
+        assertBoardAccess(permission, input.isSecret);
 
-            if (!input.title && !input.content) {
-                throw new TRPCError({ code: 'BAD_REQUEST', message: '제목과 내용이 둘다 비어있습니다.' });
-            }
+        if (!input.title && !input.content) {
+            throw new TRPCError({ code: 'BAD_REQUEST', message: '제목과 내용이 둘다 비어있습니다.' });
+        }
 
-            const post = await ctx.db.boardPost.create({
-                data: {
-                    nationId: general.nationId,
-                    isSecret: input.isSecret,
-                    authorGeneralId: general.id,
-                    authorName: general.name,
-                    title: input.title,
-                    contentHtml: input.content,
-                },
-                select: { id: true },
-            });
+        const post = await ctx.db.boardPost.create({
+            data: {
+                nationId: general.nationId,
+                isSecret: input.isSecret,
+                authorGeneralId: general.id,
+                authorName: general.name,
+                title: input.title,
+                contentHtml: input.content,
+            },
+            select: { id: true },
+        });
 
-            return { id: post.id };
-        }),
+        return { id: post.id };
+    }),
     writeComment: accessAuthedInputProcedure(
-            z.object({
-                postId: z.number().int().positive(),
-                content: z.string().trim().max(2000),
-            })
-        )
-        .mutation(async ({ ctx, input }) => {
-            const { general, permission } = await getBoardActor(ctx);
-            if (!input.content) {
-                throw new TRPCError({ code: 'BAD_REQUEST', message: '내용이 비어있습니다.' });
-            }
+        z.object({
+            postId: z.number().int().positive(),
+            content: z.string().trim().max(2000),
+        })
+    ).mutation(async ({ ctx, input }) => {
+        const { general, permission } = await getBoardActor(ctx);
+        if (!input.content) {
+            throw new TRPCError({ code: 'BAD_REQUEST', message: '내용이 비어있습니다.' });
+        }
 
-            const post = await ctx.db.boardPost.findFirst({
-                where: {
-                    id: input.postId,
-                    nationId: general.nationId,
-                },
-                select: {
-                    id: true,
-                    isSecret: true,
-                },
-            });
-            if (!post) {
-                throw new TRPCError({ code: 'NOT_FOUND', message: '게시물이 없습니다.' });
-            }
+        const post = await ctx.db.boardPost.findFirst({
+            where: {
+                id: input.postId,
+                nationId: general.nationId,
+            },
+            select: {
+                id: true,
+                isSecret: true,
+            },
+        });
+        if (!post) {
+            throw new TRPCError({ code: 'NOT_FOUND', message: '게시물이 없습니다.' });
+        }
 
-            assertBoardAccess(permission, post.isSecret);
+        assertBoardAccess(permission, post.isSecret);
 
-            const comment = await ctx.db.boardComment.create({
-                data: {
-                    postId: post.id,
-                    nationId: general.nationId,
-                    isSecret: post.isSecret,
-                    authorGeneralId: general.id,
-                    authorName: general.name,
-                    contentText: input.content,
-                },
-                select: { id: true },
-            });
+        const comment = await ctx.db.boardComment.create({
+            data: {
+                postId: post.id,
+                nationId: general.nationId,
+                isSecret: post.isSecret,
+                authorGeneralId: general.id,
+                authorName: general.name,
+                contentText: input.content,
+            },
+            select: { id: true },
+        });
 
-            return { id: comment.id };
-        }),
+        return { id: comment.id };
+    }),
     uploadImage: authedProcedure.input(z.object({ dataUrl: z.string().min(1) })).mutation(async ({ ctx, input }) => {
         const { permission } = await getBoardActor(ctx);
-        assertBoardAccess(permission, false);
+        assertBoardAccess(permission, true);
 
         const buffer = parseDataUrl(input.dataUrl);
         if (buffer.length > MAX_UPLOAD_BYTES) {

@@ -267,7 +267,10 @@ describe('board router actor, nation, and secret permissions', () => {
         const upload = vi.fn(async ({ filename }: { filename: string }) => ({
             publicUrl: `https://sam-image.hided.net/uploads/core2026/${filename}`,
         }));
-        const fixture = buildContext({ contentImageUpload: { upload } });
+        const fixture = buildContext({
+            me: buildGeneral({ officerLevel: 5 }),
+            contentImageUpload: { upload },
+        });
         const png = await sharp({
             create: { width: 64, height: 48, channels: 4, background: '#224466' },
         })
@@ -278,13 +281,29 @@ describe('board router actor, nation, and secret permissions', () => {
             dataUrl: `data:image/png;base64,${png.toString('base64')}`,
         });
 
-        expect(result.url).toMatch(
-            /^https:\/\/sam-image\.hided\.net\/uploads\/core2026\/[a-f0-9]{32}\.webp$/
-        );
+        expect(result.url).toMatch(/^https:\/\/sam-image\.hided\.net\/uploads\/core2026\/[a-f0-9]{32}\.webp$/);
         expect(upload).toHaveBeenCalledWith(
             expect.objectContaining({ contentType: 'image/webp', body: expect.any(Buffer) })
         );
         expect(result).toMatchObject({ width: 64, height: 48, format: 'webp', animated: false });
+    });
+
+    it('rejects editor image uploads from an ordinary nation member', async () => {
+        const upload = vi.fn();
+        const fixture = buildContext({
+            me: buildGeneral({ officerLevel: 1 }),
+            contentImageUpload: { upload },
+        });
+
+        await expect(
+            appRouter.createCaller(fixture.context).board.uploadImage({
+                dataUrl: 'data:image/png;base64,AA==',
+            })
+        ).rejects.toMatchObject({
+            code: 'FORBIDDEN',
+            message: '권한이 부족합니다. 수뇌부가 아닙니다.',
+        });
+        expect(upload).not.toHaveBeenCalled();
     });
 
     it('does not reveal whether another nation owns a requested comment target', async () => {
