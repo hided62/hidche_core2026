@@ -1,5 +1,4 @@
 import { PrismaPg } from '@prisma/adapter-pg';
-import { Pool } from 'pg';
 
 export type PostgresLogLevel = 'query' | 'info' | 'warn' | 'error';
 
@@ -89,11 +88,13 @@ export const createPostgresConnector = <TClient>(
 ): PostgresConnector<TClient> => {
     const schema =
         extractSchemaFromDatabaseUrl(config.url) ?? process.env.POSTGRES_SCHEMA ?? process.env.DATABASE_SCHEMA;
-    const pool = new Pool({
-        connectionString: config.url,
-        ...(schema ? { options: `-c search_path=${schema}` } : {}),
-    });
-    const adapter = new PrismaPg(pool, schema ? { schema } : undefined);
+    const adapter = new PrismaPg(
+        {
+            connectionString: config.url,
+            ...(schema ? { options: `-c search_path=${schema}` } : {}),
+        },
+        schema ? { schema } : undefined
+    );
     const prisma = createClient({
         adapter,
         log: config.log,
@@ -102,9 +103,6 @@ export const createPostgresConnector = <TClient>(
     return {
         prisma,
         connect: () => (prisma as { $connect: () => Promise<void> }).$connect(),
-        disconnect: async () => {
-            await (prisma as { $disconnect: () => Promise<void> }).$disconnect();
-            await pool.end();
-        },
+        disconnect: () => (prisma as { $disconnect: () => Promise<void> }).$disconnect(),
     };
 };

@@ -33,7 +33,7 @@ const info = ref<LobbyInfo | null>(null);
 const mapData = ref<PublicMap | null>(null);
 const mapLayout = ref<PublicMapLayout | null>(null);
 
-const statusTitle = computed(() => `${profile.value?.korName ?? '체'} 현황`);
+const statusTitle = computed(() => (profile.value ? `${profile.value.korName} 현황` : '서버 현황'));
 const dateText = computed(() => {
     if (!info.value) {
         return '';
@@ -45,15 +45,18 @@ const seasonStatus = computed(() => (info.value ? resolveServerSeasonStatus(info
 const loadPublicStatus = async (): Promise<void> => {
     statusLoading.value = true;
     statusError.value = '';
+    profile.value = null;
+    info.value = null;
+    mapData.value = null;
+    mapLayout.value = null;
     try {
         const profiles = await trpc.lobby.profiles.query();
         profile.value =
             profiles.find((entry) => entry.status === 'RUNNING') ??
             profiles.find((entry) => entry.status === 'PREOPEN') ??
-            profiles[0] ??
             null;
         if (!profile.value) {
-            statusError.value = '공개 중인 서버가 없습니다.';
+            statusError.value = '현재 공개 중인 서버가 없습니다.';
             return;
         }
         const game = createGameTrpc(profile.value.profile, profile.value.apiPort);
@@ -65,8 +68,8 @@ const loadPublicStatus = async (): Promise<void> => {
         info.value = nextInfo;
         mapLayout.value = nextLayout;
         mapData.value = nextMap;
-    } catch (error) {
-        statusError.value = error instanceof Error ? error.message : '서버 현황을 불러오지 못했습니다.';
+    } catch {
+        statusError.value = '서버 현황을 불러오지 못했습니다. 잠시 후 다시 시도해 주세요.';
     } finally {
         statusLoading.value = false;
     }

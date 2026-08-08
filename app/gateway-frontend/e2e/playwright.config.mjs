@@ -18,6 +18,7 @@ export default defineConfig({
         'gateway-notice-html.spec.ts',
         'kakao-otp.spec.ts',
         'kakao-account-recovery.spec.ts',
+        'public-map-tabs.spec.ts',
     ],
     fullyParallel: false,
     workers: 1,
