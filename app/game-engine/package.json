@@ -5,9 +5,95 @@
     "type": "module",
     "main": "dist/index.js",
     "types": "dist/index.d.ts",
+    "exports": {
+        ".": {
+            "types": "./dist/index.d.ts",
+            "default": "./dist/index.js"
+        },
+        "./auction/finalizer.js": {
+            "types": "./dist/auction/finalizer.d.ts",
+            "default": "./dist/auction/finalizer.js"
+        },
+        "./scenario/mapLoader.js": {
+            "types": "./dist/scenario/mapLoader.d.ts",
+            "default": "./dist/scenario/mapLoader.js"
+        },
+        "./scenario/scenarioComposition.js": {
+            "types": "./dist/scenario/scenarioComposition.d.ts",
+            "default": "./dist/scenario/scenarioComposition.js"
+        },
+        "./scenario/scenarioLoader.js": {
+            "types": "./dist/scenario/scenarioLoader.d.ts",
+            "default": "./dist/scenario/scenarioLoader.js"
+        },
+        "./scenario/scenarioSeeder.js": {
+            "types": "./dist/scenario/scenarioSeeder.d.ts",
+            "default": "./dist/scenario/scenarioSeeder.js"
+        },
+        "./scenario/unitSetLoader.js": {
+            "types": "./dist/scenario/unitSetLoader.d.ts",
+            "default": "./dist/scenario/unitSetLoader.js"
+        },
+        "./turn/databaseHooks.js": {
+            "types": "./dist/turn/databaseHooks.d.ts",
+            "default": "./dist/turn/databaseHooks.js"
+        },
+        "./turn/inMemoryWorld.js": {
+            "types": "./dist/turn/inMemoryWorld.d.ts",
+            "default": "./dist/turn/inMemoryWorld.js"
+        },
+        "./turn/monthlyDisasterAction.js": {
+            "types": "./dist/turn/monthlyDisasterAction.d.ts",
+            "default": "./dist/turn/monthlyDisasterAction.js"
+        },
+        "./turn/monthlyEventHandler.js": {
+            "types": "./dist/turn/monthlyEventHandler.d.ts",
+            "default": "./dist/turn/monthlyEventHandler.js"
+        },
+        "./turn/monthlyNationBettingAction.js": {
+            "types": "./dist/turn/monthlyNationBettingAction.d.ts",
+            "default": "./dist/turn/monthlyNationBettingAction.js"
+        },
+        "./turn/npcPossessionService.js": {
+            "types": "./dist/turn/npcPossessionService.d.ts",
+            "default": "./dist/turn/npcPossessionService.js"
+        },
+        "./turn/rankData.js": {
+            "types": "./dist/turn/rankData.d.ts",
+            "default": "./dist/turn/rankData.js"
+        },
+        "./turn/reservedTurnHandler.js": {
+            "types": "./dist/turn/reservedTurnHandler.d.ts",
+            "default": "./dist/turn/reservedTurnHandler.js"
+        },
+        "./turn/reservedTurnStore.js": {
+            "types": "./dist/turn/reservedTurnStore.d.ts",
+            "default": "./dist/turn/reservedTurnStore.js"
+        },
+        "./turn/selectPoolService.js": {
+            "types": "./dist/turn/selectPoolService.d.ts",
+            "default": "./dist/turn/selectPoolService.js"
+        },
+        "./turn/turnCommandProfile.js": {
+            "types": "./dist/turn/turnCommandProfile.d.ts",
+            "default": "./dist/turn/turnCommandProfile.js"
+        },
+        "./turn/types.js": {
+            "types": "./dist/turn/types.d.ts",
+            "default": "./dist/turn/types.js"
+        },
+        "./turn/worldCommandHandler.js": {
+            "types": "./dist/turn/worldCommandHandler.d.ts",
+            "default": "./dist/turn/worldCommandHandler.js"
+        },
+        "./turn/worldLoader.js": {
+            "types": "./dist/turn/worldLoader.d.ts",
+            "default": "./dist/turn/worldLoader.js"
+        }
+    },
     "scripts": {
-        "build": "tsdown -c ../../tsdown.config.ts -F @sammo-ts/game-engine",
-        "dev": "tsdown -c ../../tsdown.config.ts -F @sammo-ts/game-engine --watch",
+        "build": "tsdown -c ./tsdown.config.ts && node ../../tools/check-package-exports.mjs .",
+        "dev": "tsdown -c ./tsdown.config.ts --watch",
         "start": "pnpm run build && GAME_ENGINE_ROLE=turn-daemon node dist/index.js",
         "lint": "eslint .",
         "lint:fix": "eslint . --fix",

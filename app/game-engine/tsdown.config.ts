@@ -1,0 +1,37 @@
+import { defineConfig } from 'tsdown';
+
+export default defineConfig({
+    entry: {
+        index: 'src/index.ts',
+        'auction/finalizer': 'src/auction/finalizer.ts',
+        'scenario/mapLoader': 'src/scenario/mapLoader.ts',
+        'scenario/scenarioComposition': 'src/scenario/scenarioComposition.ts',
+        'scenario/scenarioLoader': 'src/scenario/scenarioLoader.ts',
+        'scenario/scenarioSeeder': 'src/scenario/scenarioSeeder.ts',
+        'scenario/unitSetLoader': 'src/scenario/unitSetLoader.ts',
+        'turn/databaseHooks': 'src/turn/databaseHooks.ts',
+        'turn/inMemoryWorld': 'src/turn/inMemoryWorld.ts',
+        'turn/monthlyDisasterAction': 'src/turn/monthlyDisasterAction.ts',
+        'turn/monthlyEventHandler': 'src/turn/monthlyEventHandler.ts',
+        'turn/monthlyNationBettingAction': 'src/turn/monthlyNationBettingAction.ts',
+        'turn/npcPossessionService': 'src/turn/npcPossessionService.ts',
+        'turn/rankData': 'src/turn/rankData.ts',
+        'turn/reservedTurnHandler': 'src/turn/reservedTurnHandler.ts',
+        'turn/reservedTurnStore': 'src/turn/reservedTurnStore.ts',
+        'turn/selectPoolService': 'src/turn/selectPoolService.ts',
+        'turn/turnCommandProfile': 'src/turn/turnCommandProfile.ts',
+        'turn/types': 'src/turn/types.ts',
+        'turn/worldCommandHandler': 'src/turn/worldCommandHandler.ts',
+        'turn/worldLoader': 'src/turn/worldLoader.ts',
+    },
+    format: 'es',
+    outDir: 'dist',
+    dts: {
+        build: true,
+    },
+    sourcemap: true,
+    target: 'node22',
+    platform: 'node',
+    fixedExtension: false,
+    hash: false,
+});

@@ -40,6 +40,12 @@ Resource를 읽는 `scenarioLoader`, `mapLoader`, `unitSetLoader`,
 사용합니다. `@sammo-ts/game-engine` 루트는 daemon process entrypoint이므로
 API 제품 소스에서 library처럼 import하지 않습니다.
 
+game-engine의 공개 subpath는 `app/game-engine/package.json`의 `exports`와
+`app/game-engine/tsdown.config.ts`의 entry에 함께 선언합니다. `pnpm --filter
+@sammo-ts/game-engine build`는 각 JS·type export target이 실제 생성됐는지
+검사하므로, typecheck에서는 보이지만 production Node에서만 실패하는 subpath
+누락을 배포 전에 차단합니다.
+
 Frontend가 tRPC router shape를 참조할 때는 `import type`만 사용하고 backend
 package를 `devDependencies`에 둡니다. 브라우저에서 실제 실행하는 공유 값만
 `common` 또는 `logic`의 browser-safe export에서 가져옵니다.
