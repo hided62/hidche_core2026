@@ -22,6 +22,9 @@ const buildCaller = (
         localAccountGraceDays?: number;
         flushError?: Error;
         profileListError?: Error;
+        kakaoId?: string;
+        kakaoEmail?: string;
+        allowKakaoRefresh?: boolean;
     } = {}
 ) => {
     const users = createInMemoryUserRepository();
@@ -37,32 +40,48 @@ const buildCaller = (
         }),
     };
     const oauthSessions = new InMemoryOAuthSessionStore();
+    const kakaoProfile = {
+        id: options.kakaoId ?? '1',
+        email: options.kakaoEmail ?? 'tester@example.com',
+    };
+    const sentTalkMessages: string[] = [];
+    const refreshTokenCalls: string[] = [];
     const kakaoClient = {
         restKey: '',
         redirectUri: '',
         oauthHost: '',
         apiHost: '',
-        buildAuthUrl: (state: string) => `https://kauth.example.test/authorize?state=${state}`,
+        buildAuthUrl: (state: string, scopes: string[]) =>
+            `https://kauth.example.test/authorize?state=${state}&scope=${scopes.join(',')}`,
         exchangeCode: async () => ({
             accessToken: 'access-token',
             accessTokenExpiresIn: 3600,
             refreshToken: 'refresh-token',
             refreshTokenExpiresIn: 86400,
         }),
-        refreshToken: async () => {
-            throw new Error('not used');
+        refreshToken: async (refreshToken: string) => {
+            refreshTokenCalls.push(refreshToken);
+            if (!options.allowKakaoRefresh) {
+                throw new Error('not used');
+            }
+            return {
+                accessToken: 'refreshed-access-token',
+                accessTokenExpiresIn: 3600,
+            };
         },
         signup: async () => ({ id: '1' }),
         getMe: async () => ({
-            id: '1',
+            id: kakaoProfile.id,
             kakaoAccount: {
                 hasEmail: true,
-                email: 'tester@example.com',
+                email: kakaoProfile.email,
                 isEmailValid: true,
                 isEmailVerified: true,
             },
         }),
-        sendTalkMessage: async () => {},
+        sendTalkMessage: async (_accessToken: string, message: string) => {
+            sentTalkMessages.push(message);
+        },
     };
     const profileRows = [
         {
@@ -213,6 +232,9 @@ const buildCaller = (
         sessions,
         flushPublisher,
         userIconUpload,
+        kakaoProfile,
+        sentTalkMessages,
+        refreshTokenCalls,
         sealPassword,
         setSessionHeader: (sessionToken: string) => {
             requestHeaders['x-session-token'] = sessionToken;
@@ -247,6 +269,10 @@ describe('gateway auth flow', () => {
             username: 'LOCAL-USER',
             credential: sealPassword('비밀번호-password'),
         });
+        expect(login.status).toBe('login');
+        if (login.status !== 'login') {
+            throw new Error('Expected completed login.');
+        }
         expect(login.user.username).toBe('local-user');
     });
 
@@ -405,7 +431,7 @@ describe('gateway auth flow', () => {
     });
 
     it('links Kakao to the logged-in local account instead of creating a second user', async () => {
-        const { caller, users, sealPassword, setSessionHeader } = buildCaller();
+        const { caller, users, sealPassword, setSessionHeader, sentTalkMessages } = buildCaller();
         const register = await caller.auth.registerLocal({
             username: 'verify-user',
             credential: sealPassword('verify-password'),
@@ -421,11 +447,14 @@ describe('gateway auth flow', () => {
             state: start.state,
         });
 
-        expect(verified.status).toBe('verified');
-        if (verified.status !== 'verified') {
-            throw new Error('Expected verified result.');
+        expect(verified.status).toBe('otp');
+        if (verified.status !== 'otp') {
+            throw new Error('Expected Kakao OTP challenge.');
         }
-        expect(verified.user.kakaoVerified).toBe(true);
+        const code = sentTalkMessages.at(-1)?.match(/인증 코드는 (\d{4})/)?.[1];
+        expect(code).toBeTruthy();
+        const completed = await caller.auth.kakaoOtp({ challengeId: verified.challengeId, code: code! });
+        expect(completed.user.kakaoVerified).toBe(true);
         const stored = await users.findByUsername('verify-user');
         expect(stored).toMatchObject({
             oauthType: 'KAKAO',
@@ -433,6 +462,230 @@ describe('gateway auth flow', () => {
             email: 'tester@example.com',
         });
         expect(stored?.kakaoVerifiedAt).toBeTruthy();
+    });
+
+    it('always requests both email and KakaoTalk message consent', async () => {
+        const { caller } = buildCaller();
+
+        const start = await caller.auth.kakaoStart({ mode: 'login', scopes: [] });
+
+        expect(decodeURIComponent(start.authUrl)).toContain('scope=account_email,talk_message');
+    });
+
+    it('rejects a new Kakao identity when its verified email is already registered', async () => {
+        const { caller, users, kakaoProfile } = buildCaller();
+        await users.createUser({
+            username: 'email-owner',
+            password: 'owner-password',
+            oauth: {
+                type: 'KAKAO',
+                id: 'original-kakao-id',
+                email: 'tester@example.com',
+                info: {},
+            },
+        });
+        kakaoProfile.id = 'different-kakao-id';
+
+        const start = await caller.auth.kakaoStart({ mode: 'login' });
+        await expect(caller.auth.kakaoExchange({ code: 'oauth-code', state: start.state })).rejects.toMatchObject({
+            code: 'CONFLICT',
+            message: expect.stringContaining('이미 다른 계정에서 사용 중인 카카오 이메일'),
+        });
+    });
+
+    it('synchronizes a changed email by stable Kakao ID during Kakao login', async () => {
+        const { caller, users, kakaoProfile } = buildCaller({
+            kakaoId: 'stable-kakao-id',
+            kakaoEmail: 'changed@example.com',
+        });
+        const user = await users.createUser({
+            username: 'kakao-email-change',
+            password: 'email-change-password',
+            oauth: {
+                type: 'KAKAO',
+                id: 'stable-kakao-id',
+                email: 'before@example.com',
+                info: {},
+            },
+        });
+        await users.markKakaoTalkVerified(user.id, new Date(Date.now() + 60_000));
+
+        const start = await caller.auth.kakaoStart({ mode: 'login' });
+        const login = await caller.auth.kakaoExchange({ code: 'oauth-code', state: start.state });
+
+        expect(login.status).toBe('login');
+        expect((await users.findById(user.id))?.email).toBe(kakaoProfile.email);
+        expect(await users.findByEmail('before@example.com')).toBeNull();
+    });
+
+    it('checks Kakao identity and changed email on password login, then verifies the talk OTP', async () => {
+        const { caller, users, sealPassword, kakaoProfile, sentTalkMessages } = buildCaller({
+            kakaoId: 'password-login-kakao-id',
+            kakaoEmail: 'after-password-login@example.com',
+        });
+        const user = await users.createUser({
+            username: 'kakao-password-login',
+            password: 'kakao-password',
+            oauth: {
+                type: 'KAKAO',
+                id: kakaoProfile.id,
+                email: 'before-password-login@example.com',
+                info: {
+                    accessToken: 'stored-access-token',
+                    refreshToken: 'stored-refresh-token',
+                    accessTokenValidUntil: new Date(Date.now() + 60_000).toISOString(),
+                    refreshTokenValidUntil: new Date(Date.now() + 86_400_000).toISOString(),
+                },
+            },
+        });
+
+        const login = await caller.auth.login({
+            username: user.username,
+            credential: sealPassword('kakao-password'),
+        });
+        expect(login.status).toBe('otp');
+        if (login.status !== 'otp') {
+            throw new Error('Expected Kakao OTP challenge.');
+        }
+        expect((await users.findById(user.id))?.email).toBe(kakaoProfile.email);
+        expect(sentTalkMessages).toHaveLength(1);
+
+        await expect(caller.auth.kakaoOtp({ challengeId: login.challengeId, code: '0000' })).rejects.toMatchObject({
+            code: 'UNAUTHORIZED',
+            message: expect.stringContaining('2회 더 시도'),
+        });
+        const code = sentTalkMessages[0]?.match(/인증 코드는 (\d{4})/)?.[1];
+        expect(code).toBeTruthy();
+        const completed = await caller.auth.kakaoOtp({ challengeId: login.challengeId, code: code! });
+        expect(completed.validUntil).toBeTruthy();
+        expect((await users.findById(user.id))?.kakaoTalkVerifiedUntil).toBe(completed.validUntil);
+
+        const nextLogin = await caller.auth.login({
+            username: user.username,
+            credential: sealPassword('kakao-password'),
+        });
+        expect(nextLogin.status).toBe('login');
+        expect(sentTalkMessages).toHaveLength(1);
+    });
+
+    it('refreshes an expired access token before the password-login identity check', async () => {
+        const { caller, users, sealPassword, kakaoProfile, refreshTokenCalls } = buildCaller({
+            kakaoId: 'refresh-kakao-id',
+            kakaoEmail: 'refreshed-email@example.com',
+            allowKakaoRefresh: true,
+        });
+        const user = await users.createUser({
+            username: 'refresh-kakao-user',
+            password: 'refresh-kakao-password',
+            oauth: {
+                type: 'KAKAO',
+                id: kakaoProfile.id,
+                email: 'old-refresh-email@example.com',
+                info: {
+                    accessToken: 'expired-access-token',
+                    refreshToken: 'usable-refresh-token',
+                    accessTokenValidUntil: new Date(Date.now() - 60_000).toISOString(),
+                    refreshTokenValidUntil: new Date(Date.now() + 86_400_000).toISOString(),
+                },
+            },
+        });
+
+        const login = await caller.auth.login({
+            username: user.username,
+            credential: sealPassword('refresh-kakao-password'),
+        });
+
+        expect(login.status).toBe('otp');
+        expect(refreshTokenCalls).toEqual(['usable-refresh-token']);
+        expect(await users.findById(user.id)).toMatchObject({
+            email: 'refreshed-email@example.com',
+            oauthInfo: {
+                accessToken: 'refreshed-access-token',
+                refreshToken: 'usable-refresh-token',
+            },
+        });
+    });
+
+    it('rejects password-login email synchronization when the changed email belongs to another user', async () => {
+        const { caller, users, sealPassword, kakaoProfile } = buildCaller({
+            kakaoId: 'conflicting-email-kakao-id',
+            kakaoEmail: 'occupied@example.com',
+        });
+        const user = await users.createUser({
+            username: 'conflicting-email-user',
+            password: 'conflicting-email-password',
+            oauth: {
+                type: 'KAKAO',
+                id: kakaoProfile.id,
+                email: 'previous@example.com',
+                info: {
+                    accessToken: 'stored-access-token',
+                    accessTokenValidUntil: new Date(Date.now() + 60_000).toISOString(),
+                },
+            },
+        });
+        await users.createUser({
+            username: 'occupied-email-owner',
+            password: 'occupied-email-password',
+            oauth: {
+                type: 'KAKAO',
+                id: 'other-kakao-id',
+                email: kakaoProfile.email,
+                info: {},
+            },
+        });
+
+        await expect(
+            caller.auth.login({
+                username: user.username,
+                credential: sealPassword('conflicting-email-password'),
+            })
+        ).rejects.toMatchObject({
+            code: 'CONFLICT',
+            message: expect.stringContaining('이미 다른 계정에서 사용 중'),
+        });
+        expect((await users.findById(user.id))?.email).toBe('previous@example.com');
+    });
+
+    it('reuses the active challenge and blocks retries after three wrong OTP values', async () => {
+        const { caller, users, sealPassword, kakaoProfile, sentTalkMessages } = buildCaller({
+            kakaoId: 'attempt-limit-kakao-id',
+        });
+        const user = await users.createUser({
+            username: 'attempt-limit-user',
+            password: 'attempt-limit-password',
+            oauth: {
+                type: 'KAKAO',
+                id: kakaoProfile.id,
+                email: kakaoProfile.email,
+                info: {
+                    accessToken: 'stored-access-token',
+                    accessTokenValidUntil: new Date(Date.now() + 60_000).toISOString(),
+                },
+            },
+        });
+        const login = await caller.auth.login({
+            username: user.username,
+            credential: sealPassword('attempt-limit-password'),
+        });
+        expect(login.status).toBe('otp');
+        if (login.status !== 'otp') {
+            throw new Error('Expected Kakao OTP challenge.');
+        }
+
+        for (const remaining of [2, 1, 0]) {
+            await expect(caller.auth.kakaoOtp({ challengeId: login.challengeId, code: '0000' })).rejects.toMatchObject({
+                code: 'UNAUTHORIZED',
+                message:
+                    remaining > 0 ? expect.stringContaining(`${remaining}회 더 시도`) : expect.stringContaining('초과'),
+            });
+        }
+        const retried = await caller.auth.login({
+            username: user.username,
+            credential: sealPassword('attempt-limit-password'),
+        });
+        expect(retried).toMatchObject({ status: 'otp', challengeId: login.challengeId, attemptsRemaining: 0 });
+        expect(sentTalkMessages).toHaveLength(1);
     });
 
     it('blocks Kakao login while a ban is active', async () => {
@@ -503,7 +756,7 @@ describe('gateway auth flow', () => {
     });
 
     it('registers and issues a game session', async () => {
-        const { caller, oauthSessions, sealPassword } = buildCaller();
+        const { caller, oauthSessions, sealPassword, sentTalkMessages } = buildCaller();
         const oauthSession = await oauthSessions.createSession({
             mode: 'login',
             kakaoId: '1',
@@ -524,11 +777,18 @@ describe('gateway auth flow', () => {
             thirdPartyUse: false,
         });
 
-        expect(register.user.username).toBe('tester');
-        expect(register.sessionToken).toBeTruthy();
+        expect(register.status).toBe('otp');
+        if (register.status !== 'otp') {
+            throw new Error('Expected Kakao OTP challenge.');
+        }
+        const code = sentTalkMessages.at(-1)?.match(/인증 코드는 (\d{4})/)?.[1];
+        expect(code).toBeTruthy();
+        const completed = await caller.auth.kakaoOtp({ challengeId: register.challengeId, code: code! });
+        expect(completed.user.username).toBe('tester');
+        expect(completed.sessionToken).toBeTruthy();
 
         const issued = await caller.auth.issueGameSession({
-            sessionToken: register.sessionToken,
+            sessionToken: completed.sessionToken,
             profile: 'che:default',
         });
 

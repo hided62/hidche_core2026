@@ -37,7 +37,7 @@ describe('readReleaseManifest', () => {
         const workspaceRoot = path.resolve(import.meta.dirname, '../../..');
 
         await expect(readReleaseManifest(workspaceRoot)).resolves.toMatchObject({
-            gatewaySchemaHead: '20260806000000_add_admin_audit_and_kakao_grace',
+            gatewaySchemaHead: '20260808000000_add_kakao_talk_verification',
             gameSchemaHead: '20260803000000_add_logical_game_clock',
         });
     });

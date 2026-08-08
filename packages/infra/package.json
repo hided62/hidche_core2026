@@ -19,6 +19,7 @@
         "prisma:migrate:deploy:gateway": "PRISMA_SCHEMA=prisma/gateway.prisma prisma migrate deploy --schema prisma/gateway.prisma --config prisma.gateway.config.ts",
         "prisma:migrate:status:game": "prisma migrate status --schema prisma/game.prisma",
         "verify:migration:account-icon": "sh scripts/verify-account-icon-migration.sh",
+        "verify:migration:kakao-talk": "sh scripts/verify-kakao-talk-migration.sh",
         "verify:migration:npc-selection": "sh scripts/verify-npc-selection-token-migration.sh",
         "prisma:db:push:game": "prisma db push --schema prisma/game.prisma",
         "prisma:db:push:gateway": "prisma db push --schema prisma/gateway.prisma"

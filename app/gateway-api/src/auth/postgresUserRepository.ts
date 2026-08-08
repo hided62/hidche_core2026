@@ -58,6 +58,7 @@ const mapUser = (row: {
     termsAcceptedAt: Date | null;
     privacyAcceptedAt: Date | null;
     kakaoVerifiedAt: Date | null;
+    kakaoTalkVerifiedUntil: Date | null;
     kakaoGraceStartedAt: Date;
     kakaoGraceUntil: Date | null;
     deleteAfter: Date | null;
@@ -83,6 +84,7 @@ const mapUser = (row: {
     termsAcceptedAt: row.termsAcceptedAt?.toISOString(),
     privacyAcceptedAt: row.privacyAcceptedAt?.toISOString(),
     kakaoVerifiedAt: row.kakaoVerifiedAt?.toISOString(),
+    kakaoTalkVerifiedUntil: row.kakaoTalkVerifiedUntil?.toISOString(),
     kakaoGraceStartedAt: row.kakaoGraceStartedAt.toISOString(),
     kakaoGraceUntil: row.kakaoGraceUntil?.toISOString(),
     deleteAfter: row.deleteAfter?.toISOString(),
@@ -222,6 +224,23 @@ export const createPostgresUserRepository = (
                     oauthInfo: oauthInfo as GatewayPrisma.JsonObject,
                 },
             });
+        },
+        async syncKakaoIdentity(userId: string, email: string, oauthInfo: UserOAuthInfo): Promise<UserRecord> {
+            const row = await prisma.appUser.update({
+                where: { id: userId },
+                data: {
+                    email: email.toLowerCase(),
+                    oauthInfo: oauthInfo as GatewayPrisma.JsonObject,
+                },
+            });
+            return mapUser(row);
+        },
+        async markKakaoTalkVerified(userId: string, validUntil: Date): Promise<UserRecord> {
+            const row = await prisma.appUser.update({
+                where: { id: userId },
+                data: { kakaoTalkVerifiedUntil: validUntil },
+            });
+            return mapUser(row);
         },
         async linkKakao(userId, input): Promise<UserRecord> {
             const row = await prisma.appUser.update({

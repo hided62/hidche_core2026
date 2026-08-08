@@ -16,6 +16,7 @@ export default defineConfig({
         'account-icon-sync.spec.ts',
         'legacy-log-html.spec.ts',
         'gateway-notice-html.spec.ts',
+        'kakao-otp.spec.ts',
     ],
     fullyParallel: false,
     workers: 1,

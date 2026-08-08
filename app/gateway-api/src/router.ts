@@ -9,13 +9,23 @@ import { isGameAccessBlocked, isLoginBanned } from '@sammo-ts/common/auth/sancti
 
 import { procedure, router } from './trpc.js';
 import { toPublicUser } from './auth/userRepository.js';
-import type { UserOAuthInfo } from './auth/userRepository.js';
+import type { UserOAuthInfo, UserRecord } from './auth/userRepository.js';
 import { adminRouter } from './adminRouter.js';
 import { accountRouter } from './account/router.js';
 import { resolveLocalAccountProfilePolicy } from './auth/localAccountPolicy.js';
 import { openPassword, zDisplayName, zPasswordEnvelope, zRegistrationUsername } from './auth/registrationInput.js';
 import { resolveEffectiveAccountIcon } from './auth/accountIconProjection.js';
 import { purifyGatewayNoticeHtml } from './security/gatewayNoticeHtml.js';
+import type { GatewayApiContext } from './context.js';
+import {
+    KakaoVerificationError,
+    mergeRequiredKakaoScopes,
+    oauthInfoFromToken,
+    readVerifiedKakaoProfile,
+    requireKakaoTalkProof,
+    verifyKakaoTalkChallenge,
+    verifyStoredKakaoIdentity,
+} from './auth/kakaoAccountVerification.js';
 
 const zUsername = z
     .string()
@@ -30,6 +40,50 @@ const zBootstrapToken = z.string().min(1);
 const parseDate = (value: string): Date | null => {
     const parsed = parseISO(value);
     return isValid(parsed) ? parsed : null;
+};
+
+const throwKakaoVerificationError = (error: unknown): never => {
+    if (!(error instanceof KakaoVerificationError)) {
+        throw error;
+    }
+    const code =
+        error.verificationCode === 'EMAIL_CONFLICT'
+            ? 'CONFLICT'
+            : error.verificationCode === 'IDENTITY_MISMATCH'
+              ? 'UNAUTHORIZED'
+              : error.verificationCode === 'EMAIL_REQUIRED' || error.verificationCode === 'EMAIL_UNVERIFIED'
+                ? 'BAD_REQUEST'
+                : 'PRECONDITION_FAILED';
+    throw new TRPCError({ code, message: error.message, cause: error });
+};
+
+const finishKakaoLogin = async <T extends 'login' | 'verified'>(
+    ctx: GatewayApiContext,
+    user: UserRecord,
+    accessToken: string,
+    successStatus: T
+) => {
+    try {
+        const challenge = await requireKakaoTalkProof({
+            user,
+            accessToken,
+            kakaoClient: ctx.kakaoClient,
+            oauthSessions: ctx.oauthSessions,
+            publicBaseUrl: ctx.publicBaseUrl,
+        });
+        if (challenge) {
+            return { ...challenge, successStatus };
+        }
+    } catch (error) {
+        throwKakaoVerificationError(error);
+    }
+    const session = await ctx.sessions.createSession(user);
+    return {
+        status: successStatus,
+        user: toPublicUser(user),
+        sessionToken: session.sessionToken,
+        issuedAt: session.issuedAt,
+    };
 };
 
 export const appRouter = router({
@@ -157,7 +211,7 @@ export const appRouter = router({
             )
             .query(async ({ ctx, input }) => {
                 const mode = input?.mode ?? 'login';
-                const scopes = input?.scopes ?? ['account_email'];
+                const scopes = mergeRequiredKakaoScopes(input?.scopes);
                 let userId: string | undefined;
                 if (mode === 'verify') {
                     const sessionToken =
@@ -196,10 +250,6 @@ export const appRouter = router({
                 }
                 const token = await ctx.kakaoClient.exchangeCode(input.code);
                 const tokenIssuedAt = new Date();
-                const accessTokenValidUntil = addSeconds(tokenIssuedAt, token.accessTokenExpiresIn).toISOString();
-                const refreshTokenValidUntil = token.refreshTokenExpiresIn
-                    ? addSeconds(tokenIssuedAt, token.refreshTokenExpiresIn).toISOString()
-                    : undefined;
 
                 const signupResult = await ctx.kakaoClient.signup(token.accessToken);
                 if (!signupResult.id && signupResult.msg !== 'already registered') {
@@ -209,30 +259,23 @@ export const appRouter = router({
                     });
                 }
                 const me = await ctx.kakaoClient.getMe(token.accessToken);
-                const kakaoAccount = me.kakaoAccount;
-                if (!kakaoAccount.hasEmail || !kakaoAccount.email) {
+                const profile = (() => {
+                    try {
+                        return readVerifiedKakaoProfile(me);
+                    } catch (error) {
+                        return throwKakaoVerificationError(error);
+                    }
+                })();
+                const [existingById, existingByEmail] = await Promise.all([
+                    ctx.users.findByOauthId('KAKAO', profile.kakaoId),
+                    ctx.users.findByEmail(profile.email),
+                ]);
+                if (existingByEmail && existingByEmail.id !== existingById?.id) {
                     throw new TRPCError({
-                        code: 'BAD_REQUEST',
-                        message: '이메일 정보 제공에 동의해야 합니다.',
+                        code: 'CONFLICT',
+                        message: '이미 다른 계정에서 사용 중인 카카오 이메일입니다. 관리자에게 문의해 주세요.',
                     });
                 }
-                if (!kakaoAccount.isEmailValid || !kakaoAccount.isEmailVerified) {
-                    throw new TRPCError({
-                        code: 'BAD_REQUEST',
-                        message: '카카오 계정 이메일이 인증되지 않았습니다.',
-                    });
-                }
-
-                const oauthInfo: UserOAuthInfo = {
-                    accessToken: token.accessToken,
-                    refreshToken: token.refreshToken,
-                    accessTokenValidUntil,
-                    refreshTokenValidUntil,
-                };
-
-                const existing =
-                    (await ctx.users.findByOauthId('KAKAO', me.id)) ??
-                    (await ctx.users.findByEmail(kakaoAccount.email));
 
                 if (pending.mode === 'verify') {
                     if (!pending.userId) {
@@ -254,18 +297,31 @@ export const appRouter = router({
                             message: 'Account login is blocked.',
                         });
                     }
-                    if (existing && existing.id !== localUser.id) {
+                    if (existingById && existingById.id !== localUser.id) {
                         throw new TRPCError({
                             code: 'CONFLICT',
                             message: '이미 다른 계정에 연결된 카카오 계정입니다.',
                         });
                     }
-                    let verified = localUser;
-                    if (existing?.id !== localUser.id) {
+                    if (existingByEmail && existingByEmail.id !== localUser.id) {
+                        throw new TRPCError({
+                            code: 'CONFLICT',
+                            message: '이미 다른 계정에서 사용 중인 카카오 이메일입니다. 관리자에게 문의해 주세요.',
+                        });
+                    }
+                    if (localUser.oauthType === 'KAKAO' && localUser.oauthId !== profile.kakaoId) {
+                        throw new TRPCError({
+                            code: 'CONFLICT',
+                            message: '이미 다른 카카오 계정에 연결된 사용자입니다.',
+                        });
+                    }
+                    const oauthInfo = oauthInfoFromToken(token, tokenIssuedAt, localUser.oauthInfo);
+                    let verified: UserRecord;
+                    if (existingById?.id !== localUser.id && localUser.oauthType !== 'KAKAO') {
                         try {
                             verified = await ctx.users.linkKakao(localUser.id, {
-                                oauthId: me.id,
-                                email: kakaoAccount.email,
+                                oauthId: profile.kakaoId,
+                                email: profile.email,
                                 oauthInfo,
                                 verifiedAt: new Date(),
                             });
@@ -276,26 +332,38 @@ export const appRouter = router({
                                 cause: error,
                             });
                         }
-                    }
-                    if (existing?.id === localUser.id) {
-                        await ctx.users.updateOAuthInfo(localUser.id, oauthInfo);
+                    } else {
+                        try {
+                            verified = await ctx.users.syncKakaoIdentity(localUser.id, profile.email, oauthInfo);
+                        } catch (error) {
+                            throw new TRPCError({
+                                code: 'CONFLICT',
+                                message: '이미 다른 계정에서 사용 중인 카카오 이메일입니다. 관리자에게 문의해 주세요.',
+                                cause: error,
+                            });
+                        }
                     }
                     const refreshed = (await ctx.users.findById(verified.id)) ?? verified;
-                    const session = await ctx.sessions.createSession(refreshed);
                     await ctx.flushPublisher.publishUserFlush(refreshed.id, 'kakao-verified');
-                    return {
-                        status: 'verified' as const,
-                        user: toPublicUser(refreshed),
-                        sessionToken: session.sessionToken,
-                        issuedAt: session.issuedAt,
-                    };
+                    return finishKakaoLogin(ctx, refreshed, token.accessToken, 'verified');
                 }
 
                 if (pending.mode === 'change_pw') {
-                    if (!existing) {
+                    if (!existingById) {
                         throw new TRPCError({
                             code: 'NOT_FOUND',
                             message: '카카오 계정에 연결된 사용자를 찾지 못했습니다.',
+                        });
+                    }
+                    const oauthInfo = oauthInfoFromToken(token, tokenIssuedAt, existingById.oauthInfo);
+                    let existing: UserRecord;
+                    try {
+                        existing = await ctx.users.syncKakaoIdentity(existingById.id, profile.email, oauthInfo);
+                    } catch (error) {
+                        throw new TRPCError({
+                            code: 'CONFLICT',
+                            message: '이미 다른 계정에서 사용 중인 카카오 이메일입니다. 관리자에게 문의해 주세요.',
+                            cause: error,
                         });
                     }
                     const nextPasswordChange = existing.oauthInfo?.nextPasswordChange
@@ -326,31 +394,36 @@ export const appRouter = router({
                     };
                 }
 
-                if (existing) {
-                    if (isLoginBanned(existing.sanctions)) {
+                if (existingById) {
+                    if (isLoginBanned(existingById.sanctions)) {
                         throw new TRPCError({
                             code: 'FORBIDDEN',
                             message: 'Account login is blocked.',
                         });
                     }
-                    await ctx.users.updateOAuthInfo(existing.id, oauthInfo);
-                    const session = await ctx.sessions.createSession(existing);
-                    return {
-                        status: 'login' as const,
-                        user: toPublicUser(existing),
-                        sessionToken: session.sessionToken,
-                        issuedAt: session.issuedAt,
-                    };
+                    const oauthInfo = oauthInfoFromToken(token, tokenIssuedAt, existingById.oauthInfo);
+                    let synced: UserRecord;
+                    try {
+                        synced = await ctx.users.syncKakaoIdentity(existingById.id, profile.email, oauthInfo);
+                    } catch (error) {
+                        throw new TRPCError({
+                            code: 'CONFLICT',
+                            message: '이미 다른 계정에서 사용 중인 카카오 이메일입니다. 관리자에게 문의해 주세요.',
+                            cause: error,
+                        });
+                    }
+                    return finishKakaoLogin(ctx, synced, token.accessToken, 'login');
                 }
 
+                const joinOauthInfo = oauthInfoFromToken(token, tokenIssuedAt);
                 const stored = await ctx.oauthSessions.createSession({
                     mode: pending.mode,
-                    kakaoId: me.id,
-                    email: kakaoAccount.email,
+                    kakaoId: profile.kakaoId,
+                    email: profile.email,
                     accessToken: token.accessToken,
                     refreshToken: token.refreshToken,
-                    accessTokenValidUntil,
-                    refreshTokenValidUntil,
+                    accessTokenValidUntil: joinOauthInfo.accessTokenValidUntil!,
+                    refreshTokenValidUntil: joinOauthInfo.refreshTokenValidUntil,
                     createdAt: new Date().toISOString(),
                 });
 
@@ -440,12 +513,7 @@ export const appRouter = router({
                         cause: error,
                     });
                 }
-                const session = await ctx.sessions.createSession(created);
-                return {
-                    user: toPublicUser(created),
-                    sessionToken: session.sessionToken,
-                    issuedAt: session.issuedAt,
-                };
+                return finishKakaoLogin(ctx, created, oauthSession.accessToken, 'login');
             }),
         passwordKey: procedure.query(({ ctx }) => ctx.passwordEnvelope.getPublicKey()),
         checkRegistrationField: procedure
@@ -566,11 +634,55 @@ export const appRouter = router({
                         message: 'Account login is blocked.',
                     });
                 }
+                if (user.oauthType === 'KAKAO') {
+                    const ready = await verifyStoredKakaoIdentity({
+                        user,
+                        users: ctx.users,
+                        kakaoClient: ctx.kakaoClient,
+                    }).catch((error: unknown) => throwKakaoVerificationError(error));
+                    return finishKakaoLogin(ctx, ready.user, ready.accessToken, 'login');
+                }
                 const session = await ctx.sessions.createSession(user);
                 return {
+                    status: 'login' as const,
                     user: toPublicUser(user),
                     sessionToken: session.sessionToken,
                     issuedAt: session.issuedAt,
+                };
+            }),
+        kakaoOtp: procedure
+            .input(
+                z.object({
+                    challengeId: z.string().uuid(),
+                    code: z.string().regex(/^\d{4}$/, '인증 코드는 숫자 4자리입니다.'),
+                })
+            )
+            .mutation(async ({ ctx, input }) => {
+                const verified = await verifyKakaoTalkChallenge({
+                    challengeId: input.challengeId,
+                    code: input.code,
+                    oauthSessions: ctx.oauthSessions,
+                    users: ctx.users,
+                }).catch((error: unknown) => throwKakaoVerificationError(error));
+                if (verified.user.deleteAfter) {
+                    throw new TRPCError({
+                        code: 'FORBIDDEN',
+                        message: 'Account deletion is pending.',
+                    });
+                }
+                if (isLoginBanned(verified.user.sanctions)) {
+                    throw new TRPCError({
+                        code: 'FORBIDDEN',
+                        message: 'Account login is blocked.',
+                    });
+                }
+                const session = await ctx.sessions.createSession(verified.user);
+                return {
+                    status: 'login' as const,
+                    user: toPublicUser(verified.user),
+                    sessionToken: session.sessionToken,
+                    issuedAt: session.issuedAt,
+                    validUntil: verified.validUntil,
                 };
             }),
         me: procedure

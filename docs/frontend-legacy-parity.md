@@ -79,6 +79,7 @@ storage, route guards, and image loading.
 | gateway login/status | `index.php`                              | 450/700px desktop widths, mobile collapse, Pretendard title, real login mutation/session storage, actual seasonal map asset                                                                      |
 | gateway account      | `i_entrance/user_info.php`               | 550px × minimum 575px panel, 14px Pretendard, three legacy textures, success and API-error password flows                                                                                        |
 | gateway OAuth join   | `oauth_kakao/join.php`                   | 700px centered registration card, Kakao exchange/register success, retained-input API error, hover/focus                                                                                         |
+| gateway Kakao OTP    | `index.php#modalOTP`                     | 동일 문구·500px modal, desktop/mobile geometry와 색상·typography, password/OAuth 진입, autofocus·focus-visible·active·disabled·오류 재시도·session 저장                                          |
 | game login hand-off  | unauthenticated `hwe/index.php` redirect | `/che/login` delegates to `/gateway/`                                                                                                                                                            |
 | troop                | `hwe/v_troop.php`                        | existing `app/game-frontend/e2e/troop.spec.ts` desktop/mobile geometry and interaction suite                                                                                                     |
 | current city         | `hwe/b_currentCity.php`                  | ref-specific 16px Times New Roman, 1000px summary/1024px general tables, 400px selector, 64px icon, nation title color, force summary, actor/spy/admin redaction, and map-click query navigation |
@@ -169,3 +170,18 @@ screenshot only when `CITY_PARITY_ARTIFACT_DIR` is set.
 For a review run that also writes full-page screenshots, create an ignored
 artifact directory and set `FRONTEND_PARITY_ARTIFACT_DIR` before invoking the
 suite. The ordinary CI run does not write screenshots after successful tests.
+
+Kakao OTP 화면만 실제 Chromium으로 재검증하고 선택적으로 artifact를 남기려면 다음
+명령을 사용합니다. Ref helper는 checked-out `index.php` markup과 실제 빌드 CSS를
+사용하므로 live Ref service가 없어도 정적 geometry 기준을 재현하지만, OAuth
+callback 자체의 provider 검증을 대신하지는 않습니다.
+
+```sh
+KAKAO_OTP_ARTIFACT_DIR=/path/to/ignored/artifacts \
+  pnpm exec playwright test --config app/gateway-frontend/e2e/playwright.config.mjs \
+  app/gateway-frontend/e2e/kakao-otp.spec.ts
+
+REF_SAM_ROOT=/path/to/ref/sam \
+KAKAO_OTP_ARTIFACT_DIR=/path/to/ignored/artifacts \
+  node tools/frontend-legacy-parity/kakao-otp-ref-geometry.mjs
+```

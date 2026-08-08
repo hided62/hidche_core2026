@@ -30,7 +30,28 @@ Gateway API는 다음 저장 경계를 사용합니다.
 - `GatewayOperation`: build/reset/open/close 등 실행 요청과 결과
 - `GatewayReleaseOperation`, `GatewayReleaseState`: Gateway 전체 릴리스 queue와 현재·이전 commit
 - `GatewayRuntimeAction`: profile별 시간 가속·연기 요청, 부분 적용과 최종 결과
-- Redis: gateway session, OAuth 임시 상태, flush channel
+- Redis: gateway session, OAuth 임시 상태, KakaoTalk 로그인 challenge, flush channel
+
+Kakao 로그인은 URL 이름만으로 사용자를 연결하지 않습니다. `account_email`과
+`talk_message` scope를 항상 요청하고 callback의 `/v2/user/me` 응답에서 고유 ID,
+이메일 보유·유효·인증 상태를 확인합니다. 고유 ID가 다른 계정의 같은 이메일로
+접근하는 경우와 변경 이메일이 이미 다른 `AppUser`에 속한 경우는 `CONFLICT`로
+끝나며 session을 만들지 않습니다. 기존 Kakao 계정이면 stable OAuth ID로
+사용자를 찾은 뒤 이메일과 갱신된 token metadata를 함께 저장합니다.
+
+일반 비밀번호 로그인도 `oauth_type=KAKAO`이면 저장 access token을 사용하고,
+필요하면 아직 유효한 refresh token으로 갱신한 뒤 `/v2/user/me`를 호출합니다.
+provider ID가 저장 `oauth_id`와 다르면 session을 발급하지 않고, 확인된 이메일은
+unique constraint 아래에서 동기화합니다. provider나 refresh 호출 실패는 Kakao
+재로그인을 요구하며 저장된 identity를 임의로 바꾸지 않습니다.
+
+`AppUser.kakaoTalkVerifiedUntil`이 지났으면 Gateway는 4자리 코드를 생성해 Kakao
+“나와의 채팅”에 한 번 보내고 Redis에 사용자별 180초 challenge를 둡니다. 유효한
+challenge는 재로그인에서도 재사용하여 중복 메시지를 보내지 않습니다. 제출은
+Redis script가 원자적으로 성공 소비 또는 실패 횟수 차감(최대 3회)을 수행합니다.
+성공하면 유효 기한을 10일 뒤로 저장한 후에만 Gateway session을 만듭니다.
+challenge와 OAuth pending state에는 TTL이 있으며 Redis 장애나 메시지 발송 실패는
+로그인 실패로 끝납니다.
 
 Orchestrator는 `GatewayOperation`을 claim하고 source ref를 commit으로
 해결합니다. `WorkspaceManager`가 commit별 worktree를 준비하고 build runner가

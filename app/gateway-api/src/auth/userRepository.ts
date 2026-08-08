@@ -18,6 +18,7 @@ export interface UserRecord {
     termsAcceptedAt?: string;
     privacyAcceptedAt?: string;
     kakaoVerifiedAt?: string;
+    kakaoTalkVerifiedUntil?: string;
     kakaoGraceStartedAt: string;
     kakaoGraceUntil?: string;
     deleteAfter?: string;
@@ -110,6 +111,8 @@ export interface UserRepository {
     verifyPassword(user: UserRecord, password: string): Promise<boolean>;
     updatePassword(userId: string, password: string): Promise<void>;
     updateOAuthInfo(userId: string, oauthInfo: UserOAuthInfo): Promise<void>;
+    syncKakaoIdentity(userId: string, email: string, oauthInfo: UserOAuthInfo): Promise<UserRecord>;
+    markKakaoTalkVerified(userId: string, validUntil: Date): Promise<UserRecord>;
     linkKakao(
         userId: string,
         input: {

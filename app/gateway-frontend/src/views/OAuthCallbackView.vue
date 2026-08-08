@@ -3,6 +3,7 @@ import { onMounted, ref } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 
 import DefaultLayout from '../layouts/DefaultLayout.vue';
+import KakaoOtpDialog from '../components/KakaoOtpDialog.vue';
 import { trpc } from '../utils/trpc';
 import { sealPassword } from '../utils/passwordEnvelope';
 
@@ -21,6 +22,8 @@ const displayName = ref('');
 const termsAgreed = ref(false);
 const privacyAgreed = ref(false);
 const thirdPartyUse = ref(false);
+const otpChallenge = ref<{ challengeId: string; expiresAt: string; attemptsRemaining: number } | null>(null);
+const otpSuccessStatus = ref<'login' | 'verified'>('login');
 const appBase = import.meta.env.BASE_URL;
 
 const completeExchange = async (): Promise<void> => {
@@ -33,6 +36,11 @@ const completeExchange = async (): Promise<void> => {
     }
     try {
         const result = await trpc.auth.kakaoExchange.mutate({ code, state });
+        if (result.status === 'otp') {
+            otpChallenge.value = result;
+            otpSuccessStatus.value = result.successStatus;
+            return;
+        }
         if (result.status === 'login') {
             window.localStorage.setItem('sammo-session-token', result.sessionToken);
             await router.replace('/lobby');
@@ -78,6 +86,12 @@ const register = async (): Promise<void> => {
             privacyAgreed: true,
             thirdPartyUse: thirdPartyUse.value,
         });
+        if (result.status === 'otp') {
+            otpChallenge.value = result;
+            otpSuccessStatus.value = result.successStatus;
+            oauthSessionId.value = '';
+            return;
+        }
         window.localStorage.setItem('sammo-session-token', result.sessionToken);
         await router.replace('/lobby');
     } catch (error) {
@@ -85,6 +99,12 @@ const register = async (): Promise<void> => {
     } finally {
         submitting.value = false;
     }
+};
+
+const handleOtpVerified = async (sessionToken: string): Promise<void> => {
+    window.localStorage.setItem('sammo-session-token', sessionToken);
+    otpChallenge.value = null;
+    await router.replace(otpSuccessStatus.value === 'verified' ? '/lobby?verified=1' : '/lobby');
 };
 
 onMounted(() => {
@@ -120,7 +140,13 @@ onMounted(() => {
                     <div class="form-row">
                         <label for="oauth-display-name">닉네임</label>
                         <div>
-                            <input id="oauth-display-name" v-model="displayName" minlength="2" maxlength="40" required />
+                            <input
+                                id="oauth-display-name"
+                                v-model="displayName"
+                                minlength="2"
+                                maxlength="40"
+                                required
+                            />
                             <small>깃수가 종료될 때 공개됩니다. 계속 사용할 이름이므로 신중하게 정해주세요.</small>
                         </div>
                     </div>
@@ -154,6 +180,12 @@ onMounted(() => {
             </section>
         </main>
     </DefaultLayout>
+    <KakaoOtpDialog
+        v-if="otpChallenge"
+        :challenge-id="otpChallenge.challengeId"
+        @verified="handleOtpVerified"
+        @cancel="otpChallenge = null"
+    />
 </template>
 
 <style scoped>

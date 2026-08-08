@@ -5,6 +5,7 @@ import type { inferRouterOutputs } from '@trpc/server';
 import type { AppRouter } from '@sammo-ts/gateway-api';
 
 import MapPreview from '../components/MapPreview.vue';
+import KakaoOtpDialog from '../components/KakaoOtpDialog.vue';
 import DefaultLayout from '../layouts/DefaultLayout.vue';
 import { createGameTrpc, type GameRouter } from '../utils/gameTrpc';
 import { trpc } from '../utils/trpc';
@@ -24,6 +25,7 @@ const username = ref('');
 const password = ref('');
 const loginError = ref('');
 const loginLoading = ref(false);
+const otpChallenge = ref<{ challengeId: string; expiresAt: string; attemptsRemaining: number } | null>(null);
 const statusLoading = ref(false);
 const statusError = ref('');
 const profile = ref<LobbyProfile | null>(null);
@@ -92,6 +94,10 @@ const handleLogin = async (): Promise<void> => {
             username: username.value,
             credential,
         });
+        if (result.status === 'otp') {
+            otpChallenge.value = result;
+            return;
+        }
         window.localStorage.setItem('sammo-session-token', result.sessionToken);
         await router.push('/lobby');
     } catch (error) {
@@ -99,6 +105,12 @@ const handleLogin = async (): Promise<void> => {
     } finally {
         loginLoading.value = false;
     }
+};
+
+const handleOtpVerified = async (sessionToken: string): Promise<void> => {
+    window.localStorage.setItem('sammo-session-token', sessionToken);
+    otpChallenge.value = null;
+    await router.push('/lobby');
 };
 
 const handleKakao = async (): Promise<void> => {
@@ -191,6 +203,12 @@ const handlePasswordReset = async (): Promise<void> => {
             </section>
         </div>
     </DefaultLayout>
+    <KakaoOtpDialog
+        v-if="otpChallenge"
+        :challenge-id="otpChallenge.challengeId"
+        @verified="handleOtpVerified"
+        @cancel="otpChallenge = null"
+    />
 </template>
 
 <style scoped>

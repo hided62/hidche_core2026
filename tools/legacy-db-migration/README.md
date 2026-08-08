@@ -79,6 +79,8 @@ next turn.
 
 Kakao members retain their OAuth ID, email, and OAuth metadata.
 `kakao_verified_at` and `kakao_grace_started_at` are set to the migration time.
+The existing `token_valid_until` is copied to `kakao_talk_verified_until` for
+Kakao rows so a still-current “send to me” proof remains current after cutover.
 Legacy password hashes and salts are retained and upgraded to Argon2id after
 the first successful login when
 `GATEWAY_LEGACY_PASSWORD_GLOBAL_SALT` is configured in gateway-api.

@@ -31,6 +31,9 @@ test('reserves an argument command in the real game API and reads it back from P
             ).toString('base64'),
         },
     });
+    if (login.status !== 'login') {
+        throw new Error('Local live fixture unexpectedly requires Kakao OTP.');
+    }
     const issued = await gateway.auth.issueGameSession.mutate({
         sessionToken: login.sessionToken,
         profile: 'che:2',
@@ -95,19 +98,15 @@ test('reserves an argument command in the real game API and reads it back from P
         await form.getByRole('button', { name: '쌀', exact: true }).click();
         await form.locator('input[type=number]').fill('1');
         const generalSelect = form.locator('select');
-        const generalValues = await generalSelect
-            .locator('option')
-            .evaluateAll((options) =>
-                options.map((option) => ({
-                    value: (option as HTMLOptionElement).value,
-                    label: option.textContent ?? '',
-                }))
-            );
+        const generalValues = await generalSelect.locator('option').evaluateAll((options) =>
+            options.map((option) => ({
+                value: (option as HTMLOptionElement).value,
+                label: option.textContent ?? '',
+            }))
+        );
         const targetGeneralId = Number(
             generalValues.find(
-                (option) =>
-                    Number(option.value) !== generalId &&
-                    option.label.includes(`(${nationName} ·`)
+                (option) => Number(option.value) !== generalId && option.label.includes(`(${nationName} ·`)
             )?.value
         );
         expect(targetGeneralId).toBeGreaterThan(0);

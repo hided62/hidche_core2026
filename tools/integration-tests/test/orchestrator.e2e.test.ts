@@ -608,6 +608,9 @@ describe('pm2 orchestrator e2e', () => {
             username: 'e2e-user',
             credential: sealGatewayPassword('e2e-pass-123', await gatewayClient.auth.passwordKey.query()),
         });
+        if (login.status !== 'login') {
+            throw new Error('Local integration fixture unexpectedly requires Kakao OTP.');
+        }
 
         const gameSession = await gatewayClient.auth.issueGameSession.mutate({
             sessionToken: login.sessionToken,
