@@ -197,31 +197,54 @@ test('two users enlist, the engine advances three months, and only a chief uploa
         }
         expect(enlisted.rows.every((general) => general.nation_id > 0)).toBe(true);
 
+        const waitForPaused = async (paused: boolean) => {
+            const deadline = Date.now() + 15_000;
+            while (Date.now() < deadline) {
+                const status = await admin.turnDaemon.status.query({ timeoutMs: 5_000 });
+                if (status?.lastError) throw new Error(`Turn daemon failed: ${status.lastError}`);
+                if (status?.paused === paused) return;
+                await sleep(200);
+            }
+            throw new Error(`Turn daemon did not become ${paused ? 'paused' : 'resumed'}.`);
+        };
+
+        const setOfficerLevels = async (aLevel: number, bLevel: number) => {
+            const connection = await db.connect();
+            try {
+                await connection.query('BEGIN');
+                await connection.query('UPDATE general SET officer_level = $2 WHERE id = $1', [generalAId, aLevel]);
+                await connection.query('UPDATE general SET officer_level = $2 WHERE id = $1', [generalBId, bLevel]);
+                await connection.query('COMMIT');
+            } catch (error) {
+                await connection.query('ROLLBACK');
+                throw error;
+            } finally {
+                connection.release();
+            }
+        };
+
         // Appointment is fixture setup for the authorization boundary below. Enlistment and
         // month advancement above are performed exclusively by the real turn daemon.
-        const connection = await db.connect();
+        await admin.turnDaemon.pause.mutate({ reason: 'chief upload authorization fixture' });
+        await waitForPaused(true);
         try {
-            await connection.query('BEGIN');
-            await connection.query('UPDATE general SET officer_level = 5 WHERE id = $1', [generalAId]);
-            await connection.query('UPDATE general SET officer_level = 1 WHERE id = $1', [generalBId]);
-            await connection.query('COMMIT');
-        } catch (error) {
-            await connection.query('ROLLBACK');
-            throw error;
+            await setOfficerLevels(5, 1);
+
+            await expect(userB.board.uploadImage.mutate({ dataUrl: sampleImage.toString('base64') })).rejects.toThrow(
+                '권한이 부족합니다. 수뇌부가 아닙니다.'
+            );
+
+            const uploaded = await userA.board.uploadImage.mutate({ dataUrl: sampleImage.toString('base64') });
+            expect(uploaded.url).toMatch(/^https:\/\/sam-image\.hided\.net\/uploads\/core2026\/[a-f0-9]{32}\.webp$/);
+            expect(uploaded.format).toBe('webp');
+            expect(uploaded.width).toBe(1);
+            expect(uploaded.height).toBe(1);
+            expect(uploaded.size).toBeGreaterThan(0);
         } finally {
-            connection.release();
+            await setOfficerLevels(1, 1);
+            await admin.turnDaemon.resume.mutate({ reason: 'chief upload authorization fixture complete' });
+            await waitForPaused(false);
         }
-
-        await expect(userB.board.uploadImage.mutate({ dataUrl: sampleImage.toString('base64') })).rejects.toThrow(
-            '권한이 부족합니다. 수뇌부가 아닙니다.'
-        );
-
-        const uploaded = await userA.board.uploadImage.mutate({ dataUrl: sampleImage.toString('base64') });
-        expect(uploaded.url).toMatch(/^https:\/\/sam-image\.hided\.net\/uploads\/core2026\/[a-f0-9]{32}\.webp$/);
-        expect(uploaded.format).toBe('webp');
-        expect(uploaded.width).toBe(1);
-        expect(uploaded.height).toBe(1);
-        expect(uploaded.size).toBeGreaterThan(0);
     } finally {
         await db.end();
     }
