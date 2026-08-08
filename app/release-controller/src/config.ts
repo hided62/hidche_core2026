@@ -33,6 +33,9 @@ export const resolveReleaseControllerConfig = (env: NodeJS.ProcessEnv = process.
     if (!rawGatewayDatabaseUrl) {
         throw new Error('GATEWAY_DATABASE_URL or DATABASE_URL is required.');
     }
+    if (!env.REDIS_URL?.trim()) {
+        throw new Error('REDIS_URL is required.');
+    }
     const workspaceRoot = path.resolve(env.RELEASE_CONTROLLER_WORKSPACE_ROOT ?? process.cwd());
     const gatewayDbSchema = env.GATEWAY_DB_SCHEMA?.trim() || 'public';
     return {
@@ -51,6 +54,9 @@ export const resolveReleaseControllerConfig = (env: NodeJS.ProcessEnv = process.
             60000,
             'RELEASE_CONTROLLER_READINESS_TIMEOUT_MS'
         ),
-        baseEnv: sanitizeManagedProcessEnv(env),
+        baseEnv: {
+            ...sanitizeManagedProcessEnv(env),
+            REDIS_URL: env.REDIS_URL.trim(),
+        },
     };
 };

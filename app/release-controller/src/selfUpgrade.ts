@@ -46,7 +46,7 @@ export const buildReleaseControllerDefinition = (
         ...sanitizeManagedProcessEnv(config.baseEnv),
         GATEWAY_DATABASE_URL: config.gatewayDatabaseUrl,
         GATEWAY_DB_SCHEMA: config.gatewayDbSchema,
-        RELEASE_CONTROLLER_WORKSPACE_ROOT: workspaceRoot,
+        RELEASE_CONTROLLER_WORKSPACE_ROOT: config.workspaceRoot,
         RELEASE_CONTROLLER_WORKTREE_ROOT: config.worktreeRoot,
     },
 });

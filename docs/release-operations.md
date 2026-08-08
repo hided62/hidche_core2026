@@ -114,6 +114,10 @@ release-controller는 PM2 process 안에서 실행되므로 부모의 `args`, `p
 Caddy upstream port는 열리지 않을 수 있습니다. 배포 readiness는 process 상태와
 두 HTTP endpoint를 함께 확인해야 합니다.
 
+Gateway process definition에는 `GATEWAY_DATABASE_URL`과 `REDIS_URL`이 모두
+필요합니다. controller는 `REDIS_URL`이 없는 환경에서는 시작 단계에서 실패하여
+불완전한 Gateway process 전환을 막습니다.
+
 Gateway 전체에는 활성 릴리스 작업을 동시에 하나만 둘 수 있습니다. 화면의
 릴리스 이력에서 요청 source, 고정 commit, 상태와 오류를 확인할 수 있습니다.
 
@@ -154,7 +158,10 @@ pnpm --filter @sammo-ts/release-controller run-once
 
 Self-upgrade는 실행 중인 controller daemon과 다른 shell/CLI process에서
 실행해 주세요. 대상 worktree를 준비하고 build와 gateway migration을 마친 뒤
-controller PM2 definition만 전환합니다.
+controller PM2 definition만 전환합니다. CLI 환경에는 `GATEWAY_DATABASE_URL`과
+`REDIS_URL`을 모두 주입해야 합니다. 새 controller의 cwd는 선택 commit
+worktree이지만 `RELEASE_CONTROLLER_WORKSPACE_ROOT`는 원래 Core checkout을
+유지하며, release state가 없는 최초 DEPLOY의 rollback 기준으로 사용합니다.
 
 ```sh
 pnpm --filter @sammo-ts/release-controller build

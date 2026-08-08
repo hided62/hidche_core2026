@@ -59,12 +59,17 @@ export const buildGatewayProcessDefinitions = (
     workspaceRoot: string,
     config: ReleaseControllerConfig
 ): ProcessDefinition[] => {
+    const redisUrl = config.baseEnv.REDIS_URL?.trim();
+    if (!redisUrl) {
+        throw new Error('REDIS_URL is required to start Gateway processes.');
+    }
     const apiCwd = path.join(workspaceRoot, 'app', 'gateway-api');
     const frontendCwd = path.join(workspaceRoot, 'app', 'gateway-frontend');
     const apiScript = path.join(apiCwd, 'dist', 'index.js');
     const frontendScript = path.join(frontendCwd, 'node_modules', 'vite', 'bin', 'vite.js');
     const env = {
         ...sanitizeManagedProcessEnv(config.baseEnv),
+        REDIS_URL: redisUrl,
         GATEWAY_API_HOST: '0.0.0.0',
         GATEWAY_API_PORT: String(config.gatewayApiPort),
         GATEWAY_DATABASE_URL: config.gatewayDatabaseUrl,
@@ -232,7 +237,9 @@ export class GatewayReleaseController {
             try {
                 const [api, frontend] = await Promise.all([this.fetchImpl(apiUrl), this.fetchImpl(frontendUrl)]);
                 const processes = await this.processManager.list();
-                const expected = processes.filter((process) => PROCESS_NAMES.includes(process.name as (typeof PROCESS_NAMES)[number]));
+                const expected = processes.filter((process) =>
+                    PROCESS_NAMES.includes(process.name as (typeof PROCESS_NAMES)[number])
+                );
                 const safe = expected.filter(
                     (process) => process.status.toLowerCase() === 'online' && (process.restartCount ?? 0) === 0
                 );

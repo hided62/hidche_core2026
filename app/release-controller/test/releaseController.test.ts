@@ -73,7 +73,9 @@ const config: ReleaseControllerConfig = {
     gatewayBasePath: '/gateway',
     pollIntervalMs: 5,
     readinessTimeoutMs: 10,
-    baseEnv: {},
+    baseEnv: {
+        REDIS_URL: 'redis://integration.invalid:6379/0',
+    },
 };
 
 afterEach(async () => {
@@ -127,6 +129,7 @@ it('does not forward release-controller PM2 identity to Gateway processes', () =
         ...config,
         baseEnv: {
             DATABASE_URL: 'postgresql://integration.invalid/sammo',
+            REDIS_URL: 'redis://integration.invalid:6379/0',
             GATEWAY_ROLE: 'orchestrator',
             args: 'daemon',
             name: 'sammo:release-controller',
@@ -142,6 +145,15 @@ it('does not forward release-controller PM2 identity to Gateway processes', () =
         expect(definition.env).not.toHaveProperty('pm_exec_path');
         expect(definition.env).not.toHaveProperty('name');
     }
+});
+
+it('rejects Gateway definitions before switching processes when Redis connection context is missing', () => {
+    expect(() =>
+        buildGatewayProcessDefinitions('/srv/sammo/release', {
+            ...config,
+            baseEnv: {},
+        })
+    ).toThrow('REDIS_URL is required to start Gateway processes.');
 });
 
 describe('GatewayReleaseController', () => {
@@ -239,6 +251,7 @@ describe('resolveReleaseControllerConfig', () => {
     it('applies the configured gateway schema to the controller database URL', () => {
         const resolved = resolveReleaseControllerConfig({
             GATEWAY_DATABASE_URL: 'postgresql://user:pass@127.0.0.1:5432/sammo?schema=wrong',
+            REDIS_URL: 'redis://127.0.0.1:6379/0',
             GATEWAY_DB_SCHEMA: 'gateway_release',
             RELEASE_CONTROLLER_WORKSPACE_ROOT: '/srv/sammo/controller',
         });
@@ -249,6 +262,7 @@ describe('resolveReleaseControllerConfig', () => {
     it('removes PM2 metadata from the inherited controller environment', () => {
         const resolved = resolveReleaseControllerConfig({
             GATEWAY_DATABASE_URL: 'postgresql://user:pass@127.0.0.1:5432/sammo',
+            REDIS_URL: 'redis://127.0.0.1:6379/0',
             RELEASE_CONTROLLER_WORKSPACE_ROOT: '/srv/sammo/controller',
             args: 'daemon',
             pm_id: '3',
@@ -258,12 +272,22 @@ describe('resolveReleaseControllerConfig', () => {
 
         expect(resolved.baseEnv).toMatchObject({
             GATEWAY_DATABASE_URL: 'postgresql://user:pass@127.0.0.1:5432/sammo',
+            REDIS_URL: 'redis://127.0.0.1:6379/0',
             RELEASE_CONTROLLER_WORKSPACE_ROOT: '/srv/sammo/controller',
         });
         expect(resolved.baseEnv).not.toHaveProperty('pm_id');
         expect(resolved.baseEnv).not.toHaveProperty('args');
         expect(resolved.baseEnv).not.toHaveProperty('name');
         expect(resolved.baseEnv).not.toHaveProperty('axm_monitor');
+    });
+
+    it('rejects a controller environment that cannot start Redis-backed Gateway processes', () => {
+        expect(() =>
+            resolveReleaseControllerConfig({
+                GATEWAY_DATABASE_URL: 'postgresql://user:pass@127.0.0.1:5432/sammo',
+                RELEASE_CONTROLLER_WORKSPACE_ROOT: '/srv/sammo/controller',
+            })
+        ).toThrow('REDIS_URL is required.');
     });
 });
 
@@ -280,6 +304,7 @@ describe('upgradeReleaseController', () => {
         });
 
         expect(definition.env).toMatchObject({ DATABASE_URL: 'postgresql://integration.invalid/sammo' });
+        expect(definition.env).toHaveProperty('RELEASE_CONTROLLER_WORKSPACE_ROOT', config.workspaceRoot);
         expect(definition.env).not.toHaveProperty('pm_id');
         expect(definition.env).not.toHaveProperty('pm_exec_path');
         expect(definition.env).not.toHaveProperty('name');

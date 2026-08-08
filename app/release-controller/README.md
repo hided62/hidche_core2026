@@ -21,6 +21,7 @@ Gateway process 환경에 전달하지 않습니다. 이 값이 frontend 정의�
 ## 환경 변수
 
 - `GATEWAY_DATABASE_URL`: Gateway PostgreSQL URL입니다. 필수입니다.
+- `REDIS_URL`: Gateway API와 orchestrator가 사용할 Redis URL입니다. 필수입니다.
 - `GATEWAY_DB_SCHEMA`: Gateway schema이며 기본값은 `public`입니다.
 - `RELEASE_CONTROLLER_WORKSPACE_ROOT`: Git checkout입니다.
 - `RELEASE_CONTROLLER_WORKTREE_ROOT`: commit worktree 상위 경로입니다.
@@ -31,6 +32,12 @@ Gateway process 환경에 전달하지 않습니다. 이 값이 frontend 정의�
 
 비밀값은 Git에서 제외된 환경 파일 또는 process 환경으로 전달해 주세요.
 `VITE_*`에는 공개 URL만 넣어 주세요.
+
+Self-upgrade는 controller의 script와 cwd만 선택 commit worktree로 바꿉니다.
+`RELEASE_CONTROLLER_WORKSPACE_ROOT`는 원래 Git checkout을 유지해야 합니다. 이를
+controller artifact worktree로 바꾸면 아직 게시된 release state가 없는 최초
+DEPLOY의 rollback이 frontend build가 없는 controller worktree를 이전 Gateway로
+오인할 수 있습니다.
 
 ## 설치와 실행
 
