@@ -27,7 +27,7 @@ const login = async (page: Page, username: string, password: string): Promise<vo
 const hweRow = (page: Page) => page.locator('tbody tr').filter({ hasText: /^hwe섭/ });
 
 const resetScenario = async (page: Page, scenarioId: string, sourceCommit: string): Promise<void> => {
-    await page.goto('/gateway/admin/server-operations');
+    await page.goto('/gateway/admin/releases');
     await page.getByTestId('profile-select').selectOption('hwe:2');
     await page.getByTestId('source-commit').check();
     await page.getByTestId('source-ref').fill(sourceCommit);

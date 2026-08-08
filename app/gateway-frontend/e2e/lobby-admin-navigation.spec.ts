@@ -1,4 +1,5 @@
 import { expect, test, type Page, type Route } from '@playwright/test';
+import { writeFile } from 'node:fs/promises';
 
 const response = (data: unknown) => ({ result: { data } });
 
@@ -53,7 +54,7 @@ const installGatewayFixture = async (page: Page, roles: string[]) => {
     });
 };
 
-test('bootstrap superuser can navigate from the lobby to server operations', async ({ page }) => {
+test('bootstrap superuser can navigate the administrator workspace from the lobby', async ({ page }, testInfo) => {
     await installGatewayFixture(page, ['superuser']);
 
     await page.goto('lobby');
@@ -62,9 +63,39 @@ test('bootstrap superuser can navigate from the lobby to server operations', asy
     await adminLink.click();
 
     await expect(page).toHaveURL(/\/gateway\/admin$/);
-    await expect(page.getByRole('heading', { name: '관리자 콘솔' })).toBeVisible();
-    await page.getByRole('link', { name: '서버 배포 · 시나리오 초기화' }).click();
-    await expect(page).toHaveURL(/\/gateway\/admin\/server-operations$/);
+    await expect(page.getByRole('heading', { name: '운영 개요' })).toBeVisible();
+    const navigation = page.getByRole('navigation', { name: '관리자 메뉴' });
+    await expect(navigation).toBeVisible();
+    const userLink = navigation.getByRole('link', { name: '사용자 관리' });
+    const baseColor = await userLink.evaluate((element) => getComputedStyle(element).color);
+    await userLink.hover();
+    await expect.poll(() => userLink.evaluate((element) => getComputedStyle(element).color)).not.toBe(baseColor);
+    await page.screenshot({ path: testInfo.outputPath('admin-overview-desktop.png'), fullPage: true });
+
+    await page.setViewportSize({ width: 390, height: 844 });
+    await expect(navigation).toBeHidden();
+    await page.getByRole('button', { name: '관리자 메뉴' }).click();
+    await expect(navigation).toBeVisible();
+    const geometry = await navigation.evaluate((element) => {
+        const rect = element.getBoundingClientRect();
+        return { left: rect.left, right: rect.right, top: rect.top, viewportWidth: window.innerWidth };
+    });
+    expect(geometry.left).toBeGreaterThanOrEqual(0);
+    expect(geometry.right).toBeLessThanOrEqual(geometry.viewportWidth);
+    expect(geometry.top).toBeGreaterThanOrEqual(0);
+    await writeFile(testInfo.outputPath('admin-overview-mobile-geometry.json'), JSON.stringify(geometry));
+    await page.screenshot({ path: testInfo.outputPath('admin-overview-mobile-menu.png'), fullPage: true });
+
+    await navigation.getByRole('link', { name: '버전 업데이트' }).click();
+    await expect(page).toHaveURL(/\/gateway\/admin\/releases$/);
+    await expect(page.getByRole('heading', { name: '버전 업데이트' })).toBeVisible();
+});
+
+test('legacy server operations URL keeps query parameters and redirects to releases', async ({ page }) => {
+    await installGatewayFixture(page, ['superuser']);
+
+    await page.goto('admin/server-operations?operationId=legacy-operation');
+    await expect(page).toHaveURL(/\/gateway\/admin\/releases\?operationId=legacy-operation$/);
 });
 
 test('scoped administrators see the same navigation while ordinary users do not', async ({ browser }) => {

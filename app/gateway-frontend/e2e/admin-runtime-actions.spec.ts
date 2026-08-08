@@ -211,8 +211,8 @@ const installFixture = async (
 
 test('reports clock-shift acceptance separately from actual application', async ({ page }) => {
     const fixture = await installFixture(page, { deferRequest: true, pendingProfileReads: 1 });
-    await page.goto('admin');
-    await expect(page.getByRole('heading', { name: '관리자 콘솔' })).toBeVisible();
+    await page.goto('admin/servers');
+    await expect(page.getByRole('heading', { name: '서버 관리' })).toBeVisible();
 
     const duration = page.locator('input[type="number"][min="1"][max="1440"]');
     const accelerate = page.getByRole('button', { name: '가속', exact: true });
@@ -249,7 +249,7 @@ test('blocks another clock shift while any recent action is pending', async ({ p
             }),
         ],
     });
-    await page.goto('admin');
+    await page.goto('admin/servers');
     await page.locator('input[type="number"][min="1"][max="1440"]').fill('15');
 
     await expect(page.getByRole('button', { name: '가속', exact: true })).toBeDisabled();
@@ -264,7 +264,7 @@ test('renders a failed terminal outcome without calling it applied', async ({ pa
             }),
         ],
     });
-    await page.goto('admin');
+    await page.goto('admin/servers');
 
     const failed = page.getByText('FAILED · ACCELERATE 15분');
     await expect(failed).toBeVisible();
@@ -282,7 +282,7 @@ test('renders an ignored terminal outcome without calling it applied', async ({ 
             }),
         ],
     });
-    await page.goto('admin');
+    await page.goto('admin/servers');
 
     const ignored = page.getByText('IGNORED · DELAY 15분');
     await expect(ignored).toBeVisible();
@@ -291,32 +291,20 @@ test('renders an ignored terminal outcome without calling it applied', async ({ 
     await expect(page.getByText(/적용됨|요청 완료/)).toHaveCount(0);
 });
 
-test('keeps profile installation disabled while its queued operation is active', async ({ page }, testInfo) => {
-    const fixture = await installFixture(page, { deferInstall: true });
-    page.on('dialog', (dialog) => dialog.accept());
-    await page.goto('admin');
+test('directs profile deployment to the centralized version page', async ({ page }) => {
+    await installFixture(page);
+    await page.goto('admin/servers');
 
-    const installButton = page.getByRole('button', { name: '설치 적용' });
-    const click = installButton.click();
-    await expect.poll(() => fixture.requestBodies.length).toBe(1);
-    await expect(page.getByRole('button', { name: '등록 중…' })).toBeDisabled();
-    fixture.releaseInstall();
-    await click;
-
-    const operationLink = page.getByRole('link', { name: /77777777-7777-4777-8777-777777777777 상태 보기/ });
-    await expect(operationLink).toBeVisible();
-    await expect(page.getByRole('button', { name: '설치 작업 진행 중' })).toBeDisabled();
+    const releaseLink = page.getByRole('link', { name: '버전 업데이트 열기' });
+    await expect(releaseLink).toBeVisible();
+    await expect(releaseLink).toHaveAttribute('href', '/gateway/admin/releases');
+    await expect(page.getByRole('button', { name: '설치 적용' })).toHaveCount(0);
 
     await page.setViewportSize({ width: 390, height: 844 });
-    const linkGeometry = await operationLink.evaluate((element) => {
+    const linkGeometry = await releaseLink.evaluate((element) => {
         const rect = element.getBoundingClientRect();
         return { left: rect.left, right: rect.right, viewportWidth: window.innerWidth };
     });
     expect(linkGeometry.left).toBeGreaterThanOrEqual(0);
     expect(linkGeometry.right).toBeLessThanOrEqual(linkGeometry.viewportWidth);
-    await page.screenshot({ path: testInfo.outputPath('admin-install-active-mobile.png'), fullPage: true });
-
-    await operationLink.click();
-    await expect(page).toHaveURL(/\/gateway\/admin\/server-operations\?operationId=77777777/);
-    await expect(page.getByTestId('operations-table')).toContainText('77777777-7777-4777-8777-777777777777');
 });

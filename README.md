@@ -224,4 +224,5 @@ commit-worktree build 경로에서 구성합니다.
 보존합니다. Gateway API·frontend·orchestrator는 외부 release-controller가
 함께 전환합니다. 설치와 CLI self-upgrade 절차는
 [`app/release-controller/README.md`](app/release-controller/README.md)를 확인해
-주세요.
+주세요. 관리자 화면의 메뉴와 책임 분리는
+[`docs/admin-console.md`](docs/admin-console.md)에 정리되어 있습니다.

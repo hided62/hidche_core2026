@@ -85,8 +85,8 @@ test('admin resets and opens hwe, then two users create generals and reach main'
     await login(page, adminUsername, await readPassword('admin'));
     await page.getByRole('link', { name: '관리자 페이지' }).click();
     await expect(page).toHaveURL(/\/gateway\/admin$/);
-    await page.getByRole('link', { name: '서버 배포 · 시나리오 초기화' }).click();
-    await expect(page).toHaveURL(/\/gateway\/admin\/server-operations$/);
+    await page.getByRole('link', { name: '버전 업데이트' }).first().click();
+    await expect(page).toHaveURL(/\/gateway\/admin\/releases$/);
 
     await page.getByTestId('profile-select').selectOption(profileKey);
     const profileStatus = page.getByTestId('selected-profile-status');

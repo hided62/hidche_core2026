@@ -1,6 +1,7 @@
 import { createRouter, createWebHistory } from 'vue-router';
 import HomeView from '../views/HomeView.vue';
 import LobbyView from '../views/LobbyView.vue';
+import AdminOverviewView from '../views/AdminOverviewView.vue';
 import AdminView from '../views/AdminView.vue';
 import ServerOperationsView from '../views/ServerOperationsView.vue';
 import AccountView from '../views/AccountView.vue';
@@ -28,12 +29,40 @@ const router = createRouter({
         {
             path: '/admin',
             name: 'admin',
+            component: AdminOverviewView,
+        },
+        {
+            path: '/admin/users',
+            name: 'admin-users',
             component: AdminView,
+            props: { section: 'users' },
+        },
+        {
+            path: '/admin/servers',
+            name: 'admin-servers',
+            component: AdminView,
+            props: { section: 'servers' },
+        },
+        {
+            path: '/admin/system',
+            name: 'admin-system',
+            component: AdminView,
+            props: { section: 'system' },
+        },
+        {
+            path: '/admin/audit',
+            name: 'admin-audit',
+            component: AdminView,
+            props: { section: 'audit' },
+        },
+        {
+            path: '/admin/releases',
+            name: 'admin-releases',
+            component: ServerOperationsView,
         },
         {
             path: '/admin/server-operations',
-            name: 'server-operations',
-            component: ServerOperationsView,
+            redirect: (to) => ({ path: '/admin/releases', query: to.query }),
         },
         {
             path: '/account',

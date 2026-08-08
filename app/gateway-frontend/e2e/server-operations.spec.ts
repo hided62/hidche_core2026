@@ -218,9 +218,9 @@ test('separates branch and commit semantics and submits a reset from the dedicat
     await installFixture(page, state);
     page.on('dialog', (dialog) => dialog.accept());
 
-    await page.goto('admin/server-operations');
+    await page.goto('admin/releases');
     await expect(page.getByTestId('server-operations-page')).toBeVisible();
-    await expect(page).toHaveURL(/\/gateway\/admin\/server-operations$/);
+    await expect(page).toHaveURL(/\/gateway\/admin\/releases$/);
     await expect(page.getByTestId('source-help')).toContainText('실제로 시작될 때');
     await expect(page.getByTestId('scenario-select')).toHaveValue('2');
 
@@ -293,7 +293,7 @@ test('starts and stops all runtime roles through the operation controls', async 
     await installFixture(page, state);
     page.on('dialog', (dialog) => dialog.accept());
 
-    await page.goto('admin/server-operations');
+    await page.goto('admin/releases');
     await page.getByTestId('start-server').click();
     await expect(page.getByText('시작 작업을 요청했습니다.')).toBeVisible();
     await expect(page.getByText('RUNNING', { exact: true }).first()).toBeVisible();
@@ -312,7 +312,7 @@ test('separates DB-preserving profile deployment from DB reset', async ({ page }
     await installFixture(page, state);
     page.on('dialog', (dialog) => dialog.accept());
 
-    await page.goto('admin/server-operations');
+    await page.goto('admin/releases');
     await expect(page.getByText('Game frontend')).toBeVisible();
     await page.getByTestId('request-deploy').click();
 
@@ -327,7 +327,7 @@ test('controls gateway deployment and rollback through the external controller q
     await installFixture(page, state);
     page.on('dialog', (dialog) => dialog.accept());
 
-    await page.goto('admin/server-operations');
+    await page.goto('admin/releases');
     const panel = page.getByTestId('gateway-release-panel');
     await expect(panel).toBeVisible();
     await expect(panel).toContainText('aaaaaaaaaaaa');
@@ -375,7 +375,7 @@ test('renders a failed reset, retries it as a new operation, and reaches success
     await installFixture(page, state);
     page.on('dialog', (dialog) => dialog.accept());
 
-    await page.goto('admin/server-operations');
+    await page.goto('admin/releases');
     await expect(page.getByText('FAILED', { exact: true })).toBeVisible();
     await expect(page.getByRole('cell', { name: 'fedcba987654', exact: true })).toBeVisible();
     const failure = page.getByText(longError);
