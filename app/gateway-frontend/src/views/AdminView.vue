@@ -88,6 +88,20 @@ type AdminUser = {
     createdAt: string;
 };
 
+type AdminUserListItem = {
+    id: string;
+    username: string;
+    displayName: string;
+    email?: string;
+    oauthType: 'NONE' | 'KAKAO';
+    roles: string[];
+    hasActiveSanction: boolean;
+    deleteAfter?: string;
+    createdAt: string;
+};
+
+type UserWorkspaceSection = 'account' | 'access' | 'restrictions' | 'lifecycle';
+
 type AdminCapability = {
     permission: string;
     label: string;
@@ -201,6 +215,13 @@ type AdminClient = {
         };
     };
     users: {
+        list: {
+            query: (input?: { query?: string; limit?: number; cursor?: string }) => Promise<{
+                users: AdminUserListItem[];
+                total: number;
+                nextCursor?: string;
+            }>;
+        };
         getLocalAccountStatus: {
             query: () => Promise<{ enabled: boolean }>;
         };
@@ -405,6 +426,20 @@ const userLookupValue = ref('');
 const userLoading = ref(false);
 const userError = ref('');
 const userResult = ref<AdminUser | null>(null);
+const userDirectoryQuery = ref('');
+const userDirectory = ref<AdminUserListItem[]>([]);
+const userDirectoryTotal = ref(0);
+const userDirectoryNextCursor = ref<string>();
+const userDirectoryLoading = ref(false);
+const userDirectoryError = ref('');
+const userWorkspaceSection = ref<UserWorkspaceSection>('account');
+
+const userWorkspaceSections: Array<{ id: UserWorkspaceSection; label: string; description: string }> = [
+    { id: 'account', label: '계정', description: '기본 정보와 로컬 계정 생성' },
+    { id: 'access', label: '접근 · 권한', description: '비밀번호, 운영 권한, Kakao 접근' },
+    { id: 'restrictions', label: '보안 · 제재', description: '차단, 서버 제한, 아이콘 초기화' },
+    { id: 'lifecycle', label: '탈퇴 · 이력', description: '탈퇴 예약과 관리자 조치 이력' },
+];
 
 const localAccountEnabled = ref(false);
 const localAccountStatus = ref('');
@@ -751,6 +786,31 @@ const lookupUser = async () => {
     }
 };
 
+const loadUserDirectory = async (append = false) => {
+    userDirectoryLoading.value = true;
+    userDirectoryError.value = '';
+    try {
+        const result = await adminClient.users.list.query({
+            query: userDirectoryQuery.value.trim() || undefined,
+            limit: 30,
+            cursor: append ? userDirectoryNextCursor.value : undefined,
+        });
+        userDirectory.value = append ? [...userDirectory.value, ...result.users] : result.users;
+        userDirectoryTotal.value = result.total;
+        userDirectoryNextCursor.value = result.nextCursor;
+    } catch {
+        userDirectoryError.value = '계정 목록을 불러오지 못했습니다.';
+    } finally {
+        userDirectoryLoading.value = false;
+    }
+};
+
+const selectDirectoryUser = async (user: AdminUserListItem) => {
+    userLookupMode.value = 'id';
+    userLookupValue.value = user.id;
+    await lookupUser();
+};
+
 const requireUserActionReason = (): string | null => {
     const reason = userActionReason.value.trim();
     if (reason.length < 3) {
@@ -817,7 +877,7 @@ const updateKakaoGrace = async (clear = false) => {
         const grace = await adminClient.users.getKakaoGracePolicies.query({ userId: userResult.value.id });
         kakaoPolicies.value = grace.profiles;
         specialAccessGrants.value = grace.specialAccessGrants;
-        await refreshUserHistory();
+        await Promise.all([refreshUserHistory(), loadUserDirectory()]);
     } catch {
         kakaoGraceStatus.value = 'OAuth 유예 변경 실패';
     }
@@ -844,7 +904,7 @@ const grantSpecialAccess = async () => {
         kakaoPolicies.value = policy.profiles;
         specialAccessGrants.value = policy.specialAccessGrants;
         specialAccessStatus.value = '특수 접근 자격을 부여했습니다.';
-        await refreshUserHistory();
+        await Promise.all([refreshUserHistory(), loadUserDirectory()]);
     } catch {
         specialAccessStatus.value = '특수 접근 자격 부여에 실패했습니다.';
     }
@@ -860,7 +920,7 @@ const revokeSpecialAccess = async (grantId: string) => {
         kakaoPolicies.value = policy.profiles;
         specialAccessGrants.value = policy.specialAccessGrants;
         specialAccessStatus.value = '특수 접근 자격을 해제했습니다.';
-        await refreshUserHistory();
+        await Promise.all([refreshUserHistory(), loadUserDirectory()]);
     } catch {
         specialAccessStatus.value = '특수 접근 자격 해제에 실패했습니다.';
     }
@@ -883,7 +943,7 @@ const resetUserPassword = async () => {
         passwordResult.value = result.password;
         passwordStatus.value = '초기화 완료';
         passwordInput.value = '';
-        await refreshUserHistory();
+        await Promise.all([refreshUserHistory(), loadUserDirectory()]);
     } catch (error) {
         passwordStatus.value = '초기화 실패';
     }
@@ -913,7 +973,7 @@ const updateUserRoles = async () => {
         });
         userResult.value = { ...userResult.value, roles: result.roles };
         rolesStatus.value = '권한 업데이트 완료';
-        await refreshUserHistory();
+        await Promise.all([refreshUserHistory(), loadUserDirectory()]);
     } catch (error) {
         rolesStatus.value = '권한 업데이트 실패';
     }
@@ -938,7 +998,7 @@ const applyBan = async () => {
         });
         userResult.value = { ...userResult.value, sanctions: result.sanctions };
         banStatus.value = '차단 설정 완료';
-        await refreshUserHistory();
+        await Promise.all([refreshUserHistory(), loadUserDirectory()]);
     } catch (error) {
         banStatus.value = '차단 설정 실패';
     }
@@ -958,7 +1018,7 @@ const clearBan = async () => {
         });
         userResult.value = { ...userResult.value, sanctions: result.sanctions };
         banStatus.value = '차단 해제 완료';
-        await refreshUserHistory();
+        await Promise.all([refreshUserHistory(), loadUserDirectory()]);
     } catch (error) {
         banStatus.value = '차단 해제 실패';
     }
@@ -982,7 +1042,7 @@ const resetProfileIcon = async () => {
         profileIconStatus.value = result.flushPublished
             ? '아이콘 초기화 요청 완료'
             : '아이콘은 초기화됐지만 실행 중 서버 알림에 실패했습니다. 다시 요청해 주세요.';
-        await refreshUserHistory();
+        await Promise.all([refreshUserHistory(), loadUserDirectory()]);
     } catch (error) {
         profileIconStatus.value = '아이콘 초기화 실패';
     }
@@ -1017,7 +1077,7 @@ const applyRestriction = async () => {
         });
         userResult.value = { ...userResult.value, sanctions: result.sanctions };
         restrictionStatus.value = '서버 제재 적용 완료';
-        await refreshUserHistory();
+        await Promise.all([refreshUserHistory(), loadUserDirectory()]);
     } catch (error) {
         restrictionStatus.value = '서버 제재 적용 실패';
     }
@@ -1042,7 +1102,7 @@ const clearRestriction = async () => {
         });
         userResult.value = { ...userResult.value, sanctions: result.sanctions };
         restrictionStatus.value = '서버 제재 해제 완료';
-        await refreshUserHistory();
+        await Promise.all([refreshUserHistory(), loadUserDirectory()]);
     } catch (error) {
         restrictionStatus.value = '서버 제재 해제 실패';
     }
@@ -1068,7 +1128,7 @@ const scheduleDeleteUser = async () => {
         });
         userResult.value = { ...userResult.value, deleteAfter: result.deleteAfter };
         forceDeleteStatus.value = `탈퇴 예약 완료: ${new Date(result.deleteAfter).toLocaleString('ko-KR')}`;
-        await refreshUserHistory();
+        await Promise.all([refreshUserHistory(), loadUserDirectory()]);
     } catch (error) {
         forceDeleteStatus.value = '탈퇴 예약 실패';
     }
@@ -1104,7 +1164,7 @@ const createLocalAccount = async () => {
         };
         userLookupMode.value = 'username';
         userLookupValue.value = result.user.username;
-        await lookupUser();
+        await Promise.all([lookupUser(), loadUserDirectory()]);
     } catch (error) {
         localAccountStatus.value = '로컬 계정 생성 실패';
     } finally {
@@ -1117,6 +1177,7 @@ onMounted(() => {
         void loadCapabilities();
     }
     if (props.section === 'users') {
+        void loadUserDirectory();
         void loadLocalAccountStatus();
     }
     if (props.section === 'system') {
@@ -1159,32 +1220,123 @@ onMounted(() => {
             <div class="space-y-8">
                 <section v-if="section === 'users'" class="grid min-w-0 items-start gap-6 xl:grid-cols-2">
                     <div class="bg-zinc-900 border border-zinc-800 rounded-lg p-5 space-y-4 xl:col-span-2">
-                        <h3 class="text-lg font-semibold">유저 관리</h3>
-                        <form class="space-y-3" @submit.prevent="lookupUser">
-                            <div class="flex flex-col md:flex-row gap-2">
-                                <select
-                                    v-model="userLookupMode"
-                                    class="bg-zinc-950 border border-zinc-700 rounded px-3 py-2 text-sm text-white"
-                                >
-                                    <option value="username">계정명</option>
-                                    <option value="email">이메일</option>
-                                    <option value="id">UUID</option>
-                                </select>
-                                <input
-                                    v-model="userLookupValue"
-                                    type="text"
-                                    class="flex-1 bg-zinc-950 border border-zinc-700 rounded px-3 py-2 text-sm text-white focus:outline-none focus:border-yellow-500"
-                                    placeholder="검색 값 입력"
-                                />
-                                <button
-                                    class="bg-blue-700 hover:bg-blue-600 text-white font-semibold px-4 py-2 rounded"
-                                    :disabled="userLoading"
-                                >
-                                    조회
-                                </button>
+                        <div class="flex flex-wrap items-end justify-between gap-2">
+                            <div>
+                                <h3 class="text-lg font-semibold">계정 디렉터리</h3>
+                                <p class="mt-1 text-xs text-zinc-500">
+                                    최근 가입 계정을 먼저 보여줍니다. 계정명·표시명·이메일·UUID 일부로 검색할 수
+                                    있습니다.
+                                </p>
                             </div>
-                            <div v-if="userError" class="text-xs text-red-400">{{ userError }}</div>
+                            <span class="text-xs text-zinc-400">총 {{ userDirectoryTotal }}개</span>
+                        </div>
+                        <form class="flex flex-col gap-2 md:flex-row" @submit.prevent="loadUserDirectory(false)">
+                            <input
+                                v-model="userDirectoryQuery"
+                                type="search"
+                                class="flex-1 bg-zinc-950 border border-zinc-700 rounded px-3 py-2 text-sm text-white focus:outline-none focus:border-yellow-500"
+                                placeholder="계정명, 표시명, 이메일 또는 UUID 검색"
+                            />
+                            <button
+                                class="bg-blue-700 hover:bg-blue-600 disabled:opacity-50 text-white font-semibold px-4 py-2 rounded"
+                                :disabled="userDirectoryLoading"
+                            >
+                                목록 검색
+                            </button>
                         </form>
+                        <div v-if="userDirectoryError" class="text-xs text-red-400">{{ userDirectoryError }}</div>
+                        <div
+                            v-if="userDirectory.length"
+                            class="max-h-[28rem] overflow-y-auto rounded border border-zinc-800 bg-zinc-950"
+                            role="region"
+                            aria-label="계정 목록"
+                        >
+                            <button
+                                v-for="user in userDirectory"
+                                :key="user.id"
+                                type="button"
+                                class="grid w-full gap-1 border-b border-zinc-800 px-4 py-3 text-left last:border-b-0 hover:bg-zinc-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-yellow-500 md:grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)_auto] md:items-center"
+                                :class="
+                                    userResult?.id === user.id ? 'bg-zinc-900 ring-1 ring-inset ring-yellow-700' : ''
+                                "
+                                @click="selectDirectoryUser(user)"
+                            >
+                                <span class="min-w-0">
+                                    <span class="block truncate text-sm font-semibold text-white">{{
+                                        user.username
+                                    }}</span>
+                                    <span class="block truncate text-xs text-zinc-400">{{ user.displayName }}</span>
+                                </span>
+                                <span class="min-w-0 text-xs text-zinc-500">
+                                    <span class="block truncate">{{ user.email || '이메일 없음' }}</span>
+                                    <span
+                                        >{{ user.oauthType }} ·
+                                        {{ new Date(user.createdAt).toLocaleDateString('ko-KR') }}</span
+                                    >
+                                </span>
+                                <span class="flex flex-wrap gap-1 md:justify-end">
+                                    <span
+                                        v-if="user.hasActiveSanction"
+                                        class="rounded bg-red-950 px-2 py-1 text-[11px] text-red-300"
+                                        >제재 중</span
+                                    >
+                                    <span
+                                        v-if="user.deleteAfter"
+                                        class="rounded bg-orange-950 px-2 py-1 text-[11px] text-orange-300"
+                                        >탈퇴 예약</span
+                                    >
+                                    <span class="rounded bg-zinc-800 px-2 py-1 text-[11px] text-zinc-300">{{
+                                        user.roles[0] || '역할 없음'
+                                    }}</span>
+                                </span>
+                            </button>
+                        </div>
+                        <div
+                            v-else-if="!userDirectoryLoading"
+                            class="rounded border border-dashed border-zinc-700 p-6 text-center text-sm text-zinc-500"
+                        >
+                            조건에 맞는 계정이 없습니다.
+                        </div>
+                        <button
+                            v-if="userDirectoryNextCursor"
+                            type="button"
+                            class="w-full rounded border border-zinc-700 px-4 py-2 text-sm text-zinc-300 hover:bg-zinc-800 disabled:opacity-50"
+                            :disabled="userDirectoryLoading"
+                            @click="loadUserDirectory(true)"
+                        >
+                            더 보기
+                        </button>
+
+                        <details class="rounded border border-zinc-800 bg-black/20 p-3">
+                            <summary class="cursor-pointer text-xs font-semibold text-zinc-400">
+                                정확한 값으로 직접 열기
+                            </summary>
+                            <form class="space-y-3" @submit.prevent="lookupUser">
+                                <div class="flex flex-col md:flex-row gap-2">
+                                    <select
+                                        v-model="userLookupMode"
+                                        class="bg-zinc-950 border border-zinc-700 rounded px-3 py-2 text-sm text-white"
+                                    >
+                                        <option value="username">계정명</option>
+                                        <option value="email">이메일</option>
+                                        <option value="id">UUID</option>
+                                    </select>
+                                    <input
+                                        v-model="userLookupValue"
+                                        type="text"
+                                        class="flex-1 bg-zinc-950 border border-zinc-700 rounded px-3 py-2 text-sm text-white focus:outline-none focus:border-yellow-500"
+                                        placeholder="검색 값 입력"
+                                    />
+                                    <button
+                                        class="bg-blue-700 hover:bg-blue-600 text-white font-semibold px-4 py-2 rounded"
+                                        :disabled="userLoading"
+                                    >
+                                        조회
+                                    </button>
+                                </div>
+                                <div v-if="userError" class="text-xs text-red-400">{{ userError }}</div>
+                            </form>
+                        </details>
 
                         <div v-if="userResult" class="bg-zinc-950 border border-zinc-800 rounded p-4 space-y-2">
                             <div class="flex justify-between items-center">
@@ -1214,7 +1366,10 @@ onMounted(() => {
                         </div>
                     </div>
 
-                    <div class="bg-zinc-900 border border-amber-800/70 rounded-lg p-5 space-y-3 xl:col-span-2">
+                    <div
+                        v-if="hasUser"
+                        class="bg-zinc-900 border border-amber-800/70 rounded-lg p-5 space-y-3 xl:col-span-2"
+                    >
                         <h4 class="text-base font-semibold">민감 조치 공통 사유</h4>
                         <input
                             v-model="userActionReason"
@@ -1226,7 +1381,33 @@ onMounted(() => {
                         <div class="text-xs text-zinc-500">사유와 정화된 입력은 관리자 감사 원장에 기록됩니다.</div>
                     </div>
 
-                    <div class="bg-zinc-900 border border-zinc-800 rounded-lg p-5 space-y-4">
+                    <nav
+                        v-if="hasUser"
+                        class="grid gap-2 rounded-lg border border-zinc-800 bg-zinc-900 p-2 sm:grid-cols-2 xl:col-span-2 xl:grid-cols-4"
+                        aria-label="사용자 관리 기능"
+                    >
+                        <button
+                            v-for="item in userWorkspaceSections"
+                            :key="item.id"
+                            type="button"
+                            class="rounded px-4 py-3 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-yellow-500"
+                            :class="
+                                userWorkspaceSection === item.id
+                                    ? 'bg-yellow-600 text-black'
+                                    : 'bg-zinc-950 text-zinc-300 hover:bg-zinc-800'
+                            "
+                            :aria-current="userWorkspaceSection === item.id ? 'page' : undefined"
+                            @click="userWorkspaceSection = item.id"
+                        >
+                            <span class="block text-sm font-semibold">{{ item.label }}</span>
+                            <span class="mt-1 block text-[11px] opacity-75">{{ item.description }}</span>
+                        </button>
+                    </nav>
+
+                    <div
+                        v-if="userWorkspaceSection === 'account'"
+                        class="bg-zinc-900 border border-zinc-800 rounded-lg p-5 space-y-4 xl:col-span-2"
+                    >
                         <div class="flex items-center justify-between">
                             <h4 class="text-base font-semibold">로컬 계정 생성</h4>
                             <span class="text-xs text-zinc-500"> ENV {{ localAccountEnabled ? 'ON' : 'OFF' }} </span>
@@ -1268,7 +1449,10 @@ onMounted(() => {
                         </div>
                     </div>
 
-                    <div class="bg-zinc-900 border border-zinc-800 rounded-lg p-5 space-y-4">
+                    <div
+                        v-if="userWorkspaceSection === 'access'"
+                        class="bg-zinc-900 border border-zinc-800 rounded-lg p-5 space-y-4"
+                    >
                         <h4 class="text-base font-semibold">비밀번호 리셋</h4>
                         <div class="flex flex-col md:flex-row gap-2">
                             <input
@@ -1290,7 +1474,10 @@ onMounted(() => {
                         <div class="text-xs text-zinc-500">{{ passwordStatus }}</div>
                     </div>
 
-                    <div class="bg-zinc-900 border border-zinc-800 rounded-lg p-5 space-y-4 xl:col-span-2">
+                    <div
+                        v-if="userWorkspaceSection === 'access'"
+                        class="bg-zinc-900 border border-zinc-800 rounded-lg p-5 space-y-4 xl:col-span-2"
+                    >
                         <h4 class="text-base font-semibold">특수 권한 부여</h4>
                         <div class="grid gap-2 md:grid-cols-[1fr_1fr_auto]">
                             <select
@@ -1352,7 +1539,10 @@ onMounted(() => {
                         <div class="text-xs text-zinc-500">{{ rolesStatus }}</div>
                     </div>
 
-                    <div class="bg-zinc-900 border border-amber-800/60 rounded-lg p-5 space-y-4">
+                    <div
+                        v-if="userWorkspaceSection === 'access'"
+                        class="bg-zinc-900 border border-amber-800/60 rounded-lg p-5 space-y-4"
+                    >
                         <h4 class="text-base font-semibold">Kakao 없는 특수 계정 접근</h4>
                         <div class="text-xs text-zinc-400">
                             운영자 role은 자동으로 모든 서버에 접근합니다. 테스트·복구·기타 계정은 아래에서 서버 범위와
@@ -1431,7 +1621,10 @@ onMounted(() => {
                         </div>
                     </div>
 
-                    <div class="bg-zinc-900 border border-zinc-800 rounded-lg p-5 space-y-4">
+                    <div
+                        v-if="userWorkspaceSection === 'access'"
+                        class="bg-zinc-900 border border-zinc-800 rounded-lg p-5 space-y-4"
+                    >
                         <h4 class="text-base font-semibold">Kakao 인증 유예</h4>
                         <div class="text-xs text-zinc-500">
                             기본·서버별 유예가 끝난 사용자를 예외적으로 더 허용할 때 사용합니다.
@@ -1495,7 +1688,10 @@ onMounted(() => {
                         </div>
                     </div>
 
-                    <div class="bg-zinc-900 border border-zinc-800 rounded-lg p-5 space-y-4">
+                    <div
+                        v-if="userWorkspaceSection === 'restrictions'"
+                        class="bg-zinc-900 border border-zinc-800 rounded-lg p-5 space-y-4"
+                    >
                         <h4 class="text-base font-semibold">유저 차단</h4>
                         <div class="flex flex-col gap-2">
                             <input
@@ -1531,7 +1727,10 @@ onMounted(() => {
                         <div class="text-xs text-zinc-500">{{ banStatus }}</div>
                     </div>
 
-                    <div class="bg-zinc-900 border border-zinc-800 rounded-lg p-5 space-y-4">
+                    <div
+                        v-if="userWorkspaceSection === 'restrictions'"
+                        class="bg-zinc-900 border border-zinc-800 rounded-lg p-5 space-y-4"
+                    >
                         <h4 class="text-base font-semibold">서버별 기능 제재</h4>
                         <div class="grid gap-2">
                             <input
@@ -1588,7 +1787,10 @@ onMounted(() => {
                         <div class="text-xs text-zinc-500">{{ restrictionStatus }}</div>
                     </div>
 
-                    <div class="bg-zinc-900 border border-zinc-800 rounded-lg p-5 space-y-4">
+                    <div
+                        v-if="userWorkspaceSection === 'restrictions'"
+                        class="bg-zinc-900 border border-zinc-800 rounded-lg p-5 space-y-4 xl:col-span-2"
+                    >
                         <h4 class="text-base font-semibold">프로필 아이콘 초기화</h4>
                         <button
                             class="bg-purple-600 hover:bg-purple-500 text-white font-semibold px-4 py-2 rounded"
@@ -1600,7 +1802,10 @@ onMounted(() => {
                         <div class="text-xs text-zinc-500">{{ profileIconStatus }}</div>
                     </div>
 
-                    <div class="bg-zinc-900 border border-zinc-800 rounded-lg p-5 space-y-4">
+                    <div
+                        v-if="userWorkspaceSection === 'lifecycle'"
+                        class="bg-zinc-900 border border-zinc-800 rounded-lg p-5 space-y-4"
+                    >
                         <h4 class="text-base font-semibold text-red-400">관리자 탈퇴 예약</h4>
                         <input
                             v-model.number="deletionRetentionDays"
@@ -1621,7 +1826,10 @@ onMounted(() => {
                         <div class="text-xs text-zinc-500">{{ forceDeleteStatus }}</div>
                     </div>
 
-                    <div class="bg-zinc-900 border border-zinc-800 rounded-lg p-5 space-y-4">
+                    <div
+                        v-if="userWorkspaceSection === 'lifecycle'"
+                        class="bg-zinc-900 border border-zinc-800 rounded-lg p-5 space-y-4"
+                    >
                         <h4 class="text-base font-semibold">사용자 관리자 조치 이력</h4>
                         <div v-if="!userHistory.length" class="text-xs text-zinc-500">기록이 없습니다.</div>
                         <div v-else class="max-h-80 overflow-auto space-y-2">

@@ -20,6 +20,7 @@ import {
 import type { GatewayApiContext } from './context.js';
 import { resolveLocalAccountProfilePolicy } from './auth/localAccountPolicy.js';
 import { GATEWAY_BUILD_STATUSES, GATEWAY_PROFILE_STATUSES } from './orchestrator/profileRepository.js';
+import { orderGatewayProfiles } from './profileOrder.js';
 import { purifyGatewayNoticeHtml } from './security/gatewayNoticeHtml.js';
 
 const zProfileStatus = z.enum(GATEWAY_PROFILE_STATUSES);
@@ -399,6 +400,14 @@ const zUserLookupInput = z
         message: 'id, username, or email must be provided.',
     });
 
+const zUserListInput = z
+    .object({
+        query: z.string().trim().max(100).optional(),
+        limit: z.number().int().min(1).max(100).default(30),
+        cursor: z.string().uuid().optional(),
+    })
+    .optional();
+
 const zServerRestriction = z.object({
     blockedFeatures: z.array(z.string().min(1)).optional(),
     until: z.string().datetime().nullable().optional(),
@@ -610,6 +619,13 @@ export const adminRouter = router({
         getLocalAccountStatus: adminProcedure.query(({ ctx }) => ({
             enabled: (ctx as GatewayApiContext).adminLocalAccountEnabled,
         })),
+        list: userAdminProcedure.input(zUserListInput).query(({ ctx, input }) =>
+            ctx.users.listForAdmin({
+                query: input?.query,
+                limit: input?.limit ?? 30,
+                cursor: input?.cursor,
+            })
+        ),
         createLocal: userCreateProcedure.input(zLocalAccountInput).mutation(async ({ ctx, input }) => {
             const gatewayCtx = ctx as GatewayApiContext;
             assertLocalAccountEnabled(gatewayCtx);
@@ -670,7 +686,7 @@ export const adminRouter = router({
                 if (!user) {
                     throw new TRPCError({ code: 'NOT_FOUND', message: 'User not found.' });
                 }
-                const profiles = await ctx.profiles.listProfiles();
+                const profiles = orderGatewayProfiles(await ctx.profiles.listProfiles());
                 const specialAccessGrants = await ctx.users.listSpecialAccessGrants(user.id);
                 return {
                     kakaoVerified: user.oauthType === 'KAKAO' && Boolean(user.kakaoVerifiedAt),
@@ -1430,7 +1446,7 @@ export const adminRouter = router({
     profiles: router({
         list: adminProcedure.query(async ({ ctx }) => {
             const adminAuth = requireAdminAuth(ctx);
-            const profiles = (await ctx.profiles.listProfiles()).filter((profile) =>
+            const profiles = orderGatewayProfiles(await ctx.profiles.listProfiles()).filter((profile) =>
                 canReadProfile(adminAuth, profile.profileName)
             );
             const profileNames = profiles.map((profile) => profile.profileName);

@@ -2,6 +2,7 @@ import { GatewayPrisma, type GatewayPrismaClient } from '@sammo-ts/infra';
 
 import { createSimplePasswordHasher, type PasswordHasher } from './passwordHasher.js';
 import type {
+    AdminUserListItem,
     CreateUserInput,
     SpecialAccountAccessGrantRecord,
     UserIconRecord,
@@ -10,6 +11,21 @@ import type {
     UserRepository,
     UserSanctions,
 } from './userRepository.js';
+import { hasActiveUserSanction } from './userRepository.js';
+
+const toAdminUserListItem = (user: UserRecord): AdminUserListItem => {
+    return {
+        id: user.id,
+        username: user.username,
+        displayName: user.displayName,
+        email: user.email,
+        oauthType: user.oauthType,
+        roles: user.roles,
+        hasActiveSanction: hasActiveUserSanction(user.sanctions),
+        deleteAfter: user.deleteAfter,
+        createdAt: user.createdAt,
+    };
+};
 
 const readStringArray = (value: unknown): string[] => {
     if (!Array.isArray(value)) {
@@ -194,6 +210,35 @@ export const createPostgresUserRepository = (
                 },
             });
             return row ? mapUser(row) : null;
+        },
+        async listForAdmin(input) {
+            const query = input.query?.trim();
+            const where = query
+                ? {
+                      OR: [
+                          { loginId: { contains: query, mode: 'insensitive' as const } },
+                          { displayName: { contains: query, mode: 'insensitive' as const } },
+                          { email: { contains: query, mode: 'insensitive' as const } },
+                          { id: { contains: query, mode: 'insensitive' as const } },
+                      ],
+                  }
+                : undefined;
+            const [rows, total] = await Promise.all([
+                prisma.appUser.findMany({
+                    where,
+                    orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+                    take: input.limit + 1,
+                    ...(input.cursor ? { cursor: { id: input.cursor }, skip: 1 } : {}),
+                }),
+                prisma.appUser.count({ where }),
+            ]);
+            const hasNextPage = rows.length > input.limit;
+            const page = rows.slice(0, input.limit);
+            return {
+                users: page.map(mapUser).map(toAdminUserListItem),
+                total,
+                nextCursor: hasNextPage ? page.at(-1)?.id : undefined,
+            };
         },
         async createUser(input: CreateUserInput): Promise<UserRecord> {
             const password = await hasher.hash(input.password);
