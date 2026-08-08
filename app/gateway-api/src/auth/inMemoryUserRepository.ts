@@ -1,7 +1,13 @@
 import { randomUUID } from 'node:crypto';
 
 import { createSimplePasswordHasher, type PasswordHasher } from './passwordHasher.js';
-import type { CreateUserInput, UserIconRecord, UserRecord, UserRepository } from './userRepository.js';
+import type {
+    CreateUserInput,
+    SpecialAccountAccessGrantRecord,
+    UserIconRecord,
+    UserRecord,
+    UserRepository,
+} from './userRepository.js';
 
 // 유저 데이터 저장소를 메모리로 대체한 임시 구현.
 export const createInMemoryUserRepository = (hasher: PasswordHasher = createSimplePasswordHasher()): UserRepository => {
@@ -9,6 +15,7 @@ export const createInMemoryUserRepository = (hasher: PasswordHasher = createSimp
     const usersByOauthId = new Map<string, UserRecord>();
     const usersByEmail = new Map<string, UserRecord>();
     const iconsById = new Map<string, UserIconRecord>();
+    const specialAccessGrantsById = new Map<string, SpecialAccountAccessGrantRecord>();
 
     const nextRevision = (user: UserRecord, now: Date): string =>
         new Date(
@@ -240,6 +247,40 @@ export const createInMemoryUserRepository = (hasher: PasswordHasher = createSimp
             }
             throw new Error('User not found.');
         },
+        async listSpecialAccessGrants(userId: string): Promise<SpecialAccountAccessGrantRecord[]> {
+            return [...specialAccessGrantsById.values()]
+                .filter((grant) => grant.userId === userId)
+                .sort((a, b) => b.createdAt.localeCompare(a.createdAt) || b.id.localeCompare(a.id));
+        },
+        async createSpecialAccessGrant(userId, input): Promise<SpecialAccountAccessGrantRecord> {
+            if (![...usersByName.values()].some((user) => user.id === userId)) {
+                throw new Error('User not found.');
+            }
+            const now = new Date().toISOString();
+            const grant: SpecialAccountAccessGrantRecord = {
+                id: randomUUID(),
+                userId,
+                kind: input.kind,
+                profiles: [...input.profiles],
+                allowsGeneralCreation: input.allowsGeneralCreation,
+                expiresAt: input.expiresAt?.toISOString(),
+                reason: input.reason,
+                grantedByUserId: input.grantedByUserId,
+                createdAt: now,
+            };
+            specialAccessGrantsById.set(grant.id, grant);
+            return grant;
+        },
+        async revokeSpecialAccessGrant(userId, grantId, input): Promise<SpecialAccountAccessGrantRecord | null> {
+            const grant = specialAccessGrantsById.get(grantId);
+            if (!grant || grant.userId !== userId || grant.revokedAt) {
+                return null;
+            }
+            grant.revokedAt = input.revokedAt.toISOString();
+            grant.revokedByUserId = input.revokedByUserId;
+            grant.revokedReason = input.reason;
+            return grant;
+        },
         async updateIcon(userId: string, picture: string, imageServer: number, updatedAt: Date): Promise<void> {
             for (const user of usersByName.values()) {
                 if (user.id === userId) {
@@ -389,6 +430,11 @@ export const createInMemoryUserRepository = (hasher: PasswordHasher = createSimp
             for (const [username, user] of usersByName.entries()) {
                 if (user.id === userId) {
                     usersByName.delete(username);
+                    for (const [grantId, grant] of specialAccessGrantsById) {
+                        if (grant.userId === userId) {
+                            specialAccessGrantsById.delete(grantId);
+                        }
+                    }
                     if (user.oauthType === 'KAKAO' && user.oauthId) {
                         usersByOauthId.delete(`${user.oauthType}:${user.oauthId}`);
                     }

@@ -55,6 +55,10 @@ export interface GameSessionTokenPayload {
         canCreateGeneral: boolean;
         requiresKakaoVerification: boolean;
         graceEndsAt: string | null;
+        specialAccess?: {
+            kind: 'OPERATOR' | 'TESTER' | 'RECOVERY' | 'OTHER';
+            expiresAt: string | null;
+        };
     };
 }
 
@@ -136,7 +140,13 @@ export const parseGameSessionTokenPayload = (value: unknown): GameSessionTokenPa
             typeof identity.kakaoVerified !== 'boolean' ||
             typeof identity.canCreateGeneral !== 'boolean' ||
             typeof identity.requiresKakaoVerification !== 'boolean' ||
-            (identity.graceEndsAt !== null && typeof identity.graceEndsAt !== 'string')
+            (identity.graceEndsAt !== null && typeof identity.graceEndsAt !== 'string') ||
+            (identity.specialAccess !== undefined &&
+                (!identity.specialAccess ||
+                    typeof identity.specialAccess !== 'object' ||
+                    !['OPERATOR', 'TESTER', 'RECOVERY', 'OTHER'].includes(identity.specialAccess.kind) ||
+                    (identity.specialAccess.expiresAt !== null &&
+                        typeof identity.specialAccess.expiresAt !== 'string')))
         ) {
             return null;
         }

@@ -26,6 +26,7 @@ TTL, game-token secret, OAuth, local-account 정책과 orchestrator 설정을
 Gateway API는 다음 저장 경계를 사용합니다.
 
 - `AppUser`, `SystemSetting`: 계정과 정책
+- `SpecialAccountAccessGrant`: Kakao 없는 테스트·복구·기타 계정의 profile 범위, 만료, 장수 생성 및 해제 이력
 - `GatewayProfile`: profile, scenario, port, 상태와 build 결과
 - `GatewayOperation`: build/reset/open/close 등 실행 요청과 결과
 - `GatewayReleaseOperation`, `GatewayReleaseState`: Gateway 전체 릴리스 queue와 현재·이전 commit
@@ -66,6 +67,16 @@ Redis script가 원자적으로 성공 소비 또는 실패 횟수 차감(최대
 성공하면 유효 기한을 10일 뒤로 저장한 후에만 Gateway session을 만듭니다.
 challenge와 OAuth pending state에는 TTL이 있으며 Redis 장애나 메시지 발송 실패는
 로그인 실패로 끝납니다.
+
+Kakao 없는 게임 접근은 Gateway에서만 판정합니다. 비밀번호와 제재를 먼저 검사한 뒤
+운영자 또는 유효한 특수 grant가 있는 기존 Kakao 연결 계정은 공급자 호출 없이
+Gateway session을 발급합니다. 게임 profile 진입에서는 다시 제재 검사를 수행하고
+Kakao 확인, 운영자 role, 유효한 `SpecialAccountAccessGrant`, 기존 일반 계정 유예
+순으로 접근과 장수 생성 가능 여부를 계산합니다. grant의 빈 `profiles`는 전체,
+base profile(`che`)은 모든 기수, profile name(`che:2`)은 정확한 기수를 뜻합니다.
+결과는 AES-256-GCM game token의 `identity.specialAccess`와
+`identity.canCreateGeneral`에 서명되어 game API가 장수 생성 mutation 전에 다시
+검사합니다. grant 사유나 부여자 정보는 game token에 넣지 않습니다.
 
 Orchestrator는 `GatewayOperation`을 claim하고 source ref를 commit으로
 해결합니다. `WorkspaceManager`가 commit별 worktree를 준비하고 build runner가

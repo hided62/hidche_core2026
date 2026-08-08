@@ -3,6 +3,7 @@ import { GatewayPrisma, type GatewayPrismaClient } from '@sammo-ts/infra';
 import { createSimplePasswordHasher, type PasswordHasher } from './passwordHasher.js';
 import type {
     CreateUserInput,
+    SpecialAccountAccessGrantRecord,
     UserIconRecord,
     UserOAuthInfo,
     UserRecord,
@@ -109,6 +110,34 @@ const mapIcon = (row: {
     imageServer: row.imageServer,
     createdAt: row.createdAt.toISOString(),
     retiredAt: row.retiredAt?.toISOString(),
+});
+
+const mapSpecialAccessGrant = (row: {
+    id: string;
+    userId: string;
+    kind: 'TESTER' | 'RECOVERY' | 'OTHER';
+    profiles: string[];
+    allowsGeneralCreation: boolean;
+    expiresAt: Date | null;
+    reason: string;
+    grantedByUserId: string;
+    revokedAt: Date | null;
+    revokedByUserId: string | null;
+    revokedReason: string | null;
+    createdAt: Date;
+}): SpecialAccountAccessGrantRecord => ({
+    id: row.id,
+    userId: row.userId,
+    kind: row.kind,
+    profiles: row.profiles,
+    allowsGeneralCreation: row.allowsGeneralCreation,
+    expiresAt: row.expiresAt?.toISOString(),
+    reason: row.reason,
+    grantedByUserId: row.grantedByUserId,
+    revokedAt: row.revokedAt?.toISOString(),
+    revokedByUserId: row.revokedByUserId ?? undefined,
+    revokedReason: row.revokedReason ?? undefined,
+    createdAt: row.createdAt.toISOString(),
 });
 
 export const createPostgresUserRepository = (
@@ -298,6 +327,41 @@ export const createPostgresUserRepository = (
                 where: { id: userId },
                 data: { kakaoGraceUntil: until },
             });
+        },
+        async listSpecialAccessGrants(userId: string): Promise<SpecialAccountAccessGrantRecord[]> {
+            const rows = await prisma.specialAccountAccessGrant.findMany({
+                where: { userId },
+                orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+            });
+            return rows.map(mapSpecialAccessGrant);
+        },
+        async createSpecialAccessGrant(userId, input): Promise<SpecialAccountAccessGrantRecord> {
+            const row = await prisma.specialAccountAccessGrant.create({
+                data: {
+                    userId,
+                    kind: input.kind,
+                    profiles: input.profiles,
+                    allowsGeneralCreation: input.allowsGeneralCreation,
+                    expiresAt: input.expiresAt,
+                    reason: input.reason,
+                    grantedByUserId: input.grantedByUserId,
+                },
+            });
+            return mapSpecialAccessGrant(row);
+        },
+        async revokeSpecialAccessGrant(userId, grantId, input): Promise<SpecialAccountAccessGrantRecord | null> {
+            const result = await prisma.specialAccountAccessGrant.updateMany({
+                where: { id: grantId, userId, revokedAt: null },
+                data: {
+                    revokedAt: input.revokedAt,
+                    revokedByUserId: input.revokedByUserId,
+                    revokedReason: input.reason,
+                },
+            });
+            if (result.count !== 1) {
+                return null;
+            }
+            return mapSpecialAccessGrant(await prisma.specialAccountAccessGrant.findUniqueOrThrow({ where: { id: grantId } }));
         },
         async updateIcon(userId: string, picture: string, imageServer: number, updatedAt: Date): Promise<void> {
             await prisma.appUser.update({

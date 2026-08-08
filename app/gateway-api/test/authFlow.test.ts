@@ -434,6 +434,139 @@ describe('gateway auth flow', () => {
         });
     });
 
+    it('issues a CHE game token to an expired tester with an active special access grant', async () => {
+        const { caller, users, sealPassword } = buildCaller({ localAccountGraceDays: 0 });
+        const register = await caller.auth.registerLocal({
+            username: 'special-tester',
+            credential: sealPassword('tester-password'),
+            displayName: '특수테스터',
+            termsAgreed: true,
+            privacyAgreed: true,
+            thirdPartyUse: false,
+        });
+        const user = await users.findByUsername('special-tester');
+        expect(user).not.toBeNull();
+        if (!user) throw new Error('Expected local tester.');
+        await users.createSpecialAccessGrant(user.id, {
+            kind: 'TESTER',
+            profiles: ['che'],
+            allowsGeneralCreation: true,
+            expiresAt: null,
+            reason: 'CHE 회귀 검증',
+            grantedByUserId: 'admin-id',
+        });
+
+        const issued = await caller.auth.issueGameSession({
+            sessionToken: register.sessionToken,
+            profile: 'che:default',
+        });
+        const payload = decryptGameSessionToken(issued.gameToken, 'test-secret');
+
+        expect(payload?.identity).toMatchObject({
+            kakaoVerified: false,
+            canCreateGeneral: true,
+            requiresKakaoVerification: false,
+            specialAccess: { kind: 'TESTER', expiresAt: null },
+        });
+    });
+
+    it('lets a Kakao-linked recovery account log in with its password while the grant is active', async () => {
+        const { caller, users, sealPassword } = buildCaller();
+        await caller.auth.registerLocal({
+            username: 'lost-phone-user',
+            credential: sealPassword('recovery-password'),
+            displayName: '분실복구유저',
+            termsAgreed: true,
+            privacyAgreed: true,
+            thirdPartyUse: false,
+        });
+        const user = await users.findByUsername('lost-phone-user');
+        expect(user).not.toBeNull();
+        if (!user) throw new Error('Expected recovery user.');
+        user.oauthType = 'KAKAO';
+        user.oauthId = 'lost-phone-kakao-id';
+        user.kakaoVerifiedAt = '2026-08-01T00:00:00.000Z';
+        await users.createSpecialAccessGrant(user.id, {
+            kind: 'RECOVERY',
+            profiles: ['che'],
+            allowsGeneralCreation: true,
+            expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000),
+            reason: '휴대폰 분실 본인 확인 완료',
+            grantedByUserId: 'admin-id',
+        });
+
+        await expect(
+            caller.auth.login({
+                username: 'lost-phone-user',
+                credential: sealPassword('recovery-password'),
+            })
+        ).resolves.toMatchObject({ status: 'login', user: { username: 'lost-phone-user' } });
+    });
+
+    it('lets a Kakao-linked operator log in with its password without a grant', async () => {
+        const { caller, users, sealPassword } = buildCaller();
+        await caller.auth.registerLocal({
+            username: 'oauth-free-operator',
+            credential: sealPassword('operator-password'),
+            displayName: '복구운영자',
+            termsAgreed: true,
+            privacyAgreed: true,
+            thirdPartyUse: false,
+        });
+        const user = await users.findByUsername('oauth-free-operator');
+        expect(user).not.toBeNull();
+        if (!user) throw new Error('Expected operator user.');
+        user.oauthType = 'KAKAO';
+        user.oauthId = 'operator-kakao-id';
+        user.kakaoVerifiedAt = '2026-08-01T00:00:00.000Z';
+        await users.updateRoles(user.id, ['user', 'admin.users.manage']);
+
+        await expect(
+            caller.auth.login({
+                username: 'oauth-free-operator',
+                credential: sealPassword('operator-password'),
+            })
+        ).resolves.toMatchObject({ status: 'login', user: { username: 'oauth-free-operator' } });
+    });
+
+    it('keeps an active server sanction authoritative over special access', async () => {
+        const { caller, users, sealPassword } = buildCaller({ localAccountGraceDays: 0 });
+        const register = await caller.auth.registerLocal({
+            username: 'sanctioned-special-tester',
+            credential: sealPassword('tester-password'),
+            displayName: '제재특수테스터',
+            termsAgreed: true,
+            privacyAgreed: true,
+            thirdPartyUse: false,
+        });
+        const user = await users.findByUsername('sanctioned-special-tester');
+        expect(user).not.toBeNull();
+        if (!user) throw new Error('Expected sanctioned local tester.');
+        await users.createSpecialAccessGrant(user.id, {
+            kind: 'TESTER',
+            profiles: ['che'],
+            allowsGeneralCreation: true,
+            expiresAt: null,
+            reason: 'CHE 회귀 검증',
+            grantedByUserId: 'admin-id',
+        });
+        await users.updateSanctions(user.id, {
+            serverRestrictions: {
+                che: {
+                    blockedFeatures: ['login'],
+                    until: '2099-01-01T00:00:00.000Z',
+                },
+            },
+        });
+
+        await expect(
+            caller.auth.issueGameSession({
+                sessionToken: register.sessionToken,
+                profile: 'che:default',
+            })
+        ).rejects.toMatchObject({ code: 'FORBIDDEN' });
+    });
+
     it('links Kakao to the logged-in local account instead of creating a second user', async () => {
         const { caller, users, sealPassword, setSessionHeader, sentTalkMessages } = buildCaller();
         const register = await caller.auth.registerLocal({

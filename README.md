@@ -50,6 +50,16 @@ Kakao가 `already registered`를 반환했지만 보존 이메일 계정도 없�
 확인 뒤 신규 가입 form을 엽니다. 이미 로컬에 연결된 stable ID의 변경 이메일이
 다른 계정에 있으면 기존처럼 충돌을 거부합니다.
 
+Kakao 인증을 사용할 수 없는 운영·검증·복구 계정은 Gateway의 특수 접근 자격으로
+게임 서버에 들어갈 수 있습니다. `superuser`, `admin`, `admin.*` role은 운영자
+자격으로 모든 profile과 장수 생성에 자동 허용됩니다. 그 밖의 계정은 관리자
+콘솔에서 `TESTER`, `RECOVERY`, `OTHER` grant를 profile 범위, 만료, 장수 생성
+허용 여부와 사유를 지정해 부여합니다. `RECOVERY`는 최대 90일의 만료가 필수이며,
+부여·해제는 감사 원장과 별도 DB 이력에 모두 남습니다. 계정 제재는 이 자격보다
+먼저 검사됩니다. 기존 Kakao 연결 계정이 인증 수단을 잃은 경우에도 비밀번호
+인증은 유지하면서 유효한 특수 자격 기간에는 Kakao 공급자 호출 없이 로그인할 수
+있습니다.
+
 각 game profile은 별도 PostgreSQL schema를 사용합니다. `game-api`는 인증된
 요청을 검증하고 직접 처리할 mutation 또는 daemon 입력을
 `InputEvent`에 기록합니다. `game-engine`은 DB lease와 fencing token을 확보한

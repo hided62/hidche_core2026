@@ -11,7 +11,7 @@ Gateway 관리자 콘솔은 `/gateway/admin`에서 시작합니다. 공개 로�
 | 메뉴          | 경로                      | 책임                                                                           |
 | ------------- | ------------------------- | ------------------------------------------------------------------------------ |
 | 운영 개요     | `/gateway/admin`          | 관리 영역 안내와 빠른 진입                                                     |
-| 사용자 관리   | `/gateway/admin/users`    | 계정 조회·생성, 권한, OAuth 유예, 제재, 아이콘 복구, 탈퇴 예약과 사용자별 이력 |
+| 사용자 관리   | `/gateway/admin/users`    | 계정 조회·생성, 권한, 특수 접근·OAuth 유예, 제재, 아이콘 복구, 탈퇴 예약과 사용자별 이력 |
 | 서버 관리     | `/gateway/admin/servers`  | profile 공개 정보, 계정 정책, 실행 상태와 게임 운영 동작                       |
 | 버전 업데이트 | `/gateway/admin/releases` | profile DB 유지·초기화 배포, Gateway 릴리스·rollback과 작업 이력               |
 | 공지 · 접속   | `/gateway/admin/system`   | 로비 공지와 관리자 세션 연결                                                   |
@@ -33,6 +33,26 @@ Gateway 관리자 콘솔은 `/gateway/admin`에서 시작합니다. 공개 로�
   사용하며 외부 release-controller가 실행합니다.
 - 브라우저의 메뉴 노출은 편의 기능입니다. 권한 판단의 기준은 서버가 인증
   session에서 해석한 capability입니다.
+
+## Kakao 없는 특수 계정 접근
+
+운영자 role(`superuser`, `admin`, `admin.*`)은 별도 grant 없이 모든 game
+profile에 접근하고 장수를 생성할 수 있습니다. 일반 계정의 예외는 사용자 관리의
+`특수 접근 부여`에서 다음 항목을 명시합니다.
+
+- 종류: 특수 테스트(`TESTER`), 인증 수단 복구(`RECOVERY`), 기타(`OTHER`)
+- profile: 비우면 전체, `che`면 모든 CHE 기수, `che:2`면 해당 기수만
+- 장수 생성: 단순 기존 장수 접속과 신규 장수 생성 권한을 분리
+- 만료: `RECOVERY`는 필수이며 현재 시각부터 최대 90일
+- 사유: 부여·해제 모두 3자 이상이며 감사 원장에 기록
+
+여러 grant가 있으면 현재 profile에 적용되는 유효 grant 중 하나라도 장수 생성을
+허용할 때 생성이 가능합니다. 영구 grant가 하나라도 있으면 접근 만료는 없습니다.
+Kakao 인증이 완료되면 특수 접근이 없어도 정상 접근하며, 계정 제재와 profile별
+server restriction은 특수 접근보다 먼저 적용됩니다. 변경 시 user flush가 발행되어
+다음 game token 발급부터 새 정책이 반영됩니다. 기존 Kakao 연결 계정도 비밀번호를
+확인한 뒤 유효한 grant 기간에는 Kakao 공급자 검증 없이 로그인할 수 있으므로,
+휴대폰 분실 복구에는 반드시 짧은 만료와 확인 사유를 사용합니다.
 
 상세 배포·복구 절차는 [릴리스 운영 매뉴얼](./release-operations.md)을
 따릅니다.

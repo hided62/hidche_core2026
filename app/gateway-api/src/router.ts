@@ -12,7 +12,11 @@ import { toPublicUser } from './auth/userRepository.js';
 import type { UserOAuthInfo, UserRecord } from './auth/userRepository.js';
 import { adminRouter } from './adminRouter.js';
 import { accountRouter } from './account/router.js';
-import { resolveLocalAccountProfilePolicy } from './auth/localAccountPolicy.js';
+import {
+    hasActiveSpecialAccountGrant,
+    hasOperatorSpecialAccess,
+    resolveLocalAccountProfilePolicy,
+} from './auth/localAccountPolicy.js';
 import { openPassword, zDisplayName, zPasswordEnvelope, zRegistrationUsername } from './auth/registrationInput.js';
 import { resolveEffectiveAccountIcon } from './auth/accountIconProjection.js';
 import { purifyGatewayNoticeHtml } from './security/gatewayNoticeHtml.js';
@@ -131,14 +135,17 @@ export const appRouter = router({
                         localAccountPolicy: null,
                     }));
                 }
+                const specialAccessGrants = await ctx.users.listSpecialAccessGrants(user.id);
                 return Promise.all(
                     profileList.map(async (profile) => {
                         const record = await ctx.profiles.getProfile(profile.profileName);
                         const policy = resolveLocalAccountProfilePolicy({
                             profile: record?.profile ?? profile.profile,
+                            profileName: profile.profileName,
                             profileMeta: record?.meta,
                             defaultGraceDays: ctx.localAccountGraceDays,
                             user,
+                            specialAccessGrants,
                         });
                         return {
                             ...profile,
@@ -765,6 +772,16 @@ export const appRouter = router({
                     });
                 }
                 if (user.oauthType === 'KAKAO') {
+                    const specialAccessGrants = await ctx.users.listSpecialAccessGrants(user.id);
+                    if (hasOperatorSpecialAccess(user) || hasActiveSpecialAccountGrant(specialAccessGrants)) {
+                        const session = await ctx.sessions.createSession(user);
+                        return {
+                            status: 'login' as const,
+                            user: toPublicUser(user),
+                            sessionToken: session.sessionToken,
+                            issuedAt: session.issuedAt,
+                        };
+                    }
                     const ready = await verifyStoredKakaoIdentity({
                         user,
                         users: ctx.users,
@@ -881,9 +898,11 @@ export const appRouter = router({
                 }
                 const localAccountPolicy = resolveLocalAccountProfilePolicy({
                     profile,
+                    profileName: input.profile,
                     profileMeta: profileRecord?.meta,
                     defaultGraceDays: ctx.localAccountGraceDays,
                     user,
+                    specialAccessGrants: await ctx.users.listSpecialAccessGrants(user.id),
                 });
                 if (!localAccountPolicy.accessAllowed) {
                     throw new TRPCError({
@@ -932,6 +951,14 @@ export const appRouter = router({
                         canCreateGeneral: localAccountPolicy.canCreateGeneral,
                         requiresKakaoVerification: localAccountPolicy.requiresKakaoVerification,
                         graceEndsAt: localAccountPolicy.graceEndsAt,
+                        ...(localAccountPolicy.specialAccess
+                            ? {
+                                  specialAccess: {
+                                      kind: localAccountPolicy.specialAccess.kind,
+                                      expiresAt: localAccountPolicy.specialAccess.expiresAt,
+                                  },
+                              }
+                            : {}),
                     },
                 } as const;
                 const gameToken = encryptGameSessionToken(payload, ctx.gameTokenSecret);

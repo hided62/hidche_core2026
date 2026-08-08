@@ -291,7 +291,13 @@ const handleEnter = async (profile: LobbyProfile, targetPath: string) => {
                                     {{ serverSeasonStatus(profileDetails[profile.profileName]!).label }}
                                 </div>
                                 <div
-                                    v-if="
+                                    v-if="profile.localAccountPolicy?.specialAccess"
+                                    class="mt-2 text-xs text-emerald-300"
+                                >
+                                    특수 접근 · {{ profile.localAccountPolicy.specialAccess.kind }}
+                                </div>
+                                <div
+                                    v-else-if="
                                         profile.localAccountPolicy?.requiresKakaoVerification &&
                                         !profile.localAccountPolicy.canCreateGeneral
                                     "

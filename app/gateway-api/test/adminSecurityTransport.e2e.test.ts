@@ -249,6 +249,29 @@ describe('admin security over HTTP transport', () => {
         expect((await harness.users.findById(harness.target.id))?.roles).toEqual(['user']);
     });
 
+    it('rejects an unauthenticated special-access grant at the HTTP header boundary', async () => {
+        const harness = await createHarness();
+
+        const rejected = await postTrpc(harness.baseUrl, 'admin.users.grantSpecialAccess', {
+            userId: harness.target.id,
+            kind: 'TESTER',
+            profiles: ['che'],
+            allowsGeneralCreation: true,
+            expiresAt: null,
+            reason: '미인증 특수 접근 부여 거부 테스트',
+        });
+
+        expect(rejected.response.status).toBe(401);
+        expect(rejected.body).toMatchObject({
+            error: {
+                data: {
+                    code: 'UNAUTHORIZED',
+                },
+            },
+        });
+        expect(await harness.users.listSpecialAccessGrants(harness.target.id)).toEqual([]);
+    });
+
     it('rejects self-escalation and set-mode removal outside a scoped administrator role', async () => {
         const harness = await createHarness();
 

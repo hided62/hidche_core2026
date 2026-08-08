@@ -11,6 +11,7 @@ const installFixture = async (page: Page) => {
     const mutations: Array<{ operation: string; body: unknown }> = [];
     let deleteAfter: string | null = null;
     let graceUntil: string | null = null;
+    let specialGrants: Array<Record<string, unknown>> = [];
     const auditHistory = [
         {
             id: 'audit-1',
@@ -89,6 +90,7 @@ const installFixture = async (page: Page) => {
                     kakaoVerified: false,
                     kakaoGraceStartedAt: '2026-07-20T00:00:00.000Z',
                     kakaoGraceUntil: graceUntil,
+                    specialAccessGrants: specialGrants,
                     profiles: [
                         {
                             profileName: 'che:default',
@@ -99,6 +101,14 @@ const installFixture = async (page: Page) => {
                             graceEndsAt: graceUntil ?? '2026-08-10T00:00:00.000Z',
                             generalCreationGraceDays: 0,
                             accessGraceDays: 7,
+                            specialAccess: specialGrants.length
+                                ? {
+                                      kind: 'RECOVERY',
+                                      grantId: '11111111-1111-4111-8111-111111111111',
+                                      expiresAt: '2026-08-20T00:00:00.000Z',
+                                      allowsGeneralCreation: true,
+                                  }
+                                : null,
                         },
                     ],
                 });
@@ -113,6 +123,28 @@ const installFixture = async (page: Page) => {
                     reason: '본인 확인 처리 중',
                 });
                 return response({ kakaoGraceUntil: graceUntil });
+            }
+            if (operation === 'admin.users.grantSpecialAccess') {
+                specialGrants = [
+                    {
+                        id: '11111111-1111-4111-8111-111111111111',
+                        userId: 'target-user',
+                        kind: 'RECOVERY',
+                        profiles: ['che'],
+                        allowsGeneralCreation: true,
+                        expiresAt: '2026-08-20T00:00:00.000Z',
+                        reason: '휴대폰 분실 임시 복구',
+                        grantedByUserId: 'admin-user',
+                        createdAt: '2026-08-08T00:00:00.000Z',
+                    },
+                ];
+                auditHistory.unshift({
+                    ...auditHistory[0],
+                    id: 'audit-special',
+                    action: 'admin.users.grantSpecialAccess',
+                    reason: '휴대폰 분실 임시 복구',
+                });
+                return response(specialGrants[0]);
             }
             if (operation === 'admin.users.scheduleDeletion') {
                 deleteAfter = '2026-09-05T00:00:00.000Z';
@@ -150,7 +182,17 @@ test('operates OAuth grace and scheduled deletion with reasoned audit history', 
         .not.toBe(baseDeleteColor);
     await page.screenshot({ path: testInfo.outputPath('gateway-admin-account-controls-hover.png'), fullPage: true });
     await page.getByPlaceholder('권한·제재·복구·탈퇴 조치 사유 (필수)').fill('본인 확인 처리 중');
-    await page.locator('input[type="datetime-local"]').nth(0).fill('2026-08-20T00:00');
+    await page.getByLabel('특수 접근 만료 시각').fill('2026-08-20T00:00');
+    await page.getByPlaceholder('che 또는 che:2 (쉼표 구분, 비우면 전체)').fill('che');
+    await page.getByPlaceholder('권한·제재·복구·탈퇴 조치 사유 (필수)').fill('휴대폰 분실 임시 복구');
+    await page.getByRole('button', { name: '특수 접근 부여', exact: true }).click();
+    await expect(page.getByText('특수 접근 자격을 부여했습니다.')).toBeVisible();
+    await expect(page.getByText(/RECOVERY · che/)).toBeVisible();
+    await page.screenshot({ path: testInfo.outputPath('gateway-admin-special-access-granted.png'), fullPage: true });
+
+    const gracePanel = page.getByRole('heading', { name: 'Kakao 인증 유예' }).locator('..');
+    await page.getByPlaceholder('권한·제재·복구·탈퇴 조치 사유 (필수)').fill('본인 확인 처리 중');
+    await gracePanel.locator('input[type="datetime-local"]').fill('2026-08-20T00:00');
     await page.getByRole('button', { name: '유예 연장', exact: true }).click();
     await expect(page.getByText('OAuth 유예 연장 완료')).toBeVisible();
     await expect(page.getByText('SUCCEEDED · admin.users.updateKakaoGrace').first()).toBeVisible();
@@ -160,6 +202,7 @@ test('operates OAuth grace and scheduled deletion with reasoned audit history', 
     await deletionButton.click();
     await expect(page.getByText(/탈퇴 예약 완료/)).toBeVisible();
     expect(mutations.some(({ operation }) => operation === 'admin.users.updateKakaoGrace')).toBe(true);
+    expect(mutations.some(({ operation }) => operation === 'admin.users.grantSpecialAccess')).toBe(true);
     expect(mutations.some(({ operation }) => operation === 'admin.users.scheduleDeletion')).toBe(true);
 
     await page.getByRole('link', { name: '감사 로그' }).click();

@@ -65,6 +65,12 @@ enum AdminAuditOutcome {
   FAILED
 }
 
+enum SpecialAccountAccessKind {
+  TESTER
+  RECOVERY
+  OTHER
+}
+
 enum GatewaySourceMode {
   BRANCH
   COMMIT
@@ -101,8 +107,29 @@ model AppUser {
   lastLoginAt            DateTime?  @map("last_login_at")
   legacyData             Json       @default(dbgenerated("'{}'::jsonb")) @map("legacy_data")
   icons                  UserIcon[]
+  specialAccessGrants    SpecialAccountAccessGrant[]
 
   @@map("app_user")
+}
+
+model SpecialAccountAccessGrant {
+  id                    String                   @id @default(uuid())
+  userId                String                   @map("user_id")
+  user                  AppUser                  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  kind                  SpecialAccountAccessKind
+  profiles              String[]                 @default([])
+  allowsGeneralCreation Boolean                  @default(true) @map("allows_general_creation")
+  expiresAt             DateTime?                @map("expires_at")
+  reason                String
+  grantedByUserId       String                   @map("granted_by_user_id")
+  revokedAt             DateTime?                @map("revoked_at")
+  revokedByUserId       String?                  @map("revoked_by_user_id")
+  revokedReason         String?                  @map("revoked_reason")
+  createdAt             DateTime                 @default(now()) @map("created_at")
+
+  @@index([userId, revokedAt, expiresAt])
+  @@index([kind, createdAt])
+  @@map("special_account_access_grant")
 }
 
 model AdminAuditEvent {

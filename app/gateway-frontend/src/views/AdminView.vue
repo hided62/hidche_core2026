@@ -119,6 +119,26 @@ type KakaoGracePolicy = {
     graceEndsAt: string | null;
     generalCreationGraceDays: number;
     accessGraceDays: number;
+    specialAccess: {
+        kind: 'OPERATOR' | SpecialAccountAccessGrant['kind'];
+        grantId: string | null;
+        expiresAt: string | null;
+        allowsGeneralCreation: boolean;
+    } | null;
+};
+
+type SpecialAccountAccessGrant = {
+    id: string;
+    userId: string;
+    kind: 'TESTER' | 'RECOVERY' | 'OTHER';
+    profiles: string[];
+    allowsGeneralCreation: boolean;
+    expiresAt?: string;
+    reason: string;
+    grantedByUserId: string;
+    revokedAt?: string;
+    revokedReason?: string;
+    createdAt: string;
 };
 
 type AdminPublicUser = {
@@ -197,6 +217,7 @@ type AdminClient = {
                 kakaoVerified: boolean;
                 kakaoGraceStartedAt: string;
                 kakaoGraceUntil: string | null;
+                specialAccessGrants: SpecialAccountAccessGrant[];
                 profiles: KakaoGracePolicy[];
             }>;
         };
@@ -204,6 +225,19 @@ type AdminClient = {
             mutate: (input: { userId: string; until: string | null; reason: string }) => Promise<{
                 kakaoGraceUntil: string | null;
             }>;
+        };
+        grantSpecialAccess: {
+            mutate: (input: {
+                userId: string;
+                kind: SpecialAccountAccessGrant['kind'];
+                profiles: string[];
+                allowsGeneralCreation: boolean;
+                expiresAt: string | null;
+                reason: string;
+            }) => Promise<SpecialAccountAccessGrant>;
+        };
+        revokeSpecialAccess: {
+            mutate: (input: { userId: string; grantId: string; reason: string }) => Promise<SpecialAccountAccessGrant>;
         };
         listHistory: {
             query: (input: { userId: string; limit?: number }) => Promise<AdminAuditEvent[]>;
@@ -407,6 +441,12 @@ const deletionRetentionDays = ref(30);
 const kakaoGraceUntil = ref('');
 const kakaoGraceStatus = ref('');
 const kakaoPolicies = ref<KakaoGracePolicy[]>([]);
+const specialAccessGrants = ref<SpecialAccountAccessGrant[]>([]);
+const specialAccessKind = ref<SpecialAccountAccessGrant['kind']>('RECOVERY');
+const specialAccessProfiles = ref('');
+const specialAccessAllowsGeneralCreation = ref(true);
+const specialAccessExpiresAt = ref('');
+const specialAccessStatus = ref('');
 const userHistory = ref<AdminAuditEvent[]>([]);
 const globalAuditHistory = ref<AdminAuditEvent[]>([]);
 const globalAuditStatus = ref('');
@@ -690,6 +730,7 @@ const lookupUser = async () => {
             adminClient.users.listHistory.query({ userId: result.id, limit: 50 }),
         ]);
         kakaoPolicies.value = grace.profiles;
+        specialAccessGrants.value = grace.specialAccessGrants;
         kakaoGraceUntil.value = grace.kakaoGraceUntil ? toLocalInputValue(grace.kakaoGraceUntil) : '';
         userHistory.value = history;
     } catch (error) {
@@ -764,9 +805,53 @@ const updateKakaoGrace = async (clear = false) => {
         kakaoGraceStatus.value = result.kakaoGraceUntil ? 'OAuth 유예 연장 완료' : '개별 유예 해제 완료';
         const grace = await adminClient.users.getKakaoGracePolicies.query({ userId: userResult.value.id });
         kakaoPolicies.value = grace.profiles;
+        specialAccessGrants.value = grace.specialAccessGrants;
         await refreshUserHistory();
     } catch {
         kakaoGraceStatus.value = 'OAuth 유예 변경 실패';
+    }
+};
+
+const grantSpecialAccess = async () => {
+    if (!userResult.value) return;
+    const reason = requireUserActionReason();
+    if (!reason) return;
+    specialAccessStatus.value = '';
+    try {
+        await adminClient.users.grantSpecialAccess.mutate({
+            userId: userResult.value.id,
+            kind: specialAccessKind.value,
+            profiles: specialAccessProfiles.value
+                .split(',')
+                .map((profile) => profile.trim())
+                .filter(Boolean),
+            allowsGeneralCreation: specialAccessAllowsGeneralCreation.value,
+            expiresAt: specialAccessExpiresAt.value ? new Date(specialAccessExpiresAt.value).toISOString() : null,
+            reason,
+        });
+        const policy = await adminClient.users.getKakaoGracePolicies.query({ userId: userResult.value.id });
+        kakaoPolicies.value = policy.profiles;
+        specialAccessGrants.value = policy.specialAccessGrants;
+        specialAccessStatus.value = '특수 접근 자격을 부여했습니다.';
+        await refreshUserHistory();
+    } catch {
+        specialAccessStatus.value = '특수 접근 자격 부여에 실패했습니다.';
+    }
+};
+
+const revokeSpecialAccess = async (grantId: string) => {
+    if (!userResult.value) return;
+    const reason = requireUserActionReason();
+    if (!reason) return;
+    try {
+        await adminClient.users.revokeSpecialAccess.mutate({ userId: userResult.value.id, grantId, reason });
+        const policy = await adminClient.users.getKakaoGracePolicies.query({ userId: userResult.value.id });
+        kakaoPolicies.value = policy.profiles;
+        specialAccessGrants.value = policy.specialAccessGrants;
+        specialAccessStatus.value = '특수 접근 자격을 해제했습니다.';
+        await refreshUserHistory();
+    } catch {
+        specialAccessStatus.value = '특수 접근 자격 해제에 실패했습니다.';
     }
 };
 
@@ -1256,6 +1341,84 @@ onMounted(() => {
                         <div class="text-xs text-zinc-500">{{ rolesStatus }}</div>
                     </div>
 
+                    <div class="bg-zinc-900 border border-amber-800/60 rounded-lg p-5 space-y-4">
+                        <h4 class="text-base font-semibold">Kakao 없는 특수 계정 접근</h4>
+                        <div class="text-xs text-zinc-400">
+                            운영자 role은 자동으로 모든 서버에 접근합니다. 테스트·복구·기타 계정은 아래에서
+                            서버 범위와 만료를 명시해 부여합니다. 복구 자격은 만료가 필수이며 최대 90일입니다.
+                        </div>
+                        <div class="grid grid-cols-1 md:grid-cols-2 gap-2">
+                            <select
+                                v-model="specialAccessKind"
+                                class="bg-zinc-950 border border-zinc-700 rounded px-3 py-2 text-sm text-white"
+                                :disabled="!hasUser"
+                            >
+                                <option value="RECOVERY">휴대폰 분실·계정 복구</option>
+                                <option value="TESTER">특수 테스트</option>
+                                <option value="OTHER">기타 예외</option>
+                            </select>
+                            <input
+                                v-model="specialAccessExpiresAt"
+                                type="datetime-local"
+                                class="bg-zinc-950 border border-zinc-700 rounded px-3 py-2 text-sm text-white"
+                                :disabled="!hasUser"
+                                aria-label="특수 접근 만료 시각"
+                            />
+                            <input
+                                v-model="specialAccessProfiles"
+                                type="text"
+                                class="bg-zinc-950 border border-zinc-700 rounded px-3 py-2 text-sm text-white"
+                                placeholder="che 또는 che:2 (쉼표 구분, 비우면 전체)"
+                                :disabled="!hasUser"
+                            />
+                            <label class="flex items-center gap-2 text-sm text-zinc-300 px-2">
+                                <input
+                                    v-model="specialAccessAllowsGeneralCreation"
+                                    type="checkbox"
+                                    :disabled="!hasUser"
+                                />
+                                장수 생성 허용
+                            </label>
+                        </div>
+                        <button
+                            class="bg-amber-600 hover:bg-amber-500 text-black font-semibold px-4 py-2 rounded"
+                            :disabled="!hasUser"
+                            @click="grantSpecialAccess"
+                        >
+                            특수 접근 부여
+                        </button>
+                        <div class="text-xs text-zinc-500">{{ specialAccessStatus }}</div>
+                        <div v-if="specialAccessGrants.length" class="space-y-2">
+                            <div
+                                v-for="grant in specialAccessGrants"
+                                :key="grant.id"
+                                class="bg-black/30 border border-zinc-800 rounded p-3 text-xs space-y-1"
+                            >
+                                <div class="flex flex-wrap items-center justify-between gap-2">
+                                    <span class="font-semibold text-amber-200">
+                                        {{ grant.kind }} · {{ grant.profiles.length ? grant.profiles.join(', ') : '전체 profile' }}
+                                    </span>
+                                    <button
+                                        v-if="!grant.revokedAt"
+                                        class="bg-red-900 hover:bg-red-800 text-red-100 px-3 py-1 rounded"
+                                        @click="revokeSpecialAccess(grant.id)"
+                                    >
+                                        해제
+                                    </button>
+                                </div>
+                                <div>
+                                    장수 생성 {{ grant.allowsGeneralCreation ? '허용' : '차단' }} · 만료
+                                    {{ grant.expiresAt ? new Date(grant.expiresAt).toLocaleString('ko-KR') : '없음' }}
+                                </div>
+                                <div class="text-zinc-500">부여 사유: {{ grant.reason }}</div>
+                                <div v-if="grant.revokedAt" class="text-red-300">
+                                    해제됨: {{ new Date(grant.revokedAt).toLocaleString('ko-KR') }} ·
+                                    {{ grant.revokedReason }}
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
                     <div class="bg-zinc-900 border border-zinc-800 rounded-lg p-5 space-y-4">
                         <h4 class="text-base font-semibold">Kakao 인증 유예</h4>
                         <div class="text-xs text-zinc-500">
@@ -1292,6 +1455,7 @@ onMounted(() => {
                                         <th>접근</th>
                                         <th>장수 생성</th>
                                         <th>기본 접근 유예</th>
+                                        <th>특수 자격</th>
                                         <th>종료</th>
                                     </tr>
                                 </thead>
@@ -1305,6 +1469,7 @@ onMounted(() => {
                                         <td class="text-center">{{ policy.accessAllowed ? '허용' : '차단' }}</td>
                                         <td class="text-center">{{ policy.canCreateGeneral ? '허용' : '차단' }}</td>
                                         <td class="text-center">{{ policy.accessGraceDays }}일</td>
+                                        <td class="text-center">{{ policy.specialAccess?.kind ?? '-' }}</td>
                                         <td class="text-center">
                                             {{
                                                 policy.graceEndsAt

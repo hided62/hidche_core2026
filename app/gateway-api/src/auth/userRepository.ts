@@ -38,6 +38,23 @@ export interface UserIconRecord {
     retiredAt?: string;
 }
 
+export type SpecialAccountAccessKind = 'TESTER' | 'RECOVERY' | 'OTHER';
+
+export interface SpecialAccountAccessGrantRecord {
+    id: string;
+    userId: string;
+    kind: SpecialAccountAccessKind;
+    profiles: string[];
+    allowsGeneralCreation: boolean;
+    expiresAt?: string;
+    reason: string;
+    grantedByUserId: string;
+    revokedAt?: string;
+    revokedByUserId?: string;
+    revokedReason?: string;
+    createdAt: string;
+}
+
 export type AddUserIconResult =
     { ok: true; icon: UserIconRecord; revision: string } | { ok: false; reason: 'COOLDOWN' | 'LIMIT' | 'NOT_FOUND' };
 
@@ -134,6 +151,23 @@ export interface UserRepository {
     updateRoles(userId: string, roles: string[]): Promise<void>;
     updateSanctions(userId: string, sanctions: UserSanctions): Promise<void>;
     updateKakaoGraceUntil(userId: string, until: Date | null): Promise<void>;
+    listSpecialAccessGrants(userId: string): Promise<SpecialAccountAccessGrantRecord[]>;
+    createSpecialAccessGrant(
+        userId: string,
+        input: {
+            kind: SpecialAccountAccessKind;
+            profiles: string[];
+            allowsGeneralCreation: boolean;
+            expiresAt: Date | null;
+            reason: string;
+            grantedByUserId: string;
+        }
+    ): Promise<SpecialAccountAccessGrantRecord>;
+    revokeSpecialAccessGrant(
+        userId: string,
+        grantId: string,
+        input: { revokedAt: Date; revokedByUserId: string; reason: string }
+    ): Promise<SpecialAccountAccessGrantRecord | null>;
     updateIcon(userId: string, picture: string, imageServer: number, updatedAt: Date): Promise<void>;
     updateIconForDay(
         userId: string,

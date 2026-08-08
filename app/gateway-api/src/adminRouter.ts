@@ -25,6 +25,13 @@ import { purifyGatewayNoticeHtml } from './security/gatewayNoticeHtml.js';
 const zProfileStatus = z.enum(GATEWAY_PROFILE_STATUSES);
 const zBuildStatus = z.enum(GATEWAY_BUILD_STATUSES);
 const zUserRoleMode = z.enum(['set', 'grant', 'revoke']);
+const zSpecialAccountAccessKind = z.enum(['TESTER', 'RECOVERY', 'OTHER']);
+const zSpecialAccessProfile = z
+    .string()
+    .trim()
+    .min(1)
+    .max(64)
+    .regex(/^[a-z0-9_-]+(?::[a-zA-Z0-9._-]+)?$/);
 const zJoinMode = z.enum(['full', 'onlyRandom']);
 const zServerAction = z.enum([
     'RESUME',
@@ -637,20 +644,103 @@ export const adminRouter = router({
                     throw new TRPCError({ code: 'NOT_FOUND', message: 'User not found.' });
                 }
                 const profiles = await ctx.profiles.listProfiles();
+                const specialAccessGrants = await ctx.users.listSpecialAccessGrants(user.id);
                 return {
                     kakaoVerified: user.oauthType === 'KAKAO' && Boolean(user.kakaoVerifiedAt),
                     kakaoGraceStartedAt: user.kakaoGraceStartedAt,
                     kakaoGraceUntil: user.kakaoGraceUntil ?? null,
+                    specialAccessGrants,
                     profiles: profiles.map((profile) => ({
                         profileName: profile.profileName,
                         ...resolveLocalAccountProfilePolicy({
                             profile: profile.profile,
+                            profileName: profile.profileName,
                             profileMeta: readMetaObject(profile.meta),
                             defaultGraceDays: (ctx as GatewayApiContext).localAccountGraceDays,
                             user,
+                            specialAccessGrants,
                         }),
                     })),
                 };
+            }),
+        grantSpecialAccess: userAdminProcedure
+            .input(
+                z.object({
+                    userId: z.string().min(1),
+                    kind: zSpecialAccountAccessKind,
+                    profiles: z.array(zSpecialAccessProfile).max(20).default([]),
+                    allowsGeneralCreation: z.boolean().default(true),
+                    expiresAt: z.string().datetime().nullable(),
+                    reason: z.string().trim().min(3).max(200),
+                })
+            )
+            .mutation(async ({ ctx, input }) => {
+                const user = await ctx.users.findById(input.userId);
+                if (!user) {
+                    throw new TRPCError({ code: 'NOT_FOUND', message: 'User not found.' });
+                }
+                const adminAuth = requireAdminAuth(ctx);
+                assertTargetUserManageable(adminAuth, user);
+                const expiresAt = input.expiresAt ? new Date(input.expiresAt) : null;
+                const now = new Date();
+                if (expiresAt && expiresAt.getTime() <= now.getTime()) {
+                    throw new TRPCError({ code: 'BAD_REQUEST', message: 'Special access must end in the future.' });
+                }
+                if (input.kind === 'RECOVERY') {
+                    if (!expiresAt) {
+                        throw new TRPCError({ code: 'BAD_REQUEST', message: 'Recovery access must expire.' });
+                    }
+                    if (expiresAt.getTime() > now.getTime() + 90 * 24 * 60 * 60 * 1000) {
+                        throw new TRPCError({ code: 'BAD_REQUEST', message: 'Recovery access may last at most 90 days.' });
+                    }
+                }
+                const profiles = [...new Set(input.profiles.map((profile) => profile.toLowerCase()))];
+                if (profiles.length > 0) {
+                    const knownProfiles = await ctx.profiles.listProfiles();
+                    const knownNames = new Set(
+                        knownProfiles.flatMap((profile) => [profile.profile.toLowerCase(), profile.profileName.toLowerCase()])
+                    );
+                    const unknown = profiles.find((profile) => !knownNames.has(profile));
+                    if (unknown) {
+                        throw new TRPCError({ code: 'BAD_REQUEST', message: `Unknown profile scope: ${unknown}` });
+                    }
+                }
+                const grant = await ctx.users.createSpecialAccessGrant(input.userId, {
+                    kind: input.kind,
+                    profiles,
+                    allowsGeneralCreation: input.allowsGeneralCreation,
+                    expiresAt,
+                    reason: input.reason,
+                    grantedByUserId: adminAuth.user.id,
+                });
+                await ctx.flushPublisher.publishUserFlush(input.userId, 'admin-special-access-granted');
+                return grant;
+            }),
+        revokeSpecialAccess: userAdminProcedure
+            .input(
+                z.object({
+                    userId: z.string().min(1),
+                    grantId: z.string().uuid(),
+                    reason: z.string().trim().min(3).max(200),
+                })
+            )
+            .mutation(async ({ ctx, input }) => {
+                const user = await ctx.users.findById(input.userId);
+                if (!user) {
+                    throw new TRPCError({ code: 'NOT_FOUND', message: 'User not found.' });
+                }
+                const adminAuth = requireAdminAuth(ctx);
+                assertTargetUserManageable(adminAuth, user);
+                const grant = await ctx.users.revokeSpecialAccessGrant(input.userId, input.grantId, {
+                    revokedAt: new Date(),
+                    revokedByUserId: adminAuth.user.id,
+                    reason: input.reason,
+                });
+                if (!grant) {
+                    throw new TRPCError({ code: 'NOT_FOUND', message: 'Active special access grant not found.' });
+                }
+                await ctx.flushPublisher.publishUserFlush(input.userId, 'admin-special-access-revoked');
+                return grant;
             }),
         updateKakaoGrace: userAdminProcedure
             .input(

@@ -916,6 +916,70 @@ describe('Gateway administrator account controls', () => {
         expect(harness.flushes).toContainEqual({ userId: target.id, reason: 'admin-kakao-grace-updated' });
     });
 
+    it('grants and revokes profile-scoped recovery access with an audit trail', async () => {
+        const harness = await buildCaller(unusedCreateOperation);
+        const target = await harness.users.createUser({
+            username: 'recovery-target',
+            password: 'secretpass',
+            displayName: 'Recovery Target',
+        });
+        target.oauthType = 'KAKAO';
+        target.oauthId = 'lost-phone-kakao-id';
+        target.kakaoVerifiedAt = '2026-08-01T00:00:00.000Z';
+        const expiresAt = new Date(Date.now() + 14 * 24 * 60 * 60 * 1000).toISOString();
+
+        const grant = await harness.caller.admin.users.grantSpecialAccess({
+            userId: target.id,
+            kind: 'RECOVERY',
+            profiles: ['che'],
+            allowsGeneralCreation: true,
+            expiresAt,
+            reason: '휴대폰 분실 본인 확인 완료',
+        });
+        expect(grant).toMatchObject({
+            userId: target.id,
+            kind: 'RECOVERY',
+            profiles: ['che'],
+            allowsGeneralCreation: true,
+            expiresAt,
+            grantedByUserId: harness.admin.id,
+        });
+        expect(harness.flushes).toContainEqual({ userId: target.id, reason: 'admin-special-access-granted' });
+
+        await expect(
+            harness.caller.admin.users.revokeSpecialAccess({
+                userId: target.id,
+                grantId: grant.id,
+                reason: 'Kakao 인증 수단 복구 완료',
+            })
+        ).resolves.toMatchObject({ id: grant.id, revokedReason: 'Kakao 인증 수단 복구 완료' });
+        expect(harness.flushes).toContainEqual({ userId: target.id, reason: 'admin-special-access-revoked' });
+        expect(harness.auditEvents.filter((event) => event.outcome === 'SUCCEEDED').map((event) => event.action)).toEqual([
+            'admin.users.grantSpecialAccess',
+            'admin.users.revokeSpecialAccess',
+        ]);
+    });
+
+    it('requires recovery access to expire within 90 days', async () => {
+        const harness = await buildCaller(unusedCreateOperation);
+        const target = await harness.users.createUser({
+            username: 'unsafe-recovery-target',
+            password: 'secretpass',
+            displayName: 'Unsafe Recovery Target',
+        });
+
+        await expect(
+            harness.caller.admin.users.grantSpecialAccess({
+                userId: target.id,
+                kind: 'RECOVERY',
+                profiles: [],
+                allowsGeneralCreation: true,
+                expiresAt: null,
+                reason: '무기한 복구 예외 거부',
+            })
+        ).rejects.toMatchObject({ code: 'BAD_REQUEST' });
+    });
+
     it('schedules deletion with retention and prevents administrator self-deletion', async () => {
         const harness = await buildCaller(unusedCreateOperation);
         const target = await harness.users.createUser({

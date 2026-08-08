@@ -107,4 +107,90 @@ describe('local account profile policy', () => {
             generalCreationGraceDays: 0,
         });
     });
+
+    it('treats every administrator role as permanent operator access', () => {
+        const user = buildLocalUser(new Date('2020-01-01T00:00:00.000Z'));
+        user.roles = ['user', 'admin.users.manage'];
+        const policy = resolveLocalAccountProfilePolicy({
+            profile: 'che',
+            profileName: 'che:2',
+            defaultGraceDays: 0,
+            user,
+            now: new Date('2026-08-08T00:00:00.000Z'),
+        });
+
+        expect(policy).toMatchObject({
+            accessAllowed: true,
+            canCreateGeneral: true,
+            requiresKakaoVerification: false,
+            specialAccess: {
+                kind: 'OPERATOR',
+                grantId: null,
+                expiresAt: null,
+                allowsGeneralCreation: true,
+            },
+        });
+    });
+
+    it('applies a profile-scoped tester grant to CHE including general creation', () => {
+        const user = buildLocalUser(new Date('2020-01-01T00:00:00.000Z'));
+        const policy = resolveLocalAccountProfilePolicy({
+            profile: 'che',
+            profileName: 'che:2',
+            defaultGraceDays: 0,
+            user,
+            specialAccessGrants: [
+                {
+                    id: 'grant-1',
+                    userId: user.id,
+                    kind: 'TESTER',
+                    profiles: ['che'],
+                    allowsGeneralCreation: true,
+                    reason: '고정 시나리오 검증',
+                    grantedByUserId: 'admin-id',
+                    createdAt: '2026-08-01T00:00:00.000Z',
+                },
+            ],
+            now: new Date('2026-08-08T00:00:00.000Z'),
+        });
+
+        expect(policy).toMatchObject({
+            accessAllowed: true,
+            canCreateGeneral: true,
+            requiresKakaoVerification: false,
+            specialAccess: { kind: 'TESTER', grantId: 'grant-1', allowsGeneralCreation: true },
+        });
+    });
+
+    it('ignores expired, revoked, and different-profile grants', () => {
+        const user = buildLocalUser(new Date('2020-01-01T00:00:00.000Z'));
+        const baseGrant = {
+            userId: user.id,
+            kind: 'RECOVERY' as const,
+            profiles: ['che'],
+            allowsGeneralCreation: true,
+            reason: '단말 분실 복구',
+            grantedByUserId: 'admin-id',
+            createdAt: '2026-08-01T00:00:00.000Z',
+        };
+        const policy = resolveLocalAccountProfilePolicy({
+            profile: 'che',
+            profileName: 'che:2',
+            defaultGraceDays: 0,
+            user,
+            specialAccessGrants: [
+                { ...baseGrant, id: 'expired', expiresAt: '2026-08-07T00:00:00.000Z' },
+                { ...baseGrant, id: 'revoked', revokedAt: '2026-08-07T00:00:00.000Z' },
+                { ...baseGrant, id: 'other-profile', profiles: ['hwe'], expiresAt: '2026-09-01T00:00:00.000Z' },
+            ],
+            now: new Date('2026-08-08T00:00:00.000Z'),
+        });
+
+        expect(policy).toMatchObject({
+            accessAllowed: false,
+            canCreateGeneral: false,
+            requiresKakaoVerification: true,
+            specialAccess: null,
+        });
+    });
 });
