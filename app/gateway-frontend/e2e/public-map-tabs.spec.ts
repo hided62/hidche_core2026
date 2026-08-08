@@ -42,6 +42,24 @@ const profiles: ProfileFixture[] = [
     },
 ];
 
+const orderedProfileData: ReadonlyArray<readonly [string, string, number]> = [
+    ['che', '체', 15003],
+    ['kwe', '퀘', 15005],
+    ['pwe', '풰', 15007],
+    ['twe', '퉤', 15009],
+    ['nya', '냐', 15011],
+    ['pya', '퍄', 15013],
+    ['hwe', '훼', 15015],
+];
+const orderedProfiles: ProfileFixture[] = orderedProfileData.map(([profile, korName, apiPort]) => ({
+    profileName: `${profile}:default`,
+    profile,
+    korName,
+    color: '#b0b0b0',
+    status: 'STOPPED',
+    apiPort,
+}));
+
 const fulfill = async (route: Route, results: unknown[]): Promise<void> => {
     await route.fulfill({
         status: 200,
@@ -211,4 +229,23 @@ test('treats an all-closed profile list as a normal empty login status', async (
     await expect(status).not.toContainText('Failed to fetch');
     expect(gameRequestCount).toBe(0);
     await page.screenshot({ path: testInfo.outputPath('login-no-public-server.png'), fullPage: true });
+});
+
+test('renders the Gateway profile order returned by the API', async ({ page }, testInfo) => {
+    await installGatewayFixture(page, orderedProfiles, true);
+
+    await page.setViewportSize({ width: 1200, height: 900 });
+    await page.goto('lobby');
+
+    const renderedProfiles = await page.locator('tbody tr td:first-child > div:first-child').allTextContents();
+    expect(renderedProfiles.map((name) => name.trim())).toEqual([
+        '체섭',
+        '퀘섭',
+        '풰섭',
+        '퉤섭',
+        '냐섭',
+        '퍄섭',
+        '훼섭',
+    ]);
+    await page.screenshot({ path: testInfo.outputPath('gateway-profile-order.png'), fullPage: true });
 });
