@@ -24,6 +24,7 @@ export interface ProcessManager {
 
 const PM2_INTERNAL_ENV_KEYS = new Set([
     'NODE_APP_INSTANCE',
+    'args',
     'autorestart',
     'autostart',
     'created_at',

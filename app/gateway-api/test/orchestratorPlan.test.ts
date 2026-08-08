@@ -179,6 +179,7 @@ describe('buildProcessDefinitions', () => {
                 DATABASE_URL: 'postgresql://integration.invalid/sammo',
                 VITE_APP_BASE_PATH: '/gateway',
                 GATEWAY_ROLE: 'orchestrator',
+                args: 'daemon',
                 NODE_APP_INSTANCE: '2',
                 name: 'sammo:gateway-orchestrator',
                 pm_id: '2',
@@ -189,6 +190,7 @@ describe('buildProcessDefinitions', () => {
         for (const definition of Object.values(definitions)) {
             expect(definition.env).toMatchObject({ DATABASE_URL: 'postgresql://integration.invalid/sammo' });
             expect(definition.env).not.toHaveProperty('pm_id');
+            expect(definition.env).not.toHaveProperty('args');
             expect(definition.env).not.toHaveProperty('pm_exec_path');
             expect(definition.env).not.toHaveProperty('name');
             expect(definition.env).not.toHaveProperty('NODE_APP_INSTANCE');
@@ -206,6 +208,7 @@ describe('sanitizeManagedProcessEnv', () => {
                 PATH: '/usr/local/bin:/usr/bin',
                 GATEWAY_ROLE: 'orchestrator',
                 GAME_API_ROLE: 'server',
+                args: 'daemon',
                 NODE_APP_INSTANCE: '2',
                 name: 'sammo:gateway-orchestrator',
                 pm_id: '2',

@@ -11,6 +11,7 @@ describe('buildPm2StartOptions', () => {
             env: {
                 DATABASE_URL: 'postgresql://integration.invalid/sammo',
                 GAME_API_ROLE: 'server',
+                args: 'daemon',
                 pm_id: '2',
                 pm_exec_path: '/srv/sammo/app/gateway-api/dist/index.js',
                 name: 'sammo:gateway-orchestrator',
@@ -31,9 +32,27 @@ describe('buildPm2StartOptions', () => {
             },
         });
         expect(options.env).not.toHaveProperty('pm_id');
+        expect(options.env).not.toHaveProperty('args');
         expect(options.env).not.toHaveProperty('pm_exec_path');
         expect(options.env).not.toHaveProperty('name');
         expect(options.env).not.toHaveProperty('NODE_APP_INSTANCE');
         expect(options.env).toHaveProperty('GAME_API_ROLE', 'server');
+    });
+
+    it('keeps explicit child arguments when a PM2 parent exposes its own args in the environment', () => {
+        const options = buildPm2StartOptions({
+            name: 'sammo:gateway-frontend',
+            script: '/srv/sammo/app/gateway-frontend/node_modules/vite/bin/vite.js',
+            cwd: '/srv/sammo/app/gateway-frontend',
+            args: ['preview', '--host', '0.0.0.0', '--port', '15000'],
+            env: {
+                args: 'daemon',
+                name: 'sammo:release-controller',
+                pm_id: '3',
+            },
+        });
+
+        expect(options.args).toEqual(['preview', '--host', '0.0.0.0', '--port', '15000']);
+        expect(options.env).not.toHaveProperty('args');
     });
 });

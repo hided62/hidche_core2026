@@ -13,6 +13,11 @@
 5. 두 HTTP endpoint와 세 PM2 process가 모두 준비된 경우에만 현재·이전
    릴리스 상태를 게시합니다. 실패하면 이전 세 프로세스를 복구합니다.
 
+Controller는 PM2 자식으로 실행되지만 자신의 `args=daemon`과 PM2 identity를
+Gateway process 환경에 전달하지 않습니다. 이 값이 frontend 정의를 덮으면 Vite가
+의도한 preview port 대신 기본 개발 port로 실행될 수 있으므로, process `online`
+여부뿐 아니라 Gateway API와 frontend HTTP readiness를 모두 확인합니다.
+
 ## 환경 변수
 
 - `GATEWAY_DATABASE_URL`: Gateway PostgreSQL URL입니다. 필수입니다.

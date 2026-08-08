@@ -119,9 +119,7 @@ const gatewayNames = ['sammo:gateway-api', 'sammo:gateway-frontend', 'sammo:gate
 it('runs Gateway preview from the frontend workspace dependency', () => {
     const definitions = buildGatewayProcessDefinitions('/srv/sammo/release', config);
     const frontend = definitions.find((definition) => definition.name === 'sammo:gateway-frontend');
-    expect(frontend?.script).toBe(
-        '/srv/sammo/release/app/gateway-frontend/node_modules/vite/bin/vite.js'
-    );
+    expect(frontend?.script).toBe('/srv/sammo/release/app/gateway-frontend/node_modules/vite/bin/vite.js');
 });
 
 it('does not forward release-controller PM2 identity to Gateway processes', () => {
@@ -130,6 +128,7 @@ it('does not forward release-controller PM2 identity to Gateway processes', () =
         baseEnv: {
             DATABASE_URL: 'postgresql://integration.invalid/sammo',
             GATEWAY_ROLE: 'orchestrator',
+            args: 'daemon',
             name: 'sammo:release-controller',
             pm_id: '3',
             pm_exec_path: '/srv/release-controller.js',
@@ -139,6 +138,7 @@ it('does not forward release-controller PM2 identity to Gateway processes', () =
     for (const definition of definitions) {
         expect(definition.env).toMatchObject({ DATABASE_URL: 'postgresql://integration.invalid/sammo' });
         expect(definition.env).not.toHaveProperty('pm_id');
+        expect(definition.env).not.toHaveProperty('args');
         expect(definition.env).not.toHaveProperty('pm_exec_path');
         expect(definition.env).not.toHaveProperty('name');
     }
@@ -250,6 +250,7 @@ describe('resolveReleaseControllerConfig', () => {
         const resolved = resolveReleaseControllerConfig({
             GATEWAY_DATABASE_URL: 'postgresql://user:pass@127.0.0.1:5432/sammo',
             RELEASE_CONTROLLER_WORKSPACE_ROOT: '/srv/sammo/controller',
+            args: 'daemon',
             pm_id: '3',
             name: 'sammo:release-controller',
             axm_monitor: '{}',
@@ -260,6 +261,7 @@ describe('resolveReleaseControllerConfig', () => {
             RELEASE_CONTROLLER_WORKSPACE_ROOT: '/srv/sammo/controller',
         });
         expect(resolved.baseEnv).not.toHaveProperty('pm_id');
+        expect(resolved.baseEnv).not.toHaveProperty('args');
         expect(resolved.baseEnv).not.toHaveProperty('name');
         expect(resolved.baseEnv).not.toHaveProperty('axm_monitor');
     });

@@ -107,6 +107,13 @@ Gateway는 자기 process를 직접 교체하지 않습니다. 관리자 화면�
    확인합니다.
 6. 모두 준비된 경우에만 현재·이전 commit과 workspace를 게시합니다.
 
+release-controller는 PM2 process 안에서 실행되므로 부모의 `args`, `pm_id`,
+`pm_exec_path`, `name`, `NODE_APP_INSTANCE`와 `axm_*` 같은 PM2 내부 값을 자식
+환경으로 전달하지 않습니다. 특히 부모의 `args=daemon`이 frontend의
+`vite preview --host 0.0.0.0 --port 15000` 인자를 덮으면 PM2 상태만 `online`이고
+Caddy upstream port는 열리지 않을 수 있습니다. 배포 readiness는 process 상태와
+두 HTTP endpoint를 함께 확인해야 합니다.
+
 Gateway 전체에는 활성 릴리스 작업을 동시에 하나만 둘 수 있습니다. 화면의
 릴리스 이력에서 요청 source, 고정 commit, 상태와 오류를 확인할 수 있습니다.
 
@@ -173,6 +180,9 @@ pnpm --filter @sammo-ts/release-controller self-upgrade -- COMMIT <full-sha>
 - 작업이 `SUCCEEDED`이고 고정 commit이 요청한 commit과 같은지 확인합니다.
 - PM2 process 이름별 항목이 정확히 하나이고 restart count가 0이며, cwd와
   script가 게시된 worktree를 가리키는지 확인합니다.
+- Gateway frontend의 실제 인자가 `preview --host 0.0.0.0 --port 15000`을
+  유지하고 container 내부 `127.0.0.1:15000/gateway/`와 Caddy에서
+  `runtime:15000/gateway/`가 모두 응답하는지 확인합니다.
 - `/gateway/` 또는 대상 profile prefix에 직접 접속하고 새로고침합니다.
 - API health, tRPC, SSE와 정적 자산 경로를 확인합니다.
 - DB 유지 배포에서는 현재 season/scenario와 핵심 게임 상태가 유지됐는지
