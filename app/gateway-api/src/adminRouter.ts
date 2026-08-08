@@ -381,6 +381,14 @@ const zUserLookupInput = z
         message: 'id, username, or email must be provided.',
     });
 
+const zUserListInput = z
+    .object({
+        query: z.string().trim().max(100).optional(),
+        limit: z.number().int().min(1).max(100).default(30),
+        cursor: z.string().uuid().optional(),
+    })
+    .optional();
+
 const zServerRestriction = z.object({
     blockedFeatures: z.array(z.string().min(1)).optional(),
     until: z.string().datetime().nullable().optional(),
@@ -584,6 +592,13 @@ export const adminRouter = router({
         getLocalAccountStatus: adminProcedure.query(({ ctx }) => ({
             enabled: (ctx as GatewayApiContext).adminLocalAccountEnabled,
         })),
+        list: userAdminProcedure.input(zUserListInput).query(({ ctx, input }) =>
+            ctx.users.listForAdmin({
+                query: input?.query,
+                limit: input?.limit ?? 30,
+                cursor: input?.cursor,
+            })
+        ),
         createLocal: userCreateProcedure.input(zLocalAccountInput).mutation(async ({ ctx, input }) => {
             const gatewayCtx = ctx as GatewayApiContext;
             assertLocalAccountEnabled(gatewayCtx);

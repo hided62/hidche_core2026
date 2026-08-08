@@ -2,12 +2,26 @@ import { randomUUID } from 'node:crypto';
 
 import { createSimplePasswordHasher, type PasswordHasher } from './passwordHasher.js';
 import type {
+    AdminUserListItem,
     CreateUserInput,
     SpecialAccountAccessGrantRecord,
     UserIconRecord,
     UserRecord,
     UserRepository,
 } from './userRepository.js';
+import { hasActiveUserSanction } from './userRepository.js';
+
+const toAdminUserListItem = (user: UserRecord): AdminUserListItem => ({
+    id: user.id,
+    username: user.username,
+    displayName: user.displayName,
+    email: user.email,
+    oauthType: user.oauthType,
+    roles: [...user.roles],
+    hasActiveSanction: hasActiveUserSanction(user.sanctions),
+    deleteAfter: user.deleteAfter,
+    createdAt: user.createdAt,
+});
 
 // 유저 데이터 저장소를 메모리로 대체한 임시 구현.
 export const createInMemoryUserRepository = (hasher: PasswordHasher = createSimplePasswordHasher()): UserRepository => {
@@ -55,6 +69,31 @@ export const createInMemoryUserRepository = (hasher: PasswordHasher = createSimp
         },
         async findByEmail(email: string): Promise<UserRecord | null> {
             return usersByEmail.get(email.toLowerCase()) ?? null;
+        },
+        async listForAdmin(input) {
+            const query = input.query?.trim().toLocaleLowerCase() ?? '';
+            const matching = [...usersByName.values()]
+                .filter((user) => {
+                    if (!query) return true;
+                    return [user.username, user.displayName, user.email ?? '', user.id].some((value) =>
+                        value.toLocaleLowerCase().includes(query)
+                    );
+                })
+                .sort((left, right) => {
+                    const byCreatedAt = right.createdAt.localeCompare(left.createdAt);
+                    return byCreatedAt === 0 ? right.id.localeCompare(left.id) : byCreatedAt;
+                });
+            const startIndex = input.cursor
+                ? Math.max(0, matching.findIndex((user) => user.id === input.cursor) + 1)
+                : 0;
+            const page = matching.slice(startIndex, startIndex + input.limit + 1);
+            const hasNextPage = page.length > input.limit;
+            const users = page.slice(0, input.limit);
+            return {
+                users: users.map(toAdminUserListItem),
+                total: matching.length,
+                nextCursor: hasNextPage ? users.at(-1)?.id : undefined,
+            };
         },
         async createUser(input: CreateUserInput): Promise<UserRecord> {
             if (usersByName.has(input.username)) {
