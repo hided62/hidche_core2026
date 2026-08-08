@@ -14,6 +14,8 @@ export interface OAuthPendingState {
 export interface OAuthSession {
     id: string;
     mode: OAuthMode;
+    intent?: 'register' | 'link_existing' | 'rejoin';
+    targetUserId?: string;
     kakaoId: string;
     email: string;
     accessToken: string;

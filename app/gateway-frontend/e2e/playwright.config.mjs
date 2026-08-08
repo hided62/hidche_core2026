@@ -17,6 +17,7 @@ export default defineConfig({
         'legacy-log-html.spec.ts',
         'gateway-notice-html.spec.ts',
         'kakao-otp.spec.ts',
+        'kakao-account-recovery.spec.ts',
     ],
     fullyParallel: false,
     workers: 1,

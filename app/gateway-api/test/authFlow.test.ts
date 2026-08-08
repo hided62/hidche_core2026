@@ -24,6 +24,7 @@ const buildCaller = (
         profileListError?: Error;
         kakaoId?: string;
         kakaoEmail?: string;
+        kakaoSignupAlreadyRegistered?: boolean;
         allowKakaoRefresh?: boolean;
     } = {}
 ) => {
@@ -69,7 +70,8 @@ const buildCaller = (
                 accessTokenExpiresIn: 3600,
             };
         },
-        signup: async () => ({ id: '1' }),
+        signup: async () =>
+            options.kakaoSignupAlreadyRegistered ? { msg: 'already registered' as const } : { id: kakaoProfile.id },
         getMe: async () => ({
             id: kakaoProfile.id,
             kakaoAccount: {
@@ -472,9 +474,9 @@ describe('gateway auth flow', () => {
         expect(decodeURIComponent(start.authUrl)).toContain('scope=account_email,talk_message');
     });
 
-    it('rejects a new Kakao identity when its verified email is already registered', async () => {
-        const { caller, users, kakaoProfile } = buildCaller();
-        await users.createUser({
+    it('asks before relinking a new Kakao identity to the permanently retained email owner', async () => {
+        const { caller, users, kakaoProfile, sentTalkMessages, flushPublisher } = buildCaller();
+        const emailOwner = await users.createUser({
             username: 'email-owner',
             password: 'owner-password',
             oauth: {
@@ -484,12 +486,100 @@ describe('gateway auth flow', () => {
                 info: {},
             },
         });
+        await users.markKakaoTalkVerified(emailOwner.id, new Date(Date.now() + 60_000));
         kakaoProfile.id = 'different-kakao-id';
 
         const start = await caller.auth.kakaoStart({ mode: 'login' });
-        await expect(caller.auth.kakaoExchange({ code: 'oauth-code', state: start.state })).rejects.toMatchObject({
-            code: 'CONFLICT',
-            message: expect.stringContaining('이미 다른 계정에서 사용 중인 카카오 이메일'),
+        const recovery = await caller.auth.kakaoExchange({ code: 'oauth-code', state: start.state });
+
+        expect(recovery).toMatchObject({
+            status: 'account_recovery',
+            action: 'link_existing',
+            email: 'tester@example.com',
+        });
+        if (recovery.status !== 'account_recovery') throw new Error('Expected account recovery choice.');
+
+        const linked = await caller.auth.kakaoResolveAccount({
+            oauthSessionId: recovery.oauthSessionId,
+            action: 'link_existing',
+        });
+        expect(linked.status).toBe('otp');
+        expect(sentTalkMessages).toHaveLength(1);
+        expect(await users.findByOauthId('KAKAO', 'original-kakao-id')).toBeNull();
+        expect(await users.findByOauthId('KAKAO', 'different-kakao-id')).toMatchObject({
+            id: emailOwner.id,
+            username: 'email-owner',
+            email: 'tester@example.com',
+        });
+        expect(flushPublisher.publishUserFlush).toHaveBeenCalledWith(emailOwner.id, 'kakao-account-relinked');
+    });
+
+    it('asks for rejoin confirmation when Kakao is already registered but no retained email owner exists', async () => {
+        const { caller, users, sealPassword } = buildCaller({ kakaoSignupAlreadyRegistered: true });
+
+        const start = await caller.auth.kakaoStart({ mode: 'login' });
+        const recovery = await caller.auth.kakaoExchange({ code: 'oauth-code', state: start.state });
+        expect(recovery).toMatchObject({
+            status: 'account_recovery',
+            action: 'rejoin',
+            email: 'tester@example.com',
+        });
+        if (recovery.status !== 'account_recovery') throw new Error('Expected rejoin choice.');
+
+        const confirmed = await caller.auth.kakaoResolveAccount({
+            oauthSessionId: recovery.oauthSessionId,
+            action: 'rejoin',
+        });
+        expect(confirmed).toMatchObject({ status: 'join', email: 'tester@example.com' });
+        if (confirmed.status !== 'join') throw new Error('Expected registration session.');
+
+        const registered = await caller.auth.register({
+            oauthSessionId: confirmed.oauthSessionId,
+            username: 'rejoined-user',
+            credential: sealPassword('rejoined-password'),
+            displayName: '재가입사용자',
+            termsAgreed: true,
+            privacyAgreed: true,
+            thirdPartyUse: false,
+        });
+        expect(registered.status).toBe('otp');
+        expect(await users.findByUsername('rejoined-user')).toMatchObject({
+            oauthType: 'KAKAO',
+            oauthId: '1',
+            email: 'tester@example.com',
+        });
+    });
+
+    it('does not let the registration mutation bypass the recovery confirmation', async () => {
+        const { caller, users, sealPassword } = buildCaller();
+        await users.createUser({
+            username: 'retained-owner',
+            password: 'owner-password',
+            oauth: {
+                type: 'KAKAO',
+                id: 'former-kakao-id',
+                email: 'tester@example.com',
+                info: {},
+            },
+        });
+
+        const start = await caller.auth.kakaoStart({ mode: 'login' });
+        const recovery = await caller.auth.kakaoExchange({ code: 'oauth-code', state: start.state });
+        if (recovery.status !== 'account_recovery') throw new Error('Expected account recovery choice.');
+
+        await expect(
+            caller.auth.register({
+                oauthSessionId: recovery.oauthSessionId,
+                username: 'bypass-user',
+                credential: sealPassword('bypass-password'),
+                displayName: '우회사용자',
+                termsAgreed: true,
+                privacyAgreed: true,
+                thirdPartyUse: false,
+            })
+        ).rejects.toMatchObject({
+            code: 'PRECONDITION_FAILED',
+            message: expect.stringContaining('복구 여부를 먼저 선택'),
         });
     });
 

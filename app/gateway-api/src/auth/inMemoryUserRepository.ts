@@ -161,23 +161,57 @@ export const createInMemoryUserRepository = (hasher: PasswordHasher = createSimp
             throw new Error('User not found.');
         },
         async linkKakao(userId, input): Promise<UserRecord> {
-            if (usersByOauthId.has(`KAKAO:${input.oauthId}`) || usersByEmail.has(input.email.toLowerCase())) {
+            const normalizedEmail = input.email.toLowerCase();
+            const oauthOwner = usersByOauthId.get(`KAKAO:${input.oauthId}`);
+            const emailOwner = usersByEmail.get(normalizedEmail);
+            if ((oauthOwner && oauthOwner.id !== userId) || (emailOwner && emailOwner.id !== userId)) {
                 throw new Error('Kakao account already linked.');
             }
             for (const user of usersByName.values()) {
                 if (user.id !== userId) {
                     continue;
                 }
+                if (user.oauthType === 'KAKAO' && user.oauthId) {
+                    usersByOauthId.delete(`KAKAO:${user.oauthId}`);
+                }
+                if (user.email && user.email.toLowerCase() !== normalizedEmail) {
+                    usersByEmail.delete(user.email.toLowerCase());
+                }
                 user.oauthType = 'KAKAO';
                 user.oauthId = input.oauthId;
-                user.email = input.email.toLowerCase();
+                user.email = normalizedEmail;
                 user.oauthInfo = input.oauthInfo;
                 user.kakaoVerifiedAt = input.verifiedAt.toISOString();
+                user.kakaoTalkVerifiedUntil = undefined;
                 usersByOauthId.set(`KAKAO:${input.oauthId}`, user);
                 usersByEmail.set(user.email, user);
                 return user;
             }
             throw new Error('User not found.');
+        },
+        async relinkKakaoByEmail(userId, input): Promise<UserRecord> {
+            const normalizedEmail = input.email.toLowerCase();
+            const oauthOwner = usersByOauthId.get(`KAKAO:${input.oauthId}`);
+            const emailOwner = usersByEmail.get(normalizedEmail);
+            if ((oauthOwner && oauthOwner.id !== userId) || emailOwner?.id !== userId) {
+                throw new Error('Kakao account recovery ownership changed.');
+            }
+            for (const user of usersByName.values()) {
+                if (user.id !== userId || user.email?.toLowerCase() !== normalizedEmail) {
+                    continue;
+                }
+                if (user.oauthType === 'KAKAO' && user.oauthId) {
+                    usersByOauthId.delete(`KAKAO:${user.oauthId}`);
+                }
+                user.oauthType = 'KAKAO';
+                user.oauthId = input.oauthId;
+                user.oauthInfo = input.oauthInfo;
+                user.kakaoVerifiedAt = input.verifiedAt.toISOString();
+                user.kakaoTalkVerifiedUntil = undefined;
+                usersByOauthId.set(`KAKAO:${input.oauthId}`, user);
+                return user;
+            }
+            throw new Error('Kakao account recovery ownership changed.');
         },
         async updateRoles(userId: string, roles: string[]): Promise<void> {
             for (const user of usersByName.values()) {

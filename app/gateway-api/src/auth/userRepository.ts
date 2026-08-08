@@ -122,6 +122,15 @@ export interface UserRepository {
             verifiedAt: Date;
         }
     ): Promise<UserRecord>;
+    relinkKakaoByEmail(
+        userId: string,
+        input: {
+            oauthId: string;
+            email: string;
+            oauthInfo: UserOAuthInfo;
+            verifiedAt: Date;
+        }
+    ): Promise<UserRecord>;
     updateRoles(userId: string, roles: string[]): Promise<void>;
     updateSanctions(userId: string, sanctions: UserSanctions): Promise<void>;
     updateKakaoGraceUntil(userId: string, until: Date | null): Promise<void>;

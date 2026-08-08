@@ -34,10 +34,22 @@ Gateway API는 다음 저장 경계를 사용합니다.
 
 Kakao 로그인은 URL 이름만으로 사용자를 연결하지 않습니다. `account_email`과
 `talk_message` scope를 항상 요청하고 callback의 `/v2/user/me` 응답에서 고유 ID,
-이메일 보유·유효·인증 상태를 확인합니다. 고유 ID가 다른 계정의 같은 이메일로
-접근하는 경우와 변경 이메일이 이미 다른 `AppUser`에 속한 경우는 `CONFLICT`로
-끝나며 session을 만들지 않습니다. 기존 Kakao 계정이면 stable OAuth ID로
-사용자를 찾은 뒤 이메일과 갱신된 token metadata를 함께 저장합니다.
+이메일 보유·유효·인증 상태를 확인합니다. 기존 Kakao 계정이면 stable OAuth ID로
+사용자를 찾은 뒤 이메일과 갱신된 token metadata를 함께 저장합니다. stable ID가
+로컬에 없지만 같은 `AppUser.email` 소유자가 있으면 일회용 OAuth session에 대상
+사용자 ID를 묶고 `account_recovery/link_existing` 선택을 반환합니다. 사용자가
+확인한 경우에만 그 행의 Kakao ID와 token metadata를 교체하며, 과거
+`kakaoTalkVerifiedUntil`은 무효화하여 새 KakaoTalk OTP를 통과하기 전에는 login
+session을 발급하지 않습니다. 확인과 저장 사이에 email 또는 OAuth 소유자가
+바뀌면 다시 시작하도록 거부합니다.
+
+Kakao `/v1/user/signup`이 `already registered`를 반환했는데 stable ID와 email
+소유자가 모두 없으면 `account_recovery/rejoin`을 반환합니다. 사용자가 재가입을
+확인해야 별도의 `register` intent session을 발급하므로 기존 가입 mutation으로
+확인 단계를 우회할 수 없습니다. 반대로 provider 연결이 이번 요청에서 새로
+생성됐고 로컬 email 소유자도 없으면 바로 신규 가입 form으로 진행합니다. 이미
+로컬 stable ID가 있는 상태에서 현재 이메일이 다른 `AppUser`에 속하면 identity를
+이메일 계정으로 옮기지 않고 기존처럼 `CONFLICT`로 끝냅니다.
 
 일반 비밀번호 로그인도 `oauth_type=KAKAO`이면 저장 access token을 사용하고,
 필요하면 아직 유효한 refresh token으로 갱신한 뒤 `/v2/user/me`를 호출합니다.

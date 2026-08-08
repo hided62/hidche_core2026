@@ -7,12 +7,13 @@ import { RedisOAuthSessionStore } from '../src/auth/oauthSessionStore.js';
 
 const redisUrl = process.env.GATEWAY_OAUTH_REDIS_TEST_URL;
 
-describe.skipIf(!redisUrl)('RedisOAuthSessionStore Kakao login challenge', () => {
+describe.skipIf(!redisUrl)('RedisOAuthSessionStore Kakao state', () => {
     const prefix = `gateway-oauth-test:${randomUUID()}`;
     const client = createClient({ url: redisUrl });
     const store = new RedisOAuthSessionStore(client, prefix, 300);
     const userIds = new Set<string>();
     const challengeIds = new Set<string>();
+    const sessionIds = new Set<string>();
 
     beforeAll(async () => {
         await client.connect();
@@ -22,6 +23,7 @@ describe.skipIf(!redisUrl)('RedisOAuthSessionStore Kakao login challenge', () =>
         const keys = [
             ...[...challengeIds].map((id) => `${prefix}:kakao-login-challenge:${id}`),
             ...[...userIds].map((id) => `${prefix}:kakao-login-challenge-user:${id}`),
+            ...[...sessionIds].map((id) => `${prefix}:oauth-session:${id}`),
         ];
         if (keys.length > 0) {
             await client.del(keys);
@@ -42,6 +44,31 @@ describe.skipIf(!redisUrl)('RedisOAuthSessionStore Kakao login challenge', () =>
         challengeIds.add(challenge.id);
         return challenge;
     };
+
+    it('preserves and consumes a retained-email recovery target once', async () => {
+        const targetUserId = randomUUID();
+        const session = await store.createSession({
+            mode: 'login',
+            intent: 'link_existing',
+            targetUserId,
+            kakaoId: 'replacement-kakao-id',
+            email: 'retained@example.test',
+            accessToken: 'access-token',
+            refreshToken: 'refresh-token',
+            accessTokenValidUntil: new Date(Date.now() + 60_000).toISOString(),
+            refreshTokenValidUntil: new Date(Date.now() + 86_400_000).toISOString(),
+            createdAt: new Date().toISOString(),
+        });
+        sessionIds.add(session.id);
+
+        await expect(store.consumeSession(session.id)).resolves.toMatchObject({
+            id: session.id,
+            intent: 'link_existing',
+            targetUserId,
+            email: 'retained@example.test',
+        });
+        await expect(store.consumeSession(session.id)).resolves.toBeNull();
+    });
 
     it('atomically consumes a successful code once', async () => {
         const challenge = await createChallenge();

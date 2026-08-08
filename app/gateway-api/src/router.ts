@@ -35,6 +35,7 @@ const zUsername = z
 const zPassword = z.string().min(6).max(128);
 const zProfile = z.string().min(1).max(64);
 const zOAuthMode = z.enum(['login', 'change_pw', 'verify']);
+const zKakaoRecoveryAction = z.enum(['link_existing', 'rejoin']);
 const zBootstrapToken = z.string().min(1);
 
 const parseDate = (value: string): Date | null => {
@@ -252,7 +253,8 @@ export const appRouter = router({
                 const tokenIssuedAt = new Date();
 
                 const signupResult = await ctx.kakaoClient.signup(token.accessToken);
-                if (!signupResult.id && signupResult.msg !== 'already registered') {
+                const alreadyRegisteredWithKakao = !signupResult.id && signupResult.msg === 'already registered';
+                if (!signupResult.id && !alreadyRegisteredWithKakao) {
                     throw new TRPCError({
                         code: 'BAD_REQUEST',
                         message: '카카오 앱 연결에 실패했습니다.',
@@ -270,12 +272,6 @@ export const appRouter = router({
                     ctx.users.findByOauthId('KAKAO', profile.kakaoId),
                     ctx.users.findByEmail(profile.email),
                 ]);
-                if (existingByEmail && existingByEmail.id !== existingById?.id) {
-                    throw new TRPCError({
-                        code: 'CONFLICT',
-                        message: '이미 다른 계정에서 사용 중인 카카오 이메일입니다. 관리자에게 문의해 주세요.',
-                    });
-                }
 
                 if (pending.mode === 'verify') {
                     if (!pending.userId) {
@@ -416,8 +412,15 @@ export const appRouter = router({
                 }
 
                 const joinOauthInfo = oauthInfoFromToken(token, tokenIssuedAt);
+                const recoveryIntent = existingByEmail
+                    ? ('link_existing' as const)
+                    : alreadyRegisteredWithKakao
+                      ? ('rejoin' as const)
+                      : ('register' as const);
                 const stored = await ctx.oauthSessions.createSession({
                     mode: pending.mode,
+                    intent: recoveryIntent,
+                    targetUserId: existingByEmail?.id,
                     kakaoId: profile.kakaoId,
                     email: profile.email,
                     accessToken: token.accessToken,
@@ -427,11 +430,132 @@ export const appRouter = router({
                     createdAt: new Date().toISOString(),
                 });
 
+                if (recoveryIntent !== 'register') {
+                    return {
+                        status: 'account_recovery' as const,
+                        action: recoveryIntent,
+                        oauthSessionId: stored.id,
+                        email: stored.email,
+                    };
+                }
+
                 return {
                     status: 'join' as const,
                     oauthSessionId: stored.id,
                     email: stored.email,
                 };
+            }),
+        kakaoResolveAccount: procedure
+            .input(
+                z.object({
+                    oauthSessionId: z.string().min(1),
+                    action: zKakaoRecoveryAction,
+                })
+            )
+            .mutation(async ({ ctx, input }) => {
+                const oauthSession = await ctx.oauthSessions.consumeSession(input.oauthSessionId);
+                if (!oauthSession) {
+                    throw new TRPCError({
+                        code: 'UNAUTHORIZED',
+                        message: '카카오 계정 복구 세션이 만료되었습니다.',
+                    });
+                }
+                if (oauthSession.intent !== input.action) {
+                    throw new TRPCError({
+                        code: 'BAD_REQUEST',
+                        message: '카카오 계정 복구 선택이 올바르지 않습니다.',
+                    });
+                }
+
+                if (input.action === 'rejoin') {
+                    const [oauthOwner, emailOwner] = await Promise.all([
+                        ctx.users.findByOauthId('KAKAO', oauthSession.kakaoId),
+                        ctx.users.findByEmail(oauthSession.email),
+                    ]);
+                    if (oauthOwner || emailOwner) {
+                        throw new TRPCError({
+                            code: 'CONFLICT',
+                            message: '연결할 기존 계정이 확인되었습니다. 카카오 로그인을 처음부터 다시 진행해 주세요.',
+                        });
+                    }
+                    const registrationSession = await ctx.oauthSessions.createSession({
+                        mode: oauthSession.mode,
+                        intent: 'register',
+                        kakaoId: oauthSession.kakaoId,
+                        email: oauthSession.email,
+                        accessToken: oauthSession.accessToken,
+                        refreshToken: oauthSession.refreshToken,
+                        accessTokenValidUntil: oauthSession.accessTokenValidUntil,
+                        refreshTokenValidUntil: oauthSession.refreshTokenValidUntil,
+                        createdAt: new Date().toISOString(),
+                    });
+                    return {
+                        status: 'join' as const,
+                        oauthSessionId: registrationSession.id,
+                        email: registrationSession.email,
+                    };
+                }
+
+                if (!oauthSession.targetUserId) {
+                    throw new TRPCError({
+                        code: 'CONFLICT',
+                        message: '연결할 기존 계정을 찾지 못했습니다. 카카오 로그인을 처음부터 다시 진행해 주세요.',
+                    });
+                }
+                const [targetUser, emailOwner, oauthOwner] = await Promise.all([
+                    ctx.users.findById(oauthSession.targetUserId),
+                    ctx.users.findByEmail(oauthSession.email),
+                    ctx.users.findByOauthId('KAKAO', oauthSession.kakaoId),
+                ]);
+                if (!targetUser || emailOwner?.id !== targetUser.id) {
+                    throw new TRPCError({
+                        code: 'CONFLICT',
+                        message:
+                            '보존된 이메일의 계정 정보가 변경되었습니다. 카카오 로그인을 처음부터 다시 진행해 주세요.',
+                    });
+                }
+                if (oauthOwner && oauthOwner.id !== targetUser.id) {
+                    throw new TRPCError({
+                        code: 'CONFLICT',
+                        message: '이미 다른 계정에 연결된 카카오 계정입니다.',
+                    });
+                }
+                if (targetUser.deleteAfter) {
+                    throw new TRPCError({
+                        code: 'PRECONDITION_FAILED',
+                        message: '탈퇴 처리 중인 계정에는 카카오 계정을 다시 연결할 수 없습니다.',
+                    });
+                }
+                if (isLoginBanned(targetUser.sanctions)) {
+                    throw new TRPCError({
+                        code: 'FORBIDDEN',
+                        message: 'Account login is blocked.',
+                    });
+                }
+
+                const oauthInfo: UserOAuthInfo = {
+                    accessToken: oauthSession.accessToken,
+                    refreshToken: oauthSession.refreshToken,
+                    accessTokenValidUntil: oauthSession.accessTokenValidUntil,
+                    refreshTokenValidUntil: oauthSession.refreshTokenValidUntil,
+                };
+                let linked: UserRecord;
+                try {
+                    linked = await ctx.users.relinkKakaoByEmail(targetUser.id, {
+                        oauthId: oauthSession.kakaoId,
+                        email: oauthSession.email,
+                        oauthInfo,
+                        verifiedAt: new Date(),
+                    });
+                } catch (error) {
+                    throw new TRPCError({
+                        code: 'CONFLICT',
+                        message: '카카오 계정 연결 상태가 변경되었습니다. 처음부터 다시 진행해 주세요.',
+                        cause: error,
+                    });
+                }
+                await ctx.flushPublisher.publishUserFlush(linked.id, 'kakao-account-relinked');
+                return finishKakaoLogin(ctx, linked, oauthSession.accessToken, 'login');
             }),
         register: procedure
             .input(
@@ -458,6 +582,12 @@ export const appRouter = router({
                     throw new TRPCError({
                         code: 'UNAUTHORIZED',
                         message: 'OAuth 세션이 만료되었습니다.',
+                    });
+                }
+                if (oauthSession.intent && oauthSession.intent !== 'register') {
+                    throw new TRPCError({
+                        code: 'PRECONDITION_FAILED',
+                        message: '카카오 계정 복구 여부를 먼저 선택해 주세요.',
                     });
                 }
                 const existing = await ctx.users.findByUsername(input.username);

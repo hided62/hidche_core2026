@@ -42,11 +42,13 @@ Gateway 자체 릴리스는 Gateway 프로세스 밖의 `release-controller`가 
 `GatewayReleaseOperation` queue를 처리합니다.
 
 Kakao 계정은 OAuth callback과 일반 비밀번호 로그인 모두에서 Kakao 고유 ID와
-현재 인증 이메일을 다시 확인합니다. 새 Kakao ID의 이메일이 기존 계정에 있거나
-기존 Kakao ID의 변경 이메일이 다른 계정에 있으면 로그인을 거부합니다. 확인된
-이메일은 `AppUser.email`에 동기화하며, 10일마다 `talk_message` scope로
-“나와의 채팅” 숫자 코드를 보내 소유 증명을 완료한 뒤에만 새 Gateway session을
-발급합니다.
+현재 인증 이메일을 다시 확인합니다. 로컬 고유 ID 연결이 없지만 영구 보존된
+이메일 계정이 있으면 자동 로그인하지 않고 그 계정에 연결할지 묻습니다. 기존
+계정 연결을 확인하면 이전 Kakao ID와 과거 talk proof를 교체하고 새
+“나와의 채팅” 숫자 코드로 다시 증명한 뒤에만 Gateway session을 발급합니다.
+Kakao가 `already registered`를 반환했지만 보존 이메일 계정도 없으면 재가입
+확인 뒤 신규 가입 form을 엽니다. 이미 로컬에 연결된 stable ID의 변경 이메일이
+다른 계정에 있으면 기존처럼 충돌을 거부합니다.
 
 각 game profile은 별도 PostgreSQL schema를 사용합니다. `game-api`는 인증된
 요청을 검증하고 직접 처리할 mutation 또는 daemon 입력을

@@ -22,6 +22,11 @@ const displayName = ref('');
 const termsAgreed = ref(false);
 const privacyAgreed = ref(false);
 const thirdPartyUse = ref(false);
+const accountRecovery = ref<{
+    action: 'link_existing' | 'rejoin';
+    oauthSessionId: string;
+    email: string;
+} | null>(null);
 const otpChallenge = ref<{ challengeId: string; expiresAt: string; attemptsRemaining: number } | null>(null);
 const otpSuccessStatus = ref<'login' | 'verified'>('login');
 const appBase = import.meta.env.BASE_URL;
@@ -55,12 +60,46 @@ const completeExchange = async (): Promise<void> => {
             infoMessage.value = '카카오톡으로 임시 비밀번호를 보냈습니다.';
             return;
         }
+        if (result.status === 'account_recovery') {
+            accountRecovery.value = result;
+            email.value = result.email;
+            return;
+        }
         oauthSessionId.value = result.oauthSessionId;
         email.value = result.email;
     } catch (error) {
         errorMessage.value = error instanceof Error ? error.message : '카카오 인증을 완료하지 못했습니다.';
     } finally {
         loading.value = false;
+    }
+};
+
+const resolveAccount = async (): Promise<void> => {
+    if (!accountRecovery.value) return;
+    errorMessage.value = '';
+    submitting.value = true;
+    try {
+        const result = await trpc.auth.kakaoResolveAccount.mutate({
+            oauthSessionId: accountRecovery.value.oauthSessionId,
+            action: accountRecovery.value.action,
+        });
+        accountRecovery.value = null;
+        if (result.status === 'otp') {
+            otpChallenge.value = result;
+            otpSuccessStatus.value = result.successStatus;
+            return;
+        }
+        if (result.status === 'login') {
+            window.localStorage.setItem('sammo-session-token', result.sessionToken);
+            await router.replace('/lobby');
+            return;
+        }
+        oauthSessionId.value = result.oauthSessionId;
+        email.value = result.email;
+    } catch (error) {
+        errorMessage.value = error instanceof Error ? error.message : '카카오 계정 연결을 완료하지 못했습니다.';
+    } finally {
+        submitting.value = false;
     }
 };
 
@@ -117,9 +156,31 @@ onMounted(() => {
         <main id="oauth-container">
             <h1>삼국지 모의전투 HiDCHe</h1>
             <section class="oauth-card">
-                <h2>회원가입</h2>
+                <h2>{{ accountRecovery ? '카카오 계정 연결 확인' : '회원가입' }}</h2>
                 <p v-if="loading" class="oauth-message">카카오 인증을 확인하는 중...</p>
                 <p v-else-if="infoMessage" class="oauth-message" role="status">{{ infoMessage }}</p>
+                <div v-else-if="accountRecovery" class="recovery-panel" role="group" aria-label="카카오 계정 연결 확인">
+                    <p v-if="accountRecovery.action === 'link_existing'">
+                        <strong>{{ accountRecovery.email }}</strong> 이메일로 보존된 기존 계정이 있습니다. 이 계정에
+                        카카오 로그인을 연결해드릴까요?
+                    </p>
+                    <p v-else>
+                        <strong>{{ accountRecovery.email }}</strong> 이메일은 카카오에 이미 가입된 연결이 있지만 이
+                        서비스에서 연결할 계정을 찾지 못했습니다. 새 계정으로 재가입하시겠습니까?
+                    </p>
+                    <div class="recovery-actions">
+                        <button class="register-button" type="button" :disabled="submitting" @click="resolveAccount">
+                            {{
+                                submitting
+                                    ? '처리 중...'
+                                    : accountRecovery.action === 'link_existing'
+                                      ? '기존 계정에 연결'
+                                      : '재가입'
+                            }}
+                        </button>
+                        <RouterLink class="back-link" to="/">취소</RouterLink>
+                    </div>
+                </div>
                 <form v-else-if="oauthSessionId" @submit.prevent="register">
                     <div class="form-row">
                         <label for="oauth-email">카카오 이메일</label>
@@ -222,6 +283,33 @@ onMounted(() => {
     display: grid;
     gap: 12px;
     padding: 18px;
+}
+
+.recovery-panel {
+    padding: 18px;
+    text-align: center;
+}
+
+.recovery-panel p {
+    margin: 0;
+    line-height: 1.6;
+}
+
+.recovery-panel strong {
+    color: #ffd180;
+}
+
+.recovery-actions {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    gap: 12px;
+    margin-top: 18px;
+}
+
+.recovery-actions .register-button,
+.recovery-actions .back-link {
+    margin: 0;
 }
 
 .form-row,

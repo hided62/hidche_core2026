@@ -251,8 +251,30 @@ export const createPostgresUserRepository = (
                     email: input.email.toLowerCase(),
                     oauthInfo: input.oauthInfo as GatewayPrisma.JsonObject,
                     kakaoVerifiedAt: input.verifiedAt,
+                    kakaoTalkVerifiedUntil: null,
                 },
             });
+            return mapUser(row);
+        },
+        async relinkKakaoByEmail(userId, input): Promise<UserRecord> {
+            const normalizedEmail = input.email.toLowerCase();
+            const updated = await prisma.appUser.updateMany({
+                where: {
+                    id: userId,
+                    email: normalizedEmail,
+                },
+                data: {
+                    oauthType: 'KAKAO',
+                    oauthId: input.oauthId,
+                    oauthInfo: input.oauthInfo as GatewayPrisma.JsonObject,
+                    kakaoVerifiedAt: input.verifiedAt,
+                    kakaoTalkVerifiedUntil: null,
+                },
+            });
+            if (updated.count !== 1) {
+                throw new Error('Kakao account recovery ownership changed.');
+            }
+            const row = await prisma.appUser.findUniqueOrThrow({ where: { id: userId } });
             return mapUser(row);
         },
         async updateRoles(userId: string, roles: string[]): Promise<void> {
