@@ -76,41 +76,50 @@ test('admin resets and opens hwe, then two users create generals and reach main'
 }, testInfo) => {
     test.setTimeout(360_000);
     const sourceCommit = requiredEnv('SAMMO_LIFECYCLE_SOURCE_COMMIT');
+    const adminUsername = process.env.SAMMO_LIFECYCLE_ADMIN_USERNAME?.trim() || 'guiadmin';
+    const profileKey = process.env.SAMMO_LIFECYCLE_PROFILE_KEY?.trim() || 'hwe:default';
+    const scenarioId = process.env.SAMMO_LIFECYCLE_SCENARIO_ID?.trim() || '2';
+    const skipReset = process.env.SAMMO_LIFECYCLE_SKIP_RESET === 'true';
     page.on('dialog', (dialog) => dialog.accept());
 
-    await login(page, 'guiadmin', await readPassword('admin'));
+    await login(page, adminUsername, await readPassword('admin'));
     await page.getByRole('link', { name: '관리자 페이지' }).click();
     await expect(page).toHaveURL(/\/gateway\/admin$/);
     await page.getByRole('link', { name: '서버 배포 · 시나리오 초기화' }).click();
     await expect(page).toHaveURL(/\/gateway\/admin\/server-operations$/);
 
-    await page.getByTestId('profile-select').selectOption('hwe:2');
-    await page.getByTestId('source-commit').check();
-    await page.getByTestId('source-ref').fill(sourceCommit);
-    await page.getByTestId('load-scenarios').click();
-    await expect(page.getByText(/개 시나리오를 확인했습니다/)).toBeVisible();
-    await page.getByTestId('scenario-select').selectOption('2');
-    const latestOperation = page.getByTestId('operations-table').locator('tbody tr').first();
-    const previousLatestOperation = await latestOperation.textContent();
-    await page.getByTestId('request-reset').click();
-    await expect(page.getByText('초기화 작업을 시작했습니다.')).toBeVisible();
-
-    await expect
-        .poll(() => latestOperation.textContent(), {
-            timeout: 15_000,
-        })
-        .not.toBe(previousLatestOperation);
-    await expect(latestOperation).toContainText(sourceCommit, {
-        timeout: 15_000,
-    });
-    await expect(latestOperation.locator('td').nth(3)).toHaveText('SUCCEEDED', {
-        timeout: 300_000,
-    });
+    await page.getByTestId('profile-select').selectOption(profileKey);
     const profileStatus = page.getByTestId('selected-profile-status');
+    if (!skipReset) {
+        await page.getByTestId('source-commit').check();
+        await page.getByTestId('source-ref').fill(sourceCommit);
+        await page.getByTestId('load-scenarios').click();
+        await expect(page.getByText(/개 시나리오를 확인했습니다/)).toBeVisible();
+        await page.getByTestId('scenario-select').selectOption(scenarioId);
+        const latestOperation = page.getByTestId('operations-table').locator('tbody tr').first();
+        const previousLatestOperation = await latestOperation.textContent();
+        await page.getByTestId('request-reset').click();
+        await expect(page.getByText('초기화 작업을 등록했습니다.')).toBeVisible();
+
+        await expect
+            .poll(() => latestOperation.textContent(), {
+                timeout: 15_000,
+            })
+            .not.toBe(previousLatestOperation);
+        await expect(latestOperation).toContainText(sourceCommit, {
+            timeout: 15_000,
+        });
+        await expect(latestOperation.locator('td').nth(4)).toHaveText('SUCCEEDED', {
+            timeout: 300_000,
+        });
+    }
+    await expect(profileStatus).toContainText('RUNNING', { timeout: 30_000 });
     await expect(profileStatus).toContainText('SUCCEEDED');
-    await expect(profileStatus.locator('.text-emerald-400')).toHaveCount(2, {
-        timeout: 30_000,
-    });
+    for (const processLabel of ['Game frontend', 'Game API', 'Turn daemon']) {
+        await expect(profileStatus.locator('.rounded').filter({ hasText: processLabel })).toContainText('RUNNING', {
+            timeout: 30_000,
+        });
+    }
     await page.screenshot({
         path: testInfo.outputPath('admin-reset-running.png'),
         fullPage: true,
