@@ -71,7 +71,9 @@ const buildCaller = (
             };
         },
         signup: async () =>
-            options.kakaoSignupAlreadyRegistered ? { msg: 'already registered' as const } : { id: kakaoProfile.id },
+            options.kakaoSignupAlreadyRegistered
+                ? { alreadyRegistered: true }
+                : { id: kakaoProfile.id, alreadyRegistered: false },
         getMe: async () => ({
             id: kakaoProfile.id,
             kakaoAccount: {

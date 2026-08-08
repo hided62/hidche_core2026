@@ -25,6 +25,11 @@ export interface KakaoUserInfo {
     kakaoAccount: KakaoAccountInfo;
 }
 
+export interface KakaoSignupResult {
+    id?: string;
+    alreadyRegistered: boolean;
+}
+
 const buildForm = (params: Record<string, string>): URLSearchParams => {
     const form = new URLSearchParams();
     for (const [key, value] of Object.entries(params)) {
@@ -106,19 +111,24 @@ export class KakaoOAuthClient {
         return parseToken(payload);
     }
 
-    async signup(accessToken: string): Promise<{ id?: string; msg?: string }> {
+    async signup(accessToken: string): Promise<KakaoSignupResult> {
         const response = await fetch(new URL('/v1/user/signup', this.apiHost), {
             headers: {
                 Authorization: `Bearer ${accessToken}`,
             },
         });
         const payload = (await response.json()) as Record<string, unknown>;
+        if (!response.ok && payload.code === -102 && payload.msg === 'already registered') {
+            return {
+                alreadyRegistered: true,
+            };
+        }
         if (!response.ok) {
             throw new Error(`Kakao signup error: ${JSON.stringify(payload)}`);
         }
         return {
             id: payload.id ? String(payload.id) : undefined,
-            msg: payload.msg ? String(payload.msg) : undefined,
+            alreadyRegistered: false,
         };
     }
 

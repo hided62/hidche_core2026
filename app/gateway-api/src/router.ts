@@ -253,7 +253,7 @@ export const appRouter = router({
                 const tokenIssuedAt = new Date();
 
                 const signupResult = await ctx.kakaoClient.signup(token.accessToken);
-                const alreadyRegisteredWithKakao = !signupResult.id && signupResult.msg === 'already registered';
+                const alreadyRegisteredWithKakao = !signupResult.id && signupResult.alreadyRegistered;
                 if (!signupResult.id && !alreadyRegisteredWithKakao) {
                     throw new TRPCError({
                         code: 'BAD_REQUEST',
