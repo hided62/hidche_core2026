@@ -91,12 +91,20 @@ GATEWAY_SHARED_ICON_PUBLIC_URL=https://sam-image.hided.net/icons
 GAME_IMAGE_UPLOAD_URL=https://sam-image.hided.net
 GAME_IMAGE_UPLOAD_SECRET_FILE=/run/secrets/image_upload_core2026_secret
 GAME_CONTENT_IMAGE_PUBLIC_URL=https://sam-image.hided.net/uploads/core2026
+IMAGE_SYNC_URL=https://sam-image.hided.net
+IMAGE_SYNC_SECRET_FILE=/run/secrets/image_sync_core2026_secret
 ```
 
 Gateway가 인증과 50KB·크기·형식을 확인한 뒤 60초짜리 HMAC 요청으로 서버 간
 PUT을 수행합니다. game-api의 국방·외교·정찰 편집기 첨부 이미지도 같은 계약을
 사용하되 `/uploads/core2026/` bind 경로에 저장합니다. 공유 비밀값은 `VITE_*`,
 브라우저 응답 또는 Cloudflare로 전달하지 않습니다.
+
+Gitea webhook을 놓친 경우에는 별도의 `image_sync_core2026_secret`을 mount한
+서버 컨테이너에서 `pnpm sync:image`를 실행합니다. 특정 이미지 저장소 commit을
+확인하면서 동기화하려면 `pnpm sync:image -- --commit <full-commit-sha>`를
+사용합니다. 이 호출은 현재 활성 branch의 fast-forward만 요청하며 branch를
+변경할 권한은 없습니다. 업로드 secret과 sync secret은 서로 바꾸어 쓰지 않습니다.
 
 ```sh
 cd ../docker_compose_files/development

@@ -222,7 +222,7 @@ export const accountRouter = router({
                 });
             }
             const extension = metadata.format === 'jpeg' ? 'jpg' : metadata.format;
-            const filename = `${randomBytes(8).toString('hex')}.${extension}`;
+            const filename = `${randomBytes(16).toString('hex')}.${extension}`;
             if (!ctx.userIconUpload) {
                 throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: '이미지 저장소가 설정되지 않았습니다.' });
             }

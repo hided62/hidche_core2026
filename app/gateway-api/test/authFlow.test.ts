@@ -720,7 +720,9 @@ describe('account self service', () => {
             });
             const updated = await users.findById(user.id);
 
-            expect(result.iconUrl).toMatch(/^https:\/\/sam-image\.hided\.net\/icons\/users\/core2026\/[a-f0-9]{16}\.png$/);
+            expect(result.iconUrl).toMatch(
+                /^https:\/\/sam-image\.hided\.net\/icons\/users\/core2026\/[a-f0-9]{32}\.png$/
+            );
             expect(result.profiles.map((profile) => profile.profileName)).toEqual(['che:default', 'hwe:default']);
             expect(updated?.imageServer).toBe(0);
             expect(flushPublisher.publishUserFlush).toHaveBeenCalledWith(user.id, 'account-icon-changed');
