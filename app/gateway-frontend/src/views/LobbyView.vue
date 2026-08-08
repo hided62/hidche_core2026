@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref, onMounted } from 'vue';
+import { computed, ref, onMounted, watch } from 'vue';
 import { useRouter } from 'vue-router';
 import type { inferRouterOutputs } from '@trpc/server';
 import type { AppRouter } from '@sammo-ts/gateway-api';
@@ -30,6 +30,7 @@ const notice = ref('');
 const profiles = ref<LobbyProfile[]>([]);
 const profileDetails = ref<Record<string, LobbyInfo | undefined>>({});
 const profileMapPreviews = ref<Record<string, MapPreviewBundle | undefined>>({});
+const selectedMapProfileName = ref<string | null>(null);
 const entryLoading = ref<Record<string, boolean>>({});
 const logoutLoading = ref(false);
 const logoutError = ref('');
@@ -43,6 +44,46 @@ const canAccessAdmin = computed(
 const needsKakaoVerification = computed(() => me.value !== null && !me.value.kakaoVerified);
 const userIconBaseUrl = configuredUserIconPublicUrl();
 const sharedIconBaseUrl = configuredSharedIconPublicUrl();
+const publicMapProfiles = computed(() =>
+    profiles.value.filter((profile) => profile.status === 'RUNNING' || profile.status === 'PREOPEN')
+);
+const selectedMapProfile = computed(
+    () => publicMapProfiles.value.find((profile) => profile.profileName === selectedMapProfileName.value) ?? null
+);
+const selectedMapPreview = computed(() =>
+    selectedMapProfileName.value ? profileMapPreviews.value[selectedMapProfileName.value] : undefined
+);
+
+watch(publicMapProfiles, (availableProfiles) => {
+    if (!availableProfiles.some((profile) => profile.profileName === selectedMapProfileName.value)) {
+        selectedMapProfileName.value = availableProfiles[0]?.profileName ?? null;
+    }
+});
+
+const selectMapProfile = (profileName: string): void => {
+    selectedMapProfileName.value = profileName;
+};
+
+const handleMapTabKeydown = (event: KeyboardEvent, profileName: string): void => {
+    const currentIndex = publicMapProfiles.value.findIndex((profile) => profile.profileName === profileName);
+    if (currentIndex < 0) return;
+
+    let nextIndex: number | null = null;
+    if (event.key === 'ArrowRight') nextIndex = (currentIndex + 1) % publicMapProfiles.value.length;
+    if (event.key === 'ArrowLeft') {
+        nextIndex = (currentIndex - 1 + publicMapProfiles.value.length) % publicMapProfiles.value.length;
+    }
+    if (event.key === 'Home') nextIndex = 0;
+    if (event.key === 'End') nextIndex = publicMapProfiles.value.length - 1;
+    if (nextIndex === null) return;
+
+    event.preventDefault();
+    selectedMapProfileName.value = publicMapProfiles.value[nextIndex]?.profileName ?? null;
+    const tabButtons = (event.currentTarget as HTMLElement).parentElement?.querySelectorAll<HTMLButtonElement>(
+        '[role="tab"]'
+    );
+    tabButtons?.[nextIndex]?.focus();
+};
 
 const formatGraceEndsAt = (value: string | null | undefined): string =>
     value ? new Date(value).toLocaleString('ko-KR') : '';
@@ -473,34 +514,63 @@ const handleEnter = async (profile: LobbyProfile, targetPath: string) => {
                 >
                     공개 지도 미리보기
                 </div>
-                <div class="p-4 grid grid-cols-1 lg:grid-cols-2 gap-4">
+                <div class="p-4">
                     <div
-                        v-for="profile in profiles"
-                        :key="profile.profileName"
-                        class="border border-zinc-800 rounded bg-zinc-950/50 p-3"
+                        v-if="publicMapProfiles.length"
+                        class="map-preview-tabs"
+                        role="tablist"
+                        aria-label="공개 지도 서버 선택"
+                    >
+                        <button
+                            v-for="profile in publicMapProfiles"
+                            :id="`map-preview-tab-${profile.profileName}`"
+                            :key="profile.profileName"
+                            type="button"
+                            role="tab"
+                            :aria-selected="selectedMapProfileName === profile.profileName"
+                            :aria-controls="`map-preview-panel-${profile.profileName}`"
+                            :tabindex="selectedMapProfileName === profile.profileName ? 0 : -1"
+                            class="map-preview-tab"
+                            :class="{ 'is-active': selectedMapProfileName === profile.profileName }"
+                            :style="{ '--profile-color': profile.color }"
+                            @mouseenter="selectMapProfile(profile.profileName)"
+                            @focus="selectMapProfile(profile.profileName)"
+                            @click="selectMapProfile(profile.profileName)"
+                            @keydown="handleMapTabKeydown($event, profile.profileName)"
+                        >
+                            {{ profile.korName }}섭
+                        </button>
+                    </div>
+                    <div
+                        v-if="selectedMapProfile"
+                        :id="`map-preview-panel-${selectedMapProfile.profileName}`"
+                        role="tabpanel"
+                        :aria-labelledby="`map-preview-tab-${selectedMapProfile.profileName}`"
+                        class="map-preview-panel"
+                        data-testid="public-map-preview-panel"
                     >
                         <div class="flex items-center justify-between text-xs text-zinc-400 mb-2">
-                            <span class="font-semibold" :style="{ color: profile.color }">
-                                {{ profile.korName }}섭
+                            <span class="font-semibold" :style="{ color: selectedMapProfile.color }">
+                                {{ selectedMapProfile.korName }}섭
                             </span>
-                            <span>{{ profile.status }}</span>
+                            <span>{{ selectedMapProfile.status }}</span>
                         </div>
-                        <div v-if="profile.status === 'RUNNING' || profile.status === 'PREOPEN'">
-                            <div v-if="profileMapPreviews[profile.profileName]">
-                                <MapPreview
-                                    :map-data="profileMapPreviews[profile.profileName]!.mapData"
-                                    :map-layout="profileMapPreviews[profile.profileName]!.mapLayout"
-                                />
-                                <div v-if="profileDetails[profile.profileName]" class="text-xs text-zinc-400 mt-2">
-                                    유저 {{ profileDetails[profile.profileName]?.userCnt ?? '-' }} /
-                                    {{ profileDetails[profile.profileName]?.maxUserCnt ?? '-' }} ·
-                                    {{ profileDetails[profile.profileName]?.nationCnt ?? '-' }}국 ·
-                                    {{ profileDetails[profile.profileName]?.turnTerm ?? '-' }}분 턴
-                                </div>
+                        <div v-if="selectedMapPreview">
+                            <MapPreview
+                                :map-data="selectedMapPreview.mapData"
+                                :map-layout="selectedMapPreview.mapLayout"
+                            />
+                            <div v-if="profileDetails[selectedMapProfile.profileName]" class="text-xs text-zinc-400 mt-2">
+                                유저 {{ profileDetails[selectedMapProfile.profileName]?.userCnt ?? '-' }} /
+                                {{ profileDetails[selectedMapProfile.profileName]?.maxUserCnt ?? '-' }} ·
+                                {{ profileDetails[selectedMapProfile.profileName]?.nationCnt ?? '-' }}국 ·
+                                {{ profileDetails[selectedMapProfile.profileName]?.turnTerm ?? '-' }}분 턴
                             </div>
-                            <div v-else class="text-xs text-zinc-500 py-8 text-center">지도를 불러오는 중...</div>
                         </div>
-                        <div v-else class="text-xs text-zinc-600 py-8 text-center">- 폐 쇄 중 -</div>
+                        <div v-else class="text-xs text-zinc-500 py-8 text-center">지도를 불러오는 중...</div>
+                    </div>
+                    <div v-else class="text-sm text-zinc-500 py-8 text-center" data-testid="public-map-empty">
+                        현재 공개 중인 서버가 없습니다.
                     </div>
                 </div>
             </div>
@@ -558,6 +628,53 @@ const handleEnter = async (profile: LobbyProfile, targetPath: string) => {
     font-weight: 700;
     line-height: 24px;
     padding: 10px;
+}
+
+.map-preview-tabs {
+    display: flex;
+    gap: 4px;
+    overflow-x: auto;
+    border-bottom: 1px solid #3f3f46;
+    padding: 0 2px;
+}
+
+.map-preview-tab {
+    flex: 0 0 auto;
+    border: 1px solid #3f3f46;
+    border-bottom: 0;
+    border-radius: 6px 6px 0 0;
+    background: #18181b;
+    color: #a1a1aa;
+    cursor: pointer;
+    font-size: 13px;
+    font-weight: 600;
+    line-height: 20px;
+    padding: 7px 16px;
+}
+
+.map-preview-tab:hover,
+.map-preview-tab:focus,
+.map-preview-tab.is-active {
+    background: #27272a;
+    color: var(--profile-color, #fff);
+}
+
+.map-preview-tab:focus-visible {
+    outline: 2px solid #fff;
+    outline-offset: -3px;
+}
+
+.map-preview-tab.is-active {
+    box-shadow: inset 0 3px 0 var(--profile-color, #fff);
+}
+
+.map-preview-panel {
+    min-width: 0;
+    border: 1px solid #3f3f46;
+    border-top: 0;
+    border-radius: 0 0 6px 6px;
+    background: rgb(9 9 11 / 50%);
+    padding: 12px;
 }
 
 .legacy-logout-button:hover,
