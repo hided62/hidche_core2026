@@ -12,9 +12,11 @@ Gateway 전체는 별도 release-controller가 처리합니다.
 | Gateway API·frontend·orchestrator | Gateway 관리자 화면 | 외부 release-controller | `GatewayReleaseOperation`, `GatewayReleaseState` |
 | release-controller 자체           | 별도 CLI process    | self-upgrade CLI        | PM2 `sammo:release-controller`                   |
 
-관리자 화면은 `/gateway/admin/releases`입니다. 이전 경로
-`/gateway/admin/server-operations`는 호환성을 위해 새 화면으로 이동합니다. Profile 작업에는 해당
-profile의 `admin.profiles.manage` 권한이 필요합니다. Gateway 전체 릴리스에는
+Profile 화면은 `/gateway/admin/servers/:profileName/version`과
+`/gateway/admin/servers/:profileName/scenario`, Gateway 화면은
+`/gateway/admin/releases`입니다. 이전 `/gateway/admin/server-operations`는
+호환성을 위해 서버 목록으로 이동합니다. Profile 작업은 runtime/settings/deploy/reset
+capability로 분리되며 기존 `admin.profiles.manage`는 포괄 호환 권한입니다. Gateway 전체 릴리스에는
 profile 범위 권한과 별개인 전역 `admin.releases.manage` 권한이 필요합니다.
 일반 사용자와 권한이 없는 관리자는 Gateway 릴리스 영역을 사용할 수 없습니다.
 
@@ -47,7 +49,7 @@ profile 범위 권한과 별개인 전역 `admin.releases.manage` 권한이 필�
 
 ## Profile 배포
 
-관리자 화면에서 profile과 branch 또는 commit을 선택합니다. Branch는 worker가
+버전 업데이트 화면에서 profile의 branch 또는 commit을 선택합니다. Branch는 worker가
 작업을 claim할 때 commit으로 해석하며, commit 입력은 전체 SHA로 고정됩니다.
 같은 profile에는 `QUEUED` 또는 `RUNNING` 작업을 동시에 하나만 둘 수 있습니다.
 
@@ -65,10 +67,13 @@ profile 범위 권한과 별개인 전역 `admin.releases.manage` 권한이 필�
 데이터를 변환할 수 있으므로 대상 migration의 운영 데이터 영향은 배포 전에
 별도로 검토해 주세요.
 
-### DB 초기화 배포
+### 시나리오 초기화
 
-`DB 초기화 배포`는 새 시즌이나 새 scenario로 현 시즌 데이터를 교체할 때
-사용합니다. Source와 scenario를 먼저 불러온 뒤 turn 간격, 가오픈·정식 오픈,
+시나리오 초기화는 새 시즌이나 새 scenario로 현 시즌 데이터를 교체할 때
+사용합니다. 기본 `현재 배포 버전`은 profile의 게시된 full commit을 서버에서
+결정하므로 Git 입력과 `admin.profiles.deploy` 권한이 필요하지 않습니다. 새 branch
+또는 commit을 함께 배포하는 모드는 `admin.scenarios.reset`과
+`admin.profiles.deploy`를 모두 요구합니다. Source와 scenario를 확인한 뒤 turn 간격, 가오픈·정식 오픈,
 NPC와 자동 진행 설정을 확인하고 요청해 주세요.
 
 이 모드는 build와 migration 후 기존 season/tick metadata를 읽고 scenario seeder를 실행합니다.
@@ -194,7 +199,7 @@ pnpm --filter @sammo-ts/release-controller self-upgrade COMMIT <full-sha>
 - API health, tRPC, SSE와 정적 자산 경로를 확인합니다.
 - DB 유지 배포에서는 현재 season/scenario와 핵심 게임 상태가 유지됐는지
   확인합니다.
-- DB 초기화 배포에서는 새 시즌 상태와 명예의 전당·연감 등 장기보존 자료를
+- 시나리오 초기화에서는 새 시즌 상태와 명예의 전당·연감 등 장기보존 자료를
   함께 확인합니다.
 
 Local unit, 격리 DB integration과 fixture Chromium 통과는 운영 PM2, 외부

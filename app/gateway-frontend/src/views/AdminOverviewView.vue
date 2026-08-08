@@ -1,43 +1,79 @@
 <script setup lang="ts">
+import { computed, onMounted, ref } from 'vue';
 import AdminConsoleLayout from '../layouts/AdminConsoleLayout.vue';
+import { useAuthStore } from '../stores/auth';
+import { trpc } from '../utils/trpc';
 
-const sections = [
-    {
-        to: '/admin/users',
-        eyebrow: 'Accounts',
-        title: '사용자 관리',
-        description: '계정 조회와 생성, 인증 유예, 권한, 제재, 복구 및 탈퇴 예약을 관리합니다.',
-        tone: 'blue',
-    },
-    {
-        to: '/admin/servers',
-        eyebrow: 'Profiles',
-        title: '서버 관리',
-        description: '프로필별 공개 정보, 계정 정책, 실행 상태와 게임 운영 동작을 관리합니다.',
-        tone: 'emerald',
-    },
-    {
-        to: '/admin/releases',
-        eyebrow: 'Releases',
-        title: '버전 업데이트',
-        description: '프로필 DB 유지·초기화 배포와 Gateway 릴리스, rollback 및 작업 이력을 확인합니다.',
-        tone: 'violet',
-    },
-    {
-        to: '/admin/system',
-        eyebrow: 'System',
-        title: '공지 · 접속',
-        description: '로비 공지와 관리자 세션 연결 상태처럼 Gateway 공통 설정을 관리합니다.',
-        tone: 'amber',
-    },
-    {
-        to: '/admin/audit',
-        eyebrow: 'Audit',
-        title: '감사 로그',
-        description: '누가 어떤 관리자 조치를 수행했는지 결과와 대상, 사유를 추적합니다.',
-        tone: 'zinc',
-    },
-] as const;
+const auth = useAuthStore();
+const capabilities = ref<string[]>([]);
+const profileCount = ref(0);
+const adminClient = trpc.admin as unknown as {
+    capabilities: { list: { query: () => Promise<Array<{ permission: string }>> } };
+    profiles: { list: { query: () => Promise<unknown[]> } };
+};
+const isRootAdmin = computed(() =>
+    (auth.user?.roles ?? []).some((role) => role === 'superuser' || role === 'admin' || role === 'admin.superuser')
+);
+const hasCapability = (permission: string): boolean => isRootAdmin.value || capabilities.value.includes(permission);
+
+const sections = computed(
+    () =>
+        [
+            {
+                to: '/admin/users',
+                eyebrow: 'Accounts',
+                title: '사용자 관리',
+                description: '계정 조회와 생성, 인증 유예, 권한, 제재, 복구 및 탈퇴 예약을 관리합니다.',
+                tone: 'blue',
+                visible: hasCapability('admin.users.manage') || hasCapability('admin.users.create'),
+            },
+            {
+                to: '/admin/servers',
+                eyebrow: 'Profiles',
+                title: '서버 관리',
+                description: '프로필별 공개 정보, 계정 정책, 실행 상태와 게임 운영 동작을 관리합니다.',
+                tone: 'emerald',
+                visible: isRootAdmin.value || profileCount.value > 0,
+            },
+            {
+                to: '/admin/releases',
+                eyebrow: 'Releases',
+                title: 'Gateway 릴리스',
+                description: 'Gateway API·frontend·orchestrator 배포와 rollback을 별도 제어면에서 관리합니다.',
+                tone: 'violet',
+                visible: hasCapability('admin.releases.manage'),
+            },
+            {
+                to: '/admin/system',
+                eyebrow: 'System',
+                title: '공지 · 접속',
+                description: '로비 공지와 관리자 세션 연결 상태처럼 Gateway 공통 설정을 관리합니다.',
+                tone: 'amber',
+                visible: hasCapability('admin.notice.manage'),
+            },
+            {
+                to: '/admin/audit',
+                eyebrow: 'Audit',
+                title: '감사 로그',
+                description: '누가 어떤 관리자 조치를 수행했는지 결과와 대상, 사유를 추적합니다.',
+                tone: 'zinc',
+                visible: hasCapability('admin.audit.read'),
+            },
+        ] as const
+);
+
+onMounted(async () => {
+    try {
+        capabilities.value = (await adminClient.capabilities.list.query()).map((entry) => entry.permission);
+    } catch {
+        capabilities.value = [];
+    }
+    try {
+        profileCount.value = (await adminClient.profiles.list.query()).length;
+    } catch {
+        profileCount.value = 0;
+    }
+});
 </script>
 
 <template>
@@ -56,7 +92,7 @@ const sections = [
 
         <section class="overview-grid" aria-label="관리 기능">
             <RouterLink
-                v-for="section in sections"
+                v-for="section in sections.filter((entry) => entry.visible)"
                 :key="section.to"
                 :to="section.to"
                 class="overview-card"

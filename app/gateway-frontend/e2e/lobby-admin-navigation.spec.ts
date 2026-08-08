@@ -28,12 +28,29 @@ const installGatewayFixture = async (page: Page, roles: string[]) => {
             }
             if (
                 operation === 'lobby.profiles' ||
-                operation === 'admin.profiles.list' ||
                 operation === 'admin.profiles.listScenarios' ||
                 operation === 'admin.operations.list' ||
                 operation === 'admin.releases.list'
             ) {
                 return response([]);
+            }
+            if (operation === 'admin.profiles.list') {
+                return response(
+                    roles.some((role) => role.includes(':hwe:2'))
+                        ? [
+                              {
+                                  profileName: 'hwe:2',
+                                  profile: 'hwe',
+                                  scenario: '1010',
+                                  status: 'RUNNING',
+                                  buildStatus: 'SUCCEEDED',
+                                  meta: { korName: '환상서버' },
+                                  runtime: {},
+                                  runtimeActions: [],
+                              },
+                          ]
+                        : []
+                );
             }
             if (operation === 'admin.releases.gatewayState') {
                 return response({ id: 'gateway', updatedAt: '2026-08-01T00:00:00.000Z' });
@@ -42,7 +59,26 @@ const installGatewayFixture = async (page: Page, roles: string[]) => {
                 return response({ enabled: true });
             }
             if (operation === 'admin.capabilities.list') {
-                return response([]);
+                return response(
+                    roles.includes('superuser')
+                        ? [
+                              { permission: 'admin.users.manage', scope: 'GLOBAL', scopes: ['*'] },
+                              { permission: 'admin.profiles.runtime', scope: 'PROFILE', scopes: ['*'] },
+                              { permission: 'admin.profiles.settings', scope: 'PROFILE', scopes: ['*'] },
+                              { permission: 'admin.profiles.deploy', scope: 'PROFILE', scopes: ['*'] },
+                              { permission: 'admin.scenarios.reset', scope: 'PROFILE', scopes: ['*'] },
+                              { permission: 'admin.releases.manage', scope: 'GLOBAL', scopes: ['*'] },
+                              { permission: 'admin.notice.manage', scope: 'GLOBAL', scopes: ['*'] },
+                              { permission: 'admin.audit.read', scope: 'GLOBAL', scopes: ['*'] },
+                          ]
+                        : [
+                              {
+                                  permission: roles[0]?.split(':')[0],
+                                  scope: 'PROFILE',
+                                  scopes: ['hwe:2'],
+                              },
+                          ]
+                );
             }
             throw new Error(`Unhandled tRPC operation: ${operation}`);
         });
@@ -86,16 +122,16 @@ test('bootstrap superuser can navigate the administrator workspace from the lobb
     await writeFile(testInfo.outputPath('admin-overview-mobile-geometry.json'), JSON.stringify(geometry));
     await page.screenshot({ path: testInfo.outputPath('admin-overview-mobile-menu.png'), fullPage: true });
 
-    await navigation.getByRole('link', { name: '버전 업데이트' }).click();
+    await navigation.getByRole('link', { name: 'Gateway 릴리스' }).click();
     await expect(page).toHaveURL(/\/gateway\/admin\/releases$/);
-    await expect(page.getByRole('heading', { name: '버전 업데이트' })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Gateway 릴리스' })).toBeVisible();
 });
 
-test('legacy server operations URL keeps query parameters and redirects to releases', async ({ page }) => {
+test('legacy server operations URL keeps query parameters and redirects to the server list', async ({ page }) => {
     await installGatewayFixture(page, ['superuser']);
 
     await page.goto('admin/server-operations?operationId=legacy-operation');
-    await expect(page).toHaveURL(/\/gateway\/admin\/releases\?operationId=legacy-operation$/);
+    await expect(page).toHaveURL(/\/gateway\/admin\/servers\?operationId=legacy-operation$/);
 });
 
 test('scoped administrators see the same navigation while ordinary users do not', async ({ browser }) => {
@@ -104,6 +140,11 @@ test('scoped administrators see the same navigation while ordinary users do not'
     await installGatewayFixture(scopedPage, ['admin.profiles.manage:hwe:2']);
     await scopedPage.goto('lobby');
     await expect(scopedPage.getByRole('link', { name: '관리자 페이지' })).toBeVisible();
+    await scopedPage.getByRole('link', { name: '관리자 페이지' }).click();
+    const scopedNavigation = scopedPage.getByRole('navigation', { name: '관리자 메뉴' });
+    await expect(scopedNavigation.getByRole('link', { name: '환상서버 (hwe:2)' })).toBeVisible();
+    await expect(scopedNavigation.getByRole('link', { name: 'Gateway 릴리스' })).toHaveCount(0);
+    await expect(scopedNavigation.getByRole('link', { name: '사용자 관리' })).toHaveCount(0);
     await scopedContext.close();
 
     const userContext = await browser.newContext();

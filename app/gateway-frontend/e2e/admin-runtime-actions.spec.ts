@@ -98,6 +98,38 @@ const installFixture = async (
                         risk: 'CRITICAL',
                         scope: 'GLOBAL',
                     },
+                    {
+                        permission: 'admin.profiles.runtime',
+                        label: 'Profile 실행 관리',
+                        description: '실행 상태를 관리합니다.',
+                        risk: 'HIGH',
+                        scope: 'PROFILE',
+                        scopes: ['*'],
+                    },
+                    {
+                        permission: 'admin.profiles.settings',
+                        label: 'Profile 설정 관리',
+                        description: '설정을 관리합니다.',
+                        risk: 'HIGH',
+                        scope: 'PROFILE',
+                        scopes: ['*'],
+                    },
+                    {
+                        permission: 'admin.profiles.deploy',
+                        label: 'Profile 버전 배포',
+                        description: '버전을 배포합니다.',
+                        risk: 'CRITICAL',
+                        scope: 'PROFILE',
+                        scopes: ['*'],
+                    },
+                    {
+                        permission: 'admin.scenarios.reset',
+                        label: '시나리오 초기화',
+                        description: '시나리오를 초기화합니다.',
+                        risk: 'CRITICAL',
+                        scope: 'PROFILE',
+                        scopes: ['*'],
+                    },
                 ]);
             }
             if (operation === 'admin.profiles.listScenarios') {
@@ -212,7 +244,7 @@ const installFixture = async (
 test('reports clock-shift acceptance separately from actual application', async ({ page }) => {
     const fixture = await installFixture(page, { deferRequest: true, pendingProfileReads: 1 });
     await page.goto('admin/servers');
-    await expect(page.getByRole('heading', { name: '서버 관리' })).toBeVisible();
+    await expect(page.getByRole('heading', { name: '서버 관리', level: 1 })).toBeVisible();
 
     const duration = page.locator('input[type="number"][min="1"][max="1440"]');
     const accelerate = page.getByRole('button', { name: '가속', exact: true });
@@ -291,13 +323,13 @@ test('renders an ignored terminal outcome without calling it applied', async ({ 
     await expect(page.getByText(/적용됨|요청 완료/)).toHaveCount(0);
 });
 
-test('directs profile deployment to the centralized version page', async ({ page }) => {
+test('directs profile deployment to the selected server version tab', async ({ page }) => {
     await installFixture(page);
     await page.goto('admin/servers');
 
-    const releaseLink = page.getByRole('link', { name: '버전 업데이트 열기' });
+    const releaseLink = page.getByRole('link', { name: '버전 업데이트', exact: true }).last();
     await expect(releaseLink).toBeVisible();
-    await expect(releaseLink).toHaveAttribute('href', '/gateway/admin/releases');
+    await expect(releaseLink).toHaveAttribute('href', '/gateway/admin/servers/hwe%3Adefault/version');
     await expect(page.getByRole('button', { name: '설치 적용' })).toHaveCount(0);
 
     await page.setViewportSize({ width: 390, height: 844 });

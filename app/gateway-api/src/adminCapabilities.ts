@@ -40,8 +40,36 @@ export const ADMIN_CAPABILITIES: readonly AdminCapabilityDefinition[] = [
     },
     {
         permission: 'admin.profiles.manage',
-        label: 'Profile 운영',
-        description: '지정 profile의 배포, 초기화와 runtime을 관리합니다.',
+        label: 'Profile 전체 운영 (호환)',
+        description: '기존 운영자를 위한 포괄 권한입니다. 새 역할에는 세분화 권한을 사용합니다.',
+        risk: 'CRITICAL',
+        scope: 'PROFILE',
+    },
+    {
+        permission: 'admin.profiles.runtime',
+        label: 'Profile 실행 관리',
+        description: '지정 profile의 시작, 정지와 실행 상태를 관리합니다.',
+        risk: 'HIGH',
+        scope: 'PROFILE',
+    },
+    {
+        permission: 'admin.profiles.settings',
+        label: 'Profile 설정 관리',
+        description: '지정 profile의 표시 정보와 계정 접근 정책을 변경합니다.',
+        risk: 'HIGH',
+        scope: 'PROFILE',
+    },
+    {
+        permission: 'admin.profiles.deploy',
+        label: 'Profile 버전 배포',
+        description: '지정 profile의 DB를 유지하면서 코드와 migration을 배포합니다.',
+        risk: 'CRITICAL',
+        scope: 'PROFILE',
+    },
+    {
+        permission: 'admin.scenarios.reset',
+        label: '시나리오 초기화',
+        description: '지정 profile의 현재 배포 버전으로 게임 DB와 시나리오를 초기화합니다.',
         risk: 'CRITICAL',
         scope: 'PROFILE',
     },
@@ -97,6 +125,15 @@ export const resolveAdminActionCapability = (path: string, rawInput?: unknown): 
         if (action === 'RESET_SCHEDULED') return 'admin.reset.schedule';
         if (action === 'RESUME') return 'admin.resume.when-stopped';
         if (action === 'OPEN_SURVEY') return 'admin.survey.open';
+    }
+    if (path.endsWith('.operations.requestDeploy')) return 'admin.profiles.deploy';
+    if (path.endsWith('.operations.requestReset')) return 'admin.scenarios.reset';
+    if (path.endsWith('.operations.requestRuntime')) return 'admin.profiles.runtime';
+    if (path.endsWith('.profiles.updateMeta')) return 'admin.profiles.settings';
+    if (path.endsWith('.profiles.listScenarios')) {
+        const sourceMode =
+            rawInput && typeof rawInput === 'object' ? (rawInput as { sourceMode?: unknown }).sourceMode : undefined;
+        return sourceMode === undefined || sourceMode === 'CURRENT' ? 'admin.scenarios.reset' : 'admin.profiles.deploy';
     }
     if (path.includes('.operations.') || path.includes('.profiles.')) return 'admin.profiles.manage';
     return undefined;

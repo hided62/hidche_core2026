@@ -33,6 +33,7 @@ type FixtureState = {
     }>;
     runtimeRunning: boolean;
     requestBodies: Array<{ operation: string; body: unknown }>;
+    capabilities?: Array<{ permission: string; scope: 'GLOBAL' | 'PROFILE'; scopes: string[] }>;
 };
 
 const profile = (runtimeRunning: boolean) => ({
@@ -98,6 +99,18 @@ const installFixture = async (page: Page, state: FixtureState) => {
             }
             if (name === 'admin.profiles.list') {
                 return response([profile(state.runtimeRunning)]);
+            }
+            if (name === 'admin.capabilities.list') {
+                return response(
+                    state.capabilities ?? [
+                        { permission: 'admin.profiles.runtime', scope: 'PROFILE', scopes: ['*'] },
+                        { permission: 'admin.profiles.settings', scope: 'PROFILE', scopes: ['*'] },
+                        { permission: 'admin.profiles.deploy', scope: 'PROFILE', scopes: ['*'] },
+                        { permission: 'admin.scenarios.reset', scope: 'PROFILE', scopes: ['*'] },
+                        { permission: 'admin.reset.schedule', scope: 'PROFILE', scopes: ['*'] },
+                        { permission: 'admin.releases.manage', scope: 'GLOBAL', scopes: ['*'] },
+                    ]
+                );
             }
             if (name === 'admin.operations.list') {
                 return response(state.operations);
@@ -218,10 +231,11 @@ test('separates branch and commit semantics and submits a reset from the dedicat
     await installFixture(page, state);
     page.on('dialog', (dialog) => dialog.accept());
 
-    await page.goto('admin/releases');
+    await page.goto('admin/servers/che%3A2/scenario');
     await expect(page.getByTestId('server-operations-page')).toBeVisible();
-    await expect(page).toHaveURL(/\/gateway\/admin\/releases$/);
-    await expect(page.getByTestId('source-help')).toContainText('실제로 시작될 때');
+    await expect(page).toHaveURL(/\/gateway\/admin\/servers\/che%3A2\/scenario$/);
+    await expect(page.getByTestId('source-current')).toBeChecked();
+    await expect(page.getByTestId('source-help')).toContainText('현재 서버 커밋');
     await expect(page.getByTestId('scenario-select')).toHaveValue('2');
 
     const desktopGeometry = await page
@@ -237,6 +251,7 @@ test('separates branch and commit semantics and submits a reset from the dedicat
         });
     expect(desktopGeometry).toHaveLength(2);
     expect(desktopGeometry[1]!.x).toBeGreaterThan(desktopGeometry[0]!.x);
+    await page.getByTestId('source-commit').check();
     const sourceInput = page.getByTestId('source-ref');
     await sourceInput.focus();
     const focusedInputStyle = await sourceInput.evaluate((element) => {
@@ -256,7 +271,6 @@ test('separates branch and commit semantics and submits a reset from the dedicat
     );
     await page.screenshot({ path: testInfo.outputPath('desktop-operations.png'), fullPage: true });
 
-    await page.getByTestId('source-commit').check();
     await expect(page.getByTestId('source-help')).toContainText('전체 SHA로 고정');
     await page.getByTestId('source-ref').fill('0123456789abcdef0123456789abcdef01234567');
     await page.getByTestId('load-scenarios').click();
@@ -288,31 +302,12 @@ test('separates branch and commit semantics and submits a reset from the dedicat
     await page.screenshot({ path: testInfo.outputPath('mobile-operations.png'), fullPage: true });
 });
 
-test('starts and stops all runtime roles through the operation controls', async ({ page }) => {
-    const state: FixtureState = { operations: [], gatewayOperations: [], runtimeRunning: false, requestBodies: [] };
-    await installFixture(page, state);
-    page.on('dialog', (dialog) => dialog.accept());
-
-    await page.goto('admin/releases');
-    await page.getByTestId('start-server').click();
-    await expect(page.getByText('시작 작업을 요청했습니다.')).toBeVisible();
-    await expect(page.getByText('RUNNING', { exact: true }).first()).toBeVisible();
-
-    await page.getByTestId('stop-server').click();
-    await expect(page.getByText('정지 작업을 요청했습니다.')).toBeVisible();
-    await expect(page.getByText('STOPPED', { exact: true }).first()).toBeVisible();
-
-    const serializedRequests = state.requestBodies.map((entry) => JSON.stringify(entry.body)).join('\n');
-    expect(serializedRequests).toContain('"action":"START"');
-    expect(serializedRequests).toContain('"action":"STOP"');
-});
-
 test('separates DB-preserving profile deployment from DB reset', async ({ page }) => {
     const state: FixtureState = { operations: [], gatewayOperations: [], runtimeRunning: true, requestBodies: [] };
     await installFixture(page, state);
     page.on('dialog', (dialog) => dialog.accept());
 
-    await page.goto('admin/releases');
+    await page.goto('admin/servers/che%3A2/version');
     await expect(page.getByText('Game frontend')).toBeVisible();
     await page.getByTestId('request-deploy').click();
 
@@ -320,6 +315,33 @@ test('separates DB-preserving profile deployment from DB reset', async ({ page }
     await expect(page.getByTestId('operations-table')).toContainText('DEPLOY');
     expect(state.requestBodies.some((entry) => entry.operation === 'admin.operations.requestDeploy')).toBe(true);
     expect(state.requestBodies.some((entry) => entry.operation === 'admin.operations.requestReset')).toBe(false);
+});
+
+test('scenario-only operator resets the current version without Git or Gateway controls', async ({ page }) => {
+    const state: FixtureState = {
+        operations: [],
+        gatewayOperations: [],
+        runtimeRunning: true,
+        requestBodies: [],
+        capabilities: [{ permission: 'admin.scenarios.reset', scope: 'PROFILE', scopes: ['che:2'] }],
+    };
+    await installFixture(page, state);
+    page.on('dialog', (dialog) => dialog.accept());
+
+    await page.goto('admin/servers/che%3A2/scenario');
+    await expect(page.getByTestId('source-current')).toBeChecked();
+    await expect(page.getByTestId('source-branch')).toHaveCount(0);
+    await expect(page.getByTestId('source-commit')).toHaveCount(0);
+    await expect(page.getByRole('link', { name: 'Gateway 릴리스' })).toHaveCount(0);
+    await page.getByTestId('request-reset').click();
+    await expect(page.getByText('초기화 작업을 등록했습니다.')).toBeVisible();
+    await expect
+        .poll(() => state.requestBodies.some((entry) => entry.operation === 'admin.operations.requestReset'))
+        .toBe(true);
+
+    const request = state.requestBodies.find((entry) => entry.operation === 'admin.operations.requestReset');
+    expect(JSON.stringify(request?.body)).toContain('"sourceMode":"CURRENT"');
+    expect(JSON.stringify(request?.body)).not.toContain('"sourceRef"');
 });
 
 test('controls gateway deployment and rollback through the external controller queue', async ({ page }, testInfo) => {
@@ -375,7 +397,7 @@ test('renders a failed reset, retries it as a new operation, and reaches success
     await installFixture(page, state);
     page.on('dialog', (dialog) => dialog.accept());
 
-    await page.goto('admin/releases');
+    await page.goto('admin/servers/che%3A2/scenario');
     await expect(page.getByText('FAILED', { exact: true })).toBeVisible();
     await expect(page.getByRole('cell', { name: 'fedcba987654', exact: true })).toBeVisible();
     const failure = page.getByText(longError);

@@ -1,6 +1,8 @@
 <script setup lang="ts">
-import { ref } from 'vue';
+import { computed, onMounted, ref } from 'vue';
 import DefaultLayout from './DefaultLayout.vue';
+import { useAuthStore } from '../stores/auth';
+import { trpc } from '../utils/trpc';
 
 defineProps<{
     title: string;
@@ -9,30 +11,115 @@ defineProps<{
 }>();
 
 const menuOpen = ref(false);
+const auth = useAuthStore();
+const adminClient = trpc.admin as unknown as {
+    capabilities: { list: { query: () => Promise<Array<{ permission: string; scopes?: string[] }>> } };
+    profiles: {
+        list: {
+            query: () => Promise<Array<{ profileName: string; profile: string; meta?: Record<string, unknown> }>>;
+        };
+    };
+};
+const capabilities = ref<Array<{ permission: string; scopes?: string[] }>>([]);
+const profiles = ref<Array<{ profileName: string; profile: string; meta?: Record<string, unknown> }>>([]);
 
-const navigation = [
+const isRootAdmin = computed(() =>
+    (auth.user?.roles ?? []).some((role) => role === 'superuser' || role === 'admin' || role === 'admin.superuser')
+);
+
+const hasCapability = (permission: string): boolean =>
+    isRootAdmin.value || capabilities.value.some((capability) => capability.permission === permission);
+
+const hasAnyProfileCapability = computed(() =>
+    capabilities.value.some(
+        (capability) => capability.scopes?.length || capability.permission.startsWith('admin.profiles.')
+    )
+);
+
+const profileLabel = (profile: (typeof profiles.value)[number]): string => {
+    const korName = profile.meta?.korName;
+    return typeof korName === 'string' && korName.trim() ? `${korName} (${profile.profileName})` : profile.profileName;
+};
+
+const navigation = computed(() => [
     {
         label: '관리',
         items: [
-            { to: '/admin', label: '운영 개요', icon: '⌂', exact: true },
-            { to: '/admin/users', label: '사용자 관리', icon: '人', exact: false },
+            { to: '/admin', label: '운영 개요', icon: '⌂', exact: true, visible: true, child: false },
+            {
+                to: '/admin/users',
+                label: '사용자 관리',
+                icon: '人',
+                exact: false,
+                visible: hasCapability('admin.users.manage') || hasCapability('admin.users.create'),
+                child: false,
+            },
         ],
     },
     {
-        label: '서비스 운영',
+        label: '서버 관리',
         items: [
-            { to: '/admin/servers', label: '서버 관리', icon: '◫', exact: false },
-            { to: '/admin/releases', label: '버전 업데이트', icon: '↥', exact: false },
+            {
+                to: '/admin/servers',
+                label: '서버 목록',
+                icon: '◫',
+                exact: true,
+                visible: isRootAdmin.value || hasAnyProfileCapability.value || profiles.value.length > 0,
+                child: false,
+            },
+            ...profiles.value.map((profile) => ({
+                to: `/admin/servers/${encodeURIComponent(profile.profileName)}`,
+                label: profileLabel(profile),
+                icon: '└',
+                exact: false,
+                visible: true,
+                child: true,
+            })),
         ],
     },
     {
-        label: '시스템',
+        label: 'Gateway',
         items: [
-            { to: '/admin/system', label: '공지 · 접속', icon: '⚙', exact: false },
-            { to: '/admin/audit', label: '감사 로그', icon: '≡', exact: false },
+            {
+                to: '/admin/releases',
+                label: 'Gateway 릴리스',
+                icon: '↥',
+                exact: false,
+                visible: hasCapability('admin.releases.manage'),
+                child: false,
+            },
+            {
+                to: '/admin/system',
+                label: '공지 · 접속',
+                icon: '⚙',
+                exact: false,
+                visible: hasCapability('admin.notice.manage'),
+                child: false,
+            },
+            {
+                to: '/admin/audit',
+                label: '감사 로그',
+                icon: '≡',
+                exact: false,
+                visible: hasCapability('admin.audit.read'),
+                child: false,
+            },
         ],
     },
-] as const;
+]);
+
+onMounted(async () => {
+    try {
+        capabilities.value = await adminClient.capabilities.list.query();
+    } catch {
+        capabilities.value = [];
+    }
+    try {
+        profiles.value = await adminClient.profiles.list.query();
+    } catch {
+        profiles.value = [];
+    }
+});
 </script>
 
 <template>
@@ -59,13 +146,18 @@ const navigation = [
                 </div>
 
                 <nav aria-label="관리자 메뉴">
-                    <section v-for="group in navigation" :key="group.label" class="admin-nav-group">
+                    <section
+                        v-for="group in navigation.filter((entry) => entry.items.some((item) => item.visible))"
+                        :key="group.label"
+                        class="admin-nav-group"
+                    >
                         <h2>{{ group.label }}</h2>
                         <RouterLink
-                            v-for="item in group.items"
+                            v-for="item in group.items.filter((entry) => entry.visible)"
                             :key="item.to"
                             :to="item.to"
                             class="admin-nav-link"
+                            :class="{ child: item.child }"
                             :active-class="item.exact ? '' : 'active'"
                             :exact-active-class="item.exact ? 'active' : ''"
                             @click="menuOpen = false"
@@ -202,6 +294,13 @@ const navigation = [
     border-color: #713f12;
     background: #2d1b08;
     color: #fde68a;
+}
+
+.admin-nav-link.child {
+    min-height: 34px;
+    margin-left: 15px;
+    padding-block: 5px;
+    font-size: 12px;
 }
 
 .admin-nav-icon {
