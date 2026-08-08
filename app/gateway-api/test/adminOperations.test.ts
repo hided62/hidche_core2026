@@ -846,6 +846,39 @@ describe('Gateway administrator account controls', () => {
         throw new Error('not used');
     };
 
+    it('lists accounts before exact lookup and supports partial search with cursor pagination', async () => {
+        const { caller, users } = await buildCaller(unusedCreateOperation);
+        await users.createUser({
+            username: 'alpha-user',
+            password: 'secretpass',
+            displayName: 'Pilot Alpha',
+        });
+        await users.createUser({
+            username: 'kakao-user',
+            password: 'secretpass',
+            displayName: 'Kakao Member',
+            oauth: {
+                type: 'KAKAO',
+                id: 'kakao-directory-id',
+                email: 'pilot@example.test',
+                info: {},
+            },
+        });
+
+        const search = await caller.admin.users.list({ query: 'pilot', limit: 30 });
+        expect(search.total).toBe(2);
+        expect(search.users.map((user) => user.username).sort()).toEqual(['alpha-user', 'kakao-user']);
+        expect(search.users[0]).not.toHaveProperty('oauthId');
+
+        const firstPage = await caller.admin.users.list({ limit: 1 });
+        expect(firstPage.total).toBe(3);
+        expect(firstPage.users).toHaveLength(1);
+        expect(firstPage.nextCursor).toBeTruthy();
+        const secondPage = await caller.admin.users.list({ limit: 1, cursor: firstPage.nextCursor });
+        expect(secondPage.users).toHaveLength(1);
+        expect(secondPage.users[0]?.id).not.toBe(firstPage.users[0]?.id);
+    });
+
     it('records sanitized STARTED and SUCCEEDED events and exposes target history', async () => {
         const harness = await buildCaller(unusedCreateOperation);
         const target = await harness.users.createUser({
@@ -954,10 +987,9 @@ describe('Gateway administrator account controls', () => {
             })
         ).resolves.toMatchObject({ id: grant.id, revokedReason: 'Kakao 인증 수단 복구 완료' });
         expect(harness.flushes).toContainEqual({ userId: target.id, reason: 'admin-special-access-revoked' });
-        expect(harness.auditEvents.filter((event) => event.outcome === 'SUCCEEDED').map((event) => event.action)).toEqual([
-            'admin.users.grantSpecialAccess',
-            'admin.users.revokeSpecialAccess',
-        ]);
+        expect(
+            harness.auditEvents.filter((event) => event.outcome === 'SUCCEEDED').map((event) => event.action)
+        ).toEqual(['admin.users.grantSpecialAccess', 'admin.users.revokeSpecialAccess']);
     });
 
     it('requires recovery access to expire within 90 days', async () => {

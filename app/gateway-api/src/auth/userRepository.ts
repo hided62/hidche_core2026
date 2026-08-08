@@ -73,6 +73,24 @@ export interface PublicUser {
     createdAt: string;
 }
 
+export interface AdminUserListItem {
+    id: string;
+    username: string;
+    displayName: string;
+    email?: string;
+    oauthType: 'NONE' | 'KAKAO';
+    roles: string[];
+    hasActiveSanction: boolean;
+    deleteAfter?: string;
+    createdAt: string;
+}
+
+export interface AdminUserListResult {
+    users: AdminUserListItem[];
+    total: number;
+    nextCursor?: string;
+}
+
 export interface UserSanctions {
     bannedUntil?: string;
     mutedUntil?: string;
@@ -90,6 +108,19 @@ export interface UserServerRestriction {
     reason?: string;
     notes?: string;
 }
+
+export const hasActiveUserSanction = (sanctions: UserSanctions, now = Date.now()): boolean => {
+    const hasActiveGlobalSanction = [sanctions.bannedUntil, sanctions.mutedUntil, sanctions.suspendedUntil].some(
+        (value) => value !== undefined && new Date(value).getTime() > now
+    );
+    if (hasActiveGlobalSanction || (sanctions.flags?.length ?? 0) > 0) {
+        return true;
+    }
+    return Object.values(sanctions.serverRestrictions ?? {}).some((restriction) => {
+        if ((restriction.blockedFeatures?.length ?? 0) === 0) return false;
+        return restriction.until === undefined || new Date(restriction.until).getTime() > now;
+    });
+};
 
 export const toPublicUser = (user: UserRecord): PublicUser => ({
     id: user.id,
@@ -124,6 +155,7 @@ export interface UserRepository {
     findByDisplayName(displayName: string): Promise<UserRecord | null>;
     findByOauthId(type: 'KAKAO', oauthId: string): Promise<UserRecord | null>;
     findByEmail(email: string): Promise<UserRecord | null>;
+    listForAdmin(input: { query?: string; limit: number; cursor?: string }): Promise<AdminUserListResult>;
     createUser(input: CreateUserInput): Promise<UserRecord>;
     verifyPassword(user: UserRecord, password: string): Promise<boolean>;
     updatePassword(userId: string, password: string): Promise<void>;

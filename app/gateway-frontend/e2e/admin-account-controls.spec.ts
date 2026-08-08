@@ -68,6 +68,42 @@ const installFixture = async (page: Page) => {
             }
             if (operation === 'admin.audit.list') return response(auditHistory);
             if (operation === 'admin.users.getLocalAccountStatus') return response({ enabled: false });
+            if (operation === 'admin.users.list') {
+                return response({
+                    total: 3,
+                    users: [
+                        {
+                            id: 'target-user',
+                            username: 'target',
+                            displayName: '대상 사용자',
+                            email: 'target@example.test',
+                            oauthType: 'NONE',
+                            roles: ['user'],
+                            hasActiveSanction: false,
+                            deleteAfter,
+                            createdAt: '2026-07-20T00:00:00.000Z',
+                        },
+                        {
+                            id: 'viewer-user',
+                            username: 'viewer',
+                            displayName: '조회 사용자',
+                            oauthType: 'KAKAO',
+                            roles: ['user'],
+                            hasActiveSanction: true,
+                            createdAt: '2026-07-19T00:00:00.000Z',
+                        },
+                        {
+                            id: 'admin-user',
+                            username: 'admin',
+                            displayName: '관리자',
+                            oauthType: 'NONE',
+                            roles: ['superuser'],
+                            hasActiveSanction: false,
+                            createdAt: '2026-07-18T00:00:00.000Z',
+                        },
+                    ],
+                });
+            }
             if (operation === 'admin.system.getNotice') return response({ notice: '' });
             if (operation === 'admin.profiles.list') return response([]);
             if (operation === 'admin.profiles.listScenarios') return response([]);
@@ -167,20 +203,16 @@ test('operates OAuth grace and scheduled deletion with reasoned audit history', 
     const mutations = await installFixture(page);
     page.on('dialog', (dialog) => dialog.accept());
     await page.goto('admin/users');
-    await page.getByPlaceholder('검색 값 입력').fill('target');
-    await page.getByRole('button', { name: '조회', exact: true }).click();
+    await expect(page.getByRole('region', { name: '계정 목록' })).toBeVisible();
+    await expect(page.getByText('총 3개')).toBeVisible();
+    await page.getByRole('button', { name: /target.*대상 사용자/ }).click();
 
     await expect(page.getByText('Kakao 인증: 미완료')).toBeVisible();
+    await expect(page.getByRole('navigation', { name: '사용자 관리 기능' })).toBeVisible();
+    await expect(page.getByRole('heading', { name: '비밀번호 리셋' })).toBeHidden();
+    await page.getByRole('button', { name: /접근 · 권한/ }).click();
     await expect(page.getByRole('cell', { name: 'che:default' })).toBeVisible();
-    await expect(page.getByText('SUCCEEDED · admin.users.updateSanctions').first()).toBeVisible();
     await page.screenshot({ path: testInfo.outputPath('gateway-admin-account-controls-desktop.png'), fullPage: true });
-    const deletionButton = page.getByRole('button', { name: '보존 기간 후 탈퇴 예약', exact: true });
-    const baseDeleteColor = await deletionButton.evaluate((button) => getComputedStyle(button).backgroundColor);
-    await deletionButton.hover();
-    await expect
-        .poll(() => deletionButton.evaluate((button) => getComputedStyle(button).backgroundColor))
-        .not.toBe(baseDeleteColor);
-    await page.screenshot({ path: testInfo.outputPath('gateway-admin-account-controls-hover.png'), fullPage: true });
     await page.getByPlaceholder('권한·제재·복구·탈퇴 조치 사유 (필수)').fill('본인 확인 처리 중');
     await page.getByLabel('특수 접근 만료 시각').fill('2026-08-20T00:00');
     await page.getByPlaceholder('che 또는 che:2 (쉼표 구분, 비우면 전체)').fill('che');
@@ -195,8 +227,16 @@ test('operates OAuth grace and scheduled deletion with reasoned audit history', 
     await gracePanel.locator('input[type="datetime-local"]').fill('2026-08-20T00:00');
     await page.getByRole('button', { name: '유예 연장', exact: true }).click();
     await expect(page.getByText('OAuth 유예 연장 완료')).toBeVisible();
-    await expect(page.getByText('SUCCEEDED · admin.users.updateKakaoGrace').first()).toBeVisible();
 
+    await page.getByRole('button', { name: /탈퇴 · 이력/ }).click();
+    await expect(page.getByText('SUCCEEDED · admin.users.updateKakaoGrace').first()).toBeVisible();
+    const deletionButton = page.getByRole('button', { name: '보존 기간 후 탈퇴 예약', exact: true });
+    const baseDeleteColor = await deletionButton.evaluate((button) => getComputedStyle(button).backgroundColor);
+    await deletionButton.hover();
+    await expect
+        .poll(() => deletionButton.evaluate((button) => getComputedStyle(button).backgroundColor))
+        .not.toBe(baseDeleteColor);
+    await page.screenshot({ path: testInfo.outputPath('gateway-admin-account-controls-hover.png'), fullPage: true });
     await page.getByPlaceholder('권한·제재·복구·탈퇴 조치 사유 (필수)').fill('탈퇴 요청 접수');
     await page.getByLabel('탈퇴 전 보존 일수').fill('30');
     await deletionButton.click();
@@ -205,12 +245,25 @@ test('operates OAuth grace and scheduled deletion with reasoned audit history', 
     expect(mutations.some(({ operation }) => operation === 'admin.users.grantSpecialAccess')).toBe(true);
     expect(mutations.some(({ operation }) => operation === 'admin.users.scheduleDeletion')).toBe(true);
 
+    await page.setViewportSize({ width: 390, height: 844 });
+    const userDirectoryGeometry = await page.getByRole('region', { name: '계정 목록' }).evaluate((directory) => {
+        const rect = directory.getBoundingClientRect();
+        return { left: rect.left, right: rect.right, width: rect.width, viewportWidth: window.innerWidth };
+    });
+    expect(userDirectoryGeometry.left).toBeGreaterThanOrEqual(0);
+    expect(userDirectoryGeometry.right).toBeLessThanOrEqual(userDirectoryGeometry.viewportWidth);
+    await writeFile(
+        testInfo.outputPath('gateway-admin-user-directory-mobile-geometry.json'),
+        JSON.stringify(userDirectoryGeometry)
+    );
+    await page.screenshot({ path: testInfo.outputPath('gateway-admin-user-directory-mobile.png'), fullPage: true });
+
+    await page.getByRole('button', { name: '관리자 메뉴' }).click();
     await page.getByRole('link', { name: '감사 로그' }).click();
     await expect(page).toHaveURL(/\/gateway\/admin\/audit$/);
     await expect(page.getByRole('heading', { name: '전체 관리자 감사 원장' })).toBeVisible();
     await expect(page.getByText('SUCCEEDED · admin.users.updateKakaoGrace').first()).toBeVisible();
 
-    await page.setViewportSize({ width: 390, height: 844 });
     const geometry = await page
         .getByRole('heading', { name: '전체 관리자 감사 원장' })
         .locator('..')
