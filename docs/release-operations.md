@@ -158,9 +158,9 @@ controller PM2 definition만 전환합니다.
 
 ```sh
 pnpm --filter @sammo-ts/release-controller build
-pnpm --filter @sammo-ts/release-controller self-upgrade -- BRANCH main
+pnpm --filter @sammo-ts/release-controller self-upgrade BRANCH main
 # 또는
-pnpm --filter @sammo-ts/release-controller self-upgrade -- COMMIT <full-sha>
+pnpm --filter @sammo-ts/release-controller self-upgrade COMMIT <full-sha>
 ```
 
 새 controller가 제한 시간 안에 `online`이 되지 않으면 이전 definition을

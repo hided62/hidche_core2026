@@ -68,9 +68,9 @@ worktree로 전환합니다. 새 daemon 시작에 실패하면 이전 definition
 
 ```sh
 pnpm --filter @sammo-ts/release-controller build
-pnpm --filter @sammo-ts/release-controller self-upgrade -- BRANCH main
+pnpm --filter @sammo-ts/release-controller self-upgrade BRANCH main
 # 또는
-pnpm --filter @sammo-ts/release-controller self-upgrade -- COMMIT <full-sha>
+pnpm --filter @sammo-ts/release-controller self-upgrade COMMIT <full-sha>
 ```
 
 Database migration은 일반적으로 되돌리지 않습니다. 이전 애플리케이션으로
