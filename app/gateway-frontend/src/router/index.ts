@@ -44,6 +44,24 @@ const router = createRouter({
             props: { section: 'servers' },
         },
         {
+            path: '/admin/servers/:profileName',
+            name: 'admin-server',
+            component: AdminView,
+            props: (route) => ({ section: 'servers', profileName: route.params.profileName }),
+        },
+        {
+            path: '/admin/servers/:profileName/version',
+            name: 'admin-server-version',
+            component: ServerOperationsView,
+            props: (route) => ({ mode: 'version', profileName: route.params.profileName }),
+        },
+        {
+            path: '/admin/servers/:profileName/scenario',
+            name: 'admin-server-scenario',
+            component: ServerOperationsView,
+            props: (route) => ({ mode: 'scenario', profileName: route.params.profileName }),
+        },
+        {
             path: '/admin/system',
             name: 'admin-system',
             component: AdminView,
@@ -59,10 +77,11 @@ const router = createRouter({
             path: '/admin/releases',
             name: 'admin-releases',
             component: ServerOperationsView,
+            props: { mode: 'gateway' },
         },
         {
             path: '/admin/server-operations',
-            redirect: (to) => ({ path: '/admin/releases', query: to.query }),
+            redirect: (to) => ({ path: '/admin/servers', query: to.query }),
         },
         {
             path: '/account',

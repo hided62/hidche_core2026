@@ -61,6 +61,7 @@ const buildCaller = async (
         apiPort: 15003,
         status: options.initialProfileStatus ?? ('STOPPED' as const),
         buildStatus: 'SUCCEEDED' as const,
+        buildCommitSha: 'HEAD',
         meta: {},
         createdAt: '2026-07-25T00:00:00.000Z',
         updatedAt: '2026-07-25T00:00:00.000Z',
@@ -378,6 +379,141 @@ describe('admin operation API', () => {
         });
         expect(harness.createdInputs[0]).not.toHaveProperty('payload');
     });
+
+    it('lets a scenario-only operator reset from the active commit without selecting Git', async () => {
+        const harness = await buildCaller(
+            async (input) => ({
+                id: '55555555-5555-4555-8555-555555555555',
+                profileName: input.profileName,
+                type: 'RESET',
+                status: 'QUEUED',
+                sourceMode: input.sourceMode,
+                sourceRef: input.sourceRef,
+                payload: input.payload ?? {},
+                requestedBy: input.requestedBy,
+                createdAt: '2026-08-08T00:00:00.000Z',
+                updatedAt: '2026-08-08T00:00:00.000Z',
+            }),
+            {
+                adminRoles: ['admin.scenarios.reset:che:2'],
+                firstUserIsAdmin: false,
+                profileScenario: '1010',
+            }
+        );
+
+        await harness.caller.admin.operations.requestReset({
+            profileName: 'che:2',
+            sourceMode: 'CURRENT',
+            install: {
+                scenarioId: 1010,
+                turnTermMinutes: 60,
+                sync: false,
+                fiction: 1,
+                extend: false,
+                blockGeneralCreate: 0,
+                npcMode: 0,
+                showImgLevel: 0,
+                tournamentTrig: false,
+                joinMode: 'full',
+            },
+            reason: 'new season only',
+        });
+
+        expect(harness.createdInputs[0]).toMatchObject({
+            type: 'RESET',
+            sourceMode: 'COMMIT',
+            sourceRef: expect.stringMatching(/^[0-9a-f]{40}$/u),
+            reason: 'new season only',
+        });
+    });
+
+    it('does not let a scenario-only operator combine a Git update with reset', async () => {
+        const harness = await buildCaller(
+            async () => {
+                throw new Error('not used');
+            },
+            { adminRoles: ['admin.scenarios.reset:che:2'], firstUserIsAdmin: false }
+        );
+
+        await expect(
+            harness.caller.admin.operations.requestReset({
+                profileName: 'che:2',
+                sourceMode: 'BRANCH',
+                sourceRef: 'main',
+                install: {
+                    scenarioId: 1010,
+                    turnTermMinutes: 60,
+                    sync: false,
+                    fiction: 1,
+                    extend: false,
+                    blockGeneralCreate: 0,
+                    npcMode: 0,
+                    showImgLevel: 0,
+                    tournamentTrig: false,
+                    joinMode: 'full',
+                },
+            })
+        ).rejects.toMatchObject({ code: 'FORBIDDEN' });
+    });
+
+    it('keeps runtime and DB-preserving deploy permissions independent', async () => {
+        const harness = await buildCaller(
+            async (input) => ({
+                id: '66666666-6666-4666-8666-666666666666',
+                profileName: input.profileName,
+                type: input.type,
+                status: 'QUEUED',
+                payload: {},
+                requestedBy: input.requestedBy,
+                createdAt: '2026-08-08T00:00:00.000Z',
+                updatedAt: '2026-08-08T00:00:00.000Z',
+            }),
+            { adminRoles: ['admin.profiles.runtime:che:2'], firstUserIsAdmin: false }
+        );
+
+        await expect(
+            harness.caller.admin.operations.requestRuntime({ profileName: 'che:2', action: 'START' })
+        ).resolves.toMatchObject({ type: 'START' });
+        await expect(
+            harness.caller.admin.operations.requestDeploy({
+                profileName: 'che:2',
+                sourceMode: 'BRANCH',
+                sourceRef: 'main',
+            })
+        ).rejects.toMatchObject({ code: 'FORBIDDEN' });
+    });
+
+    it('lets a settings-only operator change profile policy without runtime control', async () => {
+        const harness = await buildCaller(
+            async () => {
+                throw new Error('not used');
+            },
+            { adminRoles: ['admin.profiles.settings:che:2'], firstUserIsAdmin: false }
+        );
+
+        await harness.caller.admin.profiles.updateMeta({
+            profileName: 'che:2',
+            patch: { color: '#112233', localAccountAccessGraceDays: 14 },
+            reason: 'profile policy delegation',
+        });
+        expect(harness.updatedMetas.at(-1)).toMatchObject({ color: '#112233', localAccountAccessGraceDays: 14 });
+        await expect(
+            harness.caller.admin.operations.requestRuntime({ profileName: 'che:2', action: 'STOP' })
+        ).rejects.toMatchObject({ code: 'FORBIDDEN' });
+    });
+
+    it('returns the authenticated profile scopes with the capability catalog', async () => {
+        const harness = await buildCaller(
+            async () => {
+                throw new Error('not used');
+            },
+            { adminRoles: ['admin.scenarios.reset:che:2'], firstUserIsAdmin: false }
+        );
+
+        await expect(harness.caller.admin.capabilities.list()).resolves.toContainEqual(
+            expect.objectContaining({ permission: 'admin.scenarios.reset', scopes: ['che:2'] })
+        );
+    });
 });
 
 describe('gateway release API', () => {
@@ -637,7 +773,7 @@ describe('admin runtime clock action API', () => {
             })
         ).rejects.toMatchObject({
             code: 'BAD_REQUEST',
-            message: 'scheduledAt is supported only for scheduled reset.',
+            message: 'scheduledAt is supported only by operations.requestReset.',
         });
         expect(harness.createdRuntimeActions).toEqual([]);
     });
@@ -954,10 +1090,9 @@ describe('Gateway administrator account controls', () => {
             })
         ).resolves.toMatchObject({ id: grant.id, revokedReason: 'Kakao 인증 수단 복구 완료' });
         expect(harness.flushes).toContainEqual({ userId: target.id, reason: 'admin-special-access-revoked' });
-        expect(harness.auditEvents.filter((event) => event.outcome === 'SUCCEEDED').map((event) => event.action)).toEqual([
-            'admin.users.grantSpecialAccess',
-            'admin.users.revokeSpecialAccess',
-        ]);
+        expect(
+            harness.auditEvents.filter((event) => event.outcome === 'SUCCEEDED').map((event) => event.action)
+        ).toEqual(['admin.users.grantSpecialAccess', 'admin.users.revokeSpecialAccess']);
     });
 
     it('requires recovery access to expire within 90 days', async () => {

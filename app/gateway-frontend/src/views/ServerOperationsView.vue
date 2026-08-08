@@ -4,6 +4,13 @@ import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import AdminConsoleLayout from '../layouts/AdminConsoleLayout.vue';
 import { trpc } from '../utils/trpc';
 
+type OperationPageMode = 'version' | 'scenario' | 'gateway';
+
+const props = defineProps<{
+    mode: OperationPageMode;
+    profileName?: string;
+}>();
+
 const adminClient = trpc.admin;
 
 type Profile = {
@@ -79,7 +86,8 @@ const operations = ref<Operation[]>([]);
 const gatewayReleaseState = ref<GatewayReleaseState | null>(null);
 const gatewayReleaseOperations = ref<GatewayReleaseOperation[]>([]);
 const gatewayReleaseAvailable = ref(false);
-const selectedProfileName = ref('');
+const selectedProfileName = ref(props.profileName ?? '');
+const capabilities = ref<Array<{ permission: string; scopes?: string[] }>>([]);
 const loading = ref(false);
 const catalogLoading = ref(false);
 const submitting = ref(false);
@@ -89,7 +97,7 @@ let pollTimer: ReturnType<typeof setInterval> | undefined;
 let stateRequestInFlight = false;
 
 const form = reactive({
-    sourceMode: 'BRANCH' as 'BRANCH' | 'COMMIT',
+    sourceMode: (props.mode === 'scenario' ? 'CURRENT' : 'BRANCH') as 'CURRENT' | 'BRANCH' | 'COMMIT',
     sourceRef: 'main',
     scenarioId: 0,
     turnTermMinutes: 60,
@@ -123,6 +131,27 @@ const selectedProfile = computed(
     () => profiles.value.find((profile) => profile.profileName === selectedProfileName.value) ?? null
 );
 
+const hasCapability = (permission: string): boolean =>
+    capabilities.value.some((entry) => {
+        if (entry.permission !== permission && entry.permission !== 'admin.profiles.manage') return false;
+        if (!props.profileName) return true;
+        return !entry.scopes?.length || entry.scopes.includes('*') || entry.scopes.includes(props.profileName);
+    });
+
+const pageTitle = computed(() => {
+    if (props.mode === 'gateway') return 'Gateway 릴리스';
+    if (props.mode === 'scenario') return `${props.profileName ?? ''} 시나리오 초기화`;
+    return `${props.profileName ?? ''} 버전 업데이트`;
+});
+
+const pageDescription = computed(() => {
+    if (props.mode === 'gateway') return 'Gateway control plane 배포와 rollback을 별도 권한으로 관리합니다.';
+    if (props.mode === 'scenario') {
+        return '현재 배포 버전으로 시나리오만 초기화하거나, 배포 권한이 있을 때 새 버전과 함께 초기화합니다.';
+    }
+    return '현재 게임 DB를 유지한 채 코드와 forward migration을 배포합니다.';
+});
+
 const activeOperation = computed(
     () =>
         operations.value.find(
@@ -133,9 +162,11 @@ const activeOperation = computed(
 );
 
 const sourceHelp = computed(() =>
-    form.sourceMode === 'BRANCH'
-        ? '작업이 실제로 시작될 때 원격 브랜치를 다시 fetch하여 최신 커밋을 사용합니다.'
-        : '요청 시 커밋을 전체 SHA로 고정하므로 이후 브랜치가 이동해도 결과가 바뀌지 않습니다.'
+    form.sourceMode === 'CURRENT'
+        ? `현재 서버 커밋 ${shortSha(selectedProfile.value?.buildCommitSha)}의 시나리오 리소스를 사용합니다.`
+        : form.sourceMode === 'BRANCH'
+          ? '작업이 실제로 시작될 때 원격 브랜치를 다시 fetch하여 최신 커밋을 사용합니다.'
+          : '요청 시 커밋을 전체 SHA로 고정하므로 이후 브랜치가 이동해도 결과가 바뀌지 않습니다.'
 );
 
 const toIso = (value: string): string | undefined => {
@@ -163,23 +194,22 @@ const loadState = async (quiet = false) => {
         loading.value = true;
     }
     try {
-        const profileResult = await adminClient.profiles.list.query();
-        const operationResult = await adminClient.operations.list.query({ limit: 100 });
-        profiles.value = profileResult as Profile[];
-        operations.value = operationResult as Operation[];
-        try {
-            const [state, releaseOperations] = await Promise.all([
-                adminClient.releases.gatewayState.query(),
-                adminClient.releases.list.query({ limit: 30 }),
-            ]);
+        capabilities.value = (await adminClient.capabilities.list.query()) as typeof capabilities.value;
+        if (props.mode === 'gateway') {
+            const state = await adminClient.releases.gatewayState.query();
+            const releaseOperations = await adminClient.releases.list.query({ limit: 30 });
             gatewayReleaseState.value = state as GatewayReleaseState;
             gatewayReleaseOperations.value = releaseOperations as GatewayReleaseOperation[];
             gatewayReleaseAvailable.value = true;
-        } catch {
-            gatewayReleaseAvailable.value = false;
-        }
-        if (!selectedProfileName.value && profiles.value.length > 0) {
-            selectedProfileName.value = profiles.value[0].profileName;
+        } else {
+            const profileResult = await adminClient.profiles.list.query();
+            const operationResult = await adminClient.operations.list.query({
+                profileName: props.profileName,
+                limit: 100,
+            });
+            profiles.value = profileResult as Profile[];
+            operations.value = operationResult as Operation[];
+            selectedProfileName.value = props.profileName ?? profiles.value[0]?.profileName ?? '';
         }
     } catch (error) {
         errorMessage.value = error instanceof Error ? error.message : '운영 상태를 불러오지 못했습니다.';
@@ -191,7 +221,7 @@ const loadState = async (quiet = false) => {
 
 const requestDeploy = async () => {
     clearStatus();
-    if (!selectedProfile.value || activeOperation.value || !form.sourceRef.trim()) {
+    if (!selectedProfile.value || activeOperation.value || !form.sourceRef.trim() || form.sourceMode === 'CURRENT') {
         return;
     }
     if (
@@ -263,14 +293,15 @@ const requestGatewayRollback = async () => {
 
 const loadScenarios = async () => {
     clearStatus();
-    if (!form.sourceRef.trim()) {
+    if (form.sourceMode !== 'CURRENT' && !form.sourceRef.trim()) {
         errorMessage.value = '브랜치 또는 커밋을 입력해주세요.';
         return;
     }
     catalogLoading.value = true;
     try {
         const result = await adminClient.profiles.listScenarios.query({
-            gitRef: form.sourceRef.trim(),
+            profileName: selectedProfileName.value,
+            gitRef: form.sourceMode === 'CURRENT' ? undefined : form.sourceRef.trim(),
             sourceMode: form.sourceMode,
         });
         scenarios.value = result as Scenario[];
@@ -285,31 +316,6 @@ const loadScenarios = async () => {
         errorMessage.value = error instanceof Error ? error.message : '소스에서 시나리오를 읽지 못했습니다.';
     } finally {
         catalogLoading.value = false;
-    }
-};
-
-const requestRuntime = async (action: 'START' | 'STOP') => {
-    clearStatus();
-    if (!selectedProfile.value || activeOperation.value) {
-        return;
-    }
-    const label = action === 'START' ? '시작' : '정지';
-    if (!window.confirm(`${selectedProfile.value.profileName} 서버를 ${label}하시겠습니까?`)) {
-        return;
-    }
-    submitting.value = true;
-    try {
-        await adminClient.operations.requestRuntime.mutate({
-            profileName: selectedProfile.value.profileName,
-            action,
-            reason: form.reason.trim() || undefined,
-        });
-        message.value = `${label} 작업을 요청했습니다.`;
-        await loadState(true);
-    } catch (error) {
-        errorMessage.value = error instanceof Error ? error.message : `${label} 요청에 실패했습니다.`;
-    } finally {
-        submitting.value = false;
     }
 };
 
@@ -328,14 +334,15 @@ const requestReset = async () => {
     if (!selectedProfile.value || activeOperation.value) {
         return;
     }
-    if (!form.sourceRef.trim() || !form.scenarioId) {
-        errorMessage.value = '소스와 시나리오를 먼저 선택해주세요.';
+    if ((form.sourceMode !== 'CURRENT' && !form.sourceRef.trim()) || !form.scenarioId) {
+        errorMessage.value = '초기화 소스와 시나리오를 먼저 선택해주세요.';
         return;
     }
-    const sourceLabel = form.sourceMode === 'BRANCH' ? '브랜치' : '커밋';
+    const sourceLabel =
+        form.sourceMode === 'CURRENT' ? '현재 배포 버전' : form.sourceMode === 'BRANCH' ? '브랜치' : '커밋';
     if (
         !window.confirm(
-            `${selectedProfile.value.profileName}의 게임 DB를 초기화합니다.\n${sourceLabel}: ${form.sourceRef}\n시나리오: ${form.scenarioId}`
+            `${selectedProfile.value.profileName}의 게임 DB를 초기화합니다.\n${sourceLabel}${form.sourceMode === 'CURRENT' ? '' : `: ${form.sourceRef}`}\n시나리오: ${form.scenarioId}`
         )
     ) {
         return;
@@ -345,7 +352,7 @@ const requestReset = async () => {
         await adminClient.operations.requestReset.mutate({
             profileName: selectedProfile.value.profileName,
             sourceMode: form.sourceMode,
-            sourceRef: form.sourceRef.trim(),
+            sourceRef: form.sourceMode === 'CURRENT' ? undefined : form.sourceRef.trim(),
             scheduledAt: toIso(form.scheduledAt),
             reason: form.reason.trim() || undefined,
             install: {
@@ -415,7 +422,7 @@ watch(selectedProfileName, () => {
 
 onMounted(async () => {
     await loadState();
-    await loadScenarios();
+    if (props.mode === 'scenario') await loadScenarios();
     pollTimer = setInterval(() => void loadState(true), 3000);
 });
 
@@ -427,11 +434,7 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-    <AdminConsoleLayout
-        title="버전 업데이트"
-        description="프로필 DB 유지·초기화 배포와 Gateway 릴리스, rollback 및 작업 이력을 관리합니다."
-        eyebrow="Release operations"
-    >
+    <AdminConsoleLayout :title="pageTitle" :description="pageDescription" eyebrow="Release operations">
         <template #actions>
             <button
                 class="rounded border border-zinc-700 bg-zinc-900 px-4 py-2 text-sm hover:border-zinc-500 disabled:opacity-50"
@@ -454,7 +457,30 @@ onBeforeUnmount(() => {
                 {{ message }}
             </div>
 
-            <section class="grid gap-4 lg:grid-cols-[1.1fr_1.9fr]">
+            <nav v-if="mode !== 'gateway' && profileName" class="flex flex-wrap gap-2" aria-label="서버 관리 탭">
+                <RouterLink
+                    :to="`/admin/servers/${encodeURIComponent(profileName)}`"
+                    class="rounded border border-zinc-700 px-3 py-2 text-xs text-zinc-300 hover:bg-zinc-900"
+                >
+                    상태 · 설정
+                </RouterLink>
+                <RouterLink
+                    v-if="hasCapability('admin.profiles.deploy')"
+                    :to="`/admin/servers/${encodeURIComponent(profileName)}/version`"
+                    class="rounded border border-blue-700 px-3 py-2 text-xs text-blue-200 hover:bg-blue-950"
+                >
+                    버전 업데이트
+                </RouterLink>
+                <RouterLink
+                    v-if="hasCapability('admin.scenarios.reset')"
+                    :to="`/admin/servers/${encodeURIComponent(profileName)}/scenario`"
+                    class="rounded border border-purple-700 px-3 py-2 text-xs text-purple-200 hover:bg-purple-950"
+                >
+                    시나리오 초기화
+                </RouterLink>
+            </nav>
+
+            <section v-if="mode !== 'gateway'" class="grid gap-4 lg:grid-cols-[1.1fr_1.9fr]">
                 <div class="rounded-lg border border-zinc-800 bg-zinc-900 p-5 space-y-4">
                     <div>
                         <label class="text-xs text-zinc-400" for="profile-select">운영 프로필</label>
@@ -463,6 +489,7 @@ onBeforeUnmount(() => {
                             v-model="selectedProfileName"
                             class="mt-2 w-full rounded border border-zinc-700 bg-zinc-950 px-3 py-2 text-white"
                             data-testid="profile-select"
+                            :disabled="Boolean(profileName)"
                         >
                             <option v-for="profile in profiles" :key="profile.profileName" :value="profile.profileName">
                                 {{ profile.profileName }}
@@ -540,33 +567,16 @@ onBeforeUnmount(() => {
                         </div>
                         <div v-if="selectedProfile.lastError" class="text-red-400">{{ selectedProfile.lastError }}</div>
                     </div>
-
-                    <div class="grid grid-cols-2 gap-2">
-                        <button
-                            class="rounded bg-emerald-700 px-3 py-2 font-semibold text-white hover:bg-emerald-600 disabled:opacity-40"
-                            :disabled="submitting || Boolean(activeOperation)"
-                            data-testid="start-server"
-                            @click="requestRuntime('START')"
-                        >
-                            서버 시작
-                        </button>
-                        <button
-                            class="rounded bg-red-800 px-3 py-2 font-semibold text-white hover:bg-red-700 disabled:opacity-40"
-                            :disabled="submitting || Boolean(activeOperation)"
-                            data-testid="stop-server"
-                            @click="requestRuntime('STOP')"
-                        >
-                            서버 정지
-                        </button>
-                    </div>
                 </div>
 
                 <form
                     class="rounded-lg border border-zinc-800 bg-zinc-900 p-5 space-y-5"
-                    @submit.prevent="requestReset"
+                    @submit.prevent="mode === 'scenario' ? requestReset() : requestDeploy()"
                 >
                     <div class="flex items-center justify-between">
-                        <h3 class="text-lg font-semibold">프로필 배포 · 시나리오 초기화</h3>
+                        <h3 class="text-lg font-semibold">
+                            {{ mode === 'scenario' ? '시나리오 초기화' : 'DB 보존 버전 업데이트' }}
+                        </h3>
                         <span
                             v-if="activeOperation"
                             class="rounded-full bg-amber-500/15 px-3 py-1 text-xs text-amber-300"
@@ -578,29 +588,44 @@ onBeforeUnmount(() => {
                     <fieldset class="space-y-2">
                         <legend class="text-xs text-zinc-400">소스 종류</legend>
                         <div class="flex gap-5">
-                            <label class="flex items-center gap-2">
+                            <label v-if="mode === 'scenario'" class="flex items-center gap-2">
+                                <input
+                                    v-model="form.sourceMode"
+                                    type="radio"
+                                    value="CURRENT"
+                                    data-testid="source-current"
+                                />
+                                현재 배포 버전
+                            </label>
+                            <label
+                                v-if="mode === 'version' || hasCapability('admin.profiles.deploy')"
+                                class="flex items-center gap-2"
+                            >
                                 <input
                                     v-model="form.sourceMode"
                                     type="radio"
                                     value="BRANCH"
                                     data-testid="source-branch"
                                 />
-                                브랜치
+                                {{ mode === 'scenario' ? '새 브랜치와 함께' : '브랜치' }}
                             </label>
-                            <label class="flex items-center gap-2">
+                            <label
+                                v-if="mode === 'version' || hasCapability('admin.profiles.deploy')"
+                                class="flex items-center gap-2"
+                            >
                                 <input
                                     v-model="form.sourceMode"
                                     type="radio"
                                     value="COMMIT"
                                     data-testid="source-commit"
                                 />
-                                커밋
+                                {{ mode === 'scenario' ? '새 커밋과 함께' : '커밋' }}
                             </label>
                         </div>
                         <p class="text-xs text-amber-200/80" data-testid="source-help">{{ sourceHelp }}</p>
                     </fieldset>
 
-                    <div class="grid gap-3 md:grid-cols-[1fr_auto]">
+                    <div v-if="form.sourceMode !== 'CURRENT'" class="grid gap-3 md:grid-cols-[1fr_auto]">
                         <input
                             v-model="form.sourceRef"
                             class="rounded border border-zinc-700 bg-zinc-950 px-3 py-2 font-mono text-sm text-white"
@@ -612,6 +637,7 @@ onBeforeUnmount(() => {
                             data-testid="source-ref"
                         />
                         <button
+                            v-if="mode === 'scenario'"
                             type="button"
                             class="rounded border border-zinc-600 bg-zinc-800 px-4 py-2 text-sm hover:bg-zinc-700 disabled:opacity-50"
                             :disabled="catalogLoading"
@@ -622,7 +648,7 @@ onBeforeUnmount(() => {
                         </button>
                     </div>
 
-                    <div class="grid gap-4 md:grid-cols-2">
+                    <div v-if="mode === 'scenario'" class="grid gap-4 md:grid-cols-2">
                         <label class="text-xs text-zinc-400">
                             시나리오
                             <select
@@ -652,7 +678,7 @@ onBeforeUnmount(() => {
                         </label>
                     </div>
 
-                    <details class="rounded border border-zinc-800 bg-zinc-950/50 p-4">
+                    <details v-if="mode === 'scenario'" class="rounded border border-zinc-800 bg-zinc-950/50 p-4">
                         <summary class="cursor-pointer text-sm font-semibold">고급 시나리오 옵션</summary>
                         <div class="mt-4 grid gap-4 md:grid-cols-2 text-sm">
                             <label
@@ -735,7 +761,7 @@ onBeforeUnmount(() => {
                         </div>
                     </details>
 
-                    <div class="grid gap-4 md:grid-cols-3">
+                    <div v-if="mode === 'scenario'" class="grid gap-4 md:grid-cols-3">
                         <label class="text-xs text-zinc-400"
                             >작업 예약
                             <input
@@ -767,9 +793,10 @@ onBeforeUnmount(() => {
                         class="w-full rounded border border-zinc-700 bg-zinc-950 px-3 py-2 text-sm text-white"
                         placeholder="작업 사유 또는 운영 메모"
                     />
-                    <div class="grid gap-3 md:grid-cols-2">
+                    <div>
                         <button
-                            type="button"
+                            v-if="mode === 'version'"
+                            type="submit"
                             class="rounded bg-sky-700 px-4 py-3 font-bold text-white hover:bg-sky-600 disabled:cursor-not-allowed disabled:opacity-40"
                             :disabled="submitting || Boolean(activeOperation) || !form.sourceRef.trim()"
                             data-testid="request-deploy"
@@ -778,19 +805,20 @@ onBeforeUnmount(() => {
                             DB 유지 배포
                         </button>
                         <button
+                            v-else
                             type="submit"
-                            class="rounded bg-amber-500 px-4 py-3 font-bold text-black hover:bg-amber-400 disabled:cursor-not-allowed disabled:opacity-40"
+                            class="w-full rounded bg-amber-500 px-4 py-3 font-bold text-black hover:bg-amber-400 disabled:cursor-not-allowed disabled:opacity-40"
                             :disabled="submitting || Boolean(activeOperation) || !form.scenarioId"
                             data-testid="request-reset"
                         >
-                            {{ form.scheduledAt ? 'DB 초기화 예약' : 'DB 초기화 배포' }}
+                            {{ form.scheduledAt ? '시나리오 초기화 예약' : '시나리오 초기화' }}
                         </button>
                     </div>
                 </form>
             </section>
 
             <section
-                v-if="gatewayReleaseAvailable"
+                v-if="mode === 'gateway' && gatewayReleaseAvailable"
                 class="rounded-lg border border-violet-800/70 bg-zinc-900 p-5 space-y-4"
                 data-testid="gateway-release-panel"
             >
@@ -890,7 +918,7 @@ onBeforeUnmount(() => {
                 </div>
             </section>
 
-            <section class="rounded-lg border border-zinc-800 bg-zinc-900 p-5">
+            <section v-if="mode !== 'gateway'" class="rounded-lg border border-zinc-800 bg-zinc-900 p-5">
                 <div class="mb-4 flex items-center justify-between">
                     <h3 class="text-lg font-semibold">작업 이력</h3>
                     <span class="text-xs text-zinc-500">3초마다 상태 갱신</span>

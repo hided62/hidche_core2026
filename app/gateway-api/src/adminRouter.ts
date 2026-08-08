@@ -54,6 +54,10 @@ const ROLE_SUPERUSER = 'superuser';
 const ROLE_ADMIN_USERS = 'admin.users.manage';
 const ROLE_ADMIN_USERS_CREATE = 'admin.users.create';
 const ROLE_ADMIN_PROFILES = 'admin.profiles.manage';
+const ROLE_ADMIN_PROFILE_RUNTIME = 'admin.profiles.runtime';
+const ROLE_ADMIN_PROFILE_SETTINGS = 'admin.profiles.settings';
+const ROLE_ADMIN_PROFILE_DEPLOY = 'admin.profiles.deploy';
+const ROLE_ADMIN_SCENARIO_RESET = 'admin.scenarios.reset';
 const ROLE_ADMIN_RELEASES = 'admin.releases.manage';
 const ROLE_ADMIN_NOTICE = 'admin.notice.manage';
 const ROLE_ADMIN_AUDIT = 'admin.audit.read';
@@ -144,6 +148,21 @@ const hasScopedPermission = (adminAuth: AdminAuthContext, permission: string, pr
         return true;
     }
     return adminAuth.roles.some((role: string) => roleMatchesScope(role, permission, profileName));
+};
+
+const hasAnyScopedPermission = (
+    adminAuth: AdminAuthContext,
+    permissions: readonly string[],
+    profileName?: string
+): boolean => permissions.some((permission) => hasScopedPermission(adminAuth, permission, profileName));
+
+const assertAnyPermission = (
+    adminAuth: AdminAuthContext,
+    permissions: readonly string[],
+    profileName?: string
+): void => {
+    if (hasAnyScopedPermission(adminAuth, permissions, profileName)) return;
+    throw new TRPCError({ code: 'FORBIDDEN', message: 'Permission denied.' });
 };
 
 const splitRoleScope = (role: string): { permission: string; scope?: string } => {
@@ -437,6 +456,7 @@ const zInstallOptions = z.object({
 });
 const zOperationInstallOptions = zInstallOptions.omit({ gitRef: true });
 const zSourceMode = z.enum(['BRANCH', 'COMMIT']);
+const zResetSourceMode = z.enum(['CURRENT', 'BRANCH', 'COMMIT']);
 
 type SanctionsPatch = z.infer<typeof zSanctionsPatch>;
 
@@ -533,7 +553,14 @@ export const adminRouter = router({
                         const parsed = splitRoleScope(role);
                         return parsed.permission === entry.permission;
                     })
-            );
+            ).map((entry) => {
+                if (adminAuth.isSuperuser) return { ...entry, scopes: ['*'] };
+                const scopes = adminAuth.roles
+                    .map(splitRoleScope)
+                    .filter((role) => role.permission === entry.permission)
+                    .map((role) => role.scope ?? '*');
+                return { ...entry, scopes: Array.from(new Set(scopes)) };
+            });
         }),
     }),
     audit: router({
@@ -691,14 +718,20 @@ export const adminRouter = router({
                         throw new TRPCError({ code: 'BAD_REQUEST', message: 'Recovery access must expire.' });
                     }
                     if (expiresAt.getTime() > now.getTime() + 90 * 24 * 60 * 60 * 1000) {
-                        throw new TRPCError({ code: 'BAD_REQUEST', message: 'Recovery access may last at most 90 days.' });
+                        throw new TRPCError({
+                            code: 'BAD_REQUEST',
+                            message: 'Recovery access may last at most 90 days.',
+                        });
                     }
                 }
                 const profiles = [...new Set(input.profiles.map((profile) => profile.toLowerCase()))];
                 if (profiles.length > 0) {
                     const knownProfiles = await ctx.profiles.listProfiles();
                     const knownNames = new Set(
-                        knownProfiles.flatMap((profile) => [profile.profile.toLowerCase(), profile.profileName.toLowerCase()])
+                        knownProfiles.flatMap((profile) => [
+                            profile.profile.toLowerCase(),
+                            profile.profileName.toLowerCase(),
+                        ])
                     );
                     const unknown = profiles.find((profile) => !knownNames.has(profile));
                     if (unknown) {
@@ -984,19 +1017,19 @@ export const adminRouter = router({
             .query(async ({ ctx, input }) => {
                 const adminAuth = requireAdminAuth(ctx);
                 if (input?.profileName) {
-                    assertPermission(adminAuth, ROLE_ADMIN_PROFILES, input.profileName);
+                    if (!canReadProfile(adminAuth, input.profileName)) {
+                        throw new TRPCError({ code: 'FORBIDDEN', message: 'Permission denied.' });
+                    }
                     return ctx.profiles.listOperations({
                         profileName: input.profileName,
                         limit: input.limit,
                     });
                 }
-                if (hasScopedPermission(adminAuth, ROLE_ADMIN_PROFILES)) {
+                if (adminAuth.isSuperuser || adminAuth.roles.some((role) => role.endsWith(':*'))) {
                     return ctx.profiles.listOperations({ limit: input?.limit });
                 }
                 const profiles = await ctx.profiles.listProfiles();
-                const allowed = profiles.filter((profile) =>
-                    hasScopedPermission(adminAuth, ROLE_ADMIN_PROFILES, profile.profileName)
-                );
+                const allowed = profiles.filter((profile) => canReadProfile(adminAuth, profile.profileName));
                 const operations = (
                     await Promise.all(
                         allowed.map((profile) =>
@@ -1015,8 +1048,8 @@ export const adminRouter = router({
             .input(
                 z.object({
                     profileName: z.string().min(1),
-                    sourceMode: zSourceMode,
-                    sourceRef: z.string().min(1).max(128),
+                    sourceMode: zResetSourceMode,
+                    sourceRef: z.string().min(1).max(128).optional(),
                     install: zOperationInstallOptions,
                     scheduledAt: z.string().datetime().optional(),
                     reason: z.string().max(200).optional(),
@@ -1024,7 +1057,13 @@ export const adminRouter = router({
             )
             .mutation(async ({ ctx, input }) => {
                 const adminAuth = requireAdminAuth(ctx);
-                assertPermission(adminAuth, ROLE_ADMIN_PROFILES, input.profileName);
+                assertAnyPermission(adminAuth, [ROLE_ADMIN_PROFILES, ROLE_ADMIN_SCENARIO_RESET], input.profileName);
+                if (input.sourceMode !== 'CURRENT') {
+                    assertAnyPermission(adminAuth, [ROLE_ADMIN_PROFILES, ROLE_ADMIN_PROFILE_DEPLOY], input.profileName);
+                }
+                if (input.scheduledAt) {
+                    assertAnyPermission(adminAuth, [ROLE_ADMIN_PROFILES, ROLE_RESET_SCHEDULE], input.profileName);
+                }
                 const profile = await ctx.profiles.getProfile(input.profileName);
                 if (!profile) {
                     throw new TRPCError({ code: 'NOT_FOUND', message: 'Profile not found.' });
@@ -1074,13 +1113,24 @@ export const adminRouter = router({
                     });
                 }
 
-                let sourceRef = input.sourceRef.trim();
+                const sourceMode: 'BRANCH' | 'COMMIT' = input.sourceMode === 'CURRENT' ? 'COMMIT' : input.sourceMode;
+                let sourceRef =
+                    input.sourceMode === 'CURRENT' ? profile.buildCommitSha?.trim() : input.sourceRef?.trim();
+                if (!sourceRef) {
+                    throw new TRPCError({
+                        code: 'BAD_REQUEST',
+                        message:
+                            input.sourceMode === 'CURRENT'
+                                ? 'The profile has no active build commit to reset from.'
+                                : 'sourceRef is required.',
+                    });
+                }
                 try {
                     const resolved =
-                        input.sourceMode === 'BRANCH'
+                        sourceMode === 'BRANCH'
                             ? await resolveGitBranchCommitSha(sourceRef)
                             : await resolveGitCommitSha(sourceRef);
-                    if (input.sourceMode === 'COMMIT') {
+                    if (sourceMode === 'COMMIT') {
                         sourceRef = resolved;
                     }
                     const scenarios = await listScenarioPreviews({ gitRef: resolved });
@@ -1091,7 +1141,7 @@ export const adminRouter = router({
                     throw new TRPCError({
                         code: 'BAD_REQUEST',
                         message:
-                            input.sourceMode === 'BRANCH'
+                            sourceMode === 'BRANCH'
                                 ? 'Branch is invalid or does not contain the scenario.'
                                 : 'Commit is invalid or does not contain the scenario.',
                     });
@@ -1101,9 +1151,12 @@ export const adminRouter = router({
                     const operation = await ctx.profiles.createOperation({
                         profileName: input.profileName,
                         type: 'RESET',
-                        sourceMode: input.sourceMode,
+                        sourceMode,
                         sourceRef,
-                        payload: { install: input.install } as GatewayPrisma.JsonObject,
+                        payload: {
+                            install: input.install,
+                            requestedSource: input.sourceMode,
+                        } as GatewayPrisma.JsonObject,
                         reason: input.reason,
                         requestedBy: adminAuth.user.id,
                         scheduledAt: input.scheduledAt,
@@ -1130,7 +1183,7 @@ export const adminRouter = router({
             )
             .mutation(async ({ ctx, input }) => {
                 const adminAuth = requireAdminAuth(ctx);
-                assertPermission(adminAuth, ROLE_ADMIN_PROFILES, input.profileName);
+                assertAnyPermission(adminAuth, [ROLE_ADMIN_PROFILES, ROLE_ADMIN_PROFILE_DEPLOY], input.profileName);
                 const profile = await ctx.profiles.getProfile(input.profileName);
                 if (!profile) {
                     throw new TRPCError({ code: 'NOT_FOUND', message: 'Profile not found.' });
@@ -1183,7 +1236,7 @@ export const adminRouter = router({
             )
             .mutation(async ({ ctx, input }) => {
                 const adminAuth = requireAdminAuth(ctx);
-                assertPermission(adminAuth, ROLE_ADMIN_PROFILES, input.profileName);
+                assertAnyPermission(adminAuth, [ROLE_ADMIN_PROFILES, ROLE_ADMIN_PROFILE_RUNTIME], input.profileName);
                 const profile = await ctx.profiles.getProfile(input.profileName);
                 if (!profile) {
                     throw new TRPCError({ code: 'NOT_FOUND', message: 'Profile not found.' });
@@ -1212,7 +1265,13 @@ export const adminRouter = router({
             if (!previous) {
                 throw new TRPCError({ code: 'NOT_FOUND', message: 'Operation not found.' });
             }
-            assertPermission(adminAuth, ROLE_ADMIN_PROFILES, previous.profileName);
+            const permissions =
+                previous.type === 'RESET'
+                    ? [ROLE_ADMIN_PROFILES, ROLE_ADMIN_SCENARIO_RESET]
+                    : previous.type === 'DEPLOY'
+                      ? [ROLE_ADMIN_PROFILES, ROLE_ADMIN_PROFILE_DEPLOY]
+                      : [ROLE_ADMIN_PROFILES, ROLE_ADMIN_PROFILE_RUNTIME];
+            assertAnyPermission(adminAuth, permissions, previous.profileName);
             const cancelled = await ctx.profiles.cancelOperation(input.id);
             if (!cancelled) {
                 throw new TRPCError({
@@ -1228,7 +1287,26 @@ export const adminRouter = router({
             if (!previous) {
                 throw new TRPCError({ code: 'NOT_FOUND', message: 'Operation not found.' });
             }
-            assertPermission(adminAuth, ROLE_ADMIN_PROFILES, previous.profileName);
+            const permissions =
+                previous.type === 'RESET'
+                    ? [ROLE_ADMIN_PROFILES, ROLE_ADMIN_SCENARIO_RESET]
+                    : previous.type === 'DEPLOY'
+                      ? [ROLE_ADMIN_PROFILES, ROLE_ADMIN_PROFILE_DEPLOY]
+                      : [ROLE_ADMIN_PROFILES, ROLE_ADMIN_PROFILE_RUNTIME];
+            assertAnyPermission(adminAuth, permissions, previous.profileName);
+            if (previous.type === 'RESET') {
+                const payload = readMetaObject(previous.payload);
+                if (payload.requestedSource !== 'CURRENT') {
+                    assertAnyPermission(
+                        adminAuth,
+                        [ROLE_ADMIN_PROFILES, ROLE_ADMIN_PROFILE_DEPLOY],
+                        previous.profileName
+                    );
+                }
+                if (previous.scheduledAt) {
+                    assertAnyPermission(adminAuth, [ROLE_ADMIN_PROFILES, ROLE_RESET_SCHEDULE], previous.profileName);
+                }
+            }
             try {
                 const operation = await ctx.profiles.retryOperation(input.id, adminAuth.user.id);
                 if (!operation) {
@@ -1399,22 +1477,51 @@ export const adminRouter = router({
                 },
             }));
         }),
-        listScenarios: profileAdminProcedure
+        listScenarios: adminProcedure
             .input(
                 z
                     .object({
+                        profileName: z.string().min(1).max(64).optional(),
                         gitRef: z.string().min(1).max(128).optional(),
-                        sourceMode: zSourceMode.optional(),
+                        sourceMode: zResetSourceMode.optional(),
                     })
                     .optional()
             )
-            .query(async ({ input }) => {
-                const gitRef = input?.gitRef?.trim();
+            .query(async ({ ctx, input }) => {
+                const adminAuth = requireAdminAuth(ctx);
+                const sourceMode = input?.sourceMode ?? 'CURRENT';
+                let gitRef = input?.gitRef?.trim();
+                if (sourceMode === 'CURRENT') {
+                    if (!input?.profileName) {
+                        if (!adminAuth.isSuperuser) {
+                            throw new TRPCError({ code: 'BAD_REQUEST', message: 'profileName is required.' });
+                        }
+                    } else {
+                        assertAnyPermission(
+                            adminAuth,
+                            [ROLE_ADMIN_PROFILES, ROLE_ADMIN_SCENARIO_RESET],
+                            input.profileName
+                        );
+                        const profile = await ctx.profiles.getProfile(input.profileName);
+                        if (!profile) throw new TRPCError({ code: 'NOT_FOUND', message: 'Profile not found.' });
+                        gitRef = profile.buildCommitSha?.trim();
+                        if (!gitRef) {
+                            throw new TRPCError({
+                                code: 'BAD_REQUEST',
+                                message: 'The profile has no active build commit.',
+                            });
+                        }
+                    }
+                } else if (input?.profileName) {
+                    assertAnyPermission(adminAuth, [ROLE_ADMIN_PROFILES, ROLE_ADMIN_PROFILE_DEPLOY], input.profileName);
+                } else {
+                    assertAnyPermission(adminAuth, [ROLE_ADMIN_PROFILES, ROLE_ADMIN_PROFILE_DEPLOY]);
+                }
                 if (!gitRef) {
                     return listScenarioPreviews();
                 }
                 const resolved =
-                    input?.sourceMode === 'BRANCH'
+                    sourceMode === 'BRANCH'
                         ? await resolveGitBranchCommitSha(gitRef)
                         : await resolveGitCommitSha(gitRef);
                 return listScenarioPreviews({ gitRef: resolved });
@@ -1476,7 +1583,7 @@ export const adminRouter = router({
                 await ctx.orchestrator.reconcileNow();
                 return result;
             }),
-        updateMeta: profileAdminProcedure
+        updateMeta: adminProcedure
             .input(
                 z.object({
                     profileName: z.string().min(1),
@@ -1493,6 +1600,11 @@ export const adminRouter = router({
                 })
             )
             .mutation(async ({ ctx, input }) => {
+                assertAnyPermission(
+                    requireAdminAuth(ctx),
+                    [ROLE_ADMIN_PROFILES, ROLE_ADMIN_PROFILE_SETTINGS],
+                    input.profileName
+                );
                 const profile = await ctx.profiles.getProfile(input.profileName);
                 if (!profile) {
                     throw new TRPCError({
@@ -1730,22 +1842,22 @@ export const adminRouter = router({
             )
             .mutation(async ({ ctx, input }) => {
                 const adminAuth = requireAdminAuth(ctx);
+                if (input.action === 'RESET_NOW' || input.action === 'RESET_SCHEDULED') {
+                    throw new TRPCError({
+                        code: 'BAD_REQUEST',
+                        message: '시나리오 초기화는 operations.requestReset을 사용해 주세요.',
+                    });
+                }
                 if ((input.action === 'ACCELERATE' || input.action === 'DELAY') && !input.durationMinutes) {
                     throw new TRPCError({
                         code: 'BAD_REQUEST',
                         message: 'durationMinutes is required for acceleration or delay.',
                     });
                 }
-                if (input.action === 'RESET_SCHEDULED' && !input.scheduledAt) {
+                if (input.scheduledAt) {
                     throw new TRPCError({
                         code: 'BAD_REQUEST',
-                        message: 'scheduledAt is required for scheduled reset.',
-                    });
-                }
-                if (input.action !== 'RESET_SCHEDULED' && input.scheduledAt) {
-                    throw new TRPCError({
-                        code: 'BAD_REQUEST',
-                        message: 'scheduledAt is supported only for scheduled reset.',
+                        message: 'scheduledAt is supported only by operations.requestReset.',
                     });
                 }
                 const profile = await ctx.profiles.getProfile(input.profileName);
@@ -1756,11 +1868,13 @@ export const adminRouter = router({
                     });
                 }
 
-                const canManageProfiles = hasScopedPermission(adminAuth, ROLE_ADMIN_PROFILES, profile.profileName);
+                const canManageProfiles = hasAnyScopedPermission(
+                    adminAuth,
+                    [ROLE_ADMIN_PROFILES, ROLE_ADMIN_PROFILE_RUNTIME],
+                    profile.profileName
+                );
                 const canResume =
                     canManageProfiles || hasScopedPermission(adminAuth, ROLE_RESUME_WHEN_STOPPED, profile.profileName);
-                const canResetSchedule =
-                    canManageProfiles || hasScopedPermission(adminAuth, ROLE_RESET_SCHEDULE, profile.profileName);
                 const canOpenSurvey =
                     canManageProfiles || hasScopedPermission(adminAuth, ROLE_SURVEY_OPEN, profile.profileName);
 
@@ -1775,19 +1889,6 @@ export const adminRouter = router({
                         throw new TRPCError({
                             code: 'FORBIDDEN',
                             message: 'Resume permission is required.',
-                        });
-                    }
-                } else if (input.action === 'RESET_SCHEDULED') {
-                    if (profile.status !== 'COMPLETED') {
-                        throw new TRPCError({
-                            code: 'BAD_REQUEST',
-                            message: 'Reset scheduling is allowed only for COMPLETED profiles.',
-                        });
-                    }
-                    if (!canResetSchedule) {
-                        throw new TRPCError({
-                            code: 'FORBIDDEN',
-                            message: 'Reset scheduling permission is required.',
                         });
                     }
                 } else if (input.action === 'OPEN_SURVEY') {

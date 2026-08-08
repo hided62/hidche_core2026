@@ -7,6 +7,7 @@ type AdminSection = 'users' | 'servers' | 'system' | 'audit';
 
 const props = defineProps<{
     section: AdminSection;
+    profileName?: string;
 }>();
 
 const pageMeta: Record<AdminSection, { title: string; description: string; eyebrow: string }> = {
@@ -93,6 +94,7 @@ type AdminCapability = {
     description: string;
     risk: 'LOW' | 'MEDIUM' | 'HIGH' | 'CRITICAL';
     scope: 'GLOBAL' | 'PROFILE';
+    scopes?: string[];
 };
 
 type AdminAuditEvent = {
@@ -371,6 +373,9 @@ const profileActions = ref<
 >({});
 const profileActionStatus = ref<Record<string, string>>({});
 const profileActionSubmitting = ref<Record<string, boolean>>({});
+const visibleProfiles = computed(() =>
+    props.profileName ? profiles.value.filter((profile) => profile.profileName === props.profileName) : profiles.value
+);
 
 const runtimeActionPending = (profile: AdminProfile): boolean => {
     return profile.runtimeActions.some((action) => action.status === 'REQUESTED' || action.status === 'PARTIAL');
@@ -419,6 +424,12 @@ const rolesInput = ref('');
 const rolesMode = ref<'set' | 'grant' | 'revoke'>('grant');
 const rolesStatus = ref('');
 const capabilities = ref<AdminCapability[]>([]);
+const hasCapability = (permission: string, profileName?: string): boolean =>
+    capabilities.value.some((entry) => {
+        if (entry.permission !== permission && entry.permission !== 'admin.profiles.manage') return false;
+        if (!profileName || entry.scope === 'GLOBAL') return true;
+        return !entry.scopes?.length || entry.scopes.includes('*') || entry.scopes.includes(profileName);
+    });
 const selectedCapability = ref('');
 const capabilityProfile = ref('');
 const userActionReason = ref('');
@@ -769,7 +780,7 @@ const loadCapabilities = async () => {
     try {
         capabilities.value = await adminClient.capabilities.list.query();
         selectedCapability.value = capabilities.value[0]?.permission ?? '';
-        await loadGlobalAudit();
+        if (props.section === 'users' || props.section === 'audit') await loadGlobalAudit();
     } catch {
         capabilities.value = [];
     }
@@ -1102,7 +1113,7 @@ const createLocalAccount = async () => {
 };
 
 onMounted(() => {
-    if (props.section === 'users' || props.section === 'audit') {
+    if (props.section === 'users' || props.section === 'audit' || props.section === 'servers') {
         void loadCapabilities();
     }
     if (props.section === 'users') {
@@ -1344,8 +1355,8 @@ onMounted(() => {
                     <div class="bg-zinc-900 border border-amber-800/60 rounded-lg p-5 space-y-4">
                         <h4 class="text-base font-semibold">Kakao 없는 특수 계정 접근</h4>
                         <div class="text-xs text-zinc-400">
-                            운영자 role은 자동으로 모든 서버에 접근합니다. 테스트·복구·기타 계정은 아래에서
-                            서버 범위와 만료를 명시해 부여합니다. 복구 자격은 만료가 필수이며 최대 90일입니다.
+                            운영자 role은 자동으로 모든 서버에 접근합니다. 테스트·복구·기타 계정은 아래에서 서버 범위와
+                            만료를 명시해 부여합니다. 복구 자격은 만료가 필수이며 최대 90일입니다.
                         </div>
                         <div class="grid grid-cols-1 md:grid-cols-2 gap-2">
                             <select
@@ -1396,7 +1407,8 @@ onMounted(() => {
                             >
                                 <div class="flex flex-wrap items-center justify-between gap-2">
                                     <span class="font-semibold text-amber-200">
-                                        {{ grant.kind }} · {{ grant.profiles.length ? grant.profiles.join(', ') : '전체 profile' }}
+                                        {{ grant.kind }} ·
+                                        {{ grant.profiles.length ? grant.profiles.join(', ') : '전체 profile' }}
                                     </span>
                                     <button
                                         v-if="!grant.revokedAt"
@@ -1747,7 +1759,7 @@ onMounted(() => {
                             </button>
                         </div>
                         <div
-                            v-for="profile in profiles"
+                            v-for="profile in visibleProfiles"
                             :key="profile.profileName"
                             class="bg-zinc-900 border border-zinc-800 rounded-lg p-5 space-y-4"
                         >
@@ -1769,8 +1781,34 @@ onMounted(() => {
 
                             <div class="text-xs text-zinc-400">빌드 커밋: {{ profile.buildCommitSha ?? '미지정' }}</div>
 
+                            <nav class="flex flex-wrap gap-2" :aria-label="`${profile.profileName} 관리 탭`">
+                                <RouterLink
+                                    :to="`/admin/servers/${encodeURIComponent(profile.profileName)}`"
+                                    class="rounded border border-zinc-600 bg-zinc-800 px-3 py-2 text-xs font-semibold text-white"
+                                >
+                                    상태 · 설정
+                                </RouterLink>
+                                <RouterLink
+                                    v-if="hasCapability('admin.profiles.deploy', profile.profileName)"
+                                    :to="`/admin/servers/${encodeURIComponent(profile.profileName)}/version`"
+                                    class="rounded border border-blue-800 px-3 py-2 text-xs font-semibold text-blue-200 hover:bg-blue-950"
+                                >
+                                    버전 업데이트
+                                </RouterLink>
+                                <RouterLink
+                                    v-if="hasCapability('admin.scenarios.reset', profile.profileName)"
+                                    :to="`/admin/servers/${encodeURIComponent(profile.profileName)}/scenario`"
+                                    class="rounded border border-purple-800 px-3 py-2 text-xs font-semibold text-purple-200 hover:bg-purple-950"
+                                >
+                                    시나리오 초기화
+                                </RouterLink>
+                            </nav>
+
                             <div class="grid md:grid-cols-2 gap-3">
-                                <div class="space-y-2">
+                                <div
+                                    v-if="hasCapability('admin.profiles.settings', profile.profileName)"
+                                    class="space-y-2"
+                                >
                                     <label class="text-xs text-zinc-400">표시명</label>
                                     <input
                                         v-model="profileEdits[profile.profileName].korName"
@@ -1842,7 +1880,10 @@ onMounted(() => {
                                     </button>
                                 </div>
 
-                                <div class="space-y-2">
+                                <div
+                                    v-if="hasCapability('admin.profiles.runtime', profile.profileName)"
+                                    class="space-y-2"
+                                >
                                     <label class="text-xs text-zinc-400">특수 동작 메모</label>
                                     <input
                                         v-model="profileActions[profile.profileName].reason"
@@ -1877,12 +1918,6 @@ onMounted(() => {
                                     >
                                         1~1440 사이의 정수로 입력해 주세요.
                                     </div>
-                                    <label class="text-xs text-zinc-400">리셋 예약</label>
-                                    <input
-                                        v-model="profileActions[profile.profileName].scheduledAt"
-                                        type="datetime-local"
-                                        class="w-full bg-zinc-950 border border-zinc-700 rounded px-3 py-2 text-sm text-white"
-                                    />
                                     <div class="grid grid-cols-2 gap-2 pt-2">
                                         <button
                                             class="bg-blue-700 hover:bg-blue-600 text-white font-semibold px-3 py-2 rounded"
@@ -1923,18 +1958,6 @@ onMounted(() => {
                                             @click="requestProfileAction(profile.profileName, 'DELAY')"
                                         >
                                             연기
-                                        </button>
-                                        <button
-                                            class="bg-purple-600 hover:bg-purple-500 text-white font-semibold px-3 py-2 rounded"
-                                            @click="requestProfileAction(profile.profileName, 'RESET_NOW')"
-                                        >
-                                            즉시 리셋
-                                        </button>
-                                        <button
-                                            class="bg-purple-800 hover:bg-purple-700 text-white font-semibold px-3 py-2 rounded"
-                                            @click="requestProfileAction(profile.profileName, 'RESET_SCHEDULED')"
-                                        >
-                                            리셋 예약
                                         </button>
                                         <button
                                             class="bg-zinc-800 text-zinc-500 font-semibold px-3 py-2 rounded cursor-not-allowed"
@@ -1998,22 +2021,38 @@ onMounted(() => {
                                 </div>
                             </div>
 
-                            <div class="border-t border-zinc-800 pt-4">
+                            <div
+                                v-if="
+                                    hasCapability('admin.profiles.deploy', profile.profileName) ||
+                                    hasCapability('admin.scenarios.reset', profile.profileName)
+                                "
+                                class="border-t border-zinc-800 pt-4"
+                            >
                                 <div
                                     class="flex flex-col gap-3 rounded border border-violet-900/70 bg-violet-950/20 p-4 md:flex-row md:items-center md:justify-between"
                                 >
                                     <div>
-                                        <h4 class="text-sm font-semibold text-violet-200">배포와 시나리오 초기화</h4>
+                                        <h4 class="text-sm font-semibold text-violet-200">버전과 시즌 수명주기</h4>
                                         <p class="mt-1 text-xs text-zinc-500">
-                                            버전 선택, DB 유지 배포와 초기화 작업은 버전 업데이트에서 관리합니다.
+                                            DB를 보존하는 코드 배포와 DB를 교체하는 시나리오 초기화는 별도 작업입니다.
                                         </p>
                                     </div>
-                                    <RouterLink
-                                        to="/admin/releases"
-                                        class="rounded border border-violet-700 px-3 py-2 text-center text-xs font-semibold text-violet-200 hover:bg-violet-950"
-                                    >
-                                        버전 업데이트 열기
-                                    </RouterLink>
+                                    <div class="flex flex-wrap gap-2">
+                                        <RouterLink
+                                            v-if="hasCapability('admin.profiles.deploy', profile.profileName)"
+                                            :to="`/admin/servers/${encodeURIComponent(profile.profileName)}/version`"
+                                            class="rounded border border-blue-700 px-3 py-2 text-center text-xs font-semibold text-blue-200 hover:bg-blue-950"
+                                        >
+                                            버전 업데이트
+                                        </RouterLink>
+                                        <RouterLink
+                                            v-if="hasCapability('admin.scenarios.reset', profile.profileName)"
+                                            :to="`/admin/servers/${encodeURIComponent(profile.profileName)}/scenario`"
+                                            class="rounded border border-purple-700 px-3 py-2 text-center text-xs font-semibold text-purple-200 hover:bg-purple-950"
+                                        >
+                                            시나리오 초기화
+                                        </RouterLink>
+                                    </div>
                                 </div>
                             </div>
                         </div>

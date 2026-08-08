@@ -228,9 +228,10 @@ direct-navigation URL을 사용합니다. `/image/*`는 외부 Caddy가 소유�
 완전한 API·daemon·frontend 배포 bundle은 gateway orchestrator의
 commit-worktree build 경로에서 구성합니다.
 
-관리자 화면의 `DB 유지 배포`는 profile의 game migration만 적용하고 현재
-게임 DB를 seed하지 않습니다. `DB 초기화 배포`는 현재 시즌 테이블을 새
-시나리오로 교체하지만 `hall`, `ng_games`, 연감, 과거 장수·국가와 상속 자료는
+각 서버의 `버전 업데이트`는 profile의 game migration만 적용하고 현재
+게임 DB를 seed하지 않습니다. 별도 `시나리오 초기화`는 Git 업데이트 없이
+현재 게시 commit을 기본으로 사용하며, 필요할 때만 새 버전 배포와 결합합니다.
+초기화는 현재 시즌 테이블을 새 시나리오로 교체하지만 `hall`, `ng_games`, 연감, 과거 장수·국가와 상속 자료는
 보존합니다. Gateway API·frontend·orchestrator는 외부 release-controller가
 함께 전환합니다. 설치와 CLI self-upgrade 절차는
 [`app/release-controller/README.md`](app/release-controller/README.md)를 확인해
