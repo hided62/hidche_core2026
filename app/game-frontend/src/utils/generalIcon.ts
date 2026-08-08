@@ -1,5 +1,12 @@
-export const DEFAULT_GENERAL_ICON_URL = '/image/icons/default.jpg';
-export const DEFAULT_GATEWAY_USER_ICON_BASE_URL = '/gateway/api/user-icons';
+import {
+    configuredSharedIconPublicUrl,
+    configuredUserIconPublicUrl,
+    DEFAULT_USER_ICON_PUBLIC_URL,
+    externalizeLegacyImageUrl,
+} from './imageAssets.ts';
+
+export const DEFAULT_GENERAL_ICON_URL = `${configuredSharedIconPublicUrl()}/default.jpg`;
+export const DEFAULT_GATEWAY_USER_ICON_BASE_URL = DEFAULT_USER_ICON_PUBLIC_URL;
 
 export type GeneralIconSource = {
     picture?: string | null;
@@ -23,16 +30,16 @@ const encodeLegacyIconPath = (value: string): string =>
         })
         .join('/');
 
-const configuredUserIconBaseUrl = (): string =>
-    import.meta.env?.VITE_GATEWAY_USER_ICON_BASE_URL?.trim() || DEFAULT_GATEWAY_USER_ICON_BASE_URL;
-
 export const resolveGeneralIconUrl = (
     source: GeneralIconSource,
-    { legacyBaseUrl = '/image/icons', userIconBaseUrl = configuredUserIconBaseUrl() }: GeneralIconOptions = {}
+    {
+        legacyBaseUrl = configuredSharedIconPublicUrl(),
+        userIconBaseUrl = configuredUserIconPublicUrl(),
+    }: GeneralIconOptions = {}
 ): string => {
     const picture = source.picture?.trim() || 'default.jpg';
     const baseUrl = source.imageServer ? userIconBaseUrl : legacyBaseUrl;
-    const encodedPicture = source.imageServer ? encodeURIComponent(picture) : encodeLegacyIconPath(picture);
+    const encodedPicture = encodeLegacyIconPath(picture);
     return `${trimTrailingSlashes(baseUrl)}/${encodedPicture}`;
 };
 
@@ -43,7 +50,7 @@ export const resolveGeneralIconBackgroundImage = (source: GeneralIconSource, opt
 
 export const resolveMessageGeneralIconUrl = (
     icon: string | null | undefined,
-    userIconBaseUrl = configuredUserIconBaseUrl()
+    userIconBaseUrl = configuredUserIconPublicUrl()
 ): string => {
     const normalized = icon?.trim();
     if (!normalized) {
@@ -55,6 +62,9 @@ export const resolveMessageGeneralIconUrl = (
         return resolveGeneralIconUrl({ picture: userIconMatch[1], imageServer: 1 }, { userIconBaseUrl });
     }
 
+    if (normalized.startsWith('/image/')) {
+        return externalizeLegacyImageUrl(normalized);
+    }
     if (normalized.startsWith('/') || /^https?:\/\//iu.test(normalized)) {
         return normalized;
     }

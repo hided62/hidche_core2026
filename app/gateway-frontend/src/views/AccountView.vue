@@ -713,17 +713,17 @@ onBeforeUnmount(() => {
 
 .legacy-bg0 {
     background-color: #302016;
-    background-image: url('/image/game/back_walnut.jpg');
+    background-image: var(--sammo-texture-walnut, url('https://sam-image.hided.net/game/back_walnut.jpg'));
 }
 
 .legacy-bg1 {
     background-color: #14241b;
-    background-image: url('/image/game/back_green.jpg');
+    background-image: var(--sammo-texture-green, url('https://sam-image.hided.net/game/back_green.jpg'));
 }
 
 .legacy-bg2 {
     background-color: #172a52;
-    background-image: url('/image/game/back_blue.jpg');
+    background-image: var(--sammo-texture-blue, url('https://sam-image.hided.net/game/back_blue.jpg'));
 }
 
 #account-table caption {

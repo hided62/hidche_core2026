@@ -51,7 +51,7 @@ const installFixture = async (page: Page, options: LobbyFixtureOptions = {}) => 
         canCreateGeneral = true,
         myGeneral = {
             name: '선택장수',
-            picture: 'account-hash.png',
+            picture: 'users/core2026/account-hash.png',
             imageServer: 1,
         },
         selectionPoolEnabled = true,
@@ -168,7 +168,7 @@ const installFixture = async (page: Page, options: LobbyFixtureOptions = {}) => 
         });
         await fulfillTrpc(route, results);
     });
-    await page.route('**/gateway/api/user-icons/account-hash.png', async (route) => {
+    await page.route('https://sam-image.hided.net/icons/users/core2026/account-hash.png', async (route) => {
         await route.fulfill({
             status: 200,
             contentType: 'image/png',
@@ -189,7 +189,10 @@ test('exchanges the gateway token before loading authenticated lobby general dat
     await expect(row).toContainText('선택장수');
     await expect(row.getByRole('button', { name: '입장' })).toBeVisible();
     const portrait = row.locator('img');
-    await expect(portrait).toHaveAttribute('src', '/gateway/api/user-icons/account-hash.png');
+    await expect(portrait).toHaveAttribute(
+        'src',
+        'https://sam-image.hided.net/icons/users/core2026/account-hash.png'
+    );
     await expect.poll(() => portrait.evaluate((image: HTMLImageElement) => image.naturalWidth)).toBe(1);
 
     expect(gameOperations.find(({ operation }) => operation === 'auth.exchangeGatewayToken')).toEqual({

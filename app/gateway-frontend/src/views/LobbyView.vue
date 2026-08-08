@@ -9,6 +9,7 @@ import { trpc } from '../utils/trpc';
 import { createGameTrpc } from '../utils/gameTrpc';
 import type { GameRouter } from '../utils/gameTrpc';
 import { resolveServerSeasonStatus } from '../utils/serverSeasonStatus';
+import { configuredSharedIconPublicUrl, configuredUserIconPublicUrl } from '../utils/imageAssets';
 
 type GatewayRouterOutput = inferRouterOutputs<AppRouter>;
 type GameRouterOutput = inferRouterOutputs<GameRouter>;
@@ -40,7 +41,8 @@ const canAccessAdmin = computed(
         ) ?? false
 );
 const needsKakaoVerification = computed(() => me.value !== null && !me.value.kakaoVerified);
-const userIconBaseUrl = import.meta.env.VITE_GATEWAY_USER_ICON_BASE_URL ?? '/gateway/api/user-icons';
+const userIconBaseUrl = configuredUserIconPublicUrl();
+const sharedIconBaseUrl = configuredSharedIconPublicUrl();
 
 const formatGraceEndsAt = (value: string | null | undefined): string =>
     value ? new Date(value).toLocaleString('ko-KR') : '';
@@ -57,8 +59,8 @@ const encodeLegacyIconPath = (value: string): string =>
 const resolveGeneralPicture = (general: LobbyGeneral): string => {
     const picture = general.picture?.trim() || 'default.jpg';
     return general.imageServer
-        ? `${userIconBaseUrl.replace(/\/$/, '')}/${encodeURIComponent(picture)}`
-        : `/image/icons/${encodeLegacyIconPath(picture)}`;
+        ? `${userIconBaseUrl.replace(/\/$/, '')}/${encodeLegacyIconPath(picture)}`
+        : `${sharedIconBaseUrl}/${encodeLegacyIconPath(picture)}`;
 };
 const handleGeneralPictureError = (event: Event): void => {
     const image = event.currentTarget as HTMLImageElement;
@@ -66,7 +68,7 @@ const handleGeneralPictureError = (event: Event): void => {
         return;
     }
     image.dataset.generalIconFallbackSource = image.currentSrc;
-    image.src = '/image/icons/default.jpg';
+    image.src = `${sharedIconBaseUrl}/default.jpg`;
 };
 
 onMounted(async () => {

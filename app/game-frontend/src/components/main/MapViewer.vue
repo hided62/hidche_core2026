@@ -7,6 +7,7 @@ import MapCityBasic from './MapCityBasic.vue';
 import MapCityDetail from './MapCityDetail.vue';
 import { useMapViewerStore } from '../../stores/mapViewer';
 import { buildAssetUrl } from '../../utils/mapAssets';
+import { configuredGameAssetUrl } from '../../utils/imageAssets';
 
 interface MapSummary {
     year: number;
@@ -102,7 +103,7 @@ const resolveStateClass = (state: number): CityStateClass => {
     return 'wrong';
 };
 
-const assetBaseUrl = computed(() => import.meta.env.VITE_GAME_ASSET_URL?.trim() || '/image/game');
+const assetBaseUrl = computed(configuredGameAssetUrl);
 const resolveAsset = (path: string) => buildAssetUrl(assetBaseUrl.value, path);
 
 const nationById = computed(() => {

@@ -229,10 +229,7 @@ const nationStyle = (color: string) => ({
 const signerIcon = (signer: DiplomacyLetter['src'] | DiplomacyLetter['dest']): string | null => {
     if (signer.generalIcon) return signer.generalIcon;
     if (!signer.generalPicture) return null;
-    return resolveGeneralIconUrl(
-        { picture: signer.generalPicture, imageServer: signer.generalImageServer },
-        { legacyBaseUrl: '/image/general' }
-    );
+    return resolveGeneralIconUrl({ picture: signer.generalPicture, imageServer: signer.generalImageServer });
 };
 
 const toggleHistory = (letterId: number) => {

@@ -74,7 +74,7 @@ const resolveGeneralIcon = (general: General): string => {
         (typeof rawPicture === 'string' && rawPicture !== '') || typeof rawPicture === 'number'
             ? String(rawPicture)
             : 'default.jpg';
-    return `/image/icons/${picture}`;
+    return `https://sam-image.hided.net/icons/${picture}`;
 };
 
 export class ActionDefinition<

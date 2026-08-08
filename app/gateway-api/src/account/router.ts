@@ -77,7 +77,7 @@ const encodeIconPath = (picture: string): string => picture.split('/').map(encod
 
 const buildPictureUrl = (ctx: GatewayApiContext, picture: string, imageServer: number): string =>
     imageServer === 1
-        ? `${ctx.userIconPublicUrl.replace(/\/$/, '')}/${encodeURIComponent(picture)}`
+        ? `${ctx.userIconPublicUrl.replace(/\/$/, '')}/${encodeIconPath(picture)}`
         : `${ctx.sharedIconPublicUrl.replace(/\/$/, '')}/${encodeIconPath(picture)}`;
 
 const buildIconUrl = (ctx: GatewayApiContext, user: UserRecord): string | null => {

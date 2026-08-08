@@ -85,7 +85,7 @@ const readImage = async (relative: string): Promise<Buffer> => {
 
 const installImages = async (page: Page) => {
     for (const filename of ['back_walnut.jpg', 'back_green.jpg', 'back_blue.jpg']) {
-        await page.route(`**/image/game/${filename}`, async (route) => {
+        await page.route(`https://sam-image.hided.net/game/${filename}`, async (route) => {
             await route.fulfill({
                 status: 200,
                 contentType: 'image/jpeg',
@@ -93,7 +93,7 @@ const installImages = async (page: Page) => {
             });
         });
     }
-    await page.route('**/image/icons/**', async (route) => {
+    await page.route('https://sam-image.hided.net/icons/**', async (route) => {
         await route.fulfill({
             status: 200,
             contentType: 'image/jpeg',
@@ -270,6 +270,10 @@ test('matches the ref meeting-room geometry, typography, textures, and controls'
     await installApi(page, state);
     await page.setViewportSize({ width: 1000, height: 800 });
     await gotoBoard(page);
+    await expect(page.locator('.general-icon').first()).toHaveAttribute(
+        'src',
+        'https://sam-image.hided.net/icons/22.jpg'
+    );
     if (artifactRoot) {
         await page.screenshot({
             path: resolve(artifactRoot, 'board-core-desktop.png'),
@@ -331,9 +335,9 @@ test('matches the ref meeting-room geometry, typography, textures, and controls'
     expect(geometry.font.family).toContain('Pretendard');
     expect(geometry.font).toMatchObject({ size: '14px', lineHeight: '18.2px' });
     expect(geometry.whiteSpace).toBe('pre');
-    expect(geometry.walnut).toContain('back_walnut.jpg');
-    expect(geometry.green).toContain('back_green.jpg');
-    expect(geometry.blue).toContain('back_blue.jpg');
+    expect(geometry.walnut).toContain('https://sam-image.hided.net/game/back_walnut.jpg');
+    expect(geometry.green).toContain('https://sam-image.hided.net/game/back_green.jpg');
+    expect(geometry.blue).toContain('https://sam-image.hided.net/game/back_blue.jpg');
     expect(geometry.submitStyle).toEqual({
         backgroundColor: 'rgb(68, 68, 68)',
         borderColor: 'rgb(61, 61, 61)',

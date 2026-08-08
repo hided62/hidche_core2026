@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue';
 import type { MessageType } from '@sammo-ts/logic';
-import { resolveMessageGeneralIconUrl, useDefaultGeneralIcon } from '../../utils/generalIcon';
+import { DEFAULT_GENERAL_ICON_URL, resolveMessageGeneralIconUrl, useDefaultGeneralIcon } from '../../utils/generalIcon';
 
 interface MessageTarget {
     generalId: number;
@@ -48,7 +48,7 @@ const destination = computed<MessageTarget>(
             nationId: 0,
             nationName: '재야',
             color: '#000000',
-            icon: '/image/icons/default.jpg',
+            icon: DEFAULT_GENERAL_ICON_URL,
         }
 );
 

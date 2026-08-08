@@ -95,17 +95,28 @@ mount하고 다음 서버 전용 변수를 설정합니다.
 GATEWAY_IMAGE_UPLOAD_URL=https://sam-image.hided.net
 GATEWAY_IMAGE_UPLOAD_SECRET_FILE=/run/secrets/image_upload_core2026_secret
 GATEWAY_SHARED_ICON_PUBLIC_URL=https://sam-image.hided.net/icons
+GATEWAY_USER_ICON_PUBLIC_URL=https://sam-image.hided.net/icons
 GAME_IMAGE_UPLOAD_URL=https://sam-image.hided.net
 GAME_IMAGE_UPLOAD_SECRET_FILE=/run/secrets/image_upload_core2026_secret
 GAME_CONTENT_IMAGE_PUBLIC_URL=https://sam-image.hided.net/uploads/core2026
 IMAGE_SYNC_URL=https://sam-image.hided.net
 IMAGE_SYNC_SECRET_FILE=/run/secrets/image_sync_core2026_secret
+VITE_IMAGE_PUBLIC_URL=https://sam-image.hided.net
+VITE_GATEWAY_USER_ICON_BASE_URL=https://sam-image.hided.net/icons
 ```
 
 Gateway가 인증과 50KB·크기·형식을 확인한 뒤 60초짜리 HMAC 요청으로 서버 간
 PUT을 수행합니다. game-api의 국방·외교·정찰 편집기 첨부 이미지도 같은 계약을
 사용하되 `/uploads/core2026/` bind 경로에 저장합니다. 공유 비밀값은 `VITE_*`,
 브라우저 응답 또는 Cloudflare로 전달하지 않습니다.
+
+두 frontend는 별도 설정이 없으면 `https://sam-image.hided.net`을 공개 이미지
+origin으로 사용합니다. 게임 자산은 `/game`, 공용 장수 아이콘은 `/icons`,
+Core2026 사용자 아이콘은 서버가 발급한 `users/core2026/<파일>`을 `/icons`
+base 아래에 붙여 읽습니다. 로컬
+이미지 fixture가 필요한 비교 환경만 `VITE_IMAGE_PUBLIC_URL=/image`와 기존
+`VITE_GAME_ASSET_URL`을 명시적으로 덮어씁니다. 모든 `VITE_*` 값은 공개값이며,
+업로드 HMAC secret은 반드시 위의 server-side secret 파일로만 주입합니다.
 
 Gitea webhook을 놓친 경우에는 별도의 `image_sync_core2026_secret`을 mount한
 서버 컨테이너에서 `pnpm sync:image`를 실행합니다. 특정 이미지 저장소 commit을

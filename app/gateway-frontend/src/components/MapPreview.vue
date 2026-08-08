@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed } from 'vue';
+import { configuredGameAssetUrl } from '../utils/imageAssets';
 
 interface MapSummary {
     year: number;
@@ -40,7 +41,7 @@ const props = defineProps<{
 const BASE_MAP_WIDTH = 700;
 const BASE_MAP_HEIGHT = 500;
 
-const assetBase = computed(() => (import.meta.env.VITE_GAME_ASSET_URL ?? '/image').replace(/\/+$/, ''));
+const assetBase = computed(configuredGameAssetUrl);
 const season = computed(() => {
     if (props.mapData.month <= 3) return 'spring';
     if (props.mapData.month <= 6) return 'summer';
@@ -49,11 +50,11 @@ const season = computed(() => {
 });
 const mapBackground = computed(() => {
     const theme = props.mapLayout.mapName;
-    if (theme === 'ludo_rathowm') return `${assetBase.value}/game/map/ludo_rathowm/back.jpg`;
-    if (theme === 'chess') return `${assetBase.value}/game/map/chess/chessboard.png`;
-    if (theme === 'pokemon_v1') return `${assetBase.value}/game/map/pokemon_v1/back_pal8.png`;
-    if (theme === 'cr') return `${assetBase.value}/game/map/cr/bg-fs8.png`;
-    return `${assetBase.value}/game/map/che/bg_${season.value}.jpg`;
+    if (theme === 'ludo_rathowm') return `${assetBase.value}/map/ludo_rathowm/back.jpg`;
+    if (theme === 'chess') return `${assetBase.value}/map/chess/chessboard.png`;
+    if (theme === 'pokemon_v1') return `${assetBase.value}/map/pokemon_v1/back_pal8.png`;
+    if (theme === 'cr') return `${assetBase.value}/map/cr/bg-fs8.png`;
+    return `${assetBase.value}/map/che/bg_${season.value}.jpg`;
 });
 
 const nationById = computed(() => {

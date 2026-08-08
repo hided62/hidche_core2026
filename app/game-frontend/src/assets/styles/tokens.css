@@ -20,7 +20,7 @@
     --sammo-button-info-border: #2f89c5;
     --sammo-button-navigation-bg: #00582c;
     --sammo-button-navigation-border: #004f28;
-    --sammo-texture-walnut: url('/image/game/back_walnut.jpg');
-    --sammo-texture-green: url('/image/game/back_green.jpg');
-    --sammo-texture-blue: url('/image/game/back_blue.jpg');
+    --sammo-texture-walnut: url('https://sam-image.hided.net/game/back_walnut.jpg');
+    --sammo-texture-green: url('https://sam-image.hided.net/game/back_green.jpg');
+    --sammo-texture-blue: url('https://sam-image.hided.net/game/back_blue.jpg');
 }

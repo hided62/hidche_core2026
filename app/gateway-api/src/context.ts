@@ -77,7 +77,7 @@ export const createGatewayApiContext = (options: {
     oauthSessions: options.oauthSessions,
     publicBaseUrl: options.publicBaseUrl,
     userIconDir: options.userIconDir ?? 'uploads/user-icons',
-    userIconPublicUrl: options.userIconPublicUrl ?? `${options.publicBaseUrl.replace(/\/$/, '')}/user-icons`,
+    userIconPublicUrl: options.userIconPublicUrl ?? 'https://sam-image.hided.net/icons',
     sharedIconPublicUrl: options.sharedIconPublicUrl ?? 'https://sam-image.hided.net/icons',
     userIconUpload: options.userIconUpload,
     adminLocalAccountEnabled: options.adminLocalAccountEnabled,

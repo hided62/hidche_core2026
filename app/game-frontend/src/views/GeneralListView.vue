@@ -48,7 +48,7 @@ const loadDirectory = async () => {
     }
 };
 
-const imageUrl = (general: General): string => resolveGeneralIconUrl(general, { legacyBaseUrl: '/image/general' });
+const imageUrl = (general: General): string => resolveGeneralIconUrl(general);
 const injuredStat = (value: number, injury: number): number => Math.trunc((value * (100 - injury)) / 100);
 
 onMounted(() => {
