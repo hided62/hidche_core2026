@@ -565,6 +565,7 @@ const handleEnter = async (profile: LobbyProfile, targetPath: string) => {
                             <MapPreview
                                 :map-data="selectedMapPreview.mapData"
                                 :map-layout="selectedMapPreview.mapLayout"
+                                mode="detail"
                             />
                             <div v-if="profileDetails[selectedMapProfile.profileName]" class="text-xs text-zinc-400 mt-2">
                                 유저 {{ profileDetails[selectedMapProfile.profileName]?.userCnt ?? '-' }} /

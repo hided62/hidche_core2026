@@ -182,7 +182,7 @@ const handlePasswordReset = async (): Promise<void> => {
                     <span>{{ dateText }}</span>
                 </header>
                 <div v-if="mapData && mapLayout" class="map-frame">
-                    <MapPreview :map-data="mapData" :map-layout="mapLayout" />
+                    <MapPreview :map-data="mapData" :map-layout="mapLayout" mode="detail" />
                 </div>
                 <div v-else class="status-message">
                     {{ statusLoading ? '현황을 불러오는 중…' : statusError }}
