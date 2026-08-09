@@ -48,6 +48,13 @@ Gateway 관리자 콘솔은 `/gateway/admin`에서 시작합니다. 공개 로�
   분리된 요청으로 읽습니다. API가 profile의 현재 scenario를 표시하며 화면은
   그 항목을 기본 선택합니다. scenario ID `0`도 유효한 값이고, 초기 요청이
   실패하면 현재 버전 모드에서 다시 확인할 수 있습니다.
+- 서버 상태의 `서버 리셋 기본 옵션`은 `GatewayProfile.meta.resetDefaults`에
+  턴 간격, 동기화, 가상 장수, 연장, 가입 방식, 장수 생성 제한, NPC, 이미지,
+  토너먼트와 유저 자동턴 기본값을 저장합니다. 시나리오 초기화 화면은 대상
+  서버를 URL에서 결정한 뒤 이 메타를 별도 권한 검사로 읽어 폼에 적용합니다.
+  메타가 없거나 유효하지 않으면 기존 시스템 기본값을 사용합니다. 시나리오와
+  예약·가오픈·정식 오픈 시각은 매 실행마다 선택하므로 서버 기본값에 포함하지
+  않습니다.
 - Gateway 릴리스는 profile 작업과 다른 전역 `admin.releases.manage` 권한을
   사용하며 외부 release-controller가 실행합니다. 선택한 릴리스 작업의 단계와
   명령 출력을 관리자 화면이 long polling으로 이어 받아 표시하며, 완료된 이력의
@@ -57,15 +64,15 @@ Gateway 관리자 콘솔은 `/gateway/admin`에서 시작합니다. 공개 로�
 
 ## Profile 권한 분류
 
-| capability                       | 허용 작업                                                  |
-| -------------------------------- | ---------------------------------------------------------- |
-| `admin.profiles.runtime:<name>`  | 시작·정지·일시정지·재개와 시간 조정                        |
-| `admin.profiles.settings:<name>` | 표시색·표시명·인게임 공지·Kakao 미인증 접근/장수 생성 유예 |
-| `admin.profiles.deploy:<name>`   | DB를 유지하는 Git 버전 업데이트, 초기화와 새 버전 결합     |
-| `admin.scenarios.reset:<name>`   | 현재 배포 버전으로 시나리오 초기화                         |
-| `admin.reset.schedule:<name>`    | 허용된 시나리오 초기화를 미래 시각에 예약                  |
-| `admin.profiles.manage:<name>`   | 기존 역할 호환용 포괄 권한                                 |
-| `admin.releases.manage`          | profile과 분리된 Gateway control plane 배포·rollback       |
+| capability                       | 허용 작업                                                 |
+| -------------------------------- | --------------------------------------------------------- |
+| `admin.profiles.runtime:<name>`  | 시작·정지·일시정지·재개와 시간 조정                       |
+| `admin.profiles.settings:<name>` | 표시 정보·리셋 기본 옵션·Kakao 미인증 접근/장수 생성 유예 |
+| `admin.profiles.deploy:<name>`   | DB를 유지하는 Git 버전 업데이트, 초기화와 새 버전 결합    |
+| `admin.scenarios.reset:<name>`   | 현재 배포 버전으로 시나리오 초기화                        |
+| `admin.reset.schedule:<name>`    | 허용된 시나리오 초기화를 미래 시각에 예약                 |
+| `admin.profiles.manage:<name>`   | 기존 역할 호환용 포괄 권한                                |
+| `admin.releases.manage`          | profile과 분리된 Gateway control plane 배포·rollback      |
 
 기존 상태 화면의 `즉시 리셋`·`리셋 예약` 버튼은 실제 DB 초기화 operation과
 다른 metadata action이어서 제거했습니다. 초기화와 예약은 시나리오 초기화 탭의

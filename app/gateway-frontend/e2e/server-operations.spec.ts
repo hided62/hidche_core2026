@@ -40,9 +40,10 @@ type FixtureState = {
     profileNavigationRequests?: number;
     profileNavigationResolved?: boolean;
     scenarioFailuresRemaining?: number;
+    resetDefaults?: Record<string, unknown>;
 };
 
-const profile = (runtimeRunning: boolean) => ({
+const profile = (runtimeRunning: boolean, resetDefaults?: Record<string, unknown>) => ({
     profileName: 'che:2',
     profile: 'che',
     scenario: '2',
@@ -51,9 +52,11 @@ const profile = (runtimeRunning: boolean) => ({
     buildStatus: 'SUCCEEDED',
     buildCommitSha: '0123456789abcdef0123456789abcdef01234567',
     buildWorkspace: '/srv/sammo/worktrees/0123456789abcdef0123456789abcdef01234567',
-    meta: {},
+    meta: resetDefaults ? { resetDefaults } : {},
     createdAt: '2026-07-25T00:00:00.000Z',
     updatedAt: '2026-07-25T00:00:00.000Z',
+    activeOperation: null,
+    runtimeActions: [],
     runtime: {
         profileName: 'che:2',
         frontendRunning: runtimeRunning,
@@ -132,7 +135,7 @@ const installFixture = async (page: Page, state: FixtureState) => {
                 state.requestBodies.push({ operation: name, body });
             }
             if (name === 'admin.profiles.list') {
-                return response([profile(state.runtimeRunning)]);
+                return response([profile(state.runtimeRunning, state.resetDefaults)]);
             }
             if (name === 'admin.profiles.listNavigation') {
                 return response([
@@ -205,6 +208,26 @@ const installFixture = async (page: Page, state: FixtureState) => {
             if (name === 'admin.profiles.listScenarios') {
                 expect(names).toEqual(['admin.profiles.listScenarios']);
                 return response(scenarios);
+            }
+            if (name === 'admin.profiles.getResetDefaults') {
+                return response({
+                    source: state.resetDefaults ? 'PROFILE' : 'SYSTEM',
+                    defaults: state.resetDefaults ?? {
+                        turnTermMinutes: 60,
+                        sync: true,
+                        fiction: 1,
+                        extend: true,
+                        blockGeneralCreate: 0,
+                        npcMode: 0,
+                        showImgLevel: 3,
+                        tournamentTrig: true,
+                        joinMode: 'full',
+                        autorunUser: null,
+                    },
+                });
+            }
+            if (name === 'admin.profiles.updateMeta') {
+                return response(profile(state.runtimeRunning, state.resetDefaults));
             }
             if (name === 'admin.operations.requestReset') {
                 const operation: Operation = {
@@ -434,6 +457,68 @@ test('separates DB-preserving profile deployment from DB reset', async ({ page }
     await expect(page.getByTestId('operations-table')).toContainText('DEPLOY');
     expect(state.requestBodies.some((entry) => entry.operation === 'admin.operations.requestDeploy')).toBe(true);
     expect(state.requestBodies.some((entry) => entry.operation === 'admin.operations.requestReset')).toBe(false);
+});
+
+test('loads server metadata defaults into the reset form and submits them', async ({ page }) => {
+    const state: FixtureState = {
+        operations: [],
+        gatewayOperations: [],
+        runtimeRunning: true,
+        requestBodies: [],
+        resetDefaults: {
+            turnTermMinutes: 20,
+            sync: false,
+            fiction: 0,
+            extend: false,
+            blockGeneralCreate: 2,
+            npcMode: 1,
+            showImgLevel: 1,
+            tournamentTrig: false,
+            joinMode: 'onlyRandom',
+            autorunUser: { limitMinutes: 720, options: ['develop', 'train'] },
+        },
+    };
+    await installFixture(page, state);
+    page.on('dialog', (dialog) => dialog.accept());
+
+    await page.goto('admin/servers/che%3A2/scenario');
+    await expect(page.getByTestId('reset-turn-term')).toHaveValue('20');
+    await page.getByText('고급 시나리오 옵션').click();
+    await expect(page.getByTestId('reset-defaults-source')).toContainText('서버의 메타');
+    await expect(page.getByTestId('reset-npc-mode')).toHaveValue('1');
+    await page.getByTestId('request-reset').click();
+
+    await expect
+        .poll(() => state.requestBodies.find((entry) => entry.operation === 'admin.operations.requestReset'))
+        .toBeTruthy();
+    const request = JSON.stringify(
+        state.requestBodies.find((entry) => entry.operation === 'admin.operations.requestReset')?.body
+    );
+    expect(request).toContain('"turnTermMinutes":20');
+    expect(request).toContain('"npcMode":1');
+    expect(request).toContain('"joinMode":"onlyRandom"');
+    expect(request).toContain('"limitMinutes":720');
+    expect(request).toContain('"options":["develop","train"]');
+});
+
+test('edits server reset defaults through profile metadata settings', async ({ page }) => {
+    const state: FixtureState = { operations: [], gatewayOperations: [], runtimeRunning: true, requestBodies: [] };
+    await installFixture(page, state);
+
+    await page.goto('admin/servers/che%3A2');
+    await page.getByText('서버 리셋 기본 옵션').click();
+    await page.getByTestId('meta-reset-turn-term').selectOption('10');
+    await page.getByTestId('meta-reset-npc-mode').selectOption('2');
+    await page.getByPlaceholder('변경 사유 (필수)').fill('set reset defaults');
+    await page.getByRole('button', { name: '메타 저장' }).click();
+
+    await expect(page.getByText('메타 저장 완료')).toBeVisible();
+    const request = JSON.stringify(
+        state.requestBodies.find((entry) => entry.operation === 'admin.profiles.updateMeta')?.body
+    );
+    expect(request).toContain('"resetDefaults"');
+    expect(request).toContain('"turnTermMinutes":10');
+    expect(request).toContain('"npcMode":2');
 });
 
 test('renders the fixed-profile version form without waiting for the server list', async ({ page }) => {
