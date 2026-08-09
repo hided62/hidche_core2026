@@ -41,7 +41,7 @@ node_tag=$(printf '%s' "${CI_NODE_INDEX:-local}" | tr -cd 'a-zA-Z0-9_' | tr 'A-Z
 run_id=$(date -u +%m%d%H%M%S)_$$_${node_tag}
 export CONDITIONAL_INTEGRATION_RUN_ID=$run_id
 schema_ownership_token="sammo-conditional-integration:$run_id"
-supported_registry_modes="core create_general gateway_runtime immediate_action npc_possession reference_live_sortie reference_npc_possession select_pool"
+supported_registry_modes="core create_general external_fixture gateway_runtime immediate_action npc_possession reference_live_sortie reference_npc_possession select_pool"
 term_grace_seconds=${CONDITIONAL_INTEGRATION_TERM_GRACE_SECONDS:-10}
 case "$term_grace_seconds" in
     ''|*[!0-9]*)
@@ -88,6 +88,15 @@ done
 report_dir=$(mktemp -d)
 summary_file="$report_dir/summary.tsv"
 validated_registry_file="$report_dir/validated-registry.tsv"
+image_upload_secret_file="$report_dir/image-upload-secret"
+(
+    umask 077
+    node --input-type=module -e \
+        'import { randomBytes } from "node:crypto"; process.stdout.write(randomBytes(32).toString("hex"));' \
+        >"$image_upload_secret_file"
+)
+export GAME_IMAGE_UPLOAD_SECRET_FILE=$image_upload_secret_file
+export GATEWAY_IMAGE_UPLOAD_SECRET_FILE=$image_upload_secret_file
 active_process_group=
 cleanup_resources_started=0
 
@@ -452,7 +461,9 @@ validate_marker_registry
 pnpm install --frozen-lockfile
 pnpm --filter @sammo-ts/infra prisma:generate
 pnpm --filter @sammo-ts/common build
+pnpm --filter @sammo-ts/logic build
 pnpm --filter @sammo-ts/infra build
+pnpm --filter @sammo-ts/game-engine build
 
 GATEWAY_MIGRATION_TEST_DATABASE_URL=$base_database_url \
     pnpm --filter @sammo-ts/infra verify:migration:account-icon
