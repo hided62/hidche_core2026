@@ -87,15 +87,15 @@ export const useMainDashboardStore = defineStore('mainDashboard', () => {
         if (!layoutCity || !mapEntry) {
             return null;
         }
-        const [, , state, nationIdValue, region, supplyFlag] = mapEntry;
+        const [, level, state, nationIdValue, region, supplyFlag] = mapEntry;
         const nationEntry = map.nationList.find((nationEntry) => nationEntry[0] === nationIdValue);
         const regionName = layout.regionMap[region] ?? '-';
-        const levelName = layout.levelMap[layoutCity.level] ?? '-';
+        const levelName = layout.levelMap[level] ?? '-';
 
         return {
             id: layoutCity.id,
             name: layoutCity.name,
-            level: layoutCity.level,
+            level,
             levelName,
             region,
             regionName,
