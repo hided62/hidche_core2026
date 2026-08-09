@@ -1,4 +1,4 @@
-import { computed, ref, watch } from 'vue';
+import { computed, ref, toRaw, watch } from 'vue';
 import { defineStore } from 'pinia';
 import { MESSAGE_MAILBOX_NATIONAL_BASE, MESSAGE_MAILBOX_PUBLIC, type MessageType } from '@sammo-ts/logic';
 import type { RealtimeEvent, RealtimeReadModelChanges } from '@sammo-ts/common';
@@ -9,6 +9,7 @@ import { createLatestRefreshQueue } from '../utils/latestRefreshQueue';
 import { createRateLimitedRefreshQueue } from '../utils/rateLimitedRefreshQueue';
 import { structurallyShare } from '../utils/structuralShare';
 import { createMergedReadModelRefreshQueue, resolveDashboardRefreshPlan } from '../utils/dashboardReadModel';
+import { createBroadcastTabCoordinator, type BroadcastTabCoordinator } from '../utils/broadcastTabCoordinator';
 
 const REALTIME_FULL_REFRESH_MIN_INTERVAL_MS = 5_000;
 
@@ -35,6 +36,26 @@ export const useMainDashboardStore = defineStore('mainDashboard', () => {
     type ReservedTurnView = Awaited<ReturnType<typeof trpc.turns.reserved.getGeneral.query>>['turns'][number];
     type RecentRecord = Awaited<ReturnType<typeof trpc.general.getRecentRecords.query>>['global'][number];
     type FrontStatus = Awaited<ReturnType<typeof trpc.general.getFrontStatus.query>>;
+    type DashboardReadModelPatch = {
+        general?: PresentGeneralContext['general'] | null;
+        city?: PresentGeneralContext['city'] | null;
+        nation?: PresentGeneralContext['nation'] | null;
+        lobbyInfo?: LobbyInfo | null;
+        worldMap?: WorldMapResult | null;
+        mapLayout?: MapLayout | null;
+        commandTable?: CommandTable | null;
+        messages?: MessageBundle | null;
+        messageContacts?: MessageContacts | null;
+        boardAccess?: BoardAccess | null;
+        reservedGeneralTurns?: ReservedTurnView[] | null;
+        reservedGeneralRevision?: number;
+        globalRecords?: RecentRecord[];
+        generalRecords?: RecentRecord[];
+        worldHistory?: RecentRecord[];
+        frontStatus?: FrontStatus | null;
+    };
+    type DashboardTabMessage =
+        { kind: 'patch'; patch: DashboardReadModelPatch } | { kind: 'status'; status: 'idle' | 'connected' };
 
     const loading = ref(false);
     const refreshing = ref(false);
@@ -206,9 +227,15 @@ export const useMainDashboardStore = defineStore('mainDashboard', () => {
     });
 
     const setRealtimeEnabled = (enabled: boolean) => {
+        const wasEnabled = realtimeEnabled.value;
         realtimeEnabled.value = enabled;
         if (!enabled) {
             realtimeStatus.value = 'paused';
+            reconcileRealtimeCoordinator();
+            return;
+        }
+        if (!wasEnabled) {
+            void refreshQueue.request().finally(() => reconcileRealtimeCoordinator());
         }
     };
 
@@ -253,9 +280,7 @@ export const useMainDashboardStore = defineStore('mainDashboard', () => {
         surveyNotice.value = null;
     };
 
-    const applyRecentRecords = (
-        records: Awaited<ReturnType<typeof trpc.general.getRecentRecords.query>>
-    ) => {
+    const applyRecentRecords = (records: Awaited<ReturnType<typeof trpc.general.getRecentRecords.query>>) => {
         globalRecords.value = structurallyShare(
             globalRecords.value,
             mergeRecentRecords(globalRecords.value, records.global)
@@ -268,12 +293,84 @@ export const useMainDashboardStore = defineStore('mainDashboard', () => {
             worldHistory.value,
             mergeRecentRecords(worldHistory.value, records.history)
         );
-        lastGeneralRecordId = Math.max(
-            lastGeneralRecordId,
-            records.global[0]?.id ?? 0,
-            records.general[0]?.id ?? 0
-        );
+        lastGeneralRecordId = Math.max(lastGeneralRecordId, records.global[0]?.id ?? 0, records.general[0]?.id ?? 0);
         lastWorldHistoryId = Math.max(lastWorldHistoryId, records.history[0]?.id ?? 0);
+    };
+
+    const applyDashboardPatch = (patch: DashboardReadModelPatch) => {
+        if (patch.general === null) {
+            general.value = null;
+            city.value = null;
+            nation.value = null;
+            reservedGeneralTurns.value = null;
+            reservedGeneralRevision.value = 0;
+            boardAccess.value = null;
+            resetRecentRecords(null);
+        } else if (patch.general !== undefined) {
+            general.value = structurallyShare(general.value, patch.general);
+        }
+        if (patch.city !== undefined) city.value = structurallyShare(city.value, patch.city);
+        if (patch.nation !== undefined) nation.value = structurallyShare(nation.value, patch.nation);
+        if (patch.lobbyInfo !== undefined) lobbyInfo.value = structurallyShare(lobbyInfo.value, patch.lobbyInfo);
+        if (patch.worldMap !== undefined) worldMap.value = structurallyShare(worldMap.value, patch.worldMap);
+        if (patch.mapLayout !== undefined) mapLayout.value = structurallyShare(mapLayout.value, patch.mapLayout);
+        if (patch.commandTable !== undefined) {
+            commandTable.value = structurallyShare(commandTable.value, patch.commandTable);
+        }
+        if (patch.messages !== undefined) messages.value = structurallyShare(messages.value, patch.messages);
+        if (patch.messageContacts !== undefined) {
+            messageContacts.value = structurallyShare(messageContacts.value, patch.messageContacts);
+        }
+        if (patch.boardAccess !== undefined)
+            boardAccess.value = structurallyShare(boardAccess.value, patch.boardAccess);
+        if (patch.reservedGeneralTurns !== undefined) {
+            reservedGeneralTurns.value = structurallyShare<unknown>(
+                reservedGeneralTurns.value,
+                patch.reservedGeneralTurns
+            ) as ReservedTurnView[] | null;
+        }
+        if (patch.reservedGeneralRevision !== undefined) {
+            reservedGeneralRevision.value = patch.reservedGeneralRevision;
+        }
+        if (patch.globalRecords !== undefined) {
+            globalRecords.value = structurallyShare(globalRecords.value, patch.globalRecords);
+            lastGeneralRecordId = Math.max(lastGeneralRecordId, patch.globalRecords[0]?.id ?? 0);
+        }
+        if (patch.generalRecords !== undefined) {
+            generalRecords.value = structurallyShare(generalRecords.value, patch.generalRecords);
+            lastGeneralRecordId = Math.max(lastGeneralRecordId, patch.generalRecords[0]?.id ?? 0);
+        }
+        if (patch.worldHistory !== undefined) {
+            worldHistory.value = structurallyShare(worldHistory.value, patch.worldHistory);
+            lastWorldHistoryId = Math.max(lastWorldHistoryId, patch.worldHistory[0]?.id ?? 0);
+        }
+        if (patch.frontStatus === null) {
+            frontStatus.value = null;
+            surveyNotice.value = null;
+        } else if (patch.frontStatus !== undefined) {
+            updateFrontStatus(patch.frontStatus);
+        }
+    };
+
+    const currentDashboardPatch = (): DashboardReadModelPatch => {
+        const patch: DashboardReadModelPatch = {};
+        patch.general = toRaw(general.value);
+        patch.city = toRaw(city.value);
+        patch.nation = toRaw(nation.value);
+        patch.lobbyInfo = toRaw(lobbyInfo.value);
+        patch.worldMap = toRaw(worldMap.value);
+        patch.mapLayout = toRaw(mapLayout.value);
+        patch.commandTable = toRaw(commandTable.value);
+        patch.messages = toRaw(messages.value);
+        patch.messageContacts = toRaw(messageContacts.value);
+        patch.boardAccess = toRaw(boardAccess.value);
+        patch.reservedGeneralTurns = toRaw(reservedGeneralTurns.value as unknown) as ReservedTurnView[] | null;
+        patch.reservedGeneralRevision = reservedGeneralRevision.value;
+        patch.globalRecords = toRaw(globalRecords.value);
+        patch.generalRecords = toRaw(generalRecords.value);
+        patch.worldHistory = toRaw(worldHistory.value);
+        patch.frontStatus = toRaw(frontStatus.value);
+        return patch;
     };
 
     const refreshMainData = async () => {
@@ -384,9 +481,22 @@ export const useMainDashboardStore = defineStore('mainDashboard', () => {
 
     const refreshQueue = createLatestRefreshQueue(refreshMainData);
     const loadMainData = () => refreshQueue.request();
-    const realtimeRefreshQueue = createRateLimitedRefreshQueue(() => refreshQueue.request(), {
-        minIntervalMs: REALTIME_FULL_REFRESH_MIN_INTERVAL_MS,
-    });
+    let realtimeCoordinator: BroadcastTabCoordinator<DashboardTabMessage> | null = null;
+    let realtimeCoordinatorScope: string | null = null;
+
+    const publishDashboardPatch = (patch: DashboardReadModelPatch) => {
+        realtimeCoordinator?.postFromLeader({ kind: 'patch', patch });
+    };
+
+    const realtimeRefreshQueue = createRateLimitedRefreshQueue(
+        async () => {
+            await refreshQueue.request();
+            publishDashboardPatch(currentDashboardPatch());
+        },
+        {
+            minIntervalMs: REALTIME_FULL_REFRESH_MIN_INTERVAL_MS,
+        }
+    );
 
     const refreshChangedReadModels = async (changes: RealtimeReadModelChanges) => {
         const id = generalId.value;
@@ -452,35 +562,34 @@ export const useMainDashboardStore = defineStore('mainDashboard', () => {
                     frontPromise,
                 ]);
 
+            const patch: DashboardReadModelPatch = {};
             if (context === null) {
-                general.value = null;
-                city.value = null;
-                nation.value = null;
-                reservedGeneralTurns.value = null;
-                reservedGeneralRevision.value = 0;
-                boardAccess.value = null;
-                resetRecentRecords(null);
-                return;
+                patch.general = null;
+            } else if (context !== undefined) {
+                patch.general = context.general;
+                patch.city = context.city;
+                patch.nation = context.nation;
             }
-            if (context !== undefined) {
-                general.value = structurallyShare(general.value, context.general);
-                city.value = structurallyShare(city.value, context.city);
-                nation.value = structurallyShare(nation.value, context.nation);
-            }
-            if (lobby !== undefined) lobbyInfo.value = structurallyShare(lobbyInfo.value, lobby);
-            if (map !== undefined) worldMap.value = structurallyShare(worldMap.value, map);
-            if (commands !== undefined) commandTable.value = structurallyShare(commandTable.value, commands);
-            if (contacts !== undefined) messageContacts.value = structurallyShare(messageContacts.value, contacts);
-            if (access !== undefined) boardAccess.value = structurallyShare(boardAccess.value, access);
+            if (lobby !== undefined) patch.lobbyInfo = lobby;
+            if (map !== undefined) patch.worldMap = map;
+            if (commands !== undefined) patch.commandTable = commands;
+            if (contacts !== undefined) patch.messageContacts = contacts;
+            if (access !== undefined) patch.boardAccess = access;
             if (generalTurns !== undefined) {
-                reservedGeneralTurns.value = structurallyShare<unknown>(
-                    reservedGeneralTurns.value,
-                    generalTurns.turns
-                ) as ReservedTurnView[];
-                reservedGeneralRevision.value = generalTurns.revision;
+                patch.reservedGeneralTurns = generalTurns.turns;
+                patch.reservedGeneralRevision = generalTurns.revision;
             }
-            if (records) applyRecentRecords(records);
-            if (nextFrontStatus) updateFrontStatus(nextFrontStatus);
+            if (records) {
+                const nextGlobalRecords = mergeRecentRecords(globalRecords.value, records.global);
+                const nextGeneralRecords = mergeRecentRecords(generalRecords.value, records.general);
+                const nextWorldHistory = mergeRecentRecords(worldHistory.value, records.history);
+                patch.globalRecords = nextGlobalRecords;
+                patch.generalRecords = nextGeneralRecords;
+                patch.worldHistory = nextWorldHistory;
+            }
+            if (nextFrontStatus) patch.frontStatus = nextFrontStatus;
+            applyDashboardPatch(patch);
+            publishDashboardPatch(patch);
         } catch (err) {
             error.value = resolveErrorMessage(err);
         } finally {
@@ -496,7 +605,10 @@ export const useMainDashboardStore = defineStore('mainDashboard', () => {
             return;
         }
         try {
-            messages.value = structurallyShare(messages.value, await trpc.messages.getRecent.query({ generalId: id }));
+            const nextMessages = await trpc.messages.getRecent.query({ generalId: id });
+            const patch = { messages: nextMessages } satisfies DashboardReadModelPatch;
+            applyDashboardPatch(patch);
+            publishDashboardPatch(patch);
         } catch (err) {
             error.value = resolveErrorMessage(err);
         }
@@ -762,6 +874,61 @@ export const useMainDashboardStore = defineStore('mainDashboard', () => {
         realtimeToken = null;
     };
 
+    const isRealtimeParticipant = (): boolean =>
+        realtimeActive.value &&
+        document.visibilityState !== 'hidden' &&
+        realtimeEnabled.value &&
+        session.isReady &&
+        session.hasGeneral &&
+        generalId.value !== null;
+
+    const closeRealtimeCoordinator = () => {
+        const coordinator = realtimeCoordinator;
+        realtimeCoordinator = null;
+        realtimeCoordinatorScope = null;
+        coordinator?.stop();
+        closeRealtimeSource();
+    };
+
+    const reconcileRealtimeCoordinator = () => {
+        if (typeof window === 'undefined') return;
+        if (!isRealtimeParticipant()) {
+            closeRealtimeCoordinator();
+            return;
+        }
+        if (typeof BroadcastChannel === 'undefined') {
+            void connectRealtime();
+            return;
+        }
+
+        const profile = session.profile ?? 'game';
+        const account = session.user?.id ?? `general-${generalId.value}`;
+        const scope = `${encodeURIComponent(profile)}:${encodeURIComponent(account)}`;
+        if (realtimeCoordinator && realtimeCoordinatorScope === scope) return;
+
+        closeRealtimeCoordinator();
+        realtimeCoordinatorScope = scope;
+        realtimeCoordinator = createBroadcastTabCoordinator<DashboardTabMessage>(`sammo-main-dashboard:${scope}`, {
+            onLeadershipChange: (leader) => {
+                if (leader) {
+                    void connectRealtime();
+                } else {
+                    closeRealtimeSource();
+                    if (realtimeEnabled.value) realtimeStatus.value = 'idle';
+                }
+            },
+            onPayload: (message) => {
+                if (!isRealtimeParticipant()) return;
+                if (message.kind === 'patch') {
+                    applyDashboardPatch(message.patch);
+                    return;
+                }
+                realtimeStatus.value = message.status;
+            },
+        });
+        realtimeCoordinator.start();
+    };
+
     const ensureAccessToken = async (): Promise<string | null> => {
         if (!session.gameToken) {
             return null;
@@ -785,13 +952,17 @@ export const useMainDashboardStore = defineStore('mainDashboard', () => {
             document.visibilityState === 'hidden' ||
             !realtimeEnabled.value ||
             !session.isReady ||
-            !session.hasGeneral
+            !session.hasGeneral ||
+            (realtimeCoordinator !== null && !realtimeCoordinator.isLeader())
         ) {
             return;
         }
         const token = await ensureAccessToken();
         if (!token) {
             realtimeStatus.value = 'idle';
+            return;
+        }
+        if (!isRealtimeParticipant() || (realtimeCoordinator !== null && !realtimeCoordinator.isLeader())) {
             return;
         }
         if (realtimeSource && realtimeToken === token) {
@@ -806,11 +977,14 @@ export const useMainDashboardStore = defineStore('mainDashboard', () => {
 
         source.addEventListener('open', () => {
             realtimeStatus.value = 'connected';
+            realtimeCoordinator?.postFromLeader({ kind: 'status', status: 'connected' });
         });
         source.addEventListener('error', () => {
             realtimeStatus.value = realtimeEnabled.value ? 'idle' : 'paused';
+            realtimeCoordinator?.postFromLeader({ kind: 'status', status: 'idle' });
         });
         source.addEventListener('turnCompleted', (event) => {
+            if (realtimeCoordinator !== null && !realtimeCoordinator.isLeader()) return;
             const payload = parseRealtimePayload(event);
             if (!payload || payload.type !== 'turnCompleted') {
                 return;
@@ -823,6 +997,7 @@ export const useMainDashboardStore = defineStore('mainDashboard', () => {
             readModelRefreshQueue.request(payload.changes);
         });
         source.addEventListener('readModelChanged', (event) => {
+            if (realtimeCoordinator !== null && !realtimeCoordinator.isLeader()) return;
             const payload = parseRealtimePayload(event);
             if (!payload || payload.type !== 'readModelChanged') {
                 return;
@@ -830,6 +1005,7 @@ export const useMainDashboardStore = defineStore('mainDashboard', () => {
             readModelRefreshQueue.request(payload.changes);
         });
         source.addEventListener('messageCreated', (event) => {
+            if (realtimeCoordinator !== null && !realtimeCoordinator.isLeader()) return;
             const payload = parseRealtimePayload(event);
             if (!payload || payload.type !== 'messageCreated') {
                 return;
@@ -841,6 +1017,7 @@ export const useMainDashboardStore = defineStore('mainDashboard', () => {
         source.addEventListener('ping', () => {
             if (realtimeEnabled.value) {
                 realtimeStatus.value = 'connected';
+                realtimeCoordinator?.postFromLeader({ kind: 'status', status: 'connected' });
             }
         });
     };
@@ -850,13 +1027,12 @@ export const useMainDashboardStore = defineStore('mainDashboard', () => {
         if (document.visibilityState === 'hidden') {
             realtimeRefreshQueue.cancelPending();
             readModelRefreshQueue.cancelPending();
-            closeRealtimeSource();
+            closeRealtimeCoordinator();
             realtimeStatus.value = 'idle';
             return;
         }
         realtimeRefreshQueue.beginCooldown();
-        void connectRealtime();
-        realtimeRefreshQueue.request();
+        void refreshQueue.request().finally(() => reconcileRealtimeCoordinator());
     };
 
     const startRealtime = () => {
@@ -867,13 +1043,14 @@ export const useMainDashboardStore = defineStore('mainDashboard', () => {
             document.addEventListener('visibilitychange', handleVisibilityChange);
             visibilityListenerInstalled = true;
         }
+        reconcileRealtimeCoordinator();
     };
 
     const stopRealtime = () => {
         realtimeActive.value = false;
         realtimeRefreshQueue.cancelPending();
         readModelRefreshQueue.cancelPending();
-        closeRealtimeSource();
+        closeRealtimeCoordinator();
         if (visibilityListenerInstalled) {
             document.removeEventListener('visibilitychange', handleVisibilityChange);
             visibilityListenerInstalled = false;
@@ -882,24 +1059,22 @@ export const useMainDashboardStore = defineStore('mainDashboard', () => {
     };
 
     watch(
-        () => [realtimeActive.value, realtimeEnabled.value, session.isReady, session.hasGeneral, session.gameToken],
+        () => [
+            realtimeActive.value,
+            realtimeEnabled.value,
+            session.isReady,
+            session.hasGeneral,
+            session.gameToken,
+            session.profile,
+            session.user?.id,
+            generalId.value,
+        ],
         ([active, enabled, ready, hasGeneral]) => {
-            if (!active) {
-                closeRealtimeSource();
+            realtimeStatus.value = !enabled ? 'paused' : realtimeStatus.value;
+            if (!active || !ready || !hasGeneral) {
                 realtimeStatus.value = enabled ? 'idle' : 'paused';
-                return;
             }
-            if (!enabled) {
-                closeRealtimeSource();
-                realtimeStatus.value = 'paused';
-                return;
-            }
-            if (!ready || !hasGeneral) {
-                closeRealtimeSource();
-                realtimeStatus.value = 'idle';
-                return;
-            }
-            void connectRealtime();
+            reconcileRealtimeCoordinator();
         }
     );
 

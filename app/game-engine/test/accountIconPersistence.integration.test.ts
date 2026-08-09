@@ -306,6 +306,7 @@ integration('adjustGeneralIcon PostgreSQL persistence', () => {
             CHECK (request_id <> '${rollbackRequestId}' OR status <> 'SUCCEEDED')
         `);
         await expect(execute(rollbackCommand)).rejects.toThrow(`violates check constraint "${rollbackConstraint}"`);
+        expect(hooks.takeCommittedReadModelChanges()).toBeNull();
         expect(world.getGeneralById(targetGeneralId)).toMatchObject({
             picture: initialPicture,
             imageServer: initialImageServer,
@@ -334,6 +335,7 @@ integration('adjustGeneralIcon PostgreSQL persistence', () => {
         );
         await createInputEvent(actorMismatchCommand, foreignUserId);
         await expect(execute(actorMismatchCommand)).rejects.toThrow('actor does not match');
+        expect(hooks.takeCommittedReadModelChanges()).toBeNull();
         expect(world.getGeneralById(targetGeneralId)).toMatchObject({
             picture: initialPicture,
             imageServer: initialImageServer,
@@ -356,6 +358,13 @@ integration('adjustGeneralIcon PostgreSQL persistence', () => {
             ok: true,
             generalId: targetGeneralId,
             updated: true,
+        });
+        expect(hooks.takeCommittedReadModelChanges()).toMatchObject({
+            generalIds: [targetGeneralId],
+            mapGeneralIds: [],
+            frontStatusGeneralIds: [],
+            lobbyGeneralIds: [targetGeneralId],
+            reservedGeneralIds: [],
         });
         expect(world.getGeneralById(targetGeneralId)).toMatchObject({
             picture: nextPicture,

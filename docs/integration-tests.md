@@ -84,6 +84,13 @@ runner는 test 시작 전에 실패합니다. 지원 mode에 marker가 하나도
 실행 group의 marker 정규식이 비어도 전체 파일로 선택 범위를 넓히지 않고
 실패합니다.
 
+`external_fixture` mode는 격리 빈 schema로 만들 수 없는 명시적 예외입니다.
+현재 `CURRENT_SEASON_FIXTURE_DATABASE_URL`은 별도 Ref 현 시즌 importer가 만든
+read-only snapshot을 요구하므로 조건부 runner의 pass/skip 집계에 포함하지
+않습니다. 이 mode는 registry 누락을 숨기기 위한 일반 제외 수단이 아니며,
+해당 fixture 검증은 실제 imported snapshot URL을 주입해 별도로 실행하고 결과를
+외부 fixture 범위로 보고해야 합니다.
+
 관리자 시간 조정의 PostgreSQL 경계는
 `runtimeClockShiftPersistence.integration.test.ts`, gateway action
 `PARTIAL → APPLIED` 경계는 `gatewayRuntimeAction.integration.test.ts`입니다.

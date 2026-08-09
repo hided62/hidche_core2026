@@ -1,5 +1,6 @@
 # Environment variable	Execution mode
 CREATE_GENERAL_DATABASE_URL	create_general
+CURRENT_SEASON_FIXTURE_DATABASE_URL	external_fixture
 GATEWAY_RUNTIME_ACTION_DATABASE_URL	gateway_runtime
 GATEWAY_OPERATION_DATABASE_URL	gateway_runtime
 GATEWAY_RELEASE_DATABASE_URL	gateway_runtime
