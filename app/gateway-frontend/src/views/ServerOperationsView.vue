@@ -3,7 +3,7 @@ import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } 
 
 import ServerProfileTabs from '../components/ServerProfileTabs.vue';
 import AdminConsoleLayout from '../layouts/AdminConsoleLayout.vue';
-import { trpc } from '../utils/trpc';
+import { directTrpc, trpc } from '../utils/trpc';
 
 type OperationPageMode = 'version' | 'scenario' | 'gateway';
 
@@ -13,12 +13,14 @@ const props = defineProps<{
 }>();
 
 const adminClient = trpc.admin;
+const scenarioClient = directTrpc.admin;
 
 type Scenario = {
     id: number;
     title: string;
     year: number | null;
     npcCount: number;
+    isCurrent: boolean;
 };
 
 type Operation = {
@@ -84,6 +86,7 @@ const selectedProfileName = computed(() => props.profileName ?? '');
 const capabilities = ref<Array<{ permission: string; scopes?: string[] }>>([]);
 const loading = ref(false);
 const catalogLoading = ref(false);
+const catalogAttempted = ref(false);
 const submitting = ref(false);
 const message = ref('');
 const errorMessage = ref('');
@@ -95,7 +98,7 @@ let componentMounted = false;
 const form = reactive({
     sourceMode: (props.mode === 'scenario' ? 'CURRENT' : 'BRANCH') as 'CURRENT' | 'BRANCH' | 'COMMIT',
     sourceRef: 'main',
-    scenarioId: 0,
+    scenarioId: null as number | null,
     turnTermMinutes: 60,
     sync: true,
     fiction: 1,
@@ -372,20 +375,22 @@ const loadScenarios = async () => {
     }
     catalogLoading.value = true;
     try {
-        const result = await adminClient.profiles.listScenarios.query({
+        const result = await scenarioClient.profiles.listScenarios.query({
             profileName: selectedProfileName.value,
             gitRef: form.sourceMode === 'CURRENT' ? undefined : form.sourceRef.trim(),
             sourceMode: form.sourceMode,
         });
         scenarios.value = result as Scenario[];
         if (!scenarios.value.some((scenario) => scenario.id === form.scenarioId)) {
-            form.scenarioId = scenarios.value[0]?.id ?? 0;
+            form.scenarioId =
+                scenarios.value.find((scenario) => scenario.isCurrent)?.id ?? scenarios.value[0]?.id ?? null;
         }
         message.value = `${scenarios.value.length}개 시나리오를 확인했습니다.`;
     } catch (error) {
         scenarios.value = [];
         errorMessage.value = error instanceof Error ? error.message : '소스에서 시나리오를 읽지 못했습니다.';
     } finally {
+        catalogAttempted.value = true;
         catalogLoading.value = false;
     }
 };
@@ -405,15 +410,16 @@ const requestReset = async () => {
     if (!selectedProfileName.value || activeOperation.value) {
         return;
     }
-    if ((form.sourceMode !== 'CURRENT' && !form.sourceRef.trim()) || !form.scenarioId) {
+    if ((form.sourceMode !== 'CURRENT' && !form.sourceRef.trim()) || form.scenarioId === null) {
         errorMessage.value = '초기화 소스와 시나리오를 먼저 선택해주세요.';
         return;
     }
+    const scenarioId = form.scenarioId;
     const sourceLabel =
         form.sourceMode === 'CURRENT' ? '현재 배포 버전' : form.sourceMode === 'BRANCH' ? '브랜치' : '커밋';
     if (
         !window.confirm(
-            `${selectedProfileName.value}의 게임 DB를 초기화합니다.\n${sourceLabel}${form.sourceMode === 'CURRENT' ? '' : `: ${form.sourceRef}`}\n시나리오: ${form.scenarioId}`
+            `${selectedProfileName.value}의 게임 DB를 초기화합니다.\n${sourceLabel}${form.sourceMode === 'CURRENT' ? '' : `: ${form.sourceRef}`}\n시나리오: ${scenarioId}`
         )
     ) {
         return;
@@ -427,7 +433,7 @@ const requestReset = async () => {
             scheduledAt: toIso(form.scheduledAt),
             reason: form.reason.trim() || undefined,
             install: {
-                scenarioId: form.scenarioId,
+                scenarioId,
                 turnTermMinutes: form.turnTermMinutes,
                 sync: form.sync,
                 fiction: form.fiction,
@@ -492,6 +498,18 @@ watch(selectedGatewayOperationId, (operationId) => {
     gatewayReleaseLogConnection.value = operationId ? 'connected' : 'idle';
     if (operationId && componentMounted) void pollGatewayReleaseLogs(operationId, releaseLogLoopGeneration);
 });
+
+watch(
+    () => form.sourceMode,
+    (sourceMode) => {
+        scenarios.value = [];
+        form.scenarioId = null;
+        catalogAttempted.value = false;
+        if (sourceMode === 'CURRENT' && componentMounted) {
+            void loadScenarios();
+        }
+    }
+);
 
 onMounted(async () => {
     componentMounted = true;
@@ -601,8 +619,12 @@ onBeforeUnmount(() => {
                         <p class="text-xs text-amber-200/80" data-testid="source-help">{{ sourceHelp }}</p>
                     </fieldset>
 
-                    <div v-if="form.sourceMode !== 'CURRENT'" class="grid gap-3 md:grid-cols-[1fr_auto]">
+                    <div
+                        v-if="form.sourceMode !== 'CURRENT' || mode === 'scenario'"
+                        class="grid gap-3 md:grid-cols-[1fr_auto]"
+                    >
                         <input
+                            v-if="form.sourceMode !== 'CURRENT'"
                             v-model="form.sourceRef"
                             class="rounded border border-zinc-700 bg-zinc-950 px-3 py-2 font-mono text-sm text-white"
                             :placeholder="
@@ -620,7 +642,7 @@ onBeforeUnmount(() => {
                             data-testid="load-scenarios"
                             @click="loadScenarios"
                         >
-                            시나리오 확인
+                            {{ catalogLoading ? '확인 중…' : catalogAttempted ? '시나리오 재확인' : '시나리오 확인' }}
                         </button>
                     </div>
 
@@ -632,8 +654,15 @@ onBeforeUnmount(() => {
                                 class="mt-1 w-full rounded border border-zinc-700 bg-zinc-950 px-3 py-2 text-sm text-white"
                                 data-testid="scenario-select"
                             >
+                                <option v-if="catalogLoading" :value="null" disabled>
+                                    시나리오를 불러오는 중입니다…
+                                </option>
+                                <option v-else-if="scenarios.length === 0" :value="null" disabled>
+                                    선택할 수 있는 시나리오가 없습니다.
+                                </option>
                                 <option v-for="scenario in scenarios" :key="scenario.id" :value="scenario.id">
                                     {{ scenario.id }} · {{ scenario.title }} (NPC {{ scenario.npcCount }})
+                                    {{ scenario.isCurrent ? '· 현재 시나리오' : '' }}
                                 </option>
                             </select>
                         </label>
@@ -784,7 +813,7 @@ onBeforeUnmount(() => {
                             v-else
                             type="submit"
                             class="w-full rounded bg-amber-500 px-4 py-3 font-bold text-black hover:bg-amber-400 disabled:cursor-not-allowed disabled:opacity-40"
-                            :disabled="submitting || Boolean(activeOperation) || !form.scenarioId"
+                            :disabled="submitting || Boolean(activeOperation) || form.scenarioId === null"
                             data-testid="request-reset"
                         >
                             {{ form.scheduledAt ? '시나리오 초기화 예약' : '시나리오 초기화' }}

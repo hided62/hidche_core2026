@@ -326,6 +326,24 @@ describe('admin profile navigation API', () => {
     });
 });
 
+describe('admin scenario catalog API', () => {
+    it('marks scenario zero as the current selectable scenario', async () => {
+        const harness = await buildCaller(
+            async () => {
+                throw new Error('not used');
+            },
+            { profileScenario: '0' }
+        );
+
+        const scenarios = await harness.caller.admin.profiles.listScenarios({
+            profileName: 'che:2',
+            sourceMode: 'CURRENT',
+        });
+
+        expect(scenarios.find((scenario) => scenario.id === 0)?.isCurrent).toBe(true);
+    });
+});
+
 describe('gateway notice API', () => {
     const dirtyNotice =
         '<b>점검</b><br><script>globalThis.__noticeXss=1</script>' +

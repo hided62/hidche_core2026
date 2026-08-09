@@ -44,6 +44,10 @@ Gateway 관리자 콘솔은 `/gateway/admin`에서 시작합니다. 공개 로�
 - 시나리오 초기화는 기본적으로 서버에 현재 게시된 commit을 사용하므로 Git
   업데이트가 필요하지 않습니다. 새 branch/commit과 함께 초기화하려면 초기화
   권한과 버전 배포 권한이 모두 필요합니다.
+- 현재 배포 버전의 시나리오 catalog는 capability·operation polling batch와
+  분리된 요청으로 읽습니다. API가 profile의 현재 scenario를 표시하며 화면은
+  그 항목을 기본 선택합니다. scenario ID `0`도 유효한 값이고, 초기 요청이
+  실패하면 현재 버전 모드에서 다시 확인할 수 있습니다.
 - Gateway 릴리스는 profile 작업과 다른 전역 `admin.releases.manage` 권한을
   사용하며 외부 release-controller가 실행합니다. 선택한 릴리스 작업의 단계와
   명령 출력을 관리자 화면이 long polling으로 이어 받아 표시하며, 완료된 이력의
