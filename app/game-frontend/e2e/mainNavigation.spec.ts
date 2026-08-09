@@ -239,6 +239,10 @@ const installRealtimeHarness = async (page: Page) => {
                 );
             },
         });
+        Object.defineProperty(window, '__hasMainRealtime', {
+            configurable: true,
+            value: () => TestEventSource.latest !== null,
+        });
     });
 };
 
@@ -513,7 +517,7 @@ test('mobile single document refreshes once and preserves tokens on lobby return
     expect(state.operations).not.toContain('auth.logout');
 });
 
-test('turn realtime refresh keeps rendered panels mounted and patches only changed state', async ({ page }) => {
+test('turn realtime refresh is rate limited, patches in place, and stops after leaving main', async ({ page }) => {
     const state: NavigationFixture = {
         officerLevel: 5,
         permission: 2,
@@ -564,23 +568,19 @@ test('turn realtime refresh keeps rendered panels mounted and patches only chang
     await page.evaluate(() => {
         const emit = (window as unknown as { __emitMainRealtime: (type: string, payload: unknown) => void })
             .__emitMainRealtime;
-        emit('turnCompleted', { year: 185, month: 2, processedAt: new Date().toISOString() });
-        emit('turnCompleted', { year: 185, month: 2, processedAt: new Date().toISOString() });
-        emit('turnCompleted', { year: 185, month: 2, processedAt: new Date().toISOString() });
+        for (let index = 0; index < 100; index += 1) {
+            emit('turnCompleted', { at: new Date().toISOString(), lastTurnTime: '0185-02-01T00:00:00.000Z' });
+        }
     });
 
-    await expect.poll(() => state.generalMeCalls).toBe(callsBeforeRefresh + 1);
+    await new Promise((resolve) => setTimeout(resolve, 500));
+    expect(state.generalMeCalls).toBe(callsBeforeRefresh);
+    await expect.poll(() => state.generalMeCalls, { timeout: 7_000 }).toBe(callsBeforeRefresh + 1);
     await expect(page.locator('[data-main-target="general"] .skeleton-line')).toHaveCount(0);
     await expect(page.locator('[data-main-target="city"] .skeleton-line')).toHaveCount(0);
-    await expect(page.getByRole('button', { name: '갱 신' })).toHaveAttribute('aria-busy', 'true');
-    if (autoRefreshArtifactRoot) {
-        await mkdir(resolve(autoRefreshArtifactRoot), { recursive: true });
-        await page.screenshot({ path: resolve(autoRefreshArtifactRoot, 'auto-refresh-in-flight.png'), fullPage: true });
-    }
-
-    await expect.poll(() => state.generalMeCalls, { timeout: 5_000 }).toBe(callsBeforeRefresh + 2);
-    await expect(page.locator('.general-title')).toContainText('부드럽게갱신된장수');
     await expect(page.getByRole('button', { name: '갱 신' })).toHaveAttribute('aria-busy', 'false');
+    expect(state.generalMeCalls).toBe(callsBeforeRefresh + 1);
+    await expect(page.locator('.general-title')).toContainText('부드럽게갱신된장수');
 
     const profile = await page.evaluate(() => {
         const probe = (
@@ -615,7 +615,7 @@ test('turn realtime refresh keeps rendered panels mounted and patches only chang
                 resolve(autoRefreshArtifactRoot, 'profile.json'),
                 `${JSON.stringify(
                     {
-                        emittedTurnEvents: 3,
+                        emittedTurnEvents: 100,
                         refreshRequests: state.generalMeCalls - callsBeforeRefresh,
                         inFlightSkeletons: { general: 0, city: 0 },
                         ...profile,
@@ -626,4 +626,22 @@ test('turn realtime refresh keeps rendered panels mounted and patches only chang
             ),
         ]);
     }
+
+    await page.locator(`a[href="${basePath}/board"]`).first().click();
+    await page.waitForURL(`**${basePath}/board`);
+    expect(
+        await page.evaluate(
+            () =>
+                (window as unknown as { __hasMainRealtime: () => boolean }).__hasMainRealtime()
+        )
+    ).toBe(false);
+    const callsAfterLeavingMain = state.generalMeCalls;
+    await page.evaluate(() => {
+        (window as unknown as { __emitMainRealtime: (type: string, payload: unknown) => void }).__emitMainRealtime(
+            'turnCompleted',
+            { at: new Date().toISOString(), lastTurnTime: '0185-02-01T00:00:00.000Z' }
+        );
+    });
+    await new Promise((resolve) => setTimeout(resolve, 300));
+    expect(state.generalMeCalls).toBe(callsAfterLeavingMain);
 });
