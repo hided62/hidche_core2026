@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue';
+import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue';
 
 import AdminConsoleLayout from '../layouts/AdminConsoleLayout.vue';
 import { trpc } from '../utils/trpc';
@@ -80,11 +80,26 @@ type GatewayReleaseOperation = {
     completedAt?: string;
 };
 
+type GatewayReleaseLog = {
+    cursor: string;
+    operationId: string;
+    level: 'INFO' | 'OUTPUT' | 'ERROR';
+    phase: string;
+    message: string;
+    createdAt: string;
+};
+
 const profiles = ref<Profile[]>([]);
 const scenarios = ref<Scenario[]>([]);
 const operations = ref<Operation[]>([]);
 const gatewayReleaseState = ref<GatewayReleaseState | null>(null);
 const gatewayReleaseOperations = ref<GatewayReleaseOperation[]>([]);
+const selectedGatewayOperationId = ref('');
+const gatewayReleaseLogs = ref<GatewayReleaseLog[]>([]);
+const gatewayReleaseLogCursor = ref<string>();
+const gatewayReleaseLogStatus = ref('');
+const gatewayReleaseLogConnection = ref<'idle' | 'connected' | 'reconnecting'>('idle');
+const gatewayReleaseLogViewport = ref<HTMLElement>();
 const gatewayReleaseAvailable = ref(false);
 const selectedProfileName = ref(props.profileName ?? '');
 const capabilities = ref<Array<{ permission: string; scopes?: string[] }>>([]);
@@ -95,6 +110,8 @@ const message = ref('');
 const errorMessage = ref('');
 let pollTimer: ReturnType<typeof setInterval> | undefined;
 let stateRequestInFlight = false;
+let releaseLogLoopGeneration = 0;
+let componentMounted = false;
 
 const form = reactive({
     sourceMode: (props.mode === 'scenario' ? 'CURRENT' : 'BRANCH') as 'CURRENT' | 'BRANCH' | 'COMMIT',
@@ -126,6 +143,10 @@ const gatewayForm = reactive({
     sourceRef: 'main',
     reason: '',
 });
+
+const selectedGatewayOperation = computed(
+    () => gatewayReleaseOperations.value.find((operation) => operation.id === selectedGatewayOperationId.value) ?? null
+);
 
 const selectedProfile = computed(
     () => profiles.value.find((profile) => profile.profileName === selectedProfileName.value) ?? null
@@ -178,6 +199,8 @@ const toIso = (value: string): string | undefined => {
 };
 
 const formatTime = (value?: string): string => (value ? new Date(value).toLocaleString('ko-KR') : '-');
+const formatLogTime = (value: string): string =>
+    new Date(value).toLocaleTimeString('ko-KR', { hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit' });
 const shortSha = (value?: string): string => (value ? value.slice(0, 12) : '-');
 
 const clearStatus = () => {
@@ -200,6 +223,17 @@ const loadState = async (quiet = false) => {
             const releaseOperations = await adminClient.releases.list.query({ limit: 30 });
             gatewayReleaseState.value = state as GatewayReleaseState;
             gatewayReleaseOperations.value = releaseOperations as GatewayReleaseOperation[];
+            const active = gatewayReleaseOperations.value.find((operation) =>
+                ['QUEUED', 'RUNNING'].includes(operation.status)
+            );
+            if (active && selectedGatewayOperationId.value !== active.id) {
+                selectedGatewayOperationId.value = active.id;
+            } else if (
+                !selectedGatewayOperationId.value ||
+                !gatewayReleaseOperations.value.some((operation) => operation.id === selectedGatewayOperationId.value)
+            ) {
+                selectedGatewayOperationId.value = gatewayReleaseOperations.value[0]?.id ?? '';
+            }
             gatewayReleaseAvailable.value = true;
         } else {
             const profileResult = await adminClient.profiles.list.query();
@@ -217,6 +251,57 @@ const loadState = async (quiet = false) => {
         loading.value = false;
         stateRequestInFlight = false;
     }
+};
+
+const scrollReleaseLogToEnd = async () => {
+    await nextTick();
+    const viewport = gatewayReleaseLogViewport.value;
+    if (viewport) viewport.scrollTop = viewport.scrollHeight;
+};
+
+const pollGatewayReleaseLogs = async (operationId: string, generation: number) => {
+    while (componentMounted && generation === releaseLogLoopGeneration && selectedGatewayOperationId.value === operationId) {
+        try {
+            const result = await adminClient.releases.logs.query({
+                id: operationId,
+                afterCursor: gatewayReleaseLogCursor.value,
+                limit: 200,
+                timeoutMs: 20_000,
+            });
+            if (generation !== releaseLogLoopGeneration || selectedGatewayOperationId.value !== operationId) return;
+            gatewayReleaseLogConnection.value = 'connected';
+            const entries = result.entries as GatewayReleaseLog[];
+            if (entries.length) {
+                const known = new Set(gatewayReleaseLogs.value.map((entry) => entry.cursor));
+                gatewayReleaseLogs.value.push(...entries.filter((entry) => !known.has(entry.cursor)));
+                gatewayReleaseLogs.value = gatewayReleaseLogs.value.slice(-1_000);
+                gatewayReleaseLogCursor.value = result.nextCursor;
+                await scrollReleaseLogToEnd();
+            }
+            const operation = result.operation as GatewayReleaseOperation;
+            gatewayReleaseLogStatus.value = operation.status;
+            const index = gatewayReleaseOperations.value.findIndex((entry) => entry.id === operation.id);
+            if (index >= 0) gatewayReleaseOperations.value[index] = operation;
+            if (['SUCCEEDED', 'FAILED', 'CANCELLED'].includes(operation.status)) return;
+        } catch {
+            if (generation !== releaseLogLoopGeneration || !componentMounted) return;
+            gatewayReleaseLogConnection.value = 'reconnecting';
+            await new Promise<void>((resolve) => setTimeout(resolve, 1_000));
+        }
+    }
+};
+
+const selectGatewayReleaseOperation = (operationId: string) => {
+    if (selectedGatewayOperationId.value === operationId) {
+        releaseLogLoopGeneration += 1;
+        gatewayReleaseLogs.value = [];
+        gatewayReleaseLogCursor.value = undefined;
+        gatewayReleaseLogStatus.value = '';
+        gatewayReleaseLogConnection.value = 'idle';
+        void pollGatewayReleaseLogs(operationId, releaseLogLoopGeneration);
+        return;
+    }
+    selectedGatewayOperationId.value = operationId;
 };
 
 const requestDeploy = async () => {
@@ -254,11 +339,12 @@ const requestGatewayDeploy = async () => {
     if (!window.confirm(`Gateway 전체를 ${gatewayForm.sourceRef.trim()} 버전으로 전환하시겠습니까?`)) return;
     submitting.value = true;
     try {
-        await adminClient.releases.requestGatewayDeploy.mutate({
+        const operation = await adminClient.releases.requestGatewayDeploy.mutate({
             sourceMode: gatewayForm.sourceMode,
             sourceRef: gatewayForm.sourceRef.trim(),
             reason: gatewayForm.reason.trim() || undefined,
         });
+        selectedGatewayOperationId.value = operation.id;
         message.value = 'Gateway 배포 작업을 등록했습니다. 외부 release-controller가 처리합니다.';
         await loadState(true);
     } catch (error) {
@@ -279,9 +365,10 @@ const requestGatewayRollback = async () => {
         return;
     submitting.value = true;
     try {
-        await adminClient.releases.requestGatewayRollback.mutate({
+        const operation = await adminClient.releases.requestGatewayRollback.mutate({
             reason: gatewayForm.reason.trim() || undefined,
         });
+        selectedGatewayOperationId.value = operation.id;
         message.value = 'Gateway rollback 작업을 등록했습니다.';
         await loadState(true);
     } catch (error) {
@@ -420,13 +507,25 @@ watch(selectedProfileName, () => {
     }
 });
 
+watch(selectedGatewayOperationId, (operationId) => {
+    releaseLogLoopGeneration += 1;
+    gatewayReleaseLogs.value = [];
+    gatewayReleaseLogCursor.value = undefined;
+    gatewayReleaseLogStatus.value = '';
+    gatewayReleaseLogConnection.value = operationId ? 'connected' : 'idle';
+    if (operationId && componentMounted) void pollGatewayReleaseLogs(operationId, releaseLogLoopGeneration);
+});
+
 onMounted(async () => {
+    componentMounted = true;
     await loadState();
     if (props.mode === 'scenario') await loadScenarios();
     pollTimer = setInterval(() => void loadState(true), 3000);
 });
 
 onBeforeUnmount(() => {
+    componentMounted = false;
+    releaseLogLoopGeneration += 1;
     if (pollTimer) {
         clearInterval(pollTimer);
     }
@@ -888,6 +987,57 @@ onBeforeUnmount(() => {
                 <div v-if="gatewayReleaseState?.lastError" class="text-sm text-red-300">
                     {{ gatewayReleaseState.lastError }}
                 </div>
+                <section
+                    v-if="selectedGatewayOperationId"
+                    class="overflow-hidden rounded border border-zinc-700 bg-zinc-950"
+                    data-testid="gateway-release-log-panel"
+                    aria-live="polite"
+                >
+                    <div class="flex flex-wrap items-center justify-between gap-2 border-b border-zinc-800 px-4 py-3">
+                        <div>
+                            <h4 class="text-sm font-semibold text-zinc-100">실시간 릴리스 로그</h4>
+                            <p class="mt-1 font-mono text-[11px] text-zinc-500">
+                                {{ selectedGatewayOperationId }}
+                            </p>
+                        </div>
+                        <div class="flex items-center gap-2 text-xs">
+                            <span
+                                class="h-2 w-2 rounded-full"
+                                :class="
+                                    gatewayReleaseLogConnection === 'reconnecting'
+                                        ? 'animate-pulse bg-amber-400'
+                                        : ['QUEUED', 'RUNNING'].includes(
+                                                gatewayReleaseLogStatus || selectedGatewayOperation?.status || ''
+                                            )
+                                          ? 'animate-pulse bg-emerald-400'
+                                          : 'bg-zinc-500'
+                                "
+                            ></span>
+                            <span data-testid="gateway-release-log-status">
+                                {{ gatewayReleaseLogStatus || selectedGatewayOperation?.status || '연결 중' }}
+                                <template v-if="gatewayReleaseLogConnection === 'reconnecting'"> · 재연결 중</template>
+                            </span>
+                        </div>
+                    </div>
+                    <div
+                        ref="gatewayReleaseLogViewport"
+                        class="h-72 overflow-y-auto px-4 py-3 font-mono text-xs leading-5"
+                        data-testid="gateway-release-log"
+                    >
+                        <div v-if="!gatewayReleaseLogs.length" class="text-zinc-500">
+                            controller 로그를 기다리고 있습니다…
+                        </div>
+                        <div
+                            v-for="entry in gatewayReleaseLogs"
+                            :key="entry.cursor"
+                            :class="entry.level === 'ERROR' ? 'text-red-300' : entry.level === 'OUTPUT' ? 'text-zinc-300' : 'text-cyan-300'"
+                        >
+                            <span class="text-zinc-600">{{ formatLogTime(entry.createdAt) }}</span>
+                            <span class="ml-2 text-violet-300">[{{ entry.phase }}]</span>
+                            <span class="ml-2 whitespace-pre-wrap break-all">{{ entry.message }}</span>
+                        </div>
+                    </div>
+                </section>
                 <div class="overflow-x-auto">
                     <table class="w-full min-w-[760px] text-left text-xs" data-testid="gateway-release-table">
                         <thead class="border-b border-zinc-700 text-zinc-500">
@@ -898,6 +1048,7 @@ onBeforeUnmount(() => {
                                 <th class="p-2">소스</th>
                                 <th class="p-2">해석 커밋</th>
                                 <th class="p-2">오류</th>
+                                <th class="p-2">로그</th>
                             </tr>
                         </thead>
                         <tbody>
@@ -912,6 +1063,16 @@ onBeforeUnmount(() => {
                                 <td class="p-2 font-mono">{{ operation.sourceRef }}</td>
                                 <td class="p-2 font-mono">{{ shortSha(operation.resolvedCommitSha) }}</td>
                                 <td class="max-w-xs p-2 text-red-300">{{ operation.error }}</td>
+                                <td class="p-2">
+                                    <button
+                                        type="button"
+                                        class="rounded border border-zinc-700 px-2 py-1 text-zinc-300 hover:bg-zinc-800"
+                                        :class="operation.id === selectedGatewayOperationId ? 'border-violet-500 text-violet-200' : ''"
+                                        @click="selectGatewayReleaseOperation(operation.id)"
+                                    >
+                                        보기
+                                    </button>
+                                </td>
                             </tr>
                         </tbody>
                     </table>

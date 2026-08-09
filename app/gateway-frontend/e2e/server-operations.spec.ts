@@ -33,6 +33,7 @@ type FixtureState = {
     }>;
     runtimeRunning: boolean;
     requestBodies: Array<{ operation: string; body: unknown }>;
+    gatewayLogPollCount?: number;
     capabilities?: Array<{ permission: string; scope: 'GLOBAL' | 'PROFILE'; scopes: string[] }>;
 };
 
@@ -127,6 +128,37 @@ const installFixture = async (page: Page, state: FixtureState) => {
             }
             if (name === 'admin.releases.list') {
                 return response(state.gatewayOperations);
+            }
+            if (name === 'admin.releases.logs') {
+                const releaseOperation = state.gatewayOperations[0];
+                if (!releaseOperation) throw new Error('Release operation fixture is missing');
+                state.gatewayLogPollCount = (state.gatewayLogPollCount ?? 0) + 1;
+                const completed = state.gatewayLogPollCount > 1;
+                return response({
+                    operation: { ...releaseOperation, status: completed ? 'SUCCEEDED' : 'RUNNING' },
+                    entries: completed
+                        ? [
+                              {
+                                  cursor: '2',
+                                  operationId: releaseOperation.id,
+                                  level: 'OUTPUT',
+                                  phase: 'build',
+                                  message: 'gateway-frontend build complete',
+                                  createdAt: '2026-08-01T02:00:02.000Z',
+                              },
+                          ]
+                        : [
+                              {
+                                  cursor: '1',
+                                  operationId: releaseOperation.id,
+                                  level: 'INFO',
+                                  phase: 'build',
+                                  message: 'Gateway 구성 요소를 빌드합니다.',
+                                  createdAt: '2026-08-01T02:00:01.000Z',
+                              },
+                          ],
+                    nextCursor: completed ? '2' : '1',
+                });
             }
             if (name === 'admin.profiles.listScenarios') {
                 return response(scenarios);
@@ -359,8 +391,22 @@ test('controls gateway deployment and rollback through the external controller q
 
     await expect(page.getByText(/Gateway 배포 작업을 등록했습니다/)).toBeVisible();
     await expect(page.getByTestId('gateway-release-table')).toContainText('DEPLOY');
+    await expect(page.getByTestId('gateway-release-log-panel')).toBeVisible();
+    await expect(page.getByTestId('gateway-release-log')).toContainText('Gateway 구성 요소를 빌드합니다.');
+    await expect(page.getByTestId('gateway-release-log')).toContainText('gateway-frontend build complete');
+    await expect(page.getByTestId('gateway-release-log-status')).toContainText('SUCCEEDED');
+    expect(state.gatewayLogPollCount).toBeGreaterThanOrEqual(2);
     expect(state.requestBodies.some((entry) => entry.operation === 'admin.releases.requestGatewayDeploy')).toBe(true);
     await page.screenshot({ path: testInfo.outputPath('gateway-release-desktop.png'), fullPage: true });
+
+    await page.setViewportSize({ width: 390, height: 844 });
+    const mobileLogGeometry = await page.getByTestId('gateway-release-log-panel').evaluate((element) => {
+        const rect = element.getBoundingClientRect();
+        return { x: rect.x, width: rect.width, viewportWidth: document.documentElement.clientWidth };
+    });
+    expect(mobileLogGeometry.x).toBeGreaterThanOrEqual(0);
+    expect(mobileLogGeometry.x + mobileLogGeometry.width).toBeLessThanOrEqual(mobileLogGeometry.viewportWidth);
+    await page.screenshot({ path: testInfo.outputPath('gateway-release-mobile.png'), fullPage: true });
 
     state.gatewayOperations = [];
     await page.getByTestId('refresh-operations').click();

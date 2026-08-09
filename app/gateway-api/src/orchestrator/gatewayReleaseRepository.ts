@@ -46,10 +46,30 @@ export interface GatewayReleaseOperationCreateInput {
     requestedBy: string;
 }
 
+export const GATEWAY_RELEASE_LOG_LEVELS = ['INFO', 'OUTPUT', 'ERROR'] as const;
+export type GatewayReleaseLogLevel = (typeof GATEWAY_RELEASE_LOG_LEVELS)[number];
+
+export interface GatewayReleaseLogRecord {
+    cursor: string;
+    operationId: string;
+    level: GatewayReleaseLogLevel;
+    phase: string;
+    message: string;
+    createdAt: string;
+}
+
+export interface GatewayReleaseLogInput {
+    level: GatewayReleaseLogLevel;
+    phase: string;
+    message: string;
+}
+
 export interface GatewayReleaseRepository {
     getState(): Promise<GatewayReleaseStateRecord>;
     listOperations(limit?: number): Promise<GatewayReleaseOperationRecord[]>;
     getOperation(id: string): Promise<GatewayReleaseOperationRecord | null>;
+    listOperationLogs(id: string, afterCursor?: string, limit?: number): Promise<GatewayReleaseLogRecord[]>;
+    appendOperationLog(id: string, input: GatewayReleaseLogInput): Promise<GatewayReleaseLogRecord>;
     createOperation(input: GatewayReleaseOperationCreateInput): Promise<GatewayReleaseOperationRecord>;
     claimNextOperation(
         now: Date,
@@ -135,6 +155,24 @@ const mapOperation = (row: {
     updatedAt: row.updatedAt.toISOString(),
 });
 
+const mapLog = (row: {
+    id: bigint;
+    operationId: string;
+    level: string;
+    phase: string;
+    message: string;
+    createdAt: Date;
+}): GatewayReleaseLogRecord => ({
+    cursor: row.id.toString(),
+    operationId: row.operationId,
+    level: GATEWAY_RELEASE_LOG_LEVELS.includes(row.level as GatewayReleaseLogLevel)
+        ? (row.level as GatewayReleaseLogLevel)
+        : 'INFO',
+    phase: row.phase,
+    message: row.message,
+    createdAt: row.createdAt.toISOString(),
+});
+
 export const createGatewayReleaseRepository = (prisma: GatewayPrismaClient): GatewayReleaseRepository => ({
     async getState() {
         const row = await prisma.gatewayReleaseState.upsert({
@@ -154,6 +192,28 @@ export const createGatewayReleaseRepository = (prisma: GatewayPrismaClient): Gat
     async getOperation(id) {
         const row = await prisma.gatewayReleaseOperation.findUnique({ where: { id } });
         return row ? mapOperation(row) : null;
+    },
+    async listOperationLogs(id, afterCursor, limit = 200) {
+        const rows = await prisma.gatewayReleaseLog.findMany({
+            where: {
+                operationId: id,
+                ...(afterCursor ? { id: { gt: BigInt(afterCursor) } } : {}),
+            },
+            orderBy: { id: 'asc' },
+            take: Math.min(Math.max(limit, 1), 500),
+        });
+        return rows.map(mapLog);
+    },
+    async appendOperationLog(id, input) {
+        const row = await prisma.gatewayReleaseLog.create({
+            data: {
+                operationId: id,
+                level: input.level,
+                phase: input.phase.slice(0, 64),
+                message: input.message.slice(0, 4_000),
+            },
+        });
+        return mapLog(row);
     },
     async createOperation(input) {
         const row = await prisma.gatewayReleaseOperation.create({

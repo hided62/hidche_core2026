@@ -50,6 +50,17 @@ describeDatabase('gateway release operation persistence', () => {
         await expect(repository.pinOperationResolvedCommit(operation.id, 'controller-a', 'a'.repeat(40))).resolves.toBe(
             true
         );
+        const firstLog = await repository.appendOperationLog(operation.id, {
+            level: 'INFO',
+            phase: 'build',
+            message: 'build started',
+        });
+        const secondLog = await repository.appendOperationLog(operation.id, {
+            level: 'OUTPUT',
+            phase: 'build',
+            message: 'gateway-api build complete',
+        });
+        await expect(repository.listOperationLogs(operation.id, firstLog.cursor)).resolves.toEqual([secondLog]);
         await expect(
             repository.publishRelease(operation.id, 'stale-controller', {
                 commitSha: 'a'.repeat(40),

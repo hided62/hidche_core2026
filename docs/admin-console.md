@@ -36,7 +36,9 @@ Gateway 관리자 콘솔은 `/gateway/admin`에서 시작합니다. 공개 로�
   업데이트가 필요하지 않습니다. 새 branch/commit과 함께 초기화하려면 초기화
   권한과 버전 배포 권한이 모두 필요합니다.
 - Gateway 릴리스는 profile 작업과 다른 전역 `admin.releases.manage` 권한을
-  사용하며 외부 release-controller가 실행합니다.
+  사용하며 외부 release-controller가 실행합니다. 선택한 릴리스 작업의 단계와
+  명령 출력을 관리자 화면이 long polling으로 이어 받아 표시하며, 완료된 이력의
+  로그도 다시 열 수 있습니다.
 - 브라우저의 메뉴 노출은 편의 기능입니다. 권한 판단의 기준은 서버가 인증
   session에서 해석한 capability입니다.
 

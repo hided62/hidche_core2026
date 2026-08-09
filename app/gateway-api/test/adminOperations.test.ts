@@ -46,6 +46,16 @@ const buildCaller = async (
     const session = await sessions.createSession({ ...admin, roles: adminRoles });
     const createdInputs: GatewayOperationCreateInput[] = [];
     const createdReleaseInputs: GatewayReleaseOperationCreateInput[] = [];
+    const releaseLogs = [
+        {
+            cursor: '1',
+            operationId: '44444444-4444-4444-8444-444444444444',
+            level: 'INFO' as const,
+            phase: 'build',
+            message: 'Gateway 구성 요소를 빌드합니다.',
+            createdAt: '2026-08-01T00:00:01.000Z',
+        },
+    ];
     const operationRecords = new Map<string, Awaited<ReturnType<GatewayProfileRepository['createOperation']>>>();
     const createdRuntimeActions: Array<Record<string, unknown>> = [];
     const flushes: Array<{ userId: string; reason?: string; iconRevision?: string }> = [];
@@ -113,7 +123,27 @@ const buildCaller = async (
             updatedAt: '2026-08-01T00:00:00.000Z',
         }),
         listOperations: async () => [],
-        getOperation: async () => null,
+        getOperation: async (id) =>
+            id === '44444444-4444-4444-8444-444444444444'
+                ? {
+                      id,
+                      type: 'DEPLOY',
+                      status: 'RUNNING',
+                      payload: {},
+                      requestedBy: admin.id,
+                      attempts: 1,
+                      createdAt: '2026-08-01T00:00:00.000Z',
+                      updatedAt: '2026-08-01T00:00:00.000Z',
+                  }
+                : null,
+        listOperationLogs: async (_id, afterCursor) =>
+            releaseLogs.filter((entry) => !afterCursor || BigInt(entry.cursor) > BigInt(afterCursor)),
+        appendOperationLog: async (_id, input) => ({
+            cursor: '2',
+            operationId: '44444444-4444-4444-8444-444444444444',
+            createdAt: '2026-08-01T00:00:02.000Z',
+            ...input,
+        }),
         createOperation: async (input) => {
             createdReleaseInputs.push(input);
             return {
@@ -517,6 +547,23 @@ describe('admin operation API', () => {
 });
 
 describe('gateway release API', () => {
+    it('long-polls ordered release logs with the current operation state', async () => {
+        const harness = await buildCaller(async () => {
+            throw new Error('not used');
+        });
+
+        await expect(
+            harness.caller.admin.releases.logs({
+                id: '44444444-4444-4444-8444-444444444444',
+                timeoutMs: 0,
+            })
+        ).resolves.toMatchObject({
+            nextCursor: '1',
+            operation: { status: 'RUNNING' },
+            entries: [{ cursor: '1', phase: 'build', message: 'Gateway 구성 요소를 빌드합니다.' }],
+        });
+    });
+
     it('queues a gateway deployment for the external release controller', async () => {
         const harness = await buildCaller(async () => {
             throw new Error('not used');

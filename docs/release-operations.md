@@ -125,6 +125,18 @@ Gateway process definition에는 `GATEWAY_DATABASE_URL`과 `REDIS_URL`이 모두
 
 Gateway 전체에는 활성 릴리스 작업을 동시에 하나만 둘 수 있습니다. 화면의
 릴리스 이력에서 요청 source, 고정 commit, 상태와 오류를 확인할 수 있습니다.
+작업을 선택하면 관리자 화면이 `admin.releases.logs`를 최대 20초씩 long polling하여
+commit 해석, worktree 준비, build 명령 출력, migration, process 전환,
+readiness와 rollback 진행을 커서 순서대로 이어 붙입니다. 완료된 작업의 로그도
+같은 이력에서 다시 열 수 있으며 화면은 최근 1,000줄을 유지합니다.
+
+로그 원본은 Gateway DB의 `GatewayReleaseLog`에 작업별로 저장되고 작업 삭제 시
+함께 제거됩니다. Controller는 ANSI 제어 문자를 제거하고 secret·token·password
+계열 환경 변수 값과 URL password를 저장 전에 가립니다. 최초로 이 migration을
+적용하는 배포에서는 log table이 생기기 전의 build 구간을 기록할 수 없지만,
+migration 이후 단계와 다음 릴리스부터는 전체 진행 로그를 기록합니다. 로그가
+관리자 전용이라고 해도 credential이나 실제 환경 파일 내용을 명령 출력에
+의도적으로 남기지 마세요.
 
 ### Gateway rollback
 

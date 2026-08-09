@@ -75,6 +75,7 @@ const config: ReleaseControllerConfig = {
     readinessTimeoutMs: 10,
     baseEnv: {
         REDIS_URL: 'redis://integration.invalid:6379/0',
+        GATEWAY_BOOTSTRAP_TOKEN: 'bootstrap-secret-value',
     },
 };
 
@@ -87,10 +88,21 @@ const createRepository = () => {
     const completions: string[] = [];
     const published: Array<{ commitSha: string; workspace: string; previousCommitSha?: string }> = [];
     const errors: string[] = [];
+    const logs: Array<{ level: string; phase: string; message: string }> = [];
     const repository: GatewayReleaseRepository = {
         getState: async () => state,
         listOperations: async () => [],
         getOperation: async () => operation,
+        listOperationLogs: async () => [],
+        appendOperationLog: async (id, input) => {
+            logs.push(input);
+            return {
+                cursor: String(logs.length),
+                operationId: id,
+                createdAt: '2026-08-01T00:00:00.000Z',
+                ...input,
+            };
+        },
         createOperation: async () => operation,
         claimNextOperation: async () => {
             const claimed = next;
@@ -113,7 +125,7 @@ const createRepository = () => {
         cancelOperation: async () => false,
         retryOperation: async () => null,
     };
-    return { repository, completions, published, errors };
+    return { repository, completions, published, errors, logs };
 };
 
 const gatewayNames = ['sammo:gateway-api', 'sammo:gateway-frontend', 'sammo:gateway-orchestrator'];
@@ -203,6 +215,9 @@ describe('GatewayReleaseController', () => {
             { commitSha: SHA, workspace, previousCommitSha: OLD_SHA, previousWorkspace: '/srv/sammo/old' },
         ]);
         expect(harness.completions).toEqual(['SUCCEEDED']);
+        expect(harness.logs.map((entry) => entry.phase)).toEqual(
+            expect.arrayContaining(['claim', 'resolve', 'workspace', 'build', 'migration', 'switch', 'readiness', 'publish'])
+        );
     });
 
     it('restores the previous gateway processes when the new process set cannot start', async () => {
@@ -244,6 +259,47 @@ describe('GatewayReleaseController', () => {
         expect(harness.published).toEqual([]);
         expect(harness.completions).toEqual(['FAILED']);
         expect(harness.errors.at(-1)).toContain('new gateway failed');
+    });
+
+    it('redacts configured credentials and URI passwords from persisted build output', async () => {
+        const workspace = await createReleaseWorkspace();
+        const harness = createRepository();
+        const processManager: ProcessManager = {
+            list: async () => gatewayNames.map((name) => ({ name, status: 'online', restartCount: 0 })),
+            start: async () => {},
+            stop: async () => {},
+            delete: async () => {},
+        };
+        const buildRunner: BuildRunner = {
+            run: async (_commands, onProgress) => {
+                await onProgress?.({
+                    type: 'OUTPUT',
+                    stream: 'stdout',
+                    message:
+                        'bootstrap-secret-value postgresql://operator:visible-password@db.invalid/sammo',
+                });
+                return { ok: true, exitCode: 0, output: '' };
+            },
+        };
+        const controller = new GatewayReleaseController(
+            harness.repository,
+            {
+                resolveCommit: async () => SHA,
+                prepare: async () => ({ root: workspace, created: true, needsInstall: false }),
+            } as unknown as GitWorkspaceManager,
+            buildRunner,
+            processManager,
+            config,
+            () => new Date('2026-08-01T00:00:00.000Z'),
+            async () => new Response('', { status: 200 })
+        );
+
+        await controller.runOnce();
+
+        const persisted = harness.logs.map((entry) => entry.message).join('\n');
+        expect(persisted).not.toContain('bootstrap-secret-value');
+        expect(persisted).not.toContain('visible-password');
+        expect(persisted).toContain('[REDACTED]');
     });
 });
 

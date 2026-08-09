@@ -1351,6 +1351,36 @@ export const adminRouter = router({
         list: releaseAdminProcedure
             .input(z.object({ limit: z.number().int().min(1).max(200).optional() }).optional())
             .query(({ ctx, input }) => ctx.releases.listOperations(input?.limit)),
+        logs: releaseAdminProcedure
+            .input(
+                z.object({
+                    id: z.string().uuid(),
+                    afterCursor: z.string().regex(/^\d+$/u).optional(),
+                    limit: z.number().int().min(1).max(500).default(200),
+                    timeoutMs: z.number().int().min(0).max(25_000).default(20_000),
+                })
+            )
+            .query(async ({ ctx, input }) => {
+                const deadline = Date.now() + input.timeoutMs;
+                while (true) {
+                    const [operation, entries] = await Promise.all([
+                        ctx.releases.getOperation(input.id),
+                        ctx.releases.listOperationLogs(input.id, input.afterCursor, input.limit),
+                    ]);
+                    if (!operation) {
+                        throw new TRPCError({ code: 'NOT_FOUND', message: 'Gateway release operation not found.' });
+                    }
+                    const terminal = ['SUCCEEDED', 'FAILED', 'CANCELLED'].includes(operation.status);
+                    if (entries.length || terminal || Date.now() >= deadline) {
+                        return {
+                            operation,
+                            entries,
+                            nextCursor: entries.at(-1)?.cursor ?? input.afterCursor,
+                        };
+                    }
+                    await new Promise<void>((resolve) => setTimeout(resolve, 250));
+                }
+            }),
         requestGatewayDeploy: releaseAdminProcedure
             .input(
                 z.object({

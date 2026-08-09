@@ -40,4 +40,30 @@ describe('PnpmBuildRunner', () => {
         expect(result.output.length).toBe(MAX_BUILD_OUTPUT_CHARS);
         expect(result.output.endsWith('tail-marker')).toBe(true);
     });
+
+    it('streams command boundaries and line-buffered output to an observer', async () => {
+        const runner = new PnpmBuildRunner();
+        const events: Array<{ type: string; message?: string }> = [];
+
+        const result = await runner.run(
+            [
+                {
+                    command: process.execPath,
+                    args: ['-e', "process.stdout.write('first\\npartial');"],
+                    cwd: process.cwd(),
+                },
+            ],
+            async (event) => {
+                events.push({ type: event.type, ...('message' in event ? { message: event.message } : {}) });
+            }
+        );
+
+        expect(result.ok).toBe(true);
+        expect(events).toEqual([
+            { type: 'COMMAND_START' },
+            { type: 'OUTPUT', message: 'first' },
+            { type: 'OUTPUT', message: 'partial' },
+            { type: 'COMMAND_END' },
+        ]);
+    });
 });
