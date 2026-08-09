@@ -156,6 +156,9 @@ describe('input event atomicity', () => {
                     commitCommand: async (requestId, committedResult) => {
                         order.push(`commit:${requestId}:${committedResult.type}`);
                     },
+                    publishCommandEvents: async (committedResult) => {
+                        order.push(`publish:${committedResult.type}`);
+                    },
                 },
                 commandResponder: {
                     publishStatus: async () => {},
@@ -181,7 +184,12 @@ describe('input event atomicity', () => {
         const loop = lifecycle.start();
         await responded;
 
-        expect(order).toEqual(['handle:auctionBid', 'commit:event-1:auctionBid', 'respond:event-1:auctionBid']);
+        expect(order).toEqual([
+            'handle:auctionBid',
+            'commit:event-1:auctionBid',
+            'publish:auctionBid',
+            'respond:event-1:auctionBid',
+        ]);
 
         await lifecycle.stop('done');
         await loop;

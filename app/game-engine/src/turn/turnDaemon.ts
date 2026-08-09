@@ -1,5 +1,15 @@
 import { loadActionModuleBundle, type TurnCommandProfile, type TurnSchedule } from '@sammo-ts/logic';
-import { buildGameEventChannel, GameClock, type GameClockMode, type RealtimeEvent } from '@sammo-ts/common';
+import {
+    buildGameEventChannel,
+    buildGameReadModelDomainRevisionKey,
+    buildGameReadModelRevisionKey,
+    createEmptyRealtimeReadModelChanges,
+    GameClock,
+    hasRealtimeReadModelChanges,
+    type GameClockMode,
+    type RealtimeEvent,
+    type RealtimeReadModelChanges,
+} from '@sammo-ts/common';
 import { createGamePostgresConnector, createRedisConnector, resolveRedisConfigFromEnv } from '@sammo-ts/infra';
 import { NATION_TRAIT_KEYS, NationTraitLoader, loadNationTraitModules } from '@sammo-ts/logic';
 
@@ -633,6 +643,8 @@ const createTurnDaemonRuntimeWithLease = async (
 
     let hooks: TurnDaemonHooks | undefined;
     let publishRealtimeEvent: ((event: RealtimeEvent) => Promise<void>) | null = null;
+    let publishReadModelChanges: ((changes: RealtimeReadModelChanges) => Promise<number>) | null = null;
+    let takeCommittedReadModelChanges: (() => RealtimeReadModelChanges | null) | null = null;
     let close = async () => {};
     let auctionFinalizer: Awaited<ReturnType<typeof createAuctionFinalizer>> | null = null;
     let auctionBidder: Awaited<ReturnType<typeof createAuctionBidder>> | null = null;
@@ -676,6 +688,7 @@ const createTurnDaemonRuntimeWithLease = async (
                 await gatewayGate?.markPaused(error);
             },
         };
+        takeCommittedReadModelChanges = dbHooks.takeCommittedReadModelChanges;
         close = async () => {
             if (auctionBidder) {
                 await auctionBidder.close();
@@ -730,24 +743,65 @@ const createTurnDaemonRuntimeWithLease = async (
         publishRealtimeEvent = async (event: RealtimeEvent) => {
             await redisClient.publish(realtimeChannel, JSON.stringify(event));
         };
+        const revisionKey = buildGameReadModelRevisionKey(options.profileName ?? options.profile);
+        const domainRevisionKey = buildGameReadModelDomainRevisionKey(options.profileName ?? options.profile);
+        publishReadModelChanges = async (changes) => {
+            if (changes.worldChanged || changes.cityIds.length > 0 || changes.nationIds.length > 0) {
+                await redisClient.hIncrBy(domainRevisionKey, 'world', 1);
+            }
+            return redisClient.incr(revisionKey);
+        };
     }
 
     if (publishRealtimeEvent) {
         const basePublishEvents = hooks?.publishEvents;
-        // 턴 처리 완료 이벤트를 실시간 채널로 전파한다.
+        const basePublishCommandEvents = hooks?.publishCommandEvents;
+        const publishCommittedChanges = async (changes: RealtimeReadModelChanges): Promise<number | undefined> => {
+            if (!hasRealtimeReadModelChanges(changes)) {
+                return undefined;
+            }
+            return publishReadModelChanges?.(changes);
+        };
+        // Durable mutation summaries invalidate only the affected read models.
         hooks = {
             ...hooks,
             publishEvents: async (result) => {
                 try {
+                    const changes = takeCommittedReadModelChanges?.() ?? createEmptyRealtimeReadModelChanges();
+                    if (result.processedTurns > 0) {
+                        changes.worldChanged = true;
+                    }
+                    const revision = await publishCommittedChanges(changes);
                     await publishRealtimeEvent({
                         type: 'turnCompleted',
                         at: new Date().toISOString(),
                         lastTurnTime: result.lastTurnTime,
+                        changes,
+                        revision,
                     });
                 } catch {
                     // 실시간 이벤트 전송 실패는 턴 처리 결과에 영향을 주지 않는다.
                 }
                 await basePublishEvents?.(result);
+            },
+            publishCommandEvents: async (result) => {
+                try {
+                    const changes = takeCommittedReadModelChanges?.();
+                    if (changes && hasRealtimeReadModelChanges(changes)) {
+                        const revision = await publishCommittedChanges(changes);
+                        if (revision !== undefined) {
+                            await publishRealtimeEvent({
+                                type: 'readModelChanged',
+                                at: new Date().toISOString(),
+                                changes,
+                                revision,
+                            });
+                        }
+                    }
+                } catch {
+                    // 명령은 이미 commit되었으므로 이벤트 실패로 되돌리지 않는다.
+                }
+                await basePublishCommandEvents?.(result);
             },
         };
     }

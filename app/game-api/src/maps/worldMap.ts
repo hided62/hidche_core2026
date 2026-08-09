@@ -1,5 +1,5 @@
 import type { GameApiContext, WorldStateRow } from '../context.js';
-import { asRecord, isRecord } from '@sammo-ts/common';
+import { asRecord, buildGameReadModelDomainRevisionKey, isRecord } from '@sammo-ts/common';
 
 export type MapCityCompact = [number, number, number, number, number, number];
 export type MapNationCompact = [number, string, string, number];
@@ -94,6 +94,24 @@ const resolveSpyList = (meta: Record<string, unknown>): Record<number, number> =
 const buildBaseMapCacheKey = (ctx: GameApiContext, scope: 'base' | 'public' = 'base'): string =>
     `sammo:map:${scope}:${ctx.profile.id}:${ctx.profile.scenario}`;
 
+const loadWorldMapRevision = async (ctx: GameApiContext): Promise<string> => {
+    const redis = ctx.redis as unknown as {
+        hGet?: (key: string, field: string) => Promise<string | null>;
+    };
+    if (typeof redis.hGet !== 'function') {
+        return '0';
+    }
+    try {
+        return (await redis.hGet(buildGameReadModelDomainRevisionKey(ctx.profile.name), 'world')) ?? '0';
+    } catch {
+        // Cache revision lookup must not make the map unavailable.
+        return '0';
+    }
+};
+
+export const buildRevisionedBaseMapCacheKey = async (ctx: GameApiContext): Promise<string> =>
+    `${buildBaseMapCacheKey(ctx)}:r${await loadWorldMapRevision(ctx)}`;
+
 const loadBaseMap = async (
     ctx: GameApiContext,
     options?: {
@@ -103,7 +121,7 @@ const loadBaseMap = async (
     }
 ): Promise<BaseMapResult | null> => {
     const useCache = options?.useCache ?? true;
-    const cacheKey = options?.cacheKey ?? buildBaseMapCacheKey(ctx);
+    const cacheKey = options?.cacheKey ?? (await buildRevisionedBaseMapCacheKey(ctx));
     const ttlSeconds = options?.ttlSeconds ?? BASE_MAP_TTL_SECONDS;
 
     if (useCache) {

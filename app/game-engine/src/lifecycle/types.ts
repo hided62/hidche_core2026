@@ -70,6 +70,7 @@ export interface TurnDaemonHooks {
         requestId: string,
         execute: (context: TurnDaemonCommandExecutionContext) => Promise<TurnDaemonCommandResult>
     ): Promise<TurnDaemonCommandResult>;
+    publishCommandEvents?(result: TurnDaemonCommandResult): Promise<void>;
     publishEvents?(result: TurnRunResult): Promise<void>;
     onRunError?(error: unknown): Promise<void>;
 }

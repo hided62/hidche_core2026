@@ -1,13 +1,14 @@
 import { computed, ref, watch } from 'vue';
 import { defineStore } from 'pinia';
 import { MESSAGE_MAILBOX_NATIONAL_BASE, MESSAGE_MAILBOX_PUBLIC, type MessageType } from '@sammo-ts/logic';
-import type { RealtimeEvent } from '@sammo-ts/common';
+import type { RealtimeEvent, RealtimeReadModelChanges } from '@sammo-ts/common';
 import { trpc } from '../utils/trpc';
 import { useMapViewerStore } from './mapViewer';
 import { useSessionStore } from './session';
 import { createLatestRefreshQueue } from '../utils/latestRefreshQueue';
 import { createRateLimitedRefreshQueue } from '../utils/rateLimitedRefreshQueue';
 import { structurallyShare } from '../utils/structuralShare';
+import { createMergedReadModelRefreshQueue, resolveDashboardRefreshPlan } from '../utils/dashboardReadModel';
 
 const REALTIME_FULL_REFRESH_MIN_INTERVAL_MS = 5_000;
 
@@ -252,6 +253,29 @@ export const useMainDashboardStore = defineStore('mainDashboard', () => {
         surveyNotice.value = null;
     };
 
+    const applyRecentRecords = (
+        records: Awaited<ReturnType<typeof trpc.general.getRecentRecords.query>>
+    ) => {
+        globalRecords.value = structurallyShare(
+            globalRecords.value,
+            mergeRecentRecords(globalRecords.value, records.global)
+        );
+        generalRecords.value = structurallyShare(
+            generalRecords.value,
+            mergeRecentRecords(generalRecords.value, records.general)
+        );
+        worldHistory.value = structurallyShare(
+            worldHistory.value,
+            mergeRecentRecords(worldHistory.value, records.history)
+        );
+        lastGeneralRecordId = Math.max(
+            lastGeneralRecordId,
+            records.global[0]?.id ?? 0,
+            records.general[0]?.id ?? 0
+        );
+        lastWorldHistoryId = Math.max(lastWorldHistoryId, records.history[0]?.id ?? 0);
+    };
+
     const refreshMainData = async () => {
         const isInitialLoad = !initialized;
         if (isInitialLoad) {
@@ -337,24 +361,7 @@ export const useMainDashboardStore = defineStore('mainDashboard', () => {
             ) as ReservedTurnView[];
             reservedGeneralRevision.value = generalTurns.revision;
             if (records) {
-                globalRecords.value = structurallyShare(
-                    globalRecords.value,
-                    mergeRecentRecords(globalRecords.value, records.global)
-                );
-                generalRecords.value = structurallyShare(
-                    generalRecords.value,
-                    mergeRecentRecords(generalRecords.value, records.general)
-                );
-                worldHistory.value = structurallyShare(
-                    worldHistory.value,
-                    mergeRecentRecords(worldHistory.value, records.history)
-                );
-                lastGeneralRecordId = Math.max(
-                    lastGeneralRecordId,
-                    records.global[0]?.id ?? 0,
-                    records.general[0]?.id ?? 0
-                );
-                lastWorldHistoryId = Math.max(lastWorldHistoryId, records.history[0]?.id ?? 0);
+                applyRecentRecords(records);
             }
             if (nextFrontStatus) {
                 updateFrontStatus(nextFrontStatus);
@@ -380,6 +387,108 @@ export const useMainDashboardStore = defineStore('mainDashboard', () => {
     const realtimeRefreshQueue = createRateLimitedRefreshQueue(() => refreshQueue.request(), {
         minIntervalMs: REALTIME_FULL_REFRESH_MIN_INTERVAL_MS,
     });
+
+    const refreshChangedReadModels = async (changes: RealtimeReadModelChanges) => {
+        const id = generalId.value;
+        if (!id) {
+            return;
+        }
+        const plan = resolveDashboardRefreshPlan(changes, {
+            generalId: id,
+            cityId: city.value?.id ?? null,
+            nationId: nation.value?.id ?? null,
+        });
+        if (!Object.values(plan).some(Boolean)) {
+            return;
+        }
+
+        refreshing.value = true;
+        error.value = null;
+        if (plan.records) recordsError.value = null;
+        if (plan.frontStatus) frontStatusError.value = null;
+        try {
+            const contextPromise = plan.context
+                ? trpc.general.me.query()
+                : Promise.resolve(undefined as GeneralContext | undefined);
+            const lobbyPromise = plan.lobby ? trpc.lobby.info.query() : Promise.resolve(undefined);
+            const mapPromise = plan.map
+                ? trpc.world.getMap.query({ generalId: id, showMe: true, useCache: true })
+                : Promise.resolve(undefined);
+            const commandsPromise = plan.commands
+                ? trpc.turns.getCommandTable.query({ generalId: id })
+                : Promise.resolve(undefined);
+            const contactsPromise = plan.contacts
+                ? trpc.messages.getContacts.query({ generalId: id })
+                : Promise.resolve(undefined);
+            const boardPromise = plan.boardAccess ? trpc.board.getAccess.query() : Promise.resolve(undefined);
+            const reservedPromise = plan.reservedTurns
+                ? trpc.turns.reserved.getGeneral.query({ generalId: id })
+                : Promise.resolve(undefined);
+            const recordsPromise = plan.records
+                ? trpc.general.getRecentRecords
+                      .query({ lastGeneralRecordId, lastWorldHistoryId })
+                      .catch((err: unknown) => {
+                          recordsError.value = resolveErrorMessage(err);
+                          return null;
+                      })
+                : Promise.resolve(undefined);
+            const frontPromise = plan.frontStatus
+                ? trpc.general.getFrontStatus.query().catch((err: unknown) => {
+                      frontStatusError.value = resolveErrorMessage(err);
+                      return null;
+                  })
+                : Promise.resolve(undefined);
+
+            const [context, lobby, map, commands, contacts, access, generalTurns, records, nextFrontStatus] =
+                await Promise.all([
+                    contextPromise,
+                    lobbyPromise,
+                    mapPromise,
+                    commandsPromise,
+                    contactsPromise,
+                    boardPromise,
+                    reservedPromise,
+                    recordsPromise,
+                    frontPromise,
+                ]);
+
+            if (context === null) {
+                general.value = null;
+                city.value = null;
+                nation.value = null;
+                reservedGeneralTurns.value = null;
+                reservedGeneralRevision.value = 0;
+                boardAccess.value = null;
+                resetRecentRecords(null);
+                return;
+            }
+            if (context !== undefined) {
+                general.value = structurallyShare(general.value, context.general);
+                city.value = structurallyShare(city.value, context.city);
+                nation.value = structurallyShare(nation.value, context.nation);
+            }
+            if (lobby !== undefined) lobbyInfo.value = structurallyShare(lobbyInfo.value, lobby);
+            if (map !== undefined) worldMap.value = structurallyShare(worldMap.value, map);
+            if (commands !== undefined) commandTable.value = structurallyShare(commandTable.value, commands);
+            if (contacts !== undefined) messageContacts.value = structurallyShare(messageContacts.value, contacts);
+            if (access !== undefined) boardAccess.value = structurallyShare(boardAccess.value, access);
+            if (generalTurns !== undefined) {
+                reservedGeneralTurns.value = structurallyShare<unknown>(
+                    reservedGeneralTurns.value,
+                    generalTurns.turns
+                ) as ReservedTurnView[];
+                reservedGeneralRevision.value = generalTurns.revision;
+            }
+            if (records) applyRecentRecords(records);
+            if (nextFrontStatus) updateFrontStatus(nextFrontStatus);
+        } catch (err) {
+            error.value = resolveErrorMessage(err);
+        } finally {
+            refreshing.value = false;
+        }
+    };
+
+    const readModelRefreshQueue = createMergedReadModelRefreshQueue(refreshChangedReadModels);
 
     const refreshMessages = async () => {
         const id = generalId.value;
@@ -701,8 +810,24 @@ export const useMainDashboardStore = defineStore('mainDashboard', () => {
         source.addEventListener('error', () => {
             realtimeStatus.value = realtimeEnabled.value ? 'idle' : 'paused';
         });
-        source.addEventListener('turnCompleted', () => {
-            realtimeRefreshQueue.request();
+        source.addEventListener('turnCompleted', (event) => {
+            const payload = parseRealtimePayload(event);
+            if (!payload || payload.type !== 'turnCompleted') {
+                return;
+            }
+            if (!payload.changes) {
+                // Rolling deployment fallback for an older daemon.
+                realtimeRefreshQueue.request();
+                return;
+            }
+            readModelRefreshQueue.request(payload.changes);
+        });
+        source.addEventListener('readModelChanged', (event) => {
+            const payload = parseRealtimePayload(event);
+            if (!payload || payload.type !== 'readModelChanged') {
+                return;
+            }
+            readModelRefreshQueue.request(payload.changes);
         });
         source.addEventListener('messageCreated', (event) => {
             const payload = parseRealtimePayload(event);
@@ -724,6 +849,7 @@ export const useMainDashboardStore = defineStore('mainDashboard', () => {
         if (!realtimeActive.value) return;
         if (document.visibilityState === 'hidden') {
             realtimeRefreshQueue.cancelPending();
+            readModelRefreshQueue.cancelPending();
             closeRealtimeSource();
             realtimeStatus.value = 'idle';
             return;
@@ -746,6 +872,7 @@ export const useMainDashboardStore = defineStore('mainDashboard', () => {
     const stopRealtime = () => {
         realtimeActive.value = false;
         realtimeRefreshQueue.cancelPending();
+        readModelRefreshQueue.cancelPending();
         closeRealtimeSource();
         if (visibilityListenerInstalled) {
             document.removeEventListener('visibilitychange', handleVisibilityChange);
