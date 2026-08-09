@@ -10,6 +10,7 @@ import { cityLevelMap, formatOfficerLevelText, regionMap } from '../utils/nation
 import { getNpcColor } from '../utils/npcColor';
 import { formatSeoulDateTime } from '../utils/legacyDateTime';
 import { resolveGeneralIconUrl, useDefaultGeneralIcon } from '../utils/generalIcon';
+import { abilityLeadint, abilityLeadpow, abilityPowint, abilityRand, type GeneralStats } from '../utils/generalStats';
 
 type JoinConfig = Awaited<ReturnType<typeof trpc.join.getConfig.query>>;
 type JoinInput = Parameters<typeof trpc.join.createGeneral.mutate>[0];
@@ -365,8 +366,6 @@ const inheritTurntimeChoice = computed<string>({
     },
 });
 
-const randomInt = (min: number, max: number) => Math.floor(Math.random() * (max - min + 1)) + min;
-
 const applyBalancedStats = () => {
     const rules = statRules.value;
     if (!rules) {
@@ -378,36 +377,40 @@ const applyBalancedStats = () => {
     form.value.intel = base;
 };
 
+const applyStats = (stats: GeneralStats) => {
+    [form.value.leadership, form.value.strength, form.value.intel] = stats;
+};
+
 const applyRandomStats = () => {
     const rules = statRules.value;
     if (!rules) {
         return;
     }
-    for (let i = 0; i < 40; i += 1) {
-        const leadership = randomInt(rules.min, rules.max);
-        const strength = randomInt(rules.min, rules.max);
-        const intel = rules.total - leadership - strength;
-        if (intel >= rules.min && intel <= rules.max) {
-            form.value.leadership = leadership;
-            form.value.strength = strength;
-            form.value.intel = intel;
-            return;
-        }
-    }
-    applyBalancedStats();
+    applyStats(abilityRand(rules));
 };
 
-const applyFocusedStats = (focus: 'leadership' | 'strength' | 'intel') => {
+const applyLeadpowStats = () => {
     const rules = statRules.value;
     if (!rules) {
         return;
     }
-    const focusValue = Math.min(rules.max, rules.min + Math.floor(rules.total * 0.45));
-    const remain = rules.total - focusValue;
-    const side = Math.floor(remain / 2);
-    form.value.leadership = focus === 'leadership' ? focusValue : side;
-    form.value.strength = focus === 'strength' ? focusValue : side;
-    form.value.intel = focus === 'intel' ? focusValue : remain - side;
+    applyStats(abilityLeadpow(rules));
+};
+
+const applyLeadintStats = () => {
+    const rules = statRules.value;
+    if (!rules) {
+        return;
+    }
+    applyStats(abilityLeadint(rules));
+};
+
+const applyPowintStats = () => {
+    const rules = statRules.value;
+    if (!rules) {
+        return;
+    }
+    applyStats(abilityPowint(rules));
 };
 
 const loadConfig = async () => {
@@ -709,12 +712,11 @@ onUnmounted(() => {
                         </label>
                     </div>
 
-                    <div class="stat-actions" aria-label="능력치 빠른 설정">
+                    <div class="stat-actions" role="group" aria-label="능력치 빠른 설정">
                         <button type="button" @click="applyRandomStats">랜덤형</button>
-                        <button type="button" @click="applyFocusedStats('leadership')">통솔형</button>
-                        <button type="button" @click="applyFocusedStats('strength')">무력형</button>
-                        <button type="button" @click="applyFocusedStats('intel')">지력형</button>
-                        <button type="button" @click="applyBalancedStats">균형형</button>
+                        <button type="button" @click="applyLeadpowStats">통솔무력형</button>
+                        <button type="button" @click="applyLeadintStats">통솔지력형</button>
+                        <button type="button" @click="applyPowintStats">무력지력형</button>
                     </div>
 
                     <div v-if="accountIcons.length" class="icon-choice">
@@ -751,7 +753,7 @@ onUnmounted(() => {
                         <button class="primary-action" type="submit" :disabled="!canSubmit || submitting">
                             {{ submitting ? '생성 중...' : '장수 생성' }}
                         </button>
-                        <button type="button" class="ghost" @click="applyBalancedStats">균형형으로 되돌리기</button>
+                        <button type="button" class="ghost" @click="applyBalancedStats">능력치 초기화</button>
                     </div>
                 </form>
             </PanelCard>
