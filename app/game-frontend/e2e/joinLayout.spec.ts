@@ -157,6 +157,22 @@ test('prioritizes core general fields and keeps context and inheritance progress
     await expect(page.getByLabel('장수명')).toHaveValue('생성장수');
     await expect(page.getByLabel('성격')).toBeVisible();
     await expect(page.locator('.create-form').getByLabel('통솔')).toHaveValue('55');
+    const statActions = page.getByRole('group', { name: '능력치 빠른 설정' });
+    await expect(statActions.getByRole('button')).toHaveText([
+        '랜덤형',
+        '통솔무력형',
+        '통솔지력형',
+        '무력지력형',
+    ]);
+    await page.evaluate(() => {
+        const values = [0.9, 0.8, 0.5];
+        Math.random = () => values.shift() ?? 0.5;
+    });
+    await statActions.getByRole('button', { name: '통솔무력형' }).click();
+    await expect(page.locator('.create-form').getByLabel('통솔')).toHaveValue('75');
+    await expect(page.locator('.create-form').getByLabel('무력')).toHaveValue('75');
+    await expect(page.locator('.create-form').getByLabel('지력')).toHaveValue('15');
+    await expect(page.locator('.stat-summary')).toContainText('능력치 합계: 165');
     await expect(advanced).not.toHaveAttribute('open');
     await expect(page.getByText('전투 특기 선택')).toBeHidden();
     expect(state.mapRequests).toBe(0);
