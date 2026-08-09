@@ -22,10 +22,10 @@ import {
     type LogEntryDraft,
     type MessageRecordDraft,
 } from '@sammo-ts/logic';
-import { asRecord } from '@sammo-ts/common';
+import { asRecord, type RealtimeReadModelChanges } from '@sammo-ts/common';
 
 import type { TurnDaemonCommandResult, TurnDaemonHooks } from '../lifecycle/types.js';
-import type { InMemoryTurnWorld } from './inMemoryWorld.js';
+import type { InMemoryTurnWorld, TurnWorldChanges } from './inMemoryWorld.js';
 import type { InMemoryReservedTurnStore, ReservedTurnChanges } from './reservedTurnStore.js';
 import { buildDiplomacyMeta } from '@sammo-ts/logic';
 import { ensureItemInventory, withSerializedItemInventory } from '@sammo-ts/logic/items/index.js';
@@ -40,8 +40,84 @@ import { persistYearbookSnapshot } from './yearbookPersistence.js';
 
 export interface DatabaseTurnHooks {
     hooks: TurnDaemonHooks;
+    takeCommittedReadModelChanges(): RealtimeReadModelChanges | null;
     close(): Promise<void>;
 }
+
+const uniqueSortedIds = (values: Iterable<number>): number[] =>
+    [...new Set(values)].filter((value) => Number.isSafeInteger(value) && value > 0).sort((left, right) => left - right);
+
+export const summarizeRealtimeReadModelChanges = (
+    changes: TurnWorldChanges,
+    reservedTurnChanges?: ReservedTurnChanges
+): RealtimeReadModelChanges => {
+    const generalIds = uniqueSortedIds([
+        ...changes.generals.map((general) => general.id),
+        ...changes.createdGenerals.map((general) => general.id),
+        ...changes.deletedGenerals,
+        ...changes.lifecycleEvents.map((event) => event.generalId),
+    ]);
+    const cityIds = uniqueSortedIds(changes.cities.map((city) => city.id));
+    const nationIds = uniqueSortedIds([
+        ...changes.nations.map((nation) => nation.id),
+        ...changes.createdNations.map((nation) => nation.id),
+        ...changes.deletedNations,
+        ...changes.deletedNationSnapshots.map((snapshot) => snapshot.nation.id),
+    ]);
+    const reservedGeneralIds = uniqueSortedIds(
+        reservedTurnChanges
+            ? [
+                  ...reservedTurnChanges.generalIds,
+                  ...reservedTurnChanges.generalInitializationIds,
+                  ...reservedTurnChanges.generalLeaseIds,
+              ]
+            : []
+    );
+    const recordGeneralIds = uniqueSortedIds(
+        changes.logs.flatMap((entry) =>
+            entry.scope === LogScope.GENERAL && entry.category === LogCategory.ACTION && entry.generalId
+                ? [entry.generalId]
+                : []
+        )
+    );
+    const globalRecordsChanged = changes.logs.some(
+        (entry) =>
+            entry.scope === LogScope.SYSTEM &&
+            (entry.category === LogCategory.SUMMARY || entry.category === LogCategory.ACTION)
+    );
+    const worldHistoryChanged = changes.logs.some(
+        (entry) => entry.scope === LogScope.SYSTEM && entry.category === LogCategory.HISTORY
+    );
+    const contactsChanged =
+        changes.createdGenerals.length > 0 ||
+        changes.deletedGenerals.length > 0 ||
+        changes.createdNations.length > 0 ||
+        changes.deletedNations.length > 0 ||
+        changes.lifecycleEvents.some((event) => {
+            const after = event.after;
+            const beforePermission = asRecord(event.before.meta).permission;
+            const afterPermission = after ? asRecord(after.meta).permission : undefined;
+            return (
+                !after ||
+                event.before.name !== after.name ||
+                event.before.nationId !== after.nationId ||
+                event.before.officerLevel !== after.officerLevel ||
+                beforePermission !== afterPermission
+            );
+        });
+
+    return {
+        generalIds,
+        cityIds,
+        nationIds,
+        reservedGeneralIds,
+        recordGeneralIds,
+        worldChanged: false,
+        globalRecordsChanged,
+        worldHistoryChanged,
+        contactsChanged,
+    };
+};
 
 export const excludeDeletedReservedTurnQueues = (
     changes: ReservedTurnChanges,
@@ -588,11 +664,12 @@ export const createDatabaseTurnHooks = async (
     const connector = createGamePostgresConnector({ url: databaseUrl });
     await connector.connect();
     const prisma = connector.prisma;
+    let committedReadModelChanges: RealtimeReadModelChanges | null = null;
 
     const persistChanges = async (
         transaction?: GamePrisma.TransactionClient,
         commandCompletion?: { requestId: string; result: TurnDaemonCommandResult }
-    ): Promise<() => void> => {
+    ): Promise<{ acknowledge: () => void; readModelChanges: RealtimeReadModelChanges }> => {
         const state = world.getState();
         const changes = world.peekDirtyState();
         const {
@@ -1059,39 +1136,50 @@ export const createDatabaseTurnHooks = async (
             );
         }
 
-        return () => {
-            world.acknowledgeDirtyState(changes);
-            if (options?.reservedTurns && reservedTurnChanges) {
-                options.reservedTurns.acknowledgeDirtyState(reservedTurnChanges);
-            }
+        return {
+            acknowledge: () => {
+                world.acknowledgeDirtyState(changes);
+                if (options?.reservedTurns && reservedTurnChanges) {
+                    options.reservedTurns.acknowledgeDirtyState(reservedTurnChanges);
+                }
+            },
+            readModelChanges: summarizeRealtimeReadModelChanges(changes, persistedReservedTurnChanges),
         };
     };
 
     const hooks: TurnDaemonHooks = {
         flushChanges: async () => {
-            const acknowledge = await persistChanges();
-            acknowledge();
+            const committed = await persistChanges();
+            committed.acknowledge();
+            committedReadModelChanges = committed.readModelChanges;
         },
         commitCommand: async (requestId, result) => {
-            const acknowledge = await persistChanges(undefined, { requestId, result });
-            acknowledge();
+            const committed = await persistChanges(undefined, { requestId, result });
+            committed.acknowledge();
+            committedReadModelChanges = committed.readModelChanges;
         },
         executeCommand: async (requestId, execute) => {
             const committed = await prisma.$transaction(
                 async (transaction) => {
                     const result = await execute({ db: transaction });
-                    const acknowledge = await persistChanges(transaction, { requestId, result });
-                    return { result, acknowledge };
+                    const persisted = await persistChanges(transaction, { requestId, result });
+                    return { result, persisted };
                 },
                 options?.transactionTimeoutMs ? { timeout: options.transactionTimeoutMs } : undefined
             );
-            committed.acknowledge();
+            committed.persisted.acknowledge();
+            committedReadModelChanges = committed.persisted.readModelChanges;
             return committed.result;
         },
     };
 
     return {
         hooks,
+        takeCommittedReadModelChanges: () => {
+            const changes = committedReadModelChanges;
+            committedReadModelChanges = null;
+            return changes;
+        },
         close: () => connector.disconnect(),
     };
 };

@@ -351,6 +351,14 @@ export class TurnDaemonLifecycle {
             await this.resolveNextRunTime();
         }
 
+        try {
+            await this.hooks?.publishCommandEvents?.(result);
+        } catch (error) {
+            // The command is already durable. Realtime publication is a
+            // best-effort read-model invalidation and must not reject it.
+            this.status.lastError = error instanceof Error ? error.message : 'Unknown command event publication error.';
+        }
+
         if (this.commandResponder && command.requestId) {
             await this.commandResponder.publishCommandResult(command.requestId, result);
         }

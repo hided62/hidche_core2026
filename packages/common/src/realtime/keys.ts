@@ -7,3 +7,13 @@ export const buildGameEventChannel = (profileName: string): string => {
     const normalized = normalizeProfileName(profileName);
     return `sammo:${normalized}:realtime:events`;
 };
+
+export const buildGameReadModelRevisionKey = (profileName: string): string => {
+    const normalized = normalizeProfileName(profileName);
+    return `sammo:${normalized}:read-model:revision`;
+};
+
+export const buildGameReadModelDomainRevisionKey = (profileName: string): string => {
+    const normalized = normalizeProfileName(profileName);
+    return `sammo:${normalized}:read-model:domain-revisions`;
+};

@@ -517,7 +517,7 @@ test('mobile single document refreshes once and preserves tokens on lobby return
     expect(state.operations).not.toContain('auth.logout');
 });
 
-test('turn realtime refresh is rate limited, patches in place, and stops after leaving main', async ({ page }) => {
+test('realtime read-model events skip clock-only work, merge bursts, patch in place, and stop off-route', async ({ page }) => {
     const state: NavigationFixture = {
         officerLevel: 5,
         permission: 2,
@@ -564,23 +564,74 @@ test('turn realtime refresh is rate limited, patches in place, and stops after l
     });
 
     const callsBeforeRefresh = state.generalMeCalls;
+    const operationsBeforeClockOnly = state.operations.length;
+    await page.evaluate(() => {
+        (window as unknown as { __emitMainRealtime: (type: string, payload: unknown) => void }).__emitMainRealtime(
+            'turnCompleted',
+            {
+                at: new Date().toISOString(),
+                lastTurnTime: '0185-02-01T00:00:00.000Z',
+                changes: {
+                    generalIds: [],
+                    cityIds: [],
+                    nationIds: [],
+                    reservedGeneralIds: [],
+                    recordGeneralIds: [],
+                    worldChanged: false,
+                    globalRecordsChanged: false,
+                    worldHistoryChanged: false,
+                    contactsChanged: false,
+                },
+            }
+        );
+    });
+    await new Promise((resolve) => setTimeout(resolve, 300));
+    expect(state.operations.slice(operationsBeforeClockOnly)).toEqual([]);
+
+    const operationsBeforeChangedBurst = state.operations.length;
     state.generalName = '부드럽게갱신된장수';
     await page.evaluate(() => {
         const emit = (window as unknown as { __emitMainRealtime: (type: string, payload: unknown) => void })
             .__emitMainRealtime;
         for (let index = 0; index < 100; index += 1) {
-            emit('turnCompleted', { at: new Date().toISOString(), lastTurnTime: '0185-02-01T00:00:00.000Z' });
+            emit('turnCompleted', {
+                at: new Date().toISOString(),
+                lastTurnTime: '0185-02-01T00:00:00.000Z',
+                changes: {
+                    generalIds: [7],
+                    cityIds: [],
+                    nationIds: [],
+                    reservedGeneralIds: [],
+                    recordGeneralIds: [],
+                    worldChanged: false,
+                    globalRecordsChanged: false,
+                    worldHistoryChanged: false,
+                    contactsChanged: false,
+                },
+            });
         }
     });
 
-    await new Promise((resolve) => setTimeout(resolve, 500));
-    expect(state.generalMeCalls).toBe(callsBeforeRefresh);
-    await expect.poll(() => state.generalMeCalls, { timeout: 7_000 }).toBe(callsBeforeRefresh + 1);
+    await expect.poll(() => state.generalMeCalls, { timeout: 3_000 }).toBe(callsBeforeRefresh + 1);
     await expect(page.locator('[data-main-target="general"] .skeleton-line')).toHaveCount(0);
     await expect(page.locator('[data-main-target="city"] .skeleton-line')).toHaveCount(0);
     await expect(page.getByRole('button', { name: '갱 신' })).toHaveAttribute('aria-busy', 'false');
     expect(state.generalMeCalls).toBe(callsBeforeRefresh + 1);
     await expect(page.locator('.general-title')).toContainText('부드럽게갱신된장수');
+    const changedOperations = state.operations.slice(operationsBeforeChangedBurst);
+    expect(changedOperations).toEqual(
+        expect.arrayContaining(['general.me', 'world.getMap', 'turns.getCommandTable', 'board.getAccess'])
+    );
+    expect(changedOperations).not.toEqual(
+        expect.arrayContaining([
+            'lobby.info',
+            'messages.getRecent',
+            'messages.getContacts',
+            'general.getRecentRecords',
+            'general.getFrontStatus',
+            'turns.reserved.getGeneral',
+        ])
+    );
 
     const profile = await page.evaluate(() => {
         const probe = (
@@ -616,7 +667,7 @@ test('turn realtime refresh is rate limited, patches in place, and stops after l
                 `${JSON.stringify(
                     {
                         emittedTurnEvents: 100,
-                        refreshRequests: state.generalMeCalls - callsBeforeRefresh,
+                        selectiveGeneralRefreshes: state.generalMeCalls - callsBeforeRefresh,
                         inFlightSkeletons: { general: 0, city: 0 },
                         ...profile,
                     },
@@ -639,7 +690,21 @@ test('turn realtime refresh is rate limited, patches in place, and stops after l
     await page.evaluate(() => {
         (window as unknown as { __emitMainRealtime: (type: string, payload: unknown) => void }).__emitMainRealtime(
             'turnCompleted',
-            { at: new Date().toISOString(), lastTurnTime: '0185-02-01T00:00:00.000Z' }
+            {
+                at: new Date().toISOString(),
+                lastTurnTime: '0185-02-01T00:00:00.000Z',
+                changes: {
+                    generalIds: [7],
+                    cityIds: [],
+                    nationIds: [],
+                    reservedGeneralIds: [],
+                    recordGeneralIds: [],
+                    worldChanged: false,
+                    globalRecordsChanged: false,
+                    worldHistoryChanged: false,
+                    contactsChanged: false,
+                },
+            }
         );
     });
     await new Promise((resolve) => setTimeout(resolve, 300));
