@@ -34,6 +34,9 @@ type FixtureState = {
     runtimeRunning: boolean;
     requestBodies: Array<{ operation: string; body: unknown }>;
     capabilities?: Array<{ permission: string; scope: 'GLOBAL' | 'PROFILE'; scopes: string[] }>;
+    profileListDelayMs?: number;
+    profileListRequests?: number;
+    profileListResolved?: boolean;
 };
 
 const profile = (runtimeRunning: boolean) => ({
@@ -93,6 +96,13 @@ const installFixture = async (page: Page, state: FixtureState) => {
     await page.route('**/gateway/api/trpc/**', async (route) => {
         const names = operationNames(route);
         const body = route.request().postDataJSON() as unknown;
+        if (names.includes('admin.profiles.list')) {
+            state.profileListRequests = (state.profileListRequests ?? 0) + 1;
+            if (state.profileListDelayMs) {
+                await new Promise((resolve) => setTimeout(resolve, state.profileListDelayMs));
+            }
+            state.profileListResolved = true;
+        }
         const results = names.map((name) => {
             if (route.request().method() === 'POST') {
                 state.requestBodies.push({ operation: name, body });
@@ -235,8 +245,14 @@ test('separates branch and commit semantics and submits a reset from the dedicat
     await expect(page.getByTestId('server-operations-page')).toBeVisible();
     await expect(page).toHaveURL(/\/gateway\/admin\/servers\/che%3A2\/scenario$/);
     await expect(page.getByTestId('source-current')).toBeChecked();
-    await expect(page.getByTestId('source-help')).toContainText('현재 서버 커밋');
+    await expect(page.getByTestId('source-help')).toContainText('현재 서버에 배포된 커밋');
     await expect(page.getByTestId('scenario-select')).toHaveValue('2');
+    await expect(page.getByTestId('server-profile-tabs')).toBeVisible();
+    await expect(page.getByRole('link', { name: '시나리오 초기화', exact: true })).toHaveAttribute(
+        'aria-current',
+        'page'
+    );
+    await expect(page.getByText('운영 프로필', { exact: true })).toHaveCount(0);
 
     const desktopGeometry = await page
         .getByTestId('server-operations-page')
@@ -249,8 +265,8 @@ test('separates branch and commit semantics and submits a reset from the dedicat
             });
             return children;
         });
-    expect(desktopGeometry).toHaveLength(2);
-    expect(desktopGeometry[1]!.x).toBeGreaterThan(desktopGeometry[0]!.x);
+    expect(desktopGeometry).toHaveLength(1);
+    expect(desktopGeometry[0]!.width).toBeGreaterThan(800);
     await page.getByTestId('source-commit').check();
     const sourceInput = page.getByTestId('source-ref');
     await sourceInput.focus();
@@ -297,8 +313,19 @@ test('separates branch and commit semantics and submits a reset from the dedicat
             });
             return children;
         });
-    expect(mobileGeometry[1]!.y).toBeGreaterThan(mobileGeometry[0]!.y);
     expect(mobileGeometry[0]!.width).toBeLessThanOrEqual(390);
+    const mobileTabs = await page
+        .getByTestId('server-profile-tabs')
+        .locator('a')
+        .evaluateAll((links) =>
+            links.map((link) => {
+                const rect = link.getBoundingClientRect();
+                return { top: rect.top, width: rect.width, height: rect.height };
+            })
+        );
+    expect(mobileTabs).toHaveLength(3);
+    expect(mobileTabs[1]!.top).toBeGreaterThan(mobileTabs[0]!.top);
+    expect(mobileTabs.every((tab) => tab.height >= 44)).toBe(true);
     await page.screenshot({ path: testInfo.outputPath('mobile-operations.png'), fullPage: true });
 });
 
@@ -308,13 +335,36 @@ test('separates DB-preserving profile deployment from DB reset', async ({ page }
     page.on('dialog', (dialog) => dialog.accept());
 
     await page.goto('admin/servers/che%3A2/version');
-    await expect(page.getByText('Game frontend')).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'DB 보존 버전 업데이트' })).toBeVisible();
+    await expect(page.getByText('운영 프로필', { exact: true })).toHaveCount(0);
+    await expect(page.getByRole('link', { name: '버전 업데이트', exact: true })).toHaveAttribute(
+        'aria-current',
+        'page'
+    );
     await page.getByTestId('request-deploy').click();
 
     await expect(page.getByText('DB 보존 배포 작업을 등록했습니다.')).toBeVisible();
     await expect(page.getByTestId('operations-table')).toContainText('DEPLOY');
     expect(state.requestBodies.some((entry) => entry.operation === 'admin.operations.requestDeploy')).toBe(true);
     expect(state.requestBodies.some((entry) => entry.operation === 'admin.operations.requestReset')).toBe(false);
+});
+
+test('renders the fixed-profile version form without waiting for the server list', async ({ page }) => {
+    const state: FixtureState = {
+        operations: [],
+        gatewayOperations: [],
+        runtimeRunning: true,
+        requestBodies: [],
+        profileListDelayMs: 1500,
+        profileListResolved: false,
+    };
+    await installFixture(page, state);
+
+    await page.goto('admin/servers/che%3A2/version');
+    await expect(page.getByTestId('request-deploy')).toBeVisible({ timeout: 900 });
+    expect(state.profileListResolved).toBe(false);
+    await expect.poll(() => state.profileListResolved).toBe(true);
+    expect(state.profileListRequests).toBe(1);
 });
 
 test('scenario-only operator resets the current version without Git or Gateway controls', async ({ page }) => {
@@ -420,7 +470,7 @@ test('renders a failed reset, retries it as a new operation, and reaches success
     state.runtimeRunning = true;
     await page.getByTestId('refresh-operations').click();
     await expect(page.getByText('SUCCEEDED', { exact: true })).toBeVisible();
-    await expect(page.getByText('RUNNING', { exact: true }).first()).toBeVisible();
+    await expect(page.getByText('운영 프로필', { exact: true })).toHaveCount(0);
 
     await page.screenshot({ path: testInfo.outputPath('failed-retry-succeeded-desktop.png'), fullPage: true });
     await page.setViewportSize({ width: 390, height: 844 });
