@@ -1,4 +1,4 @@
-import { createTRPCProxyClient, httpBatchLink } from '@trpc/client';
+import { createTRPCProxyClient, httpBatchLink, httpLink } from '@trpc/client';
 import type { AppRouter } from '@sammo-ts/gateway-api';
 
 const getSessionToken = (): string | null => {
@@ -11,6 +11,18 @@ const getSessionToken = (): string | null => {
 export const trpc = createTRPCProxyClient<AppRouter>({
     links: [
         httpBatchLink({
+            url: import.meta.env.VITE_GATEWAY_API_URL ?? '/api/trpc',
+            headers() {
+                const token = getSessionToken();
+                return token ? { 'x-session-token': token } : {};
+            },
+        }),
+    ],
+});
+
+export const directTrpc = createTRPCProxyClient<AppRouter>({
+    links: [
+        httpLink({
             url: import.meta.env.VITE_GATEWAY_API_URL ?? '/api/trpc',
             headers() {
                 const token = getSessionToken();

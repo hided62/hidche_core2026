@@ -2,7 +2,7 @@
 import { computed, onMounted, ref } from 'vue';
 import DefaultLayout from './DefaultLayout.vue';
 import { useAuthStore } from '../stores/auth';
-import { trpc } from '../utils/trpc';
+import { directTrpc } from '../utils/trpc';
 
 defineProps<{
     title: string;
@@ -12,10 +12,10 @@ defineProps<{
 
 const menuOpen = ref(false);
 const auth = useAuthStore();
-const adminClient = trpc.admin as unknown as {
+const adminNavigationClient = directTrpc.admin as unknown as {
     capabilities: { list: { query: () => Promise<Array<{ permission: string; scopes?: string[] }>> } };
     profiles: {
-        list: {
+        listNavigation: {
             query: () => Promise<Array<{ profileName: string; profile: string; meta?: Record<string, unknown> }>>;
         };
     };
@@ -110,8 +110,8 @@ const navigation = computed(() => [
 
 onMounted(async () => {
     const [capabilityResult, profileResult] = await Promise.allSettled([
-        adminClient.capabilities.list.query(),
-        adminClient.profiles.list.query(),
+        adminNavigationClient.capabilities.list.query(),
+        adminNavigationClient.profiles.listNavigation.query(),
     ]);
     capabilities.value = capabilityResult.status === 'fulfilled' ? capabilityResult.value : [];
     profiles.value = profileResult.status === 'fulfilled' ? profileResult.value : [];

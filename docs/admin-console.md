@@ -35,6 +35,10 @@ Gateway 관리자 콘솔은 `/gateway/admin`에서 시작합니다. 공개 로�
   이미 고정됩니다. 따라서 작업 화면에서 전체 profile 목록이나 중복 실행 상태를
   기다리지 않고 작업 form과 해당 서버의 operation 이력을 먼저 표시합니다. 상세
   runtime·빌드 상태는 상태 설정 탭에서 확인합니다.
+- 공통 좌측 메뉴는 `admin.profiles.listNavigation`으로 접근 가능한 profile의 이름과
+  표시명만 읽습니다. 이 요청은 PM2 runtime 상태를 포함하는 본문용
+  `admin.profiles.list`와 별도의 non-batch 요청으로 전송하므로, 상태 조회가 늦거나
+  중단되어도 관리자 capability와 서버 메뉴를 함께 기다리게 하지 않습니다.
 - `DEPLOY`는 현재 game DB를 유지하고 migration/build를 적용합니다. `RESET`은
   현재 시즌 데이터를 새 시나리오로 교체하며 장기 보존 자료를 유지합니다.
 - 시나리오 초기화는 기본적으로 서버에 현재 게시된 commit을 사용하므로 Git

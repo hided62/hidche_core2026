@@ -105,6 +105,7 @@ const installFixture = async (page: Page) => {
                 });
             }
             if (operation === 'admin.system.getNotice') return response({ notice: '' });
+            if (operation === 'admin.profiles.listNavigation') return response([]);
             if (operation === 'admin.profiles.list') return response([]);
             if (operation === 'admin.profiles.listScenarios') return response([]);
             if (operation === 'admin.users.lookup') {
@@ -194,7 +195,12 @@ const installFixture = async (page: Page) => {
             }
             throw new Error(`Unhandled tRPC operation: ${operation}`);
         });
-        await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(results) });
+        const isBatch = new URL(route.request().url()).searchParams.get('batch') === '1';
+        await route.fulfill({
+            status: 200,
+            contentType: 'application/json',
+            body: JSON.stringify(isBatch ? results : results[0]),
+        });
     });
     return mutations;
 };
