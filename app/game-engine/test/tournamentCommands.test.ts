@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import type { TurnSchedule } from '@sammo-ts/logic';
 
 import { InMemoryTurnWorld } from '../src/turn/inMemoryWorld.js';
+import { buildTournamentRewardMap, resolveTournamentDevelCost } from '../src/tournament/finalizer.js';
 import type { TurnGeneral, TurnWorldSnapshot, TurnWorldState } from '../src/turn/types.js';
 import { createTurnDaemonCommandHandler } from '../src/turn/worldCommandHandler.js';
 import { buildPersistedRankRows } from '../src/turn/rankData.js';
@@ -41,14 +42,17 @@ const buildGeneral = (id: number, meta: Record<string, number> = {}): TurnGenera
     npcState: 0,
 });
 
-const buildWorld = (generals: TurnGeneral[]): InMemoryTurnWorld => {
+const buildWorld = (
+    generals: TurnGeneral[],
+    options: { worldMeta?: Record<string, unknown>; configConst?: Record<string, unknown> } = {}
+): InMemoryTurnWorld => {
     const state: TurnWorldState = {
         id: 1,
         currentYear: 180,
         currentMonth: 1,
         tickSeconds: 600,
         lastTurnTime: new Date('0180-01-01T00:00:00Z'),
-        meta: {},
+        meta: options.worldMeta ?? {},
     };
     const snapshot: TurnWorldSnapshot = {
         generals,
@@ -62,7 +66,7 @@ const buildWorld = (generals: TurnGeneral[]): InMemoryTurnWorld => {
             stat: { total: 300, min: 10, max: 100, npcTotal: 150, npcMax: 50, npcMin: 10, chiefMin: 70 },
             iconPath: '',
             map: {},
-            const: {},
+            const: options.configConst ?? {},
             environment: { mapName: 'test', unitSet: 'test' },
         },
         map: {
@@ -76,6 +80,31 @@ const buildWorld = (generals: TurnGeneral[]): InMemoryTurnWorld => {
 };
 
 describe('tournament world commands', () => {
+    it('uses the current world develcost for Ref-compatible tournament prizes', () => {
+        const currentWorld = buildWorld([], {
+            worldMeta: { develcost: 64 },
+            configConst: { develCost: 10 },
+        });
+        expect(resolveTournamentDevelCost(currentWorld)).toBe(64);
+
+        const legacySnapshot = buildWorld([], { configConst: { develCost: 10 } });
+        expect(resolveTournamentDevelCost(legacySnapshot)).toBe(10);
+
+        const rewardMap = buildTournamentRewardMap(
+            {
+                top16: Array.from({ length: 16 }, (_, index) => index + 1),
+                top8: Array.from({ length: 8 }, (_, index) => index + 1),
+                top4: Array.from({ length: 4 }, (_, index) => index + 1),
+                winnerId: 1,
+                runnerUpId: 2,
+            },
+            64
+        );
+        expect(rewardMap.get(1)?.gold).toBe(64 * 20);
+        expect(rewardMap.get(2)?.gold).toBe(64 * 12);
+        expect(Array.from(rewardMap.values()).reduce((sum, reward) => sum + reward.gold, 0)).toBe(64 * 64);
+    });
+
     it('updates the persisted tt rank keys for a tournament match', async () => {
         const world = buildWorld([
             buildGeneral(1, { ttg: 10, ttw: 2 }),

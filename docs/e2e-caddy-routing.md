@@ -1,5 +1,31 @@
 # Caddy prefix 계약
 
+## 환경과 ingress
+
+| 환경 | 공개 주소 | 연결 계약 |
+| ---- | --------- | --------- |
+| 공개 | `dev-sam2026.hided.net` | 실제 외부 Core2026 서비스입니다. 로컬 Docker `14999`의 주소가 아닙니다. |
+| E2E | `dev-sam-e2e.hided.net` | 외부 Caddy TLS → `172.30.1.54:14999` HTTP → Docker Caddy입니다. |
+
+외부 Caddy는 E2E 호스트의 모든 경로를 `172.30.1.54:14999`로 전달하고 원래
+`Host` header와 path prefix를 보존합니다. `handle_path`처럼 prefix를 제거하는
+설정을 사용하지 않습니다. Docker Caddy가 아래 활성 경로를 frontend와 API로
+분기합니다. 외부 상태 확인 경로는 `/gateway/api/healthz`입니다.
+
+E2E Docker stack은 다음 비밀이 아닌 값을 사용합니다.
+
+```dotenv
+DOMAIN=dev-sam-e2e.hided.net
+PUBLIC_SCHEME=https
+CADDY_SITE_ADDRESS=http://dev-sam-e2e.hided.net
+HTTP_PORT=14999
+```
+
+이 값에서 Gateway 공개 URL
+`https://dev-sam-e2e.hided.net/gateway/`와 Kakao redirect URI
+`https://dev-sam-e2e.hided.net/gateway/oauth/callback`을 파생합니다. 도메인을
+바꾼 뒤에는 Caddy뿐 아니라 runtime도 재생성하여 process 환경을 갱신합니다.
+
 ## 활성 경로
 
 | 서비스  | 공개 prefix | frontend |     API |
@@ -8,8 +34,10 @@
 | che     | `/che/`     |  `15002` | `15003` |
 | hwe     | `/hwe/`     |  `15014` | `15015` |
 
-Upstream host는 `172.30.1.54`입니다. `kwe`, `pwe`, `twe`, `nya`, `pya`는
-resource·profile 이름으로 사용할 수 있지만 활성 Caddy route가 아닙니다.
+표의 port는 Docker 내부 Caddy가 연결하는 frontend/API listener입니다. 외부
+Caddy가 이 port들에 직접 연결하지 않습니다. `kwe`, `pwe`, `twe`, `nya`,
+`pya`는 resource·profile 이름으로 사용할 수 있지만 활성 Caddy route가
+아닙니다.
 
 Caddy는 prefix를 보존해 upstream에 전달합니다. 앱은 root 배포를 가정하지
 않고 frontend base, tRPC, SSE, upload와 direct navigation에 같은 prefix를
@@ -95,4 +123,5 @@ path와 wildcard path를 모두 검사합니다.
 7. 새로고침 뒤 session·route 복구
 
 Local proxy·mock 성공은 외부 DNS, TLS, Caddy process, host firewall와
-upstream 상태를 증명하지 않습니다.
+upstream 상태를 증명하지 않습니다. 도메인 전환 시에는 route 응답과 별도로
+OAuth 시작 응답의 redirect URI 및 callback 복귀 호스트도 확인합니다.

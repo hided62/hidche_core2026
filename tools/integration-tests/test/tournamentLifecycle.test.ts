@@ -483,6 +483,9 @@ describe('actual tournament lifecycle', () => {
         });
         expect(finalState?.winnerId).toBeTypeOf('number');
 
+        const currentDevelCost = Number(turnDaemon!.world.getState().meta.develcost);
+        expect(currentDevelCost).toBeGreaterThan(0);
+
         const bettorAfterSettlement = await gameConnector.prisma.general.findUniqueOrThrow({
             where: { id: bettorAId },
             select: { gold: true, meta: true },
@@ -505,5 +508,8 @@ describe('actual tournament lifecycle', () => {
             ])
         );
         expect(settlementEvents.every((event) => (event.result as { ok?: boolean } | null)?.ok === true)).toBe(true);
+        const rewardEvent = settlementEvents.find((event) => event.eventType === 'tournamentReward');
+        // Ref setGift(): 16*1 + 8*2 + 4*3 + both finalists*6 + winner*8 = 64 develcost.
+        expect((rewardEvent?.result as { totalGold?: number } | null)?.totalGold).toBe(currentDevelCost * 64);
     }, 120_000);
 });

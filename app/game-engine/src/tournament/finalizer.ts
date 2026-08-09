@@ -13,6 +13,13 @@ export interface TournamentRewardFinalizer {
     close(): Promise<void>;
 }
 
+interface TournamentReward {
+    gold: number;
+    exp: number;
+    label: string;
+    inheritPoint: number;
+}
+
 const resolveTournamentLabel = (type: TournamentType): string => {
     switch (type) {
         case 1:
@@ -51,6 +58,50 @@ const resolveNumber = (source: Record<string, unknown>, keys: string[], fallback
     return fallback;
 };
 
+export const resolveTournamentDevelCost = (world: InMemoryTurnWorld): number => {
+    const constValues = asRecord(world.getScenarioConfig().const ?? {});
+    const configDevelCost = resolveNumber(constValues, ['develCost', 'develcost', 'develrate'], 0);
+    // Ref reads the current game_env.develcost when setGift() runs. Core keeps
+    // that yearly value in world_state.meta; scenario const is only a fallback
+    // for older snapshots that predate the persisted field.
+    return resolveNumber(asRecord(world.getState().meta), ['develcost', 'develCost', 'develrate'], configDevelCost);
+};
+
+export const buildTournamentRewardMap = (
+    command: Pick<
+        Extract<TurnDaemonCommand, { type: 'tournamentReward' }>,
+        'top16' | 'top8' | 'top4' | 'winnerId' | 'runnerUpId'
+    >,
+    develCost: number
+): Map<number, TournamentReward> => {
+    const rewardMap = new Map<number, TournamentReward>();
+    const applyTier = (ids: number[], tier: TournamentReward): void => {
+        for (const id of new Set(ids)) {
+            const current = rewardMap.get(id) ?? { gold: 0, exp: 0, label: tier.label, inheritPoint: 0 };
+            rewardMap.set(id, {
+                gold: current.gold + tier.gold,
+                exp: current.exp + tier.exp,
+                label: tier.label,
+                inheritPoint: tier.inheritPoint > 0 ? tier.inheritPoint : current.inheritPoint,
+            });
+        }
+    };
+
+    applyTier(command.top16, { gold: develCost, exp: 25, label: '16강 진출', inheritPoint: 10 });
+    applyTier(command.top8, { gold: develCost * 2, exp: 50, label: '8강 진출', inheritPoint: 0 });
+    applyTier(command.top4, { gold: develCost * 3, exp: 50, label: '4강 진출', inheritPoint: 10 });
+    // Ref's grp 50 final tier rewards both finalists before grp 60 adds
+    // the champion-only tier. The later champion tier replaces the label.
+    applyTier([command.runnerUpId, command.winnerId], {
+        gold: develCost * 6,
+        exp: 100,
+        label: '준우승',
+        inheritPoint: 50,
+    });
+    applyTier([command.winnerId], { gold: develCost * 8, exp: 200, label: '우승', inheritPoint: 100 });
+    return rewardMap;
+};
+
 const pushLogs = (world: InMemoryTurnWorld, logs: ReturnType<ActionLogger['flush']>): void => {
     if (logs.length === 0) {
         return;
@@ -75,31 +126,8 @@ export const createTournamentRewardFinalizer = async (options: {
         const { world } = options;
         const db = commandDb ?? prisma;
         const { winnerId, runnerUpId } = command;
-        const rewardMap = new Map<number, { gold: number; exp: number; label: string; inheritPoint: number }>();
-
-        const applyTier = (
-            ids: number[],
-            tier: { gold: number; exp: number; label: string; inheritPoint: number }
-        ): void => {
-            for (const id of new Set(ids)) {
-                const current = rewardMap.get(id) ?? { gold: 0, exp: 0, label: tier.label, inheritPoint: 0 };
-                rewardMap.set(id, {
-                    gold: current.gold + tier.gold,
-                    exp: current.exp + tier.exp,
-                    label: tier.label,
-                    inheritPoint: tier.inheritPoint > 0 ? tier.inheritPoint : current.inheritPoint,
-                });
-            }
-        };
-
-        const constValues = asRecord(world.getScenarioConfig().const ?? {});
-        const develCost = resolveNumber(constValues, ['develCost', 'develcost', 'develrate'], 0);
-
-        applyTier(command.top16, { gold: develCost, exp: 25, label: '16강 진출', inheritPoint: 10 });
-        applyTier(command.top8, { gold: develCost * 2, exp: 50, label: '8강 진출', inheritPoint: 0 });
-        applyTier(command.top4, { gold: develCost * 3, exp: 50, label: '4강 진출', inheritPoint: 10 });
-        applyTier([runnerUpId], { gold: develCost * 6, exp: 100, label: '준우승', inheritPoint: 50 });
-        applyTier([winnerId], { gold: develCost * 8, exp: 200, label: '우승', inheritPoint: 100 });
+        const develCost = resolveTournamentDevelCost(world);
+        const rewardMap = buildTournamentRewardMap(command, develCost);
 
         if (rewardMap.size === 0) {
             return {
