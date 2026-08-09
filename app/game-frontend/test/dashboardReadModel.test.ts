@@ -38,7 +38,7 @@ void test('selects only the read models affected by the current identity', () =>
     assert.deepEqual(resolveDashboardRefreshPlan(changes, { generalId: 7, cityId: 3, nationId: 2 }), {
         context: true,
         lobby: false,
-        map: true,
+        map: false,
         commands: true,
         contacts: false,
         boardAccess: true,
@@ -46,6 +46,87 @@ void test('selects only the read models affected by the current identity', () =>
         records: true,
         frontStatus: false,
     });
+});
+
+void test('refreshes the map only for map-projection changes', () => {
+    const changes = {
+        ...createEmptyRealtimeReadModelChanges(),
+        generalIds: [7],
+        mapGeneralIds: [7],
+    };
+
+    assert.equal(
+        resolveDashboardRefreshPlan(changes, { generalId: 7, cityId: 3, nationId: 2 }).map,
+        true
+    );
+});
+
+void test('keeps conservative map behavior for rolling-deploy payloads without projections', () => {
+    const changes = {
+        generalIds: [7],
+        cityIds: [],
+        nationIds: [],
+        reservedGeneralIds: [],
+        recordGeneralIds: [],
+        worldChanged: false,
+        globalRecordsChanged: false,
+        worldHistoryChanged: false,
+        contactsChanged: false,
+    };
+
+    assert.equal(
+        resolveDashboardRefreshPlan(changes, { generalId: 7, cityId: 3, nationId: 2 }).map,
+        true
+    );
+});
+
+void test('does not refresh front status for contact-only permission changes', () => {
+    const changes = {
+        ...createEmptyRealtimeReadModelChanges(),
+        generalIds: [9],
+        contactsChanged: true,
+        frontStatusGeneralIds: [],
+    };
+    const plan = resolveDashboardRefreshPlan(changes, { generalId: 7, cityId: 3, nationId: 2 });
+
+    assert.equal(plan.contacts, true);
+    assert.equal(plan.lobby, false);
+    assert.equal(plan.frontStatus, false);
+});
+
+void test('refreshes only front status for a global survey projection change', () => {
+    const changes = {
+        ...createEmptyRealtimeReadModelChanges(),
+        frontStatusChanged: true,
+    };
+
+    assert.deepEqual(resolveDashboardRefreshPlan(changes, { generalId: 7, cityId: 3, nationId: 2 }), {
+        context: false,
+        lobby: false,
+        map: false,
+        commands: false,
+        contacts: false,
+        boardAccess: false,
+        reservedTurns: false,
+        records: false,
+        frontStatus: true,
+    });
+});
+
+void test('targets a submitted survey projection to its own general', () => {
+    const changes = {
+        ...createEmptyRealtimeReadModelChanges(),
+        frontStatusActorIds: [7],
+    };
+
+    assert.equal(
+        resolveDashboardRefreshPlan(changes, { generalId: 7, cityId: 3, nationId: 2 }).frontStatus,
+        true
+    );
+    assert.equal(
+        resolveDashboardRefreshPlan(changes, { generalId: 8, cityId: 3, nationId: 2 }).frontStatus,
+        false
+    );
 });
 
 void test('merges burst payloads without losing entity ids and starts at most once per interval', async () => {

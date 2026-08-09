@@ -19,8 +19,10 @@ import {
     LogFormat,
     LogScope,
     sendMessage,
+    type City,
     type LogEntryDraft,
     type MessageRecordDraft,
+    type Nation,
 } from '@sammo-ts/logic';
 import { asRecord, type RealtimeReadModelChanges } from '@sammo-ts/common';
 
@@ -33,6 +35,7 @@ import { persistGeneralLifecycleEvents } from './generalTurnLifecyclePersistence
 import type { DatabaseTurnDaemonLease } from '../lifecycle/databaseTurnDaemonLease.js';
 import { calculateNationBettingRewards } from '../betting/nationBettingSettlement.js';
 import type { NationBettingCandidate, PendingNationBettingFinish, PendingNationBettingOpen } from './types.js';
+import type { TurnGeneral } from './types.js';
 import { buildPersistedRankRows } from './rankData.js';
 import { persistUnificationFinalization } from './unificationPersistence.js';
 import { buildOldNationArchiveData } from './oldNationArchive.js';
@@ -47,10 +50,124 @@ export interface DatabaseTurnHooks {
 const uniqueSortedIds = (values: Iterable<number>): number[] =>
     [...new Set(values)].filter((value) => Number.isSafeInteger(value) && value > 0).sort((left, right) => left - right);
 
-export const summarizeRealtimeReadModelChanges = (
-    changes: TurnWorldChanges,
-    reservedTurnChanges?: ReservedTurnChanges
-): RealtimeReadModelChanges => {
+export type ReadModelSignatures = {
+    content: string;
+    map: string;
+    contacts: string;
+    frontStatus: string;
+    frontStatusGlobal: string;
+    lobbyCount: string;
+    lobbyPersonal: string;
+};
+
+export interface RealtimeReadModelBaseline {
+    generals: Map<number, ReadModelSignatures>;
+    cities: Map<number, ReadModelSignatures>;
+    nations: Map<number, ReadModelSignatures>;
+}
+
+const canonicalizeReadModelValue = (value: unknown): unknown => {
+    if (value instanceof Date) {
+        return value.toISOString();
+    }
+    if (Array.isArray(value)) {
+        return value.map(canonicalizeReadModelValue);
+    }
+    if (value && typeof value === 'object') {
+        return Object.fromEntries(
+            Object.entries(value as Record<string, unknown>)
+                .sort(([left], [right]) => left.localeCompare(right))
+                .map(([key, item]) => [key, canonicalizeReadModelValue(item)])
+        );
+    }
+    return value;
+};
+
+const signature = (value: unknown): string => JSON.stringify(canonicalizeReadModelValue(value)) ?? 'undefined';
+
+const generalSignatures = (general: TurnGeneral): ReadModelSignatures => ({
+    content: signature(general),
+    map: signature({ cityId: general.cityId, nationId: general.nationId }),
+    contacts: signature({
+        name: general.name,
+        nationId: general.nationId,
+        officerLevel: general.officerLevel,
+        npcState: general.npcState,
+        permission: asRecord(general.meta).permission,
+        penalty: general.penalty,
+    }),
+    frontStatus: signature({ name: general.name, nationId: general.nationId }),
+    frontStatusGlobal: '',
+    lobbyCount: signature({ npcState: general.npcState }),
+    lobbyPersonal: signature({
+        name: general.name,
+        picture: general.picture,
+        imageServer: general.imageServer,
+    }),
+});
+
+const citySignatures = (city: City): ReadModelSignatures => ({
+    content: signature(city),
+    map: signature({
+        level: city.level,
+        nationId: city.nationId,
+        state: city.state,
+        supplyState: city.supplyState,
+    }),
+    contacts: '',
+    frontStatus: '',
+    frontStatusGlobal: '',
+    lobbyCount: '',
+    lobbyPersonal: '',
+});
+
+const nationSignatures = (nation: Nation): ReadModelSignatures => ({
+    content: signature(nation),
+    map: signature({
+        name: nation.name,
+        color: nation.color,
+        capitalCityId: nation.capitalCityId,
+    }),
+    contacts: signature({ name: nation.name, color: nation.color }),
+    frontStatus: signature({ notice: asRecord(nation.meta).notice }),
+    frontStatusGlobal: signature({ name: nation.name }),
+    lobbyCount: signature({ level: nation.level }),
+    lobbyPersonal: '',
+});
+
+export const createRealtimeReadModelBaseline = (world: InMemoryTurnWorld): RealtimeReadModelBaseline => ({
+    generals: new Map(world.listGenerals().map((general) => [general.id, generalSignatures(general)])),
+    cities: new Map(world.listCities().map((city) => [city.id, citySignatures(city)])),
+    nations: new Map(world.listNations().map((nation) => [nation.id, nationSignatures(nation)])),
+});
+
+const changedProjectionIds = (
+    candidateIds: readonly number[],
+    baseline: ReadonlyMap<number, ReadModelSignatures>,
+    final: ReadonlyMap<number, ReadModelSignatures>,
+    projection: keyof ReadModelSignatures
+): number[] => uniqueSortedIds(candidateIds.filter((id) => baseline.get(id)?.[projection] !== final.get(id)?.[projection]));
+
+const buildFinalSignatures = <Entity extends { id: number }>(
+    entities: readonly Entity[],
+    project: (entity: Entity) => ReadModelSignatures
+): Map<number, ReadModelSignatures> => new Map(entities.map((entity) => [entity.id, project(entity)]));
+
+export const applyRealtimeReadModelBaseline = (
+    baseline: RealtimeReadModelBaseline,
+    changes: TurnWorldChanges
+): void => {
+    const apply = (
+        target: Map<number, ReadModelSignatures>,
+        candidateIds: readonly number[],
+        final: ReadonlyMap<number, ReadModelSignatures>
+    ) => {
+        for (const id of candidateIds) {
+            const next = final.get(id);
+            if (next) target.set(id, next);
+            else target.delete(id);
+        }
+    };
     const generalIds = uniqueSortedIds([
         ...changes.generals.map((general) => general.id),
         ...changes.createdGenerals.map((general) => general.id),
@@ -64,6 +181,81 @@ export const summarizeRealtimeReadModelChanges = (
         ...changes.deletedNations,
         ...changes.deletedNationSnapshots.map((snapshot) => snapshot.nation.id),
     ]);
+    apply(
+        baseline.generals,
+        generalIds,
+        buildFinalSignatures([...changes.generals, ...changes.createdGenerals], generalSignatures)
+    );
+    apply(baseline.cities, cityIds, buildFinalSignatures(changes.cities, citySignatures));
+    apply(
+        baseline.nations,
+        nationIds,
+        buildFinalSignatures([...changes.nations, ...changes.createdNations], nationSignatures)
+    );
+};
+
+export const summarizeRealtimeReadModelChanges = (
+    changes: TurnWorldChanges,
+    reservedTurnChanges?: ReservedTurnChanges,
+    baseline?: RealtimeReadModelBaseline
+): RealtimeReadModelChanges => {
+    const generalCandidates = uniqueSortedIds([
+        ...changes.generals.map((general) => general.id),
+        ...changes.createdGenerals.map((general) => general.id),
+        ...changes.deletedGenerals,
+        ...changes.lifecycleEvents.map((event) => event.generalId),
+    ]);
+    const cityCandidates = uniqueSortedIds(changes.cities.map((city) => city.id));
+    const nationCandidates = uniqueSortedIds([
+        ...changes.nations.map((nation) => nation.id),
+        ...changes.createdNations.map((nation) => nation.id),
+        ...changes.deletedNations,
+        ...changes.deletedNationSnapshots.map((snapshot) => snapshot.nation.id),
+    ]);
+    const finalGenerals = buildFinalSignatures(
+        [...changes.generals, ...changes.createdGenerals],
+        generalSignatures
+    );
+    const finalCities = buildFinalSignatures(changes.cities, citySignatures);
+    const finalNations = buildFinalSignatures([...changes.nations, ...changes.createdNations], nationSignatures);
+    const generalIds = baseline
+        ? changedProjectionIds(generalCandidates, baseline.generals, finalGenerals, 'content')
+        : generalCandidates;
+    const cityIds = baseline
+        ? changedProjectionIds(cityCandidates, baseline.cities, finalCities, 'content')
+        : cityCandidates;
+    const nationIds = baseline
+        ? changedProjectionIds(nationCandidates, baseline.nations, finalNations, 'content')
+        : nationCandidates;
+    const mapGeneralIds = baseline
+        ? changedProjectionIds(generalCandidates, baseline.generals, finalGenerals, 'map')
+        : generalIds;
+    const mapCityIds = baseline
+        ? changedProjectionIds(cityCandidates, baseline.cities, finalCities, 'map')
+        : cityIds;
+    const mapNationIds = baseline
+        ? changedProjectionIds(nationCandidates, baseline.nations, finalNations, 'map')
+        : nationIds;
+    const frontStatusNationIds = baseline
+        ? changedProjectionIds(nationCandidates, baseline.nations, finalNations, 'frontStatus')
+        : nationIds;
+    const frontStatusGeneralIds = baseline
+        ? changedProjectionIds(generalCandidates, baseline.generals, finalGenerals, 'frontStatus')
+        : generalIds;
+    const frontStatusChanged = baseline
+        ? frontStatusGeneralIds.length > 0 ||
+          changedProjectionIds(nationCandidates, baseline.nations, finalNations, 'frontStatusGlobal').length > 0
+        : false;
+    const lobbyGeneralIds = baseline
+        ? changedProjectionIds(generalCandidates, baseline.generals, finalGenerals, 'lobbyPersonal')
+        : generalIds;
+    const lobbyChanged = baseline
+        ? changedProjectionIds(generalCandidates, baseline.generals, finalGenerals, 'lobbyCount').length > 0 ||
+          changedProjectionIds(nationCandidates, baseline.nations, finalNations, 'lobbyCount').length > 0
+        : changes.createdGenerals.length > 0 ||
+          changes.deletedGenerals.length > 0 ||
+          changes.createdNations.length > 0 ||
+          changes.deletedNations.length > 0;
     const reservedGeneralIds = uniqueSortedIds(
         reservedTurnChanges
             ? [
@@ -88,34 +280,44 @@ export const summarizeRealtimeReadModelChanges = (
     const worldHistoryChanged = changes.logs.some(
         (entry) => entry.scope === LogScope.SYSTEM && entry.category === LogCategory.HISTORY
     );
-    const contactsChanged =
-        changes.createdGenerals.length > 0 ||
-        changes.deletedGenerals.length > 0 ||
-        changes.createdNations.length > 0 ||
-        changes.deletedNations.length > 0 ||
-        changes.lifecycleEvents.some((event) => {
-            const after = event.after;
-            const beforePermission = asRecord(event.before.meta).permission;
-            const afterPermission = after ? asRecord(after.meta).permission : undefined;
-            return (
-                !after ||
-                event.before.name !== after.name ||
-                event.before.nationId !== after.nationId ||
-                event.before.officerLevel !== after.officerLevel ||
-                beforePermission !== afterPermission
-            );
-        });
+    const contactsChanged = baseline
+        ? changedProjectionIds(generalCandidates, baseline.generals, finalGenerals, 'contacts').length > 0 ||
+          changedProjectionIds(nationCandidates, baseline.nations, finalNations, 'contacts').length > 0
+        : changes.createdGenerals.length > 0 ||
+          changes.deletedGenerals.length > 0 ||
+          changes.createdNations.length > 0 ||
+          changes.deletedNations.length > 0 ||
+          changes.lifecycleEvents.some((event) => {
+              const after = event.after;
+              const beforePermission = asRecord(event.before.meta).permission;
+              const afterPermission = after ? asRecord(after.meta).permission : undefined;
+              return (
+                  !after ||
+                  event.before.name !== after.name ||
+                  event.before.nationId !== after.nationId ||
+                  event.before.officerLevel !== after.officerLevel ||
+                  beforePermission !== afterPermission
+              );
+          });
 
     return {
         generalIds,
         cityIds,
         nationIds,
+        mapGeneralIds,
+        mapCityIds,
+        mapNationIds,
+        frontStatusGeneralIds,
+        frontStatusNationIds,
+        lobbyGeneralIds,
         reservedGeneralIds,
         recordGeneralIds,
         worldChanged: false,
         globalRecordsChanged,
         worldHistoryChanged,
         contactsChanged,
+        frontStatusChanged,
+        lobbyChanged,
     };
 };
 
@@ -665,6 +867,7 @@ export const createDatabaseTurnHooks = async (
     await connector.connect();
     const prisma = connector.prisma;
     let committedReadModelChanges: RealtimeReadModelChanges | null = null;
+    const readModelBaseline = createRealtimeReadModelBaseline(world);
 
     const persistChanges = async (
         transaction?: GamePrisma.TransactionClient,
@@ -1136,14 +1339,20 @@ export const createDatabaseTurnHooks = async (
             );
         }
 
+        const readModelChanges = summarizeRealtimeReadModelChanges(
+            changes,
+            persistedReservedTurnChanges,
+            readModelBaseline
+        );
         return {
             acknowledge: () => {
                 world.acknowledgeDirtyState(changes);
                 if (options?.reservedTurns && reservedTurnChanges) {
                     options.reservedTurns.acknowledgeDirtyState(reservedTurnChanges);
                 }
+                applyRealtimeReadModelBaseline(readModelBaseline, changes);
             },
-            readModelChanges: summarizeRealtimeReadModelChanges(changes, persistedReservedTurnChanges),
+            readModelChanges,
         };
     };
 

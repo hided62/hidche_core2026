@@ -104,6 +104,8 @@ const buildContext = (options: {
         generalId: general?.id ?? 0,
         awardedUnique: false,
     }));
+    const redisIncr = vi.fn(async (_key: string) => 41);
+    const redisPublish = vi.fn(async (_channel: string, _message: string) => 1);
     const queryRaw = vi.fn(async (query: GamePrisma.Sql) => {
         const text = sqlText(query);
         if (text.includes('FROM vote_poll') && text.includes('LIMIT 1')) {
@@ -177,7 +179,10 @@ const buildContext = (options: {
     );
     const context: GameApiContext = {
         db: db as unknown as DatabaseClient,
-        redis: {} as RedisConnector['client'],
+        redis: {
+            incr: redisIncr,
+            publish: redisPublish,
+        } as unknown as RedisConnector['client'],
         turnDaemon: { requestCommand } as unknown as TurnDaemonTransport,
         battleSim: {} as GameApiContext['battleSim'],
         profile: { id: 'che', scenario: 'default', name: 'che:default' },
@@ -189,7 +194,7 @@ const buildContext = (options: {
         flushStore: new InMemoryFlushStore(),
         gameTokenSecret: 'test-secret',
     };
-    return { context, requestCommand, queryRaw, db };
+    return { context, requestCommand, queryRaw, db, redisIncr, redisPublish };
 };
 
 describe('vote router actor and permission boundaries', () => {
@@ -216,6 +221,34 @@ describe('vote router actor and permission boundaries', () => {
                 goldReward: 90,
             })
         );
+        expect(fixture.redisIncr).toHaveBeenCalledWith('sammo:che:default:read-model:revision');
+        const published = JSON.parse(String(fixture.redisPublish.mock.calls[0]?.[1]));
+        expect(published).toMatchObject({
+            type: 'readModelChanged',
+            revision: 41,
+            changes: {
+                frontStatusActorIds: [7],
+                frontStatusChanged: false,
+            },
+        });
+    });
+
+    it('publishes a global front-status projection after creating a survey', async () => {
+        const fixture = buildContext({ auth: buildAuth(['admin.survey.open']) });
+
+        await expect(
+            appRouter.createCaller(fixture.context).vote.createPoll({
+                title: '새 설문',
+                options: ['찬성', '반대'],
+                revealMode: 'after_vote',
+            })
+        ).resolves.toEqual({ ok: true });
+
+        const published = JSON.parse(String(fixture.redisPublish.mock.calls[0]?.[1]));
+        expect(published).toMatchObject({
+            type: 'readModelChanged',
+            changes: { frontStatusChanged: true },
+        });
     });
 
     it('uses the current world develcost for the legacy five-times survey reward', async () => {

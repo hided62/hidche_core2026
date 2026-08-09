@@ -31,16 +31,31 @@ export const resolveDashboardRefreshPlan = (
     const ownGeneralChanged = contains(changes.generalIds, identity.generalId);
     const ownCityChanged = contains(changes.cityIds, identity.cityId);
     const ownNationChanged = contains(changes.nationIds, identity.nationId);
+    const ownFrontStatusNationChanged = contains(
+        changes.frontStatusNationIds ?? changes.nationIds,
+        identity.nationId
+    );
+    const ownGeneralMapChanged = contains(changes.mapGeneralIds ?? changes.generalIds, identity.generalId);
+    const frontStatusGeneralChanged =
+        changes.frontStatusGeneralIds !== undefined
+            ? changes.frontStatusGeneralIds.length > 0
+            : changes.contactsChanged;
+    const ownFrontStatusActorChanged = contains(changes.frontStatusActorIds ?? [], identity.generalId);
+    const ownLobbyGeneralChanged = contains(changes.lobbyGeneralIds ?? changes.generalIds, identity.generalId);
+    const lobbyChanged = changes.lobbyChanged ?? changes.contactsChanged;
     const entityContextChanged = ownGeneralChanged || ownCityChanged || ownNationChanged;
-    const worldEntitiesChanged = changes.cityIds.length > 0 || changes.nationIds.length > 0;
+    const mapEntitiesChanged =
+        (changes.mapCityIds ?? changes.cityIds).length > 0 ||
+        (changes.mapNationIds ?? changes.nationIds).length > 0;
+    const commandEntitiesChanged = changes.cityIds.length > 0 || changes.nationIds.length > 0;
 
     return {
         context: entityContextChanged,
-        lobby: changes.worldChanged || changes.contactsChanged,
-        map: changes.worldChanged || worldEntitiesChanged || ownGeneralChanged,
-        commands: changes.worldChanged || worldEntitiesChanged || ownGeneralChanged,
+        lobby: changes.worldChanged || lobbyChanged || ownLobbyGeneralChanged,
+        map: changes.worldChanged || mapEntitiesChanged || ownGeneralMapChanged,
+        commands: changes.worldChanged || commandEntitiesChanged || ownGeneralChanged,
         contacts: changes.contactsChanged,
-        boardAccess: entityContextChanged,
+        boardAccess: ownGeneralChanged || ownNationChanged,
         reservedTurns: contains(changes.reservedGeneralIds, identity.generalId),
         records:
             changes.globalRecordsChanged ||
@@ -48,7 +63,11 @@ export const resolveDashboardRefreshPlan = (
             contains(changes.recordGeneralIds, identity.generalId),
         // lastTurnTime is intentionally excluded. This slice contains the
         // nation notice/vote/presence model and only follows related changes.
-        frontStatus: changes.contactsChanged || ownNationChanged,
+        frontStatus:
+            Boolean(changes.frontStatusChanged) ||
+            frontStatusGeneralChanged ||
+            ownFrontStatusNationChanged ||
+            ownFrontStatusActorChanged,
     };
 };
 
