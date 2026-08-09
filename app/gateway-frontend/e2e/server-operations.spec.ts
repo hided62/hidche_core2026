@@ -39,6 +39,7 @@ type FixtureState = {
     profileNavigationDelayMs?: number;
     profileNavigationRequests?: number;
     profileNavigationResolved?: boolean;
+    scenarioFailuresRemaining?: number;
 };
 
 const profile = (runtimeRunning: boolean) => ({
@@ -66,6 +67,16 @@ const profile = (runtimeRunning: boolean) => ({
 
 const scenarios = [
     {
+        id: 0,
+        title: '【테스트】공백지',
+        year: null,
+        npcCount: 0,
+        npcExCount: 0,
+        npcNeutralCount: 0,
+        nations: [],
+        isCurrent: false,
+    },
+    {
         id: 2,
         title: '【테스트】황건의 난',
         year: 184,
@@ -73,6 +84,7 @@ const scenarios = [
         npcExCount: 0,
         npcNeutralCount: 0,
         nations: [],
+        isCurrent: true,
     },
     {
         id: 5,
@@ -82,6 +94,7 @@ const scenarios = [
         npcExCount: 0,
         npcNeutralCount: 0,
         nations: [],
+        isCurrent: false,
     },
 ];
 
@@ -108,6 +121,11 @@ const installFixture = async (page: Page, state: FixtureState) => {
         }
         if (names.includes('admin.profiles.list') && state.profileListDelayMs) {
             await new Promise((resolve) => setTimeout(resolve, state.profileListDelayMs));
+        }
+        if (names.includes('admin.profiles.listScenarios') && (state.scenarioFailuresRemaining ?? 0) > 0) {
+            state.scenarioFailuresRemaining = (state.scenarioFailuresRemaining ?? 0) - 1;
+            await route.abort('failed');
+            return;
         }
         const results = names.map((name) => {
             if (route.request().method() === 'POST') {
@@ -185,6 +203,7 @@ const installFixture = async (page: Page, state: FixtureState) => {
                 });
             }
             if (name === 'admin.profiles.listScenarios') {
+                expect(names).toEqual(['admin.profiles.listScenarios']);
                 return response(scenarios);
             }
             if (name === 'admin.operations.requestReset') {
@@ -295,6 +314,26 @@ test('separates branch and commit semantics and submits a reset from the dedicat
     await expect(page.getByTestId('source-current')).toBeChecked();
     await expect(page.getByTestId('source-help')).toContainText('현재 서버에 배포된 커밋');
     await expect(page.getByTestId('scenario-select')).toHaveValue('2');
+    await expect(page.getByTestId('request-reset')).toBeEnabled();
+    await expect(page.getByTestId('scenario-select').locator('option:checked')).toContainText('현재 시나리오');
+    const catalogGeometry = await page.getByTestId('scenario-select').evaluate((select) => {
+        const scenarioSelect = select as HTMLSelectElement;
+        const rect = select.getBoundingClientRect();
+        return {
+            x: rect.x,
+            y: rect.y,
+            width: rect.width,
+            height: rect.height,
+            optionCount: scenarioSelect.options.length,
+            value: scenarioSelect.value,
+        };
+    });
+    expect(catalogGeometry.optionCount).toBe(3);
+    expect(catalogGeometry.value).toBe('2');
+    expect(catalogGeometry.width).toBeGreaterThan(300);
+    await page.screenshot({ path: testInfo.outputPath('current-scenario-catalog.png'), fullPage: true });
+    await page.getByTestId('scenario-select').selectOption('0');
+    await expect(page.getByTestId('request-reset')).toBeEnabled();
     await expect(page.getByTestId('server-profile-tabs')).toBeVisible();
     await expect(page.getByRole('link', { name: '시나리오 초기화', exact: true })).toHaveAttribute(
         'aria-current',
@@ -331,7 +370,7 @@ test('separates branch and commit semantics and submits a reset from the dedicat
     });
     await writeFile(
         testInfo.outputPath('layout-metrics.json'),
-        JSON.stringify({ desktopGeometry, focusedInputStyle }, null, 2)
+        JSON.stringify({ catalogGeometry, desktopGeometry, focusedInputStyle }, null, 2)
     );
     await page.screenshot({ path: testInfo.outputPath('desktop-operations.png'), fullPage: true });
 
@@ -413,6 +452,24 @@ test('renders the fixed-profile version form without waiting for the server list
     expect(state.profileNavigationResolved).toBe(false);
     await expect.poll(() => state.profileNavigationResolved).toBe(true);
     expect(state.profileNavigationRequests).toBe(1);
+});
+
+test('recovers the current-version scenario catalog after the initial request fails', async ({ page }) => {
+    const state: FixtureState = {
+        operations: [],
+        gatewayOperations: [],
+        runtimeRunning: true,
+        requestBodies: [],
+        scenarioFailuresRemaining: 1,
+    };
+    await installFixture(page, state);
+
+    await page.goto('admin/servers/che%3A2/scenario');
+    await expect(page.getByTestId('scenario-select')).toContainText('선택할 수 있는 시나리오가 없습니다.');
+    await expect(page.getByTestId('request-reset')).toBeDisabled();
+    await page.getByTestId('load-scenarios').click();
+    await expect(page.getByTestId('scenario-select')).toHaveValue('2');
+    await expect(page.getByTestId('request-reset')).toBeEnabled();
 });
 
 test('renders the server navigation before the detailed runtime profile request resolves', async ({ page }) => {

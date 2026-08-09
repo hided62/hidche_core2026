@@ -1549,6 +1549,7 @@ export const adminRouter = router({
                 const adminAuth = requireAdminAuth(ctx);
                 const sourceMode = input?.sourceMode ?? 'CURRENT';
                 let gitRef = input?.gitRef?.trim();
+                let currentScenarioId: number | null = null;
                 if (sourceMode === 'CURRENT') {
                     if (!input?.profileName) {
                         if (!adminAuth.isSuperuser) {
@@ -1562,6 +1563,8 @@ export const adminRouter = router({
                         );
                         const profile = await ctx.profiles.getProfile(input.profileName);
                         if (!profile) throw new TRPCError({ code: 'NOT_FOUND', message: 'Profile not found.' });
+                        const parsedScenarioId = Number(profile.scenario);
+                        currentScenarioId = Number.isInteger(parsedScenarioId) ? parsedScenarioId : null;
                         gitRef = profile.buildCommitSha?.trim();
                         if (!gitRef) {
                             throw new TRPCError({
@@ -1575,14 +1578,18 @@ export const adminRouter = router({
                 } else {
                     assertAnyPermission(adminAuth, [ROLE_ADMIN_PROFILES, ROLE_ADMIN_PROFILE_DEPLOY]);
                 }
-                if (!gitRef) {
-                    return listScenarioPreviews();
-                }
-                const resolved =
-                    sourceMode === 'BRANCH'
-                        ? await resolveGitBranchCommitSha(gitRef)
-                        : await resolveGitCommitSha(gitRef);
-                return listScenarioPreviews({ gitRef: resolved });
+                const scenarios = !gitRef
+                    ? await listScenarioPreviews()
+                    : await listScenarioPreviews({
+                          gitRef:
+                              sourceMode === 'BRANCH'
+                                  ? await resolveGitBranchCommitSha(gitRef)
+                                  : await resolveGitCommitSha(gitRef),
+                      });
+                return scenarios.map((scenario) => ({
+                    ...scenario,
+                    isCurrent: currentScenarioId === scenario.id,
+                }));
             }),
         upsert: profileAdminProcedure
             .input(
