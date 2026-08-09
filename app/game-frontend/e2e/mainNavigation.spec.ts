@@ -216,17 +216,23 @@ const installRealtimeHarness = async (page: Page) => {
     await page.addInitScript(() => {
         class TestEventSource extends EventTarget {
             static latest: TestEventSource | null = null;
+            static created = 0;
+            static closed = 0;
             readonly url: string;
 
             constructor(url: string | URL) {
                 super();
                 this.url = url.toString();
+                TestEventSource.created += 1;
                 TestEventSource.latest = this;
                 queueMicrotask(() => this.dispatchEvent(new Event('open')));
             }
 
             close() {
-                if (TestEventSource.latest === this) TestEventSource.latest = null;
+                if (TestEventSource.latest === this) {
+                    TestEventSource.latest = null;
+                    TestEventSource.closed += 1;
+                }
             }
         }
 
@@ -242,6 +248,14 @@ const installRealtimeHarness = async (page: Page) => {
         Object.defineProperty(window, '__hasMainRealtime', {
             configurable: true,
             value: () => TestEventSource.latest !== null,
+        });
+        Object.defineProperty(window, '__mainRealtimeStats', {
+            configurable: true,
+            value: () => ({
+                active: TestEventSource.latest !== null,
+                created: TestEventSource.created,
+                closed: TestEventSource.closed,
+            }),
         });
     });
 };
@@ -517,7 +531,9 @@ test('mobile single document refreshes once and preserves tokens on lobby return
     expect(state.operations).not.toContain('auth.logout');
 });
 
-test('realtime read-model events skip clock-only work, merge bursts, patch in place, and stop off-route', async ({ page }) => {
+test('realtime read-model events skip clock-only work, merge bursts, patch in place, and stop off-route', async ({
+    page,
+}) => {
     const state: NavigationFixture = {
         officerLevel: 5,
         permission: 2,
@@ -673,9 +689,9 @@ test('realtime read-model events skip clock-only work, merge bursts, patch in pl
             }
         );
     });
-    await expect.poll(() => state.operations.slice(operationsBeforeSurvey), { timeout: 3_000 }).toEqual([
-        'general.getFrontStatus',
-    ]);
+    await expect
+        .poll(() => state.operations.slice(operationsBeforeSurvey), { timeout: 3_000 })
+        .toEqual(['general.getFrontStatus']);
 
     const profile = await page.evaluate(() => {
         const probe = (
@@ -725,10 +741,7 @@ test('realtime read-model events skip clock-only work, merge bursts, patch in pl
     await page.locator(`a[href="${basePath}/board"]`).first().click();
     await page.waitForURL(`**${basePath}/board`);
     expect(
-        await page.evaluate(
-            () =>
-                (window as unknown as { __hasMainRealtime: () => boolean }).__hasMainRealtime()
-        )
+        await page.evaluate(() => (window as unknown as { __hasMainRealtime: () => boolean }).__hasMainRealtime())
     ).toBe(false);
     const callsAfterLeavingMain = state.generalMeCalls;
     await page.evaluate(() => {
@@ -762,4 +775,146 @@ test('realtime read-model events skip clock-only work, merge bursts, patch in pl
     });
     await new Promise((resolve) => setTimeout(resolve, 300));
     expect(state.generalMeCalls).toBe(callsAfterLeavingMain);
+});
+
+test('same-account main tabs share one realtime diff and exclude a tab while sync is off', async ({
+    context,
+    page,
+}) => {
+    const state: NavigationFixture = {
+        officerLevel: 5,
+        permission: 2,
+        nationLevel: 3,
+        stage: 0,
+        npcMode: 1,
+        generalMeCalls: 0,
+        operations: [],
+    };
+    const secondPage = await context.newPage();
+    const pages = [page, secondPage];
+    for (const currentPage of pages) {
+        await currentPage.addInitScript(() => {
+            Object.defineProperty(document, 'visibilityState', { configurable: true, get: () => 'visible' });
+        });
+        await installRealtimeHarness(currentPage);
+        await installFixture(currentPage, state);
+        await currentPage.setViewportSize({ width: 1200, height: 900 });
+    }
+
+    await Promise.all(pages.map((currentPage) => waitForMain(currentPage)));
+    await expect
+        .poll(async () => {
+            const stats = await Promise.all(
+                pages.map((currentPage) =>
+                    currentPage.evaluate(() =>
+                        (
+                            window as unknown as {
+                                __mainRealtimeStats: () => { active: boolean; created: number; closed: number };
+                            }
+                        ).__mainRealtimeStats()
+                    )
+                )
+            );
+            return stats.filter((entry) => entry.active).length;
+        })
+        .toBe(1);
+
+    const activeFlags = await Promise.all(
+        pages.map((currentPage) =>
+            currentPage.evaluate(() => (window as unknown as { __hasMainRealtime: () => boolean }).__hasMainRealtime())
+        )
+    );
+    const leaderIndex = activeFlags.findIndex(Boolean);
+    const followerIndex = leaderIndex === 0 ? 1 : 0;
+    const leaderPage = pages[leaderIndex];
+    const followerPage = pages[followerIndex];
+    if (!leaderPage || !followerPage) throw new Error('realtime leader election failed');
+
+    const callsBeforeSharedRefresh = state.generalMeCalls;
+    state.generalName = '탭공유갱신장수';
+    await leaderPage.evaluate(() => {
+        (window as unknown as { __emitMainRealtime: (type: string, payload: unknown) => void }).__emitMainRealtime(
+            'readModelChanged',
+            {
+                at: new Date().toISOString(),
+                revision: 100,
+                changes: {
+                    generalIds: [7],
+                    cityIds: [],
+                    nationIds: [],
+                    mapGeneralIds: [],
+                    mapCityIds: [],
+                    mapNationIds: [],
+                    frontStatusGeneralIds: [],
+                    frontStatusNationIds: [],
+                    frontStatusActorIds: [],
+                    frontStatusChanged: false,
+                    lobbyGeneralIds: [],
+                    lobbyChanged: false,
+                    reservedGeneralIds: [],
+                    recordGeneralIds: [],
+                    worldChanged: false,
+                    globalRecordsChanged: false,
+                    worldHistoryChanged: false,
+                    contactsChanged: false,
+                },
+            }
+        );
+    });
+    await expect.poll(() => state.generalMeCalls).toBe(callsBeforeSharedRefresh + 1);
+    await Promise.all(
+        pages.map((currentPage) => expect(currentPage.locator('.general-title')).toContainText('탭공유갱신장수'))
+    );
+
+    await followerPage.getByRole('button', { name: /실시간 동기화/u }).click();
+    await expect(followerPage.getByRole('button', { name: /실시간 동기화: 끔/u })).toBeVisible();
+    const callsBeforeExcludedRefresh = state.generalMeCalls;
+    state.generalName = '리더만갱신장수';
+    await leaderPage.evaluate(() => {
+        (window as unknown as { __emitMainRealtime: (type: string, payload: unknown) => void }).__emitMainRealtime(
+            'readModelChanged',
+            {
+                at: new Date().toISOString(),
+                revision: 101,
+                changes: {
+                    generalIds: [7],
+                    cityIds: [],
+                    nationIds: [],
+                    mapGeneralIds: [],
+                    mapCityIds: [],
+                    mapNationIds: [],
+                    frontStatusGeneralIds: [],
+                    frontStatusNationIds: [],
+                    frontStatusActorIds: [],
+                    frontStatusChanged: false,
+                    lobbyGeneralIds: [],
+                    lobbyChanged: false,
+                    reservedGeneralIds: [],
+                    recordGeneralIds: [],
+                    worldChanged: false,
+                    globalRecordsChanged: false,
+                    worldHistoryChanged: false,
+                    contactsChanged: false,
+                },
+            }
+        );
+    });
+    await expect.poll(() => state.generalMeCalls).toBe(callsBeforeExcludedRefresh + 1);
+    await expect(leaderPage.locator('.general-title')).toContainText('리더만갱신장수');
+    await expect(followerPage.locator('.general-title')).toContainText('탭공유갱신장수');
+
+    await followerPage.getByRole('button', { name: /실시간 동기화: 끔/u }).click();
+    await expect(followerPage.locator('.general-title')).toContainText('리더만갱신장수');
+    await expect
+        .poll(async () => {
+            const flags = await Promise.all(
+                pages.map((currentPage) =>
+                    currentPage.evaluate(() =>
+                        (window as unknown as { __hasMainRealtime: () => boolean }).__hasMainRealtime()
+                    )
+                )
+            );
+            return flags.filter(Boolean).length;
+        })
+        .toBe(1);
 });
