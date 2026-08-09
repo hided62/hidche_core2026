@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onUnmounted, ref, watch } from 'vue';
+import { computed, onMounted, onUnmounted, ref, watch } from 'vue';
 import { storeToRefs } from 'pinia';
 import { useMediaQuery } from '@vueuse/core';
 import PanelCard from '../components/ui/PanelCard.vue';
@@ -92,6 +92,11 @@ onUnmounted(() => {
     if (surveyNoticeTimer) {
         clearTimeout(surveyNoticeTimer);
     }
+    dashboard.stopRealtime();
+});
+
+onMounted(() => {
+    dashboard.startRealtime();
 });
 
 const shiftGeneralTurns = (amount: number) => {

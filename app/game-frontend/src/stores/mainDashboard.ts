@@ -6,7 +6,10 @@ import { trpc } from '../utils/trpc';
 import { useMapViewerStore } from './mapViewer';
 import { useSessionStore } from './session';
 import { createLatestRefreshQueue } from '../utils/latestRefreshQueue';
+import { createRateLimitedRefreshQueue } from '../utils/rateLimitedRefreshQueue';
 import { structurallyShare } from '../utils/structuralShare';
+
+const REALTIME_FULL_REFRESH_MIN_INTERVAL_MS = 5_000;
 
 const resolveErrorMessage = (value: unknown): string => {
     if (value instanceof Error) {
@@ -39,6 +42,7 @@ export const useMainDashboardStore = defineStore('mainDashboard', () => {
     const frontStatusError = ref<string | null>(null);
     const realtimeEnabled = ref(true);
     const realtimeStatus = ref<'idle' | 'connected' | 'paused'>('idle');
+    const realtimeActive = ref(false);
 
     const general = ref<PresentGeneralContext['general'] | null>(null);
     const city = ref<PresentGeneralContext['city'] | null>(null);
@@ -373,6 +377,9 @@ export const useMainDashboardStore = defineStore('mainDashboard', () => {
 
     const refreshQueue = createLatestRefreshQueue(refreshMainData);
     const loadMainData = () => refreshQueue.request();
+    const realtimeRefreshQueue = createRateLimitedRefreshQueue(() => refreshQueue.request(), {
+        minIntervalMs: REALTIME_FULL_REFRESH_MIN_INTERVAL_MS,
+    });
 
     const refreshMessages = async () => {
         const id = generalId.value;
@@ -593,6 +600,7 @@ export const useMainDashboardStore = defineStore('mainDashboard', () => {
 
     let realtimeSource: EventSource | null = null;
     let realtimeToken: string | null = null;
+    let visibilityListenerInstalled = false;
 
     const isAccessToken = (token: string | null): boolean => Boolean(token?.startsWith('ga_'));
 
@@ -663,7 +671,13 @@ export const useMainDashboardStore = defineStore('mainDashboard', () => {
         if (typeof window === 'undefined') {
             return;
         }
-        if (!realtimeEnabled.value || !session.isReady || !session.hasGeneral) {
+        if (
+            !realtimeActive.value ||
+            document.visibilityState === 'hidden' ||
+            !realtimeEnabled.value ||
+            !session.isReady ||
+            !session.hasGeneral
+        ) {
             return;
         }
         const token = await ensureAccessToken();
@@ -688,7 +702,7 @@ export const useMainDashboardStore = defineStore('mainDashboard', () => {
             realtimeStatus.value = realtimeEnabled.value ? 'idle' : 'paused';
         });
         source.addEventListener('turnCompleted', () => {
-            void loadMainData();
+            realtimeRefreshQueue.request();
         });
         source.addEventListener('messageCreated', (event) => {
             const payload = parseRealtimePayload(event);
@@ -706,9 +720,48 @@ export const useMainDashboardStore = defineStore('mainDashboard', () => {
         });
     };
 
+    const handleVisibilityChange = () => {
+        if (!realtimeActive.value) return;
+        if (document.visibilityState === 'hidden') {
+            realtimeRefreshQueue.cancelPending();
+            closeRealtimeSource();
+            realtimeStatus.value = 'idle';
+            return;
+        }
+        realtimeRefreshQueue.beginCooldown();
+        void connectRealtime();
+        realtimeRefreshQueue.request();
+    };
+
+    const startRealtime = () => {
+        if (typeof window === 'undefined' || realtimeActive.value) return;
+        realtimeActive.value = true;
+        realtimeRefreshQueue.beginCooldown();
+        if (!visibilityListenerInstalled) {
+            document.addEventListener('visibilitychange', handleVisibilityChange);
+            visibilityListenerInstalled = true;
+        }
+    };
+
+    const stopRealtime = () => {
+        realtimeActive.value = false;
+        realtimeRefreshQueue.cancelPending();
+        closeRealtimeSource();
+        if (visibilityListenerInstalled) {
+            document.removeEventListener('visibilitychange', handleVisibilityChange);
+            visibilityListenerInstalled = false;
+        }
+        realtimeStatus.value = realtimeEnabled.value ? 'idle' : 'paused';
+    };
+
     watch(
-        () => [realtimeEnabled.value, session.isReady, session.hasGeneral, session.gameToken],
-        ([enabled, ready, hasGeneral]) => {
+        () => [realtimeActive.value, realtimeEnabled.value, session.isReady, session.hasGeneral, session.gameToken],
+        ([active, enabled, ready, hasGeneral]) => {
+            if (!active) {
+                closeRealtimeSource();
+                realtimeStatus.value = enabled ? 'idle' : 'paused';
+                return;
+            }
             if (!enabled) {
                 closeRealtimeSource();
                 realtimeStatus.value = 'paused';
@@ -720,8 +773,7 @@ export const useMainDashboardStore = defineStore('mainDashboard', () => {
                 return;
             }
             void connectRealtime();
-        },
-        { immediate: true }
+        }
     );
 
     return {
@@ -755,6 +807,8 @@ export const useMainDashboardStore = defineStore('mainDashboard', () => {
         statusLine,
         realtimeLabel,
         setRealtimeEnabled,
+        startRealtime,
+        stopRealtime,
         dismissSurveyNotice,
         loadMainData,
         refreshMessages,
