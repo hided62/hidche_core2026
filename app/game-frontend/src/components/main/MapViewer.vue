@@ -157,7 +157,8 @@ const cityViews = computed<CityView[]>(() => {
 
     return props.mapLayout.cityList.map((layoutCity) => {
         const dynamic = dynamicCityById.value.get(layoutCity.id);
-        const [, state = 0, nationId = 0, region = layoutCity.region, supplyFlag = 0] = dynamic ?? [];
+        const [level = layoutCity.level, state = 0, nationId = 0, region = layoutCity.region, supplyFlag = 0] =
+            dynamic ?? [];
         const nation = nationById.value.get(nationId);
         const x = layoutCity.x * scale;
         const y = layoutCity.y * scale;
@@ -165,8 +166,8 @@ const cityViews = computed<CityView[]>(() => {
         return {
             id: layoutCity.id,
             name: layoutCity.name,
-            level: layoutCity.level,
-            levelName: props.mapLayout?.levelMap?.[layoutCity.level] ?? '-',
+            level,
+            levelName: props.mapLayout?.levelMap?.[level] ?? '-',
             state,
             stateClass: resolveStateClass(state),
             nationId,

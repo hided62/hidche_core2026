@@ -55,13 +55,23 @@ const city = {
     incomes: { gold: 1000, rice: 900, wall: 800 },
     officers: { 2: null, 3: null, 4: { id: 1, name: '태수', npcState: 0, officerLevel: 4, cityId: 1, cityName: '업' } },
 };
+const castleFixtures = [
+    { id: 1, level: 8, layoutLevel: 1, x: 100, y: 100, width: 32, height: 24 },
+    { id: 2, level: 1, layoutLevel: 8, x: 200, y: 100, width: 16, height: 15 },
+    { id: 3, level: 2, layoutLevel: 8, x: 300, y: 100, width: 20, height: 14 },
+    { id: 4, level: 3, layoutLevel: 8, x: 400, y: 100, width: 14, height: 14 },
+    { id: 5, level: 4, layoutLevel: 8, x: 100, y: 220, width: 20, height: 15 },
+    { id: 6, level: 5, layoutLevel: 8, x: 200, y: 220, width: 24, height: 16 },
+    { id: 7, level: 6, layoutLevel: 8, x: 300, y: 220, width: 26, height: 18 },
+    { id: 8, level: 7, layoutLevel: 8, x: 400, y: 220, width: 28, height: 20 },
+] as const;
 const map = {
     result: true,
     version: 0,
     startYear: 180,
     year: 200,
     month: 1,
-    cityList: [[1, 8, 0, 1, 1, 1]],
+    cityList: castleFixtures.map(({ id, level }) => [id, level, 0, 1, 1, 1]),
     nationList: [[1, '아국', '#008000', 1]],
     spyList: {},
     shownByGeneralList: [],
@@ -70,9 +80,17 @@ const map = {
 };
 const layout = {
     mapName: 'che',
-    cityList: [{ id: 1, name: '업', level: 8, region: 1, x: 345, y: 130, path: [] }],
+    cityList: castleFixtures.map(({ id, layoutLevel: level, x, y }) => ({
+        id,
+        name: id === 1 ? '업' : `성${id}`,
+        level,
+        region: 1,
+        x,
+        y,
+        path: [],
+    })),
     regionMap: { 1: '하북' },
-    levelMap: { 8: '특' },
+    levelMap: { 1: '수', 2: '진', 3: '관', 4: '이', 5: '소', 6: '중', 7: '대', 8: '특' },
 };
 const generalContext = {
     general: {
@@ -357,6 +375,40 @@ test('global-info renders the ref nation summary columns beside the map', async 
     await page.setViewportSize({ width: 1200, height: 900 });
     await go(page, 'global-info');
 
+    const castleGeometry = await page.locator('.map-area').evaluate((mapArea) => {
+        const mapRect = mapArea.getBoundingClientRect();
+        return Array.from(mapArea.querySelectorAll<HTMLImageElement>('.city-icon')).map((image) => {
+            const iconRect = image.getBoundingClientRect();
+            const cityBase = image.closest<HTMLElement>('.city-base');
+            if (!cityBase) throw new Error('castle icon is missing its city coordinate cell');
+            const baseRect = cityBase.getBoundingClientRect();
+            return {
+                src: new URL(image.src).pathname,
+                naturalWidth: image.naturalWidth,
+                naturalHeight: image.naturalHeight,
+                width: iconRect.width,
+                height: iconRect.height,
+                iconCenterX: iconRect.left + iconRect.width / 2 - mapRect.left,
+                iconCenterY: iconRect.top + iconRect.height / 2 - mapRect.top,
+                cellCenterX: baseRect.left + baseRect.width / 2 - mapRect.left,
+                cellCenterY: baseRect.top + baseRect.height / 2 - mapRect.top,
+            };
+        });
+    });
+    expect(castleGeometry).toEqual(
+        castleFixtures.map(({ level, x, y, width, height }) => ({
+            src: `/game/cast_${level}.gif`,
+            naturalWidth: width,
+            naturalHeight: height,
+            width,
+            height,
+            iconCenterX: x,
+            iconCenterY: y,
+            cellCenterX: x,
+            cellCenterY: y,
+        }))
+    );
+
     const summary = page.locator('.simple-nation-list');
     await expect(summary).toBeVisible();
     await expect(summary.locator('thead')).toContainText('국명');
@@ -368,7 +420,9 @@ test('global-info renders the ref nation summary columns beside the map', async 
 
     const geometry = await summary.evaluate((element) => {
         const rect = element.getBoundingClientRect();
-        const headings = Array.from(element.querySelectorAll('th')).map((heading) => heading.getBoundingClientRect().width);
+        const headings = Array.from(element.querySelectorAll('th')).map(
+            (heading) => heading.getBoundingClientRect().width
+        );
         return { x: rect.x, width: rect.width, headings };
     });
     expect(geometry).toMatchObject({ x: 800, width: 300 });
@@ -384,11 +438,12 @@ test('global-info renders the ref nation summary columns beside the map', async 
             `${JSON.stringify(
                 {
                     geometry,
+                    castleGeometry,
                     headings: await summary.locator('th').allTextContents(),
                     rows: await summary.locator('tbody tr').allTextContents(),
-                    cityTitles: await summary.locator('tbody td:last-child').evaluateAll((cells) =>
-                        cells.map((cell) => cell.getAttribute('title'))
-                    ),
+                    cityTitles: await summary
+                        .locator('tbody td:last-child')
+                        .evaluateAll((cells) => cells.map((cell) => cell.getAttribute('title'))),
                 },
                 null,
                 2
@@ -399,6 +454,30 @@ test('global-info renders the ref nation summary columns beside the map', async 
     }
 
     await page.setViewportSize({ width: 390, height: 844 });
+    const mobileCastleGeometry = await page.locator('.map-area').evaluate((mapArea) => {
+        const mapRect = mapArea.getBoundingClientRect();
+        return Array.from(mapArea.querySelectorAll<HTMLImageElement>('.city-icon')).map((image) => {
+            const rect = image.getBoundingClientRect();
+            return {
+                naturalWidth: image.naturalWidth,
+                naturalHeight: image.naturalHeight,
+                width: rect.width,
+                height: rect.height,
+                centerX: rect.left + rect.width / 2 - mapRect.left,
+                centerY: rect.top + rect.height / 2 - mapRect.top,
+            };
+        });
+    });
+    const smallScale = 5 / 7;
+    for (const [index, rendered] of mobileCastleGeometry.entries()) {
+        const { width, height, x, y } = castleFixtures[index]!;
+        expect(rendered.naturalWidth).toBe(width);
+        expect(rendered.naturalHeight).toBe(height);
+        expect(rendered.width).toBeCloseTo(width * smallScale, 1);
+        expect(rendered.height).toBeCloseTo(height * smallScale, 1);
+        expect(rendered.centerX).toBeCloseTo(x * smallScale, 1);
+        expect(rendered.centerY).toBeCloseTo(y * smallScale, 1);
+    }
     const mobileGeometry = await page.locator('.map-grid').evaluate((element) => {
         const map = element.querySelector('.map-viewer')?.getBoundingClientRect();
         const summary = element.querySelector('.simple-nation-list')?.getBoundingClientRect();
@@ -514,7 +593,10 @@ test('current-city renders a missing merchant rate with the legacy dash and perc
     await page.setViewportSize({ width: 1200, height: 900 });
     await go(page, 'current-city');
 
-    const tradeValue = page.locator('.stats th').filter({ hasText: /^시세$/ }).locator('xpath=following-sibling::td[1]');
+    const tradeValue = page
+        .locator('.stats th')
+        .filter({ hasText: /^시세$/ })
+        .locator('xpath=following-sibling::td[1]');
     await expect(tradeValue).toHaveText('- %');
 });
 

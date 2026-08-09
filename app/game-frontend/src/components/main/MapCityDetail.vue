@@ -159,7 +159,7 @@ const cityStateStyle = computed(() => ({
         @click.stop="emit('select', props.city.id)"
     >
         <div v-if="cityBgStyle" class="city-bg" :style="[cityBgWrapperStyle, cityBgStyle]" />
-        <div class="city-img">
+        <div class="city-img" :style="cityIconStyle">
             <img class="city-icon" :src="castleIcon" :style="cityIconStyle" />
             <div class="city-filler" :class="{ 'my-city': props.city.isMyCity }" />
             <div v-if="flagIcon" class="city-flag" :style="cityFlagStyle">
