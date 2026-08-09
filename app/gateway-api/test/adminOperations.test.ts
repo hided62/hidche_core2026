@@ -29,6 +29,7 @@ const buildCaller = async (
         initialNotice?: string;
         initialProfileStatus?: GatewayProfileRecord['status'];
         profileScenario?: string;
+        releaseLogVisibilityAfterPolls?: number;
     } = {}
 ) => {
     const users = createInMemoryUserRepository();
@@ -56,6 +57,7 @@ const buildCaller = async (
             createdAt: '2026-08-01T00:00:01.000Z',
         },
     ];
+    let releaseLogPollCount = 0;
     const operationRecords = new Map<string, Awaited<ReturnType<GatewayProfileRepository['createOperation']>>>();
     const createdRuntimeActions: Array<Record<string, unknown>> = [];
     const flushes: Array<{ userId: string; reason?: string; iconRevision?: string }> = [];
@@ -136,8 +138,16 @@ const buildCaller = async (
                       updatedAt: '2026-08-01T00:00:00.000Z',
                   }
                 : null,
-        listOperationLogs: async (_id, afterCursor) =>
-            releaseLogs.filter((entry) => !afterCursor || BigInt(entry.cursor) > BigInt(afterCursor)),
+        listOperationLogs: async (_id, afterCursor) => {
+            releaseLogPollCount += 1;
+            if (
+                options.releaseLogVisibilityAfterPolls !== undefined &&
+                releaseLogPollCount < options.releaseLogVisibilityAfterPolls
+            ) {
+                return [];
+            }
+            return releaseLogs.filter((entry) => !afterCursor || BigInt(entry.cursor) > BigInt(afterCursor));
+        },
         appendOperationLog: async (_id, input) => ({
             cursor: '2',
             operationId: '44444444-4444-4444-8444-444444444444',
@@ -284,6 +294,7 @@ const buildCaller = async (
         auditEvents,
         getReconcileCount: () => reconcileCount,
         getStoredNotice: () => storedNotice,
+        getReleaseLogPollCount: () => releaseLogPollCount,
         setStoredNotice: (notice: string) => {
             storedNotice = notice;
         },
@@ -547,6 +558,26 @@ describe('admin operation API', () => {
 });
 
 describe('gateway release API', () => {
+    it('waits until a new release log becomes visible', async () => {
+        const harness = await buildCaller(
+            async () => {
+                throw new Error('not used');
+            },
+            { releaseLogVisibilityAfterPolls: 2 }
+        );
+
+        await expect(
+            harness.caller.admin.releases.logs({
+                id: '44444444-4444-4444-8444-444444444444',
+                timeoutMs: 1_000,
+            })
+        ).resolves.toMatchObject({
+            nextCursor: '1',
+            entries: [{ cursor: '1' }],
+        });
+        expect(harness.getReleaseLogPollCount()).toBe(2);
+    });
+
     it('long-polls ordered release logs with the current operation state', async () => {
         const harness = await buildCaller(async () => {
             throw new Error('not used');
