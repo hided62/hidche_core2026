@@ -65,6 +65,7 @@ const buildCaller = async (
     const updatedMetas: Record<string, unknown>[] = [];
     const auditEvents: AdminAuditEventRecord[] = [];
     let reconcileCount = 0;
+    let runtimeStateListCount = 0;
     let storedNotice = options.initialNotice ?? '';
     const profile = {
         profileName: 'che:2',
@@ -244,7 +245,10 @@ const buildCaller = async (
                     }
                 },
                 cleanupStaleWorkspaces: async () => ({ removed: [], skipped: [] }),
-                listRuntimeStates: async () => [],
+                listRuntimeStates: async () => {
+                    runtimeStateListCount += 1;
+                    return [];
+                },
             },
             profileStatus: new InMemoryProfileStatusService(),
             requestHeaders: { 'x-session-token': session.sessionToken },
@@ -293,6 +297,7 @@ const buildCaller = async (
         updatedMetas,
         auditEvents,
         getReconcileCount: () => reconcileCount,
+        getRuntimeStateListCount: () => runtimeStateListCount,
         getStoredNotice: () => storedNotice,
         getReleaseLogPollCount: () => releaseLogPollCount,
         setStoredNotice: (notice: string) => {
@@ -300,6 +305,26 @@ const buildCaller = async (
         },
     };
 };
+
+describe('admin profile navigation API', () => {
+    it('returns the scoped menu inventory without loading PM2 runtime state', async () => {
+        const harness = await buildCaller(
+            async () => {
+                throw new Error('not used');
+            },
+            { adminRoles: ['admin.profiles.manage:che:2'], firstUserIsAdmin: false }
+        );
+
+        await expect(harness.caller.admin.profiles.listNavigation()).resolves.toEqual([
+            {
+                profileName: 'che:2',
+                profile: 'che',
+                meta: {},
+            },
+        ]);
+        expect(harness.getRuntimeStateListCount()).toBe(0);
+    });
+});
 
 describe('gateway notice API', () => {
     const dirtyNotice =

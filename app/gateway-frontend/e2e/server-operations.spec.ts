@@ -36,8 +36,9 @@ type FixtureState = {
     gatewayLogPollCount?: number;
     capabilities?: Array<{ permission: string; scope: 'GLOBAL' | 'PROFILE'; scopes: string[] }>;
     profileListDelayMs?: number;
-    profileListRequests?: number;
-    profileListResolved?: boolean;
+    profileNavigationDelayMs?: number;
+    profileNavigationRequests?: number;
+    profileNavigationResolved?: boolean;
 };
 
 const profile = (runtimeRunning: boolean) => ({
@@ -97,12 +98,16 @@ const installFixture = async (page: Page, state: FixtureState) => {
     await page.route('**/gateway/api/trpc/**', async (route) => {
         const names = operationNames(route);
         const body = route.request().postDataJSON() as unknown;
-        if (names.includes('admin.profiles.list')) {
-            state.profileListRequests = (state.profileListRequests ?? 0) + 1;
-            if (state.profileListDelayMs) {
-                await new Promise((resolve) => setTimeout(resolve, state.profileListDelayMs));
+        if (names.includes('admin.profiles.listNavigation')) {
+            expect(names).toEqual(['admin.profiles.listNavigation']);
+            state.profileNavigationRequests = (state.profileNavigationRequests ?? 0) + 1;
+            if (state.profileNavigationDelayMs) {
+                await new Promise((resolve) => setTimeout(resolve, state.profileNavigationDelayMs));
             }
-            state.profileListResolved = true;
+            state.profileNavigationResolved = true;
+        }
+        if (names.includes('admin.profiles.list') && state.profileListDelayMs) {
+            await new Promise((resolve) => setTimeout(resolve, state.profileListDelayMs));
         }
         const results = names.map((name) => {
             if (route.request().method() === 'POST') {
@@ -110,6 +115,15 @@ const installFixture = async (page: Page, state: FixtureState) => {
             }
             if (name === 'admin.profiles.list') {
                 return response([profile(state.runtimeRunning)]);
+            }
+            if (name === 'admin.profiles.listNavigation') {
+                return response([
+                    {
+                        profileName: 'che:2',
+                        profile: 'che',
+                        meta: { korName: '천하서버' },
+                    },
+                ]);
             }
             if (name === 'admin.capabilities.list') {
                 return response(
@@ -261,7 +275,9 @@ const installFixture = async (page: Page, state: FixtureState) => {
         await route.fulfill({
             status: 200,
             contentType: 'application/json',
-            body: JSON.stringify(results),
+            body: JSON.stringify(
+                new URL(route.request().url()).searchParams.get('batch') === '1' ? results : results[0]
+            ),
         });
     });
 };
@@ -387,16 +403,33 @@ test('renders the fixed-profile version form without waiting for the server list
         gatewayOperations: [],
         runtimeRunning: true,
         requestBodies: [],
-        profileListDelayMs: 1500,
-        profileListResolved: false,
+        profileNavigationDelayMs: 1500,
+        profileNavigationResolved: false,
     };
     await installFixture(page, state);
 
     await page.goto('admin/servers/che%3A2/version');
     await expect(page.getByTestId('request-deploy')).toBeVisible({ timeout: 900 });
-    expect(state.profileListResolved).toBe(false);
-    await expect.poll(() => state.profileListResolved).toBe(true);
-    expect(state.profileListRequests).toBe(1);
+    expect(state.profileNavigationResolved).toBe(false);
+    await expect.poll(() => state.profileNavigationResolved).toBe(true);
+    expect(state.profileNavigationRequests).toBe(1);
+});
+
+test('renders the server navigation before the detailed runtime profile request resolves', async ({ page }) => {
+    const state: FixtureState = {
+        operations: [],
+        gatewayOperations: [],
+        runtimeRunning: true,
+        requestBodies: [],
+        profileListDelayMs: 1500,
+    };
+    await installFixture(page, state);
+
+    await page.goto('admin/servers/che%3A2');
+    const navigation = page.getByRole('navigation', { name: '관리자 메뉴' });
+    await expect(navigation.getByRole('link', { name: '천하서버 (che:2)' })).toBeVisible({ timeout: 900 });
+    await expect(navigation.getByRole('link', { name: 'Gateway 릴리스' })).toBeVisible({ timeout: 900 });
+    expect(state.profileNavigationRequests).toBe(1);
 });
 
 test('scenario-only operator resets the current version without Git or Gateway controls', async ({ page }) => {

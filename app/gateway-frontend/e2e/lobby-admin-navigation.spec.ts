@@ -52,6 +52,19 @@ const installGatewayFixture = async (page: Page, roles: string[]) => {
                         : []
                 );
             }
+            if (operation === 'admin.profiles.listNavigation') {
+                return response(
+                    roles.some((role) => role === 'superuser' || role.includes(':hwe:2'))
+                        ? [
+                              {
+                                  profileName: 'hwe:2',
+                                  profile: 'hwe',
+                                  meta: { korName: '환상서버' },
+                              },
+                          ]
+                        : []
+                );
+            }
             if (operation === 'admin.releases.gatewayState') {
                 return response({ id: 'gateway', updatedAt: '2026-08-01T00:00:00.000Z' });
             }
@@ -85,7 +98,9 @@ const installGatewayFixture = async (page: Page, roles: string[]) => {
         await route.fulfill({
             status: 200,
             contentType: 'application/json',
-            body: JSON.stringify(results),
+            body: JSON.stringify(
+                new URL(route.request().url()).searchParams.get('batch') === '1' ? results : results[0]
+            ),
         });
     });
 };

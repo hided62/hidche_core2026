@@ -145,6 +145,15 @@ const installFixture = async (
                     },
                 ]);
             }
+            if (operation === 'admin.profiles.listNavigation') {
+                return response([
+                    {
+                        profileName: 'hwe:default',
+                        profile: 'hwe',
+                        meta: {},
+                    },
+                ]);
+            }
             if (operation === 'admin.profiles.list') {
                 const keepPending = requested && postRequestProfileReads++ < (options.pendingProfileReads ?? 0);
                 return response([
@@ -235,7 +244,9 @@ const installFixture = async (
         await route.fulfill({
             status: 200,
             contentType: 'application/json',
-            body: JSON.stringify(results),
+            body: JSON.stringify(
+                new URL(route.request().url()).searchParams.get('batch') === '1' ? results : results[0]
+            ),
         });
     });
     return { releaseRequest, releaseInstall, requestBodies };

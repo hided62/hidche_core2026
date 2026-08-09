@@ -1474,6 +1474,18 @@ export const adminRouter = router({
         }),
     }),
     profiles: router({
+        listNavigation: adminProcedure.query(async ({ ctx }) => {
+            const adminAuth = requireAdminAuth(ctx);
+            return orderGatewayProfiles(await ctx.profiles.listProfiles())
+                .filter((profile) => canReadProfile(adminAuth, profile.profileName))
+                .map((profile) => ({
+                    profileName: profile.profileName,
+                    profile: profile.profile,
+                    meta: {
+                        ...(typeof profile.meta.korName === 'string' ? { korName: profile.meta.korName } : {}),
+                    },
+                }));
+        }),
         list: adminProcedure.query(async ({ ctx }) => {
             const adminAuth = requireAdminAuth(ctx);
             const profiles = orderGatewayProfiles(await ctx.profiles.listProfiles()).filter((profile) =>
