@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue';
+import ServerProfileTabs from '../components/ServerProfileTabs.vue';
 import AdminConsoleLayout from '../layouts/AdminConsoleLayout.vue';
 import { trpc } from '../utils/trpc';
 
@@ -1971,6 +1972,13 @@ onMounted(() => {
                             :key="profile.profileName"
                             class="bg-zinc-900 border border-zinc-800 rounded-lg p-5 space-y-4"
                         >
+                            <ServerProfileTabs
+                                :profile-name="profile.profileName"
+                                active-tab="status"
+                                :can-deploy="hasCapability('admin.profiles.deploy', profile.profileName)"
+                                :can-reset="hasCapability('admin.scenarios.reset', profile.profileName)"
+                            />
+
                             <div class="flex flex-col md:flex-row md:items-center md:justify-between gap-2">
                                 <div>
                                     <div class="text-base font-semibold">
@@ -1988,29 +1996,6 @@ onMounted(() => {
                             </div>
 
                             <div class="text-xs text-zinc-400">빌드 커밋: {{ profile.buildCommitSha ?? '미지정' }}</div>
-
-                            <nav class="flex flex-wrap gap-2" :aria-label="`${profile.profileName} 관리 탭`">
-                                <RouterLink
-                                    :to="`/admin/servers/${encodeURIComponent(profile.profileName)}`"
-                                    class="rounded border border-zinc-600 bg-zinc-800 px-3 py-2 text-xs font-semibold text-white"
-                                >
-                                    상태 · 설정
-                                </RouterLink>
-                                <RouterLink
-                                    v-if="hasCapability('admin.profiles.deploy', profile.profileName)"
-                                    :to="`/admin/servers/${encodeURIComponent(profile.profileName)}/version`"
-                                    class="rounded border border-blue-800 px-3 py-2 text-xs font-semibold text-blue-200 hover:bg-blue-950"
-                                >
-                                    버전 업데이트
-                                </RouterLink>
-                                <RouterLink
-                                    v-if="hasCapability('admin.scenarios.reset', profile.profileName)"
-                                    :to="`/admin/servers/${encodeURIComponent(profile.profileName)}/scenario`"
-                                    class="rounded border border-purple-800 px-3 py-2 text-xs font-semibold text-purple-200 hover:bg-purple-950"
-                                >
-                                    시나리오 초기화
-                                </RouterLink>
-                            </nav>
 
                             <div class="grid md:grid-cols-2 gap-3">
                                 <div
@@ -2226,41 +2211,6 @@ onMounted(() => {
                                     <button type="button" class="text-xs text-zinc-400 underline" @click="loadProfiles">
                                         실제 처리 상태 새로고침
                                     </button>
-                                </div>
-                            </div>
-
-                            <div
-                                v-if="
-                                    hasCapability('admin.profiles.deploy', profile.profileName) ||
-                                    hasCapability('admin.scenarios.reset', profile.profileName)
-                                "
-                                class="border-t border-zinc-800 pt-4"
-                            >
-                                <div
-                                    class="flex flex-col gap-3 rounded border border-violet-900/70 bg-violet-950/20 p-4 md:flex-row md:items-center md:justify-between"
-                                >
-                                    <div>
-                                        <h4 class="text-sm font-semibold text-violet-200">버전과 시즌 수명주기</h4>
-                                        <p class="mt-1 text-xs text-zinc-500">
-                                            DB를 보존하는 코드 배포와 DB를 교체하는 시나리오 초기화는 별도 작업입니다.
-                                        </p>
-                                    </div>
-                                    <div class="flex flex-wrap gap-2">
-                                        <RouterLink
-                                            v-if="hasCapability('admin.profiles.deploy', profile.profileName)"
-                                            :to="`/admin/servers/${encodeURIComponent(profile.profileName)}/version`"
-                                            class="rounded border border-blue-700 px-3 py-2 text-center text-xs font-semibold text-blue-200 hover:bg-blue-950"
-                                        >
-                                            버전 업데이트
-                                        </RouterLink>
-                                        <RouterLink
-                                            v-if="hasCapability('admin.scenarios.reset', profile.profileName)"
-                                            :to="`/admin/servers/${encodeURIComponent(profile.profileName)}/scenario`"
-                                            class="rounded border border-purple-700 px-3 py-2 text-center text-xs font-semibold text-purple-200 hover:bg-purple-950"
-                                        >
-                                            시나리오 초기화
-                                        </RouterLink>
-                                    </div>
                                 </div>
                             </div>
                         </div>
