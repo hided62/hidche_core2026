@@ -76,6 +76,14 @@ profile 범위 권한과 별개인 전역 `admin.releases.manage` 권한이 필�
 `admin.profiles.deploy`를 모두 요구합니다. Source와 scenario를 확인한 뒤 turn 간격, 가오픈·정식 오픈,
 NPC와 자동 진행 설정을 확인하고 요청해 주세요.
 
+턴 간격과 고급 옵션은 서버 상태 화면에서 저장한
+`GatewayProfile.meta.resetDefaults`를 최초값으로 사용합니다. 서버별 기본값을
+바꾸려면 `admin.profiles.settings:<name>` 권한으로 메타를 저장하고 시나리오
+초기화 화면을 다시 여세요. 값이 없거나 유효하지 않으면 60분, 동기화·가상
+장수·연장·토너먼트 사용, 기본 NPC, 이미지 단계 3, 전체 가입과 유저 자동턴
+미사용이라는 기존 시스템 기본값으로 돌아갑니다. 실행마다 달라지는 scenario와
+예약·가오픈·정식 오픈 시각은 자동 입력하지 않습니다.
+
 이 모드는 build와 migration 후 기존 season/tick metadata를 읽고 scenario seeder를 실행합니다.
 빈 profile schema도 migration을 먼저 적용하므로 최초 `world_state` 조회가
 table 부재로 실패하지 않습니다. 현 시즌의 장수,

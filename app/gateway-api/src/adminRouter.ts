@@ -464,6 +464,24 @@ const zInstallOptions = z.object({
     gitRef: z.string().min(1).max(128).optional(),
 });
 const zOperationInstallOptions = zInstallOptions.omit({ gitRef: true });
+const zProfileResetDefaults = zInstallOptions.omit({
+    scenarioId: true,
+    openAt: true,
+    preopenAt: true,
+    gitRef: true,
+});
+const SYSTEM_PROFILE_RESET_DEFAULTS: z.infer<typeof zProfileResetDefaults> = {
+    turnTermMinutes: 60,
+    sync: true,
+    fiction: 1,
+    extend: true,
+    blockGeneralCreate: 0,
+    npcMode: 0,
+    showImgLevel: 3,
+    tournamentTrig: true,
+    joinMode: 'full',
+    autorunUser: null,
+};
 const zSourceMode = z.enum(['BRANCH', 'COMMIT']);
 const zResetSourceMode = z.enum(['CURRENT', 'BRANCH', 'COMMIT']);
 
@@ -531,6 +549,16 @@ const readMetaObject = (value: unknown): Record<string, unknown> => {
         return {};
     }
     return value as Record<string, unknown>;
+};
+
+const readProfileResetDefaults = (
+    meta: Record<string, unknown>
+): { defaults: z.infer<typeof zProfileResetDefaults>; source: 'SYSTEM' | 'PROFILE' } => {
+    const parsed = zProfileResetDefaults.partial().safeParse(meta.resetDefaults);
+    if (meta.resetDefaults === undefined || !parsed.success) {
+        return { defaults: { ...SYSTEM_PROFILE_RESET_DEFAULTS }, source: 'SYSTEM' };
+    }
+    return { defaults: { ...SYSTEM_PROFILE_RESET_DEFAULTS, ...parsed.data }, source: 'PROFILE' };
 };
 
 const applyMetaPatch = (
@@ -1474,6 +1502,18 @@ export const adminRouter = router({
         }),
     }),
     profiles: router({
+        getResetDefaults: adminProcedure
+            .input(z.object({ profileName: z.string().min(1) }))
+            .query(async ({ ctx, input }) => {
+                const adminAuth = requireAdminAuth(ctx);
+                assertAnyPermission(adminAuth, [ROLE_ADMIN_PROFILES, ROLE_ADMIN_SCENARIO_RESET], input.profileName);
+                const profile = await ctx.profiles.getProfile(input.profileName);
+                if (!profile) {
+                    throw new TRPCError({ code: 'NOT_FOUND', message: 'Profile not found.' });
+                }
+                const meta = readMetaObject(profile.meta);
+                return readProfileResetDefaults(meta);
+            }),
         listNavigation: adminProcedure.query(async ({ ctx }) => {
             const adminAuth = requireAdminAuth(ctx);
             return orderGatewayProfiles(await ctx.profiles.listProfiles())
@@ -1660,6 +1700,7 @@ export const adminRouter = router({
                         nextSeasonIdx: z.number().int().min(0).nullable().optional(),
                         localAccountAccessGraceDays: z.number().int().min(0).max(365).nullable().optional(),
                         localAccountGeneralCreationGraceDays: z.number().int().min(0).max(365).nullable().optional(),
+                        resetDefaults: zProfileResetDefaults.nullable().optional(),
                     }),
                     reason: z.string().trim().min(3).max(200),
                 })

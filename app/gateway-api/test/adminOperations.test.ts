@@ -29,6 +29,7 @@ const buildCaller = async (
         initialNotice?: string;
         initialProfileStatus?: GatewayProfileRecord['status'];
         profileScenario?: string;
+        profileMeta?: GatewayProfileRecord['meta'];
         releaseLogVisibilityAfterPolls?: number;
     } = {}
 ) => {
@@ -75,7 +76,7 @@ const buildCaller = async (
         status: options.initialProfileStatus ?? ('STOPPED' as const),
         buildStatus: 'SUCCEEDED' as const,
         buildCommitSha: 'HEAD',
-        meta: {},
+        meta: options.profileMeta ?? {},
         createdAt: '2026-07-25T00:00:00.000Z',
         updatedAt: '2026-07-25T00:00:00.000Z',
     };
@@ -509,6 +510,102 @@ describe('admin operation API', () => {
             sourceRef: expect.stringMatching(/^[0-9a-f]{40}$/u),
             reason: 'new season only',
         });
+    });
+
+    it('returns validated profile reset defaults to a scenario-only operator', async () => {
+        const harness = await buildCaller(
+            async () => {
+                throw new Error('not used');
+            },
+            {
+                adminRoles: ['admin.scenarios.reset:che:2'],
+                firstUserIsAdmin: false,
+                profileMeta: {
+                    resetDefaults: {
+                        turnTermMinutes: 20,
+                        sync: false,
+                        fiction: 0,
+                        extend: false,
+                        blockGeneralCreate: 2,
+                        npcMode: 1,
+                        showImgLevel: 1,
+                        tournamentTrig: false,
+                        joinMode: 'onlyRandom',
+                        autorunUser: { limitMinutes: 720, options: ['develop', 'train'] },
+                    },
+                },
+            }
+        );
+
+        await expect(harness.caller.admin.profiles.getResetDefaults({ profileName: 'che:2' })).resolves.toEqual({
+            source: 'PROFILE',
+            defaults: {
+                turnTermMinutes: 20,
+                sync: false,
+                fiction: 0,
+                extend: false,
+                blockGeneralCreate: 2,
+                npcMode: 1,
+                showImgLevel: 1,
+                tournamentTrig: false,
+                joinMode: 'onlyRandom',
+                autorunUser: { limitMinutes: 720, options: ['develop', 'train'] },
+            },
+        });
+    });
+
+    it('falls back to system reset defaults when profile metadata is malformed', async () => {
+        const harness = await buildCaller(
+            async () => {
+                throw new Error('not used');
+            },
+            {
+                adminRoles: ['admin.scenarios.reset:che:2'],
+                firstUserIsAdmin: false,
+                profileMeta: { resetDefaults: { npcMode: 99 } },
+            }
+        );
+
+        await expect(harness.caller.admin.profiles.getResetDefaults({ profileName: 'che:2' })).resolves.toMatchObject({
+            source: 'SYSTEM',
+            defaults: { turnTermMinutes: 60, npcMode: 0, tournamentTrig: true, autorunUser: null },
+        });
+    });
+
+    it('stores reset defaults only after validating the complete metadata object', async () => {
+        const harness = await buildCaller(
+            async () => {
+                throw new Error('not used');
+            },
+            { adminRoles: ['admin.profiles.settings:che:2'], firstUserIsAdmin: false }
+        );
+        const resetDefaults = {
+            turnTermMinutes: 10,
+            sync: true,
+            fiction: 1 as const,
+            extend: true,
+            blockGeneralCreate: 0 as const,
+            npcMode: 2 as const,
+            showImgLevel: 3 as const,
+            tournamentTrig: true,
+            joinMode: 'full' as const,
+            autorunUser: null,
+        };
+
+        await harness.caller.admin.profiles.updateMeta({
+            profileName: 'che:2',
+            patch: { resetDefaults },
+            reason: 'set server reset defaults',
+        });
+        expect(harness.updatedMetas.at(-1)).toMatchObject({ resetDefaults });
+
+        await expect(
+            harness.caller.admin.profiles.updateMeta({
+                profileName: 'che:2',
+                patch: { resetDefaults: { ...resetDefaults, turnTermMinutes: 7 } },
+                reason: 'reject invalid reset defaults',
+            })
+        ).rejects.toBeDefined();
     });
 
     it('does not let a scenario-only operator combine a Git update with reset', async () => {

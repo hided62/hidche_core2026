@@ -3,6 +3,11 @@ import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } 
 
 import ServerProfileTabs from '../components/ServerProfileTabs.vue';
 import AdminConsoleLayout from '../layouts/AdminConsoleLayout.vue';
+import {
+    normalizeProfileResetDefaults,
+    SYSTEM_PROFILE_RESET_DEFAULTS,
+    type ProfileResetDefaults,
+} from '../utils/resetDefaults';
 import { directTrpc, trpc } from '../utils/trpc';
 
 type OperationPageMode = 'version' | 'scenario' | 'gateway';
@@ -90,6 +95,7 @@ const catalogAttempted = ref(false);
 const submitting = ref(false);
 const message = ref('');
 const errorMessage = ref('');
+const resetDefaultsSource = ref<'SYSTEM' | 'PROFILE'>('SYSTEM');
 let pollTimer: ReturnType<typeof setInterval> | undefined;
 let stateRequestInFlight = false;
 let releaseLogLoopGeneration = 0;
@@ -99,15 +105,15 @@ const form = reactive({
     sourceMode: (props.mode === 'scenario' ? 'CURRENT' : 'BRANCH') as 'CURRENT' | 'BRANCH' | 'COMMIT',
     sourceRef: 'main',
     scenarioId: null as number | null,
-    turnTermMinutes: 60,
-    sync: true,
-    fiction: 1,
-    extend: true,
-    blockGeneralCreate: 0,
-    npcMode: 0,
-    showImgLevel: 3,
-    tournamentTrig: true,
-    joinMode: 'full' as 'full' | 'onlyRandom',
+    turnTermMinutes: SYSTEM_PROFILE_RESET_DEFAULTS.turnTermMinutes,
+    sync: SYSTEM_PROFILE_RESET_DEFAULTS.sync,
+    fiction: SYSTEM_PROFILE_RESET_DEFAULTS.fiction,
+    extend: SYSTEM_PROFILE_RESET_DEFAULTS.extend,
+    blockGeneralCreate: SYSTEM_PROFILE_RESET_DEFAULTS.blockGeneralCreate,
+    npcMode: SYSTEM_PROFILE_RESET_DEFAULTS.npcMode,
+    showImgLevel: SYSTEM_PROFILE_RESET_DEFAULTS.showImgLevel,
+    tournamentTrig: SYSTEM_PROFILE_RESET_DEFAULTS.tournamentTrig,
+    joinMode: SYSTEM_PROFILE_RESET_DEFAULTS.joinMode,
     autorunEnabled: false,
     autorunUserMinutes: 1440,
     autorunDevelop: true,
@@ -177,12 +183,51 @@ const toIso = (value: string): string | undefined => {
 
 const formatTime = (value?: string): string => (value ? new Date(value).toLocaleString('ko-KR') : '-');
 const formatLogTime = (value: string): string =>
-    new Date(value).toLocaleTimeString('ko-KR', { hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit' });
+    new Date(value).toLocaleTimeString('ko-KR', {
+        hour12: false,
+        hour: '2-digit',
+        minute: '2-digit',
+        second: '2-digit',
+    });
 const shortSha = (value?: string): string => (value ? value.slice(0, 12) : '-');
 
 const clearStatus = () => {
     message.value = '';
     errorMessage.value = '';
+};
+
+const applyResetDefaults = (defaults: ProfileResetDefaults) => {
+    form.turnTermMinutes = defaults.turnTermMinutes;
+    form.sync = defaults.sync;
+    form.fiction = defaults.fiction;
+    form.extend = defaults.extend;
+    form.blockGeneralCreate = defaults.blockGeneralCreate;
+    form.npcMode = defaults.npcMode;
+    form.showImgLevel = defaults.showImgLevel;
+    form.tournamentTrig = defaults.tournamentTrig;
+    form.joinMode = defaults.joinMode;
+    form.autorunEnabled = defaults.autorunUser !== null;
+    form.autorunUserMinutes = defaults.autorunUser?.limitMinutes ?? 1440;
+    const autorunOptions = new Set(defaults.autorunUser?.options ?? []);
+    form.autorunDevelop = autorunOptions.has('develop');
+    form.autorunWarp = autorunOptions.has('warp');
+    form.autorunRecruit = autorunOptions.has('recruit');
+    form.autorunTrain = autorunOptions.has('train');
+    form.autorunBattle = autorunOptions.has('battle');
+};
+
+const loadResetDefaults = async () => {
+    if (props.mode !== 'scenario' || !selectedProfileName.value) return;
+    try {
+        const result = await adminClient.profiles.getResetDefaults.query({
+            profileName: selectedProfileName.value,
+        });
+        applyResetDefaults(normalizeProfileResetDefaults(result.defaults));
+        resetDefaultsSource.value = result.source;
+    } catch {
+        applyResetDefaults(SYSTEM_PROFILE_RESET_DEFAULTS);
+        resetDefaultsSource.value = 'SYSTEM';
+    }
 };
 
 const loadCapabilities = async () => {
@@ -244,7 +289,11 @@ const scrollReleaseLogToEnd = async () => {
 };
 
 const pollGatewayReleaseLogs = async (operationId: string, generation: number) => {
-    while (componentMounted && generation === releaseLogLoopGeneration && selectedGatewayOperationId.value === operationId) {
+    while (
+        componentMounted &&
+        generation === releaseLogLoopGeneration &&
+        selectedGatewayOperationId.value === operationId
+    ) {
         try {
             const result = await adminClient.releases.logs.query({
                 id: operationId,
@@ -516,6 +565,7 @@ onMounted(async () => {
     await Promise.all([
         loadCapabilities(),
         loadState(),
+        loadResetDefaults(),
         props.mode === 'scenario' ? loadScenarios() : Promise.resolve(),
     ]);
     pollTimer = setInterval(() => void loadState(true), 3000);
@@ -671,9 +721,10 @@ onBeforeUnmount(() => {
                             <select
                                 v-model.number="form.turnTermMinutes"
                                 class="mt-1 w-full rounded border border-zinc-700 bg-zinc-950 px-3 py-2 text-sm text-white"
+                                data-testid="reset-turn-term"
                             >
                                 <option
-                                    v-for="minutes in [1, 2, 5, 10, 20, 30, 60, 120]"
+                                    v-for="minutes in [1, 2, 3, 4, 5, 6, 10, 12, 15, 20, 24, 30, 40, 60, 120]"
                                     :key="minutes"
                                     :value="minutes"
                                 >
@@ -685,6 +736,13 @@ onBeforeUnmount(() => {
 
                     <details v-if="mode === 'scenario'" class="rounded border border-zinc-800 bg-zinc-950/50 p-4">
                         <summary class="cursor-pointer text-sm font-semibold">고급 시나리오 옵션</summary>
+                        <p class="mt-2 text-xs text-zinc-500" data-testid="reset-defaults-source">
+                            {{
+                                resetDefaultsSource === 'PROFILE'
+                                    ? '이 서버의 메타에 저장된 기본값을 적용했습니다.'
+                                    : '서버별 기본값이 없어 시스템 기본값을 적용했습니다.'
+                            }}
+                        </p>
                         <div class="mt-4 grid gap-4 md:grid-cols-2 text-sm">
                             <label
                                 >동기화
@@ -727,7 +785,11 @@ onBeforeUnmount(() => {
                             </label>
                             <label
                                 >NPC 모드
-                                <select v-model.number="form.npcMode" class="ml-2 rounded bg-zinc-900 px-2 py-1">
+                                <select
+                                    v-model.number="form.npcMode"
+                                    class="ml-2 rounded bg-zinc-900 px-2 py-1"
+                                    data-testid="reset-npc-mode"
+                                >
                                     <option :value="0">기본</option>
                                     <option :value="1">확장</option>
                                     <option :value="2">전체</option>
@@ -936,7 +998,13 @@ onBeforeUnmount(() => {
                         <div
                             v-for="entry in gatewayReleaseLogs"
                             :key="entry.cursor"
-                            :class="entry.level === 'ERROR' ? 'text-red-300' : entry.level === 'OUTPUT' ? 'text-zinc-300' : 'text-cyan-300'"
+                            :class="
+                                entry.level === 'ERROR'
+                                    ? 'text-red-300'
+                                    : entry.level === 'OUTPUT'
+                                      ? 'text-zinc-300'
+                                      : 'text-cyan-300'
+                            "
                         >
                             <span class="text-zinc-600">{{ formatLogTime(entry.createdAt) }}</span>
                             <span class="ml-2 text-violet-300">[{{ entry.phase }}]</span>
@@ -973,7 +1041,11 @@ onBeforeUnmount(() => {
                                     <button
                                         type="button"
                                         class="rounded border border-zinc-700 px-2 py-1 text-zinc-300 hover:bg-zinc-800"
-                                        :class="operation.id === selectedGatewayOperationId ? 'border-violet-500 text-violet-200' : ''"
+                                        :class="
+                                            operation.id === selectedGatewayOperationId
+                                                ? 'border-violet-500 text-violet-200'
+                                                : ''
+                                        "
                                         @click="selectGatewayReleaseOperation(operation.id)"
                                     >
                                         보기

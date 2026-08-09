@@ -2,6 +2,11 @@
 import { computed, onMounted, ref } from 'vue';
 import ServerProfileTabs from '../components/ServerProfileTabs.vue';
 import AdminConsoleLayout from '../layouts/AdminConsoleLayout.vue';
+import {
+    normalizeProfileResetDefaults,
+    type ProfileResetDefaults,
+    type ResetAutorunOption,
+} from '../utils/resetDefaults';
 import { trpc } from '../utils/trpc';
 
 type AdminSection = 'users' | 'servers' | 'system' | 'audit';
@@ -325,6 +330,7 @@ type AdminClient = {
                     nextSeasonIdx?: number | null;
                     localAccountAccessGraceDays?: number | null;
                     localAccountGeneralCreationGraceDays?: number | null;
+                    resetDefaults?: ProfileResetDefaults | null;
                 };
                 reason: string;
             }) => Promise<AdminProfile | null>;
@@ -379,6 +385,8 @@ const profileEdits = ref<
             nextSeasonIdx: string;
             localAccountAccessGraceDays: string;
             localAccountGeneralCreationGraceDays: string;
+            resetDefaults: ProfileResetDefaults;
+            resetAutorunEnabled: boolean;
             reason: string;
         }
     >
@@ -393,6 +401,13 @@ const profileActions = ref<
         }
     >
 >({});
+const resetAutorunLabels: Array<{ value: ResetAutorunOption; label: string }> = [
+    { value: 'develop', label: '내정' },
+    { value: 'warp', label: '이동' },
+    { value: 'recruit', label: '징병' },
+    { value: 'train', label: '훈련' },
+    { value: 'battle', label: '전투' },
+];
 const profileActionStatus = ref<Record<string, string>>({});
 const profileActionSubmitting = ref<Record<string, boolean>>({});
 const visibleProfiles = computed(() =>
@@ -543,6 +558,7 @@ const saveNotice = async () => {
 const ensureProfileBuffers = (profile: AdminProfile) => {
     if (!profileEdits.value[profile.profileName]) {
         const meta = (profile.meta ?? {}) as Record<string, unknown>;
+        const resetDefaults = normalizeProfileResetDefaults(meta.resetDefaults);
         profileEdits.value[profile.profileName] = {
             korName: String(meta.korName ?? profile.profile),
             color: String(meta.color ?? '#ffffff'),
@@ -560,6 +576,8 @@ const ensureProfileBuffers = (profile: AdminProfile) => {
                 typeof meta.localAccountGeneralCreationGraceDays === 'number'
                     ? String(Math.floor(meta.localAccountGeneralCreationGraceDays))
                     : '',
+            resetDefaults,
+            resetAutorunEnabled: resetDefaults.autorunUser !== null,
             reason: '',
         };
     }
@@ -663,6 +681,19 @@ const updateProfileMeta = async (profileName: string) => {
         profileActionStatus.value = { ...profileActionStatus.value, [profileName]: '변경 사유를 입력하세요.' };
         return;
     }
+    if (
+        edit.resetAutorunEnabled &&
+        (!edit.resetDefaults.autorunUser ||
+            edit.resetDefaults.autorunUser.limitMinutes <= 0 ||
+            edit.resetDefaults.autorunUser.limitMinutes > 43200 ||
+            edit.resetDefaults.autorunUser.options.length === 0)
+    ) {
+        profileActionStatus.value = {
+            ...profileActionStatus.value,
+            [profileName]: '유저 자동턴은 제한 시간과 한 개 이상의 동작을 선택해야 합니다.',
+        };
+        return;
+    }
     const patch = {
         korName: edit.korName.trim() || null,
         color: edit.color.trim() || null,
@@ -671,6 +702,10 @@ const updateProfileMeta = async (profileName: string) => {
         nextSeasonIdx: nextSeasonIdx === null ? null : Math.floor(nextSeasonIdx),
         localAccountAccessGraceDays: accessGraceDays,
         localAccountGeneralCreationGraceDays: creationGraceDays,
+        resetDefaults: {
+            ...edit.resetDefaults,
+            autorunUser: edit.resetAutorunEnabled ? edit.resetDefaults.autorunUser : null,
+        },
     };
     try {
         const updated = await adminClient.profiles.updateMeta.mutate({
@@ -693,6 +728,15 @@ const updateProfileMeta = async (profileName: string) => {
             [profileName]: '메타 저장 실패',
         };
     }
+};
+
+const ensureResetAutorun = (profileName: string) => {
+    const edit = profileEdits.value[profileName];
+    if (!edit?.resetAutorunEnabled || edit.resetDefaults.autorunUser) return;
+    edit.resetDefaults.autorunUser = {
+        limitMinutes: 1440,
+        options: resetAutorunLabels.map(({ value }) => value),
+    };
 };
 
 const requestProfileAction = async (profileName: string, action: AdminAction) => {
@@ -2035,6 +2079,168 @@ onMounted(() => {
                                         placeholder="예: 12"
                                     />
                                     <div class="text-xs text-zinc-500">리셋 시 적용할 시즌 번호를 지정합니다.</div>
+                                    <details class="rounded border border-zinc-700 bg-zinc-950/60 p-3">
+                                        <summary class="cursor-pointer text-sm font-semibold text-zinc-200">
+                                            서버 리셋 기본 옵션
+                                        </summary>
+                                        <p class="mt-2 text-xs text-zinc-500">
+                                            이 서버의 시나리오 초기화 화면을 열 때 자동으로 채울 값을 저장합니다.
+                                            시나리오와 예약·오픈 시각은 실행할 때 선택합니다.
+                                        </p>
+                                        <div class="mt-3 grid gap-3 text-xs sm:grid-cols-2">
+                                            <label>
+                                                턴 간격
+                                                <select
+                                                    v-model.number="
+                                                        profileEdits[profile.profileName].resetDefaults.turnTermMinutes
+                                                    "
+                                                    class="mt-1 w-full rounded border border-zinc-700 bg-zinc-900 px-2 py-2"
+                                                    data-testid="meta-reset-turn-term"
+                                                >
+                                                    <option
+                                                        v-for="minutes in [
+                                                            1, 2, 3, 4, 5, 6, 10, 12, 15, 20, 24, 30, 40, 60, 120,
+                                                        ]"
+                                                        :key="minutes"
+                                                        :value="minutes"
+                                                    >
+                                                        {{ minutes }}분
+                                                    </option>
+                                                </select>
+                                            </label>
+                                            <label>
+                                                가입 방식
+                                                <select
+                                                    v-model="profileEdits[profile.profileName].resetDefaults.joinMode"
+                                                    class="mt-1 w-full rounded border border-zinc-700 bg-zinc-900 px-2 py-2"
+                                                >
+                                                    <option value="full">전체</option>
+                                                    <option value="onlyRandom">랜덤만</option>
+                                                </select>
+                                            </label>
+                                            <label>
+                                                가상 장수
+                                                <select
+                                                    v-model.number="
+                                                        profileEdits[profile.profileName].resetDefaults.fiction
+                                                    "
+                                                    class="mt-1 w-full rounded border border-zinc-700 bg-zinc-900 px-2 py-2"
+                                                >
+                                                    <option :value="1">허용</option>
+                                                    <option :value="0">금지</option>
+                                                </select>
+                                            </label>
+                                            <label>
+                                                장수 생성 제한
+                                                <select
+                                                    v-model.number="
+                                                        profileEdits[profile.profileName].resetDefaults
+                                                            .blockGeneralCreate
+                                                    "
+                                                    class="mt-1 w-full rounded border border-zinc-700 bg-zinc-900 px-2 py-2"
+                                                >
+                                                    <option :value="0">없음</option>
+                                                    <option :value="1">제한</option>
+                                                    <option :value="2">차단</option>
+                                                </select>
+                                            </label>
+                                            <label>
+                                                NPC 모드
+                                                <select
+                                                    v-model.number="
+                                                        profileEdits[profile.profileName].resetDefaults.npcMode
+                                                    "
+                                                    class="mt-1 w-full rounded border border-zinc-700 bg-zinc-900 px-2 py-2"
+                                                    data-testid="meta-reset-npc-mode"
+                                                >
+                                                    <option :value="0">기본</option>
+                                                    <option :value="1">확장</option>
+                                                    <option :value="2">전체</option>
+                                                </select>
+                                            </label>
+                                            <label>
+                                                이미지 표시
+                                                <select
+                                                    v-model.number="
+                                                        profileEdits[profile.profileName].resetDefaults.showImgLevel
+                                                    "
+                                                    class="mt-1 w-full rounded border border-zinc-700 bg-zinc-900 px-2 py-2"
+                                                >
+                                                    <option v-for="level in [0, 1, 2, 3]" :key="level" :value="level">
+                                                        {{ level }}
+                                                    </option>
+                                                </select>
+                                            </label>
+                                            <label class="flex items-center gap-2">
+                                                <input
+                                                    v-model="profileEdits[profile.profileName].resetDefaults.sync"
+                                                    type="checkbox"
+                                                />
+                                                동기화 사용
+                                            </label>
+                                            <label class="flex items-center gap-2">
+                                                <input
+                                                    v-model="profileEdits[profile.profileName].resetDefaults.extend"
+                                                    type="checkbox"
+                                                />
+                                                연장 사용
+                                            </label>
+                                            <label class="flex items-center gap-2">
+                                                <input
+                                                    v-model="
+                                                        profileEdits[profile.profileName].resetDefaults.tournamentTrig
+                                                    "
+                                                    type="checkbox"
+                                                />
+                                                토너먼트 사용
+                                            </label>
+                                            <label class="flex items-center gap-2">
+                                                <input
+                                                    v-model="profileEdits[profile.profileName].resetAutorunEnabled"
+                                                    type="checkbox"
+                                                    @change="ensureResetAutorun(profile.profileName)"
+                                                />
+                                                유저 자동턴
+                                            </label>
+                                            <template
+                                                v-if="
+                                                    profileEdits[profile.profileName].resetAutorunEnabled &&
+                                                    profileEdits[profile.profileName].resetDefaults.autorunUser
+                                                "
+                                            >
+                                                <label>
+                                                    자동턴 제한 분
+                                                    <input
+                                                        v-model.number="
+                                                            profileEdits[profile.profileName].resetDefaults.autorunUser!
+                                                                .limitMinutes
+                                                        "
+                                                        type="number"
+                                                        min="1"
+                                                        max="43200"
+                                                        class="mt-1 w-full rounded border border-zinc-700 bg-zinc-900 px-2 py-2"
+                                                    />
+                                                </label>
+                                                <div class="flex flex-wrap items-center gap-3 sm:col-span-2">
+                                                    <label
+                                                        v-for="option in resetAutorunLabels"
+                                                        :key="option.value"
+                                                        class="flex items-center gap-1"
+                                                    >
+                                                        <input
+                                                            v-model="
+                                                                profileEdits[profile.profileName].resetDefaults
+                                                                    .autorunUser!.options
+                                                            "
+                                                            type="checkbox"
+                                                            :value="option.value"
+                                                        />
+                                                        {{ option.label }}
+                                                    </label>
+                                                </div>
+                                            </template>
+                                        </div>
+                                    </details>
                                     <label class="text-xs text-zinc-400">Kakao 미인증 접근 유예일</label>
                                     <input
                                         v-model="profileEdits[profile.profileName].localAccountAccessGraceDays"
