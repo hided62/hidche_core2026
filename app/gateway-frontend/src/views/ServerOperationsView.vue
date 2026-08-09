@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue';
 
+import ServerProfileTabs from '../components/ServerProfileTabs.vue';
 import AdminConsoleLayout from '../layouts/AdminConsoleLayout.vue';
 import { trpc } from '../utils/trpc';
 
@@ -12,26 +13,6 @@ const props = defineProps<{
 }>();
 
 const adminClient = trpc.admin;
-
-type Profile = {
-    profileName: string;
-    profile: string;
-    scenario: string;
-    status: string;
-    buildStatus: string;
-    buildCommitSha?: string;
-    buildWorkspace?: string;
-    buildError?: string;
-    lastError?: string;
-    runtime: {
-        frontendRunning: boolean;
-        apiRunning: boolean;
-        daemonRunning: boolean;
-        auctionRunning: boolean;
-        battleSimRunning: boolean;
-        tournamentRunning: boolean;
-    };
-};
 
 type Scenario = {
     id: number;
@@ -88,8 +69,6 @@ type GatewayReleaseLog = {
     message: string;
     createdAt: string;
 };
-
-const profiles = ref<Profile[]>([]);
 const scenarios = ref<Scenario[]>([]);
 const operations = ref<Operation[]>([]);
 const gatewayReleaseState = ref<GatewayReleaseState | null>(null);
@@ -101,7 +80,7 @@ const gatewayReleaseLogStatus = ref('');
 const gatewayReleaseLogConnection = ref<'idle' | 'connected' | 'reconnecting'>('idle');
 const gatewayReleaseLogViewport = ref<HTMLElement>();
 const gatewayReleaseAvailable = ref(false);
-const selectedProfileName = ref(props.profileName ?? '');
+const selectedProfileName = computed(() => props.profileName ?? '');
 const capabilities = ref<Array<{ permission: string; scopes?: string[] }>>([]);
 const loading = ref(false);
 const catalogLoading = ref(false);
@@ -147,11 +126,6 @@ const gatewayForm = reactive({
 const selectedGatewayOperation = computed(
     () => gatewayReleaseOperations.value.find((operation) => operation.id === selectedGatewayOperationId.value) ?? null
 );
-
-const selectedProfile = computed(
-    () => profiles.value.find((profile) => profile.profileName === selectedProfileName.value) ?? null
-);
-
 const hasCapability = (permission: string): boolean =>
     capabilities.value.some((entry) => {
         if (entry.permission !== permission && entry.permission !== 'admin.profiles.manage') return false;
@@ -184,7 +158,7 @@ const activeOperation = computed(
 
 const sourceHelp = computed(() =>
     form.sourceMode === 'CURRENT'
-        ? `현재 서버 커밋 ${shortSha(selectedProfile.value?.buildCommitSha)}의 시나리오 리소스를 사용합니다.`
+        ? '현재 서버에 배포된 커밋의 시나리오 리소스를 사용합니다.'
         : form.sourceMode === 'BRANCH'
           ? '작업이 실제로 시작될 때 원격 브랜치를 다시 fetch하여 최신 커밋을 사용합니다.'
           : '요청 시 커밋을 전체 SHA로 고정하므로 이후 브랜치가 이동해도 결과가 바뀌지 않습니다.'
@@ -208,6 +182,15 @@ const clearStatus = () => {
     errorMessage.value = '';
 };
 
+const loadCapabilities = async () => {
+    try {
+        capabilities.value = (await adminClient.capabilities.list.query()) as typeof capabilities.value;
+    } catch (error) {
+        capabilities.value = [];
+        errorMessage.value = error instanceof Error ? error.message : '관리 권한을 불러오지 못했습니다.';
+    }
+};
+
 const loadState = async (quiet = false) => {
     if (stateRequestInFlight) {
         return;
@@ -217,10 +200,11 @@ const loadState = async (quiet = false) => {
         loading.value = true;
     }
     try {
-        capabilities.value = (await adminClient.capabilities.list.query()) as typeof capabilities.value;
         if (props.mode === 'gateway') {
-            const state = await adminClient.releases.gatewayState.query();
-            const releaseOperations = await adminClient.releases.list.query({ limit: 30 });
+            const [state, releaseOperations] = await Promise.all([
+                adminClient.releases.gatewayState.query(),
+                adminClient.releases.list.query({ limit: 30 }),
+            ]);
             gatewayReleaseState.value = state as GatewayReleaseState;
             gatewayReleaseOperations.value = releaseOperations as GatewayReleaseOperation[];
             const active = gatewayReleaseOperations.value.find((operation) =>
@@ -236,14 +220,11 @@ const loadState = async (quiet = false) => {
             }
             gatewayReleaseAvailable.value = true;
         } else {
-            const profileResult = await adminClient.profiles.list.query();
             const operationResult = await adminClient.operations.list.query({
                 profileName: props.profileName,
                 limit: 100,
             });
-            profiles.value = profileResult as Profile[];
             operations.value = operationResult as Operation[];
-            selectedProfileName.value = props.profileName ?? profiles.value[0]?.profileName ?? '';
         }
     } catch (error) {
         errorMessage.value = error instanceof Error ? error.message : '운영 상태를 불러오지 못했습니다.';
@@ -306,12 +287,17 @@ const selectGatewayReleaseOperation = (operationId: string) => {
 
 const requestDeploy = async () => {
     clearStatus();
-    if (!selectedProfile.value || activeOperation.value || !form.sourceRef.trim() || form.sourceMode === 'CURRENT') {
+    if (
+        !selectedProfileName.value ||
+        activeOperation.value ||
+        !form.sourceRef.trim() ||
+        form.sourceMode === 'CURRENT'
+    ) {
         return;
     }
     if (
         !window.confirm(
-            `${selectedProfile.value.profileName}의 인게임 DB를 유지하고 ${form.sourceRef.trim()} 버전으로 배포하시겠습니까?`
+            `${selectedProfileName.value}의 인게임 DB를 유지하고 ${form.sourceRef.trim()} 버전으로 배포하시겠습니까?`
         )
     ) {
         return;
@@ -319,7 +305,7 @@ const requestDeploy = async () => {
     submitting.value = true;
     try {
         await adminClient.operations.requestDeploy.mutate({
-            profileName: selectedProfile.value.profileName,
+            profileName: selectedProfileName.value,
             sourceMode: form.sourceMode,
             sourceRef: form.sourceRef.trim(),
             reason: form.reason.trim() || undefined,
@@ -393,9 +379,7 @@ const loadScenarios = async () => {
         });
         scenarios.value = result as Scenario[];
         if (!scenarios.value.some((scenario) => scenario.id === form.scenarioId)) {
-            const profileScenario = Number(selectedProfile.value?.scenario);
-            form.scenarioId =
-                scenarios.value.find((scenario) => scenario.id === profileScenario)?.id ?? scenarios.value[0]?.id ?? 0;
+            form.scenarioId = scenarios.value[0]?.id ?? 0;
         }
         message.value = `${scenarios.value.length}개 시나리오를 확인했습니다.`;
     } catch (error) {
@@ -418,7 +402,7 @@ const selectedAutorunOptions = (): Array<'develop' | 'warp' | 'recruit' | 'train
 
 const requestReset = async () => {
     clearStatus();
-    if (!selectedProfile.value || activeOperation.value) {
+    if (!selectedProfileName.value || activeOperation.value) {
         return;
     }
     if ((form.sourceMode !== 'CURRENT' && !form.sourceRef.trim()) || !form.scenarioId) {
@@ -429,7 +413,7 @@ const requestReset = async () => {
         form.sourceMode === 'CURRENT' ? '현재 배포 버전' : form.sourceMode === 'BRANCH' ? '브랜치' : '커밋';
     if (
         !window.confirm(
-            `${selectedProfile.value.profileName}의 게임 DB를 초기화합니다.\n${sourceLabel}${form.sourceMode === 'CURRENT' ? '' : `: ${form.sourceRef}`}\n시나리오: ${form.scenarioId}`
+            `${selectedProfileName.value}의 게임 DB를 초기화합니다.\n${sourceLabel}${form.sourceMode === 'CURRENT' ? '' : `: ${form.sourceRef}`}\n시나리오: ${form.scenarioId}`
         )
     ) {
         return;
@@ -437,7 +421,7 @@ const requestReset = async () => {
     submitting.value = true;
     try {
         await adminClient.operations.requestReset.mutate({
-            profileName: selectedProfile.value.profileName,
+            profileName: selectedProfileName.value,
             sourceMode: form.sourceMode,
             sourceRef: form.sourceMode === 'CURRENT' ? undefined : form.sourceRef.trim(),
             scheduledAt: toIso(form.scheduledAt),
@@ -500,13 +484,6 @@ const retryOperation = async (operation: Operation) => {
     }
 };
 
-watch(selectedProfileName, () => {
-    const scenarioId = Number(selectedProfile.value?.scenario);
-    if (Number.isFinite(scenarioId)) {
-        form.scenarioId = scenarioId;
-    }
-});
-
 watch(selectedGatewayOperationId, (operationId) => {
     releaseLogLoopGeneration += 1;
     gatewayReleaseLogs.value = [];
@@ -518,8 +495,11 @@ watch(selectedGatewayOperationId, (operationId) => {
 
 onMounted(async () => {
     componentMounted = true;
-    await loadState();
-    if (props.mode === 'scenario') await loadScenarios();
+    await Promise.all([
+        loadCapabilities(),
+        loadState(),
+        props.mode === 'scenario' ? loadScenarios() : Promise.resolve(),
+    ]);
     pollTimer = setInterval(() => void loadState(true), 3000);
 });
 
@@ -546,6 +526,14 @@ onBeforeUnmount(() => {
         </template>
 
         <div class="space-y-6" data-testid="server-operations-page">
+            <ServerProfileTabs
+                v-if="mode !== 'gateway' && profileName"
+                :profile-name="profileName"
+                :active-tab="mode === 'scenario' ? 'scenario' : 'version'"
+                :can-deploy="hasCapability('admin.profiles.deploy')"
+                :can-reset="hasCapability('admin.scenarios.reset')"
+            />
+
             <div v-if="errorMessage" class="rounded border border-red-800 bg-red-950/50 px-4 py-3 text-sm text-red-200">
                 {{ errorMessage }}
             </div>
@@ -556,118 +544,7 @@ onBeforeUnmount(() => {
                 {{ message }}
             </div>
 
-            <nav v-if="mode !== 'gateway' && profileName" class="flex flex-wrap gap-2" aria-label="서버 관리 탭">
-                <RouterLink
-                    :to="`/admin/servers/${encodeURIComponent(profileName)}`"
-                    class="rounded border border-zinc-700 px-3 py-2 text-xs text-zinc-300 hover:bg-zinc-900"
-                >
-                    상태 · 설정
-                </RouterLink>
-                <RouterLink
-                    v-if="hasCapability('admin.profiles.deploy')"
-                    :to="`/admin/servers/${encodeURIComponent(profileName)}/version`"
-                    class="rounded border border-blue-700 px-3 py-2 text-xs text-blue-200 hover:bg-blue-950"
-                >
-                    버전 업데이트
-                </RouterLink>
-                <RouterLink
-                    v-if="hasCapability('admin.scenarios.reset')"
-                    :to="`/admin/servers/${encodeURIComponent(profileName)}/scenario`"
-                    class="rounded border border-purple-700 px-3 py-2 text-xs text-purple-200 hover:bg-purple-950"
-                >
-                    시나리오 초기화
-                </RouterLink>
-            </nav>
-
-            <section v-if="mode !== 'gateway'" class="grid gap-4 lg:grid-cols-[1.1fr_1.9fr]">
-                <div class="rounded-lg border border-zinc-800 bg-zinc-900 p-5 space-y-4">
-                    <div>
-                        <label class="text-xs text-zinc-400" for="profile-select">운영 프로필</label>
-                        <select
-                            id="profile-select"
-                            v-model="selectedProfileName"
-                            class="mt-2 w-full rounded border border-zinc-700 bg-zinc-950 px-3 py-2 text-white"
-                            data-testid="profile-select"
-                            :disabled="Boolean(profileName)"
-                        >
-                            <option v-for="profile in profiles" :key="profile.profileName" :value="profile.profileName">
-                                {{ profile.profileName }}
-                            </option>
-                        </select>
-                    </div>
-
-                    <div
-                        v-if="selectedProfile"
-                        class="grid grid-cols-2 gap-3 text-sm"
-                        data-testid="selected-profile-status"
-                    >
-                        <div class="rounded bg-zinc-950 p-3">
-                            <div class="text-xs text-zinc-500">목표 상태</div>
-                            <div class="mt-1 font-semibold">{{ selectedProfile.status }}</div>
-                        </div>
-                        <div class="rounded bg-zinc-950 p-3">
-                            <div class="text-xs text-zinc-500">빌드</div>
-                            <div class="mt-1 font-semibold">{{ selectedProfile.buildStatus }}</div>
-                        </div>
-                        <div class="rounded bg-zinc-950 p-3">
-                            <div class="text-xs text-zinc-500">Game frontend</div>
-                            <div
-                                :class="selectedProfile.runtime.frontendRunning ? 'text-emerald-400' : 'text-zinc-500'"
-                            >
-                                {{ selectedProfile.runtime.frontendRunning ? 'RUNNING' : 'STOPPED' }}
-                            </div>
-                        </div>
-                        <div class="rounded bg-zinc-950 p-3">
-                            <div class="text-xs text-zinc-500">Game API</div>
-                            <div :class="selectedProfile.runtime.apiRunning ? 'text-emerald-400' : 'text-zinc-500'">
-                                {{ selectedProfile.runtime.apiRunning ? 'RUNNING' : 'STOPPED' }}
-                            </div>
-                        </div>
-                        <div class="rounded bg-zinc-950 p-3">
-                            <div class="text-xs text-zinc-500">Turn daemon</div>
-                            <div :class="selectedProfile.runtime.daemonRunning ? 'text-emerald-400' : 'text-zinc-500'">
-                                {{ selectedProfile.runtime.daemonRunning ? 'RUNNING' : 'STOPPED' }}
-                            </div>
-                        </div>
-                        <div class="rounded bg-zinc-950 p-3">
-                            <div class="text-xs text-zinc-500">Auction worker</div>
-                            <div :class="selectedProfile.runtime.auctionRunning ? 'text-emerald-400' : 'text-zinc-500'">
-                                {{ selectedProfile.runtime.auctionRunning ? 'RUNNING' : 'STOPPED' }}
-                            </div>
-                        </div>
-                        <div class="rounded bg-zinc-950 p-3">
-                            <div class="text-xs text-zinc-500">Battle sim worker</div>
-                            <div
-                                :class="selectedProfile.runtime.battleSimRunning ? 'text-emerald-400' : 'text-zinc-500'"
-                            >
-                                {{ selectedProfile.runtime.battleSimRunning ? 'RUNNING' : 'STOPPED' }}
-                            </div>
-                        </div>
-                        <div class="rounded bg-zinc-950 p-3">
-                            <div class="text-xs text-zinc-500">Tournament worker</div>
-                            <div
-                                :class="
-                                    selectedProfile.runtime.tournamentRunning ? 'text-emerald-400' : 'text-zinc-500'
-                                "
-                            >
-                                {{ selectedProfile.runtime.tournamentRunning ? 'RUNNING' : 'STOPPED' }}
-                            </div>
-                        </div>
-                    </div>
-
-                    <div v-if="selectedProfile" class="space-y-1 text-xs text-zinc-500">
-                        <div>
-                            현재 커밋:
-                            <span class="font-mono text-zinc-300">{{ shortSha(selectedProfile.buildCommitSha) }}</span>
-                        </div>
-                        <div class="break-all">worktree: {{ selectedProfile.buildWorkspace ?? '기본 workspace' }}</div>
-                        <div v-if="selectedProfile.buildError" class="text-red-400">
-                            {{ selectedProfile.buildError }}
-                        </div>
-                        <div v-if="selectedProfile.lastError" class="text-red-400">{{ selectedProfile.lastError }}</div>
-                    </div>
-                </div>
-
+            <section v-if="mode !== 'gateway'">
                 <form
                     class="rounded-lg border border-zinc-800 bg-zinc-900 p-5 space-y-5"
                     @submit.prevent="mode === 'scenario' ? requestReset() : requestDeploy()"

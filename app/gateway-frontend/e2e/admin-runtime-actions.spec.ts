@@ -323,9 +323,28 @@ test('renders an ignored terminal outcome without calling it applied', async ({ 
     await expect(page.getByText(/적용됨|요청 완료/)).toHaveCount(0);
 });
 
-test('directs profile deployment to the selected server version tab', async ({ page }) => {
+test('directs profile deployment to the selected server version tab', async ({ page }, testInfo) => {
     await installFixture(page);
     await page.goto('admin/servers');
+
+    const tabs = page.getByTestId('server-profile-tabs');
+    await expect(tabs).toBeVisible();
+    await expect(tabs.getByRole('link', { name: '상태 설정', exact: true })).toHaveAttribute('aria-current', 'page');
+    await expect(page.getByText('버전과 시즌 수명주기', { exact: true })).toHaveCount(0);
+    const versionTab = tabs.getByRole('link', { name: '버전 업데이트', exact: true });
+    const idleTabBackground = await versionTab.evaluate((element) => getComputedStyle(element).backgroundColor);
+    await versionTab.hover();
+    await expect
+        .poll(() => versionTab.evaluate((element) => getComputedStyle(element).backgroundColor))
+        .not.toBe(idleTabBackground);
+    await versionTab.focus();
+    await expect(versionTab).toBeFocused();
+    const tabAndHeaderGeometry = await Promise.all([
+        tabs.evaluate((element) => element.getBoundingClientRect().top),
+        page.getByText('hwe:default (hwe)', { exact: true }).evaluate((element) => element.getBoundingClientRect().top),
+    ]);
+    expect(tabAndHeaderGeometry[0]).toBeLessThan(tabAndHeaderGeometry[1]);
+    await page.screenshot({ path: testInfo.outputPath('status-tabs-desktop.png'), fullPage: true });
 
     const releaseLink = page.getByRole('link', { name: '버전 업데이트', exact: true }).last();
     await expect(releaseLink).toBeVisible();
@@ -339,4 +358,5 @@ test('directs profile deployment to the selected server version tab', async ({ p
     });
     expect(linkGeometry.left).toBeGreaterThanOrEqual(0);
     expect(linkGeometry.right).toBeLessThanOrEqual(linkGeometry.viewportWidth);
+    await page.screenshot({ path: testInfo.outputPath('status-tabs-mobile.png'), fullPage: true });
 });

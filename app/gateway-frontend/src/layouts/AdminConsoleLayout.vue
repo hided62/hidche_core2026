@@ -109,16 +109,12 @@ const navigation = computed(() => [
 ]);
 
 onMounted(async () => {
-    try {
-        capabilities.value = await adminClient.capabilities.list.query();
-    } catch {
-        capabilities.value = [];
-    }
-    try {
-        profiles.value = await adminClient.profiles.list.query();
-    } catch {
-        profiles.value = [];
-    }
+    const [capabilityResult, profileResult] = await Promise.allSettled([
+        adminClient.capabilities.list.query(),
+        adminClient.profiles.list.query(),
+    ]);
+    capabilities.value = capabilityResult.status === 'fulfilled' ? capabilityResult.value : [];
+    profiles.value = profileResult.status === 'fulfilled' ? profileResult.value : [];
 });
 </script>
 
