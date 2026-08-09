@@ -28,6 +28,7 @@ import { RepositoryProfileStatusService } from './lobby/profileStatusService.js'
 import { registerAccountIconInternalRoute } from './auth/accountIconInternalRoute.js';
 import { installGatewayShutdownController } from './lifecycle/shutdownController.js';
 import { RemoteUserIconStore } from './account/remoteUserIconStore.js';
+import { gatewayFastifyRouterOptions } from './fastifyOptions.js';
 
 export const createGatewayApiServer = async () => {
     const config = resolveGatewayApiConfigFromEnv();
@@ -80,6 +81,7 @@ export const createGatewayApiServer = async () => {
 
     const app = fastify({
         logger: true,
+        routerOptions: gatewayFastifyRouterOptions,
     });
 
     await app.register(cors, {
