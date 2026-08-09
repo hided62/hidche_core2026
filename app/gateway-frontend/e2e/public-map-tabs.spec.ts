@@ -68,6 +68,22 @@ const fulfill = async (route: Route, results: unknown[]): Promise<void> => {
     });
 };
 
+const installImageFixture = async (page: Page): Promise<Set<string> | null> => {
+    if (process.env.SAMMO_E2E_REAL_MAP_ASSETS === '1') {
+        return null;
+    }
+    const requestedAssets = new Set<string>();
+    const transparentPixel = Buffer.from(
+        'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M/wHwAEAQH/69aQ6wAAAABJRU5ErkJggg==',
+        'base64'
+    );
+    await page.route('https://sam-image.hided.net/game/**', async (route) => {
+        requestedAssets.add(new URL(route.request().url()).pathname);
+        await route.fulfill({ status: 200, contentType: 'image/png', body: transparentPixel });
+    });
+    return requestedAssets;
+};
+
 const installGatewayFixture = async (page: Page, fixtureProfiles: ProfileFixture[], authenticated: boolean) => {
     if (authenticated) {
         await page.addInitScript(() => window.localStorage.setItem('sammo-session-token', 'map-tab-session'));
@@ -135,9 +151,31 @@ const installGameFixture = async (page: Page, profile: ProfileFixture, userCnt: 
                     myGeneral: null,
                 });
             }
-            if (operation === 'public.getMapLayout') return response({ mapName: profile.profile, cityList: [] });
+            if (operation === 'public.getMapLayout') {
+                return response({
+                    mapName: 'che',
+                    cityList: [
+                        { id: 1, name: '낙양', level: 8, region: 2, x: 350, y: 250, path: [2] },
+                        { id: 2, name: '허창', level: 1, region: 2, x: 480, y: 300, path: [1] },
+                    ],
+                    regionMap: { 2: '중원' },
+                    levelMap: { 1: '수', 8: '특' },
+                });
+            }
             if (operation === 'public.getCachedMap') {
-                return response({ year: 200, month: 1, cityList: [], nationList: [], history: [] });
+                return response({
+                    year: 200,
+                    month: 1,
+                    cityList: [
+                        [1, 8, 41, 1, 2, 1],
+                        [2, 1, 0, 2, 2, 0],
+                    ],
+                    nationList: [
+                        [1, '위', '#FF0000', 1],
+                        [2, '촉', '#0000FF', 2],
+                    ],
+                    history: [],
+                });
             }
             throw new Error(`Unhandled ${profile.profile} operation: ${operation}`);
         });
@@ -146,6 +184,7 @@ const installGameFixture = async (page: Page, profile: ProfileFixture, userCnt: 
 };
 
 test('shows one public map panel and switches it by hover, click, and keyboard', async ({ page }, testInfo) => {
+    const requestedAssets = await installImageFixture(page);
     await installGatewayFixture(page, profiles, true);
     await installGameFixture(page, profiles[0]!, 11);
     await installGameFixture(page, profiles[1]!, 22);
@@ -162,6 +201,57 @@ test('shows one public map panel and switches it by hover, click, and keyboard',
     await expect(panel).toHaveCount(1);
     await expect(cheTab).toHaveAttribute('aria-selected', 'true');
     await expect(panel).toContainText('유저 11 / 500');
+
+    const roadLayer = panel.getByTestId('map-preview-road');
+    const castles = panel.getByTestId('map-preview-castle');
+    const nationBackgrounds = panel.getByTestId('map-preview-city-background');
+    await expect(panel.locator('.map-preview')).toHaveClass(/map-preview-detail/);
+    await expect(roadLayer).toBeVisible();
+    await expect(roadLayer).toHaveCSS('background-image', /map\/che\/che_road\.png/);
+    await expect(castles).toHaveCount(2);
+    await expect(castles.nth(0)).toHaveAttribute('src', /\/game\/cast_8\.gif$/);
+    await expect(castles.nth(1)).toHaveAttribute('src', /\/game\/cast_1\.gif$/);
+    await expect(nationBackgrounds).toHaveCount(2);
+    await expect(nationBackgrounds.nth(0)).toHaveCSS('background-image', /\/game\/bFF0000\.png/);
+    const mapGeometry = await panel.locator('.map-preview-body').evaluate((mapBody) => {
+        const rectOf = (element: Element | null) => {
+            if (!element) throw new Error('expected map preview element');
+            const rect = element.getBoundingClientRect();
+            return { width: rect.width, height: rect.height };
+        };
+        return {
+            body: rectOf(mapBody),
+            road: rectOf(mapBody.querySelector('[data-testid="map-preview-road"]')),
+            largeCastle: rectOf(mapBody.querySelector('[data-testid="map-preview-castle"]')),
+            largeNationBackground: rectOf(
+                mapBody.querySelector('[data-testid="map-preview-city-background"]')
+            ),
+        };
+    });
+    expect(mapGeometry).toEqual({
+        body: { width: 700, height: 500 },
+        road: { width: 700, height: 500 },
+        largeCastle: { width: 32, height: 24 },
+        largeNationBackground: { width: 96, height: 72 },
+    });
+    if (requestedAssets) {
+        await expect.poll(() => requestedAssets.has('/game/map/che/che_road.png')).toBe(true);
+        await expect.poll(() => requestedAssets.has('/game/cast_8.gif')).toBe(true);
+        await expect.poll(() => requestedAssets.has('/game/fFF0000.gif')).toBe(true);
+    } else {
+        await expect.poll(() => castles.nth(0).evaluate((image: HTMLImageElement) => image.naturalWidth)).toBe(32);
+        await expect.poll(() => castles.nth(1).evaluate((image: HTMLImageElement) => image.naturalWidth)).toBe(16);
+        await expect
+            .poll(() =>
+                page.evaluate(async () => {
+                    const image = new Image();
+                    image.src = 'https://sam-image.hided.net/game/map/che/che_road.png';
+                    await image.decode();
+                    return [image.naturalWidth, image.naturalHeight];
+                })
+            )
+            .toEqual([700, 500]);
+    }
 
     await hweTab.hover();
     await expect(hweTab).toHaveAttribute('aria-selected', 'true');
@@ -189,7 +279,7 @@ test('shows one public map panel and switches it by hover, click, and keyboard',
     expect(geometry.backgroundColor).toBe('rgba(9, 9, 11, 0.498)');
     await page.screenshot({ path: testInfo.outputPath('public-map-tabs-desktop.png'), fullPage: true });
     await testInfo.attach('public-map-tabs-desktop-geometry', {
-        body: Buffer.from(`${JSON.stringify(geometry, null, 2)}\n`),
+        body: Buffer.from(`${JSON.stringify({ panel: geometry, map: mapGeometry }, null, 2)}\n`),
         contentType: 'application/json',
     });
 });
@@ -209,7 +299,14 @@ test.describe('touch navigation', () => {
         expect(box?.height).toBeGreaterThanOrEqual(34);
         await hweTab.tap();
         await expect(hweTab).toHaveAttribute('aria-selected', 'true');
-        await expect(page.getByTestId('public-map-preview-panel')).toContainText('유저 22 / 500');
+        const panel = page.getByTestId('public-map-preview-panel');
+        await expect(panel).toContainText('유저 22 / 500');
+        await expect(panel.getByTestId('map-preview-road')).toBeVisible();
+        await expect(panel.getByTestId('map-preview-castle')).toHaveCount(2);
+        const mapBox = await panel.locator('.map-preview-body').boundingBox();
+        expect(mapBox?.width).toBeGreaterThan(280);
+        expect(mapBox?.width).toBeLessThanOrEqual(366);
+        expect(mapBox?.height).toBeCloseTo((mapBox?.width ?? 0) * (5 / 7), 0);
         await page.screenshot({ path: testInfo.outputPath('public-map-tabs-mobile.png'), fullPage: true });
     });
 });
