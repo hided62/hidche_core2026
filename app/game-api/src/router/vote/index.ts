@@ -1,7 +1,7 @@
 import { TRPCError } from '@trpc/server';
 import { z } from 'zod';
 
-import { asRecord, LiteHashDRBG, RandUtil } from '@sammo-ts/common';
+import { asRecord, createEmptyRealtimeReadModelChanges, LiteHashDRBG, RandUtil } from '@sammo-ts/common';
 import { GamePrisma } from '@sammo-ts/infra';
 import {
     ITEM_KEYS,
@@ -17,8 +17,24 @@ import {
 } from '@sammo-ts/logic';
 
 import { authedProcedure, router } from '../../trpc.js';
+import type { GameApiContext } from '../../context.js';
 import { getMyGeneral } from '../shared/general.js';
 import { loadCurrentGameTime, type CurrentGameTime } from '../../services/gameClock.js';
+import { publishRealtimeReadModelChanges } from '../../realtime/publisher.js';
+
+const publishFrontStatusChange = async (
+    ctx: GameApiContext,
+    options: { generalId?: number; global?: boolean }
+): Promise<void> => {
+    const changes = createEmptyRealtimeReadModelChanges();
+    if (options.generalId) changes.frontStatusActorIds = [options.generalId];
+    if (options.global) changes.frontStatusChanged = true;
+    try {
+        await publishRealtimeReadModelChanges(ctx.redis, ctx.profile.name, changes);
+    } catch {
+        // 설문 DB mutation은 이미 commit되었으므로 실시간 알림 실패로 되돌리지 않는다.
+    }
+};
 
 const hasAdminRole = (roles: string[], profileName: string): boolean => {
     if (roles.includes('superuser') || roles.includes('admin') || roles.includes('admin.superuser')) {
@@ -507,6 +523,7 @@ export const voteRouter = router({
                 throw new TRPCError({ code: 'BAD_REQUEST', message: rewardResult.reason });
             }
 
+            await publishFrontStatusChange(ctx, { generalId: general.id });
             return { ok: true, wonLottery: rewardResult.awardedUnique };
         }),
     addComment: authedProcedure
@@ -617,6 +634,7 @@ export const voteRouter = router({
                 )
             `);
 
+            await publishFrontStatusChange(ctx, { global: true });
             return { ok: true };
         }),
     updatePoll: adminProcedure
@@ -713,6 +731,9 @@ export const voteRouter = router({
                 WHERE id = ${input.voteId}
             `);
 
+            if (input.title !== undefined || endAt !== undefined) {
+                await publishFrontStatusChange(ctx, { global: true });
+            }
             return { ok: true };
         }),
     closePoll: adminProcedure
@@ -727,6 +748,7 @@ export const voteRouter = router({
             if (!rows[0]?.id) {
                 throw new TRPCError({ code: 'NOT_FOUND', message: '설문조사가 없습니다.' });
             }
+            await publishFrontStatusChange(ctx, { global: true });
             return { ok: true };
         }),
     getAdminStatus: adminProcedure.query(async () => ({ ok: true })),

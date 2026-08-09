@@ -746,7 +746,11 @@ const createTurnDaemonRuntimeWithLease = async (
         const revisionKey = buildGameReadModelRevisionKey(options.profileName ?? options.profile);
         const domainRevisionKey = buildGameReadModelDomainRevisionKey(options.profileName ?? options.profile);
         publishReadModelChanges = async (changes) => {
-            if (changes.worldChanged || changes.cityIds.length > 0 || changes.nationIds.length > 0) {
+            if (
+                changes.worldChanged ||
+                (changes.mapCityIds ?? changes.cityIds).length > 0 ||
+                (changes.mapNationIds ?? changes.nationIds).length > 0
+            ) {
                 await redisClient.hIncrBy(domainRevisionKey, 'world', 1);
             }
             return redisClient.incr(revisionKey);
@@ -787,6 +791,9 @@ const createTurnDaemonRuntimeWithLease = async (
             publishCommandEvents: async (result) => {
                 try {
                     const changes = takeCommittedReadModelChanges?.();
+                    if (changes && result.type === 'shiftSchedule' && result.ok) {
+                        changes.lobbyChanged = true;
+                    }
                     if (changes && hasRealtimeReadModelChanges(changes)) {
                         const revision = await publishCommittedChanges(changes);
                         if (revision !== undefined) {

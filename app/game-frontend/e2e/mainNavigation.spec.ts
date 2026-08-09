@@ -601,6 +601,15 @@ test('realtime read-model events skip clock-only work, merge bursts, patch in pl
                     generalIds: [7],
                     cityIds: [],
                     nationIds: [],
+                    mapGeneralIds: [],
+                    mapCityIds: [],
+                    mapNationIds: [],
+                    frontStatusGeneralIds: [],
+                    frontStatusNationIds: [],
+                    frontStatusActorIds: [],
+                    frontStatusChanged: false,
+                    lobbyGeneralIds: [],
+                    lobbyChanged: false,
                     reservedGeneralIds: [],
                     recordGeneralIds: [],
                     worldChanged: false,
@@ -620,11 +629,12 @@ test('realtime read-model events skip clock-only work, merge bursts, patch in pl
     await expect(page.locator('.general-title')).toContainText('부드럽게갱신된장수');
     const changedOperations = state.operations.slice(operationsBeforeChangedBurst);
     expect(changedOperations).toEqual(
-        expect.arrayContaining(['general.me', 'world.getMap', 'turns.getCommandTable', 'board.getAccess'])
+        expect.arrayContaining(['general.me', 'turns.getCommandTable', 'board.getAccess'])
     );
     expect(changedOperations).not.toEqual(
         expect.arrayContaining([
             'lobby.info',
+            'world.getMap',
             'messages.getRecent',
             'messages.getContacts',
             'general.getRecentRecords',
@@ -632,6 +642,40 @@ test('realtime read-model events skip clock-only work, merge bursts, patch in pl
             'turns.reserved.getGeneral',
         ])
     );
+
+    const operationsBeforeSurvey = state.operations.length;
+    await page.evaluate(() => {
+        (window as unknown as { __emitMainRealtime: (type: string, payload: unknown) => void }).__emitMainRealtime(
+            'readModelChanged',
+            {
+                at: new Date().toISOString(),
+                revision: 42,
+                changes: {
+                    generalIds: [],
+                    cityIds: [],
+                    nationIds: [],
+                    mapGeneralIds: [],
+                    mapCityIds: [],
+                    mapNationIds: [],
+                    frontStatusGeneralIds: [],
+                    frontStatusNationIds: [],
+                    frontStatusActorIds: [],
+                    frontStatusChanged: true,
+                    lobbyGeneralIds: [],
+                    lobbyChanged: false,
+                    reservedGeneralIds: [],
+                    recordGeneralIds: [],
+                    worldChanged: false,
+                    globalRecordsChanged: false,
+                    worldHistoryChanged: false,
+                    contactsChanged: false,
+                },
+            }
+        );
+    });
+    await expect.poll(() => state.operations.slice(operationsBeforeSurvey), { timeout: 3_000 }).toEqual([
+        'general.getFrontStatus',
+    ]);
 
     const profile = await page.evaluate(() => {
         const probe = (
@@ -697,6 +741,15 @@ test('realtime read-model events skip clock-only work, merge bursts, patch in pl
                     generalIds: [7],
                     cityIds: [],
                     nationIds: [],
+                    mapGeneralIds: [],
+                    mapCityIds: [],
+                    mapNationIds: [],
+                    frontStatusGeneralIds: [],
+                    frontStatusNationIds: [],
+                    frontStatusActorIds: [],
+                    frontStatusChanged: false,
+                    lobbyGeneralIds: [],
+                    lobbyChanged: false,
                     reservedGeneralIds: [],
                     recordGeneralIds: [],
                     worldChanged: false,

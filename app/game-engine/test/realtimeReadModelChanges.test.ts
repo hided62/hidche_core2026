@@ -1,7 +1,12 @@
 import { describe, expect, it } from 'vitest';
 import { LogCategory, LogFormat, LogScope } from '@sammo-ts/logic';
 
-import { summarizeRealtimeReadModelChanges } from '../src/turn/databaseHooks.js';
+import {
+    applyRealtimeReadModelBaseline,
+    createRealtimeReadModelBaseline,
+    summarizeRealtimeReadModelChanges,
+} from '../src/turn/databaseHooks.js';
+import type { InMemoryTurnWorld } from '../src/turn/inMemoryWorld.js';
 import type { TurnWorldChanges } from '../src/turn/inMemoryWorld.js';
 import type { ReservedTurnChanges } from '../src/turn/reservedTurnStore.js';
 
@@ -52,12 +57,212 @@ describe('summarizeRealtimeReadModelChanges', () => {
             generalIds: [7, 8, 9],
             cityIds: [4],
             nationIds: [3],
+            mapGeneralIds: [7, 8, 9],
+            mapCityIds: [4],
+            mapNationIds: [3],
+            frontStatusGeneralIds: [7, 8, 9],
+            frontStatusNationIds: [3],
+            lobbyGeneralIds: [7, 8, 9],
             reservedGeneralIds: [7, 8, 9],
             recordGeneralIds: [7],
             worldChanged: false,
             globalRecordsChanged: true,
             worldHistoryChanged: true,
             contactsChanged: true,
+            frontStatusChanged: false,
+            lobbyChanged: true,
+        });
+    });
+
+    it('separates content changes from map and contact projections', () => {
+        const baseline = createRealtimeReadModelBaseline({
+            listGenerals: () => [
+                {
+                    id: 7,
+                    name: '장수',
+                    cityId: 1,
+                    nationId: 1,
+                    officerLevel: 1,
+                    npcState: 0,
+                    gold: 100,
+                    meta: { permission: 'normal' },
+                    penalty: {},
+                },
+            ],
+            listCities: () => [
+                { id: 1, level: 1, nationId: 1, state: 0, supplyState: 1, population: 100 },
+            ],
+            listNations: () => [
+                { id: 1, name: '위', color: '#008000', capitalCityId: 1, gold: 100 },
+            ],
+        } as unknown as InMemoryTurnWorld);
+        const changes = {
+            generals: [
+                {
+                    id: 7,
+                    name: '장수',
+                    cityId: 1,
+                    nationId: 1,
+                    officerLevel: 1,
+                    npcState: 0,
+                    gold: 90,
+                    meta: { permission: 'normal' },
+                    penalty: {},
+                },
+            ],
+            createdGenerals: [],
+            deletedGenerals: [],
+            cities: [{ id: 1, level: 1, nationId: 1, state: 0, supplyState: 1, population: 101 }],
+            nations: [{ id: 1, name: '위', color: '#008000', capitalCityId: 1, gold: 90 }],
+            createdNations: [],
+            deletedNations: [],
+            deletedNationSnapshots: [],
+            lifecycleEvents: [],
+            logs: [],
+        } as unknown as TurnWorldChanges;
+
+        expect(summarizeRealtimeReadModelChanges(changes, undefined, baseline)).toMatchObject({
+            generalIds: [7],
+            cityIds: [1],
+            nationIds: [1],
+            mapGeneralIds: [],
+            mapCityIds: [],
+            mapNationIds: [],
+            frontStatusGeneralIds: [],
+            frontStatusNationIds: [],
+            lobbyGeneralIds: [],
+            contactsChanged: false,
+            frontStatusChanged: false,
+            lobbyChanged: false,
+        });
+
+        applyRealtimeReadModelBaseline(baseline, changes);
+        expect(summarizeRealtimeReadModelChanges(changes, undefined, baseline)).toMatchObject({
+            generalIds: [],
+            cityIds: [],
+            nationIds: [],
+            mapGeneralIds: [],
+            mapCityIds: [],
+            mapNationIds: [],
+            frontStatusGeneralIds: [],
+            frontStatusNationIds: [],
+            lobbyGeneralIds: [],
+            contactsChanged: false,
+            frontStatusChanged: false,
+            lobbyChanged: false,
+        });
+    });
+
+    it('detects map, contact, and front-status fields independently', () => {
+        const baseline = createRealtimeReadModelBaseline({
+            listGenerals: () => [
+                {
+                    id: 7,
+                    name: '장수',
+                    cityId: 1,
+                    nationId: 1,
+                    officerLevel: 1,
+                    npcState: 0,
+                    meta: { permission: 'normal' },
+                    penalty: {},
+                },
+            ],
+            listCities: () => [{ id: 1, level: 1, nationId: 1, state: 0, supplyState: 1 }],
+            listNations: () => [
+                { id: 1, name: '위', color: '#008000', capitalCityId: 1, meta: { notice: '이전' } },
+            ],
+        } as unknown as InMemoryTurnWorld);
+        const changes = {
+            generals: [
+                {
+                    id: 7,
+                    name: '장수',
+                    cityId: 1,
+                    nationId: 1,
+                    officerLevel: 5,
+                    npcState: 0,
+                    meta: { permission: 'normal' },
+                    penalty: {},
+                },
+            ],
+            createdGenerals: [],
+            deletedGenerals: [],
+            cities: [{ id: 1, level: 2, nationId: 1, state: 0, supplyState: 1 }],
+            nations: [
+                { id: 1, name: '위', color: '#008000', capitalCityId: 1, meta: { notice: '새 방침' } },
+            ],
+            createdNations: [],
+            deletedNations: [],
+            deletedNationSnapshots: [],
+            lifecycleEvents: [],
+            logs: [],
+        } as unknown as TurnWorldChanges;
+
+        expect(summarizeRealtimeReadModelChanges(changes, undefined, baseline)).toMatchObject({
+            generalIds: [7],
+            cityIds: [1],
+            nationIds: [1],
+            mapGeneralIds: [],
+            mapCityIds: [1],
+            mapNationIds: [],
+            frontStatusGeneralIds: [],
+            frontStatusNationIds: [1],
+            lobbyGeneralIds: [],
+            contactsChanged: true,
+            frontStatusChanged: false,
+            lobbyChanged: false,
+        });
+    });
+
+    it('separates global front-status names from nation-targeted notices', () => {
+        const baseline = createRealtimeReadModelBaseline({
+            listGenerals: () => [
+                {
+                    id: 7,
+                    name: '장수',
+                    cityId: 1,
+                    nationId: 1,
+                    officerLevel: 1,
+                    npcState: 0,
+                    meta: {},
+                    penalty: {},
+                },
+            ],
+            listCities: () => [],
+            listNations: () => [
+                { id: 1, name: '위', color: '#008000', capitalCityId: 1, meta: { notice: '이전' } },
+            ],
+        } as unknown as InMemoryTurnWorld);
+        const changes = {
+            generals: [
+                {
+                    id: 7,
+                    name: '새 장수',
+                    cityId: 1,
+                    nationId: 1,
+                    officerLevel: 1,
+                    npcState: 0,
+                    meta: {},
+                    penalty: {},
+                },
+            ],
+            createdGenerals: [],
+            deletedGenerals: [],
+            cities: [],
+            nations: [
+                { id: 1, name: '촉', color: '#008000', capitalCityId: 1, meta: { notice: '새 공지' } },
+            ],
+            createdNations: [],
+            deletedNations: [],
+            deletedNationSnapshots: [],
+            lifecycleEvents: [],
+            logs: [],
+        } as unknown as TurnWorldChanges;
+
+        expect(summarizeRealtimeReadModelChanges(changes, undefined, baseline)).toMatchObject({
+            frontStatusGeneralIds: [7],
+            frontStatusNationIds: [1],
+            frontStatusChanged: true,
         });
     });
 });
