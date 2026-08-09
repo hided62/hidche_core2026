@@ -164,14 +164,36 @@ test('prioritizes core general fields and keeps context and inheritance progress
         '통솔지력형',
         '무력지력형',
     ]);
-    await page.evaluate(() => {
-        const values = [0.9, 0.8, 0.5];
-        Math.random = () => values.shift() ?? 0.5;
-    });
+    const setRandomValues = async (values: number[]) => {
+        await page.evaluate((nextValues) => {
+            let index = 0;
+            Math.random = () => nextValues[index++] ?? nextValues.at(-1) ?? 0.5;
+        }, values);
+    };
+
+    await setRandomValues([0.2, 0.4, 0.6]);
+    await statActions.getByRole('button', { name: '랜덤형', exact: true }).click();
+    await expect(page.locator('.create-form').getByLabel('통솔')).toHaveValue('36');
+    await expect(page.locator('.create-form').getByLabel('무력')).toHaveValue('55');
+    await expect(page.locator('.create-form').getByLabel('지력')).toHaveValue('74');
+
+    await setRandomValues([0.9, 0.8, 0.5]);
     await statActions.getByRole('button', { name: '통솔무력형' }).click();
     await expect(page.locator('.create-form').getByLabel('통솔')).toHaveValue('75');
     await expect(page.locator('.create-form').getByLabel('무력')).toHaveValue('75');
     await expect(page.locator('.create-form').getByLabel('지력')).toHaveValue('15');
+
+    await setRandomValues([0.9, 0.5, 0.8]);
+    await statActions.getByRole('button', { name: '통솔지력형' }).click();
+    await expect(page.locator('.create-form').getByLabel('통솔')).toHaveValue('75');
+    await expect(page.locator('.create-form').getByLabel('무력')).toHaveValue('15');
+    await expect(page.locator('.create-form').getByLabel('지력')).toHaveValue('75');
+
+    await setRandomValues([0.5, 0.9, 0.8]);
+    await statActions.getByRole('button', { name: '무력지력형' }).click();
+    await expect(page.locator('.create-form').getByLabel('통솔')).toHaveValue('15');
+    await expect(page.locator('.create-form').getByLabel('무력')).toHaveValue('75');
+    await expect(page.locator('.create-form').getByLabel('지력')).toHaveValue('75');
     await expect(page.locator('.stat-summary')).toContainText('능력치 합계: 165');
     await expect(advanced).not.toHaveAttribute('open');
     await expect(page.getByText('전투 특기 선택')).toBeHidden();
