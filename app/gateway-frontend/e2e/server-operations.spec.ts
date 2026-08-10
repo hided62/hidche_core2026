@@ -34,6 +34,7 @@ type FixtureState = {
     runtimeRunning: boolean;
     requestBodies: Array<{ operation: string; body: unknown }>;
     gatewayLogPollCount?: number;
+    gatewayLogsEmpty?: boolean;
     capabilities?: Array<{ permission: string; scope: 'GLOBAL' | 'PROFILE'; scopes: string[] }>;
     profileListDelayMs?: number;
     profileNavigationDelayMs?: number;
@@ -178,6 +179,9 @@ const installFixture = async (page: Page, state: FixtureState) => {
                 const releaseOperation = state.gatewayOperations[0];
                 if (!releaseOperation) throw new Error('Release operation fixture is missing');
                 state.gatewayLogPollCount = (state.gatewayLogPollCount ?? 0) + 1;
+                if (state.gatewayLogsEmpty) {
+                    return response({ operation: releaseOperation, entries: [] });
+                }
                 const completed = state.gatewayLogPollCount > 1;
                 return response({
                     operation: { ...releaseOperation, status: completed ? 'SUCCEEDED' : 'RUNNING' },
@@ -638,6 +642,35 @@ test('controls gateway deployment and rollback through the external controller q
     await page.getByTestId('request-gateway-rollback').click();
     await expect(page.getByText('Gateway rollback 작업을 등록했습니다.')).toBeVisible();
     expect(state.requestBodies.some((entry) => entry.operation === 'admin.releases.requestGatewayRollback')).toBe(true);
+});
+
+test('explains terminal releases created before controller progress logging', async ({ page }) => {
+    const state: FixtureState = {
+        operations: [],
+        gatewayOperations: [
+            {
+                id: '99999999-9999-4999-8999-999999999999',
+                type: 'DEPLOY',
+                status: 'SUCCEEDED',
+                sourceMode: 'COMMIT',
+                sourceRef: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+                payload: {},
+                requestedBy: 'admin',
+                createdAt: '2026-08-01T02:00:00.000Z',
+                updatedAt: '2026-08-01T02:02:00.000Z',
+            },
+        ],
+        gatewayLogsEmpty: true,
+        runtimeRunning: true,
+        requestBodies: [],
+    };
+    await installFixture(page, state);
+
+    await page.goto('admin/releases');
+    await expect(page.getByTestId('gateway-release-log')).toContainText(
+        '로그 지원 controller 적용 전 작업일 수 있습니다.'
+    );
+    await expect(page.getByTestId('gateway-release-log')).not.toContainText('controller 로그를 기다리고 있습니다');
 });
 
 test('renders a failed reset, retries it as a new operation, and reaches success', async ({ page }, testInfo) => {

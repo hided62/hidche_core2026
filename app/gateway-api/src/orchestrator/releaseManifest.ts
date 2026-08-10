@@ -3,7 +3,10 @@ import path from 'node:path';
 
 import { isRecord } from '@sammo-ts/common';
 
-export const RELEASE_CONTROLLER_PROTOCOL = 1;
+// Protocol 2 requires a controller that persists GatewayReleaseLog progress.
+// Older controllers must reject these releases instead of silently deploying a
+// log-aware API/frontend while continuing to run without the logging contract.
+export const RELEASE_CONTROLLER_PROTOCOL = 2;
 
 export interface ReleaseManifest {
     formatVersion: 1;

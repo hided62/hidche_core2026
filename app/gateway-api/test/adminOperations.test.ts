@@ -48,6 +48,7 @@ const buildCaller = async (
     const session = await sessions.createSession({ ...admin, roles: adminRoles });
     const createdInputs: GatewayOperationCreateInput[] = [];
     const createdReleaseInputs: GatewayReleaseOperationCreateInput[] = [];
+    const appendedReleaseLogs: Array<{ operationId: string; phase: string; message: string }> = [];
     const releaseLogs = [
         {
             cursor: '1',
@@ -150,12 +151,15 @@ const buildCaller = async (
             }
             return releaseLogs.filter((entry) => !afterCursor || BigInt(entry.cursor) > BigInt(afterCursor));
         },
-        appendOperationLog: async (_id, input) => ({
-            cursor: '2',
-            operationId: '44444444-4444-4444-8444-444444444444',
-            createdAt: '2026-08-01T00:00:02.000Z',
-            ...input,
-        }),
+        appendOperationLog: async (operationId, input) => {
+            appendedReleaseLogs.push({ operationId, phase: input.phase, message: input.message });
+            return {
+                cursor: '2',
+                operationId,
+                createdAt: '2026-08-01T00:00:02.000Z',
+                ...input,
+            };
+        },
         createOperation: async (input) => {
             createdReleaseInputs.push(input);
             return {
@@ -290,6 +294,7 @@ const buildCaller = async (
         caller,
         createdInputs,
         createdReleaseInputs,
+        appendedReleaseLogs,
         createdRuntimeActions,
         users,
         admin,
@@ -753,6 +758,11 @@ describe('gateway release API', () => {
             requestedBy: harness.admin.id,
         });
         expect(harness.createdReleaseInputs[0]?.sourceRef).toMatch(/^[0-9a-f]{40}$/u);
+        expect(harness.appendedReleaseLogs).toContainEqual({
+            operationId: '44444444-4444-4444-8444-444444444444',
+            phase: 'queue',
+            message: 'Gateway 배포 작업을 controller queue에 등록했습니다.',
+        });
     });
 
     it('queues rollback to the previously published gateway commit', async () => {
@@ -766,6 +776,11 @@ describe('gateway release API', () => {
             type: 'ROLLBACK',
             sourceMode: 'COMMIT',
             sourceRef: '2222222222222222222222222222222222222222',
+        });
+        expect(harness.appendedReleaseLogs).toContainEqual({
+            operationId: '44444444-4444-4444-8444-444444444444',
+            phase: 'queue',
+            message: 'Gateway rollback 작업을 controller queue에 등록했습니다.',
         });
     });
 
