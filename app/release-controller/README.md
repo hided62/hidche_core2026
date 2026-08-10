@@ -82,3 +82,8 @@ pnpm --filter @sammo-ts/release-controller self-upgrade COMMIT <full-sha>
 
 Database migration은 일반적으로 되돌리지 않습니다. 이전 애플리케이션으로
 rollback하려면 새 schema와의 하위 호환성을 릴리스 전에 확인해 주세요.
+
+`release-manifest.json`의 `controllerProtocol`이 올라간 릴리스는 controller를
+먼저 self-upgrade해야 합니다. Protocol 2는 `GatewayReleaseLog` 진행 로그 저장을
+요구합니다. 구형 controller로 새 Gateway만 배포하면 관리자 화면과 controller의
+기능이 어긋날 수 있으므로, manifest protocol 검사를 우회하지 마세요.

@@ -1432,13 +1432,23 @@ export const adminRouter = router({
                     throw new TRPCError({ code: 'BAD_REQUEST', message: 'Gateway release source is invalid.' });
                 }
                 try {
-                    return await ctx.releases.createOperation({
+                    const operation = await ctx.releases.createOperation({
                         type: 'DEPLOY',
                         sourceMode: input.sourceMode,
                         sourceRef,
                         reason: input.reason,
                         requestedBy: adminAuth.user.id,
                     });
+                    try {
+                        await ctx.releases.appendOperationLog(operation.id, {
+                            level: 'INFO',
+                            phase: 'queue',
+                            message: 'Gateway 배포 작업을 controller queue에 등록했습니다.',
+                        });
+                    } catch {
+                        // The API that first creates GatewayReleaseLog must still be able to queue its own release.
+                    }
+                    return operation;
                 } catch (error) {
                     if (!isUniqueConstraintError(error)) {
                         throw error;
@@ -1455,7 +1465,7 @@ export const adminRouter = router({
                     throw new TRPCError({ code: 'BAD_REQUEST', message: 'No previous gateway release is available.' });
                 }
                 try {
-                    return await ctx.releases.createOperation({
+                    const operation = await ctx.releases.createOperation({
                         type: 'ROLLBACK',
                         sourceMode: 'COMMIT',
                         sourceRef: state.previousCommitSha,
@@ -1466,6 +1476,16 @@ export const adminRouter = router({
                         reason: input?.reason,
                         requestedBy: adminAuth.user.id,
                     });
+                    try {
+                        await ctx.releases.appendOperationLog(operation.id, {
+                            level: 'INFO',
+                            phase: 'queue',
+                            message: 'Gateway rollback 작업을 controller queue에 등록했습니다.',
+                        });
+                    } catch {
+                        // Preserve the bootstrap release when the log table does not exist yet.
+                    }
+                    return operation;
                 } catch (error) {
                     if (!isUniqueConstraintError(error)) {
                         throw error;

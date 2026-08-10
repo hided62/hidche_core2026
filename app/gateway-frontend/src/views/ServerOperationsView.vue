@@ -135,6 +135,17 @@ const gatewayForm = reactive({
 const selectedGatewayOperation = computed(
     () => gatewayReleaseOperations.value.find((operation) => operation.id === selectedGatewayOperationId.value) ?? null
 );
+const gatewayReleaseLogEmptyMessage = computed(() => {
+    const operation = selectedGatewayOperation.value;
+    const status = gatewayReleaseLogStatus.value || operation?.status;
+    if (!operation || !status || ['QUEUED', 'RUNNING'].includes(status)) {
+        return 'controller 로그를 기다리고 있습니다…';
+    }
+    if (operation.error) {
+        return `이 작업에는 controller 로그가 기록되지 않았습니다. 작업 오류: ${operation.error}`;
+    }
+    return '이 작업에는 controller 로그가 기록되지 않았습니다. 로그 지원 controller 적용 전 작업일 수 있습니다.';
+});
 const hasCapability = (permission: string): boolean =>
     capabilities.value.some((entry) => {
         if (entry.permission !== permission && entry.permission !== 'admin.profiles.manage') return false;
@@ -993,7 +1004,7 @@ onBeforeUnmount(() => {
                         data-testid="gateway-release-log"
                     >
                         <div v-if="!gatewayReleaseLogs.length" class="text-zinc-500">
-                            controller 로그를 기다리고 있습니다…
+                            {{ gatewayReleaseLogEmptyMessage }}
                         </div>
                         <div
                             v-for="entry in gatewayReleaseLogs"

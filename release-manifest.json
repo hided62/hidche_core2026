@@ -1,6 +1,6 @@
 {
     "formatVersion": 1,
-    "controllerProtocol": 1,
+    "controllerProtocol": 2,
     "gatewaySchemaHead": "20260809000000_add_gateway_release_logs",
     "gameSchemaHead": "20260803000000_add_logical_game_clock",
     "components": ["gateway-api", "gateway-frontend", "release-controller", "game-api", "game-engine", "game-frontend"]

@@ -4,7 +4,7 @@ import path from 'node:path';
 
 import { afterEach, describe, expect, it } from 'vitest';
 
-import { readReleaseManifest } from '../src/orchestrator/releaseManifest.js';
+import { readReleaseManifest, RELEASE_CONTROLLER_PROTOCOL } from '../src/orchestrator/releaseManifest.js';
 
 const temporaryDirectories: string[] = [];
 
@@ -37,6 +37,7 @@ describe('readReleaseManifest', () => {
         const workspaceRoot = path.resolve(import.meta.dirname, '../../..');
 
         await expect(readReleaseManifest(workspaceRoot)).resolves.toMatchObject({
+            controllerProtocol: RELEASE_CONTROLLER_PROTOCOL,
             gatewaySchemaHead: '20260809000000_add_gateway_release_logs',
             gameSchemaHead: '20260803000000_add_logical_game_clock',
         });

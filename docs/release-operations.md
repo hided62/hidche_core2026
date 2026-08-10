@@ -198,6 +198,13 @@ pnpm --filter @sammo-ts/release-controller self-upgrade COMMIT <full-sha>
 새 controller가 제한 시간 안에 `online`이 되지 않으면 이전 definition을
 복구합니다. Self-upgrade 중에도 migration downgrade는 수행하지 않습니다.
 
+`release-manifest.json`의 `controllerProtocol`이 현재 controller가 지원하는
+값보다 높으면 일반 Gateway 배포는 시작 전에 실패합니다. Protocol 2부터
+release-controller가 `GatewayReleaseLog` 진행 로그를 저장하는 것이 계약입니다.
+로그 기능이 포함된 Gateway API/frontend만 먼저 배포하면 화면은 polling하지만
+구형 controller는 로그를 만들 수 있으므로, protocol 변경 commit은 위
+`self-upgrade`로 controller를 먼저 전환한 뒤 Gateway 배포를 요청해야 합니다.
+
 ## 운영 확인 목록
 
 배포 전:
