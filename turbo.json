@@ -1,17 +1,20 @@
 {
     "$schema": "https://turbo.build/schema.json",
     "ui": "tui",
+    "globalPassThroughEnv": ["NODE_OPTIONS", "RAYON_NUM_THREADS"],
     "tasks": {
         "build": {
             "dependsOn": ["^build", "typecheck"],
+            "env": ["NODE_ENV"],
+            "inputs": ["$TURBO_DEFAULT$", ".env*"],
             "outputs": ["dist/**"]
         },
         "typecheck": {
-            "dependsOn": ["^typecheck", "prisma:generate"],
+            "dependsOn": ["^build", "prisma:generate"],
             "cache": true
         },
         "prisma:generate": {
-            "inputs": ["prisma/*.prisma"],
+            "inputs": ["$TURBO_DEFAULT$"],
             "outputs": ["node_modules/.prisma/client/**", "prisma/generated/**"],
             "cache": true
         },

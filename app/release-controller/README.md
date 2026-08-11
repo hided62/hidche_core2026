@@ -29,6 +29,9 @@ Gateway process 환경에 전달하지 않습니다. 이 값이 frontend 정의�
   frontend build 계약입니다.
 - `RELEASE_CONTROLLER_POLL_MS`, `RELEASE_CONTROLLER_READINESS_TIMEOUT_MS`: queue
   poll과 준비 제한 시간입니다.
+- `TURBO_CACHE_DIR`: 선택 사항인 공유 local cache 경로입니다. 없으면 원래
+  `RELEASE_CONTROLLER_WORKSPACE_ROOT/.turbo/release-cache`를 사용합니다. 상대 경로는
+  원래 workspace 기준으로 해석합니다.
 
 비밀값은 Git에서 제외된 환경 파일 또는 process 환경으로 전달해 주세요.
 `VITE_*`에는 공개 URL만 넣어 주세요.
@@ -46,13 +49,7 @@ DEPLOY의 rollback이 frontend build가 없는 controller worktree를 이전 Gat
 
 ```sh
 pnpm install --frozen-lockfile
-pnpm --filter @sammo-ts/infra prisma:generate
-pnpm --filter @sammo-ts/common build
-pnpm --filter @sammo-ts/infra build
-pnpm --filter @sammo-ts/logic build
-pnpm --filter @sammo-ts/game-engine build
-pnpm --filter @sammo-ts/gateway-api build
-pnpm --filter @sammo-ts/release-controller build
+pnpm exec turbo run build --filter=@sammo-ts/release-controller --concurrency=2 --ui=stream
 pnpm --filter @sammo-ts/infra prisma:migrate:deploy:gateway
 pnpm --filter @sammo-ts/release-controller start
 ```

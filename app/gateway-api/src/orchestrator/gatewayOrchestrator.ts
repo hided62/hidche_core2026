@@ -12,7 +12,7 @@ import {
 } from '@sammo-ts/infra';
 import { isRecord } from '@sammo-ts/common';
 
-import type { BuildCommand, BuildRunner } from './buildRunner.js';
+import { buildTurboReleaseCommand, type BuildCommand, type BuildRunner } from './buildRunner.js';
 import { sanitizeManagedProcessEnv, type ProcessManager } from './processManager.js';
 import type {
     GatewayClaimedProfileUpdate,
@@ -494,7 +494,8 @@ export const buildProfileFrontendCommands = (
 export const buildWorkspaceCommands = (
     workspaceRoot: string,
     needsInstall: boolean,
-    env?: Record<string, string>
+    env?: Record<string, string>,
+    cacheAnchorRoot: string = workspaceRoot
 ): BuildCommand[] => {
     const commands: BuildCommand[] = [];
     if (needsInstall) {
@@ -505,23 +506,9 @@ export const buildWorkspaceCommands = (
             env,
         });
     }
-    const buildSteps: Array<[filter: string, script: string]> = [
-        ['@sammo-ts/common', 'build'],
-        ['@sammo-ts/infra', 'prisma:generate'],
-        ['@sammo-ts/infra', 'build'],
-        ['@sammo-ts/logic', 'build'],
-        ['@sammo-ts/game-api', 'build'],
-        ['@sammo-ts/game-engine', 'build'],
-        ['@sammo-ts/gateway-api', 'build'],
-    ];
-    for (const [filter, script] of buildSteps) {
-        commands.push({
-            command: 'pnpm',
-            args: ['--filter', filter, script],
-            cwd: workspaceRoot,
-            env,
-        });
-    }
+    commands.push(
+        buildTurboReleaseCommand(workspaceRoot, cacheAnchorRoot, ['@sammo-ts/game-api', '@sammo-ts/gateway-api'], env)
+    );
     return commands;
 };
 
@@ -1061,7 +1048,12 @@ export class GatewayOrchestrator implements GatewayOrchestratorHandle {
             const manifest = await readReleaseManifest(workspace.root);
             assertReleaseComponents(manifest, ['game-api', 'game-engine', 'game-frontend']);
             const commands = [
-                ...buildWorkspaceCommands(workspace.root, workspace.needsInstall, this.processConfig.baseEnv),
+                ...buildWorkspaceCommands(
+                    workspace.root,
+                    workspace.needsInstall,
+                    this.processConfig.baseEnv,
+                    this.processConfig.workspaceRoot
+                ),
                 ...buildProfileFrontendCommands(workspace.root, profile, this.processConfig.baseEnv),
             ];
             const result = await this.buildRunner.run(commands);
@@ -1552,7 +1544,12 @@ export class GatewayOrchestrator implements GatewayOrchestratorHandle {
     }> {
         const workspace = await this.workspaceManager.prepare(commitSha);
         const commands = [
-            ...buildWorkspaceCommands(workspace.root, workspace.needsInstall, this.processConfig.baseEnv),
+            ...buildWorkspaceCommands(
+                workspace.root,
+                workspace.needsInstall,
+                this.processConfig.baseEnv,
+                this.processConfig.workspaceRoot
+            ),
             ...(profile ? buildProfileFrontendCommands(workspace.root, profile, this.processConfig.baseEnv) : []),
         ];
         return { result: await this.buildRunner.run(commands), workspace };
