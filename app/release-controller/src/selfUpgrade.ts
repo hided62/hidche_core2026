@@ -65,7 +65,10 @@ export const upgradeReleaseController = async (options: {
 }): Promise<{ commitSha: string; workspace: string }> => {
     const commitSha = await options.workspaceManager.resolveCommit(options.sourceMode, options.sourceRef);
     const workspace = await options.workspaceManager.prepare(commitSha);
-    const manifest = await readReleaseManifest(workspace.root);
+    // The target controller, rather than this bootstrap CLI, owns the target
+    // controller protocol. Keep all manifest/schema/component checks while
+    // allowing this explicit self-upgrade boundary to cross protocol versions.
+    const manifest = await readReleaseManifest(workspace.root, { allowControllerUpgrade: true });
     assertReleaseComponents(manifest, ['release-controller']);
     const build = await options.buildRunner.run(
         buildReleaseControllerCommands(workspace.root, workspace.needsInstall, options.config)

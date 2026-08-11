@@ -8,7 +8,7 @@ import { readReleaseManifest, RELEASE_CONTROLLER_PROTOCOL } from '../src/orchest
 
 const temporaryDirectories: string[] = [];
 
-const createWorkspace = async (gatewayHead: string, gameHead: string): Promise<string> => {
+const createWorkspace = async (gatewayHead: string, gameHead: string, controllerProtocol = 1): Promise<string> => {
     const workspace = await fs.mkdtemp(path.join(os.tmpdir(), 'sammo-release-manifest-'));
     temporaryDirectories.push(workspace);
     await fs.mkdir(path.join(workspace, 'packages/infra/prisma/gateway-migrations', gatewayHead), {
@@ -19,7 +19,7 @@ const createWorkspace = async (gatewayHead: string, gameHead: string): Promise<s
         path.join(workspace, 'release-manifest.json'),
         JSON.stringify({
             formatVersion: 1,
-            controllerProtocol: 1,
+            controllerProtocol,
             gatewaySchemaHead: gatewayHead,
             gameSchemaHead: gameHead,
             components: ['gateway-api', 'gateway-frontend', 'game-api', 'game-engine', 'game-frontend'],
@@ -57,5 +57,21 @@ describe('readReleaseManifest', () => {
         await fs.mkdir(path.join(workspace, 'packages/infra/prisma/migrations/20260802000000_newer'));
 
         await expect(readReleaseManifest(workspace)).rejects.toThrow('does not match workspace head');
+    });
+
+    it('allows only the explicit controller self-upgrade boundary to cross protocol versions', async () => {
+        const futureProtocol = RELEASE_CONTROLLER_PROTOCOL + 1;
+        const workspace = await createWorkspace(
+            '20260801000000_gateway',
+            '20260801000000_game',
+            futureProtocol
+        );
+
+        await expect(readReleaseManifest(workspace)).rejects.toThrow(
+            `Release requires controller protocol ${futureProtocol}`
+        );
+        await expect(readReleaseManifest(workspace, { allowControllerUpgrade: true })).resolves.toMatchObject({
+            controllerProtocol: futureProtocol,
+        });
     });
 });
