@@ -189,10 +189,7 @@ test('exchanges the gateway token before loading authenticated lobby general dat
     await expect(row).toContainText('선택장수');
     await expect(row.getByRole('button', { name: '입장' })).toBeVisible();
     const portrait = row.locator('img');
-    await expect(portrait).toHaveAttribute(
-        'src',
-        'https://sam-image.hided.net/icons/users/core2026/account-hash.png'
-    );
+    await expect(portrait).toHaveAttribute('src', 'https://sam-image.hided.net/icons/users/core2026/account-hash.png');
     await expect.poll(() => portrait.evaluate((image: HTMLImageElement) => image.naturalWidth)).toBe(1);
 
     expect(gameOperations.find(({ operation }) => operation === 'auth.exchangeGatewayToken')).toEqual({
@@ -219,7 +216,32 @@ test('applies the signed general-acquisition policy to both create and possessio
     await expect(row.getByRole('button', { name: '장수빙의' })).toBeDisabled();
 });
 
-test('opens the mode-1 possession tab with a fresh gateway game token', async ({ page }) => {
+test('opens the profile root without profile or game token query parameters', async ({ page }) => {
+    await installFixture(page);
+    await page.route('**/hwe/', async (route) => {
+        await route.fulfill({
+            status: 200,
+            contentType: 'text/html',
+            body: '<title>Clean profile target</title>',
+        });
+    });
+
+    await page.goto('lobby');
+    const row = page.locator('tbody tr').filter({ hasText: 'hwe섭' });
+    await row.getByRole('button', { name: '입장', exact: true }).click();
+
+    await expect(page).toHaveURL(/\/hwe\/$/);
+    const target = new URL(page.url());
+    expect(target.search).toBe('');
+    expect(
+        await page.evaluate(() => JSON.parse(window.sessionStorage.getItem('sammo-pending-game-session') ?? 'null'))
+    ).toEqual({
+        profile: 'hwe:903',
+        gatewayToken: 'encrypted-gateway-game-token',
+    });
+});
+
+test('opens the mode-1 possession route with a fresh gateway game token outside the URL', async ({ page }) => {
     await installFixture(page, {
         myGeneral: null,
         selectionPoolEnabled: false,
@@ -238,11 +260,17 @@ test('opens the mode-1 possession tab with a fresh gateway game token', async ({
     await expect(row.getByRole('button', { name: '장수빙의' })).toBeEnabled();
     await row.getByRole('button', { name: '장수빙의' }).click();
 
-    await expect(page).toHaveURL(/\/hwe\/join\?/);
+    await expect(page).toHaveURL(/\/hwe\/join\?tab=possess$/);
     const target = new URL(page.url());
     expect(target.searchParams.get('tab')).toBe('possess');
-    expect(target.searchParams.get('profile')).toBe('hwe:903');
-    expect(target.searchParams.get('gameToken')).toBe('encrypted-gateway-game-token');
+    expect(target.searchParams.has('profile')).toBe(false);
+    expect(target.searchParams.has('gameToken')).toBe(false);
+    expect(
+        await page.evaluate(() => JSON.parse(window.sessionStorage.getItem('sammo-pending-game-session') ?? 'null'))
+    ).toEqual({
+        profile: 'hwe:903',
+        gatewayToken: 'encrypted-gateway-game-token',
+    });
 });
 
 test('shows registration closed instead of acquisition actions at the Ref capacity boundary', async ({ page }) => {

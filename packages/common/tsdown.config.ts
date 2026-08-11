@@ -4,6 +4,7 @@ export default defineConfig({
     entry: {
         index: 'src/index.ts',
         'auth/gameToken': 'src/auth/gameToken.ts',
+        'auth/gameSessionTransfer': 'src/auth/gameSessionTransfer.ts',
         'auth/sanctions': 'src/auth/sanctions.ts',
     },
     format: 'es',
