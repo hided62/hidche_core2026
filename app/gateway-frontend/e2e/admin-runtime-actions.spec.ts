@@ -311,7 +311,7 @@ test('renders a failed terminal outcome without calling it applied', async ({ pa
 
     const failed = page.getByText('FAILED · ACCELERATE 15분');
     await expect(failed).toBeVisible();
-    await expect(page.getByText('DB 시간 조정 실패')).toBeVisible();
+    await expect(page.getByText('DB 시간 조정 실패').first()).toBeVisible();
     expect(await failed.evaluate((element) => getComputedStyle(element).color)).toBe('oklch(0.704 0.191 22.216)');
     await expect(page.getByText(/적용됨|요청 완료/)).toHaveCount(0);
 });

@@ -5,6 +5,7 @@ import type { inferRouterOutputs } from '@trpc/server';
 import type { AppRouter } from '@sammo-ts/gateway-api';
 import DefaultLayout from '../layouts/DefaultLayout.vue';
 import MapPreview from '../components/MapPreview.vue';
+import { useToast } from '../composables/useToast';
 import { trpc } from '../utils/trpc';
 import { createGameTrpc } from '../utils/gameTrpc';
 import type { GameRouter } from '../utils/gameTrpc';
@@ -34,6 +35,9 @@ const selectedMapProfileName = ref<string | null>(null);
 const entryLoading = ref<Record<string, boolean>>({});
 const logoutLoading = ref(false);
 const logoutError = ref('');
+const { error: showErrorToast } = useToast();
+
+watch(logoutError, (value) => value && showErrorToast(value), { flush: 'sync' });
 const canAccessAdmin = computed(
     () =>
         me.value?.roles.some(
@@ -207,7 +211,7 @@ const handleKakaoVerification = async (): Promise<void> => {
         });
         window.location.assign(result.authUrl);
     } catch (error) {
-        alert(error instanceof Error ? error.message : '카카오 인증을 시작하지 못했습니다.');
+        showErrorToast(error instanceof Error ? error.message : '카카오 인증을 시작하지 못했습니다.');
     }
 };
 
@@ -245,13 +249,13 @@ const handleEnter = async (profile: LobbyProfile, targetPath: string) => {
         });
         const url = resolveGameUrl(targetPath, issued.profile, issued.gameToken);
         if (!url) {
-            alert('게임 프론트엔드 주소가 설정되지 않았습니다.');
+            showErrorToast('게임 프론트엔드 주소가 설정되지 않았습니다.');
             return;
         }
         window.location.href = url;
     } catch (e) {
         console.error('Failed to issue game session', e);
-        alert(e instanceof Error ? e.message : '게임 서버 접속에 실패했습니다.');
+        showErrorToast(e instanceof Error ? e.message : '게임 서버 접속에 실패했습니다.');
     } finally {
         entryLoading.value[profile.profileName] = false;
     }

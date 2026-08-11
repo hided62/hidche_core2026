@@ -118,7 +118,7 @@ test('keeps the lobby and every token when server logout fails', async ({ page }
     await page.locator('#btn_logout').click();
 
     await expect(page).toHaveURL(/\/gateway\/lobby$/);
-    await expect(page.getByRole('alert')).toContainText('로그아웃 서버가 응답하지 않습니다.');
+    await expect(page.getByTestId('action-toast')).toContainText('로그아웃 서버가 응답하지 않습니다.');
     await expect
         .poll(() =>
             page.evaluate(() => ({
