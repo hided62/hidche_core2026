@@ -237,7 +237,7 @@ describe('buildWorkspaceCommands', () => {
                 '--filter=@sammo-ts/game-api',
                 '--filter=@sammo-ts/gateway-api',
                 '--cache-dir=/srv/sammo/controller/.turbo/release-cache',
-                '--concurrency=2',
+                '--concurrency=1',
                 '--ui=stream',
                 '--output-logs=new-only',
             ],

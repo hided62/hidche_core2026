@@ -32,6 +32,9 @@ Gateway process 환경에 전달하지 않습니다. 이 값이 frontend 정의�
 - `TURBO_CACHE_DIR`: 선택 사항인 공유 local cache 경로입니다. 없으면 원래
   `RELEASE_CONTROLLER_WORKSPACE_ROOT/.turbo/release-cache`를 사용합니다. 상대 경로는
   원래 workspace 기준으로 해석합니다.
+- `RELEASE_TURBO_CONCURRENCY`: Turbo worker 수입니다. 기본값 1은 실행 중인 game/Gateway
+  process와 4 GiB runtime을 공유하는 production cold build의 OOM을 피합니다. 더 큰
+  격리 build host에서만 측정 후 2 이상으로 올립니다.
 
 비밀값은 Git에서 제외된 환경 파일 또는 process 환경으로 전달해 주세요.
 `VITE_*`에는 공개 URL만 넣어 주세요.
@@ -49,7 +52,7 @@ DEPLOY의 rollback이 frontend build가 없는 controller worktree를 이전 Gat
 
 ```sh
 pnpm install --frozen-lockfile
-pnpm exec turbo run build --filter=@sammo-ts/release-controller --concurrency=2 --ui=stream
+pnpm exec turbo run build --filter=@sammo-ts/release-controller --concurrency=1 --ui=stream
 pnpm --filter @sammo-ts/infra prisma:migrate:deploy:gateway
 pnpm --filter @sammo-ts/release-controller start
 ```

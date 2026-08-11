@@ -26,7 +26,17 @@ export interface BuildRunner {
 }
 
 export const MAX_BUILD_OUTPUT_CHARS = 64 * 1024;
-export const RELEASE_TURBO_CONCURRENCY = 2;
+export const DEFAULT_RELEASE_TURBO_CONCURRENCY = 1;
+
+export const resolveReleaseTurboConcurrency = (env?: Record<string, string>): number => {
+    const configured = env?.RELEASE_TURBO_CONCURRENCY?.trim();
+    if (!configured) return DEFAULT_RELEASE_TURBO_CONCURRENCY;
+    const parsed = Number(configured);
+    if (!Number.isInteger(parsed) || parsed <= 0) {
+        throw new Error('RELEASE_TURBO_CONCURRENCY must be a positive integer.');
+    }
+    return parsed;
+};
 
 export const resolveReleaseTurboCacheDir = (cacheAnchorRoot: string, env?: Record<string, string>): string => {
     const configured = env?.TURBO_CACHE_DIR?.trim();
@@ -48,7 +58,7 @@ export const buildTurboReleaseCommand = (
         'build',
         ...packageNames.map((packageName) => `--filter=${packageName}`),
         `--cache-dir=${resolveReleaseTurboCacheDir(cacheAnchorRoot, env)}`,
-        `--concurrency=${RELEASE_TURBO_CONCURRENCY}`,
+        `--concurrency=${resolveReleaseTurboConcurrency(env)}`,
         '--ui=stream',
         '--output-logs=new-only',
     ],

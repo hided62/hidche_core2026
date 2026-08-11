@@ -45,7 +45,9 @@ profile 범위 권한과 별개인 전역 `admin.releases.manage` 권한이 필�
   Node heap/Rayon 상한을 상속한 동일 toolchain으로 초기 Gateway와 profile
   worktree를 빌드하여 구형 Rolldown의 과도한 native thread 생성을 피합니다.
 - Profile, Gateway와 controller self-upgrade의 server package build는 Turbo DAG를
-  동시성 2로 실행합니다. 기본 local cache는 원래 Core checkout의
+  사용합니다. 실행 중인 game/Gateway process와 4 GiB runtime을 공유하는 기본
+  동시성은 1이며, 더 큰 격리 build host에서는 `RELEASE_TURBO_CONCURRENCY`를 측정 후
+  2 이상으로 올릴 수 있습니다. 기본 local cache는 원래 Core checkout의
   `.turbo/release-cache`이므로 commit별 worktree가 달라도 재사용됩니다. 별도
   persistent 경로가 필요하면 controller/orchestrator 환경에 `TURBO_CACHE_DIR`을
   설정합니다. Cache는 재생성 가능한 build artifact이며 DB/Redis backup이 아닙니다.
