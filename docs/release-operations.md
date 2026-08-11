@@ -204,6 +204,8 @@ release-controller가 `GatewayReleaseLog` 진행 로그를 저장하는 것이 �
 로그 기능이 포함된 Gateway API/frontend만 먼저 배포하면 화면은 polling하지만
 구형 controller는 로그를 만들 수 있으므로, protocol 변경 commit은 위
 `self-upgrade`로 controller를 먼저 전환한 뒤 Gateway 배포를 요청해야 합니다.
+명시적인 self-upgrade 경로만 다음 controller protocol의 manifest를 읽을 수 있고,
+schema head·component 검사는 그대로 수행합니다.
 
 ## 운영 확인 목록
 

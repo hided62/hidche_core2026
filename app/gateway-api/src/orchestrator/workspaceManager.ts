@@ -77,12 +77,25 @@ export class GitWorkspaceManager {
             sourceMode === 'BRANCH'
                 ? [`refs/remotes/origin/${ref}^{commit}`, `refs/heads/${ref}^{commit}`]
                 : [`${ref}^{commit}`];
-        for (const candidate of candidates) {
-            const result = await runGit(['rev-parse', '--verify', candidate], this.repoRoot, this.baseEnv);
-            const commitSha = result.output.trim().split('\n')[0];
-            if (result.ok && /^[0-9a-f]{40}$/i.test(commitSha)) {
-                return commitSha;
+        const resolveCandidates = async (): Promise<string | undefined> => {
+            for (const candidate of candidates) {
+                const result = await runGit(['rev-parse', '--verify', candidate], this.repoRoot, this.baseEnv);
+                const commitSha = result.output.trim().split('\n')[0];
+                if (result.ok && /^[0-9a-f]{40}$/i.test(commitSha)) {
+                    return commitSha;
+                }
             }
+            return undefined;
+        };
+        const localCommit = await resolveCandidates();
+        if (localCommit) return localCommit;
+        if (sourceMode === 'COMMIT') {
+            const fetched = await runGit(['fetch', '--all', '--tags'], this.repoRoot, this.baseEnv);
+            if (!fetched.ok) {
+                throw new Error(fetched.output || 'Failed to fetch git commits.');
+            }
+            const fetchedCommit = await resolveCandidates();
+            if (fetchedCommit) return fetchedCommit;
         }
         throw new Error(`${sourceMode === 'BRANCH' ? 'Branch' : 'Commit'} not found.`);
     }

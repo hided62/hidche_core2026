@@ -75,6 +75,23 @@ describe('GitWorkspaceManager source resolution', () => {
         expect(await manager.resolveCommit('BRANCH', 'main')).toBe(secondCommit);
     });
 
+    it('fetches a remote commit that is not present in the controller checkout yet', async () => {
+        const fixture = createRepositoryFixture();
+        const manager = new GitWorkspaceManager({
+            repoRoot: fixture.checkout,
+            worktreeRoot: fixture.worktrees,
+        });
+
+        fs.writeFileSync(path.join(fixture.source, 'version.txt'), 'remote-only\n');
+        git(fixture.source, 'add', 'version.txt');
+        git(fixture.source, 'commit', '-m', 'remote only');
+        const remoteCommit = git(fixture.source, 'rev-parse', 'HEAD');
+        git(fixture.source, 'push', 'origin', 'main');
+        expect(() => git(fixture.checkout, 'cat-file', '-e', `${remoteCommit}^{commit}`)).toThrow();
+
+        await expect(manager.resolveCommit('COMMIT', remoteCommit)).resolves.toBe(remoteCommit);
+    });
+
     it('rejects option-like and range refs', async () => {
         const fixture = createRepositoryFixture();
         const manager = new GitWorkspaceManager({
