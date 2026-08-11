@@ -38,7 +38,7 @@ describe('readReleaseManifest', () => {
 
         await expect(readReleaseManifest(workspaceRoot)).resolves.toMatchObject({
             controllerProtocol: RELEASE_CONTROLLER_PROTOCOL,
-            gatewaySchemaHead: '20260809000000_add_gateway_release_logs',
+            gatewaySchemaHead: '20260811000000_add_gateway_operation_logs',
             gameSchemaHead: '20260803000000_add_logical_game_clock',
         });
     });

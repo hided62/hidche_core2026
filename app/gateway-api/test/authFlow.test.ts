@@ -15,6 +15,7 @@ import { appRouter } from '../src/router.js';
 import type { GatewayPrismaClient } from '@sammo-ts/infra';
 import { decryptGameSessionToken, type UserSanctions } from '@sammo-ts/common/auth/gameToken';
 import { createPasswordEnvelopeService } from '../src/auth/passwordEnvelope.js';
+import type { GatewayProfileRepository } from '../src/orchestrator/profileRepository.js';
 
 const buildCaller = (
     options: {
@@ -111,7 +112,7 @@ const buildCaller = (
             updatedAt: new Date().toISOString(),
         },
     ];
-    const profiles = {
+    const profiles: GatewayProfileRepository = {
         listProfiles: async () => profileRows,
         getProfile: async (profileName: string) =>
             profileRows.find((profile) => profile.profileName === profileName) ?? null,
@@ -129,6 +130,13 @@ const buildCaller = (
         clearWorkspaceUsage: async () => {},
         listOperations: async () => [],
         getOperation: async () => null,
+        listOperationLogs: async () => [],
+        appendOperationLog: async (operationId, input) => ({
+            cursor: '1',
+            operationId,
+            createdAt: '2026-08-11T00:00:00.000Z',
+            ...input,
+        }),
         createOperation: async () => {
             throw new Error('not implemented');
         },

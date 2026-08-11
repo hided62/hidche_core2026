@@ -69,6 +69,28 @@ describeDatabase('gateway operation lease and profile serialization', () => {
         await expect(repository.listOperations({ profileName })).resolves.toHaveLength(1);
     });
 
+    it('stores durable cursor logs for profile operations', async () => {
+        const operation = await repository.createOperation({
+            profileName,
+            type: 'DEPLOY',
+            sourceMode: 'BRANCH',
+            sourceRef: 'main',
+            requestedBy: 'admin-a',
+        });
+
+        const queued = await repository.listOperationLogs(operation.id);
+        expect(queued).toHaveLength(1);
+        expect(queued[0]).toMatchObject({ phase: 'queue', level: 'INFO' });
+
+        const build = await repository.appendOperationLog(operation.id, {
+            level: 'OUTPUT',
+            phase: 'build',
+            message: 'game-frontend build complete',
+        });
+        await expect(repository.listOperationLogs(operation.id, queued[0]?.cursor)).resolves.toEqual([build]);
+        await expect(repository.listOperationLogs(operation.id, build.cursor)).resolves.toEqual([]);
+    });
+
     it('serializes running operations globally across profiles', async () => {
         const first = await repository.createOperation({
             profileName,

@@ -57,6 +57,24 @@ export interface GatewayOperationCreateInput {
     scheduledAt?: string;
 }
 
+export const GATEWAY_OPERATION_LOG_LEVELS = ['INFO', 'OUTPUT', 'ERROR'] as const;
+export type GatewayOperationLogLevel = (typeof GATEWAY_OPERATION_LOG_LEVELS)[number];
+
+export interface GatewayOperationLogRecord {
+    cursor: string;
+    operationId: string;
+    level: GatewayOperationLogLevel;
+    phase: string;
+    message: string;
+    createdAt: string;
+}
+
+export interface GatewayOperationLogInput {
+    level: GatewayOperationLogLevel;
+    phase: string;
+    message: string;
+}
+
 export interface GatewayProfileRecord {
     profileName: string;
     profile: string;
@@ -145,6 +163,8 @@ export interface GatewayProfileRepository {
     listOperations(options?: { profileName?: string; limit?: number }): Promise<GatewayOperationRecord[]>;
     listActiveOperationProfileNames?(now: Date): Promise<string[]>;
     getOperation(id: string): Promise<GatewayOperationRecord | null>;
+    listOperationLogs(id: string, afterCursor?: string, limit?: number): Promise<GatewayOperationLogRecord[]>;
+    appendOperationLog(id: string, input: GatewayOperationLogInput): Promise<GatewayOperationLogRecord>;
     createOperation(input: GatewayOperationCreateInput): Promise<GatewayOperationRecord>;
     claimNextOperation(
         now: Date,
@@ -288,6 +308,24 @@ const mapOperation = (row: GatewayOperationRow): GatewayOperationRecord => ({
     attempts: row.attempts,
     createdAt: row.createdAt.toISOString(),
     updatedAt: row.updatedAt.toISOString(),
+});
+
+const mapOperationLog = (row: {
+    id: bigint;
+    operationId: string;
+    level: string;
+    phase: string;
+    message: string;
+    createdAt: Date;
+}): GatewayOperationLogRecord => ({
+    cursor: row.id.toString(),
+    operationId: row.operationId,
+    level: GATEWAY_OPERATION_LOG_LEVELS.includes(row.level as GatewayOperationLogLevel)
+        ? (row.level as GatewayOperationLogLevel)
+        : 'INFO',
+    phase: row.phase,
+    message: row.message,
+    createdAt: row.createdAt.toISOString(),
 });
 
 export const createGatewayProfileRepository = (prisma: GatewayPrismaClient): GatewayProfileRepository => ({
@@ -511,18 +549,51 @@ export const createGatewayProfileRepository = (prisma: GatewayPrismaClient): Gat
         const row = await prisma.gatewayOperation.findUnique({ where: { id } });
         return row ? mapOperation(row) : null;
     },
-    async createOperation(input: GatewayOperationCreateInput): Promise<GatewayOperationRecord> {
-        const row = await prisma.gatewayOperation.create({
-            data: {
-                profileName: input.profileName,
-                type: input.type,
-                sourceMode: input.sourceMode,
-                sourceRef: input.sourceRef,
-                payload: (input.payload ?? {}) as GatewayPrisma.JsonObject,
-                reason: input.reason,
-                requestedBy: input.requestedBy,
-                scheduledAt: input.scheduledAt ? new Date(input.scheduledAt) : null,
+    async listOperationLogs(id, afterCursor, limit = 200) {
+        const rows = await prisma.gatewayOperationLog.findMany({
+            where: {
+                operationId: id,
+                ...(afterCursor ? { id: { gt: BigInt(afterCursor) } } : {}),
             },
+            orderBy: { id: 'asc' },
+            take: Math.min(Math.max(limit, 1), 500),
+        });
+        return rows.map(mapOperationLog);
+    },
+    async appendOperationLog(id, input) {
+        const row = await prisma.gatewayOperationLog.create({
+            data: {
+                operationId: id,
+                level: input.level,
+                phase: input.phase.slice(0, 64),
+                message: input.message.slice(0, 4_000),
+            },
+        });
+        return mapOperationLog(row);
+    },
+    async createOperation(input: GatewayOperationCreateInput): Promise<GatewayOperationRecord> {
+        const row = await prisma.$transaction(async (tx) => {
+            const operation = await tx.gatewayOperation.create({
+                data: {
+                    profileName: input.profileName,
+                    type: input.type,
+                    sourceMode: input.sourceMode,
+                    sourceRef: input.sourceRef,
+                    payload: (input.payload ?? {}) as GatewayPrisma.JsonObject,
+                    reason: input.reason,
+                    requestedBy: input.requestedBy,
+                    scheduledAt: input.scheduledAt ? new Date(input.scheduledAt) : null,
+                },
+            });
+            await tx.gatewayOperationLog.create({
+                data: {
+                    operationId: operation.id,
+                    level: 'INFO',
+                    phase: 'queue',
+                    message: `${input.type} 작업이 등록되었습니다.`,
+                },
+            });
+            return operation;
         });
         return mapOperation(row);
     },
@@ -697,11 +768,24 @@ export const createGatewayProfileRepository = (prisma: GatewayPrismaClient): Gat
         return mapOperation(row);
     },
     async cancelOperation(id: string): Promise<boolean> {
-        const result = await prisma.gatewayOperation.updateMany({
-            where: { id, status: 'QUEUED' },
-            data: { status: 'CANCELLED', completedAt: new Date() },
+        const count = await prisma.$transaction(async (tx) => {
+            const result = await tx.gatewayOperation.updateMany({
+                where: { id, status: 'QUEUED' },
+                data: { status: 'CANCELLED', completedAt: new Date() },
+            });
+            if (result.count === 1) {
+                await tx.gatewayOperationLog.create({
+                    data: {
+                        operationId: id,
+                        level: 'INFO',
+                        phase: 'cancel',
+                        message: '대기 중인 작업이 취소되었습니다.',
+                    },
+                });
+            }
+            return result.count;
         });
-        return result.count === 1;
+        return count === 1;
     },
     async retryOperation(id: string, requestedBy: string): Promise<GatewayOperationRecord | null> {
         const row = await prisma.$transaction(async (tx) => {
@@ -711,7 +795,7 @@ export const createGatewayProfileRepository = (prisma: GatewayPrismaClient): Gat
             }
             const previousPayload = previous.payload as GatewayPrisma.JsonObject;
             const retrySource = buildRetryOperationSource(previous);
-            return tx.gatewayOperation.create({
+            const operation = await tx.gatewayOperation.create({
                 data: {
                     profileName: previous.profileName,
                     type: previous.type,
@@ -723,6 +807,15 @@ export const createGatewayProfileRepository = (prisma: GatewayPrismaClient): Gat
                     scheduledAt: null,
                 },
             });
+            await tx.gatewayOperationLog.create({
+                data: {
+                    operationId: operation.id,
+                    level: 'INFO',
+                    phase: 'queue',
+                    message: `작업 ${previous.id}의 재시도가 등록되었습니다.`,
+                },
+            });
+            return operation;
         });
         return row ? mapOperation(row) : null;
     },

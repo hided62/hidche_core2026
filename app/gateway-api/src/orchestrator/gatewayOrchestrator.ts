@@ -2,6 +2,7 @@ import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { createHash, randomBytes, randomUUID } from 'node:crypto';
+import { stripVTControlCharacters } from 'node:util';
 
 import type { ScenarioInstallOptions } from '@sammo-ts/game-engine/scenario/scenarioSeeder.js';
 import {
@@ -12,7 +13,13 @@ import {
 } from '@sammo-ts/infra';
 import { isRecord } from '@sammo-ts/common';
 
-import { buildTurboReleaseCommand, type BuildCommand, type BuildRunner } from './buildRunner.js';
+import {
+    buildTurboReleaseCommand,
+    type BuildCommand,
+    type BuildProgressEvent,
+    type BuildProgressObserver,
+    type BuildRunner,
+} from './buildRunner.js';
 import { sanitizeManagedProcessEnv, type ProcessManager } from './processManager.js';
 import type {
     GatewayClaimedProfileUpdate,
@@ -75,6 +82,8 @@ export interface GatewayOrchestratorHandle {
     }>;
     listRuntimeStates(profileNames: string[]): Promise<ProfileRuntimeSnapshot[]>;
 }
+
+const SENSITIVE_ENV_NAME = /(SECRET|TOKEN|PASSWORD|PASSWD|PRIVATE_KEY|CLIENT_SECRET|DATABASE_URL|REDIS_URL)/iu;
 
 export const planProfileReconcile = (
     status: GatewayProfileStatus,
@@ -589,6 +598,57 @@ export class GatewayOrchestrator implements GatewayOrchestratorHandle {
             ((profileName) => this.clearTournamentRuntimeStateFromRedis(profileName));
     }
 
+    private sanitizeOperationLogMessage(message: string): string {
+        let sanitized = stripVTControlCharacters(message);
+        const sensitiveValues = new Set([
+            this.processConfig.gameTokenSecret,
+            ...Object.entries(this.processConfig.baseEnv ?? {})
+                .filter(([name]) => SENSITIVE_ENV_NAME.test(name))
+                .map(([, value]) => value),
+        ]);
+        for (const secret of sensitiveValues) {
+            if (secret && secret.length >= 4) sanitized = sanitized.replaceAll(secret, '[REDACTED]');
+        }
+        return sanitized.replace(/(:\/\/[^:\s/@]+:)[^@\s/]+@/gu, '$1[REDACTED]@').slice(0, 4_000);
+    }
+
+    private async appendOperationLog(
+        operationId: string,
+        phase: string,
+        message: string,
+        level: 'INFO' | 'OUTPUT' | 'ERROR' = 'INFO'
+    ): Promise<void> {
+        try {
+            await this.repository.appendOperationLog(operationId, {
+                level,
+                phase,
+                message: this.sanitizeOperationLogMessage(message),
+            });
+        } catch {
+            // Progress logging must not make an otherwise recoverable profile operation fail.
+        }
+    }
+
+    private readonly buildProgress =
+        (operationId: string, phase: string): BuildProgressObserver =>
+        async (event: BuildProgressEvent) => {
+            if (event.type === 'OUTPUT') {
+                if (event.message) await this.appendOperationLog(operationId, phase, event.message, 'OUTPUT');
+                return;
+            }
+            const command = [event.command.command, ...event.command.args].join(' ');
+            if (event.type === 'COMMAND_START') {
+                await this.appendOperationLog(operationId, phase, `$ ${command}`);
+                return;
+            }
+            await this.appendOperationLog(
+                operationId,
+                phase,
+                `${command} 종료 (exit ${event.exitCode ?? 'unknown'})`,
+                event.exitCode === 0 ? 'INFO' : 'ERROR'
+            );
+        };
+
     start(): void {
         this.stopping = false;
         this.trackTask(this.reconcileNow());
@@ -837,8 +897,14 @@ export class GatewayOrchestrator implements GatewayOrchestratorHandle {
 
     private async handleOperation(operation: GatewayOperationRecord): Promise<void> {
         const assertLease = () => this.assertOperationLease(operation.id);
+        await this.appendOperationLog(
+            operation.id,
+            'claim',
+            `${operation.type} 작업을 시작합니다. 시도 ${operation.attempts ?? 1}회차.`
+        );
         const profile = await this.repository.getProfile(operation.profileName);
         if (!profile) {
+            await this.appendOperationLog(operation.id, 'failed', 'Profile not found.', 'ERROR');
             await this.repository.completeOperation(
                 operation.id,
                 'FAILED',
@@ -871,6 +937,7 @@ export class GatewayOrchestrator implements GatewayOrchestratorHandle {
         let resolvedCommitSha: string | undefined;
         try {
             if (operation.type === 'START') {
+                await this.appendOperationLog(operation.id, 'runtime', '프로필 process를 시작합니다.');
                 const updated = await updateOperationProfile(
                     {
                         status: 'RUNNING',
@@ -892,10 +959,12 @@ export class GatewayOrchestrator implements GatewayOrchestratorHandle {
                     );
                     throw new Error('Failed to start profile processes.');
                 }
+                await this.appendOperationLog(operation.id, 'runtime', '프로필 process 시작을 완료했습니다.');
                 await updateOperationProfile({ lastError: null }, async () => {
                     await this.repository.updateLastError(profile.profileName, null);
                     return this.repository.getProfile(profile.profileName);
                 });
+                await this.appendOperationLog(operation.id, 'complete', 'START 작업이 완료되었습니다.');
                 await this.repository.completeOperation(
                     operation.id,
                     'SUCCEEDED',
@@ -905,10 +974,12 @@ export class GatewayOrchestrator implements GatewayOrchestratorHandle {
                 return;
             }
             if (operation.type === 'STOP') {
+                await this.appendOperationLog(operation.id, 'runtime', '프로필 process를 정지합니다.');
                 await updateOperationProfile({ status: 'STOPPED' }, () =>
                     this.repository.updateStatus(profile.profileName, 'STOPPED')
                 );
                 await this.stopProfile(profile, assertLease);
+                await this.appendOperationLog(operation.id, 'complete', 'STOP 작업이 완료되었습니다.');
                 await this.repository.completeOperation(
                     operation.id,
                     'SUCCEEDED',
@@ -921,6 +992,11 @@ export class GatewayOrchestrator implements GatewayOrchestratorHandle {
             if (!operation.sourceMode || !operation.sourceRef) {
                 throw new Error('Reset source mode and ref are required.');
             }
+            await this.appendOperationLog(
+                operation.id,
+                'resolve',
+                `${operation.sourceMode} ${operation.sourceRef} 커밋을 해석합니다.`
+            );
             const commitSha =
                 operation.resolvedCommitSha ??
                 (await this.workspaceManager.resolveCommit(operation.sourceMode, operation.sourceRef));
@@ -935,12 +1011,14 @@ export class GatewayOrchestrator implements GatewayOrchestratorHandle {
                     throw new OperationLeaseLostError(`Operation lease lost while pinning commit: ${operation.id}`);
                 }
             }
+            await this.appendOperationLog(operation.id, 'resolve', `대상 커밋을 ${commitSha}로 고정했습니다.`);
             await assertLease();
             if (operation.type === 'DEPLOY') {
                 const result = await this.handleProfileDeploy(profile, commitSha, assertLease, operation.id);
                 if (!result.ok) {
                     throw new Error(result.detail);
                 }
+                await this.appendOperationLog(operation.id, 'complete', 'DB 보존 버전 업데이트가 완료되었습니다.');
                 await this.repository.completeOperation(
                     operation.id,
                     'SUCCEEDED',
@@ -964,12 +1042,18 @@ export class GatewayOrchestrator implements GatewayOrchestratorHandle {
             const result = await this.handleResetAction(profile, resetAction, commitSha, assertLease, operation.id);
             if (result.status === 'REQUESTED') {
                 const retryAt = new Date(this.now().getTime() + this.adminActionIntervalMs).toISOString();
+                await this.appendOperationLog(
+                    operation.id,
+                    'wait',
+                    `${result.detail ?? '작업을 다시 시도합니다.'} 다음 시도: ${retryAt}`
+                );
                 await this.repository.requeueOperation(operation.id, result.detail, retryAt, this.operationLeaseOwner);
                 return;
             }
             if (result.status !== 'APPLIED') {
                 throw new Error(result.detail ?? 'Reset failed.');
             }
+            await this.appendOperationLog(operation.id, 'complete', '시나리오 초기화가 완료되었습니다.');
             await this.repository.completeOperation(
                 operation.id,
                 'SUCCEEDED',
@@ -987,6 +1071,7 @@ export class GatewayOrchestrator implements GatewayOrchestratorHandle {
                 return;
             }
             const detail = error instanceof Error ? error.message : String(error);
+            await this.appendOperationLog(operation.id, 'failed', detail, 'ERROR');
             try {
                 await this.repository.completeOperation(
                     operation.id,
@@ -1044,7 +1129,9 @@ export class GatewayOrchestrator implements GatewayOrchestratorHandle {
                 buildStartedAt: startedAt,
                 buildError: null,
             });
+            await this.appendOperationLog(operationId, 'workspace', `커밋 ${commitSha}의 worktree를 준비합니다.`);
             const workspace = await this.workspaceManager.prepare(commitSha);
+            await this.appendOperationLog(operationId, 'workspace', `worktree 준비 완료: ${workspace.root}`);
             const manifest = await readReleaseManifest(workspace.root);
             assertReleaseComponents(manifest, ['game-api', 'game-engine', 'game-frontend']);
             const commands = [
@@ -1056,7 +1143,8 @@ export class GatewayOrchestrator implements GatewayOrchestratorHandle {
                 ),
                 ...buildProfileFrontendCommands(workspace.root, profile, this.processConfig.baseEnv),
             ];
-            const result = await this.buildRunner.run(commands);
+            await this.appendOperationLog(operationId, 'build', `${profile.profileName} 구성 요소를 빌드합니다.`);
+            const result = await this.buildRunner.run(commands, this.buildProgress(operationId, 'build'));
             await assertLease();
             if (!result.ok) {
                 const detail = result.output.slice(-4000) || 'selected workspace build failed';
@@ -1068,10 +1156,16 @@ export class GatewayOrchestrator implements GatewayOrchestratorHandle {
                 return { ok: false, detail };
             }
 
+            await this.appendOperationLog(operationId, 'switch', '기존 profile process를 정지합니다.');
             await this.stopProfile(profile, assertLease);
             oldRuntimeStopped = true;
             const profileDatabaseUrl = this.resolveProfileDatabaseUrl(profile);
-            const migration = await this.runProfileMigration(workspace.root, profileDatabaseUrl);
+            await this.appendOperationLog(operationId, 'migration', '선택 버전의 game migration을 적용합니다.');
+            const migration = await this.runProfileMigration(
+                workspace.root,
+                profileDatabaseUrl,
+                this.buildProgress(operationId, 'migration')
+            );
             await assertLease();
             if (!migration.ok) {
                 const detail = migration.output.slice(-4000) || 'profile database migration failed';
@@ -1086,6 +1180,7 @@ export class GatewayOrchestrator implements GatewayOrchestratorHandle {
                 });
                 return { ok: false, detail };
             }
+            await this.appendOperationLog(operationId, 'migration', 'game migration이 완료되었습니다.');
 
             const completedAt = this.now().toISOString();
             const candidate: GatewayProfileRecord = {
@@ -1098,7 +1193,9 @@ export class GatewayOrchestrator implements GatewayOrchestratorHandle {
                 buildError: undefined,
             };
             if (shouldRun) {
+                await this.appendOperationLog(operationId, 'switch', '새 버전의 profile process를 시작합니다.');
                 const started = await this.startProfile(candidate, assertLease);
+                await this.appendOperationLog(operationId, 'readiness', 'profile process readiness를 확인합니다.');
                 const ready = started && (await this.waitForProfileReadiness(candidate, assertLease));
                 if (!ready) {
                     if (started) {
@@ -1107,6 +1204,14 @@ export class GatewayOrchestrator implements GatewayOrchestratorHandle {
                     const rollbackStarted =
                         (await this.startProfile(profile, assertLease)) &&
                         (await this.waitForProfileReadiness(profile, assertLease));
+                    await this.appendOperationLog(
+                        operationId,
+                        'rollback',
+                        rollbackStarted
+                            ? '새 버전 readiness 실패 후 이전 runtime을 복구했습니다.'
+                            : '새 버전 readiness 실패 후 이전 runtime 복구도 실패했습니다.',
+                        rollbackStarted ? 'INFO' : 'ERROR'
+                    );
                     oldRuntimeStopped = !rollbackStarted;
                     const detail = rollbackStarted
                         ? 'new profile release failed readiness; previous runtime restored'
@@ -1120,6 +1225,7 @@ export class GatewayOrchestrator implements GatewayOrchestratorHandle {
                     });
                     return { ok: false, detail };
                 }
+                await this.appendOperationLog(operationId, 'readiness', 'profile readiness 확인을 통과했습니다.');
             }
             await assertLease();
             await updateClaimedProfile({
@@ -1131,6 +1237,11 @@ export class GatewayOrchestrator implements GatewayOrchestratorHandle {
                 buildError: null,
                 lastError: null,
             });
+            await this.appendOperationLog(
+                operationId,
+                'publish',
+                `${commitSha}를 active profile 버전으로 게시했습니다.`
+            );
             oldRuntimeStopped = false;
             return { ok: true };
         } catch (error) {
@@ -1246,6 +1357,15 @@ export class GatewayOrchestrator implements GatewayOrchestratorHandle {
         assertLease?: () => Promise<void>,
         operationId?: string
     ): Promise<GatewayAdminActionResult> {
+        const appendLog = async (
+            phase: string,
+            message: string,
+            level: 'INFO' | 'OUTPUT' | 'ERROR' = 'INFO'
+        ): Promise<void> => {
+            if (operationId) await this.appendOperationLog(operationId, phase, message, level);
+        };
+        const buildProgress = (phase: string): BuildProgressObserver | undefined =>
+            operationId ? this.buildProgress(operationId, phase) : undefined;
         // 리셋 요청을 빌드+재기동 흐름으로 처리한다.
         if (this.resetInFlight.has(profile.profileName)) {
             return { status: 'REQUESTED', detail: 'reset already in progress' };
@@ -1329,7 +1449,7 @@ export class GatewayOrchestrator implements GatewayOrchestratorHandle {
                         commitSha,
                     })
             );
-            const { result, workspace } = await this.runBuildCommands(commitSha, profile);
+            const { result, workspace } = await this.runBuildCommands(commitSha, profile, operationId);
             await assertLease?.();
             if (!result.ok) {
                 const completedAt = this.now().toISOString();
@@ -1347,11 +1467,17 @@ export class GatewayOrchestrator implements GatewayOrchestratorHandle {
                 );
                 return { status: 'FAILED', detail: 'selected workspace build failed' };
             }
+            await appendLog('seed', '선택 버전의 profile seed CLI를 확인합니다.');
             await this.assertProfileSeedCli(workspace.root);
             // A newly provisioned profile schema has no world_state row (or table) yet.
             // Apply the selected release's migrations before reading optional prior-season
             // metadata; existing profiles still expose the same season/tick values afterward.
-            const migrationResult = await this.runProfileMigration(workspace.root, profileDatabaseUrl);
+            await appendLog('migration', '선택 버전의 game migration을 적용합니다.');
+            const migrationResult = await this.runProfileMigration(
+                workspace.root,
+                profileDatabaseUrl,
+                buildProgress('migration')
+            );
             await assertLease?.();
             if (!migrationResult.ok) {
                 const completedAt = this.now().toISOString();
@@ -1369,6 +1495,8 @@ export class GatewayOrchestrator implements GatewayOrchestratorHandle {
                 );
                 return { status: 'FAILED', detail: 'profile database migration failed' };
             }
+            await appendLog('migration', 'game migration이 완료되었습니다.');
+            await appendLog('seed', '기존 season과 tick metadata를 확인합니다.');
             const seedInfo = await this.resolveResetSeedInfo(
                 profile,
                 {
@@ -1384,27 +1512,33 @@ export class GatewayOrchestrator implements GatewayOrchestratorHandle {
             await updateClaimedProfile({ status: 'STOPPED' }, () =>
                 this.repository.updateStatus(profile.profileName, 'STOPPED')
             );
+            await appendLog('switch', '기존 profile process를 정지합니다.');
             await this.stopProfile(profile, assertLease);
             await assertLease?.();
             const serverId = buildServerId(profile.profileName, seedTime, installOptions?.installOperationId);
-            const seedResult = await this.runSelectedProfileSeed({
-                workspaceRoot: workspace.root,
-                databaseUrl: seedInfo.databaseUrl,
-                scenarioId,
-                tickSeconds: seedInfo.tickSeconds,
-                now: seedTime,
-                installOptions: {
-                    ...(installOptions ?? {}),
-                    season,
-                    serverId,
-                    installCommitSha: commitSha,
+            await appendLog('seed', `시나리오 ${scenarioId}, 시즌 ${season} 초기 데이터를 생성합니다.`);
+            const seedResult = await this.runSelectedProfileSeed(
+                {
+                    workspaceRoot: workspace.root,
+                    databaseUrl: seedInfo.databaseUrl,
+                    scenarioId,
+                    tickSeconds: seedInfo.tickSeconds,
+                    now: seedTime,
+                    installOptions: {
+                        ...(installOptions ?? {}),
+                        season,
+                        serverId,
+                        installCommitSha: commitSha,
+                    },
+                    adminUser,
                 },
-                adminUser,
-            });
+                buildProgress('seed')
+            );
             await assertLease?.();
             if (!seedResult.ok) {
                 throw new Error(`Selected profile seed failed: ${seedResult.output.slice(-4000)}`);
             }
+            await appendLog('seed', '시나리오 초기 데이터 생성을 완료했습니다.');
             await this.clearTournamentRuntimeState(profile.profileName);
             await assertLease?.();
             const completedAt = this.now().toISOString();
@@ -1447,7 +1581,9 @@ export class GatewayOrchestrator implements GatewayOrchestratorHandle {
                 status: desiredStatus,
                 buildWorkspace: workspace.root,
             };
+            await appendLog('switch', '초기화된 profile process를 시작합니다.');
             const started = await this.startProfile(builtProfile, assertLease);
+            await appendLog('readiness', 'profile process readiness를 확인합니다.');
             const ready = started && (await this.waitForProfileReadiness(builtProfile, assertLease));
             if (!ready) {
                 if (started) {
@@ -1461,10 +1597,12 @@ export class GatewayOrchestrator implements GatewayOrchestratorHandle {
                 );
                 return { status: 'FAILED', detail };
             }
+            await appendLog('readiness', 'profile readiness 확인을 통과했습니다.');
             await updateClaimedProfile({ lastError: null }, async () => {
                 await this.repository.updateLastError(profile.profileName, null);
                 return this.repository.getProfile(profile.profileName);
             });
+            await appendLog('publish', `${commitSha}와 시나리오 ${scenarioId} 초기화 상태를 게시했습니다.`);
             return { status: 'APPLIED', detail: 'reset completed via rebuild' };
         } catch (error) {
             if (error instanceof OperationLeaseLostError) {
@@ -1537,12 +1675,19 @@ export class GatewayOrchestrator implements GatewayOrchestratorHandle {
 
     private async runBuildCommands(
         commitSha: string,
-        profile?: GatewayProfileRecord
+        profile?: GatewayProfileRecord,
+        operationId?: string
     ): Promise<{
         result: Awaited<ReturnType<BuildRunner['run']>>;
         workspace: Awaited<ReturnType<GitWorkspaceManager['prepare']>>;
     }> {
+        if (operationId) {
+            await this.appendOperationLog(operationId, 'workspace', `커밋 ${commitSha}의 worktree를 준비합니다.`);
+        }
         const workspace = await this.workspaceManager.prepare(commitSha);
+        if (operationId) {
+            await this.appendOperationLog(operationId, 'workspace', `worktree 준비 완료: ${workspace.root}`);
+        }
         const commands = [
             ...buildWorkspaceCommands(
                 workspace.root,
@@ -1552,7 +1697,20 @@ export class GatewayOrchestrator implements GatewayOrchestratorHandle {
             ),
             ...(profile ? buildProfileFrontendCommands(workspace.root, profile, this.processConfig.baseEnv) : []),
         ];
-        return { result: await this.buildRunner.run(commands), workspace };
+        if (operationId) {
+            await this.appendOperationLog(
+                operationId,
+                'build',
+                `${profile?.profileName ?? 'profile'} 구성 요소를 빌드합니다.`
+            );
+        }
+        return {
+            result: await this.buildRunner.run(
+                commands,
+                operationId ? this.buildProgress(operationId, 'build') : undefined
+            ),
+            workspace,
+        };
     }
 
     private async assertProfileSeedCli(workspaceRoot: string): Promise<void> {
@@ -1566,22 +1724,27 @@ export class GatewayOrchestrator implements GatewayOrchestratorHandle {
 
     private async runProfileMigration(
         workspaceRoot: string,
-        profileDatabaseUrl: string
+        profileDatabaseUrl: string,
+        onProgress?: BuildProgressObserver
     ): Promise<Awaited<ReturnType<BuildRunner['run']>>> {
-        return this.buildRunner.run([
-            buildProfileMigrationCommand(workspaceRoot, profileDatabaseUrl, this.processConfig.baseEnv),
-        ]);
+        return this.buildRunner.run(
+            [buildProfileMigrationCommand(workspaceRoot, profileDatabaseUrl, this.processConfig.baseEnv)],
+            onProgress
+        );
     }
 
-    private async runSelectedProfileSeed(options: {
-        workspaceRoot: string;
-        databaseUrl: string;
-        scenarioId: number;
-        tickSeconds?: number;
-        now: Date;
-        installOptions?: ScenarioInstallOptions;
-        adminUser?: AdminSeedUser | null;
-    }): Promise<Awaited<ReturnType<BuildRunner['run']>>> {
+    private async runSelectedProfileSeed(
+        options: {
+            workspaceRoot: string;
+            databaseUrl: string;
+            scenarioId: number;
+            tickSeconds?: number;
+            now: Date;
+            installOptions?: ScenarioInstallOptions;
+            adminUser?: AdminSeedUser | null;
+        },
+        onProgress?: BuildProgressObserver
+    ): Promise<Awaited<ReturnType<BuildRunner['run']>>> {
         const tempDirectory = await fs.mkdtemp(path.join(os.tmpdir(), 'sammo-profile-seed-'));
         const requestFile = path.join(tempDirectory, 'request.json');
         try {
@@ -1601,19 +1764,22 @@ export class GatewayOrchestrator implements GatewayOrchestratorHandle {
                 }),
                 { encoding: 'utf8', mode: 0o600 }
             );
-            return await this.buildRunner.run([
-                {
-                    command: process.execPath,
-                    args: [path.join(options.workspaceRoot, 'app', 'gateway-api', 'dist', 'index.js')],
-                    cwd: options.workspaceRoot,
-                    env: {
-                        ...(this.processConfig.baseEnv ?? {}),
-                        DATABASE_URL: options.databaseUrl,
-                        GATEWAY_ROLE: 'profile-seed',
-                        PROFILE_SEED_REQUEST_FILE: requestFile,
+            return await this.buildRunner.run(
+                [
+                    {
+                        command: process.execPath,
+                        args: [path.join(options.workspaceRoot, 'app', 'gateway-api', 'dist', 'index.js')],
+                        cwd: options.workspaceRoot,
+                        env: {
+                            ...(this.processConfig.baseEnv ?? {}),
+                            DATABASE_URL: options.databaseUrl,
+                            GATEWAY_ROLE: 'profile-seed',
+                            PROFILE_SEED_REQUEST_FILE: requestFile,
+                        },
                     },
-                },
-            ]);
+                ],
+                onProgress
+            );
         } finally {
             await fs.rm(tempDirectory, { recursive: true, force: true });
         }
