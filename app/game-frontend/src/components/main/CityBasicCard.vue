@@ -1,5 +1,8 @@
 <script setup lang="ts">
+import { computed } from 'vue';
 import SkeletonLines from '../ui/SkeletonLines.vue';
+import LegacyProgressBar from '../ui/LegacyProgressBar.vue';
+import { ratioPercent } from '../../utils/legacyProgress';
 
 interface CityInfo {
     id: number;
@@ -7,11 +10,19 @@ interface CityInfo {
     level: number;
     nationId: number;
     population: number;
+    populationMax: number;
     agriculture: number;
+    agricultureMax: number;
     commerce: number;
+    commerceMax: number;
     security: number;
+    securityMax: number;
+    trust: number;
+    trade: number | null;
     defence: number;
+    defenceMax: number;
     wall: number;
+    wallMax: number;
     supplyState: number;
     frontState: number;
 }
@@ -20,6 +31,31 @@ const props = defineProps<{
     city: CityInfo | null;
     loading: boolean;
 }>();
+
+const metrics = computed(() => {
+    const city = props.city;
+    if (!city) return [];
+    const paired = (label: string, current: number, maximum: number) => ({
+        label,
+        percent: ratioPercent(current, maximum),
+        text: `${current.toLocaleString()} / ${maximum.toLocaleString()}`,
+    });
+    const tradeText = city.trade ? `${city.trade}%` : '상인 없음';
+    return [
+        paired('주민', city.population, city.populationMax),
+        {
+            label: '민심',
+            percent: ratioPercent(city.trust, 100),
+            text: city.trust.toLocaleString(undefined, { maximumFractionDigits: 1 }),
+        },
+        paired('농업', city.agriculture, city.agricultureMax),
+        paired('상업', city.commerce, city.commerceMax),
+        paired('치안', city.security, city.securityMax),
+        paired('수비', city.defence, city.defenceMax),
+        paired('성벽', city.wall, city.wallMax),
+        { label: '시세', percent: city.trade ? ratioPercent(city.trade - 95, 10) : 0, text: tradeText },
+    ];
+});
 </script>
 
 <template>
@@ -30,17 +66,26 @@ const props = defineProps<{
         <div v-else-if="!props.city" class="empty">도시 정보를 불러오지 못했습니다.</div>
         <div v-else class="city-body">
             <div class="title">
-                {{ props.city.name }} (Lv {{ props.city.level }}) · 국가 {{ props.city.nationId || '무주' }}
+                {{ props.city.name }} (Lv {{ props.city.level }}) · 국가 {{ props.city.nationId || '무주' }} · 보급
+                {{ props.city.supplyState }} · 전방 {{ props.city.frontState }}
             </div>
-            <div class="grid">
-                <span>인구</span><strong>{{ props.city.population.toLocaleString() }}</strong> <span>농업</span
-                ><strong>{{ props.city.agriculture.toLocaleString() }}</strong> <span>상업</span
-                ><strong>{{ props.city.commerce.toLocaleString() }}</strong> <span>치안</span
-                ><strong>{{ props.city.security.toLocaleString() }}</strong> <span>수비</span
-                ><strong>{{ props.city.defence.toLocaleString() }}</strong> <span>성벽</span
-                ><strong>{{ props.city.wall.toLocaleString() }}</strong> <span>보급</span
-                ><strong>{{ props.city.supplyState }}</strong> <span>전방</span
-                ><strong>{{ props.city.frontState }}</strong>
+            <div class="progress-grid">
+                <div
+                    v-for="metric of metrics"
+                    :key="metric.label"
+                    class="city-progress"
+                    :data-city-progress="metric.label"
+                >
+                    <span class="city-progress__label">{{ metric.label }}</span>
+                    <div class="city-progress__body">
+                        <LegacyProgressBar
+                            :height="7"
+                            :percent="metric.percent"
+                            :label="`${metric.label} ${metric.text}`"
+                        />
+                        <span class="city-progress__text">{{ metric.text }}</span>
+                    </div>
+                </div>
             </div>
         </div>
     </div>
@@ -48,36 +93,60 @@ const props = defineProps<{
 
 <style scoped>
 .title {
-    min-height: 24px;
-    padding: 2px 6px;
+    box-sizing: border-box;
+    min-height: 20px;
+    padding: 1px 6px;
     border-bottom: 1px solid #666;
     background: #173d27;
     text-align: center;
+    font-size: 12px;
     font-weight: 600;
 }
 
-.grid {
+.progress-grid {
     display: grid;
-    grid-template-columns: repeat(8, minmax(0, 1fr));
+    grid-template-columns: repeat(4, minmax(0, 1fr));
     font-size: 12px;
 }
-.grid > * {
-    min-height: 23px;
-    box-sizing: border-box;
+
+.city-progress {
+    display: grid;
+    grid-template-columns: 1fr 2fr;
+    min-width: 0;
+    min-height: 31px;
     border-right: 1px solid #666;
     border-bottom: 1px solid #666;
-    padding: 2px 5px;
 }
-.grid > span {
+
+.city-progress__label {
+    display: flex;
+    align-items: center;
+    justify-content: center;
     background: rgb(20 75 42 / 70%);
-    text-align: center;
 }
-.grid > strong {
-    text-align: right;
-    font-weight: 400;
+
+.city-progress__body {
+    display: grid;
+    min-width: 0;
+    align-content: center;
+    padding: 1px 3px;
+}
+
+.city-progress__text {
+    overflow: hidden;
+    line-height: 14px;
+    text-align: center;
+    text-overflow: ellipsis;
+    white-space: nowrap;
 }
 
 .empty {
     color: rgba(232, 221, 196, 0.6);
+}
+
+@media (max-width: 939.98px) {
+    .progress-grid {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
 }
 </style>

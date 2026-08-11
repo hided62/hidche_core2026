@@ -3,6 +3,7 @@ import { computed, onMounted, reactive, ref, watch } from 'vue';
 import { useRoute } from 'vue-router';
 import PanelCard from '../components/ui/PanelCard.vue';
 import SkeletonLines from '../components/ui/SkeletonLines.vue';
+import LegacyGeneralProgress from '../components/ui/LegacyGeneralProgress.vue';
 import { trpc } from '../utils/trpc';
 import { getNpcColor } from '../utils/npcColor';
 import { formatLog } from '../utils/formatLog';
@@ -302,9 +303,9 @@ onMounted(() => {
                             ><strong>{{ selectedGeneral.battleStats.deathCrew.toLocaleString('ko-KR') }}</strong>
                             <span>전투 특기</span><strong>{{ selectedGeneral.traits.specialWar }}</strong>
                             <span>내정 특기</span><strong>{{ selectedGeneral.traits.specialDomestic }}</strong>
-                            <span>성격</span><strong>{{ selectedGeneral.traits.personal }}</strong> <span>숙련도</span
-                            ><strong>{{ selectedGeneral.battleStats.dex.join(' / ') }}</strong>
+                            <span>성격</span><strong>{{ selectedGeneral.traits.personal }}</strong>
                         </div>
+                        <LegacyGeneralProgress :general="selectedGeneral" />
                     </div>
                     <div v-if="selectedGeneral" class="general-meta">
                         <div>최근 턴: {{ selectedGeneral.turnTime ? selectedGeneral.turnTime.slice(-5) : '-' }}</div>

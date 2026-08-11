@@ -90,17 +90,24 @@ const buildContext = (options: {
                 }
                 return options.target?.id === where.id ? options.target : null;
             }),
+            findMany: vi.fn(async () => [me, ...(options.target ? [options.target] : [])]),
         },
         nation: {
             findUnique: vi.fn(async ({ where }: { where: { id: number } }) =>
-                where.id === me.nationId ? { id: me.nationId, meta: options.nationMeta ?? {} } : null
+                where.id === me.nationId ? { id: me.nationId, name: '테스트국', meta: options.nationMeta ?? {} } : null
             ),
         },
         troop: {
             findUnique: vi.fn(async ({ where }: { where: { troopLeaderId: number } }) =>
                 options.troop?.troopLeaderId === where.troopLeaderId ? options.troop : null
             ),
+            findMany: vi.fn(async () =>
+                options.troop ? [options.troop] : [{ troopLeaderId: me.id, nationId: me.nationId, name: '백마대' }]
+            ),
         },
+        city: { findMany: vi.fn(async () => [{ id: 1, name: '북평' }]) },
+        worldState: { findFirst: vi.fn(async () => ({ config: { const: { upgradeLimit: 20 } } })) },
+        generalTurn: { findMany: vi.fn(async () => []) },
     };
     const accessTokenStore = new RedisAccessTokenStore(
         {
@@ -127,6 +134,43 @@ const buildContext = (options: {
 };
 
 describe('troop router permissions and mutations', () => {
+    it('returns the Ref general progress inputs for same-nation troop popups', async () => {
+        const me = buildGeneral({
+            troopId: 1,
+            meta: {
+                explevel: 4,
+                leadership_exp: 7,
+                strength_exp: 8,
+                intel_exp: 9,
+                dex1: 350,
+                dex2: 1_375,
+                dex3: 3_500,
+                dex4: 7_125,
+                dex5: 12_650,
+            },
+        });
+        const fixture = buildContext({ me, result: null });
+
+        await expect(appRouter.createCaller(fixture.context).troop.getList()).resolves.toMatchObject({
+            troops: [
+                {
+                    members: [
+                        {
+                            stats: { leadership: 50, strength: 50, intelligence: 50 },
+                            experience: 0,
+                            progression: {
+                                experienceLevel: 4,
+                                statExperience: { leadership: 7, strength: 8, intelligence: 9 },
+                                statUpgradeLimit: 20,
+                                dex: [350, 1_375, 3_500, 7_125, 12_650],
+                            },
+                        },
+                    ],
+                },
+            ],
+        });
+    });
+
     it('creates a troop only for the general owned by the authenticated user', async () => {
         const { context, requestCommand } = buildContext({
             result: { type: 'troopCreate', ok: true, generalId: 1, troopId: 1, troopName: '백마대' },

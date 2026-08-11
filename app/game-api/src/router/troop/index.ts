@@ -1,7 +1,7 @@
 import { TRPCError } from '@trpc/server';
 import { z } from 'zod';
 
-import type { TurnDaemonCommandResult } from '@sammo-ts/common';
+import { asRecord, type TurnDaemonCommandResult } from '@sammo-ts/common';
 import { isValidTroopNameWidth, normalizeTroopName, resolveTroopSecretPermission } from '@sammo-ts/logic';
 
 import { accessAuthedProcedure, authedProcedure, router } from '../../trpc.js';
@@ -39,7 +39,7 @@ export const troopRouter = router({
             throw new TRPCError({ code: 'PRECONDITION_FAILED', message: '국가에 소속되어 있지 않습니다.' });
         }
 
-        const [nation, troops, generals, cities] = await Promise.all([
+        const [nation, troops, generals, cities, worldState] = await Promise.all([
             ctx.db.nation.findUnique({
                 where: { id: me.nationId },
                 select: { id: true, name: true, meta: true },
@@ -58,11 +58,17 @@ export const troopRouter = router({
                     picture: true,
                     imageServer: true,
                     turnTime: true,
+                    leadership: true,
+                    strength: true,
+                    intel: true,
+                    experience: true,
+                    meta: true,
                 },
             }),
             ctx.db.city.findMany({
                 select: { id: true, name: true },
             }),
+            ctx.db.worldState.findFirst({ select: { config: true } }),
         ]);
         if (!nation) {
             throw new TRPCError({ code: 'NOT_FOUND', message: '국가 정보를 찾을 수 없습니다.' });
@@ -80,6 +86,12 @@ export const troopRouter = router({
         const cityNames = new Map(cities.map((city) => [city.id, city.name]));
         const generalMap = new Map(generals.map((general) => [general.id, general]));
         const reservedByLeader = new Map<number, string[]>();
+        const worldConfig = asRecord(worldState?.config);
+        const constValues = asRecord(worldConfig.const ?? worldConfig.consts);
+        const statUpgradeLimit =
+            typeof constValues.upgradeLimit === 'number' && Number.isFinite(constValues.upgradeLimit)
+                ? constValues.upgradeLimit
+                : 30;
         for (const turn of turns) {
             const list = reservedByLeader.get(turn.generalId) ?? [];
             list.push(turn.actionCode);
@@ -107,12 +119,35 @@ export const troopRouter = router({
                         : null,
                     members: generals
                         .filter((general) => general.troopId === troop.troopLeaderId)
-                        .map((general) => ({
-                            id: general.id,
-                            name: general.name,
-                            cityId: general.cityId,
-                            cityName: cityNames.get(general.cityId) ?? '알 수 없음',
-                        })),
+                        .map((general) => {
+                            const meta = asRecord(general.meta);
+                            const metaNumber = (key: string): number => {
+                                const value = meta[key];
+                                return typeof value === 'number' && Number.isFinite(value) ? value : 0;
+                            };
+                            return {
+                                id: general.id,
+                                name: general.name,
+                                cityId: general.cityId,
+                                cityName: cityNames.get(general.cityId) ?? '알 수 없음',
+                                stats: {
+                                    leadership: general.leadership,
+                                    strength: general.strength,
+                                    intelligence: general.intel,
+                                },
+                                experience: general.experience,
+                                progression: {
+                                    experienceLevel: metaNumber('explevel'),
+                                    statExperience: {
+                                        leadership: metaNumber('leadership_exp'),
+                                        strength: metaNumber('strength_exp'),
+                                        intelligence: metaNumber('intel_exp'),
+                                    },
+                                    statUpgradeLimit,
+                                    dex: [1, 2, 3, 4, 5].map((index) => metaNumber(`dex${index}`)),
+                                },
+                            };
+                        }),
                 };
             })
             .sort((left, right) => {

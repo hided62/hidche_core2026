@@ -22,7 +22,35 @@ const readReferenceImage = async (filename: string): Promise<Buffer> => {
     throw new Error(`Reference image not found: ${filename}`);
 };
 
-type Member = { id: number; name: string; cityId: number; cityName: string };
+type Member = {
+    id: number;
+    name: string;
+    cityId: number;
+    cityName: string;
+    stats: { leadership: number; strength: number; intelligence: number };
+    experience: number;
+    progression: {
+        experienceLevel: number;
+        statExperience: { leadership: number; strength: number; intelligence: number };
+        statUpgradeLimit: number;
+        dex: number[];
+    };
+};
+
+const member = (id: number, name: string, cityId: number, cityName: string): Member => ({
+    id,
+    name,
+    cityId,
+    cityName,
+    stats: { leadership: 70, strength: 60, intelligence: 50 },
+    experience: 450,
+    progression: {
+        experienceLevel: 4,
+        statExperience: { leadership: 7, strength: 8, intelligence: 9 },
+        statUpgradeLimit: 20,
+        dex: [350, 1_375, 3_500, 7_125, 1_275_975],
+    },
+});
 type TroopFixture = {
     id: number;
     name: string;
@@ -61,11 +89,7 @@ const baseTroops = (): TroopFixture[] => [
             picture: 'default.jpg',
             imageServer: 0,
         },
-        members: [
-            { id: 1, name: '공손찬', cityId: 1, cityName: '북평' },
-            { id: 3, name: '조운', cityId: 1, cityName: '북평' },
-            { id: 4, name: '전예', cityId: 2, cityName: '계' },
-        ],
+        members: [member(1, '공손찬', 1, '북평'), member(3, '조운', 1, '북평'), member(4, '전예', 2, '계')],
     },
     {
         id: 2,
@@ -81,7 +105,7 @@ const baseTroops = (): TroopFixture[] => [
             picture: 'default.jpg',
             imageServer: 0,
         },
-        members: [{ id: 2, name: '관우', cityId: 2, cityName: '계' }],
+        members: [member(2, '관우', 2, '계')],
     },
 ];
 
@@ -124,11 +148,11 @@ const installApiFixture = async (page: Page, state: FixtureState) => {
         window.localStorage.setItem('sammo-game-token', 'ga_playwright');
         window.localStorage.setItem('sammo-game-profile', profile);
     }, gameProfile);
-    for (const filename of ['back_walnut.jpg', 'back_green.jpg']) {
+    for (const filename of ['back_walnut.jpg', 'back_green.jpg', 'pr5.gif', 'pb5.gif', 'pr8.gif', 'pb8.gif']) {
         await page.route(`**/image/game/${filename}`, async (route) => {
             await route.fulfill({
                 status: 200,
-                contentType: 'image/jpeg',
+                contentType: filename.endsWith('.gif') ? 'image/gif' : 'image/jpeg',
                 body: await readReferenceImage(filename),
             });
         });
@@ -182,7 +206,7 @@ const installApiFixture = async (page: Page, state: FixtureState) => {
                         picture: 'default.jpg',
                         imageServer: 0,
                     },
-                    members: [{ id: createdId, name: '유비', cityId: 1, cityName: '북평' }],
+                    members: [member(createdId, '유비', 1, '북평')],
                 });
                 return response({ ok: true, troopId: createdId, troopName: '신규대' });
             }
@@ -270,6 +294,15 @@ test('renders the legacy desktop grid with matching computed geometry and states
 
     await page.locator('.troopMember').nth(1).hover();
     await expect(page.getByRole('tooltip')).toContainText('조운');
+    await expect(page.getByRole('tooltip').locator('[role="progressbar"]')).toHaveCount(14);
+    await expect(page.getByRole('tooltip').locator('[aria-label*="1,275,975 (EX+)"]')).toHaveCount(5);
+    expect(
+        await page
+            .getByRole('tooltip')
+            .locator('[role="progressbar"]')
+            .first()
+            .evaluate((bar) => getComputedStyle(bar).backgroundImage)
+    ).toContain('/game/pr8.gif');
     expect(await page.getByRole('tooltip').evaluate((tooltip) => tooltip.getBoundingClientRect().width)).toBeCloseTo(
         500,
         0
