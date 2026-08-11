@@ -31,7 +31,10 @@ const assertMigrationHead = async (workspaceRoot: string, directory: string, exp
     }
 };
 
-export const readReleaseManifest = async (workspaceRoot: string): Promise<ReleaseManifest> => {
+export const readReleaseManifest = async (
+    workspaceRoot: string,
+    options: { allowControllerUpgrade?: boolean } = {}
+): Promise<ReleaseManifest> => {
     const manifestPath = path.join(workspaceRoot, 'release-manifest.json');
     const parsed = JSON.parse(await fs.readFile(manifestPath, 'utf8')) as unknown;
     if (
@@ -46,7 +49,7 @@ export const readReleaseManifest = async (workspaceRoot: string): Promise<Releas
     ) {
         throw new Error(`Invalid release manifest: ${manifestPath}`);
     }
-    if (parsed.controllerProtocol > RELEASE_CONTROLLER_PROTOCOL) {
+    if (parsed.controllerProtocol > RELEASE_CONTROLLER_PROTOCOL && !options.allowControllerUpgrade) {
         throw new Error(
             `Release requires controller protocol ${parsed.controllerProtocol}; this controller supports ${RELEASE_CONTROLLER_PROTOCOL}.`
         );
