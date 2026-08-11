@@ -2,7 +2,54 @@ import path from 'node:path';
 
 import { describe, expect, it } from 'vitest';
 
-import { MAX_BUILD_OUTPUT_CHARS, PnpmBuildRunner } from '../src/orchestrator/buildRunner.js';
+import {
+    buildTurboReleaseCommand,
+    MAX_BUILD_OUTPUT_CHARS,
+    PnpmBuildRunner,
+    resolveReleaseTurboCacheDir,
+} from '../src/orchestrator/buildRunner.js';
+
+describe('Turbo release build plan', () => {
+    it('anchors the default cache outside commit worktrees and allows an operator override', () => {
+        expect(resolveReleaseTurboCacheDir('/srv/core/repository')).toBe('/srv/core/repository/.turbo/release-cache');
+        expect(
+            resolveReleaseTurboCacheDir('/srv/core/repository', {
+                TURBO_CACHE_DIR: '/srv/core/cache/turbo',
+            })
+        ).toBe('/srv/core/cache/turbo');
+        expect(
+            resolveReleaseTurboCacheDir('/srv/core/repository', {
+                TURBO_CACHE_DIR: '.cache/turbo',
+            })
+        ).toBe('/srv/core/repository/.cache/turbo');
+    });
+
+    it('uses a bounded streaming Turbo build for the selected packages', () => {
+        expect(
+            buildTurboReleaseCommand(
+                '/srv/core/profile-worktrees/commit',
+                '/srv/core/repository',
+                ['@sammo-ts/game-api'],
+                { NODE_ENV: 'production' }
+            )
+        ).toEqual({
+            command: 'pnpm',
+            args: [
+                'exec',
+                'turbo',
+                'run',
+                'build',
+                '--filter=@sammo-ts/game-api',
+                '--cache-dir=/srv/core/repository/.turbo/release-cache',
+                '--concurrency=2',
+                '--ui=stream',
+                '--output-logs=new-only',
+            ],
+            cwd: '/srv/core/profile-worktrees/commit',
+            env: { NODE_ENV: 'production' },
+        });
+    });
+});
 
 describe('PnpmBuildRunner', () => {
     it('returns a failed result when a command cannot be spawned', async () => {
