@@ -2,6 +2,7 @@ import path from 'node:path';
 
 import {
     assertReleaseComponents,
+    buildTurboReleaseCommand,
     type BuildCommand,
     type BuildRunner,
     type GitWorkspaceManager,
@@ -24,13 +25,7 @@ export const buildReleaseControllerCommands = (
     const env = sanitizeManagedProcessEnv(config.baseEnv);
     return [
         ...(needsInstall ? [{ command: 'pnpm', args: ['install', '--frozen-lockfile'], cwd: workspaceRoot, env }] : []),
-        { command: 'pnpm', args: ['--filter', '@sammo-ts/common', 'build'], cwd: workspaceRoot, env },
-        { command: 'pnpm', args: ['--filter', '@sammo-ts/infra', 'prisma:generate'], cwd: workspaceRoot, env },
-        { command: 'pnpm', args: ['--filter', '@sammo-ts/infra', 'build'], cwd: workspaceRoot, env },
-        { command: 'pnpm', args: ['--filter', '@sammo-ts/logic', 'build'], cwd: workspaceRoot, env },
-        { command: 'pnpm', args: ['--filter', '@sammo-ts/game-engine', 'build'], cwd: workspaceRoot, env },
-        { command: 'pnpm', args: ['--filter', '@sammo-ts/gateway-api', 'build'], cwd: workspaceRoot, env },
-        { command: 'pnpm', args: ['--filter', '@sammo-ts/release-controller', 'build'], cwd: workspaceRoot, env },
+        buildTurboReleaseCommand(workspaceRoot, config.workspaceRoot, ['@sammo-ts/release-controller'], env),
     ];
 };
 

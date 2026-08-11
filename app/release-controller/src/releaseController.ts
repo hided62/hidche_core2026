@@ -4,6 +4,7 @@ import { stripVTControlCharacters } from 'node:util';
 
 import {
     assertReleaseComponents,
+    buildTurboReleaseCommand,
     type BuildCommand,
     type BuildProgressEvent,
     type BuildRunner,
@@ -38,13 +39,12 @@ export const buildGatewayReleaseCommands = (
     };
     return [
         ...(needsInstall ? [{ command: 'pnpm', args: ['install', '--frozen-lockfile'], cwd: workspaceRoot, env }] : []),
-        { command: 'pnpm', args: ['--filter', '@sammo-ts/common', 'build'], cwd: workspaceRoot, env },
-        { command: 'pnpm', args: ['--filter', '@sammo-ts/infra', 'prisma:generate'], cwd: workspaceRoot, env },
-        { command: 'pnpm', args: ['--filter', '@sammo-ts/infra', 'build'], cwd: workspaceRoot, env },
-        { command: 'pnpm', args: ['--filter', '@sammo-ts/logic', 'build'], cwd: workspaceRoot, env },
-        { command: 'pnpm', args: ['--filter', '@sammo-ts/game-engine', 'build'], cwd: workspaceRoot, env },
-        { command: 'pnpm', args: ['--filter', '@sammo-ts/gateway-api', 'build'], cwd: workspaceRoot, env },
-        { command: 'pnpm', args: ['--filter', '@sammo-ts/gateway-frontend', 'build'], cwd: workspaceRoot, env },
+        buildTurboReleaseCommand(
+            workspaceRoot,
+            config.workspaceRoot,
+            ['@sammo-ts/gateway-api', '@sammo-ts/gateway-frontend'],
+            env
+        ),
     ];
 };
 
@@ -244,7 +244,12 @@ export class GatewayReleaseController {
             await this.startDefinitions(buildGatewayProcessDefinitions(workspace.root, this.config), operation.id);
             await this.waitForReadiness(operation.id);
         } catch (error) {
-            await this.appendLog(operation.id, 'rollback', '새 Gateway 시작에 실패하여 이전 process를 복구합니다.', 'ERROR');
+            await this.appendLog(
+                operation.id,
+                'rollback',
+                '새 Gateway 시작에 실패하여 이전 process를 복구합니다.',
+                'ERROR'
+            );
             await this.stopManagedProcesses(operation.id);
             if (previousDefinitions.length) {
                 await this.startDefinitions(previousDefinitions, operation.id);
