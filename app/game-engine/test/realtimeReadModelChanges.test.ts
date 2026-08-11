@@ -89,12 +89,8 @@ describe('summarizeRealtimeReadModelChanges', () => {
                     penalty: {},
                 },
             ],
-            listCities: () => [
-                { id: 1, level: 1, nationId: 1, state: 0, supplyState: 1, population: 100 },
-            ],
-            listNations: () => [
-                { id: 1, name: '위', color: '#008000', capitalCityId: 1, gold: 100 },
-            ],
+            listCities: () => [{ id: 1, level: 1, nationId: 1, state: 0, supplyState: 1, population: 100 }],
+            listNations: () => [{ id: 1, name: '위', color: '#008000', capitalCityId: 1, gold: 100 }],
         } as unknown as InMemoryTurnWorld);
         const changes = {
             generals: [
@@ -153,6 +149,107 @@ describe('summarizeRealtimeReadModelChanges', () => {
         });
     });
 
+    it('classifies defence, nation policy, and current-city state changes by canonical projection', () => {
+        const baseline = createRealtimeReadModelBaseline({
+            listGenerals: () => [],
+            listCities: () => [
+                {
+                    id: 3,
+                    name: '업',
+                    level: 8,
+                    nationId: 2,
+                    state: 0,
+                    supplyState: 1,
+                    defence: 1_000,
+                    defenceMax: 2_000,
+                },
+            ],
+            listNations: () => [
+                {
+                    id: 2,
+                    name: '위',
+                    color: '#008000',
+                    capitalCityId: 3,
+                    meta: { rate: 20, bill: 100 },
+                },
+            ],
+        } as unknown as InMemoryTurnWorld);
+        const emptyChanges = {
+            generals: [],
+            createdGenerals: [],
+            deletedGenerals: [],
+            createdNations: [],
+            deletedNations: [],
+            deletedNationSnapshots: [],
+            lifecycleEvents: [],
+            logs: [],
+        };
+
+        const defenceChanges = {
+            ...emptyChanges,
+            cities: [
+                {
+                    id: 3,
+                    name: '업',
+                    level: 8,
+                    nationId: 2,
+                    state: 0,
+                    supplyState: 1,
+                    defence: 900,
+                    defenceMax: 2_000,
+                },
+            ],
+            nations: [],
+        } as unknown as TurnWorldChanges;
+        expect(summarizeRealtimeReadModelChanges(defenceChanges, undefined, baseline)).toMatchObject({
+            cityIds: [3],
+            mapCityIds: [],
+            nationIds: [],
+        });
+
+        const policyChanges = {
+            ...emptyChanges,
+            cities: [],
+            nations: [
+                {
+                    id: 2,
+                    name: '위',
+                    color: '#008000',
+                    capitalCityId: 3,
+                    meta: { rate: 25, bill: 120 },
+                },
+            ],
+        } as unknown as TurnWorldChanges;
+        expect(summarizeRealtimeReadModelChanges(policyChanges, undefined, baseline)).toMatchObject({
+            cityIds: [],
+            nationIds: [2],
+            mapNationIds: [],
+            frontStatusNationIds: [],
+        });
+
+        const stateChanges = {
+            ...emptyChanges,
+            cities: [
+                {
+                    id: 3,
+                    name: '업',
+                    level: 8,
+                    nationId: 2,
+                    state: 5,
+                    supplyState: 1,
+                    defence: 1_000,
+                    defenceMax: 2_000,
+                },
+            ],
+            nations: [],
+        } as unknown as TurnWorldChanges;
+        expect(summarizeRealtimeReadModelChanges(stateChanges, undefined, baseline)).toMatchObject({
+            cityIds: [3],
+            mapCityIds: [3],
+            nationIds: [],
+        });
+    });
+
     it('detects map, contact, and front-status fields independently', () => {
         const baseline = createRealtimeReadModelBaseline({
             listGenerals: () => [
@@ -168,9 +265,7 @@ describe('summarizeRealtimeReadModelChanges', () => {
                 },
             ],
             listCities: () => [{ id: 1, level: 1, nationId: 1, state: 0, supplyState: 1 }],
-            listNations: () => [
-                { id: 1, name: '위', color: '#008000', capitalCityId: 1, meta: { notice: '이전' } },
-            ],
+            listNations: () => [{ id: 1, name: '위', color: '#008000', capitalCityId: 1, meta: { notice: '이전' } }],
         } as unknown as InMemoryTurnWorld);
         const changes = {
             generals: [
@@ -188,9 +283,7 @@ describe('summarizeRealtimeReadModelChanges', () => {
             createdGenerals: [],
             deletedGenerals: [],
             cities: [{ id: 1, level: 2, nationId: 1, state: 0, supplyState: 1 }],
-            nations: [
-                { id: 1, name: '위', color: '#008000', capitalCityId: 1, meta: { notice: '새 방침' } },
-            ],
+            nations: [{ id: 1, name: '위', color: '#008000', capitalCityId: 1, meta: { notice: '새 방침' } }],
             createdNations: [],
             deletedNations: [],
             deletedNationSnapshots: [],
@@ -229,9 +322,7 @@ describe('summarizeRealtimeReadModelChanges', () => {
                 },
             ],
             listCities: () => [],
-            listNations: () => [
-                { id: 1, name: '위', color: '#008000', capitalCityId: 1, meta: { notice: '이전' } },
-            ],
+            listNations: () => [{ id: 1, name: '위', color: '#008000', capitalCityId: 1, meta: { notice: '이전' } }],
         } as unknown as InMemoryTurnWorld);
         const changes = {
             generals: [
@@ -249,9 +340,7 @@ describe('summarizeRealtimeReadModelChanges', () => {
             createdGenerals: [],
             deletedGenerals: [],
             cities: [],
-            nations: [
-                { id: 1, name: '촉', color: '#008000', capitalCityId: 1, meta: { notice: '새 공지' } },
-            ],
+            nations: [{ id: 1, name: '촉', color: '#008000', capitalCityId: 1, meta: { notice: '새 공지' } }],
             createdNations: [],
             deletedNations: [],
             deletedNationSnapshots: [],

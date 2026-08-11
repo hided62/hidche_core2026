@@ -2,10 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 
 import { createEmptyRealtimeReadModelChanges } from '@sammo-ts/common';
-import {
-    createMergedReadModelRefreshQueue,
-    resolveDashboardRefreshPlan,
-} from '../src/utils/dashboardReadModel.ts';
+import { createMergedReadModelRefreshQueue, resolveDashboardRefreshPlan } from '../src/utils/dashboardReadModel.ts';
 
 void test('last-turn-time-only events do not schedule any dashboard query', () => {
     const plan = resolveDashboardRefreshPlan(createEmptyRealtimeReadModelChanges(), {
@@ -55,10 +52,63 @@ void test('refreshes the map only for map-projection changes', () => {
         mapGeneralIds: [7],
     };
 
-    assert.equal(
-        resolveDashboardRefreshPlan(changes, { generalId: 7, cityId: 3, nationId: 2 }).map,
-        true
+    assert.equal(resolveDashboardRefreshPlan(changes, { generalId: 7, cityId: 3, nationId: 2 }).map, true);
+});
+
+void test('routes defence, tax-rate, and current-city-state events to their exact dashboard slices', () => {
+    const identity = { generalId: 7, cityId: 3, nationId: 2 };
+    const defence = resolveDashboardRefreshPlan(
+        {
+            ...createEmptyRealtimeReadModelChanges(),
+            cityIds: [3],
+            mapCityIds: [],
+        },
+        identity
     );
+    assert.deepEqual(defence, {
+        context: true,
+        lobby: false,
+        map: false,
+        commands: true,
+        contacts: false,
+        boardAccess: false,
+        reservedTurns: false,
+        records: false,
+        frontStatus: false,
+    });
+
+    const taxRate = resolveDashboardRefreshPlan(
+        {
+            ...createEmptyRealtimeReadModelChanges(),
+            nationIds: [2],
+            mapNationIds: [],
+            frontStatusNationIds: [],
+        },
+        identity
+    );
+    assert.deepEqual(taxRate, {
+        context: true,
+        lobby: false,
+        map: false,
+        commands: true,
+        contacts: false,
+        boardAccess: true,
+        reservedTurns: false,
+        records: false,
+        frontStatus: false,
+    });
+
+    const cityState = resolveDashboardRefreshPlan(
+        {
+            ...createEmptyRealtimeReadModelChanges(),
+            cityIds: [3],
+            mapCityIds: [3],
+        },
+        identity
+    );
+    assert.equal(cityState.context, true);
+    assert.equal(cityState.commands, true);
+    assert.equal(cityState.map, true);
 });
 
 void test('keeps conservative map behavior for rolling-deploy payloads without projections', () => {
@@ -74,10 +124,7 @@ void test('keeps conservative map behavior for rolling-deploy payloads without p
         contactsChanged: false,
     };
 
-    assert.equal(
-        resolveDashboardRefreshPlan(changes, { generalId: 7, cityId: 3, nationId: 2 }).map,
-        true
-    );
+    assert.equal(resolveDashboardRefreshPlan(changes, { generalId: 7, cityId: 3, nationId: 2 }).map, true);
 });
 
 void test('does not refresh front status for contact-only permission changes', () => {
@@ -119,14 +166,8 @@ void test('targets a submitted survey projection to its own general', () => {
         frontStatusActorIds: [7],
     };
 
-    assert.equal(
-        resolveDashboardRefreshPlan(changes, { generalId: 7, cityId: 3, nationId: 2 }).frontStatus,
-        true
-    );
-    assert.equal(
-        resolveDashboardRefreshPlan(changes, { generalId: 8, cityId: 3, nationId: 2 }).frontStatus,
-        false
-    );
+    assert.equal(resolveDashboardRefreshPlan(changes, { generalId: 7, cityId: 3, nationId: 2 }).frontStatus, true);
+    assert.equal(resolveDashboardRefreshPlan(changes, { generalId: 8, cityId: 3, nationId: 2 }).frontStatus, false);
 });
 
 void test('merges burst payloads without losing entity ids and starts at most once per interval', async () => {

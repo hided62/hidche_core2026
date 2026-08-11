@@ -20,6 +20,15 @@ type NavigationFixture = {
     generalMeCalls: number;
     operations: string[];
     generalName?: string;
+    cityDefence?: number;
+    cityState?: number;
+    nationRate?: number;
+    contextRevision?: string;
+    contextOperations?: JsonPatchOperation[];
+    commandTableRevision?: string;
+    commandTableOperations?: JsonPatchOperation[];
+    commandBlockedCount?: number;
+    forceSnapshotCalls?: number;
     refreshDelayMs?: number;
     largeCommandTable?: boolean;
     dashboardResponses?: Array<{
@@ -28,6 +37,12 @@ type NavigationFixture = {
         commandTableKind: string | null;
         boardAccessKind: string | null;
     }>;
+};
+
+type JsonPatchOperation = {
+    op: 'add' | 'remove' | 'replace';
+    path: string;
+    value?: unknown;
 };
 
 type DashboardBundleInput = {
@@ -44,7 +59,62 @@ const operationInput = (route: Route, index: number): DashboardBundleInput => {
     return entry.json ?? (entry as DashboardBundleInput);
 };
 
-const commandTableFixture = (large: boolean) => ({
+const readModelChanges = (
+    overrides: Partial<{
+        generalIds: number[];
+        cityIds: number[];
+        nationIds: number[];
+        mapGeneralIds: number[];
+        mapCityIds: number[];
+        mapNationIds: number[];
+        frontStatusGeneralIds: number[];
+        frontStatusNationIds: number[];
+        frontStatusActorIds: number[];
+        frontStatusChanged: boolean;
+        lobbyGeneralIds: number[];
+        lobbyChanged: boolean;
+        reservedGeneralIds: number[];
+        recordGeneralIds: number[];
+        worldChanged: boolean;
+        globalRecordsChanged: boolean;
+        worldHistoryChanged: boolean;
+        contactsChanged: boolean;
+    }>
+) => ({
+    generalIds: [],
+    cityIds: [],
+    nationIds: [],
+    mapGeneralIds: [],
+    mapCityIds: [],
+    mapNationIds: [],
+    frontStatusGeneralIds: [],
+    frontStatusNationIds: [],
+    frontStatusActorIds: [],
+    frontStatusChanged: false,
+    lobbyGeneralIds: [],
+    lobbyChanged: false,
+    reservedGeneralIds: [],
+    recordGeneralIds: [],
+    worldChanged: false,
+    globalRecordsChanged: false,
+    worldHistoryChanged: false,
+    contactsChanged: false,
+    ...overrides,
+});
+
+const emitReadModelChanges = (page: Page, changes: ReturnType<typeof readModelChanges>) =>
+    page.evaluate((payload) => {
+        (window as unknown as { __emitMainRealtime: (type: string, value: unknown) => void }).__emitMainRealtime(
+            'readModelChanged',
+            {
+                at: new Date().toISOString(),
+                revision: Date.now(),
+                changes: payload,
+            }
+        );
+    }, changes);
+
+const commandTableFixture = (large: boolean, blockedCount = 0) => ({
     general: large
         ? [
               {
@@ -53,8 +123,8 @@ const commandTableFixture = (large: boolean) => ({
                       key: `command-${index}`,
                       name: `명령 ${index}`,
                       reqArg: index % 2 === 0,
-                      possible: true,
-                      status: 'available',
+                      possible: index >= blockedCount,
+                      status: index >= blockedCount ? 'available' : 'blocked',
                       inputFields: [
                           {
                               key: 'amount',
@@ -87,6 +157,7 @@ const COMMAND_TABLE_REVISION = 'CCCCCCCCCCCCCCCCCCCCCC';
 const BOARD_ACCESS_REVISION = 'DDDDDDDDDDDDDDDDDDDDDD';
 
 const contextRevision = (state: NavigationFixture) => {
+    if (state.contextRevision) return state.contextRevision;
     const name = state.generalName ?? '메뉴검증장수';
     if (name === '메뉴검증장수') return CONTEXT_INITIAL_REVISION;
     if (name === '부드럽게갱신된장수') return 'EEEEEEEEEEEEEEEEEEEEEE';
@@ -95,14 +166,20 @@ const contextRevision = (state: NavigationFixture) => {
     return 'HHHHHHHHHHHHHHHHHHHHHH';
 };
 
-const deltaSlice = <T>(value: T, revision: string, known: string | undefined, forceSnapshot: boolean) => {
+const deltaSlice = <T>(
+    value: T,
+    revision: string,
+    known: string | undefined,
+    forceSnapshot: boolean,
+    operations?: JsonPatchOperation[]
+) => {
     if (forceSnapshot || !known) return { kind: 'snapshot' as const, revision, data: value };
     if (known === revision) return { kind: 'unchanged' as const, revision };
     return {
         kind: 'patch' as const,
         baseRevision: known,
         revision,
-        operations: [
+        operations: operations ?? [
             {
                 op: 'replace' as const,
                 path: '/general/name',
@@ -169,12 +246,13 @@ const generalContext = (state: NavigationFixture) => ({
         securityMax: 2_000,
         trust: 80,
         trade: 100,
-        defence: 1_000,
+        defence: state.cityDefence ?? 1_000,
         defenceMax: 2_000,
         wall: 1_000,
         wallMax: 2_000,
         supplyState: 1,
         frontState: 0,
+        state: state.cityState ?? 0,
     },
     nation: {
         id: 1,
@@ -184,7 +262,7 @@ const generalContext = (state: NavigationFixture) => ({
         gold: 10_000,
         rice: 20_000,
         tech: 100,
-        rate: 20,
+        rate: state.nationRate ?? 20,
         bill: 100,
         capitalCityId: 1,
         typeCode: 'che_유가',
@@ -241,18 +319,33 @@ const installFixture = async (page: Page, state: NavigationFixture) => {
                 const input = operationInput(route, index);
                 const include = input.include ?? {};
                 const forceSnapshot = input.forceSnapshot === true;
+                if (forceSnapshot) state.forceSnapshotCalls = (state.forceSnapshotCalls ?? 0) + 1;
                 const revision = contextRevision(state);
                 const context = include.context
-                    ? deltaSlice(generalContext(state), revision, input.known?.context, forceSnapshot)
+                    ? deltaSlice(
+                          generalContext(state),
+                          revision,
+                          input.known?.context,
+                          forceSnapshot,
+                          state.contextOperations
+                      )
                     : undefined;
+                const currentCommandTableRevision = state.commandTableRevision ?? COMMAND_TABLE_REVISION;
                 const commandTable = include.commandTable
                     ? forceSnapshot || !input.known?.commandTable
                         ? {
                               kind: 'snapshot' as const,
-                              revision: COMMAND_TABLE_REVISION,
-                              data: commandTableFixture(state.largeCommandTable === true),
+                              revision: currentCommandTableRevision,
+                              data: commandTableFixture(state.largeCommandTable === true, state.commandBlockedCount),
                           }
-                        : { kind: 'unchanged' as const, revision: COMMAND_TABLE_REVISION }
+                        : input.known.commandTable === currentCommandTableRevision
+                          ? { kind: 'unchanged' as const, revision: currentCommandTableRevision }
+                          : {
+                                kind: 'patch' as const,
+                                baseRevision: input.known.commandTable,
+                                revision: currentCommandTableRevision,
+                                operations: state.commandTableOperations ?? [],
+                            }
                     : undefined;
                 const boardAccess = include.boardAccess
                     ? forceSnapshot || !input.known?.boardAccess
@@ -297,7 +390,7 @@ const installFixture = async (page: Page, state: NavigationFixture) => {
                     startYear: 180,
                     year: 185,
                     month: 1,
-                    cityList: [[1, 8, 0, 1, 1, 1]],
+                    cityList: [[1, 8, state.cityState ?? 0, 1, 1, 1]],
                     nationList: [[1, '위', '#008000', 1]],
                     spyList: {},
                     shownByGeneralList: [],
@@ -1001,6 +1094,78 @@ test('realtime read-model events skip clock-only work, merge bursts, patch in pl
             ),
         ]);
     }
+
+    const callsBeforeDefence = state.generalMeCalls;
+    state.cityDefence = 900;
+    state.contextRevision = 'I'.repeat(22);
+    state.contextOperations = [{ op: 'replace', path: '/city/defence', value: 900 }];
+    state.commandTableRevision = 'J'.repeat(22);
+    state.commandBlockedCount = 1;
+    state.commandTableOperations = [
+        { op: 'replace', path: '/general/0/values/0/possible', value: false },
+        { op: 'replace', path: '/general/0/values/0/status', value: 'blocked' },
+    ];
+    await emitReadModelChanges(page, readModelChanges({ cityIds: [1], mapCityIds: [] }));
+    await expect.poll(() => state.generalMeCalls, { timeout: 4_000 }).toBe(callsBeforeDefence + 1);
+    await expect(page.locator('[data-city-progress="수비"] .city-progress__text')).toHaveText('900 / 2,000');
+
+    const callsBeforeTax = state.generalMeCalls;
+    state.nationRate = 25;
+    state.contextRevision = 'K'.repeat(22);
+    state.contextOperations = [{ op: 'replace', path: '/nation/rate', value: 25 }];
+    state.commandTableRevision = 'L'.repeat(22);
+    state.commandBlockedCount = 2;
+    state.commandTableOperations = [
+        { op: 'replace', path: '/general/0/values/1/possible', value: false },
+        { op: 'replace', path: '/general/0/values/1/status', value: 'blocked' },
+    ];
+    await emitReadModelChanges(page, readModelChanges({ nationIds: [1], mapNationIds: [], frontStatusNationIds: [] }));
+    await expect.poll(() => state.generalMeCalls, { timeout: 4_000 }).toBe(callsBeforeTax + 1);
+
+    const callsBeforeCityState = state.generalMeCalls;
+    const operationsBeforeCityState = state.operations.length;
+    state.cityState = 5;
+    state.contextRevision = 'M'.repeat(22);
+    state.contextOperations = [{ op: 'replace', path: '/city/state', value: 5 }];
+    state.commandTableRevision = 'N'.repeat(22);
+    state.commandBlockedCount = 3;
+    state.commandTableOperations = [
+        { op: 'replace', path: '/general/0/values/2/possible', value: false },
+        { op: 'replace', path: '/general/0/values/2/status', value: 'blocked' },
+    ];
+    await emitReadModelChanges(page, readModelChanges({ cityIds: [1], mapCityIds: [1] }));
+    await expect.poll(() => state.generalMeCalls, { timeout: 4_000 }).toBe(callsBeforeCityState + 1);
+    await expect(page.locator('.city-base .city-state img')).toHaveAttribute('src', /event5\.gif$/u);
+    expect(state.operations.slice(operationsBeforeCityState).sort()).toEqual(
+        ['dashboard.getContextBundleDelta', 'world.getMap'].sort()
+    );
+
+    const callsBeforeFallback = state.generalMeCalls;
+    const forcedBeforeFallback = state.forceSnapshotCalls ?? 0;
+    state.generalName = 'snapshot복구장수';
+    state.contextRevision = 'O'.repeat(22);
+    state.contextOperations = [{ op: 'replace', path: '/missing/value', value: 'invalid-delta' }];
+    state.commandTableOperations = [];
+    await emitReadModelChanges(page, readModelChanges({ generalIds: [7] }));
+    await expect.poll(() => state.generalMeCalls, { timeout: 4_000 }).toBe(callsBeforeFallback + 2);
+    expect(state.forceSnapshotCalls).toBe(forcedBeforeFallback + 1);
+    await expect(page.locator('.general-title')).toContainText('snapshot복구장수');
+    await expect(page.locator('.game-feedback')).toHaveCount(0);
+    await expect(page.locator('[data-main-target="general"] .skeleton-line')).toHaveCount(0);
+    await expect(page.locator('[data-main-target="city"] .skeleton-line')).toHaveCount(0);
+    expect(
+        await page.evaluate(() => {
+            const probe = (
+                window as unknown as {
+                    __mainRefreshProbe: { general: Element; city: Element };
+                }
+            ).__mainRefreshProbe;
+            return {
+                generalMounted: probe.general === document.querySelector('[data-main-target="general"]'),
+                cityMounted: probe.city === document.querySelector('[data-main-target="city"]'),
+            };
+        })
+    ).toEqual({ generalMounted: true, cityMounted: true });
 
     await page.locator(`a[href="${basePath}/board"]`).first().click();
     await page.waitForURL(`**${basePath}/board`);

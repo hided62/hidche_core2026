@@ -3,7 +3,7 @@ import { defineStore } from 'pinia';
 import { MESSAGE_MAILBOX_NATIONAL_BASE, MESSAGE_MAILBOX_PUBLIC, type MessageType } from '@sammo-ts/logic';
 import {
     applyReadModelDelta,
-    ReadModelDeltaMismatchError,
+    cloneReadModelJson,
     type RealtimeEvent,
     type RealtimeReadModelChanges,
 } from '@sammo-ts/common';
@@ -15,6 +15,7 @@ import { createRateLimitedRefreshQueue } from '../utils/rateLimitedRefreshQueue'
 import { structurallyShare } from '../utils/structuralShare';
 import { createMergedReadModelRefreshQueue, resolveDashboardRefreshPlan } from '../utils/dashboardReadModel';
 import { createBroadcastTabCoordinator, type BroadcastTabCoordinator } from '../utils/broadcastTabCoordinator';
+import { resolveWithReadModelSnapshotFallback } from '../utils/readModelDeltaRecovery';
 
 const REALTIME_FULL_REFRESH_MIN_INTERVAL_MS = 5_000;
 
@@ -103,6 +104,8 @@ export const useMainDashboardStore = defineStore('mainDashboard', () => {
     let recordGeneralId: number | null = null;
     let initialized = false;
     let contextSnapshot: GeneralContext | undefined;
+    let commandTableSnapshot: CommandTable | undefined;
+    let boardAccessSnapshot: BoardAccess | undefined;
     let contextRevision: string | null = null;
     let commandTableRevision: string | null = null;
     let boardAccessRevision: string | null = null;
@@ -319,6 +322,8 @@ export const useMainDashboardStore = defineStore('mainDashboard', () => {
     const applyDashboardPatch = (patch: DashboardReadModelPatch) => {
         if (patch.contextSnapshot === null) {
             contextSnapshot = null;
+            commandTableSnapshot = undefined;
+            boardAccessSnapshot = undefined;
             general.value = null;
             city.value = null;
             nation.value = null;
@@ -337,6 +342,8 @@ export const useMainDashboardStore = defineStore('mainDashboard', () => {
         }
         if (patch.general === null) {
             contextSnapshot = null;
+            commandTableSnapshot = undefined;
+            boardAccessSnapshot = undefined;
             general.value = null;
             city.value = null;
             nation.value = null;
@@ -357,14 +364,17 @@ export const useMainDashboardStore = defineStore('mainDashboard', () => {
         if (patch.worldMap !== undefined) worldMap.value = structurallyShare(worldMap.value, patch.worldMap);
         if (patch.mapLayout !== undefined) mapLayout.value = structurallyShare(mapLayout.value, patch.mapLayout);
         if (patch.commandTable !== undefined) {
+            commandTableSnapshot = patch.commandTable ?? undefined;
             commandTable.value = structurallyShare(commandTable.value, patch.commandTable);
         }
         if (patch.messages !== undefined) messages.value = structurallyShare(messages.value, patch.messages);
         if (patch.messageContacts !== undefined) {
             messageContacts.value = structurallyShare(messageContacts.value, patch.messageContacts);
         }
-        if (patch.boardAccess !== undefined)
+        if (patch.boardAccess !== undefined) {
+            boardAccessSnapshot = patch.boardAccess ?? undefined;
             boardAccess.value = structurallyShare(boardAccess.value, patch.boardAccess);
+        }
         if (patch.reservedGeneralTurns !== undefined) {
             reservedGeneralTurns.value = structurallyShare<unknown>(
                 reservedGeneralTurns.value,
@@ -409,10 +419,10 @@ export const useMainDashboardStore = defineStore('mainDashboard', () => {
         patch.lobbyInfo = toRaw(lobbyInfo.value);
         patch.worldMap = toRaw(worldMap.value);
         patch.mapLayout = toRaw(mapLayout.value);
-        patch.commandTable = toRaw(commandTable.value);
+        patch.commandTable = commandTableSnapshot ?? null;
         patch.messages = toRaw(messages.value);
         patch.messageContacts = toRaw(messageContacts.value);
-        patch.boardAccess = toRaw(boardAccess.value);
+        patch.boardAccess = boardAccessSnapshot ?? null;
         patch.reservedGeneralTurns = toRaw(reservedGeneralTurns.value as unknown) as ReservedTurnView[] | null;
         patch.reservedGeneralRevision = reservedGeneralRevision.value;
         patch.globalRecords = toRaw(globalRecords.value);
@@ -433,16 +443,14 @@ export const useMainDashboardStore = defineStore('mainDashboard', () => {
             }
         }
         if (bundle.commandTable) {
-            const current = commandTable.value === null ? undefined : toRaw(commandTable.value);
-            const applied = applyReadModelDelta(current, commandTableRevision, bundle.commandTable);
+            const applied = applyReadModelDelta(commandTableSnapshot, commandTableRevision, bundle.commandTable);
             patch.commandTableRevision = applied.revision;
             if (bundle.commandTable.kind !== 'unchanged') {
                 patch.commandTable = applied.data;
             }
         }
         if (bundle.boardAccess) {
-            const current = boardAccess.value === null ? undefined : toRaw(boardAccess.value);
-            const applied = applyReadModelDelta(current, boardAccessRevision, bundle.boardAccess);
+            const applied = applyReadModelDelta(boardAccessSnapshot, boardAccessRevision, bundle.boardAccess);
             patch.boardAccessRevision = applied.revision;
             if (bundle.boardAccess.kind !== 'unchanged') {
                 patch.boardAccess = applied.data;
@@ -469,15 +477,11 @@ export const useMainDashboardStore = defineStore('mainDashboard', () => {
                 forceSnapshot: force || undefined,
             });
 
-        const bundle = await request(forceSnapshot);
-        try {
-            return resolveContextBundlePatch(bundle);
-        } catch (error) {
-            if (forceSnapshot || !(error instanceof ReadModelDeltaMismatchError)) {
-                throw error;
-            }
-            return resolveContextBundlePatch(await request(true));
-        }
+        return resolveWithReadModelSnapshotFallback({
+            request,
+            resolve: resolveContextBundlePatch,
+            forceSnapshot,
+        });
     };
 
     const refreshMainData = async () => {
@@ -576,7 +580,17 @@ export const useMainDashboardStore = defineStore('mainDashboard', () => {
     let realtimeCoordinatorScope: string | null = null;
 
     const publishDashboardPatch = (patch: DashboardReadModelPatch) => {
-        realtimeCoordinator?.postFromLeader({ kind: 'patch', patch });
+        if (!realtimeCoordinator) {
+            return;
+        }
+        // BroadcastChannel uses the structured-clone algorithm. Normalize the
+        // full payload so nested Vue proxies never reach that browser boundary.
+        try {
+            realtimeCoordinator.postFromLeader({ kind: 'patch', patch: cloneReadModelJson(patch) });
+        } catch {
+            // Same-account fan-out is best effort; the leader's local refresh
+            // and the next visibility/full-snapshot recovery remain valid.
+        }
     };
 
     const realtimeRefreshQueue = createRateLimitedRefreshQueue(
