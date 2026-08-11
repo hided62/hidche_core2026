@@ -17,6 +17,10 @@
         "./auth/sanctions": {
             "types": "./dist/auth/sanctions.d.ts",
             "default": "./dist/auth/sanctions.js"
+        },
+        "./auth/gameSessionTransfer": {
+            "types": "./dist/auth/gameSessionTransfer.d.ts",
+            "default": "./dist/auth/gameSessionTransfer.js"
         }
     },
     "scripts": {

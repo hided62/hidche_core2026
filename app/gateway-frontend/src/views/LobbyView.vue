@@ -3,6 +3,7 @@ import { computed, ref, onMounted, watch } from 'vue';
 import { useRouter } from 'vue-router';
 import type { inferRouterOutputs } from '@trpc/server';
 import type { AppRouter } from '@sammo-ts/gateway-api';
+import { writeGameSessionTransfer } from '@sammo-ts/common/auth/gameSessionTransfer';
 import DefaultLayout from '../layouts/DefaultLayout.vue';
 import MapPreview from '../components/MapPreview.vue';
 import { useToast } from '../composables/useToast';
@@ -227,8 +228,21 @@ const resolveGameUrl = (path: string, profileName: string, gameToken: string): s
     const base = new URL(baseUrl, window.location.origin);
     const normalizedPath = path.replace(/^\//, '');
     const url = new URL(normalizedPath, base);
-    url.searchParams.set('profile', profileName);
-    url.searchParams.set('gameToken', gameToken);
+    let transferredInSessionStorage = false;
+    if (url.origin === window.location.origin) {
+        try {
+            transferredInSessionStorage = writeGameSessionTransfer(window.sessionStorage, {
+                profile: profileName,
+                gatewayToken: gameToken,
+            });
+        } catch {
+            transferredInSessionStorage = false;
+        }
+    }
+    if (!transferredInSessionStorage) {
+        url.searchParams.set('profile', profileName);
+        url.searchParams.set('gameToken', gameToken);
+    }
     return url.toString();
 };
 
@@ -571,7 +585,10 @@ const handleEnter = async (profile: LobbyProfile, targetPath: string) => {
                                 :map-layout="selectedMapPreview.mapLayout"
                                 mode="detail"
                             />
-                            <div v-if="profileDetails[selectedMapProfile.profileName]" class="text-xs text-zinc-400 mt-2">
+                            <div
+                                v-if="profileDetails[selectedMapProfile.profileName]"
+                                class="text-xs text-zinc-400 mt-2"
+                            >
                                 유저 {{ profileDetails[selectedMapProfile.profileName]?.userCnt ?? '-' }} /
                                 {{ profileDetails[selectedMapProfile.profileName]?.maxUserCnt ?? '-' }} ·
                                 {{ profileDetails[selectedMapProfile.profileName]?.nationCnt ?? '-' }}국 ·

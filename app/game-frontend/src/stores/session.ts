@@ -1,4 +1,5 @@
 import { defineStore } from 'pinia';
+import { takeGameSessionTransfer, type GameSessionTransfer } from '@sammo-ts/common/auth/gameSessionTransfer';
 import { gatewayTrpc } from '../utils/gatewayTrpc';
 import { trpc as gameTrpc } from '../utils/trpc';
 
@@ -55,6 +56,17 @@ const readQueryParam = (key: string): string | null => {
     url.searchParams.delete(key);
     window.history.replaceState({}, '', url.toString());
     return value;
+};
+
+const readTransferredGameSession = (): GameSessionTransfer | null => {
+    if (typeof window === 'undefined') {
+        return null;
+    }
+    try {
+        return takeGameSessionTransfer(window.sessionStorage);
+    } catch {
+        return null;
+    }
 };
 
 const isAccessToken = (token: string | null): boolean => {
@@ -192,6 +204,12 @@ export const useSessionStore = defineStore('session', {
             const gatewayTokenFromQuery = readQueryParam('gameToken');
             if (gatewayTokenFromQuery) {
                 this.setGameToken(gatewayTokenFromQuery);
+            }
+
+            const transferredGameSession = readTransferredGameSession();
+            if (transferredGameSession) {
+                this.setProfile(transferredGameSession.profile);
+                this.setGameToken(transferredGameSession.gatewayToken);
             }
 
             const storedToken = this.sessionToken ?? readStorage(SESSION_TOKEN_KEY);
