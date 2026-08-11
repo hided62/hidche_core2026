@@ -1088,6 +1088,44 @@ export const adminRouter = router({
                     .sort((left, right) => right.createdAt.localeCompare(left.createdAt));
                 return operations.slice(0, input?.limit ?? 50);
             }),
+        logs: adminProcedure
+            .input(
+                z.object({
+                    id: z.string().uuid(),
+                    afterCursor: z.string().regex(/^\d+$/u).optional(),
+                    limit: z.number().int().min(1).max(500).default(200),
+                    timeoutMs: z.number().int().min(0).max(25_000).default(20_000),
+                })
+            )
+            .query(async ({ ctx, input }) => {
+                const adminAuth = requireAdminAuth(ctx);
+                const initialOperation = await ctx.profiles.getOperation(input.id);
+                if (!initialOperation) {
+                    throw new TRPCError({ code: 'NOT_FOUND', message: 'Profile operation not found.' });
+                }
+                if (!canReadProfile(adminAuth, initialOperation.profileName)) {
+                    throw new TRPCError({ code: 'FORBIDDEN', message: 'Permission denied.' });
+                }
+                const deadline = Date.now() + input.timeoutMs;
+                while (true) {
+                    const [operation, entries] = await Promise.all([
+                        ctx.profiles.getOperation(input.id),
+                        ctx.profiles.listOperationLogs(input.id, input.afterCursor, input.limit),
+                    ]);
+                    if (!operation) {
+                        throw new TRPCError({ code: 'NOT_FOUND', message: 'Profile operation not found.' });
+                    }
+                    const terminal = ['SUCCEEDED', 'FAILED', 'CANCELLED'].includes(operation.status);
+                    if (entries.length || terminal || Date.now() >= deadline) {
+                        return {
+                            operation,
+                            entries,
+                            nextCursor: entries.at(-1)?.cursor ?? input.afterCursor,
+                        };
+                    }
+                    await new Promise<void>((resolve) => setTimeout(resolve, 250));
+                }
+            }),
         requestReset: adminProcedure
             .input(
                 z.object({

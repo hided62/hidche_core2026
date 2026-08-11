@@ -280,11 +280,25 @@ model GatewayOperation {
   attempts          Int                    @default(0)
   createdAt         DateTime               @default(now()) @map("created_at")
   updatedAt         DateTime               @updatedAt @map("updated_at")
+  logs              GatewayOperationLog[]
 
   @@index([status, scheduledAt, createdAt])
   @@index([status, leaseUntil, createdAt])
   @@index([profileName, createdAt])
   @@map("gateway_operation")
+}
+
+model GatewayOperationLog {
+  id          BigInt           @id @default(autoincrement())
+  operationId String           @map("operation_id")
+  level       String
+  phase       String
+  message     String           @db.Text
+  createdAt   DateTime         @default(now()) @map("created_at")
+  operation   GatewayOperation @relation(fields: [operationId], references: [id], onDelete: Cascade)
+
+  @@index([operationId, id])
+  @@map("gateway_operation_log")
 }
 
 model GatewayReleaseState {

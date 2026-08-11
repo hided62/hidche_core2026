@@ -52,6 +52,7 @@ const createHarness = (
     const started: ProcessDefinition[] = [];
     const stopped: string[] = [];
     const deleted: string[] = [];
+    const logs: Array<{ phase: string; message: string; level: string }> = [];
 
     const repository: GatewayProfileRepository = {
         listProfiles: async () => [profile],
@@ -72,6 +73,16 @@ const createHarness = (
         listOperations: async () => [],
         listActiveOperationProfileNames: async () => [profile.profileName],
         getOperation: async () => operation,
+        listOperationLogs: async () => [],
+        appendOperationLog: async (operationId, input) => {
+            logs.push(input);
+            return {
+                cursor: String(logs.length),
+                operationId,
+                createdAt: '2026-08-11T00:00:00.000Z',
+                ...input,
+            };
+        },
         createOperation: async () => operation,
         claimNextOperation: async () => {
             const result = nextOperation;
@@ -146,7 +157,7 @@ const createHarness = (
         adminActionIntervalMs: 60_000,
     });
 
-    return { orchestrator, statuses, completions, completionFields, started, stopped, deleted };
+    return { orchestrator, statuses, completions, completionFields, started, stopped, deleted, logs };
 };
 
 describe('GatewayOrchestrator first-class operations', () => {

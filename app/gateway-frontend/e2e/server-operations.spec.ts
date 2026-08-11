@@ -33,6 +33,9 @@ type FixtureState = {
     }>;
     runtimeRunning: boolean;
     requestBodies: Array<{ operation: string; body: unknown }>;
+    profileLogPollCount?: number;
+    profileLogProgress?: boolean;
+    profileLogsEmpty?: boolean;
     gatewayLogPollCount?: number;
     gatewayLogsEmpty?: boolean;
     capabilities?: Array<{ permission: string; scope: 'GLOBAL' | 'PROFILE'; scopes: string[] }>;
@@ -136,6 +139,9 @@ const installFixture = async (page: Page, state: FixtureState) => {
             await route.abort('failed');
             return;
         }
+        if (names.includes('admin.operations.logs') && !state.profileLogProgress) {
+            await new Promise((resolve) => setTimeout(resolve, 50));
+        }
         const results = names.map((name) => {
             if (route.request().method() === 'POST') {
                 state.requestBodies.push({ operation: name, body });
@@ -166,6 +172,54 @@ const installFixture = async (page: Page, state: FixtureState) => {
             }
             if (name === 'admin.operations.list') {
                 return response(state.operations);
+            }
+            if (name === 'admin.operations.logs') {
+                const operation = state.operations[0];
+                if (!operation) throw new Error('Profile operation fixture is missing');
+                state.profileLogPollCount = (state.profileLogPollCount ?? 0) + 1;
+                if (['SUCCEEDED', 'FAILED', 'CANCELLED'].includes(operation.status)) {
+                    return response({ operation, entries: [] });
+                }
+                if (!state.profileLogProgress) {
+                    return response({ operation, entries: [] });
+                }
+                if (state.profileLogsEmpty) {
+                    return response({ operation, entries: [] });
+                }
+                const completed = state.profileLogPollCount > 1;
+                const nextOperation = {
+                    ...operation,
+                    status: completed ? ('SUCCEEDED' as const) : ('RUNNING' as const),
+                };
+                if (completed) state.operations[0] = nextOperation;
+                return response({
+                    operation: nextOperation,
+                    entries: completed
+                        ? [
+                              {
+                                  cursor: '2',
+                                  operationId: operation.id,
+                                  level: 'OUTPUT',
+                                  phase: operation.type === 'RESET' ? 'seed' : 'build',
+                                  message:
+                                      operation.type === 'RESET'
+                                          ? '시나리오 초기 데이터 생성을 완료했습니다.'
+                                          : 'game-frontend build complete',
+                                  createdAt: '2026-08-01T01:00:02.000Z',
+                              },
+                          ]
+                        : [
+                              {
+                                  cursor: '1',
+                                  operationId: operation.id,
+                                  level: 'INFO',
+                                  phase: 'build',
+                                  message: `${operation.profileName} 구성 요소를 빌드합니다.`,
+                                  createdAt: '2026-08-01T01:00:01.000Z',
+                              },
+                          ],
+                    nextCursor: completed ? '2' : '1',
+                });
             }
             if (name === 'admin.releases.gatewayState') {
                 return response({
@@ -336,7 +390,13 @@ const installFixture = async (page: Page, state: FixtureState) => {
 test('separates branch and commit semantics and submits a reset from the dedicated page', async ({
     page,
 }, testInfo) => {
-    const state: FixtureState = { operations: [], gatewayOperations: [], runtimeRunning: false, requestBodies: [] };
+    const state: FixtureState = {
+        operations: [],
+        gatewayOperations: [],
+        runtimeRunning: false,
+        requestBodies: [],
+        profileLogProgress: true,
+    };
     await installFixture(page, state);
     page.on('dialog', (dialog) => dialog.accept());
 
@@ -415,10 +475,15 @@ test('separates branch and commit semantics and submits a reset from the dedicat
 
     await expect(page.getByText('초기화 작업을 등록했습니다.').first()).toBeVisible();
     await expect(page.getByTestId('operations-table')).toContainText('RESET');
+    await expect(page.getByTestId('profile-operation-log-panel')).toBeVisible();
+    await expect(page.getByTestId('profile-operation-log')).toContainText('che:2 구성 요소를 빌드합니다.');
+    await expect(page.getByTestId('profile-operation-log')).toContainText('시나리오 초기 데이터 생성을 완료했습니다.');
+    await expect(page.getByTestId('profile-operation-log-status')).toContainText('SUCCEEDED');
     const resetRequest = state.requestBodies.find((entry) => entry.operation === 'admin.operations.requestReset');
     expect(JSON.stringify(resetRequest?.body)).toContain('"sourceMode":"COMMIT"');
     expect(JSON.stringify(resetRequest?.body)).toContain('0123456789abcdef0123456789abcdef01234567');
     expect(JSON.stringify(resetRequest?.body)).toContain('"scenarioId":5');
+    await page.screenshot({ path: testInfo.outputPath('reset-operation-log-desktop.png'), fullPage: true });
 
     await page.setViewportSize({ width: 390, height: 844 });
     const mobileGeometry = await page
@@ -449,7 +514,13 @@ test('separates branch and commit semantics and submits a reset from the dedicat
 });
 
 test('separates DB-preserving profile deployment from DB reset', async ({ page }) => {
-    const state: FixtureState = { operations: [], gatewayOperations: [], runtimeRunning: true, requestBodies: [] };
+    const state: FixtureState = {
+        operations: [],
+        gatewayOperations: [],
+        runtimeRunning: true,
+        requestBodies: [],
+        profileLogProgress: true,
+    };
     await installFixture(page, state);
     page.on('dialog', (dialog) => dialog.accept());
 
@@ -464,6 +535,10 @@ test('separates DB-preserving profile deployment from DB reset', async ({ page }
 
     await expect(page.getByText('DB 보존 배포 작업을 등록했습니다.').first()).toBeVisible();
     await expect(page.getByTestId('operations-table')).toContainText('DEPLOY');
+    await expect(page.getByTestId('profile-operation-log-panel')).toBeVisible();
+    await expect(page.getByTestId('profile-operation-log')).toContainText('che:2 구성 요소를 빌드합니다.');
+    await expect(page.getByTestId('profile-operation-log')).toContainText('game-frontend build complete');
+    await expect(page.getByTestId('profile-operation-log-status')).toContainText('SUCCEEDED');
     expect(state.requestBodies.some((entry) => entry.operation === 'admin.operations.requestDeploy')).toBe(true);
     expect(state.requestBodies.some((entry) => entry.operation === 'admin.operations.requestReset')).toBe(false);
 });
@@ -766,16 +841,16 @@ test('renders a failed reset, retries it as a new operation, and reaches success
     page.on('dialog', (dialog) => dialog.accept());
 
     await page.goto('admin/servers/che%3A2/scenario');
-    await expect(page.getByText('FAILED', { exact: true })).toBeVisible();
+    await expect(page.getByTestId('operations-table').getByText('FAILED', { exact: true })).toBeVisible();
     await expect(page.getByRole('cell', { name: 'fedcba987654', exact: true })).toBeVisible();
-    const failure = page.getByText(longError);
+    const failure = page.getByTestId('operations-table').getByText(longError);
     await expect(failure).toBeVisible();
     expect(await failure.evaluate((element) => getComputedStyle(element).color)).toBe('oklch(0.704 0.191 22.216)');
 
     await page.getByRole('button', { name: '재시도' }).click();
     await expect(page.getByText('재시도 작업을 등록했습니다.').first()).toBeVisible();
-    await expect(page.getByText('FAILED', { exact: true })).toBeVisible();
-    await expect(page.getByText('QUEUED', { exact: true })).toBeVisible();
+    await expect(page.getByTestId('operations-table').getByText('FAILED', { exact: true })).toBeVisible();
+    await expect(page.getByTestId('operations-table').getByText('QUEUED', { exact: true })).toBeVisible();
     await expect(page.getByTestId('operations-table').locator('tbody tr')).toHaveCount(2);
 
     state.operations[0] = {
@@ -787,7 +862,7 @@ test('renders a failed reset, retries it as a new operation, and reaches success
     };
     state.runtimeRunning = true;
     await page.getByTestId('refresh-operations').click();
-    await expect(page.getByText('SUCCEEDED', { exact: true })).toBeVisible();
+    await expect(page.getByTestId('operations-table').getByText('SUCCEEDED', { exact: true })).toBeVisible();
     await expect(page.getByText('운영 프로필', { exact: true })).toHaveCount(0);
 
     await page.screenshot({ path: testInfo.outputPath('failed-retry-succeeded-desktop.png'), fullPage: true });

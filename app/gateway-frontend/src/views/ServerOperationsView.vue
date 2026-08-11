@@ -79,6 +79,12 @@ type GatewayReleaseLog = {
 };
 const scenarios = ref<Scenario[]>([]);
 const operations = ref<Operation[]>([]);
+const selectedProfileOperationId = ref('');
+const profileOperationLogs = ref<GatewayReleaseLog[]>([]);
+const profileOperationLogCursor = ref<string>();
+const profileOperationLogStatus = ref('');
+const profileOperationLogConnection = ref<'idle' | 'connected' | 'reconnecting'>('idle');
+const profileOperationLogViewport = ref<HTMLElement>();
 const gatewayReleaseState = ref<GatewayReleaseState | null>(null);
 const gatewayReleaseOperations = ref<GatewayReleaseOperation[]>([]);
 const selectedGatewayOperationId = ref('');
@@ -104,6 +110,7 @@ const resetDefaultsSource = ref<'SYSTEM' | 'PROFILE'>('SYSTEM');
 let pollTimer: ReturnType<typeof setInterval> | undefined;
 let stateRequestInFlight = false;
 let releaseLogLoopGeneration = 0;
+let profileLogLoopGeneration = 0;
 let componentMounted = false;
 
 const form = reactive({
@@ -140,6 +147,20 @@ const gatewayForm = reactive({
 const selectedGatewayOperation = computed(
     () => gatewayReleaseOperations.value.find((operation) => operation.id === selectedGatewayOperationId.value) ?? null
 );
+const selectedProfileOperation = computed(
+    () => operations.value.find((operation) => operation.id === selectedProfileOperationId.value) ?? null
+);
+const profileOperationLogEmptyMessage = computed(() => {
+    const operation = selectedProfileOperation.value;
+    const status = profileOperationLogStatus.value || operation?.status;
+    if (!operation || !status || ['QUEUED', 'RUNNING'].includes(status)) {
+        return '오케스트레이터 로그를 기다리고 있습니다…';
+    }
+    if (operation.error) {
+        return `이 작업에는 진행 로그가 기록되지 않았습니다. 작업 오류: ${operation.error}`;
+    }
+    return '이 작업에는 진행 로그가 기록되지 않았습니다. 로그 기능 적용 전 작업일 수 있습니다.';
+});
 const gatewayReleaseLogEmptyMessage = computed(() => {
     const operation = selectedGatewayOperation.value;
     const status = gatewayReleaseLogStatus.value || operation?.status;
@@ -289,6 +310,15 @@ const loadState = async (quiet = false) => {
                 limit: 100,
             });
             operations.value = operationResult as Operation[];
+            const active = operations.value.find((operation) => ['QUEUED', 'RUNNING'].includes(operation.status));
+            if (active && selectedProfileOperationId.value !== active.id) {
+                selectedProfileOperationId.value = active.id;
+            } else if (
+                !selectedProfileOperationId.value ||
+                !operations.value.some((operation) => operation.id === selectedProfileOperationId.value)
+            ) {
+                selectedProfileOperationId.value = operations.value[0]?.id ?? '';
+            }
         }
     } catch (error) {
         errorMessage.value = error instanceof Error ? error.message : '운영 상태를 불러오지 못했습니다.';
@@ -296,6 +326,61 @@ const loadState = async (quiet = false) => {
         loading.value = false;
         stateRequestInFlight = false;
     }
+};
+
+const scrollProfileOperationLogToEnd = async () => {
+    await nextTick();
+    const viewport = profileOperationLogViewport.value;
+    if (viewport) viewport.scrollTop = viewport.scrollHeight;
+};
+
+const pollProfileOperationLogs = async (operationId: string, generation: number) => {
+    while (
+        componentMounted &&
+        generation === profileLogLoopGeneration &&
+        selectedProfileOperationId.value === operationId
+    ) {
+        try {
+            const result = await adminClient.operations.logs.query({
+                id: operationId,
+                afterCursor: profileOperationLogCursor.value,
+                limit: 200,
+                timeoutMs: 20_000,
+            });
+            if (generation !== profileLogLoopGeneration || selectedProfileOperationId.value !== operationId) return;
+            profileOperationLogConnection.value = 'connected';
+            const entries = result.entries as GatewayReleaseLog[];
+            if (entries.length) {
+                const known = new Set(profileOperationLogs.value.map((entry) => entry.cursor));
+                profileOperationLogs.value.push(...entries.filter((entry) => !known.has(entry.cursor)));
+                profileOperationLogs.value = profileOperationLogs.value.slice(-1_000);
+                profileOperationLogCursor.value = result.nextCursor;
+                await scrollProfileOperationLogToEnd();
+            }
+            const operation = result.operation as Operation;
+            profileOperationLogStatus.value = operation.status;
+            const index = operations.value.findIndex((entry) => entry.id === operation.id);
+            if (index >= 0) operations.value[index] = operation;
+            if (['SUCCEEDED', 'FAILED', 'CANCELLED'].includes(operation.status)) return;
+        } catch {
+            if (generation !== profileLogLoopGeneration || !componentMounted) return;
+            profileOperationLogConnection.value = 'reconnecting';
+            await new Promise<void>((resolve) => setTimeout(resolve, 1_000));
+        }
+    }
+};
+
+const selectProfileOperation = (operationId: string) => {
+    if (selectedProfileOperationId.value === operationId) {
+        profileLogLoopGeneration += 1;
+        profileOperationLogs.value = [];
+        profileOperationLogCursor.value = undefined;
+        profileOperationLogStatus.value = '';
+        profileOperationLogConnection.value = 'idle';
+        void pollProfileOperationLogs(operationId, profileLogLoopGeneration);
+        return;
+    }
+    selectedProfileOperationId.value = operationId;
 };
 
 const scrollReleaseLogToEnd = async () => {
@@ -372,12 +457,13 @@ const requestDeploy = async () => {
     }
     submitting.value = true;
     try {
-        await adminClient.operations.requestDeploy.mutate({
+        const operation = await adminClient.operations.requestDeploy.mutate({
             profileName: selectedProfileName.value,
             sourceMode: form.sourceMode,
             sourceRef: form.sourceRef.trim(),
             reason: form.reason.trim() || undefined,
         });
+        selectedProfileOperationId.value = operation.id;
         message.value = 'DB 보존 배포 작업을 등록했습니다.';
         await loadState(true);
     } catch (error) {
@@ -491,7 +577,7 @@ const requestReset = async () => {
     }
     submitting.value = true;
     try {
-        await adminClient.operations.requestReset.mutate({
+        const operation = await adminClient.operations.requestReset.mutate({
             profileName: selectedProfileName.value,
             sourceMode: form.sourceMode,
             sourceRef: form.sourceMode === 'CURRENT' ? undefined : form.sourceRef.trim(),
@@ -518,6 +604,7 @@ const requestReset = async () => {
                 preopenAt: toIso(form.preopenAt),
             },
         });
+        selectedProfileOperationId.value = operation.id;
         message.value = form.scheduledAt ? '예약 초기화 작업을 등록했습니다.' : '초기화 작업을 등록했습니다.';
         await loadState(true);
     } catch (error) {
@@ -534,6 +621,7 @@ const cancelOperation = async (operation: Operation) => {
     }
     try {
         await adminClient.operations.cancel.mutate({ id: operation.id });
+        selectedProfileOperationId.value = operation.id;
         message.value = '작업을 취소했습니다.';
         await loadState(true);
     } catch (error) {
@@ -547,13 +635,23 @@ const retryOperation = async (operation: Operation) => {
         return;
     }
     try {
-        await adminClient.operations.retry.mutate({ id: operation.id });
+        const retried = await adminClient.operations.retry.mutate({ id: operation.id });
+        selectedProfileOperationId.value = retried.id;
         message.value = '재시도 작업을 등록했습니다.';
         await loadState(true);
     } catch (error) {
         errorMessage.value = error instanceof Error ? error.message : '작업 재시도에 실패했습니다.';
     }
 };
+
+watch(selectedProfileOperationId, (operationId) => {
+    profileLogLoopGeneration += 1;
+    profileOperationLogs.value = [];
+    profileOperationLogCursor.value = undefined;
+    profileOperationLogStatus.value = '';
+    profileOperationLogConnection.value = operationId ? 'connected' : 'idle';
+    if (operationId && componentMounted) void pollProfileOperationLogs(operationId, profileLogLoopGeneration);
+});
 
 watch(selectedGatewayOperationId, (operationId) => {
     releaseLogLoopGeneration += 1;
@@ -589,6 +687,7 @@ onMounted(async () => {
 
 onBeforeUnmount(() => {
     componentMounted = false;
+    profileLogLoopGeneration += 1;
     releaseLogLoopGeneration += 1;
     if (pollTimer) {
         clearInterval(pollTimer);
@@ -1073,6 +1172,64 @@ onBeforeUnmount(() => {
                 </div>
             </section>
 
+            <section
+                v-if="mode !== 'gateway' && selectedProfileOperationId"
+                class="overflow-hidden rounded border border-zinc-700 bg-zinc-950"
+                data-testid="profile-operation-log-panel"
+                aria-live="polite"
+            >
+                <div class="flex flex-wrap items-center justify-between gap-2 border-b border-zinc-800 px-4 py-3">
+                    <div>
+                        <h3 class="text-sm font-semibold text-zinc-100">빌드·작업 로그</h3>
+                        <p class="mt-1 font-mono text-[11px] text-zinc-500">
+                            {{ selectedProfileOperationId }}
+                        </p>
+                    </div>
+                    <div class="flex items-center gap-2 text-xs">
+                        <span
+                            class="h-2 w-2 rounded-full"
+                            :class="
+                                profileOperationLogConnection === 'reconnecting'
+                                    ? 'animate-pulse bg-amber-400'
+                                    : ['QUEUED', 'RUNNING'].includes(
+                                            profileOperationLogStatus || selectedProfileOperation?.status || ''
+                                        )
+                                      ? 'animate-pulse bg-emerald-400'
+                                      : 'bg-zinc-500'
+                            "
+                        ></span>
+                        <span data-testid="profile-operation-log-status">
+                            {{ profileOperationLogStatus || selectedProfileOperation?.status || '연결 중' }}
+                            <template v-if="profileOperationLogConnection === 'reconnecting'"> · 재연결 중</template>
+                        </span>
+                    </div>
+                </div>
+                <div
+                    ref="profileOperationLogViewport"
+                    class="h-72 overflow-y-auto px-4 py-3 font-mono text-xs leading-5"
+                    data-testid="profile-operation-log"
+                >
+                    <div v-if="!profileOperationLogs.length" class="text-zinc-500">
+                        {{ profileOperationLogEmptyMessage }}
+                    </div>
+                    <div
+                        v-for="entry in profileOperationLogs"
+                        :key="entry.cursor"
+                        :class="
+                            entry.level === 'ERROR'
+                                ? 'text-red-300'
+                                : entry.level === 'OUTPUT'
+                                  ? 'text-zinc-300'
+                                  : 'text-cyan-300'
+                        "
+                    >
+                        <span class="text-zinc-600">{{ formatLogTime(entry.createdAt) }}</span>
+                        <span class="ml-2 text-violet-300">[{{ entry.phase }}]</span>
+                        <span class="ml-2 whitespace-pre-wrap break-all">{{ entry.message }}</span>
+                    </div>
+                </div>
+            </section>
+
             <section v-if="mode !== 'gateway'" class="rounded-lg border border-zinc-800 bg-zinc-900 p-5">
                 <div class="mb-4 flex items-center justify-between">
                     <h3 class="text-lg font-semibold">작업 이력</h3>
@@ -1091,7 +1248,7 @@ onBeforeUnmount(() => {
                                 <th class="p-2">해석 커밋</th>
                                 <th class="p-2">요청자/사유</th>
                                 <th class="p-2">완료/오류</th>
-                                <th class="p-2"></th>
+                                <th class="p-2">동작</th>
                             </tr>
                         </thead>
                         <tbody>
@@ -1129,20 +1286,36 @@ onBeforeUnmount(() => {
                                     </div>
                                 </td>
                                 <td class="p-2">
-                                    <button
-                                        v-if="operation.status === 'QUEUED'"
-                                        class="rounded border border-red-800 px-2 py-1 text-xs text-red-300 hover:bg-red-950"
-                                        @click="cancelOperation(operation)"
-                                    >
-                                        취소
-                                    </button>
-                                    <button
-                                        v-else-if="operation.status === 'FAILED' || operation.status === 'CANCELLED'"
-                                        class="rounded border border-amber-700 px-2 py-1 text-xs text-amber-300 hover:bg-amber-950"
-                                        @click="retryOperation(operation)"
-                                    >
-                                        재시도
-                                    </button>
+                                    <div class="flex flex-wrap gap-2">
+                                        <button
+                                            type="button"
+                                            class="rounded border border-zinc-700 px-2 py-1 text-xs text-zinc-300 hover:bg-zinc-800"
+                                            :class="
+                                                operation.id === selectedProfileOperationId
+                                                    ? 'border-violet-500 text-violet-200'
+                                                    : ''
+                                            "
+                                            @click="selectProfileOperation(operation.id)"
+                                        >
+                                            로그
+                                        </button>
+                                        <button
+                                            v-if="operation.status === 'QUEUED'"
+                                            class="rounded border border-red-800 px-2 py-1 text-xs text-red-300 hover:bg-red-950"
+                                            @click="cancelOperation(operation)"
+                                        >
+                                            취소
+                                        </button>
+                                        <button
+                                            v-else-if="
+                                                operation.status === 'FAILED' || operation.status === 'CANCELLED'
+                                            "
+                                            class="rounded border border-amber-700 px-2 py-1 text-xs text-amber-300 hover:bg-amber-950"
+                                            @click="retryOperation(operation)"
+                                        >
+                                            재시도
+                                        </button>
+                                    </div>
                                 </td>
                             </tr>
                             <tr v-if="operations.length === 0">

@@ -6,6 +6,7 @@ import { InMemoryGatewaySessionService } from '../src/auth/inMemorySessionServic
 import { createInMemoryUserRepository } from '../src/auth/inMemoryUserRepository.js';
 import type {
     GatewayOperationCreateInput,
+    GatewayOperationRecord,
     GatewayProfileRecord,
     GatewayProfileRepository,
 } from '../src/orchestrator/profileRepository.js';
@@ -30,6 +31,8 @@ const buildCaller = async (
         initialProfileStatus?: GatewayProfileRecord['status'];
         profileScenario?: string;
         profileMeta?: GatewayProfileRecord['meta'];
+        initialOperation?: GatewayOperationRecord;
+        profileLogVisibilityAfterPolls?: number;
         releaseLogVisibilityAfterPolls?: number;
     } = {}
 ) => {
@@ -49,6 +52,14 @@ const buildCaller = async (
     const createdInputs: GatewayOperationCreateInput[] = [];
     const createdReleaseInputs: GatewayReleaseOperationCreateInput[] = [];
     const appendedReleaseLogs: Array<{ operationId: string; phase: string; message: string }> = [];
+    const profileLogs: Array<{
+        cursor: string;
+        operationId: string;
+        level: 'INFO' | 'OUTPUT' | 'ERROR';
+        phase: string;
+        message: string;
+        createdAt: string;
+    }> = [];
     const releaseLogs = [
         {
             cursor: '1',
@@ -60,7 +71,9 @@ const buildCaller = async (
         },
     ];
     let releaseLogPollCount = 0;
+    let profileLogPollCount = 0;
     const operationRecords = new Map<string, Awaited<ReturnType<GatewayProfileRepository['createOperation']>>>();
+    if (options.initialOperation) operationRecords.set(options.initialOperation.id, options.initialOperation);
     const createdRuntimeActions: Array<Record<string, unknown>> = [];
     const flushes: Array<{ userId: string; reason?: string; iconRevision?: string }> = [];
     const updatedStatuses: GatewayProfileRecord['status'][] = [];
@@ -102,6 +115,28 @@ const buildCaller = async (
         clearWorkspaceUsage: async () => {},
         listOperations: async () => [],
         getOperation: async (id) => operationRecords.get(id) ?? null,
+        listOperationLogs: async (id, afterCursor) => {
+            profileLogPollCount += 1;
+            if (
+                options.profileLogVisibilityAfterPolls !== undefined &&
+                profileLogPollCount < options.profileLogVisibilityAfterPolls
+            ) {
+                return [];
+            }
+            return profileLogs.filter(
+                (entry) => entry.operationId === id && (!afterCursor || BigInt(entry.cursor) > BigInt(afterCursor))
+            );
+        },
+        appendOperationLog: async (operationId, input) => {
+            const entry = {
+                cursor: String(profileLogs.length + 1),
+                operationId,
+                createdAt: new Date(Date.UTC(2026, 7, 1, 0, 0, profileLogs.length + 1)).toISOString(),
+                ...input,
+            };
+            profileLogs.push(entry);
+            return entry;
+        },
         createOperation: async (input) => {
             createdInputs.push(input);
             const operation = await createOperation(input);
@@ -295,6 +330,7 @@ const buildCaller = async (
         createdInputs,
         createdReleaseInputs,
         appendedReleaseLogs,
+        profileLogs,
         createdRuntimeActions,
         users,
         admin,
@@ -306,6 +342,7 @@ const buildCaller = async (
         getRuntimeStateListCount: () => runtimeStateListCount,
         getStoredNotice: () => storedNotice,
         getReleaseLogPollCount: () => releaseLogPollCount,
+        getProfileLogPollCount: () => profileLogPollCount,
         setStoredNotice: (notice: string) => {
             storedNotice = notice;
         },
@@ -699,6 +736,78 @@ describe('admin operation API', () => {
         await expect(harness.caller.admin.capabilities.list()).resolves.toContainEqual(
             expect.objectContaining({ permission: 'admin.scenarios.reset', scopes: ['che:2'] })
         );
+    });
+});
+
+describe('profile operation progress API', () => {
+    it('long-polls durable build logs with the current profile operation state', async () => {
+        const operationId = '33333333-3333-4333-8333-333333333333';
+        const harness = await buildCaller(
+            async (input) => ({
+                id: operationId,
+                profileName: input.profileName,
+                type: 'DEPLOY',
+                status: 'RUNNING',
+                sourceMode: input.sourceMode,
+                sourceRef: input.sourceRef,
+                payload: {},
+                requestedBy: input.requestedBy,
+                createdAt: '2026-08-11T00:00:00.000Z',
+                updatedAt: '2026-08-11T00:00:00.000Z',
+            }),
+            { profileScenario: '1010', profileLogVisibilityAfterPolls: 2 }
+        );
+        await harness.caller.admin.operations.requestDeploy({
+            profileName: 'che:2',
+            sourceMode: 'COMMIT',
+            sourceRef: 'HEAD',
+        });
+        harness.profileLogs.push({
+            cursor: '1',
+            operationId,
+            level: 'OUTPUT',
+            phase: 'build',
+            message: 'game-frontend build complete',
+            createdAt: '2026-08-11T00:00:01.000Z',
+        });
+
+        await expect(
+            harness.caller.admin.operations.logs({ id: operationId, timeoutMs: 1_000 })
+        ).resolves.toMatchObject({
+            nextCursor: '1',
+            operation: { status: 'RUNNING', profileName: 'che:2' },
+            entries: [{ cursor: '1', phase: 'build', message: 'game-frontend build complete' }],
+        });
+        expect(harness.getProfileLogPollCount()).toBe(2);
+    });
+
+    it('does not expose operation logs outside the caller profile scope', async () => {
+        const operationId = '33333333-3333-4333-8333-333333333333';
+        const harness = await buildCaller(
+            async () => {
+                throw new Error('not used');
+            },
+            {
+                adminRoles: ['admin.scenarios.reset:hwe:1'],
+                firstUserIsAdmin: false,
+                initialOperation: {
+                    id: operationId,
+                    profileName: 'che:2',
+                    type: 'RESET',
+                    status: 'RUNNING',
+                    sourceMode: 'COMMIT',
+                    sourceRef: '1111111111111111111111111111111111111111',
+                    payload: {},
+                    requestedBy: 'admin',
+                    createdAt: '2026-08-11T00:00:00.000Z',
+                    updatedAt: '2026-08-11T00:00:00.000Z',
+                },
+            }
+        );
+
+        await expect(harness.caller.admin.operations.logs({ id: operationId, timeoutMs: 0 })).rejects.toMatchObject({
+            code: 'FORBIDDEN',
+        });
     });
 });
 

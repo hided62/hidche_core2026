@@ -75,6 +75,7 @@ describe('profile DEPLOY operation', () => {
         let nextOperation: GatewayOperationRecord | null = operation;
         const patches: GatewayClaimedProfileUpdate[] = [];
         const completions: string[] = [];
+        const logs: Array<{ phase: string; message: string; level: string }> = [];
         const repository: GatewayProfileRepository = {
             listProfiles: async () => [profile],
             getProfile: async () => profile,
@@ -90,6 +91,16 @@ describe('profile DEPLOY operation', () => {
             clearWorkspaceUsage: async () => {},
             listOperations: async () => [],
             getOperation: async () => operation,
+            listOperationLogs: async () => [],
+            appendOperationLog: async (operationId, input) => {
+                logs.push(input);
+                return {
+                    cursor: String(logs.length),
+                    operationId,
+                    createdAt: '2026-08-11T00:00:00.000Z',
+                    ...input,
+                };
+            },
             createOperation: async () => operation,
             claimNextOperation: async () => {
                 const value = nextOperation;
@@ -138,8 +149,17 @@ describe('profile DEPLOY operation', () => {
             repository,
             processManager,
             buildRunner: {
-                run: async (commands) => {
+                run: async (commands, onProgress) => {
                     commandGroups.push(commands);
+                    for (const command of commands) {
+                        await onProgress?.({ type: 'COMMAND_START', command });
+                        await onProgress?.({
+                            type: 'OUTPUT',
+                            stream: 'stdout',
+                            message: 'built profile with postgresql://user:pass@integration.invalid/sammo',
+                        });
+                        await onProgress?.({ type: 'COMMAND_END', command, exitCode: 0 });
+                    }
                     return { ok: true, exitCode: 0, output: '' };
                 },
             },
@@ -149,7 +169,7 @@ describe('profile DEPLOY operation', () => {
                 redisKeyPrefix: 'sammo:test',
                 gameTokenSecret: 'test-secret',
                 gatewayInternalApiUrl: 'http://127.0.0.1:15001',
-                baseEnv: { DATABASE_URL: 'postgresql://integration.invalid/sammo' },
+                baseEnv: { DATABASE_URL: 'postgresql://user:pass@integration.invalid/sammo' },
             },
             reconcileIntervalMs: 60_000,
             scheduleIntervalMs: 60_000,
@@ -173,6 +193,17 @@ describe('profile DEPLOY operation', () => {
             buildWorkspace: workspace,
         });
         expect(completions).toEqual(['SUCCEEDED']);
+        expect(logs).toEqual(
+            expect.arrayContaining([
+                expect.objectContaining({ phase: 'resolve', message: `대상 커밋을 ${SHA}로 고정했습니다.` }),
+                expect.objectContaining({ phase: 'build', level: 'OUTPUT' }),
+                expect.objectContaining({ phase: 'migration', level: 'OUTPUT' }),
+                expect.objectContaining({ phase: 'readiness', message: 'profile readiness 확인을 통과했습니다.' }),
+                expect.objectContaining({ phase: 'complete', message: 'DB 보존 버전 업데이트가 완료되었습니다.' }),
+            ])
+        );
+        expect(logs.map((entry) => entry.message).join('\n')).not.toContain('pass@integration.invalid');
+        expect(logs.map((entry) => entry.message).join('\n')).toContain('[REDACTED]');
         expect([...running].sort()).toEqual([...processNames].sort());
     });
 });
