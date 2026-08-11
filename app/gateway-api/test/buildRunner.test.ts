@@ -7,6 +7,7 @@ import {
     MAX_BUILD_OUTPUT_CHARS,
     PnpmBuildRunner,
     resolveReleaseTurboCacheDir,
+    resolveReleaseTurboConcurrency,
 } from '../src/orchestrator/buildRunner.js';
 
 describe('Turbo release build plan', () => {
@@ -22,6 +23,14 @@ describe('Turbo release build plan', () => {
                 TURBO_CACHE_DIR: '.cache/turbo',
             })
         ).toBe('/srv/core/repository/.cache/turbo');
+    });
+
+    it('defaults to one worker for bounded runtimes and accepts a larger-host override', () => {
+        expect(resolveReleaseTurboConcurrency()).toBe(1);
+        expect(resolveReleaseTurboConcurrency({ RELEASE_TURBO_CONCURRENCY: '2' })).toBe(2);
+        expect(() => resolveReleaseTurboConcurrency({ RELEASE_TURBO_CONCURRENCY: '0' })).toThrow(
+            'RELEASE_TURBO_CONCURRENCY must be a positive integer.'
+        );
     });
 
     it('uses a bounded streaming Turbo build for the selected packages', () => {
@@ -41,7 +50,7 @@ describe('Turbo release build plan', () => {
                 'build',
                 '--filter=@sammo-ts/game-api',
                 '--cache-dir=/srv/core/repository/.turbo/release-cache',
-                '--concurrency=2',
+                '--concurrency=1',
                 '--ui=stream',
                 '--output-logs=new-only',
             ],
