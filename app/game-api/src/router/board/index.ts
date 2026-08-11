@@ -34,6 +34,15 @@ const getBoardActor = async (ctx: Parameters<typeof getMyGeneral>[0]) => {
     return { general, permission };
 };
 
+export const getBoardAccess = async (ctx: Parameters<typeof getMyGeneral>[0]) => {
+    const { permission } = await getBoardActor(ctx);
+    return {
+        permission,
+        canMeeting: permission >= 0,
+        canSecret: permission >= 2,
+    };
+};
+
 const parseDataUrl = (dataUrl: string): Buffer => {
     const match = dataUrl.match(/^data:([^;]+);base64,(.+)$/);
     if (match) {
@@ -82,14 +91,7 @@ const buildAvifBuffer = async (buffer: Buffer, resize: boolean): Promise<Buffer>
 };
 
 export const boardRouter = router({
-    getAccess: authedProcedure.query(async ({ ctx }) => {
-        const { permission } = await getBoardActor(ctx);
-        return {
-            permission,
-            canMeeting: permission >= 0,
-            canSecret: permission >= 2,
-        };
-    }),
+    getAccess: authedProcedure.query(({ ctx }) => getBoardAccess(ctx)),
     getArticles: accessAuthedInputProcedure(z.object({ isSecret: z.boolean() })).query(async ({ ctx, input }) => {
         const { general, permission } = await getBoardActor(ctx);
         assertBoardAccess(permission, input.isSecret);

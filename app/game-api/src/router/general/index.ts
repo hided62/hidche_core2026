@@ -173,6 +173,171 @@ const resolvePenalty = (penalty: unknown): Record<string, number> => {
     return result;
 };
 
+export const getGeneralContext = async (ctx: GameApiContext) => {
+    const userId = ctx.auth?.user.id;
+    if (!userId) {
+        throw new TRPCError({ code: 'UNAUTHORIZED' });
+    }
+
+    const general = await ctx.db.general.findFirst({
+        where: { userId },
+        select: {
+            id: true,
+            name: true,
+            npcState: true,
+            nationId: true,
+            cityId: true,
+            troopId: true,
+            picture: true,
+            imageServer: true,
+            leadership: true,
+            strength: true,
+            intel: true,
+            officerLevel: true,
+            gold: true,
+            rice: true,
+            crew: true,
+            train: true,
+            atmos: true,
+            injury: true,
+            experience: true,
+            dedication: true,
+            age: true,
+            turnTime: true,
+            crewTypeId: true,
+            personalCode: true,
+            specialCode: true,
+            special2Code: true,
+            weaponCode: true,
+            horseCode: true,
+            bookCode: true,
+            itemCode: true,
+            meta: true,
+            penalty: true,
+        },
+    });
+
+    if (!general) {
+        return null;
+    }
+
+    const [city, nation, worldState] = await Promise.all([
+        general.cityId > 0
+            ? ctx.db.city.findUnique({
+                  where: { id: general.cityId },
+                  select: {
+                      id: true,
+                      name: true,
+                      level: true,
+                      nationId: true,
+                      population: true,
+                      populationMax: true,
+                      agriculture: true,
+                      agricultureMax: true,
+                      commerce: true,
+                      commerceMax: true,
+                      security: true,
+                      securityMax: true,
+                      trust: true,
+                      trade: true,
+                      defence: true,
+                      defenceMax: true,
+                      wall: true,
+                      wallMax: true,
+                      region: true,
+                      supplyState: true,
+                      frontState: true,
+                  },
+              })
+            : null,
+        general.nationId > 0
+            ? ctx.db.nation.findUnique({
+                  where: { id: general.nationId },
+                  select: {
+                      id: true,
+                      name: true,
+                      color: true,
+                      level: true,
+                      gold: true,
+                      rice: true,
+                      tech: true,
+                      typeCode: true,
+                      capitalCityId: true,
+                  },
+              })
+            : null,
+        ctx.db.worldState.findFirst({ select: { config: true } }),
+    ]);
+
+    const metaRecord = asRecord(general.meta);
+    const worldConfig = asRecord(worldState?.config);
+    const constValues = asRecord(worldConfig.const ?? worldConfig.consts);
+    const settings = resolveUserSettings(metaRecord);
+    const penalties = resolvePenalty(general.penalty);
+
+    return {
+        general: {
+            id: general.id,
+            name: general.name,
+            npcState: general.npcState,
+            nationId: general.nationId,
+            cityId: general.cityId,
+            troopId: general.troopId,
+            picture: general.picture,
+            imageServer: general.imageServer,
+            officerLevel: general.officerLevel,
+            stats: {
+                leadership: general.leadership,
+                strength: general.strength,
+                intelligence: general.intel,
+            },
+            gold: general.gold,
+            rice: general.rice,
+            crew: general.crew,
+            train: general.train,
+            atmos: general.atmos,
+            injury: general.injury,
+            experience: general.experience,
+            dedication: general.dedication,
+            age: general.age,
+            turnTime: general.turnTime.toISOString(),
+            crewTypeId: general.crewTypeId,
+            traits: {
+                personal: general.personalCode,
+                specialWar: general.specialCode,
+                specialDomestic: general.special2Code,
+            },
+            progression: {
+                experienceLevel: readNumber(metaRecord.explevel, 0),
+                dedicationLevel: readNumber(metaRecord.dedlevel, 0),
+                statExperience: {
+                    leadership: readNumber(metaRecord.leadership_exp, 0),
+                    strength: readNumber(metaRecord.strength_exp, 0),
+                    intelligence: readNumber(metaRecord.intel_exp, 0),
+                },
+                statUpgradeLimit: readNumber(constValues.upgradeLimit, 30),
+                dex: [1, 2, 3, 4, 5].map((index) => readNumber(metaRecord[`dex${index}`], 0)),
+            },
+            items: {
+                horse: normalizeItemCode(general.horseCode),
+                weapon: normalizeItemCode(general.weaponCode),
+                book: normalizeItemCode(general.bookCode),
+                item: normalizeItemCode(general.itemCode),
+            },
+        },
+        iconChoices: ctx.auth?.user.canUseGeneralPicture === false ? [] : (ctx.auth?.user.icons ?? []),
+        canChangeIcon: general.npcState === 0 && ctx.auth?.user.canUseGeneralPicture !== false,
+        iconChangeAvailableAt:
+            typeof metaRecord.generalIconChangedAt === 'string'
+                ? new Date(new Date(metaRecord.generalIconChangedAt).getTime() + 24 * 60 * 60 * 1000).toISOString()
+                : null,
+        city,
+        nation,
+        settings,
+        penalties,
+    };
+};
+
 export const generalRouter = router({
     adjustIcon: engineAuthedProcedure
         .input(
@@ -201,170 +366,7 @@ export const generalRouter = router({
                 input?.clientRequestId ?? ctx.requestId
             );
         }),
-    me: authedProcedure.query(async ({ ctx }) => {
-        const userId = ctx.auth?.user.id;
-        if (!userId) {
-            throw new TRPCError({ code: 'UNAUTHORIZED' });
-        }
-
-        const general = await ctx.db.general.findFirst({
-            where: { userId },
-            select: {
-                id: true,
-                name: true,
-                npcState: true,
-                nationId: true,
-                cityId: true,
-                troopId: true,
-                picture: true,
-                imageServer: true,
-                leadership: true,
-                strength: true,
-                intel: true,
-                officerLevel: true,
-                gold: true,
-                rice: true,
-                crew: true,
-                train: true,
-                atmos: true,
-                injury: true,
-                experience: true,
-                dedication: true,
-                age: true,
-                turnTime: true,
-                crewTypeId: true,
-                personalCode: true,
-                specialCode: true,
-                special2Code: true,
-                weaponCode: true,
-                horseCode: true,
-                bookCode: true,
-                itemCode: true,
-                meta: true,
-                penalty: true,
-            },
-        });
-
-        if (!general) {
-            return null;
-        }
-
-        const [city, nation, worldState] = await Promise.all([
-            general.cityId > 0
-                ? ctx.db.city.findUnique({
-                      where: { id: general.cityId },
-                      select: {
-                          id: true,
-                          name: true,
-                          level: true,
-                          nationId: true,
-                          population: true,
-                          populationMax: true,
-                          agriculture: true,
-                          agricultureMax: true,
-                          commerce: true,
-                          commerceMax: true,
-                          security: true,
-                          securityMax: true,
-                          trust: true,
-                          trade: true,
-                          defence: true,
-                          defenceMax: true,
-                          wall: true,
-                          wallMax: true,
-                          region: true,
-                          supplyState: true,
-                          frontState: true,
-                      },
-                  })
-                : null,
-            general.nationId > 0
-                ? ctx.db.nation.findUnique({
-                      where: { id: general.nationId },
-                      select: {
-                          id: true,
-                          name: true,
-                          color: true,
-                          level: true,
-                          gold: true,
-                          rice: true,
-                          tech: true,
-                          typeCode: true,
-                          capitalCityId: true,
-                      },
-                  })
-                : null,
-            ctx.db.worldState.findFirst({ select: { config: true } }),
-        ]);
-
-        const metaRecord = asRecord(general.meta);
-        const worldConfig = asRecord(worldState?.config);
-        const constValues = asRecord(worldConfig.const ?? worldConfig.consts);
-        const settings = resolveUserSettings(metaRecord);
-        const penalties = resolvePenalty(general.penalty);
-
-        return {
-            general: {
-                id: general.id,
-                name: general.name,
-                npcState: general.npcState,
-                nationId: general.nationId,
-                cityId: general.cityId,
-                troopId: general.troopId,
-                picture: general.picture,
-                imageServer: general.imageServer,
-                officerLevel: general.officerLevel,
-                stats: {
-                    leadership: general.leadership,
-                    strength: general.strength,
-                    intelligence: general.intel,
-                },
-                gold: general.gold,
-                rice: general.rice,
-                crew: general.crew,
-                train: general.train,
-                atmos: general.atmos,
-                injury: general.injury,
-                experience: general.experience,
-                dedication: general.dedication,
-                age: general.age,
-                turnTime: general.turnTime.toISOString(),
-                crewTypeId: general.crewTypeId,
-                traits: {
-                    personal: general.personalCode,
-                    specialWar: general.specialCode,
-                    specialDomestic: general.special2Code,
-                },
-                progression: {
-                    experienceLevel: readNumber(metaRecord.explevel, 0),
-                    dedicationLevel: readNumber(metaRecord.dedlevel, 0),
-                    statExperience: {
-                        leadership: readNumber(metaRecord.leadership_exp, 0),
-                        strength: readNumber(metaRecord.strength_exp, 0),
-                        intelligence: readNumber(metaRecord.intel_exp, 0),
-                    },
-                    statUpgradeLimit: readNumber(constValues.upgradeLimit, 30),
-                    dex: [1, 2, 3, 4, 5].map((index) => readNumber(metaRecord[`dex${index}`], 0)),
-                },
-                items: {
-                    horse: normalizeItemCode(general.horseCode),
-                    weapon: normalizeItemCode(general.weaponCode),
-                    book: normalizeItemCode(general.bookCode),
-                    item: normalizeItemCode(general.itemCode),
-                },
-            },
-            iconChoices: ctx.auth?.user.canUseGeneralPicture === false ? [] : (ctx.auth?.user.icons ?? []),
-            canChangeIcon: general.npcState === 0 && ctx.auth?.user.canUseGeneralPicture !== false,
-            iconChangeAvailableAt:
-                typeof metaRecord.generalIconChangedAt === 'string'
-                    ? new Date(new Date(metaRecord.generalIconChangedAt).getTime() + 24 * 60 * 60 * 1000).toISOString()
-                    : null,
-            city,
-            nation,
-            settings,
-            penalties,
-        };
-    }),
+    me: authedProcedure.query(({ ctx }) => getGeneralContext(ctx)),
     ensureDieOnPrestartStatus: accessEngineAuthedProcedure.mutation(async ({ ctx }) => {
         const userId = ctx.auth?.user.id;
         if (!userId) {

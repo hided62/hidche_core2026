@@ -42,17 +42,14 @@ const zPushAmount = z
 const zRepeatAmount = z.number().int().min(1).max(12);
 
 const buildTurnListSchema = (minimum: number, maximum: number) =>
-    z
-        .array(z.number().int().min(minimum).max(maximum))
-        .min(1);
+    z.array(z.number().int().min(minimum).max(maximum)).min(1);
 
 const buildBulkEntrySchema = (turnList: z.ZodType<number[]>) =>
-    z
-        .object({
-            turnList,
-            action: z.string().min(1),
-            args: z.unknown().optional(),
-        });
+    z.object({
+        turnList,
+        action: z.string().min(1),
+        args: z.unknown().optional(),
+    });
 
 const parseCommandArgs = async (scope: 'general' | 'nation', action: string, args: unknown) => {
     try {
@@ -112,9 +109,107 @@ const assertReservedTurnPermission = async (
     throw new TRPCError({
         code: 'PRECONDITION_FAILED',
         message:
-            result.kind === 'deny'
-                ? `예약 불가능한 커맨드 :${result.reason}`
-                : '예약 권한을 확인할 정보가 부족합니다.',
+            result.kind === 'deny' ? `예약 불가능한 커맨드 :${result.reason}` : '예약 권한을 확인할 정보가 부족합니다.',
+    });
+};
+
+export const getTurnCommandTable = async (ctx: GameApiContext, generalId: number) => {
+    const [worldState, general] = await Promise.all([ctx.db.worldState.findFirst(), getOwnedGeneral(ctx, generalId)]);
+
+    if (!worldState) {
+        throw new TRPCError({
+            code: 'PRECONDITION_FAILED',
+            message: 'World state is not initialized.',
+        });
+    }
+
+    const [city, nation, nationGenerals, cities, nations, generals, environment, traits, itemModules] =
+        await Promise.all([
+            general.cityId > 0
+                ? ctx.db.city.findUnique({
+                      where: { id: general.cityId },
+                  })
+                : null,
+            general.nationId > 0
+                ? ctx.db.nation.findUnique({
+                      where: { id: general.nationId },
+                  })
+                : null,
+            general.nationId > 0
+                ? ctx.db.general.findMany({
+                      where: { nationId: general.nationId },
+                  })
+                : Promise.resolve(null),
+            ctx.db.city.findMany({
+                select: { id: true, name: true, nationId: true },
+                orderBy: { id: 'asc' },
+            }),
+            ctx.db.nation.findMany({
+                select: { id: true, name: true, color: true },
+                orderBy: { id: 'asc' },
+            }),
+            ctx.db.general.findMany({
+                where: { npcState: { lt: 2 } },
+                select: { id: true, name: true, nationId: true, cityId: true },
+                orderBy: { id: 'asc' },
+            }),
+            buildBattleSimEnvironment(worldState, ctx.profile.id),
+            loadBattleSimTraitOptions(),
+            loadItemModules([...ITEM_KEYS]),
+        ]);
+
+    const nationById = new Map(nations.map((entry) => [entry.id, entry]));
+    const cityById = new Map(cities.map((entry) => [entry.id, entry]));
+    const items: TurnCommandInputOptions['items'] = {
+        horse: [{ value: 'None', label: '판매/해제' }],
+        weapon: [{ value: 'None', label: '판매/해제' }],
+        book: [{ value: 'None', label: '판매/해제' }],
+        item: [{ value: 'None', label: '판매/해제' }],
+    };
+    for (const item of itemModules) {
+        if (item.buyable) {
+            items[item.slot].push({ value: item.key, label: item.name });
+        }
+    }
+    const inputOptions: TurnCommandInputOptions = {
+        cities: cities.map((entry) => ({
+            value: entry.id,
+            label: `${entry.name} (${nationById.get(entry.nationId)?.name ?? '무주'})`,
+        })),
+        nations: nations.map((entry) => ({
+            value: entry.id,
+            label: entry.name,
+            color: entry.color,
+        })),
+        generals: generals.map((entry) => ({
+            value: entry.id,
+            label: `${entry.name} (${nationById.get(entry.nationId)?.name ?? '무소속'} · ${
+                cityById.get(entry.cityId)?.name ?? '재야'
+            })`,
+        })),
+        crewTypes: (environment.unitSet.crewTypes ?? [])
+            .filter((entry) => !entry.requirements.some((requirement) => requirement.type === 'Impossible'))
+            .map((entry) => ({ value: entry.id, label: entry.name })),
+        armTypes: Object.entries(environment.unitSet.armTypes ?? {}).map(([value, label]) => ({
+            value: Number(value),
+            label,
+        })),
+        nationTypes: traits.nationTypes.map((entry) => ({ value: entry.key, label: entry.name })),
+        colors: TURN_COMMAND_NATION_COLORS.map((color, index) => ({
+            value: index,
+            label: `색상 ${index + 1}`,
+            color,
+        })),
+        items,
+    };
+
+    return buildTurnCommandTable({
+        worldState,
+        general,
+        city,
+        nation,
+        nationGenerals,
+        inputOptions,
     });
 };
 
@@ -125,108 +220,7 @@ export const turnsRouter = router({
                 generalId: z.number().int().positive(),
             })
         )
-        .query(async ({ ctx, input }) => {
-            const [worldState, general] = await Promise.all([
-                ctx.db.worldState.findFirst(),
-                getOwnedGeneral(ctx, input.generalId),
-            ]);
-
-            if (!worldState) {
-                throw new TRPCError({
-                    code: 'PRECONDITION_FAILED',
-                    message: 'World state is not initialized.',
-                });
-            }
-
-            const [city, nation, nationGenerals, cities, nations, generals, environment, traits, itemModules] =
-                await Promise.all([
-                general.cityId > 0
-                    ? ctx.db.city.findUnique({
-                          where: { id: general.cityId },
-                      })
-                    : null,
-                general.nationId > 0
-                    ? ctx.db.nation.findUnique({
-                          where: { id: general.nationId },
-                      })
-                    : null,
-                general.nationId > 0
-                    ? ctx.db.general.findMany({
-                          where: { nationId: general.nationId },
-                      })
-                    : Promise.resolve(null),
-                ctx.db.city.findMany({
-                    select: { id: true, name: true, nationId: true },
-                    orderBy: { id: 'asc' },
-                }),
-                ctx.db.nation.findMany({
-                    select: { id: true, name: true, color: true },
-                    orderBy: { id: 'asc' },
-                }),
-                ctx.db.general.findMany({
-                    where: { npcState: { lt: 2 } },
-                    select: { id: true, name: true, nationId: true, cityId: true },
-                    orderBy: { id: 'asc' },
-                }),
-                buildBattleSimEnvironment(worldState, ctx.profile.id),
-                loadBattleSimTraitOptions(),
-                loadItemModules([...ITEM_KEYS]),
-            ]);
-
-            const nationById = new Map(nations.map((entry) => [entry.id, entry]));
-            const cityById = new Map(cities.map((entry) => [entry.id, entry]));
-            const items: TurnCommandInputOptions['items'] = {
-                horse: [{ value: 'None', label: '판매/해제' }],
-                weapon: [{ value: 'None', label: '판매/해제' }],
-                book: [{ value: 'None', label: '판매/해제' }],
-                item: [{ value: 'None', label: '판매/해제' }],
-            };
-            for (const item of itemModules) {
-                if (item.buyable) {
-                    items[item.slot].push({ value: item.key, label: item.name });
-                }
-            }
-            const inputOptions: TurnCommandInputOptions = {
-                cities: cities.map((entry) => ({
-                    value: entry.id,
-                    label: `${entry.name} (${nationById.get(entry.nationId)?.name ?? '무주'})`,
-                })),
-                nations: nations.map((entry) => ({
-                    value: entry.id,
-                    label: entry.name,
-                    color: entry.color,
-                })),
-                generals: generals.map((entry) => ({
-                    value: entry.id,
-                    label: `${entry.name} (${nationById.get(entry.nationId)?.name ?? '무소속'} · ${
-                        cityById.get(entry.cityId)?.name ?? '재야'
-                    })`,
-                })),
-                crewTypes: (environment.unitSet.crewTypes ?? [])
-                    .filter((entry) => !entry.requirements.some((requirement) => requirement.type === 'Impossible'))
-                    .map((entry) => ({ value: entry.id, label: entry.name })),
-                armTypes: Object.entries(environment.unitSet.armTypes ?? {}).map(([value, label]) => ({
-                    value: Number(value),
-                    label,
-                })),
-                nationTypes: traits.nationTypes.map((entry) => ({ value: entry.key, label: entry.name })),
-                colors: TURN_COMMAND_NATION_COLORS.map((color, index) => ({
-                    value: index,
-                    label: `색상 ${index + 1}`,
-                    color,
-                })),
-                items,
-            };
-
-            return buildTurnCommandTable({
-                worldState,
-                general,
-                city,
-                nation,
-                nationGenerals,
-                inputOptions,
-            });
-        }),
+        .query(({ ctx, input }) => getTurnCommandTable(ctx, input.generalId)),
     reserved: router({
         getGeneral: authedProcedure
             .input(
@@ -322,13 +316,7 @@ export const turnsRouter = router({
             .input(
                 z.object({
                     generalId: z.number().int().positive(),
-                    entries: z
-                        .array(
-                            buildBulkEntrySchema(
-                                buildTurnListSchema(-3, MAX_GENERAL_TURNS - 1)
-                            )
-                        )
-                        .min(1),
+                    entries: z.array(buildBulkEntrySchema(buildTurnListSchema(-3, MAX_GENERAL_TURNS - 1))).min(1),
                     expectedRevision: z.number().int().nonnegative(),
                 })
             )
@@ -343,13 +331,7 @@ export const turnsRouter = router({
                 );
                 const worldState = await getReservationWorldState(ctx);
                 for (const update of updates) {
-                    await assertReservedTurnPermission(
-                        worldState,
-                        general,
-                        'general',
-                        update.action,
-                        update.args
-                    );
+                    await assertReservedTurnPermission(worldState, general, 'general', update.action, update.args);
                 }
                 const snapshot = await mutateReservedTurns(() =>
                     setGeneralTurns(ctx.db, input.generalId, updates, input.expectedRevision)
@@ -472,13 +454,7 @@ export const turnsRouter = router({
             .input(
                 z.object({
                     generalId: z.number().int().positive(),
-                    entries: z
-                        .array(
-                            buildBulkEntrySchema(
-                                buildTurnListSchema(0, MAX_NATION_TURNS - 1)
-                            )
-                        )
-                        .min(1),
+                    entries: z.array(buildBulkEntrySchema(buildTurnListSchema(0, MAX_NATION_TURNS - 1))).min(1),
                     expectedRevision: z.number().int().nonnegative(),
                 })
             )
@@ -505,22 +481,10 @@ export const turnsRouter = router({
                 );
                 const worldState = await getReservationWorldState(ctx);
                 for (const update of updates) {
-                    await assertReservedTurnPermission(
-                        worldState,
-                        general,
-                        'nation',
-                        update.action,
-                        update.args
-                    );
+                    await assertReservedTurnPermission(worldState, general, 'nation', update.action, update.args);
                 }
                 const snapshot = await mutateReservedTurns(() =>
-                    setNationTurns(
-                        ctx.db,
-                        general.nationId,
-                        general.officerLevel,
-                        updates,
-                        input.expectedRevision
-                    )
+                    setNationTurns(ctx.db, general.nationId, general.officerLevel, updates, input.expectedRevision)
                 );
                 return { ok: true, ...snapshot };
             }),
