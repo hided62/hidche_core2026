@@ -249,7 +249,7 @@ export const generalRouter = router({
             return null;
         }
 
-        const [city, nation] = await Promise.all([
+        const [city, nation, worldState] = await Promise.all([
             general.cityId > 0
                 ? ctx.db.city.findUnique({
                       where: { id: general.cityId },
@@ -259,11 +259,20 @@ export const generalRouter = router({
                           level: true,
                           nationId: true,
                           population: true,
+                          populationMax: true,
                           agriculture: true,
+                          agricultureMax: true,
                           commerce: true,
+                          commerceMax: true,
                           security: true,
+                          securityMax: true,
+                          trust: true,
+                          trade: true,
                           defence: true,
+                          defenceMax: true,
                           wall: true,
+                          wallMax: true,
+                          region: true,
                           supplyState: true,
                           frontState: true,
                       },
@@ -285,9 +294,12 @@ export const generalRouter = router({
                       },
                   })
                 : null,
+            ctx.db.worldState.findFirst({ select: { config: true } }),
         ]);
 
         const metaRecord = asRecord(general.meta);
+        const worldConfig = asRecord(worldState?.config);
+        const constValues = asRecord(worldConfig.const ?? worldConfig.consts);
         const settings = resolveUserSettings(metaRecord);
         const penalties = resolvePenalty(general.penalty);
 
@@ -326,6 +338,12 @@ export const generalRouter = router({
                 progression: {
                     experienceLevel: readNumber(metaRecord.explevel, 0),
                     dedicationLevel: readNumber(metaRecord.dedlevel, 0),
+                    statExperience: {
+                        leadership: readNumber(metaRecord.leadership_exp, 0),
+                        strength: readNumber(metaRecord.strength_exp, 0),
+                        intelligence: readNumber(metaRecord.intel_exp, 0),
+                    },
+                    statUpgradeLimit: readNumber(constValues.upgradeLimit, 30),
                     dex: [1, 2, 3, 4, 5].map((index) => readNumber(metaRecord[`dex${index}`], 0)),
                 },
                 items: {

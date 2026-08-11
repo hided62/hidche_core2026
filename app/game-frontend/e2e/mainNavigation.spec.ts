@@ -54,6 +54,13 @@ const generalContext = (state: NavigationFixture) => ({
         injury: 0,
         experience: 100,
         dedication: 200,
+        progression: {
+            experienceLevel: 1,
+            dedicationLevel: 2,
+            statExperience: { leadership: 5, strength: 10, intelligence: 15 },
+            statUpgradeLimit: 20,
+            dex: [350, 100_000, 500_000, 1_000_000, 1_275_975],
+        },
         items: { horse: null, weapon: null, book: null, item: null },
     },
     city: {
@@ -383,6 +390,94 @@ test('desktop menus preserve ref columns, prefix-safe routes, and controlled dro
     await page.getByRole('heading', { name: '전장 현황' }).click();
     await expect(gameInfoButton).toHaveAttribute('aria-expanded', 'false');
     await persistArtifact(page, `${basePath.slice(1)}-desktop-1200`);
+});
+
+test('main city and general cards render every ref bar plus dual dexterity progress at ref heights', async ({
+    page,
+}) => {
+    const state: NavigationFixture = {
+        officerLevel: 1,
+        permission: 0,
+        nationLevel: 1,
+        stage: 0,
+        npcMode: 1,
+        generalMeCalls: 0,
+        operations: [],
+    };
+    await installFixture(page, state);
+    await page.setViewportSize({ width: 1200, height: 900 });
+    await waitForMain(page);
+
+    const cityBars = page.locator('[data-main-target="city"] [role="progressbar"]');
+    const statBars = page.locator('[data-stat-progress] [role="progressbar"]');
+    const experienceBar = page.locator('[data-experience-progress] [role="progressbar"]');
+    const dexRows = page.locator('[data-dex-progress]');
+    await expect(cityBars).toHaveCount(8);
+    await expect(statBars).toHaveCount(3);
+    await expect(experienceBar).toHaveCount(1);
+    await expect(dexRows).toHaveCount(5);
+    await expect(dexRows.locator('[role="progressbar"]')).toHaveCount(10);
+
+    expect(await cityBars.first().evaluate((element) => element.getBoundingClientRect().height)).toBe(9);
+    expect(await statBars.first().evaluate((element) => element.getBoundingClientRect().height)).toBe(12);
+    expect(await experienceBar.evaluate((element) => element.getBoundingClientRect().height)).toBe(12);
+    const firstDexBars = dexRows.first().locator('[role="progressbar"]');
+    expect(await firstDexBars.nth(0).evaluate((element) => element.getBoundingClientRect().height)).toBe(12);
+    expect(await firstDexBars.nth(1).evaluate((element) => element.getBoundingClientRect().height)).toBe(9);
+
+    await expect(dexRows.nth(3).locator('[role="progressbar"]').nth(0)).toHaveAttribute('aria-valuemax', '100');
+    await expect(dexRows.nth(3).locator('[role="progressbar"]').nth(0)).toHaveAttribute(
+        'aria-label',
+        /1,000,000 \/ 1,275,975 \(EX\+\)/
+    );
+    await expect(dexRows.nth(3).locator('[role="progressbar"]').nth(1)).toHaveAttribute('aria-label', /까지 .* 남음/);
+    await expect(dexRows.nth(4).locator('[role="progressbar"]').nth(1)).toHaveAttribute('aria-label', /EX\+ 달성/);
+
+    const texture = await cityBars.first().evaluate((element) => getComputedStyle(element).backgroundImage);
+    const fillTexture = await cityBars
+        .first()
+        .locator('.legacy-progress__fill')
+        .evaluate((element) => getComputedStyle(element).backgroundImage);
+    expect(texture).toContain('/game/pr5.gif');
+    expect(fillTexture).toContain('/game/pb5.gif');
+
+    const captureProgress = async (name: string) => {
+        if (!artifactRoot) return;
+        await mkdir(artifactRoot, { recursive: true });
+        const measurement = await page.locator('.legacy-progress').evaluateAll((elements) =>
+            elements.map((element) => {
+                const rect = element.getBoundingClientRect();
+                const style = getComputedStyle(element);
+                const fill = element.querySelector<HTMLElement>('.legacy-progress__fill');
+                return {
+                    label: element.getAttribute('aria-label'),
+                    rect: { x: rect.x, y: rect.y, width: rect.width, height: rect.height },
+                    borderTop: style.borderTop,
+                    borderBottom: style.borderBottom,
+                    backgroundImage: style.backgroundImage,
+                    fillWidth: fill?.getBoundingClientRect().width ?? 0,
+                    fillBackgroundImage: fill ? getComputedStyle(fill).backgroundImage : '',
+                };
+            })
+        );
+        await Promise.all([
+            page.screenshot({ path: resolve(artifactRoot, `progress-bars-${name}.png`), fullPage: true }),
+            writeFile(resolve(artifactRoot, `progress-bars-${name}.json`), `${JSON.stringify(measurement, null, 2)}\n`),
+        ]);
+    };
+    await captureProgress('desktop-1200');
+
+    await page.setViewportSize({ width: 500, height: 900 });
+    await expect(page.locator('.layout-mobile')).toBeVisible();
+    await expect(page.locator('[data-main-target="city"] [role="progressbar"]')).toHaveCount(8);
+    await expect(page.locator('[data-main-target="general"] [role="progressbar"]')).toHaveCount(14);
+    expect(
+        await page
+            .locator('[data-main-target="city"] [role="progressbar"]')
+            .first()
+            .evaluate((element) => element.getBoundingClientRect().height)
+    ).toBe(9);
+    await captureProgress('mobile-500');
 });
 
 test('the 939/940 boundary switches to the Ref-style 502px single document', async ({ page }) => {

@@ -1,5 +1,6 @@
 import { TRPCError } from '@trpc/server';
 
+import { asRecord } from '@sammo-ts/common';
 import { LogCategory } from '@sammo-ts/logic';
 
 import { accessAuthedProcedure } from '../../../trpc.js';
@@ -91,6 +92,13 @@ export const getBattleCenter = accessAuthedProcedure.query(async ({ ctx }) => {
         }
     }
 
+    const worldConfig = asRecord(worldState.config);
+    const constValues = asRecord(worldConfig.const ?? worldConfig.consts);
+    const statUpgradeLimit =
+        typeof constValues.upgradeLimit === 'number' && Number.isFinite(constValues.upgradeLimit)
+            ? constValues.upgradeLimit
+            : 30;
+
     const generals = generalRows.map((general) => {
         const meta =
             general.meta && typeof general.meta === 'object' && !Array.isArray(general.meta)
@@ -136,6 +144,16 @@ export const getBattleCenter = accessAuthedProcedure.query(async ({ ctx }) => {
                 personal: general.personalCode,
                 specialDomestic: general.specialCode,
                 specialWar: general.special2Code,
+            },
+            progression: {
+                experienceLevel: metaNumber('explevel'),
+                statExperience: {
+                    leadership: metaNumber('leadership_exp'),
+                    strength: metaNumber('strength_exp'),
+                    intelligence: metaNumber('intel_exp'),
+                },
+                statUpgradeLimit,
+                dex: [1, 2, 3, 4, 5].map((index) => metaNumber(`dex${index}`)),
             },
             battleStats: {
                 kills: metaNumber('rank_killnum') || metaNumber('killnum'),

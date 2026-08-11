@@ -6,6 +6,7 @@ import { formatSeoulDateTime } from '../utils/legacyDateTime';
 import { isDefenceTrainPenaltyWaivedByScenarioEffect } from '@sammo-ts/logic';
 import { useSessionStore } from '../stores/session';
 import { resolveGeneralIconUrl, useDefaultGeneralIcon } from '../utils/generalIcon';
+import LegacyGeneralProgress from '../components/ui/LegacyGeneralProgress.vue';
 
 const SCREEN_MODE_KEY = 'sam.screenMode';
 const CUSTOM_CSS_KEY = 'sam_customCSS';
@@ -417,19 +418,12 @@ onMounted(() => {
                     <div>전투 0 · 계략 0 · 사관 7년</div>
                     <div>승률 0% · 승리 0 · 패배 0</div>
                     <div>살상률 0% · 사살 0 · 피살 0</div>
-                    <div class="dexterity-title">숙련도</div>
-                    <div>
-                        보병 {{ data.general.progression?.dex?.[0] ?? 0 }} · 궁병
-                        {{ data.general.progression?.dex?.[1] ?? 0 }} · 기병
-                        {{ data.general.progression?.dex?.[2] ?? 0 }} · 귀병
-                        {{ data.general.progression?.dex?.[3] ?? 0 }} · 차병
-                        {{ data.general.progression?.dex?.[4] ?? 0 }}
-                    </div>
                     <div>
                         병종 {{ data.general.crewTypeId || '-' }} · 내정특기
                         {{ data.general.traits?.specialDomestic ?? '-' }} · 부상 {{ data.general.injury }} · 부대
                         {{ data.general.troopId || '-' }} · 벌점 {{ penalties.length || '-' }}
                     </div>
+                    <LegacyGeneralProgress :general="data.general" />
                 </div>
             </div>
 
@@ -791,10 +785,9 @@ button:disabled {
 .legacy-general-details > div {
     border-top: 1px solid #557;
 }
-.dexterity-title {
-    background: #14241b var(--sammo-texture-green);
-}
 .legacy-credit {
+    max-width: 100%;
+    overflow: hidden;
     white-space: nowrap;
 }
 dl {

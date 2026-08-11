@@ -75,6 +75,7 @@ const auth: GameSessionTokenPayload = {
 
 const createContext = (options: {
     me?: GeneralRow | null;
+    city?: Record<string, unknown> | null;
     targets?: GeneralRow[];
     nationMeta?: Record<string, unknown>;
     requestCommand?: ReturnType<typeof vi.fn>;
@@ -95,7 +96,7 @@ const createContext = (options: {
             findMany: vi.fn(async () => targets.filter((general) => general.nationId === (me?.nationId ?? 0))),
             update: vi.fn(),
         },
-        city: { findUnique: vi.fn(async () => null) },
+        city: { findUnique: vi.fn(async () => options.city ?? null) },
         nation: {
             findUnique: vi.fn(async () => ({
                 id: 1,
@@ -115,6 +116,7 @@ const createContext = (options: {
                 currentYear: 185,
                 currentMonth: 1,
                 tickSeconds: 600,
+                config: { const: { upgradeLimit: 20 } },
             })),
         },
         logEntry: {
@@ -162,6 +164,90 @@ const createContext = (options: {
 };
 
 describe('in-game my information ownership', () => {
+    it('returns every ref progress-bar input from the owned general and current city read model', async () => {
+        const fixture = createContext({
+            me: buildGeneral({
+                meta: {
+                    explevel: 4,
+                    dedlevel: 3,
+                    leadership_exp: 7,
+                    strength_exp: 8,
+                    intel_exp: 9,
+                    dex1: 350,
+                    dex2: 1_375,
+                    dex3: 3_500,
+                    dex4: 7_125,
+                    dex5: 12_650,
+                },
+            }),
+            city: {
+                id: 1,
+                name: '계',
+                level: 5,
+                nationId: 1,
+                population: 322_886,
+                populationMax: 388_500,
+                agriculture: 6_911,
+                agricultureMax: 7_500,
+                commerce: 7_451,
+                commerceMax: 8_000,
+                security: 5_792,
+                securityMax: 6_000,
+                trust: 72,
+                trade: 101,
+                defence: 7_529,
+                defenceMax: 7_800,
+                wall: 7_819,
+                wallMax: 8_100,
+                region: 1,
+                supplyState: 1,
+                frontState: 0,
+            },
+        });
+
+        await expect(appRouter.createCaller(fixture.context).general.me()).resolves.toMatchObject({
+            general: {
+                progression: {
+                    experienceLevel: 4,
+                    dedicationLevel: 3,
+                    statExperience: { leadership: 7, strength: 8, intelligence: 9 },
+                    statUpgradeLimit: 20,
+                    dex: [350, 1_375, 3_500, 7_125, 12_650],
+                },
+            },
+            city: {
+                population: 322_886,
+                populationMax: 388_500,
+                agriculture: 6_911,
+                agricultureMax: 7_500,
+                commerce: 7_451,
+                commerceMax: 8_000,
+                security: 5_792,
+                securityMax: 6_000,
+                trust: 72,
+                trade: 101,
+                defence: 7_529,
+                defenceMax: 7_800,
+                wall: 7_819,
+                wallMax: 8_100,
+            },
+        });
+        expect(fixture.db.city.findUnique).toHaveBeenCalledWith(
+            expect.objectContaining({
+                select: expect.objectContaining({
+                    populationMax: true,
+                    agricultureMax: true,
+                    commerceMax: true,
+                    securityMax: true,
+                    trust: true,
+                    trade: true,
+                    defenceMax: true,
+                    wallMax: true,
+                }),
+            })
+        );
+    });
+
     it('reads legacy top-level settings and dispatches only the session-owned general', async () => {
         const requestCommand = vi.fn(async () => ({ type: 'setMySetting', ok: true, generalId: 7 }));
         const fixture = createContext({ requestCommand });
@@ -422,6 +508,12 @@ describe('battle-center general and user permissions', () => {
                     id: 7,
                     picture: 'default.jpg',
                     imageServer: 0,
+                    progression: {
+                        experienceLevel: 0,
+                        statExperience: { leadership: 0, strength: 0, intelligence: 0 },
+                        statUpgradeLimit: 20,
+                        dex: [0, 0, 0, 0, 0],
+                    },
                     battleStats: { kills: 0, deaths: 0, fire: 0, killCrew: 0, deathCrew: 0, dex: [0, 0, 0, 0, 0] },
                 },
             ],

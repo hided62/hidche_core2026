@@ -72,6 +72,17 @@ const myGeneral = (state: FixtureState) => ({
         injury: 0,
         experience: 100,
         dedication: 200,
+        age: 30,
+        turnTime: '2026-01-01 00:10:00',
+        crewTypeId: 1,
+        traits: { personal: 'None', specialDomestic: 'None', specialWar: 'None' },
+        progression: {
+            experienceLevel: 1,
+            dedicationLevel: 2,
+            statExperience: { leadership: 7, strength: 8, intelligence: 9 },
+            statUpgradeLimit: 20,
+            dex: [350, 1_375, 3_500, 7_125, 1_275_975],
+        },
         items: { horse: 'che_명마', weapon: null, book: null, item: null },
     },
     city: { id: 1, name: '업', level: 8, nationId: 1 },
@@ -118,6 +129,17 @@ const battleCenter = (state: FixtureState) => ({
             crew: 300,
             train: 80,
             atmos: 90,
+            age: 30,
+            crewTypeId: 1,
+            equipment: { weapon: 'None', book: 'None', horse: 'None', item: 'None' },
+            traits: { personal: 'None', specialDomestic: 'None', specialWar: 'None' },
+            progression: {
+                experienceLevel: 1,
+                statExperience: { leadership: 7, strength: 8, intelligence: 9 },
+                statUpgradeLimit: 20,
+                dex: [350, 1_375, 3_500, 7_125, 1_275_975],
+            },
+            battleStats: { kills: 1, deaths: 2, fire: 0, killCrew: 300, deathCrew: 100, dex: [] },
         },
         {
             id: 8,
@@ -137,6 +159,17 @@ const battleCenter = (state: FixtureState) => ({
             crew: 100,
             train: 60,
             atmos: 60,
+            age: 20,
+            crewTypeId: 1,
+            equipment: { weapon: 'None', book: 'None', horse: 'None', item: 'None' },
+            traits: { personal: 'None', specialDomestic: 'None', specialWar: 'None' },
+            progression: {
+                experienceLevel: 0,
+                statExperience: { leadership: 0, strength: 0, intelligence: 0 },
+                statUpgradeLimit: 20,
+                dex: [0, 0, 0, 0, 0],
+            },
+            battleStats: { kills: 0, deaths: 0, fire: 0, killCrew: 0, deathCrew: 0, dex: [] },
         },
     ],
 });
@@ -153,10 +186,15 @@ const install = async (page: Page, state: FixtureState) => {
     );
     await page.route('**/image/game/**', async (route) => {
         const filename = basename(new URL(route.request().url()).pathname);
-        if (legacyImageRoot && ['back_walnut.jpg', 'back_green.jpg', 'back_blue.jpg'].includes(filename)) {
+        if (
+            legacyImageRoot &&
+            ['back_walnut.jpg', 'back_green.jpg', 'back_blue.jpg', 'pr5.gif', 'pb5.gif', 'pr8.gif', 'pb8.gif'].includes(
+                filename
+            )
+        ) {
             await route.fulfill({
                 status: 200,
-                contentType: 'image/jpeg',
+                contentType: filename.endsWith('.gif') ? 'image/gif' : 'image/jpeg',
                 body: await readFile(resolve(legacyImageRoot, filename)),
             });
             return;
@@ -455,6 +493,8 @@ test('내 정보&설정 keeps the legacy 1000px/500px geometry and saves in plac
     await page.goto('my-page');
     await expect(page.locator('.title-row')).toContainText('내 정 보');
     await expect(page.locator('#set_my_setting')).toBeVisible();
+    await expect(page.locator('.general-column [role="progressbar"]')).toHaveCount(14);
+    await expect(page.locator('.general-column [aria-label*="1,275,975 (EX+)"]')).toHaveCount(5);
     await expect.poll(() => state.generalMeQueries).toBeGreaterThan(0);
     expect(state.accessPages).not.toContain('my-page');
     const noDefenceOption = page.locator('option[value="999"]');
@@ -911,6 +951,14 @@ test('감찰부 keeps the selector interaction and shows the permission error pa
     await expect(page.locator('.selector-row select').nth(1)).toHaveValue('8');
     await page.getByRole('button', { name: '다음 ▶' }).click();
     await expect(page.locator('.selector-row select').nth(1)).toHaveValue('7');
+    await expect(page.locator('.battle-general-card [role="progressbar"]')).toHaveCount(14);
+    await expect(page.locator('.battle-general-card [aria-label*="1,275,975 (EX+)"]')).toHaveCount(5);
+    expect(
+        await page
+            .locator('.battle-general-card [role="progressbar"]')
+            .first()
+            .evaluate((bar) => getComputedStyle(bar).backgroundImage)
+    ).toContain('/game/pr8.gif');
     const geometry = await page.locator('.battle-page').evaluate((element) => {
         const selector = element.querySelector<HTMLElement>('.selector-row')!;
         const controls = [...selector.children].map((child) => (child as HTMLElement).getBoundingClientRect());
