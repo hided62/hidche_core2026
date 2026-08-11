@@ -31,12 +31,37 @@ export class ReadModelDeltaMismatchError extends Error {
     }
 }
 
+export class ReadModelDeltaApplyError extends Error {
+    constructor(message: string, options?: ErrorOptions) {
+        super(message, options);
+        this.name = 'ReadModelDeltaApplyError';
+    }
+}
+
 export interface AppliedReadModelDelta<T> {
     data: T;
     revision: string;
 }
 
-const cloneJsonValue = <T>(value: T): T => structuredClone(value);
+/**
+ * Read-model deltas operate on JSON documents received over tRPC. Serializing
+ * through JSON also unwraps Vue's nested reactive proxies, which a root-level
+ * `toRaw()` does not remove and `structuredClone()` cannot clone.
+ */
+export const cloneReadModelJson = <T>(value: T): T => {
+    try {
+        const serialized = JSON.stringify(value);
+        if (serialized === undefined) {
+            throw new TypeError('The read-model value is not a JSON document.');
+        }
+        return JSON.parse(serialized) as T;
+    } catch (error) {
+        if (error instanceof ReadModelDeltaApplyError) {
+            throw error;
+        }
+        throw new ReadModelDeltaApplyError('Failed to clone the read-model JSON document.', { cause: error });
+    }
+};
 
 export const createJsonPatch = (current: unknown, next: unknown): JsonPatchOperation[] => createPatch(current, next);
 
@@ -74,11 +99,18 @@ export const applyReadModelDelta = <T>(
         );
     }
 
-    const next = cloneJsonValue(current);
-    const errors = applyPatch(next, delta.operations as Operation[]);
-    const failure = errors.find((error) => error !== null);
-    if (failure) {
-        throw new ReadModelDeltaMismatchError(`JSON Patch application failed: ${failure.message}`);
+    const next = cloneReadModelJson(current);
+    try {
+        const errors = applyPatch(next, delta.operations as Operation[]);
+        const failure = errors.find((error) => error !== null);
+        if (failure) {
+            throw new ReadModelDeltaApplyError(`JSON Patch application failed: ${failure.message}`);
+        }
+    } catch (error) {
+        if (error instanceof ReadModelDeltaApplyError) {
+            throw error;
+        }
+        throw new ReadModelDeltaApplyError('JSON Patch application failed.', { cause: error });
     }
 
     return {

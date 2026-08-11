@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { applyReadModelDelta, ReadModelDeltaMismatchError } from '../src/realtime/delta.js';
+import { applyReadModelDelta, ReadModelDeltaApplyError, ReadModelDeltaMismatchError } from '../src/realtime/delta.js';
 
 describe('applyReadModelDelta', () => {
     it('applies a JSON Patch without mutating the previous snapshot', () => {
@@ -45,5 +45,45 @@ describe('applyReadModelDelta', () => {
                 operations: [{ op: 'replace', path: '/value', value: 2 }],
             })
         ).toThrow(ReadModelDeltaMismatchError);
+    });
+
+    it('unwraps nested reactive-style proxies before applying a later patch', () => {
+        const proxiedStableBranch = new Proxy(
+            {
+                values: [{ key: '이동', possible: true, status: 'available' }],
+            },
+            {}
+        );
+        const current = {
+            general: [
+                { category: '일반', values: [{ key: '휴식', possible: false, status: 'blocked' }] },
+                proxiedStableBranch,
+            ],
+        };
+
+        expect(() => structuredClone(current)).toThrow();
+        const applied = applyReadModelDelta(current, 'revision-1', {
+            kind: 'patch',
+            baseRevision: 'revision-1',
+            revision: 'revision-2',
+            operations: [{ op: 'replace', path: '/general/1/values/0/possible', value: false }],
+        });
+
+        expect(applied.data.general[1]?.values[0]?.possible).toBe(false);
+        expect(applied.data.general[1]).not.toBe(proxiedStableBranch);
+    });
+
+    it('reports a non-JSON baseline as a recoverable delta application error', () => {
+        const current: { value: number; self?: unknown } = { value: 1 };
+        current.self = current;
+
+        expect(() =>
+            applyReadModelDelta(current, 'revision-1', {
+                kind: 'patch',
+                baseRevision: 'revision-1',
+                revision: 'revision-2',
+                operations: [{ op: 'replace', path: '/value', value: 2 }],
+            })
+        ).toThrow(ReadModelDeltaApplyError);
     });
 });
