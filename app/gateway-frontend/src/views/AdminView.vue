@@ -1,7 +1,8 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue';
+import { computed, onMounted, ref, watch } from 'vue';
 import ServerProfileTabs from '../components/ServerProfileTabs.vue';
 import AdminConsoleLayout from '../layouts/AdminConsoleLayout.vue';
+import { useToast } from '../composables/useToast';
 import {
     normalizeProfileResetDefaults,
     type ProfileResetDefaults,
@@ -513,6 +514,45 @@ const userHistory = ref<AdminAuditEvent[]>([]);
 const globalAuditHistory = ref<AdminAuditEvent[]>([]);
 const globalAuditStatus = ref('');
 
+const { feedback: showFeedbackToast } = useToast();
+const actionFeedback = [
+    noticeStatus,
+    userError,
+    kakaoGraceStatus,
+    specialAccessStatus,
+    passwordStatus,
+    rolesStatus,
+    banStatus,
+    profileIconStatus,
+    restrictionStatus,
+    forceDeleteStatus,
+];
+
+watch(
+    actionFeedback,
+    (current, previous) => {
+        current.forEach((message, index) => {
+            if (message && message !== previous[index]) showFeedbackToast(message);
+        });
+    },
+    { flush: 'sync' }
+);
+
+const setLocalAccountFeedback = (message: string): void => {
+    localAccountStatus.value = message;
+    showFeedbackToast(message);
+};
+
+watch(
+    profileActionStatus,
+    (current, previous) => {
+        Object.entries(current).forEach(([profileName, message]) => {
+            if (message && message !== previous[profileName]) showFeedbackToast(message);
+        });
+    },
+    { flush: 'sync' }
+);
+
 const hasUser = computed(() => Boolean(userResult.value));
 
 const loadLocalAccountStatus = async () => {
@@ -723,9 +763,10 @@ const updateProfileMeta = async (profileName: string) => {
             );
         }
     } catch (error) {
+        const detail = error instanceof Error ? error.message : '';
         profileActionStatus.value = {
             ...profileActionStatus.value,
-            [profileName]: '메타 저장 실패',
+            [profileName]: detail ? `메타 저장 실패: ${detail}` : '메타 저장 실패',
         };
     }
 };
@@ -1183,14 +1224,14 @@ const createLocalAccount = async () => {
     localAccountStatus.value = '';
     localAccountResult.value = '';
     if (!localAccountEnabled.value) {
-        localAccountStatus.value = 'ENV 설정이 비활성화 상태입니다.';
+        setLocalAccountFeedback('ENV 설정이 비활성화 상태입니다.');
         return;
     }
     const username = localAccountForm.value.username.trim();
     const password = localAccountForm.value.password.trim();
     const displayName = localAccountForm.value.displayName.trim();
     if (!username || !password) {
-        localAccountStatus.value = '아이디와 비밀번호를 입력하세요.';
+        setLocalAccountFeedback('아이디와 비밀번호를 입력하세요.');
         return;
     }
     localAccountLoading.value = true;
@@ -1201,7 +1242,7 @@ const createLocalAccount = async () => {
             displayName: displayName || undefined,
         });
         localAccountResult.value = `생성됨: ${result.user.username} (${result.user.id})`;
-        localAccountStatus.value = '로컬 계정 생성 완료';
+        setLocalAccountFeedback('로컬 계정 생성 완료');
         localAccountForm.value = {
             username: result.user.username,
             password: '',
@@ -1211,7 +1252,7 @@ const createLocalAccount = async () => {
         userLookupValue.value = result.user.username;
         await Promise.all([lookupUser(), loadUserDirectory()]);
     } catch (error) {
-        localAccountStatus.value = '로컬 계정 생성 실패';
+        setLocalAccountFeedback('로컬 계정 생성 실패');
     } finally {
         localAccountLoading.value = false;
     }

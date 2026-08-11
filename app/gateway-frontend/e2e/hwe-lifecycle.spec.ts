@@ -98,7 +98,7 @@ test('admin resets and opens hwe, then two users create generals and reach main'
         const latestOperation = page.getByTestId('operations-table').locator('tbody tr').first();
         const previousLatestOperation = await latestOperation.textContent();
         await page.getByTestId('request-reset').click();
-        await expect(page.getByText('초기화 작업을 등록했습니다.')).toBeVisible();
+        await expect(page.getByText('초기화 작업을 등록했습니다.').first()).toBeVisible();
 
         await expect
             .poll(() => latestOperation.textContent(), {

@@ -224,7 +224,7 @@ test('operates OAuth grace and scheduled deletion with reasoned audit history', 
     await page.getByPlaceholder('che 또는 che:2 (쉼표 구분, 비우면 전체)').fill('che');
     await page.getByPlaceholder('권한·제재·복구·탈퇴 조치 사유 (필수)').fill('휴대폰 분실 임시 복구');
     await page.getByRole('button', { name: '특수 접근 부여', exact: true }).click();
-    await expect(page.getByText('특수 접근 자격을 부여했습니다.')).toBeVisible();
+    await expect(page.getByText('특수 접근 자격을 부여했습니다.').first()).toBeVisible();
     await expect(page.getByText(/RECOVERY · che/)).toBeVisible();
     await page.screenshot({ path: testInfo.outputPath('gateway-admin-special-access-granted.png'), fullPage: true });
 
@@ -232,7 +232,7 @@ test('operates OAuth grace and scheduled deletion with reasoned audit history', 
     await page.getByPlaceholder('권한·제재·복구·탈퇴 조치 사유 (필수)').fill('본인 확인 처리 중');
     await gracePanel.locator('input[type="datetime-local"]').fill('2026-08-20T00:00');
     await page.getByRole('button', { name: '유예 연장', exact: true }).click();
-    await expect(page.getByText('OAuth 유예 연장 완료')).toBeVisible();
+    await expect(page.getByText('OAuth 유예 연장 완료').first()).toBeVisible();
 
     await page.getByRole('button', { name: /탈퇴 · 이력/ }).click();
     await expect(page.getByText('SUCCEEDED · admin.users.updateKakaoGrace').first()).toBeVisible();
@@ -246,7 +246,7 @@ test('operates OAuth grace and scheduled deletion with reasoned audit history', 
     await page.getByPlaceholder('권한·제재·복구·탈퇴 조치 사유 (필수)').fill('탈퇴 요청 접수');
     await page.getByLabel('탈퇴 전 보존 일수').fill('30');
     await deletionButton.click();
-    await expect(page.getByText(/탈퇴 예약 완료/)).toBeVisible();
+    await expect(page.getByText(/탈퇴 예약 완료/).first()).toBeVisible();
     expect(mutations.some(({ operation }) => operation === 'admin.users.updateKakaoGrace')).toBe(true);
     expect(mutations.some(({ operation }) => operation === 'admin.users.grantSpecialAccess')).toBe(true);
     expect(mutations.some(({ operation }) => operation === 'admin.users.scheduleDeletion')).toBe(true);

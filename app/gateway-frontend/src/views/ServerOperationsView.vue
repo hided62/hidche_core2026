@@ -2,6 +2,7 @@
 import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue';
 
 import ServerProfileTabs from '../components/ServerProfileTabs.vue';
+import { useToast } from '../composables/useToast';
 import AdminConsoleLayout from '../layouts/AdminConsoleLayout.vue';
 import {
     normalizeProfileResetDefaults,
@@ -95,6 +96,10 @@ const catalogAttempted = ref(false);
 const submitting = ref(false);
 const message = ref('');
 const errorMessage = ref('');
+const { success: showSuccessToast, error: showErrorToast } = useToast();
+
+watch(message, (value) => value && showSuccessToast(value), { flush: 'sync' });
+watch(errorMessage, (value) => value && showErrorToast(value), { flush: 'sync' });
 const resetDefaultsSource = ref<'SYSTEM' | 'PROFILE'>('SYSTEM');
 let pollTimer: ReturnType<typeof setInterval> | undefined;
 let stateRequestInFlight = false;
