@@ -34,6 +34,56 @@ const seedGameStorage = async (page: Page, gameToken: string): Promise<void> => 
     );
 };
 
+test('consumes a same-tab gateway transfer from a clean profile URL', async ({ page }) => {
+    await page.addInitScript((profile) => {
+        window.sessionStorage.setItem(
+            'sammo-pending-game-session',
+            JSON.stringify({ profile, gatewayToken: 'gateway-transfer-token' })
+        );
+    }, gameProfile);
+    const exchangedInputs: unknown[] = [];
+    await page.route(gameTrpcRoute, async (route) => {
+        const operations = operationNames(route);
+        const requestBody = route.request().postDataJSON() as
+            { json?: unknown; 0?: { json?: unknown; gatewayToken?: string } } | undefined;
+        const results = operations.map((operation) => {
+            if (operation === 'auth.exchangeGatewayToken') {
+                exchangedInputs.push(requestBody?.json ?? requestBody?.[0]?.json ?? requestBody?.[0]);
+                return response({
+                    accessToken: 'ga_transferred',
+                    profile: gameProfile,
+                    expiresAt: '2026-08-11T01:00:00Z',
+                });
+            }
+            if (operation === 'auth.status') {
+                expect(route.request().headers().authorization).toBe('Bearer ga_transferred');
+                return response({ userId: 'transfer-user' });
+            }
+            if (operation === 'lobby.info') {
+                return response({ myGeneral: null });
+            }
+            if (operation === 'join.getConfig') {
+                return response({});
+            }
+            return publicResponse(operation);
+        });
+        await route.fulfill({
+            status: 200,
+            contentType: 'application/json',
+            body: JSON.stringify(results),
+        });
+    });
+
+    await page.goto('select-general');
+
+    await expect(page).toHaveURL(new RegExp(`${gameBasePath}/select-general$`));
+    await expect(page.locator('.page-title')).toContainText('장 수 선 택');
+    expect(exchangedInputs).toEqual([{ gatewayToken: 'gateway-transfer-token' }]);
+    expect(await page.evaluate(() => window.sessionStorage.getItem('sammo-pending-game-session'))).toBeNull();
+    expect(await page.evaluate(() => window.localStorage.getItem('sammo-game-profile'))).toBe(gameProfile);
+    expect(await page.evaluate(() => window.localStorage.getItem('sammo-game-token'))).toBe('ga_transferred');
+});
+
 test('removes an invalid ga_ token and redirects an authenticated route to public', async ({ page }) => {
     await seedGameStorage(page, 'ga_invalid');
     let gatewayRequests = 0;
