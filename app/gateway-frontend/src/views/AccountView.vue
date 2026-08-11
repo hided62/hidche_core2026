@@ -1,7 +1,8 @@
 <script setup lang="ts">
-import { computed, nextTick, onBeforeUnmount, onMounted, ref } from 'vue';
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import { useRouter } from 'vue-router';
 
+import { useToast } from '../composables/useToast';
 import DefaultLayout from '../layouts/DefaultLayout.vue';
 import { createGameTrpc } from '../utils/gameTrpc';
 import { trpc } from '../utils/trpc';
@@ -22,6 +23,10 @@ const loading = ref(true);
 const busy = ref(false);
 const errorMessage = ref('');
 const successMessage = ref('');
+const { success: showSuccessToast, error: showErrorToast } = useToast();
+
+watch(successMessage, (value) => value && showSuccessToast(value), { flush: 'sync' });
+watch(errorMessage, (value) => value && showErrorToast(value), { flush: 'sync' });
 const currentPassword = ref('');
 const newPassword = ref('');
 const newPasswordConfirm = ref('');

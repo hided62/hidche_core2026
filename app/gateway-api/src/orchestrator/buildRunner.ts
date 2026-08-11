@@ -1,4 +1,5 @@
 import { spawn } from 'node:child_process';
+import path from 'node:path';
 
 export interface BuildCommand {
     command: string;
@@ -25,6 +26,45 @@ export interface BuildRunner {
 }
 
 export const MAX_BUILD_OUTPUT_CHARS = 64 * 1024;
+export const DEFAULT_RELEASE_TURBO_CONCURRENCY = 1;
+
+export const resolveReleaseTurboConcurrency = (env?: Record<string, string>): number => {
+    const configured = env?.RELEASE_TURBO_CONCURRENCY?.trim();
+    if (!configured) return DEFAULT_RELEASE_TURBO_CONCURRENCY;
+    const parsed = Number(configured);
+    if (!Number.isInteger(parsed) || parsed <= 0) {
+        throw new Error('RELEASE_TURBO_CONCURRENCY must be a positive integer.');
+    }
+    return parsed;
+};
+
+export const resolveReleaseTurboCacheDir = (cacheAnchorRoot: string, env?: Record<string, string>): string => {
+    const configured = env?.TURBO_CACHE_DIR?.trim();
+    if (!configured) return path.join(path.resolve(cacheAnchorRoot), '.turbo', 'release-cache');
+    return path.isAbsolute(configured) ? configured : path.resolve(cacheAnchorRoot, configured);
+};
+
+export const buildTurboReleaseCommand = (
+    workspaceRoot: string,
+    cacheAnchorRoot: string,
+    packageNames: string[],
+    env?: Record<string, string>
+): BuildCommand => ({
+    command: 'pnpm',
+    args: [
+        'exec',
+        'turbo',
+        'run',
+        'build',
+        ...packageNames.map((packageName) => `--filter=${packageName}`),
+        `--cache-dir=${resolveReleaseTurboCacheDir(cacheAnchorRoot, env)}`,
+        `--concurrency=${resolveReleaseTurboConcurrency(env)}`,
+        '--ui=stream',
+        '--output-logs=new-only',
+    ],
+    cwd: workspaceRoot,
+    env,
+});
 
 const appendOutputTail = (current: string, chunk: unknown): string =>
     `${current}${String(chunk)}`.slice(-MAX_BUILD_OUTPUT_CHARS);

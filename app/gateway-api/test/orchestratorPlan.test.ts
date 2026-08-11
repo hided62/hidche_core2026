@@ -225,17 +225,22 @@ describe('sanitizeManagedProcessEnv', () => {
 describe('buildWorkspaceCommands', () => {
     it('installs and builds runtime dependencies before the profile processes', () => {
         const workspaceRoot = '/srv/sammo/worktrees/0123456789abcdef';
-        const commands = buildWorkspaceCommands(workspaceRoot, true);
+        const commands = buildWorkspaceCommands(workspaceRoot, true, undefined, '/srv/sammo/controller');
 
         expect(commands.map(({ args }) => args)).toEqual([
             ['install', '--frozen-lockfile'],
-            ['--filter', '@sammo-ts/common', 'build'],
-            ['--filter', '@sammo-ts/infra', 'prisma:generate'],
-            ['--filter', '@sammo-ts/infra', 'build'],
-            ['--filter', '@sammo-ts/logic', 'build'],
-            ['--filter', '@sammo-ts/game-api', 'build'],
-            ['--filter', '@sammo-ts/game-engine', 'build'],
-            ['--filter', '@sammo-ts/gateway-api', 'build'],
+            [
+                'exec',
+                'turbo',
+                'run',
+                'build',
+                '--filter=@sammo-ts/game-api',
+                '--filter=@sammo-ts/gateway-api',
+                '--cache-dir=/srv/sammo/controller/.turbo/release-cache',
+                '--concurrency=1',
+                '--ui=stream',
+                '--output-logs=new-only',
+            ],
         ]);
         expect(commands.every(({ cwd }) => cwd === workspaceRoot)).toBe(true);
     });

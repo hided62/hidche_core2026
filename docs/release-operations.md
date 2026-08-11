@@ -44,6 +44,17 @@ profile 범위 권한과 별개인 전역 `admin.releases.manage` 권한이 필�
 - Root와 server package의 `tsdown`은 0.22.14 계열로 통일합니다. Docker runtime의
   Node heap/Rayon 상한을 상속한 동일 toolchain으로 초기 Gateway와 profile
   worktree를 빌드하여 구형 Rolldown의 과도한 native thread 생성을 피합니다.
+- Profile, Gateway와 controller self-upgrade의 server package build는 Turbo DAG를
+  사용합니다. 실행 중인 game/Gateway process와 4 GiB runtime을 공유하는 기본
+  동시성은 1이며, 더 큰 격리 build host에서는 `RELEASE_TURBO_CONCURRENCY`를 측정 후
+  2 이상으로 올릴 수 있습니다. 기본 local cache는 원래 Core checkout의
+  `.turbo/release-cache`이므로 commit별 worktree가 달라도 재사용됩니다. 별도
+  persistent 경로가 필요하면 controller/orchestrator 환경에 `TURBO_CACHE_DIR`을
+  설정합니다. Cache는 재생성 가능한 build artifact이며 DB/Redis backup이 아닙니다.
+- `NODE_ENV`와 Vite가 추론한 `VITE_*`는 build hash에 포함됩니다. 따라서 base path나
+  API URL이 다른 frontend artifact를 cache hit로 잘못 복원하지 않습니다.
+  `NODE_OPTIONS`와 `RAYON_NUM_THREADS`는 출력에는 영향을 주지 않는 resource 제한으로
+  build child에 전달됩니다.
 - migration 이후 이전 애플리케이션으로 돌아갈 때 schema 하위 호환성이
   유지됩니다.
 
@@ -113,7 +124,7 @@ Gateway는 자기 process를 직접 교체하지 않습니다. 관리자 화면�
 
 1. Source ref를 commit SHA로 고정하고 commit worktree를 준비합니다.
 2. Release manifest의 protocol, component와 migration head를 검증합니다.
-3. Gateway API와 frontend를 빌드하고 gateway migration을 적용합니다.
+3. Gateway API와 frontend를 공유 Turbo cache로 빌드하고 gateway migration을 적용합니다.
 4. `sammo:gateway-api`, `sammo:gateway-frontend`,
    `sammo:gateway-orchestrator`를 새 worktree definition으로 전환합니다.
 5. Gateway API `/healthz`, `/gateway/`와 세 PM2 process의 `online` 상태를
@@ -137,6 +148,8 @@ Gateway 전체에는 활성 릴리스 작업을 동시에 하나만 둘 수 있�
 commit 해석, worktree 준비, build 명령 출력, migration, process 전환,
 readiness와 rollback 진행을 커서 순서대로 이어 붙입니다. 완료된 작업의 로그도
 같은 이력에서 다시 열 수 있으며 화면은 최근 1,000줄을 유지합니다.
+Build 로그의 `cache hit`/`cache miss`와 마지막 `Cached: N cached, M total`은 실제
+이번 릴리스의 cache 사용 여부를 나타냅니다.
 
 로그 원본은 Gateway DB의 `GatewayReleaseLog`에 작업별로 저장되고 작업 삭제 시
 함께 제거됩니다. Controller는 ANSI 제어 문자를 제거하고 secret·token·password

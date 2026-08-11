@@ -42,6 +42,7 @@ type FixtureState = {
     profileNavigationResolved?: boolean;
     scenarioFailuresRemaining?: number;
     resetDefaults?: Record<string, unknown>;
+    updateMetaFails?: boolean;
 };
 
 const profile = (runtimeRunning: boolean, resetDefaults?: Record<string, unknown>) => ({
@@ -128,6 +129,10 @@ const installFixture = async (page: Page, state: FixtureState) => {
         }
         if (names.includes('admin.profiles.listScenarios') && (state.scenarioFailuresRemaining ?? 0) > 0) {
             state.scenarioFailuresRemaining = (state.scenarioFailuresRemaining ?? 0) - 1;
+            await route.abort('failed');
+            return;
+        }
+        if (names.includes('admin.profiles.updateMeta') && state.updateMetaFails) {
             await route.abort('failed');
             return;
         }
@@ -408,7 +413,7 @@ test('separates branch and commit semantics and submits a reset from the dedicat
     await page.getByTestId('request-reset').hover();
     await page.getByTestId('request-reset').click();
 
-    await expect(page.getByText('초기화 작업을 등록했습니다.')).toBeVisible();
+    await expect(page.getByText('초기화 작업을 등록했습니다.').first()).toBeVisible();
     await expect(page.getByTestId('operations-table')).toContainText('RESET');
     const resetRequest = state.requestBodies.find((entry) => entry.operation === 'admin.operations.requestReset');
     expect(JSON.stringify(resetRequest?.body)).toContain('"sourceMode":"COMMIT"');
@@ -457,7 +462,7 @@ test('separates DB-preserving profile deployment from DB reset', async ({ page }
     );
     await page.getByTestId('request-deploy').click();
 
-    await expect(page.getByText('DB 보존 배포 작업을 등록했습니다.')).toBeVisible();
+    await expect(page.getByText('DB 보존 배포 작업을 등록했습니다.').first()).toBeVisible();
     await expect(page.getByTestId('operations-table')).toContainText('DEPLOY');
     expect(state.requestBodies.some((entry) => entry.operation === 'admin.operations.requestDeploy')).toBe(true);
     expect(state.requestBodies.some((entry) => entry.operation === 'admin.operations.requestReset')).toBe(false);
@@ -505,7 +510,7 @@ test('loads server metadata defaults into the reset form and submits them', asyn
     expect(request).toContain('"options":["develop","train"]');
 });
 
-test('edits server reset defaults through profile metadata settings', async ({ page }) => {
+test('edits server reset defaults through profile metadata settings', async ({ page }, testInfo) => {
     const state: FixtureState = { operations: [], gatewayOperations: [], runtimeRunning: true, requestBodies: [] };
     await installFixture(page, state);
 
@@ -513,10 +518,47 @@ test('edits server reset defaults through profile metadata settings', async ({ p
     await page.getByText('서버 리셋 기본 옵션').click();
     await page.getByTestId('meta-reset-turn-term').selectOption('10');
     await page.getByTestId('meta-reset-npc-mode').selectOption('2');
+
+    await page.getByRole('button', { name: '메타 저장' }).click();
+    const validationToast = page.getByTestId('action-toast').filter({ hasText: '변경 사유를 입력하세요.' });
+    await expect(validationToast).toHaveAttribute('data-toast-kind', 'error');
+    await expect(validationToast).toHaveAttribute('role', 'alert');
+
     await page.getByPlaceholder('변경 사유 (필수)').fill('set reset defaults');
     await page.getByRole('button', { name: '메타 저장' }).click();
 
-    await expect(page.getByText('메타 저장 완료')).toBeVisible();
+    await expect(page.getByText('메타 저장 완료').first()).toBeVisible();
+    const successToast = page.getByTestId('action-toast').filter({ hasText: '메타 저장 완료' });
+    await expect(successToast).toHaveAttribute('data-toast-kind', 'success');
+    await expect(successToast).toHaveAttribute('role', 'status');
+    const toastGeometry = await successToast.evaluate((element) => {
+        const rect = element.getBoundingClientRect();
+        const viewport = element.parentElement?.parentElement;
+        return {
+            right: Math.round(window.innerWidth - rect.right),
+            width: Math.round(rect.width),
+            viewportPosition: viewport ? getComputedStyle(viewport).position : '',
+        };
+    });
+    expect(toastGeometry.right).toBeGreaterThanOrEqual(0);
+    expect(toastGeometry.width).toBeGreaterThan(250);
+    expect(toastGeometry.viewportPosition).toBe('fixed');
+    await page.screenshot({ path: testInfo.outputPath('meta-save-toast-desktop.png'), fullPage: true });
+
+    await page.setViewportSize({ width: 390, height: 844 });
+    const mobileToastGeometry = await successToast.evaluate((element) => {
+        const rect = element.getBoundingClientRect();
+        return {
+            left: Math.round(rect.left),
+            right: Math.round(window.innerWidth - rect.right),
+            bottom: Math.round(window.innerHeight - rect.bottom),
+        };
+    });
+    expect(mobileToastGeometry.left).toBeGreaterThanOrEqual(0);
+    expect(mobileToastGeometry.right).toBeGreaterThanOrEqual(0);
+    expect(mobileToastGeometry.bottom).toBeGreaterThanOrEqual(0);
+    expect(mobileToastGeometry.bottom).toBeLessThanOrEqual(20);
+    await page.screenshot({ path: testInfo.outputPath('meta-save-toast-mobile.png'), fullPage: true });
     const request = JSON.stringify(
         state.requestBodies.find((entry) => entry.operation === 'admin.profiles.updateMeta')?.body
     );
@@ -525,13 +567,35 @@ test('edits server reset defaults through profile metadata settings', async ({ p
     expect(request).toContain('"npcMode":2');
 });
 
+test('shows a dismissible error toast when profile metadata persistence fails', async ({ page }, testInfo) => {
+    const state: FixtureState = {
+        operations: [],
+        gatewayOperations: [],
+        runtimeRunning: true,
+        requestBodies: [],
+        updateMetaFails: true,
+    };
+    await installFixture(page, state);
+
+    await page.goto('admin/servers/che%3A2');
+    await page.getByPlaceholder('변경 사유 (필수)').fill('exercise persistence error');
+    await page.getByRole('button', { name: '메타 저장' }).click();
+
+    const errorToast = page.getByTestId('action-toast').filter({ hasText: '메타 저장 실패' });
+    await expect(errorToast).toBeVisible();
+    await expect(errorToast).toHaveAttribute('data-toast-kind', 'error');
+    await page.screenshot({ path: testInfo.outputPath('meta-save-toast-error.png'), fullPage: true });
+    await errorToast.getByRole('button', { name: '알림 닫기' }).click();
+    await expect(errorToast).toHaveCount(0);
+});
+
 test('renders the fixed-profile version form without waiting for the server list', async ({ page }) => {
     const state: FixtureState = {
         operations: [],
         gatewayOperations: [],
         runtimeRunning: true,
         requestBodies: [],
-        profileNavigationDelayMs: 1500,
+        profileNavigationDelayMs: 3000,
         profileNavigationResolved: false,
     };
     await installFixture(page, state);
@@ -595,7 +659,7 @@ test('scenario-only operator resets the current version without Git or Gateway c
     await expect(page.getByTestId('source-commit')).toHaveCount(0);
     await expect(page.getByRole('link', { name: 'Gateway 릴리스' })).toHaveCount(0);
     await page.getByTestId('request-reset').click();
-    await expect(page.getByText('초기화 작업을 등록했습니다.')).toBeVisible();
+    await expect(page.getByText('초기화 작업을 등록했습니다.').first()).toBeVisible();
     await expect
         .poll(() => state.requestBodies.some((entry) => entry.operation === 'admin.operations.requestReset'))
         .toBe(true);
@@ -618,7 +682,7 @@ test('controls gateway deployment and rollback through the external controller q
     await page.getByTestId('gateway-source-ref').fill('release/2026-08');
     await page.getByTestId('request-gateway-deploy').click();
 
-    await expect(page.getByText(/Gateway 배포 작업을 등록했습니다/)).toBeVisible();
+    await expect(page.getByText(/Gateway 배포 작업을 등록했습니다/).first()).toBeVisible();
     await expect(page.getByTestId('gateway-release-table')).toContainText('DEPLOY');
     await expect(page.getByTestId('gateway-release-log-panel')).toBeVisible();
     await expect(page.getByTestId('gateway-release-log')).toContainText('Gateway 구성 요소를 빌드합니다.');
@@ -640,7 +704,7 @@ test('controls gateway deployment and rollback through the external controller q
     state.gatewayOperations = [];
     await page.getByTestId('refresh-operations').click();
     await page.getByTestId('request-gateway-rollback').click();
-    await expect(page.getByText('Gateway rollback 작업을 등록했습니다.')).toBeVisible();
+    await expect(page.getByText('Gateway rollback 작업을 등록했습니다.').first()).toBeVisible();
     expect(state.requestBodies.some((entry) => entry.operation === 'admin.releases.requestGatewayRollback')).toBe(true);
 });
 
@@ -709,7 +773,7 @@ test('renders a failed reset, retries it as a new operation, and reaches success
     expect(await failure.evaluate((element) => getComputedStyle(element).color)).toBe('oklch(0.704 0.191 22.216)');
 
     await page.getByRole('button', { name: '재시도' }).click();
-    await expect(page.getByText('재시도 작업을 등록했습니다.')).toBeVisible();
+    await expect(page.getByText('재시도 작업을 등록했습니다.').first()).toBeVisible();
     await expect(page.getByText('FAILED', { exact: true })).toBeVisible();
     await expect(page.getByText('QUEUED', { exact: true })).toBeVisible();
     await expect(page.getByTestId('operations-table').locator('tbody tr')).toHaveCount(2);

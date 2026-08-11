@@ -209,6 +209,8 @@ describe('GatewayReleaseController', () => {
 
         expect(commandGroups).toHaveLength(2);
         expect(commandGroups[0]?.[0]).toBe('install --frozen-lockfile');
+        expect(commandGroups[0]?.[1]).toContain('turbo run build');
+        expect(commandGroups[0]?.[1]).toContain('--cache-dir=/srv/sammo/controller/.turbo/release-cache');
         expect(commandGroups[1]).toEqual(['--filter @sammo-ts/infra prisma:migrate:deploy:gateway']);
         expect([...running.keys()].sort()).toEqual([...gatewayNames].sort());
         expect(harness.published).toEqual([
@@ -216,7 +218,16 @@ describe('GatewayReleaseController', () => {
         ]);
         expect(harness.completions).toEqual(['SUCCEEDED']);
         expect(harness.logs.map((entry) => entry.phase)).toEqual(
-            expect.arrayContaining(['claim', 'resolve', 'workspace', 'build', 'migration', 'switch', 'readiness', 'publish'])
+            expect.arrayContaining([
+                'claim',
+                'resolve',
+                'workspace',
+                'build',
+                'migration',
+                'switch',
+                'readiness',
+                'publish',
+            ])
         );
     });
 
@@ -275,8 +286,7 @@ describe('GatewayReleaseController', () => {
                 await onProgress?.({
                     type: 'OUTPUT',
                     stream: 'stdout',
-                    message:
-                        'bootstrap-secret-value postgresql://operator:visible-password@db.invalid/sammo',
+                    message: 'bootstrap-secret-value postgresql://operator:visible-password@db.invalid/sammo',
                 });
                 return { ok: true, exitCode: 0, output: '' };
             },
@@ -405,7 +415,7 @@ describe('upgradeReleaseController', () => {
         ).resolves.toEqual({ commitSha: SHA, workspace });
 
         expect(commandGroups).toHaveLength(2);
-        expect(commandGroups[0]?.at(-1)).toBe('--filter @sammo-ts/release-controller build');
+        expect(commandGroups[0]?.at(-1)).toContain('turbo run build --filter=@sammo-ts/release-controller');
         expect(starts.at(-1)).toMatchObject({
             name: 'sammo:release-controller',
             cwd: path.join(workspace, 'app', 'release-controller'),
