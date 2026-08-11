@@ -5,6 +5,7 @@ import { expect, test, type Page, type Route } from '@playwright/test';
 const response = (data: unknown) => ({ result: { data } });
 const artifactRoot = process.env.MAIN_NAVIGATION_ARTIFACT_DIR;
 const autoRefreshArtifactRoot = process.env.AUTO_REFRESH_ARTIFACT_DIR;
+const productionBundle = process.env.PLAYWRIGHT_FRONTEND_MODE === 'production';
 const basePath = `/${(process.env.PLAYWRIGHT_GAME_BASE_PATH ?? 'che').replace(/^\/+|\/+$/g, '')}`;
 const gameProfile = process.env.PLAYWRIGHT_GAME_PROFILE ?? 'che:default';
 const operationNames = (route: Route) =>
@@ -20,6 +21,95 @@ type NavigationFixture = {
     operations: string[];
     generalName?: string;
     refreshDelayMs?: number;
+    largeCommandTable?: boolean;
+    dashboardResponses?: Array<{
+        bytes: number;
+        contextKind: string | null;
+        commandTableKind: string | null;
+        boardAccessKind: string | null;
+    }>;
+};
+
+type DashboardBundleInput = {
+    include?: { context?: boolean; commandTable?: boolean; boardAccess?: boolean };
+    known?: { context?: string; commandTable?: string; boardAccess?: string };
+    forceSnapshot?: boolean;
+};
+
+const operationInput = (route: Route, index: number): DashboardBundleInput => {
+    const input = new URL(route.request().url()).searchParams.get('input');
+    if (!input) return {};
+    const parsed = JSON.parse(input) as Record<string, unknown>;
+    const entry = (parsed[String(index)] ?? parsed) as { json?: DashboardBundleInput };
+    return entry.json ?? (entry as DashboardBundleInput);
+};
+
+const commandTableFixture = (large: boolean) => ({
+    general: large
+        ? [
+              {
+                  category: '일반',
+                  values: Array.from({ length: 48 }, (_, index) => ({
+                      key: `command-${index}`,
+                      name: `명령 ${index}`,
+                      reqArg: index % 2 === 0,
+                      possible: true,
+                      status: 'available',
+                      inputFields: [
+                          {
+                              key: 'amount',
+                              label: '수량',
+                              kind: 'number',
+                              required: true,
+                              min: 1,
+                              max: 10_000,
+                          },
+                      ],
+                  })),
+              },
+          ]
+        : [],
+    nation: [],
+    inputOptions: {
+        cities: Array.from({ length: 20 }, (_, index) => ({ value: index + 1, label: `도시 ${index + 1}` })),
+        nations: [],
+        generals: [],
+        crewTypes: [],
+        armTypes: [],
+        nationTypes: [],
+        colors: [],
+        items: {},
+    },
+});
+
+const CONTEXT_INITIAL_REVISION = 'AAAAAAAAAAAAAAAAAAAAAA';
+const COMMAND_TABLE_REVISION = 'CCCCCCCCCCCCCCCCCCCCCC';
+const BOARD_ACCESS_REVISION = 'DDDDDDDDDDDDDDDDDDDDDD';
+
+const contextRevision = (state: NavigationFixture) => {
+    const name = state.generalName ?? '메뉴검증장수';
+    if (name === '메뉴검증장수') return CONTEXT_INITIAL_REVISION;
+    if (name === '부드럽게갱신된장수') return 'EEEEEEEEEEEEEEEEEEEEEE';
+    if (name === '탭공유갱신장수') return 'FFFFFFFFFFFFFFFFFFFFFF';
+    if (name === '리더만갱신장수') return 'GGGGGGGGGGGGGGGGGGGGGG';
+    return 'HHHHHHHHHHHHHHHHHHHHHH';
+};
+
+const deltaSlice = <T>(value: T, revision: string, known: string | undefined, forceSnapshot: boolean) => {
+    if (forceSnapshot || !known) return { kind: 'snapshot' as const, revision, data: value };
+    if (known === revision) return { kind: 'unchanged' as const, revision };
+    return {
+        kind: 'patch' as const,
+        baseRevision: known,
+        revision,
+        operations: [
+            {
+                op: 'replace' as const,
+                path: '/general/name',
+                value: (value as ReturnType<typeof generalContext>).general.name,
+            },
+        ],
+    };
 };
 
 const emptyMessages = (permission: number) => ({
@@ -134,13 +224,50 @@ const installFixture = async (page: Page, state: NavigationFixture) => {
     await page.route(`**${basePath}/api/trpc/**`, async (route) => {
         const operations = operationNames(route);
         state.operations.push(...operations);
-        if (operations.includes('general.me') && state.generalMeCalls > 0 && state.refreshDelayMs) {
+        if (
+            operations.some((operation) => ['general.me', 'dashboard.getContextBundleDelta'].includes(operation)) &&
+            state.generalMeCalls > 0 &&
+            state.refreshDelayMs
+        ) {
             await new Promise((resolve) => setTimeout(resolve, state.refreshDelayMs));
         }
-        const results = operations.map((operation) => {
+        const results = operations.map((operation, index) => {
             if (operation === 'auth.status') return response({ ok: true });
             if (operation === 'lobby.info') {
                 return response({ myGeneral: { id: 7, name: '메뉴검증장수' }, year: 185, month: 1, turnTerm: 10 });
+            }
+            if (operation === 'dashboard.getContextBundleDelta') {
+                state.generalMeCalls += 1;
+                const input = operationInput(route, index);
+                const include = input.include ?? {};
+                const forceSnapshot = input.forceSnapshot === true;
+                const revision = contextRevision(state);
+                const context = include.context
+                    ? deltaSlice(generalContext(state), revision, input.known?.context, forceSnapshot)
+                    : undefined;
+                const commandTable = include.commandTable
+                    ? forceSnapshot || !input.known?.commandTable
+                        ? {
+                              kind: 'snapshot' as const,
+                              revision: COMMAND_TABLE_REVISION,
+                              data: commandTableFixture(state.largeCommandTable === true),
+                          }
+                        : { kind: 'unchanged' as const, revision: COMMAND_TABLE_REVISION }
+                    : undefined;
+                const boardAccess = include.boardAccess
+                    ? forceSnapshot || !input.known?.boardAccess
+                        ? {
+                              kind: 'snapshot' as const,
+                              revision: BOARD_ACCESS_REVISION,
+                              data: {
+                                  permission: state.permission,
+                                  canMeeting: state.officerLevel >= 1,
+                                  canSecret: state.permission >= 2,
+                              },
+                          }
+                        : { kind: 'unchanged' as const, revision: BOARD_ACCESS_REVISION }
+                    : undefined;
+                return response({ context, commandTable, boardAccess });
             }
             if (operation === 'general.me') {
                 state.generalMeCalls += 1;
@@ -210,6 +337,22 @@ const installFixture = async (page: Page, state: NavigationFixture) => {
             }
             if (operation === 'tournament.getState') return response({ stage: state.stage });
             return response({ ok: true });
+        });
+        operations.forEach((operation, index) => {
+            if (operation !== 'dashboard.getContextBundleDelta') return;
+            const item = results[index];
+            if (!item) return;
+            const data = item.result.data as {
+                context?: { kind: string };
+                commandTable?: { kind: string };
+                boardAccess?: { kind: string };
+            };
+            (state.dashboardResponses ??= []).push({
+                bytes: Buffer.byteLength(JSON.stringify(item)),
+                contextKind: data.context?.kind ?? null,
+                commandTableKind: data.commandTable?.kind ?? null,
+                boardAccessKind: data.boardAccess?.kind ?? null,
+            });
         });
         await route.fulfill({
             status: 200,
@@ -638,6 +781,7 @@ test('realtime read-model events skip clock-only work, merge bursts, patch in pl
         generalMeCalls: 0,
         operations: [],
         refreshDelayMs: 300,
+        largeCommandTable: true,
     };
     await installRealtimeHarness(page);
     await installFixture(page, state);
@@ -739,11 +883,12 @@ test('realtime read-model events skip clock-only work, merge bursts, patch in pl
     expect(state.generalMeCalls).toBe(callsBeforeRefresh + 1);
     await expect(page.locator('.general-title')).toContainText('부드럽게갱신된장수');
     const changedOperations = state.operations.slice(operationsBeforeChangedBurst);
-    expect(changedOperations).toEqual(
-        expect.arrayContaining(['general.me', 'turns.getCommandTable', 'board.getAccess'])
-    );
+    expect(changedOperations).toEqual(['dashboard.getContextBundleDelta']);
     expect(changedOperations).not.toEqual(
         expect.arrayContaining([
+            'general.me',
+            'turns.getCommandTable',
+            'board.getAccess',
             'lobby.info',
             'world.getMap',
             'messages.getRecent',
@@ -753,6 +898,19 @@ test('realtime read-model events skip clock-only work, merge bursts, patch in pl
             'turns.reserved.getGeneral',
         ])
     );
+    const initialBundle = state.dashboardResponses?.find(
+        (entry) => entry.contextKind === 'snapshot' && entry.commandTableKind === 'snapshot'
+    );
+    const realtimeBundle = state.dashboardResponses?.find(
+        (entry) => entry.contextKind === 'patch' && entry.commandTableKind === 'unchanged'
+    );
+    expect(initialBundle?.bytes).toBeGreaterThan(5_000);
+    expect(realtimeBundle).toMatchObject({
+        contextKind: 'patch',
+        commandTableKind: 'unchanged',
+        boardAccessKind: 'unchanged',
+    });
+    expect(realtimeBundle?.bytes).toBeLessThan(1_000);
 
     const operationsBeforeSurvey = state.operations.length;
     await page.evaluate(() => {
@@ -812,8 +970,10 @@ test('realtime read-model events skip clock-only work, merge bursts, patch in pl
     expect(profile.cityMounted).toBe(true);
     expect(profile.generalMutations).toBeGreaterThan(0);
     expect(profile.cityMutations).toBe(0);
-    expect(profile.vueMeasures.some((name) => name.includes('GeneralBasicCard'))).toBe(true);
-    expect(profile.vueMeasures.some((name) => name.includes('CityBasicCard'))).toBe(false);
+    if (!productionBundle) {
+        expect(profile.vueMeasures.some((name) => name.includes('GeneralBasicCard'))).toBe(true);
+        expect(profile.vueMeasures.some((name) => name.includes('CityBasicCard'))).toBe(false);
+    }
     if (autoRefreshArtifactRoot) {
         await Promise.all([
             page.screenshot({ path: resolve(autoRefreshArtifactRoot, 'auto-refresh-complete.png'), fullPage: true }),
@@ -823,6 +983,15 @@ test('realtime read-model events skip clock-only work, merge bursts, patch in pl
                     {
                         emittedTurnEvents: 100,
                         selectiveGeneralRefreshes: state.generalMeCalls - callsBeforeRefresh,
+                        responseBytes: {
+                            initialSnapshot: initialBundle?.bytes ?? null,
+                            realtimeDelta: realtimeBundle?.bytes ?? null,
+                            reductionPercent:
+                                initialBundle && realtimeBundle
+                                    ? Number(((1 - realtimeBundle.bytes / initialBundle.bytes) * 100).toFixed(2))
+                                    : null,
+                        },
+                        responseKinds: realtimeBundle ?? null,
                         inFlightSkeletons: { general: 0, city: 0 },
                         ...profile,
                     },

@@ -1,7 +1,12 @@
 import { computed, ref, toRaw, watch } from 'vue';
 import { defineStore } from 'pinia';
 import { MESSAGE_MAILBOX_NATIONAL_BASE, MESSAGE_MAILBOX_PUBLIC, type MessageType } from '@sammo-ts/logic';
-import type { RealtimeEvent, RealtimeReadModelChanges } from '@sammo-ts/common';
+import {
+    applyReadModelDelta,
+    ReadModelDeltaMismatchError,
+    type RealtimeEvent,
+    type RealtimeReadModelChanges,
+} from '@sammo-ts/common';
 import { trpc } from '../utils/trpc';
 import { useMapViewerStore } from './mapViewer';
 import { useSessionStore } from './session';
@@ -36,7 +41,17 @@ export const useMainDashboardStore = defineStore('mainDashboard', () => {
     type ReservedTurnView = Awaited<ReturnType<typeof trpc.turns.reserved.getGeneral.query>>['turns'][number];
     type RecentRecord = Awaited<ReturnType<typeof trpc.general.getRecentRecords.query>>['global'][number];
     type FrontStatus = Awaited<ReturnType<typeof trpc.general.getFrontStatus.query>>;
+    type ContextBundleDelta = Awaited<ReturnType<typeof trpc.dashboard.getContextBundleDelta.query>>;
+    type ContextBundleInclude = {
+        context: boolean;
+        commandTable: boolean;
+        boardAccess: boolean;
+    };
     type DashboardReadModelPatch = {
+        contextSnapshot?: GeneralContext;
+        contextRevision?: string | null;
+        commandTableRevision?: string | null;
+        boardAccessRevision?: string | null;
         general?: PresentGeneralContext['general'] | null;
         city?: PresentGeneralContext['city'] | null;
         nation?: PresentGeneralContext['nation'] | null;
@@ -87,6 +102,10 @@ export const useMainDashboardStore = defineStore('mainDashboard', () => {
     let lastWorldHistoryId = 0;
     let recordGeneralId: number | null = null;
     let initialized = false;
+    let contextSnapshot: GeneralContext | undefined;
+    let contextRevision: string | null = null;
+    let commandTableRevision: string | null = null;
+    let boardAccessRevision: string | null = null;
 
     const messageDraftText = ref('');
     const targetMailbox = ref<number>(MESSAGE_MAILBOX_PUBLIC);
@@ -298,14 +317,37 @@ export const useMainDashboardStore = defineStore('mainDashboard', () => {
     };
 
     const applyDashboardPatch = (patch: DashboardReadModelPatch) => {
-        if (patch.general === null) {
+        if (patch.contextSnapshot === null) {
+            contextSnapshot = null;
             general.value = null;
             city.value = null;
             nation.value = null;
+            commandTable.value = null;
+            boardAccess.value = null;
             reservedGeneralTurns.value = null;
             reservedGeneralRevision.value = 0;
-            boardAccess.value = null;
             resetRecentRecords(null);
+            commandTableRevision = null;
+            boardAccessRevision = null;
+        } else if (patch.contextSnapshot !== undefined) {
+            contextSnapshot = patch.contextSnapshot;
+            general.value = structurallyShare(general.value, patch.contextSnapshot.general);
+            city.value = structurallyShare(city.value, patch.contextSnapshot.city);
+            nation.value = structurallyShare(nation.value, patch.contextSnapshot.nation);
+        }
+        if (patch.general === null) {
+            contextSnapshot = null;
+            general.value = null;
+            city.value = null;
+            nation.value = null;
+            commandTable.value = null;
+            boardAccess.value = null;
+            reservedGeneralTurns.value = null;
+            reservedGeneralRevision.value = 0;
+            resetRecentRecords(null);
+            contextRevision = null;
+            commandTableRevision = null;
+            boardAccessRevision = null;
         } else if (patch.general !== undefined) {
             general.value = structurallyShare(general.value, patch.general);
         }
@@ -350,10 +392,17 @@ export const useMainDashboardStore = defineStore('mainDashboard', () => {
         } else if (patch.frontStatus !== undefined) {
             updateFrontStatus(patch.frontStatus);
         }
+        if (patch.contextRevision !== undefined) contextRevision = patch.contextRevision;
+        if (patch.commandTableRevision !== undefined) commandTableRevision = patch.commandTableRevision;
+        if (patch.boardAccessRevision !== undefined) boardAccessRevision = patch.boardAccessRevision;
     };
 
     const currentDashboardPatch = (): DashboardReadModelPatch => {
         const patch: DashboardReadModelPatch = {};
+        patch.contextSnapshot = toRaw(contextSnapshot);
+        patch.contextRevision = contextRevision;
+        patch.commandTableRevision = commandTableRevision;
+        patch.boardAccessRevision = boardAccessRevision;
         patch.general = toRaw(general.value);
         patch.city = toRaw(city.value);
         patch.nation = toRaw(nation.value);
@@ -373,6 +422,64 @@ export const useMainDashboardStore = defineStore('mainDashboard', () => {
         return patch;
     };
 
+    const resolveContextBundlePatch = (bundle: ContextBundleDelta): DashboardReadModelPatch => {
+        const patch: DashboardReadModelPatch = {};
+
+        if (bundle.context) {
+            const applied = applyReadModelDelta(contextSnapshot, contextRevision, bundle.context);
+            patch.contextRevision = applied.revision;
+            if (bundle.context.kind !== 'unchanged') {
+                patch.contextSnapshot = applied.data;
+            }
+        }
+        if (bundle.commandTable) {
+            const current = commandTable.value === null ? undefined : toRaw(commandTable.value);
+            const applied = applyReadModelDelta(current, commandTableRevision, bundle.commandTable);
+            patch.commandTableRevision = applied.revision;
+            if (bundle.commandTable.kind !== 'unchanged') {
+                patch.commandTable = applied.data;
+            }
+        }
+        if (bundle.boardAccess) {
+            const current = boardAccess.value === null ? undefined : toRaw(boardAccess.value);
+            const applied = applyReadModelDelta(current, boardAccessRevision, bundle.boardAccess);
+            patch.boardAccessRevision = applied.revision;
+            if (bundle.boardAccess.kind !== 'unchanged') {
+                patch.boardAccess = applied.data;
+            }
+        }
+
+        return patch;
+    };
+
+    const fetchContextBundlePatch = async (
+        include: ContextBundleInclude,
+        forceSnapshot = false
+    ): Promise<DashboardReadModelPatch> => {
+        const request = (force: boolean) =>
+            trpc.dashboard.getContextBundleDelta.query({
+                include,
+                known: force
+                    ? undefined
+                    : {
+                          ...(contextRevision ? { context: contextRevision } : {}),
+                          ...(commandTableRevision ? { commandTable: commandTableRevision } : {}),
+                          ...(boardAccessRevision ? { boardAccess: boardAccessRevision } : {}),
+                      },
+                forceSnapshot: force || undefined,
+            });
+
+        const bundle = await request(forceSnapshot);
+        try {
+            return resolveContextBundlePatch(bundle);
+        } catch (error) {
+            if (forceSnapshot || !(error instanceof ReadModelDeltaMismatchError)) {
+                throw error;
+            }
+            return resolveContextBundlePatch(await request(true));
+        }
+    };
+
     const refreshMainData = async () => {
         const isInitialLoad = !initialized;
         if (isInitialLoad) {
@@ -385,16 +492,14 @@ export const useMainDashboardStore = defineStore('mainDashboard', () => {
         frontStatusError.value = null;
 
         try {
-            const context = await trpc.general.me.query();
+            const contextPatch = await fetchContextBundlePatch(
+                { context: true, commandTable: true, boardAccess: true },
+                true
+            );
+            applyDashboardPatch(contextPatch);
+            const context = contextSnapshot;
 
             if (!context) {
-                general.value = null;
-                city.value = null;
-                nation.value = null;
-                reservedGeneralTurns.value = null;
-                reservedGeneralRevision.value = 0;
-                boardAccess.value = null;
-                resetRecentRecords(null);
                 initialized = true;
                 return;
             }
@@ -418,29 +523,17 @@ export const useMainDashboardStore = defineStore('mainDashboard', () => {
                 frontStatusError.value = resolveErrorMessage(err);
                 return null;
             });
-            const [
-                layout,
-                lobby,
-                map,
-                commands,
-                messageData,
-                contacts,
-                access,
-                generalTurns,
-                records,
-                nextFrontStatus,
-            ] = await Promise.all([
-                layoutPromise,
-                trpc.lobby.info.query(),
-                trpc.world.getMap.query({ generalId: id, showMe: true, useCache: true }),
-                trpc.turns.getCommandTable.query({ generalId: id }),
-                trpc.messages.getRecent.query({ generalId: id }),
-                trpc.messages.getContacts.query({ generalId: id }),
-                trpc.board.getAccess.query(),
-                generalTurnsPromise,
-                recordsPromise,
-                frontStatusPromise,
-            ]);
+            const [layout, lobby, map, messageData, contacts, generalTurns, records, nextFrontStatus] =
+                await Promise.all([
+                    layoutPromise,
+                    trpc.lobby.info.query(),
+                    trpc.world.getMap.query({ generalId: id, showMe: true, useCache: true }),
+                    trpc.messages.getRecent.query({ generalId: id }),
+                    trpc.messages.getContacts.query({ generalId: id }),
+                    generalTurnsPromise,
+                    recordsPromise,
+                    frontStatusPromise,
+                ]);
 
             general.value = structurallyShare(general.value, context.general);
             city.value = structurallyShare(city.value, context.city);
@@ -448,10 +541,8 @@ export const useMainDashboardStore = defineStore('mainDashboard', () => {
             mapLayout.value = structurallyShare(mapLayout.value, layout);
             lobbyInfo.value = structurallyShare(lobbyInfo.value, lobby);
             worldMap.value = structurallyShare(worldMap.value, map);
-            commandTable.value = structurallyShare(commandTable.value, commands);
             messages.value = structurallyShare(messages.value, messageData);
             messageContacts.value = structurallyShare(messageContacts.value, contacts);
-            boardAccess.value = structurallyShare(boardAccess.value, access);
             reservedGeneralTurns.value = structurallyShare<unknown>(
                 reservedGeneralTurns.value,
                 generalTurns.turns
@@ -517,20 +608,21 @@ export const useMainDashboardStore = defineStore('mainDashboard', () => {
         if (plan.records) recordsError.value = null;
         if (plan.frontStatus) frontStatusError.value = null;
         try {
-            const contextPromise = plan.context
-                ? trpc.general.me.query()
-                : Promise.resolve(undefined as GeneralContext | undefined);
+            const contextBundlePromise =
+                plan.context || plan.commands || plan.boardAccess
+                    ? fetchContextBundlePatch({
+                          context: plan.context,
+                          commandTable: plan.commands,
+                          boardAccess: plan.boardAccess,
+                      })
+                    : Promise.resolve(undefined);
             const lobbyPromise = plan.lobby ? trpc.lobby.info.query() : Promise.resolve(undefined);
             const mapPromise = plan.map
                 ? trpc.world.getMap.query({ generalId: id, showMe: true, useCache: true })
                 : Promise.resolve(undefined);
-            const commandsPromise = plan.commands
-                ? trpc.turns.getCommandTable.query({ generalId: id })
-                : Promise.resolve(undefined);
             const contactsPromise = plan.contacts
                 ? trpc.messages.getContacts.query({ generalId: id })
                 : Promise.resolve(undefined);
-            const boardPromise = plan.boardAccess ? trpc.board.getAccess.query() : Promise.resolve(undefined);
             const reservedPromise = plan.reservedTurns
                 ? trpc.turns.reserved.getGeneral.query({ generalId: id })
                 : Promise.resolve(undefined);
@@ -549,32 +641,20 @@ export const useMainDashboardStore = defineStore('mainDashboard', () => {
                   })
                 : Promise.resolve(undefined);
 
-            const [context, lobby, map, commands, contacts, access, generalTurns, records, nextFrontStatus] =
-                await Promise.all([
-                    contextPromise,
-                    lobbyPromise,
-                    mapPromise,
-                    commandsPromise,
-                    contactsPromise,
-                    boardPromise,
-                    reservedPromise,
-                    recordsPromise,
-                    frontPromise,
-                ]);
+            const [contextPatch, lobby, map, contacts, generalTurns, records, nextFrontStatus] = await Promise.all([
+                contextBundlePromise,
+                lobbyPromise,
+                mapPromise,
+                contactsPromise,
+                reservedPromise,
+                recordsPromise,
+                frontPromise,
+            ]);
 
-            const patch: DashboardReadModelPatch = {};
-            if (context === null) {
-                patch.general = null;
-            } else if (context !== undefined) {
-                patch.general = context.general;
-                patch.city = context.city;
-                patch.nation = context.nation;
-            }
+            const patch: DashboardReadModelPatch = contextPatch ? { ...contextPatch } : {};
             if (lobby !== undefined) patch.lobbyInfo = lobby;
             if (map !== undefined) patch.worldMap = map;
-            if (commands !== undefined) patch.commandTable = commands;
             if (contacts !== undefined) patch.messageContacts = contacts;
-            if (access !== undefined) patch.boardAccess = access;
             if (generalTurns !== undefined) {
                 patch.reservedGeneralTurns = generalTurns.turns;
                 patch.reservedGeneralRevision = generalTurns.revision;
