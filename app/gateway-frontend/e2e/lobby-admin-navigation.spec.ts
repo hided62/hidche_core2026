@@ -139,7 +139,59 @@ test('bootstrap superuser can navigate the administrator workspace from the lobb
 
     await navigation.getByRole('link', { name: 'Gateway 릴리스' }).click();
     await expect(page).toHaveURL(/\/gateway\/admin\/releases$/);
-    await expect(page.getByRole('heading', { name: 'Gateway 릴리스' })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Gateway 릴리스', level: 1 })).toBeVisible();
+});
+
+test('desktop administrator sidebar follows the navbar away and then sticks to the viewport top', async ({
+    page,
+}, testInfo) => {
+    await page.setViewportSize({ width: 1200, height: 500 });
+    await installGatewayFixture(page, ['superuser']);
+    await page.goto('admin');
+
+    const sidebar = page.locator('#admin-navigation');
+    await expect(sidebar).toBeVisible();
+    const measurements: Array<{
+        scrollY: number;
+        top: number;
+        bottom: number;
+        height: number;
+        viewportHeight: number;
+        position: string;
+        backgroundColor: string;
+    }> = [];
+
+    for (const scrollY of [0, 20, 55, 56, 120]) {
+        await page.evaluate((top) => window.scrollTo(0, top), scrollY);
+        await expect.poll(() => page.evaluate(() => window.scrollY)).toBe(scrollY);
+
+        const geometry = await sidebar.evaluate((element) => {
+            const rect = element.getBoundingClientRect();
+            const style = getComputedStyle(element);
+            return {
+                top: rect.top,
+                bottom: rect.bottom,
+                height: rect.height,
+                viewportHeight: window.innerHeight,
+                position: style.position,
+                backgroundColor: style.backgroundColor,
+            };
+        });
+        expect(geometry.top).toBeCloseTo(Math.max(0, 56 - scrollY), 0);
+        expect(geometry.position).toBe('sticky');
+        expect(geometry.backgroundColor).toBe('rgb(17, 17, 19)');
+        measurements.push({ scrollY, ...geometry });
+
+        if (scrollY >= 56) {
+            expect(geometry.bottom).toBeCloseTo(geometry.viewportHeight, 0);
+        }
+
+        if (scrollY === 20 || scrollY === 56) {
+            await page.screenshot({ path: testInfo.outputPath(`admin-sidebar-scroll-${scrollY}.png`) });
+        }
+    }
+
+    await writeFile(testInfo.outputPath('admin-sidebar-scroll-geometry.json'), JSON.stringify(measurements, null, 2));
 });
 
 test('legacy server operations URL keeps query parameters and redirects to the server list', async ({ page }) => {
