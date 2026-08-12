@@ -971,6 +971,108 @@ test.describe('yearbook legacy parity', () => {
         await expect(page.getByRole('alert')).toBeVisible();
         await expect(page.getByLabel('연월 선택')).toBeVisible();
     });
+
+    test('keeps the rendered yearbook in place while moving between months', async ({ page }) => {
+        await page.goto(gameUrl('/yearbook'));
+        await expect(page.getByText('한이 낙양을 지키고 있습니다.')).toBeVisible();
+
+        let releaseHistory: (() => void) | undefined;
+        const historyReleased = new Promise<void>((resolve) => {
+            releaseHistory = resolve;
+        });
+        let markHistoryRequested: (() => void) | undefined;
+        const historyRequested = new Promise<void>((resolve) => {
+            markHistoryRequested = resolve;
+        });
+        await page.route('**/che/api/trpc/**', async (route) => {
+            if (!operationNames(route).includes('yearbook.getHistory')) {
+                await route.fallback();
+                return;
+            }
+            markHistoryRequested?.();
+            await historyReleased;
+            await fulfillOperations(route, () => ({
+                notModified: false,
+                hash: 'yearbook-previous-month-hash',
+                data: {
+                    ...fixture.game.yearbook.data,
+                    year: 197,
+                    month: 6,
+                    map: {
+                        ...fixture.game.yearbook.data.map,
+                        year: 197,
+                        month: 6,
+                    },
+                    nations: fixture.game.yearbook.data.nations.map((nation, index) => ({
+                        ...nation,
+                        generalCount: index === 0 ? 12 : 8,
+                    })),
+                    globalHistory: ['<C>●</> 이전 달의 중원 정세입니다.'],
+                    globalAction: ['<L>●</> 이전 달의 장수 동향입니다.'],
+                },
+            }));
+        });
+
+        await page.evaluate(() => {
+            const grid = document.querySelector<HTMLElement>('.history-grid')!;
+            const transition = {
+                grid,
+                mapBody: document.querySelector<HTMLElement>('.map-body')!,
+                nationBody: document.querySelector<HTMLElement>('.nation-position tbody')!,
+                removedNodes: 0,
+            };
+            new MutationObserver((records) => {
+                transition.removedNodes += records.reduce((count, record) => count + record.removedNodes.length, 0);
+            }).observe(grid, { childList: true, subtree: true });
+            (window as unknown as { __yearbookTransition: typeof transition }).__yearbookTransition = transition;
+        });
+
+        await page.getByRole('button', { name: '◀ 이전달' }).click();
+        await historyRequested;
+
+        await expect(page.locator('.history-grid')).toHaveAttribute('aria-busy', 'true');
+        await expect(page.locator('.map-body')).toHaveCount(1);
+        await expect(page.locator('.map-viewer .skeleton-lines')).toHaveCount(0);
+        await expect(page.getByText('한이 낙양을 지키고 있습니다.')).toBeVisible();
+        expect(
+            await page.evaluate(() => {
+                const transition = (
+                    window as unknown as {
+                        __yearbookTransition: {
+                            grid: Element;
+                            mapBody: Element;
+                            nationBody: Element;
+                            removedNodes: number;
+                        };
+                    }
+                ).__yearbookTransition;
+                return {
+                    gridIsSame: document.querySelector('.history-grid') === transition.grid,
+                    mapIsSame: document.querySelector('.map-body') === transition.mapBody,
+                    nationIsSame: document.querySelector('.nation-position tbody') === transition.nationBody,
+                    removedNodes: transition.removedNodes,
+                };
+            })
+        ).toEqual({ gridIsSame: true, mapIsSame: true, nationIsSame: true, removedNodes: 0 });
+
+        releaseHistory?.();
+        await expect(page.getByText('이전 달의 중원 정세입니다.')).toBeVisible();
+        await expect(page.locator('.history-grid')).toHaveAttribute('aria-busy', 'false');
+        expect(
+            await page.evaluate(() => {
+                const transition = (
+                    window as unknown as {
+                        __yearbookTransition: { grid: Element; mapBody: Element; nationBody: Element };
+                    }
+                ).__yearbookTransition;
+                return {
+                    gridIsSame: document.querySelector('.history-grid') === transition.grid,
+                    mapIsSame: document.querySelector('.map-body') === transition.mapBody,
+                    nationIsSame: document.querySelector('.nation-position tbody') === transition.nationBody,
+                };
+            })
+        ).toEqual({ gridIsSame: true, mapIsSame: true, nationIsSame: true });
+    });
 });
 
 test.describe('survey legacy parity', () => {
