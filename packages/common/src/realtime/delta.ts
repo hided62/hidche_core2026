@@ -1,4 +1,4 @@
-import { applyPatch, createPatch, type Operation } from 'rfc6902';
+import { applyPatch, type Operation } from 'rfc6902';
 
 export interface JsonPatchOperation {
     op: 'add' | 'remove' | 'replace' | 'move' | 'copy' | 'test';
@@ -63,7 +63,76 @@ export const cloneReadModelJson = <T>(value: T): T => {
     }
 };
 
-export const createJsonPatch = (current: unknown, next: unknown): JsonPatchOperation[] => createPatch(current, next);
+const escapeJsonPointerToken = (token: string): string => token.replaceAll('~', '~0').replaceAll('/', '~1');
+
+const appendJsonPointer = (path: string, token: string): string => `${path}/${escapeJsonPointerToken(token)}`;
+
+const isJsonObject = (value: unknown): value is Record<string, unknown> =>
+    value !== null && typeof value === 'object' && !Array.isArray(value);
+
+/**
+ * Build a valid patch in one positional pass over arrays.
+ *
+ * The upstream rfc6902 generator minimizes array edit count with a Levenshtein
+ * matrix. Dashboard read models use stable, positional arrays and only need an
+ * exact reconstruction; the cache layer already rejects patches larger than a
+ * snapshot. Positional recursion is therefore linear: shifted positions are
+ * reconciled once, then excess tail items are removed or appended.
+ */
+const appendLinearJsonDiff = (
+    operations: JsonPatchOperation[],
+    current: unknown,
+    next: unknown,
+    path: string
+): void => {
+    if (Object.is(current, next)) {
+        return;
+    }
+
+    if (Array.isArray(current) && Array.isArray(next)) {
+        const sharedLength = Math.min(current.length, next.length);
+        for (let index = 0; index < sharedLength; index += 1) {
+            appendLinearJsonDiff(operations, current[index], next[index], appendJsonPointer(path, String(index)));
+        }
+        for (let index = current.length - 1; index >= next.length; index -= 1) {
+            operations.push({ op: 'remove', path: appendJsonPointer(path, String(index)) });
+        }
+        for (let index = current.length; index < next.length; index += 1) {
+            operations.push({ op: 'add', path: appendJsonPointer(path, '-'), value: next[index] });
+        }
+        return;
+    }
+
+    if (isJsonObject(current) && isJsonObject(next)) {
+        const currentKeys = Object.keys(current).filter((key) => current[key] !== undefined);
+        const nextKeys = Object.keys(next).filter((key) => next[key] !== undefined);
+        const nextKeySet = new Set(nextKeys);
+        const currentKeySet = new Set(currentKeys);
+
+        for (const key of currentKeys) {
+            if (!nextKeySet.has(key)) {
+                operations.push({ op: 'remove', path: appendJsonPointer(path, key) });
+            }
+        }
+        for (const key of nextKeys) {
+            const itemPath = appendJsonPointer(path, key);
+            if (!currentKeySet.has(key)) {
+                operations.push({ op: 'add', path: itemPath, value: next[key] });
+                continue;
+            }
+            appendLinearJsonDiff(operations, current[key], next[key], itemPath);
+        }
+        return;
+    }
+
+    operations.push({ op: 'replace', path, value: next });
+};
+
+export const createJsonPatch = (current: unknown, next: unknown): JsonPatchOperation[] => {
+    const operations: JsonPatchOperation[] = [];
+    appendLinearJsonDiff(operations, current, next, '');
+    return operations;
+};
 
 export const applyReadModelDelta = <T>(
     current: T | undefined,

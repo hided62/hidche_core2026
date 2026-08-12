@@ -52,6 +52,11 @@ export const buildReadModelDeltaCacheKey = (
 const canPatch = (value: unknown): value is Record<string, unknown> | unknown[] =>
     value !== null && typeof value === 'object';
 
+const snapshotByteLength = (revision: string, serialized: string): number =>
+    Buffer.byteLength(`{"kind":"snapshot","revision":${JSON.stringify(revision)},"data":`) +
+    Buffer.byteLength(serialized) +
+    1;
+
 const storeSnapshot = async (store: ReadModelDeltaCacheStore, key: string, serialized: string): Promise<void> => {
     try {
         await store.set(key, serialized, { EX: CACHE_TTL_SECONDS });
@@ -91,7 +96,7 @@ export const createReadModelDelta = async <T>(request: ReadModelDeltaRequest<T>)
                     };
                     const snapshot = { kind: 'snapshot' as const, revision, data: canonicalValue };
                     await storeSnapshot(request.store, currentKey, serialized);
-                    return Buffer.byteLength(JSON.stringify(patch)) < Buffer.byteLength(JSON.stringify(snapshot))
+                    return Buffer.byteLength(JSON.stringify(patch)) < snapshotByteLength(revision, serialized)
                         ? patch
                         : snapshot;
                 }
