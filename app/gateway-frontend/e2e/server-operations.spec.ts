@@ -479,6 +479,47 @@ test('separates branch and commit semantics and submits a reset from the dedicat
     await expect(page.getByTestId('profile-operation-log')).toContainText('che:2 구성 요소를 빌드합니다.');
     await expect(page.getByTestId('profile-operation-log')).toContainText('시나리오 초기 데이터 생성을 완료했습니다.');
     await expect(page.getByTestId('profile-operation-log-status')).toContainText('SUCCEEDED');
+    const operationTableGeometry = await page.getByTestId('operations-table').evaluate((table) => {
+        const columnWidths = Array.from(table.querySelectorAll('thead th')).map(
+            (heading) => heading.getBoundingClientRect().width
+        );
+        const rowHeight = table.querySelector('tbody tr')?.getBoundingClientRect().height ?? 0;
+        return {
+            columnWidths,
+            rowHeight,
+            tableWidth: table.getBoundingClientRect().width,
+            scrollerWidth: table.parentElement?.getBoundingClientRect().width ?? 0,
+            tableLayout: getComputedStyle(table).tableLayout,
+        };
+    });
+    const sourceRefGeometry = await page.getByTestId('operation-source-ref').evaluate((element) => {
+        const style = getComputedStyle(element);
+        return {
+            title: element.getAttribute('title'),
+            overflow: style.overflow,
+            textOverflow: style.textOverflow,
+            whiteSpace: style.whiteSpace,
+        };
+    });
+    expect(operationTableGeometry.tableLayout).toBe('fixed');
+    expect(operationTableGeometry.tableWidth).toBeGreaterThanOrEqual(1_300);
+    expect(operationTableGeometry.tableWidth).toBeGreaterThan(operationTableGeometry.scrollerWidth);
+    expect(operationTableGeometry.columnWidths[0]).toBeGreaterThanOrEqual(159);
+    expect(operationTableGeometry.columnWidths[1]).toBeGreaterThanOrEqual(263);
+    expect(operationTableGeometry.columnWidths[5]).toBeLessThanOrEqual(113);
+    expect(operationTableGeometry.columnWidths[7]).toBeGreaterThanOrEqual(175);
+    expect(operationTableGeometry.columnWidths[1]).toBeGreaterThan(operationTableGeometry.columnWidths[5]! * 2);
+    expect(operationTableGeometry.rowHeight).toBeLessThanOrEqual(50);
+    expect(sourceRefGeometry).toEqual({
+        title: '0123456789abcdef0123456789abcdef01234567',
+        overflow: 'hidden',
+        textOverflow: 'ellipsis',
+        whiteSpace: 'nowrap',
+    });
+    await writeFile(
+        testInfo.outputPath('operation-table-metrics.json'),
+        JSON.stringify({ operationTableGeometry, sourceRefGeometry }, null, 2)
+    );
     const resetRequest = state.requestBodies.find((entry) => entry.operation === 'admin.operations.requestReset');
     expect(JSON.stringify(resetRequest?.body)).toContain('"sourceMode":"COMMIT"');
     expect(JSON.stringify(resetRequest?.body)).toContain('0123456789abcdef0123456789abcdef01234567');
@@ -510,6 +551,33 @@ test('separates branch and commit semantics and submits a reset from the dedicat
     expect(mobileTabs).toHaveLength(3);
     expect(mobileTabs[1]!.top).toBeGreaterThan(mobileTabs[0]!.top);
     expect(mobileTabs.every((tab) => tab.height >= 44)).toBe(true);
+    const mobileOperationTableGeometry = await page.getByTestId('operations-table').evaluate((table) => {
+        const scroller = table.parentElement!;
+        const scrollerRect = scroller.getBoundingClientRect();
+        return {
+            tableWidth: table.getBoundingClientRect().width,
+            scrollerX: scrollerRect.x,
+            scrollerWidth: scrollerRect.width,
+            scrollerScrollWidth: scroller.scrollWidth,
+            viewportWidth: document.documentElement.clientWidth,
+            documentScrollWidth: document.documentElement.scrollWidth,
+        };
+    });
+    expect(mobileOperationTableGeometry.tableWidth).toBeGreaterThanOrEqual(1_300);
+    expect(mobileOperationTableGeometry.scrollerScrollWidth).toBeGreaterThan(
+        mobileOperationTableGeometry.scrollerWidth
+    );
+    expect(mobileOperationTableGeometry.scrollerX).toBeGreaterThanOrEqual(0);
+    expect(
+        mobileOperationTableGeometry.scrollerX + mobileOperationTableGeometry.scrollerWidth
+    ).toBeLessThanOrEqual(mobileOperationTableGeometry.viewportWidth);
+    expect(mobileOperationTableGeometry.documentScrollWidth).toBeLessThanOrEqual(
+        mobileOperationTableGeometry.viewportWidth
+    );
+    await writeFile(
+        testInfo.outputPath('operation-table-mobile-metrics.json'),
+        JSON.stringify(mobileOperationTableGeometry, null, 2)
+    );
     await page.screenshot({ path: testInfo.outputPath('mobile-operations.png'), fullPage: true });
 });
 
