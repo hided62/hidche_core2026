@@ -18,7 +18,7 @@ import { ConflictingTurnDaemonCommandError } from '../../daemon/databaseTranspor
 import { resolveAccessWindows } from '../../services/generalAccess.js';
 import { adjustAccountIconForUser } from '../../services/accountIconSync.js';
 import { getMyGeneral } from '../shared/general.js';
-import { resolveNationNotice } from '../nation/shared.js';
+import { loadTraitNames, resolveNationNotice, type TraitNameMap } from '../nation/shared.js';
 
 const zGeneralSettings = z.object({
     tnmt: z.number().int().optional(),
@@ -34,6 +34,17 @@ const zImmediateActionInput = z
     })
     .optional();
 const MAIN_RECORD_LIMIT = 15;
+const NEUTRAL_NATION_CONTEXT = {
+    id: 0,
+    name: '재야',
+    color: '#000000',
+    level: 0,
+    gold: 0,
+    rice: 0,
+    tech: 0,
+    typeCode: 'None',
+    capitalCityId: null,
+} as const;
 
 const resolveImmediateActionRequestId = (
     contextRequestId: string | undefined,
@@ -133,6 +144,18 @@ const normalizeItemCode = (value: string | null): string | null => {
         return null;
     }
     return value;
+};
+
+const resolveTraitDisplayName = (code: string, names: TraitNameMap): string => {
+    if (!code || code === 'None') {
+        return '-';
+    }
+    const loadedName = names.get(code)?.name;
+    if (loadedName) {
+        return loadedName;
+    }
+    // Ref는 class getName()을 표시하므로 로더가 모르는 선택적 특기도 raw namespace는 노출하지 않는다.
+    return code.replace(/^che_(?:event_)?/u, '');
 };
 
 const resolveUserSettings = (meta: Record<string, unknown>) => {
@@ -265,8 +288,14 @@ export const getGeneralContext = async (ctx: GameApiContext) => {
                       capitalCityId: true,
                   },
               })
-            : null,
+            : Promise.resolve(NEUTRAL_NATION_CONTEXT),
         ctx.db.worldState.findFirst({ select: { config: true } }),
+    ]);
+
+    const [personalityNames, domesticNames, warNames] = await Promise.all([
+        loadTraitNames([general.personalCode], 'personality'),
+        loadTraitNames([general.specialCode], 'domestic'),
+        loadTraitNames([general.special2Code], 'war'),
     ]);
 
     const metaRecord = asRecord(general.meta);
@@ -303,9 +332,9 @@ export const getGeneralContext = async (ctx: GameApiContext) => {
             turnTime: general.turnTime.toISOString(),
             crewTypeId: general.crewTypeId,
             traits: {
-                personal: general.personalCode,
-                specialWar: general.specialCode,
-                specialDomestic: general.special2Code,
+                personal: resolveTraitDisplayName(general.personalCode, personalityNames),
+                specialDomestic: resolveTraitDisplayName(general.specialCode, domesticNames),
+                specialWar: resolveTraitDisplayName(general.special2Code, warNames),
             },
             progression: {
                 experienceLevel: readNumber(metaRecord.explevel, 0),
