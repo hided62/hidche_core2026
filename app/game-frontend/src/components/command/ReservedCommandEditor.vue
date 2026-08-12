@@ -246,8 +246,8 @@ const clickOutsideMenu = (event: Event) => {
                     <strong>{{ props.name ?? '-' }}</strong
                     ><span>{{ props.title }}</span>
                 </div>
-                <div class="clock">{{ props.currentTime }}</div>
                 <button type="button" @click="editMode = !editMode">{{ editMode ? '일반 모드' : '고급 모드' }}</button>
+                <div class="clock">{{ props.currentTime }}</div>
                 <details class="legacy-menu">
                     <summary>반복</summary>
                     <div class="menu-items">
@@ -364,7 +364,7 @@ const clickOutsideMenu = (event: Event) => {
                     </details>
                 </template>
 
-                <details class="legacy-menu">
+                <details v-if="props.compact" class="legacy-menu">
                     <summary>당기기</summary>
                     <div class="menu-items">
                         <button
@@ -379,7 +379,7 @@ const clickOutsideMenu = (event: Event) => {
                         </button>
                     </div>
                 </details>
-                <details class="legacy-menu">
+                <details v-if="props.compact" class="legacy-menu">
                     <summary>미루기</summary>
                     <div class="menu-items">
                         <button
