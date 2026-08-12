@@ -34,6 +34,7 @@ type NavigationFixture = {
     reservedTurns?: Array<{ index: number; action: string; args: Record<string, unknown> }>;
     messages?: unknown;
     messageContacts?: unknown;
+    autorunLimit?: number | null;
     dashboardResponses?: Array<{
         bytes: number;
         contextKind: string | null;
@@ -405,7 +406,11 @@ const installFixture = async (page: Page, state: NavigationFixture) => {
             }
             if (operation === 'turns.getCommandTable') return response({ general: [], nation: [] });
             if (operation === 'turns.reserved.getGeneral' || operation === 'turns.reserved.getNation') {
-                return response({ turns: state.reservedTurns ?? [], revision: 0 });
+                return response({
+                    turns: state.reservedTurns ?? [],
+                    revision: 0,
+                    autorunLimit: state.autorunLimit ?? null,
+                });
             }
             if (operation === 'messages.getRecent') {
                 return response(state.messages ?? emptyMessages(state.permission));
@@ -729,11 +734,12 @@ test('main cards and command input stay inside their Ref-sized grid slots', asyn
         generalMeCalls: 0,
         operations: [],
         largeCommandTable: true,
-        reservedTurns: Array.from({ length: 14 }, (_, index) => ({
+        reservedTurns: Array.from({ length: 30 }, (_, index) => ({
             index,
-            action: `command-${index}`,
+            action: index === 0 ? '휴식' : `command-${index}`,
             args: {},
         })),
+        autorunLimit: 2224,
     };
     await installFixture(page, state);
     await page.setViewportSize({ width: 1200, height: 900 });
@@ -816,6 +822,27 @@ test('main cards and command input stay inside their Ref-sized grid slots', asyn
     expect(new Set(desktopGeometry.visibleControlBoxes.map(({ y }) => y)).size).toBe(1);
     expect(desktopGeometry.bottomActionBoxes).toHaveLength(3);
     expect(new Set(desktopGeometry.bottomActionBoxes.map(({ y }) => y)).size).toBe(1);
+    await expect(page.locator('[data-main-target="commands"] .edit-column button')).toHaveCount(15);
+    const autonomousRest = page.locator('[data-main-target="commands"] .action-column > div').first();
+    await expect(autonomousRest).toContainText('휴식(자율 행동)');
+    expect(await autonomousRest.evaluate((element) => getComputedStyle(element).color)).toBe('rgb(170, 255, 255)');
+
+    const tenthTurnButton = page.getByRole('button', { name: '10턴 명령 입력' });
+    await tenthTurnButton.click();
+    const quickPicker = page.getByTestId('command-picker');
+    await expect(quickPicker).toBeVisible();
+    const quickPickerAlignment = await quickPicker.evaluate((element) => {
+        const row = element
+            .closest('.reserved-command-editor')
+            ?.querySelector<HTMLElement>('.action-column > div:nth-child(10)');
+        if (!row) throw new Error('10th command row missing');
+        return {
+            pickerTop: element.getBoundingClientRect().top,
+            rowTop: row.getBoundingClientRect().top,
+        };
+    });
+    expect(quickPickerAlignment.pickerTop - quickPickerAlignment.rowTop).toBeCloseTo(30, 0);
+    await quickPicker.getByRole('button', { name: '명령 입력 닫기' }).click();
 
     const modeButton = page.locator('[data-main-target="commands"] .control-pad').getByRole('button', {
         name: '고급 모드',
@@ -824,6 +851,27 @@ test('main cards and command input stay inside their Ref-sized grid slots', asyn
     await modeButton.focus();
     await expect(modeButton).toBeFocused();
     await modeButton.click();
+    const advancedControlGeometry = await page.locator('[data-main-target="commands"] .reserved-command-editor').evaluate(
+        (editor) => {
+            const range = editor.querySelector<HTMLElement>('.range-menu');
+            const recent = [...editor.querySelectorAll<HTMLElement>('.control-pad summary')].find((element) =>
+                element.textContent?.includes('최근 실행')
+            );
+            const advanced = editor.querySelector<HTMLElement>('.advanced-actions');
+            const queue = editor.querySelector<HTMLElement>('.queue-grid');
+            if (!range || !recent || !advanced || !queue) throw new Error('advanced command controls missing');
+            return {
+                rangeTop: range.getBoundingClientRect().top,
+                recentTop: recent.getBoundingClientRect().top,
+                advancedTop: advanced.getBoundingClientRect().top,
+                advancedBottom: advanced.getBoundingClientRect().bottom,
+                queueTop: queue.getBoundingClientRect().top,
+            };
+        }
+    );
+    expect(advancedControlGeometry.rangeTop).toBe(advancedControlGeometry.recentTop);
+    expect(advancedControlGeometry.advancedTop).toBeGreaterThan(advancedControlGeometry.rangeTop);
+    expect(advancedControlGeometry.advancedBottom).toBeLessThanOrEqual(advancedControlGeometry.queueTop);
     await page.locator('[data-main-target="commands"] .select-command').click();
     const picker = page.getByTestId('command-picker');
     await expect(picker).toBeVisible();
@@ -852,6 +900,32 @@ test('main cards and command input stay inside their Ref-sized grid slots', asyn
     expect(new Set(pickerGeometry.categoryBoxes.map(({ y }) => y)).size).toBe(1);
     expect(pickerGeometry.horizontalOverflow).toBeLessThanOrEqual(0);
     await picker.getByRole('button', { name: '명령 입력 닫기' }).click();
+
+    await page.locator('[data-main-target="commands"] .control-pad').getByRole('button', { name: '일반 모드' }).click();
+    const collapsedPanelHeight = await page
+        .locator('[data-main-target="commands"]')
+        .evaluate((element) => element.getBoundingClientRect().height);
+    await page.locator('[data-main-target="commands"] .bottom-actions').getByRole('button', { name: '펼치기' }).click();
+    await expect(page.locator('[data-main-target="commands"] .edit-column button')).toHaveCount(30);
+    const expandedDesktopGeometry = await page.locator('.layout-desktop').evaluate((layout) => {
+        const commands = layout.querySelector<HTMLElement>('[data-main-target="commands"]');
+        const city = layout.querySelector<HTMLElement>('[data-main-target="city"]');
+        const nation = layout.querySelector<HTMLElement>('[data-main-target="nation"]');
+        if (!commands || !city || !nation) throw new Error('expanded desktop panels missing');
+        return {
+            commandHeight: commands.getBoundingClientRect().height,
+            commandBottom: commands.getBoundingClientRect().bottom,
+            cityBottom: city.getBoundingClientRect().bottom,
+            nationTop: nation.getBoundingClientRect().top,
+            verticalOverflow: commands.scrollHeight - commands.clientHeight,
+            overflowY: getComputedStyle(commands).overflowY,
+        };
+    });
+    expect(expandedDesktopGeometry.commandHeight).toBeGreaterThan(collapsedPanelHeight);
+    expect(expandedDesktopGeometry.verticalOverflow).toBeLessThanOrEqual(0);
+    expect(expandedDesktopGeometry.overflowY).toBe('visible');
+    expect(expandedDesktopGeometry.cityBottom).toBe(expandedDesktopGeometry.commandBottom);
+    expect(expandedDesktopGeometry.nationTop).toBeGreaterThanOrEqual(expandedDesktopGeometry.commandBottom);
 
     const captureProgress = async (name: string) => {
         if (!artifactRoot) return;
@@ -940,9 +1014,9 @@ test('main cards and command input stay inside their Ref-sized grid slots', asyn
     };
     await captureProgress('desktop-1200');
 
-    await page.locator('[data-main-target="commands"] .control-pad').getByRole('button', { name: '일반 모드' }).click();
     await page.setViewportSize({ width: 500, height: 900 });
     await expect(page.locator('.layout-mobile')).toBeVisible();
+    await page.locator('[data-main-target="commands"] .bottom-actions').getByRole('button', { name: '펼치기' }).click();
     expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(500);
     await expect(page.locator('[data-main-target="city"] [role="progressbar"]')).toHaveCount(8);
     await expect(page.locator('[data-main-target="general"] [role="progressbar"]')).toHaveCount(4);
@@ -977,7 +1051,7 @@ test('main cards and command input stay inside their Ref-sized grid slots', asyn
             controlBoxes,
         };
     });
-    expect(mobileGeometry.panelHeight).toBe(645);
+    expect(mobileGeometry.panelHeight).toBeGreaterThan(645);
     expect(mobileGeometry.editorLeft).toBeGreaterThanOrEqual(mobileGeometry.panelLeft);
     expect(mobileGeometry.editorRight).toBeLessThanOrEqual(mobileGeometry.panelRight);
     expect(mobileGeometry.horizontalOverflow).toBeLessThanOrEqual(0);
@@ -985,6 +1059,7 @@ test('main cards and command input stay inside their Ref-sized grid slots', asyn
     expect(mobileGeometry.controlColumns.split(' ')).toHaveLength(3);
     expect(mobileGeometry.controlBoxes).toHaveLength(3);
     expect(new Set(mobileGeometry.controlBoxes.map(({ y }) => y)).size).toBe(1);
+    await expect(page.locator('[data-main-target="commands"] .edit-column button')).toHaveCount(30);
     await captureProgress('mobile-500');
 });
 

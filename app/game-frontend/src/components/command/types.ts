@@ -49,6 +49,7 @@ export type ReservedCommandRow = {
     time?: string;
     year?: number;
     month?: number;
+    autonomous?: boolean;
 };
 
 export type CommandPatternEntry = {
