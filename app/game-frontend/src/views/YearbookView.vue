@@ -35,6 +35,7 @@ const history = ref<HistoryData | null>(null);
 const selectedYearMonth = ref<number | null>(null);
 const settingsOpen = ref(false);
 const rankingBottom = ref(localStorage.getItem('yearbook-ranking-bottom') === 'true');
+let historyRequestId = 0;
 const serverID = computed(() => {
     const value = route.query.serverID;
     const raw = Array.isArray(value) ? value[0] : value;
@@ -71,19 +72,27 @@ const loadHistory = async (): Promise<void> => {
     if (selectedYearMonth.value === null) {
         return;
     }
+    const requestId = ++historyRequestId;
     loading.value = true;
     errorMessage.value = '';
     try {
         const { year, month } = parseYearMonth(selectedYearMonth.value);
         const result = await trpc.yearbook.getHistory.query({ year, month, serverID: serverID.value });
+        if (requestId !== historyRequestId) {
+            return;
+        }
         if ('data' in result) {
             history.value = result.data;
         }
     } catch (error) {
-        history.value = null;
+        if (requestId !== historyRequestId) {
+            return;
+        }
         errorMessage.value = error instanceof Error ? error.message : '연감 데이터를 불러오지 못했습니다.';
     } finally {
-        loading.value = false;
+        if (requestId === historyRequestId) {
+            loading.value = false;
+        }
     }
 };
 
@@ -129,7 +138,13 @@ onMounted(async () => {
             <strong>연 감</strong>
             <button class="legacy-button close-button" type="button" @click="closePage">창 닫기</button>
             <span class="settings-menu">
-                <button class="legacy-button legacy-button--navigation" type="button" @click="settingsOpen = !settingsOpen">⚙ 설정⌄</button>
+                <button
+                    class="legacy-button legacy-button--navigation"
+                    type="button"
+                    @click="settingsOpen = !settingsOpen"
+                >
+                    ⚙ 설정⌄
+                </button>
                 <button v-if="settingsOpen" class="settings-item" type="button" @click="toggleRankingPosition">
                     국가 순서 위치 변경(모바일 전용)
                 </button>
@@ -164,9 +179,9 @@ onMounted(async () => {
         <div v-if="errorMessage" class="yearbook-message error" role="alert">{{ errorMessage }}</div>
         <div v-else-if="loading && !history" class="yearbook-message">불러오는 중...</div>
 
-        <section v-if="history" :class="['history-grid', { 'ranking-bottom': rankingBottom }]">
+        <section v-if="history" :class="['history-grid', { 'ranking-bottom': rankingBottom }]" :aria-busy="loading">
             <div class="map-position">
-                <MapViewer :map-data="history.map" :map-layout="mapLayout" :loading="loading" />
+                <MapViewer :map-data="history.map" :map-layout="mapLayout" :loading="loading && !history" />
             </div>
             <aside class="nation-position">
                 <table>
