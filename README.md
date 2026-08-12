@@ -73,8 +73,8 @@ input-event 결과를 transaction으로 반영합니다. Redis pub/sub과 SSE는
 
 ## 도구 체인
 
-- pnpm `11.17.0`, Turbo
-- TypeScript `6.0.2`
+- pnpm `11.21.0`, Turbo
+- TypeScript `6.0.3` compiler API와 TypeScript `7.0.2` native `tsc`
 - Fastify, tRPC, zod
 - Vue 3, Pinia, Vue Router, Vite
 - PostgreSQL, Prisma, Redis

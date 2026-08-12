@@ -5,7 +5,7 @@
     "type": "module",
     "scripts": {
         "test:integration": "vitest run --config vitest.config.ts",
-        "typecheck": "tsc -b"
+        "typecheck": "pnpm -w tsc7 -b tools/integration-tests/tsconfig.json"
     },
     "dependencies": {
         "@sammo-ts/common": "workspace:*",

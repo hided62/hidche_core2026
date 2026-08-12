@@ -18,7 +18,7 @@
         "lint": "eslint .",
         "lint:fix": "eslint . --fix",
         "test": "vitest run --config vitest.config.ts",
-        "typecheck": "tsc -b"
+        "typecheck": "pnpm -w tsc7 -b packages/logic/tsconfig.json"
     },
     "dependencies": {
         "@sammo-ts/common": "workspace:*",
