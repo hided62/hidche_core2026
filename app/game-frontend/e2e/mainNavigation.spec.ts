@@ -31,6 +31,11 @@ type NavigationFixture = {
     forceSnapshotCalls?: number;
     refreshDelayMs?: number;
     largeCommandTable?: boolean;
+    currentYear?: number;
+    currentMonth?: number;
+    globalRecords?: Array<{ id: number; text: string }>;
+    generalRecords?: Array<{ id: number; text: string }>;
+    worldHistory?: Array<{ id: number; text: string }>;
     reservedTurns?: Array<{ index: number; action: string; args: Record<string, unknown> }>;
     messages?: unknown;
     messageContacts?: unknown;
@@ -318,7 +323,12 @@ const installFixture = async (page: Page, state: NavigationFixture) => {
         const results = operations.map((operation, index) => {
             if (operation === 'auth.status') return response({ ok: true });
             if (operation === 'lobby.info') {
-                return response({ myGeneral: { id: 7, name: '메뉴검증장수' }, year: 185, month: 1, turnTerm: 10 });
+                return response({
+                    myGeneral: { id: 7, name: '메뉴검증장수' },
+                    year: state.currentYear ?? 185,
+                    month: state.currentMonth ?? 1,
+                    turnTerm: 10,
+                });
             }
             if (operation === 'dashboard.getContextBundleDelta') {
                 state.generalMeCalls += 1;
@@ -394,8 +404,8 @@ const installFixture = async (page: Page, state: NavigationFixture) => {
                     result: true,
                     version: 0,
                     startYear: 180,
-                    year: 185,
-                    month: 1,
+                    year: state.currentYear ?? 185,
+                    month: state.currentMonth ?? 1,
                     cityList: [[1, 8, state.cityState ?? 0, 1, 1, 1]],
                     nationList: [[1, '위', '#008000', 1]],
                     spyList: {},
@@ -418,9 +428,9 @@ const installFixture = async (page: Page, state: NavigationFixture) => {
             if (operation === 'messages.getContacts') return response(state.messageContacts ?? { nation: [] });
             if (operation === 'general.getRecentRecords') {
                 return response({
-                    global: [{ id: 3, text: '장수 동향 기록' }],
-                    general: [{ id: 2, text: '개인 기록' }],
-                    history: [{ id: 1, text: '중원 정세 기록' }],
+                    global: state.globalRecords ?? [{ id: 3, text: '장수 동향 기록' }],
+                    general: state.generalRecords ?? [{ id: 2, text: '개인 기록' }],
+                    history: state.worldHistory ?? [{ id: 1, text: '중원 정세 기록' }],
                 });
             }
             if (operation === 'general.getFrontStatus') {
@@ -1560,6 +1570,66 @@ test('realtime read-model events skip clock-only work, merge bursts, patch in pl
     });
     await new Promise((resolve) => setTimeout(resolve, 300));
     expect(state.generalMeCalls).toBe(callsAfterLeavingMain);
+});
+
+test('global activity, world history, and a month boundary refresh their visible main slices', async ({ page }) => {
+    const state: NavigationFixture = {
+        officerLevel: 5,
+        permission: 2,
+        nationLevel: 3,
+        stage: 0,
+        npcMode: 1,
+        generalMeCalls: 0,
+        operations: [],
+    };
+    await installRealtimeHarness(page);
+    await installFixture(page, state);
+    await page.setViewportSize({ width: 1200, height: 900 });
+    await waitForMain(page);
+    await expect
+        .poll(() =>
+            page.evaluate(() => (window as unknown as { __hasMainRealtime: () => boolean }).__hasMainRealtime())
+        )
+        .toBe(true);
+
+    state.globalRecords = [
+        { id: 4, text: '자동 갱신된 장수 동향' },
+        { id: 3, text: '장수 동향 기록' },
+    ];
+    const operationsBeforeGlobal = state.operations.length;
+    await emitReadModelChanges(page, readModelChanges({ globalRecordsChanged: true }));
+    await expect(page.locator('[data-main-target="global-records"]')).toContainText('자동 갱신된 장수 동향');
+    expect(state.operations.slice(operationsBeforeGlobal)).toEqual(['general.getRecentRecords']);
+
+    state.worldHistory = [
+        { id: 5, text: '자동 갱신된 중원 정세' },
+        { id: 1, text: '중원 정세 기록' },
+    ];
+    const operationsBeforeHistory = state.operations.length;
+    await emitReadModelChanges(page, readModelChanges({ worldHistoryChanged: true }));
+    await expect(page.locator('[data-main-target="world-history"]')).toContainText('자동 갱신된 중원 정세');
+    expect(state.operations.slice(operationsBeforeHistory)).toEqual(['general.getRecentRecords']);
+
+    state.currentMonth = 2;
+    const operationsBeforeMonth = state.operations.length;
+    await page.evaluate(
+        (changes) => {
+            (window as unknown as { __emitMainRealtime: (type: string, payload: unknown) => void }).__emitMainRealtime(
+                'turnCompleted',
+                {
+                    at: new Date().toISOString(),
+                    lastTurnTime: '0185-02-01T00:00:00.000Z',
+                    changes,
+                }
+            );
+        },
+        readModelChanges({ worldChanged: true })
+    );
+    await expect(page.getByText('현재: 185년 2월')).toBeVisible();
+    await expect(page.locator('.map-viewer')).toContainText('185年 2月');
+    expect(state.operations.slice(operationsBeforeMonth).sort()).toEqual(
+        ['dashboard.getContextBundleDelta', 'lobby.info', 'world.getMap'].sort()
+    );
 });
 
 test('same-account main tabs share one realtime diff and exclude a tab while sync is off', async ({

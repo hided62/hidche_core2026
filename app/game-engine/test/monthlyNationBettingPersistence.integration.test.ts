@@ -271,6 +271,7 @@ integration('monthly nation betting persistence', () => {
                 durationMs: 0,
                 partial: false,
             });
+            expect(hooks.takeCommittedReadModelChanges()?.worldHistoryChanged).toBe(true);
 
             expect(await db.nationBetting.findUniqueOrThrow({ where: { id: bettingId } })).toMatchObject({
                 name: '천통국 예상',
@@ -320,6 +321,7 @@ integration('monthly nation betting persistence', () => {
                 })
             ).toBe(true);
             await world.advanceMonth(new Date('0200-02-01T00:00:00.000Z'));
+            expect(world.peekDirtyState().logs).toEqual([]);
             await hooks.hooks.flushChanges?.({
                 lastTurnTime: state.lastTurnTime.toISOString(),
                 processedGenerals: 0,
@@ -327,6 +329,7 @@ integration('monthly nation betting persistence', () => {
                 durationMs: 0,
                 partial: false,
             });
+            expect(hooks.takeCommittedReadModelChanges()?.worldHistoryChanged).toBe(true);
 
             expect(await db.nationBetting.findUniqueOrThrow({ where: { id: bettingId } })).toMatchObject({
                 finished: true,
