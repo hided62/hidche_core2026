@@ -2,6 +2,7 @@
 import { computed, onMounted, reactive, ref, watch } from 'vue';
 import { useRouter } from 'vue-router';
 
+import { useGameFeedback } from '../composables/useGameFeedback';
 import { resolveGeneralIconBackgroundImage } from '../utils/generalIcon';
 import { trpc } from '../utils/trpc';
 import { cityLevelMap, formatOfficerLevelText, getNationChiefLevel, regionMap } from '../utils/nationFormat';
@@ -27,6 +28,7 @@ const kickTargetId = ref(0);
 const ambassadorSelection = ref<number[]>([]);
 const auditorSelection = ref<number[]>([]);
 const router = useRouter();
+const { error: showErrorToast } = useGameFeedback();
 
 const resolveErrorMessage = (value: unknown): string =>
     value instanceof Error ? value.message : typeof value === 'string' ? value : 'unknown_error';
@@ -157,7 +159,7 @@ const appointCityOfficer = async (level: OfficerLevel) => {
 const enforcePermissionLimit = (selection: number[]) => {
     if (selection.length <= 2) return;
     selection.splice(0, selection.length - 2);
-    window.alert('최대 2명까지 설정 가능합니다.');
+    showErrorToast('최대 2명까지 설정 가능합니다.');
 };
 
 const changePermissions = async (isAmbassador: boolean) => {
