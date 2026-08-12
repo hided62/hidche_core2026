@@ -1,6 +1,88 @@
 import { describe, expect, it } from 'vitest';
 
-import { applyReadModelDelta, ReadModelDeltaApplyError, ReadModelDeltaMismatchError } from '../src/realtime/delta.js';
+import {
+    applyReadModelDelta,
+    createJsonPatch,
+    ReadModelDeltaApplyError,
+    ReadModelDeltaMismatchError,
+} from '../src/realtime/delta.js';
+
+describe('createJsonPatch', () => {
+    it('diffs stable arrays positionally and preserves narrow field updates', () => {
+        const current = {
+            general: Array.from({ length: 48 }, (_, index) => ({
+                key: `command-${index}`,
+                possible: true,
+                status: 'available',
+            })),
+        };
+        const next = structuredClone(current);
+        const changed = next.general[0];
+        if (!changed) throw new Error('command fixture is empty');
+        changed.possible = false;
+        changed.status = 'blocked';
+
+        const operations = createJsonPatch(current, next);
+
+        expect(operations).toEqual([
+            { op: 'replace', path: '/general/0/possible', value: false },
+            { op: 'replace', path: '/general/0/status', value: 'blocked' },
+        ]);
+        expect(
+            applyReadModelDelta(current, 'revision-1', {
+                kind: 'patch',
+                baseRevision: 'revision-1',
+                revision: 'revision-2',
+                operations,
+            }).data
+        ).toEqual(next);
+    });
+
+    it('resizes arrays linearly and escapes object keys as JSON Pointer tokens', () => {
+        const current = { 'a/b~c': { values: [1, 2] }, removed: true };
+        const next = { 'a/b~c': { values: [1, 2, 3] }, added: true };
+
+        const operations = createJsonPatch(current, next);
+
+        expect(operations).toEqual([
+            { op: 'remove', path: '/removed' },
+            { op: 'add', path: '/a~1b~0c/values/-', value: 3 },
+            { op: 'add', path: '/added', value: true },
+        ]);
+        expect(
+            applyReadModelDelta(current, 'revision-1', {
+                kind: 'patch',
+                baseRevision: 'revision-1',
+                revision: 'revision-2',
+                operations,
+            }).data
+        ).toEqual(next);
+    });
+
+    it('reconstructs root arrays after positional insertions and removals', () => {
+        const inserted = ['new', 'first', 'second'];
+        const insertionOperations = createJsonPatch(['first', 'second'], inserted);
+        expect(
+            applyReadModelDelta(['first', 'second'], 'revision-1', {
+                kind: 'patch',
+                baseRevision: 'revision-1',
+                revision: 'revision-2',
+                operations: insertionOperations,
+            }).data
+        ).toEqual(inserted);
+
+        const removed = ['second'];
+        const removalOperations = createJsonPatch(['first', 'second', 'third'], removed);
+        expect(
+            applyReadModelDelta(['first', 'second', 'third'], 'revision-2', {
+                kind: 'patch',
+                baseRevision: 'revision-2',
+                revision: 'revision-3',
+                operations: removalOperations,
+            }).data
+        ).toEqual(removed);
+    });
+});
 
 describe('applyReadModelDelta', () => {
     it('applies a JSON Patch without mutating the previous snapshot', () => {

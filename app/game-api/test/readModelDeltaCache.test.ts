@@ -89,6 +89,31 @@ describe('createReadModelDelta', () => {
         );
     });
 
+    it('keeps the snapshot fallback when a positional patch is larger', async () => {
+        const store = new MemoryStore();
+        const initialValue = { values: Array.from({ length: 24 }, () => 'old') };
+        const initial = await createReadModelDelta({
+            store,
+            profile: 'hwe:default',
+            viewerId: 'user-1',
+            slice: 'context',
+            value: initialValue,
+            forceSnapshot: true,
+        });
+        const nextValue = { values: Array.from({ length: 24 }, () => 'new') };
+
+        const changed = await createReadModelDelta({
+            store,
+            profile: 'hwe:default',
+            viewerId: 'user-1',
+            slice: 'context',
+            value: nextValue,
+            knownRevision: initial.revision,
+        });
+
+        expect(changed).toMatchObject({ kind: 'snapshot', data: nextValue });
+    });
+
     it('falls back to a snapshot when Redis is unavailable', async () => {
         const store: ReadModelDeltaCacheStore = {
             get: async () => {
