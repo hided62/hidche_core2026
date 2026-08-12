@@ -1,10 +1,12 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
-import { RANK_DATA_TYPES } from '@sammo-ts/common';
+import { buildGameEventChannel, RANK_DATA_TYPES, type RealtimeEvent } from '@sammo-ts/common';
 import type { GameSessionTokenPayload } from '@sammo-ts/common/auth/gameToken';
 import { createTurnDaemonRuntime, seedScenarioToDatabase, type TurnDaemonRuntime } from '@sammo-ts/game-engine';
 import {
     createGamePostgresConnector,
+    createRedisConnector,
+    resolveRedisConfigFromEnv,
     type GamePrisma,
     type GamePrismaClient,
     type RedisConnector,
@@ -16,6 +18,7 @@ import { InMemoryBattleSimTransport } from '../src/battleSim/inMemoryTransport.j
 import type { GameApiContext } from '../src/context.js';
 import { DatabaseTurnDaemonTransport } from '../src/daemon/databaseTransport.js';
 import type { TurnDaemonTransport } from '../src/daemon/transport.js';
+import { RedisRealtimeEventHub } from '../src/realtime/eventHub.js';
 import { appRouter } from '../src/router.js';
 
 const databaseUrl = process.env.SELECT_POOL_DATABASE_URL;
@@ -92,6 +95,22 @@ integration('scenario 903 select pool through the durable turn daemon', () => {
     let daemonLoop: Promise<void> | undefined;
     let turnDaemon: TurnDaemonTransport;
     let worldStateId: number;
+    let realtimeHub: RedisRealtimeEventHub | undefined;
+    let unsubscribeRealtime = () => {};
+    const realtimeEvents: RealtimeEvent[] = [];
+
+    const waitForRealtimeEvent = async (
+        predicate: (event: RealtimeEvent) => boolean,
+        timeoutMs = 2_000
+    ): Promise<RealtimeEvent> => {
+        const deadline = Date.now() + timeoutMs;
+        while (Date.now() < deadline) {
+            const event = realtimeEvents.find(predicate);
+            if (event) return event;
+            await new Promise((resolve) => setTimeout(resolve, 20));
+        }
+        throw new Error('Timed out waiting for select-pool realtime event.');
+    };
 
     const buildContext = (requestId: string, actorAuth: GameSessionTokenPayload = auth): GameApiContext => {
         const redisClient = {
@@ -148,6 +167,14 @@ integration('scenario 903 select pool through the durable turn daemon', () => {
         await db.logEntry.deleteMany();
         worldStateId = (await db.worldState.findFirstOrThrow()).id;
 
+        if (process.env.REDIS_URL) {
+            const realtimeSubscriber = createRedisConnector(resolveRedisConfigFromEnv());
+            await realtimeSubscriber.connect();
+            realtimeHub = new RedisRealtimeEventHub(realtimeSubscriber.client, buildGameEventChannel(profile));
+            unsubscribeRealtime = realtimeHub.subscribe((event) => realtimeEvents.push(event));
+            await realtimeHub.start();
+        }
+
         runtime = await createTurnDaemonRuntime({
             profile,
             databaseUrl: databaseUrl!,
@@ -168,6 +195,8 @@ integration('scenario 903 select pool through the durable turn daemon', () => {
             await daemonLoop;
             await runtime.close();
         }
+        unsubscribeRealtime();
+        await realtimeHub?.stop();
         await closeDb?.();
     }, 30_000);
 
@@ -267,6 +296,18 @@ integration('scenario 903 select pool through the durable turn daemon', () => {
                 where: { meta: { path: ['ownerUserId'], equals: userId } },
             })
         ).toBe(2);
+        if (realtimeHub) {
+            const creationEvent = await waitForRealtimeEvent(
+                (event) => event.type === 'readModelChanged' && event.changes.globalRecordsChanged
+            );
+            expect(creationEvent).toMatchObject({
+                type: 'readModelChanged',
+                changes: {
+                    generalIds: [initial.id],
+                    globalRecordsChanged: true,
+                },
+            });
+        }
 
         await expect(
             appRouter.createCaller(buildContext('select-pool-cooldown')).join.getSelectionPool()

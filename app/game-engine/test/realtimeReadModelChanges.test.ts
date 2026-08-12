@@ -1,9 +1,11 @@
 import { describe, expect, it } from 'vitest';
+import { createEmptyRealtimeReadModelChanges } from '@sammo-ts/common';
 import { LogCategory, LogFormat, LogScope } from '@sammo-ts/logic';
 
 import {
     applyRealtimeReadModelBaseline,
     createRealtimeReadModelBaseline,
+    mergePersistedVisibleLogChanges,
     summarizeRealtimeReadModelChanges,
 } from '../src/turn/databaseHooks.js';
 import type { InMemoryTurnWorld } from '../src/turn/inMemoryWorld.js';
@@ -11,6 +13,35 @@ import type { TurnWorldChanges } from '../src/turn/inMemoryWorld.js';
 import type { ReservedTurnChanges } from '../src/turn/reservedTurnStore.js';
 
 describe('summarizeRealtimeReadModelChanges', () => {
+    it('classifies the committed log rows even when they bypass in-memory log drafts', () => {
+        expect(
+            mergePersistedVisibleLogChanges(createEmptyRealtimeReadModelChanges(), [
+                {
+                    id: 10,
+                    scope: LogScope.GENERAL,
+                    category: LogCategory.ACTION,
+                    generalId: 7,
+                },
+                {
+                    id: 11,
+                    scope: LogScope.SYSTEM,
+                    category: LogCategory.SUMMARY,
+                    generalId: null,
+                },
+                {
+                    id: 12,
+                    scope: LogScope.SYSTEM,
+                    category: LogCategory.HISTORY,
+                    generalId: null,
+                },
+            ])
+        ).toMatchObject({
+            recordGeneralIds: [7],
+            globalRecordsChanged: true,
+            worldHistoryChanged: true,
+        });
+    });
+
     it('emits deterministic entity and record invalidations from committed changes', () => {
         const worldChanges = {
             generals: [{ id: 9 }, { id: 7 }],

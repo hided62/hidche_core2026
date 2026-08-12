@@ -66,6 +66,13 @@ export interface RealtimeReadModelBaseline {
     nations: Map<number, ReadModelSignatures>;
 }
 
+export type PersistedVisibleLogRow = {
+    id: number;
+    scope: LogScope;
+    category: LogCategory;
+    generalId: number | null;
+};
+
 const canonicalizeReadModelValue = (value: unknown): unknown => {
     if (value instanceof Date) {
         return value.toISOString();
@@ -320,6 +327,31 @@ export const summarizeRealtimeReadModelChanges = (
         lobbyChanged,
     };
 };
+
+export const mergePersistedVisibleLogChanges = (
+    changes: RealtimeReadModelChanges,
+    rows: readonly PersistedVisibleLogRow[]
+): RealtimeReadModelChanges => ({
+    ...changes,
+    recordGeneralIds: uniqueSortedIds([
+        ...changes.recordGeneralIds,
+        ...rows.flatMap((entry) =>
+            entry.scope === LogScope.GENERAL && entry.category === LogCategory.ACTION && entry.generalId
+                ? [entry.generalId]
+                : []
+        ),
+    ]),
+    globalRecordsChanged:
+        changes.globalRecordsChanged ||
+        rows.some(
+            (entry) =>
+                entry.scope === LogScope.SYSTEM &&
+                (entry.category === LogCategory.SUMMARY || entry.category === LogCategory.ACTION)
+        ),
+    worldHistoryChanged:
+        changes.worldHistoryChanged ||
+        rows.some((entry) => entry.scope === LogScope.SYSTEM && entry.category === LogCategory.HISTORY),
+});
 
 export const excludeDeletedReservedTurnQueues = (
     changes: ReservedTurnChanges,
@@ -871,10 +903,13 @@ export const createDatabaseTurnHooks = async (
 
     const persistChanges = async (
         transaction?: GamePrisma.TransactionClient,
-        commandCompletion?: { requestId: string; result: TurnDaemonCommandResult }
+        commandCompletion?: { requestId: string; result: TurnDaemonCommandResult },
+        directLogFloor?: number
     ): Promise<{ acknowledge: () => void; readModelChanges: RealtimeReadModelChanges }> => {
         const state = world.getState();
         const changes = world.peekDirtyState();
+        let persistedVisibleLogs: PersistedVisibleLogRow[] = [];
+        let visibleLogFloor = directLogFloor;
         const {
             generals,
             cities,
@@ -918,6 +953,13 @@ export const createDatabaseTurnHooks = async (
             meta: asJson(state.meta),
         };
         const persist = async (prisma: GamePrisma.TransactionClient): Promise<void> => {
+            visibleLogFloor ??=
+                (
+                    await prisma.logEntry.findFirst({
+                        orderBy: { id: 'desc' },
+                        select: { id: true },
+                    })
+                )?.id ?? 0;
             // Lock and validate the fencing row in the same transaction as every
             // world mutation. A stale daemon can finish calculating, but it can
             // never commit after another owner has advanced the epoch.
@@ -1329,6 +1371,23 @@ export const createDatabaseTurnHooks = async (
                     },
                 });
             }
+            persistedVisibleLogs = await prisma.logEntry.findMany({
+                where: {
+                    id: { gt: visibleLogFloor },
+                    OR: [
+                        {
+                            scope: LogScope.GENERAL,
+                            category: LogCategory.ACTION,
+                        },
+                        {
+                            scope: LogScope.SYSTEM,
+                            category: { in: [LogCategory.SUMMARY, LogCategory.ACTION, LogCategory.HISTORY] },
+                        },
+                    ],
+                },
+                orderBy: { id: 'asc' },
+                select: { id: true, scope: true, category: true, generalId: true },
+            });
         };
         if (transaction) {
             await persist(transaction);
@@ -1339,10 +1398,9 @@ export const createDatabaseTurnHooks = async (
             );
         }
 
-        const readModelChanges = summarizeRealtimeReadModelChanges(
-            changes,
-            persistedReservedTurnChanges,
-            readModelBaseline
+        const readModelChanges = mergePersistedVisibleLogChanges(
+            summarizeRealtimeReadModelChanges(changes, persistedReservedTurnChanges, readModelBaseline),
+            persistedVisibleLogs
         );
         return {
             acknowledge: () => {
@@ -1370,8 +1428,15 @@ export const createDatabaseTurnHooks = async (
         executeCommand: async (requestId, execute) => {
             const committed = await prisma.$transaction(
                 async (transaction) => {
+                    const directLogFloor =
+                        (
+                            await transaction.logEntry.findFirst({
+                                orderBy: { id: 'desc' },
+                                select: { id: true },
+                            })
+                        )?.id ?? 0;
                     const result = await execute({ db: transaction });
-                    const persisted = await persistChanges(transaction, { requestId, result });
+                    const persisted = await persistChanges(transaction, { requestId, result }, directLogFloor);
                     return { result, persisted };
                 },
                 options?.transactionTimeoutMs ? { timeout: options.transactionTimeoutMs } : undefined
