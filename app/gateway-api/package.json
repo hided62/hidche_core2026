@@ -26,13 +26,12 @@
     "devDependencies": {
         "@types/sanitize-html": "2.16.1",
         "tsdown": "^0.22.14",
-        "vite-tsconfig-paths": "^6.0.3",
-        "vitest": "^4.0.16"
+        "vitest": "^4.1.10"
     },
     "dependencies": {
         "@fastify/cors": "^11.2.0",
         "@fastify/static": "^9.0.0",
-        "@prisma/client": "^7.2.0",
+        "@prisma/client": "^7.9.1",
         "@sammo-ts/common": "workspace:*",
         "@sammo-ts/game-engine": "workspace:*",
         "@sammo-ts/infra": "workspace:*",

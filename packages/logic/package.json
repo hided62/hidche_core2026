@@ -28,7 +28,6 @@
     },
     "devDependencies": {
         "tsdown": "^0.22.14",
-        "vite-tsconfig-paths": "^6.0.3",
-        "vitest": "^4.0.16"
+        "vitest": "^4.1.10"
     }
 }
