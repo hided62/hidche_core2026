@@ -2,6 +2,7 @@
 import { computed, nextTick, onMounted, reactive, ref, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 
+import { useGameFeedback } from '../composables/useGameFeedback';
 import { resolveGeneralIconUrl, useDefaultGeneralIcon } from '../utils/generalIcon';
 import { trpc } from '../utils/trpc';
 
@@ -9,6 +10,7 @@ type BoardArticle = Awaited<ReturnType<typeof trpc.board.getArticles.query>>[num
 
 const route = useRoute();
 const router = useRouter();
+const { error: showErrorToast } = useGameFeedback();
 const isSecretBoard = computed(() => route.name === 'board-secret');
 const title = computed(() => (isSecretBoard.value ? '기밀실' : '회의실'));
 const closeBoard = () => router.push('/');
@@ -92,7 +94,7 @@ const submitArticle = async () => {
         resizeTextArea(articleTextArea.value);
         await refreshArticles();
     } catch (error) {
-        window.alert(`실패했습니다. :${errorText(error, '게시물 등록에 실패했습니다.')}`);
+        showErrorToast(`게시물 등록에 실패했습니다: ${errorText(error, '게시물 등록에 실패했습니다.')}`);
     }
 };
 
@@ -106,7 +108,7 @@ const submitComment = async (postId: number) => {
         commentDrafts[postId] = '';
         await refreshArticles();
     } catch (error) {
-        window.alert(`실패했습니다: ${errorText(error, '댓글 등록에 실패했습니다.')}`);
+        showErrorToast(`댓글 등록에 실패했습니다: ${errorText(error, '댓글 등록에 실패했습니다.')}`);
     }
 };
 

@@ -216,13 +216,15 @@ test.describe('NPC possession through live PostgreSQL, Redis, API, daemon, and C
 
         await startDaemon();
         await possessButton.click();
+        const successDialog = page.getByRole('alertdialog', { name: '완료' });
+        await expect(successDialog).toContainText('빙의에 성공했습니다.');
+        await successDialog.getByRole('button', { name: '확인' }).click();
         await expect(page).toHaveURL(/\/hwe\/$/);
         expect(requestIds).toHaveLength(2);
         expect(requestIds[1]).toBe(requestIds[0]);
         expect(await db.general.count({ where: { userId } })).toBe(1);
         await expect(db.npcSelectionToken.findUnique({ where: { ownerUserId: userId } })).resolves.toBeNull();
         expect(await page.evaluate(() => window.sessionStorage.getItem('sammo-npc-possess-pending-action'))).toBeNull();
-        expect(dialogs).toContain('빙의에 성공했습니다.');
         const event = await db.inputEvent.findUniqueOrThrow({
             where: { requestId: eventRequestId },
         });
