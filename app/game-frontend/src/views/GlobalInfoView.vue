@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue';
+import { computed, onMounted, ref, watch } from 'vue';
 import { useRouter } from 'vue-router';
 import MapViewer from '../components/main/MapViewer.vue';
 import { trpc } from '../utils/trpc';
@@ -10,6 +10,8 @@ type Layout = Awaited<ReturnType<typeof trpc.world.getMapLayout.query>>;
 const data = ref<Result | null>(null);
 const layout = ref<Layout | null>(null);
 const error = ref('');
+const matrixElement = ref<HTMLTableElement | null>(null);
+const matrixHeight = ref<number | null>(null);
 const router = useRouter();
 const goBack = () => router.push('/');
 const state = (value: number) => ({ 0: '★', 1: '▲', 2: '', 7: '@' })[value] ?? 'ㆍ';
@@ -19,6 +21,23 @@ const nationNameStyle = (color: string) => ({
     backgroundColor: color,
     color: legacyNationTextColor(color),
 });
+watch(
+    matrixElement,
+    (element, _previousElement, onCleanup) => {
+        if (!element) {
+            matrixHeight.value = null;
+            return;
+        }
+        const updateHeight = () => {
+            matrixHeight.value = element.getBoundingClientRect().height;
+        };
+        const observer = new ResizeObserver(updateHeight);
+        observer.observe(element);
+        updateHeight();
+        onCleanup(() => observer.disconnect());
+    },
+    { flush: 'post' }
+);
 onMounted(async () => {
     try {
         [data.value, layout.value] = await Promise.all([
@@ -39,8 +58,8 @@ onMounted(async () => {
         <p v-if="error" class="error">{{ error }}</p>
         <section v-if="data" class="section">
             <h2 class="blue">외교 현황</h2>
-            <div class="matrix-wrap">
-                <table class="matrix">
+            <div class="matrix-wrap" :style="{ height: matrixHeight === null ? undefined : `${matrixHeight}px` }">
+                <table ref="matrixElement" class="matrix">
                     <thead>
                         <tr>
                             <th></th>
@@ -194,7 +213,6 @@ onMounted(async () => {
     background: green;
 }
 .matrix-wrap {
-    height: 1212.5px;
     overflow-x: auto;
     overflow-y: hidden;
 }
