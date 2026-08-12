@@ -46,7 +46,12 @@ const canAccessAdmin = computed(
                 role === 'superuser' || role === 'admin' || role === 'admin.superuser' || role.startsWith('admin.')
         ) ?? false
 );
-const needsKakaoVerification = computed(() => me.value !== null && !me.value.kakaoVerified);
+const needsKakaoVerification = computed(
+    () =>
+        me.value !== null &&
+        !me.value.kakaoVerified &&
+        profiles.value.some((profile) => profile.localAccountPolicy?.requiresKakaoVerification === true)
+);
 const userIconBaseUrl = configuredUserIconPublicUrl();
 const sharedIconBaseUrl = configuredSharedIconPublicUrl();
 const publicMapProfiles = computed(() =>
