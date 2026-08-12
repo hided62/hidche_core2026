@@ -19,6 +19,7 @@ export interface ReservedTurnView {
 export interface ReservedTurnSnapshot {
     revision: number;
     turns: ReservedTurnView[];
+    autorunLimit?: number | null;
 }
 
 export interface ReservedTurnUpdate {
@@ -170,13 +171,19 @@ export const listGeneralTurns = async (db: DatabaseClient, generalId: number): P
 };
 
 export const getGeneralTurnSnapshot = async (db: DatabaseClient, generalId: number): Promise<ReservedTurnSnapshot> => {
-    const [turns, revisionRow] = await Promise.all([
+    const [turns, revisionRow, general] = await Promise.all([
         loadGeneralTurns(db, generalId),
         db.generalTurnRevision.findUnique({ where: { generalId } }),
+        db.general.findUnique({ where: { id: generalId }, select: { meta: true } }),
     ]);
+    const rawAutorunLimit = isRecord(general?.meta) ? general.meta.autorun_limit : undefined;
     return {
         revision: revisionRow?.revision ?? 0,
         turns: serializeTurnList(turns),
+        autorunLimit:
+            typeof rawAutorunLimit === 'number' && Number.isFinite(rawAutorunLimit)
+                ? Math.trunc(rawAutorunLimit)
+                : null,
     };
 };
 

@@ -29,6 +29,7 @@ const props = defineProps<{
     nationId: number;
     permission: number;
     canRespondDiplomacy: boolean;
+    replyableGeneralIds: number[];
 }>();
 
 const emit = defineEmits<{
@@ -107,6 +108,7 @@ const isBright = (color: string): boolean => {
 };
 
 const iconUrl = computed(() => resolveMessageGeneralIconUrl(props.message.src.icon));
+const canReplyToGeneral = (target: MessageTarget): boolean => props.replyableGeneralIds.includes(target.generalId);
 
 const targetClass = (target: MessageTarget) => ({
     'msg-target': true,
@@ -167,6 +169,7 @@ onBeforeUnmount(() => {
                         >
                         <span class="msg-from-to">▶</span>
                         <button
+                            v-if="canReplyToGeneral(destination)"
                             :class="targetClass(destination)"
                             :style="{ backgroundColor: destination.color }"
                             type="button"
@@ -174,9 +177,13 @@ onBeforeUnmount(() => {
                         >
                             {{ destination.generalName }}:{{ destination.nationName }} | ↩
                         </button>
+                        <span v-else :class="targetClass(destination)" :style="{ backgroundColor: destination.color }">
+                            {{ destination.generalName }}:{{ destination.nationName }}
+                        </span>
                     </template>
                     <template v-else>
                         <button
+                            v-if="canReplyToGeneral(message.src)"
                             :class="targetClass(message.src)"
                             :style="{ backgroundColor: message.src.color }"
                             type="button"
@@ -184,6 +191,9 @@ onBeforeUnmount(() => {
                         >
                             {{ message.src.generalName }}:{{ message.src.nationName }} | ↩
                         </button>
+                        <span v-else :class="targetClass(message.src)" :style="{ backgroundColor: message.src.color }">
+                            {{ message.src.generalName }}:{{ message.src.nationName }}
+                        </span>
                         <span class="msg-from-to">▶</span>
                         <span :class="targetClass(destination)" :style="{ backgroundColor: destination.color }"
                             >나</span
@@ -241,7 +251,7 @@ onBeforeUnmount(() => {
                 </template>
 
                 <button
-                    v-else-if="message.src.generalId !== generalId"
+                    v-else-if="message.src.generalId !== generalId && canReplyToGeneral(message.src)"
                     :class="targetClass(message.src)"
                     :style="{ backgroundColor: message.src.color }"
                     type="button"
@@ -249,6 +259,13 @@ onBeforeUnmount(() => {
                 >
                     {{ message.src.generalName }}:{{ message.src.nationName }} | ↩
                 </button>
+                <span
+                    v-else-if="message.src.generalId !== generalId"
+                    :class="targetClass(message.src)"
+                    :style="{ backgroundColor: message.src.color }"
+                >
+                    {{ message.src.generalName }}:{{ message.src.nationName }}
+                </span>
                 <span v-else :class="targetClass(message.src)" :style="{ backgroundColor: message.src.color }">
                     {{ message.src.generalName }}
                 </span>

@@ -71,6 +71,7 @@ const map = {
     startYear: 180,
     year: 200,
     month: 1,
+    techLevelLimit: { maxLevel: 12, initialLevel: 1, increaseYears: 5 },
     cityList: castleFixtures.map(({ id, level }) => [id, level, 0, 1, 1, 1]),
     nationList: [[1, '아국', '#008000', 1]],
     spyList: {},
@@ -130,7 +131,13 @@ const emptyMessages = {
     canRespondDiplomacy: false,
 };
 
-const install = async (page: Page, mode: 'member' | 'wanderer' | 'admin' = 'member', trade: number | null = 100) => {
+const install = async (
+    page: Page,
+    mode: 'member' | 'wanderer' | 'admin' = 'member',
+    trade: number | null = 100,
+    globalNationCount = 2,
+    mapFixture = map
+) => {
     await page.addInitScript((profile) => {
         localStorage.setItem('sammo-game-token', 'ga_info');
         localStorage.setItem('sammo-game-profile', profile);
@@ -143,13 +150,22 @@ const install = async (page: Page, mode: 'member' | 'wanderer' | 'admin' = 'memb
             body: await readImage(relativePath),
         });
     });
+    await page.route('**/game/**', async (route) => {
+        const relativePath = decodeURIComponent(new URL(route.request().url()).pathname.split('/game/')[1] ?? '');
+        const fixturePath = `game/${relativePath}`;
+        await route.fulfill({
+            status: 200,
+            contentType: imageContentType(fixturePath),
+            body: await readImage(fixturePath),
+        });
+    });
     await page.route(`**${gameBasePath}/api/trpc/**`, async (route) => {
         const results = operationNames(route).map((operation) => {
             if (operation === 'auth.status') return response({ ok: true });
             if (operation === 'lobby.info') return response({ myGeneral: { id: 1, name: '장수' } });
             if (operation === 'join.getConfig') return response({});
             if (operation === 'general.me') return response(generalContext);
-            if (operation === 'world.getMap') return response(map);
+            if (operation === 'world.getMap') return response(mapFixture);
             if (operation === 'turns.getCommandTable') return response({ general: [], nation: [] });
             if (operation === 'turns.reserved.getGeneral' || operation === 'turns.reserved.getNation') {
                 return response({ turns: [], revision: 0 });
@@ -250,10 +266,10 @@ const install = async (page: Page, mode: 'member' | 'wanderer' | 'admin' = 'memb
                             generalCount: 1,
                             cities: ['허창'],
                         },
-                    ],
+                    ].slice(0, globalNationCount),
                     diplomacy: { 1: { 1: 2, 2: 0 }, 2: { 1: 0, 2: 2 } },
                     conflict: [],
-                    map,
+                    map: mapFixture,
                 });
             if (operation === 'world.getMapLayout') return response(layout);
             if (operation === 'world.getCurrentCity')
@@ -375,6 +391,86 @@ test('global-info renders the ref nation summary columns beside the map', async 
     await page.setViewportSize({ width: 1200, height: 900 });
     await go(page, 'global-info');
 
+    const mapTitle = page.locator('.map-title');
+    await expect(mapTitle).toHaveText(/200年 1月/u);
+    const titleBackground = await page
+        .locator('.map-top')
+        .evaluate((element) => getComputedStyle(element).backgroundImage);
+    expect(titleBackground).toContain('ltitle.jpg');
+    expect(titleBackground).toContain('rtitle.jpg');
+    const titleTextBackground = await mapTitle.evaluate((element) => getComputedStyle(element).backgroundImage);
+    expect(titleTextBackground).toContain('ad.gif');
+    expect(titleTextBackground).toContain('spring.gif');
+    await mapTitle.hover();
+    const titleTooltip = page.locator('.map-title-tooltip');
+    await expect(titleTooltip).toBeVisible();
+    await expect(titleTooltip).toContainText('기술등급 제한 : 5등급 (205년 해제)');
+    const titleGeometry = await page.locator('.map-top').evaluate((element) => {
+        const band = element.getBoundingClientRect();
+        const title = element.querySelector('.map-title')?.getBoundingClientRect();
+        const tooltip = element.querySelector('.map-title-tooltip')?.getBoundingClientRect();
+        return {
+            band: { width: band.width, height: band.height },
+            title: title ? { width: title.width, height: title.height } : null,
+            tooltip: tooltip ? { width: tooltip.width, height: tooltip.height } : null,
+        };
+    });
+    expect(titleGeometry).toEqual({
+        band: { width: 700, height: 20 },
+        title: { width: 160, height: 20 },
+        tooltip: { width: 220, height: 28 },
+    });
+    if (artifactRoot) {
+        await mkdir(artifactRoot, { recursive: true });
+        await page.screenshot({ path: resolve(artifactRoot, 'core-global-info-title-hover.png'), fullPage: true });
+    }
+
+    const hoveredCastle = page.locator('.city-base').first();
+    await hoveredCastle.hover();
+    const cityTooltip = page.locator('.map-tooltip');
+    await expect(cityTooltip).toBeVisible();
+    await expect(cityTooltip.locator('.tooltip-title')).toHaveText('【하북|특】업');
+    await expect(cityTooltip.locator('.tooltip-body')).toHaveText('아국');
+    const cityTooltipStyle = await cityTooltip.evaluate((element) => {
+        const style = getComputedStyle(element);
+        const rect = element.getBoundingClientRect();
+        return {
+            width: rect.width,
+            backgroundColor: style.backgroundColor,
+            fontSize: style.fontSize,
+            lineHeight: style.lineHeight,
+        };
+    });
+    expect(cityTooltipStyle.width).toBeGreaterThanOrEqual(120);
+    expect(cityTooltipStyle).toMatchObject({
+        backgroundColor: 'rgb(30, 164, 255)',
+        fontSize: '14px',
+        lineHeight: '15px',
+    });
+    if (artifactRoot) {
+        await page.screenshot({ path: resolve(artifactRoot, 'core-global-info-city-hover.png'), fullPage: true });
+    }
+
+    await expect
+        .poll(async () => {
+            const [matrixWrapBox, matrixBox] = await Promise.all([
+                page.locator('.matrix-wrap').boundingBox(),
+                page.locator('.matrix').boundingBox(),
+            ]);
+            if (!matrixWrapBox || !matrixBox) return null;
+            return Math.abs(matrixWrapBox.height - matrixBox.height);
+        })
+        .toBeLessThan(1);
+
+    await expect
+        .poll(() =>
+            page
+                .locator('.map-area .city-icon')
+                .evaluateAll((images: HTMLImageElement[]) =>
+                    images.every((image) => image.complete && image.naturalWidth > 0)
+                )
+        )
+        .toBe(true);
     const castleGeometry = await page.locator('.map-area').evaluate((mapArea) => {
         const mapRect = mapArea.getBoundingClientRect();
         return Array.from(mapArea.querySelectorAll<HTMLImageElement>('.city-icon')).map((image) => {
@@ -437,6 +533,10 @@ test('global-info renders the ref nation summary columns beside the map', async 
             resolve(artifactRoot, 'core-global-info-computed-dom.json'),
             `${JSON.stringify(
                 {
+                    titleBackground,
+                    titleTextBackground,
+                    titleGeometry,
+                    cityTooltipStyle,
                     geometry,
                     castleGeometry,
                     headings: await summary.locator('th').allTextContents(),
@@ -489,8 +589,98 @@ test('global-info renders the ref nation summary columns beside the map', async 
     expect(mobileGeometry.map?.width).toBe(500);
     expect(mobileGeometry.summary?.width).toBe(500);
     expect(mobileGeometry.summary?.y).toBe(mobileGeometry.map?.bottom);
+    await mapTitle.hover();
+    await expect(titleTooltip).toBeVisible();
+    const mobileTitleGeometry = await page.locator('.map-top').evaluate((element) => {
+        const band = element.getBoundingClientRect();
+        const tooltip = element.querySelector('.map-title-tooltip')?.getBoundingClientRect();
+        return {
+            band: { width: band.width, height: band.height },
+            tooltip: tooltip ? { x: tooltip.x, width: tooltip.width } : null,
+            documentWidth: document.documentElement.scrollWidth,
+        };
+    });
+    expect(mobileTitleGeometry.band).toEqual({ width: 500, height: 20 });
+    expect(mobileTitleGeometry.tooltip?.width).toBe(220);
+    expect(mobileTitleGeometry.documentWidth).toBe(500);
+    await hoveredCastle.hover();
+    await expect(cityTooltip).toBeVisible();
+    await expect(cityTooltip.locator('.tooltip-title')).toHaveText('【하북|특】업');
     if (artifactRoot) {
+        await page.screenshot({
+            path: resolve(artifactRoot, 'core-global-info-mobile-city-hover.png'),
+            fullPage: true,
+        });
         await page.screenshot({ path: resolve(artifactRoot, 'core-global-info-mobile.png'), fullPage: true });
+    }
+});
+
+test('map title keeps the ref early-game restriction boundary and color', async ({ page }) => {
+    await install(page, 'member', 100, 2, { ...map, startYear: 198 });
+    await page.setViewportSize({ width: 1200, height: 900 });
+    await go(page, 'global-info');
+
+    const mapTitle = page.locator('.map-title');
+    await expect(mapTitle).toHaveCSS('color', 'rgb(255, 255, 0)');
+    await mapTitle.hover();
+    await expect(page.locator('.map-title-tooltip')).toHaveText(
+        '초반제한 기간 : 0년 12개월 (201년)기술등급 제한 : 1등급 (203년 해제)'
+    );
+});
+
+test('global-info diplomacy height follows the active nation count', async ({ page }) => {
+    await install(page, 'member', 100, 1);
+    await go(page, 'global-info');
+
+    const matrixWrap = page.locator('.matrix-wrap');
+    const matrix = page.locator('.matrix');
+    const mapSection = page.locator('.map-section');
+    await expect(matrix.locator('tbody tr')).toHaveCount(1);
+
+    for (const viewport of [
+        { name: 'desktop', width: 1200, height: 900 },
+        { name: 'mobile', width: 390, height: 844 },
+    ]) {
+        await page.setViewportSize(viewport);
+        await expect
+            .poll(async () => {
+                const [wrapBox, matrixBox] = await Promise.all([matrixWrap.boundingBox(), matrix.boundingBox()]);
+                if (!wrapBox || !matrixBox) return null;
+                return Math.abs(wrapBox.height - matrixBox.height);
+            })
+            .toBeLessThan(1);
+
+        const geometry = await page.evaluate(() => {
+            const rect = (selector: string) => document.querySelector(selector)?.getBoundingClientRect();
+            const diplomacy = rect('.section');
+            const matrix = rect('.matrix');
+            const matrixWrap = rect('.matrix-wrap');
+            const mapSection = rect('.map-section');
+            return {
+                diplomacyHeight: diplomacy?.height ?? null,
+                matrixHeight: matrix?.height ?? null,
+                matrixWrapHeight: matrixWrap?.height ?? null,
+                gapToMap: matrixWrap && mapSection ? mapSection.top - matrixWrap.bottom : null,
+            };
+        });
+        expect(geometry.matrixHeight).not.toBeNull();
+        expect(geometry.matrixWrapHeight).toBeCloseTo(geometry.matrixHeight!, 0);
+        expect(geometry.diplomacyHeight).toBeLessThan(200);
+        expect(geometry.gapToMap).toBe(21);
+        await expect(mapSection).toBeInViewport();
+
+        if (artifactRoot) {
+            await mkdir(artifactRoot, { recursive: true });
+            await writeFile(
+                resolve(artifactRoot, `core-global-info-one-nation-${viewport.name}.json`),
+                `${JSON.stringify(geometry, null, 2)}\n`,
+                'utf8'
+            );
+            await page.screenshot({
+                path: resolve(artifactRoot, `core-global-info-one-nation-${viewport.name}.png`),
+                fullPage: true,
+            });
+        }
     }
 });
 

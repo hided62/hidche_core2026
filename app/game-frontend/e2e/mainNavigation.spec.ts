@@ -32,6 +32,9 @@ type NavigationFixture = {
     refreshDelayMs?: number;
     largeCommandTable?: boolean;
     reservedTurns?: Array<{ index: number; action: string; args: Record<string, unknown> }>;
+    messages?: unknown;
+    messageContacts?: unknown;
+    autorunLimit?: number | null;
     dashboardResponses?: Array<{
         bytes: number;
         contextKind: string | null;
@@ -403,10 +406,16 @@ const installFixture = async (page: Page, state: NavigationFixture) => {
             }
             if (operation === 'turns.getCommandTable') return response({ general: [], nation: [] });
             if (operation === 'turns.reserved.getGeneral' || operation === 'turns.reserved.getNation') {
-                return response({ turns: state.reservedTurns ?? [], revision: 0 });
+                return response({
+                    turns: state.reservedTurns ?? [],
+                    revision: 0,
+                    autorunLimit: state.autorunLimit ?? null,
+                });
             }
-            if (operation === 'messages.getRecent') return response(emptyMessages(state.permission));
-            if (operation === 'messages.getContacts') return response({ nation: [] });
+            if (operation === 'messages.getRecent') {
+                return response(state.messages ?? emptyMessages(state.permission));
+            }
+            if (operation === 'messages.getContacts') return response(state.messageContacts ?? { nation: [] });
             if (operation === 'general.getRecentRecords') {
                 return response({
                     global: [{ id: 3, text: '장수 동향 기록' }],
@@ -617,7 +626,23 @@ test('desktop menus preserve ref columns, prefix-safe routes, and controlled dro
     await expect(page.locator('.main-nation-menu [data-navigation-id="tournament"]')).toHaveClass(/highlight/);
 
     const gameInfoButton = global.locator('[data-menu-id="game-info"]');
+    const bettingButton = global.locator('[data-navigation-id="nation-betting"]');
+    await expect
+        .poll(() =>
+            bettingButton.evaluate((element) => ({
+                backgroundColor: getComputedStyle(element).backgroundColor,
+                backgroundImage: getComputedStyle(element).backgroundImage,
+            }))
+        )
+        .toEqual({ backgroundColor: 'rgb(0, 88, 44)', backgroundImage: 'none' });
+    await bettingButton.hover();
+    await expect
+        .poll(() => bettingButton.evaluate((element) => getComputedStyle(element).backgroundColor))
+        .toBe('rgb(0, 88, 44)');
     await gameInfoButton.focus();
+    await expect
+        .poll(() => gameInfoButton.evaluate((element) => getComputedStyle(element).backgroundColor))
+        .toBe('rgb(0, 88, 44)');
     await gameInfoButton.press('Enter');
     await expect(gameInfoButton).toHaveAttribute('aria-expanded', 'true');
     await expect(global.locator('#global-menu-game-info')).toBeVisible();
@@ -631,6 +656,74 @@ test('desktop menus preserve ref columns, prefix-safe routes, and controlled dro
     await persistArtifact(page, `${basePath.slice(1)}-desktop-1200`);
 });
 
+test('pure NPC message senders are not rendered as reply targets', async ({ page }) => {
+    const target = (generalId: number, generalName: string) => ({
+        generalId,
+        generalName,
+        nationId: 1,
+        nationName: '위',
+        color: '#008000',
+        icon: '',
+    });
+    const messages = {
+        ...emptyMessages(0),
+        public: [
+            {
+                id: 102,
+                text: 'NPC 메시지',
+                time: '2026-08-12 12:00:00',
+                msgType: 'public',
+                src: target(22, '순수NPC'),
+                dest: null,
+                option: {},
+            },
+            {
+                id: 101,
+                text: '유저 메시지',
+                time: '2026-08-12 11:59:00',
+                msgType: 'public',
+                src: target(21, '유저장수'),
+                dest: null,
+                option: {},
+            },
+        ],
+    };
+    const state: NavigationFixture = {
+        officerLevel: 1,
+        permission: 0,
+        nationLevel: 1,
+        stage: 0,
+        npcMode: 1,
+        generalMeCalls: 0,
+        operations: [],
+        messages,
+        messageContacts: {
+            nation: [
+                {
+                    nationId: 1,
+                    mailbox: 9001,
+                    name: '위',
+                    color: '#008000',
+                    general: [[21, '유저장수', 0]],
+                },
+            ],
+        },
+    };
+    await installFixture(page, state);
+    await page.setViewportSize({ width: 1200, height: 900 });
+    await waitForMain(page);
+
+    const npcMessage = page.locator('.desktop-message-panel .msg-plate[data-id="102"]');
+    const userMessage = page.locator('.desktop-message-panel .msg-plate[data-id="101"]');
+    await expect(npcMessage.locator('.msg-header')).toContainText('순수NPC:위');
+    await expect(npcMessage.locator('.msg-header')).not.toContainText('↩');
+    await expect(npcMessage.getByRole('button', { name: /순수NPC/ })).toHaveCount(0);
+    await expect(userMessage.getByRole('button', { name: /유저장수:위.*↩/ })).toBeVisible();
+    await userMessage.getByRole('button', { name: /유저장수:위.*↩/ }).click();
+    await expect(page.locator('.desktop-message-panel #mailbox_list')).toHaveValue('21');
+    await persistArtifact(page, `${basePath.slice(1)}-npc-reply-targets-desktop-1200`);
+});
+
 test('main cards and command input stay inside their Ref-sized grid slots', async ({ page }) => {
     const state: NavigationFixture = {
         officerLevel: 1,
@@ -641,11 +734,12 @@ test('main cards and command input stay inside their Ref-sized grid slots', asyn
         generalMeCalls: 0,
         operations: [],
         largeCommandTable: true,
-        reservedTurns: Array.from({ length: 14 }, (_, index) => ({
+        reservedTurns: Array.from({ length: 30 }, (_, index) => ({
             index,
-            action: `command-${index}`,
+            action: index === 0 ? '휴식' : `command-${index}`,
             args: {},
         })),
+        autorunLimit: 2224,
     };
     await installFixture(page, state);
     await page.setViewportSize({ width: 1200, height: 900 });
@@ -728,6 +822,27 @@ test('main cards and command input stay inside their Ref-sized grid slots', asyn
     expect(new Set(desktopGeometry.visibleControlBoxes.map(({ y }) => y)).size).toBe(1);
     expect(desktopGeometry.bottomActionBoxes).toHaveLength(3);
     expect(new Set(desktopGeometry.bottomActionBoxes.map(({ y }) => y)).size).toBe(1);
+    await expect(page.locator('[data-main-target="commands"] .edit-column button')).toHaveCount(15);
+    const autonomousRest = page.locator('[data-main-target="commands"] .action-column > div').first();
+    await expect(autonomousRest).toContainText('휴식(자율 행동)');
+    expect(await autonomousRest.evaluate((element) => getComputedStyle(element).color)).toBe('rgb(170, 255, 255)');
+
+    const tenthTurnButton = page.getByRole('button', { name: '10턴 명령 입력' });
+    await tenthTurnButton.click();
+    const quickPicker = page.getByTestId('command-picker');
+    await expect(quickPicker).toBeVisible();
+    const quickPickerAlignment = await quickPicker.evaluate((element) => {
+        const row = element
+            .closest('.reserved-command-editor')
+            ?.querySelector<HTMLElement>('.action-column > div:nth-child(10)');
+        if (!row) throw new Error('10th command row missing');
+        return {
+            pickerTop: element.getBoundingClientRect().top,
+            rowTop: row.getBoundingClientRect().top,
+        };
+    });
+    expect(quickPickerAlignment.pickerTop - quickPickerAlignment.rowTop).toBeCloseTo(30, 0);
+    await quickPicker.getByRole('button', { name: '명령 입력 닫기' }).click();
 
     const modeButton = page.locator('[data-main-target="commands"] .control-pad').getByRole('button', {
         name: '고급 모드',
@@ -736,6 +851,27 @@ test('main cards and command input stay inside their Ref-sized grid slots', asyn
     await modeButton.focus();
     await expect(modeButton).toBeFocused();
     await modeButton.click();
+    const advancedControlGeometry = await page.locator('[data-main-target="commands"] .reserved-command-editor').evaluate(
+        (editor) => {
+            const range = editor.querySelector<HTMLElement>('.range-menu');
+            const recent = [...editor.querySelectorAll<HTMLElement>('.control-pad summary')].find((element) =>
+                element.textContent?.includes('최근 실행')
+            );
+            const advanced = editor.querySelector<HTMLElement>('.advanced-actions');
+            const queue = editor.querySelector<HTMLElement>('.queue-grid');
+            if (!range || !recent || !advanced || !queue) throw new Error('advanced command controls missing');
+            return {
+                rangeTop: range.getBoundingClientRect().top,
+                recentTop: recent.getBoundingClientRect().top,
+                advancedTop: advanced.getBoundingClientRect().top,
+                advancedBottom: advanced.getBoundingClientRect().bottom,
+                queueTop: queue.getBoundingClientRect().top,
+            };
+        }
+    );
+    expect(advancedControlGeometry.rangeTop).toBe(advancedControlGeometry.recentTop);
+    expect(advancedControlGeometry.advancedTop).toBeGreaterThan(advancedControlGeometry.rangeTop);
+    expect(advancedControlGeometry.advancedBottom).toBeLessThanOrEqual(advancedControlGeometry.queueTop);
     await page.locator('[data-main-target="commands"] .select-command').click();
     const picker = page.getByTestId('command-picker');
     await expect(picker).toBeVisible();
@@ -764,6 +900,32 @@ test('main cards and command input stay inside their Ref-sized grid slots', asyn
     expect(new Set(pickerGeometry.categoryBoxes.map(({ y }) => y)).size).toBe(1);
     expect(pickerGeometry.horizontalOverflow).toBeLessThanOrEqual(0);
     await picker.getByRole('button', { name: '명령 입력 닫기' }).click();
+
+    await page.locator('[data-main-target="commands"] .control-pad').getByRole('button', { name: '일반 모드' }).click();
+    const collapsedPanelHeight = await page
+        .locator('[data-main-target="commands"]')
+        .evaluate((element) => element.getBoundingClientRect().height);
+    await page.locator('[data-main-target="commands"] .bottom-actions').getByRole('button', { name: '펼치기' }).click();
+    await expect(page.locator('[data-main-target="commands"] .edit-column button')).toHaveCount(30);
+    const expandedDesktopGeometry = await page.locator('.layout-desktop').evaluate((layout) => {
+        const commands = layout.querySelector<HTMLElement>('[data-main-target="commands"]');
+        const city = layout.querySelector<HTMLElement>('[data-main-target="city"]');
+        const nation = layout.querySelector<HTMLElement>('[data-main-target="nation"]');
+        if (!commands || !city || !nation) throw new Error('expanded desktop panels missing');
+        return {
+            commandHeight: commands.getBoundingClientRect().height,
+            commandBottom: commands.getBoundingClientRect().bottom,
+            cityBottom: city.getBoundingClientRect().bottom,
+            nationTop: nation.getBoundingClientRect().top,
+            verticalOverflow: commands.scrollHeight - commands.clientHeight,
+            overflowY: getComputedStyle(commands).overflowY,
+        };
+    });
+    expect(expandedDesktopGeometry.commandHeight).toBeGreaterThan(collapsedPanelHeight);
+    expect(expandedDesktopGeometry.verticalOverflow).toBeLessThanOrEqual(0);
+    expect(expandedDesktopGeometry.overflowY).toBe('visible');
+    expect(expandedDesktopGeometry.cityBottom).toBe(expandedDesktopGeometry.commandBottom);
+    expect(expandedDesktopGeometry.nationTop).toBeGreaterThanOrEqual(expandedDesktopGeometry.commandBottom);
 
     const captureProgress = async (name: string) => {
         if (!artifactRoot) return;
@@ -852,9 +1014,9 @@ test('main cards and command input stay inside their Ref-sized grid slots', asyn
     };
     await captureProgress('desktop-1200');
 
-    await page.locator('[data-main-target="commands"] .control-pad').getByRole('button', { name: '일반 모드' }).click();
     await page.setViewportSize({ width: 500, height: 900 });
     await expect(page.locator('.layout-mobile')).toBeVisible();
+    await page.locator('[data-main-target="commands"] .bottom-actions').getByRole('button', { name: '펼치기' }).click();
     expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(500);
     await expect(page.locator('[data-main-target="city"] [role="progressbar"]')).toHaveCount(8);
     await expect(page.locator('[data-main-target="general"] [role="progressbar"]')).toHaveCount(4);
@@ -889,7 +1051,7 @@ test('main cards and command input stay inside their Ref-sized grid slots', asyn
             controlBoxes,
         };
     });
-    expect(mobileGeometry.panelHeight).toBe(645);
+    expect(mobileGeometry.panelHeight).toBeGreaterThan(645);
     expect(mobileGeometry.editorLeft).toBeGreaterThanOrEqual(mobileGeometry.panelLeft);
     expect(mobileGeometry.editorRight).toBeLessThanOrEqual(mobileGeometry.panelRight);
     expect(mobileGeometry.horizontalOverflow).toBeLessThanOrEqual(0);
@@ -897,6 +1059,7 @@ test('main cards and command input stay inside their Ref-sized grid slots', asyn
     expect(mobileGeometry.controlColumns.split(' ')).toHaveLength(3);
     expect(mobileGeometry.controlBoxes).toHaveLength(3);
     expect(new Set(mobileGeometry.controlBoxes.map(({ y }) => y)).size).toBe(1);
+    await expect(page.locator('[data-main-target="commands"] .edit-column button')).toHaveCount(30);
     await captureProgress('mobile-500');
 });
 
@@ -925,6 +1088,15 @@ test('the 939/940 boundary switches to the Ref-style 500px single document', asy
     await expect(page.locator('.main-mobile-bottom')).toBeVisible();
 
     await page.setViewportSize({ width: 500, height: 900 });
+    await expect
+        .poll(() =>
+            page
+                .locator('.main-global-menu')
+                .first()
+                .locator('[data-navigation-id="nation-betting"]')
+                .evaluate((element) => getComputedStyle(element).backgroundColor)
+        )
+        .toBe('rgb(0, 88, 44)');
     const documentGeometry = await page.locator('.main-page').evaluate((element) => {
         const rect = element.getBoundingClientRect();
         return {
