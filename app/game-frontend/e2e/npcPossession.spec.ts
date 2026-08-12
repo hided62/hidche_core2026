@@ -106,6 +106,13 @@ const installFixture = async (page: Page, state: FixtureState): Promise<void> =>
             body: '<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64"><rect width="64" height="64" fill="#777"/></svg>',
         });
     });
+    await page.route('https://sam-image.hided.net/icons/**', async (route) => {
+        await route.fulfill({
+            status: 200,
+            contentType: 'image/svg+xml',
+            body: '<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64"><rect width="64" height="64" fill="#777"/></svg>',
+        });
+    });
     await page.route('**/gateway/api/user-icons/default.jpg', async (route) => {
         await route.fulfill({
             status: 200,
@@ -265,7 +272,10 @@ test('renders Ref-shaped token cards, preserves keep cooldown and retries posses
     await tooltip.focus();
     await expect(tooltip).toBeFocused();
     await expect(tooltipPopup).toHaveText('안전을 중시합니다.');
-    await expect(page.locator('.npc-card-image').first()).toHaveAttribute('src', '/gateway/api/user-icons/default.jpg');
+    await expect(page.locator('.npc-card-image').first()).toHaveAttribute(
+        'src',
+        'https://sam-image.hided.net/icons/default.jpg'
+    );
 
     await page.locator('#btn-load-general-list').click();
     await expect(page.locator('#tb-general-list')).toBeVisible();
@@ -347,11 +357,31 @@ test('renders Ref-shaped token cards, preserves keep cooldown and retries posses
     await expect(page.locator('.npc-token-expired')).toBeVisible();
     await expect(possessButton).toBeEnabled();
     await expect(refreshButton).toBeDisabled();
+    await page.setViewportSize({ width: 390, height: 844 });
+    const documentWidthBeforeDialog = await page.evaluate(() => document.documentElement.scrollWidth);
     await page.locator('#btn-retry-possession').click();
+    const successDialog = page.getByRole('alertdialog', { name: '완료' });
+    await expect(successDialog).toContainText('빙의에 성공했습니다.');
+    await expect(successDialog.getByRole('button', { name: '확인' })).toBeFocused();
+    const dialogGeometry = await successDialog.evaluate((element) => {
+        const rect = element.getBoundingClientRect();
+        return {
+            left: rect.left,
+            right: window.innerWidth - rect.right,
+            bottom: window.innerHeight - rect.bottom,
+            width: rect.width,
+            documentWidth: document.documentElement.scrollWidth,
+        };
+    });
+    expect(dialogGeometry.left).toBeGreaterThanOrEqual(0);
+    expect(dialogGeometry.right).toBeGreaterThanOrEqual(0);
+    expect(dialogGeometry.bottom).toBeGreaterThanOrEqual(0);
+    expect(dialogGeometry.documentWidth).toBe(documentWidthBeforeDialog);
+    await page.screenshot({ path: testInfo.outputPath('game-notice-dialog.png') });
+    await successDialog.getByRole('button', { name: '확인' }).click();
     await expect(page).toHaveURL(new RegExp(`${basePath}/$`));
     expect(state.possessInputs).toHaveLength(2);
     expect(state.possessInputs[1]?.clientRequestId).toBe(firstRequestId);
-    expect(dialogs).toContain('빙의에 성공했습니다.');
     expect(await page.evaluate(() => window.sessionStorage.getItem('sammo-npc-possess-pending-action'))).toBeNull();
 
     await page.screenshot({

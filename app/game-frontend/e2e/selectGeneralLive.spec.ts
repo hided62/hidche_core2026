@@ -406,8 +406,8 @@ test.describe('scenario 903 live selection pool', () => {
         await expect(page.locator('.selected-card')).toHaveCount(1);
         await page.locator('.custom-form select').selectOption('che_안전');
         await page.locator('#build-general').click();
-        await expect.poll(() => dialogs).toContain(
-            '실패했습니다: 장수 선택 요청은 접수됐지만 처리 결과를 아직 확인하지 못했습니다. 같은 요청으로 다시 시도해 주세요.'
+        await expect(page.getByTestId('game-toast')).toContainText(
+            '장수 생성에 실패했습니다: 장수 선택 요청은 접수됐지만 처리 결과를 아직 확인하지 못했습니다. 같은 요청으로 다시 시도해 주세요.'
         );
         await waitForPool(page);
         const retryCard = page
@@ -417,9 +417,11 @@ test.describe('scenario 903 live selection pool', () => {
         await retryCard.locator('.select-button').click();
         await page.locator('.custom-form select').selectOption('che_안전');
         await page.locator('#build-general').click();
+        const createDialog = page.getByRole('alertdialog', { name: '완료' });
+        await expect(createDialog).toContainText('선택한 장수로 생성했습니다.');
+        await createDialog.getByRole('button', { name: '확인' }).click();
         await expect(page).toHaveURL(/\/hwe\/$/);
         expect(dialogs.filter((message) => message === '이 장수로 생성할까요?')).toHaveLength(2);
-        await expect.poll(() => dialogs).toContain('선택한 장수로 생성했습니다.');
         expect(createClientRequestIds).toHaveLength(2);
         expect(createClientRequestIds[1]).toBe(createClientRequestIds[0]);
 
@@ -452,7 +454,9 @@ test.describe('scenario 903 live selection pool', () => {
 
         dialogs.length = 0;
         await page.goto('select-general');
-        await expect.poll(() => dialogs).toContain('실패했습니다: 아직 다시 고를 수 없습니다');
+        await expect(page.getByTestId('game-toast')).toContainText(
+            '장수 선택 정보를 불러오지 못했습니다: 아직 다시 고를 수 없습니다'
+        );
         await expect(page.locator('.error-text')).toHaveText('아직 다시 고를 수 없습니다');
 
         const availableAt = '2026-07-29T00:00:00.000Z';
@@ -495,9 +499,11 @@ test.describe('scenario 903 live selection pool', () => {
         expect(targetIndex).toBeGreaterThanOrEqual(0);
         const targetName = names[targetIndex]!.trim();
         await cards.nth(targetIndex).locator('.select-button').click();
+        const reselectDialog = page.getByRole('alertdialog', { name: '완료' });
+        await expect(reselectDialog).toContainText('선택한 장수로 변경했습니다.');
+        await reselectDialog.getByRole('button', { name: '확인' }).click();
         await expect(page).toHaveURL(/\/hwe\/$/);
         await expect.poll(() => dialogs).toContain(`이 장수를 선택할까요? : ${targetName}`);
-        await expect.poll(() => dialogs).toContain('선택한 장수로 변경했습니다.');
 
         await expect
             .poll(async () => (await db.general.findUniqueOrThrow({ where: { id: created.id } })).name)

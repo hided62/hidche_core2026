@@ -838,9 +838,7 @@ test('내 정보 즉시행동은 timeout 재시도 ID를 유지하고 성공 후
 
     await instantRetreatButton.click();
     await expect.poll(() => state.instantRetreatInputs?.length).toBe(1);
-    await expect
-        .poll(() => dialogs.some((message) => message.includes('요청 처리 결과를 확인하지 못했습니다.')))
-        .toBe(true);
+    await expect(page.getByTestId('game-toast')).toContainText('요청 처리 결과를 확인하지 못했습니다.');
     await expect.poll(() => state.generalMeQueries).toBe(2);
     await expect.poll(() => state.ensurePrestartQueries).toBe(2);
 
@@ -948,13 +946,9 @@ test('가오픈 장수 삭제는 레거시 표시와 확인을 보존하고 time
     const timeoutReload = page.waitForEvent('framenavigated', (frame) => frame === page.mainFrame());
     await deleteButton.click();
     await expect.poll(() => state.dieOnPrestartInputs?.length).toBe(1);
-    await expect
-        .poll(() =>
-            dialogs.some((message) =>
-                message.includes('alert:실패했습니다: 요청은 접수됐지만 처리 결과를 아직 확인하지 못했습니다.')
-            )
-        )
-        .toBe(true);
+    const failureDialog = page.getByRole('alertdialog', { name: '장수 삭제 실패' });
+    await expect(failureDialog).toContainText('요청은 접수됐지만 처리 결과를 아직 확인하지 못했습니다.');
+    await failureDialog.getByRole('button', { name: '확인' }).click();
     await timeoutReload;
     await page.waitForLoadState('networkidle');
     await expect(deleteButton).toBeVisible();

@@ -2,10 +2,12 @@
 import { computed, onMounted, reactive, ref, watch } from 'vue';
 import PanelCard from '../components/ui/PanelCard.vue';
 import SkeletonLines from '../components/ui/SkeletonLines.vue';
+import { useGameFeedback } from '../composables/useGameFeedback';
 import { trpc } from '../utils/trpc';
 
 const CUSTOM_CSS_KEY = 'sammo-custom-css';
 const SCREEN_MODE_KEY = 'sammo-screen-mode';
+const { success: showSuccessToast, error: showErrorToast } = useGameFeedback();
 
 type MyGeneralResponse = Awaited<ReturnType<typeof trpc.general.me.query>>;
 
@@ -170,7 +172,7 @@ const loadSettings = async () => {
 
 const saveSettings = async () => {
     if (!canSave.value) {
-        alert('설정 저장 가능 횟수가 없습니다.');
+        showErrorToast('설정 저장 가능 횟수가 없습니다.');
         return;
     }
 
@@ -182,9 +184,9 @@ const saveSettings = async () => {
             use_auto_nation_turn: resolveNumber(form.use_auto_nation_turn, 1),
         });
         await loadSettings();
-        alert('설정을 저장했습니다.');
+        showSuccessToast('설정을 저장했습니다.');
     } catch (err) {
-        alert(`실패했습니다: ${resolveErrorMessage(err)}`);
+        showErrorToast(`설정 저장에 실패했습니다: ${resolveErrorMessage(err)}`);
     }
 };
 
