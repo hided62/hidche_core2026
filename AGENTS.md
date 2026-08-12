@@ -316,8 +316,10 @@ docs에서 확인해 주세요. 존재하지 않는 명령을 오래된 report�
 
 ## 코드 스타일
 
-- TypeScript는 workspace 전체에서 정확히 `6.0.2`를 사용해 주세요. package-local
-  다른 버전을 추가하지 말아 주세요.
+- Vite, Vue/Volar와 compiler API 소비자는 workspace 전체에서 정확히
+  TypeScript `6.0.3`을 사용해 주세요. CLI project build/typecheck는 root의
+  `@typescript/native` alias로 고정한 TypeScript 7 `tsc`를 사용하며 package-local
+  다른 compiler version이나 직접 `tsc` 호출을 추가하지 말아 주세요.
 - TypeScript/JSON/Vue SFC는 기존 4-space 스타일을 유지해 주세요.
 - public API는 명시적 타입을 사용하고 `any`, 불필요하게 넓은 `unknown`,
   `as unknown as` 우회를 피해 주세요.

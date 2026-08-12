@@ -3,7 +3,6 @@
     "compilerOptions": {
         "outDir": "dist",
         "composite": true,
-        "baseUrl": ".",
         "paths": {
             "@sammo-ts/common": [
                 "../../packages/common/src/index.ts"

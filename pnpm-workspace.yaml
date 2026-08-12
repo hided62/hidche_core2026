@@ -5,7 +5,7 @@ packages:
 
 overrides:
   postcss: 8.5.26
-  typescript: 6.0.2
+  typescript: 6.0.3
 
 allowBuilds:
   '@prisma/engines': true

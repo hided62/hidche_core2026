@@ -23,7 +23,7 @@
         "lint": "eslint .",
         "lint:fix": "eslint . --fix",
         "test": "vitest run --config vitest.config.ts",
-        "typecheck": "tsc -b"
+        "typecheck": "pnpm -w tsc7 -b app/game-api/tsconfig.json"
     },
     "devDependencies": {
         "@types/sanitize-html": "2.16.1",

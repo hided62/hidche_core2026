@@ -14,7 +14,7 @@
         "lint": "eslint .",
         "lint:fix": "eslint . --fix",
         "test": "vitest run --config vitest.config.ts",
-        "typecheck": "tsc -b"
+        "typecheck": "pnpm -w tsc7 -b app/release-controller/tsconfig.json"
     },
     "dependencies": {
         "@sammo-ts/gateway-api": "workspace:*",
