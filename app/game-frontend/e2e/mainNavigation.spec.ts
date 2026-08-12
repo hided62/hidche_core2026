@@ -32,6 +32,8 @@ type NavigationFixture = {
     refreshDelayMs?: number;
     largeCommandTable?: boolean;
     reservedTurns?: Array<{ index: number; action: string; args: Record<string, unknown> }>;
+    messages?: unknown;
+    messageContacts?: unknown;
     dashboardResponses?: Array<{
         bytes: number;
         contextKind: string | null;
@@ -405,8 +407,10 @@ const installFixture = async (page: Page, state: NavigationFixture) => {
             if (operation === 'turns.reserved.getGeneral' || operation === 'turns.reserved.getNation') {
                 return response({ turns: state.reservedTurns ?? [], revision: 0 });
             }
-            if (operation === 'messages.getRecent') return response(emptyMessages(state.permission));
-            if (operation === 'messages.getContacts') return response({ nation: [] });
+            if (operation === 'messages.getRecent') {
+                return response(state.messages ?? emptyMessages(state.permission));
+            }
+            if (operation === 'messages.getContacts') return response(state.messageContacts ?? { nation: [] });
             if (operation === 'general.getRecentRecords') {
                 return response({
                     global: [{ id: 3, text: '장수 동향 기록' }],
@@ -617,7 +621,23 @@ test('desktop menus preserve ref columns, prefix-safe routes, and controlled dro
     await expect(page.locator('.main-nation-menu [data-navigation-id="tournament"]')).toHaveClass(/highlight/);
 
     const gameInfoButton = global.locator('[data-menu-id="game-info"]');
+    const bettingButton = global.locator('[data-navigation-id="nation-betting"]');
+    await expect
+        .poll(() =>
+            bettingButton.evaluate((element) => ({
+                backgroundColor: getComputedStyle(element).backgroundColor,
+                backgroundImage: getComputedStyle(element).backgroundImage,
+            }))
+        )
+        .toEqual({ backgroundColor: 'rgb(0, 88, 44)', backgroundImage: 'none' });
+    await bettingButton.hover();
+    await expect
+        .poll(() => bettingButton.evaluate((element) => getComputedStyle(element).backgroundColor))
+        .toBe('rgb(0, 88, 44)');
     await gameInfoButton.focus();
+    await expect
+        .poll(() => gameInfoButton.evaluate((element) => getComputedStyle(element).backgroundColor))
+        .toBe('rgb(0, 88, 44)');
     await gameInfoButton.press('Enter');
     await expect(gameInfoButton).toHaveAttribute('aria-expanded', 'true');
     await expect(global.locator('#global-menu-game-info')).toBeVisible();
@@ -629,6 +649,74 @@ test('desktop menus preserve ref columns, prefix-safe routes, and controlled dro
     await page.getByRole('heading', { name: '전장 현황' }).click();
     await expect(gameInfoButton).toHaveAttribute('aria-expanded', 'false');
     await persistArtifact(page, `${basePath.slice(1)}-desktop-1200`);
+});
+
+test('pure NPC message senders are not rendered as reply targets', async ({ page }) => {
+    const target = (generalId: number, generalName: string) => ({
+        generalId,
+        generalName,
+        nationId: 1,
+        nationName: '위',
+        color: '#008000',
+        icon: '',
+    });
+    const messages = {
+        ...emptyMessages(0),
+        public: [
+            {
+                id: 102,
+                text: 'NPC 메시지',
+                time: '2026-08-12 12:00:00',
+                msgType: 'public',
+                src: target(22, '순수NPC'),
+                dest: null,
+                option: {},
+            },
+            {
+                id: 101,
+                text: '유저 메시지',
+                time: '2026-08-12 11:59:00',
+                msgType: 'public',
+                src: target(21, '유저장수'),
+                dest: null,
+                option: {},
+            },
+        ],
+    };
+    const state: NavigationFixture = {
+        officerLevel: 1,
+        permission: 0,
+        nationLevel: 1,
+        stage: 0,
+        npcMode: 1,
+        generalMeCalls: 0,
+        operations: [],
+        messages,
+        messageContacts: {
+            nation: [
+                {
+                    nationId: 1,
+                    mailbox: 9001,
+                    name: '위',
+                    color: '#008000',
+                    general: [[21, '유저장수', 0]],
+                },
+            ],
+        },
+    };
+    await installFixture(page, state);
+    await page.setViewportSize({ width: 1200, height: 900 });
+    await waitForMain(page);
+
+    const npcMessage = page.locator('.desktop-message-panel .msg-plate[data-id="102"]');
+    const userMessage = page.locator('.desktop-message-panel .msg-plate[data-id="101"]');
+    await expect(npcMessage.locator('.msg-header')).toContainText('순수NPC:위');
+    await expect(npcMessage.locator('.msg-header')).not.toContainText('↩');
+    await expect(npcMessage.getByRole('button', { name: /순수NPC/ })).toHaveCount(0);
+    await expect(userMessage.getByRole('button', { name: /유저장수:위.*↩/ })).toBeVisible();
+    await userMessage.getByRole('button', { name: /유저장수:위.*↩/ }).click();
+    await expect(page.locator('.desktop-message-panel #mailbox_list')).toHaveValue('21');
+    await persistArtifact(page, `${basePath.slice(1)}-npc-reply-targets-desktop-1200`);
 });
 
 test('main cards and command input stay inside their Ref-sized grid slots', async ({ page }) => {
@@ -925,6 +1013,15 @@ test('the 939/940 boundary switches to the Ref-style 500px single document', asy
     await expect(page.locator('.main-mobile-bottom')).toBeVisible();
 
     await page.setViewportSize({ width: 500, height: 900 });
+    await expect
+        .poll(() =>
+            page
+                .locator('.main-global-menu')
+                .first()
+                .locator('[data-navigation-id="nation-betting"]')
+                .evaluate((element) => getComputedStyle(element).backgroundColor)
+        )
+        .toBe('rgb(0, 88, 44)');
     const documentGeometry = await page.locator('.main-page').evaluate((element) => {
         const rect = element.getBoundingClientRect();
         return {
