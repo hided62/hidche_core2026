@@ -115,6 +115,33 @@ const isActive = (link: MainNavigationLinkItem) => link.id === 'survey' && props
     min-width: 0;
 }
 
+.main-global-menu > :deep(.main-menu-link),
+.main-menu-popup > .main-menu-button,
+.main-menu-split > :deep(.main-menu-link),
+.main-menu-split > .main-menu-split__toggle {
+    border-color: var(--sammo-button-navigation-border);
+    background-color: var(--sammo-button-navigation-bg);
+    background-image: none;
+}
+
+.main-global-menu > :deep(.main-menu-link:hover),
+.main-global-menu > :deep(.main-menu-link:focus-visible),
+.main-global-menu > :deep(.main-menu-link:active),
+.main-menu-popup > .main-menu-button:hover,
+.main-menu-popup > .main-menu-button:focus-visible,
+.main-menu-popup > .main-menu-button:active,
+.main-menu-popup > .main-menu-button[aria-expanded='true'],
+.main-menu-split > :deep(.main-menu-link:hover),
+.main-menu-split > :deep(.main-menu-link:focus-visible),
+.main-menu-split > :deep(.main-menu-link:active),
+.main-menu-split > .main-menu-split__toggle:hover,
+.main-menu-split > .main-menu-split__toggle:focus-visible,
+.main-menu-split > .main-menu-split__toggle:active,
+.main-menu-split > .main-menu-split__toggle[aria-expanded='true'] {
+    border-color: var(--sammo-button-navigation-border);
+    background-color: var(--sammo-button-navigation-bg);
+}
+
 .main-menu-popup > .main-menu-button,
 .main-menu-split > :deep(.main-menu-link) {
     width: 100%;

@@ -50,6 +50,7 @@ const commandArgsValid = ref(false);
 const expanded = ref(false);
 const menuRevision = ref(0);
 const pendingReservation = ref<CommandPatternEntry | null>(null);
+const collapsedRowCount = 15;
 
 const loadStorage = (key: string) => {
     storage.value = new CommandStorage(key);
@@ -108,7 +109,11 @@ const labelMap = computed(() => {
     for (const group of groups) for (const command of group.values) map.set(command.key, command.name);
     return map;
 });
-const displayRows = computed(() => props.rows.slice(0, expanded.value || props.compact ? props.rows.length : 14));
+const displayRows = computed(() =>
+    props.rows.slice(0, expanded.value || props.compact ? props.rows.length : collapsedRowCount)
+);
+const quickPickerTop = computed(() => `${70 + (quickTarget.value ?? 0) * 34.4}px`);
+const rowLabel = (row: ReservedCommandRow): string => row.label ?? labelMap.value.get(row.action) ?? row.action;
 const selectedIndices = () => normalizedSelection(selected.value, previousSelected.value, props.rows.length);
 const pattern = () => extractPattern(props.rows, selectedIndices());
 const touchMenus = () => (menuRevision.value += 1);
@@ -396,6 +401,87 @@ const clickOutsideMenu = (event: Event) => {
                 </details>
             </aside>
 
+            <div v-if="editMode" class="advanced-actions">
+                <details class="legacy-menu selected-menu">
+                    <summary>선택한 턴을</summary>
+                    <div class="menu-items">
+                        <button
+                            @click="
+                                cut();
+                                clickOutsideMenu($event);
+                            "
+                        >
+                            잘라내기
+                        </button>
+                        <button
+                            @click="
+                                copy();
+                                clickOutsideMenu($event);
+                            "
+                        >
+                            복사하기
+                        </button>
+                        <button
+                            @click="
+                                paste();
+                                clickOutsideMenu($event);
+                            "
+                        >
+                            붙여넣기
+                        </button>
+                        <button
+                            @click="
+                                textCopy();
+                                clickOutsideMenu($event);
+                            "
+                        >
+                            텍스트 복사
+                        </button>
+                        <button
+                            @click="
+                                saveTemplate();
+                                clickOutsideMenu($event);
+                            "
+                        >
+                            보관하기
+                        </button>
+                        <button
+                            @click="
+                                repeatPattern();
+                                clickOutsideMenu($event);
+                            "
+                        >
+                            반복하기
+                        </button>
+                        <button
+                            @click="
+                                clearSelection();
+                                clickOutsideMenu($event);
+                            "
+                        >
+                            비우기
+                        </button>
+                        <button
+                            @click="
+                                rearrange('pull');
+                                clickOutsideMenu($event);
+                            "
+                        >
+                            지우고 당기기
+                        </button>
+                        <button
+                            @click="
+                                rearrange('push');
+                                clickOutsideMenu($event);
+                            "
+                        >
+                            뒤로 밀기
+                        </button>
+                    </div>
+                </details>
+                <button type="button" class="select-command" @click="openPicker()">명령 선택 ▾</button>
+            </div>
+
             <div class="queue-area">
                 <div class="queue-grid" :class="{ advanced: editMode }">
                     <DragSelect
@@ -443,9 +529,11 @@ const clickOutsideMenu = (event: Event) => {
                         <div
                             v-for="row in displayRows"
                             :key="row.index"
-                            :title="row.label ?? labelMap.get(row.action) ?? row.action"
+                            :title="row.autonomous ? `${rowLabel(row)} · 자율 행동` : rowLabel(row)"
+                            :class="{ autonomous: row.autonomous }"
                         >
-                            {{ row.label ?? labelMap.get(row.action) ?? row.action }}
+                            <span>{{ rowLabel(row) }}</span>
+                            <small v-if="row.autonomous && row.action === '휴식'">(자율 행동)</small>
                         </div>
                     </div>
                     <div v-if="!editMode" class="edit-column">
@@ -461,87 +549,6 @@ const clickOutsideMenu = (event: Event) => {
                     </div>
                 </div>
 
-                <div v-if="editMode" class="advanced-actions">
-                    <details class="legacy-menu selected-menu">
-                        <summary>선택한 턴을</summary>
-                        <div class="menu-items">
-                            <button
-                                @click="
-                                    cut();
-                                    clickOutsideMenu($event);
-                                "
-                            >
-                                잘라내기
-                            </button>
-                            <button
-                                @click="
-                                    copy();
-                                    clickOutsideMenu($event);
-                                "
-                            >
-                                복사하기
-                            </button>
-                            <button
-                                @click="
-                                    paste();
-                                    clickOutsideMenu($event);
-                                "
-                            >
-                                붙여넣기
-                            </button>
-                            <button
-                                @click="
-                                    textCopy();
-                                    clickOutsideMenu($event);
-                                "
-                            >
-                                텍스트 복사
-                            </button>
-                            <button
-                                @click="
-                                    saveTemplate();
-                                    clickOutsideMenu($event);
-                                "
-                            >
-                                보관하기
-                            </button>
-                            <button
-                                @click="
-                                    repeatPattern();
-                                    clickOutsideMenu($event);
-                                "
-                            >
-                                반복하기
-                            </button>
-                            <button
-                                @click="
-                                    clearSelection();
-                                    clickOutsideMenu($event);
-                                "
-                            >
-                                비우기
-                            </button>
-                            <button
-                                @click="
-                                    rearrange('pull');
-                                    clickOutsideMenu($event);
-                                "
-                            >
-                                지우고 당기기
-                            </button>
-                            <button
-                                @click="
-                                    rearrange('push');
-                                    clickOutsideMenu($event);
-                                "
-                            >
-                                뒤로 밀기
-                            </button>
-                        </div>
-                    </details>
-                    <button type="button" class="select-command" @click="openPicker()">명령 선택 ▾</button>
-                </div>
-
                 <div v-if="!props.compact" class="bottom-actions">
                     <button type="button" @click="emit('shift', -1)">당기기</button>
                     <button type="button" @click="emit('shift', 1)">미루기</button>
@@ -550,7 +557,12 @@ const clickOutsideMenu = (event: Event) => {
             </div>
         </div>
 
-        <div v-if="pickerOpen" class="command-picker" data-testid="command-picker">
+        <div
+            v-if="pickerOpen"
+            class="command-picker"
+            data-testid="command-picker"
+            :style="quickTarget === null || props.compact ? undefined : { top: quickPickerTop }"
+        >
             <header>
                 <strong>{{ quickTarget === null ? '선택한 턴' : `${quickTarget + 1}턴` }} 명령 입력</strong
                 ><button type="button" aria-label="명령 입력 닫기" @click="closePicker">×</button>
@@ -627,6 +639,9 @@ const clickOutsideMenu = (event: Event) => {
     grid-template-columns: repeat(3, minmax(0, 1fr));
     gap: 4px;
     padding: 3px 0;
+}
+.queue-area {
+    order: 2;
 }
 .control-pad > button,
 .clock,
@@ -779,6 +794,13 @@ const clickOutsideMenu = (event: Event) => {
 .action-column > div:nth-child(even) {
     background: #071638;
 }
+.action-column > div.autonomous {
+    color: #aaffff;
+}
+.action-column small {
+    font-size: 0.72em;
+    line-height: 1;
+}
 .edit-column button {
     background: #444;
     cursor: pointer;
@@ -786,6 +808,7 @@ const clickOutsideMenu = (event: Event) => {
 .advanced-actions {
     display: grid;
     grid-template-columns: 5fr 7fr;
+    order: 1;
 }
 .advanced-actions > * {
     border-radius: 0 !important;
@@ -807,6 +830,10 @@ const clickOutsideMenu = (event: Event) => {
     border: 1px solid #888;
     background: #303030;
     box-shadow: 0 6px 16px #000;
+}
+.reserved-command-editor:not(.compact) .command-picker {
+    max-height: none;
+    overflow: visible;
 }
 .command-picker > header {
     display: flex;

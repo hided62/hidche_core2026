@@ -65,6 +65,7 @@ export const useMainDashboardStore = defineStore('mainDashboard', () => {
         boardAccess?: BoardAccess | null;
         reservedGeneralTurns?: ReservedTurnView[] | null;
         reservedGeneralRevision?: number;
+        reservedGeneralAutorunLimit?: number | null;
         globalRecords?: RecentRecord[];
         generalRecords?: RecentRecord[];
         worldHistory?: RecentRecord[];
@@ -94,6 +95,7 @@ export const useMainDashboardStore = defineStore('mainDashboard', () => {
     const boardAccess = ref<BoardAccess | null>(null);
     const reservedGeneralTurns = ref<ReservedTurnView[] | null>(null);
     const reservedGeneralRevision = ref(0);
+    const reservedGeneralAutorunLimit = ref<number | null>(null);
     const globalRecords = ref<RecentRecord[]>([]);
     const generalRecords = ref<RecentRecord[]>([]);
     const worldHistory = ref<RecentRecord[]>([]);
@@ -331,6 +333,7 @@ export const useMainDashboardStore = defineStore('mainDashboard', () => {
             boardAccess.value = null;
             reservedGeneralTurns.value = null;
             reservedGeneralRevision.value = 0;
+            reservedGeneralAutorunLimit.value = null;
             resetRecentRecords(null);
             commandTableRevision = null;
             boardAccessRevision = null;
@@ -351,6 +354,7 @@ export const useMainDashboardStore = defineStore('mainDashboard', () => {
             boardAccess.value = null;
             reservedGeneralTurns.value = null;
             reservedGeneralRevision.value = 0;
+            reservedGeneralAutorunLimit.value = null;
             resetRecentRecords(null);
             contextRevision = null;
             commandTableRevision = null;
@@ -383,6 +387,9 @@ export const useMainDashboardStore = defineStore('mainDashboard', () => {
         }
         if (patch.reservedGeneralRevision !== undefined) {
             reservedGeneralRevision.value = patch.reservedGeneralRevision;
+        }
+        if (patch.reservedGeneralAutorunLimit !== undefined) {
+            reservedGeneralAutorunLimit.value = patch.reservedGeneralAutorunLimit;
         }
         if (patch.globalRecords !== undefined) {
             globalRecords.value = structurallyShare(globalRecords.value, patch.globalRecords);
@@ -425,6 +432,7 @@ export const useMainDashboardStore = defineStore('mainDashboard', () => {
         patch.boardAccess = boardAccessSnapshot ?? null;
         patch.reservedGeneralTurns = toRaw(reservedGeneralTurns.value as unknown) as ReservedTurnView[] | null;
         patch.reservedGeneralRevision = reservedGeneralRevision.value;
+        patch.reservedGeneralAutorunLimit = reservedGeneralAutorunLimit.value;
         patch.globalRecords = toRaw(globalRecords.value);
         patch.generalRecords = toRaw(generalRecords.value);
         patch.worldHistory = toRaw(worldHistory.value);
@@ -552,6 +560,7 @@ export const useMainDashboardStore = defineStore('mainDashboard', () => {
                 generalTurns.turns
             ) as ReservedTurnView[];
             reservedGeneralRevision.value = generalTurns.revision;
+            reservedGeneralAutorunLimit.value = generalTurns.autorunLimit ?? null;
             if (records) {
                 applyRecentRecords(records);
             }
@@ -672,6 +681,7 @@ export const useMainDashboardStore = defineStore('mainDashboard', () => {
             if (generalTurns !== undefined) {
                 patch.reservedGeneralTurns = generalTurns.turns;
                 patch.reservedGeneralRevision = generalTurns.revision;
+                patch.reservedGeneralAutorunLimit = generalTurns.autorunLimit ?? null;
             }
             if (records) {
                 const nextGlobalRecords = mergeRecentRecords(globalRecords.value, records.global);
@@ -836,12 +846,14 @@ export const useMainDashboardStore = defineStore('mainDashboard', () => {
             });
             reservedGeneralTurns.value = result.turns;
             reservedGeneralRevision.value = result.revision;
+            reservedGeneralAutorunLimit.value = result.autorunLimit ?? null;
         } catch (err) {
             error.value = resolveErrorMessage(err);
             const snapshot = await trpc.turns.reserved.getGeneral.query({ generalId: id }).catch(() => null);
             if (snapshot) {
                 reservedGeneralTurns.value = snapshot.turns;
                 reservedGeneralRevision.value = snapshot.revision;
+                reservedGeneralAutorunLimit.value = snapshot.autorunLimit ?? null;
             }
         }
     };
@@ -859,12 +871,14 @@ export const useMainDashboardStore = defineStore('mainDashboard', () => {
             });
             reservedGeneralTurns.value = result.turns;
             reservedGeneralRevision.value = result.revision;
+            reservedGeneralAutorunLimit.value = result.autorunLimit ?? null;
         } catch (err) {
             error.value = resolveErrorMessage(err);
             const snapshot = await trpc.turns.reserved.getGeneral.query({ generalId: id }).catch(() => null);
             if (snapshot) {
                 reservedGeneralTurns.value = snapshot.turns;
                 reservedGeneralRevision.value = snapshot.revision;
+                reservedGeneralAutorunLimit.value = snapshot.autorunLimit ?? null;
             }
         }
     };
@@ -882,12 +896,14 @@ export const useMainDashboardStore = defineStore('mainDashboard', () => {
             });
             reservedGeneralTurns.value = result.turns;
             reservedGeneralRevision.value = result.revision;
+            reservedGeneralAutorunLimit.value = result.autorunLimit ?? null;
         } catch (err) {
             error.value = resolveErrorMessage(err);
             const snapshot = await trpc.turns.reserved.getGeneral.query({ generalId: id }).catch(() => null);
             if (snapshot) {
                 reservedGeneralTurns.value = snapshot.turns;
                 reservedGeneralRevision.value = snapshot.revision;
+                reservedGeneralAutorunLimit.value = snapshot.autorunLimit ?? null;
             }
         }
     };
@@ -903,12 +919,14 @@ export const useMainDashboardStore = defineStore('mainDashboard', () => {
             });
             reservedGeneralTurns.value = result.turns;
             reservedGeneralRevision.value = result.revision;
+            reservedGeneralAutorunLimit.value = result.autorunLimit ?? null;
         } catch (err) {
             error.value = resolveErrorMessage(err);
             const snapshot = await trpc.turns.reserved.getGeneral.query({ generalId: id }).catch(() => null);
             if (snapshot) {
                 reservedGeneralTurns.value = snapshot.turns;
                 reservedGeneralRevision.value = snapshot.revision;
+                reservedGeneralAutorunLimit.value = snapshot.autorunLimit ?? null;
             }
         }
     };
@@ -1192,6 +1210,7 @@ export const useMainDashboardStore = defineStore('mainDashboard', () => {
         messageContacts,
         boardAccess,
         reservedGeneralTurns,
+        reservedGeneralAutorunLimit,
         globalRecords,
         generalRecords,
         worldHistory,

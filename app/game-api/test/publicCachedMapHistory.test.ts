@@ -26,7 +26,13 @@ const buildContext = () => {
             findFirst: vi.fn(async () => ({
                 currentYear: 190,
                 currentMonth: 3,
-                config: {},
+                config: {
+                    const: {
+                        maxTechLevel: 10,
+                        initialAllowedTechLevel: 2,
+                        techLevelIncYear: 4,
+                    },
+                },
                 meta: { scenarioMeta: { startYear: 184 } },
             })),
         },
@@ -38,12 +44,8 @@ const buildContext = () => {
         },
         $queryRaw: vi
             .fn()
-            .mockResolvedValueOnce([
-                { id: 1, level: 5, nationId: 1, region: 1, supplyState: 1, meta: { state: 0 } },
-            ])
-            .mockResolvedValueOnce([
-                { id: 1, name: '촉', color: '#ff0000', capitalCityId: 1, meta: {} },
-            ]),
+            .mockResolvedValueOnce([{ id: 1, level: 5, nationId: 1, region: 1, supplyState: 1, meta: { state: 0 } }])
+            .mockResolvedValueOnce([{ id: 1, name: '촉', color: '#ff0000', capitalCityId: 1, meta: {} }]),
     };
     const context: GameApiContext = {
         db: db as unknown as DatabaseClient,
@@ -70,6 +72,11 @@ describe('public.getCachedMap', () => {
         expect(result).toMatchObject({
             year: 190,
             month: 3,
+            techLevelLimit: {
+                maxLevel: 10,
+                initialLevel: 2,
+                increaseYears: 4,
+            },
             history: [
                 { id: 9, text: '<Y>최근 정세</>' },
                 { id: 8, text: '이전 정세' },

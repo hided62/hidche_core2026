@@ -13,6 +13,11 @@ interface MapSummary {
     year: number;
     month: number;
     startYear: number;
+    techLevelLimit?: {
+        maxLevel: number;
+        initialLevel: number;
+        increaseYears: number;
+    };
     cityList: [number, number, number, number, number, number][];
     nationList: [number, string, string, number][];
     myCity?: number | null;
@@ -198,8 +203,76 @@ const mapSummary = computed(() => {
     if (!props.mapData) {
         return '';
     }
-    return `${props.mapData.year}년 ${props.mapData.month}월`;
+    return `${props.mapData.year}年 ${props.mapData.month}月`;
 });
+
+const titleColor = computed(() => {
+    if (!props.mapData) {
+        return undefined;
+    }
+    const { startYear, year } = props.mapData;
+    if (year < startYear + 1) {
+        return 'magenta';
+    }
+    if (year < startYear + 2) {
+        return 'orange';
+    }
+    if (year < startYear + 3) {
+        return 'yellow';
+    }
+    return undefined;
+});
+
+const titleTooltipLines = computed(() => {
+    if (!props.mapData) {
+        return [];
+    }
+
+    const { startYear, year, month } = props.mapData;
+    const lines: string[] = [];
+    if (year <= startYear + 3) {
+        // Ref uses joinYearMonth(startYear + 3, 0) as the limit boundary.
+        const remainingMonths = (startYear + 3) * 12 - 1 - (year * 12 + month - 1);
+        const remainYear = Math.trunc(remainingMonths / 12);
+        const remainMonth = (remainingMonths % 12) + 1;
+        lines.push(
+            `초반제한 기간 : ${remainYear}년${remainMonth > 0 ? ` ${remainMonth}개월` : ''} (${startYear + 3}년)`
+        );
+    }
+
+    const limit = props.mapData.techLevelLimit ?? {
+        maxLevel: 12,
+        initialLevel: 1,
+        increaseYears: 5,
+    };
+    const currentLevel = Math.min(
+        limit.maxLevel,
+        Math.max(1, Math.floor((year - startYear) / limit.increaseYears) + limit.initialLevel)
+    );
+    if (currentLevel === limit.maxLevel) {
+        lines.push(`기술등급 제한 : ${currentLevel}등급 (최종)`);
+    } else {
+        lines.push(`기술등급 제한 : ${currentLevel}등급 (${currentLevel * limit.increaseYears + startYear}년 해제)`);
+    }
+    return lines;
+});
+
+const titleBandStyle = computed(() =>
+    detailMode.value
+        ? {
+              backgroundImage: `url('${resolveAsset('ltitle.jpg')}'), url('${resolveAsset('rtitle.jpg')}')`,
+          }
+        : {}
+);
+
+const titleTextStyle = computed(() =>
+    detailMode.value
+        ? {
+              color: titleColor.value,
+              backgroundImage: `url('${resolveAsset('ad.gif')}'), url('${resolveAsset(`${mapSeason.value}.gif`)}')`,
+          }
+        : { color: titleColor.value }
+);
 
 const mapThemeClass = computed(() => {
     return `map-theme-${mapTheme.value}`;
@@ -269,6 +342,24 @@ const hoveredCity = computed(() => {
     return cityViews.value.find((city) => city.id === hoveredCityId.value) ?? null;
 });
 
+const hoveredCityTitle = computed(() => {
+    if (!hoveredCity.value) {
+        return '';
+    }
+    return `【${hoveredCity.value.regionName}|${hoveredCity.value.levelName}】${hoveredCity.value.name}`;
+});
+
+const tooltipPosition = computed(() => {
+    const width = 120;
+    const offset = 10;
+    const mapPixelWidth = BASE_MAP_WIDTH * mapScale.value;
+    const left = elementX.value + width + offset > mapPixelWidth ? elementX.value - width - 5 : elementX.value + offset;
+    return {
+        left: `${Math.max(0, left)}px`,
+        top: `${elementY.value + 30}px`,
+    };
+});
+
 const setHoveredCity = (cityId: number | null) => {
     mapStore.setHoveredCity(cityId);
 };
@@ -280,8 +371,13 @@ const selectCity = (cityId: number) => {
 
 <template>
     <div class="map-viewer">
-        <div class="map-top">
-            <div class="map-title">{{ mapSummary }}</div>
+        <div class="map-top" :style="titleBandStyle">
+            <div class="map-title" tabindex="0" :style="titleTextStyle">
+                {{ mapSummary }}
+                <div class="map-title-tooltip" role="tooltip">
+                    <div v-for="line in titleTooltipLines" :key="line">{{ line }}</div>
+                </div>
+            </div>
         </div>
         <div v-if="props.loading">
             <SkeletonLines :lines="4" />
@@ -309,15 +405,9 @@ const selectCity = (cityId: number) => {
                     @leave="setHoveredCity(null)"
                     @select="selectCity"
                 />
-                <div
-                    v-if="hoveredCity"
-                    class="map-tooltip"
-                    :style="{ left: `${elementX + 16}px`, top: `${elementY + 16}px` }"
-                >
-                    <div class="tooltip-title">{{ hoveredCity.name }}</div>
-                    <div class="tooltip-body">
-                        {{ hoveredCity.nationName }} · {{ hoveredCity.regionName }} · {{ hoveredCity.levelName }}
-                    </div>
+                <div v-if="hoveredCity" class="map-tooltip" :style="tooltipPosition">
+                    <div class="tooltip-title">{{ hoveredCityTitle }}</div>
+                    <div class="tooltip-body">{{ hoveredCity.nationId > 0 ? hoveredCity.nationName : '' }}</div>
                 </div>
                 <div class="map-controls">
                     <button class="map-toggle" :class="{ active: showCityName }" @click="mapStore.toggleCityName">
@@ -338,17 +428,69 @@ const selectCity = (cityId: number) => {
 }
 
 .map-top {
+    position: relative;
     display: flex;
     height: 20px;
     align-items: center;
     justify-content: center;
     background: #111;
+    background-position:
+        left top,
+        right top;
+    background-repeat: no-repeat;
     line-height: 20px;
 }
 
 .map-title {
-    font-size: 0.95rem;
-    font-weight: 600;
+    position: relative;
+    display: block;
+    width: 160px;
+    height: 20px;
+    margin: auto;
+    background-position:
+        left top,
+        right top;
+    background-repeat: no-repeat;
+    font-size: 14px;
+    font-weight: 700;
+    line-height: 20px;
+    text-align: center;
+}
+
+.map-title-tooltip {
+    position: absolute;
+    z-index: 20;
+    bottom: calc(100% + 7px);
+    left: 50%;
+    display: none;
+    box-sizing: border-box;
+    width: 220px;
+    border-radius: 4px;
+    padding: 5px 8px;
+    background: #000;
+    color: #fff;
+    font-size: 12px;
+    font-weight: 400;
+    line-height: 18px;
+    text-align: left;
+    transform: translateX(-50%);
+    white-space: nowrap;
+}
+
+.map-title-tooltip::after {
+    position: absolute;
+    top: 100%;
+    left: 50%;
+    border: 5px solid transparent;
+    border-top-color: #000;
+    content: '';
+    transform: translateX(-50%);
+}
+
+.map-title:hover .map-title-tooltip,
+.map-title:focus .map-title-tooltip,
+.map-title:focus-within .map-title-tooltip {
+    display: block;
 }
 
 .map-controls {
@@ -400,19 +542,28 @@ const selectCity = (cityId: number) => {
 
 .map-tooltip {
     position: absolute;
+    z-index: 16;
+    box-sizing: border-box;
+    min-width: 120px;
     pointer-events: none;
-    border: 1px solid rgba(201, 164, 90, 0.4);
-    background: rgba(16, 16, 16, 0.9);
-    padding: 4px 6px;
-    font-size: 0.65rem;
+    border: 1px solid gray;
+    padding: 0;
+    background: rgb(30, 164, 255);
+    color: #fff;
+    font-size: 14px;
+    line-height: 15px;
+    white-space: nowrap;
 }
 
 .tooltip-title {
-    font-weight: 600;
+    height: 15px;
 }
 
 .tooltip-body {
-    color: rgba(232, 221, 196, 0.6);
+    height: 15px;
+    border-top: 1px solid gray;
+    color: #fff;
+    text-align: right;
 }
 
 .map-empty {

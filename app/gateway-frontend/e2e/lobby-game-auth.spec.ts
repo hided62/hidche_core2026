@@ -28,7 +28,16 @@ const fulfillTrpc = async (route: Route, results: unknown[]): Promise<void> => {
 
 type LobbyFixtureOptions = {
     authenticated?: boolean;
+    roles?: string[];
+    kakaoVerified?: boolean;
     canCreateGeneral?: boolean;
+    requiresKakaoVerification?: boolean;
+    specialAccess?: {
+        kind: 'OPERATOR' | 'TESTER' | 'RECOVERY' | 'OTHER';
+        grantId: string | null;
+        expiresAt: string | null;
+        allowsGeneralCreation: boolean;
+    } | null;
     myGeneral?: {
         name: string;
         picture: string;
@@ -48,7 +57,11 @@ type LobbyFixtureOptions = {
 const installFixture = async (page: Page, options: LobbyFixtureOptions = {}) => {
     const {
         authenticated = true,
+        roles = ['user'],
+        kakaoVerified = true,
         canCreateGeneral = true,
+        requiresKakaoVerification = false,
+        specialAccess = null,
         myGeneral = {
             name: '선택장수',
             picture: 'users/core2026/account-hash.png',
@@ -79,8 +92,8 @@ const installFixture = async (page: Page, options: LobbyFixtureOptions = {}) => 
                               id: 'lobby-user',
                               username: 'lobby-user',
                               displayName: '로비사용자',
-                              roles: ['user'],
-                              kakaoVerified: true,
+                              roles,
+                              kakaoVerified,
                               createdAt: '2026-07-30T00:00:00.000Z',
                           }
                         : null
@@ -109,8 +122,9 @@ const installFixture = async (page: Page, options: LobbyFixtureOptions = {}) => 
                         localAccountPolicy: {
                             accessAllowed: true,
                             canCreateGeneral,
-                            requiresKakaoVerification: false,
+                            requiresKakaoVerification,
                             graceEndsAt: null,
+                            specialAccess,
                         },
                     },
                 ]);
@@ -214,6 +228,51 @@ test('applies the signed general-acquisition policy to both create and possessio
     const row = page.locator('tbody tr').filter({ hasText: 'hwe섭' });
     await expect(row.getByRole('button', { name: '인증 필요' })).toBeDisabled();
     await expect(row.getByRole('button', { name: '장수빙의' })).toBeDisabled();
+});
+
+test('shows the Kakao verification banner when a profile still requires verification', async ({ page }) => {
+    await installFixture(page, {
+        kakaoVerified: false,
+        requiresKakaoVerification: true,
+    });
+
+    await page.goto('lobby');
+    await expect(page.getByText('카카오 인증이 필요합니다.')).toBeVisible();
+});
+
+test('hides the Kakao verification banner for operator special access', async ({ page }) => {
+    await installFixture(page, {
+        roles: ['superuser'],
+        kakaoVerified: false,
+        specialAccess: {
+            kind: 'OPERATOR',
+            grantId: null,
+            expiresAt: null,
+            allowsGeneralCreation: true,
+        },
+    });
+
+    await page.goto('lobby');
+    await expect(page.getByText('특수 접근 · OPERATOR')).toBeVisible();
+    await expect(page.getByText('카카오 인증이 필요합니다.')).toHaveCount(0);
+});
+
+test('hides the Kakao verification banner when a grant removes the remaining verification requirement', async ({
+    page,
+}) => {
+    await installFixture(page, {
+        kakaoVerified: false,
+        specialAccess: {
+            kind: 'RECOVERY',
+            grantId: '11111111-1111-4111-8111-111111111111',
+            expiresAt: '2026-08-20T00:00:00.000Z',
+            allowsGeneralCreation: true,
+        },
+    });
+
+    await page.goto('lobby');
+    await expect(page.getByText('특수 접근 · RECOVERY')).toBeVisible();
+    await expect(page.getByText('카카오 인증이 필요합니다.')).toHaveCount(0);
 });
 
 test('opens the profile root without profile or game token query parameters', async ({ page }) => {
