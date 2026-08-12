@@ -25,18 +25,18 @@
         "prisma:db:push:gateway": "prisma db push --schema prisma/gateway.prisma"
     },
     "dependencies": {
-        "@prisma/adapter-pg": "^7.2.0",
-        "@prisma/client": "^7.2.0",
-        "@prisma/client-runtime-utils": "^7.2.0",
+        "@prisma/adapter-pg": "^7.9.1",
+        "@prisma/client": "^7.9.1",
+        "@prisma/client-runtime-utils": "^7.9.1",
         "@sammo-ts/logic": "workspace:*",
         "es-toolkit": "^1.43.0",
         "pg": "^8.16.3",
         "redis": "^5.10.0"
     },
     "devDependencies": {
-        "@types/pg": "^8.16.0",
-        "dotenv": "^17.2.3",
-        "prisma": "^7.2.0",
+        "@types/pg": "^8.21.0",
+        "dotenv": "^17.4.2",
+        "prisma": "^7.9.1",
         "tsdown": "^0.22.14"
     }
 }

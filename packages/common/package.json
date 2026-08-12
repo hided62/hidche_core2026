@@ -38,6 +38,6 @@
     },
     "devDependencies": {
         "tsdown": "^0.22.14",
-        "vitest": "^4.0.16"
+        "vitest": "^4.1.10"
     }
 }

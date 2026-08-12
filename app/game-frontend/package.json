@@ -51,13 +51,13 @@
         "@sammo-ts/game-engine": "workspace:*",
         "@sammo-ts/gateway-api": "workspace:*",
         "@sammo-ts/infra": "workspace:*",
-        "@tailwindcss/vite": "^4.1.18",
-        "@vitejs/plugin-vue": "^6.0.3",
-        "autoprefixer": "^10.4.23",
-        "postcss": "^8.5.6",
-        "tailwindcss": "^4.1.18",
+        "@tailwindcss/vite": "^4.3.3",
+        "@vitejs/plugin-vue": "^6.0.8",
+        "autoprefixer": "^10.5.4",
+        "postcss": "8.5.26",
+        "tailwindcss": "^4.3.3",
         "typescript": "6.0.2",
-        "vite": "^7.3.1",
-        "vue-tsc": "^3.2.2"
+        "vite": "^8.2.1",
+        "vue-tsc": "^3.3.9"
     }
 }

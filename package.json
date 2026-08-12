@@ -3,7 +3,7 @@
     "private": true,
     "type": "module",
     "version": "0.0.0",
-    "packageManager": "pnpm@11.17.0",
+    "packageManager": "pnpm@11.21.0",
     "scripts": {
         "lint": "turbo lint",
         "lint:fix": "turbo lint:fix",
@@ -37,21 +37,21 @@
     },
     "devDependencies": {
         "@eslint/js": "^10.0.1",
-        "@playwright/test": "1.62.0",
-        "@types/node": "^26.1.1",
-        "@typescript-eslint/eslint-plugin": "^8.65.0",
-        "@typescript-eslint/parser": "^8.65.0",
-        "eslint": "^10.8.0",
+        "@playwright/test": "1.62.1",
+        "@types/node": "^26.2.0",
+        "@typescript-eslint/eslint-plugin": "^8.67.0",
+        "@typescript-eslint/parser": "^8.67.0",
+        "eslint": "^10.8.1",
         "eslint-config-prettier": "^10.1.8",
         "eslint-plugin-prettier": "^5.5.6",
         "eslint-plugin-vue": "^10.10.0",
-        "globals": "^17.7.0",
+        "globals": "^17.11.0",
         "prettier": "^3.9.6",
         "tsdown": "^0.22.14",
-        "turbo": "^2.10.6",
+        "turbo": "^2.10.9",
         "typescript": "6.0.2",
-        "typescript-eslint": "^8.65.0",
-        "vue-eslint-parser": "^10.4.1",
-        "vitepress": "1.6.4"
+        "typescript-eslint": "^8.67.0",
+        "vitepress": "1.6.4",
+        "vue-eslint-parser": "^10.4.1"
     }
 }

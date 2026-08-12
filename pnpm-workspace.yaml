@@ -4,7 +4,7 @@ packages:
   - tools/*
 
 overrides:
-  postcss: 8.5.19
+  postcss: 8.5.26
   typescript: 6.0.2
 
 allowBuilds:
@@ -14,10 +14,11 @@ allowBuilds:
   sharp: true
 
 minimumReleaseAgeExclude:
-  - eslint@10.8.0
-  - '@playwright/test@1.62.0'
-  - playwright-core@1.62.0
-  - playwright@1.62.0
+  - eslint@10.8.1
+  - '@playwright/test@1.62.1'
+  - playwright-core@1.62.1
+  - playwright@1.62.1
+  - globals@17.11.0
 
 onlyBuiltDependencies:
   - '@prisma/client'
