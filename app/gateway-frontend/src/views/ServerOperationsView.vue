@@ -1236,7 +1236,22 @@ onBeforeUnmount(() => {
                     <span class="text-xs text-zinc-500">3초마다 상태 갱신</span>
                 </div>
                 <div class="overflow-x-auto">
-                    <table class="w-full min-w-[920px] text-left text-sm" data-testid="operations-table">
+                    <table
+                        class="w-full min-w-[1300px] table-fixed text-left text-sm"
+                        data-testid="operations-table"
+                    >
+                        <colgroup>
+                            <col style="width: 160px" />
+                            <col style="width: 264px" />
+                            <col style="width: 72px" />
+                            <col style="width: 64px" />
+                            <col style="width: 88px" />
+                            <col style="width: 112px" />
+                            <col style="width: 104px" />
+                            <col style="width: 176px" />
+                            <col style="width: 176px" />
+                            <col style="width: 84px" />
+                        </colgroup>
                         <thead class="border-b border-zinc-700 text-xs text-zinc-500">
                             <tr>
                                 <th class="p-2">요청/예약</th>
@@ -1268,7 +1283,15 @@ onBeforeUnmount(() => {
                                 <td class="p-2">{{ operation.type }}</td>
                                 <td class="p-2 font-semibold">{{ operation.status }}</td>
                                 <td class="p-2 font-mono text-xs">
-                                    {{ operation.sourceMode ?? '-' }}<br />{{ operation.sourceRef ?? '' }}
+                                    <div>{{ operation.sourceMode ?? '-' }}</div>
+                                    <div
+                                        v-if="operation.sourceRef"
+                                        class="truncate"
+                                        data-testid="operation-source-ref"
+                                        :title="operation.sourceRef"
+                                    >
+                                        {{ operation.sourceRef }}
+                                    </div>
                                 </td>
                                 <td class="p-2 font-mono text-xs">{{ shortSha(operation.resolvedCommitSha) }}</td>
                                 <td class="max-w-xs p-2 text-xs">
