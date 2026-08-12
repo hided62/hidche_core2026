@@ -201,8 +201,8 @@ onMounted(async () => {
 
 .admin-sidebar {
     position: sticky;
-    top: 56px;
-    height: calc(100vh - 56px);
+    top: 0;
+    height: 100vh;
     border-right: 1px solid #27272a;
     background: #111113;
     padding: 24px 16px;

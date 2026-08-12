@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue';
 import { RouterLink, useRoute, useRouter } from 'vue-router';
+import { useGameFeedback } from '../composables/useGameFeedback';
 import PanelCard from '../components/ui/PanelCard.vue';
 import SkeletonLines from '../components/ui/SkeletonLines.vue';
 import MapViewer from '../components/main/MapViewer.vue';
@@ -42,6 +43,7 @@ type PendingPossessAction = {
 const router = useRouter();
 const route = useRoute();
 const session = useSessionStore();
+const { error: showErrorToast, showDialog } = useGameFeedback();
 
 const loading = ref(true);
 const error = ref<string | null>(null);
@@ -459,14 +461,20 @@ const loadNpcCandidates = async (refresh = false) => {
     } catch (err) {
         npcError.value = err instanceof Error ? err.message : 'npc_list_failed';
         if (refresh) {
-            window.alert(npcError.value);
             if (isTrpcBusinessError(err)) {
+                await showDialog({
+                    kind: 'error',
+                    title: '빙의 대상 갱신 실패',
+                    message: `${npcError.value}\n확인 후 페이지를 새로고침합니다.`,
+                });
                 window.location.reload();
+            } else {
+                showErrorToast(`빙의 대상 갱신에 실패했습니다: ${npcError.value}`);
             }
         } else if (isTrpcBusinessError(err)) {
-            window.alert(npcError.value);
+            await showDialog({ kind: 'error', title: '빙의 대상 확인 실패', message: npcError.value });
         } else {
-            window.alert(`알 수 없는 에러: ${npcError.value}`);
+            showErrorToast(`빙의 대상 확인에 실패했습니다: ${npcError.value}`);
         }
     } finally {
         npcLoading.value = false;
@@ -513,7 +521,7 @@ const submitPossession = async (pending: PendingPossessAction) => {
             clientRequestId: pending.clientRequestId,
         });
         clearPendingPossess(pending);
-        window.alert('빙의에 성공했습니다.');
+        await showDialog({ kind: 'success', message: '빙의에 성공했습니다.' });
         await session.refreshGeneralStatus();
         if (session.hasGeneral) {
             await router.push({ name: 'home' });
@@ -524,10 +532,14 @@ const submitPossession = async (pending: PendingPossessAction) => {
         }
         error.value = err instanceof Error ? err.message : 'possess_failed';
         if (isTrpcBusinessError(err) && !isIndeterminateTimeout(err)) {
-            window.alert(error.value);
+            await showDialog({
+                kind: 'error',
+                title: '빙의 실패',
+                message: `${error.value}\n확인 후 페이지를 새로고침합니다.`,
+            });
             window.location.reload();
         } else if (!isIndeterminateTimeout(err)) {
-            window.alert(`알 수 없는 에러: ${error.value}`);
+            showErrorToast(`빙의에 실패했습니다: ${error.value}`);
         }
     } finally {
         submitting.value = false;
@@ -566,7 +578,7 @@ const loadNpcGeneralList = async () => {
         npcGeneralListVisibleCount.value = 50;
     } catch (err) {
         npcGeneralListError.value = err instanceof Error ? err.message : 'npc_general_list_failed';
-        window.alert(`실패했습니다: ${npcGeneralListError.value}`);
+        showErrorToast(`NPC 장수 목록을 불러오지 못했습니다: ${npcGeneralListError.value}`);
     } finally {
         npcGeneralListLoading.value = false;
     }

@@ -7,10 +7,12 @@ import { isDefenceTrainPenaltyWaivedByScenarioEffect } from '@sammo-ts/logic';
 import { useSessionStore } from '../stores/session';
 import { resolveGeneralIconUrl, useDefaultGeneralIcon } from '../utils/generalIcon';
 import LegacyGeneralProgress from '../components/ui/LegacyGeneralProgress.vue';
+import { useGameFeedback } from '../composables/useGameFeedback';
 
 const SCREEN_MODE_KEY = 'sam.screenMode';
 const CUSTOM_CSS_KEY = 'sam_customCSS';
 const PENDING_DIE_ON_PRESTART_KEY = 'sam.pending.dieOnPrestart';
+const { error: showErrorToast, showDialog } = useGameFeedback();
 type ScreenMode = 'auto' | '500px' | '1000px';
 type LogType = 'generalHistory' | 'battleDetail' | 'battleResult' | 'generalAction';
 type ItemSlotKey = 'horse' | 'weapon' | 'book' | 'item';
@@ -249,7 +251,7 @@ const changeGeneralIcon = async () => {
         });
         await loadPage();
     } catch (cause) {
-        alert(`실패했습니다: ${errorText(cause)}`);
+        showErrorToast(`전용 아이콘 변경에 실패했습니다: ${errorText(cause)}`);
     }
 };
 
@@ -259,7 +261,7 @@ const saveSettings = async () => {
         await trpc.general.setMySetting.mutate({ ...form });
         await loadPage();
     } catch (cause) {
-        alert(`실패했습니다: ${errorText(cause)}`);
+        showErrorToast(`설정 저장에 실패했습니다: ${errorText(cause)}`);
     }
 };
 
@@ -269,7 +271,7 @@ const confirmMutation = async (message: string, mutation: () => Promise<unknown>
         await mutation();
         await loadPage();
     } catch (cause) {
-        alert(`실패했습니다: ${errorText(cause)}`);
+        showErrorToast(`요청 처리에 실패했습니다: ${errorText(cause)}`);
         if (reloadAfterFailure) {
             const code = asRecord(asRecord(cause).data).code;
             await loadPage(code !== 'TIMEOUT');
@@ -291,7 +293,11 @@ const dieOnPrestart = async () => {
         if (code !== 'TIMEOUT') {
             window.sessionStorage.removeItem(PENDING_DIE_ON_PRESTART_KEY);
         }
-        alert(`실패했습니다: ${errorText(cause)}`);
+        await showDialog({
+            kind: 'error',
+            title: '장수 삭제 실패',
+            message: `요청 처리에 실패했습니다: ${errorText(cause)}\n확인 후 페이지를 새로고침합니다.`,
+        });
         window.location.reload();
     }
 };

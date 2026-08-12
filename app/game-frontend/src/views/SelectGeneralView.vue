@@ -2,6 +2,7 @@
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue';
 import { useRouter } from 'vue-router';
 
+import { useGameFeedback } from '../composables/useGameFeedback';
 import { useSessionStore } from '../stores/session';
 import { formatSeoulDateTime } from '../utils/legacyDateTime';
 import { resolveGeneralIconUrl, useDefaultGeneralIcon } from '../utils/generalIcon';
@@ -21,6 +22,7 @@ type PendingSelectionAction = {
 
 const router = useRouter();
 const session = useSessionStore();
+const { error: showErrorToast, showDialog } = useGameFeedback();
 
 const config = ref<JoinConfig | null>(null);
 const reservation = ref<Reservation | null>(null);
@@ -181,7 +183,7 @@ const selectCandidate = async (candidate: Candidate): Promise<void> => {
             clientRequestId: pending.clientRequestId,
         });
         clearPendingAction(pending);
-        alert('선택한 장수로 변경했습니다.');
+        await showDialog({ kind: 'success', message: '선택한 장수로 변경했습니다.' });
         await session.refreshGeneralStatus();
         await router.push('/');
     } catch (cause) {
@@ -189,7 +191,7 @@ const selectCandidate = async (candidate: Candidate): Promise<void> => {
         if (!isIndeterminateTimeout(cause)) {
             clearPendingAction(pending);
         }
-        alert(`실패했습니다: ${errorText(cause)}`);
+        showErrorToast(`장수 변경에 실패했습니다: ${errorText(cause)}`);
         await loadPage();
     } finally {
         submitting.value = false;
@@ -199,7 +201,7 @@ const selectCandidate = async (candidate: Candidate): Promise<void> => {
 const createGeneral = async (): Promise<void> => {
     const candidate = selectedCandidate.value;
     if (!candidate) {
-        alert('장수를 선택해주세요!');
+        showErrorToast('장수를 선택해주세요.');
         return;
     }
     if (!confirm('이 장수로 생성할까요?')) {
@@ -215,7 +217,7 @@ const createGeneral = async (): Promise<void> => {
             clientRequestId: pending.clientRequestId,
         });
         clearPendingAction(pending);
-        alert('선택한 장수로 생성했습니다.');
+        await showDialog({ kind: 'success', message: '선택한 장수로 생성했습니다.' });
         await session.refreshGeneralStatus();
         await router.push('/');
     } catch (cause) {
@@ -223,7 +225,7 @@ const createGeneral = async (): Promise<void> => {
         if (!isIndeterminateTimeout(cause)) {
             clearPendingAction(pending);
         }
-        alert(`실패했습니다: ${errorText(cause)}`);
+        showErrorToast(`장수 생성에 실패했습니다: ${errorText(cause)}`);
         await loadPage();
     } finally {
         submitting.value = false;
@@ -247,7 +249,7 @@ async function loadPage(): Promise<void> {
     } catch (cause) {
         console.error(cause);
         error.value = errorText(cause);
-        alert(`실패했습니다: ${error.value}`);
+        showErrorToast(`장수 선택 정보를 불러오지 못했습니다: ${error.value}`);
     } finally {
         loading.value = false;
     }
