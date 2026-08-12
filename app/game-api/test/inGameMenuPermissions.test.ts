@@ -248,6 +248,40 @@ describe('in-game my information ownership', () => {
         );
     });
 
+    it('returns the Ref-style neutral nation frame and trait display names on the main read model', async () => {
+        const fixture = createContext({
+            me: buildGeneral({
+                nationId: 0,
+                officerLevel: 0,
+                personalCode: 'che_안전',
+                specialCode: 'che_상재',
+                special2Code: 'che_신산',
+            }),
+        });
+
+        await expect(appRouter.createCaller(fixture.context).general.me()).resolves.toMatchObject({
+            general: {
+                traits: {
+                    personal: '안전',
+                    specialDomestic: '상재',
+                    specialWar: '신산',
+                },
+            },
+            nation: {
+                id: 0,
+                name: '재야',
+                color: '#000000',
+                level: 0,
+                gold: 0,
+                rice: 0,
+                tech: 0,
+                typeCode: 'None',
+                capitalCityId: null,
+            },
+        });
+        expect(fixture.db.nation.findUnique).not.toHaveBeenCalled();
+    });
+
     it('reads legacy top-level settings and dispatches only the session-owned general', async () => {
         const requestCommand = vi.fn(async () => ({ type: 'setMySetting', ok: true, generalId: 7 }));
         const fixture = createContext({ requestCommand });
