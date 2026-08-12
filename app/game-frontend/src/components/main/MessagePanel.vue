@@ -87,6 +87,13 @@ const bucket = (type: MessageType): MessageEntry[] => props.messages?.[type] ?? 
 const visibleMessages = (type: MessageType): MessageEntry[] => bucket(type).slice(0, visibleLimits[type]);
 
 const permission = computed(() => props.messages?.permission ?? -1);
+const replyableGeneralIds = computed(() =>
+    props.mailboxGroups.flatMap((group) =>
+        group.options
+            .filter((option) => !option.disabled && option.value > 0 && option.value < 9000)
+            .map((option) => option.value)
+    )
+);
 
 const setMailbox = (value: string) => {
     const parsed = Number(value);
@@ -239,6 +246,7 @@ const forwardResponse = (messageId: number, response: boolean) => {
                         :nation-id="nationId"
                         :permission="permission"
                         :can-respond-diplomacy="canRespondDiplomacy"
+                        :replyable-general-ids="replyableGeneralIds"
                         @set-target="setReplyTarget"
                         @delete="emit('delete', $event)"
                         @respond="forwardResponse"
