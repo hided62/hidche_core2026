@@ -45,6 +45,7 @@ type FixtureState = {
     adjustIconInputs?: Array<Record<string, unknown>>;
     joinConfig?: Record<string, unknown>;
     createGeneralInputs?: Array<Record<string, unknown>>;
+    mainTraits?: { personal: string; specialDomestic: string; specialWar: string };
 };
 
 type TrpcRequestPayload = {
@@ -75,7 +76,7 @@ const myGeneral = (state: FixtureState) => ({
         age: 30,
         turnTime: '2026-01-01 00:10:00',
         crewTypeId: 1,
-        traits: { personal: 'None', specialDomestic: 'None', specialWar: 'None' },
+        traits: state.mainTraits ?? { personal: '-', specialDomestic: '-', specialWar: '-' },
         progression: {
             experienceLevel: 1,
             dedicationLevel: 2,
@@ -86,7 +87,19 @@ const myGeneral = (state: FixtureState) => ({
         items: { horse: 'che_명마', weapon: null, book: null, item: null },
     },
     city: { id: 1, name: '업', level: 8, nationId: 1 },
-    nation: { id: 1, name: '위', color: '#777777', level: 3 },
+    nation: state.buildNationCandidateEnabled
+        ? {
+              id: 0,
+              name: '재야',
+              color: '#000000',
+              level: 0,
+              gold: 0,
+              rice: 0,
+              tech: 0,
+              typeCode: 'None',
+              capitalCityId: null,
+          }
+        : { id: 1, name: '위', color: '#777777', level: 3 },
     settings: {
         tnmt: 0,
         defence_train: 80,
@@ -220,6 +233,25 @@ const install = async (page: Page, state: FixtureState) => {
             if (operation === 'join.createGeneral') {
                 state.createGeneralInputs?.push(jsonInput);
                 return response({ generalId: 9 });
+            }
+            if (operation === 'dashboard.getContextBundleDelta') {
+                return response({
+                    context: {
+                        kind: 'snapshot',
+                        revision: 'AAAAAAAAAAAAAAAAAAAAAA',
+                        data: myGeneral(state),
+                    },
+                    commandTable: {
+                        kind: 'snapshot',
+                        revision: 'BBBBBBBBBBBBBBBBBBBBBB',
+                        data: { general: [], nation: [] },
+                    },
+                    boardAccess: {
+                        kind: 'snapshot',
+                        revision: 'CCCCCCCCCCCCCCCCCCCCCC',
+                        data: { permission: 4, canMeeting: true, canSecret: true },
+                    },
+                });
             }
             if (operation === 'general.me') {
                 state.generalMeQueries = (state.generalMeQueries ?? 0) + 1;
@@ -435,6 +467,49 @@ test('정화된 국가 방침은 실행 가능한 속성 없이 Chromium에 표�
     await expect
         .poll(() => page.evaluate(() => (globalThis as typeof globalThis & { __nationXss?: number }).__nationXss))
         .toBeUndefined();
+});
+
+test('재야 메인은 국가 틀과 성격·특기 표기명을 Chromium에 표시한다', async ({ page }) => {
+    const state: FixtureState = {
+        permission: 'member',
+        myset: 0,
+        buildNationCandidateEnabled: true,
+        mainTraits: { personal: '안전', specialDomestic: '상재', specialWar: '신산' },
+        settingMutations: [],
+        accessPages: [],
+    };
+    await install(page, state);
+    await page.setViewportSize({ width: 1000, height: 900 });
+    await page.goto('');
+
+    const nationCard = page.locator('.nation-card');
+    await expect(nationCard.locator('.title')).toHaveText('재야');
+    await expect(nationCard.locator('.empty')).toHaveCount(0);
+    await expect(nationCard.locator('.grid strong')).toHaveText(Array.from({ length: 6 }, () => '해당 없음'));
+
+    const generalCard = page.locator('.general-card');
+    await expect(generalCard).toContainText('성격안전');
+    await expect(generalCard).toContainText('전투특기신산');
+    await expect(generalCard).toContainText('내정특기상재');
+    await expect(generalCard).not.toContainText('che_');
+
+    const geometry = await nationCard.evaluate((element) => {
+        const rect = element.getBoundingClientRect();
+        const title = element.querySelector<HTMLElement>('.title')!;
+        return {
+            width: rect.width,
+            height: rect.height,
+            titleBackground: getComputedStyle(title).backgroundColor,
+            placeholderCount: [...element.querySelectorAll('.grid strong')].filter(
+                (cell) => cell.textContent?.trim() === '해당 없음'
+            ).length,
+        };
+    });
+    expect(geometry.width).toBeGreaterThan(0);
+    expect(geometry.height).toBeGreaterThan(0);
+    expect(geometry.titleBackground).toBe('rgb(0, 0, 0)');
+    expect(geometry.placeholderCount).toBe(6);
+    await persistParityArtifact(page, 'main-neutral-trait-display', geometry);
 });
 
 test('접속량정보 keeps the legacy public 1016px chart geometry', async ({ page }) => {

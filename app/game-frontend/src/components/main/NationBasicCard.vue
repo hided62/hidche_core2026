@@ -31,15 +31,19 @@ const props = defineProps<{
                 class="title"
                 :style="{ backgroundColor: props.nation.color, color: legacyNationTextColor(props.nation.color) }"
             >
-                {{ props.nation.name }} (Lv {{ props.nation.level }})
+                {{ props.nation.name }}<template v-if="props.nation.id > 0"> (Lv {{ props.nation.level }})</template>
             </div>
             <div class="grid">
-                <span>국고</span><strong>{{ props.nation.gold.toLocaleString() }}</strong> <span>국량</span
-                ><strong>{{ props.nation.rice.toLocaleString() }}</strong> <span>기술</span
-                ><strong>{{ props.nation.tech.toLocaleString() }}</strong> <span>체제</span
-                ><strong>{{ props.nation.typeCode }}</strong> <span>수도</span
-                ><strong>{{ props.nation.capitalCityId ?? '-' }}</strong> <span>국가 등급</span
-                ><strong>{{ props.nation.level }}</strong>
+                <span>국고</span
+                ><strong>{{ props.nation.id === 0 ? '해당 없음' : props.nation.gold.toLocaleString() }}</strong>
+                <span>국량</span
+                ><strong>{{ props.nation.id === 0 ? '해당 없음' : props.nation.rice.toLocaleString() }}</strong>
+                <span>기술</span
+                ><strong>{{ props.nation.id === 0 ? '해당 없음' : props.nation.tech.toLocaleString() }}</strong>
+                <span>체제</span><strong>{{ props.nation.id === 0 ? '해당 없음' : props.nation.typeCode }}</strong>
+                <span>수도</span
+                ><strong>{{ props.nation.id === 0 ? '해당 없음' : (props.nation.capitalCityId ?? '-') }}</strong>
+                <span>국가 등급</span><strong>{{ props.nation.id === 0 ? '해당 없음' : props.nation.level }}</strong>
             </div>
         </div>
     </div>
