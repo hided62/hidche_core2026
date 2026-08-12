@@ -10,6 +10,11 @@ export type BaseMapResult = {
     startYear: number;
     year: number;
     month: number;
+    techLevelLimit: {
+        maxLevel: number;
+        initialLevel: number;
+        increaseYears: number;
+    };
     cityList: MapCityCompact[];
     nationList: MapNationCompact[];
 };
@@ -62,6 +67,23 @@ const readState = (meta: Record<string, unknown>): number => {
         return Math.floor(raw);
     }
     return 0;
+};
+
+const readPositiveInteger = (value: unknown, fallback: number): number => {
+    if (typeof value !== 'number' || !Number.isFinite(value)) {
+        return fallback;
+    }
+    const normalized = Math.floor(value);
+    return normalized > 0 ? normalized : fallback;
+};
+
+const resolveTechLevelLimit = (worldState: WorldStateRow): BaseMapResult['techLevelLimit'] => {
+    const constValues = asRecord(asRecord(worldState.config).const);
+    return {
+        maxLevel: readPositiveInteger(constValues.maxTechLevel, 12),
+        initialLevel: readPositiveInteger(constValues.initialAllowedTechLevel, 1),
+        increaseYears: readPositiveInteger(constValues.techLevelIncYear, 5),
+    };
 };
 
 const normalizeNumberRecord = (value: unknown): Record<number, number> => {
@@ -180,6 +202,7 @@ const loadBaseMap = async (
         startYear: resolveStartYear(worldState),
         year: worldState.currentYear,
         month: worldState.currentMonth,
+        techLevelLimit: resolveTechLevelLimit(worldState),
         cityList,
         nationList,
     };
