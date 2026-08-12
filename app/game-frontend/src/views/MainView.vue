@@ -46,6 +46,7 @@ const {
     messages,
     boardAccess,
     reservedGeneralTurns,
+    reservedGeneralAutorunLimit,
     globalRecords,
     generalRecords,
     worldHistory,
@@ -218,6 +219,7 @@ watch(
                         :current-year="lobbyInfo?.year"
                         :current-month="lobbyInfo?.month"
                         :turn-term-minutes="lobbyInfo?.turnTerm"
+                        :autorun-limit="reservedGeneralAutorunLimit"
                         @set-general-turns="reserveGeneralTurns"
                         @shift-general-turns="shiftGeneralTurns"
                         @repeat-general-turns="repeatGeneralTurns"
@@ -341,6 +343,7 @@ watch(
                     :current-year="lobbyInfo?.year"
                     :current-month="lobbyInfo?.month"
                     :turn-term-minutes="lobbyInfo?.turnTerm"
+                    :autorun-limit="reservedGeneralAutorunLimit"
                     @set-general-turns="reserveGeneralTurns"
                     @shift-general-turns="shiftGeneralTurns"
                     @repeat-general-turns="repeatGeneralTurns"
@@ -571,6 +574,7 @@ button {
 .layout-desktop {
     display: grid;
     grid-template-columns: repeat(10, minmax(0, 1fr));
+    grid-template-rows: 520px minmax(125px, auto) auto;
     gap: 0;
     align-items: start;
 }
@@ -584,32 +588,30 @@ button {
 
 .layout-desktop > [data-main-target='commands'] {
     grid-column: 8 / 11;
-    grid-row: 1;
-    height: 645px;
+    grid-row: 1 / 3;
+    min-height: 645px;
     width: 290px;
     margin-left: 10px;
-    overflow-y: auto;
+    overflow: visible;
 }
 
 .layout-desktop > [data-main-target='city'] {
     grid-column: 1 / 8;
-    grid-row: 1;
+    grid-row: 2;
+    align-self: stretch;
     min-height: 125px;
-    margin-top: 520px;
 }
 
 .layout-desktop > [data-main-target='nation'] {
     grid-column: 1 / 6;
-    grid-row: 1;
+    grid-row: 3;
     min-height: 193px;
-    margin-top: 645px;
 }
 
 .layout-desktop > [data-main-target='general'] {
     grid-column: 6 / 11;
-    grid-row: 1;
+    grid-row: 3;
     min-height: 193px;
-    margin-top: 645px;
 }
 
 .layout-desktop > [data-main-target],
@@ -719,8 +721,8 @@ button {
 }
 
 .layout-mobile [data-main-target='commands'] {
-    height: 645px;
-    overflow-y: auto;
+    min-height: 645px;
+    overflow: visible;
 }
 
 .layout-mobile [data-main-target='nation'],

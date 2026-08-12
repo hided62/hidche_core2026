@@ -12,6 +12,7 @@ const props = defineProps<{
     currentYear?: number;
     currentMonth?: number;
     turnTermMinutes?: number;
+    autorunLimit?: number | null;
     storageKey?: string;
 }>();
 
@@ -43,6 +44,7 @@ const rows = computed<ReservedCommandRow[]>(() => {
             label: labelMap.value.get(turn.action) ?? turn.action,
             year: Math.floor(absoluteMonth / 12),
             month: (absoluteMonth % 12) + 1,
+            autonomous: props.autorunLimit != null && absoluteMonth <= props.autorunLimit - 1,
             time: date
                 ? term >= 5
                     ? `${String(date.getUTCHours()).padStart(2, '0')}:${String(date.getUTCMinutes()).padStart(2, '0')}`

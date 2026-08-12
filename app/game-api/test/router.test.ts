@@ -824,7 +824,7 @@ describe('appRouter', () => {
     });
 
     it('returns reserved general turns', async () => {
-        const general = buildGeneralRow({ id: 11 });
+        const general = buildGeneralRow({ id: 11, meta: { autorun_limit: 2408 } });
         const generalTurns: GeneralTurnRow[] = [
             {
                 id: 1,
@@ -839,6 +839,7 @@ describe('appRouter', () => {
         const response = await caller.turns.reserved.getGeneral({ generalId: 11 });
 
         expect(response.revision).toBe(0);
+        expect(response.autorunLimit).toBe(2408);
         expect(response.turns[0]?.action).toBe('che_화계');
         expect(response.turns[0]?.index).toBe(0);
     });
