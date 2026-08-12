@@ -585,7 +585,7 @@ button {
 .layout-desktop > [data-main-target='commands'] {
     grid-column: 8 / 11;
     grid-row: 1;
-    height: 589px;
+    height: 645px;
     width: 290px;
     margin-left: 10px;
     overflow-y: auto;
@@ -719,7 +719,7 @@ button {
 }
 
 .layout-mobile [data-main-target='commands'] {
-    height: 586px;
+    height: 645px;
     overflow-y: auto;
 }
 
@@ -780,7 +780,7 @@ button {
     }
 
     .main-page {
-        width: 502px;
+        width: 500px;
         min-height: 3688px;
     }
 

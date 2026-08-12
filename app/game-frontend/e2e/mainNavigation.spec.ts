@@ -31,6 +31,7 @@ type NavigationFixture = {
     forceSnapshotCalls?: number;
     refreshDelayMs?: number;
     largeCommandTable?: boolean;
+    reservedTurns?: Array<{ index: number; action: string; args: Record<string, unknown> }>;
     dashboardResponses?: Array<{
         bytes: number;
         contextKind: string | null;
@@ -116,12 +117,13 @@ const emitReadModelChanges = (page: Page, changes: ReturnType<typeof readModelCh
 
 const commandTableFixture = (large: boolean, blockedCount = 0) => ({
     general: large
-        ? [
-              {
-                  category: '일반',
-                  values: Array.from({ length: 48 }, (_, index) => ({
+        ? ['내정', '군사', '계략'].map((category, categoryIndex) => ({
+              category,
+              values: Array.from({ length: 16 }, (_, localIndex) => {
+                  const index = categoryIndex * 16 + localIndex;
+                  return {
                       key: `command-${index}`,
-                      name: `명령 ${index}`,
+                      name: index === 0 ? '주민 선정과 장기 도시 개발' : `명령 ${index}`,
                       reqArg: index % 2 === 0,
                       possible: index >= blockedCount,
                       status: index >= blockedCount ? 'available' : 'blocked',
@@ -135,9 +137,9 @@ const commandTableFixture = (large: boolean, blockedCount = 0) => ({
                               max: 10_000,
                           },
                       ],
-                  })),
-              },
-          ]
+                  };
+              }),
+          }))
         : [],
     nation: [],
     inputOptions: {
@@ -229,6 +231,7 @@ const generalContext = (state: NavigationFixture) => ({
             dex: [350, 100_000, 500_000, 1_000_000, 1_275_975],
         },
         items: { horse: null, weapon: null, book: null, item: null },
+        turnTime: '0185-01-01T00:00:00.000Z',
     },
     city: {
         id: 1,
@@ -400,7 +403,7 @@ const installFixture = async (page: Page, state: NavigationFixture) => {
             }
             if (operation === 'turns.getCommandTable') return response({ general: [], nation: [] });
             if (operation === 'turns.reserved.getGeneral' || operation === 'turns.reserved.getNation') {
-                return response({ turns: [], revision: 0 });
+                return response({ turns: state.reservedTurns ?? [], revision: 0 });
             }
             if (operation === 'messages.getRecent') return response(emptyMessages(state.permission));
             if (operation === 'messages.getContacts') return response({ nation: [] });
@@ -628,9 +631,7 @@ test('desktop menus preserve ref columns, prefix-safe routes, and controlled dro
     await persistArtifact(page, `${basePath.slice(1)}-desktop-1200`);
 });
 
-test('main city and general cards render every ref bar plus dual dexterity progress at ref heights', async ({
-    page,
-}) => {
+test('main cards and command input stay inside their Ref-sized grid slots', async ({ page }) => {
     const state: NavigationFixture = {
         officerLevel: 1,
         permission: 0,
@@ -639,6 +640,12 @@ test('main city and general cards render every ref bar plus dual dexterity progr
         npcMode: 1,
         generalMeCalls: 0,
         operations: [],
+        largeCommandTable: true,
+        reservedTurns: Array.from({ length: 14 }, (_, index) => ({
+            index,
+            action: `command-${index}`,
+            args: {},
+        })),
     };
     await installFixture(page, state);
     await page.setViewportSize({ width: 1200, height: 900 });
@@ -647,28 +654,15 @@ test('main city and general cards render every ref bar plus dual dexterity progr
     const cityBars = page.locator('[data-main-target="city"] [role="progressbar"]');
     const statBars = page.locator('[data-stat-progress] [role="progressbar"]');
     const experienceBar = page.locator('[data-experience-progress] [role="progressbar"]');
-    const dexRows = page.locator('[data-dex-progress]');
     await expect(cityBars).toHaveCount(8);
     await expect(statBars).toHaveCount(3);
     await expect(experienceBar).toHaveCount(1);
-    await expect(dexRows).toHaveCount(5);
-    await expect(dexRows.locator('[role="progressbar"]')).toHaveCount(10);
+    await expect(page.locator('[data-main-target="general"] [data-dex-progress]')).toHaveCount(0);
+    await expect(page.locator('[data-main-target="general"] [role="progressbar"]')).toHaveCount(4);
 
     expect(await cityBars.first().evaluate((element) => element.getBoundingClientRect().height)).toBe(9);
     expect(await statBars.first().evaluate((element) => element.getBoundingClientRect().height)).toBe(12);
     expect(await experienceBar.evaluate((element) => element.getBoundingClientRect().height)).toBe(12);
-    const firstDexBars = dexRows.first().locator('[role="progressbar"]');
-    expect(await firstDexBars.nth(0).evaluate((element) => element.getBoundingClientRect().height)).toBe(12);
-    expect(await firstDexBars.nth(1).evaluate((element) => element.getBoundingClientRect().height)).toBe(9);
-
-    await expect(dexRows.nth(3).locator('[role="progressbar"]').nth(0)).toHaveAttribute('aria-valuemax', '100');
-    await expect(dexRows.nth(3).locator('[role="progressbar"]').nth(0)).toHaveAttribute(
-        'aria-label',
-        /1,000,000 \/ 1,275,975 \(EX\+\)/
-    );
-    await expect(dexRows.nth(3).locator('[role="progressbar"]').nth(1)).toHaveAttribute('aria-label', /까지 .* 남음/);
-    await expect(dexRows.nth(4).locator('[role="progressbar"]').nth(1)).toHaveAttribute('aria-label', /EX\+ 달성/);
-
     const texture = await cityBars.first().evaluate((element) => getComputedStyle(element).backgroundImage);
     const fillTexture = await cityBars
         .first()
@@ -676,6 +670,100 @@ test('main city and general cards render every ref bar plus dual dexterity progr
         .evaluate((element) => getComputedStyle(element).backgroundImage);
     expect(texture).toContain('/game/pr5.gif');
     expect(fillTexture).toContain('/game/pb5.gif');
+
+    const desktopGeometry = await page.evaluate(() => {
+        const box = (element: Element) => {
+            const rect = element.getBoundingClientRect();
+            return {
+                x: rect.x,
+                y: rect.y,
+                width: rect.width,
+                height: rect.height,
+                right: rect.right,
+                bottom: rect.bottom,
+            };
+        };
+        const target = (name: string) => {
+            const panel = document.querySelector<HTMLElement>(`[data-main-target="${name}"]`);
+            if (!panel) throw new Error(`${name} panel missing`);
+            return panel;
+        };
+        const general = target('general');
+        const nation = target('nation');
+        const city = target('city');
+        const commands = target('commands');
+        const generalBody = general.querySelector<HTMLElement>('.general-body');
+        const editor = commands.querySelector<HTMLElement>('.reserved-command-editor');
+        const controlPad = commands.querySelector<HTMLElement>('.control-pad');
+        const bottomActions = commands.querySelector<HTMLElement>('.bottom-actions');
+        if (!generalBody || !editor || !controlPad || !bottomActions) throw new Error('main layout probe missing');
+        const visibleControlBoxes = [...controlPad.children]
+            .filter((element) => getComputedStyle(element).display !== 'none')
+            .map(box);
+        const bottomActionBoxes = [...bottomActions.children].map(box);
+        return {
+            general: box(general),
+            generalBody: box(generalBody),
+            nation: box(nation),
+            city: box(city),
+            commands: box(commands),
+            editor: box(editor),
+            controlPad: box(controlPad),
+            controlColumns: getComputedStyle(controlPad).gridTemplateColumns,
+            visibleControlBoxes,
+            bottomActionBoxes,
+            commandHorizontalOverflow: commands.scrollWidth - commands.clientWidth,
+            commandVerticalOverflow: commands.scrollHeight - commands.clientHeight,
+        };
+    });
+    expect(desktopGeometry.general.y).toBe(desktopGeometry.nation.y);
+    expect(desktopGeometry.general.bottom).toBe(desktopGeometry.nation.bottom);
+    expect(desktopGeometry.commands.bottom).toBe(desktopGeometry.city.bottom);
+    expect(desktopGeometry.generalBody.bottom).toBeLessThanOrEqual(desktopGeometry.general.bottom);
+    expect(desktopGeometry.editor.right).toBeLessThanOrEqual(desktopGeometry.commands.right);
+    expect(desktopGeometry.commandHorizontalOverflow).toBeLessThanOrEqual(0);
+    expect(desktopGeometry.commandVerticalOverflow).toBeLessThanOrEqual(0);
+    expect(desktopGeometry.controlColumns.split(' ')).toHaveLength(3);
+    expect(desktopGeometry.visibleControlBoxes).toHaveLength(3);
+    expect(new Set(desktopGeometry.visibleControlBoxes.map(({ y }) => y)).size).toBe(1);
+    expect(desktopGeometry.bottomActionBoxes).toHaveLength(3);
+    expect(new Set(desktopGeometry.bottomActionBoxes.map(({ y }) => y)).size).toBe(1);
+
+    const modeButton = page.locator('[data-main-target="commands"] .control-pad').getByRole('button', {
+        name: '고급 모드',
+    });
+    await modeButton.hover();
+    await modeButton.focus();
+    await expect(modeButton).toBeFocused();
+    await modeButton.click();
+    await page.locator('[data-main-target="commands"] .select-command').click();
+    const picker = page.getByTestId('command-picker');
+    await expect(picker).toBeVisible();
+    const pickerGeometry = await picker.evaluate((element) => {
+        const rect = element.getBoundingClientRect();
+        const editor = element.closest('.reserved-command-editor')?.getBoundingClientRect();
+        const categories = element.querySelector<HTMLElement>('.category-list');
+        if (!editor || !categories) throw new Error('command picker geometry missing');
+        return {
+            left: rect.left,
+            right: rect.right,
+            editorLeft: editor.left,
+            editorRight: editor.right,
+            categoryColumns: getComputedStyle(categories).gridTemplateColumns,
+            categoryBoxes: [...categories.children].map((child) => {
+                const childRect = child.getBoundingClientRect();
+                return { x: childRect.x, y: childRect.y, width: childRect.width, height: childRect.height };
+            }),
+            horizontalOverflow: element.scrollWidth - element.clientWidth,
+        };
+    });
+    expect(pickerGeometry.left).toBeGreaterThanOrEqual(pickerGeometry.editorLeft);
+    expect(pickerGeometry.right).toBeLessThanOrEqual(pickerGeometry.editorRight);
+    expect(pickerGeometry.categoryColumns.split(' ')).toHaveLength(3);
+    expect(pickerGeometry.categoryBoxes).toHaveLength(3);
+    expect(new Set(pickerGeometry.categoryBoxes.map(({ y }) => y)).size).toBe(1);
+    expect(pickerGeometry.horizontalOverflow).toBeLessThanOrEqual(0);
+    await picker.getByRole('button', { name: '명령 입력 닫기' }).click();
 
     const captureProgress = async (name: string) => {
         if (!artifactRoot) return;
@@ -696,27 +784,123 @@ test('main city and general cards render every ref bar plus dual dexterity progr
                 };
             })
         );
+        const layout = await page.evaluate(() => {
+            const describe = (selector: string) => {
+                const element = document.querySelector<HTMLElement>(selector);
+                if (!element) return null;
+                const rect = element.getBoundingClientRect();
+                return {
+                    rect: {
+                        x: rect.x,
+                        y: rect.y,
+                        width: rect.width,
+                        height: rect.height,
+                        right: rect.right,
+                        bottom: rect.bottom,
+                    },
+                    clientWidth: element.clientWidth,
+                    clientHeight: element.clientHeight,
+                    scrollWidth: element.scrollWidth,
+                    scrollHeight: element.scrollHeight,
+                    overflowX: getComputedStyle(element).overflowX,
+                    overflowY: getComputedStyle(element).overflowY,
+                    boxSizing: getComputedStyle(element).boxSizing,
+                    cssWidth: getComputedStyle(element).width,
+                    minWidth: getComputedStyle(element).minWidth,
+                    paddingInline: getComputedStyle(element).paddingInline,
+                    borderInline: `${getComputedStyle(element).borderLeftWidth} ${getComputedStyle(element).borderRightWidth}`,
+                };
+            };
+            return {
+                viewport: { width: innerWidth, height: innerHeight },
+                documentWidth: document.documentElement.scrollWidth,
+                roots: {
+                    html: describe('html'),
+                    body: describe('body'),
+                    app: describe('#app'),
+                    main: describe('main.main-page'),
+                },
+                overflowingElements: [...document.body.querySelectorAll<HTMLElement>('*')]
+                    .map((element) => {
+                        const rect = element.getBoundingClientRect();
+                        return {
+                            tag: element.tagName.toLowerCase(),
+                            className: element.className,
+                            testId: element.dataset.testid ?? null,
+                            left: rect.left,
+                            right: rect.right,
+                            width: rect.width,
+                        };
+                    })
+                    .filter(({ left, right }) => left < 0 || right > innerWidth)
+                    .slice(0, 20),
+                city: describe('[data-main-target="city"]'),
+                nation: describe('[data-main-target="nation"]'),
+                general: describe('[data-main-target="general"]'),
+                commands: describe('[data-main-target="commands"]'),
+                commandEditor: describe('[data-main-target="commands"] .reserved-command-editor'),
+                commandPicker: describe('[data-testid="command-picker"]'),
+            };
+        });
         await Promise.all([
             page.screenshot({ path: resolve(artifactRoot, `progress-bars-${name}.png`), fullPage: true }),
-            writeFile(resolve(artifactRoot, `progress-bars-${name}.json`), `${JSON.stringify(measurement, null, 2)}\n`),
+            writeFile(
+                resolve(artifactRoot, `progress-bars-${name}.json`),
+                `${JSON.stringify({ layout, progress: measurement }, null, 2)}\n`
+            ),
         ]);
     };
     await captureProgress('desktop-1200');
 
+    await page.locator('[data-main-target="commands"] .control-pad').getByRole('button', { name: '일반 모드' }).click();
     await page.setViewportSize({ width: 500, height: 900 });
     await expect(page.locator('.layout-mobile')).toBeVisible();
+    expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(500);
     await expect(page.locator('[data-main-target="city"] [role="progressbar"]')).toHaveCount(8);
-    await expect(page.locator('[data-main-target="general"] [role="progressbar"]')).toHaveCount(14);
+    await expect(page.locator('[data-main-target="general"] [role="progressbar"]')).toHaveCount(4);
     expect(
         await page
             .locator('[data-main-target="city"] [role="progressbar"]')
             .first()
             .evaluate((element) => element.getBoundingClientRect().height)
     ).toBe(9);
+    const mobileGeometry = await page.locator('[data-main-target="commands"]').evaluate((commands) => {
+        const editor = commands.querySelector<HTMLElement>('.reserved-command-editor');
+        const controls = commands.querySelector<HTMLElement>('.control-pad');
+        if (!editor || !controls) throw new Error('mobile command layout probe missing');
+        const panelRect = commands.getBoundingClientRect();
+        const editorRect = editor.getBoundingClientRect();
+        const controlBoxes = [...controls.children]
+            .filter((element) => getComputedStyle(element).display !== 'none')
+            .map((element) => {
+                const rect = element.getBoundingClientRect();
+                return { y: rect.y, width: rect.width };
+            });
+        return {
+            panelWidth: panelRect.width,
+            panelHeight: panelRect.height,
+            editorLeft: editorRect.left,
+            editorRight: editorRect.right,
+            panelLeft: panelRect.left,
+            panelRight: panelRect.right,
+            horizontalOverflow: commands.scrollWidth - commands.clientWidth,
+            verticalOverflow: commands.scrollHeight - commands.clientHeight,
+            controlColumns: getComputedStyle(controls).gridTemplateColumns,
+            controlBoxes,
+        };
+    });
+    expect(mobileGeometry.panelHeight).toBe(645);
+    expect(mobileGeometry.editorLeft).toBeGreaterThanOrEqual(mobileGeometry.panelLeft);
+    expect(mobileGeometry.editorRight).toBeLessThanOrEqual(mobileGeometry.panelRight);
+    expect(mobileGeometry.horizontalOverflow).toBeLessThanOrEqual(0);
+    expect(mobileGeometry.verticalOverflow).toBeLessThanOrEqual(0);
+    expect(mobileGeometry.controlColumns.split(' ')).toHaveLength(3);
+    expect(mobileGeometry.controlBoxes).toHaveLength(3);
+    expect(new Set(mobileGeometry.controlBoxes.map(({ y }) => y)).size).toBe(1);
     await captureProgress('mobile-500');
 });
 
-test('the 939/940 boundary switches to the Ref-style 502px single document', async ({ page }) => {
+test('the 939/940 boundary switches to the Ref-style 500px single document', async ({ page }) => {
     const state: NavigationFixture = {
         officerLevel: 5,
         permission: 2,
@@ -738,7 +922,7 @@ test('the 939/940 boundary switches to the Ref-style 502px single document', asy
     await expect(page.locator('.layout-mobile')).toBeVisible();
     expect(await gridColumnCount(page, '.main-global-menu')).toBe(4);
     expect(await gridColumnCount(page, '.main-nation-menu')).toBe(5);
-    await expect(page.locator('.main-mobile-bottom')).toHaveCount(0);
+    await expect(page.locator('.main-mobile-bottom')).toBeVisible();
 
     await page.setViewportSize({ width: 500, height: 900 });
     const documentGeometry = await page.locator('.main-page').evaluate((element) => {
@@ -752,8 +936,8 @@ test('the 939/940 boundary switches to the Ref-style 502px single document', asy
     });
     expect(documentGeometry).toMatchObject({
         x: 0,
-        width: 502,
-        scrollWidth: 502,
+        width: 500,
+        scrollWidth: 500,
     });
     expect(documentGeometry.height).toBeGreaterThan(900);
     for (const selector of [
