@@ -130,7 +130,12 @@ const emptyMessages = {
     canRespondDiplomacy: false,
 };
 
-const install = async (page: Page, mode: 'member' | 'wanderer' | 'admin' = 'member', trade: number | null = 100) => {
+const install = async (
+    page: Page,
+    mode: 'member' | 'wanderer' | 'admin' = 'member',
+    trade: number | null = 100,
+    globalNationCount = 2
+) => {
     await page.addInitScript((profile) => {
         localStorage.setItem('sammo-game-token', 'ga_info');
         localStorage.setItem('sammo-game-profile', profile);
@@ -250,7 +255,7 @@ const install = async (page: Page, mode: 'member' | 'wanderer' | 'admin' = 'memb
                             generalCount: 1,
                             cities: ['허창'],
                         },
-                    ],
+                    ].slice(0, globalNationCount),
                     diplomacy: { 1: { 1: 2, 2: 0 }, 2: { 1: 0, 2: 2 } },
                     conflict: [],
                     map,
@@ -375,6 +380,24 @@ test('global-info renders the ref nation summary columns beside the map', async 
     await page.setViewportSize({ width: 1200, height: 900 });
     await go(page, 'global-info');
 
+    await expect
+        .poll(async () => {
+            const [matrixWrapBox, matrixBox] = await Promise.all([
+                page.locator('.matrix-wrap').boundingBox(),
+                page.locator('.matrix').boundingBox(),
+            ]);
+            if (!matrixWrapBox || !matrixBox) return null;
+            return Math.abs(matrixWrapBox.height - matrixBox.height);
+        })
+        .toBeLessThan(1);
+
+    await expect
+        .poll(() =>
+            page
+                .locator('.map-area .city-icon')
+                .evaluateAll((images: HTMLImageElement[]) => images.every((image) => image.complete && image.naturalWidth > 0))
+        )
+        .toBe(true);
     const castleGeometry = await page.locator('.map-area').evaluate((mapArea) => {
         const mapRect = mapArea.getBoundingClientRect();
         return Array.from(mapArea.querySelectorAll<HTMLImageElement>('.city-icon')).map((image) => {
@@ -491,6 +514,62 @@ test('global-info renders the ref nation summary columns beside the map', async 
     expect(mobileGeometry.summary?.y).toBe(mobileGeometry.map?.bottom);
     if (artifactRoot) {
         await page.screenshot({ path: resolve(artifactRoot, 'core-global-info-mobile.png'), fullPage: true });
+    }
+});
+
+test('global-info diplomacy height follows the active nation count', async ({ page }) => {
+    await install(page, 'member', 100, 1);
+    await go(page, 'global-info');
+
+    const matrixWrap = page.locator('.matrix-wrap');
+    const matrix = page.locator('.matrix');
+    const mapSection = page.locator('.map-section');
+    await expect(matrix.locator('tbody tr')).toHaveCount(1);
+
+    for (const viewport of [
+        { name: 'desktop', width: 1200, height: 900 },
+        { name: 'mobile', width: 390, height: 844 },
+    ]) {
+        await page.setViewportSize(viewport);
+        await expect
+            .poll(async () => {
+                const [wrapBox, matrixBox] = await Promise.all([matrixWrap.boundingBox(), matrix.boundingBox()]);
+                if (!wrapBox || !matrixBox) return null;
+                return Math.abs(wrapBox.height - matrixBox.height);
+            })
+            .toBeLessThan(1);
+
+        const geometry = await page.evaluate(() => {
+            const rect = (selector: string) => document.querySelector(selector)?.getBoundingClientRect();
+            const diplomacy = rect('.section');
+            const matrix = rect('.matrix');
+            const matrixWrap = rect('.matrix-wrap');
+            const mapSection = rect('.map-section');
+            return {
+                diplomacyHeight: diplomacy?.height ?? null,
+                matrixHeight: matrix?.height ?? null,
+                matrixWrapHeight: matrixWrap?.height ?? null,
+                gapToMap: matrixWrap && mapSection ? mapSection.top - matrixWrap.bottom : null,
+            };
+        });
+        expect(geometry.matrixHeight).not.toBeNull();
+        expect(geometry.matrixWrapHeight).toBeCloseTo(geometry.matrixHeight!, 0);
+        expect(geometry.diplomacyHeight).toBeLessThan(200);
+        expect(geometry.gapToMap).toBe(21);
+        await expect(mapSection).toBeInViewport();
+
+        if (artifactRoot) {
+            await mkdir(artifactRoot, { recursive: true });
+            await writeFile(
+                resolve(artifactRoot, `core-global-info-one-nation-${viewport.name}.json`),
+                `${JSON.stringify(geometry, null, 2)}\n`,
+                'utf8'
+            );
+            await page.screenshot({
+                path: resolve(artifactRoot, `core-global-info-one-nation-${viewport.name}.png`),
+                fullPage: true,
+            });
+        }
     }
 });
 
