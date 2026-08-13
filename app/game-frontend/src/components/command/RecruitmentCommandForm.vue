@@ -423,14 +423,16 @@ watch(
     display: none;
 }
 
-@media (max-width: 600px) {
+@media (max-width: 939px) {
     .recruitment-command-form {
-        width: 500px;
+        width: 100%;
+        max-width: 100%;
+        overflow-x: clip;
     }
     .recruitment-list-front {
         position: sticky;
         z-index: 5;
-        top: 0;
+        top: 44px;
         background: #1d1d1d;
     }
     .recruitment-status {
@@ -438,7 +440,7 @@ watch(
     }
     .mobile-selected-panel {
         display: grid;
-        grid-template-columns: 64px 76px 270px 90px;
+        grid-template-columns: 64px minmax(58px, 76px) minmax(0, 1fr) minmax(64px, 90px);
         min-height: 64px;
         align-items: stretch;
     }
@@ -458,10 +460,11 @@ watch(
         text-align: right;
     }
     .crew-grid {
-        grid-template:
-            'image name attack defence speed info' 32px
-            'image name avoid cost rice info' 32px /
-            64px 76px 30px 30px 30px 270px;
+        grid-template-areas:
+            'image name attack defence speed info'
+            'image name avoid cost rice info';
+        grid-template-columns: 64px minmax(58px, 76px) repeat(3, minmax(26px, 30px)) minmax(0, 1fr);
+        grid-template-rows: 32px 32px;
     }
     .crew-grid .crew-image {
         grid-area: image;
@@ -518,7 +521,27 @@ watch(
     }
     .crew-info {
         overflow: hidden;
+        overflow-wrap: anywhere;
         font-size: 0.9em;
+    }
+}
+
+@media (max-width: 440px) {
+    .mobile-selected-panel {
+        grid-template-columns: 64px minmax(58px, 76px) minmax(0, 1fr) 72px;
+        min-height: 86px;
+    }
+    .mobile-selected-panel .amount-panel label {
+        grid-template-columns: auto minmax(34px, 1fr) auto;
+    }
+    .mobile-selected-panel output {
+        grid-column: 1 / -1;
+        min-height: 22px;
+        padding: 2px 4px;
+    }
+    .mobile-selected-panel .quick-buttons button,
+    .mobile-selected-panel .submit-recruit {
+        min-height: 32px;
     }
 }
 </style>
