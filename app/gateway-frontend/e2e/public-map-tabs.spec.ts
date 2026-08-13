@@ -223,9 +223,7 @@ test('shows one public map panel and switches it by hover, click, and keyboard',
             body: rectOf(mapBody),
             road: rectOf(mapBody.querySelector('[data-testid="map-preview-road"]')),
             largeCastle: rectOf(mapBody.querySelector('[data-testid="map-preview-castle"]')),
-            largeNationBackground: rectOf(
-                mapBody.querySelector('[data-testid="map-preview-city-background"]')
-            ),
+            largeNationBackground: rectOf(mapBody.querySelector('[data-testid="map-preview-city-background"]')),
         };
     });
     expect(mapGeometry).toEqual({
@@ -253,6 +251,31 @@ test('shows one public map panel and switches it by hover, click, and keyboard',
             .toEqual([700, 500]);
     }
 
+    const firstCity = panel.getByTestId('map-preview-city').first();
+    await expect(firstCity).not.toHaveAttribute('title');
+    await firstCity.hover();
+    const cityTooltip = panel.getByTestId('map-preview-city-tooltip');
+    await expect(cityTooltip).toBeVisible();
+    await expect(cityTooltip.locator('.tooltip-city-name')).toHaveText('【중원|특】낙양');
+    await expect(cityTooltip.locator('.tooltip-nation-name')).toHaveText('위');
+    const tooltipGeometry = await cityTooltip.evaluate((tooltip) => {
+        const rect = tooltip.getBoundingClientRect();
+        const style = getComputedStyle(tooltip);
+        return {
+            width: rect.width,
+            height: rect.height,
+            backgroundColor: style.backgroundColor,
+            fontSize: style.fontSize,
+            lineHeight: style.lineHeight,
+        };
+    });
+    expect(tooltipGeometry.width).toBeGreaterThanOrEqual(120);
+    expect(tooltipGeometry.height).toBe(32);
+    expect(tooltipGeometry.backgroundColor).toBe('rgb(30, 164, 255)');
+    expect(tooltipGeometry.fontSize).toBe('14px');
+    expect(tooltipGeometry.lineHeight).toBe('15px');
+    await page.screenshot({ path: testInfo.outputPath('public-map-city-hover-desktop.png'), fullPage: true });
+
     await hweTab.hover();
     await expect(hweTab).toHaveAttribute('aria-selected', 'true');
     await expect(panel).toContainText('유저 22 / 500');
@@ -276,10 +299,12 @@ test('shows one public map panel and switches it by hover, click, and keyboard',
     expect(geometry.width).toBeLessThanOrEqual(992);
     expect(geometry.borderLeft).toBe('1px solid rgb(63, 63, 70)');
     expect(geometry.borderTopWidth).toBe('0px');
-    expect(geometry.backgroundColor).toBe('rgba(9, 9, 11, 0.498)');
+    expect(geometry.backgroundColor).toBe('rgba(9, 9, 11, 0.5)');
     await page.screenshot({ path: testInfo.outputPath('public-map-tabs-desktop.png'), fullPage: true });
     await testInfo.attach('public-map-tabs-desktop-geometry', {
-        body: Buffer.from(`${JSON.stringify({ panel: geometry, map: mapGeometry }, null, 2)}\n`),
+        body: Buffer.from(
+            `${JSON.stringify({ panel: geometry, map: mapGeometry, tooltip: tooltipGeometry }, null, 2)}\n`
+        ),
         contentType: 'application/json',
     });
 });
@@ -307,6 +332,24 @@ test.describe('touch navigation', () => {
         expect(mapBox?.width).toBeGreaterThan(280);
         expect(mapBox?.width).toBeLessThanOrEqual(366);
         expect(mapBox?.height).toBeCloseTo((mapBox?.width ?? 0) * (5 / 7), 0);
+        const rightCity = panel.getByTestId('map-preview-city').nth(1);
+        await rightCity.hover();
+        const tooltip = panel.getByTestId('map-preview-city-tooltip');
+        await expect(tooltip).toContainText('【중원|수】허창');
+        await expect(tooltip).toContainText('촉');
+        const tooltipBounds = await tooltip.evaluate((element) => {
+            const tooltipRect = element.getBoundingClientRect();
+            const mapRect = element.parentElement?.getBoundingClientRect();
+            if (!mapRect) throw new Error('expected map preview body');
+            return {
+                left: tooltipRect.left - mapRect.left,
+                right: mapRect.right - tooltipRect.right,
+                width: tooltipRect.width,
+            };
+        });
+        expect(tooltipBounds.left).toBeGreaterThanOrEqual(0);
+        expect(tooltipBounds.right).toBeGreaterThanOrEqual(0);
+        expect(tooltipBounds.width).toBeGreaterThanOrEqual(120);
         await page.screenshot({ path: testInfo.outputPath('public-map-tabs-mobile.png'), fullPage: true });
     });
 });

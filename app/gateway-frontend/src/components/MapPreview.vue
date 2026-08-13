@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed } from 'vue';
+import { computed, ref } from 'vue';
 import { configuredGameAssetUrl } from '../utils/imageAssets';
 
 interface MapSummary {
@@ -22,6 +22,8 @@ interface MapLayoutCity {
 interface MapLayout {
     mapName: string;
     cityList: MapLayoutCity[];
+    regionMap: Record<number, string>;
+    levelMap: Record<number, string>;
 }
 
 type DetailSize = {
@@ -37,8 +39,11 @@ interface CityPreview {
     id: number;
     name: string;
     level: number;
+    levelName: string;
+    regionName: string;
     state: number;
     nationId: number;
+    nationName: string;
     color: string;
     colorToken: string | null;
     supply: boolean;
@@ -63,6 +68,8 @@ const BASE_MAP_WIDTH = 700;
 const BASE_MAP_HEIGHT = 500;
 const CITY_BASE_WIDTH = 40;
 const CITY_BASE_HEIGHT = 30;
+const TOOLTIP_MIN_WIDTH = 120;
+const TOOLTIP_CURSOR_OFFSET = 10;
 const DETAIL_SIZES: DetailSize[] = [
     { bgWidth: 48, bgHeight: 45, iconWidth: 16, iconHeight: 15, flagRight: -8, flagTop: -4 },
     { bgWidth: 60, bgHeight: 42, iconWidth: 20, iconHeight: 14, flagRight: -8, flagTop: -4 },
@@ -118,9 +125,9 @@ const mapRoad = computed(() => {
 });
 
 const nationById = computed(() => {
-    const map = new Map<number, { color: string; capitalCityId: number }>();
-    for (const [id, , color, capitalCityId] of props.mapData.nationList) {
-        map.set(id, { color, capitalCityId });
+    const map = new Map<number, { name: string; color: string; capitalCityId: number }>();
+    for (const [id, name, color, capitalCityId] of props.mapData.nationList) {
+        map.set(id, { name, color, capitalCityId });
     }
     return map;
 });
@@ -136,15 +143,19 @@ const dynamicCityById = computed(() => {
 const cities = computed<CityPreview[]>(() =>
     props.mapLayout.cityList.map((layoutCity) => {
         const dynamic = dynamicCityById.value.get(layoutCity.id);
-        const [level = layoutCity.level, state = 0, nationId = 0, , supplyFlag = 0] = dynamic ?? [];
+        const [level = layoutCity.level, state = 0, nationId = 0, region = layoutCity.region, supplyFlag = 0] =
+            dynamic ?? [];
         const nation = nationById.value.get(nationId);
         const color = nation?.color ?? '#ffffff';
         return {
             id: layoutCity.id,
             name: layoutCity.name,
             level,
+            levelName: props.mapLayout.levelMap[level] ?? '-',
+            regionName: props.mapLayout.regionMap[region] ?? '-',
             state,
             nationId,
+            nationName: nation?.name ?? '',
             color,
             colorToken: normalizeColorToken(color),
             supply: supplyFlag > 0,
@@ -155,6 +166,44 @@ const cities = computed<CityPreview[]>(() =>
         };
     })
 );
+
+const mapBody = ref<HTMLElement | null>(null);
+const tooltipElement = ref<HTMLElement | null>(null);
+const hoveredCityId = ref<number | null>(null);
+const pointerPosition = ref({ x: 0, y: 0 });
+const hoveredCity = computed(() => cities.value.find((city) => city.id === hoveredCityId.value) ?? null);
+const hoveredCityTitle = computed(() => {
+    const city = hoveredCity.value;
+    return city ? `【${city.regionName}|${city.levelName}】${city.name}` : '';
+});
+const tooltipPosition = computed(() => {
+    const mapWidth = mapBody.value?.clientWidth ?? BASE_MAP_WIDTH;
+    const tooltipWidth = tooltipElement.value?.offsetWidth ?? TOOLTIP_MIN_WIDTH;
+    const { x, y } = pointerPosition.value;
+    const left = x + tooltipWidth + TOOLTIP_CURSOR_OFFSET > mapWidth ? x - tooltipWidth - 5 : x + TOOLTIP_CURSOR_OFFSET;
+    return {
+        left: `${Math.max(0, left)}px`,
+        top: `${y + 30}px`,
+    };
+});
+
+const updatePointerPosition = (event: PointerEvent): void => {
+    const rect = mapBody.value?.getBoundingClientRect();
+    if (!rect) return;
+    pointerPosition.value = {
+        x: event.clientX - rect.left,
+        y: event.clientY - rect.top,
+    };
+};
+
+const showCityTooltip = (cityId: number, event: PointerEvent): void => {
+    hoveredCityId.value = cityId;
+    updatePointerPosition(event);
+};
+
+const hideCityTooltip = (): void => {
+    hoveredCityId.value = null;
+};
 
 const cityBaseStyle = (city: CityPreview) => ({
     left: percentOf(city.x, BASE_MAP_WIDTH),
@@ -231,7 +280,7 @@ const stateClass = (state: number): string => {
             <span class="map-preview-title">{{ props.mapLayout.mapName }}</span>
             <span class="map-preview-date">{{ props.mapData.year }}년 {{ props.mapData.month }}월</span>
         </div>
-        <div class="map-preview-body" :style="{ backgroundImage: `url('${mapBackground}')` }">
+        <div ref="mapBody" class="map-preview-body" :style="{ backgroundImage: `url('${mapBackground}')` }">
             <div
                 v-if="mapRoad"
                 class="map-preview-road"
@@ -243,9 +292,11 @@ const stateClass = (state: number): string => {
                 :key="city.id"
                 class="city-base"
                 :class="[`city-level-${city.level}`, { capital: city.isCapital }]"
-                :title="city.name"
                 :style="cityBaseStyle(city)"
                 data-testid="map-preview-city"
+                @pointerenter="showCityTooltip(city.id, $event)"
+                @pointermove="updatePointerPosition"
+                @pointerleave="hideCityTooltip"
             >
                 <template v-if="props.mode === 'detail'">
                     <div
@@ -263,10 +314,7 @@ const stateClass = (state: number): string => {
                             data-testid="map-preview-castle"
                         />
                         <div v-if="city.nationId > 0 && city.colorToken" class="city-flag" :style="flagStyle(city)">
-                            <img
-                                :src="assetUrl(`${city.supply ? 'f' : 'd'}${city.colorToken}.gif`)"
-                                alt=""
-                            />
+                            <img :src="assetUrl(`${city.supply ? 'f' : 'd'}${city.colorToken}.gif`)" alt="" />
                             <img v-if="city.isCapital" class="capital-image" :src="assetUrl('event51.gif')" alt="" />
                         </div>
                         <span class="city-name" :style="cityNameStyle(city)">{{ city.name }}</span>
@@ -288,6 +336,17 @@ const stateClass = (state: number): string => {
                     />
                     <span class="city-name" :style="basicCityNameStyle(city)">{{ city.name }}</span>
                 </div>
+            </div>
+            <div
+                v-if="hoveredCity"
+                ref="tooltipElement"
+                class="map-preview-tooltip"
+                :style="tooltipPosition"
+                role="tooltip"
+                data-testid="map-preview-city-tooltip"
+            >
+                <div class="tooltip-city-name">{{ hoveredCityTitle }}</div>
+                <div class="tooltip-nation-name">{{ hoveredCity.nationName }}</div>
             </div>
         </div>
     </div>
@@ -330,6 +389,29 @@ const stateClass = (state: number): string => {
     background-position: center;
     background-repeat: no-repeat;
     background-size: 100% 100%;
+}
+
+.map-preview-tooltip {
+    position: absolute;
+    z-index: 16;
+    min-width: 120px;
+    border: 1px solid gray;
+    background: rgb(30, 164, 255);
+    color: #fff;
+    font-size: 14px;
+    line-height: 15px;
+    pointer-events: none;
+    white-space: nowrap;
+}
+
+.tooltip-city-name,
+.tooltip-nation-name {
+    height: 15px;
+}
+
+.tooltip-nation-name {
+    border-top: 1px solid gray;
+    text-align: right;
 }
 
 .city-base {

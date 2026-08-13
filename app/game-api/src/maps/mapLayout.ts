@@ -1,7 +1,7 @@
 import { loadScenarioDefinitionById } from '@sammo-ts/game-engine/scenario/scenarioLoader.js';
 import type { ScenarioDefinition } from '@sammo-ts/logic';
 
-import { loadMapDefinitionByName } from './mapDefinition.js';
+import { loadMapDefinitionByName, loadRegionDisplayMapByName } from './mapDefinition.js';
 
 export interface MapLayoutCity {
     id: number;
@@ -23,9 +23,21 @@ export interface MapLayout {
 export interface MapLayoutLoaderOptions {
     loadScenario?: (scenarioId: number) => Promise<ScenarioDefinition>;
     loadMap?: typeof loadMapDefinitionByName;
+    loadRegionMap?: typeof loadRegionDisplayMapByName;
 }
 
 const layoutCache = new Map<string, MapLayout>();
+
+const CITY_LEVEL_MAP: Record<number, string> = {
+    1: '수',
+    2: '진',
+    3: '관',
+    4: '이',
+    5: '소',
+    6: '중',
+    7: '대',
+    8: '특',
+};
 
 const parseScenarioId = (scenario: string): number | null => {
     const normalized = scenario.replace(/^scenario_/i, '').replace(/\.json$/i, '');
@@ -56,13 +68,16 @@ const resolveMapName = async (
 
 export const loadMapLayout = async (scenario: string, options: MapLayoutLoaderOptions = {}): Promise<MapLayout> => {
     const mapName = await resolveMapName(scenario, options.loadScenario ?? loadScenarioDefinitionById);
-    const useCache = !options.loadScenario && !options.loadMap;
+    const useCache = !options.loadScenario && !options.loadMap && !options.loadRegionMap;
     const cached = useCache ? layoutCache.get(mapName) : undefined;
     if (cached) {
         return cached;
     }
 
-    const map = await (options.loadMap ?? loadMapDefinitionByName)(mapName);
+    const [map, regionMap] = await Promise.all([
+        (options.loadMap ?? loadMapDefinitionByName)(mapName),
+        (options.loadRegionMap ?? loadRegionDisplayMapByName)(mapName),
+    ]);
     const layout: MapLayout = {
         mapName,
         cityList: map.cities.map((city) => ({
@@ -74,8 +89,8 @@ export const loadMapLayout = async (scenario: string, options: MapLayoutLoaderOp
             y: city.position.y,
             path: [...city.connections],
         })),
-        regionMap: {},
-        levelMap: {},
+        regionMap,
+        levelMap: CITY_LEVEL_MAP,
     };
 
     if (useCache) {
