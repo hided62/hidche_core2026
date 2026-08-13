@@ -27,7 +27,14 @@ SET
 ALTER TABLE "gateway_profile"
 ALTER COLUMN "instance_key" SET NOT NULL;
 
-DROP INDEX "gateway_profile_profile_scenario_key";
+-- Older combined-schema installs created this uniqueness rule as a table
+-- constraint, while the standalone Gateway baseline created a unique index.
+-- Dropping the constraint first also removes its backing index; the second
+-- statement handles the standalone-index shape and is then a no-op otherwise.
+ALTER TABLE "gateway_profile"
+DROP CONSTRAINT IF EXISTS "gateway_profile_profile_scenario_key";
+
+DROP INDEX IF EXISTS "gateway_profile_profile_scenario_key";
 
 ALTER TABLE "gateway_profile"
 ADD CONSTRAINT "gateway_profile_profile_instance_key_key" UNIQUE ("profile", "instance_key"),

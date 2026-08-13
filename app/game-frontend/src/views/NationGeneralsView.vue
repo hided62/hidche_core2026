@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, ref, watch } from 'vue';
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import { useRouter } from 'vue-router';
 import { formatOfficerLevelText } from '../utils/nationFormat';
 import { resolveGeneralIconUrl } from '../utils/generalIcon';
@@ -9,14 +9,18 @@ import {
     compareGridValues,
     defaultNationGeneralDisplaySettings,
     lastUsedSettingsKey,
-    matchesKoreanSearch,
-    matchesNumberSearch,
+    matchesNumberFilterCondition,
+    matchesTextFilterCondition,
+    numberFilterOperators,
     parseStoredDisplaySettings,
     parseStoredSettingKey,
     serializeDisplaySettings,
+    textFilterOperators,
     type NationGeneralColumnId,
     type NationGeneralColumnState,
     type NationGeneralDisplaySetting,
+    type NationGeneralFilterCondition,
+    type NationGeneralFilterOperator,
     type NationGeneralGroupId,
     type NationGeneralSettingKey,
 } from '../utils/nationGeneralGrid';
@@ -52,6 +56,11 @@ type HeaderSegment = {
     colspan: number;
     groupId?: NationGeneralGroupId;
     open?: boolean;
+};
+
+type ColumnFilterState = {
+    join: 'AND' | 'OR';
+    conditions: [NationGeneralFilterCondition, NationGeneralFilterCondition];
 };
 
 const columns: ColumnDefinition[] = [
@@ -158,7 +167,46 @@ const groupState = ref<Record<NationGeneralGroupId, boolean>>({
     years: false,
     killturnAndRefresh: true,
 });
-const filters = ref<Partial<Record<NationGeneralColumnId, string>>>({});
+const createFilterCondition = (searchable?: 'text' | 'number'): NationGeneralFilterCondition => ({
+    operator: searchable === 'number' ? 'equals' : 'contains',
+    value: '',
+    valueTo: '',
+});
+const filters = ref(
+    Object.fromEntries(
+        columns.map((column) => [
+            column.id,
+            {
+                join: 'AND',
+                conditions: [createFilterCondition(column.searchable), createFilterCondition(column.searchable)],
+            },
+        ])
+    ) as Record<NationGeneralColumnId, ColumnFilterState>
+);
+const activeFilterMenu = ref<NationGeneralColumnId | null>(null);
+
+const filterOperators = (searchable?: 'text' | 'number') =>
+    searchable === 'number' ? numberFilterOperators : textFilterOperators;
+const isValueFreeOperator = (operator: NationGeneralFilterOperator): boolean =>
+    operator === 'blank' || operator === 'notBlank';
+const isConditionActive = (condition: NationGeneralFilterCondition): boolean =>
+    isValueFreeOperator(condition.operator) || condition.value.trim() !== '';
+const updateFilterOperator = (columnId: NationGeneralColumnId, conditionIndex: number, event: Event) => {
+    const target = event.target;
+    if (!(target instanceof HTMLSelectElement)) return;
+    const condition = filters.value[columnId].conditions[conditionIndex];
+    if (!condition) return;
+    condition.operator = target.value as NationGeneralFilterOperator;
+};
+const toggleFilterMenu = (columnId: NationGeneralColumnId) => {
+    activeFilterMenu.value = activeFilterMenu.value === columnId ? null : columnId;
+};
+const closeFilterMenu = () => {
+    activeFilterMenu.value = null;
+};
+const closeFilterMenuOnEscape = (event: KeyboardEvent) => {
+    if (event.key === 'Escape') closeFilterMenu();
+};
 
 const applyDisplaySetting = (settingKey: NationGeneralSettingKey, setting: NationGeneralDisplaySetting) => {
     const cloned = cloneNationGeneralDisplaySetting(setting);
@@ -359,14 +407,19 @@ const sortValue = (general: General, columnId: NationGeneralColumnId): CellValue
 
 const generals = computed(() => {
     const filtered = [...(data.value?.generals ?? [])].filter((general) =>
-        Object.entries(filters.value).every(([rawColumnId, query]) => {
-            if (!query) return true;
+        Object.entries(filters.value).every(([rawColumnId, filter]) => {
             const columnId = rawColumnId as NationGeneralColumnId;
             const column = columnById.get(columnId);
+            if (!column?.searchable) return true;
+            const activeConditions = filter.conditions.filter(isConditionActive);
+            if (!activeConditions.length) return true;
             const value = filterValue(general, columnId);
-            if (column?.searchable === 'number')
-                return matchesNumberSearch(typeof value === 'number' ? value : null, query);
-            return matchesKoreanSearch(value === null ? '' : String(value), query);
+            const results = activeConditions.map((condition) =>
+                column.searchable === 'number'
+                    ? matchesNumberFilterCondition(typeof value === 'number' ? value : null, condition)
+                    : matchesTextFilterCondition(value === null ? null : String(value), condition)
+            );
+            return filter.join === 'AND' ? results.every(Boolean) : results.some(Boolean);
         })
     );
     const sorts = columnState.value
@@ -468,7 +521,15 @@ const cellTitle = (general: General, columnId: NationGeneralColumnId): string =>
     return '';
 };
 
-onMounted(load);
+onMounted(() => {
+    document.addEventListener('pointerdown', closeFilterMenu);
+    document.addEventListener('keydown', closeFilterMenuOnEscape);
+    void load();
+});
+onBeforeUnmount(() => {
+    document.removeEventListener('pointerdown', closeFilterMenu);
+    document.removeEventListener('keydown', closeFilterMenuOnEscape);
+});
 </script>
 
 <template>
@@ -586,17 +647,114 @@ onMounted(load);
                         </th>
                     </tr>
                     <tr class="filter-head">
-                        <th v-for="column in activeColumns" :key="column.id">
-                            <template v-if="column.searchable">
+                        <th
+                            v-for="column in activeColumns"
+                            :key="column.id"
+                            :class="{ 'filter-menu-open': activeFilterMenu === column.id }"
+                        >
+                            <div v-if="column.searchable" class="floating-filter" @pointerdown.stop>
                                 <input
-                                    v-model="filters[column.id]"
+                                    v-model="filters[column.id].conditions[0].value"
                                     type="search"
                                     :inputmode="column.searchable === 'number' ? 'decimal' : 'search'"
                                     :aria-label="`${column.label} 필터`"
-                                    :placeholder="column.searchable === 'number' ? '=, >, <' : ''"
+                                    placeholder=""
                                 />
-                                <span>▽</span>
-                            </template>
+                                <button
+                                    type="button"
+                                    class="filter-menu-button"
+                                    :aria-label="`${column.label} 상세 필터 열기`"
+                                    :aria-expanded="activeFilterMenu === column.id"
+                                    title="Open Filter Menu"
+                                    @click.stop="toggleFilterMenu(column.id)"
+                                >
+                                    <span class="filter-icon" aria-hidden="true"></span>
+                                </button>
+                                <div
+                                    v-if="activeFilterMenu === column.id"
+                                    class="filter-popup"
+                                    role="dialog"
+                                    :aria-label="`${column.label} 상세 필터`"
+                                    @pointerdown.stop
+                                >
+                                    <div class="filter-condition">
+                                        <select
+                                            :value="filters[column.id].conditions[0].operator"
+                                            :aria-label="`${column.label} 첫 번째 필터 연산자`"
+                                            @change="updateFilterOperator(column.id, 0, $event)"
+                                        >
+                                            <option
+                                                v-for="option in filterOperators(column.searchable)"
+                                                :key="option.value"
+                                                :value="option.value"
+                                            >
+                                                {{ option.label }}
+                                            </option>
+                                        </select>
+                                        <template
+                                            v-if="!isValueFreeOperator(filters[column.id].conditions[0].operator)"
+                                        >
+                                            <input
+                                                v-model="filters[column.id].conditions[0].value"
+                                                :inputmode="column.searchable === 'number' ? 'decimal' : 'search'"
+                                                :aria-label="`${column.label} 첫 번째 필터 값`"
+                                                placeholder="Filter..."
+                                            />
+                                            <input
+                                                v-if="filters[column.id].conditions[0].operator === 'inRange'"
+                                                v-model="filters[column.id].conditions[0].valueTo"
+                                                inputmode="decimal"
+                                                :aria-label="`${column.label} 첫 번째 필터 끝값`"
+                                                placeholder="To"
+                                            />
+                                        </template>
+                                    </div>
+                                    <template v-if="isConditionActive(filters[column.id].conditions[0])">
+                                        <div class="filter-join" role="group" :aria-label="`${column.label} 필터 결합`">
+                                            <label>
+                                                <input v-model="filters[column.id].join" type="radio" value="AND" />
+                                                AND
+                                            </label>
+                                            <label>
+                                                <input v-model="filters[column.id].join" type="radio" value="OR" />
+                                                OR
+                                            </label>
+                                        </div>
+                                        <div class="filter-condition second-condition">
+                                            <select
+                                                :value="filters[column.id].conditions[1].operator"
+                                                :aria-label="`${column.label} 두 번째 필터 연산자`"
+                                                @change="updateFilterOperator(column.id, 1, $event)"
+                                            >
+                                                <option
+                                                    v-for="option in filterOperators(column.searchable)"
+                                                    :key="option.value"
+                                                    :value="option.value"
+                                                >
+                                                    {{ option.label }}
+                                                </option>
+                                            </select>
+                                            <template
+                                                v-if="!isValueFreeOperator(filters[column.id].conditions[1].operator)"
+                                            >
+                                                <input
+                                                    v-model="filters[column.id].conditions[1].value"
+                                                    :inputmode="column.searchable === 'number' ? 'decimal' : 'search'"
+                                                    :aria-label="`${column.label} 두 번째 필터 값`"
+                                                    placeholder="Filter..."
+                                                />
+                                                <input
+                                                    v-if="filters[column.id].conditions[1].operator === 'inRange'"
+                                                    v-model="filters[column.id].conditions[1].valueTo"
+                                                    inputmode="decimal"
+                                                    :aria-label="`${column.label} 두 번째 필터 끝값`"
+                                                    placeholder="To"
+                                                />
+                                            </template>
+                                        </div>
+                                    </template>
+                                </div>
+                            </div>
                         </th>
                     </tr>
                 </thead>
@@ -853,27 +1011,139 @@ th {
     font-size: 10px;
 }
 .filter-head th {
+    position: relative;
     height: 32px;
     padding: 3px 4px;
+    overflow: visible;
 }
-.filter-head input {
-    width: calc(100% - 15px);
+.filter-head th.filter-menu-open {
+    z-index: 12;
+}
+.floating-filter {
+    display: flex;
+    width: 100%;
+    height: 24px;
+    align-items: center;
+}
+.floating-filter > input {
+    width: calc(100% - 18px);
+    min-width: 0;
     height: 20px;
+    padding: 1px 2px;
     border: 1px solid #aab3b7;
     background: #252a2c;
     color: #fff;
 }
-.filter-head input:focus-visible {
+.floating-filter > input:focus-visible,
+.filter-popup input:focus-visible,
+.filter-popup select:focus-visible,
+.filter-menu-button:focus-visible {
     border-color: #8dd4ff;
     outline: 1px solid #8dd4ff;
 }
-.filter-head input::placeholder {
+.floating-filter > input::placeholder,
+.filter-popup input::placeholder {
     color: #8f999d;
     font-size: 10px;
 }
-.filter-head span {
-    margin-left: 4px;
+.filter-menu-button {
+    display: inline-flex;
+    width: 18px;
+    height: 22px;
+    flex: 0 0 18px;
+    align-items: center;
+    justify-content: center;
+    padding: 0;
+    border: 0;
     color: #a5b5bf;
+    background: transparent;
+    cursor: pointer;
+}
+.filter-menu-button:hover,
+.filter-menu-button[aria-expanded='true'] {
+    color: #fff;
+    background: #3a4144;
+}
+.filter-icon {
+    position: relative;
+    display: block;
+    width: 11px;
+    height: 10px;
+}
+.filter-icon::before {
+    position: absolute;
+    top: 1px;
+    left: 1px;
+    width: 0;
+    height: 0;
+    border-top: 6px solid currentcolor;
+    border-right: 5px solid transparent;
+    border-left: 5px solid transparent;
+    content: '';
+}
+.filter-icon::after {
+    position: absolute;
+    top: 6px;
+    left: 5px;
+    width: 2px;
+    height: 4px;
+    background: currentcolor;
+    content: '';
+}
+.filter-popup {
+    position: absolute;
+    z-index: 30;
+    top: 28px;
+    left: calc(100% - 19px);
+    width: 190px;
+    min-height: 60px;
+    padding: 10px;
+    border: 1px solid #596164;
+    background: #2d3436;
+    box-shadow: 0 2px 6px rgb(0 0 0 / 45%);
+    color: #f5f5f5;
+    font-size: 12px;
+    line-height: 18px;
+    text-align: left;
+    white-space: normal;
+}
+.filter-condition {
+    display: grid;
+    gap: 6px;
+}
+.filter-condition select,
+.filter-condition input {
+    box-sizing: border-box;
+    width: 100%;
+    height: 28px;
+    padding: 2px 6px;
+    border: 1px solid #80898d;
+    border-radius: 0;
+    background: #252a2c;
+    color: #fff;
+    font: 12px/18px var(--sammo-font-sans);
+}
+.filter-condition select {
+    cursor: pointer;
+}
+.filter-join {
+    display: flex;
+    gap: 14px;
+    margin: 9px 0;
+}
+.filter-join label {
+    display: inline-flex;
+    align-items: center;
+    gap: 3px;
+    cursor: pointer;
+}
+.filter-join input {
+    width: 13px;
+    height: 13px;
+    margin: 0;
+}
+.second-condition {
+    padding-top: 1px;
 }
 tbody tr {
     height: 68px;

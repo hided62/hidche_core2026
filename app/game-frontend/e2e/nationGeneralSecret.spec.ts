@@ -171,7 +171,7 @@ test('nation generals restores Ref group, saved view, sort, and Korean search be
     await expect(table.locator('tr[data-general-id="1"]')).toBeVisible();
     await expect(table.locator('tr[data-general-id="2"]')).toHaveCount(0);
     await page.getByLabel('장수명 필터').fill('');
-    await page.getByLabel('통솔 필터').fill('>= 60');
+    await page.getByLabel('통솔 필터').fill('70');
     await expect(table.locator('tr[data-general-id="1"]')).toBeVisible();
     await expect(table.locator('tr[data-general-id="2"]')).toHaveCount(0);
     await page.getByLabel('통솔 필터').fill('');
@@ -213,6 +213,91 @@ test('nation generals restores Ref group, saved view, sort, and Korean search be
     await expect
         .poll(() => page.evaluate(() => localStorage.getItem('GeneralListDisplaySetting')))
         .not.toContain('내 보기');
+});
+
+test('nation generals filter buttons open Ref operator menus and apply compound conditions', async ({
+    page,
+}, testInfo) => {
+    await install(page);
+    await page.setViewportSize({ width: 1200, height: 900 });
+    await page.goto('nation/generals');
+    const table = page.locator('#nation-general-list');
+
+    const nameMenuButton = page.getByRole('button', { name: '장수명 상세 필터 열기' });
+    await expect(nameMenuButton).toHaveAttribute('title', 'Open Filter Menu');
+    await nameMenuButton.hover();
+    expect(await nameMenuButton.evaluate((element) => getComputedStyle(element).cursor)).toBe('pointer');
+    await nameMenuButton.focus();
+    await expect(nameMenuButton).toBeFocused();
+    expect(await nameMenuButton.evaluate((element) => getComputedStyle(element).outlineStyle)).toBe('solid');
+    await nameMenuButton.click();
+
+    const namePopup = page.getByRole('dialog', { name: '장수명 상세 필터' });
+    await expect(namePopup).toBeVisible();
+    expect((await namePopup.boundingBox())?.width).toBe(190);
+    expect(await namePopup.evaluate((element) => getComputedStyle(element).backgroundColor)).toBe('rgb(45, 52, 54)');
+    const nameOperator = page.getByLabel('장수명 첫 번째 필터 연산자');
+    expect(await nameOperator.locator('option').allTextContents()).toEqual([
+        'Contains',
+        'Not contains',
+        'Equals',
+        'Not equal',
+        'Starts with',
+        'Ends with',
+        'Blank',
+        'Not blank',
+    ]);
+    await nameOperator.selectOption('notContains');
+    await page.getByLabel('장수명 첫 번째 필터 값').fill('테스트');
+    await expect(page.getByRole('searchbox', { name: '장수명 필터', exact: true })).toHaveValue('테스트');
+    await expect(table.locator('tr[data-general-id="1"]')).toHaveCount(0);
+    await expect(table.locator('tr[data-general-id="2"]')).toBeVisible();
+
+    await nameOperator.selectOption('contains');
+    await page.getByLabel('장수명 첫 번째 필터 값').fill('장수');
+    await page.getByLabel('장수명 두 번째 필터 연산자').selectOption('notContains');
+    await page.getByLabel('장수명 두 번째 필터 값').fill('테스트');
+    await expect(table.locator('tr[data-general-id="1"]')).toHaveCount(0);
+    await expect(table.locator('tr[data-general-id="2"]')).toBeVisible();
+    await namePopup.getByLabel('OR').check();
+    await expect(table.locator('tr[data-general-id="1"]')).toBeVisible();
+    await expect(table.locator('tr[data-general-id="2"]')).toBeVisible();
+    await page.screenshot({ path: testInfo.outputPath('core-text-filter-menu.png'), fullPage: true });
+
+    await page.getByLabel('장수명 두 번째 필터 값').fill('');
+    await page.getByLabel('장수명 첫 번째 필터 값').fill('');
+    await page.getByRole('button', { name: '통솔 상세 필터 열기' }).click();
+    const numberPopup = page.getByRole('dialog', { name: '통솔 상세 필터' });
+    const numberOperator = page.getByLabel('통솔 첫 번째 필터 연산자');
+    expect(await numberOperator.locator('option').allTextContents()).toEqual([
+        'Equals',
+        'Not equal',
+        'Less than',
+        'Less than or equals',
+        'Greater than',
+        'Greater than or equals',
+        'In range',
+        'Blank',
+        'Not blank',
+    ]);
+    await numberOperator.selectOption('inRange');
+    await page.getByLabel('통솔 첫 번째 필터 값').fill('45');
+    await page.getByLabel('통솔 첫 번째 필터 끝값').fill('75');
+    await expect(table.locator('tr[data-general-id="1"]')).toBeVisible();
+    await expect(table.locator('tr[data-general-id="2"]')).toHaveCount(0);
+    await page.screenshot({ path: testInfo.outputPath('core-number-filter-menu.png'), fullPage: true });
+    await numberOperator.selectOption('blank');
+    await expect(table.locator('tr[data-general-id]')).toHaveCount(0);
+    await expect(numberPopup.getByPlaceholder('Filter...')).toHaveCount(1);
+    await page.keyboard.press('Escape');
+    await expect(numberPopup).toHaveCount(0);
+
+    await page.setViewportSize({ width: 500, height: 900 });
+    expect(await page.locator('.general-page').evaluate((element) => element.getBoundingClientRect().width)).toBe(1000);
+    await nameMenuButton.click();
+    await expect(namePopup).toBeVisible();
+    expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeGreaterThanOrEqual(1000);
+    await page.screenshot({ path: testInfo.outputPath('core-mobile-filter-menu.png'), fullPage: true });
 });
 
 test('both pages preserve the legacy 1000px overflow contract at 500px', async ({ page }) => {

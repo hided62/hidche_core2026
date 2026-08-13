@@ -261,6 +261,24 @@ const generalContext = (state: NavigationFixture) => ({
         bill: 100,
         capitalCityId: 1,
         typeCode: 'che_유가',
+        typeName: '유가',
+        typePros: '농상↑ 민심↑',
+        typeCons: '쌀수입↓',
+        population: { cityCount: 2, current: 150_000, max: 620_500 },
+        crew: { generalCount: 2, current: 500, max: 7_000 },
+        power: 1_234,
+        taxRate: state.nationRate ?? 20,
+        strategicCommandLimit: 2,
+        diplomaticLimit: 0,
+        prohibitScout: false,
+        prohibitWar: true,
+        techLevel: 0,
+        techLimited: false,
+        topChiefs: {
+            12: { id: 1, name: '군주', npcState: 0 },
+            11: { id: 2, name: '참모', npcState: 1 },
+        },
+        impossibleStrategicCommands: [{ name: '수몰', remainingTurns: 2, availableYear: 190, availableMonth: 5 }],
     },
     settings: {},
     penalties: {},
@@ -572,18 +590,20 @@ const persistArtifact = async (page: Page, name: string) => {
             executionStatus: describe('.execution-status'),
             tournamentStatus: describe('.tournament-status'),
             voteStatus: describe('.vote-status'),
+            autoRefresh: describe('[data-bottom-menu="auto-refresh"]'),
+            manualRefresh: describe('[data-bottom-menu="manual-refresh"]'),
             commandMenu: describe('.reserved-command-editor details[open] .menu-items'),
-            commandDividers: [...document.querySelectorAll<HTMLElement>('.reserved-command-editor details[open] .menu-divider')].map(
-                (element) => {
-                    const rect = element.getBoundingClientRect();
-                    const style = getComputedStyle(element);
-                    return {
-                        rect: { x: rect.x, y: rect.y, width: rect.width, height: rect.height },
-                        borderTop: style.borderTop,
-                        margin: style.margin,
-                    };
-                }
-            ),
+            commandDividers: [
+                ...document.querySelectorAll<HTMLElement>('.reserved-command-editor details[open] .menu-divider'),
+            ].map((element) => {
+                const rect = element.getBoundingClientRect();
+                const style = getComputedStyle(element);
+                return {
+                    rect: { x: rect.x, y: rect.y, width: rect.width, height: rect.height },
+                    borderTop: style.borderTop,
+                    margin: style.margin,
+                };
+            }),
         };
     });
     const commandMenu = page.locator('.reserved-command-editor details[open] .menu-items').first();
@@ -877,6 +897,31 @@ test('main cards and command input stay inside their Ref-sized grid slots', asyn
     await expect(page.locator('[data-main-target="general"] [data-dex-progress]')).toHaveCount(0);
     await expect(page.locator('[data-main-target="general"] [role="progressbar"]')).toHaveCount(4);
 
+    const nationCard = page.locator('[data-main-target="nation"] [data-nation-basic-card]');
+    await expect(nationCard.locator('.head')).toHaveCount(17);
+    await expect(nationCard).toContainText('유가 (농상↑ 민심↑쌀수입↓)');
+    await expect(nationCard).toContainText('영주군주참모ⓝ참모');
+    await expect(nationCard).toContainText('총 주민150,000 / 620,500');
+    await expect(nationCard).toContainText('총 병사500 / 7,000');
+    await expect(nationCard).toContainText('지급률100%');
+    await expect(nationCard).toContainText('전략2턴');
+    await expect(nationCard).toContainText('임관허가');
+    await expect(nationCard).toContainText('전쟁금지');
+    expect(await nationCard.evaluate((element) => element.getBoundingClientRect().height)).toBe(193);
+    const nationRowHeights = await nationCard
+        .locator('.nation-grid')
+        .evaluate((element) => [...element.children].map((child) => child.getBoundingClientRect().height));
+    expect(Math.max(...nationRowHeights) - Math.min(...nationRowHeights)).toBeLessThanOrEqual(0.01);
+    const strategicCell = nationCard.locator('.strategic');
+    const strategicTooltip = strategicCell.getByRole('tooltip');
+    await expect(strategicTooltip).toBeHidden();
+    await strategicCell.hover();
+    await expect(strategicTooltip).toBeVisible();
+    await expect(strategicTooltip).toContainText('수몰: 2턴 뒤(190년 5월부터)');
+    await strategicCell.focus();
+    await expect(strategicCell).toBeFocused();
+    await expect(strategicTooltip).toBeVisible();
+
     expect(await cityBars.first().evaluate((element) => element.getBoundingClientRect().height)).toBe(9);
     expect(await statBars.first().evaluate((element) => element.getBoundingClientRect().height)).toBe(12);
     expect(await experienceBar.evaluate((element) => element.getBoundingClientRect().height)).toBe(12);
@@ -978,8 +1023,9 @@ test('main cards and command input stay inside their Ref-sized grid slots', asyn
     await modeButton.focus();
     await expect(modeButton).toBeFocused();
     await modeButton.click();
-    const advancedControlGeometry = await page.locator('[data-main-target="commands"] .reserved-command-editor').evaluate(
-        (editor) => {
+    const advancedControlGeometry = await page
+        .locator('[data-main-target="commands"] .reserved-command-editor')
+        .evaluate((editor) => {
             const range = editor.querySelector<HTMLElement>('.range-menu');
             const recent = [...editor.querySelectorAll<HTMLElement>('.control-pad summary')].find((element) =>
                 element.textContent?.includes('최근 실행')
@@ -994,8 +1040,7 @@ test('main cards and command input stay inside their Ref-sized grid slots', asyn
                 advancedBottom: advanced.getBoundingClientRect().bottom,
                 queueTop: queue.getBoundingClientRect().top,
             };
-        }
-    );
+        });
     expect(advancedControlGeometry.rangeTop).toBe(advancedControlGeometry.recentTop);
     expect(advancedControlGeometry.advancedTop).toBeGreaterThan(advancedControlGeometry.rangeTop);
     expect(advancedControlGeometry.advancedBottom).toBeLessThanOrEqual(advancedControlGeometry.queueTop);
@@ -1171,6 +1216,11 @@ test('main cards and command input stay inside their Ref-sized grid slots', asyn
     expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(500);
     await expect(page.locator('[data-main-target="city"] [role="progressbar"]')).toHaveCount(8);
     await expect(page.locator('[data-main-target="general"] [role="progressbar"]')).toHaveCount(4);
+    const mobileNationCard = page.locator('[data-main-target="nation"] [data-nation-basic-card]');
+    expect(await mobileNationCard.evaluate((element) => element.getBoundingClientRect().height)).toBe(193);
+    expect(await mobileNationCard.evaluate((element) => element.scrollWidth - element.clientWidth)).toBeLessThanOrEqual(
+        0
+    );
     expect(
         await page
             .locator('[data-main-target="city"] [role="progressbar"]')
@@ -1375,12 +1425,7 @@ test('real mobile devices initially fit the complete 500px game canvas', async (
 
         const routeGeometry: Record<string, unknown> = {};
         if (deviceWidth === 390) {
-            for (const target of [
-                'chief-center',
-                'battle-center',
-                'inherit',
-                'nation-betting',
-            ]) {
+            for (const target of ['chief-center', 'battle-center', 'inherit', 'nation-betting']) {
                 await mobilePage.goto(target);
                 await expect
                     .poll(() => mobilePage.locator('#app').evaluate((element) => getComputedStyle(element).minWidth))
@@ -1472,6 +1517,7 @@ test('mobile single document refreshes once and preserves tokens on lobby return
         generalMeCalls: 0,
         operations: [],
     };
+    await installRealtimeHarness(page);
     await installFixture(page, state);
     await page.setViewportSize({ width: 500, height: 900 });
     await waitForMain(page);
@@ -1494,9 +1540,65 @@ test('mobile single document refreshes once and preserves tokens on lobby return
         await expect(page.locator(selector)).toBeVisible();
     }
 
+    const autoRefresh = page.getByRole('button', { name: '자동 갱신 ON' });
+    const manualRefresh = page.getByRole('button', { name: '직접 갱신' });
+    await expect(autoRefresh).toHaveAttribute('aria-pressed', 'true');
+    await expect(autoRefresh.locator('strong')).toHaveCSS('color', 'rgb(158, 240, 184)');
+    await expect(manualRefresh).toHaveAttribute('aria-busy', 'false');
+    await expect
+        .poll(() => page.evaluate(() => (window as unknown as { __hasMainRealtime: () => boolean }).__hasMainRealtime()))
+        .toBe(true);
+
+    const refreshGeometry = await page.locator('.bottom-refresh-controls').evaluate((controls) => {
+        const auto = controls.querySelector<HTMLElement>('[data-bottom-menu="auto-refresh"]');
+        const manual = controls.querySelector<HTMLElement>('[data-bottom-menu="manual-refresh"]');
+        if (!auto || !manual) throw new Error('mobile refresh controls are incomplete');
+        const controlsRect = controls.getBoundingClientRect();
+        const autoRect = auto.getBoundingClientRect();
+        const manualRect = manual.getBoundingClientRect();
+        return {
+            controls: { left: controlsRect.left, right: controlsRect.right, width: controlsRect.width },
+            auto: { left: autoRect.left, right: autoRect.right, width: autoRect.width },
+            manual: { left: manualRect.left, right: manualRect.right, width: manualRect.width },
+            overflow: controls.scrollWidth - controls.clientWidth,
+        };
+    });
+    expect(refreshGeometry.controls.width).toBe(125);
+    expect(refreshGeometry.auto.width).toBe(85);
+    expect(refreshGeometry.manual.width).toBe(40);
+    expect(refreshGeometry.auto.left).toBe(refreshGeometry.controls.left);
+    expect(refreshGeometry.auto.right).toBe(refreshGeometry.manual.left);
+    expect(refreshGeometry.manual.right).toBe(refreshGeometry.controls.right);
+    expect(refreshGeometry.overflow).toBeLessThanOrEqual(0);
+
+    await autoRefresh.focus();
+    await expect(autoRefresh).toBeFocused();
+    await autoRefresh.hover();
+    await expect(autoRefresh).toHaveCSS('filter', 'brightness(1.14)');
+    await autoRefresh.click();
+    const disabledAutoRefresh = page.getByRole('button', { name: '자동 갱신 OFF' });
+    await expect(disabledAutoRefresh).toHaveAttribute('aria-pressed', 'false');
+    await expect(disabledAutoRefresh.locator('strong')).toHaveCSS('color', 'rgb(187, 187, 187)');
+    await expect
+        .poll(() => page.evaluate(() => (window as unknown as { __hasMainRealtime: () => boolean }).__hasMainRealtime()))
+        .toBe(false);
+    await persistArtifact(page, `${basePath.slice(1)}-mobile-auto-refresh-controls-off`);
+
+    state.generalName = '직접갱신된장수';
     const callsBeforeRefresh = state.generalMeCalls;
-    await page.getByRole('button', { name: '갱 신' }).click();
+    await manualRefresh.click();
     await expect.poll(() => state.generalMeCalls).toBeGreaterThan(callsBeforeRefresh);
+    await expect(page.locator('.general-title')).toContainText('직접갱신된장수');
+
+    const callsBeforeEnable = state.generalMeCalls;
+    await page.getByRole('button', { name: '자동 갱신 OFF' }).click();
+    await expect(page.getByRole('button', { name: '자동 갱신 ON' })).toHaveAttribute('aria-pressed', 'true');
+    await expect.poll(() => state.generalMeCalls).toBeGreaterThan(callsBeforeEnable);
+    await expect
+        .poll(() => page.evaluate(() => (window as unknown as { __hasMainRealtime: () => boolean }).__hasMainRealtime()))
+        .toBe(true);
+
+    await persistArtifact(page, `${basePath.slice(1)}-mobile-auto-refresh-controls`);
 
     await page.evaluate(() => {
         localStorage.setItem('sammo-session-token', 'session_navigation');
@@ -1734,10 +1836,7 @@ test('realtime read-model events skip clock-only work, merge bursts, patch in pl
         { op: 'replace', path: '/general/0/values/1/possible', value: false },
         { op: 'replace', path: '/general/0/values/1/status', value: 'blocked' },
     ];
-    await emitReadModelInvalidation(
-        page,
-        readModelInvalidation({ context: true, commands: true, boardAccess: true })
-    );
+    await emitReadModelInvalidation(page, readModelInvalidation({ context: true, commands: true, boardAccess: true }));
     await expect.poll(() => state.generalMeCalls, { timeout: 4_000 }).toBe(callsBeforeTax + 1);
 
     const callsBeforeCityState = state.generalMeCalls;
@@ -1764,10 +1863,7 @@ test('realtime read-model events skip clock-only work, merge bursts, patch in pl
     state.contextRevision = 'O'.repeat(22);
     state.contextOperations = [{ op: 'replace', path: '/missing/value', value: 'invalid-delta' }];
     state.commandTableOperations = [];
-    await emitReadModelInvalidation(
-        page,
-        readModelInvalidation({ context: true, commands: true, boardAccess: true })
-    );
+    await emitReadModelInvalidation(page, readModelInvalidation({ context: true, commands: true, boardAccess: true }));
     await expect.poll(() => state.generalMeCalls, { timeout: 4_000 }).toBe(callsBeforeFallback + 2);
     expect(state.forceSnapshotCalls).toBe(forcedBeforeFallback + 1);
     await expect(page.locator('.general-title')).toContainText('snapshot복구장수');
