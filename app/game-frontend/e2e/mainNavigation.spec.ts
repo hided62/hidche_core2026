@@ -201,9 +201,13 @@ const generalContext = (state: NavigationFixture) => ({
         name: state.generalName ?? '메뉴검증장수',
         nationId: 1,
         cityId: 1,
-        troopId: 0,
+        troopId: 7,
         npcState: 0,
         officerLevel: state.officerLevel,
+        officerLevelText: state.officerLevel === 0 ? '재야' : '군주',
+        officerCityName: state.officerLevel >= 2 && state.officerLevel <= 4 ? '업' : null,
+        generalType: '용장',
+        leadershipBonus: state.officerLevel === 12 ? state.nationLevel * 2 : 0,
         picture: null,
         imageServer: 0,
         stats: { leadership: 70, strength: 60, intelligence: 50 },
@@ -215,6 +219,13 @@ const generalContext = (state: NavigationFixture) => ({
         injury: 0,
         experience: 100,
         dedication: 200,
+        age: 25,
+        retirementYear: 70,
+        defenceTrain: 80,
+        killTurn: 5,
+        remainingMinutes: 7,
+        troop: { name: '백마대', status: 'present', leaderCityName: '업' },
+        refreshScore: { current: 3, total: 120, text: '보통' },
         progression: {
             experienceLevel: 1,
             dedicationLevel: 2,
@@ -223,6 +234,10 @@ const generalContext = (state: NavigationFixture) => ({
             dex: [350, 100_000, 500_000, 1_000_000, 1_275_975],
         },
         items: { horse: null, weapon: null, book: null, item: null },
+        itemNames: { horse: '적토마', weapon: '청룡언월도', book: '육도', item: '옥벽' },
+        crewTypeId: 1,
+        crewTypeName: '보병',
+        traits: { personal: '대담', specialDomestic: '상재', specialWar: '무쌍' },
         turnTime: state.generalTurnTime ?? '0185-01-01T00:00:00.000Z',
     },
     city: {
@@ -739,7 +754,7 @@ test('desktop menus preserve ref columns, prefix-safe routes, and controlled dro
     await persistArtifact(page, `${basePath.slice(1)}-desktop-1200`);
 });
 
-test('main general card renders the next turn in the Seoul server timezone', async ({ page }) => {
+test('main general card renders Ref title and omitted rows with second precision', async ({ page }) => {
     const state: NavigationFixture = {
         officerLevel: 0,
         permission: 0,
@@ -759,8 +774,15 @@ test('main general card renders the next turn in the Seoul server timezone', asy
 
     const title = page.locator('[data-main-target="general"] .general-title').first();
     await expect(title).toContainText('Administrator');
-    await expect(title).toContainText('다음 턴 09:07');
+    await expect(title).toContainText('용장');
+    await expect(title).toContainText('09:07:06');
     await expect(title).not.toContainText('00:07');
+    const generalCard = page.locator('[data-main-target="general"] [data-general-basic-card]').first();
+    await expect(generalCard).toContainText('수비 함(훈사80)');
+    await expect(generalCard).toContainText('5 턴');
+    await expect(generalCard).toContainText('7분 남음');
+    await expect(generalCard).toContainText('백마대');
+    await expect(generalCard).toContainText('보통 120점(3)');
 
     const desktopGeometry = await title.evaluate((element) => {
         const rect = element.getBoundingClientRect();
@@ -768,6 +790,8 @@ test('main general card renders the next turn in the Seoul server timezone', asy
         return {
             width: rect.width,
             height: rect.height,
+            scrollWidth: element.scrollWidth,
+            clientWidth: element.clientWidth,
             fontSize: style.fontSize,
             lineHeight: style.lineHeight,
             overflow: style.overflow,
@@ -775,6 +799,8 @@ test('main general card renders the next turn in the Seoul server timezone', asy
     });
     expect(desktopGeometry.width).toBeGreaterThan(0);
     expect(desktopGeometry.height).toBeGreaterThan(0);
+    expect(desktopGeometry.scrollWidth - desktopGeometry.clientWidth).toBeLessThanOrEqual(0);
+    expect(await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth)).toBeLessThanOrEqual(0);
     if (artifactRoot) {
         const target = resolve(artifactRoot);
         await mkdir(target, { recursive: true });
@@ -789,8 +815,9 @@ test('main general card renders the next turn in the Seoul server timezone', asy
 
     await page.setViewportSize({ width: 500, height: 900 });
     const mobileTitle = page.locator('[data-main-target="general"] .general-title').first();
-    await expect(mobileTitle).toContainText('다음 턴 09:07');
+    await expect(mobileTitle).toContainText('09:07:06');
     expect(await mobileTitle.evaluate((element) => element.scrollWidth - element.clientWidth)).toBeLessThanOrEqual(0);
+    expect(await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth)).toBeLessThanOrEqual(0);
     if (artifactRoot) {
         await page.screenshot({
             path: resolve(artifactRoot, 'main-turn-time-seoul-mobile-500.png'),
@@ -1546,7 +1573,9 @@ test('mobile single document refreshes once and preserves tokens on lobby return
     await expect(autoRefresh.locator('strong')).toHaveCSS('color', 'rgb(158, 240, 184)');
     await expect(manualRefresh).toHaveAttribute('aria-busy', 'false');
     await expect
-        .poll(() => page.evaluate(() => (window as unknown as { __hasMainRealtime: () => boolean }).__hasMainRealtime()))
+        .poll(() =>
+            page.evaluate(() => (window as unknown as { __hasMainRealtime: () => boolean }).__hasMainRealtime())
+        )
         .toBe(true);
 
     const refreshGeometry = await page.locator('.bottom-refresh-controls').evaluate((controls) => {
@@ -1580,7 +1609,9 @@ test('mobile single document refreshes once and preserves tokens on lobby return
     await expect(disabledAutoRefresh).toHaveAttribute('aria-pressed', 'false');
     await expect(disabledAutoRefresh.locator('strong')).toHaveCSS('color', 'rgb(187, 187, 187)');
     await expect
-        .poll(() => page.evaluate(() => (window as unknown as { __hasMainRealtime: () => boolean }).__hasMainRealtime()))
+        .poll(() =>
+            page.evaluate(() => (window as unknown as { __hasMainRealtime: () => boolean }).__hasMainRealtime())
+        )
         .toBe(false);
     await persistArtifact(page, `${basePath.slice(1)}-mobile-auto-refresh-controls-off`);
 
@@ -1595,7 +1626,9 @@ test('mobile single document refreshes once and preserves tokens on lobby return
     await expect(page.getByRole('button', { name: '자동 갱신 ON' })).toHaveAttribute('aria-pressed', 'true');
     await expect.poll(() => state.generalMeCalls).toBeGreaterThan(callsBeforeEnable);
     await expect
-        .poll(() => page.evaluate(() => (window as unknown as { __hasMainRealtime: () => boolean }).__hasMainRealtime()))
+        .poll(() =>
+            page.evaluate(() => (window as unknown as { __hasMainRealtime: () => boolean }).__hasMainRealtime())
+        )
         .toBe(true);
 
     await persistArtifact(page, `${basePath.slice(1)}-mobile-auto-refresh-controls`);

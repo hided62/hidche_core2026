@@ -81,6 +81,10 @@ const createContext = (options: {
     requestCommand?: ReturnType<typeof vi.fn>;
     accessToken?: string;
     logs?: Array<{ id: number; text: string; year?: number; month?: number; createdAt?: Date }>;
+    troopName?: string | null;
+    troopLeaderAction?: string | null;
+    refreshScore?: number;
+    refreshScoreTotal?: number;
 }) => {
     const me = options.me === undefined ? buildGeneral() : options.me;
     const targets = options.targets ?? (me ? [me] : []);
@@ -94,9 +98,43 @@ const createContext = (options: {
             findFirst: vi.fn(async () => me),
             findUnique: generalFindUnique,
             findMany: vi.fn(async () => targets.filter((general) => general.nationId === (me?.nationId ?? 0))),
+            aggregate: vi.fn(async () => ({
+                _count: targets.filter((general) => general.nationId === (me?.nationId ?? 0)).length,
+                _sum: {
+                    crew: targets.reduce((sum, general) => sum + general.crew, 0),
+                    leadership: targets.reduce((sum, general) => sum + general.leadership, 0),
+                },
+            })),
             update: vi.fn(),
         },
-        city: { findUnique: vi.fn(async () => options.city ?? null) },
+        troop: {
+            findUnique: vi.fn(async () =>
+                options.troopName === undefined ? null : options.troopName === null ? null : { name: options.troopName }
+            ),
+        },
+        generalTurn: {
+            findFirst: vi.fn(async () =>
+                options.troopLeaderAction === undefined || options.troopLeaderAction === null
+                    ? null
+                    : { actionCode: options.troopLeaderAction }
+            ),
+        },
+        generalAccessLog: {
+            findUnique: vi.fn(async () => ({
+                refreshScore: options.refreshScore ?? 0,
+                refreshScoreTotal: options.refreshScoreTotal ?? 0,
+            })),
+        },
+        city: {
+            findUnique: vi.fn(async () => options.city ?? null),
+            aggregate: vi.fn(async () => ({
+                _count: options.city ? 1 : 0,
+                _sum: {
+                    population: Number(options.city?.population ?? 0),
+                    populationMax: Number(options.city?.populationMax ?? 0),
+                },
+            })),
+        },
         nation: {
             findUnique: vi.fn(async () => ({
                 id: 1,
@@ -293,6 +331,60 @@ describe('in-game my information ownership', () => {
                 levelName: '주자사',
                 typeName: '법가',
                 capitalCityName: '업',
+            },
+        });
+    });
+
+    it('returns the Ref general-card title, execution, troop, and refresh-score projection', async () => {
+        const fixture = createContext({
+            me: buildGeneral({
+                troopId: 7,
+                officerLevel: 4,
+                strength: 70,
+                intel: 40,
+                turnTime: new Date('2026-01-01T00:07:06.000Z'),
+                meta: { officerCity: 1, killturn: 6, defence_train: 80 },
+            }),
+            city: {
+                id: 1,
+                name: '업',
+                level: 8,
+                nationId: 1,
+                population: 1_000,
+                populationMax: 2_000,
+                agriculture: 100,
+                agricultureMax: 200,
+                commerce: 100,
+                commerceMax: 200,
+                security: 100,
+                securityMax: 200,
+                trust: 70,
+                trade: 100,
+                defence: 100,
+                defenceMax: 200,
+                wall: 100,
+                wallMax: 200,
+                region: 2,
+                supplyState: 1,
+                frontState: 0,
+            },
+            troopName: '정밀검증부대',
+            troopLeaderAction: '휴식',
+            refreshScore: 3,
+            refreshScoreTotal: 1_141,
+        });
+
+        await expect(appRouter.createCaller(fixture.context).general.me()).resolves.toMatchObject({
+            general: {
+                officerCityName: '업',
+                generalType: '용장',
+                leadershipBonus: 0,
+                retirementYear: 70,
+                defenceTrain: 80,
+                killTurn: 6,
+                remainingMinutes: null,
+                troop: { name: '정밀검증부대', status: 'inactive', leaderCityName: '업' },
+                refreshScore: { current: 3, total: 1_141, text: '열심' },
             },
         });
     });

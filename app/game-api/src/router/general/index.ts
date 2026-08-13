@@ -42,6 +42,12 @@ import {
     resolveMainNationTech,
     splitNationTraitInfo,
 } from '../../services/mainNationProjection.js';
+import {
+    resolveGeneralTypeCall,
+    resolveLeadershipBonus,
+    resolveRefreshScoreText,
+    resolveRemainingMinutes,
+} from '../../services/generalBasicCardProjection.js';
 
 const zGeneralSettings = z.object({
     tnmt: z.number().int().optional(),
@@ -268,62 +274,90 @@ export const getGeneralContext = async (ctx: GameApiContext) => {
         return null;
     }
 
-    const [city, queriedNation, worldState] = await Promise.all([
-        general.cityId > 0
-            ? ctx.db.city.findUnique({
-                  where: { id: general.cityId },
-                  select: {
-                      id: true,
-                      name: true,
-                      level: true,
-                      nationId: true,
-                      population: true,
-                      populationMax: true,
-                      agriculture: true,
-                      agricultureMax: true,
-                      commerce: true,
-                      commerceMax: true,
-                      security: true,
-                      securityMax: true,
-                      trust: true,
-                      trade: true,
-                      defence: true,
-                      defenceMax: true,
-                      wall: true,
-                      wallMax: true,
-                      region: true,
-                      supplyState: true,
-                      frontState: true,
-                  },
-              })
-            : null,
-        general.nationId > 0
-            ? ctx.db.nation.findUnique({
-                  where: { id: general.nationId },
-                  select: {
-                      id: true,
-                      name: true,
-                      color: true,
-                      level: true,
-                      gold: true,
-                      rice: true,
-                      tech: true,
-                      typeCode: true,
-                      capitalCityId: true,
-                      meta: true,
-                  },
-              })
-            : Promise.resolve(NEUTRAL_NATION_CONTEXT),
-        ctx.db.worldState.findFirst({ select: { currentYear: true, currentMonth: true, config: true, meta: true } }),
-    ]);
+    const metaRecord = asRecord(general.meta);
+    const officerCityId = readNumber(metaRecord.officerCity ?? metaRecord.officer_city ?? metaRecord.officerCityId, 0);
+    const [city, queriedNation, worldState, officerCity, troop, troopLeader, troopLeaderFirstTurn, accessLog] =
+        await Promise.all([
+            general.cityId > 0
+                ? ctx.db.city.findUnique({
+                      where: { id: general.cityId },
+                      select: {
+                          id: true,
+                          name: true,
+                          level: true,
+                          nationId: true,
+                          population: true,
+                          populationMax: true,
+                          agriculture: true,
+                          agricultureMax: true,
+                          commerce: true,
+                          commerceMax: true,
+                          security: true,
+                          securityMax: true,
+                          trust: true,
+                          trade: true,
+                          defence: true,
+                          defenceMax: true,
+                          wall: true,
+                          wallMax: true,
+                          region: true,
+                          supplyState: true,
+                          frontState: true,
+                      },
+                  })
+                : null,
+            general.nationId > 0
+                ? ctx.db.nation.findUnique({
+                      where: { id: general.nationId },
+                      select: {
+                          id: true,
+                          name: true,
+                          color: true,
+                          level: true,
+                          gold: true,
+                          rice: true,
+                          tech: true,
+                          typeCode: true,
+                          capitalCityId: true,
+                          meta: true,
+                      },
+                  })
+                : Promise.resolve(NEUTRAL_NATION_CONTEXT),
+            ctx.db.worldState.findFirst({
+                select: { currentYear: true, currentMonth: true, tickSeconds: true, config: true, meta: true },
+            }),
+            officerCityId > 0
+                ? ctx.db.city.findUnique({ where: { id: officerCityId }, select: { name: true } })
+                : Promise.resolve(null),
+            general.troopId > 0
+                ? ctx.db.troop.findUnique({ where: { troopLeaderId: general.troopId }, select: { name: true } })
+                : Promise.resolve(null),
+            general.troopId > 0
+                ? ctx.db.general.findUnique({ where: { id: general.troopId }, select: { cityId: true } })
+                : Promise.resolve(null),
+            general.troopId > 0
+                ? ctx.db.generalTurn.findFirst({
+                      where: { generalId: general.troopId },
+                      orderBy: { turnIdx: 'asc' },
+                      select: { actionCode: true },
+                  })
+                : Promise.resolve(null),
+            ctx.db.generalAccessLog.findUnique({
+                where: { generalId: general.id },
+                select: { refreshScore: true, refreshScoreTotal: true },
+            }),
+        ]);
     const nation = queriedNation ?? NEUTRAL_NATION_CONTEXT;
 
-    const [capitalCity, cityNation, nationPopulation, nationCrew, topChiefRows] = await Promise.all([
+    const [capitalCity, cityNation, troopLeaderCity, nationPopulation, nationCrew, topChiefRows] = await Promise.all([
         nation.capitalCityId
             ? ctx.db.city.findUnique({ where: { id: nation.capitalCityId }, select: { name: true } })
             : Promise.resolve(null),
         city && city.nationId > 0
             ? ctx.db.nation.findUnique({ where: { id: city.nationId }, select: { name: true } })
+            : Promise.resolve(null),
+        troopLeader && troopLeader.cityId > 0
+            ? ctx.db.city.findUnique({ where: { id: troopLeader.cityId }, select: { name: true } })
             : Promise.resolve(null),
         nation.id > 0
             ? ctx.db.city.aggregate({
@@ -356,9 +390,12 @@ export const getGeneralContext = async (ctx: GameApiContext) => {
         loadItemDisplayNames([general.horseCode, general.weaponCode, general.bookCode, general.itemCode]),
     ]);
 
-    const metaRecord = asRecord(general.meta);
     const worldConfig = asRecord(worldState?.config);
     const constValues = asRecord(worldConfig.const ?? worldConfig.consts);
+    const scenarioStat = asRecord(worldConfig.stat);
+    const chiefStatMin = readNumber(scenarioStat.chiefMin, 70);
+    const statGradeLevel = readNumber(constValues.statGradeLevel, 5);
+    const retirementYear = readNumber(constValues.retirementYear, 70);
     const maxDedicationLevel = readNumber(constValues.maxDedLevel, 30);
     const settings = resolveUserSettings(metaRecord);
     const penalties = resolvePenalty(general.penalty);
@@ -379,6 +416,27 @@ export const getGeneralContext = async (ctx: GameApiContext) => {
         const normalized = normalizeItemCode(code);
         return normalized ? (itemNames.get(normalized) ?? sanitizeInternalDisplayCode(normalized)) : null;
     };
+    const worldMeta = asRecord(worldState?.meta);
+    const rawLastExecuted = worldMeta.lastTurnTime ?? worldMeta.turntime;
+    const parsedLastExecuted =
+        rawLastExecuted instanceof Date
+            ? rawLastExecuted
+            : typeof rawLastExecuted === 'string'
+              ? new Date(rawLastExecuted)
+              : null;
+    const stats = {
+        leadership: general.leadership,
+        strength: general.strength,
+        intelligence: general.intel,
+    };
+    const refreshScore = accessLog?.refreshScore ?? 0;
+    const refreshScoreTotal = accessLog?.refreshScoreTotal ?? 0;
+    const troopStatus: 'inactive' | 'present' | 'away' =
+        troopLeaderFirstTurn?.actionCode !== undefined && troopLeaderFirstTurn.actionCode !== 'che_집합'
+            ? 'inactive'
+            : troopLeader?.cityId === general.cityId
+              ? 'present'
+              : 'away';
 
     return {
         general: {
@@ -392,11 +450,11 @@ export const getGeneralContext = async (ctx: GameApiContext) => {
             imageServer: general.imageServer,
             officerLevel: general.officerLevel,
             officerLevelText: resolveOfficerLevelName(general.officerLevel, nation.level),
-            stats: {
-                leadership: general.leadership,
-                strength: general.strength,
-                intelligence: general.intel,
-            },
+            officerCityName:
+                general.officerLevel >= 2 && general.officerLevel <= 4 ? (officerCity?.name ?? null) : null,
+            generalType: resolveGeneralTypeCall(stats, chiefStatMin, statGradeLevel),
+            leadershipBonus: resolveLeadershipBonus(general.officerLevel, nation.level),
+            stats,
             gold: general.gold,
             rice: general.rice,
             crew: general.crew,
@@ -406,7 +464,15 @@ export const getGeneralContext = async (ctx: GameApiContext) => {
             experience: general.experience,
             dedication: general.dedication,
             age: general.age,
+            retirementYear,
             turnTime: general.turnTime.toISOString(),
+            defenceTrain: settings.defence_train,
+            killTurn: readNumber(metaRecord.killturn ?? metaRecord.killTurn, 0),
+            remainingMinutes: resolveRemainingMinutes(
+                general.turnTime,
+                parsedLastExecuted,
+                worldState?.tickSeconds ?? 0
+            ),
             crewTypeId: general.crewTypeId,
             crewTypeName: crewTypeNames.get(general.crewTypeId) ?? '-',
             traits: {
@@ -437,6 +503,18 @@ export const getGeneralContext = async (ctx: GameApiContext) => {
                 weapon: itemName(general.weaponCode),
                 book: itemName(general.bookCode),
                 item: itemName(general.itemCode),
+            },
+            troop: troop
+                ? {
+                      name: troop.name,
+                      status: troopStatus,
+                      leaderCityName: troopLeaderCity?.name ?? null,
+                  }
+                : null,
+            refreshScore: {
+                current: refreshScore,
+                total: refreshScoreTotal,
+                text: resolveRefreshScoreText(refreshScoreTotal),
             },
         },
         iconChoices: ctx.auth?.user.canUseGeneralPicture === false ? [] : (ctx.auth?.user.icons ?? []),

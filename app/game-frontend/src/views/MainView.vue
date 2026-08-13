@@ -234,12 +234,7 @@ watch(
                     <NationBasicCard :nation="nation" :loading="loading" />
                 </PanelCard>
                 <PanelCard title="장수 스탯" data-main-target="general">
-                    <GeneralBasicCard
-                        :general="general"
-                        :loading="loading"
-                        :nation-color="nation?.color"
-                        :troop-text="general?.troopId ? String(general.troopId) : '-'"
-                    />
+                    <GeneralBasicCard :general="general" :loading="loading" :nation-color="nation?.color" />
                 </PanelCard>
                 <PanelCard title="도시 정보" data-main-target="city">
                     <CityBasicCard :city="city" :loading="loading" />
@@ -356,12 +351,7 @@ watch(
                 <NationBasicCard :nation="nation" :loading="loading" />
             </PanelCard>
             <PanelCard title="장수 스탯" data-main-target="general">
-                <GeneralBasicCard
-                    :general="general"
-                    :loading="loading"
-                    :nation-color="nation?.color"
-                    :troop-text="general?.troopId ? String(general.troopId) : '-'"
-                />
+                <GeneralBasicCard :general="general" :loading="loading" :nation-color="nation?.color" />
             </PanelCard>
             <MainNationMenu
                 class="nation-menu-middle"
