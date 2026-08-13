@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { formatServerDateTime } from '@sammo-ts/common';
 import { computed, onMounted, ref } from 'vue';
 import { useRouter } from 'vue-router';
 
@@ -166,10 +167,7 @@ const hideMemberPopup = () => {
 const iconPath = (troop: Troop): string => resolveGeneralIconUrl(troop.leader ?? {});
 
 const formatTurn = (turnTime: string | null): string => {
-    if (!turnTime) {
-        return '--:--';
-    }
-    return turnTime.slice(14, 19);
+    return formatServerDateTime(turnTime, { format: 'minuteSecond', fallback: '--:--' });
 };
 
 onMounted(() => {

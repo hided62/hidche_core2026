@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { formatServerDateTime } from '@sammo-ts/common';
 import { computed, ref, onMounted, watch } from 'vue';
 import { useRouter } from 'vue-router';
 import type { inferRouterOutputs } from '@trpc/server';
@@ -95,8 +96,7 @@ const handleMapTabKeydown = (event: KeyboardEvent, profileName: string): void =>
     tabButtons?.[nextIndex]?.focus();
 };
 
-const formatGraceEndsAt = (value: string | null | undefined): string =>
-    value ? new Date(value).toLocaleString('ko-KR') : '';
+const formatGraceEndsAt = (value: string | null | undefined): string => formatServerDateTime(value);
 const serverSeasonStatus = (info: LobbyInfo) => resolveServerSeasonStatus(info);
 const encodeLegacyIconPath = (value: string): string =>
     value

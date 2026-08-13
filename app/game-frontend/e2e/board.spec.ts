@@ -274,6 +274,8 @@ test('matches the ref meeting-room geometry, typography, textures, and controls'
         'src',
         'https://sam-image.hided.net/icons/22.jpg'
     );
+    await expect(page.locator('.article-header .date')).toHaveText('07-26 19:20');
+    await expect(page.locator('.comment-row .date')).toHaveText('07-26 19:25');
     if (artifactRoot) {
         await page.screenshot({
             path: resolve(artifactRoot, 'board-core-desktop.png'),
@@ -392,7 +394,9 @@ test('uses the ref 500px responsive form widths', async ({ page }) => {
     await expect(page.getByRole('heading', { name: '기밀실' })).toBeVisible();
 });
 
-test('retains article and comment input after a failed mutation, then reloads after success', async ({ page }, testInfo) => {
+test('retains article and comment input after a failed mutation, then reloads after success', async ({
+    page,
+}, testInfo) => {
     const state: BoardFixture = {
         permission: 2,
         canMeeting: true,
@@ -408,7 +412,9 @@ test('retains article and comment input after a failed mutation, then reloads af
     await page.locator('#board-title').fill('새 제목');
     await page.locator('#board-content').fill('새 내용');
     await page.locator('#submitArticle').click();
-    const articleToast = page.getByTestId('game-toast').filter({ hasText: '게시물 등록에 실패했습니다: 접속 제한입니다.' });
+    const articleToast = page
+        .getByTestId('game-toast')
+        .filter({ hasText: '게시물 등록에 실패했습니다: 접속 제한입니다.' });
     await expect(articleToast).toHaveAttribute('data-feedback-kind', 'error');
     await expect(articleToast).toHaveAttribute('role', 'alert');
     await expect(page.locator('#board-title')).toHaveValue('새 제목');
@@ -416,7 +422,13 @@ test('retains article and comment input after a failed mutation, then reloads af
 
     const desktopToastGeometry = await articleToast.evaluate((element) => {
         const rect = element.getBoundingClientRect();
-        return { left: rect.left, right: rect.right, top: rect.top, width: rect.width, viewportWidth: window.innerWidth };
+        return {
+            left: rect.left,
+            right: rect.right,
+            top: rect.top,
+            width: rect.width,
+            viewportWidth: window.innerWidth,
+        };
     });
     expect(desktopToastGeometry.left).toBeGreaterThanOrEqual(0);
     expect(desktopToastGeometry.right).toBeLessThanOrEqual(desktopToastGeometry.viewportWidth);
@@ -435,10 +447,14 @@ test('retains article and comment input after a failed mutation, then reloads af
     await page.setViewportSize({ width: 390, height: 844 });
     const documentWidthBeforeToast = await page.evaluate(() => document.documentElement.scrollWidth);
     await commentInput.press('Enter');
-    const commentToast = page.getByTestId('game-toast').filter({ hasText: '댓글 등록에 실패했습니다: 접속 제한입니다.' });
+    const commentToast = page
+        .getByTestId('game-toast')
+        .filter({ hasText: '댓글 등록에 실패했습니다: 접속 제한입니다.' });
     await expect(commentToast).toBeVisible();
     await expect
-        .poll(async () => commentToast.evaluate((element) => window.innerHeight - element.getBoundingClientRect().bottom))
+        .poll(async () =>
+            commentToast.evaluate((element) => window.innerHeight - element.getBoundingClientRect().bottom)
+        )
         .toBeGreaterThanOrEqual(0);
     const mobileToastGeometry = await commentToast.evaluate((element) => {
         const rect = element.getBoundingClientRect();

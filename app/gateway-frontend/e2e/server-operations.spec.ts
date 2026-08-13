@@ -490,6 +490,7 @@ test('separates branch and commit semantics and submits a reset from the dedicat
     await page.getByTestId('source-ref').fill('0123456789abcdef0123456789abcdef01234567');
     await page.getByTestId('load-scenarios').click();
     await page.getByTestId('scenario-select').selectOption('5');
+    await page.getByLabel('작업 예약 (서버 시간 UTC+9)').fill('2026-08-13T09:30');
     await page.getByTestId('request-reset').hover();
     await page.getByTestId('request-reset').click();
 
@@ -544,6 +545,7 @@ test('separates branch and commit semantics and submits a reset from the dedicat
     expect(JSON.stringify(resetRequest?.body)).toContain('"sourceMode":"COMMIT"');
     expect(JSON.stringify(resetRequest?.body)).toContain('0123456789abcdef0123456789abcdef01234567');
     expect(JSON.stringify(resetRequest?.body)).toContain('"scenarioId":5');
+    expect(JSON.stringify(resetRequest?.body)).toContain('"scheduledAt":"2026-08-13T00:30:00.000Z"');
     await page.screenshot({ path: testInfo.outputPath('reset-operation-log-desktop.png'), fullPage: true });
 
     await page.setViewportSize({ width: 390, height: 844 });
@@ -588,9 +590,9 @@ test('separates branch and commit semantics and submits a reset from the dedicat
         mobileOperationTableGeometry.scrollerWidth
     );
     expect(mobileOperationTableGeometry.scrollerX).toBeGreaterThanOrEqual(0);
-    expect(
-        mobileOperationTableGeometry.scrollerX + mobileOperationTableGeometry.scrollerWidth
-    ).toBeLessThanOrEqual(mobileOperationTableGeometry.viewportWidth);
+    expect(mobileOperationTableGeometry.scrollerX + mobileOperationTableGeometry.scrollerWidth).toBeLessThanOrEqual(
+        mobileOperationTableGeometry.viewportWidth
+    );
     expect(mobileOperationTableGeometry.documentScrollWidth).toBeLessThanOrEqual(
         mobileOperationTableGeometry.viewportWidth
     );
