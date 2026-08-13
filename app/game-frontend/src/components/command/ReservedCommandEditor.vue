@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, ref, shallowRef, watch } from 'vue';
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, shallowRef, watch } from 'vue';
 import CommandArgumentForm from '../main/CommandArgumentForm.vue';
 import CommandSelectForm from '../main/CommandSelectForm.vue';
 import { commandArgumentPresentation } from './commandArgumentPresentation';
@@ -70,6 +70,7 @@ const commandArgsValid = ref(false);
 const expanded = ref(false);
 const menuRevision = ref(0);
 const pendingReservation = ref<CommandPatternEntry | null>(null);
+const pickerElement = ref<HTMLElement | null>(null);
 const collapsedRowCount = 15;
 
 const loadStorage = (key: string) => {
@@ -136,6 +137,7 @@ const quickPickerTop = computed(() => `${70 + (quickTarget.value ?? 0) * 34.4}px
 const isRecruitmentCommand = computed(
     () => selectedCommand.value?.key === 'che_징병' || selectedCommand.value?.key === 'che_모병'
 );
+const isRecruitmentOverlayOpen = computed(() => pickerOpen.value && isRecruitmentCommand.value);
 const rowLabel = (row: ReservedCommandRow): string => row.label ?? labelMap.value.get(row.action) ?? row.action;
 const selectedIndices = () => normalizedSelection(selected.value, previousSelected.value, props.rows.length);
 const pattern = () => extractPattern(props.rows, selectedIndices());
@@ -171,6 +173,46 @@ const closePicker = () => {
     pickerOpen.value = false;
     quickTarget.value = null;
     selectedCommand.value = null;
+};
+
+let previousBodyOverflow: string | null = null;
+const restoreBodyScroll = () => {
+    if (previousBodyOverflow === null) return;
+    document.body.style.overflow = previousBodyOverflow;
+    previousBodyOverflow = null;
+};
+
+watch(isRecruitmentOverlayOpen, async (open) => {
+    if (!open) {
+        restoreBodyScroll();
+        return;
+    }
+    if (previousBodyOverflow === null) previousBodyOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    await nextTick();
+    pickerElement.value?.querySelector<HTMLElement>('[data-picker-close]')?.focus();
+});
+
+onBeforeUnmount(restoreBodyScroll);
+
+const trapRecruitmentFocus = (event: KeyboardEvent) => {
+    if (!isRecruitmentOverlayOpen.value || event.key !== 'Tab' || !pickerElement.value) return;
+    const focusable = [
+        ...pickerElement.value.querySelectorAll<HTMLElement>(
+            'button:not(:disabled), input:not(:disabled), select:not(:disabled), [tabindex="0"]'
+        ),
+    ].filter((element) => element.offsetParent !== null);
+    if (!focusable.length) return;
+    const first = focusable[0];
+    const last = focusable.at(-1);
+    if (!first || !last) return;
+    if (event.shiftKey && document.activeElement === first) {
+        event.preventDefault();
+        last.focus();
+    } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault();
+        first.focus();
+    }
 };
 const togglePicker = (turnIndex?: number) => {
     const target = turnIndex ?? null;
@@ -600,65 +642,79 @@ const clickOutsideMenu = (event: Event) => {
             </div>
         </div>
 
-        <div
-            v-if="pickerOpen"
-            class="command-picker"
-            :class="{ 'recruitment-picker': isRecruitmentCommand }"
-            data-testid="command-picker"
-            :style="quickTarget === null || props.compact ? undefined : { top: quickPickerTop }"
-        >
-            <header>
-                <strong>{{ quickTarget === null ? '선택한 턴' : `${quickTarget + 1}턴` }} 명령 입력</strong
-                ><button type="button" aria-label="명령 입력 닫기" @click="closePicker">×</button>
-            </header>
-            <CommandSelectForm
-                v-if="!selectedCommand"
-                :command-table="scopedTable"
-                :loading="props.loading"
-                :scope="props.scope"
-                :active-category="activeCategory"
-                :allow-blocked="true"
-                @update:active-category="activeCategory = $event"
-                @select="selectCommand"
-            />
-            <template v-else>
-                <div class="selected-command">
-                    <strong>{{ selectedCommand.name }}</strong>
-                    <small v-if="selectedCommand.reason"
-                        >현재 상태: {{ selectedCommand.reason }} · 예약 입력은 가능합니다.</small
-                    >
-                </div>
-                <RecruitmentCommandForm
-                    v-if="
-                        isRecruitmentCommand &&
-                        props.commandTable?.inputOptions.recruitment &&
-                        (selectedCommand.key === 'che_징병' || selectedCommand.key === 'che_모병')
-                    "
-                    :command-key="selectedCommand.key"
-                    :info="props.commandTable.inputOptions.recruitment"
-                    @update:args="commandArgs = $event"
-                    @update:valid="commandArgsValid = $event"
-                    @submit="submitCommand"
+        <Teleport to="body" :disabled="!isRecruitmentCommand">
+            <div
+                v-if="pickerOpen"
+                ref="pickerElement"
+                class="command-picker"
+                :class="{ 'recruitment-picker': isRecruitmentCommand }"
+                data-testid="command-picker"
+                :style="isRecruitmentCommand || quickTarget === null || props.compact ? undefined : { top: quickPickerTop }"
+                :role="isRecruitmentCommand ? 'dialog' : undefined"
+                :aria-modal="isRecruitmentCommand ? 'true' : undefined"
+                :aria-label="
+                    isRecruitmentCommand
+                        ? `${selectedCommand?.name ?? ''} ${quickTarget === null ? '선택한 턴' : `${quickTarget + 1}턴`} 명령 입력`
+                        : undefined
+                "
+                @keydown.esc.stop.prevent="closePicker"
+                @keydown="trapRecruitmentFocus"
+            >
+                <header>
+                    <strong
+                        ><template v-if="isRecruitmentCommand">{{ selectedCommand?.name }} · </template
+                        >{{ quickTarget === null ? '선택한 턴' : `${quickTarget + 1}턴` }} 명령 입력</strong
+                    ><button data-picker-close type="button" aria-label="명령 입력 닫기" @click="closePicker">×</button>
+                </header>
+                <CommandSelectForm
+                    v-if="!selectedCommand"
+                    :command-table="scopedTable"
+                    :loading="props.loading"
+                    :scope="props.scope"
+                    :active-category="activeCategory"
+                    :allow-blocked="true"
+                    @update:active-category="activeCategory = $event"
+                    @select="selectCommand"
                 />
-                <CommandArgumentForm
-                    v-else-if="selectedCommand.reqArg && props.commandTable"
-                    :command-key="selectedCommand.key"
-                    :fields="selectedCommand.inputFields"
-                    :options="props.commandTable.inputOptions"
-                    :map-data="props.mapData"
-                    :map-layout="props.mapLayout"
-                    @update:args="commandArgs = $event"
-                    @update:valid="commandArgsValid = $event"
-                />
-                <div class="picker-actions">
-                    <button :disabled="Boolean(pendingReservation)" @click="selectedCommand = null">
-                        명령 다시 선택</button
-                    ><button :disabled="!commandArgsValid || Boolean(pendingReservation)" @click="submitCommand">
-                        {{ pendingReservation ? '저장 중' : '입력' }}
-                    </button>
-                </div>
-            </template>
-        </div>
+                <template v-else>
+                    <div class="selected-command">
+                        <strong>{{ selectedCommand.name }}</strong>
+                        <small v-if="selectedCommand.reason"
+                            >현재 상태: {{ selectedCommand.reason }} · 예약 입력은 가능합니다.</small
+                        >
+                    </div>
+                    <RecruitmentCommandForm
+                        v-if="
+                            isRecruitmentCommand &&
+                            props.commandTable?.inputOptions.recruitment &&
+                            (selectedCommand.key === 'che_징병' || selectedCommand.key === 'che_모병')
+                        "
+                        :command-key="selectedCommand.key"
+                        :info="props.commandTable.inputOptions.recruitment"
+                        @update:args="commandArgs = $event"
+                        @update:valid="commandArgsValid = $event"
+                        @submit="submitCommand"
+                    />
+                    <CommandArgumentForm
+                        v-else-if="selectedCommand.reqArg && props.commandTable"
+                        :command-key="selectedCommand.key"
+                        :fields="selectedCommand.inputFields"
+                        :options="props.commandTable.inputOptions"
+                        :map-data="props.mapData"
+                        :map-layout="props.mapLayout"
+                        @update:args="commandArgs = $event"
+                        @update:valid="commandArgsValid = $event"
+                    />
+                    <div class="picker-actions">
+                        <button :disabled="Boolean(pendingReservation)" @click="selectedCommand = null">
+                            명령 다시 선택</button
+                        ><button :disabled="!commandArgsValid || Boolean(pendingReservation)" @click="submitCommand">
+                            {{ pendingReservation ? '저장 중' : '입력' }}
+                        </button>
+                    </div>
+                </template>
+            </div>
+        </Teleport>
     </article>
 </template>
 
@@ -967,18 +1023,59 @@ const clickOutsideMenu = (event: Event) => {
     max-height: 344px;
 }
 
-.reserved-command-editor .command-picker.recruitment-picker {
+.command-picker.recruitment-picker {
     position: fixed;
     z-index: 1100;
-    top: 76px;
-    right: auto;
-    bottom: auto;
-    left: 50%;
-    width: 1000px;
-    height: auto;
-    max-height: calc(100vh - 82px);
-    overflow: auto;
-    transform: translateX(-50%);
+    inset: 0;
+    display: flex;
+    flex-direction: column;
+    width: 100vw;
+    height: 100vh;
+    height: 100dvh;
+    max-height: none;
+    overflow-x: hidden;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    padding: 0;
+    border: 0;
+    background: #1d1d1d;
+    box-shadow: none;
+    transform: none;
+}
+.command-picker.recruitment-picker > header {
+    position: sticky;
+    z-index: 30;
+    top: 0;
+    box-sizing: border-box;
+    min-height: 44px;
+    padding: 6px 8px;
+    border-bottom: 1px solid #777;
+    background: #302016 var(--sammo-texture-walnut);
+}
+.command-picker.recruitment-picker > header button {
+    min-width: 36px;
+    min-height: 32px;
+    cursor: pointer;
+}
+.command-picker.recruitment-picker .selected-command,
+.command-picker.recruitment-picker :deep(.recruitment-command-form),
+.command-picker.recruitment-picker .picker-actions {
+    width: min(100%, 1000px);
+    margin-right: auto;
+    margin-left: auto;
+}
+.command-picker.recruitment-picker :deep(.recruitment-command-form) {
+    flex: 1 0 auto;
+}
+.command-picker.recruitment-picker .picker-actions {
+    position: sticky;
+    z-index: 30;
+    bottom: 0;
+    box-sizing: border-box;
+    margin-top: 0;
+    padding: 6px;
+    border-top: 1px solid #777;
+    background: #302016 var(--sammo-texture-walnut);
 }
 
 @media (min-width: 1025px) {
@@ -1001,14 +1098,6 @@ const clickOutsideMenu = (event: Event) => {
         height: auto;
         max-height: calc(100vh - 104px);
         overflow: auto;
-    }
-    .compact:not(.mobile) .command-picker.recruitment-picker {
-        top: 76px;
-        left: 50%;
-        width: 1000px;
-        max-height: calc(100vh - 82px);
-        overflow: auto;
-        transform: translateX(-50%);
     }
 }
 
@@ -1055,36 +1144,10 @@ const clickOutsideMenu = (event: Event) => {
     margin-top: -330px;
     overflow: visible;
 }
-.mobile.compact .command-picker.recruitment-picker {
-    position: fixed;
-    top: 76px;
-    left: 0;
-    width: 500px;
-    height: auto;
-    max-height: calc(100vh - 82px);
-    margin-top: 0;
-    overflow: auto;
-    transform: none;
-}
 .mobile.compact .advanced-actions {
     right: 0;
     bottom: 0;
     left: 109px;
 }
 
-@media (max-width: 600px) {
-    .reserved-command-editor .command-picker.recruitment-picker,
-    .reserved-command-editor.compact .command-picker.recruitment-picker {
-        top: 76px;
-        left: 0;
-        width: 500px;
-        height: auto;
-        max-height: calc(100vh - 82px);
-        overflow: auto;
-        padding: 0;
-        border-right: 0;
-        border-left: 0;
-        transform: none;
-    }
-}
 </style>
