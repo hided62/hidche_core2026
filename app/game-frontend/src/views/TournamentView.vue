@@ -2,6 +2,7 @@
 import { computed, onMounted, ref } from 'vue';
 import TournamentBracket from '../components/tournament/TournamentBracket.vue';
 import { trpc } from '../utils/trpc';
+import { resolveTournamentStageName } from '../utils/tournamentStatus';
 
 type Snapshot = Awaited<ReturnType<typeof trpc.tournament.getSnapshot.query>>;
 
@@ -14,20 +15,6 @@ const actionMessage = ref<string | null>(null);
 const adminEnabled = ref(false);
 
 const typeNames = ['전력전', '통솔전', '일기토', '설전'];
-const stageNames = [
-    '경기 없음',
-    '참가 모집중',
-    '예선 진행중',
-    '본선 추첨중',
-    '본선 진행중',
-    '16강 배정중',
-    '베팅 진행중',
-    '16강 진행중',
-    '8강 진행중',
-    '4강 진행중',
-    '결승 진행중',
-];
-
 const errorText = (value: unknown) => (value instanceof Error ? value.message : String(value));
 
 const load = async () => {
@@ -152,7 +139,7 @@ const start = async () => {
         <section class="operator-row bg0">운영자 메세지 : <span></span></section>
         <section class="state-row bg0">
             <span class="type">{{ typeNames[snapshot?.state?.type ?? 0] }}</span>
-            ({{ stageNames[snapshot?.state?.stage ?? 0] ?? '상태 확인 중' }}, 개막시간 {{ openingTime }}, 경기당
+            ({{ resolveTournamentStageName(snapshot?.state?.stage ?? 0) }}, 개막시간 {{ openingTime }}, 경기당
             {{ snapshot?.state?.termSeconds ?? '-' }}초)
         </section>
         <section class="section-title bg2">16강 승자전</section>

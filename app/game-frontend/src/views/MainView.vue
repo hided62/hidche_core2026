@@ -148,13 +148,9 @@ watch(
         <header class="game-shell__header">
             <div>
                 <h1 class="game-shell__title">
-                    {{ isMobile ? '전장 현황' : lobbyInfo?.scenarioTitle || '전장 현황' }}
+                    {{ lobbyInfo?.scenarioTitle || '전장 현황' }}
                 </h1>
-                <p class="game-shell__subtitle">
-                    {{
-                        !isMobile && lobbyInfo?.scenarioTitle ? `${lobbyInfo.scenarioTitle} ${statusLine}` : statusLine
-                    }}
-                </p>
+                <p class="game-shell__subtitle">{{ statusLine }}</p>
             </div>
             <div class="game-shell__actions desktop-action-controls">
                 <button
@@ -197,7 +193,7 @@ watch(
         </div>
 
         <div data-main-target="policy">
-            <MainFrontStatus :status="frontStatus" />
+            <MainFrontStatus :status="frontStatus" :tournament-stage="tournamentStage" />
         </div>
 
         <aside v-if="surveyNotice" class="survey-notice" role="status" aria-live="polite">

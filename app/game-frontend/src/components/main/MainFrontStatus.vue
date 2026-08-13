@@ -1,5 +1,9 @@
 <script setup lang="ts">
-defineProps<{
+import { computed } from 'vue';
+import { resolveTournamentStageName } from '../../utils/tournamentStatus';
+
+const props = defineProps<{
+    tournamentStage: number;
     status: {
         onlineUserCount: number;
         onlineNations: string;
@@ -13,15 +17,24 @@ defineProps<{
         } | null;
     } | null;
 }>();
+
+const tournamentStatus = computed(() => resolveTournamentStageName(props.tournamentStage));
 </script>
 
 <template>
     <section class="front-status" aria-label="접속 현황과 국가 방침">
-        <div class="status-row vote-status">
-            <RouterLink v-if="status?.latestVote" to="/survey">
-                <span class="vote-label">설문 진행 중: </span>{{ status.latestVote.title }}
-            </RouterLink>
-            <span v-else class="vote-empty">진행중인 설문 없음</span>
+        <div class="activity-status" aria-label="설문과 토너먼트 진행 현황">
+            <div class="status-row tournament-status">
+                <RouterLink to="/tournament">
+                    <span class="tournament-label">토너먼트: </span>{{ tournamentStatus }}
+                </RouterLink>
+            </div>
+            <div class="status-row vote-status">
+                <RouterLink v-if="status?.latestVote" to="/survey">
+                    <span class="vote-label">설문: </span>{{ status.latestVote.title }}
+                </RouterLink>
+                <span v-else class="vote-empty">설문: 진행 중인 설문 없음</span>
+            </div>
         </div>
         <div class="status-row online-nations">접속중인 국가: {{ status?.onlineNations ?? '' }}</div>
         <div class="status-row online-users">【 접속자 】 {{ status?.onlineGenerals ?? '' }}</div>
@@ -71,17 +84,26 @@ defineProps<{
     margin: 0;
 }
 
-.vote-status {
-    width: 33.333333%;
+.activity-status {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    width: 66.666667%;
     margin-left: auto;
+}
+
+.activity-status .status-row {
     padding-right: 0;
     padding-left: 0;
     text-align: center;
 }
 
-.vote-status a {
+.activity-status a {
     color: #fff;
     text-decoration: gray underline;
+}
+
+.tournament-label {
+    color: #ffc107;
 }
 
 .vote-label {
@@ -93,8 +115,8 @@ defineProps<{
 }
 
 @media (max-width: 991px) {
-    .vote-status {
-        width: 50%;
+    .activity-status {
+        width: 100%;
     }
 }
 </style>
