@@ -1,6 +1,6 @@
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { basename, resolve } from 'node:path';
-import { expect, test, type Page, type Route } from '@playwright/test';
+import { expect, test, type Locator, type Page, type Route } from '@playwright/test';
 import { gameBasePath, gameProfile, gameTrpcRoute } from './gameTestPaths.js';
 
 const response = (data: unknown) => ({ result: { data } });
@@ -19,6 +19,23 @@ const persistParityArtifact = async (page: Page, name: string, geometry: unknown
         writeFile(resolve(parityArtifactDir, `${name}.json`), `${JSON.stringify(geometry, null, 2)}\n`),
     ]);
 };
+
+const readGeneralPanelImages = async (panel: Locator) =>
+    panel.evaluate((element) =>
+        [...element.querySelectorAll<HTMLElement>('.general-image')].map((image) => {
+            const rect = image.getBoundingClientRect();
+            const style = getComputedStyle(image);
+            return {
+                label: image.getAttribute('aria-label'),
+                width: rect.width,
+                height: rect.height,
+                backgroundImage: style.backgroundImage,
+                backgroundSize: style.backgroundSize,
+                pointerEvents: style.pointerEvents,
+                userSelect: style.userSelect,
+            };
+        })
+    );
 
 type FixtureState = {
     permission: 'head' | 'member';
@@ -545,9 +562,15 @@ test('재야 메인은 국가 틀과 성격·특기 표기명을 Chromium에 표
 
     const generalCard = page.locator('.general-card');
     await expect(generalCard).toContainText('성격안전');
-    await expect(generalCard).toContainText('전투특기신산');
-    await expect(generalCard).toContainText('내정특기상재');
+    await expect(generalCard).toContainText('특기상재 / 신산');
     await expect(generalCard).not.toContainText('che_');
+    await expect(generalCard).toHaveAttribute('data-general-basic-card', '');
+    const mainImages = await readGeneralPanelImages(generalCard);
+    expect(mainImages).toHaveLength(2);
+    expect(mainImages[0]).toMatchObject({ width: 64, height: 64, pointerEvents: 'none', userSelect: 'none' });
+    expect(mainImages[0]?.backgroundImage).toContain('/icons/default.jpg');
+    expect(mainImages[1]).toMatchObject({ width: 64, height: 64, pointerEvents: 'none', userSelect: 'none' });
+    expect(mainImages[1]?.backgroundImage).toContain('/game/crewtype1.png');
 
     const geometry = await nationCard.evaluate((element) => {
         const rect = element.getBoundingClientRect();
@@ -587,9 +610,9 @@ test('메인 카드의 국가·수도·관직·계급·병종은 Ref 출력명�
     await expect(nationCard).toContainText('국가 등급주자사');
 
     const generalCard = page.locator('.general-card');
-    await expect(generalCard.locator('.general-title')).toContainText('검증장수 · 간의대부');
+    await expect(generalCard.locator('.general-title')).toContainText('검증장수 【 간의대부 | 건강 】');
     await expect(generalCard).toContainText('병종보병');
-    await expect(generalCard).toContainText('계급29품관');
+    await expect(generalCard).toContainText('계급 29품관');
 
     const cityCard = page.locator('.city-card');
     await expect(cityCard.locator('.title')).toContainText('【중원 | 특】 업');
@@ -651,6 +674,14 @@ test('내 정보&설정 keeps the legacy 1000px/500px geometry and saves in plac
     await install(page, state);
     await page.setViewportSize({ width: 1000, height: 900 });
     await page.goto('my-page');
+    await expect(page.locator('.general-table')).toHaveAttribute('data-general-basic-card', '');
+    const myPageImages = await readGeneralPanelImages(page.locator('.general-table'));
+    expect(myPageImages.map(({ width, height }) => ({ width, height }))).toEqual([
+        { width: 64, height: 64 },
+        { width: 64, height: 64 },
+    ]);
+    expect(myPageImages[0]?.backgroundImage).toContain('/icons/default.jpg');
+    expect(myPageImages[1]?.backgroundImage).toContain('/game/crewtype1.png');
     await expect(page.locator('.legacy-general-details')).toContainText('계급 29품관');
     await expect(page.locator('.legacy-general-details')).toContainText('병종 보병');
     await expect(page.locator('.item-group')).toContainText('명마');
@@ -1109,10 +1140,15 @@ test('감찰부 keeps the selector interaction and shows the permission error pa
     await expect(page.locator('.selector-row select').nth(1)).toHaveValue('8');
     await page.getByRole('button', { name: '다음 ▶' }).click();
     await expect(page.locator('.selector-row select').nth(1)).toHaveValue('7');
-    await expect(page.locator('.battle-general-name')).toContainText('검증장수 (간의대부)');
+    await expect(page.locator('.battle-general-name')).toContainText('검증장수 【 간의대부 | 건강 】');
     await expect(page.locator('.battle-general-extra')).toContainText('계급29품관');
-    await expect(page.locator('.battle-general-extra')).toContainText('병종보병');
+    await expect(page.locator('.battle-general-card')).toContainText('병종보병');
     await expect(page.locator('.battle-general-card')).not.toContainText('che_');
+    await expect(page.locator('.battle-general-card')).toHaveAttribute('data-general-basic-card', '');
+    const battleImages = await readGeneralPanelImages(page.locator('.battle-general-card'));
+    expect(battleImages).toHaveLength(2);
+    expect(battleImages[0]?.backgroundImage).toContain('/icons/default.jpg');
+    expect(battleImages[1]?.backgroundImage).toContain('/game/crewtype1.png');
     await expect(page.locator('.battle-general-card [role="progressbar"]')).toHaveCount(14);
     await expect(page.locator('.battle-general-card [aria-label*="1,275,975 (EX+)"]')).toHaveCount(5);
     expect(
