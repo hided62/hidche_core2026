@@ -2,6 +2,7 @@
 import { computed, onMounted, ref, shallowRef, watch } from 'vue';
 import CommandArgumentForm from '../main/CommandArgumentForm.vue';
 import CommandSelectForm from '../main/CommandSelectForm.vue';
+import { commandArgumentPresentation } from './commandArgumentPresentation';
 import DragSelect from './DragSelect.vue';
 import {
     amplifyPattern,
@@ -11,7 +12,14 @@ import {
     normalizedSelection,
     selectStep,
 } from './commandQueue';
-import type { CommandAvailability, CommandPatternEntry, CommandTable, ReservedCommandRow } from './types';
+import type {
+    CommandAvailability,
+    CommandMapData,
+    CommandMapLayout,
+    CommandPatternEntry,
+    CommandTable,
+    ReservedCommandRow,
+} from './types';
 
 const props = withDefaults(
     defineProps<{
@@ -26,8 +34,19 @@ const props = withDefaults(
         title?: string;
         name?: string | null;
         currentTime?: string;
+        mapData?: CommandMapData | null;
+        mapLayout?: CommandMapLayout | null;
     }>(),
-    { maxPushTurn: 6, compact: false, mobile: false, title: '', name: null, currentTime: '--:--' }
+    {
+        maxPushTurn: 6,
+        compact: false,
+        mobile: false,
+        title: '',
+        name: null,
+        currentTime: '--:--',
+        mapData: null,
+        mapLayout: null,
+    }
 );
 
 const emit = defineEmits<{
@@ -238,7 +257,15 @@ const clickOutsideMenu = (event: Event) => {
 <template>
     <article
         class="reserved-command-editor"
-        :class="{ compact: props.compact, mobile: props.mobile, 'edit-mode': editMode, 'picker-open': pickerOpen }"
+        :class="{
+            compact: props.compact,
+            mobile: props.mobile,
+            'edit-mode': editMode,
+            'picker-open': pickerOpen,
+            'argument-expanded': Boolean(
+                selectedCommand?.reqArg && commandArgumentPresentation(selectedCommand.key).lines.length
+            ),
+        }"
         :data-command-scope="props.scope"
     >
         <header v-if="props.compact && !props.mobile" class="identity legacy-bg1">
@@ -589,6 +616,8 @@ const clickOutsideMenu = (event: Event) => {
                     :command-key="selectedCommand.key"
                     :fields="selectedCommand.inputFields"
                     :options="props.commandTable.inputOptions"
+                    :map-data="props.mapData"
+                    :map-layout="props.mapLayout"
                     @update:args="commandArgs = $event"
                     @update:valid="commandArgsValid = $event"
                 />
@@ -902,6 +931,11 @@ const clickOutsideMenu = (event: Event) => {
 }
 
 @media (min-width: 1025px) {
+    .argument-expanded:not(.compact) .command-picker {
+        right: 0;
+        left: auto;
+        width: 700px;
+    }
     .compact:not(.mobile) .command-picker {
         position: fixed;
         z-index: 1000;
@@ -909,6 +943,13 @@ const clickOutsideMenu = (event: Event) => {
         right: auto;
         left: calc(50% - 476px);
         width: 238px;
+    }
+    .compact.argument-expanded:not(.mobile) .command-picker {
+        left: calc(50% - 350px);
+        width: 700px;
+        height: auto;
+        max-height: calc(100vh - 104px);
+        overflow: auto;
     }
 }
 
@@ -944,6 +985,16 @@ const clickOutsideMenu = (event: Event) => {
     left: 130px;
     width: 370px;
     height: 327px;
+}
+.mobile.compact.argument-expanded .command-picker {
+    position: relative;
+    top: auto;
+    left: auto;
+    width: 100%;
+    height: auto;
+    max-height: none;
+    margin-top: -330px;
+    overflow: visible;
 }
 .mobile.compact .advanced-actions {
     right: 0;

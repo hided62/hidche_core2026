@@ -1,7 +1,13 @@
 <script setup lang="ts">
 import { computed } from 'vue';
 import ReservedCommandEditor from '../command/ReservedCommandEditor.vue';
-import type { CommandPatternEntry, CommandTable, ReservedCommandRow } from '../command/types';
+import type {
+    CommandMapData,
+    CommandMapLayout,
+    CommandPatternEntry,
+    CommandTable,
+    ReservedCommandRow,
+} from '../command/types';
 
 const props = defineProps<{
     officerLevelText: string;
@@ -13,6 +19,8 @@ const props = defineProps<{
     generalId: number;
     officerLevel: number;
     mobile?: boolean;
+    mapData?: CommandMapData | null;
+    mapLayout?: CommandMapLayout | null;
 }>();
 
 const commandRows = computed(() => props.rows.map((row) => ({ ...row, action: row.actionCode ?? row.action })));
@@ -37,6 +45,8 @@ const emit = defineEmits<{
         :title="props.officerLevelText"
         :name="props.name"
         :current-time="props.rows[0]?.time"
+        :map-data="props.mapData"
+        :map-layout="props.mapLayout"
         @reserve-bulk="emit('reserve-bulk', $event)"
         @shift="emit('shift', $event)"
         @repeat="emit('repeat', $event)"

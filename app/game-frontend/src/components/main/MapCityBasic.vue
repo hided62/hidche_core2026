@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed } from 'vue';
+import { RouterLink } from 'vue-router';
 interface MapCityView {
     id: number;
     name: string;
@@ -20,6 +21,7 @@ const props = defineProps<{
     city: MapCityView;
     showName: boolean;
     mapScale: number;
+    selectOnly?: boolean;
 }>();
 
 const emit = defineEmits<{
@@ -31,12 +33,15 @@ const emit = defineEmits<{
 const size = computed(() => (6 + props.city.level * 2) * props.mapScale);
 const stateSize = computed(() => 8 * props.mapScale);
 const stateOffset = computed(() => -6 * props.mapScale);
+const selectCity = () => emit('select', props.city.id);
 </script>
 
 <template>
-    <RouterLink
+    <component
+        :is="props.selectOnly ? 'button' : RouterLink"
         class="map-city"
-        :to="{ name: 'current-city', query: { cityId: props.city.id } }"
+        :type="props.selectOnly ? 'button' : undefined"
+        :to="props.selectOnly ? undefined : { name: 'current-city', query: { cityId: props.city.id } }"
         :class="[
             `state-${props.city.stateClass}`,
             { mine: props.city.isMyCity, selected: props.city.selected, 'supply-off': !props.city.supply },
@@ -44,7 +49,7 @@ const stateOffset = computed(() => -6 * props.mapScale);
         :style="{ left: `${props.city.x}px`, top: `${props.city.y}px` }"
         @mouseenter="emit('hover', props.city.id)"
         @mouseleave="emit('leave')"
-        @click.stop="emit('select', props.city.id)"
+        @click.stop="selectCity"
     >
         <div class="city-dot" :style="{ backgroundColor: props.city.color, width: `${size}px`, height: `${size}px` }">
             <span v-if="props.city.isCapital" class="capital" />
@@ -61,7 +66,7 @@ const stateOffset = computed(() => -6 * props.mapScale);
             }"
         />
         <div v-if="props.showName" class="city-name">{{ props.city.name }}</div>
-    </RouterLink>
+    </component>
 </template>
 
 <style scoped>
@@ -76,6 +81,9 @@ const stateOffset = computed(() => -6 * props.mapScale);
     color: rgba(232, 221, 196, 0.8);
     cursor: pointer;
     text-decoration: none;
+    padding: 0;
+    border: 0;
+    background: transparent;
 }
 
 .city-dot {

@@ -15,17 +15,11 @@ export interface TurnCommandOption {
     value: TurnCommandOptionValue;
     label: string;
     color?: string;
+    description?: string;
 }
 
 export type TurnCommandOptionSource =
-    | 'cities'
-    | 'nations'
-    | 'generals'
-    | 'crewTypes'
-    | 'armTypes'
-    | 'nationTypes'
-    | 'colors'
-    | 'items';
+    'cities' | 'nations' | 'generals' | 'crewTypes' | 'armTypes' | 'nationTypes' | 'colors' | 'items';
 
 export interface TurnCommandInputField {
     key: string;
@@ -50,14 +44,50 @@ export interface TurnCommandInputOptions {
     nationTypes: TurnCommandOption[];
     colors: TurnCommandOption[];
     items: Record<string, TurnCommandOption[]>;
+    context?: {
+        actorGold: number;
+        actorRice: number;
+        citySecurity?: number;
+        nationGold?: number;
+        nationRice?: number;
+        nationLevel?: number;
+    };
 }
 
 // 레거시 및 명령 실행 모듈의 인덱스 순서와 동일해야 한다.
 export const TURN_COMMAND_NATION_COLORS = [
-    '#FF0000', '#800000', '#A0522D', '#FF6347', '#FFA500', '#FFDAB9', '#FFD700', '#FFFF00',
-    '#7CFC00', '#00FF00', '#808000', '#008000', '#2E8B57', '#008080', '#20B2AA', '#6495ED',
-    '#7FFFD4', '#AFEEEE', '#87CEEB', '#00FFFF', '#00BFFF', '#0000FF', '#000080', '#483D8B',
-    '#7B68EE', '#BA55D3', '#800080', '#FF00FF', '#FFC0CB', '#F5F5DC', '#E0FFFF', '#FFFFFF',
+    '#FF0000',
+    '#800000',
+    '#A0522D',
+    '#FF6347',
+    '#FFA500',
+    '#FFDAB9',
+    '#FFD700',
+    '#FFFF00',
+    '#7CFC00',
+    '#00FF00',
+    '#808000',
+    '#008000',
+    '#2E8B57',
+    '#008080',
+    '#20B2AA',
+    '#6495ED',
+    '#7FFFD4',
+    '#AFEEEE',
+    '#87CEEB',
+    '#00FFFF',
+    '#00BFFF',
+    '#0000FF',
+    '#000080',
+    '#483D8B',
+    '#7B68EE',
+    '#BA55D3',
+    '#800080',
+    '#FF00FF',
+    '#FFC0CB',
+    '#F5F5DC',
+    '#E0FFFF',
+    '#FFFFFF',
     '#A9A9A9',
 ] as const;
 

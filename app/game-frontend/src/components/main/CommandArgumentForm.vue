@@ -1,40 +1,24 @@
 <script setup lang="ts">
 import { computed, reactive, watch } from 'vue';
+import MapViewer from './MapViewer.vue';
+import { commandArgumentPresentation } from '../command/commandArgumentPresentation';
+import type {
+    CommandInputContext,
+    CommandInputField,
+    CommandMapData,
+    CommandMapLayout,
+    CommandOption,
+    CommandTable,
+} from '../command/types';
 
-type OptionValue = string | number;
-interface CommandOption {
-    value: OptionValue;
-    label: string;
-    color?: string;
-}
-interface CommandInputField {
-    key: string;
-    label: string;
-    kind: 'text' | 'number' | 'boolean' | 'select' | 'numberTuple' | 'hidden';
-    required: boolean;
-    min?: number;
-    max?: number;
-    step?: number;
-    constValue?: OptionValue;
-    options?: CommandOption[];
-    optionSource?: 'cities' | 'nations' | 'generals' | 'crewTypes' | 'armTypes' | 'nationTypes' | 'colors' | 'items';
-    tupleLabels?: string[];
-}
-interface CommandInputOptions {
-    cities: CommandOption[];
-    nations: CommandOption[];
-    generals: CommandOption[];
-    crewTypes: CommandOption[];
-    armTypes: CommandOption[];
-    nationTypes: CommandOption[];
-    colors: CommandOption[];
-    items: Record<string, CommandOption[]>;
-}
+type CommandInputOptions = CommandTable['inputOptions'];
 
 const props = defineProps<{
     commandKey: string;
     fields: CommandInputField[];
     options: CommandInputOptions;
+    mapData?: CommandMapData | null;
+    mapLayout?: CommandMapLayout | null;
 }>();
 
 const emit = defineEmits<{
@@ -43,6 +27,8 @@ const emit = defineEmits<{
 }>();
 
 const values = reactive<Record<string, unknown>>({});
+const presentation = computed(() => commandArgumentPresentation(props.commandKey));
+const visibleFields = computed(() => props.fields.filter((entry) => entry.kind !== 'hidden'));
 
 const optionsFor = (field: CommandInputField): CommandOption[] => {
     if (field.options) return field.options;
@@ -58,7 +44,16 @@ const defaultValue = (field: CommandInputField): unknown => {
     if (field.kind === 'boolean') return true;
     if (field.kind === 'numberTuple') return [field.min ?? 0, field.min ?? 0];
     if (field.kind === 'number') return field.min ?? 0;
-    if (field.kind === 'select') return optionsFor(field)[0]?.value ?? '';
+    if (field.kind === 'select') {
+        const options = optionsFor(field);
+        const mapDefault =
+            field.optionSource === 'cities' && (field.key === 'destCityId' || field.key === 'destCityID')
+                ? props.mapData?.myCity
+                : field.optionSource === 'nations' && field.key === 'destNationId'
+                  ? props.mapData?.myNation
+                  : null;
+        return options.find((option) => option.value === mapDefault)?.value ?? options[0]?.value ?? '';
+    }
     return '';
 };
 
@@ -78,6 +73,129 @@ const setSelectValue = (field: CommandInputField, rawValue: string) => {
     }
 };
 
+const selectedOptionFor = (field: CommandInputField): CommandOption | undefined =>
+    optionsFor(field).find((entry) => entry.value === values[field.key]);
+
+const cityTargetField = computed(() =>
+    props.fields.find(
+        (field) =>
+            field.kind === 'select' &&
+            field.optionSource === 'cities' &&
+            (field.key === 'destCityId' || field.key === 'destCityID')
+    )
+);
+const nationTargetField = computed(() =>
+    props.fields.find(
+        (field) => field.kind === 'select' && field.optionSource === 'nations' && field.key === 'destNationId'
+    )
+);
+const showMap = computed(
+    () =>
+        Boolean(props.mapData && props.mapLayout) &&
+        ((presentation.value.mapTarget === 'city' && cityTargetField.value) ||
+            (presentation.value.mapTarget === 'nation' && nationTargetField.value))
+);
+const mapSelectedCityId = computed<number | null>(() => {
+    if (!props.mapData) return null;
+    if (presentation.value.mapTarget === 'city' && cityTargetField.value) {
+        const value = values[cityTargetField.value.key];
+        return typeof value === 'number' ? value : null;
+    }
+    if (presentation.value.mapTarget === 'nation' && nationTargetField.value) {
+        const value = values[nationTargetField.value.key];
+        if (typeof value !== 'number') return null;
+        return props.mapData.cityList.find((entry) => entry[3] === value)?.[0] ?? null;
+    }
+    return null;
+});
+
+const distanceFromMyCity = (destination: number): number | null => {
+    const start = props.mapData?.myCity;
+    if (!start || !props.mapLayout) return null;
+    if (start === destination) return 0;
+    const paths = new Map(props.mapLayout.cityList.map((city) => [city.id, city.path]));
+    const visited = new Set<number>([start]);
+    let frontier = [start];
+    for (let distance = 1; frontier.length; distance += 1) {
+        const next: number[] = [];
+        for (const cityId of frontier) {
+            for (const adjacentId of paths.get(cityId) ?? []) {
+                if (visited.has(adjacentId)) continue;
+                if (adjacentId === destination) return distance;
+                visited.add(adjacentId);
+                next.push(adjacentId);
+            }
+        }
+        frontier = next;
+    }
+    return null;
+};
+
+const mapTargetSummary = computed(() => {
+    if (!props.mapData || !props.mapLayout) return '';
+    if (presentation.value.mapTarget === 'city' && mapSelectedCityId.value) {
+        const city = props.mapLayout.cityList.find((entry) => entry.id === mapSelectedCityId.value);
+        const dynamic = props.mapData.cityList.find((entry) => entry[0] === mapSelectedCityId.value);
+        if (!city) return '';
+        const nation = props.mapData.nationList.find((entry) => entry[0] === dynamic?.[3]);
+        const distance = distanceFromMyCity(city.id);
+        return [
+            city.name,
+            nation?.[1] ?? '무주',
+            props.mapLayout.regionMap[dynamic?.[4] ?? city.region],
+            props.mapLayout.levelMap[dynamic?.[1] ?? city.level],
+            distance === null ? null : `현재 도시에서 ${distance}칸`,
+        ]
+            .filter(Boolean)
+            .join(' · ');
+    }
+    if (presentation.value.mapTarget === 'nation' && nationTargetField.value) {
+        const value = values[nationTargetField.value.key];
+        if (typeof value !== 'number') return '';
+        const nation = props.mapData.nationList.find((entry) => entry[0] === value);
+        if (!nation) return '';
+        const capital = props.mapLayout.cityList.find((entry) => entry.id === nation[3]);
+        const cityCount = props.mapData.cityList.filter((entry) => entry[3] === value).length;
+        return `${nation[1]} · 수도 ${capital?.name ?? '-'} · 도시 ${cityCount.toLocaleString()}개`;
+    }
+    return '';
+});
+
+const selectMapCity = (cityId: number) => {
+    if (!props.mapData) return;
+    if (presentation.value.mapTarget === 'city' && cityTargetField.value) {
+        setSelectValue(cityTargetField.value, String(cityId));
+        return;
+    }
+    if (presentation.value.mapTarget === 'nation' && nationTargetField.value) {
+        const nationId = props.mapData.cityList.find((entry) => entry[0] === cityId)?.[3];
+        if (nationId && nationId > 0) setSelectValue(nationTargetField.value, String(nationId));
+    }
+};
+
+const resourceSummary = computed(() => {
+    const context: CommandInputContext | undefined = props.options.context;
+    if (!context) return [];
+    const result: string[] = [];
+    const usesActorResources = new Set(['che_증여', 'che_헌납', 'che_군량매매', 'che_장비매매']);
+    const usesNationResources = new Set(['che_몰수', 'che_포상', 'che_물자원조']);
+    if (usesActorResources.has(props.commandKey)) {
+        result.push(
+            `현재 자금 ${context.actorGold.toLocaleString()}`,
+            `현재 군량 ${context.actorRice.toLocaleString()}`
+        );
+    }
+    if (props.commandKey === 'che_장비매매' && context.citySecurity !== undefined) {
+        result.push(`현재 도시 치안 ${context.citySecurity.toLocaleString()}`);
+    }
+    if (usesNationResources.has(props.commandKey)) {
+        if (context.nationGold !== undefined) result.push(`국고 ${context.nationGold.toLocaleString()}`);
+        if (context.nationRice !== undefined) result.push(`국가 군량 ${context.nationRice.toLocaleString()}`);
+        if (context.nationLevel !== undefined) result.push(`국가 작위 ${context.nationLevel}`);
+    }
+    return result;
+});
+
 const setTupleValue = (field: CommandInputField, index: number, rawValue: string) => {
     const tuple = Array.isArray(values[field.key]) ? [...(values[field.key] as unknown[])] : [0, 0];
     tuple[index] = Number(rawValue);
@@ -89,17 +207,32 @@ const isValid = computed(() =>
         const value = values[field.key];
         if (field.kind === 'text') {
             const length = typeof value === 'string' ? value.trim().length : 0;
-            return (!field.required || length > 0) && (field.min === undefined || length >= field.min) &&
-                (field.max === undefined || length <= field.max);
+            return (
+                (!field.required || length > 0) &&
+                (field.min === undefined || length >= field.min) &&
+                (field.max === undefined || length <= field.max)
+            );
         }
         if (field.kind === 'number') {
-            return typeof value === 'number' && Number.isFinite(value) &&
-                (field.min === undefined || value >= field.min) && (field.max === undefined || value <= field.max);
+            return (
+                typeof value === 'number' &&
+                Number.isFinite(value) &&
+                (field.min === undefined || value >= field.min) &&
+                (field.max === undefined || value <= field.max)
+            );
         }
         if (field.kind === 'numberTuple') {
-            return Array.isArray(value) && value.length === 2 &&
-                value.every((entry) => typeof entry === 'number' && Number.isFinite(entry) &&
-                    (field.min === undefined || entry >= field.min) && (field.max === undefined || entry <= field.max));
+            return (
+                Array.isArray(value) &&
+                value.length === 2 &&
+                value.every(
+                    (entry) =>
+                        typeof entry === 'number' &&
+                        Number.isFinite(entry) &&
+                        (field.min === undefined || entry >= field.min) &&
+                        (field.max === undefined || entry <= field.max)
+                )
+            );
         }
         if (field.kind === 'select') return optionsFor(field).some((option) => option.value === value);
         return value !== undefined;
@@ -119,11 +252,28 @@ watch(
 
 <template>
     <div v-if="props.fields.length" class="command-argument-form" data-testid="command-argument-form">
-        <div
-            v-for="field in props.fields.filter((entry) => entry.kind !== 'hidden')"
-            :key="field.key"
-            class="argument-row"
-        >
+        <div v-if="showMap" class="command-map" data-testid="command-argument-map">
+            <MapViewer
+                :map-data="props.mapData ?? null"
+                :map-layout="props.mapLayout ?? null"
+                :loading="false"
+                :selected-city-id="mapSelectedCityId"
+                :detail-mode="false"
+                :fit-container="true"
+                @select-city="selectMapCity"
+            />
+            <small>지도에서 도시를 클릭하거나 아래 목록에서 대상을 선택하세요.</small>
+            <div v-if="mapTargetSummary" class="map-target-summary" data-testid="command-map-target-summary">
+                {{ mapTargetSummary }}
+            </div>
+        </div>
+        <div v-if="presentation.lines.length" class="command-guidance" data-testid="command-argument-guidance">
+            <div v-for="line in presentation.lines" :key="line">{{ line }}</div>
+        </div>
+        <div v-if="resourceSummary.length" class="resource-summary" data-testid="command-resource-summary">
+            <span v-for="entry in resourceSummary" :key="entry">{{ entry }}</span>
+        </div>
+        <div v-for="field in visibleFields" :key="field.key" class="argument-row">
             <label :for="`command-arg-${field.key}`">{{ field.label }}</label>
             <input
                 v-if="field.kind === 'text'"
@@ -182,6 +332,21 @@ watch(
                     />
                 </label>
             </div>
+            <div
+                v-if="
+                    field.kind === 'select' &&
+                    (selectedOptionFor(field)?.description || selectedOptionFor(field)?.color)
+                "
+                class="option-detail"
+            >
+                <span
+                    v-if="selectedOptionFor(field)?.color"
+                    class="option-color"
+                    :style="{ backgroundColor: selectedOptionFor(field)?.color }"
+                    aria-hidden="true"
+                />
+                <span>{{ selectedOptionFor(field)?.description }}</span>
+            </div>
         </div>
         <div v-if="!isValid" class="argument-error" role="alert">필수 입력을 확인하세요.</div>
     </div>
@@ -193,11 +358,65 @@ watch(
     font-size: 0.75rem;
 }
 
+.command-map {
+    width: 100%;
+    overflow: hidden;
+    background: #111;
+}
+
+.command-map small {
+    display: block;
+    padding: 5px 8px;
+    color: rgba(232, 221, 196, 0.72);
+}
+
+.map-target-summary {
+    padding: 0 8px 6px;
+    color: #f1d89a;
+    line-height: 1.35;
+}
+
+.command-guidance {
+    display: grid;
+    gap: 3px;
+    padding: 8px;
+    border-bottom: 1px solid rgba(201, 164, 90, 0.35);
+    background: #191919;
+    color: #eee;
+    line-height: 1.35;
+}
+
+.resource-summary {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 5px 14px;
+    padding: 6px 8px;
+    border-bottom: 1px solid rgba(201, 164, 90, 0.25);
+    color: #f1d89a;
+}
+
 .argument-row {
     display: grid;
     grid-template-columns: minmax(76px, 0.36fr) 1fr;
     min-height: 34px;
     align-items: center;
+}
+
+.option-detail {
+    grid-column: 2;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 0 6px 6px 0;
+    color: rgba(232, 221, 196, 0.74);
+    line-height: 1.35;
+}
+
+.option-color {
+    width: 18px;
+    height: 18px;
+    flex: 0 0 18px;
+    border: 1px solid #ddd;
 }
 
 .argument-row:nth-child(odd) {

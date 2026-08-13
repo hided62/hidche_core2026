@@ -8,7 +8,7 @@ import ChiefTurnCard from '../components/chief/ChiefTurnCard.vue';
 import ChiefCommandEditor from '../components/chief/ChiefCommandEditor.vue';
 import { trpc } from '../utils/trpc';
 import { formatOfficerLevelText } from '../utils/nationFormat';
-import type { CommandPatternEntry } from '../components/command/types';
+import type { CommandMapData, CommandMapLayout, CommandPatternEntry, CommandTable } from '../components/command/types';
 
 type ChiefTurn = {
     index: number;
@@ -43,49 +43,6 @@ type ChiefCenterResponse = {
     chiefs: ChiefEntry[];
 };
 
-type CommandAvailability = {
-    key: string;
-    name: string;
-    reqArg: boolean;
-    status: 'available' | 'blocked' | 'needsInput' | 'unknown';
-    possible: boolean;
-    reason?: string;
-    inputFields: Array<{
-        key: string;
-        label: string;
-        kind: 'text' | 'number' | 'boolean' | 'select' | 'numberTuple' | 'hidden';
-        required: boolean;
-        min?: number;
-        max?: number;
-        step?: number;
-        constValue?: string | number;
-        options?: Array<{ value: string | number; label: string; color?: string }>;
-        optionSource?:
-            'cities' | 'nations' | 'generals' | 'crewTypes' | 'armTypes' | 'nationTypes' | 'colors' | 'items';
-        tupleLabels?: string[];
-    }>;
-};
-
-type CommandGroup = {
-    category: string;
-    values: CommandAvailability[];
-};
-
-type CommandTable = {
-    general: CommandGroup[];
-    nation: CommandGroup[];
-    inputOptions: {
-        cities: Array<{ value: string | number; label: string; color?: string }>;
-        nations: Array<{ value: string | number; label: string; color?: string }>;
-        generals: Array<{ value: string | number; label: string; color?: string }>;
-        crewTypes: Array<{ value: string | number; label: string; color?: string }>;
-        armTypes: Array<{ value: string | number; label: string; color?: string }>;
-        nationTypes: Array<{ value: string | number; label: string; color?: string }>;
-        colors: Array<{ value: string | number; label: string; color?: string }>;
-        items: Record<string, Array<{ value: string | number; label: string; color?: string }>>;
-    };
-};
-
 const chiefApi = trpc as unknown as {
     nation: {
         getChiefCenter: {
@@ -96,6 +53,10 @@ const chiefApi = trpc as unknown as {
         getCommandTable: {
             query: (input: { generalId: number }) => Promise<CommandTable>;
         };
+    };
+    world: {
+        getMap: { query: () => Promise<CommandMapData> };
+        getMapLayout: { query: () => Promise<CommandMapLayout> };
     };
 };
 
@@ -114,6 +75,8 @@ const commandLoading = ref(false);
 const error = ref<string | null>(null);
 const data = ref<ChiefCenterResponse | null>(null);
 const commandTable = ref<CommandTable | null>(null);
+const worldMap = ref<CommandMapData | null>(null);
+const mapLayout = ref<CommandMapLayout | null>(null);
 
 const selectedChiefLevel = ref<number | null>(null);
 const router = useRouter();
@@ -152,7 +115,14 @@ const loadCommandTable = async (generalId: number) => {
     }
     commandLoading.value = true;
     try {
-        commandTable.value = await chiefApi.turns.getCommandTable.query({ generalId });
+        const [nextCommandTable, nextWorldMap, nextMapLayout] = await Promise.all([
+            chiefApi.turns.getCommandTable.query({ generalId }),
+            chiefApi.world.getMap.query().catch(() => null),
+            chiefApi.world.getMapLayout.query().catch(() => null),
+        ]);
+        commandTable.value = nextCommandTable;
+        worldMap.value = nextWorldMap;
+        mapLayout.value = nextMapLayout;
     } catch (err) {
         error.value = resolveErrorMessage(err);
     } finally {
@@ -360,6 +330,8 @@ const repeatTurns = async (amount: number) => {
                 :general-id="data.me.id"
                 :officer-level="selectedChief.officerLevel"
                 :mobile="true"
+                :map-data="worldMap"
+                :map-layout="mapLayout"
                 @reserve-bulk="reserveTurns"
                 @shift="shiftTurns"
                 @repeat="repeatTurns"
@@ -420,6 +392,8 @@ const repeatTurns = async (amount: number) => {
                         :loading="commandLoading"
                         :general-id="data.me.id"
                         :officer-level="chief.officerLevel"
+                        :map-data="worldMap"
+                        :map-layout="mapLayout"
                         @reserve-bulk="reserveTurns"
                         @shift="shiftTurns"
                         @repeat="repeatTurns"
