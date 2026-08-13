@@ -8,7 +8,7 @@ import ChiefTurnCard from '../components/chief/ChiefTurnCard.vue';
 import ChiefCommandEditor from '../components/chief/ChiefCommandEditor.vue';
 import { trpc } from '../utils/trpc';
 import { formatOfficerLevelText } from '../utils/nationFormat';
-import type { CommandPatternEntry } from '../components/command/types';
+import type { CommandPatternEntry, CommandTable } from '../components/command/types';
 
 type ChiefTurn = {
     index: number;
@@ -41,49 +41,6 @@ type ChiefCenterResponse = {
     turnTermMinutes: number;
     maxTurns: number;
     chiefs: ChiefEntry[];
-};
-
-type CommandAvailability = {
-    key: string;
-    name: string;
-    reqArg: boolean;
-    status: 'available' | 'blocked' | 'needsInput' | 'unknown';
-    possible: boolean;
-    reason?: string;
-    inputFields: Array<{
-        key: string;
-        label: string;
-        kind: 'text' | 'number' | 'boolean' | 'select' | 'numberTuple' | 'hidden';
-        required: boolean;
-        min?: number;
-        max?: number;
-        step?: number;
-        constValue?: string | number;
-        options?: Array<{ value: string | number; label: string; color?: string }>;
-        optionSource?:
-            'cities' | 'nations' | 'generals' | 'crewTypes' | 'armTypes' | 'nationTypes' | 'colors' | 'items';
-        tupleLabels?: string[];
-    }>;
-};
-
-type CommandGroup = {
-    category: string;
-    values: CommandAvailability[];
-};
-
-type CommandTable = {
-    general: CommandGroup[];
-    nation: CommandGroup[];
-    inputOptions: {
-        cities: Array<{ value: string | number; label: string; color?: string }>;
-        nations: Array<{ value: string | number; label: string; color?: string }>;
-        generals: Array<{ value: string | number; label: string; color?: string }>;
-        crewTypes: Array<{ value: string | number; label: string; color?: string }>;
-        armTypes: Array<{ value: string | number; label: string; color?: string }>;
-        nationTypes: Array<{ value: string | number; label: string; color?: string }>;
-        colors: Array<{ value: string | number; label: string; color?: string }>;
-        items: Record<string, Array<{ value: string | number; label: string; color?: string }>>;
-    };
 };
 
 const chiefApi = trpc as unknown as {

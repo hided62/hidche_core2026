@@ -3,6 +3,7 @@ import { computed, onMounted, ref, shallowRef, watch } from 'vue';
 import CommandArgumentForm from '../main/CommandArgumentForm.vue';
 import CommandSelectForm from '../main/CommandSelectForm.vue';
 import DragSelect from './DragSelect.vue';
+import RecruitmentCommandForm from './RecruitmentCommandForm.vue';
 import {
     amplifyPattern,
     CommandStorage,
@@ -113,6 +114,9 @@ const displayRows = computed(() =>
     props.rows.slice(0, expanded.value || props.compact ? props.rows.length : collapsedRowCount)
 );
 const quickPickerTop = computed(() => `${70 + (quickTarget.value ?? 0) * 34.4}px`);
+const isRecruitmentCommand = computed(
+    () => selectedCommand.value?.key === 'che_징병' || selectedCommand.value?.key === 'che_모병'
+);
 const rowLabel = (row: ReservedCommandRow): string => row.label ?? labelMap.value.get(row.action) ?? row.action;
 const selectedIndices = () => normalizedSelection(selected.value, previousSelected.value, props.rows.length);
 const pattern = () => extractPattern(props.rows, selectedIndices());
@@ -560,6 +564,7 @@ const clickOutsideMenu = (event: Event) => {
         <div
             v-if="pickerOpen"
             class="command-picker"
+            :class="{ 'recruitment-picker': isRecruitmentCommand }"
             data-testid="command-picker"
             :style="quickTarget === null || props.compact ? undefined : { top: quickPickerTop }"
         >
@@ -584,8 +589,20 @@ const clickOutsideMenu = (event: Event) => {
                         >현재 상태: {{ selectedCommand.reason }} · 예약 입력은 가능합니다.</small
                     >
                 </div>
+                <RecruitmentCommandForm
+                    v-if="
+                        isRecruitmentCommand &&
+                        props.commandTable?.inputOptions.recruitment &&
+                        (selectedCommand.key === 'che_징병' || selectedCommand.key === 'che_모병')
+                    "
+                    :command-key="selectedCommand.key"
+                    :info="props.commandTable.inputOptions.recruitment"
+                    @update:args="commandArgs = $event"
+                    @update:valid="commandArgsValid = $event"
+                    @submit="submitCommand"
+                />
                 <CommandArgumentForm
-                    v-if="selectedCommand.reqArg && props.commandTable"
+                    v-else-if="selectedCommand.reqArg && props.commandTable"
                     :command-key="selectedCommand.key"
                     :fields="selectedCommand.inputFields"
                     :options="props.commandTable.inputOptions"
@@ -901,6 +918,20 @@ const clickOutsideMenu = (event: Event) => {
     max-height: 344px;
 }
 
+.reserved-command-editor .command-picker.recruitment-picker {
+    position: fixed;
+    z-index: 1100;
+    top: 76px;
+    right: auto;
+    bottom: auto;
+    left: 50%;
+    width: 1000px;
+    height: auto;
+    max-height: calc(100vh - 82px);
+    overflow: auto;
+    transform: translateX(-50%);
+}
+
 @media (min-width: 1025px) {
     .compact:not(.mobile) .command-picker {
         position: fixed;
@@ -909,6 +940,14 @@ const clickOutsideMenu = (event: Event) => {
         right: auto;
         left: calc(50% - 476px);
         width: 238px;
+    }
+    .compact:not(.mobile) .command-picker.recruitment-picker {
+        top: 76px;
+        left: 50%;
+        width: 1000px;
+        max-height: calc(100vh - 82px);
+        overflow: auto;
+        transform: translateX(-50%);
     }
 }
 
@@ -945,9 +984,33 @@ const clickOutsideMenu = (event: Event) => {
     width: 370px;
     height: 327px;
 }
+.mobile.compact .command-picker.recruitment-picker {
+    top: 76px;
+    left: 0;
+    width: 500px;
+    height: auto;
+    max-height: calc(100vh - 82px);
+    transform: none;
+}
 .mobile.compact .advanced-actions {
     right: 0;
     bottom: 0;
     left: 109px;
+}
+
+@media (max-width: 600px) {
+    .reserved-command-editor .command-picker.recruitment-picker,
+    .reserved-command-editor.compact .command-picker.recruitment-picker {
+        top: 76px;
+        left: 0;
+        width: 500px;
+        height: auto;
+        max-height: calc(100vh - 82px);
+        overflow: auto;
+        padding: 0;
+        border-right: 0;
+        border-left: 0;
+        transform: none;
+    }
 }
 </style>

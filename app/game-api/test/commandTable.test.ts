@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest';
 
 import type { CityRow, GeneralRow, NationRow, WorldStateRow } from '../src/context.js';
-import { buildTurnCommandTable } from '../src/turns/commandTable.js';
+import type { GeneralActionModule, MapDefinition, UnitSetDefinition } from '@sammo-ts/logic';
+import { buildRecruitmentCommandInfo, buildTurnCommandTable } from '../src/turns/commandTable.js';
 
 const buildWorldState = (joinMode = 'full'): WorldStateRow =>
     ({
@@ -134,6 +135,110 @@ describe('buildTurnCommandTable', () => {
             possible: false,
             status: 'blocked',
             reason: '랜덤 임관만 가능합니다',
+        });
+    });
+
+    it('projects Ref recruitment availability, combat values, descriptions, and adjusted costs', () => {
+        const general = buildGeneral();
+        general.injury = 3;
+        general.gold = 12_345;
+        const nation = buildNation();
+        nation.tech = 1000;
+        const unitSet = {
+            id: 'test',
+            name: 'test',
+            defaultCrewTypeId: 1100,
+            armTypes: { 1: '보병' },
+            crewTypes: [
+                {
+                    id: 1100,
+                    armType: 1,
+                    name: '보병',
+                    attack: 100,
+                    defence: 150,
+                    speed: 7,
+                    avoid: 10,
+                    magicCoef: 0,
+                    cost: 9,
+                    rice: 9,
+                    requirements: [],
+                    attackCoef: {},
+                    defenceCoef: {},
+                    info: ['표준적인 보병입니다.'],
+                    initSkillTrigger: null,
+                    phaseSkillTrigger: null,
+                    iActionList: null,
+                },
+                {
+                    id: 1101,
+                    armType: 1,
+                    name: '정예병',
+                    attack: 150,
+                    defence: 200,
+                    speed: 8,
+                    avoid: 20,
+                    magicCoef: 0,
+                    cost: 12,
+                    rice: 10,
+                    requirements: [{ type: 'ReqTech', tech: 2000 }],
+                    attackCoef: {},
+                    defenceCoef: {},
+                    info: ['강력하지만 기술이 필요합니다.'],
+                    initSkillTrigger: null,
+                    phaseSkillTrigger: null,
+                    iActionList: null,
+                },
+            ],
+        } satisfies UnitSetDefinition;
+        const map = {
+            id: 'test',
+            name: 'test',
+            cities: [{ id: 1, name: 'TestCity', region: 1 }],
+        } as unknown as MapDefinition;
+        const costDiscount: GeneralActionModule = {
+            onCalcDomestic: (_context, _turnType, varType, value) => (varType === 'cost' ? value * 0.9 : value),
+        };
+
+        const info = buildRecruitmentCommandInfo({
+            worldState: buildWorldState(),
+            general,
+            city: buildCity(),
+            nation,
+            cities: [buildCity()],
+            map,
+            unitSet,
+            generalActionModules: [costDiscount],
+        });
+
+        expect(info).toMatchObject({
+            techLevel: 1,
+            fullLeadership: 70,
+            currentCrewTypeId: 1100,
+            currentCrewTypeName: '보병',
+            crew: 100,
+            gold: 12_345,
+        });
+        expect(info.leadership).toBeLessThan(info.fullLeadership);
+        expect(info.groups).toHaveLength(1);
+        expect(info.groups[0]?.values[0]).toMatchObject({
+            name: '보병',
+            available: true,
+            special: false,
+            attack: 125,
+            defence: 175,
+            speed: 7,
+            avoid: 10,
+            info: ['표준적인 보병입니다.'],
+        });
+        expect(info.groups[0]?.values[0]?.baseCost).toBeCloseTo(9 * 1.15 * 0.9, 10);
+        expect(info.groups[0]?.values[0]?.baseRice).toBeCloseTo(9 * 1.15, 10);
+        expect(info.groups[0]?.values[1]).toMatchObject({
+            name: '정예병',
+            available: false,
+            special: true,
+            attack: 175,
+            defence: 225,
+            info: ['강력하지만 기술이 필요합니다.'],
         });
     });
 });

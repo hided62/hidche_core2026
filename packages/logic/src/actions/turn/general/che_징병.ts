@@ -235,6 +235,25 @@ export class CommandResolver<TriggerState extends GeneralTriggerState = GeneralT
         return finalizeLegacyStat(this.pipeline.onCalcStat(context, 'leadership', base));
     }
 
+    resolveFullLeadership(context: RecruitCalcContext<TriggerState>): number {
+        return finalizeLegacyStat(this.pipeline.onCalcStat(context, 'leadership', context.general.stats.leadership));
+    }
+
+    getDisplayUnitCost(
+        context: RecruitCalcContext<TriggerState>,
+        crewType: { armType: number; cost: number; rice: number }
+    ): { gold: number; rice: number } {
+        const techCost = getTechCost(readNationTech(context.nation ?? null));
+        return {
+            gold: this.pipeline.onCalcDomestic(context, ACTION_NAME, 'cost', crewType.cost * techCost, {
+                armType: crewType.armType,
+            }),
+            rice: this.pipeline.onCalcDomestic(context, ACTION_NAME, 'rice', crewType.rice * techCost, {
+                armType: crewType.armType,
+            }),
+        };
+    }
+
     resolveCrewPlan(
         context: RecruitCalcContext<TriggerState>,
         crewTypeId: number,

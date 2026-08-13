@@ -7,15 +7,20 @@ import type {
     GeneralItemSlots,
     GeneralActionDefinition,
     GeneralTurnCommandSpec,
+    MapDefinition,
     Nation,
     NationTurnCommandSpec,
     RequirementKey,
     StateView,
     TurnCommandEnv,
     TriggerValue,
+    UnitSetDefinition,
 } from '@sammo-ts/logic';
 import { evaluateConstraints } from '@sammo-ts/logic';
+import type { GeneralActionModule } from '@sammo-ts/logic/actionModules/general.js';
+import { CommandResolver as RecruitmentCommandResolver } from '@sammo-ts/logic/actions/turn/general/che_징병.js';
 import { projectItemSlots, readItemInventoryFromMeta } from '@sammo-ts/logic/items/index.js';
+import { getTechAbility, getTechLevel, isCrewTypeAvailable } from '@sammo-ts/logic/world/unitSet.js';
 import { asRecord, isRecord } from '@sammo-ts/common';
 
 import type { CityRow, GeneralRow, NationRow, WorldStateRow } from '../context.js';
@@ -24,6 +29,7 @@ import {
     loadTurnCommandSpecs,
     type TurnCommandInputField,
     type TurnCommandInputOptions,
+    type TurnCommandRecruitmentInfo,
 } from './commandInput.js';
 
 type AvailabilityStatus = 'available' | 'blocked' | 'needsInput' | 'unknown';
@@ -343,6 +349,81 @@ const mapNationRow = (row: NationRow): Nation => ({
     },
 });
 
+export const buildRecruitmentCommandInfo = (options: {
+    worldState: WorldStateRow;
+    general: GeneralRow;
+    city: CityRow | null;
+    nation: NationRow | null;
+    cities: CityRow[];
+    map: MapDefinition;
+    unitSet: UnitSetDefinition;
+    generalActionModules?: ReadonlyArray<GeneralActionModule | null | undefined>;
+}): TurnCommandRecruitmentInfo => {
+    const general = mapGeneralRow(options.general);
+    const city = options.city ? mapCityRow(options.city) : undefined;
+    const nation = options.nation ? mapNationRow(options.nation) : null;
+    const cities = options.cities.map(mapCityRow);
+    const context = city ? { general, city, nation } : { general, nation };
+    const command = new RecruitmentCommandResolver(options.generalActionModules ?? [], {});
+    const tech = options.nation?.tech ?? 0;
+    const techAbility = getTechAbility(tech);
+    const constraintEnv = buildConstraintEnv(options.worldState);
+    const startYear = typeof constraintEnv.startYear === 'number' ? constraintEnv.startYear : undefined;
+    const availabilityContext = {
+        general,
+        nation,
+        map: options.map,
+        cities,
+        currentYear: options.worldState.currentYear,
+        ...(startYear === undefined ? {} : { startYear }),
+    };
+    const crewTypes = options.unitSet.crewTypes ?? [];
+    const armTypes = Object.entries(options.unitSet.armTypes ?? {})
+        .map(([armType, armName]) => ({ armType: Number(armType), armName }))
+        .filter((entry) => Number.isFinite(entry.armType))
+        .sort((left, right) => left.armType - right.armType);
+
+    const groups = armTypes.map(({ armType, armName }) => ({
+        armType,
+        armName,
+        values: crewTypes
+            .filter((crewType) => crewType.armType === armType)
+            .map((crewType) => {
+                const displayCost = command.getDisplayUnitCost(context, crewType);
+                const requiredTech = crewType.requirements.find((requirement) => requirement.type === 'ReqTech');
+                return {
+                    id: crewType.id,
+                    armType,
+                    name: crewType.name,
+                    available: isCrewTypeAvailable(options.unitSet, crewType.id, availabilityContext),
+                    special:
+                        requiredTech?.type === 'ReqTech' &&
+                        typeof requiredTech.tech === 'number' &&
+                        requiredTech.tech > 0,
+                    attack: crewType.attack + techAbility,
+                    defence: crewType.defence + techAbility,
+                    speed: crewType.speed,
+                    avoid: crewType.avoid,
+                    baseCost: displayCost.gold,
+                    baseRice: displayCost.rice,
+                    info: [...crewType.info],
+                };
+            }),
+    }));
+    const currentCrewTypeName = crewTypes.find((crewType) => crewType.id === general.crewTypeId)?.name ?? '-';
+
+    return {
+        techLevel: getTechLevel(tech),
+        leadership: command.resolveLeadership(context),
+        fullLeadership: command.resolveFullLeadership(context),
+        currentCrewTypeId: general.crewTypeId,
+        currentCrewTypeName,
+        crew: general.crew,
+        gold: general.gold,
+        groups,
+    };
+};
+
 const buildStateView = (
     general: General,
     city: City | null,
@@ -528,6 +609,7 @@ export const buildTurnCommandTable = async (options: {
             nationTypes: [],
             colors: [],
             items: {},
+            recruitment: null,
         },
     };
 };

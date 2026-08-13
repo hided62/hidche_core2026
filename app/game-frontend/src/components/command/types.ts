@@ -26,6 +26,36 @@ export type CommandAvailability = {
 
 export type CommandGroup = { category: string; values: CommandAvailability[] };
 
+export type RecruitmentCrewType = {
+    id: number;
+    armType: number;
+    name: string;
+    available: boolean;
+    special: boolean;
+    attack: number;
+    defence: number;
+    speed: number;
+    avoid: number;
+    baseCost: number;
+    baseRice: number;
+    info: string[];
+};
+
+export type RecruitmentInfo = {
+    techLevel: number;
+    leadership: number;
+    fullLeadership: number;
+    currentCrewTypeId: number;
+    currentCrewTypeName: string;
+    crew: number;
+    gold: number;
+    groups: Array<{
+        armType: number;
+        armName: string;
+        values: RecruitmentCrewType[];
+    }>;
+};
+
 export type CommandTable = {
     general: CommandGroup[];
     nation: CommandGroup[];
@@ -38,6 +68,7 @@ export type CommandTable = {
         nationTypes: CommandOption[];
         colors: CommandOption[];
         items: Record<string, CommandOption[]>;
+        recruitment: RecruitmentInfo | null;
     };
 };
 

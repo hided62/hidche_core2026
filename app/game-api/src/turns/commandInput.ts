@@ -17,6 +17,38 @@ export interface TurnCommandOption {
     color?: string;
 }
 
+export interface TurnCommandRecruitmentCrewType {
+    id: number;
+    armType: number;
+    name: string;
+    available: boolean;
+    special: boolean;
+    attack: number;
+    defence: number;
+    speed: number;
+    avoid: number;
+    baseCost: number;
+    baseRice: number;
+    info: string[];
+}
+
+export interface TurnCommandRecruitmentGroup {
+    armType: number;
+    armName: string;
+    values: TurnCommandRecruitmentCrewType[];
+}
+
+export interface TurnCommandRecruitmentInfo {
+    techLevel: number;
+    leadership: number;
+    fullLeadership: number;
+    currentCrewTypeId: number;
+    currentCrewTypeName: string;
+    crew: number;
+    gold: number;
+    groups: TurnCommandRecruitmentGroup[];
+}
+
 export type TurnCommandOptionSource =
     | 'cities'
     | 'nations'
@@ -50,6 +82,7 @@ export interface TurnCommandInputOptions {
     nationTypes: TurnCommandOption[];
     colors: TurnCommandOption[];
     items: Record<string, TurnCommandOption[]>;
+    recruitment: TurnCommandRecruitmentInfo | null;
 }
 
 // 레거시 및 명령 실행 모듈의 인덱스 순서와 동일해야 한다.

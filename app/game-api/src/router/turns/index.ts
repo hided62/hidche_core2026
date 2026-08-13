@@ -1,11 +1,17 @@
 import { TRPCError } from '@trpc/server';
 import { z } from 'zod';
-import { ITEM_KEYS, loadItemModules } from '@sammo-ts/logic';
+import { loadActionModuleBundle } from '@sammo-ts/logic';
+import { asRecord } from '@sammo-ts/common';
 
 import { authedProcedure, router } from '../../trpc.js';
 import { buildBattleSimEnvironment } from '../../battleSim/environment.js';
 import { loadBattleSimTraitOptions } from '../../battleSim/simulatorOptions.js';
-import { buildTurnCommandTable, evaluateReservedTurnPermission } from '../../turns/commandTable.js';
+import {
+    buildRecruitmentCommandInfo,
+    buildTurnCommandTable,
+    evaluateReservedTurnPermission,
+} from '../../turns/commandTable.js';
+import { loadMapDefinitionByName } from '../../maps/mapDefinition.js';
 import {
     parseReservedTurnArgs,
     TURN_COMMAND_NATION_COLORS,
@@ -89,6 +95,13 @@ const getReservationWorldState = async (ctx: GameApiContext): Promise<WorldState
     return worldState;
 };
 
+const resolveMapName = (worldState: WorldStateRow, fallback: string): string => {
+    const config = asRecord(worldState.config);
+    const environment = asRecord(config.environment ?? config.map);
+    const mapName = environment.mapName;
+    return typeof mapName === 'string' && mapName.trim().length > 0 ? mapName : fallback;
+};
+
 const assertReservedTurnPermission = async (
     worldState: WorldStateRow,
     general: GeneralRow,
@@ -123,7 +136,11 @@ export const getTurnCommandTable = async (ctx: GameApiContext, generalId: number
         });
     }
 
-    const [city, nation, nationGenerals, cities, nations, generals, environment, traits, itemModules] =
+    const environmentPromise = buildBattleSimEnvironment(worldState, ctx.profile.id);
+    const moduleBundlePromise = environmentPromise.then((environment) =>
+        loadActionModuleBundle(environment.unitSet, environment.scenarioEffect)
+    );
+    const [city, nation, nationGenerals, cities, nations, generals, environment, traits, moduleBundle, map] =
         await Promise.all([
             general.cityId > 0
                 ? ctx.db.city.findUnique({
@@ -140,10 +157,7 @@ export const getTurnCommandTable = async (ctx: GameApiContext, generalId: number
                       where: { nationId: general.nationId },
                   })
                 : Promise.resolve(null),
-            ctx.db.city.findMany({
-                select: { id: true, name: true, nationId: true },
-                orderBy: { id: 'asc' },
-            }),
+            ctx.db.city.findMany({ orderBy: { id: 'asc' } }),
             ctx.db.nation.findMany({
                 select: { id: true, name: true, color: true },
                 orderBy: { id: 'asc' },
@@ -153,9 +167,10 @@ export const getTurnCommandTable = async (ctx: GameApiContext, generalId: number
                 select: { id: true, name: true, nationId: true, cityId: true },
                 orderBy: { id: 'asc' },
             }),
-            buildBattleSimEnvironment(worldState, ctx.profile.id),
+            environmentPromise,
             loadBattleSimTraitOptions(),
-            loadItemModules([...ITEM_KEYS]),
+            moduleBundlePromise,
+            loadMapDefinitionByName(resolveMapName(worldState, ctx.profile.id)),
         ]);
 
     const nationById = new Map(nations.map((entry) => [entry.id, entry]));
@@ -166,7 +181,7 @@ export const getTurnCommandTable = async (ctx: GameApiContext, generalId: number
         book: [{ value: 'None', label: '판매/해제' }],
         item: [{ value: 'None', label: '판매/해제' }],
     };
-    for (const item of itemModules) {
+    for (const item of moduleBundle.itemModules) {
         if (item.buyable) {
             items[item.slot].push({ value: item.key, label: item.name });
         }
@@ -201,6 +216,16 @@ export const getTurnCommandTable = async (ctx: GameApiContext, generalId: number
             color,
         })),
         items,
+        recruitment: buildRecruitmentCommandInfo({
+            worldState,
+            general,
+            city,
+            nation,
+            cities,
+            map,
+            unitSet: environment.unitSet,
+            generalActionModules: moduleBundle.general,
+        }),
     };
 
     return buildTurnCommandTable({

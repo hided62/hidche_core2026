@@ -167,6 +167,22 @@ and is never written to the artifact. The matching core fixture is
 `app/game-frontend/e2e/inGameInfo.spec.ts`, which writes its computed DOM and
 screenshot only when `CITY_PARITY_ARTIFACT_DIR` is set.
 
+징병·모병의 Ref 화면은 다음 collector로 1000/500px DOM, 이미지 natural size,
+불가능 병종 toggle과 hover/focus를 수집합니다. 기본 모드는 현재 Ref session을
+사용합니다. 비교 계정이 없는 환경에서는 `REF_STATIC_FIXTURE=1`로 Ref가 빌드한
+실제 `v_processing.js`/CSS에 고정 `procRes`만 주입하며, 이 결과는 live PHP/DB
+export 검증과 구분합니다. artifact 디렉터리는 Git 밖의 경로를 사용합니다.
+
+```sh
+REF_PARITY_PASSWORD_FILE=/path/to/ignored/password \
+REF_PARITY_ARTIFACT_DIR=/tmp/ref-recruitment \
+  node tools/frontend-legacy-parity/reference-recruitment.mjs
+
+REF_STATIC_FIXTURE=1 \
+REF_PARITY_ARTIFACT_DIR=/tmp/ref-recruitment-static \
+  node tools/frontend-legacy-parity/reference-recruitment.mjs
+```
+
 For a review run that also writes full-page screenshots, create an ignored
 artifact directory and set `FRONTEND_PARITY_ARTIFACT_DIR` before invoking the
 suite. The ordinary CI run does not write screenshots after successful tests.
