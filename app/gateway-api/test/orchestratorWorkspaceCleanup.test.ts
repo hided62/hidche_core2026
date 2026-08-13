@@ -14,6 +14,8 @@ const makeProfile = (
 ): GatewayProfileRecord => ({
     profileName,
     profile: profileName.split(':')[0] ?? 'che',
+    instanceKey: profileName.split(':')[1] ?? 'default',
+    currentScenario: null,
     scenario: profileName.split(':')[1] ?? 'default',
     apiPort: 15_003,
     status: 'RUNNING',

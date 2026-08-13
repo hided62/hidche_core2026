@@ -131,6 +131,13 @@ Gateway는 자기 process를 직접 교체하지 않습니다. 관리자 화면�
    확인합니다.
 6. 모두 준비된 경우에만 현재·이전 commit과 workspace를 게시합니다.
 
+Gateway migration은 앱 rollback 때 자동으로 역방향 적용되지 않습니다. 따라서
+profile identity 분리의 첫 단계는 기존 `profile_name`과 legacy `scenario`를 유지한
+채 `instance_key`와 nullable `current_scenario`를 추가합니다. DB trigger가 구버전의
+`scenario` write와 신버전의 `current_scenario` write를 양방향 동기화하므로 migration
+적용 뒤 readiness가 실패해 직전 Gateway worktree로 돌아가도 기존 DB와 시즌을
+그대로 사용할 수 있습니다.
+
 release-controller는 PM2 process 안에서 실행되므로 부모의 `args`, `pm_id`,
 `pm_exec_path`, `name`, `NODE_APP_INSTANCE`와 `axm_*` 같은 PM2 내부 값을 자식
 환경으로 전달하지 않습니다. 특히 부모의 `args=daemon`이 frontend의

@@ -41,6 +41,8 @@ const installGatewayFixture = async (page: Page, roles: string[]) => {
                               {
                                   profileName: 'hwe:2',
                                   profile: 'hwe',
+                                  instanceKey: '2',
+                                  currentScenario: '1010',
                                   scenario: '1010',
                                   status: 'RUNNING',
                                   buildStatus: 'SUCCEEDED',
@@ -59,6 +61,8 @@ const installGatewayFixture = async (page: Page, roles: string[]) => {
                               {
                                   profileName: 'hwe:2',
                                   profile: 'hwe',
+                                  instanceKey: '2',
+                                  currentScenario: '1010',
                                   meta: { korName: '환상서버' },
                               },
                           ]
@@ -209,7 +213,7 @@ test('scoped administrators see the same navigation while ordinary users do not'
     await expect(scopedPage.getByRole('link', { name: '관리자 페이지' })).toBeVisible();
     await scopedPage.getByRole('link', { name: '관리자 페이지' }).click();
     const scopedNavigation = scopedPage.getByRole('navigation', { name: '관리자 메뉴' });
-    await expect(scopedNavigation.getByRole('link', { name: '환상서버 (hwe:2)' })).toBeVisible();
+    await expect(scopedNavigation.getByRole('link', { name: '환상서버 [2]' })).toBeVisible();
     await expect(scopedNavigation.getByRole('link', { name: 'Gateway 릴리스' })).toHaveCount(0);
     await expect(scopedNavigation.getByRole('link', { name: '사용자 관리' })).toHaveCount(0);
     await scopedContext.close();

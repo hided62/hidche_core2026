@@ -1,7 +1,7 @@
 {
     "formatVersion": 1,
     "controllerProtocol": 2,
-    "gatewaySchemaHead": "20260811000000_add_gateway_operation_logs",
+    "gatewaySchemaHead": "20260813000000_split_gateway_profile_identity",
     "gameSchemaHead": "20260803000000_add_logical_game_clock",
     "components": ["gateway-api", "gateway-frontend", "release-controller", "game-api", "game-engine", "game-frontend"]
 }

@@ -150,6 +150,8 @@ const installFixture = async (
                     {
                         profileName: 'hwe:default',
                         profile: 'hwe',
+                        instanceKey: 'default',
+                        currentScenario: '1010',
                         meta: {},
                     },
                 ]);
@@ -160,6 +162,8 @@ const installFixture = async (
                     {
                         profileName: 'hwe:default',
                         profile: 'hwe',
+                        instanceKey: 'default',
+                        currentScenario: '1010',
                         scenario: '1010',
                         apiPort: 15015,
                         status: 'RUNNING',
@@ -352,7 +356,9 @@ test('directs profile deployment to the selected server version tab', async ({ p
     await expect(versionTab).toBeFocused();
     const tabAndHeaderGeometry = await Promise.all([
         tabs.evaluate((element) => element.getBoundingClientRect().top),
-        page.getByText('hwe:default (hwe)', { exact: true }).evaluate((element) => element.getBoundingClientRect().top),
+        page
+            .getByText('서버 ID: hwe:default · 인스턴스: default', { exact: true })
+            .evaluate((element) => element.getBoundingClientRect().top),
     ]);
     expect(tabAndHeaderGeometry[0]).toBeLessThan(tabAndHeaderGeometry[1]);
     await page.screenshot({ path: testInfo.outputPath('status-tabs-desktop.png'), fullPage: true });

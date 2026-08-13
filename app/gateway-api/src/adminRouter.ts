@@ -1280,7 +1280,10 @@ export const adminRouter = router({
                         sourceRef = resolved;
                     }
                     const scenarios = await listScenarioPreviews({ gitRef: resolved });
-                    if (!scenarios.some((scenario) => String(scenario.id) === profile.scenario)) {
+                    if (
+                        profile.currentScenario === null ||
+                        !scenarios.some((scenario) => String(scenario.id) === profile.currentScenario)
+                    ) {
                         throw new Error('Current scenario is not available at source.');
                     }
                 } catch {
@@ -1579,6 +1582,8 @@ export const adminRouter = router({
                 .map((profile) => ({
                     profileName: profile.profileName,
                     profile: profile.profile,
+                    instanceKey: profile.instanceKey,
+                    currentScenario: profile.currentScenario,
                     meta: {
                         ...(typeof profile.meta.korName === 'string' ? { korName: profile.meta.korName } : {}),
                     },
@@ -1661,7 +1666,8 @@ export const adminRouter = router({
                         );
                         const profile = await ctx.profiles.getProfile(input.profileName);
                         if (!profile) throw new TRPCError({ code: 'NOT_FOUND', message: 'Profile not found.' });
-                        const parsedScenarioId = Number(profile.scenario);
+                        const parsedScenarioId =
+                            profile.currentScenario === null ? Number.NaN : Number(profile.currentScenario);
                         currentScenarioId = Number.isInteger(parsedScenarioId) ? parsedScenarioId : null;
                         gitRef = profile.buildCommitSha?.trim();
                         if (!gitRef) {
@@ -1692,8 +1698,13 @@ export const adminRouter = router({
         upsert: profileAdminProcedure
             .input(
                 z.object({
-                    profile: z.string().min(1).max(32),
-                    scenario: z.string().min(1).max(64),
+                    profile: z.string().regex(/^[a-z0-9-]{1,32}$/),
+                    instanceKey: z
+                        .string()
+                        .regex(/^[a-z0-9-]{1,64}$/)
+                        .optional(),
+                    currentScenario: z.string().min(1).max(64).nullable().optional(),
+                    scenario: z.string().min(1).max(64).optional(),
                     apiPort: z.number().int().min(1).max(65535),
                     status: zProfileStatus.optional(),
                     preopenAt: z.string().datetime().optional(),
@@ -1706,6 +1717,8 @@ export const adminRouter = router({
                 const status = input.status ?? 'STOPPED';
                 return ctx.profiles.upsertProfile({
                     profile: input.profile,
+                    instanceKey: input.instanceKey,
+                    currentScenario: input.currentScenario,
                     scenario: input.scenario,
                     apiPort: input.apiPort,
                     status,

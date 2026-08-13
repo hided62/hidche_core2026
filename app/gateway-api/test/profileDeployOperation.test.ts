@@ -50,6 +50,8 @@ describe('profile DEPLOY operation', () => {
         const profile: GatewayProfileRecord = {
             profileName: 'che:1010',
             profile: 'che',
+            instanceKey: '1010',
+            currentScenario: '1010',
             scenario: '1010',
             apiPort: 15003,
             status: 'RUNNING',
@@ -80,7 +82,7 @@ describe('profile DEPLOY operation', () => {
             listProfiles: async () => [profile],
             getProfile: async () => profile,
             upsertProfile: async () => profile,
-            updateScenario: async () => profile,
+            updateCurrentScenario: async () => profile,
             updateStatus: async () => profile,
             updateBuildStatus: async () => profile,
             updateMeta: async () => profile,

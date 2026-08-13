@@ -92,6 +92,8 @@ const buildCaller = (
         {
             profileName: 'che:default',
             profile: 'che',
+            instanceKey: 'default',
+            currentScenario: null,
             scenario: 'default',
             apiPort: 15003,
             status: 'RUNNING' as const,
@@ -103,6 +105,8 @@ const buildCaller = (
         {
             profileName: 'hwe:default',
             profile: 'hwe',
+            instanceKey: 'default',
+            currentScenario: null,
             scenario: 'default',
             apiPort: 15015,
             status: 'RUNNING' as const,
@@ -119,7 +123,7 @@ const buildCaller = (
         upsertProfile: async () => {
             throw new Error('not used');
         },
-        updateScenario: async () => null,
+        updateCurrentScenario: async () => null,
         updateStatus: async () => null,
         updateBuildStatus: async () => null,
         updateMeta: async () => null,
@@ -167,6 +171,8 @@ const buildCaller = (
         profileRows.map((profile) => ({
             profileName: profile.profileName,
             profile: profile.profile,
+            instanceKey: profile.instanceKey,
+            currentScenario: profile.currentScenario,
             scenario: profile.scenario,
             status: profile.status,
             apiPort: profile.apiPort,
