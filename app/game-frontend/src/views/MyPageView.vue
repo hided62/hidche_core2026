@@ -168,6 +168,7 @@ const items = computed<Array<{ key: ItemSlotKey; slotName: string; displayName: 
     ]
 );
 const iconChoices = computed(() => data.value?.iconChoices ?? []);
+const selectedIcon = computed(() => iconChoices.value.find((icon) => icon.id === selectedIconId.value) ?? null);
 
 const autorunUser = computed(() => asRecord(world.value?.meta.autorun_user));
 const showAutoNationTurn = computed(() => asRecord(autorunUser.value.options).chief !== false);
@@ -361,7 +362,7 @@ onMounted(() => {
 </script>
 
 <template>
-    <main id="container" class="legacy-page bg0" :class="`screen-${screenMode}`">
+    <main id="container" class="legacy-page bg0 responsive-settings-page" :class="`screen-${screenMode}`">
         <div class="title-row">
             <span>내 정 보</span>
             <RouterLink class="legacy-button" to="/past-plays">지난 플레이</RouterLink>
@@ -494,6 +495,16 @@ onMounted(() => {
                     <span v-if="data.iconChangeAvailableAt" class="hint">
                         다음 변경 가능: {{ formatSeoulDateTime(data.iconChangeAvailableAt) }}
                     </span>
+                    <div v-if="selectedIcon" class="selected-general-icon" aria-live="polite">
+                        <img
+                            :src="resolveGeneralIconUrl(selectedIcon)"
+                            width="48"
+                            height="48"
+                            alt=""
+                            @error="useDefaultGeneralIcon"
+                        />
+                        <strong>{{ data.general.name }}</strong>
+                    </div>
                     <div class="general-icon-list" role="radiogroup" aria-label="장수 전용 아이콘 선택">
                         <label v-for="icon in iconChoices" :key="icon.id" class="general-icon-choice">
                             <input v-model="selectedIconId" type="radio" :value="icon.id" />
@@ -628,8 +639,7 @@ onMounted(() => {
 .legacy-page {
     width: 100%;
     max-width: 1000px;
-    min-width: 500px;
-    height: 1257.5px;
+    min-width: 0;
     min-height: 0;
     margin: 0 auto;
     padding: 0;
@@ -856,6 +866,21 @@ button:disabled {
     gap: 6px;
     margin: 6px 0;
 }
+.selected-general-icon {
+    display: flex;
+    max-width: 260px;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
+    margin: 8px auto;
+    padding: 6px 10px;
+    border: 1px solid #666;
+    background: rgb(23 42 82 / 70%);
+}
+.selected-general-icon img {
+    flex: 0 0 48px;
+    object-fit: cover;
+}
 .general-icon-choice {
     display: flex;
     align-items: center;
@@ -863,16 +888,44 @@ button:disabled {
 }
 @media (max-width: 991px) {
     .legacy-page {
-        width: 500px;
-        height: 1798.34px;
+        width: 100%;
+        max-width: 100%;
     }
     .my-page-mobile-scroll-spacer {
-        display: block;
-        height: 100px;
+        display: none;
     }
     .top-grid,
     .log-grid {
         grid-template-columns: 1fr;
+    }
+}
+@media (max-width: 600px) {
+    .title-row {
+        height: auto;
+        min-height: 54px;
+    }
+    dl > div {
+        grid-template-columns: 62px minmax(0, 1fr);
+    }
+    dt,
+    dd {
+        padding: 2px 3px;
+    }
+    .settings-column {
+        padding: 10px 12px;
+    }
+    .screen-mode-row {
+        grid-template-columns: 1fr;
+        gap: 6px;
+    }
+    .button-group {
+        overflow-x: auto;
+    }
+    .item-group {
+        grid-template-columns: repeat(2, 1fr);
+    }
+    .custom-css textarea {
+        width: 100%;
     }
 }
 </style>
