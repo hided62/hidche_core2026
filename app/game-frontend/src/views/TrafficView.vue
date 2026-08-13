@@ -204,7 +204,7 @@ onMounted(() => {
                 </tr>
                 <tr>
                     <td class="banner">
-                        삼국지 모의전투 PHP HiDCHe - unknown / KOEI의 이미지를 사용, 응용하였습니다 / 제작 :
+                        삼국지 모의전투 HiDCHe / KOEI의 이미지를 사용, 응용하였습니다 / 제작 :
                         HideD(hided62@gmail.com) /
                         <a href="https://sam.hided.net/wiki/hidche/credit" target="_blank" rel="noreferrer">Credit</a>
                     </td>
