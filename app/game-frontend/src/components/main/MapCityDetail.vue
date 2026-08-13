@@ -188,7 +188,7 @@ const cityStateStyle = computed(() => ({
     transform: translate(-50%, -50%);
     font-size: 0.65rem;
     color: #fff;
-    cursor: auto;
+    cursor: pointer;
     text-decoration: none;
     padding: 0;
     border: 0;
