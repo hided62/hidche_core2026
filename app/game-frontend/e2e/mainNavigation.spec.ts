@@ -20,6 +20,7 @@ type NavigationFixture = {
     generalMeCalls: number;
     operations: string[];
     generalName?: string;
+    generalTurnTime?: string;
     cityDefence?: number;
     cityState?: number;
     nationRate?: number;
@@ -219,7 +220,7 @@ const generalContext = (state: NavigationFixture) => ({
             dex: [350, 100_000, 500_000, 1_000_000, 1_275_975],
         },
         items: { horse: null, weapon: null, book: null, item: null },
-        turnTime: '0185-01-01T00:00:00.000Z',
+        turnTime: state.generalTurnTime ?? '0185-01-01T00:00:00.000Z',
     },
     city: {
         id: 1,
@@ -644,6 +645,66 @@ test('desktop menus preserve ref columns, prefix-safe routes, and controlled dro
     await page.getByRole('heading', { name: '전장 현황' }).click();
     await expect(gameInfoButton).toHaveAttribute('aria-expanded', 'false');
     await persistArtifact(page, `${basePath.slice(1)}-desktop-1200`);
+});
+
+test('main general card renders the next turn in the Seoul server timezone', async ({ page }) => {
+    const state: NavigationFixture = {
+        officerLevel: 0,
+        permission: 0,
+        nationLevel: 0,
+        stage: 0,
+        npcMode: 1,
+        generalMeCalls: 0,
+        operations: [],
+        generalName: 'Administrator',
+        generalTurnTime: '2026-08-13T00:07:06.713Z',
+        currentYear: 179,
+        currentMonth: 8,
+    };
+    await installFixture(page, state);
+    await page.setViewportSize({ width: 1200, height: 900 });
+    await waitForMain(page);
+
+    const title = page.locator('[data-main-target="general"] .general-title').first();
+    await expect(title).toContainText('Administrator');
+    await expect(title).toContainText('다음 턴 09:07');
+    await expect(title).not.toContainText('00:07');
+
+    const desktopGeometry = await title.evaluate((element) => {
+        const rect = element.getBoundingClientRect();
+        const style = getComputedStyle(element);
+        return {
+            width: rect.width,
+            height: rect.height,
+            fontSize: style.fontSize,
+            lineHeight: style.lineHeight,
+            overflow: style.overflow,
+        };
+    });
+    expect(desktopGeometry.width).toBeGreaterThan(0);
+    expect(desktopGeometry.height).toBeGreaterThan(0);
+    if (artifactRoot) {
+        const target = resolve(artifactRoot);
+        await mkdir(target, { recursive: true });
+        await Promise.all([
+            page.screenshot({ path: resolve(target, 'main-turn-time-seoul-desktop-1200.png'), fullPage: true }),
+            writeFile(
+                resolve(target, 'main-turn-time-seoul-desktop-1200.json'),
+                `${JSON.stringify(desktopGeometry, null, 2)}\n`
+            ),
+        ]);
+    }
+
+    await page.setViewportSize({ width: 500, height: 900 });
+    const mobileTitle = page.locator('[data-main-target="general"] .general-title').first();
+    await expect(mobileTitle).toContainText('다음 턴 09:07');
+    expect(await mobileTitle.evaluate((element) => element.scrollWidth - element.clientWidth)).toBeLessThanOrEqual(0);
+    if (artifactRoot) {
+        await page.screenshot({
+            path: resolve(artifactRoot, 'main-turn-time-seoul-mobile-500.png'),
+            fullPage: true,
+        });
+    }
 });
 
 test('pure NPC message senders are not rendered as reply targets', async ({ page }) => {

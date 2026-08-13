@@ -1,6 +1,10 @@
 import { describe, expect, it } from 'vitest';
 
-import { buildJoinCreateGeneralSeed, cutJoinTurnTime } from '../src/turn/joinCreateGeneralService.js';
+import {
+    buildJoinCreateGeneralSeed,
+    cutJoinTurnTime,
+    JOIN_WELCOME_MESSAGE,
+} from '../src/turn/joinCreateGeneralService.js';
 
 describe('generic join legacy time contracts', () => {
     it('builds the Ref MakeGeneral seed from the logical game tick', () => {
@@ -13,5 +17,10 @@ describe('generic join legacy time contracts', () => {
         expect(cutJoinTurnTime(new Date('2026-07-30T03:34:56.789Z'), 120 * 60).toISOString()).toBe(
             '2026-07-30T02:00:00.000Z'
         );
+    });
+
+    it('uses the HiDCHe product name without the legacy PHP runtime label', () => {
+        expect(JOIN_WELCOME_MESSAGE).toBe('삼국지 모의전투 HiDCHe의 세계에 오신 것을 환영합니다 ^o^');
+        expect(JOIN_WELCOME_MESSAGE).not.toContain('PHP');
     });
 });
