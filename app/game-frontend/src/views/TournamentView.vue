@@ -2,6 +2,7 @@
 import { formatServerDateTime } from '@sammo-ts/common';
 import { computed, onMounted, ref } from 'vue';
 import TournamentBracket from '../components/tournament/TournamentBracket.vue';
+import GeneralIdentity from '../components/ui/GeneralIdentity.vue';
 import { trpc } from '../utils/trpc';
 import { resolveTournamentStageName } from '../utils/tournamentStatus';
 
@@ -14,8 +15,11 @@ const loading = ref(false);
 const error = ref<string | null>(null);
 const actionMessage = ref<string | null>(null);
 const adminEnabled = ref(false);
+const activeFinalGroup = ref(0);
+const activePreliminaryGroup = ref(0);
 
 const typeNames = ['전력전', '통솔전', '일기토', '설전'];
+const typeStatNames = ['종합', '통솔', '무력', '지력'];
 const errorText = (value: unknown) => (value instanceof Error ? value.message : String(value));
 
 const load = async () => {
@@ -64,6 +68,26 @@ const groups = computed(() =>
             .sort((a, b) => (a.finalRank ?? 99) - (b.finalRank ?? 99) || (a.groupNo ?? 99) - (b.groupNo ?? 99))
     )
 );
+const preliminaryGroups = computed(() =>
+    Array.from({ length: 8 }, (_, index) =>
+        (snapshot.value?.participants ?? [])
+            .filter((participant) => participant.groupId === index)
+            .sort((a, b) => (a.seedRank ?? 99) - (b.seedRank ?? 99) || (a.groupNo ?? 99) - (b.groupNo ?? 99))
+    )
+);
+const groupNames = ['一', '二', '三', '四', '五', '六', '七', '八'];
+const statOf = (participant: Snapshot['participants'][number] | undefined): number | '' => {
+    if (!participant) return '';
+    const type = snapshot.value?.state?.type ?? 0;
+    if (type === 0) return participant.leadership + participant.strength + participant.intel;
+    if (type === 1) return participant.leadership;
+    if (type === 2) return participant.strength;
+    return participant.intel;
+};
+const gamesOf = (participant: Snapshot['participants'][number] | undefined): number | '' =>
+    participant ? (participant.win ?? 0) + (participant.draw ?? 0) + (participant.lose ?? 0) : '';
+const pointsOf = (participant: Snapshot['participants'][number] | undefined): number | '' =>
+    participant ? (participant.win ?? 0) * 3 + (participant.draw ?? 0) : '';
 const currentMatch = computed(() => {
     const state = snapshot.value?.state;
     if (!state || state.stage < 7 || state.stage > 10) return null;
@@ -154,7 +178,6 @@ const start = async () => {
             :winner-id="snapshot?.state?.winnerId"
             :bet-totals="betTotals"
             :total-bet="totalBet"
-            force-desktop
         />
 
         <section v-if="currentMatch" class="fight bg0">
@@ -163,18 +186,35 @@ const start = async () => {
         </section>
 
         <section class="section-title groups-title bg2">조별 본선 순위</section>
+        <div class="group-tabs bg0" role="tablist" aria-label="본선 조 선택">
+            <button
+                v-for="(groupName, groupIndex) in groupNames"
+                :key="`final-tab-${groupName}`"
+                type="button"
+                role="tab"
+                :aria-selected="activeFinalGroup === groupIndex"
+                :class="{ active: activeFinalGroup === groupIndex }"
+                @click="activeFinalGroup = groupIndex"
+            >
+                {{ groupName }}조
+            </button>
+        </div>
         <section class="group-grid bg0">
-            <table v-for="(group, groupIndex) in groups" :key="groupIndex">
+            <table
+                v-for="(group, groupIndex) in groups"
+                :key="groupIndex"
+                :class="{ 'mobile-active': activeFinalGroup === groupIndex }"
+            >
                 <caption>
                     {{
-                        ['一', '二', '三', '四', '五', '六', '七', '八'][groupIndex]
+                        groupNames[groupIndex]
                     }}조
                 </caption>
                 <thead>
                     <tr>
                         <th>순</th>
                         <th>장수</th>
-                        <th>{{ typeNames[snapshot?.state?.type ?? 0].replace('전', '') }}</th>
+                        <th>{{ typeStatNames[snapshot?.state?.type ?? 0] }}</th>
                         <th>경</th>
                         <th>승</th>
                         <th>무</th>
@@ -186,26 +226,21 @@ const start = async () => {
                 <tbody>
                     <tr v-for="rowIndex in 4" :key="rowIndex">
                         <td>{{ rowIndex }}</td>
-                        <td>{{ group[rowIndex - 1]?.name ?? '' }}</td>
-                        <td>
-                            {{
-                                group[rowIndex - 1]
-                                    ? (group[rowIndex - 1]!.win ?? 0) +
-                                      (group[rowIndex - 1]!.draw ?? 0) +
-                                      (group[rowIndex - 1]!.lose ?? 0)
-                                    : ''
-                            }}
+                        <td class="general-cell">
+                            <GeneralIdentity
+                                v-if="group[rowIndex - 1]"
+                                :name="group[rowIndex - 1]!.name"
+                                :picture="group[rowIndex - 1]!.picture"
+                                :image-server="group[rowIndex - 1]!.imageServer"
+                                :icon-size="24"
+                            />
                         </td>
+                        <td>{{ statOf(group[rowIndex - 1]) }}</td>
+                        <td>{{ gamesOf(group[rowIndex - 1]) }}</td>
                         <td>{{ group[rowIndex - 1]?.win ?? '' }}</td>
                         <td>{{ group[rowIndex - 1]?.draw ?? '' }}</td>
                         <td>{{ group[rowIndex - 1]?.lose ?? '' }}</td>
-                        <td>
-                            {{
-                                group[rowIndex - 1]
-                                    ? (group[rowIndex - 1]!.win ?? 0) * 3 + (group[rowIndex - 1]!.draw ?? 0)
-                                    : ''
-                            }}
-                        </td>
+                        <td>{{ pointsOf(group[rowIndex - 1]) }}</td>
                         <td>{{ group[rowIndex - 1]?.gl ?? '' }}</td>
                     </tr>
                 </tbody>
@@ -213,18 +248,35 @@ const start = async () => {
         </section>
 
         <section class="section-title groups-title bg2">조별 예선 순위</section>
+        <div class="group-tabs bg0" role="tablist" aria-label="예선 조 선택">
+            <button
+                v-for="(groupName, groupIndex) in groupNames"
+                :key="`preliminary-tab-${groupName}`"
+                type="button"
+                role="tab"
+                :aria-selected="activePreliminaryGroup === groupIndex"
+                :class="{ active: activePreliminaryGroup === groupIndex }"
+                @click="activePreliminaryGroup = groupIndex"
+            >
+                {{ groupName }}조
+            </button>
+        </div>
         <section class="group-grid preliminary-grid bg0">
-            <table v-for="groupIndex in 8" :key="`preliminary-${groupIndex}`">
+            <table
+                v-for="(group, groupIndex) in preliminaryGroups"
+                :key="`preliminary-${groupIndex}`"
+                :class="{ 'mobile-active': activePreliminaryGroup === groupIndex }"
+            >
                 <caption>
                     {{
-                        ['一', '二', '三', '四', '五', '六', '七', '八'][groupIndex - 1]
+                        groupNames[groupIndex]
                     }}조
                 </caption>
                 <thead>
                     <tr>
                         <th>순</th>
                         <th>장수</th>
-                        <th>{{ typeNames[snapshot?.state?.type ?? 0].replace('전', '') }}</th>
+                        <th>{{ typeStatNames[snapshot?.state?.type ?? 0] }}</th>
                         <th>경</th>
                         <th>승</th>
                         <th>무</th>
@@ -236,14 +288,22 @@ const start = async () => {
                 <tbody>
                     <tr v-for="rowIndex in 8" :key="rowIndex">
                         <td>{{ rowIndex }}</td>
-                        <td></td>
-                        <td></td>
-                        <td></td>
-                        <td></td>
-                        <td></td>
-                        <td></td>
-                        <td></td>
-                        <td></td>
+                        <td class="general-cell">
+                            <GeneralIdentity
+                                v-if="group[rowIndex - 1]"
+                                :name="group[rowIndex - 1]!.name"
+                                :picture="group[rowIndex - 1]!.picture"
+                                :image-server="group[rowIndex - 1]!.imageServer"
+                                :icon-size="24"
+                            />
+                        </td>
+                        <td>{{ statOf(group[rowIndex - 1]) }}</td>
+                        <td>{{ gamesOf(group[rowIndex - 1]) }}</td>
+                        <td>{{ group[rowIndex - 1]?.win ?? '' }}</td>
+                        <td>{{ group[rowIndex - 1]?.draw ?? '' }}</td>
+                        <td>{{ group[rowIndex - 1]?.lose ?? '' }}</td>
+                        <td>{{ pointsOf(group[rowIndex - 1]) }}</td>
+                        <td>{{ group[rowIndex - 1]?.gl ?? '' }}</td>
                     </tr>
                 </tbody>
             </table>
@@ -291,9 +351,10 @@ const start = async () => {
 
 <style scoped>
 .legacy-page {
-    width: 2009px;
-    height: 1059px;
-    overflow: hidden;
+    width: 100%;
+    max-width: 1200px;
+    min-width: 0;
+    min-height: 100vh;
     margin: 0 auto;
     color: #fff;
     font-family: var(--sammo-font-sans);
@@ -420,13 +481,15 @@ button:focus-visible {
 }
 .group-grid {
     display: grid;
-    grid-template-columns: repeat(8, 250px);
+    grid-template-columns: repeat(4, minmax(0, 1fr));
     align-items: start;
+    gap: 8px;
+    padding: 8px;
 }
 table {
-    width: 250px;
+    width: 100%;
     border-collapse: collapse;
-    table-layout: auto;
+    table-layout: fixed;
 }
 caption {
     padding: 3px;
@@ -439,14 +502,99 @@ th {
 }
 th,
 td {
-    height: 17px;
+    height: 30px;
     border: 1px solid #555;
     padding: 1px 3px;
+}
+.group-grid th:first-child,
+.group-grid td:first-child {
+    width: 24px;
+}
+.group-grid th:nth-child(2),
+.group-grid td:nth-child(2) {
+    width: 92px;
+}
+.general-cell {
+    overflow: hidden;
+}
+.group-tabs {
+    display: none;
 }
 .admin-row {
     text-align: left;
 }
 .error-row {
     color: #ff8080;
+}
+@media (max-width: 800px) {
+    .legacy-page {
+        max-width: 100%;
+        font-size: 13px;
+    }
+    .legacy-title {
+        height: auto;
+        min-height: 55px;
+    }
+    .state-row {
+        font-size: 18px;
+    }
+    .section-title {
+        font-size: 20px;
+    }
+    .group-tabs {
+        display: grid;
+        grid-template-columns: repeat(8, minmax(44px, 1fr));
+        overflow-x: auto;
+        padding: 6px;
+        gap: 4px;
+    }
+    .group-tabs button {
+        min-width: 44px;
+        height: 34px;
+        margin: 0;
+        border-radius: 3px;
+    }
+    .group-tabs button.active {
+        border-color: #f39c12;
+        background: #8a5b13;
+        color: #fff;
+    }
+    .group-grid {
+        display: block;
+        overflow-x: auto;
+        padding: 6px 0;
+    }
+    .group-grid table {
+        display: none;
+        min-width: 370px;
+    }
+    .group-grid table.mobile-active {
+        display: table;
+    }
+    .group-grid th,
+    .group-grid td {
+        height: 31px;
+        padding: 1px;
+        font-size: 11px;
+    }
+    .group-grid th:first-child,
+    .group-grid td:first-child {
+        width: 22px;
+    }
+    .group-grid th:nth-child(2),
+    .group-grid td:nth-child(2) {
+        width: 108px;
+    }
+    .tournament-guide {
+        padding: 10px;
+        font-size: 11px;
+        line-height: 16px;
+    }
+    .tournament-footer {
+        padding: 10px 0 0;
+    }
+    .tournament-footer small {
+        white-space: normal;
+    }
 }
 </style>

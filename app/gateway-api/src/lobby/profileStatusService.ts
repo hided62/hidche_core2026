@@ -21,6 +21,9 @@ export type LobbyGeneralStatus = {
 export type LobbyProfileStatus = {
     profileName: string;
     profile: string;
+    instanceKey: string;
+    currentScenario: string | null;
+    /** @deprecated Rollback-compatible mirror of currentScenario. */
     scenario: string;
     status: GatewayProfileStatus;
     apiPort: number;
@@ -87,6 +90,8 @@ export class RepositoryProfileStatusService implements GatewayProfileStatusServi
         return {
             profileName: row.profileName,
             profile: row.profile,
+            instanceKey: row.instanceKey,
+            currentScenario: row.currentScenario,
             scenario: row.scenario,
             status: row.status,
             apiPort: row.apiPort,

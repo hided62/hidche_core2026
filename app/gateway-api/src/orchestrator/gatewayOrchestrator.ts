@@ -396,7 +396,7 @@ export const buildProcessDefinitions = (
         ...baseEnv,
         GAME_API_ROLE: 'server',
         PROFILE: profile.profile,
-        SCENARIO: profile.scenario,
+        SCENARIO: profile.currentScenario ?? 'default',
         GAME_PROFILE_NAME: profile.profileName,
         GAME_API_PORT: String(profile.apiPort),
         GAME_TRPC_PATH: `/${profile.profile}/api/trpc`,
@@ -411,7 +411,7 @@ export const buildProcessDefinitions = (
         GAME_ENGINE_ROLE: 'turn-daemon',
         TURN_PROFILE: profile.profile,
         PROFILE: profile.profile,
-        SCENARIO: profile.scenario,
+        SCENARIO: profile.currentScenario ?? 'default',
         TURN_PROFILE_NAME: profile.profileName,
     };
     return {
@@ -1422,8 +1422,8 @@ export class GatewayOrchestrator implements GatewayOrchestratorHandle {
             } = parseInstallOptions(action);
             const tickOverride =
                 installOptions?.turnTermMinutes !== undefined ? installOptions.turnTermMinutes * 60 : undefined;
-            const scenarioId = installScenarioId ?? parseScenarioId(profile.scenario);
-            if (!scenarioId) {
+            const scenarioId = installScenarioId ?? parseScenarioId(profile.currentScenario);
+            if (scenarioId === null) {
                 return { status: 'FAILED', detail: 'scenarioId is missing' };
             }
             const profileDatabaseUrl = this.resolveProfileDatabaseUrl(profile);
@@ -1547,7 +1547,7 @@ export class GatewayOrchestrator implements GatewayOrchestratorHandle {
             const desiredStatus = shouldPreopen ? 'PREOPEN' : 'RUNNING';
             const publishedProfile = await updateClaimedProfile(
                 {
-                    scenario: String(scenarioId),
+                    currentScenario: String(scenarioId),
                     status: desiredStatus,
                     buildStatus: 'SUCCEEDED',
                     buildWorkspace: workspace.root,
@@ -1564,8 +1564,8 @@ export class GatewayOrchestrator implements GatewayOrchestratorHandle {
                         completedAt,
                         error: null,
                     });
-                    if (String(scenarioId) !== profile.scenario) {
-                        await this.repository.updateScenario(profile.profileName, String(scenarioId));
+                    if (String(scenarioId) !== profile.currentScenario) {
+                        await this.repository.updateCurrentScenario(profile.profileName, String(scenarioId));
                     }
                     return this.repository.updateStatus(profile.profileName, desiredStatus, {
                         preopenAt: preopenAt ? preopenAt.toISOString() : openAt ? openAt.toISOString() : null,
@@ -1577,6 +1577,7 @@ export class GatewayOrchestrator implements GatewayOrchestratorHandle {
             releasePrepared = true;
             const builtProfile = publishedProfile ?? {
                 ...profile,
+                currentScenario: String(scenarioId),
                 scenario: String(scenarioId),
                 status: desiredStatus,
                 buildWorkspace: workspace.root,
@@ -1642,7 +1643,7 @@ export class GatewayOrchestrator implements GatewayOrchestratorHandle {
         meta: Record<string, unknown>;
     }> {
         const databaseUrl = databaseUrlOverride ?? this.resolveProfileDatabaseUrl(profile);
-        let scenarioId = overrides?.scenarioId ?? parseScenarioId(profile.scenario);
+        let scenarioId = overrides?.scenarioId ?? parseScenarioId(profile.currentScenario);
         let tickSeconds: number | undefined = overrides?.tickSeconds;
         let meta: Record<string, unknown> = {};
         const connector = createGamePostgresConnector({ url: databaseUrl });

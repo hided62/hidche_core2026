@@ -31,6 +31,10 @@ Gateway 관리자 콘솔은 `/gateway/admin`에서 시작합니다. 공개 로�
 - 서버 관리는 profile별 하위 트리입니다. 상태·설정, DB 보존 버전 업데이트와
   시나리오 초기화가 같은 서버 아래의 상단 탭으로 노출됩니다. 현재 탭은 색상과
   `aria-current`로 구분하며 desktop과 mobile에서 본문보다 먼저 표시합니다.
+- `profileName`은 `${profile}:${instanceKey}` 형식의 불변 기술 ID입니다.
+  `che:default`의 `default`는 현재 시나리오가 아니라 기본 인스턴스 키입니다.
+  좌측 메뉴는 기본 인스턴스의 suffix를 숨기고 표시명만 보여 주며, 상태 상세에서
+  기술 ID·인스턴스 키·nullable 현재 시나리오를 분리해 확인할 수 있습니다.
 - 버전 업데이트와 시나리오 초기화 route는 URL의 `profileName`으로 대상 서버가
   이미 고정됩니다. 따라서 작업 화면에서 전체 profile 목록이나 중복 실행 상태를
   기다리지 않고 작업 form과 해당 서버의 operation 이력을 먼저 표시합니다. 상세
@@ -45,7 +49,7 @@ Gateway 관리자 콘솔은 `/gateway/admin`에서 시작합니다. 공개 로�
   업데이트가 필요하지 않습니다. 새 branch/commit과 함께 초기화하려면 초기화
   권한과 버전 배포 권한이 모두 필요합니다.
 - 현재 배포 버전의 시나리오 catalog는 capability·operation polling batch와
-  분리된 요청으로 읽습니다. API가 profile의 현재 scenario를 표시하며 화면은
+  분리된 요청으로 읽습니다. API가 profile의 `currentScenario`를 표시하며 화면은
   그 항목을 기본 선택합니다. scenario ID `0`도 유효한 값이고, 초기 요청이
   실패하면 현재 버전 모드에서 다시 확인할 수 있습니다.
 - 서버 상태의 `서버 리셋 기본 옵션`은 `GatewayProfile.meta.resetDefaults`에

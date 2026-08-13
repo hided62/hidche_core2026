@@ -5,10 +5,10 @@ import { useRoute } from 'vue-router';
 import PanelCard from '../components/ui/PanelCard.vue';
 import SkeletonLines from '../components/ui/SkeletonLines.vue';
 import LegacyGeneralProgress from '../components/ui/LegacyGeneralProgress.vue';
+import GeneralBasicCard from '../components/main/GeneralBasicCard.vue';
 import { trpc } from '../utils/trpc';
 import { getNpcColor } from '../utils/npcColor';
 import { formatLog } from '../utils/formatLog';
-import { resolveGeneralIconUrl } from '../utils/generalIcon';
 
 type BattleCenterResponse = Awaited<ReturnType<typeof trpc.nation.getBattleCenter.query>>;
 type GeneralEntry = BattleCenterResponse['generals'][number];
@@ -136,8 +136,6 @@ const formatGeneralLabel = (general: GeneralEntry): string => {
     }
     return `${name} (${time})`;
 };
-
-const generalImageUrl = (general: GeneralEntry): string => resolveGeneralIconUrl(general);
 
 let logRequestId = 0;
 
@@ -270,47 +268,29 @@ onMounted(() => {
                 </PanelCard>
 
                 <PanelCard title="장수 정보">
-                    <SkeletonLines v-if="loading" :lines="5" />
-                    <div v-else-if="selectedGeneral" class="battle-general-card">
-                        <div class="battle-general-name">
-                            {{ selectedGeneral.name }} ({{ selectedGeneral.officerLevelText }})
-                        </div>
-                        <span
-                            class="battle-general-portrait"
-                            role="img"
-                            :aria-label="`${selectedGeneral.name} 초상`"
-                            :style="{ backgroundImage: `url(${generalImageUrl(selectedGeneral)})` }"
-                        />
-                        <div class="battle-general-grid">
-                            <span>통솔</span><strong>{{ selectedGeneral.stats.leadership }}</strong> <span>무력</span
-                            ><strong>{{ selectedGeneral.stats.strength }}</strong> <span>지력</span
-                            ><strong>{{ selectedGeneral.stats.intelligence }}</strong> <span>자금</span
-                            ><strong>{{ selectedGeneral.gold }}</strong> <span>군량</span
-                            ><strong>{{ selectedGeneral.rice }}</strong> <span>병력</span
-                            ><strong>{{ selectedGeneral.crew }}</strong> <span>훈련</span
-                            ><strong>{{ selectedGeneral.train }}</strong> <span>사기</span
-                            ><strong>{{ selectedGeneral.atmos }}</strong> <span>부상</span
-                            ><strong>{{ selectedGeneral.injury }}</strong> <span>경험</span
-                            ><strong>{{ selectedGeneral.experience }}</strong> <span>공헌</span
-                            ><strong>{{ selectedGeneral.dedication }}</strong> <span>전투</span
-                            ><strong>{{ selectedGeneral.warnum }}회</strong>
-                        </div>
-                        <div class="battle-general-extra">
-                            <span>명성</span><strong>{{ selectedGeneral.experience.toLocaleString('ko-KR') }}</strong>
-                            <span>계급</span><strong>{{ selectedGeneral.progression.dedicationText }}</strong>
-                            <span>나이</span><strong>{{ selectedGeneral.age }}세</strong> <span>병종</span
-                            ><strong>{{ selectedGeneral.crewTypeName }}</strong> <span>승리</span
-                            ><strong>{{ selectedGeneral.battleStats.kills }}</strong> <span>패배</span
-                            ><strong>{{ selectedGeneral.battleStats.deaths }}</strong> <span>사살</span
-                            ><strong>{{ selectedGeneral.battleStats.killCrew.toLocaleString('ko-KR') }}</strong>
-                            <span>피살</span
-                            ><strong>{{ selectedGeneral.battleStats.deathCrew.toLocaleString('ko-KR') }}</strong>
-                            <span>전투 특기</span><strong>{{ selectedGeneral.traits.specialWar }}</strong>
-                            <span>내정 특기</span><strong>{{ selectedGeneral.traits.specialDomestic }}</strong>
-                            <span>성격</span><strong>{{ selectedGeneral.traits.personal }}</strong>
-                        </div>
-                        <LegacyGeneralProgress :general="selectedGeneral" />
-                    </div>
+                    <GeneralBasicCard
+                        class="battle-general-card"
+                        :general="selectedGeneral"
+                        :loading="loading"
+                        :nation-color="data?.nation.color"
+                    >
+                        <template v-if="selectedGeneral" #details>
+                            <div class="battle-general-extra">
+                                <span>명성</span
+                                ><strong>{{ selectedGeneral.experience.toLocaleString('ko-KR') }}</strong>
+                                <span>계급</span><strong>{{ selectedGeneral.progression.dedicationText }}</strong>
+                                <span>전투</span><strong>{{ selectedGeneral.warnum }}회</strong> <span>승리</span
+                                ><strong>{{ selectedGeneral.battleStats.kills }}</strong> <span>패배</span
+                                ><strong>{{ selectedGeneral.battleStats.deaths }}</strong> <span>계략</span
+                                ><strong>{{ selectedGeneral.battleStats.fire }}</strong> <span>사살</span
+                                ><strong>{{ selectedGeneral.battleStats.killCrew.toLocaleString('ko-KR') }}</strong>
+                                <span>피살</span
+                                ><strong>{{ selectedGeneral.battleStats.deathCrew.toLocaleString('ko-KR') }}</strong>
+                                <span>최근 전투</span><strong>{{ selectedGeneral.recentWar || '-' }}</strong>
+                            </div>
+                            <LegacyGeneralProgress :general="selectedGeneral" :show-primary="false" />
+                        </template>
+                    </GeneralBasicCard>
                     <div v-if="selectedGeneral" class="general-meta">
                         <div>
                             최근 턴:
@@ -384,39 +364,7 @@ onMounted(() => {
     gap: 4px;
 }
 
-.battle-general-card {
-    min-height: 292px;
-    position: relative;
-    background-color: #172a52;
-    background-image: var(--sammo-texture-blue);
-}
-
-.battle-general-portrait {
-    display: block;
-    width: 64px;
-    height: 80px;
-    float: left;
-    background-position: center;
-    background-size: cover;
-}
-
-.battle-general-name {
-    min-height: 24px;
-    padding: 2px 6px;
-    text-align: center;
-    border-bottom: 1px solid #777;
-    background: rgba(220, 220, 220, 0.85);
-    color: #111;
-    font-weight: 700;
-}
-
-.battle-general-grid {
-    display: grid;
-    grid-template-columns: repeat(6, 1fr);
-}
-
 .battle-general-extra {
-    clear: both;
     display: grid;
     grid-template-columns: repeat(6, 1fr);
 }
@@ -440,24 +388,6 @@ onMounted(() => {
     text-align: right;
     text-overflow: ellipsis;
     white-space: nowrap;
-}
-
-.battle-general-grid > * {
-    min-height: 24px;
-    padding: 2px 5px;
-    border-right: 1px solid #777;
-    border-bottom: 1px solid #777;
-}
-
-.battle-general-grid > span {
-    background-color: rgba(20, 75, 42, 0.7);
-    color: #fff;
-    text-align: center;
-}
-
-.battle-general-grid > strong {
-    text-align: right;
-    font-weight: 500;
 }
 
 .log-grid {

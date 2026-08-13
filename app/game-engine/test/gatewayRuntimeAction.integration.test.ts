@@ -50,6 +50,8 @@ integration('gateway runtime action consumer', () => {
             create: {
                 profileName,
                 profile: 'runtime',
+                instanceKey: 'consumer-integration',
+                currentScenario: 'consumer-integration',
                 scenario: 'consumer-integration',
                 apiPort: 15998,
                 status: 'RUNNING',

@@ -176,6 +176,9 @@ type AdminPublicUser = {
 type AdminProfile = {
     profileName: string;
     profile: string;
+    instanceKey: string;
+    currentScenario: string | null;
+    /** @deprecated Rollback-compatible mirror of currentScenario. */
     scenario: string;
     status: string;
     apiPort: number;
@@ -2058,9 +2061,14 @@ onMounted(() => {
                             <div class="flex flex-col md:flex-row md:items-center md:justify-between gap-2">
                                 <div>
                                     <div class="text-base font-semibold">
-                                        {{ profile.profileName }} ({{ profile.profile }})
+                                        {{ profile.meta.korName ?? profile.profile }}
                                     </div>
-                                    <div class="text-xs text-zinc-500">시나리오: {{ profile.scenario }}</div>
+                                    <div class="text-xs text-zinc-500">
+                                        서버 ID: {{ profile.profileName }} · 인스턴스: {{ profile.instanceKey }}
+                                    </div>
+                                    <div class="text-xs text-zinc-500">
+                                        현재 시나리오: {{ profile.currentScenario ?? '미설정' }}
+                                    </div>
                                 </div>
                                 <div class="text-xs text-zinc-400">
                                     상태: {{ profile.status }} / API: {{ profile.runtime.apiRunning ? 'ON' : 'OFF' }} /

@@ -514,7 +514,7 @@ const installRealtimeHarness = async (page: Page) => {
 
 const waitForMain = async (page: Page) => {
     await page.goto('./');
-    await expect(page.getByRole('heading', { name: '전장 현황' })).toBeVisible();
+    await expect(page.locator('.game-shell__title')).toBeVisible();
     await expect(page.locator('.main-global-menu').first()).toBeVisible();
     await expect(page.locator('.main-nation-menu')).toBeVisible();
     await expect(page.locator('[data-navigation-id="npc-list"]')).toHaveCount(3);
@@ -567,8 +567,24 @@ const persistArtifact = async (page: Page, name: string) => {
             globalPopup: describe('#mobile-global-menu'),
             nationPopup: describe('#mobile-nation-menu'),
             quickPopup: describe('#mobile-quick-menu'),
+            commandMenu: describe('.reserved-command-editor details[open] .menu-items'),
+            commandDividers: [...document.querySelectorAll<HTMLElement>('.reserved-command-editor details[open] .menu-divider')].map(
+                (element) => {
+                    const rect = element.getBoundingClientRect();
+                    const style = getComputedStyle(element);
+                    return {
+                        rect: { x: rect.x, y: rect.y, width: rect.width, height: rect.height },
+                        borderTop: style.borderTop,
+                        margin: style.margin,
+                    };
+                }
+            ),
         };
     });
+    const commandMenu = page.locator('.reserved-command-editor details[open] .menu-items').first();
+    if (await commandMenu.isVisible()) {
+        await commandMenu.screenshot({ path: resolve(target, `${name}-menu.png`) });
+    }
     await Promise.all([
         page.screenshot({ path: resolve(target, `${name}.png`), fullPage: true }),
         writeFile(resolve(target, `${name}.json`), `${JSON.stringify(geometry, null, 2)}\n`),
@@ -928,6 +944,10 @@ test('main cards and command input stay inside their Ref-sized grid slots', asyn
     await tenthTurnButton.click();
     const quickPicker = page.getByTestId('command-picker');
     await expect(quickPicker).toBeVisible();
+    await tenthTurnButton.click();
+    await expect(quickPicker).toBeHidden();
+    await tenthTurnButton.click();
+    await expect(quickPicker).toBeVisible();
     const quickPickerAlignment = await quickPicker.evaluate((element) => {
         const row = element
             .closest('.reserved-command-editor')
@@ -969,6 +989,30 @@ test('main cards and command input stay inside their Ref-sized grid slots', asyn
     expect(advancedControlGeometry.rangeTop).toBe(advancedControlGeometry.recentTop);
     expect(advancedControlGeometry.advancedTop).toBeGreaterThan(advancedControlGeometry.rangeTop);
     expect(advancedControlGeometry.advancedBottom).toBeLessThanOrEqual(advancedControlGeometry.queueTop);
+    const rangeMenu = page.locator('[data-main-target="commands"] .range-menu');
+    await rangeMenu.locator('summary').click();
+    const rangeDividers = rangeMenu.locator('.menu-divider');
+    await expect(rangeDividers).toHaveCount(1);
+    await expect(rangeDividers.first()).toBeVisible();
+    expect(await rangeDividers.first().evaluate((element) => getComputedStyle(element).borderTop)).toBe(
+        '1px solid rgb(68, 68, 68)'
+    );
+    await persistArtifact(page, `${basePath.slice(1)}-command-range-divider-desktop-1200`);
+    await rangeMenu.evaluate((element) => ((element as HTMLDetailsElement).open = false));
+    await expect(rangeMenu).not.toHaveAttribute('open', '');
+
+    const selectedMenu = page.locator('[data-main-target="commands"] .selected-menu');
+    await selectedMenu.locator('summary').click();
+    const selectedMenuDividers = selectedMenu.locator('.menu-divider');
+    await expect(selectedMenuDividers).toHaveCount(3);
+    await expect(selectedMenuDividers.first()).toBeVisible();
+    expect(await selectedMenuDividers.first().evaluate((element) => getComputedStyle(element).borderTop)).toBe(
+        '1px solid rgb(68, 68, 68)'
+    );
+    await persistArtifact(page, `${basePath.slice(1)}-command-selected-dividers-desktop-1200`);
+    await selectedMenu.evaluate((element) => ((element as HTMLDetailsElement).open = false));
+    await expect(selectedMenu).not.toHaveAttribute('open', '');
+
     await page.locator('[data-main-target="commands"] .select-command').click();
     const picker = page.getByTestId('command-picker');
     await expect(picker).toBeVisible();
@@ -1157,6 +1201,11 @@ test('main cards and command input stay inside their Ref-sized grid slots', asyn
     expect(mobileGeometry.controlBoxes).toHaveLength(3);
     expect(new Set(mobileGeometry.controlBoxes.map(({ y }) => y)).size).toBe(1);
     await expect(page.locator('[data-main-target="commands"] .edit-column button')).toHaveCount(30);
+    const mobileTurnButton = page.getByRole('button', { name: '10턴 명령 입력' });
+    await mobileTurnButton.click();
+    await expect(page.getByTestId('command-picker')).toBeVisible();
+    await mobileTurnButton.click();
+    await expect(page.getByTestId('command-picker')).toBeHidden();
     await captureProgress('mobile-500');
 });
 
