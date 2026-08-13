@@ -18,10 +18,13 @@ const props = defineProps<{
     tournamentStage: number;
     nationColor: string;
     npcMode: number;
+    realtimeEnabled: boolean;
+    refreshing: boolean;
 }>();
 
 const emit = defineEmits<{
     refresh: [];
+    toggleRealtime: [];
     lobby: [];
     quick: [item: QuickNavigationItem];
 }>();
@@ -189,14 +192,31 @@ const onQuick = (item: QuickNavigationItem) => {
             </ul>
         </div>
 
-        <button
-            class="bottom-trigger refresh-trigger"
-            type="button"
-            data-bottom-menu="refresh"
-            @click="emit('refresh')"
-        >
-            갱신
-        </button>
+        <div class="bottom-refresh-controls">
+            <button
+                class="bottom-trigger auto-refresh-trigger"
+                :class="{ active: realtimeEnabled }"
+                type="button"
+                data-bottom-menu="auto-refresh"
+                :aria-pressed="realtimeEnabled"
+                @click="emit('toggleRealtime')"
+            >
+                <span>자동 갱신</span>
+                <strong>{{ realtimeEnabled ? 'ON' : 'OFF' }}</strong>
+            </button>
+            <button
+                class="bottom-trigger manual-refresh-trigger"
+                type="button"
+                data-bottom-menu="manual-refresh"
+                aria-label="직접 갱신"
+                title="직접 갱신"
+                :disabled="refreshing"
+                :aria-busy="refreshing"
+                @click="emit('refresh')"
+            >
+                <span aria-hidden="true">↻</span>
+            </button>
+        </div>
     </nav>
 </template>
 
@@ -221,6 +241,17 @@ const onQuick = (item: QuickNavigationItem) => {
     position: relative;
 }
 
+.bottom-refresh-controls {
+    display: grid;
+    width: 125px;
+    height: 45px;
+    grid-template-columns: minmax(0, 1fr) 40px;
+}
+
+.bottom-refresh-controls > .bottom-trigger {
+    width: auto;
+}
+
 .bottom-trigger {
     box-sizing: border-box;
     width: 125px;
@@ -243,6 +274,43 @@ const onQuick = (item: QuickNavigationItem) => {
 
 .quick-trigger {
     background: #212529;
+}
+
+.auto-refresh-trigger {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 2px 1px;
+    font-size: 12px;
+    line-height: 1.15;
+}
+
+.auto-refresh-trigger strong {
+    color: #bbb;
+    font-size: 11px;
+    line-height: 1;
+}
+
+.auto-refresh-trigger.active {
+    background-color: #164f2c;
+}
+
+.auto-refresh-trigger.active strong {
+    color: #9ef0b8;
+}
+
+.manual-refresh-trigger {
+    padding: 0;
+    background: #212529;
+    font-size: 22px;
+    line-height: 1;
+}
+
+.manual-refresh-trigger:disabled {
+    cursor: wait;
+    filter: grayscale(0.6);
+    opacity: 0.55;
 }
 
 .bottom-trigger:hover,
