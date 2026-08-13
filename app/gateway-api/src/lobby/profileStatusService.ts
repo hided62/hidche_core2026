@@ -4,7 +4,7 @@ import type {
     GatewayProfileRepository,
     GatewayProfileStatus,
 } from '../orchestrator/profileRepository.js';
-import { orderGatewayProfiles } from '../profileOrder.js';
+import { orderGatewayProfiles, resolveGatewayProfileKoreanName } from '../profileOrder.js';
 
 export type LobbyMapSnapshot = {
     updatedAt: string | null;
@@ -102,7 +102,7 @@ export class RepositoryProfileStatusService implements GatewayProfileStatusServi
                 battleSimRunning: false,
                 tournamentRunning: false,
             },
-            korName: (meta.korName as string | undefined) ?? row.profile,
+            korName: resolveGatewayProfileKoreanName(row.profile, meta.korName),
             color: (meta.color as string | undefined) ?? '#ffffff',
         };
     }

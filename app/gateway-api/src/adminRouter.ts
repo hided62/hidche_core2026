@@ -20,7 +20,7 @@ import {
 import type { GatewayApiContext } from './context.js';
 import { resolveLocalAccountProfilePolicy } from './auth/localAccountPolicy.js';
 import { GATEWAY_BUILD_STATUSES, GATEWAY_PROFILE_STATUSES } from './orchestrator/profileRepository.js';
-import { orderGatewayProfiles } from './profileOrder.js';
+import { orderGatewayProfiles, resolveGatewayProfileKoreanName } from './profileOrder.js';
 import { purifyGatewayNoticeHtml } from './security/gatewayNoticeHtml.js';
 
 const zProfileStatus = z.enum(GATEWAY_PROFILE_STATUSES);
@@ -1585,7 +1585,7 @@ export const adminRouter = router({
                     instanceKey: profile.instanceKey,
                     currentScenario: profile.currentScenario,
                     meta: {
-                        ...(typeof profile.meta.korName === 'string' ? { korName: profile.meta.korName } : {}),
+                        korName: resolveGatewayProfileKoreanName(profile.profile, profile.meta.korName),
                     },
                 }));
         }),
