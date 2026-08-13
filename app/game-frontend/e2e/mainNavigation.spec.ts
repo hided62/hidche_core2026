@@ -1244,6 +1244,125 @@ test('the 939/940 boundary switches to the Ref-style 500px single document', asy
     await persistArtifact(page, `${basePath.slice(1)}-mobile-500`);
 });
 
+test('real mobile devices initially fit the complete 500px game canvas', async ({ browser }, testInfo) => {
+    test.setTimeout(60_000);
+    const configuredBaseUrl = testInfo.project.use.baseURL;
+    if (typeof configuredBaseUrl !== 'string') {
+        throw new Error('Playwright baseURL is required for the mobile viewport contract');
+    }
+
+    const deviceWidths = [360, 390, 480];
+    const measurements: Record<string, unknown> = {};
+
+    for (const deviceWidth of deviceWidths) {
+        const context = await browser.newContext({
+            baseURL: configuredBaseUrl,
+            viewport: { width: deviceWidth, height: 844 },
+            screen: { width: deviceWidth, height: 844 },
+            deviceScaleFactor: 1,
+            isMobile: true,
+            hasTouch: true,
+            colorScheme: 'dark',
+        });
+        const mobilePage = await context.newPage();
+        const state: NavigationFixture = {
+            officerLevel: 5,
+            permission: 2,
+            nationLevel: 3,
+            stage: 6,
+            npcMode: 1,
+            generalMeCalls: 0,
+            operations: [],
+        };
+        await installFixture(mobilePage, state);
+        await waitForMain(mobilePage);
+
+        const mainGeometry = await mobilePage.locator('.main-page').evaluate((element) => {
+            const rect = element.getBoundingClientRect();
+            return {
+                viewportMeta: document.querySelector<HTMLMetaElement>('meta[name="viewport"]')?.content,
+                screenWidth: screen.availWidth,
+                innerWidth: window.innerWidth,
+                layoutViewportWidth: document.documentElement.clientWidth,
+                visualViewportWidth: window.visualViewport?.width ?? null,
+                visualViewportScale: window.visualViewport?.scale ?? null,
+                documentScrollWidth: document.documentElement.scrollWidth,
+                canvas: {
+                    left: rect.left,
+                    right: rect.right,
+                    width: rect.width,
+                },
+            };
+        });
+
+        expect(mainGeometry.viewportMeta).toBe('width=500');
+        expect(mainGeometry.screenWidth).toBe(deviceWidth);
+        expect(mainGeometry.layoutViewportWidth).toBe(500);
+        expect(mainGeometry.visualViewportWidth).toBeCloseTo(500, 2);
+        expect(mainGeometry.visualViewportScale).toBeCloseTo(deviceWidth / 500, 2);
+        expect(mainGeometry.documentScrollWidth).toBeLessThanOrEqual(mainGeometry.innerWidth);
+        expect(mainGeometry.canvas).toEqual({ left: 0, right: 500, width: 500 });
+        expect(mainGeometry.canvas.right).toBeLessThanOrEqual((mainGeometry.visualViewportWidth ?? 0) + 0.01);
+        if (artifactRoot) {
+            await mkdir(artifactRoot, { recursive: true });
+            await mobilePage.screenshot({
+                path: resolve(artifactRoot, `initial-mobile-fit-${deviceWidth}.png`),
+                fullPage: true,
+            });
+        }
+
+        const routeGeometry: Record<string, unknown> = {};
+        if (deviceWidth === 390) {
+            for (const target of [
+                'chief-center',
+                'battle-center',
+                'inherit',
+                'nation-betting',
+            ]) {
+                await mobilePage.goto(target);
+                await expect
+                    .poll(() => mobilePage.locator('#app').evaluate((element) => getComputedStyle(element).minWidth))
+                    .toBe('500px');
+                routeGeometry[target] = await mobilePage.locator('#app').evaluate((element) => {
+                    const rect = element.getBoundingClientRect();
+                    return {
+                        viewportMeta: document.querySelector<HTMLMetaElement>('meta[name="viewport"]')?.content,
+                        layoutViewportWidth: document.documentElement.clientWidth,
+                        visualViewportWidth: window.visualViewport?.width ?? null,
+                        left: rect.left,
+                        right: rect.right,
+                        width: rect.width,
+                    };
+                });
+                const geometry = routeGeometry[target] as {
+                    viewportMeta: string;
+                    layoutViewportWidth: number;
+                    visualViewportWidth: number;
+                    left: number;
+                    right: number;
+                    width: number;
+                };
+                expect(geometry.viewportMeta).toBe('width=500');
+                expect(geometry.layoutViewportWidth).toBe(500);
+                expect(geometry.visualViewportWidth).toBeCloseTo(500, 2);
+                expect(geometry.left).toBeCloseTo(0, 2);
+                expect(geometry.right).toBeCloseTo(500, 2);
+                expect(geometry.width).toBeCloseTo(500, 2);
+            }
+        }
+
+        measurements[String(deviceWidth)] = { main: mainGeometry, routes: routeGeometry };
+        await context.close();
+    }
+
+    if (artifactRoot) {
+        await writeFile(
+            resolve(artifactRoot, 'initial-mobile-fit-computed-dom.json'),
+            `${JSON.stringify(measurements, null, 2)}\n`
+        );
+    }
+});
+
 test('nation menu presentation follows the server-derived permission matrix', async ({ page }) => {
     const state: NavigationFixture = {
         officerLevel: 1,
