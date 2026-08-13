@@ -572,6 +572,8 @@ const persistArtifact = async (page: Page, name: string) => {
             executionStatus: describe('.execution-status'),
             tournamentStatus: describe('.tournament-status'),
             voteStatus: describe('.vote-status'),
+            autoRefresh: describe('[data-bottom-menu="auto-refresh"]'),
+            manualRefresh: describe('[data-bottom-menu="manual-refresh"]'),
             commandMenu: describe('.reserved-command-editor details[open] .menu-items'),
             commandDividers: [...document.querySelectorAll<HTMLElement>('.reserved-command-editor details[open] .menu-divider')].map(
                 (element) => {
@@ -1472,6 +1474,7 @@ test('mobile single document refreshes once and preserves tokens on lobby return
         generalMeCalls: 0,
         operations: [],
     };
+    await installRealtimeHarness(page);
     await installFixture(page, state);
     await page.setViewportSize({ width: 500, height: 900 });
     await waitForMain(page);
@@ -1494,9 +1497,65 @@ test('mobile single document refreshes once and preserves tokens on lobby return
         await expect(page.locator(selector)).toBeVisible();
     }
 
+    const autoRefresh = page.getByRole('button', { name: '자동 갱신 ON' });
+    const manualRefresh = page.getByRole('button', { name: '직접 갱신' });
+    await expect(autoRefresh).toHaveAttribute('aria-pressed', 'true');
+    await expect(autoRefresh.locator('strong')).toHaveCSS('color', 'rgb(158, 240, 184)');
+    await expect(manualRefresh).toHaveAttribute('aria-busy', 'false');
+    await expect
+        .poll(() => page.evaluate(() => (window as unknown as { __hasMainRealtime: () => boolean }).__hasMainRealtime()))
+        .toBe(true);
+
+    const refreshGeometry = await page.locator('.bottom-refresh-controls').evaluate((controls) => {
+        const auto = controls.querySelector<HTMLElement>('[data-bottom-menu="auto-refresh"]');
+        const manual = controls.querySelector<HTMLElement>('[data-bottom-menu="manual-refresh"]');
+        if (!auto || !manual) throw new Error('mobile refresh controls are incomplete');
+        const controlsRect = controls.getBoundingClientRect();
+        const autoRect = auto.getBoundingClientRect();
+        const manualRect = manual.getBoundingClientRect();
+        return {
+            controls: { left: controlsRect.left, right: controlsRect.right, width: controlsRect.width },
+            auto: { left: autoRect.left, right: autoRect.right, width: autoRect.width },
+            manual: { left: manualRect.left, right: manualRect.right, width: manualRect.width },
+            overflow: controls.scrollWidth - controls.clientWidth,
+        };
+    });
+    expect(refreshGeometry.controls.width).toBe(125);
+    expect(refreshGeometry.auto.width).toBe(85);
+    expect(refreshGeometry.manual.width).toBe(40);
+    expect(refreshGeometry.auto.left).toBe(refreshGeometry.controls.left);
+    expect(refreshGeometry.auto.right).toBe(refreshGeometry.manual.left);
+    expect(refreshGeometry.manual.right).toBe(refreshGeometry.controls.right);
+    expect(refreshGeometry.overflow).toBeLessThanOrEqual(0);
+
+    await autoRefresh.focus();
+    await expect(autoRefresh).toBeFocused();
+    await autoRefresh.hover();
+    await expect(autoRefresh).toHaveCSS('filter', 'brightness(1.14)');
+    await autoRefresh.click();
+    const disabledAutoRefresh = page.getByRole('button', { name: '자동 갱신 OFF' });
+    await expect(disabledAutoRefresh).toHaveAttribute('aria-pressed', 'false');
+    await expect(disabledAutoRefresh.locator('strong')).toHaveCSS('color', 'rgb(187, 187, 187)');
+    await expect
+        .poll(() => page.evaluate(() => (window as unknown as { __hasMainRealtime: () => boolean }).__hasMainRealtime()))
+        .toBe(false);
+    await persistArtifact(page, `${basePath.slice(1)}-mobile-auto-refresh-controls-off`);
+
+    state.generalName = '직접갱신된장수';
     const callsBeforeRefresh = state.generalMeCalls;
-    await page.getByRole('button', { name: '갱 신' }).click();
+    await manualRefresh.click();
     await expect.poll(() => state.generalMeCalls).toBeGreaterThan(callsBeforeRefresh);
+    await expect(page.locator('.general-title')).toContainText('직접갱신된장수');
+
+    const callsBeforeEnable = state.generalMeCalls;
+    await page.getByRole('button', { name: '자동 갱신 OFF' }).click();
+    await expect(page.getByRole('button', { name: '자동 갱신 ON' })).toHaveAttribute('aria-pressed', 'true');
+    await expect.poll(() => state.generalMeCalls).toBeGreaterThan(callsBeforeEnable);
+    await expect
+        .poll(() => page.evaluate(() => (window as unknown as { __hasMainRealtime: () => boolean }).__hasMainRealtime()))
+        .toBe(true);
+
+    await persistArtifact(page, `${basePath.slice(1)}-mobile-auto-refresh-controls`);
 
     await page.evaluate(() => {
         localStorage.setItem('sammo-session-token', 'session_navigation');
