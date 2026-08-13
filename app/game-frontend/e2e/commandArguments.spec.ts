@@ -1,5 +1,32 @@
 import { expect, test, type Page, type Route } from '@playwright/test';
+import { readFile } from 'node:fs/promises';
+import { dirname, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { gameProfile, gameTrpcRoute } from './gameTestPaths.js';
+
+const repositoryRoot = resolve(dirname(fileURLToPath(import.meta.url)), '../../..');
+const imageRoots = [
+    resolve(repositoryRoot, '../image'),
+    resolve(repositoryRoot, '../../image'),
+    resolve(repositoryRoot, '../sam_rebuild/image'),
+    resolve(repositoryRoot, '../../sam_rebuild/image'),
+];
+const readImage = async (relativePath: string): Promise<Buffer> => {
+    if (relativePath.includes('..')) throw new Error(`Unsafe fixture image path: ${relativePath}`);
+    for (const root of imageRoots) {
+        try {
+            return await readFile(resolve(root, relativePath));
+        } catch {
+            // Product checkout and feature worktrees have different image-root parents.
+        }
+    }
+    throw new Error(`Fixture image not found: ${relativePath}`);
+};
+const imageContentType = (relativePath: string): string => {
+    if (relativePath.endsWith('.png')) return 'image/png';
+    if (relativePath.endsWith('.gif')) return 'image/gif';
+    return 'image/jpeg';
+};
 
 const response = (data: unknown) => ({ result: { data } });
 const errorResponse = (path: string, message: string) => ({
@@ -184,7 +211,26 @@ const install = async (page: Page, rejectGeneral = false) => {
         localStorage.setItem('sammo-game-token', 'ga_commands');
         localStorage.setItem('sammo-game-profile', profile);
     }, gameProfile);
-    await page.route('**/image/**', (route) => route.fulfill({ status: 404, body: '' }));
+    await page.route('**/image/**', async (route) => {
+        const relativePath = decodeURIComponent(new URL(route.request().url()).pathname.split('/image/')[1] ?? '');
+        await route.fulfill({
+            status: 200,
+            contentType: imageContentType(relativePath),
+            body: await readImage(relativePath),
+        });
+    });
+    await page.route('**/game/**', async (route) => {
+        const relativePath = decodeURIComponent(new URL(route.request().url()).pathname.split('/game/')[1] ?? '');
+        try {
+            await route.fulfill({
+                status: 200,
+                contentType: imageContentType(relativePath),
+                body: await readImage(`game/${relativePath}`),
+            });
+        } catch {
+            await route.fulfill({ status: 404, body: '' });
+        }
+    });
     await page.route(gameTrpcRoute, async (route) => {
         const names = operations(route);
         const body = route.request().postDataJSON();
@@ -232,7 +278,7 @@ const install = async (page: Page, rejectGeneral = false) => {
                     month: 1,
                     cityList: [
                         [1, 8, 0, 1, 1, 1],
-                        [2, 7, 40, 2, 2, 1],
+                        [2, 7, 41, 2, 2, 1],
                     ],
                     nationList: [
                         [1, '아국', '#008000', 1],
@@ -316,19 +362,52 @@ test('enters general and nation command arguments and sends exact values', async
     await expect(form.getByTestId('command-argument-map')).toBeVisible();
     await expect(form.getByTestId('command-argument-guidance')).toContainText('선택한 도시에 화계를 실행합니다.');
     await expect(form.getByTestId('command-map-target-summary')).toContainText('현재 도시에서 0칸');
-    await form.getByTestId('command-argument-map').locator('.map-city').nth(1).click();
+    const commandMap = form.getByTestId('command-argument-map');
+    const mapCities = commandMap.locator('.city-base');
+    await expect(mapCities).toHaveCount(2);
+    await expect(commandMap.locator('.city-bg')).toHaveCount(2);
+    await expect(commandMap.locator('.city-flag')).toHaveCount(2);
+    await expect(commandMap.locator('.city-state')).toHaveCount(1);
+    await expect
+        .poll(() =>
+            commandMap
+                .locator('.city-icon')
+                .evaluateAll((images: HTMLImageElement[]) =>
+                    images.every((image) => image.complete && image.naturalWidth > 0 && image.naturalHeight > 0)
+                )
+        )
+        .toBe(true);
+    const castleGeometry = await commandMap.locator('.city-icon').evaluateAll((images: HTMLImageElement[]) =>
+        images.map((image) => ({
+            src: new URL(image.src).pathname,
+            naturalWidth: image.naturalWidth,
+            naturalHeight: image.naturalHeight,
+            renderedWidth: image.getBoundingClientRect().width,
+            renderedHeight: image.getBoundingClientRect().height,
+        }))
+    );
+    expect(castleGeometry).toEqual([
+        expect.objectContaining({ src: '/game/cast_8.gif', naturalWidth: 32, naturalHeight: 24 }),
+        expect.objectContaining({ src: '/game/cast_7.gif', naturalWidth: 28, naturalHeight: 20 }),
+    ]);
+    for (const castle of castleGeometry) {
+        expect(castle.renderedWidth).toBeGreaterThan(castle.naturalWidth * 0.9);
+        expect(castle.renderedHeight).toBeGreaterThan(castle.naturalHeight * 0.9);
+        expect(castle.renderedWidth / castle.naturalWidth).toBeCloseTo(castle.renderedHeight / castle.naturalHeight, 2);
+    }
+    const layerStyles = await commandMap.evaluate((element) => ({
+        background: getComputedStyle(element.querySelector<HTMLElement>('.map-bglayer1')!).backgroundImage,
+        road: getComputedStyle(element.querySelector<HTMLElement>('.map-bgroad')!).backgroundImage,
+    }));
+    expect(layerStyles.background).toContain('/game/map/che/bg_spring.jpg');
+    expect(layerStyles.road).toContain('/game/map/che/che_road.png');
+    await mapCities.nth(1).click();
     await expect(form.locator('select')).toHaveValue('2');
     await expect(form.getByTestId('command-map-target-summary')).toContainText('현재 도시에서 1칸');
-    await form.getByTestId('command-argument-map').locator('.map-city').nth(1).hover();
-    expect(
-        await form
-            .getByTestId('command-argument-map')
-            .locator('.map-city')
-            .nth(1)
-            .evaluate((element) => getComputedStyle(element).cursor)
-    ).toBe('pointer');
-    await form.getByTestId('command-argument-map').locator('.map-city').nth(1).focus();
-    await expect(form.getByTestId('command-argument-map').locator('.map-city').nth(1)).toBeFocused();
+    await mapCities.nth(1).hover();
+    expect(await mapCities.nth(1).evaluate((element) => getComputedStyle(element).cursor)).toBe('pointer');
+    await mapCities.nth(1).focus();
+    await expect(mapCities.nth(1)).toBeFocused();
     await expect(page).toHaveURL(/\/$/);
     const mapGeometry = await form.getByTestId('command-argument-map').evaluate((element) => {
         const area = element.querySelector<HTMLElement>('.map-area')!;
@@ -385,7 +464,7 @@ test('uses the map to choose a nation target in the chief command window', async
     await picker.getByRole('button', { name: /선전포고/ }).click();
     const form = picker.getByTestId('command-argument-form');
     await expect(form.getByTestId('command-argument-guidance')).toContainText('초반 제한');
-    await form.getByTestId('command-argument-map').locator('.map-city').nth(1).click();
+    await form.getByTestId('command-argument-map').locator('.city-base').nth(1).click();
     await expect(form.locator('select')).toHaveValue('2');
     await expect(form.getByTestId('command-map-target-summary')).toContainText('수도 허창 · 도시 1개');
     await expect(page).toHaveURL(/\/che\/chief-center$/);

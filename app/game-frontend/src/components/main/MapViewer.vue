@@ -63,14 +63,20 @@ interface CityView {
     selected: boolean;
 }
 
-const props = defineProps<{
-    mapData: MapSummary | null;
-    mapLayout: MapLayout | null;
-    loading: boolean;
-    selectedCityId?: number | null;
-    detailMode?: boolean;
-    fitContainer?: boolean;
-}>();
+const props = withDefaults(
+    defineProps<{
+        mapData: MapSummary | null;
+        mapLayout: MapLayout | null;
+        loading: boolean;
+        selectedCityId?: number | null;
+        detailMode?: boolean;
+        fitContainer?: boolean;
+    }>(),
+    {
+        // Vue casts an absent Boolean prop to false unless undefined is an explicit default.
+        detailMode: undefined,
+    }
+);
 
 const emit = defineEmits<{
     (event: 'select-city', cityId: number): void;

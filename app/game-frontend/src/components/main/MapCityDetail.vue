@@ -158,7 +158,14 @@ const cityStateStyle = computed(() => ({
         class="city-base"
         :type="props.selectOnly ? 'button' : undefined"
         :to="props.selectOnly ? undefined : { name: 'current-city', query: { cityId: props.city.id } }"
-        :class="[{ mine: props.city.isMyCity, selected: props.city.selected, 'supply-off': !props.city.supply }]"
+        :class="[
+            {
+                mine: props.city.isMyCity,
+                selected: props.city.selected,
+                'supply-off': !props.city.supply,
+                'select-only': props.selectOnly,
+            },
+        ]"
         :style="cityBaseStyle"
         @mouseenter="emit('hover', props.city.id)"
         @mouseleave="emit('leave')"
@@ -193,6 +200,10 @@ const cityStateStyle = computed(() => ({
     padding: 0;
     border: 0;
     background: transparent;
+}
+
+.city-base.select-only {
+    cursor: pointer;
 }
 
 .city-bg {
