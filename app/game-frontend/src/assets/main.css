@@ -39,6 +39,13 @@ body {
     min-width: 500px;
 }
 
+/* These redesigned identity/tournament screens own a true handheld layout. */
+#app:has(.responsive-settings-page),
+#app:has(#tournament-container),
+#app:has(#tournament-betting-container) {
+    min-width: 320px;
+}
+
 body:has(.battle-page),
 body:has(.chief-page),
 body:has(.global-page),

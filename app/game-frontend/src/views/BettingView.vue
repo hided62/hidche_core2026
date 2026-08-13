@@ -2,6 +2,7 @@
 import { formatServerDateTime } from '@sammo-ts/common';
 import { computed, onMounted, ref } from 'vue';
 import TournamentBracket from '../components/tournament/TournamentBracket.vue';
+import GeneralIdentity from '../components/ui/GeneralIdentity.vue';
 import { trpc } from '../utils/trpc';
 
 type Snapshot = Awaited<ReturnType<typeof trpc.tournament.getSnapshot.query>>;
@@ -13,6 +14,7 @@ const loading = ref(false);
 const error = ref<string | null>(null);
 const message = ref<string | null>(null);
 const amounts = ref<Record<number, number>>({});
+const activeRankingPrefix = ref('tt');
 const typeNames = ['전력전', '통솔전', '일기토', '설전'];
 const stageNames = [
     '경기 없음',
@@ -58,7 +60,13 @@ const final16Ids = computed(() =>
 const candidates = computed(() =>
     Array.from({ length: 16 }, (_, index) => {
         const id = final16Ids.value[index] ?? 0;
-        return { id, name: id ? (participantMap.value.get(id)?.name ?? `#${id}`) : '-' };
+        const participant = id ? participantMap.value.get(id) : null;
+        return {
+            id,
+            name: id ? (participant?.name ?? `#${id}`) : '-',
+            picture: participant?.picture ?? null,
+            imageServer: participant?.imageServer ?? 0,
+        };
     })
 );
 const totalAmount = computed(() => summary.value?.totalAmount ?? 0);
@@ -132,58 +140,43 @@ const placeBet = async (targetId: number) => {
             :bet-totals="betTotals"
             :total-bet="totalAmount"
             :show-legend="false"
-            force-desktop
         />
 
         <section class="candidate-table bg0">
-            <div class="candidate-row names">
-                <span v-for="candidate in candidates" :key="candidate.id || candidate.name">{{ candidate.name }}</span>
+            <div class="candidate-grid">
+                <article v-for="candidate in candidates" :key="candidate.id || candidate.name" class="candidate-card">
+                    <GeneralIdentity
+                        :name="candidate.name"
+                        :picture="candidate.picture"
+                        :image-server="candidate.imageServer"
+                        :icon-size="36"
+                    />
+                    <div class="candidate-return">
+                        <span class="ratio-color">{{ ratio(candidate.id) }}</span>
+                        <span aria-hidden="true">×</span>
+                        <span class="gold-color">{{ amounts[candidate.id] ?? 10 }}</span>
+                        <span aria-hidden="true">=</span>
+                        <strong class="return-color">{{ expected(candidate.id) }}</strong>
+                    </div>
+                    <div v-if="bettingOpen" class="candidate-actions">
+                        <select
+                            v-model.number="amounts[candidate.id]"
+                            :aria-label="`${candidate.name} 베팅 금액`"
+                            :disabled="!candidate.id"
+                        >
+                            <option :value="10">금10</option>
+                            <option :value="20">금20</option>
+                            <option :value="50">금50</option>
+                            <option :value="100">금100</option>
+                            <option :value="200">금200</option>
+                            <option :value="500">금500</option>
+                            <option :value="1000">최대</option>
+                        </select>
+                        <button type="button" :disabled="!candidate.id" @click="placeBet(candidate.id)">베팅</button>
+                    </div>
+                </article>
             </div>
-            <div class="candidate-row ratios">
-                <span v-for="candidate in candidates" :key="candidate.id || candidate.name">{{
-                    ratio(candidate.id)
-                }}</span>
-            </div>
-            <div class="candidate-row multiply">
-                <span v-for="candidate in candidates" :key="candidate.id || candidate.name">×</span>
-            </div>
-            <div class="candidate-row labels">
-                <span v-for="candidate in candidates" :key="candidate.id || candidate.name">∥</span>
-            </div>
-            <div class="candidate-row expected">
-                <span v-for="candidate in candidates" :key="candidate.id || candidate.name">{{
-                    expected(candidate.id)
-                }}</span>
-            </div>
-            <div v-if="bettingOpen" class="candidate-row selects">
-                <select
-                    v-for="candidate in candidates"
-                    :key="candidate.id || candidate.name"
-                    v-model.number="amounts[candidate.id]"
-                    :aria-label="`${candidate.name} 베팅 금액`"
-                    :disabled="!candidate.id"
-                >
-                    <option :value="10">금10</option>
-                    <option :value="20">금20</option>
-                    <option :value="50">금50</option>
-                    <option :value="100">금100</option>
-                    <option :value="200">금200</option>
-                    <option :value="500">금500</option>
-                    <option :value="1000">최대</option>
-                </select>
-            </div>
-            <div v-if="bettingOpen" class="candidate-row buttons">
-                <button
-                    v-for="candidate in candidates"
-                    :key="candidate.id || candidate.name"
-                    type="button"
-                    :disabled="!candidate.id"
-                    @click="placeBet(candidate.id)"
-                >
-                    베팅!
-                </button>
-            </div>
-            <p>
+            <p class="candidate-help">
                 <span class="ratio-color">배당률</span> × <span class="gold-color">베팅금</span> =
                 <span class="return-color">적중시 환수금</span><br />
                 <span class="ratio-color">( 베팅후 500원 이하일땐 베팅이 불가능합니다. )</span>
@@ -204,8 +197,26 @@ const placeBet = async (targetId: number) => {
         <section class="ranking-placeholder bg0">
             순위 / 장수명 / 능력치 / 경기수 / 승리 / 무승부 / 패배 / 집계점수 / 우승횟수
         </section>
+        <div class="ranking-tabs bg0" role="tablist" aria-label="토너먼트 랭킹 종목 선택">
+            <button
+                v-for="section in rankings"
+                :key="`ranking-tab-${section.prefix}`"
+                type="button"
+                role="tab"
+                :aria-selected="activeRankingPrefix === section.prefix"
+                :class="{ active: activeRankingPrefix === section.prefix }"
+                @click="activeRankingPrefix = section.prefix"
+            >
+                {{ section.title.replaceAll(' ', '') }}
+            </button>
+        </div>
         <section class="ranking-grid bg0">
-            <table v-for="section in rankings" :key="section.prefix" class="ranking-table">
+            <table
+                v-for="section in rankings"
+                :key="section.prefix"
+                class="ranking-table"
+                :class="{ 'mobile-active': activeRankingPrefix === section.prefix }"
+            >
                 <thead>
                     <tr>
                         <th colspan="9">{{ section.title }}</th>
@@ -225,7 +236,14 @@ const placeBet = async (targetId: number) => {
                 <tbody>
                     <tr v-for="entry in section.entries" :key="entry.generalId">
                         <td>{{ entry.rank }}</td>
-                        <td>{{ entry.name }}</td>
+                        <td class="ranking-general">
+                            <GeneralIdentity
+                                :name="entry.name"
+                                :picture="entry.picture"
+                                :image-server="entry.imageServer"
+                                :icon-size="24"
+                            />
+                        </td>
                         <td>{{ entry.stat }}</td>
                         <td>{{ entry.games }}</td>
                         <td>{{ entry.win }}</td>
@@ -259,9 +277,10 @@ const placeBet = async (targetId: number) => {
 
 <style scoped>
 .betting-page {
-    width: 1125px;
-    height: 1346px;
-    overflow: hidden;
+    width: 100%;
+    max-width: 1200px;
+    min-width: 0;
+    min-height: 100vh;
     margin: 0 auto;
     color: #fff;
     font-family: var(--sammo-font-sans);
@@ -270,8 +289,8 @@ const placeBet = async (targetId: number) => {
     text-align: center;
 }
 .betting-bracket :deep(.bracket-canvas) {
-    width: 1125px;
-    min-width: 1125px;
+    width: 100%;
+    min-width: 1000px;
 }
 .betting-bracket :deep(.bracket-round),
 .betting-bracket :deep(.connector-row) {
@@ -353,20 +372,34 @@ const placeBet = async (targetId: number) => {
 }
 .candidate-table {
     border: 1px solid gray;
-    padding: 10px 0;
-    font-size: 10px;
+    padding: 10px;
+    font-size: 12px;
 }
-.candidate-row {
+.candidate-grid {
     display: grid;
-    grid-template-columns: repeat(16, 70px);
-    align-items: center;
-    min-height: 10px;
-    line-height: 10px;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 8px;
 }
-.names {
-    min-height: 14px;
+.candidate-card {
+    min-width: 0;
+    padding: 8px;
+    border: 1px solid #5b504b;
+    background: rgb(0 0 0 / 26%);
+    text-align: left;
 }
-.ratios,
+.candidate-return {
+    display: grid;
+    grid-template-columns: 1fr auto 1fr auto 1fr;
+    gap: 4px;
+    margin: 8px 0;
+    text-align: center;
+    font-variant-numeric: tabular-nums;
+}
+.candidate-actions {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 64px;
+    gap: 6px;
+}
 .ratio-color {
     color: skyblue;
 }
@@ -378,7 +411,7 @@ const placeBet = async (targetId: number) => {
     color: orange;
 }
 select,
-.buttons button {
+.candidate-actions button {
     width: 100%;
     min-height: 27px;
     padding: 2px 1px;
@@ -412,7 +445,7 @@ select:disabled {
     cursor: not-allowed;
     opacity: 0.5;
 }
-.candidate-table p {
+.candidate-help {
     min-height: 20px;
     margin: 8px 0 0;
     font-size: 18px;
@@ -431,11 +464,13 @@ select:disabled {
 }
 .ranking-grid {
     display: grid;
-    grid-template-columns: repeat(4, 280px);
+    grid-template-columns: repeat(2, minmax(0, 1fr));
     align-items: start;
+    gap: 8px;
+    padding: 8px;
 }
 .ranking-table {
-    width: 280px;
+    width: 100%;
     border-collapse: collapse;
     font-variant-numeric: tabular-nums;
     font-size: 12px;
@@ -443,7 +478,7 @@ select:disabled {
 }
 .ranking-table th,
 .ranking-table td {
-    height: 14px;
+    height: 28px;
     padding: 1px;
     border: 1px solid #555;
 }
@@ -457,11 +492,19 @@ select:disabled {
 .ranking-table .bg1 {
     background: #213b52;
 }
+.ranking-table th:nth-child(2),
 .ranking-table td:nth-child(2) {
-    max-width: 80px;
+    width: 130px;
+    max-width: 130px;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
+}
+.ranking-general {
+    text-align: left;
+}
+.ranking-tabs {
+    display: none;
 }
 .guide {
     padding: 10px;
@@ -469,5 +512,84 @@ select:disabled {
 }
 .error {
     color: #ff8080;
+}
+@media (max-width: 800px) {
+    .betting-page {
+        max-width: 100%;
+        font-size: 13px;
+    }
+    .title {
+        height: auto;
+        min-height: 55px;
+    }
+    .state {
+        font-size: 18px;
+    }
+    .section-title,
+    .ranking-title {
+        font-size: 20px;
+    }
+    .candidate-grid {
+        grid-template-columns: 1fr;
+    }
+    .candidate-card {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) 112px;
+        align-items: center;
+        gap: 8px 12px;
+    }
+    .candidate-return {
+        margin: 0;
+    }
+    .candidate-actions {
+        grid-column: 1 / -1;
+    }
+    .candidate-help {
+        font-size: 14px;
+        line-height: 18px;
+    }
+    .ranking-placeholder {
+        display: none;
+    }
+    .ranking-tabs {
+        display: grid;
+        grid-template-columns: repeat(4, minmax(0, 1fr));
+        gap: 5px;
+        padding: 8px;
+    }
+    .ranking-tabs button {
+        height: 36px;
+        margin: 0;
+        border-radius: 3px;
+    }
+    .ranking-tabs button.active {
+        border-color: #f39c12;
+        background: #8a5b13;
+    }
+    .ranking-grid {
+        display: block;
+        overflow-x: auto;
+        padding: 0;
+    }
+    .ranking-table {
+        display: none;
+        min-width: 390px;
+        font-size: 11px;
+    }
+    .ranking-table.mobile-active {
+        display: table;
+    }
+    .ranking-table th:nth-child(2),
+    .ranking-table td:nth-child(2) {
+        width: 112px;
+        max-width: 112px;
+    }
+    .guide,
+    .betting-footer {
+        padding: 10px;
+    }
+    .betting-footer small {
+        white-space: normal;
+    }
 }
 </style>

@@ -669,7 +669,7 @@ test('접속량정보 keeps the legacy public 1016px chart geometry', async ({ p
     expect(mobileWidth).toBe(1016);
 });
 
-test('내 정보&설정 keeps the legacy 1000px/500px geometry and saves in place', async ({ page }) => {
+test('내 정보&설정 keeps desktop density and becomes a 390px horizontal-identity layout', async ({ page }) => {
     const state: FixtureState = { permission: 'head', myset: 3, settingMutations: [], accessPages: [] };
     await install(page, state);
     await page.setViewportSize({ width: 1000, height: 900 });
@@ -727,7 +727,7 @@ test('내 정보&설정 keeps the legacy 1000px/500px geometry and saves in plac
         };
     });
     expect(desktop.width).toBe(1000);
-    expect(desktop.minWidth).toBe('500px');
+    expect(desktop.minWidth).toBe('0px');
     expect(desktop.fontSize).toBe('14px');
     expect(desktop.columns.split(' ')).toHaveLength(2);
     expect(desktop.titleHeight).toBeCloseTo(54, 0);
@@ -797,26 +797,39 @@ test('내 정보&설정 keeps the legacy 1000px/500px geometry and saves in plac
         expect(state.settingMutations.at(-1)).not.toHaveProperty('generalId');
     }
 
-    await page.setViewportSize({ width: 500, height: 900 });
+    await page.setViewportSize({ width: 390, height: 900 });
     await page.reload();
     const mobile = await page.locator('#container').evaluate((element) => {
         const rect = element.getBoundingClientRect();
         const settings = element.querySelector<HTMLElement>('.settings-column')!.getBoundingClientRect();
+        const icon = element.querySelector<HTMLElement>('[data-general-basic-card] .general-icon')!.getBoundingClientRect();
+        const name = element.querySelector<HTMLElement>('[data-general-basic-card] .general-title')!.getBoundingClientRect();
         return {
             width: rect.width,
             scrollWidth: document.documentElement.scrollWidth,
             columns: getComputedStyle(element.querySelector('.top-grid')!).gridTemplateColumns,
             settingsOffset: settings.x - rect.x,
             settingsWidth: settings.width,
+            identity: {
+                iconRight: icon.right,
+                nameLeft: name.left,
+                iconTop: icon.top,
+                iconBottom: icon.bottom,
+                nameTop: name.top,
+                nameBottom: name.bottom,
+            },
         };
     });
     expect(mobile).toMatchObject({
-        width: 500,
-        scrollWidth: 500,
-        columns: '500px',
+        width: 390,
+        scrollWidth: 390,
+        columns: '390px',
         settingsOffset: 0,
-        settingsWidth: 500,
+        settingsWidth: 390,
     });
+    expect(mobile.identity.nameLeft).toBeGreaterThanOrEqual(mobile.identity.iconRight - 1);
+    expect(mobile.identity.nameTop).toBeLessThan(mobile.identity.iconBottom);
+    expect(mobile.identity.nameBottom).toBeGreaterThan(mobile.identity.iconTop);
     await persistParityArtifact(page, 'core-my-page-mobile', mobile);
 });
 
