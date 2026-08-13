@@ -68,60 +68,40 @@ const operationInput = (route: Route, index: number): DashboardBundleInput => {
     return entry.json ?? (entry as DashboardBundleInput);
 };
 
-const readModelChanges = (
+const readModelInvalidation = (
     overrides: Partial<{
-        generalIds: number[];
-        cityIds: number[];
-        nationIds: number[];
-        mapGeneralIds: number[];
-        mapCityIds: number[];
-        mapNationIds: number[];
-        frontStatusGeneralIds: number[];
-        frontStatusNationIds: number[];
-        frontStatusActorIds: number[];
-        frontStatusChanged: boolean;
-        lobbyGeneralIds: number[];
-        lobbyChanged: boolean;
-        reservedGeneralIds: number[];
-        recordGeneralIds: number[];
-        worldChanged: boolean;
-        globalRecordsChanged: boolean;
-        worldHistoryChanged: boolean;
-        contactsChanged: boolean;
+        context: boolean;
+        lobby: boolean;
+        map: boolean;
+        commands: boolean;
+        contacts: boolean;
+        boardAccess: boolean;
+        reservedTurns: boolean;
+        records: boolean;
+        frontStatus: boolean;
     }>
 ) => ({
-    generalIds: [],
-    cityIds: [],
-    nationIds: [],
-    mapGeneralIds: [],
-    mapCityIds: [],
-    mapNationIds: [],
-    frontStatusGeneralIds: [],
-    frontStatusNationIds: [],
-    frontStatusActorIds: [],
-    frontStatusChanged: false,
-    lobbyGeneralIds: [],
-    lobbyChanged: false,
-    reservedGeneralIds: [],
-    recordGeneralIds: [],
-    worldChanged: false,
-    globalRecordsChanged: false,
-    worldHistoryChanged: false,
-    contactsChanged: false,
+    context: false,
+    lobby: false,
+    map: false,
+    commands: false,
+    contacts: false,
+    boardAccess: false,
+    reservedTurns: false,
+    records: false,
+    frontStatus: false,
     ...overrides,
 });
 
-const emitReadModelChanges = (page: Page, changes: ReturnType<typeof readModelChanges>) =>
+const emitReadModelInvalidation = (page: Page, invalidation: ReturnType<typeof readModelInvalidation>) =>
     page.evaluate((payload) => {
         (window as unknown as { __emitMainRealtime: (type: string, value: unknown) => void }).__emitMainRealtime(
-            'readModelChanged',
+            'readModelInvalidated',
             {
-                at: new Date().toISOString(),
-                revision: Date.now(),
-                changes: payload,
+                invalidation: payload,
             }
         );
-    }, changes);
+    }, invalidation);
 
 const commandTableFixture = (large: boolean, blockedCount = 0) => ({
     general: large
@@ -1279,26 +1259,6 @@ test('realtime read-model events skip clock-only work, merge bursts, patch in pl
 
     const callsBeforeRefresh = state.generalMeCalls;
     const operationsBeforeClockOnly = state.operations.length;
-    await page.evaluate(() => {
-        (window as unknown as { __emitMainRealtime: (type: string, payload: unknown) => void }).__emitMainRealtime(
-            'turnCompleted',
-            {
-                at: new Date().toISOString(),
-                lastTurnTime: '0185-02-01T00:00:00.000Z',
-                changes: {
-                    generalIds: [],
-                    cityIds: [],
-                    nationIds: [],
-                    reservedGeneralIds: [],
-                    recordGeneralIds: [],
-                    worldChanged: false,
-                    globalRecordsChanged: false,
-                    worldHistoryChanged: false,
-                    contactsChanged: false,
-                },
-            }
-        );
-    });
     await new Promise((resolve) => setTimeout(resolve, 300));
     expect(state.operations.slice(operationsBeforeClockOnly)).toEqual([]);
 
@@ -1308,28 +1268,17 @@ test('realtime read-model events skip clock-only work, merge bursts, patch in pl
         const emit = (window as unknown as { __emitMainRealtime: (type: string, payload: unknown) => void })
             .__emitMainRealtime;
         for (let index = 0; index < 100; index += 1) {
-            emit('turnCompleted', {
-                at: new Date().toISOString(),
-                lastTurnTime: '0185-02-01T00:00:00.000Z',
-                changes: {
-                    generalIds: [7],
-                    cityIds: [],
-                    nationIds: [],
-                    mapGeneralIds: [],
-                    mapCityIds: [],
-                    mapNationIds: [],
-                    frontStatusGeneralIds: [],
-                    frontStatusNationIds: [],
-                    frontStatusActorIds: [],
-                    frontStatusChanged: false,
-                    lobbyGeneralIds: [],
-                    lobbyChanged: false,
-                    reservedGeneralIds: [],
-                    recordGeneralIds: [],
-                    worldChanged: false,
-                    globalRecordsChanged: false,
-                    worldHistoryChanged: false,
-                    contactsChanged: false,
+            emit('readModelInvalidated', {
+                invalidation: {
+                    context: true,
+                    lobby: false,
+                    map: false,
+                    commands: true,
+                    contacts: false,
+                    boardAccess: true,
+                    reservedTurns: false,
+                    records: false,
+                    frontStatus: false,
                 },
             });
         }
@@ -1374,29 +1323,18 @@ test('realtime read-model events skip clock-only work, merge bursts, patch in pl
     const operationsBeforeSurvey = state.operations.length;
     await page.evaluate(() => {
         (window as unknown as { __emitMainRealtime: (type: string, payload: unknown) => void }).__emitMainRealtime(
-            'readModelChanged',
+            'readModelInvalidated',
             {
-                at: new Date().toISOString(),
-                revision: 42,
-                changes: {
-                    generalIds: [],
-                    cityIds: [],
-                    nationIds: [],
-                    mapGeneralIds: [],
-                    mapCityIds: [],
-                    mapNationIds: [],
-                    frontStatusGeneralIds: [],
-                    frontStatusNationIds: [],
-                    frontStatusActorIds: [],
-                    frontStatusChanged: true,
-                    lobbyGeneralIds: [],
-                    lobbyChanged: false,
-                    reservedGeneralIds: [],
-                    recordGeneralIds: [],
-                    worldChanged: false,
-                    globalRecordsChanged: false,
-                    worldHistoryChanged: false,
-                    contactsChanged: false,
+                invalidation: {
+                    context: false,
+                    lobby: false,
+                    map: false,
+                    commands: false,
+                    contacts: false,
+                    boardAccess: false,
+                    reservedTurns: false,
+                    records: false,
+                    frontStatus: true,
                 },
             }
         );
@@ -1471,7 +1409,7 @@ test('realtime read-model events skip clock-only work, merge bursts, patch in pl
         { op: 'replace', path: '/general/0/values/0/possible', value: false },
         { op: 'replace', path: '/general/0/values/0/status', value: 'blocked' },
     ];
-    await emitReadModelChanges(page, readModelChanges({ cityIds: [1], mapCityIds: [] }));
+    await emitReadModelInvalidation(page, readModelInvalidation({ context: true, commands: true }));
     await expect.poll(() => state.generalMeCalls, { timeout: 4_000 }).toBe(callsBeforeDefence + 1);
     await expect(page.locator('[data-city-progress="수비"] .city-progress__text')).toHaveText('900 / 2,000');
 
@@ -1485,7 +1423,10 @@ test('realtime read-model events skip clock-only work, merge bursts, patch in pl
         { op: 'replace', path: '/general/0/values/1/possible', value: false },
         { op: 'replace', path: '/general/0/values/1/status', value: 'blocked' },
     ];
-    await emitReadModelChanges(page, readModelChanges({ nationIds: [1], mapNationIds: [], frontStatusNationIds: [] }));
+    await emitReadModelInvalidation(
+        page,
+        readModelInvalidation({ context: true, commands: true, boardAccess: true })
+    );
     await expect.poll(() => state.generalMeCalls, { timeout: 4_000 }).toBe(callsBeforeTax + 1);
 
     const callsBeforeCityState = state.generalMeCalls;
@@ -1499,7 +1440,7 @@ test('realtime read-model events skip clock-only work, merge bursts, patch in pl
         { op: 'replace', path: '/general/0/values/2/possible', value: false },
         { op: 'replace', path: '/general/0/values/2/status', value: 'blocked' },
     ];
-    await emitReadModelChanges(page, readModelChanges({ cityIds: [1], mapCityIds: [1] }));
+    await emitReadModelInvalidation(page, readModelInvalidation({ context: true, map: true, commands: true }));
     await expect.poll(() => state.generalMeCalls, { timeout: 4_000 }).toBe(callsBeforeCityState + 1);
     await expect(page.locator('.city-base .city-state img')).toHaveAttribute('src', /event5\.gif$/u);
     expect(state.operations.slice(operationsBeforeCityState).sort()).toEqual(
@@ -1512,7 +1453,10 @@ test('realtime read-model events skip clock-only work, merge bursts, patch in pl
     state.contextRevision = 'O'.repeat(22);
     state.contextOperations = [{ op: 'replace', path: '/missing/value', value: 'invalid-delta' }];
     state.commandTableOperations = [];
-    await emitReadModelChanges(page, readModelChanges({ generalIds: [7] }));
+    await emitReadModelInvalidation(
+        page,
+        readModelInvalidation({ context: true, commands: true, boardAccess: true })
+    );
     await expect.poll(() => state.generalMeCalls, { timeout: 4_000 }).toBe(callsBeforeFallback + 2);
     expect(state.forceSnapshotCalls).toBe(forcedBeforeFallback + 1);
     await expect(page.locator('.general-title')).toContainText('snapshot복구장수');
@@ -1541,29 +1485,18 @@ test('realtime read-model events skip clock-only work, merge bursts, patch in pl
     const callsAfterLeavingMain = state.generalMeCalls;
     await page.evaluate(() => {
         (window as unknown as { __emitMainRealtime: (type: string, payload: unknown) => void }).__emitMainRealtime(
-            'turnCompleted',
+            'readModelInvalidated',
             {
-                at: new Date().toISOString(),
-                lastTurnTime: '0185-02-01T00:00:00.000Z',
-                changes: {
-                    generalIds: [7],
-                    cityIds: [],
-                    nationIds: [],
-                    mapGeneralIds: [],
-                    mapCityIds: [],
-                    mapNationIds: [],
-                    frontStatusGeneralIds: [],
-                    frontStatusNationIds: [],
-                    frontStatusActorIds: [],
-                    frontStatusChanged: false,
-                    lobbyGeneralIds: [],
-                    lobbyChanged: false,
-                    reservedGeneralIds: [],
-                    recordGeneralIds: [],
-                    worldChanged: false,
-                    globalRecordsChanged: false,
-                    worldHistoryChanged: false,
-                    contactsChanged: false,
+                invalidation: {
+                    context: true,
+                    lobby: false,
+                    map: false,
+                    commands: true,
+                    contacts: false,
+                    boardAccess: true,
+                    reservedTurns: false,
+                    records: false,
+                    frontStatus: false,
                 },
             }
         );
@@ -1597,7 +1530,7 @@ test('global activity, world history, and a month boundary refresh their visible
         { id: 3, text: '장수 동향 기록' },
     ];
     const operationsBeforeGlobal = state.operations.length;
-    await emitReadModelChanges(page, readModelChanges({ globalRecordsChanged: true }));
+    await emitReadModelInvalidation(page, readModelInvalidation({ records: true }));
     await expect(page.locator('[data-main-target="global-records"]')).toContainText('자동 갱신된 장수 동향');
     expect(state.operations.slice(operationsBeforeGlobal)).toEqual(['general.getRecentRecords']);
 
@@ -1606,24 +1539,22 @@ test('global activity, world history, and a month boundary refresh their visible
         { id: 1, text: '중원 정세 기록' },
     ];
     const operationsBeforeHistory = state.operations.length;
-    await emitReadModelChanges(page, readModelChanges({ worldHistoryChanged: true }));
+    await emitReadModelInvalidation(page, readModelInvalidation({ records: true }));
     await expect(page.locator('[data-main-target="world-history"]')).toContainText('자동 갱신된 중원 정세');
     expect(state.operations.slice(operationsBeforeHistory)).toEqual(['general.getRecentRecords']);
 
     state.currentMonth = 2;
     const operationsBeforeMonth = state.operations.length;
     await page.evaluate(
-        (changes) => {
+        (invalidation) => {
             (window as unknown as { __emitMainRealtime: (type: string, payload: unknown) => void }).__emitMainRealtime(
-                'turnCompleted',
+                'readModelInvalidated',
                 {
-                    at: new Date().toISOString(),
-                    lastTurnTime: '0185-02-01T00:00:00.000Z',
-                    changes,
+                    invalidation,
                 }
             );
         },
-        readModelChanges({ worldChanged: true })
+        readModelInvalidation({ lobby: true, map: true, commands: true })
     );
     await expect(page.getByText('현재: 185년 2월')).toBeVisible();
     await expect(page.locator('.map-viewer')).toContainText('185年 2月');
@@ -1689,29 +1620,18 @@ test('same-account main tabs share one realtime diff and exclude a tab while syn
     state.generalName = '탭공유갱신장수';
     await leaderPage.evaluate(() => {
         (window as unknown as { __emitMainRealtime: (type: string, payload: unknown) => void }).__emitMainRealtime(
-            'readModelChanged',
+            'readModelInvalidated',
             {
-                at: new Date().toISOString(),
-                revision: 100,
-                changes: {
-                    generalIds: [7],
-                    cityIds: [],
-                    nationIds: [],
-                    mapGeneralIds: [],
-                    mapCityIds: [],
-                    mapNationIds: [],
-                    frontStatusGeneralIds: [],
-                    frontStatusNationIds: [],
-                    frontStatusActorIds: [],
-                    frontStatusChanged: false,
-                    lobbyGeneralIds: [],
-                    lobbyChanged: false,
-                    reservedGeneralIds: [],
-                    recordGeneralIds: [],
-                    worldChanged: false,
-                    globalRecordsChanged: false,
-                    worldHistoryChanged: false,
-                    contactsChanged: false,
+                invalidation: {
+                    context: true,
+                    lobby: false,
+                    map: false,
+                    commands: true,
+                    contacts: false,
+                    boardAccess: true,
+                    reservedTurns: false,
+                    records: false,
+                    frontStatus: false,
                 },
             }
         );
@@ -1727,29 +1647,18 @@ test('same-account main tabs share one realtime diff and exclude a tab while syn
     state.generalName = '리더만갱신장수';
     await leaderPage.evaluate(() => {
         (window as unknown as { __emitMainRealtime: (type: string, payload: unknown) => void }).__emitMainRealtime(
-            'readModelChanged',
+            'readModelInvalidated',
             {
-                at: new Date().toISOString(),
-                revision: 101,
-                changes: {
-                    generalIds: [7],
-                    cityIds: [],
-                    nationIds: [],
-                    mapGeneralIds: [],
-                    mapCityIds: [],
-                    mapNationIds: [],
-                    frontStatusGeneralIds: [],
-                    frontStatusNationIds: [],
-                    frontStatusActorIds: [],
-                    frontStatusChanged: false,
-                    lobbyGeneralIds: [],
-                    lobbyChanged: false,
-                    reservedGeneralIds: [],
-                    recordGeneralIds: [],
-                    worldChanged: false,
-                    globalRecordsChanged: false,
-                    worldHistoryChanged: false,
-                    contactsChanged: false,
+                invalidation: {
+                    context: true,
+                    lobby: false,
+                    map: false,
+                    commands: true,
+                    contacts: false,
+                    boardAccess: true,
+                    reservedTurns: false,
+                    records: false,
+                    frontStatus: false,
                 },
             }
         );

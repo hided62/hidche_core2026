@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import { createEmptyRealtimeReadModelChanges } from '@sammo-ts/common';
+import { createEmptyRealtimeReadModelChanges, createEmptyRealtimeReadModelInvalidation } from '@sammo-ts/common';
 import { createMergedReadModelRefreshQueue, resolveDashboardRefreshPlan } from '../src/utils/dashboardReadModel.ts';
 
 void test('last-turn-time-only events do not schedule any dashboard query', () => {
@@ -170,14 +170,14 @@ void test('targets a submitted survey projection to its own general', () => {
     assert.equal(resolveDashboardRefreshPlan(changes, { generalId: 8, cityId: 3, nationId: 2 }).frontStatus, false);
 });
 
-void test('merges burst payloads without losing entity ids and starts at most once per interval', async () => {
+void test('merges browser-safe boolean invalidations and starts at most once per interval', async () => {
     let nowMs = 0;
     let nextTimerId = 1;
     const timers = new Map<number, { callback: () => void; at: number }>();
-    const observed: number[][] = [];
+    const observed: Array<{ context: boolean; records: boolean }> = [];
     const queue = createMergedReadModelRefreshQueue(
-        async (changes) => {
-            observed.push(changes.generalIds);
+        async (invalidation) => {
+            observed.push({ context: invalidation.context, records: invalidation.records });
         },
         {
             minIntervalMs: 1_000,
@@ -199,18 +199,21 @@ void test('merges burst payloads without losing entity ids and starts at most on
         }
     };
 
-    queue.request({ ...createEmptyRealtimeReadModelChanges(), generalIds: [7] });
+    queue.request({ ...createEmptyRealtimeReadModelInvalidation(), context: true });
     runDueTimers();
     await new Promise<void>((resolve) => setImmediate(resolve));
-    assert.deepEqual(observed, [[7]]);
+    assert.deepEqual(observed, [{ context: true, records: false }]);
 
-    queue.request({ ...createEmptyRealtimeReadModelChanges(), generalIds: [9] });
-    queue.request({ ...createEmptyRealtimeReadModelChanges(), generalIds: [8, 9] });
+    queue.request({ ...createEmptyRealtimeReadModelInvalidation(), context: true });
+    queue.request({ ...createEmptyRealtimeReadModelInvalidation(), records: true });
     nowMs = 999;
     runDueTimers();
     assert.equal(observed.length, 1);
     nowMs = 1_000;
     runDueTimers();
     await new Promise<void>((resolve) => setImmediate(resolve));
-    assert.deepEqual(observed, [[7], [8, 9]]);
+    assert.deepEqual(observed, [
+        { context: true, records: false },
+        { context: true, records: true },
+    ]);
 });

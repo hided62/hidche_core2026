@@ -4,8 +4,8 @@ import { MESSAGE_MAILBOX_NATIONAL_BASE, MESSAGE_MAILBOX_PUBLIC, type MessageType
 import {
     applyReadModelDelta,
     cloneReadModelJson,
-    type RealtimeEvent,
-    type RealtimeReadModelChanges,
+    type PublicRealtimeEvent,
+    type RealtimeReadModelInvalidation,
 } from '@sammo-ts/common';
 import { trpc } from '../utils/trpc';
 import { useMapViewerStore } from './mapViewer';
@@ -13,7 +13,7 @@ import { useSessionStore } from './session';
 import { createLatestRefreshQueue } from '../utils/latestRefreshQueue';
 import { createRateLimitedRefreshQueue } from '../utils/rateLimitedRefreshQueue';
 import { structurallyShare } from '../utils/structuralShare';
-import { createMergedReadModelRefreshQueue, resolveDashboardRefreshPlan } from '../utils/dashboardReadModel';
+import { createMergedReadModelRefreshQueue } from '../utils/dashboardReadModel';
 import { createBroadcastTabCoordinator, type BroadcastTabCoordinator } from '../utils/broadcastTabCoordinator';
 import { resolveWithReadModelSnapshotFallback } from '../utils/readModelDeltaRecovery';
 
@@ -612,16 +612,11 @@ export const useMainDashboardStore = defineStore('mainDashboard', () => {
         }
     );
 
-    const refreshChangedReadModels = async (changes: RealtimeReadModelChanges) => {
+    const refreshChangedReadModels = async (plan: RealtimeReadModelInvalidation) => {
         const id = generalId.value;
         if (!id) {
             return;
         }
-        const plan = resolveDashboardRefreshPlan(changes, {
-            generalId: id,
-            cityId: city.value?.id ?? null,
-            nationId: nation.value?.id ?? null,
-        });
         if (!Object.values(plan).some(Boolean)) {
             return;
         }
@@ -944,12 +939,12 @@ export const useMainDashboardStore = defineStore('mainDashboard', () => {
         return url.toString();
     };
 
-    const parseRealtimePayload = (raw: MessageEvent): RealtimeEvent | null => {
+    const parseRealtimePayload = (raw: MessageEvent): PublicRealtimeEvent | null => {
         if (!raw.data || typeof raw.data !== 'string') {
             return null;
         }
         try {
-            const parsed = JSON.parse(raw.data) as RealtimeEvent;
+            const parsed = JSON.parse(raw.data) as PublicRealtimeEvent;
             if (!parsed || typeof parsed !== 'object') {
                 return null;
             }
@@ -960,21 +955,6 @@ export const useMainDashboardStore = defineStore('mainDashboard', () => {
         } catch {
             return null;
         }
-    };
-
-    const isMailboxRelevant = (mailbox: number): boolean => {
-        if (mailbox === MESSAGE_MAILBOX_PUBLIC) {
-            return true;
-        }
-        const currentGeneralId = generalId.value;
-        if (currentGeneralId && mailbox === currentGeneralId) {
-            return true;
-        }
-        const currentNationId = nationId.value;
-        if (currentNationId && mailbox === MESSAGE_MAILBOX_NATIONAL_BASE + currentNationId) {
-            return true;
-        }
-        return false;
     };
 
     const closeRealtimeSource = () => {
@@ -1095,36 +1075,34 @@ export const useMainDashboardStore = defineStore('mainDashboard', () => {
             realtimeStatus.value = realtimeEnabled.value ? 'idle' : 'paused';
             realtimeCoordinator?.postFromLeader({ kind: 'status', status: 'idle' });
         });
-        source.addEventListener('turnCompleted', (event) => {
+        source.addEventListener('readModelInvalidated', (event) => {
             if (realtimeCoordinator !== null && !realtimeCoordinator.isLeader()) return;
             const payload = parseRealtimePayload(event);
-            if (!payload || payload.type !== 'turnCompleted') {
+            if (!payload || payload.type !== 'readModelInvalidated') {
                 return;
             }
-            if (!payload.changes) {
-                // Rolling deployment fallback for an older daemon.
+            readModelRefreshQueue.request(payload.invalidation);
+        });
+        source.addEventListener('messagesInvalidated', (event) => {
+            if (realtimeCoordinator !== null && !realtimeCoordinator.isLeader()) return;
+            const payload = parseRealtimePayload(event);
+            if (!payload || payload.type !== 'messagesInvalidated') {
+                return;
+            }
+            void refreshMessages();
+        });
+
+        // Rolling deployment fallback: an older API may still expose internal
+        // events. Do not inspect their payload; use the bounded full refresh.
+        for (const legacyEventType of ['turnCompleted', 'readModelChanged'] as const) {
+            source.addEventListener(legacyEventType, () => {
+                if (realtimeCoordinator !== null && !realtimeCoordinator.isLeader()) return;
                 realtimeRefreshQueue.request();
-                return;
-            }
-            readModelRefreshQueue.request(payload.changes);
-        });
-        source.addEventListener('readModelChanged', (event) => {
+            });
+        }
+        source.addEventListener('messageCreated', () => {
             if (realtimeCoordinator !== null && !realtimeCoordinator.isLeader()) return;
-            const payload = parseRealtimePayload(event);
-            if (!payload || payload.type !== 'readModelChanged') {
-                return;
-            }
-            readModelRefreshQueue.request(payload.changes);
-        });
-        source.addEventListener('messageCreated', (event) => {
-            if (realtimeCoordinator !== null && !realtimeCoordinator.isLeader()) return;
-            const payload = parseRealtimePayload(event);
-            if (!payload || payload.type !== 'messageCreated') {
-                return;
-            }
-            if (isMailboxRelevant(payload.mailbox)) {
-                void refreshMessages();
-            }
+            void refreshMessages();
         });
         source.addEventListener('ping', () => {
             if (realtimeEnabled.value) {
