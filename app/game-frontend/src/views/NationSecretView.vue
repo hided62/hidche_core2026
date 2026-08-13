@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { formatServerDateTime } from '@sammo-ts/common';
 import { computed, onMounted, ref } from 'vue';
 import { trpc } from '../utils/trpc';
 type Result = Awaited<ReturnType<typeof trpc.nation.getSecretGeneralList.query>>;
@@ -147,7 +148,7 @@ onMounted(load);
                             >
                         </td>
                         <td>{{ general.killTurn }}</td>
-                        <td>{{ general.turnTime.slice(14, 19) }}</td>
+                        <td>{{ formatServerDateTime(general.turnTime, { format: 'minuteSecond' }) }}</td>
                     </tr>
                 </tbody>
             </table>
@@ -159,8 +160,8 @@ onMounted(load);
                 </tr>
                 <tr>
                     <td class="legacy-banner">
-                        삼국지 모의전투 HiDCHe / KOEI의 이미지를 사용, 응용하였습니다 / 제작 :
-                        HideD(hided62@gmail.com) /
+                        삼국지 모의전투 HiDCHe / KOEI의 이미지를 사용, 응용하였습니다 / 제작 : HideD(hided62@gmail.com)
+                        /
                         <a href="https://github.com/hided/SamK" target="_blank" rel="noopener noreferrer">Credit</a>
                     </td>
                 </tr>

@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { formatServerDateTime } from '@sammo-ts/common';
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import { useRouter } from 'vue-router';
 
@@ -130,7 +131,7 @@ const scheduleDeletion = async (): Promise<void> => {
             currentCredential,
         });
         window.localStorage.removeItem('sammo-session-token');
-        successMessage.value = `${new Date(result.deleteAfter).toLocaleDateString('ko-KR')}까지 정보가 보존됩니다.`;
+        successMessage.value = `${formatServerDateTime(result.deleteAfter, { format: 'date' })}까지 정보가 보존됩니다.`;
         await router.replace('/');
     });
 };
@@ -411,7 +412,7 @@ onBeforeUnmount(() => {
                     </tr>
                     <tr>
                         <th class="legacy-bg1">가입일시</th>
-                        <td colspan="2">{{ new Date(account.createdAt).toLocaleString('ko-KR') }}</td>
+                        <td colspan="2">{{ formatServerDateTime(account.createdAt) }}</td>
                         <td colspan="3">
                             개인정보 3자 제공 동의 : {{ account.thirdPartyUse ? '○' : '×' }}
                             <button

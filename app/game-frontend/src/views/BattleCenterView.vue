@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { formatServerDateTime } from '@sammo-ts/common';
 import { computed, onMounted, reactive, ref, watch } from 'vue';
 import { useRoute } from 'vue-router';
 import PanelCard from '../components/ui/PanelCard.vue';
@@ -126,9 +127,9 @@ const selectedGeneral = computed(() => {
 
 const formatGeneralLabel = (general: GeneralEntry): string => {
     const name = general.officerLevel > 4 ? `*${general.name}*` : general.name;
-    const time = general.turnTime ? general.turnTime.slice(-5) : '--:--';
+    const time = formatServerDateTime(general.turnTime, { format: 'hourMinute', fallback: '--:--' });
     if (orderBy.value === 'recentWar') {
-        return `${name} (${general.recentWar ? general.recentWar.slice(-5) : '--:--'})`;
+        return `${name} (${formatServerDateTime(general.recentWar, { format: 'hourMinute', fallback: '--:--' })})`;
     }
     if (orderBy.value === 'warnum') {
         return `${name} (${general.warnum}회)`;
@@ -154,7 +155,10 @@ const loadLogs = async (generalId: number) => {
         }
         for (const response of responses) {
             const formatted = response.logs.map((entry) => {
-                const eventTime = response.type === 'generalAction' ? ` ${entry.createdAt.slice(-8, -3)}` : '';
+                const eventTime =
+                    response.type === 'generalAction'
+                        ? ` ${formatServerDateTime(entry.createdAt, { format: 'hourMinute' })}`
+                        : '';
                 return {
                     id: entry.id,
                     html: formatLog(`${entry.text}${eventTime}`),
@@ -288,7 +292,12 @@ onMounted(() => {
                         </template>
                     </GeneralBasicCard>
                     <div v-if="selectedGeneral" class="general-meta">
-                        <div>최근 턴: {{ selectedGeneral.turnTime ? selectedGeneral.turnTime.slice(-5) : '-' }}</div>
+                        <div>
+                            최근 턴:
+                            {{
+                                formatServerDateTime(selectedGeneral.turnTime, { format: 'hourMinute', fallback: '-' })
+                            }}
+                        </div>
                         <div>최근 전투: {{ selectedGeneral.recentWar || '-' }}</div>
                         <div>전투 횟수: {{ selectedGeneral.warnum }}</div>
                     </div>
