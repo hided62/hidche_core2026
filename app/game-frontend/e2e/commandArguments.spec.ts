@@ -465,6 +465,7 @@ test('enters general and nation command arguments and sends exact values', async
     const requests = await install(page);
     await page.setViewportSize({ width: 1200, height: 900 });
     await page.goto('/');
+    await expect(page.getByTestId('current-city-marker')).toHaveCount(0);
 
     await page.getByRole('button', { name: '1턴 명령 입력', exact: true }).click();
     await page.getByTestId('command-picker').getByRole('button', { name: /화계/ }).click();
@@ -474,6 +475,12 @@ test('enters general and nation command arguments and sends exact values', async
     await expect(form.getByTestId('command-argument-guidance')).toContainText('선택한 도시에 화계를 실행합니다.');
     await expect(form.getByTestId('command-map-target-summary')).toContainText('현재 도시에서 0칸');
     const commandMap = form.getByTestId('command-argument-map');
+    const currentCityMarker = commandMap.getByTestId('current-city-marker');
+    const selectionStatus = form.getByTestId('command-map-selection-status');
+    await expect(currentCityMarker).toHaveText('현재');
+    await expect(currentCityMarker).toHaveAttribute('aria-label', '현재 도시 업');
+    await expect(selectionStatus).toContainText('현재 도시업');
+    await expect(selectionStatus).toContainText('선택 도시업');
     const mapCities = commandMap.locator('.city-base');
     await expect(mapCities).toHaveCount(2);
     await expect(commandMap.locator('.city-bg')).toHaveCount(2);
@@ -515,11 +522,17 @@ test('enters general and nation command arguments and sends exact values', async
     await mapCities.nth(1).click();
     await expect(form.locator('select')).toHaveValue('2');
     await expect(form.getByTestId('command-map-target-summary')).toContainText('현재 도시에서 1칸');
+    await expect(selectionStatus).toContainText('현재 도시업');
+    await expect(selectionStatus).toContainText('선택 도시허창');
+    await expect(currentCityMarker).toHaveAttribute('aria-label', '현재 도시 업');
+    await expect(mapCities.nth(0)).toHaveClass(/mine/);
+    await expect(mapCities.nth(1)).toHaveClass(/selected/);
     await mapCities.nth(1).hover();
     expect(await mapCities.nth(1).evaluate((element) => getComputedStyle(element).cursor)).toBe('pointer');
     await mapCities.nth(1).focus();
     await expect(mapCities.nth(1)).toBeFocused();
     await expect(page).toHaveURL(/\/$/);
+    await commandMap.screenshot({ path: test.info().outputPath('main-city-current-marker-desktop.png') });
     const mapGeometry = await form.getByTestId('command-argument-map').evaluate((element) => {
         const area = element.querySelector<HTMLElement>('.map-area')!;
         const rect = area.getBoundingClientRect();
@@ -759,6 +772,9 @@ test('uses the map to choose a nation target in the chief command window', async
     await expect(form.getByTestId('command-argument-guidance')).toContainText('초반 제한');
     await form.getByTestId('command-argument-map').locator('.city-base').nth(1).click();
     await expect(form.locator('select')).toHaveValue('2');
+    await expect(form.getByTestId('command-map-selection-status')).toContainText('현재 도시업');
+    await expect(form.getByTestId('command-map-selection-status')).toContainText('선택 국가적국');
+    await expect(form.getByTestId('current-city-marker')).toHaveAttribute('aria-label', '현재 도시 업');
     await expect(form.getByTestId('command-map-target-summary')).toContainText('수도 허창 · 도시 1개');
     await expect(page).toHaveURL(/\/che\/chief-center$/);
     await page.screenshot({ path: test.info().outputPath('chief-nation-map-option.png'), fullPage: true });
@@ -771,6 +787,16 @@ test('fits the city map option window inside the Ref-compatible 500px mobile pag
     await page.getByRole('button', { name: '1턴 명령 입력', exact: true }).click();
     const picker = page.getByTestId('command-picker');
     await picker.getByRole('button', { name: /화계/ }).click();
+    const mobileForm = picker.getByTestId('command-argument-form');
+    const mobileMap = mobileForm.getByTestId('command-argument-map');
+    const mobileCities = mobileMap.locator('.city-base');
+    await mobileCities.nth(1).click();
+    await expect(mobileForm.locator('select')).toHaveValue('2');
+    await expect(mobileForm.getByTestId('command-map-selection-status')).toContainText('현재 도시업');
+    await expect(mobileForm.getByTestId('command-map-selection-status')).toContainText('선택 도시허창');
+    await expect(mobileMap.getByTestId('current-city-marker')).toHaveAttribute('aria-label', '현재 도시 업');
+    await expect(mobileCities.nth(0)).toHaveClass(/mine/);
+    await expect(mobileCities.nth(1)).toHaveClass(/selected/);
     const geometry = await picker.evaluate((element) => {
         const map = element.querySelector<HTMLElement>('[data-testid="command-argument-map"] .map-area')!;
         const pickerRect = element.getBoundingClientRect();
@@ -782,6 +808,19 @@ test('fits the city map option window inside the Ref-compatible 500px mobile pag
             pickerScrollWidth: element.scrollWidth,
             mapWidth: mapRect.width,
             mapHeight: mapRect.height,
+            marker: (() => {
+                const marker = element.querySelector<HTMLElement>('[data-testid="current-city-marker"]')!;
+                const rect = marker.getBoundingClientRect();
+                const style = getComputedStyle(marker);
+                return {
+                    left: rect.left,
+                    right: rect.right,
+                    top: rect.top,
+                    bottom: rect.bottom,
+                    pointerEvents: style.pointerEvents,
+                    borderColor: style.borderColor,
+                };
+            })(),
         };
     });
     expect(geometry.pickerX).toBeGreaterThanOrEqual(0);
@@ -790,6 +829,12 @@ test('fits the city map option window inside the Ref-compatible 500px mobile pag
     expect(geometry.pickerScrollWidth).toBeLessThanOrEqual(geometry.pickerWidth);
     expect(geometry.mapWidth).toBeGreaterThan(470);
     expect(geometry.mapHeight / geometry.mapWidth).toBeCloseTo(5 / 7, 2);
+    expect(geometry.marker.left).toBeGreaterThanOrEqual(0);
+    expect(geometry.marker.right).toBeLessThanOrEqual(500);
+    expect(geometry.marker.top).toBeGreaterThanOrEqual(0);
+    expect(geometry.marker.bottom).toBeLessThanOrEqual(900);
+    expect(geometry.marker.pointerEvents).toBe('none');
+    expect(geometry.marker.borderColor).toBe('rgb(130, 207, 255)');
     await page.screenshot({ path: test.info().outputPath('main-city-map-option-mobile.png'), fullPage: true });
 });
 

@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { formatServerDateTime } from '@sammo-ts/common';
 import { computed } from 'vue';
 import { resolveTournamentStageName } from '../../utils/tournamentStatus';
 
@@ -19,11 +20,17 @@ const props = defineProps<{
 }>();
 
 const tournamentStatus = computed(() => resolveTournamentStageName(props.tournamentStage));
+const lastExecutedStatus = computed(() =>
+    formatServerDateTime(props.status?.lastExecuted, { format: 'monthDayTime', fallback: '기록 없음' })
+);
 </script>
 
 <template>
     <section class="front-status" aria-label="접속 현황과 국가 방침">
-        <div class="activity-status" aria-label="설문과 토너먼트 진행 현황">
+        <div class="activity-status" aria-label="동작 시각, 토너먼트와 설문 진행 현황">
+            <div class="status-row execution-status" :class="{ 'execution-status--empty': !status?.lastExecuted }">
+                동작 시각: {{ lastExecutedStatus }}
+            </div>
             <div class="status-row tournament-status">
                 <RouterLink to="/tournament">
                     <span class="tournament-label">토너먼트: </span>{{ tournamentStatus }}
@@ -86,9 +93,8 @@ const tournamentStatus = computed(() => resolveTournamentStageName(props.tournam
 
 .activity-status {
     display: grid;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    width: 66.666667%;
-    margin-left: auto;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    width: 100%;
 }
 
 .activity-status .status-row {
@@ -106,17 +112,19 @@ const tournamentStatus = computed(() => resolveTournamentStageName(props.tournam
     color: #ffc107;
 }
 
+.execution-status {
+    color: cyan;
+}
+
+.execution-status--empty {
+    color: magenta;
+}
+
 .vote-label {
     color: cyan;
 }
 
 .vote-empty {
     color: magenta;
-}
-
-@media (max-width: 991px) {
-    .activity-status {
-        width: 100%;
-    }
 }
 </style>

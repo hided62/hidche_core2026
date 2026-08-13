@@ -109,6 +109,26 @@ const mapSelectedCityId = computed<number | null>(() => {
     return null;
 });
 
+const currentCityName = computed(() => {
+    const cityId = props.mapData?.myCity;
+    if (!cityId) return '-';
+    return props.mapLayout?.cityList.find((city) => city.id === cityId)?.name ?? '-';
+});
+
+const selectedMapTargetName = computed(() => {
+    if (presentation.value.mapTarget === 'city') {
+        const cityId = mapSelectedCityId.value;
+        if (!cityId) return '-';
+        return props.mapLayout?.cityList.find((city) => city.id === cityId)?.name ?? '-';
+    }
+    if (presentation.value.mapTarget === 'nation' && nationTargetField.value) {
+        const nationId = values[nationTargetField.value.key];
+        if (typeof nationId !== 'number') return '-';
+        return props.mapData?.nationList.find((nation) => nation[0] === nationId)?.[1] ?? '-';
+    }
+    return '-';
+});
+
 const distanceFromMyCity = (destination: number): number | null => {
     const start = props.mapData?.myCity;
     if (!start || !props.mapLayout) return null;
@@ -260,9 +280,23 @@ watch(
                 :selected-city-id="mapSelectedCityId"
                 :detail-mode="true"
                 :fit-container="true"
+                :show-current-city-marker="true"
                 @select-city="selectMapCity"
             />
             <small>지도에서 도시를 클릭하거나 아래 목록에서 대상을 선택하세요.</small>
+            <div class="map-selection-status" aria-live="polite" data-testid="command-map-selection-status">
+                <span class="current-city-status">
+                    <span class="status-key">현재 도시</span>
+                    <strong>{{ currentCityName }}</strong>
+                </span>
+                <span aria-hidden="true">→</span>
+                <span class="selected-target-status">
+                    <span class="status-key">{{
+                        presentation.mapTarget === 'nation' ? '선택 국가' : '선택 도시'
+                    }}</span>
+                    <strong>{{ selectedMapTargetName }}</strong>
+                </span>
+            </div>
             <div v-if="mapTargetSummary" class="map-target-summary" data-testid="command-map-target-summary">
                 {{ mapTargetSummary }}
             </div>
@@ -374,6 +408,41 @@ watch(
     padding: 0 8px 6px;
     color: #f1d89a;
     line-height: 1.35;
+}
+
+.map-selection-status {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 4px 7px;
+    padding: 0 8px 5px;
+    color: rgba(232, 221, 196, 0.82);
+    line-height: 18px;
+}
+
+.map-selection-status > span:not([aria-hidden='true']) {
+    display: inline-flex;
+    gap: 4px;
+    align-items: center;
+}
+
+.status-key {
+    border-radius: 2px;
+    padding: 0 4px;
+    font-size: 10px;
+    font-weight: 700;
+}
+
+.current-city-status .status-key {
+    border: 1px solid #82cfff;
+    background: rgba(5, 27, 43, 0.92);
+    color: #d9f3ff;
+}
+
+.selected-target-status .status-key {
+    border: 1px solid rgba(255, 235, 150, 0.9);
+    background: rgba(201, 164, 90, 0.18);
+    color: #ffe996;
 }
 
 .command-guidance {
