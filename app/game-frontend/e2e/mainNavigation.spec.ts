@@ -260,6 +260,24 @@ const generalContext = (state: NavigationFixture) => ({
         bill: 100,
         capitalCityId: 1,
         typeCode: 'che_유가',
+        typeName: '유가',
+        typePros: '농상↑ 민심↑',
+        typeCons: '쌀수입↓',
+        population: { cityCount: 2, current: 150_000, max: 620_500 },
+        crew: { generalCount: 2, current: 500, max: 7_000 },
+        power: 1_234,
+        taxRate: state.nationRate ?? 20,
+        strategicCommandLimit: 2,
+        diplomaticLimit: 0,
+        prohibitScout: false,
+        prohibitWar: true,
+        techLevel: 0,
+        techLimited: false,
+        topChiefs: {
+            12: { id: 1, name: '군주', npcState: 0 },
+            11: { id: 2, name: '참모', npcState: 1 },
+        },
+        impossibleStrategicCommands: [{ name: '수몰', remainingTurns: 2, availableYear: 190, availableMonth: 5 }],
     },
     settings: {},
     penalties: {},
@@ -568,17 +586,17 @@ const persistArtifact = async (page: Page, name: string) => {
             nationPopup: describe('#mobile-nation-menu'),
             quickPopup: describe('#mobile-quick-menu'),
             commandMenu: describe('.reserved-command-editor details[open] .menu-items'),
-            commandDividers: [...document.querySelectorAll<HTMLElement>('.reserved-command-editor details[open] .menu-divider')].map(
-                (element) => {
-                    const rect = element.getBoundingClientRect();
-                    const style = getComputedStyle(element);
-                    return {
-                        rect: { x: rect.x, y: rect.y, width: rect.width, height: rect.height },
-                        borderTop: style.borderTop,
-                        margin: style.margin,
-                    };
-                }
-            ),
+            commandDividers: [
+                ...document.querySelectorAll<HTMLElement>('.reserved-command-editor details[open] .menu-divider'),
+            ].map((element) => {
+                const rect = element.getBoundingClientRect();
+                const style = getComputedStyle(element);
+                return {
+                    rect: { x: rect.x, y: rect.y, width: rect.width, height: rect.height },
+                    borderTop: style.borderTop,
+                    margin: style.margin,
+                };
+            }),
         };
     });
     const commandMenu = page.locator('.reserved-command-editor details[open] .menu-items').first();
@@ -867,6 +885,31 @@ test('main cards and command input stay inside their Ref-sized grid slots', asyn
     await expect(page.locator('[data-main-target="general"] [data-dex-progress]')).toHaveCount(0);
     await expect(page.locator('[data-main-target="general"] [role="progressbar"]')).toHaveCount(4);
 
+    const nationCard = page.locator('[data-main-target="nation"] [data-nation-basic-card]');
+    await expect(nationCard.locator('.head')).toHaveCount(17);
+    await expect(nationCard).toContainText('유가 (농상↑ 민심↑쌀수입↓)');
+    await expect(nationCard).toContainText('영주군주참모ⓝ참모');
+    await expect(nationCard).toContainText('총 주민150,000 / 620,500');
+    await expect(nationCard).toContainText('총 병사500 / 7,000');
+    await expect(nationCard).toContainText('지급률100%');
+    await expect(nationCard).toContainText('전략2턴');
+    await expect(nationCard).toContainText('임관허가');
+    await expect(nationCard).toContainText('전쟁금지');
+    expect(await nationCard.evaluate((element) => element.getBoundingClientRect().height)).toBe(193);
+    const nationRowHeights = await nationCard
+        .locator('.nation-grid')
+        .evaluate((element) => [...element.children].map((child) => child.getBoundingClientRect().height));
+    expect(Math.max(...nationRowHeights) - Math.min(...nationRowHeights)).toBeLessThanOrEqual(0.01);
+    const strategicCell = nationCard.locator('.strategic');
+    const strategicTooltip = strategicCell.getByRole('tooltip');
+    await expect(strategicTooltip).toBeHidden();
+    await strategicCell.hover();
+    await expect(strategicTooltip).toBeVisible();
+    await expect(strategicTooltip).toContainText('수몰: 2턴 뒤(190년 5월부터)');
+    await strategicCell.focus();
+    await expect(strategicCell).toBeFocused();
+    await expect(strategicTooltip).toBeVisible();
+
     expect(await cityBars.first().evaluate((element) => element.getBoundingClientRect().height)).toBe(9);
     expect(await statBars.first().evaluate((element) => element.getBoundingClientRect().height)).toBe(12);
     expect(await experienceBar.evaluate((element) => element.getBoundingClientRect().height)).toBe(12);
@@ -968,8 +1011,9 @@ test('main cards and command input stay inside their Ref-sized grid slots', asyn
     await modeButton.focus();
     await expect(modeButton).toBeFocused();
     await modeButton.click();
-    const advancedControlGeometry = await page.locator('[data-main-target="commands"] .reserved-command-editor').evaluate(
-        (editor) => {
+    const advancedControlGeometry = await page
+        .locator('[data-main-target="commands"] .reserved-command-editor')
+        .evaluate((editor) => {
             const range = editor.querySelector<HTMLElement>('.range-menu');
             const recent = [...editor.querySelectorAll<HTMLElement>('.control-pad summary')].find((element) =>
                 element.textContent?.includes('최근 실행')
@@ -984,8 +1028,7 @@ test('main cards and command input stay inside their Ref-sized grid slots', asyn
                 advancedBottom: advanced.getBoundingClientRect().bottom,
                 queueTop: queue.getBoundingClientRect().top,
             };
-        }
-    );
+        });
     expect(advancedControlGeometry.rangeTop).toBe(advancedControlGeometry.recentTop);
     expect(advancedControlGeometry.advancedTop).toBeGreaterThan(advancedControlGeometry.rangeTop);
     expect(advancedControlGeometry.advancedBottom).toBeLessThanOrEqual(advancedControlGeometry.queueTop);
@@ -1161,6 +1204,11 @@ test('main cards and command input stay inside their Ref-sized grid slots', asyn
     expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(500);
     await expect(page.locator('[data-main-target="city"] [role="progressbar"]')).toHaveCount(8);
     await expect(page.locator('[data-main-target="general"] [role="progressbar"]')).toHaveCount(4);
+    const mobileNationCard = page.locator('[data-main-target="nation"] [data-nation-basic-card]');
+    expect(await mobileNationCard.evaluate((element) => element.getBoundingClientRect().height)).toBe(193);
+    expect(await mobileNationCard.evaluate((element) => element.scrollWidth - element.clientWidth)).toBeLessThanOrEqual(
+        0
+    );
     expect(
         await page
             .locator('[data-main-target="city"] [role="progressbar"]')
@@ -1362,12 +1410,7 @@ test('real mobile devices initially fit the complete 500px game canvas', async (
 
         const routeGeometry: Record<string, unknown> = {};
         if (deviceWidth === 390) {
-            for (const target of [
-                'chief-center',
-                'battle-center',
-                'inherit',
-                'nation-betting',
-            ]) {
+            for (const target of ['chief-center', 'battle-center', 'inherit', 'nation-betting']) {
                 await mobilePage.goto(target);
                 await expect
                     .poll(() => mobilePage.locator('#app').evaluate((element) => getComputedStyle(element).minWidth))
@@ -1721,10 +1764,7 @@ test('realtime read-model events skip clock-only work, merge bursts, patch in pl
         { op: 'replace', path: '/general/0/values/1/possible', value: false },
         { op: 'replace', path: '/general/0/values/1/status', value: 'blocked' },
     ];
-    await emitReadModelInvalidation(
-        page,
-        readModelInvalidation({ context: true, commands: true, boardAccess: true })
-    );
+    await emitReadModelInvalidation(page, readModelInvalidation({ context: true, commands: true, boardAccess: true }));
     await expect.poll(() => state.generalMeCalls, { timeout: 4_000 }).toBe(callsBeforeTax + 1);
 
     const callsBeforeCityState = state.generalMeCalls;
@@ -1751,10 +1791,7 @@ test('realtime read-model events skip clock-only work, merge bursts, patch in pl
     state.contextRevision = 'O'.repeat(22);
     state.contextOperations = [{ op: 'replace', path: '/missing/value', value: 'invalid-delta' }];
     state.commandTableOperations = [];
-    await emitReadModelInvalidation(
-        page,
-        readModelInvalidation({ context: true, commands: true, boardAccess: true })
-    );
+    await emitReadModelInvalidation(page, readModelInvalidation({ context: true, commands: true, boardAccess: true }));
     await expect.poll(() => state.generalMeCalls, { timeout: 4_000 }).toBe(callsBeforeFallback + 2);
     expect(state.forceSnapshotCalls).toBe(forcedBeforeFallback + 1);
     await expect(page.locator('.general-title')).toContainText('snapshot복구장수');

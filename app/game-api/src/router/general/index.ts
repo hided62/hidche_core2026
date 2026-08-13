@@ -28,7 +28,20 @@ import {
     sanitizeInternalDisplayCode,
 } from '../../services/gameDisplayNames.js';
 import { getMyGeneral } from '../shared/general.js';
-import { loadTraitNames, resolveNationNotice, type TraitNameMap } from '../nation/shared.js';
+import {
+    loadTraitNames,
+    resolveNationBill,
+    resolveNationBlockScout,
+    resolveNationBlockWar,
+    resolveNationNotice,
+    resolveNationRate,
+    type TraitNameMap,
+} from '../nation/shared.js';
+import {
+    resolveImpossibleStrategicCommands,
+    resolveMainNationTech,
+    splitNationTraitInfo,
+} from '../../services/mainNationProjection.js';
 
 const zGeneralSettings = z.object({
     tnmt: z.number().int().optional(),
@@ -54,6 +67,7 @@ const NEUTRAL_NATION_CONTEXT = {
     tech: 0,
     typeCode: 'None',
     capitalCityId: null,
+    meta: {},
 } as const;
 
 const resolveImmediateActionRequestId = (
@@ -296,20 +310,42 @@ export const getGeneralContext = async (ctx: GameApiContext) => {
                       tech: true,
                       typeCode: true,
                       capitalCityId: true,
+                      meta: true,
                   },
               })
             : Promise.resolve(NEUTRAL_NATION_CONTEXT),
-        ctx.db.worldState.findFirst({ select: { config: true } }),
+        ctx.db.worldState.findFirst({ select: { currentYear: true, currentMonth: true, config: true, meta: true } }),
     ]);
     const nation = queriedNation ?? NEUTRAL_NATION_CONTEXT;
 
-    const [capitalCity, cityNation] = await Promise.all([
+    const [capitalCity, cityNation, nationPopulation, nationCrew, topChiefRows] = await Promise.all([
         nation.capitalCityId
             ? ctx.db.city.findUnique({ where: { id: nation.capitalCityId }, select: { name: true } })
             : Promise.resolve(null),
         city && city.nationId > 0
             ? ctx.db.nation.findUnique({ where: { id: city.nationId }, select: { name: true } })
             : Promise.resolve(null),
+        nation.id > 0
+            ? ctx.db.city.aggregate({
+                  where: { nationId: nation.id },
+                  _count: true,
+                  _sum: { population: true, populationMax: true },
+              })
+            : Promise.resolve({ _count: 0, _sum: { population: 0, populationMax: 0 } }),
+        nation.id > 0
+            ? ctx.db.general.aggregate({
+                  where: { nationId: nation.id, npcState: { not: 5 } },
+                  _count: true,
+                  _sum: { crew: true, leadership: true },
+              })
+            : Promise.resolve({ _count: 0, _sum: { crew: 0, leadership: 0 } }),
+        nation.id > 0
+            ? ctx.db.general.findMany({
+                  where: { nationId: nation.id, officerLevel: { gte: 11 } },
+                  select: { id: true, name: true, npcState: true, officerLevel: true },
+                  orderBy: { id: 'asc' },
+              })
+            : Promise.resolve([]),
     ]);
     const [personalityNames, domesticNames, warNames, nationTypeNames, crewTypeNames, itemNames] = await Promise.all([
         loadTraitNames([general.personalCode], 'personality'),
@@ -327,6 +363,18 @@ export const getGeneralContext = async (ctx: GameApiContext) => {
     const settings = resolveUserSettings(metaRecord);
     const penalties = resolvePenalty(general.penalty);
     const dedicationLevel = readNumber(metaRecord.dedlevel, 0);
+    const nationMeta = asRecord(nation.meta);
+    const nationType = nationTypeNames.get(nation.typeCode);
+    const nationTypeEffects = splitNationTraitInfo(nationType?.info ?? '');
+    const nationTech = resolveMainNationTech({
+        tech: nation.tech,
+        currentYear: worldState?.currentYear ?? 0,
+        worldConfig: worldState?.config,
+        worldMeta: worldState?.meta,
+    });
+    const topChiefs = Object.fromEntries(
+        topChiefRows.map((chief) => [chief.officerLevel, { id: chief.id, name: chief.name, npcState: chief.npcState }])
+    );
     const itemName = (code: string | null): string | null => {
         const normalized = normalizeItemCode(code);
         return normalized ? (itemNames.get(normalized) ?? sanitizeInternalDisplayCode(normalized)) : null;
@@ -406,13 +454,48 @@ export const getGeneralContext = async (ctx: GameApiContext) => {
               }
             : null,
         nation: {
-            ...nation,
+            id: nation.id,
+            name: nation.name,
+            color: nation.color,
+            level: nation.level,
+            gold: nation.gold,
+            rice: nation.rice,
+            tech: nation.tech,
+            typeCode: nation.typeCode,
+            capitalCityId: nation.capitalCityId,
             levelName: resolveNationLevelName(nation.level),
-            typeName:
-                nation.id === 0
-                    ? '해당 없음'
-                    : (nationTypeNames.get(nation.typeCode)?.name ?? sanitizeInternalDisplayCode(nation.typeCode)),
+            typeName: nation.id === 0 ? '-' : (nationType?.name ?? sanitizeInternalDisplayCode(nation.typeCode)),
+            typePros: nationTypeEffects.pros,
+            typeCons: nationTypeEffects.cons,
             capitalCityName: nation.id === 0 ? null : (capitalCity?.name ?? null),
+            population: {
+                cityCount: nationPopulation._count,
+                current: nationPopulation._sum.population ?? 0,
+                max: nationPopulation._sum.populationMax ?? 0,
+            },
+            crew: {
+                generalCount: nationCrew._count,
+                current: nationCrew._sum.crew ?? 0,
+                max: (nationCrew._sum.leadership ?? 0) * 100,
+            },
+            power: readNumber(nationMeta.power, 0),
+            bill: resolveNationBill(nationMeta),
+            taxRate: resolveNationRate(nation),
+            strategicCommandLimit: readNumber(nationMeta.strategic_cmd_limit, 0),
+            diplomaticLimit: readNumber(nationMeta.surlimit, 0),
+            prohibitScout: resolveNationBlockScout(nationMeta),
+            prohibitWar: resolveNationBlockWar(nationMeta),
+            techLevel: nationTech.level,
+            techLimited: nationTech.limited,
+            topChiefs,
+            impossibleStrategicCommands:
+                nation.id === 0
+                    ? []
+                    : resolveImpossibleStrategicCommands(
+                          nationMeta,
+                          worldState?.currentYear ?? 0,
+                          worldState?.currentMonth ?? 1
+                      ),
         },
         settings,
         penalties,
