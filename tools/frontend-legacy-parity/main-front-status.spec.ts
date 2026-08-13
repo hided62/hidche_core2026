@@ -293,11 +293,14 @@ test('renders actual online, nation policy, and survey data with ref geometry an
     await expect(status).toContainText(marker);
     await expect(page.locator('.online-users')).toContainText('현황검증장수');
     await expect(page.locator('.survey-notice')).toContainText('새로운 설문조사가 있습니다.');
+    await expect(page.locator('.tournament-status')).toHaveText('토너먼트: 경기 없음');
+    await expect(page.locator('.vote-status')).toHaveText('설문: 검증 설문');
     const desktop = await status.evaluate((element) => {
         const style = getComputedStyle(element);
         const onlineRow = element.querySelector<HTMLElement>('.online-nations');
         const voteRow = element.querySelector<HTMLElement>('.vote-status');
-        if (!onlineRow || !voteRow) throw new Error('status row missing');
+        const tournamentRow = element.querySelector<HTMLElement>('.tournament-status');
+        if (!onlineRow || !voteRow || !tournamentRow) throw new Error('status row missing');
         return {
             rect: element.getBoundingClientRect().toJSON(),
             fontSize: style.fontSize,
@@ -308,6 +311,7 @@ test('renders actual online, nation policy, and survey data with ref geometry an
                 borderTop: getComputedStyle(onlineRow).borderTop,
                 padding: getComputedStyle(onlineRow).padding,
             },
+            tournamentRow: tournamentRow.getBoundingClientRect().toJSON(),
             voteRow: voteRow.getBoundingClientRect().toJSON(),
         };
     });
@@ -321,6 +325,9 @@ test('renders actual online, nation policy, and survey data with ref geometry an
         },
     });
     expect(desktop.onlineRow.rect.height).toBeCloseTo(36, 0);
+    expect(desktop.tournamentRow.x).toBeCloseTo(333.33, 0);
+    expect(desktop.tournamentRow.width).toBeCloseTo(333.33, 0);
+    expect(desktop.tournamentRow.height).toBeCloseTo(36, 0);
     expect(desktop.voteRow.x).toBeCloseTo(666.67, 0);
     expect(desktop.voteRow.width).toBeCloseTo(333.33, 0);
     expect(desktop.voteRow.height).toBeCloseTo(36, 0);
@@ -328,6 +335,7 @@ test('renders actual online, nation policy, and survey data with ref geometry an
 
     await page.setViewportSize({ width: 500, height: 900 });
     await expect(status).toHaveCSS('width', '500px');
+    await expect(page.locator('.tournament-status')).toHaveCSS('width', '250px');
     await expect(page.locator('.vote-status')).toHaveCSS('width', '250px');
 
     failStatus = true;
