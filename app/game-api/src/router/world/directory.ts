@@ -2,6 +2,7 @@ import { asRecord } from '@sammo-ts/common';
 import { z } from 'zod';
 
 import { accessAuthedInputProcedure, authedProcedure } from '../../trpc.js';
+import { sanitizeInternalDisplayCode } from '../../services/gameDisplayNames.js';
 import { loadTraitNames } from '../nation/shared.js';
 import { getMyGeneral } from '../shared/general.js';
 import { resolveSecretPermission } from '../shared/secretPermission.js';
@@ -172,7 +173,7 @@ export const getNationDirectory = authedProcedure.query(async ({ ctx }) => {
                 level: nation.level,
                 type: {
                     key: nation.typeCode,
-                    name: nationTypeNames.get(nation.typeCode)?.name ?? nation.typeCode,
+                    name: nationTypeNames.get(nation.typeCode)?.name ?? sanitizeInternalDisplayCode(nation.typeCode),
                 },
                 power: readMetaNumber(nation.meta, 'power'),
                 capitalCityId: nation.capitalCityId ?? 0,

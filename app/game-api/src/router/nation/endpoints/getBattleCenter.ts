@@ -4,8 +4,15 @@ import { asRecord } from '@sammo-ts/common';
 import { LogCategory } from '@sammo-ts/logic';
 
 import { accessAuthedProcedure } from '../../../trpc.js';
+import {
+    loadCrewTypeDisplayNames,
+    loadItemDisplayNames,
+    resolveDedicationLevelName,
+    resolveOfficerLevelName,
+    sanitizeInternalDisplayCode,
+} from '../../../services/gameDisplayNames.js';
 import { getMyGeneral } from '../../shared/general.js';
-import { assertNationAccess, formatDateTime, resolveNationPermission } from '../shared.js';
+import { assertNationAccess, formatDateTime, loadTraitNames, resolveNationPermission } from '../shared.js';
 
 export const getBattleCenter = accessAuthedProcedure.query(async ({ ctx }) => {
     const me = await getMyGeneral(ctx);
@@ -98,6 +105,36 @@ export const getBattleCenter = accessAuthedProcedure.query(async ({ ctx }) => {
         typeof constValues.upgradeLimit === 'number' && Number.isFinite(constValues.upgradeLimit)
             ? constValues.upgradeLimit
             : 30;
+    const maxDedicationLevel =
+        typeof constValues.maxDedLevel === 'number' && Number.isFinite(constValues.maxDedLevel)
+            ? Math.max(0, Math.trunc(constValues.maxDedLevel))
+            : 30;
+    const [personalityNames, domesticNames, warNames, crewTypeNames, itemNames] = await Promise.all([
+        loadTraitNames(
+            generalRows.map((general) => general.personalCode),
+            'personality'
+        ),
+        loadTraitNames(
+            generalRows.map((general) => general.specialCode),
+            'domestic'
+        ),
+        loadTraitNames(
+            generalRows.map((general) => general.special2Code),
+            'war'
+        ),
+        loadCrewTypeDisplayNames(worldState, ctx.profile.id),
+        loadItemDisplayNames(
+            generalRows.flatMap((general) => [
+                general.weaponCode,
+                general.bookCode,
+                general.horseCode,
+                general.itemCode,
+            ])
+        ),
+    ]);
+    const traitName = (code: string, names: Awaited<ReturnType<typeof loadTraitNames>>): string =>
+        names.get(code)?.name ?? sanitizeInternalDisplayCode(code);
+    const itemName = (code: string): string => itemNames.get(code) ?? sanitizeInternalDisplayCode(code);
 
     const generals = generalRows.map((general) => {
         const meta =
@@ -108,6 +145,11 @@ export const getBattleCenter = accessAuthedProcedure.query(async ({ ctx }) => {
             const value = meta[key];
             return typeof value === 'number' && Number.isFinite(value) ? value : 0;
         };
+        const storedDedicationLevel = metaNumber('dedlevel');
+        const dedicationLevel =
+            storedDedicationLevel > 0
+                ? storedDedicationLevel
+                : Math.max(0, Math.min(Math.ceil(Math.sqrt(general.dedication) / 10), maxDedicationLevel));
         return {
             id: general.id,
             name: general.name,
@@ -115,6 +157,7 @@ export const getBattleCenter = accessAuthedProcedure.query(async ({ ctx }) => {
             imageServer: general.imageServer,
             npcState: general.npcState,
             officerLevel: general.officerLevel,
+            officerLevelText: resolveOfficerLevelName(general.officerLevel, nation.level),
             cityId: general.cityId,
             turnTime: formatDateTime(general.turnTime),
             recentWar: formatDateTime(general.recentWarTime),
@@ -134,19 +177,28 @@ export const getBattleCenter = accessAuthedProcedure.query(async ({ ctx }) => {
             atmos: general.atmos,
             age: general.age,
             crewTypeId: general.crewTypeId,
+            crewTypeName: crewTypeNames.get(general.crewTypeId) ?? '-',
             equipment: {
                 weapon: general.weaponCode,
                 book: general.bookCode,
                 horse: general.horseCode,
                 item: general.itemCode,
             },
+            equipmentNames: {
+                weapon: itemName(general.weaponCode),
+                book: itemName(general.bookCode),
+                horse: itemName(general.horseCode),
+                item: itemName(general.itemCode),
+            },
             traits: {
-                personal: general.personalCode,
-                specialDomestic: general.specialCode,
-                specialWar: general.special2Code,
+                personal: traitName(general.personalCode, personalityNames),
+                specialDomestic: traitName(general.specialCode, domesticNames),
+                specialWar: traitName(general.special2Code, warNames),
             },
             progression: {
                 experienceLevel: metaNumber('explevel'),
+                dedicationLevel,
+                dedicationText: resolveDedicationLevelName(dedicationLevel, maxDedicationLevel),
                 statExperience: {
                     leadership: metaNumber('leadership_exp'),
                     strength: metaNumber('strength_exp'),

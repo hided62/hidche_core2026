@@ -117,6 +117,9 @@ describe('nation general and secret office permissions', () => {
             cityName: null,
             troopName: null,
             refreshScoreTotal: 10,
+            dedicationLevel: 1,
+            dedicationText: '30품관',
+            bill: 600,
         });
         expect(result.generals[0]).not.toHaveProperty('crew');
         await expect(caller.nation.getSecretGeneralList()).rejects.toMatchObject({ code: 'FORBIDDEN' });

@@ -63,7 +63,6 @@ const generals = computed(() =>
         })
 );
 const special = (general: General) => `${general.specialDomestic?.name ?? '-'} / ${general.specialWar?.name ?? '-'}`;
-const rank = (general: General) => (general.dedicationLevel ? `${11 - general.dedicationLevel}품관` : '무품관');
 const iconUrl = (general: General) => resolveGeneralIconUrl(general);
 onMounted(load);
 </script>
@@ -78,7 +77,13 @@ onMounted(load);
             <strong>세력 장수</strong>
             <span class="right-actions">
                 <span class="dropdown">
-                    <button class="top-button mode-button" :aria-expanded="viewMenuOpen" @click="viewMenuOpen = !viewMenuOpen">보기 모드⌄</button>
+                    <button
+                        class="top-button mode-button"
+                        :aria-expanded="viewMenuOpen"
+                        @click="viewMenuOpen = !viewMenuOpen"
+                    >
+                        보기 모드⌄
+                    </button>
                     <span v-if="viewMenuOpen" class="dropdown-menu">
                         <button
                             @click="
@@ -178,7 +183,7 @@ onMounted(load);
                         </td>
                         <td :class="`name-cell npc-${general.npcState}`">{{ general.name }}</td>
                         <td>{{ formatOfficerLevelText(general.officerLevel, data?.nation.level) }}</td>
-                        <td>{{ rank(general) }}<br />({{ (general.dedicationLevel * 200).toLocaleString() }})</td>
+                        <td>{{ general.dedicationText }}<br />({{ general.bill.toLocaleString() }})</td>
                         <td>Lv {{ general.experienceLevel }}<br />({{ general.personality?.name ?? '-' }})</td>
                         <td>{{ general.stats.leadership }}</td>
                         <td>{{ general.stats.strength }}</td>

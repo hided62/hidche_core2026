@@ -17,6 +17,16 @@ import {
 import { ConflictingTurnDaemonCommandError } from '../../daemon/databaseTransport.js';
 import { resolveAccessWindows } from '../../services/generalAccess.js';
 import { adjustAccountIconForUser } from '../../services/accountIconSync.js';
+import {
+    loadCrewTypeDisplayNames,
+    loadItemDisplayNames,
+    resolveCityLevelName,
+    resolveDedicationLevelName,
+    resolveNationLevelName,
+    resolveOfficerLevelName,
+    resolveRegionName,
+    sanitizeInternalDisplayCode,
+} from '../../services/gameDisplayNames.js';
 import { getMyGeneral } from '../shared/general.js';
 import { loadTraitNames, resolveNationNotice, type TraitNameMap } from '../nation/shared.js';
 
@@ -155,7 +165,7 @@ const resolveTraitDisplayName = (code: string, names: TraitNameMap): string => {
         return loadedName;
     }
     // Ref는 class getName()을 표시하므로 로더가 모르는 선택적 특기도 raw namespace는 노출하지 않는다.
-    return code.replace(/^che_(?:event_)?/u, '');
+    return sanitizeInternalDisplayCode(code);
 };
 
 const resolveUserSettings = (meta: Record<string, unknown>) => {
@@ -244,7 +254,7 @@ export const getGeneralContext = async (ctx: GameApiContext) => {
         return null;
     }
 
-    const [city, nation, worldState] = await Promise.all([
+    const [city, queriedNation, worldState] = await Promise.all([
         general.cityId > 0
             ? ctx.db.city.findUnique({
                   where: { id: general.cityId },
@@ -291,18 +301,36 @@ export const getGeneralContext = async (ctx: GameApiContext) => {
             : Promise.resolve(NEUTRAL_NATION_CONTEXT),
         ctx.db.worldState.findFirst({ select: { config: true } }),
     ]);
+    const nation = queriedNation ?? NEUTRAL_NATION_CONTEXT;
 
-    const [personalityNames, domesticNames, warNames] = await Promise.all([
+    const [capitalCity, cityNation] = await Promise.all([
+        nation.capitalCityId
+            ? ctx.db.city.findUnique({ where: { id: nation.capitalCityId }, select: { name: true } })
+            : Promise.resolve(null),
+        city && city.nationId > 0
+            ? ctx.db.nation.findUnique({ where: { id: city.nationId }, select: { name: true } })
+            : Promise.resolve(null),
+    ]);
+    const [personalityNames, domesticNames, warNames, nationTypeNames, crewTypeNames, itemNames] = await Promise.all([
         loadTraitNames([general.personalCode], 'personality'),
         loadTraitNames([general.specialCode], 'domestic'),
         loadTraitNames([general.special2Code], 'war'),
+        loadTraitNames([nation.typeCode], 'nation'),
+        loadCrewTypeDisplayNames(worldState, ctx.profile.id),
+        loadItemDisplayNames([general.horseCode, general.weaponCode, general.bookCode, general.itemCode]),
     ]);
 
     const metaRecord = asRecord(general.meta);
     const worldConfig = asRecord(worldState?.config);
     const constValues = asRecord(worldConfig.const ?? worldConfig.consts);
+    const maxDedicationLevel = readNumber(constValues.maxDedLevel, 30);
     const settings = resolveUserSettings(metaRecord);
     const penalties = resolvePenalty(general.penalty);
+    const dedicationLevel = readNumber(metaRecord.dedlevel, 0);
+    const itemName = (code: string | null): string | null => {
+        const normalized = normalizeItemCode(code);
+        return normalized ? (itemNames.get(normalized) ?? sanitizeInternalDisplayCode(normalized)) : null;
+    };
 
     return {
         general: {
@@ -315,6 +343,7 @@ export const getGeneralContext = async (ctx: GameApiContext) => {
             picture: general.picture,
             imageServer: general.imageServer,
             officerLevel: general.officerLevel,
+            officerLevelText: resolveOfficerLevelName(general.officerLevel, nation.level),
             stats: {
                 leadership: general.leadership,
                 strength: general.strength,
@@ -331,6 +360,7 @@ export const getGeneralContext = async (ctx: GameApiContext) => {
             age: general.age,
             turnTime: general.turnTime.toISOString(),
             crewTypeId: general.crewTypeId,
+            crewTypeName: crewTypeNames.get(general.crewTypeId) ?? '-',
             traits: {
                 personal: resolveTraitDisplayName(general.personalCode, personalityNames),
                 specialDomestic: resolveTraitDisplayName(general.specialCode, domesticNames),
@@ -338,7 +368,8 @@ export const getGeneralContext = async (ctx: GameApiContext) => {
             },
             progression: {
                 experienceLevel: readNumber(metaRecord.explevel, 0),
-                dedicationLevel: readNumber(metaRecord.dedlevel, 0),
+                dedicationLevel,
+                dedicationText: resolveDedicationLevelName(dedicationLevel, maxDedicationLevel),
                 statExperience: {
                     leadership: readNumber(metaRecord.leadership_exp, 0),
                     strength: readNumber(metaRecord.strength_exp, 0),
@@ -353,6 +384,12 @@ export const getGeneralContext = async (ctx: GameApiContext) => {
                 book: normalizeItemCode(general.bookCode),
                 item: normalizeItemCode(general.itemCode),
             },
+            itemNames: {
+                horse: itemName(general.horseCode),
+                weapon: itemName(general.weaponCode),
+                book: itemName(general.bookCode),
+                item: itemName(general.itemCode),
+            },
         },
         iconChoices: ctx.auth?.user.canUseGeneralPicture === false ? [] : (ctx.auth?.user.icons ?? []),
         canChangeIcon: general.npcState === 0 && ctx.auth?.user.canUseGeneralPicture !== false,
@@ -360,8 +397,23 @@ export const getGeneralContext = async (ctx: GameApiContext) => {
             typeof metaRecord.generalIconChangedAt === 'string'
                 ? new Date(new Date(metaRecord.generalIconChangedAt).getTime() + 24 * 60 * 60 * 1000).toISOString()
                 : null,
-        city,
-        nation,
+        city: city
+            ? {
+                  ...city,
+                  levelName: resolveCityLevelName(city.level),
+                  regionName: resolveRegionName(city.region),
+                  nationName: city.nationId > 0 ? (cityNation?.name ?? '-') : '공백지',
+              }
+            : null,
+        nation: {
+            ...nation,
+            levelName: resolveNationLevelName(nation.level),
+            typeName:
+                nation.id === 0
+                    ? '해당 없음'
+                    : (nationTypeNames.get(nation.typeCode)?.name ?? sanitizeInternalDisplayCode(nation.typeCode)),
+            capitalCityName: nation.id === 0 ? null : (capitalCity?.name ?? null),
+        },
         settings,
         penalties,
     };

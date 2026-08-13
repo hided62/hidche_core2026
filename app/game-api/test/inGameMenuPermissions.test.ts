@@ -248,6 +248,55 @@ describe('in-game my information ownership', () => {
         );
     });
 
+    it('returns Ref display names instead of numeric levels and internal codes for the main GUI', async () => {
+        const fixture = createContext({
+            me: buildGeneral({
+                officerLevel: 9,
+                crewTypeId: 1100,
+                horseCode: 'che_명마_03_노새',
+                meta: { explevel: 4, dedlevel: 2 },
+            }),
+            city: {
+                id: 1,
+                name: '업',
+                level: 8,
+                nationId: 1,
+                population: 1_000,
+                populationMax: 2_000,
+                agriculture: 100,
+                agricultureMax: 200,
+                commerce: 100,
+                commerceMax: 200,
+                security: 100,
+                securityMax: 200,
+                trust: 70,
+                trade: 100,
+                defence: 100,
+                defenceMax: 200,
+                wall: 100,
+                wallMax: 200,
+                region: 2,
+                supplyState: 1,
+                frontState: 0,
+            },
+        });
+
+        await expect(appRouter.createCaller(fixture.context).general.me()).resolves.toMatchObject({
+            general: {
+                officerLevelText: '간의대부',
+                crewTypeName: '보병',
+                progression: { experienceLevel: 4, dedicationLevel: 2, dedicationText: '29품관' },
+                itemNames: { horse: '노새(+3)' },
+            },
+            city: { levelName: '특', regionName: '중원', nationName: '위' },
+            nation: {
+                levelName: '주자사',
+                typeName: '법가',
+                capitalCityName: '업',
+            },
+        });
+    });
+
     it('returns the Ref-style neutral nation frame and trait display names on the main read model', async () => {
         const fixture = createContext({
             me: buildGeneral({
@@ -542,8 +591,14 @@ describe('battle-center general and user permissions', () => {
                     id: 7,
                     picture: 'default.jpg',
                     imageServer: 0,
+                    officerLevelText: '일반',
+                    crewTypeName: '-',
+                    equipmentNames: { weapon: '-', book: '-', horse: '-', item: '-' },
+                    traits: { personal: '-', specialDomestic: '-', specialWar: '-' },
                     progression: {
                         experienceLevel: 0,
+                        dedicationLevel: 1,
+                        dedicationText: '30품관',
                         statExperience: { leadership: 0, strength: 0, intelligence: 0 },
                         statUpgradeLimit: 20,
                         dex: [0, 0, 0, 0, 0],
