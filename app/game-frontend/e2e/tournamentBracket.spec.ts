@@ -210,46 +210,67 @@ test('desktop bracket connects every real general slot to the next round', async
     await page.setViewportSize({ width: 1365, height: 900 });
     await openTournament(page);
 
-    await expect(page.locator('.bracket-canvas .bracket-name[data-general-id]')).toHaveCount(31);
-    await expect(page.locator('.bracket-canvas .connector-segment')).toHaveCount(15);
-    await expect(page.locator('.bracket-canvas .bracket-name.advanced', { hasText: '관우' })).toHaveCount(5);
+    await expect(page.locator('.desktop-bracket-canvas .desktop-bracket-name[data-general-id]')).toHaveCount(31);
+    await expect(page.locator('.desktop-bracket-canvas svg > g')).toHaveCount(15);
+    await expect(
+        page.locator('.desktop-bracket-canvas .desktop-bracket-name.advanced', { hasText: '관우' })
+    ).toHaveCount(5);
 
-    const geometry = await page.locator('.bracket-canvas').evaluate((canvas) => {
-        const firstConnector = canvas.querySelector<HTMLElement>('.connector-segment')!.getBoundingClientRect();
-        const champion = canvas.querySelector<HTMLElement>('.bracket-champion .bracket-name')!.getBoundingClientRect();
-        const finalists = [...canvas.querySelectorAll<HTMLElement>('.bracket-round:nth-of-type(3) .bracket-name')].map(
-            (element) => element.getBoundingClientRect()
+    const geometry = await page.locator('.desktop-bracket-canvas').evaluate((canvas) => {
+        const cards = [...canvas.querySelectorAll<HTMLElement>('.desktop-bracket-name')];
+        const firstRound = cards.slice(0, 16).map((element) => element.getBoundingClientRect());
+        const quarterFinal = cards[16]!.getBoundingClientRect();
+        const icons = cards.map((element) => element.querySelector('img')!.getBoundingClientRect());
+        const names = cards.map((element) =>
+            element.querySelector<HTMLElement>('.general-identity-name')!.getBoundingClientRect()
         );
+        const own = canvas.getBoundingClientRect();
         return {
-            canvasWidth: canvas.getBoundingClientRect().width,
-            connectorCenter: firstConnector.x + firstConnector.width / 2,
-            championCenter: champion.x + champion.width / 2,
-            finalistCenters: finalists.map((rect) => rect.x + rect.width / 2),
-            connectorQuarters: [
-                firstConnector.x + firstConnector.width / 4,
-                firstConnector.x + (firstConnector.width * 3) / 4,
-            ],
+            canvasWidth: own.width,
+            minX: Math.min(...cards.map((card) => card.getBoundingClientRect().left - own.left)),
+            maxX: Math.max(...cards.map((card) => card.getBoundingClientRect().right - own.left)),
+            iconSizes: icons.map((icon) => [icon.width, icon.height]),
+            horizontalIdentities: icons.every((icon, index) => names[index]!.left >= icon.right - 1),
+            firstParentY: quarterFinal.y + quarterFinal.height / 2,
+            firstPairAverageY:
+                (firstRound[0]!.y + firstRound[0]!.height / 2 + firstRound[1]!.y + firstRound[1]!.height / 2) / 2,
         };
     });
-    expect(geometry.canvasWidth).toBeGreaterThanOrEqual(1000);
+    expect(geometry.canvasWidth).toBeGreaterThanOrEqual(800);
     expect(geometry.canvasWidth).toBeLessThanOrEqual(1200);
-    expect(Math.abs(geometry.connectorCenter - geometry.championCenter)).toBeLessThan(1);
-    expect(geometry.finalistCenters).toHaveLength(2);
-    expect(Math.abs(geometry.finalistCenters[0]! - geometry.connectorQuarters[0]!)).toBeLessThan(1);
-    expect(Math.abs(geometry.finalistCenters[1]! - geometry.connectorQuarters[1]!)).toBeLessThan(1);
+    expect(geometry.minX).toBeGreaterThanOrEqual(0);
+    expect(geometry.maxX).toBeLessThanOrEqual(geometry.canvasWidth);
+    expect(geometry.iconSizes.every(([width, height]) => width === 64 && height === 64)).toBe(true);
+    expect(geometry.horizontalIdentities).toBe(true);
+    expect(Math.abs(geometry.firstParentY - geometry.firstPairAverageY)).toBeLessThan(1);
 
     await persistScreenshot(page, 'tournament-desktop', testInfo.outputPath('tournament-bracket-desktop.webp'));
 });
 
-test('mobile bracket shows every round and general within the handheld width', async ({ page }, testInfo) => {
+test('mobile bracket exposes every round through tabs with standard horizontal identities', async ({
+    page,
+}, testInfo) => {
     await page.setViewportSize({ width: 390, height: 844 });
     await openTournament(page);
 
     const bracket = page.locator('.mobile-bracket');
     await expect(bracket).toBeVisible();
-    await expect(bracket.locator('.mobile-bracket-name')).toHaveCount(31);
+    await expect(page.getByRole('tablist', { name: '토너먼트 라운드 선택' })).toBeVisible();
+    await expect(bracket.locator('.mobile-bracket-name')).toHaveCount(16);
     await expect(bracket.locator('.mobile-bracket-name', { hasText: '방덕' })).toBeVisible();
-    await expect(bracket.locator('.mobile-bracket-name', { hasText: '관우' })).toHaveCount(5);
+    await expect(bracket.locator('.mobile-bracket-name', { hasText: '관우' })).toHaveCount(1);
+    for (const [label, count] of [
+        ['8강', 8],
+        ['4강', 4],
+        ['결승', 2],
+        ['우승', 1],
+    ] as const) {
+        await page.getByRole('tab', { name: label }).click();
+        await expect(page.getByRole('tab', { name: label })).toHaveAttribute('aria-selected', 'true');
+        await expect(bracket.locator('.mobile-bracket-name')).toHaveCount(count);
+        await expect(bracket.locator('.mobile-bracket-name', { hasText: '관우' })).toHaveCount(1);
+    }
+    await page.getByRole('tab', { name: '16강' }).click();
     const bounds = await bracket.evaluate((element) => {
         const names = [...element.querySelectorAll<HTMLElement>('.mobile-bracket-name')].map((name) =>
             name.getBoundingClientRect()
@@ -270,10 +291,22 @@ test('mobile bracket shows every round and general within the handheld width', a
         .evaluate((element) => {
             const icon = element.querySelector('img')!.getBoundingClientRect();
             const name = element.querySelector<HTMLElement>('.general-identity-name')!.getBoundingClientRect();
-            return { iconRight: icon.right, nameLeft: name.left, iconY: icon.y, nameY: name.y };
+            return {
+                iconWidth: icon.width,
+                iconHeight: icon.height,
+                iconRight: icon.right,
+                nameLeft: name.left,
+                iconTop: icon.top,
+                iconBottom: icon.bottom,
+                nameTop: name.top,
+                nameBottom: name.bottom,
+            };
         });
-    expect(identity.nameLeft).toBeGreaterThanOrEqual(identity.iconRight);
-    expect(Math.abs(identity.iconY - identity.nameY)).toBeLessThan(8);
+    expect(identity.iconWidth).toBe(64);
+    expect(identity.iconHeight).toBe(64);
+    expect(identity.nameLeft).toBeGreaterThanOrEqual(identity.iconRight - 1);
+    expect(identity.nameTop).toBeLessThan(identity.iconBottom);
+    expect(identity.nameBottom).toBeGreaterThan(identity.iconTop);
     await expect(page.getByRole('tablist', { name: '본선 조 선택' })).toBeVisible();
     await page.getByRole('tab', { name: '二조' }).first().click();
     await expect(page.getByRole('tab', { name: '二조' }).first()).toHaveAttribute('aria-selected', 'true');
@@ -299,10 +332,11 @@ test('mobile betting rankings use tabs and keep dedicated icons beside general n
         .evaluate((element) => {
             const icon = element.querySelector('img')!.getBoundingClientRect();
             const name = element.querySelector<HTMLElement>('.general-identity-name')!.getBoundingClientRect();
-            return { iconRight: icon.right, nameLeft: name.left, iconY: icon.y, nameY: name.y };
+            return { iconWidth: icon.width, iconHeight: icon.height, iconRight: icon.right, nameLeft: name.left };
         });
-    expect(identity.nameLeft).toBeGreaterThanOrEqual(identity.iconRight);
-    expect(Math.abs(identity.iconY - identity.nameY)).toBeLessThan(8);
+    expect(identity.iconWidth).toBe(64);
+    expect(identity.iconHeight).toBe(64);
+    expect(identity.nameLeft).toBeGreaterThanOrEqual(identity.iconRight - 1);
     expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
     await persistScreenshot(page, 'tournament-ranking-mobile', testInfo.outputPath('tournament-ranking-mobile.webp'));
 });
@@ -316,6 +350,8 @@ test('desktop betting presents icon-and-name cards and all four rankings without
 
     await expect(page.locator('.candidate-card')).toHaveCount(16);
     await expect(page.locator('.ranking-table:visible')).toHaveCount(4);
+    await expect(page.locator('.general-identity-icon').first()).toHaveCSS('width', '64px');
+    await expect(page.locator('.general-identity-icon').first()).toHaveCSS('height', '64px');
     const columns = await page
         .locator('.candidate-grid')
         .evaluate((element) => getComputedStyle(element).gridTemplateColumns.split(' ').length);

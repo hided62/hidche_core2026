@@ -498,8 +498,8 @@ onMounted(() => {
                     <div v-if="selectedIcon" class="selected-general-icon" aria-live="polite">
                         <img
                             :src="resolveGeneralIconUrl(selectedIcon)"
-                            width="48"
-                            height="48"
+                            width="64"
+                            height="64"
                             alt=""
                             @error="useDefaultGeneralIcon"
                         />
@@ -878,7 +878,9 @@ button:disabled {
     background: rgb(23 42 82 / 70%);
 }
 .selected-general-icon img {
-    flex: 0 0 48px;
+    flex: 0 0 var(--sammo-general-icon-size);
+    width: var(--sammo-general-icon-size);
+    height: var(--sammo-general-icon-size);
     object-fit: cover;
 }
 .general-icon-choice {

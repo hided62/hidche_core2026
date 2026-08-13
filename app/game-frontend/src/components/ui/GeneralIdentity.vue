@@ -7,13 +7,11 @@ const props = withDefaults(
         name: string;
         picture?: GeneralIconSource['picture'];
         imageServer?: GeneralIconSource['imageServer'];
-        iconSize?: number;
         hideIcon?: boolean;
     }>(),
     {
         picture: null,
         imageServer: 0,
-        iconSize: 28,
         hideIcon: false,
     }
 );
@@ -24,11 +22,10 @@ const iconUrl = computed(() =>
         imageServer: props.imageServer,
     })
 );
-const identityStyle = computed(() => ({ '--general-identity-icon-size': `${props.iconSize}px` }));
 </script>
 
 <template>
-    <span class="general-identity" :style="identityStyle">
+    <span class="general-identity">
         <img
             v-if="!hideIcon && name !== '-'"
             class="general-identity-icon"
@@ -52,9 +49,9 @@ const identityStyle = computed(() => ({ '--general-identity-icon-size': `${props
     vertical-align: middle;
 }
 .general-identity-icon {
-    width: var(--general-identity-icon-size);
-    height: var(--general-identity-icon-size);
-    flex: 0 0 var(--general-identity-icon-size);
+    width: var(--sammo-general-icon-size);
+    height: var(--sammo-general-icon-size);
+    flex: 0 0 var(--sammo-general-icon-size);
     border: 1px solid rgb(255 255 255 / 28%);
     background: #111;
     object-fit: cover;
