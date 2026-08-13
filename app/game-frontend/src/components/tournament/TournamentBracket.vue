@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed } from 'vue';
+import GeneralIdentity from '../ui/GeneralIdentity.vue';
 import {
     buildTournamentBracket,
     type TournamentBracketMatch,
@@ -89,7 +90,12 @@ const odds = (id: number | null) => {
                     :class="{ advanced: bracket.champion.advanced }"
                     :data-general-id="bracket.champion.id ?? undefined"
                 >
-                    {{ bracket.champion.name }}
+                    <GeneralIdentity
+                        :name="bracket.champion.name"
+                        :picture="bracket.champion.picture"
+                        :image-server="bracket.champion.imageServer"
+                        :icon-size="24"
+                    />
                 </span>
             </div>
 
@@ -110,7 +116,12 @@ const odds = (id: number | null) => {
                         :class="{ advanced: slot.advanced }"
                         :data-general-id="slot.id ?? undefined"
                     >
-                        {{ slot.name }}
+                        <GeneralIdentity
+                            :name="slot.name"
+                            :picture="slot.picture"
+                            :image-server="slot.imageServer"
+                            :icon-size="22"
+                        />
                     </span>
                 </div>
                 <div class="connector-row" :style="{ '--connector-count': round.slots.length }">
@@ -140,7 +151,12 @@ const odds = (id: number | null) => {
                     :class="{ advanced: slot.advanced }"
                     :data-general-id="slot.id ?? undefined"
                 >
-                    {{ slot.name }}
+                    <GeneralIdentity
+                        :name="slot.name"
+                        :picture="slot.picture"
+                        :image-server="slot.imageServer"
+                        :icon-size="20"
+                    />
                 </span>
             </div>
             <div class="bracket-round bracket-odds" :style="roundStyle(bracket.top16)">
@@ -183,9 +199,17 @@ const odds = (id: number | null) => {
                     :key="`mobile-${columnIndex}-${slot.id ?? 'empty'}-${slotIndex}`"
                     class="mobile-bracket-name"
                     :class="{ advanced: slot.advanced }"
-                    :style="{ left: `${mobileX[columnIndex]}px`, top: `${mobileY(columnIndex, slotIndex)}px` }"
+                    :style="{
+                        left: `${(mobileX[columnIndex]! / 390) * 100}%`,
+                        top: `${mobileY(columnIndex, slotIndex)}px`,
+                    }"
                 >
-                    {{ slot.name }}
+                    <GeneralIdentity
+                        :name="slot.name"
+                        :picture="slot.picture"
+                        :image-server="slot.imageServer"
+                        :icon-size="18"
+                    />
                 </span>
             </template>
         </div>
@@ -210,21 +234,23 @@ const odds = (id: number | null) => {
     white-space: nowrap;
 }
 .bracket-canvas {
-    width: 2000px;
-    min-width: 2000px;
+    width: 100%;
+    min-width: 1000px;
+    max-width: 1200px;
     margin: 0 auto;
 }
 .mobile-bracket {
     position: relative;
     display: none;
-    width: 390px;
+    width: 100%;
+    max-width: 390px;
     height: 544px;
     margin: 0 auto;
 }
 .mobile-bracket svg {
     position: absolute;
     inset: 0;
-    width: 390px;
+    width: 100%;
     height: 544px;
 }
 .mobile-connector {
@@ -239,14 +265,16 @@ const odds = (id: number | null) => {
 .mobile-bracket-name {
     position: absolute;
     z-index: 1;
-    width: 64px;
+    width: clamp(58px, 18vw, 72px);
     overflow: hidden;
     transform: translate(-50%, -50%);
     border: 1px solid #555;
     background: rgb(58 33 24 / 92%);
     color: #fff;
-    font-size: 12px;
-    line-height: 22px;
+    min-height: 26px;
+    padding: 2px;
+    font-size: 11px;
+    line-height: 20px;
     text-overflow: ellipsis;
     white-space: nowrap;
 }
@@ -265,7 +293,7 @@ const odds = (id: number | null) => {
 }
 .bracket-name {
     overflow: hidden;
-    padding: 0 3px;
+    padding: 2px 3px;
     color: #fff;
     text-overflow: ellipsis;
     white-space: nowrap;
@@ -321,8 +349,8 @@ const odds = (id: number | null) => {
 }
 @media (max-width: 800px) {
     .tournament-bracket {
-        width: 100vw;
-        max-width: 100vw;
+        width: 100%;
+        max-width: 100%;
         overflow-x: hidden;
     }
     .bracket-canvas {

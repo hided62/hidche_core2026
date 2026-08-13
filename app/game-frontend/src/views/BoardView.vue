@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { formatServerDateTime } from '@sammo-ts/common';
 import { computed, nextTick, onMounted, reactive, ref, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 
@@ -40,7 +41,7 @@ const resizeTextArea = (element: HTMLTextAreaElement | null) => {
     element.style.height = `${Math.max(element.scrollHeight, 42)}px`;
 };
 
-const formatDate = (value: string): string => value.slice(5, 16).replace('T', ' ');
+const formatDate = (value: string): string => formatServerDateTime(value, { format: 'monthDayTime' });
 
 const iconPath = (article: BoardArticle): string =>
     resolveGeneralIconUrl({
@@ -160,7 +161,14 @@ onMounted(() => {
                 </div>
                 <div class="article-submit-row">
                     <div></div>
-                    <button id="submitArticle" class="legacy-button legacy-button--secondary" type="button" @click="submitArticle">등록</button>
+                    <button
+                        id="submitArticle"
+                        class="legacy-button legacy-button--secondary"
+                        type="button"
+                        @click="submitArticle"
+                    >
+                        등록
+                    </button>
                 </div>
             </section>
 
@@ -244,7 +252,9 @@ onMounted(() => {
     padding: 8px;
     color: #000;
     background: #fff;
-    font: 16px/normal 'Times New Roman', serif;
+    font:
+        16px/normal 'Times New Roman',
+        serif;
 }
 
 .legacy-board-page {

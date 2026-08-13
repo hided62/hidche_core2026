@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { formatServerDateTime } from '@sammo-ts/common';
 import { computed, onMounted, ref, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 
@@ -47,12 +48,7 @@ const loadDetail = async (): Promise<void> => {
     }
 };
 
-const formatArchiveDate = (value: string): string =>
-    new Intl.DateTimeFormat('sv-SE', {
-        dateStyle: 'short',
-        timeStyle: 'medium',
-        timeZone: 'UTC',
-    }).format(new Date(value));
+const formatArchiveDate = (value: string): string => formatServerDateTime(value);
 
 watch(emperorId, loadDetail);
 onMounted(loadDetail);
@@ -67,7 +63,9 @@ onMounted(loadDetail);
                         역 대 왕 조<br />
                         <button class="native-button" type="button" @click="closePage">창 닫기</button>
                         <span class="all-link">
-                            <RouterLink to="/dynasty"><button class="native-button" type="button">전체보기</button></RouterLink>
+                            <RouterLink to="/dynasty"
+                                ><button class="native-button" type="button">전체보기</button></RouterLink
+                            >
                         </span>
                     </td>
                 </tr>
@@ -202,7 +200,11 @@ onMounted(loadDetail);
                         <td colspan="5">
                             <!-- 레거시 색상 tag를 동일한 span 구조로 변환한다. -->
                             <!-- eslint-disable-next-line vue/no-v-html -->
-                            <div v-for="(entry, index) in data.emperor.history" :key="index" v-html="formatLog(entry)" />
+                            <div
+                                v-for="(entry, index) in data.emperor.history"
+                                :key="index"
+                                v-html="formatLog(entry)"
+                            />
                         </td>
                     </tr>
                 </tbody>
@@ -283,14 +285,10 @@ onMounted(loadDetail);
         <table class="legacy-table legacy-bg0 footer-table">
             <tbody>
                 <tr>
-                    <td>
-                        <button class="native-button" type="button" @click="closePage">창 닫기</button><br />
-                    </td>
+                    <td><button class="native-button" type="button" @click="closePage">창 닫기</button><br /></td>
                 </tr>
                 <tr>
-                    <td class="banner">
-                        삼국지 모의전투 HiDCHe / KOEI의 이미지를 사용, 응용하였습니다 / 제작 : HideD
-                    </td>
+                    <td class="banner">삼국지 모의전투 HiDCHe / KOEI의 이미지를 사용, 응용하였습니다 / 제작 : HideD</td>
                 </tr>
             </tbody>
         </table>

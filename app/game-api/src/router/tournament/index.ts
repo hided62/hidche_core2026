@@ -137,7 +137,24 @@ export const tournamentRouter = router({
             store.getMatches(),
             store.getBettingEntries(),
         ]);
-        return { state, participants, matches, betCount: bets.length };
+        const participantIds = [...new Set(participants.map((participant) => participant.id))];
+        const iconRows =
+            participantIds.length === 0
+                ? []
+                : await ctx.db.general.findMany({
+                      where: { id: { in: participantIds } },
+                      select: { id: true, picture: true, imageServer: true },
+                  });
+        const iconsByGeneralId = new Map(iconRows.map((general) => [general.id, general]));
+        const publicParticipants = participants.map((participant) => {
+            const icon = iconsByGeneralId.get(participant.id);
+            return {
+                ...participant,
+                picture: icon?.picture ?? null,
+                imageServer: icon?.imageServer ?? 0,
+            };
+        });
+        return { state, participants: publicParticipants, matches, betCount: bets.length };
     }),
     getRankings: authedProcedure.query(async ({ ctx }) => {
         await getMyGeneral(ctx);
@@ -177,7 +194,16 @@ export const tournamentRouter = router({
         }
         const generals = await ctx.db.general.findMany({
             where: { id: { in: [...rankMap.keys()] } },
-            select: { id: true, name: true, npcState: true, leadership: true, strength: true, intel: true },
+            select: {
+                id: true,
+                name: true,
+                npcState: true,
+                picture: true,
+                imageServer: true,
+                leadership: true,
+                strength: true,
+                intel: true,
+            },
         });
 
         return tournamentRankTypes.map((prefix) => {
@@ -201,6 +227,8 @@ export const tournamentRouter = router({
                         generalId: general.id,
                         name: general.name,
                         npcState: general.npcState,
+                        picture: general.picture,
+                        imageServer: general.imageServer,
                         stat,
                         games: win + draw + lose,
                         win,

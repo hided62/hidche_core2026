@@ -13,6 +13,8 @@ import { GitWorkspaceManager } from '../src/orchestrator/workspaceManager.js';
 const profile: GatewayProfileRecord = {
     profileName: 'che:2',
     profile: 'che',
+    instanceKey: '2',
+    currentScenario: '2',
     scenario: '2',
     apiPort: 15003,
     status: 'STOPPED',
@@ -58,7 +60,7 @@ const createHarness = (
         listProfiles: async () => [profile],
         getProfile: async () => profile,
         upsertProfile: async () => profile,
-        updateScenario: async () => profile,
+        updateCurrentScenario: async () => profile,
         updateStatus: async (_profileName, status) => {
             statuses.push(status);
             return { ...profile, status };

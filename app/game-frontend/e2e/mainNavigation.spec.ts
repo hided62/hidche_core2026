@@ -34,6 +34,8 @@ type NavigationFixture = {
     largeCommandTable?: boolean;
     currentYear?: number;
     currentMonth?: number;
+    scenarioTitle?: string;
+    latestVote?: { id: number; title: string; hasVoted: boolean } | null;
     globalRecords?: Array<{ id: number; text: string }>;
     generalRecords?: Array<{ id: number; text: string }>;
     worldHistory?: Array<{ id: number; text: string }>;
@@ -309,6 +311,7 @@ const installFixture = async (page: Page, state: NavigationFixture) => {
                     year: state.currentYear ?? 185,
                     month: state.currentMonth ?? 1,
                     turnTerm: 10,
+                    scenarioTitle: state.scenarioTitle ?? '',
                 });
             }
             if (operation === 'dashboard.getContextBundleDelta') {
@@ -421,7 +424,10 @@ const installFixture = async (page: Page, state: NavigationFixture) => {
                     onlineGenerals: '메뉴검증장수',
                     nationNotice: '<p>국가 방침</p>',
                     lastExecuted: null,
-                    latestVote: { id: 9, title: '메뉴 설문', hasVoted: false },
+                    latestVote:
+                        state.latestVote === undefined
+                            ? { id: 9, title: '메뉴 설문', hasVoted: false }
+                            : state.latestVote,
                 });
             }
             if (operation === 'board.getAccess') {
@@ -508,7 +514,7 @@ const installRealtimeHarness = async (page: Page) => {
 
 const waitForMain = async (page: Page) => {
     await page.goto('./');
-    await expect(page.getByRole('heading', { name: '전장 현황' })).toBeVisible();
+    await expect(page.locator('.game-shell__title')).toBeVisible();
     await expect(page.locator('.main-global-menu').first()).toBeVisible();
     await expect(page.locator('.main-nation-menu')).toBeVisible();
     await expect(page.locator('[data-navigation-id="npc-list"]')).toHaveCount(3);
@@ -561,8 +567,24 @@ const persistArtifact = async (page: Page, name: string) => {
             globalPopup: describe('#mobile-global-menu'),
             nationPopup: describe('#mobile-nation-menu'),
             quickPopup: describe('#mobile-quick-menu'),
+            commandMenu: describe('.reserved-command-editor details[open] .menu-items'),
+            commandDividers: [...document.querySelectorAll<HTMLElement>('.reserved-command-editor details[open] .menu-divider')].map(
+                (element) => {
+                    const rect = element.getBoundingClientRect();
+                    const style = getComputedStyle(element);
+                    return {
+                        rect: { x: rect.x, y: rect.y, width: rect.width, height: rect.height },
+                        borderTop: style.borderTop,
+                        margin: style.margin,
+                    };
+                }
+            ),
         };
     });
+    const commandMenu = page.locator('.reserved-command-editor details[open] .menu-items').first();
+    if (await commandMenu.isVisible()) {
+        await commandMenu.screenshot({ path: resolve(target, `${name}-menu.png`) });
+    }
     await Promise.all([
         page.screenshot({ path: resolve(target, `${name}.png`), fullPage: true }),
         writeFile(resolve(target, `${name}.json`), `${JSON.stringify(geometry, null, 2)}\n`),
@@ -576,6 +598,7 @@ test('desktop menus preserve ref columns, prefix-safe routes, and controlled dro
         nationLevel: 3,
         stage: 1,
         npcMode: 1,
+        scenarioTitle: '메인 화면 검증 시나리오',
         generalMeCalls: 0,
         operations: [],
     };
@@ -589,6 +612,45 @@ test('desktop menus preserve ref columns, prefix-safe routes, and controlled dro
     await expect(page.locator('.main-mobile-bottom')).toBeHidden();
     await expect(page.locator('.layout-desktop')).toBeVisible();
     await expect(page.locator('.layout-mobile')).toHaveCount(0);
+    await expect(page.getByRole('heading', { name: '메인 화면 검증 시나리오', exact: true })).toHaveCount(1);
+    await expect(page.locator('.game-shell__subtitle')).toHaveText('185년 1월 · 턴 10분');
+    await expect(page.locator('.game-shell__subtitle')).not.toContainText('메인 화면 검증 시나리오');
+    await expect(page.locator('.tournament-status')).toHaveText('토너먼트: 참가 모집중');
+    await expect(page.locator('.vote-status')).toHaveText('설문: 메뉴 설문');
+    const headerStatusGeometry = await page.locator('.main-page').evaluate((element) => {
+        const title = element.querySelector<HTMLElement>('.game-shell__title');
+        const subtitle = element.querySelector<HTMLElement>('.game-shell__subtitle');
+        const activity = element.querySelector<HTMLElement>('.activity-status');
+        const tournament = element.querySelector<HTMLElement>('.tournament-status');
+        const survey = element.querySelector<HTMLElement>('.vote-status');
+        if (!title || !subtitle || !activity || !tournament || !survey) {
+            throw new Error('main header status geometry is incomplete');
+        }
+        return {
+            title: title.getBoundingClientRect().toJSON(),
+            subtitle: subtitle.getBoundingClientRect().toJSON(),
+            activity: activity.getBoundingClientRect().toJSON(),
+            tournament: tournament.getBoundingClientRect().toJSON(),
+            survey: survey.getBoundingClientRect().toJSON(),
+            activityColumns: getComputedStyle(activity).gridTemplateColumns,
+        };
+    });
+    expect(headerStatusGeometry.subtitle.y).toBeGreaterThanOrEqual(headerStatusGeometry.title.bottom);
+    expect(headerStatusGeometry.activity.width).toBeCloseTo(666.67, 0);
+    expect(headerStatusGeometry.tournament.width).toBeCloseTo(333.33, 0);
+    expect(headerStatusGeometry.survey.width).toBeCloseTo(333.33, 0);
+    expect(headerStatusGeometry.activityColumns.split(' ')).toHaveLength(2);
+    const tournamentStatusLink = page.locator('.tournament-status a');
+    const surveyStatusLink = page.locator('.vote-status a');
+    await tournamentStatusLink.hover();
+    await expect
+        .poll(() => tournamentStatusLink.evaluate((element) => getComputedStyle(element).cursor))
+        .toBe('pointer');
+    await surveyStatusLink.focus();
+    await expect(surveyStatusLink).toBeFocused();
+    await expect
+        .poll(() => surveyStatusLink.evaluate((element) => getComputedStyle(element).textDecorationLine))
+        .toContain('underline');
     const contentOrder = await page
         .locator('.record-zone, [data-menu-position="middle"], .desktop-message-panel, [data-menu-position="bottom"]')
         .evaluateAll((elements) =>
@@ -642,7 +704,7 @@ test('desktop menus preserve ref columns, prefix-safe routes, and controlled dro
     await expect(gameInfoButton).toBeFocused();
 
     await gameInfoButton.click();
-    await page.getByRole('heading', { name: '전장 현황' }).click();
+    await page.getByRole('heading', { name: '메인 화면 검증 시나리오' }).click();
     await expect(gameInfoButton).toHaveAttribute('aria-expanded', 'false');
     await persistArtifact(page, `${basePath.slice(1)}-desktop-1200`);
 });
@@ -882,6 +944,10 @@ test('main cards and command input stay inside their Ref-sized grid slots', asyn
     await tenthTurnButton.click();
     const quickPicker = page.getByTestId('command-picker');
     await expect(quickPicker).toBeVisible();
+    await tenthTurnButton.click();
+    await expect(quickPicker).toBeHidden();
+    await tenthTurnButton.click();
+    await expect(quickPicker).toBeVisible();
     const quickPickerAlignment = await quickPicker.evaluate((element) => {
         const row = element
             .closest('.reserved-command-editor')
@@ -923,6 +989,30 @@ test('main cards and command input stay inside their Ref-sized grid slots', asyn
     expect(advancedControlGeometry.rangeTop).toBe(advancedControlGeometry.recentTop);
     expect(advancedControlGeometry.advancedTop).toBeGreaterThan(advancedControlGeometry.rangeTop);
     expect(advancedControlGeometry.advancedBottom).toBeLessThanOrEqual(advancedControlGeometry.queueTop);
+    const rangeMenu = page.locator('[data-main-target="commands"] .range-menu');
+    await rangeMenu.locator('summary').click();
+    const rangeDividers = rangeMenu.locator('.menu-divider');
+    await expect(rangeDividers).toHaveCount(1);
+    await expect(rangeDividers.first()).toBeVisible();
+    expect(await rangeDividers.first().evaluate((element) => getComputedStyle(element).borderTop)).toBe(
+        '1px solid rgb(68, 68, 68)'
+    );
+    await persistArtifact(page, `${basePath.slice(1)}-command-range-divider-desktop-1200`);
+    await rangeMenu.evaluate((element) => ((element as HTMLDetailsElement).open = false));
+    await expect(rangeMenu).not.toHaveAttribute('open', '');
+
+    const selectedMenu = page.locator('[data-main-target="commands"] .selected-menu');
+    await selectedMenu.locator('summary').click();
+    const selectedMenuDividers = selectedMenu.locator('.menu-divider');
+    await expect(selectedMenuDividers).toHaveCount(3);
+    await expect(selectedMenuDividers.first()).toBeVisible();
+    expect(await selectedMenuDividers.first().evaluate((element) => getComputedStyle(element).borderTop)).toBe(
+        '1px solid rgb(68, 68, 68)'
+    );
+    await persistArtifact(page, `${basePath.slice(1)}-command-selected-dividers-desktop-1200`);
+    await selectedMenu.evaluate((element) => ((element as HTMLDetailsElement).open = false));
+    await expect(selectedMenu).not.toHaveAttribute('open', '');
+
     await page.locator('[data-main-target="commands"] .select-command').click();
     const picker = page.getByTestId('command-picker');
     await expect(picker).toBeVisible();
@@ -1111,6 +1201,11 @@ test('main cards and command input stay inside their Ref-sized grid slots', asyn
     expect(mobileGeometry.controlBoxes).toHaveLength(3);
     expect(new Set(mobileGeometry.controlBoxes.map(({ y }) => y)).size).toBe(1);
     await expect(page.locator('[data-main-target="commands"] .edit-column button')).toHaveCount(30);
+    const mobileTurnButton = page.getByRole('button', { name: '10턴 명령 입력' });
+    await mobileTurnButton.click();
+    await expect(page.getByTestId('command-picker')).toBeVisible();
+    await mobileTurnButton.click();
+    await expect(page.getByTestId('command-picker')).toBeHidden();
     await captureProgress('mobile-500');
 });
 
@@ -1121,6 +1216,8 @@ test('the 939/940 boundary switches to the Ref-style 500px single document', asy
         nationLevel: 3,
         stage: 6,
         npcMode: 1,
+        scenarioTitle: '모바일 검증 시나리오',
+        latestVote: null,
         generalMeCalls: 0,
         operations: [],
     };
@@ -1139,6 +1236,27 @@ test('the 939/940 boundary switches to the Ref-style 500px single document', asy
     await expect(page.locator('.main-mobile-bottom')).toBeVisible();
 
     await page.setViewportSize({ width: 500, height: 900 });
+    await expect(page.getByRole('heading', { name: '모바일 검증 시나리오', exact: true })).toHaveCount(1);
+    await expect(page.locator('.game-shell__subtitle')).toHaveText('185년 1월 · 턴 10분');
+    await expect(page.locator('.tournament-status')).toHaveText('토너먼트: 베팅 진행중');
+    await expect(page.locator('.vote-status')).toHaveText('설문: 진행 중인 설문 없음');
+    const activityGeometry = await page.locator('.activity-status').evaluate((element) => {
+        const tournament = element.querySelector<HTMLElement>('.tournament-status');
+        const survey = element.querySelector<HTMLElement>('.vote-status');
+        if (!tournament || !survey) throw new Error('activity status is incomplete');
+        return {
+            width: element.getBoundingClientRect().width,
+            tournamentWidth: tournament.getBoundingClientRect().width,
+            surveyWidth: survey.getBoundingClientRect().width,
+            columns: getComputedStyle(element).gridTemplateColumns,
+        };
+    });
+    expect(activityGeometry).toMatchObject({
+        width: 500,
+        tournamentWidth: 250,
+        surveyWidth: 250,
+        columns: '250px 250px',
+    });
     await expect
         .poll(() =>
             page
@@ -1173,6 +1291,125 @@ test('the 939/940 boundary switches to the Ref-style 500px single document', asy
         await expect(page.locator(selector)).toBeVisible();
     }
     await persistArtifact(page, `${basePath.slice(1)}-mobile-500`);
+});
+
+test('real mobile devices initially fit the complete 500px game canvas', async ({ browser }, testInfo) => {
+    test.setTimeout(60_000);
+    const configuredBaseUrl = testInfo.project.use.baseURL;
+    if (typeof configuredBaseUrl !== 'string') {
+        throw new Error('Playwright baseURL is required for the mobile viewport contract');
+    }
+
+    const deviceWidths = [360, 390, 480];
+    const measurements: Record<string, unknown> = {};
+
+    for (const deviceWidth of deviceWidths) {
+        const context = await browser.newContext({
+            baseURL: configuredBaseUrl,
+            viewport: { width: deviceWidth, height: 844 },
+            screen: { width: deviceWidth, height: 844 },
+            deviceScaleFactor: 1,
+            isMobile: true,
+            hasTouch: true,
+            colorScheme: 'dark',
+        });
+        const mobilePage = await context.newPage();
+        const state: NavigationFixture = {
+            officerLevel: 5,
+            permission: 2,
+            nationLevel: 3,
+            stage: 6,
+            npcMode: 1,
+            generalMeCalls: 0,
+            operations: [],
+        };
+        await installFixture(mobilePage, state);
+        await waitForMain(mobilePage);
+
+        const mainGeometry = await mobilePage.locator('.main-page').evaluate((element) => {
+            const rect = element.getBoundingClientRect();
+            return {
+                viewportMeta: document.querySelector<HTMLMetaElement>('meta[name="viewport"]')?.content,
+                screenWidth: screen.availWidth,
+                innerWidth: window.innerWidth,
+                layoutViewportWidth: document.documentElement.clientWidth,
+                visualViewportWidth: window.visualViewport?.width ?? null,
+                visualViewportScale: window.visualViewport?.scale ?? null,
+                documentScrollWidth: document.documentElement.scrollWidth,
+                canvas: {
+                    left: rect.left,
+                    right: rect.right,
+                    width: rect.width,
+                },
+            };
+        });
+
+        expect(mainGeometry.viewportMeta).toBe('width=500');
+        expect(mainGeometry.screenWidth).toBe(deviceWidth);
+        expect(mainGeometry.layoutViewportWidth).toBe(500);
+        expect(mainGeometry.visualViewportWidth).toBeCloseTo(500, 2);
+        expect(mainGeometry.visualViewportScale).toBeCloseTo(deviceWidth / 500, 2);
+        expect(mainGeometry.documentScrollWidth).toBeLessThanOrEqual(mainGeometry.innerWidth);
+        expect(mainGeometry.canvas).toEqual({ left: 0, right: 500, width: 500 });
+        expect(mainGeometry.canvas.right).toBeLessThanOrEqual((mainGeometry.visualViewportWidth ?? 0) + 0.01);
+        if (artifactRoot) {
+            await mkdir(artifactRoot, { recursive: true });
+            await mobilePage.screenshot({
+                path: resolve(artifactRoot, `initial-mobile-fit-${deviceWidth}.png`),
+                fullPage: true,
+            });
+        }
+
+        const routeGeometry: Record<string, unknown> = {};
+        if (deviceWidth === 390) {
+            for (const target of [
+                'chief-center',
+                'battle-center',
+                'inherit',
+                'nation-betting',
+            ]) {
+                await mobilePage.goto(target);
+                await expect
+                    .poll(() => mobilePage.locator('#app').evaluate((element) => getComputedStyle(element).minWidth))
+                    .toBe('500px');
+                routeGeometry[target] = await mobilePage.locator('#app').evaluate((element) => {
+                    const rect = element.getBoundingClientRect();
+                    return {
+                        viewportMeta: document.querySelector<HTMLMetaElement>('meta[name="viewport"]')?.content,
+                        layoutViewportWidth: document.documentElement.clientWidth,
+                        visualViewportWidth: window.visualViewport?.width ?? null,
+                        left: rect.left,
+                        right: rect.right,
+                        width: rect.width,
+                    };
+                });
+                const geometry = routeGeometry[target] as {
+                    viewportMeta: string;
+                    layoutViewportWidth: number;
+                    visualViewportWidth: number;
+                    left: number;
+                    right: number;
+                    width: number;
+                };
+                expect(geometry.viewportMeta).toBe('width=500');
+                expect(geometry.layoutViewportWidth).toBe(500);
+                expect(geometry.visualViewportWidth).toBeCloseTo(500, 2);
+                expect(geometry.left).toBeCloseTo(0, 2);
+                expect(geometry.right).toBeCloseTo(500, 2);
+                expect(geometry.width).toBeCloseTo(500, 2);
+            }
+        }
+
+        measurements[String(deviceWidth)] = { main: mainGeometry, routes: routeGeometry };
+        await context.close();
+    }
+
+    if (artifactRoot) {
+        await writeFile(
+            resolve(artifactRoot, 'initial-mobile-fit-computed-dom.json'),
+            `${JSON.stringify(measurements, null, 2)}\n`
+        );
+    }
 });
 
 test('nation menu presentation follows the server-derived permission matrix', async ({ page }) => {

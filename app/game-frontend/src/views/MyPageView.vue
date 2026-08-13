@@ -7,6 +7,7 @@ import { isDefenceTrainPenaltyWaivedByScenarioEffect } from '@sammo-ts/logic';
 import { useSessionStore } from '../stores/session';
 import { resolveGeneralIconUrl, useDefaultGeneralIcon } from '../utils/generalIcon';
 import LegacyGeneralProgress from '../components/ui/LegacyGeneralProgress.vue';
+import GeneralBasicCard from '../components/main/GeneralBasicCard.vue';
 import { useGameFeedback } from '../composables/useGameFeedback';
 
 const SCREEN_MODE_KEY = 'sam.screenMode';
@@ -167,6 +168,7 @@ const items = computed<Array<{ key: ItemSlotKey; slotName: string; displayName: 
     ]
 );
 const iconChoices = computed(() => data.value?.iconChoices ?? []);
+const selectedIcon = computed(() => iconChoices.value.find((icon) => icon.id === selectedIconId.value) ?? null);
 
 const autorunUser = computed(() => asRecord(world.value?.meta.autorun_user));
 const showAutoNationTurn = computed(() => asRecord(autorunUser.value.options).chief !== false);
@@ -360,7 +362,7 @@ onMounted(() => {
 </script>
 
 <template>
-    <main id="container" class="legacy-page bg0" :class="`screen-${screenMode}`">
+    <main id="container" class="legacy-page bg0 responsive-settings-page" :class="`screen-${screenMode}`">
         <div class="title-row">
             <span>내 정 보</span>
             <RouterLink class="legacy-button" to="/past-plays">지난 플레이</RouterLink>
@@ -374,91 +376,43 @@ onMounted(() => {
         <section class="top-grid">
             <div class="general-column">
                 <div class="section-title sky">장수 정보</div>
-                <div v-if="loading || !data" class="loading">불러오는 중...</div>
-                <div v-else class="general-table">
-                    <div class="portrait-cell">
-                        <span
-                            class="portrait-image"
-                            role="img"
-                            :style="{ backgroundImage: `url(${resolveGeneralIconUrl(data.general)})` }"
-                        ></span>
-                        <strong>{{ data.general.name }}</strong>
-                    </div>
-                    <dl>
-                        <div>
-                            <dt>통솔</dt>
-                            <dd>{{ data.general.stats.leadership }}</dd>
+                <GeneralBasicCard
+                    class="general-table"
+                    :general="data?.general ?? null"
+                    :loading="loading"
+                    :nation-color="data?.nation?.color"
+                    :defence-text="form.defence_train === 999 ? '수비 안함' : `수비 함(훈사${form.defence_train})`"
+                    :troop-text="data?.general.troopId ? String(data.general.troopId) : '-'"
+                    :penalty-text="penalties.length || '-'"
+                >
+                    <template v-if="data" #details>
+                        <div class="legacy-general-details">
+                            <div>
+                                명망
+                                <strong
+                                    >Lv {{ data.general.progression?.experienceLevel ?? 0 }} ({{
+                                        data.general.experience
+                                    }})</strong
+                                >
+                                · 계급
+                                <strong
+                                    >{{ data.general.progression?.dedicationText ?? '무품관' }} ({{
+                                        data.general.dedication
+                                    }})</strong
+                                >
+                            </div>
+                            <div>전투 0 · 계략 0 · 사관 7년</div>
+                            <div>승률 0% · 승리 0 · 패배 0</div>
+                            <div>살상률 0% · 사살 0 · 피살 0</div>
+                            <div>
+                                소속 {{ data.nation?.name ?? '재야' }} · 도시 {{ data.city?.name ?? '-' }} · 병종
+                                {{ data.general.crewTypeName ?? '-' }} · 내정특기
+                                {{ data.general.traits?.specialDomestic ?? '-' }} · 부상 {{ data.general.injury }}
+                            </div>
+                            <LegacyGeneralProgress :general="data.general" :show-primary="false" />
                         </div>
-                        <div>
-                            <dt>무력</dt>
-                            <dd>{{ data.general.stats.strength }}</dd>
-                        </div>
-                        <div>
-                            <dt>지력</dt>
-                            <dd>{{ data.general.stats.intelligence }}</dd>
-                        </div>
-                        <div>
-                            <dt>소속</dt>
-                            <dd>{{ data.nation?.name ?? '재야' }}</dd>
-                        </div>
-                        <div>
-                            <dt>도시</dt>
-                            <dd>{{ data.city?.name ?? '-' }}</dd>
-                        </div>
-                        <div>
-                            <dt>금/쌀</dt>
-                            <dd>{{ data.general.gold }} / {{ data.general.rice }}</dd>
-                        </div>
-                        <div>
-                            <dt>병력</dt>
-                            <dd>{{ data.general.crew }}</dd>
-                        </div>
-                        <div>
-                            <dt>훈련/사기</dt>
-                            <dd>{{ data.general.train }} / {{ data.general.atmos }}</dd>
-                        </div>
-                        <div>
-                            <dt>경험/공헌</dt>
-                            <dd>{{ data.general.experience }} / {{ data.general.dedication }}</dd>
-                        </div>
-                        <div>
-                            <dt>성격/특기</dt>
-                            <dd>
-                                {{ data.general.traits?.personal ?? '-' }} /
-                                {{ data.general.traits?.specialWar ?? '-' }}
-                            </dd>
-                        </div>
-                        <div>
-                            <dt>나이/다음턴</dt>
-                            <dd>{{ data.general.age ?? '-' }}세 / {{ data.general.turnTime?.slice(11, 16) ?? '-' }}</dd>
-                        </div>
-                    </dl>
-                </div>
-                <div v-if="data" class="legacy-general-details">
-                    <div>
-                        명망
-                        <strong
-                            >Lv {{ data.general.progression?.experienceLevel ?? 0 }} ({{
-                                data.general.experience
-                            }})</strong
-                        >
-                        · 계급
-                        <strong
-                            >{{ data.general.progression?.dedicationText ?? '무품관' }} ({{
-                                data.general.dedication
-                            }})</strong
-                        >
-                    </div>
-                    <div>전투 0 · 계략 0 · 사관 7년</div>
-                    <div>승률 0% · 승리 0 · 패배 0</div>
-                    <div>살상률 0% · 사살 0 · 피살 0</div>
-                    <div>
-                        병종 {{ data.general.crewTypeName ?? '-' }} · 내정특기
-                        {{ data.general.traits?.specialDomestic ?? '-' }} · 부상 {{ data.general.injury }} · 부대
-                        {{ data.general.troopId || '-' }} · 벌점 {{ penalties.length || '-' }}
-                    </div>
-                    <LegacyGeneralProgress :general="data.general" />
-                </div>
+                    </template>
+                </GeneralBasicCard>
             </div>
 
             <div class="settings-column">
@@ -541,6 +495,16 @@ onMounted(() => {
                     <span v-if="data.iconChangeAvailableAt" class="hint">
                         다음 변경 가능: {{ formatSeoulDateTime(data.iconChangeAvailableAt) }}
                     </span>
+                    <div v-if="selectedIcon" class="selected-general-icon" aria-live="polite">
+                        <img
+                            :src="resolveGeneralIconUrl(selectedIcon)"
+                            width="48"
+                            height="48"
+                            alt=""
+                            @error="useDefaultGeneralIcon"
+                        />
+                        <strong>{{ data.general.name }}</strong>
+                    </div>
                     <div class="general-icon-list" role="radiogroup" aria-label="장수 전용 아이콘 선택">
                         <label v-for="icon in iconChoices" :key="icon.id" class="general-icon-choice">
                             <input v-model="selectedIconId" type="radio" :value="icon.id" />
@@ -675,8 +639,7 @@ onMounted(() => {
 .legacy-page {
     width: 100%;
     max-width: 1000px;
-    min-width: 500px;
-    height: 1257.5px;
+    min-width: 0;
     min-height: 0;
     margin: 0 auto;
     padding: 0;
@@ -786,28 +749,6 @@ button:disabled {
 .sky {
     color: skyblue;
 }
-.general-table {
-    display: grid;
-    grid-template-columns: 150px 1fr;
-    padding: 0;
-    background-color: #172a52;
-    background-image: var(--sammo-texture-blue);
-}
-.portrait-cell {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    gap: 8px;
-    padding: 10px;
-    border-right: 1px solid #777;
-}
-.portrait-image {
-    display: block;
-    width: 64px;
-    height: 64px;
-    background-position: center;
-    background-size: cover;
-}
 .legacy-general-info-compat {
     display: none;
 }
@@ -823,23 +764,6 @@ button:disabled {
     max-width: 100%;
     overflow: hidden;
     white-space: nowrap;
-}
-dl {
-    margin: 0;
-}
-dl > div {
-    display: grid;
-    grid-template-columns: 80px 1fr;
-    border-bottom: 1px solid #777;
-}
-dt,
-dd {
-    margin: 0;
-    padding: 2px 5px;
-    border-right: 1px solid #777;
-}
-dt {
-    color: #aaa;
 }
 .settings-column {
     padding: 10px 18px;
@@ -942,6 +866,21 @@ dt {
     gap: 6px;
     margin: 6px 0;
 }
+.selected-general-icon {
+    display: flex;
+    max-width: 260px;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
+    margin: 8px auto;
+    padding: 6px 10px;
+    border: 1px solid #666;
+    background: rgb(23 42 82 / 70%);
+}
+.selected-general-icon img {
+    flex: 0 0 48px;
+    object-fit: cover;
+}
 .general-icon-choice {
     display: flex;
     align-items: center;
@@ -949,16 +888,44 @@ dt {
 }
 @media (max-width: 991px) {
     .legacy-page {
-        width: 500px;
-        height: 1798.34px;
+        width: 100%;
+        max-width: 100%;
     }
     .my-page-mobile-scroll-spacer {
-        display: block;
-        height: 100px;
+        display: none;
     }
     .top-grid,
     .log-grid {
         grid-template-columns: 1fr;
+    }
+}
+@media (max-width: 600px) {
+    .title-row {
+        height: auto;
+        min-height: 54px;
+    }
+    dl > div {
+        grid-template-columns: 62px minmax(0, 1fr);
+    }
+    dt,
+    dd {
+        padding: 2px 3px;
+    }
+    .settings-column {
+        padding: 10px 12px;
+    }
+    .screen-mode-row {
+        grid-template-columns: 1fr;
+        gap: 6px;
+    }
+    .button-group {
+        overflow-x: auto;
+    }
+    .item-group {
+        grid-template-columns: repeat(2, 1fr);
+    }
+    .custom-css textarea {
+        width: 100%;
     }
 }
 </style>
