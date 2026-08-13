@@ -514,7 +514,7 @@ const installRealtimeHarness = async (page: Page) => {
 
 const waitForMain = async (page: Page) => {
     await page.goto('./');
-    await expect(page.getByRole('heading', { name: '전장 현황' })).toBeVisible();
+    await expect(page.locator('.game-shell__title')).toBeVisible();
     await expect(page.locator('.main-global-menu').first()).toBeVisible();
     await expect(page.locator('.main-nation-menu')).toBeVisible();
     await expect(page.locator('[data-navigation-id="npc-list"]')).toHaveCount(3);
