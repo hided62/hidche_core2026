@@ -35,6 +35,7 @@ type NavigationFixture = {
     currentYear?: number;
     currentMonth?: number;
     scenarioTitle?: string;
+    lastExecuted?: string | null;
     latestVote?: { id: number; title: string; hasVoted: boolean } | null;
     globalRecords?: Array<{ id: number; text: string }>;
     generalRecords?: Array<{ id: number; text: string }>;
@@ -441,7 +442,7 @@ const installFixture = async (page: Page, state: NavigationFixture) => {
                     onlineNations: '위(1)',
                     onlineGenerals: '메뉴검증장수',
                     nationNotice: '<p>국가 방침</p>',
-                    lastExecuted: null,
+                    lastExecuted: state.lastExecuted === undefined ? '2026-08-13T00:05:06.000Z' : state.lastExecuted,
                     latestVote:
                         state.latestVote === undefined
                             ? { id: 9, title: '메뉴 설문', hasVoted: false }
@@ -585,6 +586,10 @@ const persistArtifact = async (page: Page, name: string) => {
             globalPopup: describe('#mobile-global-menu'),
             nationPopup: describe('#mobile-nation-menu'),
             quickPopup: describe('#mobile-quick-menu'),
+            activityStatus: describe('.activity-status'),
+            executionStatus: describe('.execution-status'),
+            tournamentStatus: describe('.tournament-status'),
+            voteStatus: describe('.vote-status'),
             commandMenu: describe('.reserved-command-editor details[open] .menu-items'),
             commandDividers: [
                 ...document.querySelectorAll<HTMLElement>('.reserved-command-editor details[open] .menu-divider'),
@@ -617,6 +622,7 @@ test('desktop menus preserve ref columns, prefix-safe routes, and controlled dro
         stage: 1,
         npcMode: 1,
         scenarioTitle: '메인 화면 검증 시나리오',
+        lastExecuted: '2026-08-13T00:05:06.000Z',
         generalMeCalls: 0,
         operations: [],
     };
@@ -633,31 +639,35 @@ test('desktop menus preserve ref columns, prefix-safe routes, and controlled dro
     await expect(page.getByRole('heading', { name: '메인 화면 검증 시나리오', exact: true })).toHaveCount(1);
     await expect(page.locator('.game-shell__subtitle')).toHaveText('185년 1월 · 턴 10분');
     await expect(page.locator('.game-shell__subtitle')).not.toContainText('메인 화면 검증 시나리오');
+    await expect(page.locator('.execution-status')).toHaveText('동작 시각: 08-13 09:05');
     await expect(page.locator('.tournament-status')).toHaveText('토너먼트: 참가 모집중');
     await expect(page.locator('.vote-status')).toHaveText('설문: 메뉴 설문');
     const headerStatusGeometry = await page.locator('.main-page').evaluate((element) => {
         const title = element.querySelector<HTMLElement>('.game-shell__title');
         const subtitle = element.querySelector<HTMLElement>('.game-shell__subtitle');
         const activity = element.querySelector<HTMLElement>('.activity-status');
+        const execution = element.querySelector<HTMLElement>('.execution-status');
         const tournament = element.querySelector<HTMLElement>('.tournament-status');
         const survey = element.querySelector<HTMLElement>('.vote-status');
-        if (!title || !subtitle || !activity || !tournament || !survey) {
+        if (!title || !subtitle || !activity || !execution || !tournament || !survey) {
             throw new Error('main header status geometry is incomplete');
         }
         return {
             title: title.getBoundingClientRect().toJSON(),
             subtitle: subtitle.getBoundingClientRect().toJSON(),
             activity: activity.getBoundingClientRect().toJSON(),
+            execution: execution.getBoundingClientRect().toJSON(),
             tournament: tournament.getBoundingClientRect().toJSON(),
             survey: survey.getBoundingClientRect().toJSON(),
             activityColumns: getComputedStyle(activity).gridTemplateColumns,
         };
     });
     expect(headerStatusGeometry.subtitle.y).toBeGreaterThanOrEqual(headerStatusGeometry.title.bottom);
-    expect(headerStatusGeometry.activity.width).toBeCloseTo(666.67, 0);
+    expect(headerStatusGeometry.activity.width).toBeCloseTo(1000, 0);
+    expect(headerStatusGeometry.execution.width).toBeCloseTo(333.33, 0);
     expect(headerStatusGeometry.tournament.width).toBeCloseTo(333.33, 0);
     expect(headerStatusGeometry.survey.width).toBeCloseTo(333.33, 0);
-    expect(headerStatusGeometry.activityColumns.split(' ')).toHaveLength(2);
+    expect(headerStatusGeometry.activityColumns.split(' ')).toHaveLength(3);
     const tournamentStatusLink = page.locator('.tournament-status a');
     const surveyStatusLink = page.locator('.vote-status a');
     await tournamentStatusLink.hover();
@@ -1265,6 +1275,7 @@ test('the 939/940 boundary switches to the Ref-style 500px single document', asy
         stage: 6,
         npcMode: 1,
         scenarioTitle: '모바일 검증 시나리오',
+        lastExecuted: null,
         latestVote: null,
         generalMeCalls: 0,
         operations: [],
@@ -1286,25 +1297,27 @@ test('the 939/940 boundary switches to the Ref-style 500px single document', asy
     await page.setViewportSize({ width: 500, height: 900 });
     await expect(page.getByRole('heading', { name: '모바일 검증 시나리오', exact: true })).toHaveCount(1);
     await expect(page.locator('.game-shell__subtitle')).toHaveText('185년 1월 · 턴 10분');
+    await expect(page.locator('.execution-status')).toHaveText('동작 시각: 기록 없음');
     await expect(page.locator('.tournament-status')).toHaveText('토너먼트: 베팅 진행중');
     await expect(page.locator('.vote-status')).toHaveText('설문: 진행 중인 설문 없음');
     const activityGeometry = await page.locator('.activity-status').evaluate((element) => {
+        const execution = element.querySelector<HTMLElement>('.execution-status');
         const tournament = element.querySelector<HTMLElement>('.tournament-status');
         const survey = element.querySelector<HTMLElement>('.vote-status');
-        if (!tournament || !survey) throw new Error('activity status is incomplete');
+        if (!execution || !tournament || !survey) throw new Error('activity status is incomplete');
         return {
             width: element.getBoundingClientRect().width,
+            executionWidth: execution.getBoundingClientRect().width,
             tournamentWidth: tournament.getBoundingClientRect().width,
             surveyWidth: survey.getBoundingClientRect().width,
             columns: getComputedStyle(element).gridTemplateColumns,
         };
     });
-    expect(activityGeometry).toMatchObject({
-        width: 500,
-        tournamentWidth: 250,
-        surveyWidth: 250,
-        columns: '250px 250px',
-    });
+    expect(activityGeometry.width).toBe(500);
+    expect(activityGeometry.executionWidth).toBeCloseTo(166.67, 0);
+    expect(activityGeometry.tournamentWidth).toBeCloseTo(166.67, 0);
+    expect(activityGeometry.surveyWidth).toBeCloseTo(166.67, 0);
+    expect(activityGeometry.columns.split(' ')).toHaveLength(3);
     await expect
         .poll(() =>
             page

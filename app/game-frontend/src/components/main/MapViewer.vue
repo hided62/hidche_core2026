@@ -71,6 +71,7 @@ const props = withDefaults(
         selectedCityId?: number | null;
         detailMode?: boolean;
         fitContainer?: boolean;
+        showCurrentCityMarker?: boolean;
     }>(),
     {
         // Vue casts an absent Boolean prop to false unless undefined is an explicit default.
@@ -212,6 +213,20 @@ const cityViews = computed<CityView[]>(() => {
             selected: effectiveSelectedCityId.value === layoutCity.id,
         };
     });
+});
+
+const currentCityMarker = computed(() =>
+    props.showCurrentCityMarker ? (cityViews.value.find((city) => city.isMyCity) ?? null) : null
+);
+
+const currentCityMarkerStyle = computed(() => {
+    const city = currentCityMarker.value;
+    if (!city) return undefined;
+    const verticalOffset = (effectiveDetailMode.value ? 22 : 14) * mapScale.value;
+    return {
+        left: `${city.x}px`,
+        top: `${city.y - verticalOffset}px`,
+    };
 });
 
 const mapSeason = computed(() => {
@@ -433,6 +448,16 @@ const selectCity = (cityId: number) => {
                     @leave="setHoveredCity(null)"
                     @select="selectCity"
                 />
+                <div
+                    v-if="currentCityMarker"
+                    class="current-city-marker"
+                    :style="currentCityMarkerStyle"
+                    data-testid="current-city-marker"
+                    role="note"
+                    :aria-label="`현재 도시 ${currentCityMarker.name}`"
+                >
+                    현재
+                </div>
                 <div v-if="hoveredCity" class="map-tooltip" :style="tooltipPosition">
                     <div class="tooltip-title">{{ hoveredCityTitle }}</div>
                     <div class="tooltip-body">{{ hoveredCity.nationId > 0 ? hoveredCity.nationName : '' }}</div>
@@ -581,6 +606,38 @@ const selectCity = (cityId: number) => {
     font-size: 14px;
     line-height: 15px;
     white-space: nowrap;
+}
+
+.current-city-marker {
+    position: absolute;
+    z-index: 12;
+    box-sizing: border-box;
+    min-width: 30px;
+    border: 1px solid #82cfff;
+    border-radius: 2px;
+    padding: 1px 4px;
+    background: rgba(5, 27, 43, 0.92);
+    color: #d9f3ff;
+    font-size: 10px;
+    font-weight: 700;
+    line-height: 14px;
+    pointer-events: none;
+    text-align: center;
+    text-shadow: 0 1px #000;
+    transform: translate(-50%, -100%);
+    white-space: nowrap;
+}
+
+.current-city-marker::after {
+    position: absolute;
+    top: 100%;
+    left: 50%;
+    width: 0;
+    height: 0;
+    border: 4px solid transparent;
+    border-top-color: #82cfff;
+    content: '';
+    transform: translateX(-50%);
 }
 
 .tooltip-title {

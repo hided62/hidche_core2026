@@ -293,14 +293,16 @@ test('renders actual online, nation policy, and survey data with ref geometry an
     await expect(status).toContainText(marker);
     await expect(page.locator('.online-users')).toContainText('현황검증장수');
     await expect(page.locator('.survey-notice')).toContainText('새로운 설문조사가 있습니다.');
+    await expect(page.locator('.execution-status')).toContainText('동작 시각:');
     await expect(page.locator('.tournament-status')).toHaveText('토너먼트: 경기 없음');
     await expect(page.locator('.vote-status')).toHaveText('설문: 검증 설문');
     const desktop = await status.evaluate((element) => {
         const style = getComputedStyle(element);
         const onlineRow = element.querySelector<HTMLElement>('.online-nations');
+        const executionRow = element.querySelector<HTMLElement>('.execution-status');
         const voteRow = element.querySelector<HTMLElement>('.vote-status');
         const tournamentRow = element.querySelector<HTMLElement>('.tournament-status');
-        if (!onlineRow || !voteRow || !tournamentRow) throw new Error('status row missing');
+        if (!onlineRow || !executionRow || !voteRow || !tournamentRow) throw new Error('status row missing');
         return {
             rect: element.getBoundingClientRect().toJSON(),
             fontSize: style.fontSize,
@@ -311,6 +313,7 @@ test('renders actual online, nation policy, and survey data with ref geometry an
                 borderTop: getComputedStyle(onlineRow).borderTop,
                 padding: getComputedStyle(onlineRow).padding,
             },
+            executionRow: executionRow.getBoundingClientRect().toJSON(),
             tournamentRow: tournamentRow.getBoundingClientRect().toJSON(),
             voteRow: voteRow.getBoundingClientRect().toJSON(),
         };
@@ -325,6 +328,9 @@ test('renders actual online, nation policy, and survey data with ref geometry an
         },
     });
     expect(desktop.onlineRow.rect.height).toBeCloseTo(36, 0);
+    expect(desktop.executionRow.x).toBeCloseTo(0, 0);
+    expect(desktop.executionRow.width).toBeCloseTo(333.33, 0);
+    expect(desktop.executionRow.height).toBeCloseTo(36, 0);
     expect(desktop.tournamentRow.x).toBeCloseTo(333.33, 0);
     expect(desktop.tournamentRow.width).toBeCloseTo(333.33, 0);
     expect(desktop.tournamentRow.height).toBeCloseTo(36, 0);
@@ -335,8 +341,12 @@ test('renders actual online, nation policy, and survey data with ref geometry an
 
     await page.setViewportSize({ width: 500, height: 900 });
     await expect(status).toHaveCSS('width', '500px');
-    await expect(page.locator('.tournament-status')).toHaveCSS('width', '250px');
-    await expect(page.locator('.vote-status')).toHaveCSS('width', '250px');
+    const mobileActivity = await page.locator('.activity-status').evaluate((element) => ({
+        columns: getComputedStyle(element).gridTemplateColumns,
+        widths: [...element.children].map((child) => child.getBoundingClientRect().width),
+    }));
+    expect(mobileActivity.columns.split(' ')).toHaveLength(3);
+    for (const width of mobileActivity.widths) expect(width).toBeCloseTo(166.67, 0);
 
     failStatus = true;
     await page.getByRole('button', { name: '새로고침', exact: true }).click();
