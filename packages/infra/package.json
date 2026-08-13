@@ -12,7 +12,7 @@
         "lint:fix": "eslint . --fix",
         "test": "node -e \"console.log('test not configured')\"",
         "prisma:generate": "pnpm prisma:generate:game && pnpm prisma:generate:gateway",
-        "typecheck": "tsc -b",
+        "typecheck": "pnpm -w tsc7 -b packages/infra/tsconfig.json",
         "prisma:generate:game": "prisma generate --schema prisma/game.prisma",
         "prisma:generate:gateway": "prisma generate --schema prisma/gateway.prisma",
         "prisma:migrate:deploy:game": "prisma migrate deploy --schema prisma/game.prisma",
