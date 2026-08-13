@@ -164,6 +164,25 @@ const install = async (
             if (operation === 'auth.status') return response({ ok: true });
             if (operation === 'lobby.info') return response({ myGeneral: { id: 1, name: '장수' } });
             if (operation === 'join.getConfig') return response({});
+            if (operation === 'dashboard.getContextBundleDelta') {
+                return response({
+                    context: {
+                        kind: 'snapshot',
+                        revision: 'AAAAAAAAAAAAAAAAAAAAAA',
+                        data: generalContext,
+                    },
+                    commandTable: {
+                        kind: 'snapshot',
+                        revision: 'BBBBBBBBBBBBBBBBBBBBBB',
+                        data: { general: [], nation: [] },
+                    },
+                    boardAccess: {
+                        kind: 'snapshot',
+                        revision: 'CCCCCCCCCCCCCCCCCCCCCC',
+                        data: { permission: 0, canMeeting: false, canSecret: false },
+                    },
+                });
+            }
             if (operation === 'general.me') return response(generalContext);
             if (operation === 'world.getMap') return response(mapFixture);
             if (operation === 'turns.getCommandTable') return response({ general: [], nation: [] });
@@ -807,7 +826,7 @@ test('a Chromium map click opens the clicked city route and keeps the legacy poi
     await install(page);
     await page.setViewportSize({ width: 1200, height: 900 });
     await go(page, '');
-    const cityLink = page.locator('.map-city').first();
+    const cityLink = page.locator('.city-base').first();
     await expect(cityLink).toBeVisible();
     await cityLink.hover();
     await expect(cityLink).toHaveCSS('cursor', 'pointer');

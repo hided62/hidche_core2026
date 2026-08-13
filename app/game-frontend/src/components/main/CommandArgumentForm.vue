@@ -258,7 +258,7 @@ watch(
                 :map-layout="props.mapLayout ?? null"
                 :loading="false"
                 :selected-city-id="mapSelectedCityId"
-                :detail-mode="false"
+                :detail-mode="true"
                 :fit-container="true"
                 @select-city="selectMapCity"
             />
