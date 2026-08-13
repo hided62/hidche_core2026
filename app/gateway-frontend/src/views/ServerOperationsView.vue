@@ -88,6 +88,7 @@ const profileOperationLogViewport = ref<HTMLElement>();
 const gatewayReleaseState = ref<GatewayReleaseState | null>(null);
 const gatewayReleaseOperations = ref<GatewayReleaseOperation[]>([]);
 const selectedGatewayOperationId = ref('');
+const expandedGatewayErrorOperationId = ref('');
 const gatewayReleaseLogs = ref<GatewayReleaseLog[]>([]);
 const gatewayReleaseLogCursor = ref<string>();
 const gatewayReleaseLogStatus = ref('');
@@ -169,7 +170,7 @@ const gatewayReleaseLogEmptyMessage = computed(() => {
         return 'controller 로그를 기다리고 있습니다…';
     }
     if (operation.error) {
-        return `이 작업에는 controller 로그가 기록되지 않았습니다. 작업 오류: ${operation.error}`;
+        return '이 작업에는 controller 로그가 기록되지 않았습니다. 작업 이력의 오류 상세를 확인하세요.';
     }
     return '이 작업에는 controller 로그가 기록되지 않았습니다. 로그 지원 controller 적용 전 작업일 수 있습니다.';
 });
@@ -442,6 +443,11 @@ const selectGatewayReleaseOperation = (operationId: string) => {
         return;
     }
     selectedGatewayOperationId.value = operationId;
+};
+
+const toggleGatewayReleaseError = (operationId: string) => {
+    expandedGatewayErrorOperationId.value =
+        expandedGatewayErrorOperationId.value === operationId ? '' : operationId;
 };
 
 const requestDeploy = async () => {
@@ -1136,45 +1142,97 @@ onBeforeUnmount(() => {
                     </div>
                 </section>
                 <div class="overflow-x-auto">
-                    <table class="w-full min-w-[760px] text-left text-xs" data-testid="gateway-release-table">
+                    <table
+                        class="w-full table-fixed text-left text-xs sm:min-w-[680px]"
+                        data-testid="gateway-release-table"
+                    >
+                        <colgroup>
+                            <col class="w-[32%] sm:w-[144px]" />
+                            <col class="w-[17%] sm:w-[68px]" />
+                            <col class="w-[20%] sm:w-[88px]" />
+                            <col class="hidden sm:table-column sm:w-[128px]" />
+                            <col class="hidden sm:table-column sm:w-[112px]" />
+                            <col class="w-[31%] sm:w-[140px]" />
+                        </colgroup>
                         <thead class="border-b border-zinc-700 text-zinc-500">
                             <tr>
                                 <th class="p-2">시각</th>
                                 <th class="p-2">작업</th>
                                 <th class="p-2">상태</th>
-                                <th class="p-2">소스</th>
-                                <th class="p-2">해석 커밋</th>
-                                <th class="p-2">오류</th>
-                                <th class="p-2">로그</th>
+                                <th class="hidden p-2 sm:table-cell">소스</th>
+                                <th class="hidden p-2 sm:table-cell">해석 커밋</th>
+                                <th class="p-2">상세</th>
                             </tr>
                         </thead>
                         <tbody>
-                            <tr
-                                v-for="operation in gatewayReleaseOperations"
-                                :key="operation.id"
-                                class="border-b border-zinc-800"
-                            >
-                                <td class="p-2">{{ formatTime(operation.createdAt) }}</td>
-                                <td class="p-2">{{ operation.type }}</td>
-                                <td class="p-2">{{ operation.status }}</td>
-                                <td class="p-2 font-mono">{{ operation.sourceRef }}</td>
-                                <td class="p-2 font-mono">{{ shortSha(operation.resolvedCommitSha) }}</td>
-                                <td class="max-w-xs p-2 text-red-300">{{ operation.error }}</td>
-                                <td class="p-2">
-                                    <button
-                                        type="button"
-                                        class="rounded border border-zinc-700 px-2 py-1 text-zinc-300 hover:bg-zinc-800"
-                                        :class="
-                                            operation.id === selectedGatewayOperationId
-                                                ? 'border-violet-500 text-violet-200'
-                                                : ''
-                                        "
-                                        @click="selectGatewayReleaseOperation(operation.id)"
-                                    >
-                                        보기
-                                    </button>
-                                </td>
-                            </tr>
+                            <template v-for="operation in gatewayReleaseOperations" :key="operation.id">
+                                <tr class="border-b border-zinc-800 align-top">
+                                    <td class="p-2">{{ formatTime(operation.createdAt) }}</td>
+                                    <td class="p-2">
+                                        <div>{{ operation.type }}</div>
+                                        <div
+                                            class="mt-1 truncate font-mono text-[10px] text-zinc-500 sm:hidden"
+                                            :title="operation.sourceRef"
+                                        >
+                                            {{ operation.sourceRef ?? '-' }}
+                                        </div>
+                                    </td>
+                                    <td class="p-2 font-semibold">{{ operation.status }}</td>
+                                    <td class="hidden p-2 font-mono sm:table-cell">
+                                        <div class="truncate" :title="operation.sourceRef">{{ operation.sourceRef }}</div>
+                                    </td>
+                                    <td class="hidden p-2 font-mono sm:table-cell">
+                                        {{ shortSha(operation.resolvedCommitSha) }}
+                                    </td>
+                                    <td class="p-2">
+                                        <div class="flex flex-wrap gap-2">
+                                            <button
+                                                type="button"
+                                                class="rounded border border-zinc-700 px-2 py-1 text-zinc-300 hover:bg-zinc-800 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-violet-400"
+                                                :class="
+                                                    operation.id === selectedGatewayOperationId
+                                                        ? 'border-violet-500 text-violet-200'
+                                                        : ''
+                                                "
+                                                @click="selectGatewayReleaseOperation(operation.id)"
+                                            >
+                                                로그
+                                            </button>
+                                            <button
+                                                v-if="operation.error"
+                                                type="button"
+                                                class="rounded border border-red-800 px-2 py-1 text-red-300 hover:bg-red-950 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-red-400"
+                                                :aria-expanded="expandedGatewayErrorOperationId === operation.id"
+                                                :aria-controls="`gateway-release-error-${operation.id}`"
+                                                data-testid="gateway-release-error-toggle"
+                                                @click="toggleGatewayReleaseError(operation.id)"
+                                            >
+                                                {{ expandedGatewayErrorOperationId === operation.id ? '오류 닫기' : '오류 보기' }}
+                                            </button>
+                                        </div>
+                                    </td>
+                                </tr>
+                                <tr
+                                    v-if="operation.error"
+                                    v-show="expandedGatewayErrorOperationId === operation.id"
+                                    :id="`gateway-release-error-${operation.id}`"
+                                    class="border-b border-red-900/70 bg-red-950/30"
+                                    data-testid="gateway-release-error-detail"
+                                >
+                                    <td colspan="6" class="p-4">
+                                        <div
+                                            class="rounded border border-red-900/70 bg-zinc-950 px-4 py-3"
+                                            role="region"
+                                            :aria-label="`${operation.type} 릴리스 오류 상세`"
+                                        >
+                                            <div class="mb-2 text-xs font-semibold text-red-300">오류 상세</div>
+                                            <pre
+                                                class="whitespace-pre-wrap break-all font-mono text-xs leading-5 text-red-200"
+                                            >{{ operation.error }}</pre>
+                                        </div>
+                                    </td>
+                                </tr>
+                            </template>
                         </tbody>
                     </table>
                 </div>
