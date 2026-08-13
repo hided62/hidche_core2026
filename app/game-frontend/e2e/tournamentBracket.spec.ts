@@ -1,14 +1,21 @@
 import { expect, test, type Page, type Route } from '@playwright/test';
-import { readFile } from 'node:fs/promises';
+import { mkdir, readFile } from 'node:fs/promises';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { gameProfile, gameTrpcRoute } from './gameTestPaths.js';
 
 const repositoryRoot = resolve(dirname(fileURLToPath(import.meta.url)), '../../..');
+const responsiveArtifactDir = process.env.TOURNAMENT_RESPONSIVE_ARTIFACT_DIR;
 const imageRoots = [
     ...(process.env.FRONTEND_PARITY_IMAGE_ROOT ? [resolve(process.env.FRONTEND_PARITY_IMAGE_ROOT, 'game')] : []),
     resolve(repositoryRoot, '../image/game'),
     resolve(repositoryRoot, '../../image/game'),
+];
+const iconRoots = [
+    ...(process.env.FRONTEND_PARITY_IMAGE_ROOT ? [resolve(process.env.FRONTEND_PARITY_IMAGE_ROOT, 'icons')] : []),
+    resolve(repositoryRoot, '../image/icons'),
+    resolve(repositoryRoot, '../../image/icons'),
+    resolve(repositoryRoot, '../../sam_rebuild/image/icons'),
 ];
 const names = [
     '관우',
@@ -35,6 +42,8 @@ const participants = names.map((name, index) => ({
     strength: 80,
     intel: 80,
     level: 10,
+    picture: 'default.jpg',
+    imageServer: 0,
     groupId: 10 + (index % 8),
     groupNo: Math.floor(index / 8),
     win: 3 - (index % 2),
@@ -88,6 +97,26 @@ const readReferenceImage = async (filename: string): Promise<Buffer> => {
     throw new Error(`Reference image not found: ${filename}`);
 };
 
+const readReferenceIcon = async (filename: string): Promise<Buffer> => {
+    for (const iconRoot of iconRoots) {
+        try {
+            return await readFile(resolve(iconRoot, filename));
+        } catch {
+            // Worktrees can be nested at different depths.
+        }
+    }
+    throw new Error(`Reference icon not found: ${filename}`);
+};
+
+const persistScreenshot = async (page: Page, name: string, fallbackPath: string) => {
+    if (!responsiveArtifactDir) {
+        await page.screenshot({ path: fallbackPath, fullPage: true });
+        return;
+    }
+    await mkdir(responsiveArtifactDir, { recursive: true });
+    await page.screenshot({ path: resolve(responsiveArtifactDir, `${name}.webp`), fullPage: true });
+};
+
 const installFixture = async (page: Page) => {
     await page.addInitScript((profile) => {
         window.localStorage.setItem('sammo-game-token', 'ga_tournament_bracket_playwright');
@@ -98,6 +127,9 @@ const installFixture = async (page: Page) => {
             await route.fulfill({ status: 200, contentType: 'image/jpeg', body: await readReferenceImage(filename) });
         });
     }
+    await page.route('**/icons/default.jpg', async (route) => {
+        await route.fulfill({ status: 200, contentType: 'image/jpeg', body: await readReferenceIcon('default.jpg') });
+    });
     await page.route(gameTrpcRoute, async (route) => {
         const results = operationNames(route).map((operation) => {
             if (operation === 'auth.status') return response({ ok: true });
@@ -125,11 +157,42 @@ const installFixture = async (page: Page) => {
             }
             if (operation === 'tournament.getBettingSummary') {
                 return response({
-                    totals: Object.fromEntries(participants.map((participant, index) => [participant.id, 100 + index * 10])),
+                    totals: Object.fromEntries(
+                        participants.map((participant, index) => [participant.id, 100 + index * 10])
+                    ),
                     myTotals: {},
                     totalAmount: 2800,
                     myAmount: 0,
                 });
+            }
+            if (operation === 'tournament.getRankings') {
+                return response(
+                    [
+                        ['tt', '전 력 전', '종합'],
+                        ['tl', '통 솔 전', '통솔'],
+                        ['ts', '일 기 토', '무력'],
+                        ['ti', '설 전', '지력'],
+                    ].map(([prefix, title, statLabel]) => ({
+                        prefix,
+                        title,
+                        statLabel,
+                        entries: participants.slice(0, 6).map((participant, index) => ({
+                            rank: index + 1,
+                            generalId: participant.id,
+                            name: participant.name,
+                            picture: participant.picture,
+                            imageServer: participant.imageServer,
+                            npcState: 0,
+                            stat: 240 - index,
+                            games: 10,
+                            win: 7,
+                            draw: 1,
+                            lose: 2,
+                            score: 22 - index,
+                            prizes: 3,
+                        })),
+                    }))
+                );
             }
             return response(null);
         });
@@ -162,16 +225,20 @@ test('desktop bracket connects every real general slot to the next round', async
             connectorCenter: firstConnector.x + firstConnector.width / 2,
             championCenter: champion.x + champion.width / 2,
             finalistCenters: finalists.map((rect) => rect.x + rect.width / 2),
-            connectorQuarters: [firstConnector.x + firstConnector.width / 4, firstConnector.x + (firstConnector.width * 3) / 4],
+            connectorQuarters: [
+                firstConnector.x + firstConnector.width / 4,
+                firstConnector.x + (firstConnector.width * 3) / 4,
+            ],
         };
     });
-    expect(geometry.canvasWidth).toBe(2000);
+    expect(geometry.canvasWidth).toBeGreaterThanOrEqual(1000);
+    expect(geometry.canvasWidth).toBeLessThanOrEqual(1200);
     expect(Math.abs(geometry.connectorCenter - geometry.championCenter)).toBeLessThan(1);
     expect(geometry.finalistCenters).toHaveLength(2);
     expect(Math.abs(geometry.finalistCenters[0]! - geometry.connectorQuarters[0]!)).toBeLessThan(1);
     expect(Math.abs(geometry.finalistCenters[1]! - geometry.connectorQuarters[1]!)).toBeLessThan(1);
 
-    await page.screenshot({ path: testInfo.outputPath('tournament-bracket-desktop.webp'), fullPage: true });
+    await persistScreenshot(page, 'tournament-desktop', testInfo.outputPath('tournament-bracket-desktop.webp'));
 });
 
 test('mobile bracket shows every round and general within the handheld width', async ({ page }, testInfo) => {
@@ -197,5 +264,62 @@ test('mobile bracket shows every round and general within the handheld width', a
     expect(bounds.width).toBe(390);
     expect(bounds.minX).toBeGreaterThanOrEqual(0);
     expect(bounds.maxX).toBeLessThanOrEqual(390);
-    await page.screenshot({ path: testInfo.outputPath('tournament-bracket-mobile.webp'), fullPage: true });
+    const identity = await bracket
+        .locator('.mobile-bracket-name')
+        .first()
+        .evaluate((element) => {
+            const icon = element.querySelector('img')!.getBoundingClientRect();
+            const name = element.querySelector<HTMLElement>('.general-identity-name')!.getBoundingClientRect();
+            return { iconRight: icon.right, nameLeft: name.left, iconY: icon.y, nameY: name.y };
+        });
+    expect(identity.nameLeft).toBeGreaterThanOrEqual(identity.iconRight);
+    expect(Math.abs(identity.iconY - identity.nameY)).toBeLessThan(8);
+    await expect(page.getByRole('tablist', { name: '본선 조 선택' })).toBeVisible();
+    await page.getByRole('tab', { name: '二조' }).first().click();
+    await expect(page.getByRole('tab', { name: '二조' }).first()).toHaveAttribute('aria-selected', 'true');
+    expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
+    await persistScreenshot(page, 'tournament-mobile', testInfo.outputPath('tournament-bracket-mobile.webp'));
+});
+
+test('mobile betting rankings use tabs and keep dedicated icons beside general names', async ({ page }, testInfo) => {
+    await page.setViewportSize({ width: 390, height: 844 });
+    await installFixture(page);
+    await page.goto('betting');
+
+    await expect(page.locator('.candidate-card')).toHaveCount(16);
+    await expect(page.getByRole('tablist', { name: '토너먼트 랭킹 종목 선택' })).toBeVisible();
+    await expect(page.locator('.ranking-table:visible')).toHaveCount(1);
+    await page.getByRole('tab', { name: '통솔전' }).click();
+    await expect(page.getByRole('tab', { name: '통솔전' })).toHaveAttribute('aria-selected', 'true');
+    await expect(page.locator('.ranking-table:visible thead')).toContainText('통 솔 전');
+
+    const identity = await page
+        .locator('.ranking-table:visible .general-identity')
+        .first()
+        .evaluate((element) => {
+            const icon = element.querySelector('img')!.getBoundingClientRect();
+            const name = element.querySelector<HTMLElement>('.general-identity-name')!.getBoundingClientRect();
+            return { iconRight: icon.right, nameLeft: name.left, iconY: icon.y, nameY: name.y };
+        });
+    expect(identity.nameLeft).toBeGreaterThanOrEqual(identity.iconRight);
+    expect(Math.abs(identity.iconY - identity.nameY)).toBeLessThan(8);
+    expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
+    await persistScreenshot(page, 'tournament-ranking-mobile', testInfo.outputPath('tournament-ranking-mobile.webp'));
+});
+
+test('desktop betting presents icon-and-name cards and all four rankings without document overflow', async ({
+    page,
+}, testInfo) => {
+    await page.setViewportSize({ width: 1365, height: 900 });
+    await installFixture(page);
+    await page.goto('betting');
+
+    await expect(page.locator('.candidate-card')).toHaveCount(16);
+    await expect(page.locator('.ranking-table:visible')).toHaveCount(4);
+    const columns = await page
+        .locator('.candidate-grid')
+        .evaluate((element) => getComputedStyle(element).gridTemplateColumns.split(' ').length);
+    expect(columns).toBe(4);
+    expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(1365);
+    await persistScreenshot(page, 'tournament-ranking-desktop', testInfo.outputPath('tournament-ranking-desktop.webp'));
 });

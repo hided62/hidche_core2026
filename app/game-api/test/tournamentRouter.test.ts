@@ -84,6 +84,8 @@ const buildGeneral = (id: number, userId: string, gold = 2_000): GeneralRow =>
         id,
         userId,
         name: `장수${id}`,
+        picture: `${id}.jpg`,
+        imageServer: id % 2,
         leadership: 70 + id,
         strength: 60 + id,
         intel: 50 + id,
@@ -296,11 +298,42 @@ describe('tournament router permissions and mutations', () => {
         const sections = await ownerCaller.tournament.getRankings();
         expect(sections).toHaveLength(4);
         expect(sections[0]?.entries.map((entry) => entry.generalId)).toEqual([second.id, first.id]);
+        expect(sections[0]?.entries[0]).toMatchObject({
+            picture: '2.jpg',
+            imageServer: 0,
+        });
 
         const generalLessCaller = appRouter.createCaller(
             buildContext({ redis, transport, generals: [first, second], userId: 'user-3', rankRows })
         );
         await expect(generalLessCaller.tournament.getRankings()).rejects.toMatchObject({ code: 'NOT_FOUND' });
+    });
+
+    it('joins current dedicated icon metadata to the public tournament snapshot', async () => {
+        const redis = new MemoryRedis();
+        const transport = new TournamentTransport();
+        const owner = buildGeneral(11, 'user-1');
+        const rival = buildGeneral(12, 'user-2');
+        await setTournamentFixture(redis, {
+            stage: 7,
+            phase: 0,
+            type: 0,
+            auto: true,
+            openYear: 193,
+            openMonth: 1,
+            termSeconds: 60,
+            nextAt: '2026-07-26T01:00:00.000Z',
+        });
+        const caller = appRouter.createCaller(
+            buildContext({ redis, transport, generals: [owner, rival], userId: 'user-1' })
+        );
+
+        const snapshot = await caller.tournament.getSnapshot();
+
+        expect(snapshot.participants).toEqual([
+            expect.objectContaining({ id: 11, picture: '11.jpg', imageServer: 1 }),
+            expect.objectContaining({ id: 12, picture: '12.jpg', imageServer: 0 }),
+        ]);
     });
 
     it('refunds gold when the tournament bet rank update fails', async () => {

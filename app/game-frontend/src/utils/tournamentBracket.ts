@@ -1,6 +1,8 @@
 export interface TournamentBracketParticipant {
     id: number;
     name: string;
+    picture?: string | null;
+    imageServer?: number | null;
 }
 
 export interface TournamentBracketMatch {
@@ -15,6 +17,8 @@ export interface TournamentBracketMatch {
 export interface TournamentBracketSlot {
     id: number | null;
     name: string;
+    picture: string | null;
+    imageServer: number;
     advanced: boolean;
 }
 
@@ -31,7 +35,13 @@ export interface TournamentBracketModel {
     top16: TournamentBracketRound;
 }
 
-const emptySlot = (): TournamentBracketSlot => ({ id: null, name: '-', advanced: false });
+const emptySlot = (): TournamentBracketSlot => ({
+    id: null,
+    name: '-',
+    picture: null,
+    imageServer: 0,
+    advanced: false,
+});
 
 export const buildTournamentBracket = (
     participants: TournamentBracketParticipant[],
@@ -39,19 +49,24 @@ export const buildTournamentBracket = (
     winnerId?: number
 ): TournamentBracketModel => {
     const participantsById = new Map(participants.map((participant) => [participant.id, participant]));
-    const nameOf = (id: number | null): string =>
-        id === null ? '-' : (participantsById.get(id)?.name ?? `#${id}`);
+    const participantOf = (id: number | null): TournamentBracketParticipant | null =>
+        id === null ? null : (participantsById.get(id) ?? { id, name: `#${id}` });
 
     const buildRound = (stage: number, slotCount: number): TournamentBracketRound => {
         const roundMatches = matches
             .filter((match) => match.stage === stage)
             .sort((lhs, rhs) => lhs.roundIndex - rhs.roundIndex || lhs.id - rhs.id);
         const slots: TournamentBracketSlot[] = roundMatches.flatMap((match) =>
-            [match.attackerId, match.defenderId].map((id) => ({
-                id,
-                name: nameOf(id),
-                advanced: match.winnerId === id,
-            }))
+            [match.attackerId, match.defenderId].map((id) => {
+                const participant = participantOf(id);
+                return {
+                    id,
+                    name: participant?.name ?? '-',
+                    picture: participant?.picture ?? null,
+                    imageServer: participant?.imageServer ?? 0,
+                    advanced: match.winnerId === id,
+                };
+            })
         );
         while (slots.length < slotCount) {
             slots.push(emptySlot());
@@ -65,7 +80,9 @@ export const buildTournamentBracket = (
     return {
         champion: {
             id: resolvedWinnerId,
-            name: nameOf(resolvedWinnerId),
+            name: participantOf(resolvedWinnerId)?.name ?? '-',
+            picture: participantOf(resolvedWinnerId)?.picture ?? null,
+            imageServer: participantOf(resolvedWinnerId)?.imageServer ?? 0,
             advanced: resolvedWinnerId !== null,
         },
         final,

@@ -3,7 +3,12 @@ import { describe, it } from 'node:test';
 
 import { buildTournamentBracket } from '../src/utils/tournamentBracket.ts';
 
-const participants = Array.from({ length: 16 }, (_, index) => ({ id: index + 1, name: `장수${index + 1}` }));
+const participants = Array.from({ length: 16 }, (_, index) => ({
+    id: index + 1,
+    name: `장수${index + 1}`,
+    picture: `${index + 1}.jpg`,
+    imageServer: index % 2,
+}));
 const matches = [
     ...Array.from({ length: 8 }, (_, index) => ({
         id: index + 1,
@@ -37,6 +42,8 @@ void describe('tournament bracket', () => {
         const bracket = buildTournamentBracket(participants, matches, 1);
 
         assert.equal(bracket.champion.name, '장수1');
+        assert.equal(bracket.champion.picture, '1.jpg');
+        assert.equal(bracket.top16.slots[1]?.imageServer, 1);
         assert.deepEqual(
             bracket.top16.slots.map((slot) => slot.name),
             participants.map((participant) => participant.name)
@@ -52,10 +59,16 @@ void describe('tournament bracket', () => {
     });
 
     void it('renders missing future rounds as stable empty slots without inventing generals', () => {
-        const bracket = buildTournamentBracket(participants, matches.filter((match) => match.stage === 7));
+        const bracket = buildTournamentBracket(
+            participants,
+            matches.filter((match) => match.stage === 7)
+        );
 
         assert.equal(bracket.champion.name, '-');
-        assert.deepEqual(bracket.final.slots.map((slot) => slot.name), ['-', '-']);
+        assert.deepEqual(
+            bracket.final.slots.map((slot) => slot.name),
+            ['-', '-']
+        );
         assert.equal(bracket.top16.slots[0]?.name, '장수1');
         assert.equal(bracket.top16.slots[15]?.name, '장수16');
     });
