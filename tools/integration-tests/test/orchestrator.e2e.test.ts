@@ -655,8 +655,7 @@ describe('pm2 orchestrator e2e', () => {
         const ssePromise = waitForSseEvent({
             url: `${gameUrl}${eventsPath}`,
             token: accessTokenRef.value ?? '',
-            eventName: 'turnCompleted',
-            minAtMs: runStartMs,
+            eventName: 'readModelInvalidated',
             timeoutMs: 30_000,
         });
 
@@ -664,7 +663,8 @@ describe('pm2 orchestrator e2e', () => {
         expect(runStatus.lastRunAt).toBeTruthy();
 
         const realtimeEvent = await ssePromise;
-        expect(realtimeEvent.type).toBe('turnCompleted');
+        expect(realtimeEvent.type).toBe('readModelInvalidated');
+        expect(realtimeEvent.invalidation).toBeTypeOf('object');
 
         const gameDatabaseUrl = resolvePostgresConfigFromEnv({ schema: profile }).url;
         const connector = createGamePostgresConnector({ url: gameDatabaseUrl });
