@@ -75,6 +75,7 @@ const props = withDefaults(
     {
         // Vue casts an absent Boolean prop to false unless undefined is an explicit default.
         detailMode: undefined,
+        selectedCityId: undefined,
     }
 );
 
