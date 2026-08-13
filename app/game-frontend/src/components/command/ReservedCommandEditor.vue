@@ -149,6 +149,14 @@ const closePicker = () => {
     quickTarget.value = null;
     selectedCommand.value = null;
 };
+const togglePicker = (turnIndex?: number) => {
+    const target = turnIndex ?? null;
+    if (pickerOpen.value && quickTarget.value === target) {
+        closePicker();
+        return;
+    }
+    openPicker(turnIndex);
+};
 const selectCommand = (commandKey: string) => {
     const command = props.commandTable?.[props.scope]
         .flatMap((group) => group.values)
@@ -305,6 +313,7 @@ const clickOutsideMenu = (event: Event) => {
                             >
                                 짝수턴
                             </button>
+                            <hr class="menu-divider" />
                             <template v-for="step in [3, 4, 5, 6, 7]" :key="step">
                                 <small>{{ step }}턴 간격</small>
                                 <div class="step-buttons">
@@ -429,6 +438,7 @@ const clickOutsideMenu = (event: Event) => {
                         >
                             붙여넣기
                         </button>
+                        <hr class="menu-divider" />
                         <button
                             @click="
                                 textCopy();
@@ -437,6 +447,7 @@ const clickOutsideMenu = (event: Event) => {
                         >
                             텍스트 복사
                         </button>
+                        <hr class="menu-divider" />
                         <button
                             @click="
                                 saveTemplate();
@@ -453,6 +464,7 @@ const clickOutsideMenu = (event: Event) => {
                         >
                             반복하기
                         </button>
+                        <hr class="menu-divider" />
                         <button
                             @click="
                                 clearSelection();
@@ -479,7 +491,7 @@ const clickOutsideMenu = (event: Event) => {
                         </button>
                     </div>
                 </details>
-                <button type="button" class="select-command" @click="openPicker()">명령 선택 ▾</button>
+                <button type="button" class="select-command" @click="togglePicker()">명령 선택 ▾</button>
             </div>
 
             <div class="queue-area">
@@ -542,7 +554,7 @@ const clickOutsideMenu = (event: Event) => {
                             :key="row.index"
                             type="button"
                             :aria-label="`${row.index + 1}턴 명령 입력`"
-                            @click="openPicker(row.index)"
+                            @click="togglePicker(row.index)"
                         >
                             ✎
                         </button>
@@ -707,6 +719,14 @@ const clickOutsideMenu = (event: Event) => {
     display: block;
     padding: 5px 8px;
     color: #bbb;
+}
+.menu-divider {
+    width: 100%;
+    height: 0;
+    margin: 4px 0;
+    border: 0;
+    border-top: 1px solid #444;
+    opacity: 1;
 }
 .step-buttons,
 .template-row {
