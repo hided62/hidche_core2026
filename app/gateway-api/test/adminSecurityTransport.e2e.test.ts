@@ -15,6 +15,8 @@ import { appRouter } from '../src/router.js';
 const profile = {
     profileName: 'che:default',
     profile: 'che',
+    instanceKey: 'default',
+    currentScenario: null,
     scenario: 'default',
     apiPort: 15003,
     status: 'RUNNING' as const,
@@ -28,7 +30,7 @@ const profiles: GatewayProfileRepository = {
     listProfiles: async () => [profile],
     getProfile: async (profileName) => (profileName === profile.profileName ? profile : null),
     upsertProfile: async () => profile,
-    updateScenario: async () => profile,
+    updateCurrentScenario: async () => profile,
     updateStatus: async () => profile,
     updateBuildStatus: async () => profile,
     updateMeta: async () => profile,

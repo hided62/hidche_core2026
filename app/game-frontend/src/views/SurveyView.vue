@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { formatServerDateTime } from '@sammo-ts/common';
 import { computed, onMounted, ref } from 'vue';
 import { useRouter } from 'vue-router';
 
@@ -67,16 +68,9 @@ const newVoteOptions = computed(() => newVoteOptionsText.value.split('\n').filte
 
 const percentage = (count: number, total: number): string => ((count / Math.max(1, total)) * 100).toFixed(1);
 
-const formatStartDate = (value: string): string => value.slice(0, 10);
+const formatStartDate = (value: string): string => formatServerDateTime(value, { format: 'date' });
 
-const formatCommentDate = (value: string): string => {
-    const date = new Date(value);
-    if (Number.isNaN(date.getTime())) {
-        return value;
-    }
-    const pad = (part: number) => String(part).padStart(2, '0');
-    return `${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}`;
-};
+const formatCommentDate = (value: string): string => formatServerDateTime(value, { format: 'monthDayTime' });
 
 const voteColor = (index: number): string =>
     ['#ff0000', '#ffa500', '#ffff00', '#008000', '#0000ff', '#000080', '#800080'][index % 7]!;

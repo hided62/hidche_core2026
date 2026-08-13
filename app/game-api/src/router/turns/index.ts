@@ -102,6 +102,24 @@ const resolveMapName = (worldState: WorldStateRow, fallback: string): string => 
     return typeof mapName === 'string' && mapName.trim().length > 0 ? mapName : fallback;
 };
 
+const plainLegacyInfo = (value: string): string =>
+    value
+        .replace(/<br\s*\/?>/giu, ' · ')
+        .replace(/<[^>]+>/gu, '')
+        .replace(/\s+/gu, ' ')
+        .trim();
+
+const readGeneralMetaNumber = (meta: unknown, key: string): number | null => {
+    if (!meta || typeof meta !== 'object' || Array.isArray(meta)) return null;
+    const value = (meta as Record<string, unknown>)[key];
+    if (typeof value === 'number' && Number.isFinite(value)) return value;
+    if (typeof value === 'string') {
+        const parsed = Number(value);
+        if (Number.isFinite(parsed)) return parsed;
+    }
+    return null;
+};
+
 const assertReservedTurnPermission = async (
     worldState: WorldStateRow,
     general: GeneralRow,
@@ -183,7 +201,19 @@ export const getTurnCommandTable = async (ctx: GameApiContext, generalId: number
     };
     for (const item of moduleBundle.itemModules) {
         if (item.buyable) {
-            items[item.slot].push({ value: item.key, label: item.name });
+            const cost = item.cost ?? 0;
+            const currentSecurity = city?.security ?? 0;
+            const availability =
+                currentSecurity < item.reqSecu
+                    ? `현재 구입 불가: 치안 ${item.reqSecu.toLocaleString()} 필요`
+                    : general.gold < cost
+                      ? `현재 구입 불가: 자금 ${cost.toLocaleString()} 필요`
+                      : '현재 구입 가능';
+            items[item.slot].push({
+                value: item.key,
+                label: item.name,
+                description: `${availability} · 가격 ${cost.toLocaleString()} · ${plainLegacyInfo(item.info)}`,
+            });
         }
     }
     const inputOptions: TurnCommandInputOptions = {
@@ -205,11 +235,19 @@ export const getTurnCommandTable = async (ctx: GameApiContext, generalId: number
         crewTypes: (environment.unitSet.crewTypes ?? [])
             .filter((entry) => !entry.requirements.some((requirement) => requirement.type === 'Impossible'))
             .map((entry) => ({ value: entry.id, label: entry.name })),
-        armTypes: Object.entries(environment.unitSet.armTypes ?? {}).map(([value, label]) => ({
-            value: Number(value),
-            label,
+        armTypes: Object.entries(environment.unitSet.armTypes ?? {}).map(([value, label]) => {
+            const dexterity = readGeneralMetaNumber(general.meta, `dex${value}`);
+            return {
+                value: Number(value),
+                label,
+                ...(dexterity === null ? {} : { description: `현재 숙련 ${dexterity.toLocaleString()}` }),
+            };
+        }),
+        nationTypes: traits.nationTypes.map((entry) => ({
+            value: entry.key,
+            label: entry.name,
+            description: plainLegacyInfo(entry.info),
         })),
-        nationTypes: traits.nationTypes.map((entry) => ({ value: entry.key, label: entry.name })),
         colors: TURN_COMMAND_NATION_COLORS.map((color, index) => ({
             value: index,
             label: `색상 ${index + 1}`,
@@ -226,6 +264,12 @@ export const getTurnCommandTable = async (ctx: GameApiContext, generalId: number
             unitSet: environment.unitSet,
             generalActionModules: moduleBundle.general,
         }),
+        context: {
+            actorGold: general.gold,
+            actorRice: general.rice,
+            ...(city ? { citySecurity: city.security } : {}),
+            ...(nation ? { nationGold: nation.gold, nationRice: nation.rice, nationLevel: nation.level } : {}),
+        },
     };
 
     return buildTurnCommandTable({

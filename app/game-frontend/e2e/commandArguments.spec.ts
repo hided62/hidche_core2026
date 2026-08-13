@@ -15,11 +15,11 @@ const operations = (route: Route) =>
 const inputOptions = {
     cities: [
         { value: 1, label: '업 (아국)' },
-        { value: 2, label: '허창 (적국)' },
+        { value: 2, label: '허창 (적국)', description: '적국 · 예주 · 대도시' },
     ],
     nations: [
         { value: 1, label: '아국', color: '#008000' },
-        { value: 2, label: '적국', color: '#800000' },
+        { value: 2, label: '적국', color: '#800000', description: '수도 허창' },
     ],
     generals: [
         { value: 1, label: '장수 (아국 · 업)' },
@@ -74,6 +74,14 @@ const inputOptions = {
                 ],
             },
         ],
+    },
+    context: {
+        actorGold: 1000,
+        actorRice: 1000,
+        citySecurity: 500,
+        nationGold: 5000,
+        nationRice: 6000,
+        nationLevel: 1,
     },
 };
 const commandTable = {
@@ -152,6 +160,27 @@ const commandTable = {
                 },
             ],
         },
+        {
+            category: '외교',
+            values: [
+                {
+                    key: 'che_선전포고',
+                    name: '선전포고',
+                    reqArg: true,
+                    possible: true,
+                    status: 'needsInput',
+                    inputFields: [
+                        {
+                            key: 'destNationId',
+                            label: '대상 국가',
+                            kind: 'select',
+                            required: true,
+                            optionSource: 'nations',
+                        },
+                    ],
+                },
+            ],
+        },
     ],
     inputOptions,
 };
@@ -177,8 +206,46 @@ const generalContext = {
         dedication: 0,
         items: { horse: 'None', weapon: 'None', book: 'None', item: 'None' },
     },
-    city: { id: 1, name: '업', level: 8, region: 1, population: 1000, populationMax: 2000 },
-    nation: { id: 1, name: '아국', color: '#008000', level: 1 },
+    city: {
+        id: 1,
+        name: '업',
+        level: 8,
+        levelName: '특',
+        region: 1,
+        regionName: '하북',
+        nationId: 1,
+        nationName: '아국',
+        population: 1000,
+        populationMax: 2000,
+        agriculture: 100,
+        agricultureMax: 200,
+        commerce: 100,
+        commerceMax: 200,
+        security: 100,
+        securityMax: 200,
+        trust: 70,
+        trade: 100,
+        defence: 100,
+        defenceMax: 200,
+        wall: 100,
+        wallMax: 200,
+        supplyState: 1,
+        frontState: 0,
+    },
+    nation: {
+        id: 1,
+        name: '아국',
+        color: '#008000',
+        level: 1,
+        levelName: '호족',
+        gold: 5000,
+        rice: 6000,
+        tech: 100,
+        typeCode: 'che_중립',
+        typeName: '중립',
+        capitalCityId: 1,
+        capitalCityName: '업',
+    },
     settings: {},
     penalties: {},
 };
@@ -247,8 +314,11 @@ const install = async (page: Page, rejectGeneral = false) => {
             if (name === 'world.getMapLayout')
                 return response({
                     mapName: 'che',
-                    cityList: [{ id: 1, name: '업', level: 8, region: 1, x: 100, y: 100, path: [] }],
-                    regionMap: { 1: '하북' },
+                    cityList: [
+                        { id: 1, name: '업', level: 8, region: 1, x: 100, y: 100, path: [2] },
+                        { id: 2, name: '허창', level: 7, region: 2, x: 240, y: 180, path: [1] },
+                    ],
+                    regionMap: { 1: '하북', 2: '예주' },
                     levelMap: { 8: '특' },
                 });
             if (name === 'auth.status') return response({ ok: true });
@@ -271,8 +341,14 @@ const install = async (page: Page, rejectGeneral = false) => {
                     startYear: 180,
                     year: 200,
                     month: 1,
-                    cityList: [[1, 8, 0, 1, 1, 1]],
-                    nationList: [[1, '아국', '#008000', 1]],
+                    cityList: [
+                        [1, 8, 0, 1, 1, 1],
+                        [2, 7, 40, 2, 2, 1],
+                    ],
+                    nationList: [
+                        [1, '아국', '#008000', 1],
+                        [2, '적국', '#800000', 2],
+                    ],
                     spyList: {},
                     shownByGeneralList: [],
                     myCity: 1,
@@ -341,13 +417,35 @@ const install = async (page: Page, rejectGeneral = false) => {
 
 test('enters general and nation command arguments and sends exact values', async ({ page }) => {
     const requests = await install(page);
+    await page.setViewportSize({ width: 1200, height: 900 });
     await page.goto('/');
 
     await page.getByRole('button', { name: '1턴 명령 입력', exact: true }).click();
     await page.getByTestId('command-picker').getByRole('button', { name: /화계/ }).click();
     const form = page.getByTestId('command-argument-form');
     await expect(form).toBeVisible();
-    await form.locator('select').selectOption('2');
+    await expect(form.getByTestId('command-argument-map')).toBeVisible();
+    await expect(form.getByTestId('command-argument-guidance')).toContainText('선택한 도시에 화계를 실행합니다.');
+    await expect(form.getByTestId('command-map-target-summary')).toContainText('현재 도시에서 0칸');
+    await form.getByTestId('command-argument-map').locator('.map-city').nth(1).click();
+    await expect(form.locator('select')).toHaveValue('2');
+    await expect(form.getByTestId('command-map-target-summary')).toContainText('현재 도시에서 1칸');
+    await form.getByTestId('command-argument-map').locator('.map-city').nth(1).hover();
+    expect(
+        await form
+            .getByTestId('command-argument-map')
+            .locator('.map-city')
+            .nth(1)
+            .evaluate((element) => getComputedStyle(element).cursor)
+    ).toBe('pointer');
+    await form.getByTestId('command-argument-map').locator('.map-city').nth(1).focus();
+    await expect(form.getByTestId('command-argument-map').locator('.map-city').nth(1)).toBeFocused();
+    await expect(page).toHaveURL(/\/$/);
+    const mapGeometry = await form.getByTestId('command-argument-map').evaluate((element) => {
+        const area = element.querySelector<HTMLElement>('.map-area')!;
+        const rect = area.getBoundingClientRect();
+        return { width: rect.width, height: rect.height };
+    });
     await page.getByTestId('command-picker').getByRole('button', { name: '입력', exact: true }).click();
     await expect(page.locator('[data-command-scope="general"] .action-column > div').first()).toHaveText('화계');
 
@@ -378,6 +476,9 @@ test('enters general and nation command arguments and sends exact values', async
     expect(JSON.stringify(requests)).toContain('"isGold":false');
     expect(JSON.stringify(requests)).toContain('"amount":300');
     expect(JSON.stringify(requests)).toContain('"destGeneralId":2');
+
+    expect(mapGeometry.width).toBeGreaterThan(650);
+    expect(mapGeometry.height / mapGeometry.width).toBeCloseTo(5 / 7, 2);
 
     expect(geometry.width).toBeGreaterThan(200);
     expect(geometry.rowHeight).toBeGreaterThanOrEqual(34);
@@ -491,6 +592,52 @@ test('shows Ref recruitment details and preserves the 1000px desktop and 500px m
     const mercenaryForm = picker.getByTestId('recruitment-command-form');
     await expect(mercenaryForm).toContainText('모병은 가격 2배의 자금이 소요됩니다.');
     await expect(mercenaryForm.locator('.mobile-selected-panel output')).toHaveText('1,346금');
+});
+
+test('uses the map to choose a nation target in the chief command window', async ({ page }) => {
+    await install(page);
+    await page.setViewportSize({ width: 1200, height: 900 });
+    await page.goto('/che/chief-center');
+    await page.getByRole('button', { name: '1턴 명령 입력', exact: true }).click();
+    const picker = page.getByTestId('command-picker');
+    await picker.getByRole('button', { name: /^(?:국가:)?외교$/, exact: true }).click();
+    await picker.getByRole('button', { name: /선전포고/ }).click();
+    const form = picker.getByTestId('command-argument-form');
+    await expect(form.getByTestId('command-argument-guidance')).toContainText('초반 제한');
+    await form.getByTestId('command-argument-map').locator('.map-city').nth(1).click();
+    await expect(form.locator('select')).toHaveValue('2');
+    await expect(form.getByTestId('command-map-target-summary')).toContainText('수도 허창 · 도시 1개');
+    await expect(page).toHaveURL(/\/che\/chief-center$/);
+    await page.screenshot({ path: test.info().outputPath('chief-nation-map-option.png'), fullPage: true });
+});
+
+test('fits the city map option window inside the Ref-compatible 500px mobile page', async ({ page }) => {
+    await install(page);
+    await page.setViewportSize({ width: 500, height: 900 });
+    await page.goto('/');
+    await page.getByRole('button', { name: '1턴 명령 입력', exact: true }).click();
+    const picker = page.getByTestId('command-picker');
+    await picker.getByRole('button', { name: /화계/ }).click();
+    const geometry = await picker.evaluate((element) => {
+        const map = element.querySelector<HTMLElement>('[data-testid="command-argument-map"] .map-area')!;
+        const pickerRect = element.getBoundingClientRect();
+        const mapRect = map.getBoundingClientRect();
+        return {
+            pickerX: pickerRect.x,
+            pickerRight: pickerRect.right,
+            pickerWidth: pickerRect.width,
+            pickerScrollWidth: element.scrollWidth,
+            mapWidth: mapRect.width,
+            mapHeight: mapRect.height,
+        };
+    });
+    expect(geometry.pickerX).toBeGreaterThanOrEqual(0);
+    expect(geometry.pickerRight).toBeLessThanOrEqual(500);
+    expect(geometry.pickerWidth).toBeGreaterThanOrEqual(488);
+    expect(geometry.pickerScrollWidth).toBeLessThanOrEqual(geometry.pickerWidth);
+    expect(geometry.mapWidth).toBeGreaterThan(470);
+    expect(geometry.mapHeight / geometry.mapWidth).toBeCloseTo(5 / 7, 2);
+    await page.screenshot({ path: test.info().outputPath('main-city-map-option-mobile.png'), fullPage: true });
 });
 
 test('keeps the entered command visible and reports a server validation error', async ({ page }) => {

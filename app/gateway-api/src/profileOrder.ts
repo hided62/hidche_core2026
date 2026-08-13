@@ -3,8 +3,8 @@ export const GATEWAY_PROFILE_ORDER = ['che', 'kwe', 'pwe', 'twe', 'nya', 'pya', 
 const gatewayProfileOrder = new Map<string, number>(GATEWAY_PROFILE_ORDER.map((profile, index) => [profile, index]));
 
 export const compareGatewayProfiles = (
-    left: { profile: string; scenario: string },
-    right: { profile: string; scenario: string }
+    left: { profile: string; instanceKey: string },
+    right: { profile: string; instanceKey: string }
 ): number => {
     const unknownRank = GATEWAY_PROFILE_ORDER.length;
     const profileOrder =
@@ -14,8 +14,8 @@ export const compareGatewayProfiles = (
 
     const profileNameOrder = left.profile.localeCompare(right.profile);
     if (profileNameOrder !== 0) return profileNameOrder;
-    return left.scenario.localeCompare(right.scenario);
+    return left.instanceKey.localeCompare(right.instanceKey);
 };
 
-export const orderGatewayProfiles = <T extends { profile: string; scenario: string }>(profiles: readonly T[]): T[] =>
+export const orderGatewayProfiles = <T extends { profile: string; instanceKey: string }>(profiles: readonly T[]): T[] =>
     [...profiles].sort(compareGatewayProfiles);

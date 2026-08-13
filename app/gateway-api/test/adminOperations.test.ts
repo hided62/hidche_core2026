@@ -85,6 +85,8 @@ const buildCaller = async (
     const profile = {
         profileName: 'che:2',
         profile: 'che',
+        instanceKey: '2',
+        currentScenario: options.profileScenario ?? '2',
         scenario: options.profileScenario ?? '2',
         apiPort: 15003,
         status: options.initialProfileStatus ?? ('STOPPED' as const),
@@ -98,7 +100,7 @@ const buildCaller = async (
         listProfiles: async () => [profile],
         getProfile: async () => profile,
         upsertProfile: async () => profile,
-        updateScenario: async () => profile,
+        updateCurrentScenario: async () => profile,
         updateStatus: async (_profileName, status) => {
             updatedStatuses.push(status);
             return { ...profile, status };
@@ -362,6 +364,8 @@ describe('admin profile navigation API', () => {
             {
                 profileName: 'che:2',
                 profile: 'che',
+                instanceKey: '2',
+                currentScenario: '2',
                 meta: {},
             },
         ]);

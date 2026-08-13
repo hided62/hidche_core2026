@@ -67,6 +67,13 @@ const props = defineProps<{
     mapData: MapSummary | null;
     mapLayout: MapLayout | null;
     loading: boolean;
+    selectedCityId?: number | null;
+    detailMode?: boolean;
+    fitContainer?: boolean;
+}>();
+
+const emit = defineEmits<{
+    (event: 'select-city', cityId: number): void;
 }>();
 
 const BASE_MAP_WIDTH = 700;
@@ -75,7 +82,12 @@ const SMALL_MAP_SCALE = 5 / 7;
 
 const isWide = useMediaQuery('(min-width: 1024px)');
 const mapStore = useMapViewerStore();
-const { showCityName, detailMode, hoveredCityId, selectedCityId } = storeToRefs(mapStore);
+const {
+    showCityName,
+    detailMode: storeDetailMode,
+    hoveredCityId,
+    selectedCityId: storeSelectedCityId,
+} = storeToRefs(mapStore);
 
 const mapArea = ref<HTMLElement | null>(null);
 const mapBody = ref<HTMLElement | null>(null);
@@ -140,14 +152,19 @@ const dynamicCityById = computed(() => {
 });
 
 const mapScale = computed(() => {
-    if (isWide.value) {
+    if (isWide.value && !props.fitContainer) {
         return 1;
     }
     if (mapBodyWidth.value <= 0) {
         return SMALL_MAP_SCALE;
     }
-    return Math.min(SMALL_MAP_SCALE, mapBodyWidth.value / BASE_MAP_WIDTH);
+    return Math.min(props.fitContainer ? 1 : SMALL_MAP_SCALE, mapBodyWidth.value / BASE_MAP_WIDTH);
 });
+
+const effectiveDetailMode = computed(() => props.detailMode ?? storeDetailMode.value);
+const effectiveSelectedCityId = computed(() =>
+    props.selectedCityId === undefined ? storeSelectedCityId.value : props.selectedCityId
+);
 
 const mapWidth = computed(() => `${BASE_MAP_WIDTH * mapScale.value}px`);
 
@@ -185,7 +202,7 @@ const cityViews = computed<CityView[]>(() => {
             y,
             isCapital: nation?.capitalCityId === layoutCity.id,
             isMyCity: props.mapData?.myCity === layoutCity.id,
-            selected: selectedCityId.value === layoutCity.id,
+            selected: effectiveSelectedCityId.value === layoutCity.id,
         };
     });
 });
@@ -258,7 +275,7 @@ const titleTooltipLines = computed(() => {
 });
 
 const titleBandStyle = computed(() =>
-    detailMode.value
+    effectiveDetailMode.value
         ? {
               backgroundImage: `url('${resolveAsset('ltitle.jpg')}'), url('${resolveAsset('rtitle.jpg')}')`,
           }
@@ -266,7 +283,7 @@ const titleBandStyle = computed(() =>
 );
 
 const titleTextStyle = computed(() =>
-    detailMode.value
+    effectiveDetailMode.value
         ? {
               color: titleColor.value,
               backgroundImage: `url('${resolveAsset('ad.gif')}'), url('${resolveAsset(`${mapSeason.value}.gif`)}')`,
@@ -327,7 +344,7 @@ const mapRoadStyle = computed(() => ({
 }));
 
 const detailProps = computed(() =>
-    detailMode.value
+    effectiveDetailMode.value
         ? {
               imageBaseUrl: assetBaseUrl.value,
               themeName: mapTheme.value,
@@ -365,7 +382,10 @@ const setHoveredCity = (cityId: number | null) => {
 };
 
 const selectCity = (cityId: number) => {
-    mapStore.setSelectedCity(cityId);
+    emit('select-city', cityId);
+    if (props.selectedCityId === undefined) {
+        mapStore.setSelectedCity(cityId);
+    }
 };
 </script>
 
@@ -394,12 +414,13 @@ const selectCity = (cityId: number) => {
                 <div class="map-layer map-bglayer2" />
                 <div v-if="mapRoadImage" class="map-layer map-bgroad" :style="mapRoadStyle" />
                 <component
-                    :is="detailMode ? MapCityDetail : MapCityBasic"
+                    :is="effectiveDetailMode ? MapCityDetail : MapCityBasic"
                     v-for="city in cityViews"
                     :key="city.id"
                     :city="city"
                     :map-scale="mapScale"
                     :show-name="showCityName"
+                    :select-only="props.selectedCityId !== undefined"
                     v-bind="detailProps"
                     @hover="setHoveredCity"
                     @leave="setHoveredCity(null)"

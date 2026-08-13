@@ -16,12 +16,28 @@ const adminNavigationClient = directTrpc.admin as unknown as {
     capabilities: { list: { query: () => Promise<Array<{ permission: string; scopes?: string[] }>> } };
     profiles: {
         listNavigation: {
-            query: () => Promise<Array<{ profileName: string; profile: string; meta?: Record<string, unknown> }>>;
+            query: () => Promise<
+                Array<{
+                    profileName: string;
+                    profile: string;
+                    instanceKey: string;
+                    currentScenario: string | null;
+                    meta?: Record<string, unknown>;
+                }>
+            >;
         };
     };
 };
 const capabilities = ref<Array<{ permission: string; scopes?: string[] }>>([]);
-const profiles = ref<Array<{ profileName: string; profile: string; meta?: Record<string, unknown> }>>([]);
+const profiles = ref<
+    Array<{
+        profileName: string;
+        profile: string;
+        instanceKey: string;
+        currentScenario: string | null;
+        meta?: Record<string, unknown>;
+    }>
+>([]);
 
 const isRootAdmin = computed(() =>
     (auth.user?.roles ?? []).some((role) => role === 'superuser' || role === 'admin' || role === 'admin.superuser')
@@ -38,7 +54,8 @@ const hasAnyProfileCapability = computed(() =>
 
 const profileLabel = (profile: (typeof profiles.value)[number]): string => {
     const korName = profile.meta?.korName;
-    return typeof korName === 'string' && korName.trim() ? `${korName} (${profile.profileName})` : profile.profileName;
+    const displayName = typeof korName === 'string' && korName.trim() ? korName.trim() : profile.profile;
+    return profile.instanceKey === 'default' ? displayName : `${displayName} [${profile.instanceKey}]`;
 };
 
 const navigation = computed(() => [
@@ -70,6 +87,7 @@ const navigation = computed(() => [
             ...profiles.value.map((profile) => ({
                 to: `/admin/servers/${encodeURIComponent(profile.profileName)}`,
                 label: profileLabel(profile),
+                title: `서버 ID: ${profile.profileName}`,
                 icon: '└',
                 exact: false,
                 visible: true,
@@ -156,6 +174,7 @@ onMounted(async () => {
                             :class="{ child: item.child }"
                             :active-class="item.exact ? '' : 'active'"
                             :exact-active-class="item.exact ? 'active' : ''"
+                            :title="'title' in item ? item.title : undefined"
                             @click="menuOpen = false"
                         >
                             <span class="admin-nav-icon" aria-hidden="true">{{ item.icon }}</span>

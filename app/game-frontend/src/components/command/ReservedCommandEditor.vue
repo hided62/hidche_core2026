@@ -2,6 +2,7 @@
 import { computed, onMounted, ref, shallowRef, watch } from 'vue';
 import CommandArgumentForm from '../main/CommandArgumentForm.vue';
 import CommandSelectForm from '../main/CommandSelectForm.vue';
+import { commandArgumentPresentation } from './commandArgumentPresentation';
 import DragSelect from './DragSelect.vue';
 import RecruitmentCommandForm from './RecruitmentCommandForm.vue';
 import {
@@ -12,7 +13,14 @@ import {
     normalizedSelection,
     selectStep,
 } from './commandQueue';
-import type { CommandAvailability, CommandPatternEntry, CommandTable, ReservedCommandRow } from './types';
+import type {
+    CommandAvailability,
+    CommandMapData,
+    CommandMapLayout,
+    CommandPatternEntry,
+    CommandTable,
+    ReservedCommandRow,
+} from './types';
 
 const props = withDefaults(
     defineProps<{
@@ -27,8 +35,19 @@ const props = withDefaults(
         title?: string;
         name?: string | null;
         currentTime?: string;
+        mapData?: CommandMapData | null;
+        mapLayout?: CommandMapLayout | null;
     }>(),
-    { maxPushTurn: 6, compact: false, mobile: false, title: '', name: null, currentTime: '--:--' }
+    {
+        maxPushTurn: 6,
+        compact: false,
+        mobile: false,
+        title: '',
+        name: null,
+        currentTime: '--:--',
+        mapData: null,
+        mapLayout: null,
+    }
 );
 
 const emit = defineEmits<{
@@ -153,6 +172,14 @@ const closePicker = () => {
     quickTarget.value = null;
     selectedCommand.value = null;
 };
+const togglePicker = (turnIndex?: number) => {
+    const target = turnIndex ?? null;
+    if (pickerOpen.value && quickTarget.value === target) {
+        closePicker();
+        return;
+    }
+    openPicker(turnIndex);
+};
 const selectCommand = (commandKey: string) => {
     const command = props.commandTable?.[props.scope]
         .flatMap((group) => group.values)
@@ -242,7 +269,15 @@ const clickOutsideMenu = (event: Event) => {
 <template>
     <article
         class="reserved-command-editor"
-        :class="{ compact: props.compact, mobile: props.mobile, 'edit-mode': editMode, 'picker-open': pickerOpen }"
+        :class="{
+            compact: props.compact,
+            mobile: props.mobile,
+            'edit-mode': editMode,
+            'picker-open': pickerOpen,
+            'argument-expanded': Boolean(
+                selectedCommand?.reqArg && commandArgumentPresentation(selectedCommand.key).lines.length
+            ),
+        }"
         :data-command-scope="props.scope"
     >
         <header v-if="props.compact && !props.mobile" class="identity legacy-bg1">
@@ -309,6 +344,7 @@ const clickOutsideMenu = (event: Event) => {
                             >
                                 짝수턴
                             </button>
+                            <hr class="menu-divider" />
                             <template v-for="step in [3, 4, 5, 6, 7]" :key="step">
                                 <small>{{ step }}턴 간격</small>
                                 <div class="step-buttons">
@@ -433,6 +469,7 @@ const clickOutsideMenu = (event: Event) => {
                         >
                             붙여넣기
                         </button>
+                        <hr class="menu-divider" />
                         <button
                             @click="
                                 textCopy();
@@ -441,6 +478,7 @@ const clickOutsideMenu = (event: Event) => {
                         >
                             텍스트 복사
                         </button>
+                        <hr class="menu-divider" />
                         <button
                             @click="
                                 saveTemplate();
@@ -457,6 +495,7 @@ const clickOutsideMenu = (event: Event) => {
                         >
                             반복하기
                         </button>
+                        <hr class="menu-divider" />
                         <button
                             @click="
                                 clearSelection();
@@ -483,7 +522,7 @@ const clickOutsideMenu = (event: Event) => {
                         </button>
                     </div>
                 </details>
-                <button type="button" class="select-command" @click="openPicker()">명령 선택 ▾</button>
+                <button type="button" class="select-command" @click="togglePicker()">명령 선택 ▾</button>
             </div>
 
             <div class="queue-area">
@@ -546,7 +585,7 @@ const clickOutsideMenu = (event: Event) => {
                             :key="row.index"
                             type="button"
                             :aria-label="`${row.index + 1}턴 명령 입력`"
-                            @click="openPicker(row.index)"
+                            @click="togglePicker(row.index)"
                         >
                             ✎
                         </button>
@@ -606,6 +645,8 @@ const clickOutsideMenu = (event: Event) => {
                     :command-key="selectedCommand.key"
                     :fields="selectedCommand.inputFields"
                     :options="props.commandTable.inputOptions"
+                    :map-data="props.mapData"
+                    :map-layout="props.mapLayout"
                     @update:args="commandArgs = $event"
                     @update:valid="commandArgsValid = $event"
                 />
@@ -724,6 +765,14 @@ const clickOutsideMenu = (event: Event) => {
     display: block;
     padding: 5px 8px;
     color: #bbb;
+}
+.menu-divider {
+    width: 100%;
+    height: 0;
+    margin: 4px 0;
+    border: 0;
+    border-top: 1px solid #444;
+    opacity: 1;
 }
 .step-buttons,
 .template-row {
@@ -933,6 +982,11 @@ const clickOutsideMenu = (event: Event) => {
 }
 
 @media (min-width: 1025px) {
+    .argument-expanded:not(.compact) .command-picker {
+        right: 0;
+        left: auto;
+        width: 700px;
+    }
     .compact:not(.mobile) .command-picker {
         position: fixed;
         z-index: 1000;
@@ -940,6 +994,13 @@ const clickOutsideMenu = (event: Event) => {
         right: auto;
         left: calc(50% - 476px);
         width: 238px;
+    }
+    .compact.argument-expanded:not(.mobile) .command-picker {
+        left: calc(50% - 350px);
+        width: 700px;
+        height: auto;
+        max-height: calc(100vh - 104px);
+        overflow: auto;
     }
     .compact:not(.mobile) .command-picker.recruitment-picker {
         top: 76px;
@@ -984,12 +1045,25 @@ const clickOutsideMenu = (event: Event) => {
     width: 370px;
     height: 327px;
 }
+.mobile.compact.argument-expanded .command-picker {
+    position: relative;
+    top: auto;
+    left: auto;
+    width: 100%;
+    height: auto;
+    max-height: none;
+    margin-top: -330px;
+    overflow: visible;
+}
 .mobile.compact .command-picker.recruitment-picker {
+    position: fixed;
     top: 76px;
     left: 0;
     width: 500px;
     height: auto;
     max-height: calc(100vh - 82px);
+    margin-top: 0;
+    overflow: auto;
     transform: none;
 }
 .mobile.compact .advanced-actions {

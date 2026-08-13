@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed } from 'vue';
+import { RouterLink } from 'vue-router';
 import { buildAssetUrl, normalizeColorToken } from '../../utils/mapAssets';
 
 interface MapCityView {
@@ -46,6 +47,7 @@ const props = defineProps<{
     imageBaseUrl: string;
     themeName: string;
     mapScale: number;
+    selectOnly?: boolean;
 }>();
 
 const emit = defineEmits<{
@@ -141,6 +143,8 @@ const capitalIconStyle = computed(() => ({
     height: `${10 * props.mapScale}px`,
 }));
 
+const selectCity = () => emit('select', props.city.id);
+
 const cityStateStyle = computed(() => ({
     width: `${12 * props.mapScale}px`,
     height: `${12 * props.mapScale}px`,
@@ -149,14 +153,16 @@ const cityStateStyle = computed(() => ({
 </script>
 
 <template>
-    <RouterLink
+    <component
+        :is="props.selectOnly ? 'button' : RouterLink"
         class="city-base"
-        :to="{ name: 'current-city', query: { cityId: props.city.id } }"
+        :type="props.selectOnly ? 'button' : undefined"
+        :to="props.selectOnly ? undefined : { name: 'current-city', query: { cityId: props.city.id } }"
         :class="[{ mine: props.city.isMyCity, selected: props.city.selected, 'supply-off': !props.city.supply }]"
         :style="cityBaseStyle"
         @mouseenter="emit('hover', props.city.id)"
         @mouseleave="emit('leave')"
-        @click.stop="emit('select', props.city.id)"
+        @click.stop="selectCity"
     >
         <div v-if="cityBgStyle" class="city-bg" :style="[cityBgWrapperStyle, cityBgStyle]" />
         <div class="city-img" :style="cityIconStyle">
@@ -173,7 +179,7 @@ const cityStateStyle = computed(() => ({
         <div v-if="stateIcon" class="city-state" :style="cityStateStyle">
             <img :src="stateIcon" />
         </div>
-    </RouterLink>
+    </component>
 </template>
 
 <style scoped>
@@ -184,6 +190,9 @@ const cityStateStyle = computed(() => ({
     color: #fff;
     cursor: auto;
     text-decoration: none;
+    padding: 0;
+    border: 0;
+    background: transparent;
 }
 
 .city-bg {

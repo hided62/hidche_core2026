@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { formatServerDateTime } from '@sammo-ts/common';
 import { computed, onMounted, ref } from 'vue';
 import { useRouter } from 'vue-router';
 
@@ -50,10 +51,7 @@ const onlineRows = computed(() =>
     }))
 );
 
-const timeLabel = (value: string): string => {
-    const timePart = value.includes('T') ? value.split('T')[1] : value.slice(11);
-    return (timePart ?? '').slice(0, 5);
-};
+const timeLabel = (value: string): string => formatServerDateTime(value, { format: 'hourMinute' });
 
 const trafficColor = (percentage: number): string => {
     const channel = (value: number): string =>
@@ -204,8 +202,8 @@ onMounted(() => {
                 </tr>
                 <tr>
                     <td class="banner">
-                        삼국지 모의전투 HiDCHe / KOEI의 이미지를 사용, 응용하였습니다 / 제작 :
-                        HideD(hided62@gmail.com) /
+                        삼국지 모의전투 HiDCHe / KOEI의 이미지를 사용, 응용하였습니다 / 제작 : HideD(hided62@gmail.com)
+                        /
                         <a href="https://sam.hided.net/wiki/hidche/credit" target="_blank" rel="noreferrer">Credit</a>
                     </td>
                 </tr>

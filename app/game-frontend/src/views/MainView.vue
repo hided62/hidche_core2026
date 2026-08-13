@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { formatServerDateTime } from '@sammo-ts/common';
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue';
 import { storeToRefs } from 'pinia';
 import { useMediaQuery } from '@vueuse/core';
@@ -68,14 +69,8 @@ const nationColor = computed(() => nation.value?.color ?? '#000000');
 const voteActive = computed(() => Boolean(frontStatus.value?.latestVote));
 const formatRecord = (entry: { text: string; createdAt?: string | Date }, appendTime = false): string => {
     if (!appendTime || /\d{2}:\d{2}\s*$/u.test(entry.text)) return formatLog(entry.text);
-    const parsed = entry.createdAt ? new Date(entry.createdAt) : null;
-    if (!parsed || Number.isNaN(parsed.getTime())) return formatLog(entry.text);
-    const time = new Intl.DateTimeFormat('ko-KR', {
-        timeZone: 'Asia/Seoul',
-        hour: '2-digit',
-        minute: '2-digit',
-        hour12: false,
-    }).format(parsed);
+    const time = formatServerDateTime(entry.createdAt, { format: 'hourMinute', fallback: '' });
+    if (!time) return formatLog(entry.text);
     return formatLog(`${entry.text} ${time}`);
 };
 
@@ -148,13 +143,9 @@ watch(
         <header class="game-shell__header">
             <div>
                 <h1 class="game-shell__title">
-                    {{ isMobile ? '전장 현황' : lobbyInfo?.scenarioTitle || '전장 현황' }}
+                    {{ lobbyInfo?.scenarioTitle || '전장 현황' }}
                 </h1>
-                <p class="game-shell__subtitle">
-                    {{
-                        !isMobile && lobbyInfo?.scenarioTitle ? `${lobbyInfo.scenarioTitle} ${statusLine}` : statusLine
-                    }}
-                </p>
+                <p class="game-shell__subtitle">{{ statusLine }}</p>
             </div>
             <div class="game-shell__actions desktop-action-controls">
                 <button
@@ -197,7 +188,7 @@ watch(
         </div>
 
         <div data-main-target="policy">
-            <MainFrontStatus :status="frontStatus" />
+            <MainFrontStatus :status="frontStatus" :tournament-stage="tournamentStage" />
         </div>
 
         <aside v-if="surveyNotice" class="survey-notice" role="status" aria-live="polite">
@@ -220,6 +211,8 @@ watch(
                         :current-month="lobbyInfo?.month"
                         :turn-term-minutes="lobbyInfo?.turnTerm"
                         :autorun-limit="reservedGeneralAutorunLimit"
+                        :map-data="worldMap"
+                        :map-layout="mapLayout"
                         @set-general-turns="reserveGeneralTurns"
                         @shift-general-turns="shiftGeneralTurns"
                         @repeat-general-turns="repeatGeneralTurns"
@@ -241,7 +234,12 @@ watch(
                     <NationBasicCard :nation="nation" :loading="loading" />
                 </PanelCard>
                 <PanelCard title="장수 스탯" data-main-target="general">
-                    <GeneralBasicCard :general="general" :loading="loading" />
+                    <GeneralBasicCard
+                        :general="general"
+                        :loading="loading"
+                        :nation-color="nation?.color"
+                        :troop-text="general?.troopId ? String(general.troopId) : '-'"
+                    />
                 </PanelCard>
                 <PanelCard title="도시 정보" data-main-target="city">
                     <CityBasicCard :city="city" :loading="loading" />
@@ -344,6 +342,8 @@ watch(
                     :current-month="lobbyInfo?.month"
                     :turn-term-minutes="lobbyInfo?.turnTerm"
                     :autorun-limit="reservedGeneralAutorunLimit"
+                    :map-data="worldMap"
+                    :map-layout="mapLayout"
                     @set-general-turns="reserveGeneralTurns"
                     @shift-general-turns="shiftGeneralTurns"
                     @repeat-general-turns="repeatGeneralTurns"
@@ -356,7 +356,12 @@ watch(
                 <NationBasicCard :nation="nation" :loading="loading" />
             </PanelCard>
             <PanelCard title="장수 스탯" data-main-target="general">
-                <GeneralBasicCard :general="general" :loading="loading" />
+                <GeneralBasicCard
+                    :general="general"
+                    :loading="loading"
+                    :nation-color="nation?.color"
+                    :troop-text="general?.troopId ? String(general.troopId) : '-'"
+                />
             </PanelCard>
             <MainNationMenu
                 class="nation-menu-middle"
@@ -605,12 +610,14 @@ button {
 .layout-desktop > [data-main-target='nation'] {
     grid-column: 1 / 6;
     grid-row: 3;
+    align-self: stretch;
     min-height: 193px;
 }
 
 .layout-desktop > [data-main-target='general'] {
     grid-column: 6 / 11;
     grid-row: 3;
+    align-self: stretch;
     min-height: 193px;
 }
 

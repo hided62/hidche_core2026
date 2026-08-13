@@ -208,6 +208,10 @@ model LegacyRootKeyValue {
 model GatewayProfile {
   profileName      String                 @id @map("profile_name")
   profile          String
+  instanceKey      String                 @map("instance_key")
+  currentScenario  String?                @map("current_scenario")
+  /// Legacy compatibility mirror. The database trigger keeps this synchronized
+  /// with currentScenario while the previous Gateway release remains rollbackable.
   scenario         String
   apiPort          Int                    @map("api_port")
   status           GatewayProfileStatus
@@ -229,7 +233,7 @@ model GatewayProfile {
   operations       GatewayOperation[]
   runtimeActions   GatewayRuntimeAction[]
 
-  @@unique([profile, scenario])
+  @@unique([profile, instanceKey])
   @@map("gateway_profile")
 }
 

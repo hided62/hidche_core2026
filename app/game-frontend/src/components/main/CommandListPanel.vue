@@ -2,7 +2,13 @@
 import { computed } from 'vue';
 import { addMinutes } from 'date-fns';
 import ReservedCommandEditor from '../command/ReservedCommandEditor.vue';
-import type { CommandPatternEntry, CommandTable, ReservedCommandRow } from '../command/types';
+import type {
+    CommandMapData,
+    CommandMapLayout,
+    CommandPatternEntry,
+    CommandTable,
+    ReservedCommandRow,
+} from '../command/types';
 
 const props = defineProps<{
     commandTable: CommandTable | null;
@@ -14,6 +20,8 @@ const props = defineProps<{
     turnTermMinutes?: number;
     autorunLimit?: number | null;
     storageKey?: string;
+    mapData?: CommandMapData | null;
+    mapLayout?: CommandMapLayout | null;
 }>();
 
 const emit = defineEmits<{
@@ -63,6 +71,8 @@ const rows = computed<ReservedCommandRow[]>(() => {
         :loading="props.loading"
         :storage-key="props.storageKey ?? `core2026:general:${props.general?.id ?? 0}`"
         :current-time="rows[0]?.time"
+        :map-data="props.mapData"
+        :map-layout="props.mapLayout"
         @reserve-bulk="emit('set-general-turns', $event)"
         @shift="emit('shift-general-turns', $event)"
         @repeat="emit('repeat-general-turns', $event)"

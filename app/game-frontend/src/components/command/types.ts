@@ -1,4 +1,36 @@
-export type CommandOption = { value: string | number; label: string; color?: string };
+export type CommandOption = {
+    value: string | number;
+    label: string;
+    color?: string;
+    description?: string;
+};
+
+export type CommandMapData = {
+    year: number;
+    month: number;
+    startYear: number;
+    techLevelLimit?: { maxLevel: number; initialLevel: number; increaseYears: number };
+    cityList: [number, number, number, number, number, number][];
+    nationList: [number, string, string, number][];
+    myCity?: number | null;
+    myNation?: number | null;
+};
+
+export type CommandMapLayout = {
+    mapName: string;
+    cityList: Array<{ id: number; name: string; level: number; region: number; x: number; y: number; path: number[] }>;
+    regionMap: Record<number, string>;
+    levelMap: Record<number, string>;
+};
+
+export type CommandInputContext = {
+    actorGold: number;
+    actorRice: number;
+    citySecurity?: number;
+    nationGold?: number;
+    nationRice?: number;
+    nationLevel?: number;
+};
 
 export type CommandInputField = {
     key: string;
@@ -69,6 +101,7 @@ export type CommandTable = {
         colors: CommandOption[];
         items: Record<string, CommandOption[]>;
         recruitment: RecruitmentInfo | null;
+        context?: CommandInputContext;
     };
 };
 
