@@ -132,12 +132,40 @@ const noDefencePenaltyWaived = computed(() => {
     );
 });
 const noDefenceLabel = computed(() => (noDefencePenaltyWaived.value ? '×' : '× [훈련 -3,사기 -6]'));
-const items = computed<Array<{ key: ItemSlotKey; name: string; code: string | null }>>(() => [
-    { key: 'horse', name: '말', code: data.value?.general.items.horse ?? null },
-    { key: 'weapon', name: '무기', code: data.value?.general.items.weapon ?? null },
-    { key: 'book', name: '서적', code: data.value?.general.items.book ?? null },
-    { key: 'item', name: '도구', code: data.value?.general.items.item ?? null },
-]);
+const fallbackDisplayCode = (value: string | null | undefined): string | null =>
+    value && !/^\d+$/u.test(value) ? value.replace(/^che_(?:event_)?/u, '') : null;
+const items = computed<Array<{ key: ItemSlotKey; slotName: string; displayName: string | null; code: string | null }>>(
+    () => [
+        {
+            key: 'horse',
+            slotName: '말',
+            displayName:
+                data.value?.general.itemNames?.horse ?? fallbackDisplayCode(data.value?.general.items.horse) ?? null,
+            code: data.value?.general.items.horse ?? null,
+        },
+        {
+            key: 'weapon',
+            slotName: '무기',
+            displayName:
+                data.value?.general.itemNames?.weapon ?? fallbackDisplayCode(data.value?.general.items.weapon) ?? null,
+            code: data.value?.general.items.weapon ?? null,
+        },
+        {
+            key: 'book',
+            slotName: '서적',
+            displayName:
+                data.value?.general.itemNames?.book ?? fallbackDisplayCode(data.value?.general.items.book) ?? null,
+            code: data.value?.general.items.book ?? null,
+        },
+        {
+            key: 'item',
+            slotName: '도구',
+            displayName:
+                data.value?.general.itemNames?.item ?? fallbackDisplayCode(data.value?.general.items.item) ?? null,
+            code: data.value?.general.items.item ?? null,
+        },
+    ]
+);
 const iconChoices = computed(() => data.value?.iconChoices ?? []);
 
 const autorunUser = computed(() => asRecord(world.value?.meta.autorun_user));
@@ -302,8 +330,8 @@ const dieOnPrestart = async () => {
     }
 };
 
-const dropItem = (item: { key: ItemSlotKey; name: string; code: string | null }) =>
-    confirmMutation(`${item.code ?? item.name}을(를) 버리시겠습니까?`, () =>
+const dropItem = (item: { key: ItemSlotKey; slotName: string; displayName: string | null; code: string | null }) =>
+    confirmMutation(`${item.displayName ?? item.slotName}을(를) 버리시겠습니까?`, () =>
         trpc.general.dropItem.mutate({ itemType: item.key })
     );
 
@@ -416,7 +444,7 @@ onMounted(() => {
                         >
                         · 계급
                         <strong
-                            >Lv {{ data.general.progression?.dedicationLevel ?? 0 }} ({{
+                            >{{ data.general.progression?.dedicationText ?? '무품관' }} ({{
                                 data.general.dedication
                             }})</strong
                         >
@@ -425,7 +453,7 @@ onMounted(() => {
                     <div>승률 0% · 승리 0 · 패배 0</div>
                     <div>살상률 0% · 사살 0 · 피살 0</div>
                     <div>
-                        병종 {{ data.general.crewTypeId || '-' }} · 내정특기
+                        병종 {{ data.general.crewTypeName ?? '-' }} · 내정특기
                         {{ data.general.traits?.specialDomestic ?? '-' }} · 부상 {{ data.general.injury }} · 부대
                         {{ data.general.troopId || '-' }} · 벌점 {{ penalties.length || '-' }}
                     </div>
@@ -595,7 +623,7 @@ onMounted(() => {
                         :disabled="!item.code"
                         @click="dropItem(item)"
                     >
-                        {{ item.code ?? '-' }}
+                        {{ item.displayName ?? '-' }}
                     </button>
                 </div>
 

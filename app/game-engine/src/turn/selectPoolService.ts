@@ -6,10 +6,12 @@ import {
     EventDomesticTraitLoader,
     isEventDomesticTraitKey,
     isPersonalityTraitKey,
+    isWarTraitKey,
     LogCategory,
     LogScope,
     PERSONALITY_TRAIT_KEYS,
     simpleSerialize,
+    WarTraitLoader,
 } from '@sammo-ts/logic';
 
 import type { DatabaseClient, GamePrisma as GamePrismaTypes } from '@sammo-ts/infra';
@@ -78,6 +80,8 @@ export interface SelectPoolCandidateDto {
     specialDomesticName: string;
     specialDomesticInfo: string;
     specialWar: string | null;
+    specialWarName: string | null;
+    specialWarInfo: string;
     ego: string | null;
     dex: [number, number, number, number, number];
     imageServer: 0 | 1;
@@ -158,11 +162,16 @@ const candidateWeight = (candidate: SelectPoolCandidateInfo): number =>
     candidate.dex.reduce((sum, value) => sum + value, 0);
 
 const eventDomesticTraitLoader = new EventDomesticTraitLoader();
+const warTraitLoader = new WarTraitLoader();
 
 const toCandidateDto = async (candidate: SelectPoolCandidateInfo): Promise<SelectPoolCandidateDto> => {
     const trait = isEventDomesticTraitKey(candidate.specialDomestic)
         ? await eventDomesticTraitLoader.load(candidate.specialDomestic)
         : null;
+    const warTrait =
+        candidate.specialWar && isWarTraitKey(candidate.specialWar)
+            ? await warTraitLoader.load(candidate.specialWar)
+            : null;
     return {
         uniqueName: candidate.uniqueName,
         generalName: candidate.generalName,
@@ -173,6 +182,8 @@ const toCandidateDto = async (candidate: SelectPoolCandidateInfo): Promise<Selec
         specialDomesticName: trait?.name ?? candidate.specialDomestic.replace(/^che_event_/, ''),
         specialDomesticInfo: trait?.info ?? '',
         specialWar: candidate.specialWar ?? null,
+        specialWarName: warTrait?.name ?? candidate.specialWar?.replace(/^che_(?:event_)?/u, '') ?? null,
+        specialWarInfo: warTrait?.info ?? '',
         ego: candidate.ego ?? null,
         dex: candidate.dex,
         imageServer: candidate.imgsvr,

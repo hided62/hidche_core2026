@@ -8,6 +8,7 @@ import { zWorldStateConfig, zWorldStateMeta } from '../../context.js';
 import { loadMapLayout } from '../../maps/mapLayout.js';
 import { loadPublicMap } from '../../maps/worldMap.js';
 import { accessPages, recordGeneralAccess } from '../../services/generalAccess.js';
+import { sanitizeInternalDisplayCode } from '../../services/gameDisplayNames.js';
 import { accessInputProcedure, procedure, router, sessionActivityProcedure } from '../../trpc.js';
 import { loadTraitNames } from '../nation/shared.js';
 
@@ -478,174 +479,170 @@ export const publicRouter = router({
         }));
     }),
     getNpcList: accessInputProcedure(
-            z
-                .object({
-                    sort: z.number().int().min(1).max(8).catch(1).optional(),
-                    includeAllWithToken: z.boolean().optional(),
-                })
-                .optional()
-        )
-        .query(async ({ ctx, input }) => {
-            const sort = (input?.sort ?? 1) as NpcListSort;
-            const includeAllWithToken = input?.includeAllWithToken === true;
-            if (includeAllWithToken && !ctx.auth) {
-                throw new TRPCError({ code: 'UNAUTHORIZED' });
-            }
-            const now = new Date(Math.floor(Date.now() / 1000) * 1000);
-            const poolGeneralIds = includeAllWithToken
-                ? []
-                : (
-                      await ctx.db.selectPoolEntry.findMany({
-                          where: { generalId: { not: null } },
-                          select: { generalId: true },
-                      })
-                  ).flatMap(({ generalId }) => (generalId === null ? [] : [generalId]));
-            const [generals, nations, activeTokens, worldState] = await Promise.all([
-                ctx.db.general.findMany({
-                    ...(includeAllWithToken
-                        ? {}
-                        : {
-                              where: {
-                                  OR: [
-                                      { npcState: 1 },
-                                      { npcState: 0, id: { in: poolGeneralIds } },
-                                  ],
-                              },
-                          }),
-                    select: {
-                        id: true,
-                        name: true,
-                        picture: true,
-                        imageServer: true,
-                        npcState: true,
-                        age: true,
-                        officerLevel: true,
-                        nationId: true,
-                        leadership: true,
-                        strength: true,
-                        intel: true,
-                        experience: true,
-                        dedication: true,
-                        personalCode: true,
-                        specialCode: true,
-                        special2Code: true,
-                        meta: true,
-                    },
-                    orderBy: { id: 'asc' },
-                }),
-                ctx.db.nation.findMany({
-                    select: { id: true, name: true, level: true },
-                }),
-                includeAllWithToken
-                    ? ctx.db.npcSelectionToken.findMany({
-                          where: { validUntil: { gte: now } },
-                          select: { pickResult: true },
-                      })
-                    : [],
-                includeAllWithToken
-                    ? ctx.db.worldState.findFirst({
-                          select: { config: true },
-                      })
-                    : null,
-            ]);
+        z
+            .object({
+                sort: z.number().int().min(1).max(8).catch(1).optional(),
+                includeAllWithToken: z.boolean().optional(),
+            })
+            .optional()
+    ).query(async ({ ctx, input }) => {
+        const sort = (input?.sort ?? 1) as NpcListSort;
+        const includeAllWithToken = input?.includeAllWithToken === true;
+        if (includeAllWithToken && !ctx.auth) {
+            throw new TRPCError({ code: 'UNAUTHORIZED' });
+        }
+        const now = new Date(Math.floor(Date.now() / 1000) * 1000);
+        const poolGeneralIds = includeAllWithToken
+            ? []
+            : (
+                  await ctx.db.selectPoolEntry.findMany({
+                      where: { generalId: { not: null } },
+                      select: { generalId: true },
+                  })
+              ).flatMap(({ generalId }) => (generalId === null ? [] : [generalId]));
+        const [generals, nations, activeTokens, worldState] = await Promise.all([
+            ctx.db.general.findMany({
+                ...(includeAllWithToken
+                    ? {}
+                    : {
+                          where: {
+                              OR: [{ npcState: 1 }, { npcState: 0, id: { in: poolGeneralIds } }],
+                          },
+                      }),
+                select: {
+                    id: true,
+                    name: true,
+                    picture: true,
+                    imageServer: true,
+                    npcState: true,
+                    age: true,
+                    officerLevel: true,
+                    nationId: true,
+                    leadership: true,
+                    strength: true,
+                    intel: true,
+                    experience: true,
+                    dedication: true,
+                    personalCode: true,
+                    specialCode: true,
+                    special2Code: true,
+                    meta: true,
+                },
+                orderBy: { id: 'asc' },
+            }),
+            ctx.db.nation.findMany({
+                select: { id: true, name: true, level: true },
+            }),
+            includeAllWithToken
+                ? ctx.db.npcSelectionToken.findMany({
+                      where: { validUntil: { gte: now } },
+                      select: { pickResult: true },
+                  })
+                : [],
+            includeAllWithToken
+                ? ctx.db.worldState.findFirst({
+                      select: { config: true },
+                  })
+                : null,
+        ]);
 
-            const personalityKeys = generals.map((general) => normalizeTraitKey(general.personalCode));
-            const domesticKeys = generals.map((general) => normalizeTraitKey(general.specialCode));
-            const warKeys = generals.map((general) => normalizeTraitKey(general.special2Code));
-            const [personalityMap, domesticMap, warMap] = await Promise.all([
-                loadTraitNames(personalityKeys, 'personality'),
-                loadTraitNames(domesticKeys, 'domestic'),
-                loadTraitNames(warKeys, 'war'),
-            ]);
-            const nationMap = new Map(nations.map((nation) => [nation.id, nation]));
-            const worldConfig = asRecord(worldState?.config);
-            const worldConstants = asRecord(worldConfig.const);
-            const maxLevel = Math.max(0, Math.floor(asNumber(worldConstants.maxLevel, 255)));
-            const maxDedLevel = Math.max(0, Math.floor(asNumber(worldConstants.maxDedLevel, 30)));
+        const personalityKeys = generals.map((general) => normalizeTraitKey(general.personalCode));
+        const domesticKeys = generals.map((general) => normalizeTraitKey(general.specialCode));
+        const warKeys = generals.map((general) => normalizeTraitKey(general.special2Code));
+        const [personalityMap, domesticMap, warMap] = await Promise.all([
+            loadTraitNames(personalityKeys, 'personality'),
+            loadTraitNames(domesticKeys, 'domestic'),
+            loadTraitNames(warKeys, 'war'),
+        ]);
+        const nationMap = new Map(nations.map((nation) => [nation.id, nation]));
+        const worldConfig = asRecord(worldState?.config);
+        const worldConstants = asRecord(worldConfig.const);
+        const maxLevel = Math.max(0, Math.floor(asNumber(worldConstants.maxLevel, 255)));
+        const maxDedLevel = Math.max(0, Math.floor(asNumber(worldConstants.maxDedLevel, 30)));
 
-            // Legacy a_npcList.php shows select_pool humans first and possessed npc=1 rows.
-            // Unpossessed npc=2 candidates belong only to the token-aware selection screen.
-            // selection list instead consumes the raw id-ordered full list before its own comparator.
-            const sourceRows = includeAllWithToken
-                ? generals
-                : [
-                      ...generals.filter((general) => general.npcState === 0),
-                      ...generals.filter((general) => general.npcState === 1),
-                  ];
-            const rows = sourceRows.map((general) => {
-                const meta = asRecord(general.meta);
-                const personalityKey = normalizeTraitKey(general.personalCode);
-                const domesticKey = normalizeTraitKey(general.specialCode);
-                const warKey = normalizeTraitKey(general.special2Code);
-                const ownerName =
-                    general.npcState === 1
-                        ? typeof meta.owner_name === 'string'
-                            ? meta.owner_name
-                            : typeof meta.ownerName === 'string'
-                              ? meta.ownerName
-                              : ''
-                        : '';
-
-                return {
-                    id: general.id,
-                    name: general.name,
-                    picture: general.picture,
-                    imageServer: general.imageServer,
-                    npcState: general.npcState,
-                    ownerName,
-                    age: general.age,
-                    level: includeAllWithToken
-                        ? resolveExperienceLevel(general.experience, maxLevel)
-                        : readFiniteMetaNumber(meta, 'explevel'),
-                    officerLevel: general.officerLevel,
-                    killturn: readFiniteMetaNumber(meta, 'killturn'),
-                    nationId: general.nationId,
-                    nationName: nationMap.get(general.nationId)?.name ?? '-',
-                    nationLevel: nationMap.get(general.nationId)?.level ?? 0,
-                    personality: personalityKey
-                        ? {
-                              key: personalityKey,
-                              name: personalityMap.get(personalityKey)?.name ?? personalityKey,
-                              info: personalityMap.get(personalityKey)?.info ?? '',
-                          }
-                        : null,
-                    specialDomestic: domesticKey
-                        ? {
-                              key: domesticKey,
-                              name: domesticMap.get(domesticKey)?.name ?? domesticKey,
-                              info: domesticMap.get(domesticKey)?.info ?? '',
-                          }
-                        : null,
-                    specialWar: warKey
-                        ? {
-                              key: warKey,
-                              name: warMap.get(warKey)?.name ?? warKey,
-                              info: warMap.get(warKey)?.info ?? '',
-                          }
-                        : null,
-                    statTotal: general.leadership + general.strength + general.intel,
-                    leadership: general.leadership,
-                    strength: general.strength,
-                    intelligence: general.intel,
-                    experience: general.experience,
-                    experienceText: resolveHonorText(general.experience),
-                    dedication: general.dedication,
-                    dedicationText: resolveDedicationText(general.dedication, maxDedLevel),
-                };
-            });
-            const tokenKeepCounts = Object.fromEntries(
-                activeTokens.flatMap((token) =>
-                    Object.entries(asRecord(token.pickResult)).flatMap(([generalId, value]) => {
-                        const keepCount = asNumber(asRecord(value).keepCount, Number.NaN);
-                        return Number.isFinite(keepCount) ? [[generalId, Math.max(0, Math.floor(keepCount))]] : [];
-                    })
-                )
-            );
+        // Legacy a_npcList.php shows select_pool humans first and possessed npc=1 rows.
+        // Unpossessed npc=2 candidates belong only to the token-aware selection screen.
+        // selection list instead consumes the raw id-ordered full list before its own comparator.
+        const sourceRows = includeAllWithToken
+            ? generals
+            : [
+                  ...generals.filter((general) => general.npcState === 0),
+                  ...generals.filter((general) => general.npcState === 1),
+              ];
+        const rows = sourceRows.map((general) => {
+            const meta = asRecord(general.meta);
+            const personalityKey = normalizeTraitKey(general.personalCode);
+            const domesticKey = normalizeTraitKey(general.specialCode);
+            const warKey = normalizeTraitKey(general.special2Code);
+            const ownerName =
+                general.npcState === 1
+                    ? typeof meta.owner_name === 'string'
+                        ? meta.owner_name
+                        : typeof meta.ownerName === 'string'
+                          ? meta.ownerName
+                          : ''
+                    : '';
 
             return {
-                sort,
-                generals: includeAllWithToken ? rows : sortNpcList(rows, sort),
-                tokenKeepCounts,
+                id: general.id,
+                name: general.name,
+                picture: general.picture,
+                imageServer: general.imageServer,
+                npcState: general.npcState,
+                ownerName,
+                age: general.age,
+                level: includeAllWithToken
+                    ? resolveExperienceLevel(general.experience, maxLevel)
+                    : readFiniteMetaNumber(meta, 'explevel'),
+                officerLevel: general.officerLevel,
+                killturn: readFiniteMetaNumber(meta, 'killturn'),
+                nationId: general.nationId,
+                nationName: nationMap.get(general.nationId)?.name ?? '-',
+                nationLevel: nationMap.get(general.nationId)?.level ?? 0,
+                personality: personalityKey
+                    ? {
+                          key: personalityKey,
+                          name: personalityMap.get(personalityKey)?.name ?? sanitizeInternalDisplayCode(personalityKey),
+                          info: personalityMap.get(personalityKey)?.info ?? '',
+                      }
+                    : null,
+                specialDomestic: domesticKey
+                    ? {
+                          key: domesticKey,
+                          name: domesticMap.get(domesticKey)?.name ?? sanitizeInternalDisplayCode(domesticKey),
+                          info: domesticMap.get(domesticKey)?.info ?? '',
+                      }
+                    : null,
+                specialWar: warKey
+                    ? {
+                          key: warKey,
+                          name: warMap.get(warKey)?.name ?? sanitizeInternalDisplayCode(warKey),
+                          info: warMap.get(warKey)?.info ?? '',
+                      }
+                    : null,
+                statTotal: general.leadership + general.strength + general.intel,
+                leadership: general.leadership,
+                strength: general.strength,
+                intelligence: general.intel,
+                experience: general.experience,
+                experienceText: resolveHonorText(general.experience),
+                dedication: general.dedication,
+                dedicationText: resolveDedicationText(general.dedication, maxDedLevel),
             };
-        }),
+        });
+        const tokenKeepCounts = Object.fromEntries(
+            activeTokens.flatMap((token) =>
+                Object.entries(asRecord(token.pickResult)).flatMap(([generalId, value]) => {
+                    const keepCount = asNumber(asRecord(value).keepCount, Number.NaN);
+                    return Number.isFinite(keepCount) ? [[generalId, Math.max(0, Math.floor(keepCount))]] : [];
+                })
+            )
+        );
+
+        return {
+            sort,
+            generals: includeAllWithToken ? rows : sortNpcList(rows, sort),
+            tokenKeepCounts,
+        };
+    }),
 });

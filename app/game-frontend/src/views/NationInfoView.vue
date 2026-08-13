@@ -3,6 +3,7 @@ import { computed, onMounted, ref } from 'vue';
 import { useRouter } from 'vue-router';
 import { formatLog } from '../utils/formatLog';
 import { legacyNationTextColor } from '../utils/legacyNationColor';
+import { formatNationLevelText } from '../utils/nationFormat';
 import { trpc } from '../utils/trpc';
 
 type Result = Awaited<ReturnType<typeof trpc.nation.getNationInfo.query>>;
@@ -11,9 +12,7 @@ const router = useRouter();
 const error = ref('');
 const number = (value: number) => value.toLocaleString('ko-KR');
 const diff = (value: number) => `${value > 0 ? '+' : ''}${number(value)}`;
-const nationLevel = computed(
-    () => ['두목', '영주', '군벌', '주자사', '주목', '공', '왕', '황제'][data.value?.nation.level ?? 0] ?? '-'
-);
+const nationLevel = computed(() => formatNationLevelText(data.value?.nation.level ?? 0));
 onMounted(async () => {
     try {
         data.value = await trpc.nation.getNationInfo.query();

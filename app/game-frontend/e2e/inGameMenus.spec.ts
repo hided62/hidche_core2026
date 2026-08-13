@@ -63,7 +63,9 @@ const myGeneral = (state: FixtureState) => ({
         troopId: 0,
         picture: null,
         imageServer: 0,
-        officerLevel: state.permission === 'head' ? 5 : 1,
+        officerLevel: state.permission === 'head' ? 9 : 1,
+        officerLevelText:
+            state.permission === 'head' ? '간의대부' : state.buildNationCandidateEnabled ? '재야' : '일반',
         stats: { leadership: 70, strength: 60, intelligence: 50 },
         gold: 1_000,
         rice: 2_000,
@@ -76,30 +78,74 @@ const myGeneral = (state: FixtureState) => ({
         age: 30,
         turnTime: '2026-01-01 00:10:00',
         crewTypeId: 1,
+        crewTypeName: '보병',
         traits: state.mainTraits ?? { personal: '-', specialDomestic: '-', specialWar: '-' },
         progression: {
             experienceLevel: 1,
             dedicationLevel: 2,
+            dedicationText: '29품관',
             statExperience: { leadership: 7, strength: 8, intelligence: 9 },
             statUpgradeLimit: 20,
             dex: [350, 1_375, 3_500, 7_125, 1_275_975],
         },
         items: { horse: 'che_명마', weapon: null, book: null, item: null },
+        itemNames: { horse: '명마', weapon: null, book: null, item: null },
     },
-    city: { id: 1, name: '업', level: 8, nationId: 1 },
+    city: {
+        id: 1,
+        name: '업',
+        level: 8,
+        levelName: '특',
+        region: 2,
+        regionName: '중원',
+        nationId: 1,
+        nationName: '위',
+        population: 1000,
+        populationMax: 2000,
+        agriculture: 100,
+        agricultureMax: 200,
+        commerce: 100,
+        commerceMax: 200,
+        security: 100,
+        securityMax: 200,
+        trust: 70,
+        trade: 100,
+        defence: 100,
+        defenceMax: 200,
+        wall: 100,
+        wallMax: 200,
+        supplyState: 1,
+        frontState: 0,
+    },
     nation: state.buildNationCandidateEnabled
         ? {
               id: 0,
               name: '재야',
               color: '#000000',
               level: 0,
+              levelName: '방랑군',
               gold: 0,
               rice: 0,
               tech: 0,
               typeCode: 'None',
+              typeName: '해당 없음',
               capitalCityId: null,
+              capitalCityName: null,
           }
-        : { id: 1, name: '위', color: '#777777', level: 3 },
+        : {
+              id: 1,
+              name: '위',
+              color: '#777777',
+              level: 3,
+              levelName: '주자사',
+              gold: 10_000,
+              rice: 20_000,
+              tech: 100,
+              typeCode: 'che_법가',
+              typeName: '법가',
+              capitalCityId: 1,
+              capitalCityName: '업',
+          },
     settings: {
         tnmt: 0,
         defence_train: 80,
@@ -116,7 +162,7 @@ const myGeneral = (state: FixtureState) => ({
 const battleCenter = (state: FixtureState) => ({
     me: {
         id: 7,
-        officerLevel: state.permission === 'head' ? 5 : 1,
+        officerLevel: state.permission === 'head' ? 9 : 1,
         permissionLevel: state.permission === 'head' ? 2 : 0,
     },
     nation: { id: 1, name: '위', color: '#777777', level: 3 },
@@ -128,7 +174,8 @@ const battleCenter = (state: FixtureState) => ({
             id: 7,
             name: '검증장수',
             npcState: 0,
-            officerLevel: state.permission === 'head' ? 5 : 1,
+            officerLevel: state.permission === 'head' ? 9 : 1,
+            officerLevelText: state.permission === 'head' ? '간의대부' : '일반',
             cityId: 1,
             turnTime: '2026-01-01 00:10:00',
             recentWar: '2026-01-01 00:00:00',
@@ -144,10 +191,14 @@ const battleCenter = (state: FixtureState) => ({
             atmos: 90,
             age: 30,
             crewTypeId: 1,
+            crewTypeName: '보병',
             equipment: { weapon: 'None', book: 'None', horse: 'None', item: 'None' },
-            traits: { personal: 'None', specialDomestic: 'None', specialWar: 'None' },
+            equipmentNames: { weapon: '-', book: '-', horse: '-', item: '-' },
+            traits: { personal: '-', specialDomestic: '-', specialWar: '-' },
             progression: {
                 experienceLevel: 1,
+                dedicationLevel: 2,
+                dedicationText: '29품관',
                 statExperience: { leadership: 7, strength: 8, intelligence: 9 },
                 statUpgradeLimit: 20,
                 dex: [350, 1_375, 3_500, 7_125, 1_275_975],
@@ -159,6 +210,7 @@ const battleCenter = (state: FixtureState) => ({
             name: '다른장수',
             npcState: 2,
             officerLevel: 1,
+            officerLevelText: '일반',
             cityId: 1,
             turnTime: '2026-01-01 00:20:00',
             recentWar: null,
@@ -174,10 +226,14 @@ const battleCenter = (state: FixtureState) => ({
             atmos: 60,
             age: 20,
             crewTypeId: 1,
+            crewTypeName: '보병',
             equipment: { weapon: 'None', book: 'None', horse: 'None', item: 'None' },
-            traits: { personal: 'None', specialDomestic: 'None', specialWar: 'None' },
+            equipmentNames: { weapon: '-', book: '-', horse: '-', item: '-' },
+            traits: { personal: '-', specialDomestic: '-', specialWar: '-' },
             progression: {
                 experienceLevel: 0,
+                dedicationLevel: 0,
+                dedicationText: '무품관',
                 statExperience: { leadership: 0, strength: 0, intelligence: 0 },
                 statUpgradeLimit: 20,
                 dex: [0, 0, 0, 0, 0],
@@ -512,6 +568,35 @@ test('재야 메인은 국가 틀과 성격·특기 표기명을 Chromium에 표
     await persistParityArtifact(page, 'main-neutral-trait-display', geometry);
 });
 
+test('메인 카드의 국가·수도·관직·계급·병종은 Ref 출력명으로 표시된다', async ({ page }) => {
+    const state: FixtureState = {
+        permission: 'head',
+        myset: 3,
+        mainTraits: { personal: '안전', specialDomestic: '상재', specialWar: '신산' },
+        settingMutations: [],
+        accessPages: [],
+    };
+    await install(page, state);
+    await page.setViewportSize({ width: 1000, height: 900 });
+    await page.goto('');
+
+    const nationCard = page.locator('.nation-card');
+    await expect(nationCard.locator('.title')).toHaveText('위 (주자사)');
+    await expect(nationCard).toContainText('체제법가');
+    await expect(nationCard).toContainText('수도업');
+    await expect(nationCard).toContainText('국가 등급주자사');
+
+    const generalCard = page.locator('.general-card');
+    await expect(generalCard.locator('.general-title')).toContainText('검증장수 · 간의대부');
+    await expect(generalCard).toContainText('병종보병');
+    await expect(generalCard).toContainText('계급29품관');
+
+    const cityCard = page.locator('.city-card');
+    await expect(cityCard.locator('.title')).toContainText('【중원 | 특】 업');
+    await expect(cityCard.locator('.title')).toContainText('지배 국가 【 위 】');
+    await expect(page.locator('.main-page')).not.toContainText('che_');
+});
+
 test('접속량정보 keeps the legacy public 1016px chart geometry', async ({ page }) => {
     const state: FixtureState = { permission: 'member', myset: 0, settingMutations: [], accessPages: [] };
     await install(page, state);
@@ -566,6 +651,10 @@ test('내 정보&설정 keeps the legacy 1000px/500px geometry and saves in plac
     await install(page, state);
     await page.setViewportSize({ width: 1000, height: 900 });
     await page.goto('my-page');
+    await expect(page.locator('.legacy-general-details')).toContainText('계급 29품관');
+    await expect(page.locator('.legacy-general-details')).toContainText('병종 보병');
+    await expect(page.locator('.item-group')).toContainText('명마');
+    await expect(page.locator('#container')).not.toContainText('che_');
     await expect(page.locator('.title-row')).toContainText('내 정 보');
     await expect(page.locator('#set_my_setting')).toBeVisible();
     await expect(page.locator('.general-column [role="progressbar"]')).toHaveCount(14);
@@ -1020,6 +1109,10 @@ test('감찰부 keeps the selector interaction and shows the permission error pa
     await expect(page.locator('.selector-row select').nth(1)).toHaveValue('8');
     await page.getByRole('button', { name: '다음 ▶' }).click();
     await expect(page.locator('.selector-row select').nth(1)).toHaveValue('7');
+    await expect(page.locator('.battle-general-name')).toContainText('검증장수 (간의대부)');
+    await expect(page.locator('.battle-general-extra')).toContainText('계급29품관');
+    await expect(page.locator('.battle-general-extra')).toContainText('병종보병');
+    await expect(page.locator('.battle-general-card')).not.toContainText('che_');
     await expect(page.locator('.battle-general-card [role="progressbar"]')).toHaveCount(14);
     await expect(page.locator('.battle-general-card [aria-label*="1,275,975 (EX+)"]')).toHaveCount(5);
     expect(

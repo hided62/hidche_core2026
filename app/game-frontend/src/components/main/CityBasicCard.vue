@@ -8,7 +8,10 @@ interface CityInfo {
     id: number;
     name: string;
     level: number;
+    levelName: string;
+    regionName: string;
     nationId: number;
+    nationName: string;
     population: number;
     populationMax: number;
     agriculture: number;
@@ -66,8 +69,8 @@ const metrics = computed(() => {
         <div v-else-if="!props.city" class="empty">도시 정보를 불러오지 못했습니다.</div>
         <div v-else class="city-body">
             <div class="title">
-                {{ props.city.name }} (Lv {{ props.city.level }}) · 국가 {{ props.city.nationId || '무주' }} · 보급
-                {{ props.city.supplyState }} · 전방 {{ props.city.frontState }}
+                【{{ props.city.regionName }} | {{ props.city.levelName }}】 {{ props.city.name }} ·
+                {{ props.city.nationId > 0 ? `지배 국가 【 ${props.city.nationName} 】` : '공 백 지' }}
             </div>
             <div class="progress-grid">
                 <div
