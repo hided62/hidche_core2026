@@ -149,7 +149,6 @@ const placeBet = async (targetId: number) => {
                         :name="candidate.name"
                         :picture="candidate.picture"
                         :image-server="candidate.imageServer"
-                        :icon-size="36"
                     />
                     <div class="candidate-return">
                         <span class="ratio-color">{{ ratio(candidate.id) }}</span>
@@ -241,7 +240,6 @@ const placeBet = async (targetId: number) => {
                                 :name="entry.name"
                                 :picture="entry.picture"
                                 :image-server="entry.imageServer"
-                                :icon-size="24"
                             />
                         </td>
                         <td>{{ entry.stat }}</td>
@@ -287,24 +285,6 @@ const placeBet = async (targetId: number) => {
     font-size: 14px;
     line-height: 1.3;
     text-align: center;
-}
-.betting-bracket :deep(.bracket-canvas) {
-    width: 100%;
-    min-width: 1000px;
-}
-.betting-bracket :deep(.bracket-round),
-.betting-bracket :deep(.connector-row) {
-    min-height: 8px;
-}
-.betting-bracket :deep(.connector-segment) {
-    height: 8px;
-}
-.betting-bracket :deep(.connector-segment .stem) {
-    height: 5px;
-}
-.betting-bracket :deep(.connector-segment .arm) {
-    top: 4px;
-    height: 4px;
 }
 .betting-footer {
     padding-top: 20px;
@@ -481,6 +461,9 @@ select:disabled {
     height: 28px;
     padding: 1px;
     border: 1px solid #555;
+}
+.ranking-table tbody tr:has(.general-identity) td {
+    height: 66px;
 }
 .ranking-table thead tr:first-child th {
     height: 18px;

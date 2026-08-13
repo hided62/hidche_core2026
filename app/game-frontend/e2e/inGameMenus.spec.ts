@@ -802,8 +802,12 @@ test('내 정보&설정 keeps desktop density and becomes a 390px horizontal-ide
     const mobile = await page.locator('#container').evaluate((element) => {
         const rect = element.getBoundingClientRect();
         const settings = element.querySelector<HTMLElement>('.settings-column')!.getBoundingClientRect();
-        const icon = element.querySelector<HTMLElement>('[data-general-basic-card] .general-icon')!.getBoundingClientRect();
-        const name = element.querySelector<HTMLElement>('[data-general-basic-card] .general-title')!.getBoundingClientRect();
+        const icon = element
+            .querySelector<HTMLElement>('[data-general-basic-card] .general-icon')!
+            .getBoundingClientRect();
+        const name = element
+            .querySelector<HTMLElement>('[data-general-basic-card] .general-title')!
+            .getBoundingClientRect();
         return {
             width: rect.width,
             scrollWidth: document.documentElement.scrollWidth,
@@ -882,6 +886,8 @@ test('내 정보에서 사람 장수의 등록 전콘을 골라 변경한다', a
     await install(page, state);
     await page.goto('my-page');
     await expect(page.getByText('전용 아이콘 변경 (24시간에 1회)')).toBeVisible();
+    await expect(page.locator('.selected-general-icon img')).toHaveCSS('width', '64px');
+    await expect(page.locator('.selected-general-icon img')).toHaveCSS('height', '64px');
     await page.locator('.general-icon-choice input').check();
     page.once('dialog', async (dialog) => dialog.accept());
     await page.getByRole('button', { name: '아이콘 변경' }).click();

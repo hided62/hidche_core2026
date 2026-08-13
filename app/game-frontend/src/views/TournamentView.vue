@@ -232,7 +232,6 @@ const start = async () => {
                                 :name="group[rowIndex - 1]!.name"
                                 :picture="group[rowIndex - 1]!.picture"
                                 :image-server="group[rowIndex - 1]!.imageServer"
-                                :icon-size="24"
                             />
                         </td>
                         <td>{{ statOf(group[rowIndex - 1]) }}</td>
@@ -294,7 +293,6 @@ const start = async () => {
                                 :name="group[rowIndex - 1]!.name"
                                 :picture="group[rowIndex - 1]!.picture"
                                 :image-server="group[rowIndex - 1]!.imageServer"
-                                :icon-size="24"
                             />
                         </td>
                         <td>{{ statOf(group[rowIndex - 1]) }}</td>
@@ -369,13 +367,6 @@ const start = async () => {
 .tournament-guide {
     font-size: 12px;
     line-height: 14px;
-}
-.legacy-page :deep(.tournament-bracket .bracket-round),
-.legacy-page :deep(.tournament-bracket .connector-row) {
-    min-height: 20px;
-}
-.legacy-page :deep(.tournament-bracket .connector-segment) {
-    height: 20px;
 }
 .tournament-footer {
     padding-top: 10px;
@@ -512,10 +503,14 @@ td {
 }
 .group-grid th:nth-child(2),
 .group-grid td:nth-child(2) {
-    width: 92px;
+    width: 130px;
 }
 .general-cell {
     overflow: hidden;
+    text-align: left;
+}
+.group-grid tbody tr:has(.general-identity) td {
+    height: 66px;
 }
 .group-tabs {
     display: none;
@@ -583,7 +578,7 @@ td {
     }
     .group-grid th:nth-child(2),
     .group-grid td:nth-child(2) {
-        width: 108px;
+        width: 138px;
     }
     .tournament-guide {
         padding: 10px;
