@@ -232,7 +232,12 @@ watch(
                     <NationBasicCard :nation="nation" :loading="loading" />
                 </PanelCard>
                 <PanelCard title="장수 스탯" data-main-target="general">
-                    <GeneralBasicCard :general="general" :loading="loading" />
+                    <GeneralBasicCard
+                        :general="general"
+                        :loading="loading"
+                        :nation-color="nation?.color"
+                        :troop-text="general?.troopId ? String(general.troopId) : '-'"
+                    />
                 </PanelCard>
                 <PanelCard title="도시 정보" data-main-target="city">
                     <CityBasicCard :city="city" :loading="loading" />
@@ -347,7 +352,12 @@ watch(
                 <NationBasicCard :nation="nation" :loading="loading" />
             </PanelCard>
             <PanelCard title="장수 스탯" data-main-target="general">
-                <GeneralBasicCard :general="general" :loading="loading" />
+                <GeneralBasicCard
+                    :general="general"
+                    :loading="loading"
+                    :nation-color="nation?.color"
+                    :troop-text="general?.troopId ? String(general.troopId) : '-'"
+                />
             </PanelCard>
             <MainNationMenu
                 class="nation-menu-middle"
@@ -596,12 +606,14 @@ button {
 .layout-desktop > [data-main-target='nation'] {
     grid-column: 1 / 6;
     grid-row: 3;
+    align-self: stretch;
     min-height: 193px;
 }
 
 .layout-desktop > [data-main-target='general'] {
     grid-column: 6 / 11;
     grid-row: 3;
+    align-self: stretch;
     min-height: 193px;
 }
 

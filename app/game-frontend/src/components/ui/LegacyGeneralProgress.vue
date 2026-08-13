@@ -15,7 +15,9 @@ type GeneralProgress = {
     };
 };
 
-const props = defineProps<{ general: GeneralProgress }>();
+const props = withDefaults(defineProps<{ general: GeneralProgress; showPrimary?: boolean }>(), {
+    showPrimary: true,
+});
 
 const statRows = computed(() =>
     [
@@ -50,7 +52,7 @@ const experiencePercent = computed(() =>
 
 <template>
     <div class="legacy-general-progress">
-        <div class="stat-grid">
+        <div v-if="props.showPrimary" class="stat-grid">
             <template v-for="stat of statRows" :key="stat.key">
                 <span class="cell-label">{{ stat.label }}</span>
                 <strong>{{ stat.value }}</strong>
@@ -60,7 +62,7 @@ const experiencePercent = computed(() =>
                 />
             </template>
         </div>
-        <div class="experience-row">
+        <div v-if="props.showPrimary" class="experience-row">
             <span class="cell-label">Lv</span>
             <strong>{{ props.general.progression.experienceLevel }}</strong>
             <LegacyProgressBar
