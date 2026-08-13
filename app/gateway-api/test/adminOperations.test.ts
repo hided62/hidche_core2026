@@ -366,7 +366,7 @@ describe('admin profile navigation API', () => {
                 profile: 'che',
                 instanceKey: '2',
                 currentScenario: '2',
-                meta: {},
+                meta: { korName: '체' },
             },
         ]);
         expect(harness.getRuntimeStateListCount()).toBe(0);
