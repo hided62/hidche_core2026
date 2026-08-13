@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { formatServerDateTime } from '@sammo-ts/common';
 import { computed, onMounted, ref } from 'vue';
 import TournamentBracket from '../components/tournament/TournamentBracket.vue';
 import { trpc } from '../utils/trpc';
@@ -68,7 +69,9 @@ const ratio = (id: number) => {
     const amount = totals?.[id] ?? 0;
     return amount ? (totalAmount.value / amount).toFixed(2) : '0';
 };
-const openingTime = computed(() => snapshot.value?.state?.nextAt?.slice(11, 16) ?? '--:--');
+const openingTime = computed(() =>
+    formatServerDateTime(snapshot.value?.state?.nextAt, { format: 'hourMinute', fallback: '--:--' })
+);
 const expected = (id: number) => {
     const myTotals = summary.value?.myTotals as Record<number, number> | undefined;
     const current = myTotals?.[id] ?? 0;
@@ -248,8 +251,7 @@ const placeBet = async (targetId: number) => {
                 <button class="close-button" type="button" @click="navigate">창 닫기</button>
             </RouterLink>
             <small>
-                삼국지 모의전투 HiDCHe / KOEI의 이미지를 사용, 응용하였습니다 / 제작 :
-                HideD(hided62@gmail.com) / Credit
+                삼국지 모의전투 HiDCHe / KOEI의 이미지를 사용, 응용하였습니다 / 제작 : HideD(hided62@gmail.com) / Credit
             </small>
         </footer>
     </main>

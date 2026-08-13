@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { formatServerDateTime, serverDateTimeInputToIso } from '@sammo-ts/common';
 import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue';
 
 import ServerProfileTabs from '../components/ServerProfileTabs.vue';
@@ -211,21 +212,11 @@ const sourceHelp = computed(() =>
 );
 
 const toIso = (value: string): string | undefined => {
-    if (!value) {
-        return undefined;
-    }
-    const parsed = new Date(value);
-    return Number.isNaN(parsed.getTime()) ? undefined : parsed.toISOString();
+    return serverDateTimeInputToIso(value);
 };
 
-const formatTime = (value?: string): string => (value ? new Date(value).toLocaleString('ko-KR') : '-');
-const formatLogTime = (value: string): string =>
-    new Date(value).toLocaleTimeString('ko-KR', {
-        hour12: false,
-        hour: '2-digit',
-        minute: '2-digit',
-        second: '2-digit',
-    });
+const formatTime = (value?: string): string => formatServerDateTime(value, { fallback: '-' });
+const formatLogTime = (value: string): string => formatServerDateTime(value, { format: 'timeSeconds' });
 const shortSha = (value?: string): string => (value ? value.slice(0, 12) : '-');
 
 const clearStatus = () => {
@@ -945,7 +936,7 @@ onBeforeUnmount(() => {
 
                     <div v-if="mode === 'scenario'" class="grid gap-4 md:grid-cols-3">
                         <label class="text-xs text-zinc-400"
-                            >작업 예약
+                            >작업 예약 (서버 시간 UTC+9)
                             <input
                                 v-model="form.scheduledAt"
                                 type="datetime-local"
@@ -953,7 +944,7 @@ onBeforeUnmount(() => {
                             />
                         </label>
                         <label class="text-xs text-zinc-400"
-                            >가오픈
+                            >가오픈 (서버 시간 UTC+9)
                             <input
                                 v-model="form.preopenAt"
                                 type="datetime-local"
@@ -961,7 +952,7 @@ onBeforeUnmount(() => {
                             />
                         </label>
                         <label class="text-xs text-zinc-400"
-                            >정식 오픈
+                            >정식 오픈 (서버 시간 UTC+9)
                             <input
                                 v-model="form.openAt"
                                 type="datetime-local"
@@ -1236,10 +1227,7 @@ onBeforeUnmount(() => {
                     <span class="text-xs text-zinc-500">3초마다 상태 갱신</span>
                 </div>
                 <div class="overflow-x-auto">
-                    <table
-                        class="w-full min-w-[1300px] table-fixed text-left text-sm"
-                        data-testid="operations-table"
-                    >
+                    <table class="w-full min-w-[1300px] table-fixed text-left text-sm" data-testid="operations-table">
                         <colgroup>
                             <col style="width: 160px" />
                             <col style="width: 264px" />

@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { formatServerDateTime, serverDateTimeInputToIso, toServerDateTimeInputValue } from '@sammo-ts/common';
 import { computed, onMounted, ref, watch } from 'vue';
 import ServerProfileTabs from '../components/ServerProfileTabs.vue';
 import AdminConsoleLayout from '../layouts/AdminConsoleLayout.vue';
@@ -435,8 +436,7 @@ const runtimeActionStatusClass = (status: AdminProfile['runtimeActions'][number]
 const isRuntimeActionTerminal = (status: AdminProfile['runtimeActions'][number]['status']): boolean =>
     status === 'APPLIED' || status === 'FAILED' || status === 'IGNORED';
 
-const formatRuntimeActionTime = (value: string | null): string =>
-    value ? new Date(value).toLocaleString('ko-KR') : '';
+const formatRuntimeActionTime = (value: string | null): string => formatServerDateTime(value);
 
 const userLookupMode = ref<'username' | 'id' | 'email'>('username');
 const userLookupValue = ref('');
@@ -630,14 +630,7 @@ const ensureProfileBuffers = (profile: AdminProfile) => {
     }
 };
 
-const toLocalInputValue = (value: string): string => {
-    const date = new Date(value);
-    if (Number.isNaN(date.getTime())) return '';
-    const pad = (part: number): string => String(part).padStart(2, '0');
-    return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(
-        date.getMinutes()
-    )}`;
-};
+const toLocalInputValue = (value: string): string => toServerDateTimeInputValue(value);
 
 const loadProfiles = async () => {
     profilesLoading.value = true;
@@ -795,7 +788,7 @@ const requestProfileAction = async (profileName: string, action: AdminAction) =>
     const durationValue = durationMinutes && validDuration(profileName) ? durationMinutes : undefined;
     const scheduledAt =
         action === 'RESET_SCHEDULED' && actionState?.scheduledAt
-            ? new Date(actionState.scheduledAt).toISOString()
+            ? serverDateTimeInputToIso(actionState.scheduledAt)
             : undefined;
     const reason = actionState?.reason.trim() || undefined;
     let runtimeActionId: string | undefined;
@@ -952,7 +945,7 @@ const updateKakaoGrace = async (clear = false) => {
     try {
         const result = await adminClient.users.updateKakaoGrace.mutate({
             userId: userResult.value.id,
-            until: clear || !kakaoGraceUntil.value ? null : new Date(kakaoGraceUntil.value).toISOString(),
+            until: clear || !kakaoGraceUntil.value ? null : (serverDateTimeInputToIso(kakaoGraceUntil.value) ?? null),
             reason,
         });
         userResult.value = {
@@ -983,7 +976,9 @@ const grantSpecialAccess = async () => {
                 .map((profile) => profile.trim())
                 .filter(Boolean),
             allowsGeneralCreation: specialAccessAllowsGeneralCreation.value,
-            expiresAt: specialAccessExpiresAt.value ? new Date(specialAccessExpiresAt.value).toISOString() : null,
+            expiresAt: specialAccessExpiresAt.value
+                ? (serverDateTimeInputToIso(specialAccessExpiresAt.value) ?? null)
+                : null,
             reason,
         });
         const policy = await adminClient.users.getKakaoGracePolicies.query({ userId: userResult.value.id });
@@ -1071,7 +1066,7 @@ const applyBan = async () => {
     }
     const reason = requireUserActionReason();
     if (!reason) return;
-    const until = banUntil.value ? new Date(banUntil.value).toISOString() : null;
+    const until = banUntil.value ? (serverDateTimeInputToIso(banUntil.value) ?? null) : null;
     const patch = {
         bannedUntil: until,
         notes: banReason.value.trim() || undefined,
@@ -1150,7 +1145,7 @@ const applyRestriction = async () => {
         .filter(Boolean);
     const restriction = {
         blockedFeatures: features.length ? features : undefined,
-        until: restrictionUntil.value ? new Date(restrictionUntil.value).toISOString() : undefined,
+        until: restrictionUntil.value ? serverDateTimeInputToIso(restrictionUntil.value) : undefined,
         reason: restrictionReason.value.trim() || undefined,
         notes: restrictionNotes.value.trim() || undefined,
     };
@@ -1213,7 +1208,7 @@ const scheduleDeleteUser = async () => {
             reason,
         });
         userResult.value = { ...userResult.value, deleteAfter: result.deleteAfter };
-        forceDeleteStatus.value = `탈퇴 예약 완료: ${new Date(result.deleteAfter).toLocaleString('ko-KR')}`;
+        forceDeleteStatus.value = `탈퇴 예약 완료: ${formatServerDateTime(result.deleteAfter)}`;
         await Promise.all([refreshUserHistory(), loadUserDirectory()]);
     } catch (error) {
         forceDeleteStatus.value = '탈퇴 예약 실패';
@@ -1357,7 +1352,7 @@ onMounted(() => {
                                     <span class="block truncate">{{ user.email || '이메일 없음' }}</span>
                                     <span
                                         >{{ user.oauthType }} ·
-                                        {{ new Date(user.createdAt).toLocaleDateString('ko-KR') }}</span
+                                        {{ formatServerDateTime(user.createdAt, { format: 'date' }) }}</span
                                     >
                                 </span>
                                 <span class="flex flex-wrap gap-1 md:justify-end">
@@ -1436,15 +1431,17 @@ onMounted(() => {
                             </div>
                             <div class="text-xs text-zinc-500">
                                 Kakao 인증: {{ userResult.kakaoVerifiedAt ? '완료' : '미완료' }} · 유예 시작:
-                                {{ new Date(userResult.kakaoGraceStartedAt).toLocaleString('ko-KR') }}
+                                {{ formatServerDateTime(userResult.kakaoGraceStartedAt) }}
                             </div>
                             <div v-if="userResult.kakaoGraceUntil" class="text-xs text-amber-300">
-                                관리자 유예: {{ new Date(userResult.kakaoGraceUntil).toLocaleString('ko-KR') }}까지
+                                관리자 유예: {{ formatServerDateTime(userResult.kakaoGraceUntil) }}까지
                             </div>
                             <div v-if="userResult.deleteAfter" class="text-xs text-red-300">
-                                탈퇴 예약: {{ new Date(userResult.deleteAfter).toLocaleString('ko-KR') }}
+                                탈퇴 예약: {{ formatServerDateTime(userResult.deleteAfter) }}
                             </div>
-                            <div class="text-xs text-zinc-500">가입일: {{ userResult.createdAt }}</div>
+                            <div class="text-xs text-zinc-500">
+                                가입일: {{ formatServerDateTime(userResult.createdAt) }}
+                            </div>
                             <div class="text-xs text-zinc-400 mt-2">제재 상태</div>
                             <pre class="text-[11px] text-zinc-400 bg-black/50 p-2 rounded whitespace-pre-wrap"
                                 >{{ JSON.stringify(userResult.sanctions, null, 2) }}
@@ -1632,7 +1629,8 @@ onMounted(() => {
                         <h4 class="text-base font-semibold">Kakao 없는 특수 계정 접근</h4>
                         <div class="text-xs text-zinc-400">
                             운영자 role은 자동으로 모든 서버에 접근합니다. 테스트·복구·기타 계정은 아래에서 서버 범위와
-                            만료를 명시해 부여합니다. 복구 자격은 만료가 필수이며 최대 90일입니다.
+                            만료를 명시해 부여합니다. 복구 자격은 만료가 필수이며 최대 90일입니다. 시각 입력은 서버 시간
+                            UTC+9 기준입니다.
                         </div>
                         <div class="grid grid-cols-1 md:grid-cols-2 gap-2">
                             <select
@@ -1696,11 +1694,11 @@ onMounted(() => {
                                 </div>
                                 <div>
                                     장수 생성 {{ grant.allowsGeneralCreation ? '허용' : '차단' }} · 만료
-                                    {{ grant.expiresAt ? new Date(grant.expiresAt).toLocaleString('ko-KR') : '없음' }}
+                                    {{ formatServerDateTime(grant.expiresAt, { fallback: '없음' }) }}
                                 </div>
                                 <div class="text-zinc-500">부여 사유: {{ grant.reason }}</div>
                                 <div v-if="grant.revokedAt" class="text-red-300">
-                                    해제됨: {{ new Date(grant.revokedAt).toLocaleString('ko-KR') }} ·
+                                    해제됨: {{ formatServerDateTime(grant.revokedAt) }} ·
                                     {{ grant.revokedReason }}
                                 </div>
                             </div>
@@ -1713,7 +1711,8 @@ onMounted(() => {
                     >
                         <h4 class="text-base font-semibold">Kakao 인증 유예</h4>
                         <div class="text-xs text-zinc-500">
-                            기본·서버별 유예가 끝난 사용자를 예외적으로 더 허용할 때 사용합니다.
+                            기본·서버별 유예가 끝난 사용자를 예외적으로 더 허용할 때 사용합니다. 시각 입력은 서버 시간
+                            UTC+9 기준입니다.
                         </div>
                         <div class="flex flex-col md:flex-row gap-2">
                             <input
@@ -1762,11 +1761,7 @@ onMounted(() => {
                                         <td class="text-center">{{ policy.accessGraceDays }}일</td>
                                         <td class="text-center">{{ policy.specialAccess?.kind ?? '-' }}</td>
                                         <td class="text-center">
-                                            {{
-                                                policy.graceEndsAt
-                                                    ? new Date(policy.graceEndsAt).toLocaleString('ko-KR')
-                                                    : '-'
-                                            }}
+                                            {{ policy.graceEndsAt ? formatServerDateTime(policy.graceEndsAt) : '-' }}
                                         </td>
                                     </tr>
                                 </tbody>
@@ -1778,7 +1773,7 @@ onMounted(() => {
                         v-if="userWorkspaceSection === 'restrictions'"
                         class="bg-zinc-900 border border-zinc-800 rounded-lg p-5 space-y-4"
                     >
-                        <h4 class="text-base font-semibold">유저 차단</h4>
+                        <h4 class="text-base font-semibold">유저 차단 (서버 시간 UTC+9)</h4>
                         <div class="flex flex-col gap-2">
                             <input
                                 v-model="banUntil"
@@ -1817,7 +1812,7 @@ onMounted(() => {
                         v-if="userWorkspaceSection === 'restrictions'"
                         class="bg-zinc-900 border border-zinc-800 rounded-lg p-5 space-y-4"
                     >
-                        <h4 class="text-base font-semibold">서버별 기능 제재</h4>
+                        <h4 class="text-base font-semibold">서버별 기능 제재 (서버 시간 UTC+9)</h4>
                         <div class="grid gap-2">
                             <input
                                 v-model="restrictionProfile"
@@ -1936,9 +1931,7 @@ onMounted(() => {
                                     >
                                         {{ event.outcome }} · {{ event.action }}
                                     </span>
-                                    <span class="text-zinc-500">{{
-                                        new Date(event.createdAt).toLocaleString('ko-KR')
-                                    }}</span>
+                                    <span class="text-zinc-500">{{ formatServerDateTime(event.createdAt) }}</span>
                                 </div>
                                 <div class="text-zinc-400">
                                     {{ event.actorUsername }} · {{ event.reason ?? '사유 없음' }}
@@ -1988,9 +1981,7 @@ onMounted(() => {
                                     >
                                         {{ event.outcome }} · {{ event.action }}
                                     </span>
-                                    <span class="text-zinc-500">{{
-                                        new Date(event.createdAt).toLocaleString('ko-KR')
-                                    }}</span>
+                                    <span class="text-zinc-500">{{ formatServerDateTime(event.createdAt) }}</span>
                                 </div>
                                 <div class="text-zinc-400">
                                     {{ event.actorUsername }} · {{ event.targetType ?? '-' }}
