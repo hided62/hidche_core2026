@@ -18,6 +18,8 @@ const general = {
     stats: { leadership: 70, strength: 60, intelligence: 50 },
     experienceLevel: 9,
     dedicationLevel: 1,
+    dedicationText: '30품관',
+    bill: 600,
     injury: 0,
     gold: 1000,
     rice: 2000,
@@ -27,6 +29,24 @@ const general = {
     belong: 1,
     refreshScoreTotal: 10,
     permission: 'normal',
+};
+const otherGeneral = {
+    ...general,
+    id: 2,
+    name: '다른장수',
+    npcState: 1,
+    stats: { leadership: 40, strength: 80, intelligence: 65 },
+    experienceLevel: 12,
+    dedicationLevel: 3,
+    dedicationText: '28품관',
+    bill: 1000,
+    gold: 3000,
+    rice: 500,
+    personality: { key: '용장', name: '용장', info: '공격적인 성격' },
+    specialDomestic: { key: '상재', name: '상재', info: '상업 특기' },
+    specialWar: { key: '돌격', name: '돌격', info: '전투 특기' },
+    belong: 4,
+    refreshScoreTotal: 20,
 };
 const install = async (page: Page, secretAllowed = true) => {
     await page.addInitScript((profile) => {
@@ -42,7 +62,7 @@ const install = async (page: Page, secretAllowed = true) => {
                 return response({
                     nation: { id: 1, name: '위', color: '#008000', level: 3 },
                     viewer: { generalId: 1, permission: 0 },
-                    generals: [general],
+                    generals: [general, otherGeneral],
                 });
             if (operation === 'nation.getSecretGeneralList') {
                 if (!secretAllowed)
@@ -108,19 +128,91 @@ test('nation generals keeps the 1000px legacy grid and redacted member columns',
     await page.setViewportSize({ width: 1200, height: 900 });
     await page.goto('nation/generals');
     await expect(page.locator('#nation-general-list')).toContainText('테스트장수');
-    await expect(page.locator('#nation-general-list')).toContainText('?');
     const computed = await page.locator('.general-page').evaluate((element) => {
         const rect = element.getBoundingClientRect();
         const style = getComputedStyle(element);
         return { x: rect.x, width: rect.width, fontSize: style.fontSize, fontFamily: style.fontFamily };
     });
-    expect(computed).toMatchObject({ x: 100, width: 1000, fontSize: '16px' });
-    expect(computed.fontFamily).toContain('Times New Roman');
+    expect(computed).toMatchObject({ x: 100, width: 1000, fontSize: '14px' });
+    expect(computed.fontFamily).toContain('Pretendard');
     expect(await page.locator('#nation-general-list').evaluate((el) => getComputedStyle(el).borderCollapse)).toBe(
         'separate'
     );
-    expect((await page.locator('#nation-general-list').boundingBox())?.width).toBe(1030);
-    expect((await page.locator('#nation-general-list tbody tr').boundingBox())?.height).toBe(66);
+    expect((await page.locator('#nation-general-list').boundingBox())?.width).toBe(1000);
+    expect((await page.locator('#nation-general-list tbody tr').first().boundingBox())?.height).toBe(68);
+    await page.getByRole('button', { name: '보기 모드⌄' }).click();
+    await page.getByRole('button', { name: '전투', exact: true }).click();
+    await expect(page.locator('#nation-general-list')).toContainText('?');
+});
+
+test('nation generals restores Ref group, saved view, sort, and Korean search behavior', async ({ page }, testInfo) => {
+    await install(page);
+    await page.setViewportSize({ width: 1200, height: 900 });
+    await page.goto('nation/generals');
+    const table = page.locator('#nation-general-list');
+    await page.screenshot({ path: testInfo.outputPath('core-initial.png'), fullPage: true });
+
+    const statGroupButton = page.getByRole('button', { name: '능력치 접기' });
+    await expect(statGroupButton).toHaveAttribute('aria-expanded', 'true');
+    expect(await statGroupButton.evaluate((el) => getComputedStyle(el).backgroundColor)).toBe('rgba(0, 0, 0, 0)');
+    await statGroupButton.hover();
+    expect(await statGroupButton.evaluate((el) => getComputedStyle(el).backgroundColor)).toBe('rgb(48, 54, 56)');
+    await statGroupButton.focus();
+    await expect(statGroupButton).toBeFocused();
+    expect(await statGroupButton.evaluate((el) => getComputedStyle(el).outlineStyle)).toBe('solid');
+    await statGroupButton.click();
+    await page.screenshot({ path: testInfo.outputPath('core-stat-collapsed.png'), fullPage: true });
+    await expect(page.getByRole('button', { name: '능력치 펼치기' })).toHaveAttribute('aria-expanded', 'false');
+    await expect(table.locator('thead')).toContainText('통|무|지');
+    await expect(table.locator('tr[data-general-id="1"]')).toContainText('70|60|50');
+
+    await page.getByRole('button', { name: '능력치 펼치기' }).click();
+    await page.getByLabel('장수명 필터').fill('ㅌㅅㅌㅈㅅ');
+    await expect(table.locator('tr[data-general-id="1"]')).toBeVisible();
+    await expect(table.locator('tr[data-general-id="2"]')).toHaveCount(0);
+    await page.getByLabel('장수명 필터').fill('');
+    await page.getByLabel('통솔 필터').fill('>= 60');
+    await expect(table.locator('tr[data-general-id="1"]')).toBeVisible();
+    await expect(table.locator('tr[data-general-id="2"]')).toHaveCount(0);
+    await page.getByLabel('통솔 필터').fill('');
+
+    await page.getByRole('button', { name: '통솔 정렬' }).click();
+    await expect(table.locator('tbody tr[data-general-id]').first()).toHaveAttribute('data-general-id', '1');
+    await page.getByRole('button', { name: '통솔 정렬' }).click();
+    await expect(table.locator('tbody tr[data-general-id]').first()).toHaveAttribute('data-general-id', '2');
+
+    await page.getByRole('button', { name: '능력치 접기' }).click();
+    await page.getByRole('button', { name: '열 선택⌄' }).click();
+    await page.getByLabel('쌀', { exact: true }).uncheck();
+    await expect(page.getByRole('button', { name: '쌀 정렬' })).toHaveCount(0);
+    await page.getByRole('button', { name: '보기 모드⌄' }).click();
+    page.once('dialog', async (dialog) => {
+        expect(dialog.type()).toBe('prompt');
+        await dialog.accept('내 보기');
+    });
+    await page.getByRole('button', { name: /보관하기/ }).click();
+    await expect
+        .poll(() =>
+            page.evaluate(() => ({
+                settings: localStorage.getItem('GeneralListDisplaySetting'),
+                last: localStorage.getItem('LastUsedSettingsKey_pageNationGeneral'),
+            }))
+        )
+        .toMatchObject({ settings: expect.stringContaining('내 보기'), last: '[false,"내 보기"]' });
+
+    await page.reload();
+    await expect(page.getByRole('button', { name: '능력치 펼치기' })).toHaveAttribute('aria-expanded', 'false');
+    await expect(page.getByRole('button', { name: '쌀 정렬' })).toHaveCount(0);
+    await page.getByRole('button', { name: '보기 모드⌄' }).click();
+    await expect(page.getByRole('button', { name: '내 보기', exact: true })).toBeVisible();
+    page.once('dialog', async (dialog) => {
+        expect(dialog.type()).toBe('confirm');
+        await dialog.accept();
+    });
+    await page.getByRole('button', { name: '내 보기 설정 삭제' }).click();
+    await expect
+        .poll(() => page.evaluate(() => localStorage.getItem('GeneralListDisplaySetting')))
+        .not.toContain('내 보기');
 });
 
 test('both pages preserve the legacy 1000px overflow contract at 500px', async ({ page }) => {
