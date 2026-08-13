@@ -3,7 +3,7 @@ import { computed } from 'vue';
 
 import SkeletonLines from '../ui/SkeletonLines.vue';
 import LegacyProgressBar from '../ui/LegacyProgressBar.vue';
-import { formatSeoulHourMinute } from '../../utils/legacyDateTime';
+import { formatSeoulTimeSeconds } from '../../utils/legacyDateTime';
 import { legacyExperiencePercent, ratioPercent } from '../../utils/legacyProgress';
 import { DEFAULT_GENERAL_ICON_URL, resolveGeneralIconBackgroundImage } from '../../utils/generalIcon';
 import { configuredGameAssetUrl } from '../../utils/imageAssets';
@@ -29,6 +29,18 @@ interface ItemDisplayNames {
     item?: string | null;
 }
 
+interface GeneralTroopDisplay {
+    name: string;
+    status: 'inactive' | 'present' | 'away';
+    leaderCityName?: string | null;
+}
+
+interface GeneralRefreshScore {
+    current: number;
+    total: number;
+    text: string;
+}
+
 interface GeneralInfo {
     id: number;
     name: string;
@@ -37,6 +49,9 @@ interface GeneralInfo {
     npcState: number;
     officerLevel: number;
     officerLevelText: string;
+    officerCityName?: string | null;
+    generalType?: string;
+    leadershipBonus?: number;
     stats: GeneralStats;
     gold: number;
     rice: number;
@@ -47,8 +62,14 @@ interface GeneralInfo {
     experience: number;
     dedication: number;
     age?: number;
+    retirementYear?: number;
     turnTime?: string | null;
+    defenceTrain?: number;
+    killTurn?: number;
+    remainingMinutes?: number | null;
     troopId?: number;
+    troop?: GeneralTroopDisplay | null;
+    refreshScore?: GeneralRefreshScore;
     crewTypeId?: number;
     crewTypeName?: string;
     traits?: { personal: string; specialWar: string; specialDomestic: string };
@@ -87,14 +108,22 @@ const statRows = computed(() => {
         {
             key: 'leadership',
             label: '통솔',
-            value: general.stats.leadership,
+            value: Math.round((general.stats.leadership * (100 - general.injury)) / 100),
+            bonus: general.leadershipBonus ?? 0,
             accumulated: accumulated?.leadership ?? 0,
         },
-        { key: 'strength', label: '무력', value: general.stats.strength, accumulated: accumulated?.strength ?? 0 },
+        {
+            key: 'strength',
+            label: '무력',
+            value: Math.round((general.stats.strength * (100 - general.injury)) / 100),
+            bonus: 0,
+            accumulated: accumulated?.strength ?? 0,
+        },
         {
             key: 'intelligence',
             label: '지력',
-            value: general.stats.intelligence,
+            value: Math.round((general.stats.intelligence * (100 - general.injury)) / 100),
+            bonus: 0,
             accumulated: accumulated?.intelligence ?? 0,
         },
     ].map((entry) => ({ ...entry, limit, percent: ratioPercent(entry.accumulated, limit) }));
@@ -119,9 +148,9 @@ const crewTypeIconBackground = computed(() => {
 
 const injuryInfo = computed(() => {
     const injury = props.general?.injury ?? 0;
-    if (injury > 60) return { text: '위독', color: '#ff4d4f' };
+    if (injury > 60) return { text: '위독', color: '#ff0000' };
     if (injury > 40) return { text: '심각', color: '#ff00ff' };
-    if (injury > 20) return { text: '중상', color: '#ff9f1a' };
+    if (injury > 20) return { text: '중상', color: '#ffa500' };
     if (injury > 0) return { text: '경상', color: '#ffff00' };
     return { text: '건강', color: '#ffffff' };
 });
@@ -143,20 +172,40 @@ const titleStyle = computed(() => {
 });
 
 const ageColor = computed(() => {
-    const age = props.general?.age;
-    if (age === undefined) return '#ffffff';
-    if (age < 53) return '#32cd32';
-    if (age < 70) return '#ffff00';
-    return '#ff4d4f';
+    const general = props.general;
+    const age = general?.age;
+    if (!general || age === undefined) return '#ffffff';
+    const retirementYear = general.retirementYear ?? 70;
+    if (age < retirementYear * 0.75) return '#32cd32';
+    if (age < retirementYear) return '#ffff00';
+    return '#ff0000';
 });
 
-const displayTroop = computed(() => props.troopText ?? (props.general?.troopId ? String(props.general.troopId) : '-'));
-const displayPenalty = computed(() => {
-    const penalty = props.penaltyText ?? '-';
-    const dedication = props.general?.progression?.dedicationText ?? '무품관';
-    return `${penalty} · 계급 ${dedication}`;
+const displayTroop = computed<GeneralTroopDisplay | null>(() => {
+    if (props.general?.troop) return props.general.troop;
+    if (props.troopText && props.troopText !== '-') {
+        return { name: props.troopText, status: 'present' };
+    }
+    return null;
 });
-const displayDefence = computed(() => props.defenceText ?? '-');
+const displayPenalty = computed(() => {
+    const refreshScore = props.general?.refreshScore;
+    if (refreshScore) {
+        return `${refreshScore.text} ${refreshScore.total.toLocaleString('ko-KR')}점(${refreshScore.current})`;
+    }
+    const penalty = props.penaltyText ?? '-';
+    return String(penalty);
+});
+const displayDefence = computed(() => {
+    if (props.general?.defenceTrain !== undefined) {
+        return props.general.defenceTrain === 999
+            ? { text: '수비 안함', active: false }
+            : { text: `수비 함(훈사${props.general.defenceTrain})`, active: true };
+    }
+    return { text: props.defenceText ?? '-', active: null };
+});
+const displayKillTurn = computed(() => props.general?.killTurn ?? props.killTurn);
+const displayRemainingMinutes = computed(() => props.general?.remainingMinutes ?? props.remainingMinutes);
 const specialText = computed(() => {
     const traits = props.general?.traits;
     return traits ? `${traits.specialDomestic || '-'} / ${traits.specialWar || '-'}` : '-';
@@ -178,15 +227,20 @@ const specialText = computed(() => {
                     :style="{ backgroundImage: generalIconBackground }"
                 />
                 <div class="general-title battle-general-name" :style="titleStyle">
-                    {{ props.general.name }} 【 {{ props.general.officerLevelText }} |
-                    <span :style="{ color: injuryInfo.color }">{{ injuryInfo.text }}</span> 】 다음 턴
-                    {{ props.general.turnTime ? formatSeoulHourMinute(props.general.turnTime) : '-' }}
+                    {{ props.general.name }} 【
+                    <template v-if="props.general.officerCityName">{{ props.general.officerCityName }} </template>
+                    {{ props.general.officerLevelText }} | {{ props.general.generalType ?? '-' }} |
+                    <span :style="{ color: injuryInfo.color }">{{ injuryInfo.text }}</span> 】
+                    <span data-general-turn-time>{{
+                        props.general.turnTime ? formatSeoulTimeSeconds(props.general.turnTime) : '-'
+                    }}</span>
                 </div>
 
                 <template v-for="stat of statRows" :key="stat.key">
                     <span class="cell-label">{{ stat.label }}</span>
-                    <strong class="stat-value">
+                    <strong class="stat-value" :style="{ color: injuryInfo.color }">
                         <span>{{ stat.value }}</span>
+                        <span v-if="stat.bonus > 0" class="leadership-bonus">+{{ stat.bonus }}</span>
                         <span class="bar-cell" :data-stat-progress="stat.key">
                             <LegacyProgressBar
                                 :percent="stat.percent"
@@ -230,16 +284,32 @@ const specialText = computed(() => {
                 <strong class="age-value" :style="{ color: ageColor }">{{ props.general.age ?? '-' }}세</strong>
 
                 <span class="cell-label defence-label">수비</span>
-                <strong class="defence-value">{{ displayDefence }}</strong>
+                <strong
+                    class="defence-value"
+                    :class="{
+                        'defence-value--active': displayDefence.active === true,
+                        'defence-value--inactive': displayDefence.active === false,
+                    }"
+                    >{{ displayDefence.text }}</strong
+                >
                 <span class="cell-label kill-label">삭턴</span>
-                <strong class="kill-value">{{ props.killTurn === null ? '-' : `${props.killTurn} 턴` }}</strong>
+                <strong class="kill-value">{{ displayKillTurn === null ? '-' : `${displayKillTurn} 턴` }}</strong>
                 <span class="cell-label execute-label">실행</span>
                 <strong class="execute-value">{{
-                    props.remainingMinutes === null ? '-' : `${props.remainingMinutes}분 남음`
+                    displayRemainingMinutes === null ? '-' : `${displayRemainingMinutes}분 남음`
                 }}</strong>
 
                 <span class="cell-label troop-label">부대</span>
-                <strong class="troop-value">{{ displayTroop }}</strong>
+                <strong class="troop-value">
+                    <s v-if="displayTroop?.status === 'inactive'" class="troop-value--inactive">{{
+                        displayTroop.name
+                    }}</s>
+                    <span v-else-if="displayTroop?.status === 'away'" class="troop-value--away">
+                        {{ displayTroop.name
+                        }}<template v-if="displayTroop.leaderCityName">({{ displayTroop.leaderCityName }})</template>
+                    </span>
+                    <span v-else>{{ displayTroop?.name ?? '-' }}</span>
+                </strong>
                 <span class="cell-label penalty-label">벌점</span>
                 <strong class="penalty-value">{{ displayPenalty }}</strong>
             </div>
@@ -321,9 +391,17 @@ const specialText = computed(() => {
 
 .stat-value {
     display: grid;
-    grid-template-columns: minmax(22px, auto) minmax(26px, 1fr);
+    grid-template-columns: minmax(22px, auto) auto minmax(26px, 1fr);
     align-items: center;
     gap: 2px;
+}
+
+.leadership-bonus {
+    color: #00ffff;
+}
+
+.stat-value > .bar-cell {
+    grid-column: 3;
 }
 
 .bar-cell,
@@ -411,6 +489,22 @@ const specialText = computed(() => {
 .penalty-value {
     grid-column: 5 / 8;
     grid-row: 9;
+}
+
+.defence-value--active {
+    color: #32cd32;
+}
+
+.defence-value--inactive {
+    color: #ff0000;
+}
+
+.troop-value--inactive {
+    color: #808080;
+}
+
+.troop-value--away {
+    color: #ffa500;
 }
 
 .general-loading,

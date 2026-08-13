@@ -4,3 +4,6 @@ export const formatSeoulDateTime = (value: string | Date): string => formatServe
 
 export const formatSeoulHourMinute = (value: string | Date): string =>
     formatServerDateTime(value, { format: 'hourMinute' });
+
+export const formatSeoulTimeSeconds = (value: string | Date): string =>
+    formatServerDateTime(value, { format: 'timeSeconds' });

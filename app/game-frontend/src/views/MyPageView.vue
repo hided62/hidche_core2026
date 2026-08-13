@@ -382,7 +382,6 @@ onMounted(() => {
                     :loading="loading"
                     :nation-color="data?.nation?.color"
                     :defence-text="form.defence_train === 999 ? '수비 안함' : `수비 함(훈사${form.defence_train})`"
-                    :troop-text="data?.general.troopId ? String(data.general.troopId) : '-'"
                     :penalty-text="penalties.length || '-'"
                 >
                     <template v-if="data" #details>
