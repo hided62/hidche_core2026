@@ -1,4 +1,7 @@
-import { loadMapDefinitionByName as loadRuntimeMapDefinitionByName } from '@sammo-ts/game-engine/scenario/mapLoader.js';
+import {
+    loadMapDefinitionByName as loadRuntimeMapDefinitionByName,
+    loadRegionDisplayMapByName as loadRuntimeRegionDisplayMapByName,
+} from '@sammo-ts/game-engine/scenario/mapLoader.js';
 import type { MapDefinition } from '@sammo-ts/logic';
 
 const mapCache = new Map<string, MapDefinition>();
@@ -15,3 +18,6 @@ export const loadMapDefinitionByName = async (mapName: string): Promise<MapDefin
     mapCache.set(mapName, map);
     return map;
 };
+
+export const loadRegionDisplayMapByName = (mapName: string): Promise<Record<number, string>> =>
+    loadRuntimeRegionDisplayMapByName(mapName);
