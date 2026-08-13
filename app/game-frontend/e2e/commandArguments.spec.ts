@@ -565,7 +565,7 @@ test('enters general and nation command arguments and sends exact values', async
     expect(Number.parseFloat(geometry.fontSize)).toBeGreaterThanOrEqual(10);
 });
 
-test('shows Ref recruitment details and preserves the 1000px desktop and 500px mobile information layouts', async ({
+test('uses a Ref-style full recruitment page without horizontal overflow on desktop or mobile', async ({
     page,
 }, testInfo) => {
     const requests = await install(page);
@@ -576,7 +576,10 @@ test('shows Ref recruitment details and preserves the 1000px desktop and 500px m
     let picker = page.getByTestId('command-picker');
     await picker.getByRole('button', { name: '내정', exact: true }).click();
     await picker.getByRole('button', { name: '징병', exact: true }).click();
-    let form = picker.getByTestId('recruitment-command-form');
+    await expect(picker).toHaveAttribute('role', 'dialog');
+    await expect(picker).toHaveAttribute('aria-modal', 'true');
+    await expect(picker.getByRole('button', { name: '명령 입력 닫기', exact: true })).toBeFocused();
+    const form = picker.getByTestId('recruitment-command-form');
     await expect(form).toContainText('현재 기술력 : 1등급');
     await expect(form).toContainText('공격');
     await expect(form).toContainText('방어');
@@ -606,19 +609,23 @@ test('shows Ref recruitment details and preserves the 1000px desktop and 500px m
               })
             : null;
         return {
+            overlay: element.closest('[data-testid="command-picker"]')?.getBoundingClientRect().toJSON(),
             formWidth: element.getBoundingClientRect().width,
             rowHeight: row?.getBoundingClientRect().height ?? 0,
             infoWidth: info?.getBoundingClientRect().width ?? 0,
             imageNaturalSize: naturalSize,
             scrollWidth: element.scrollWidth,
             clientWidth: element.clientWidth,
+            bodyOverflow: getComputedStyle(document.body).overflow,
         };
     });
-    expect(desktopGeometry.formWidth).toBeCloseTo(986, 0);
+    expect(desktopGeometry.overlay).toMatchObject({ x: 0, y: 0, width: 1200, height: 900 });
+    expect(desktopGeometry.formWidth).toBe(1000);
     expect(desktopGeometry.rowHeight).toBeGreaterThanOrEqual(64);
     expect(desktopGeometry.infoWidth).toBeCloseTo(250, 0);
     expect(desktopGeometry.imageNaturalSize).toEqual({ width: 128, height: 128 });
     expect(desktopGeometry.scrollWidth).toBe(desktopGeometry.clientWidth);
+    expect(desktopGeometry.bodyOverflow).toBe('hidden');
 
     const infantry = form.getByRole('button', { name: '보병 선택 가능', exact: true });
     await infantry.getByRole('button', { name: '절반', exact: true }).click();
@@ -628,49 +635,116 @@ test('shows Ref recruitment details and preserves the 1000px desktop and 500px m
     expect(JSON.stringify(requests)).toContain('"crewType":1100');
     expect(JSON.stringify(requests)).toContain('"amount":3500');
 
-    await page.setViewportSize({ width: 390, height: 844 });
+    await page.setViewportSize({ width: 500, height: 844 });
     await page.getByRole('button', { name: '2턴 명령 입력', exact: true }).click();
     picker = page.getByTestId('command-picker');
     await picker.getByRole('button', { name: '내정', exact: true }).click();
     await picker.getByRole('button', { name: '징병', exact: true }).click();
-    form = picker.getByTestId('recruitment-command-form');
-    await page.evaluate(() => window.scrollTo(0, 0));
-    const mobileGeometry = await form.evaluate((element) => {
-        const row = element.querySelector('.crew-row');
-        const image = row?.querySelector('.crew-image');
-        const info = row?.querySelector('.crew-info');
-        const selectedPanel = element.querySelector('.mobile-selected-panel');
+    await expect(picker.getByRole('button', { name: '명령 입력 닫기', exact: true })).toBeFocused();
+    const referenceWidthGeometry = await picker.evaluate((element) => {
+        const formElement = element.querySelector<HTMLElement>('[data-testid="recruitment-command-form"]')!;
+        const row = formElement.querySelector<HTMLElement>('.crew-row')!;
+        const selectedPanel = formElement.querySelector<HTMLElement>('.mobile-selected-panel')!;
         return {
-            formLeft: element.getBoundingClientRect().left,
-            formWidth: element.getBoundingClientRect().width,
-            rowWidth: row?.getBoundingClientRect().width ?? 0,
-            rowHeight: row?.getBoundingClientRect().height ?? 0,
-            imageWidth: image?.getBoundingClientRect().width ?? 0,
-            infoWidth: info?.getBoundingClientRect().width ?? 0,
-            selectedDisplay: selectedPanel ? getComputedStyle(selectedPanel).display : '',
+            overlayWidth: element.getBoundingClientRect().width,
+            rowWidth: row.getBoundingClientRect().width,
+            rowGridColumns: getComputedStyle(row).gridTemplateColumns,
+            selectedWidth: selectedPanel.getBoundingClientRect().width,
+            selectedGridColumns: getComputedStyle(selectedPanel).gridTemplateColumns,
             scrollWidth: element.scrollWidth,
             clientWidth: element.clientWidth,
-            documentScrollWidth: document.documentElement.scrollWidth,
         };
     });
-    expect(mobileGeometry.formLeft).toBe(0);
-    expect(mobileGeometry.formWidth).toBe(500);
-    expect(mobileGeometry.rowWidth).toBe(500);
+    expect(referenceWidthGeometry).toMatchObject({
+        overlayWidth: 500,
+        rowWidth: 500,
+        rowGridColumns: '64px 76px 30px 30px 30px 270px',
+        selectedWidth: 500,
+        selectedGridColumns: '64px 76px 270px 90px',
+        scrollWidth: 500,
+        clientWidth: 500,
+    });
+
+    await page.setViewportSize({ width: 390, height: 844 });
+    const mobileGeometry = await picker.evaluate((element) => {
+        const formElement = element.querySelector<HTMLElement>('[data-testid="recruitment-command-form"]')!;
+        const row = formElement.querySelector('.crew-row');
+        const image = row?.querySelector('.crew-image');
+        const info = row?.querySelector('.crew-info');
+        const selectedPanel = formElement.querySelector('.mobile-selected-panel');
+        const rect = element.getBoundingClientRect();
+        const bottomElement = document.elementFromPoint(window.innerWidth / 2, window.innerHeight - 1);
+        return {
+            overlay: rect.toJSON(),
+            overlayCoversBottom: bottomElement instanceof Element && element.contains(bottomElement),
+            formLeft: formElement.getBoundingClientRect().left,
+            formWidth: formElement.getBoundingClientRect().width,
+            rowWidth: row?.getBoundingClientRect().width ?? 0,
+            rowHeight: row?.getBoundingClientRect().height ?? 0,
+            rowGridColumns: row ? getComputedStyle(row).gridTemplateColumns : '',
+            rowGridRows: row ? getComputedStyle(row).gridTemplateRows : '',
+            imageWidth: image?.getBoundingClientRect().width ?? 0,
+            infoWidth: info?.getBoundingClientRect().width ?? 0,
+            selectedWidth: selectedPanel?.getBoundingClientRect().width ?? 0,
+            selectedDisplay: selectedPanel ? getComputedStyle(selectedPanel).display : '',
+            actionsBottom: element.querySelector<HTMLElement>('.picker-actions')?.getBoundingClientRect().bottom ?? 0,
+            viewportHeight: window.innerHeight,
+            scrollWidth: element.scrollWidth,
+            clientWidth: element.clientWidth,
+            bodyOverflow: getComputedStyle(document.body).overflow,
+        };
+    });
+    expect(mobileGeometry.overlay).toMatchObject({ x: 0, y: 0, width: 390, height: 844 });
+    expect(mobileGeometry.overlayCoversBottom).toBe(true);
+    expect(mobileGeometry.rowGridColumns).toBe('64px 76px 30px 30px 30px 160px');
+    expect(mobileGeometry).toMatchObject({
+        formLeft: 0,
+        formWidth: 390,
+        rowWidth: 390,
+        imageWidth: 64,
+        selectedWidth: 390,
+        selectedDisplay: 'grid',
+        actionsBottom: 844,
+        viewportHeight: 844,
+        bodyOverflow: 'hidden',
+    });
     expect(mobileGeometry.rowHeight).toBeGreaterThanOrEqual(64);
-    expect(mobileGeometry.rowHeight).toBeLessThanOrEqual(66);
-    expect(mobileGeometry.imageWidth).toBe(64);
-    expect(mobileGeometry.infoWidth).toBe(270);
-    expect(mobileGeometry.selectedDisplay).toBe('grid');
+    expect(mobileGeometry.infoWidth).toBeGreaterThanOrEqual(150);
     expect(mobileGeometry.scrollWidth).toBe(mobileGeometry.clientWidth);
-    expect(mobileGeometry.documentScrollWidth).toBeGreaterThanOrEqual(500);
+
+    await page.setViewportSize({ width: 390, height: 360 });
+    await picker.evaluate((element) => (element.scrollTop = 160));
+    const stickyGeometry = await picker.evaluate((element) => {
+        const header = element.querySelector<HTMLElement>(':scope > header')!;
+        const listFront = element.querySelector<HTMLElement>('.recruitment-list-front')!;
+        const actions = element.querySelector<HTMLElement>('.picker-actions')!;
+        return {
+            scrollTop: element.scrollTop,
+            headerTop: header.getBoundingClientRect().top,
+            listFrontTop: listFront.getBoundingClientRect().top,
+            actionsBottom: actions.getBoundingClientRect().bottom,
+            viewportHeight: window.innerHeight,
+        };
+    });
+    expect(stickyGeometry.scrollTop).toBeGreaterThan(0);
+    expect(stickyGeometry.headerTop).toBe(0);
+    expect(stickyGeometry.listFrontTop).toBeGreaterThanOrEqual(44);
+    expect(stickyGeometry.actionsBottom).toBe(stickyGeometry.viewportHeight);
+
+    await page.setViewportSize({ width: 390, height: 844 });
+    await picker.evaluate((element) => (element.scrollTop = 0));
     await page.screenshot({ path: testInfo.outputPath('recruitment-mobile.png') });
 
     await picker.getByRole('button', { name: '명령 다시 선택', exact: true }).click();
+    await expect.poll(() => page.evaluate(() => getComputedStyle(document.body).overflow)).not.toBe('hidden');
     await picker.getByRole('button', { name: '내정', exact: true }).click();
     await picker.getByRole('button', { name: '모병', exact: true }).click();
     const mercenaryForm = picker.getByTestId('recruitment-command-form');
     await expect(mercenaryForm).toContainText('모병은 가격 2배의 자금이 소요됩니다.');
     await expect(mercenaryForm.locator('.mobile-selected-panel output')).toHaveText('1,346금');
+    await page.keyboard.press('Escape');
+    await expect(picker).toHaveCount(0);
+    await expect.poll(() => page.evaluate(() => getComputedStyle(document.body).overflow)).not.toBe('hidden');
 });
 
 test('uses the map to choose a nation target in the chief command window', async ({ page }) => {
