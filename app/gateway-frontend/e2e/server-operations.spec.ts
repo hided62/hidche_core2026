@@ -26,6 +26,9 @@ type FixtureState = {
         status: OperationStatus;
         sourceMode?: 'BRANCH' | 'COMMIT';
         sourceRef?: string;
+        resolvedCommitSha?: string;
+        completedAt?: string;
+        error?: string;
         payload: Record<string, unknown>;
         requestedBy: string;
         createdAt: string;
@@ -875,6 +878,131 @@ test('controls gateway deployment and rollback through the external controller q
     await page.getByTestId('request-gateway-rollback').click();
     await expect(page.getByText('Gateway rollback 작업을 등록했습니다.').first()).toBeVisible();
     expect(state.requestBodies.some((entry) => entry.operation === 'admin.releases.requestGatewayRollback')).toBe(true);
+});
+
+test('moves long Gateway release errors out of the table column into an expandable detail row', async ({
+    page,
+}, testInfo) => {
+    const longError = [
+        'Gateway release did not become ready before the timeout.',
+        'Error: gateway-frontend readiness check failed after 30 attempts',
+        '    at waitForGatewayReadiness (/srv/core/release-controller/dist/releaseController.js:842:19)',
+        'controller-output-without-breaks-'.repeat(12),
+    ].join('\n');
+    const operationId = '88888888-8888-4888-8888-888888888888';
+    const state: FixtureState = {
+        operations: [],
+        gatewayOperations: [
+            {
+                id: operationId,
+                type: 'DEPLOY',
+                status: 'FAILED',
+                sourceMode: 'COMMIT',
+                sourceRef: 'cccccccccccccccccccccccccccccccccccccccc',
+                resolvedCommitSha: 'cccccccccccccccccccccccccccccccccccccccc',
+                completedAt: '2026-08-01T02:03:00.000Z',
+                error: longError,
+                payload: {},
+                requestedBy: 'admin',
+                createdAt: '2026-08-01T02:00:00.000Z',
+                updatedAt: '2026-08-01T02:03:00.000Z',
+            },
+        ],
+        gatewayLogsEmpty: true,
+        runtimeRunning: true,
+        requestBodies: [],
+    };
+    await installFixture(page, state);
+
+    await page.goto('admin/releases');
+    const table = page.getByTestId('gateway-release-table');
+    await expect(table.getByRole('columnheader')).toHaveCount(6);
+    await expect(table.getByRole('columnheader', { name: '오류', exact: true })).toHaveCount(0);
+    await expect(table.getByRole('columnheader', { name: '상세', exact: true })).toBeVisible();
+
+    const errorToggle = page.getByTestId('gateway-release-error-toggle');
+    await expect(errorToggle).toHaveText('오류 보기');
+    await expect(errorToggle).toHaveAttribute('aria-expanded', 'false');
+    await expect(page.getByTestId('gateway-release-error-detail')).toBeHidden();
+
+    await errorToggle.focus();
+    const focusedToggleStyle = await errorToggle.evaluate((element) => {
+        const style = getComputedStyle(element);
+        return {
+            outlineStyle: style.outlineStyle,
+            outlineWidth: style.outlineWidth,
+            color: style.color,
+        };
+    });
+    expect(focusedToggleStyle.outlineStyle).not.toBe('none');
+    expect(parseFloat(focusedToggleStyle.outlineWidth)).toBeGreaterThanOrEqual(2);
+
+    await errorToggle.hover();
+    await errorToggle.click();
+    await expect(errorToggle).toHaveText('오류 닫기');
+    await expect(errorToggle).toHaveAttribute('aria-expanded', 'true');
+    const errorDetail = page.getByTestId('gateway-release-error-detail');
+    await expect(errorDetail).toContainText('Gateway release did not become ready');
+    await expect(errorDetail).toContainText('controller-output-without-breaks');
+    const desktopGeometry = await table.evaluate((element) => {
+        const headings = Array.from(element.querySelectorAll('thead th'));
+        const detail = element.querySelector('[data-testid="gateway-release-error-detail"]');
+        const detailCell = detail?.querySelector('td');
+        const errorText = detail?.querySelector('pre');
+        return {
+            tableWidth: element.getBoundingClientRect().width,
+            scrollerWidth: element.parentElement?.getBoundingClientRect().width ?? 0,
+            tableLayout: getComputedStyle(element).tableLayout,
+            columnCount: headings.length,
+            detailColSpan: detailCell?.getAttribute('colspan'),
+            detailWidth: detailCell?.getBoundingClientRect().width ?? 0,
+            errorWhiteSpace: errorText ? getComputedStyle(errorText).whiteSpace : '',
+            errorOverflowWrap: errorText ? getComputedStyle(errorText).overflowWrap : '',
+        };
+    });
+    expect(desktopGeometry).toMatchObject({
+        tableLayout: 'fixed',
+        columnCount: 6,
+        detailColSpan: '6',
+        errorWhiteSpace: 'pre-wrap',
+    });
+    expect(desktopGeometry.tableWidth).toBeGreaterThanOrEqual(680);
+    expect(desktopGeometry.detailWidth).toBeGreaterThanOrEqual(desktopGeometry.tableWidth - 1);
+    await page.screenshot({ path: testInfo.outputPath('gateway-release-error-expanded-desktop.png'), fullPage: true });
+
+    await page.setViewportSize({ width: 390, height: 844 });
+    await expect(table.getByRole('columnheader')).toHaveCount(4);
+    await expect(table.getByRole('columnheader', { name: '소스', exact: true })).toHaveCount(0);
+    await expect(table.getByRole('columnheader', { name: '해석 커밋', exact: true })).toHaveCount(0);
+    const mobileGeometry = await table.evaluate((element) => {
+        const scroller = element.parentElement!;
+        const scrollerRect = scroller.getBoundingClientRect();
+        const detailRect = element
+            .querySelector('[data-testid="gateway-release-error-detail"]')!
+            .getBoundingClientRect();
+        return {
+            tableWidth: element.getBoundingClientRect().width,
+            scrollerX: scrollerRect.x,
+            scrollerWidth: scrollerRect.width,
+            scrollerScrollWidth: scroller.scrollWidth,
+            detailWidth: detailRect.width,
+            viewportWidth: document.documentElement.clientWidth,
+            documentScrollWidth: document.documentElement.scrollWidth,
+        };
+    });
+    expect(mobileGeometry.tableWidth).toBeLessThanOrEqual(mobileGeometry.scrollerWidth + 1);
+    expect(mobileGeometry.detailWidth).toBeGreaterThanOrEqual(mobileGeometry.tableWidth - 1);
+    expect(mobileGeometry.scrollerScrollWidth).toBeLessThanOrEqual(mobileGeometry.scrollerWidth + 1);
+    expect(mobileGeometry.scrollerX).toBeGreaterThanOrEqual(0);
+    expect(mobileGeometry.scrollerX + mobileGeometry.scrollerWidth).toBeLessThanOrEqual(
+        mobileGeometry.viewportWidth
+    );
+    expect(mobileGeometry.documentScrollWidth).toBeLessThanOrEqual(mobileGeometry.viewportWidth);
+    await page.screenshot({ path: testInfo.outputPath('gateway-release-error-expanded-mobile.png'), fullPage: true });
+
+    await errorToggle.click();
+    await expect(errorToggle).toHaveAttribute('aria-expanded', 'false');
+    await expect(page.getByTestId('gateway-release-error-detail')).toBeHidden();
 });
 
 test('explains terminal releases created before controller progress logging', async ({ page }) => {
