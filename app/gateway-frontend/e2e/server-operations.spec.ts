@@ -38,6 +38,9 @@ type FixtureState = {
     profileLogsEmpty?: boolean;
     gatewayLogPollCount?: number;
     gatewayLogsEmpty?: boolean;
+    gatewayStateFailuresAfterRequest?: number;
+    gatewayStateFailuresRemaining?: number;
+    gatewayStateFailureCount?: number;
     capabilities?: Array<{ permission: string; scope: 'GLOBAL' | 'PROFILE'; scopes: string[] }>;
     profileListDelayMs?: number;
     profileNavigationDelayMs?: number;
@@ -137,6 +140,19 @@ const installFixture = async (page: Page, state: FixtureState) => {
         }
         if (names.includes('admin.profiles.updateMeta') && state.updateMetaFails) {
             await route.abort('failed');
+            return;
+        }
+        if (
+            names.includes('admin.releases.gatewayState') &&
+            (state.gatewayStateFailuresRemaining ?? 0) > 0
+        ) {
+            state.gatewayStateFailuresRemaining = (state.gatewayStateFailuresRemaining ?? 0) - 1;
+            state.gatewayStateFailureCount = (state.gatewayStateFailureCount ?? 0) + 1;
+            await route.fulfill({
+                status: 502,
+                contentType: 'application/json',
+                body: '',
+            });
             return;
         }
         if (names.includes('admin.operations.logs') && !state.profileLogProgress) {
@@ -337,6 +353,7 @@ const installFixture = async (page: Page, state: FixtureState) => {
                     updatedAt: '2026-08-01T02:00:00.000Z',
                 };
                 state.gatewayOperations = [releaseOperation];
+                state.gatewayStateFailuresRemaining = state.gatewayStateFailuresAfterRequest;
                 return response(releaseOperation);
             }
             if (name === 'admin.operations.requestRuntime') {
@@ -813,7 +830,13 @@ test('scenario-only operator resets the current version without Git or Gateway c
 });
 
 test('controls gateway deployment and rollback through the external controller queue', async ({ page }, testInfo) => {
-    const state: FixtureState = { operations: [], gatewayOperations: [], runtimeRunning: true, requestBodies: [] };
+    const state: FixtureState = {
+        operations: [],
+        gatewayOperations: [],
+        runtimeRunning: true,
+        requestBodies: [],
+        gatewayStateFailuresAfterRequest: 1,
+    };
     await installFixture(page, state);
     page.on('dialog', (dialog) => dialog.accept());
 
@@ -826,6 +849,9 @@ test('controls gateway deployment and rollback through the external controller q
     await page.getByTestId('request-gateway-deploy').click();
 
     await expect(page.getByText(/Gateway 배포 작업을 등록했습니다/).first()).toBeVisible();
+    expect(state.gatewayStateFailureCount).toBe(1);
+    await expect(page.getByTestId('server-operations-page')).not.toContainText('Unexpected end of JSON input');
+    await expect(page.getByTestId('action-toast').filter({ hasText: 'Unexpected end of JSON input' })).toHaveCount(0);
     await expect(page.getByTestId('gateway-release-table')).toContainText('DEPLOY');
     await expect(page.getByTestId('gateway-release-log-panel')).toBeVisible();
     await expect(page.getByTestId('gateway-release-log')).toContainText('Gateway 구성 요소를 빌드합니다.');

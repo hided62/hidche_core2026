@@ -112,6 +112,7 @@ let stateRequestInFlight = false;
 let releaseLogLoopGeneration = 0;
 let profileLogLoopGeneration = 0;
 let componentMounted = false;
+let gatewayReleaseTransitionActive = false;
 
 const form = reactive({
     sourceMode: (props.mode === 'scenario' ? 'CURRENT' : 'BRANCH') as 'CURRENT' | 'BRANCH' | 'COMMIT',
@@ -295,6 +296,7 @@ const loadState = async (quiet = false) => {
             const active = gatewayReleaseOperations.value.find((operation) =>
                 ['QUEUED', 'RUNNING'].includes(operation.status)
             );
+            gatewayReleaseTransitionActive = Boolean(active);
             if (active && selectedGatewayOperationId.value !== active.id) {
                 selectedGatewayOperationId.value = active.id;
             } else if (
@@ -321,7 +323,11 @@ const loadState = async (quiet = false) => {
             }
         }
     } catch (error) {
-        errorMessage.value = error instanceof Error ? error.message : '운영 상태를 불러오지 못했습니다.';
+        // Gateway release가 process를 교체하는 동안에는 background poll의 HTTP 연결이
+        // 일시적으로 끊길 수 있다. 이 경우는 기존 상태를 유지하고 다음 poll에서 복구한다.
+        if (!quiet || props.mode !== 'gateway' || !gatewayReleaseTransitionActive) {
+            errorMessage.value = error instanceof Error ? error.message : '운영 상태를 불러오지 못했습니다.';
+        }
     } finally {
         loading.value = false;
         stateRequestInFlight = false;
@@ -484,6 +490,7 @@ const requestGatewayDeploy = async () => {
             sourceRef: gatewayForm.sourceRef.trim(),
             reason: gatewayForm.reason.trim() || undefined,
         });
+        gatewayReleaseTransitionActive = true;
         selectedGatewayOperationId.value = operation.id;
         message.value = 'Gateway 배포 작업을 등록했습니다. 외부 release-controller가 처리합니다.';
         await loadState(true);
@@ -508,6 +515,7 @@ const requestGatewayRollback = async () => {
         const operation = await adminClient.releases.requestGatewayRollback.mutate({
             reason: gatewayForm.reason.trim() || undefined,
         });
+        gatewayReleaseTransitionActive = true;
         selectedGatewayOperationId.value = operation.id;
         message.value = 'Gateway rollback 작업을 등록했습니다.';
         await loadState(true);
