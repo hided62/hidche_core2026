@@ -2,6 +2,7 @@
 import { computed } from 'vue';
 import SkeletonLines from '../ui/SkeletonLines.vue';
 import LegacyProgressBar from '../ui/LegacyProgressBar.vue';
+import { formatSeoulHourMinute } from '../../utils/legacyDateTime';
 import { legacyExperiencePercent, ratioPercent } from '../../utils/legacyProgress';
 
 interface GeneralStats {
@@ -83,7 +84,7 @@ const experiencePercent = computed(() =>
             <div class="general-title">
                 {{ props.general.name }} · {{ props.general.officerLevelText }} · {{ props.general.age ?? '-' }}세 ·
                 다음 턴
-                {{ props.general.turnTime?.slice(11, 16) ?? '-' }}
+                {{ props.general.turnTime ? formatSeoulHourMinute(props.general.turnTime) : '-' }}
             </div>
 
             <div class="stat-progress-grid">
