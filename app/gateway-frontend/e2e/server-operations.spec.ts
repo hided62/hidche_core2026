@@ -55,8 +55,10 @@ type FixtureState = {
 };
 
 const profile = (runtimeRunning: boolean, resetDefaults?: Record<string, unknown>) => ({
-    profileName: 'che:2',
+    profileName: 'che:default',
     profile: 'che',
+    instanceKey: 'default',
+    currentScenario: '2',
     scenario: '2',
     apiPort: 15003,
     status: runtimeRunning ? 'RUNNING' : 'STOPPED',
@@ -69,7 +71,7 @@ const profile = (runtimeRunning: boolean, resetDefaults?: Record<string, unknown
     activeOperation: null,
     runtimeActions: [],
     runtime: {
-        profileName: 'che:2',
+        profileName: 'che:default',
         frontendRunning: runtimeRunning,
         apiRunning: runtimeRunning,
         daemonRunning: runtimeRunning,
@@ -145,10 +147,7 @@ const installFixture = async (page: Page, state: FixtureState) => {
             await route.abort('failed');
             return;
         }
-        if (
-            names.includes('admin.releases.gatewayState') &&
-            (state.gatewayStateFailuresRemaining ?? 0) > 0
-        ) {
+        if (names.includes('admin.releases.gatewayState') && (state.gatewayStateFailuresRemaining ?? 0) > 0) {
             state.gatewayStateFailuresRemaining = (state.gatewayStateFailuresRemaining ?? 0) - 1;
             state.gatewayStateFailureCount = (state.gatewayStateFailureCount ?? 0) + 1;
             await route.fulfill({
@@ -171,8 +170,10 @@ const installFixture = async (page: Page, state: FixtureState) => {
             if (name === 'admin.profiles.listNavigation') {
                 return response([
                     {
-                        profileName: 'che:2',
+                        profileName: 'che:default',
                         profile: 'che',
+                        instanceKey: 'default',
+                        currentScenario: '2',
                         meta: { korName: '천하서버' },
                     },
                 ]);
@@ -314,7 +315,7 @@ const installFixture = async (page: Page, state: FixtureState) => {
             if (name === 'admin.operations.requestReset') {
                 const operation: Operation = {
                     id: '11111111-1111-4111-8111-111111111111',
-                    profileName: 'che:2',
+                    profileName: 'che:default',
                     type: 'RESET',
                     status: 'QUEUED',
                     sourceMode: 'COMMIT',
@@ -330,7 +331,7 @@ const installFixture = async (page: Page, state: FixtureState) => {
             if (name === 'admin.operations.requestDeploy') {
                 const operation: Operation = {
                     id: '66666666-6666-4666-8666-666666666666',
-                    profileName: 'che:2',
+                    profileName: 'che:default',
                     type: 'DEPLOY',
                     status: 'QUEUED',
                     sourceMode: 'BRANCH',
@@ -368,7 +369,7 @@ const installFixture = async (page: Page, state: FixtureState) => {
                         type === 'START'
                             ? '22222222-2222-4222-8222-222222222222'
                             : '33333333-3333-4333-8333-333333333333',
-                    profileName: 'che:2',
+                    profileName: 'che:default',
                     type,
                     status: 'SUCCEEDED',
                     payload: {},
@@ -382,7 +383,7 @@ const installFixture = async (page: Page, state: FixtureState) => {
             if (name === 'admin.operations.retry') {
                 const operation: Operation = {
                     id: '44444444-4444-4444-8444-444444444444',
-                    profileName: 'che:2',
+                    profileName: 'che:default',
                     type: 'RESET',
                     status: 'QUEUED',
                     sourceMode: 'COMMIT',
@@ -420,9 +421,9 @@ test('separates branch and commit semantics and submits a reset from the dedicat
     await installFixture(page, state);
     page.on('dialog', (dialog) => dialog.accept());
 
-    await page.goto('admin/servers/che%3A2/scenario');
+    await page.goto('admin/servers/che%3Adefault/scenario');
     await expect(page.getByTestId('server-operations-page')).toBeVisible();
-    await expect(page).toHaveURL(/\/gateway\/admin\/servers\/che%3A2\/scenario$/);
+    await expect(page).toHaveURL(/\/gateway\/admin\/servers\/che%3Adefault\/scenario$/);
     await expect(page.getByTestId('source-current')).toBeChecked();
     await expect(page.getByTestId('source-help')).toContainText('현재 서버에 배포된 커밋');
     await expect(page.getByTestId('scenario-select')).toHaveValue('2');
@@ -497,7 +498,7 @@ test('separates branch and commit semantics and submits a reset from the dedicat
     await expect(page.getByText('초기화 작업을 등록했습니다.').first()).toBeVisible();
     await expect(page.getByTestId('operations-table')).toContainText('RESET');
     await expect(page.getByTestId('profile-operation-log-panel')).toBeVisible();
-    await expect(page.getByTestId('profile-operation-log')).toContainText('che:2 구성 요소를 빌드합니다.');
+    await expect(page.getByTestId('profile-operation-log')).toContainText('che:default 구성 요소를 빌드합니다.');
     await expect(page.getByTestId('profile-operation-log')).toContainText('시나리오 초기 데이터 생성을 완료했습니다.');
     await expect(page.getByTestId('profile-operation-log-status')).toContainText('SUCCEEDED');
     const operationTableGeometry = await page.getByTestId('operations-table').evaluate((table) => {
@@ -614,7 +615,7 @@ test('separates DB-preserving profile deployment from DB reset', async ({ page }
     await installFixture(page, state);
     page.on('dialog', (dialog) => dialog.accept());
 
-    await page.goto('admin/servers/che%3A2/version');
+    await page.goto('admin/servers/che%3Adefault/version');
     await expect(page.getByRole('heading', { name: 'DB 보존 버전 업데이트' })).toBeVisible();
     await expect(page.getByText('운영 프로필', { exact: true })).toHaveCount(0);
     await expect(page.getByRole('link', { name: '버전 업데이트', exact: true })).toHaveAttribute(
@@ -626,7 +627,7 @@ test('separates DB-preserving profile deployment from DB reset', async ({ page }
     await expect(page.getByText('DB 보존 배포 작업을 등록했습니다.').first()).toBeVisible();
     await expect(page.getByTestId('operations-table')).toContainText('DEPLOY');
     await expect(page.getByTestId('profile-operation-log-panel')).toBeVisible();
-    await expect(page.getByTestId('profile-operation-log')).toContainText('che:2 구성 요소를 빌드합니다.');
+    await expect(page.getByTestId('profile-operation-log')).toContainText('che:default 구성 요소를 빌드합니다.');
     await expect(page.getByTestId('profile-operation-log')).toContainText('game-frontend build complete');
     await expect(page.getByTestId('profile-operation-log-status')).toContainText('SUCCEEDED');
     expect(state.requestBodies.some((entry) => entry.operation === 'admin.operations.requestDeploy')).toBe(true);
@@ -655,7 +656,7 @@ test('loads server metadata defaults into the reset form and submits them', asyn
     await installFixture(page, state);
     page.on('dialog', (dialog) => dialog.accept());
 
-    await page.goto('admin/servers/che%3A2/scenario');
+    await page.goto('admin/servers/che%3Adefault/scenario');
     await expect(page.getByTestId('reset-turn-term')).toHaveValue('20');
     await page.getByText('고급 시나리오 옵션').click();
     await expect(page.getByTestId('reset-defaults-source')).toContainText('서버의 메타');
@@ -679,7 +680,7 @@ test('edits server reset defaults through profile metadata settings', async ({ p
     const state: FixtureState = { operations: [], gatewayOperations: [], runtimeRunning: true, requestBodies: [] };
     await installFixture(page, state);
 
-    await page.goto('admin/servers/che%3A2');
+    await page.goto('admin/servers/che%3Adefault');
     await page.getByText('서버 리셋 기본 옵션').click();
     await page.getByTestId('meta-reset-turn-term').selectOption('10');
     await page.getByTestId('meta-reset-npc-mode').selectOption('2');
@@ -742,7 +743,7 @@ test('shows a dismissible error toast when profile metadata persistence fails', 
     };
     await installFixture(page, state);
 
-    await page.goto('admin/servers/che%3A2');
+    await page.goto('admin/servers/che%3Adefault');
     await page.getByPlaceholder('변경 사유 (필수)').fill('exercise persistence error');
     await page.getByRole('button', { name: '메타 저장' }).click();
 
@@ -765,7 +766,7 @@ test('renders the fixed-profile version form without waiting for the server list
     };
     await installFixture(page, state);
 
-    await page.goto('admin/servers/che%3A2/version');
+    await page.goto('admin/servers/che%3Adefault/version');
     await expect(page.getByTestId('request-deploy')).toBeVisible({ timeout: 900 });
     expect(state.profileNavigationResolved).toBe(false);
     await expect.poll(() => state.profileNavigationResolved).toBe(true);
@@ -782,7 +783,7 @@ test('recovers the current-version scenario catalog after the initial request fa
     };
     await installFixture(page, state);
 
-    await page.goto('admin/servers/che%3A2/scenario');
+    await page.goto('admin/servers/che%3Adefault/scenario');
     await expect(page.getByTestId('scenario-select')).toContainText('선택할 수 있는 시나리오가 없습니다.');
     await expect(page.getByTestId('request-reset')).toBeDisabled();
     await page.getByTestId('load-scenarios').click();
@@ -790,7 +791,9 @@ test('recovers the current-version scenario catalog after the initial request fa
     await expect(page.getByTestId('request-reset')).toBeEnabled();
 });
 
-test('renders the server navigation before the detailed runtime profile request resolves', async ({ page }) => {
+test('renders the stable server identity without exposing the default suffix as the display name', async ({
+    page,
+}, testInfo) => {
     const state: FixtureState = {
         operations: [],
         gatewayOperations: [],
@@ -800,10 +803,42 @@ test('renders the server navigation before the detailed runtime profile request 
     };
     await installFixture(page, state);
 
-    await page.goto('admin/servers/che%3A2');
+    await page.goto('admin/servers/che%3Adefault');
     const navigation = page.getByRole('navigation', { name: '관리자 메뉴' });
-    await expect(navigation.getByRole('link', { name: '천하서버 (che:2)' })).toBeVisible({ timeout: 900 });
+    const profileLink = navigation.getByRole('link', { name: '천하서버' });
+    await expect(profileLink).toBeVisible({ timeout: 900 });
+    await expect(profileLink).toHaveAttribute('title', '서버 ID: che:default');
+    await expect(navigation).not.toContainText('천하서버 (che:default)');
     await expect(navigation.getByRole('link', { name: 'Gateway 릴리스' })).toBeVisible({ timeout: 900 });
+    await expect(page.getByText('서버 ID: che:default · 인스턴스: default')).toBeVisible();
+    await expect(page.getByText('현재 시나리오: 2')).toBeVisible();
+    await profileLink.focus();
+    const desktop = await profileLink.evaluate((element) => {
+        const rect = element.getBoundingClientRect();
+        const style = getComputedStyle(element);
+        return {
+            x: rect.x,
+            width: rect.width,
+            height: rect.height,
+            overflow: element.scrollWidth - element.clientWidth,
+            backgroundColor: style.backgroundColor,
+            color: style.color,
+        };
+    });
+    expect(desktop.width).toBeGreaterThan(100);
+    expect(desktop.height).toBeGreaterThan(30);
+    expect(desktop.overflow).toBeLessThanOrEqual(0);
+    expect(desktop.backgroundColor).toBe('rgb(45, 27, 8)');
+    expect(desktop.color).toBe('rgb(253, 230, 138)');
+    await page.screenshot({ path: testInfo.outputPath('profile-identity-desktop.png'), fullPage: true });
+
+    await page.setViewportSize({ width: 390, height: 844 });
+    await page.getByRole('button', { name: '관리자 메뉴' }).click();
+    await expect(profileLink).toBeVisible();
+    expect(
+        await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)
+    ).toBeLessThanOrEqual(0);
+    await page.screenshot({ path: testInfo.outputPath('profile-identity-mobile.png'), fullPage: true });
     expect(state.profileNavigationRequests).toBe(1);
 });
 
@@ -813,12 +848,12 @@ test('scenario-only operator resets the current version without Git or Gateway c
         gatewayOperations: [],
         runtimeRunning: true,
         requestBodies: [],
-        capabilities: [{ permission: 'admin.scenarios.reset', scope: 'PROFILE', scopes: ['che:2'] }],
+        capabilities: [{ permission: 'admin.scenarios.reset', scope: 'PROFILE', scopes: ['che:default'] }],
     };
     await installFixture(page, state);
     page.on('dialog', (dialog) => dialog.accept());
 
-    await page.goto('admin/servers/che%3A2/scenario');
+    await page.goto('admin/servers/che%3Adefault/scenario');
     await expect(page.getByTestId('source-current')).toBeChecked();
     await expect(page.getByTestId('source-branch')).toHaveCount(0);
     await expect(page.getByTestId('source-commit')).toHaveCount(0);
@@ -996,9 +1031,7 @@ test('moves long Gateway release errors out of the table column into an expandab
     expect(mobileGeometry.detailWidth).toBeGreaterThanOrEqual(mobileGeometry.tableWidth - 1);
     expect(mobileGeometry.scrollerScrollWidth).toBeLessThanOrEqual(mobileGeometry.scrollerWidth + 1);
     expect(mobileGeometry.scrollerX).toBeGreaterThanOrEqual(0);
-    expect(mobileGeometry.scrollerX + mobileGeometry.scrollerWidth).toBeLessThanOrEqual(
-        mobileGeometry.viewportWidth
-    );
+    expect(mobileGeometry.scrollerX + mobileGeometry.scrollerWidth).toBeLessThanOrEqual(mobileGeometry.viewportWidth);
     expect(mobileGeometry.documentScrollWidth).toBeLessThanOrEqual(mobileGeometry.viewportWidth);
     await page.screenshot({ path: testInfo.outputPath('gateway-release-error-expanded-mobile.png'), fullPage: true });
 
@@ -1043,7 +1076,7 @@ test('renders a failed reset, retries it as a new operation, and reaches success
         operations: [
             {
                 id: '55555555-5555-4555-8555-555555555555',
-                profileName: 'che:2',
+                profileName: 'che:default',
                 type: 'RESET',
                 status: 'FAILED',
                 sourceMode: 'COMMIT',
@@ -1064,7 +1097,7 @@ test('renders a failed reset, retries it as a new operation, and reaches success
     await installFixture(page, state);
     page.on('dialog', (dialog) => dialog.accept());
 
-    await page.goto('admin/servers/che%3A2/scenario');
+    await page.goto('admin/servers/che%3Adefault/scenario');
     await expect(page.getByTestId('operations-table').getByText('FAILED', { exact: true })).toBeVisible();
     await expect(page.getByRole('cell', { name: 'fedcba987654', exact: true })).toBeVisible();
     const failure = page.getByTestId('operations-table').getByText(longError);

@@ -14,6 +14,8 @@ import type { GatewayProfileRecord } from '../src/orchestrator/profileRepository
 const buildProfile = (buildWorkspace?: string): GatewayProfileRecord => ({
     profileName: 'che:2',
     profile: 'che',
+    instanceKey: '2',
+    currentScenario: '2',
     scenario: '2',
     apiPort: 15003,
     status: 'RUNNING',
@@ -170,6 +172,39 @@ describe('buildProcessDefinitions', () => {
         expect(definitions.auction.cwd).toBe(path.join(processConfig.workspaceRoot, 'app', 'game-api'));
         expect(definitions.battleSim.cwd).toBe(path.join(processConfig.workspaceRoot, 'app', 'game-api'));
         expect(definitions.tournament.cwd).toBe(path.join(processConfig.workspaceRoot, 'app', 'game-api'));
+    });
+
+    it('keeps the instance identity stable while passing the mutable current scenario', () => {
+        const definitions = buildProcessDefinitions(
+            {
+                ...buildProfile(),
+                profileName: 'che:default',
+                instanceKey: 'default',
+                currentScenario: '1010',
+                scenario: '1010',
+            },
+            processConfig
+        );
+
+        expect(definitions.api.name).toBe('sammo:che:default:game-api');
+        expect(definitions.api.env).toMatchObject({
+            GAME_PROFILE_NAME: 'che:default',
+            SCENARIO: '1010',
+        });
+        expect(definitions.daemon.env).toMatchObject({
+            TURN_PROFILE_NAME: 'che:default',
+            SCENARIO: '1010',
+        });
+    });
+
+    it('uses the legacy default scenario marker only for an uninitialized instance runtime', () => {
+        const definitions = buildProcessDefinitions(
+            { ...buildProfile(), currentScenario: null, scenario: 'default' },
+            processConfig
+        );
+
+        expect(definitions.api.env.SCENARIO).toBe('default');
+        expect(definitions.daemon.env.SCENARIO).toBe('default');
     });
 
     it('does not forward PM2 identity or parent runtime roles to profile processes', () => {

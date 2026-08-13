@@ -78,6 +78,9 @@ export interface GatewayOperationLogInput {
 export interface GatewayProfileRecord {
     profileName: string;
     profile: string;
+    instanceKey: string;
+    currentScenario: string | null;
+    /** @deprecated Rollback-compatible mirror of currentScenario. */
     scenario: string;
     apiPort: number;
     status: GatewayProfileStatus;
@@ -100,7 +103,10 @@ export interface GatewayProfileRecord {
 
 export interface GatewayProfileUpsertInput {
     profile: string;
-    scenario: string;
+    instanceKey?: string;
+    currentScenario?: string | null;
+    /** @deprecated Accepted while older bootstrap clients are still supported. */
+    scenario?: string;
     apiPort: number;
     status?: GatewayProfileStatus;
     preopenAt?: string;
@@ -111,7 +117,7 @@ export interface GatewayProfileUpsertInput {
 }
 
 export interface GatewayClaimedProfileUpdate {
-    scenario?: string;
+    currentScenario?: string | null;
     status?: GatewayProfileStatus;
     buildStatus?: GatewayBuildStatus;
     buildCommitSha?: string | null;
@@ -131,7 +137,7 @@ export interface GatewayProfileRepository {
     listProfiles(): Promise<GatewayProfileRecord[]>;
     getProfile(profileName: string): Promise<GatewayProfileRecord | null>;
     upsertProfile(input: GatewayProfileUpsertInput): Promise<GatewayProfileRecord>;
-    updateScenario(profileName: string, scenario: string): Promise<GatewayProfileRecord | null>;
+    updateCurrentScenario(profileName: string, scenario: string | null): Promise<GatewayProfileRecord | null>;
     updateStatus(
         profileName: string,
         status: GatewayProfileStatus,
@@ -219,6 +225,8 @@ export const buildRetryOperationSource = (previous: {
 type GatewayProfileRow = {
     profileName: string;
     profile: string;
+    instanceKey: string;
+    currentScenario: string | null;
     scenario: string;
     apiPort: number;
     status: GatewayProfileStatus;
@@ -265,6 +273,8 @@ type GatewayOperationRow = {
 const mapProfile = (row: GatewayProfileRow): GatewayProfileRecord => ({
     profileName: row.profileName,
     profile: row.profile,
+    instanceKey: row.instanceKey,
+    currentScenario: row.currentScenario,
     scenario: row.scenario,
     apiPort: row.apiPort,
     status: row.status,
@@ -285,7 +295,24 @@ const mapProfile = (row: GatewayProfileRow): GatewayProfileRecord => ({
     updatedAt: row.updatedAt.toISOString(),
 });
 
-const buildProfileName = (profile: string, scenario: string): string => `${profile}:${scenario}`;
+export const buildGatewayProfileName = (profile: string, instanceKey: string): string => `${profile}:${instanceKey}`;
+
+export const resolveGatewayProfileIdentity = (
+    input: GatewayProfileUpsertInput
+): {
+    instanceKey: string;
+    currentScenario: string | null;
+    shouldUpdateCurrentScenario: boolean;
+} => {
+    const instanceKey = input.instanceKey ?? input.scenario ?? 'default';
+    if (input.currentScenario !== undefined) {
+        return { instanceKey, currentScenario: input.currentScenario, shouldUpdateCurrentScenario: true };
+    }
+    if (input.instanceKey === undefined && input.scenario !== undefined && input.scenario !== 'default') {
+        return { instanceKey, currentScenario: input.scenario, shouldUpdateCurrentScenario: true };
+    }
+    return { instanceKey, currentScenario: null, shouldUpdateCurrentScenario: false };
+};
 
 const mapOperation = (row: GatewayOperationRow): GatewayOperationRecord => ({
     id: row.id,
@@ -331,7 +358,7 @@ const mapOperationLog = (row: {
 export const createGatewayProfileRepository = (prisma: GatewayPrismaClient): GatewayProfileRepository => ({
     async listProfiles(): Promise<GatewayProfileRecord[]> {
         const rows = await prisma.gatewayProfile.findMany({
-            orderBy: [{ profile: 'asc' }, { scenario: 'asc' }],
+            orderBy: [{ profile: 'asc' }, { instanceKey: 'asc' }],
         });
         return rows.map(mapProfile);
     },
@@ -342,13 +369,16 @@ export const createGatewayProfileRepository = (prisma: GatewayPrismaClient): Gat
         return row ? mapProfile(row) : null;
     },
     async upsertProfile(input: GatewayProfileUpsertInput): Promise<GatewayProfileRecord> {
-        const profileName = buildProfileName(input.profile, input.scenario);
+        const { instanceKey, currentScenario, shouldUpdateCurrentScenario } = resolveGatewayProfileIdentity(input);
+        const profileName = buildGatewayProfileName(input.profile, instanceKey);
         const row = await prisma.gatewayProfile.upsert({
             where: { profileName },
             create: {
                 profileName,
                 profile: input.profile,
-                scenario: input.scenario,
+                instanceKey,
+                currentScenario,
+                scenario: currentScenario ?? 'default',
                 apiPort: input.apiPort,
                 status: input.status ?? 'STOPPED',
                 preopenAt: input.preopenAt ? new Date(input.preopenAt) : null,
@@ -358,6 +388,8 @@ export const createGatewayProfileRepository = (prisma: GatewayPrismaClient): Gat
                 meta: (input.meta ?? {}) as GatewayPrisma.JsonObject,
             },
             update: {
+                currentScenario: shouldUpdateCurrentScenario ? currentScenario : undefined,
+                scenario: shouldUpdateCurrentScenario ? (currentScenario ?? 'default') : undefined,
                 apiPort: input.apiPort,
                 status: input.status,
                 preopenAt: input.preopenAt ? new Date(input.preopenAt) : input.preopenAt === null ? null : undefined,
@@ -373,11 +405,12 @@ export const createGatewayProfileRepository = (prisma: GatewayPrismaClient): Gat
         });
         return mapProfile(row);
     },
-    async updateScenario(profileName: string, scenario: string): Promise<GatewayProfileRecord | null> {
+    async updateCurrentScenario(profileName: string, scenario: string | null): Promise<GatewayProfileRecord | null> {
         const row = await prisma.gatewayProfile.update({
             where: { profileName },
             data: {
-                scenario,
+                currentScenario: scenario,
+                scenario: scenario ?? 'default',
             },
         });
         return row ? mapProfile(row) : null;
@@ -700,7 +733,8 @@ export const createGatewayProfileRepository = (prisma: GatewayPrismaClient): Gat
             return tx.gatewayProfile.update({
                 where: { profileName },
                 data: {
-                    scenario: patch.scenario,
+                    currentScenario: patch.currentScenario,
+                    scenario: patch.currentScenario === undefined ? undefined : (patch.currentScenario ?? 'default'),
                     status: patch.status,
                     buildStatus: patch.buildStatus,
                     buildCommitSha: patch.buildCommitSha,
