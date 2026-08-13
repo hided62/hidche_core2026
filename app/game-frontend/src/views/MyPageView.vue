@@ -2,7 +2,7 @@
 import { computed, onMounted, reactive, ref, watch } from 'vue';
 import { trpc } from '../utils/trpc';
 import { formatLog } from '../utils/formatLog';
-import { formatSeoulDateTime } from '../utils/legacyDateTime';
+import { formatSeoulDateTime, formatSeoulHourMinute } from '../utils/legacyDateTime';
 import { isDefenceTrainPenaltyWaivedByScenarioEffect } from '@sammo-ts/logic';
 import { useSessionStore } from '../stores/session';
 import { resolveGeneralIconUrl, useDefaultGeneralIcon } from '../utils/generalIcon';
@@ -430,7 +430,10 @@ onMounted(() => {
                         </div>
                         <div>
                             <dt>나이/다음턴</dt>
-                            <dd>{{ data.general.age ?? '-' }}세 / {{ data.general.turnTime?.slice(11, 16) ?? '-' }}</dd>
+                            <dd>
+                                {{ data.general.age ?? '-' }}세 /
+                                {{ data.general.turnTime ? formatSeoulHourMinute(data.general.turnTime) : '-' }}
+                            </dd>
                         </div>
                     </dl>
                 </div>

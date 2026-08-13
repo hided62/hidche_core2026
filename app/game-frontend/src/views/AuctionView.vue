@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { formatServerDateTime } from '@sammo-ts/common';
 import { computed, onMounted, reactive, ref, watch } from 'vue';
 import { useRoute } from 'vue-router';
 
@@ -41,24 +42,10 @@ const formatNumber = (value: number | null | undefined): string => (value ?? 0).
 const displayCode = (value: string | null | undefined): string =>
     !value || /^\d+$/u.test(value) ? '-' : value.replace(/^che_(?:event_)?/u, '');
 const cutDateTime = (value: string | null | undefined, showSecond = false): string => {
-    if (!value) {
-        return '-';
-    }
-    const date = new Date(value);
-    if (Number.isNaN(date.getTime())) {
-        return value.slice(5, showSecond ? 19 : 16);
-    }
-    const parts = new Intl.DateTimeFormat('ko-KR', {
-        month: '2-digit',
-        day: '2-digit',
-        hour: '2-digit',
-        minute: '2-digit',
-        ...(showSecond ? { second: '2-digit' } : {}),
-        hour12: false,
-    }).formatToParts(date);
-    const part = (type: Intl.DateTimeFormatPartTypes): string =>
-        parts.find((entry) => entry.type === type)?.value ?? '';
-    return `${part('month')}-${part('day')} ${part('hour')}:${part('minute')}${showSecond ? `:${part('second')}` : ''}`;
+    return formatServerDateTime(value, {
+        format: showSecond ? 'monthDayTimeSeconds' : 'monthDayTime',
+        fallback: '-',
+    });
 };
 
 const buyRice = computed(() =>

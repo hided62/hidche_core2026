@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { formatServerDateTime } from '@sammo-ts/common';
 import { computed, onMounted, reactive, ref } from 'vue';
 import { trpc } from '../utils/trpc';
 
@@ -169,11 +170,7 @@ const turnTimeLabel = computed(() => {
     if (!turnTimeResult.value) {
         return null;
     }
-    const parsed = new Date(turnTimeResult.value);
-    if (Number.isNaN(parsed.getTime())) {
-        return turnTimeResult.value;
-    }
-    return parsed.toLocaleString();
+    return formatServerDateTime(turnTimeResult.value);
 });
 
 const isUnited = computed(() => status.value?.isUnited ?? false);
@@ -735,7 +732,7 @@ onMounted(() => {
                 <div v-if="logLoading && logs.length === 0" class="log-empty">불러오는 중...</div>
                 <div v-else-if="logs.length === 0" class="log-empty">기록이 없습니다.</div>
                 <div v-for="entry in logs" v-else :key="entry.id" class="log-row">
-                    <small>[{{ new Date(entry.createdAt).toLocaleString('ko-KR') }}]</small>
+                    <small>[{{ formatServerDateTime(entry.createdAt) }}]</small>
                     <span>{{ entry.text }}</span>
                 </div>
                 <button

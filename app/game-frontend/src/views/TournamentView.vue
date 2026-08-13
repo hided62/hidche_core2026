@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { formatServerDateTime } from '@sammo-ts/common';
 import { computed, onMounted, ref } from 'vue';
 import TournamentBracket from '../components/tournament/TournamentBracket.vue';
 import { trpc } from '../utils/trpc';
@@ -49,7 +50,9 @@ const matchesAt = (stage: number) =>
         .sort((a, b) => a.roundIndex - b.roundIndex);
 const nameOf = (id?: number) => (id ? (participantsById.value.get(id)?.name ?? `#${id}`) : '-');
 const totalBet = computed(() => betting.value?.totalAmount ?? 0);
-const openingTime = computed(() => snapshot.value?.state?.nextAt?.slice(11, 16) ?? '--:--');
+const openingTime = computed(() =>
+    formatServerDateTime(snapshot.value?.state?.nextAt, { format: 'hourMinute', fallback: '--:--' })
+);
 const betTotals = computed(() => betting.value?.totals as Record<number, number> | undefined);
 const isParticipant = computed(() =>
     (snapshot.value?.participants ?? []).some((participant) => participant.id === myGeneralId.value)
@@ -274,8 +277,7 @@ const start = async () => {
                 <button class="close-button" type="button" @click="navigate">창 닫기</button>
             </RouterLink>
             <small>
-                삼국지 모의전투 HiDCHe / KOEI의 이미지를 사용, 응용하였습니다 / 제작 :
-                HideD(hided62@gmail.com) / Credit
+                삼국지 모의전투 HiDCHe / KOEI의 이미지를 사용, 응용하였습니다 / 제작 : HideD(hided62@gmail.com) / Credit
             </small>
         </footer>
 
