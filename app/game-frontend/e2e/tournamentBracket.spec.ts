@@ -17,6 +17,7 @@ const iconRoots = [
     resolve(repositoryRoot, '../../image/icons'),
     resolve(repositoryRoot, '../../sam_rebuild/image/icons'),
 ];
+const longGeneralName = 'ⓜ가나다라마바사아자차카타파하일이삼';
 const names = [
     '관우',
     '장료',
@@ -33,7 +34,7 @@ const names = [
     '안량',
     '허저',
     '주태',
-    '방덕',
+    longGeneralName,
 ];
 const participants = names.map((name, index) => ({
     id: index + 1,
@@ -257,7 +258,24 @@ test('mobile bracket exposes every round through tabs with standard horizontal i
     await expect(bracket).toBeVisible();
     await expect(page.getByRole('tablist', { name: '토너먼트 라운드 선택' })).toBeVisible();
     await expect(bracket.locator('.mobile-bracket-name')).toHaveCount(16);
-    await expect(bracket.locator('.mobile-bracket-name', { hasText: '방덕' })).toBeVisible();
+    const longIdentity = bracket.locator('.mobile-bracket-name', { hasText: longGeneralName });
+    await expect(longIdentity).toBeVisible();
+    const longNameMetrics = await longIdentity.locator('.general-identity-name').evaluate((element) => {
+        const style = getComputedStyle(element);
+        return {
+            clientWidth: element.clientWidth,
+            scrollWidth: element.scrollWidth,
+            overflow: style.overflow,
+            textOverflow: style.textOverflow,
+            whiteSpace: style.whiteSpace,
+            title: element.getAttribute('title'),
+        };
+    });
+    expect(longNameMetrics.scrollWidth).toBeGreaterThan(longNameMetrics.clientWidth);
+    expect(longNameMetrics.overflow).toBe('hidden');
+    expect(longNameMetrics.textOverflow).toBe('ellipsis');
+    expect(longNameMetrics.whiteSpace).toBe('nowrap');
+    expect(longNameMetrics.title).toBe(longGeneralName);
     await expect(bracket.locator('.mobile-bracket-name', { hasText: '관우' })).toHaveCount(1);
     for (const [label, count] of [
         ['8강', 8],

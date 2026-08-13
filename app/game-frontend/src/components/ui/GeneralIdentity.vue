@@ -34,7 +34,7 @@ const iconUrl = computed(() =>
             aria-hidden="true"
             @error="useDefaultGeneralIcon"
         />
-        <span class="general-identity-name">{{ name }}</span>
+        <span class="general-identity-name" :title="name">{{ name }}</span>
     </span>
 </template>
 
