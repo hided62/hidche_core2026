@@ -28,6 +28,7 @@ import {
 
 import type { GameApiContext, InputJsonValue, WorldStateRow } from '../../context.js';
 import { purifyNationHtml } from '../../security/nationHtml.js';
+import { sanitizeInternalDisplayCode } from '../../services/gameDisplayNames.js';
 import { resolveSecretPermission } from '../shared/secretPermission.js';
 
 export type PermissionKind = 'normal' | 'ambassador' | 'auditor';
@@ -313,10 +314,7 @@ export const loadTraitNames = async (keys: Array<string | null>, kind: keyof Tra
             }
         }
         if (eventFiltered.length) {
-            const modules = await loadEventDomesticTraitModules(
-                eventFiltered,
-                new EventDomesticTraitLoader()
-            );
+            const modules = await loadEventDomesticTraitModules(eventFiltered, new EventDomesticTraitLoader());
             for (const module of modules) {
                 cache.set(module.key, { name: module.name, info: module.info ?? '' });
             }
@@ -513,21 +511,21 @@ export const mapGeneralList = async (
             personality: personalityKey
                 ? {
                       key: personalityKey,
-                      name: personalityMap.get(personalityKey)?.name ?? personalityKey,
+                      name: personalityMap.get(personalityKey)?.name ?? sanitizeInternalDisplayCode(personalityKey),
                       info: personalityMap.get(personalityKey)?.info ?? '',
                   }
                 : null,
             specialDomestic: domesticKey
                 ? {
                       key: domesticKey,
-                      name: domesticMap.get(domesticKey)?.name ?? domesticKey,
+                      name: domesticMap.get(domesticKey)?.name ?? sanitizeInternalDisplayCode(domesticKey),
                       info: domesticMap.get(domesticKey)?.info ?? '',
                   }
                 : null,
             specialWar: warKey
                 ? {
                       key: warKey,
-                      name: warMap.get(warKey)?.name ?? warKey,
+                      name: warMap.get(warKey)?.name ?? sanitizeInternalDisplayCode(warKey),
                       info: warMap.get(warKey)?.info ?? '',
                   }
                 : null,

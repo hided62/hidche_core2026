@@ -2,8 +2,9 @@ export type MessageTypeKey = 'public' | 'private' | 'national' | 'diplomacy';
 
 /**
  * Durable mutations summarized after the database transaction commits.
- * Entity IDs let each authenticated client decide whether its own read model
- * is affected without exposing entity payloads over the shared Redis channel.
+ * This internal Redis contract carries entity IDs so the authenticated game
+ * API can derive each subscriber's browser-safe invalidation. It must never be
+ * serialized directly to a public SSE response.
  */
 export interface RealtimeReadModelChanges {
     generalIds: number[];
@@ -31,6 +32,119 @@ export interface RealtimeReadModelChanges {
     frontStatusChanged?: boolean;
     lobbyChanged?: boolean;
 }
+
+/**
+ * Browser-visible invalidation contract. It deliberately contains no entity
+ * IDs, timestamps, turn times, or global revisions. The API derives these
+ * viewer-specific booleans from the internal committed-change summary before
+ * crossing the SSE boundary.
+ */
+export interface RealtimeReadModelInvalidation {
+    context: boolean;
+    lobby: boolean;
+    map: boolean;
+    commands: boolean;
+    contacts: boolean;
+    boardAccess: boolean;
+    reservedTurns: boolean;
+    records: boolean;
+    frontStatus: boolean;
+}
+
+export interface RealtimeViewerIdentity {
+    generalId: number | null;
+    cityId: number | null;
+    nationId: number | null;
+}
+
+export const createEmptyRealtimeReadModelInvalidation = (): RealtimeReadModelInvalidation => ({
+    context: false,
+    lobby: false,
+    map: false,
+    commands: false,
+    contacts: false,
+    boardAccess: false,
+    reservedTurns: false,
+    records: false,
+    frontStatus: false,
+});
+
+export const createFullRealtimeReadModelInvalidation = (): RealtimeReadModelInvalidation => ({
+    context: true,
+    lobby: true,
+    map: true,
+    commands: true,
+    contacts: true,
+    boardAccess: true,
+    reservedTurns: true,
+    records: true,
+    frontStatus: true,
+});
+
+export const mergeRealtimeReadModelInvalidations = (
+    left: RealtimeReadModelInvalidation,
+    right: RealtimeReadModelInvalidation
+): RealtimeReadModelInvalidation => ({
+    context: left.context || right.context,
+    lobby: left.lobby || right.lobby,
+    map: left.map || right.map,
+    commands: left.commands || right.commands,
+    contacts: left.contacts || right.contacts,
+    boardAccess: left.boardAccess || right.boardAccess,
+    reservedTurns: left.reservedTurns || right.reservedTurns,
+    records: left.records || right.records,
+    frontStatus: left.frontStatus || right.frontStatus,
+});
+
+export const hasRealtimeReadModelInvalidation = (invalidation: RealtimeReadModelInvalidation): boolean =>
+    Object.values(invalidation).some(Boolean);
+
+const contains = (ids: readonly number[], id: number | null): boolean => id !== null && ids.includes(id);
+
+export const resolveRealtimeReadModelInvalidation = (
+    changes: RealtimeReadModelChanges,
+    identity: RealtimeViewerIdentity
+): RealtimeReadModelInvalidation => {
+    const ownGeneralChanged = contains(changes.generalIds, identity.generalId);
+    const ownCityChanged = contains(changes.cityIds, identity.cityId);
+    const ownNationChanged = contains(changes.nationIds, identity.nationId);
+    const ownFrontStatusNationChanged = contains(
+        changes.frontStatusNationIds ?? changes.nationIds,
+        identity.nationId
+    );
+    const ownGeneralMapChanged = contains(changes.mapGeneralIds ?? changes.generalIds, identity.generalId);
+    const frontStatusGeneralChanged =
+        changes.frontStatusGeneralIds !== undefined
+            ? changes.frontStatusGeneralIds.length > 0
+            : changes.contactsChanged;
+    const ownFrontStatusActorChanged = contains(changes.frontStatusActorIds ?? [], identity.generalId);
+    const ownLobbyGeneralChanged = contains(changes.lobbyGeneralIds ?? changes.generalIds, identity.generalId);
+    const lobbyChanged = changes.lobbyChanged ?? changes.contactsChanged;
+    const entityContextChanged = ownGeneralChanged || ownCityChanged || ownNationChanged;
+    const mapEntitiesChanged =
+        (changes.mapCityIds ?? changes.cityIds).length > 0 ||
+        (changes.mapNationIds ?? changes.nationIds).length > 0;
+    const commandEntitiesChanged = changes.cityIds.length > 0 || changes.nationIds.length > 0;
+
+    return {
+        context: entityContextChanged,
+        lobby: changes.worldChanged || lobbyChanged || ownLobbyGeneralChanged,
+        map: changes.worldChanged || mapEntitiesChanged || ownGeneralMapChanged,
+        commands: changes.worldChanged || commandEntitiesChanged || ownGeneralChanged,
+        contacts: changes.contactsChanged,
+        boardAccess: ownGeneralChanged || ownNationChanged,
+        reservedTurns: contains(changes.reservedGeneralIds, identity.generalId),
+        records:
+            changes.globalRecordsChanged ||
+            changes.worldHistoryChanged ||
+            contains(changes.recordGeneralIds, identity.generalId),
+        frontStatus:
+            Boolean(changes.frontStatusChanged) ||
+            frontStatusGeneralChanged ||
+            ownFrontStatusNationChanged ||
+            ownFrontStatusActorChanged,
+    };
+};
 
 export const createEmptyRealtimeReadModelChanges = (): RealtimeReadModelChanges => ({
     generalIds: [],
@@ -124,6 +238,18 @@ export interface MessageCreatedEvent {
     messageId: number;
     senderId: number;
 }
+
+export interface ReadModelInvalidatedEvent {
+    type: 'readModelInvalidated';
+    invalidation: RealtimeReadModelInvalidation;
+}
+
+export interface MessagesInvalidatedEvent {
+    type: 'messagesInvalidated';
+}
+
+/** Events safe to expose to an authenticated browser over SSE. */
+export type PublicRealtimeEvent = ReadModelInvalidatedEvent | MessagesInvalidatedEvent;
 
 export type RealtimeEvent =
     | TurnCompletedEvent

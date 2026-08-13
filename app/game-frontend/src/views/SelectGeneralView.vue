@@ -358,8 +358,11 @@ onBeforeUnmount(() => {
                                     <span role="tooltip">{{ candidate.specialDomesticInfo }}</span>
                                 </span>
                                 /
-                                <span>{{ candidate.specialWar ?? '-' }}</span
-                                ><br /><br />
+                                <span v-if="candidate.specialWarName" class="trait-tooltip" tabindex="0">
+                                    {{ candidate.specialWarName }}
+                                    <span role="tooltip">{{ candidate.specialWarInfo }}</span>
+                                </span>
+                                <span v-else>-</span><br /><br />
                                 보병: {{ Math.trunc(candidate.dex[0] / 1000) }}K<br />
                                 궁병: {{ Math.trunc(candidate.dex[1] / 1000) }}K<br />
                                 기병: {{ Math.trunc(candidate.dex[2] / 1000) }}K<br />
@@ -408,8 +411,11 @@ onBeforeUnmount(() => {
                                 <span role="tooltip">{{ selectedCandidate.specialDomesticInfo }}</span>
                             </span>
                             /
-                            <span>{{ selectedCandidate.specialWar ?? '-' }}</span
-                            ><br /><br />
+                            <span v-if="selectedCandidate.specialWarName" class="trait-tooltip" tabindex="0">
+                                {{ selectedCandidate.specialWarName }}
+                                <span role="tooltip">{{ selectedCandidate.specialWarInfo }}</span>
+                            </span>
+                            <span v-else>-</span><br /><br />
                             보병: {{ Math.trunc(selectedCandidate.dex[0] / 1000) }}K<br />
                             궁병: {{ Math.trunc(selectedCandidate.dex[1] / 1000) }}K<br />
                             기병: {{ Math.trunc(selectedCandidate.dex[2] / 1000) }}K<br />
@@ -498,7 +504,7 @@ onBeforeUnmount(() => {
             </div>
             <div class="footer-banner with-border">
                 <small>
-                    삼국지 모의전투 HiDCHe core2026 / KOEI의 이미지를 사용, 응용하였습니다 / 제작 : HideD /
+                    삼국지 모의전투 HiDCHe / KOEI의 이미지를 사용, 응용하였습니다 / 제작 : HideD /
                     <a href="https://sam.hided.net/wiki/hidche/credit" target="_blank" rel="noopener noreferrer"
                         >Credit</a
                     >

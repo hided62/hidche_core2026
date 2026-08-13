@@ -230,7 +230,7 @@ test.describe('scenario 903 live selection pool', () => {
         expect(geometry.footerBanner.height).toBeCloseTo(20.1875, 3);
         await expect(page.locator('.invitation-table tbody tr')).toHaveCount(0);
         await expect(page.locator('.footer-banner')).toContainText(
-            '삼국지 모의전투 HiDCHe core2026'
+            '삼국지 모의전투 HiDCHe'
         );
         await expect(page.locator('.footer-banner a')).toHaveText('Credit');
 

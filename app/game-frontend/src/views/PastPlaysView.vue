@@ -140,7 +140,7 @@ onMounted(() => {
                                 <td>{{ valueOrDash(general.leadership) }}</td>
                                 <td>{{ valueOrDash(general.strength) }}</td>
                                 <td>{{ valueOrDash(general.intel) }}</td>
-                                <td>{{ valueOrDash(general.officerLevel) }}</td>
+                                <td>{{ valueOrDash(general.officerLevelText) }}</td>
                                 <td>{{ valueOrDash(general.personal) }}</td>
                                 <td>{{ valueOrDash(general.special) }}</td>
                                 <td>{{ valueOrDash(general.special2) }}</td>

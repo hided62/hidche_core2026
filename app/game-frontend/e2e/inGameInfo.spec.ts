@@ -383,7 +383,20 @@ test('four legacy menu pages keep the 1000px desktop table contract', async ({ p
                 .first()
                 .evaluate((el) => getComputedStyle(el).borderCollapse)
         ).toBe(borderCollapse);
+        if (path === 'nation/info') {
+            await expect(page.locator(selector)).toContainText('작 위호족');
+            await expect(page.locator(selector)).not.toContainText('작 위1');
+        }
     }
+});
+
+test('국가 정보의 작위는 Ref 국가 등급 이름으로 표시된다', async ({ page }) => {
+    await install(page);
+    await page.goto('nation/info');
+
+    const root = page.locator('.legacy-info-page');
+    await expect(root).toContainText('작 위호족');
+    await expect(root).not.toContainText('작 위1');
 });
 
 test('global-info renders the ref nation summary columns beside the map', async ({ page }) => {

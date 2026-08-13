@@ -20,3 +20,5 @@ export const formatSeoulDateTime = (value: string | Date): string => {
         koreaTime.getUTCSeconds()
     )}`;
 };
+
+export const formatSeoulHourMinute = (value: string | Date): string => formatSeoulDateTime(value).slice(11, 16);

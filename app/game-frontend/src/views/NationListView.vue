@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { onMounted, ref } from 'vue';
 
-import { formatOfficerLevelText } from '../utils/nationFormat';
+import { formatNationLevelText, formatOfficerLevelText } from '../utils/nationFormat';
 import { getNpcColor } from '../utils/npcColor';
 import { trpc } from '../utils/trpc';
 
@@ -12,16 +12,6 @@ const nations = ref<Directory>([]);
 const loading = ref(false);
 const error = ref('');
 
-const nationLevelText: Record<number, string> = {
-    7: '황제',
-    6: '왕',
-    5: '공',
-    4: '주목',
-    3: '주자사',
-    2: '군벌',
-    1: '호족',
-    0: '방랑군',
-};
 const whiteTextColors = new Set([
     '',
     '#330000',
@@ -111,7 +101,7 @@ onMounted(() => {
                         <td class="label-cell">성 향</td>
                         <td class="value-wide type-name">{{ Array.from(nation.type.name).join(' ') }}</td>
                         <td class="label-cell">작 위</td>
-                        <td class="value-wide">{{ nationLevelText[nation.level] ?? '-' }}</td>
+                        <td class="value-wide">{{ formatNationLevelText(nation.level) }}</td>
                         <td class="label-cell">국 력</td>
                         <td class="value-wide">{{ nation.power }}</td>
                         <td class="label-cell">장수 / 속령</td>
@@ -227,7 +217,7 @@ onMounted(() => {
                 <tr>
                     <td>
                         <small>
-                            삼국지 모의전투 PHP HiDCHe - unknown / KOEI의 이미지를 사용, 응용하였습니다 / 제작 :
+                            삼국지 모의전투 HiDCHe / KOEI의 이미지를 사용, 응용하였습니다 / 제작 :
                             HideD(hided62@gmail.com) /
                             <a href="https://github.com/hided/SamK" target="_blank" rel="noopener noreferrer">Credit</a>
                         </small>

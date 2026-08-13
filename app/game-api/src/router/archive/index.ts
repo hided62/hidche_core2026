@@ -3,7 +3,9 @@ import { z } from 'zod';
 
 import { asRecord } from '@sammo-ts/common';
 
+import { resolveOfficerLevelName, sanitizeInternalDisplayCode } from '../../services/gameDisplayNames.js';
 import { readOnlyAuthedProcedure, router } from '../../trpc.js';
+import { loadTraitNames } from '../nation/shared.js';
 
 const numberOrNull = (value: unknown): number | null =>
     typeof value === 'number' && Number.isFinite(value) ? value : null;
@@ -87,6 +89,31 @@ export const archiveRouter = router({
                 nationByServerAndId.set(key, nation);
             }
         }
+        const archivedRoles = generals.map((general) => {
+            const data = asRecord(general.data);
+            const role = asRecord(data.role);
+            return {
+                personal: displayTextOrNull(data.personalCode ?? data.personal ?? role.personality),
+                special: displayTextOrNull(data.specialCode ?? data.special ?? role.specialDomestic),
+                special2: displayTextOrNull(data.special2Code ?? data.special2 ?? role.specialWar),
+            };
+        });
+        const [personalityNames, domesticNames, warNames] = await Promise.all([
+            loadTraitNames(
+                archivedRoles.map((role) => role.personal),
+                'personality'
+            ),
+            loadTraitNames(
+                archivedRoles.map((role) => role.special),
+                'domestic'
+            ),
+            loadTraitNames(
+                archivedRoles.map((role) => role.special2),
+                'war'
+            ),
+        ]);
+        const displayRole = (value: string | null, names: Awaited<ReturnType<typeof loadTraitNames>>): string | null =>
+            value ? (names.get(value)?.name ?? sanitizeInternalDisplayCode(value)) : null;
 
         const seasons = new Map<
             string,
@@ -110,6 +137,7 @@ export const archiveRouter = router({
                     experience: number | null;
                     dedication: number | null;
                     officerLevel: number | null;
+                    officerLevelText: string | null;
                     personal: string | null;
                     special: string | null;
                     special2: string | null;
@@ -118,7 +146,7 @@ export const archiveRouter = router({
             }
         >();
 
-        for (const general of generals) {
+        for (const [generalIndex, general] of generals.entries()) {
             const game = gameByServer.get(general.serverId);
             let season = seasons.get(general.serverId);
             if (!season) {
@@ -136,10 +164,12 @@ export const archiveRouter = router({
 
             const data = asRecord(general.data);
             const stats = asRecord(data.stats);
-            const role = asRecord(data.role);
             const nationId = firstNumber(data, 'nationId', 'nation') ?? 0;
             const nation = nationByServerAndId.get(`${general.serverId}:${nationId}`);
             const nationData = asRecord(nation?.data);
+            const officerLevel = firstNumber(data, 'officerLevel', 'officer_level');
+            const nationLevel = firstNumber(nationData, 'level', 'nationLevel');
+            const archivedRole = archivedRoles[generalIndex]!;
             season.generals.push({
                 generalNo: general.generalNo,
                 name: general.name,
@@ -152,10 +182,14 @@ export const archiveRouter = router({
                 intel: firstNumber(data, 'intel', 'intelligence') ?? numberOrNull(stats.intelligence),
                 experience: numberOrNull(data.experience),
                 dedication: numberOrNull(data.dedication),
-                officerLevel: firstNumber(data, 'officerLevel', 'officer_level'),
-                personal: displayTextOrNull(data.personalCode ?? data.personal ?? role.personality),
-                special: displayTextOrNull(data.specialCode ?? data.special ?? role.specialDomestic),
-                special2: displayTextOrNull(data.special2Code ?? data.special2 ?? role.specialWar),
+                officerLevel,
+                officerLevelText:
+                    officerLevel === null
+                        ? null
+                        : resolveOfficerLevelName(officerLevel, nationLevel === null ? undefined : nationLevel),
+                personal: displayRole(archivedRole.personal, personalityNames),
+                special: displayRole(archivedRole.special, domesticNames),
+                special2: displayRole(archivedRole.special2, warNames),
                 historyCount: parseHistory(data.history).length,
             });
         }

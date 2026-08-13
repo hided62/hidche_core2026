@@ -41,6 +41,7 @@ const installArchive = async (page: Page) => {
                                     experience: 23000,
                                     dedication: 1200,
                                     officerLevel: 12,
+                                    officerLevelText: '황제',
                                     personal: '대담',
                                     special: '상재',
                                     special2: '신산',
@@ -66,6 +67,15 @@ const installArchive = async (page: Page) => {
     });
 };
 
+test('지난 플레이 관직은 숫자 대신 저장된 Ref 표시명으로 나타난다', async ({ page }) => {
+    await installArchive(page);
+    await page.goto('past-plays');
+
+    const generalRow = page.locator('tbody tr').filter({ hasText: '관우' });
+    await expect(generalRow).toContainText('황제');
+    await expect(generalRow).not.toContainText('che_');
+});
+
 test('past plays is available without a current general and preserves desktop interaction geometry', async ({
     page,
 }) => {
@@ -78,6 +88,7 @@ test('past plays is available without a current general and preserves desktop in
     await expect(page.getByRole('heading', { name: '내 지난 플레이 보기' })).toBeVisible();
     await expect(page.getByText('천하쟁패 · 51기')).toBeVisible();
     await expect(page.locator('.general-name')).toHaveText('관우');
+    await expect(page.locator('tbody tr').filter({ hasText: '관우' })).toContainText('황제');
     await expect(page.getByRole('link', { name: '이 기수 국가 정보' })).toHaveAttribute('href', gamePath('/dynasty/7'));
     const historyToggle = page.locator('.history-toggle');
     await expect(historyToggle).toHaveText('보기 (2)');

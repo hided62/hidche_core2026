@@ -3,6 +3,7 @@ import { computed, onMounted, ref } from 'vue';
 import { useRouter } from 'vue-router';
 import { formatLog } from '../utils/formatLog';
 import { legacyNationTextColor } from '../utils/legacyNationColor';
+import { formatNationLevelText } from '../utils/nationFormat';
 import { trpc } from '../utils/trpc';
 
 type Result = Awaited<ReturnType<typeof trpc.nation.getNationInfo.query>>;
@@ -11,9 +12,7 @@ const router = useRouter();
 const error = ref('');
 const number = (value: number) => value.toLocaleString('ko-KR');
 const diff = (value: number) => `${value > 0 ? '+' : ''}${number(value)}`;
-const nationLevel = computed(
-    () => ['두목', '영주', '군벌', '주자사', '주목', '공', '왕', '황제'][data.value?.nation.level ?? 0] ?? '-'
-);
+const nationLevel = computed(() => formatNationLevelText(data.value?.nation.level ?? 0));
 onMounted(async () => {
     try {
         data.value = await trpc.nation.getNationInfo.query();
@@ -114,7 +113,7 @@ onMounted(async () => {
                     <td><button type="button" @click="router.push('/')">돌아가기</button></td>
                 </tr>
                 <tr>
-                    <td class="credit">삼국지 모의전투 PHP HiDCHe / KOEI의 이미지를 사용했습니다 / 제작: Hide.D</td>
+                    <td class="credit">삼국지 모의전투 HiDCHe / KOEI의 이미지를 사용했습니다 / 제작: Hide.D</td>
                 </tr>
             </tbody>
         </table>

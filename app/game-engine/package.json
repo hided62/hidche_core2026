@@ -99,7 +99,7 @@
         "lint:fix": "eslint . --fix",
         "profile:npc-unification-memory": "node scripts/profile-npc-unification-memory.mjs",
         "test": "vitest run --config vitest.config.ts",
-        "typecheck": "tsc -b"
+        "typecheck": "pnpm -w tsc7 -b app/game-engine/tsconfig.json"
     },
     "dependencies": {
         "@prisma/client": "^7.9.1",

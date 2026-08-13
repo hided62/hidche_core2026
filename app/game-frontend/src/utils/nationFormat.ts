@@ -14,6 +14,19 @@ export const officerLevelMapDefault: Record<number, string> = {
     0: '재야',
 };
 
+export const nationLevelMap: Record<number, string> = {
+    7: '황제',
+    6: '왕',
+    5: '공',
+    4: '주목',
+    3: '주자사',
+    2: '군벌',
+    1: '호족',
+    0: '방랑군',
+};
+
+export const formatNationLevelText = (nationLevel: number): string => nationLevelMap[nationLevel] ?? '-';
+
 export const officerLevelMapByNationLevel: Record<number, Record<number, string>> = {
     7: {
         12: '황제',
@@ -75,15 +88,13 @@ export const officerLevelMapByNationLevel: Record<number, Record<number, string>
 
 export const formatOfficerLevelText = (officerLevel: number, nationLevel?: number): string => {
     if (officerLevel < 5) {
-        return officerLevelMapDefault[officerLevel] ?? '???';
+        return officerLevelMapDefault[officerLevel] ?? '-';
     }
 
-    const nationMap =
-        nationLevel === undefined
-            ? officerLevelMapDefault
-            : (officerLevelMapByNationLevel[nationLevel] ?? officerLevelMapDefault);
-
-    return nationMap[officerLevel] ?? (officerLevelMapDefault[officerLevel] ?? '???');
+    if (nationLevel === undefined) {
+        return officerLevelMapDefault[officerLevel] ?? '-';
+    }
+    return officerLevelMapByNationLevel[nationLevel]?.[officerLevel] ?? '-';
 };
 
 export const regionMap: Record<number, string> = {

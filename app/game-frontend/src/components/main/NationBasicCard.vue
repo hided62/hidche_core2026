@@ -7,11 +7,14 @@ interface NationInfo {
     name: string;
     color: string;
     level: number;
+    levelName: string;
     gold: number;
     rice: number;
     tech: number;
     typeCode: string;
+    typeName: string;
     capitalCityId: number | null;
+    capitalCityName: string | null;
 }
 
 const props = defineProps<{
@@ -31,7 +34,7 @@ const props = defineProps<{
                 class="title"
                 :style="{ backgroundColor: props.nation.color, color: legacyNationTextColor(props.nation.color) }"
             >
-                {{ props.nation.name }}<template v-if="props.nation.id > 0"> (Lv {{ props.nation.level }})</template>
+                {{ props.nation.name }}<template v-if="props.nation.id > 0"> ({{ props.nation.levelName }})</template>
             </div>
             <div class="grid">
                 <span>국고</span
@@ -40,10 +43,11 @@ const props = defineProps<{
                 ><strong>{{ props.nation.id === 0 ? '해당 없음' : props.nation.rice.toLocaleString() }}</strong>
                 <span>기술</span
                 ><strong>{{ props.nation.id === 0 ? '해당 없음' : props.nation.tech.toLocaleString() }}</strong>
-                <span>체제</span><strong>{{ props.nation.id === 0 ? '해당 없음' : props.nation.typeCode }}</strong>
+                <span>체제</span><strong>{{ props.nation.id === 0 ? '해당 없음' : props.nation.typeName }}</strong>
                 <span>수도</span
-                ><strong>{{ props.nation.id === 0 ? '해당 없음' : (props.nation.capitalCityId ?? '-') }}</strong>
-                <span>국가 등급</span><strong>{{ props.nation.id === 0 ? '해당 없음' : props.nation.level }}</strong>
+                ><strong>{{ props.nation.id === 0 ? '해당 없음' : (props.nation.capitalCityName ?? '-') }}</strong>
+                <span>국가 등급</span
+                ><strong>{{ props.nation.id === 0 ? '해당 없음' : props.nation.levelName }}</strong>
             </div>
         </div>
     </div>
