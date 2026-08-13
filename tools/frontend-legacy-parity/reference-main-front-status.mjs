@@ -61,6 +61,9 @@ try {
             };
             return {
                 container: inspect('#container'),
+                gameInfo: inspect('.gameInfo'),
+                tournamentStatus: inspect('.subTournamentState'),
+                lastExecuted: inspect('.subLastExecuted'),
                 onlineNations: inspect('.onlineNations'),
                 onlineUsers: inspect('.onlineUsers'),
                 nationNotice: inspect('.nationNotice'),
