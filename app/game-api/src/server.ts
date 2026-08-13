@@ -4,7 +4,7 @@ import fastifyStatic from '@fastify/static';
 import path from 'path';
 import fs from 'node:fs/promises';
 import { fastifyTRPCPlugin } from '@trpc/server/adapters/fastify';
-import { buildGameEventChannel } from '@sammo-ts/common';
+import { buildGameEventChannel, type RealtimeViewerIdentity } from '@sammo-ts/common';
 import type { GameSessionTokenPayload } from '@sammo-ts/common/auth/gameToken';
 import {
     createGamePostgresConnector,
@@ -23,6 +23,7 @@ import { buildBattleSimQueueKeys } from './battleSim/keys.js';
 import { RedisBattleSimTransport } from './battleSim/redisTransport.js';
 import { RedisRealtimeEventHub } from './realtime/eventHub.js';
 import { formatSseFrame } from './realtime/sse.js';
+import { shouldReloadRealtimeViewerIdentity, toPublicRealtimeEvent } from './realtime/publicEvent.js';
 import { GatewayHttpAccountIconSource } from './auth/accountIconSource.js';
 import { createAdminProfileIconResetFlushHandler } from './services/accountIconSync.js';
 import { AccountIconResetReconciler } from './services/accountIconResetReconciler.js';
@@ -229,6 +230,17 @@ export const createGameApiServer = async () => {
             return;
         }
 
+        const loadViewerIdentity = async (): Promise<RealtimeViewerIdentity> => {
+            const general = await postgres.prisma.general.findFirst({
+                where: { userId: auth.user.id, npcState: 0 },
+                select: { id: true, cityId: true, nationId: true },
+            });
+            return general
+                ? { generalId: general.id, cityId: general.cityId, nationId: general.nationId }
+                : { generalId: null, cityId: null, nationId: null };
+        };
+        let viewerIdentity = await loadViewerIdentity();
+
         reply.hijack();
         const requestOrigin = request.headers.origin;
         if (typeof requestOrigin === 'string' && requestOrigin.length > 0) {
@@ -256,30 +268,47 @@ export const createGameApiServer = async () => {
         sendFrame(
             formatSseFrame({
                 event: 'ready',
-                data: JSON.stringify({ at: new Date().toISOString() }),
+                data: '{}',
             })
         );
 
+        let closed = false;
+        let eventQueue = Promise.resolve();
         const unsubscribe = realtimeHub.subscribe((event) => {
-            sendFrame(
-                formatSseFrame({
-                    event: event.type,
-                    data: JSON.stringify(event),
-                    id: event.at,
+            eventQueue = eventQueue
+                .then(async () => {
+                    if (closed) return;
+                    const identities = [viewerIdentity];
+                    if (shouldReloadRealtimeViewerIdentity(event, viewerIdentity)) {
+                        const nextIdentity = await loadViewerIdentity();
+                        identities.push(nextIdentity);
+                        viewerIdentity = nextIdentity;
+                    }
+                    const publicEvent = toPublicRealtimeEvent(event, identities);
+                    if (!publicEvent || closed) return;
+                    sendFrame(
+                        formatSseFrame({
+                            event: publicEvent.type,
+                            data: JSON.stringify(publicEvent),
+                        })
+                    );
                 })
-            );
+                .catch(() => {
+                    // A best-effort notification must not affect committed game state.
+                });
         });
 
         const heartbeat = setInterval(() => {
             sendFrame(
                 formatSseFrame({
                     event: 'ping',
-                    data: JSON.stringify({ at: new Date().toISOString() }),
+                    data: '{}',
                 })
             );
         }, 15000);
 
         const close = () => {
+            closed = true;
             clearInterval(heartbeat);
             unsubscribe();
         };
