@@ -9,7 +9,7 @@ import { sealGatewayPassword } from '../src/passwordEnvelope.js';
 
 import type { AppRouter as GatewayAppRouter } from '@sammo-ts/gateway-api';
 import type { AppRouter as GameAppRouter } from '@sammo-ts/game-api';
-import { createGatewayApiServer } from '@sammo-ts/gateway-api';
+import { createGatewayApiServer, seedProfileDatabase } from '@sammo-ts/gateway-api';
 import { createGameApiServer } from '@sammo-ts/game-api';
 import { createTurnDaemonRuntime } from '@sammo-ts/game-engine';
 import {
@@ -86,7 +86,8 @@ const truncateSchema = async (schema: string) => {
     await connector.connect();
     try {
         const rows = (await connector.prisma.$queryRawUnsafe(
-            `SELECT tablename FROM pg_tables WHERE schemaname = '${schema}'`
+            `SELECT tablename FROM pg_tables
+             WHERE schemaname = '${schema}' AND tablename <> '_prisma_migrations'`
         )) as Array<{ tablename: string }>;
         if (rows.length === 0) {
             return;
@@ -101,13 +102,15 @@ const truncateSchema = async (schema: string) => {
 const resetDatabase = async () => {
     await ensureSchema('public');
     await ensureSchema('che');
-    await execCommand('pnpm', ['--filter', '@sammo-ts/infra', 'prisma:db:push:gateway', '--accept-data-loss'], {
+    await execCommand('pnpm', ['--filter', '@sammo-ts/infra', 'prisma:migrate:deploy:gateway'], {
         ...process.env,
         POSTGRES_SCHEMA: 'public',
+        GATEWAY_DATABASE_URL: resolvePostgresConfigFromEnv({ schema: 'public' }).url,
     });
-    await execCommand('pnpm', ['--filter', '@sammo-ts/infra', 'prisma:db:push:game', '--accept-data-loss'], {
+    await execCommand('pnpm', ['--filter', '@sammo-ts/infra', 'prisma:migrate:deploy:game'], {
         ...process.env,
         POSTGRES_SCHEMA: 'che',
+        DATABASE_URL: resolvePostgresConfigFromEnv({ schema: 'che' }).url,
     });
     await truncateSchema('public');
     await truncateSchema('che');
@@ -251,10 +254,11 @@ describe('integration initialization flow', () => {
             },
         });
 
-        await gatewayClient.admin.profiles.installNow.mutate({
-            profileName: 'che:2',
-            install: {
-                scenarioId: 2,
+        await seedProfileDatabase({
+            scenarioId: 2,
+            databaseUrl: resolvePostgresConfigFromEnv({ schema: 'che' }).url,
+            adminUser: bootstrap.user,
+            installOptions: {
                 turnTermMinutes: 1,
                 sync: false,
                 fiction: 0,
@@ -267,6 +271,15 @@ describe('integration initialization flow', () => {
                 autorunUser: null,
             },
         });
+        const gameDatabaseUrl = resolvePostgresConfigFromEnv({ schema: 'che' }).url;
+        const gatewayDatabaseUrl = resolvePostgresConfigFromEnv({ schema: 'public' }).url;
+        turnDaemon = await createTurnDaemonRuntime({
+            profile: 'che',
+            profileName: 'che:2',
+            databaseUrl: gameDatabaseUrl,
+            gatewayDatabaseUrl,
+        });
+        turnDaemonLoop = turnDaemon.lifecycle.start();
 
         const publicMap = await gameClient.public.getCachedMap.query();
         expect(publicMap.result).toBe(true);
@@ -397,16 +410,6 @@ describe('integration initialization flow', () => {
                 });
             }
         }
-
-        const gameDatabaseUrl = resolvePostgresConfigFromEnv({ schema: 'che' }).url;
-        const gatewayDatabaseUrl = resolvePostgresConfigFromEnv({ schema: 'public' }).url;
-        turnDaemon = await createTurnDaemonRuntime({
-            profile: 'che',
-            profileName: 'che:2',
-            databaseUrl: gameDatabaseUrl,
-            gatewayDatabaseUrl,
-        });
-        turnDaemonLoop = turnDaemon.lifecycle.start();
 
         const waitForStatus = async (timeoutMs = 10_000) => {
             const deadline = Date.now() + timeoutMs;

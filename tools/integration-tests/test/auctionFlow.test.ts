@@ -8,7 +8,7 @@ import { createTRPCProxyClient, httpBatchLink } from '@trpc/client';
 import { sealGatewayPassword } from '../src/passwordEnvelope.js';
 
 import type { AppRouter as GatewayAppRouter } from '@sammo-ts/gateway-api';
-import { createGatewayApiServer } from '@sammo-ts/gateway-api';
+import { createGatewayApiServer, seedProfileDatabase } from '@sammo-ts/gateway-api';
 import type { AppRouter as GameAppRouter } from '@sammo-ts/game-api';
 import {
     createGameApiServer,
@@ -17,6 +17,7 @@ import {
     DatabaseTurnDaemonTransport,
 } from '@sammo-ts/game-api';
 import { createTurnDaemonRuntime } from '@sammo-ts/game-engine';
+import { GAME_TICKS_PER_TURN, GameClock } from '@sammo-ts/common';
 import {
     createGatewayPostgresConnector,
     createGamePostgresConnector,
@@ -25,7 +26,13 @@ import {
     resolveRedisConfigFromEnv,
     GamePrisma,
 } from '@sammo-ts/infra';
-import { buildNeutralResourceAuctionPlan, ItemLoader, ITEM_KEYS } from '@sammo-ts/logic';
+import {
+    buildNeutralResourceAuctionPlan,
+    createItemInventoryFromSlots,
+    ItemLoader,
+    ITEM_KEYS,
+    serializeItemInventory,
+} from '@sammo-ts/logic';
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 const workspaceRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../..');
@@ -93,7 +100,8 @@ const truncateSchema = async (schema: string) => {
     await connector.connect();
     try {
         const rows = (await connector.prisma.$queryRawUnsafe(
-            `SELECT tablename FROM pg_tables WHERE schemaname = '${schema}'`
+            `SELECT tablename FROM pg_tables
+             WHERE schemaname = '${schema}' AND tablename <> '_prisma_migrations'`
         )) as Array<{ tablename: string }>;
         if (rows.length === 0) {
             return;
@@ -108,13 +116,15 @@ const truncateSchema = async (schema: string) => {
 const resetDatabase = async () => {
     await ensureSchema('public');
     await ensureSchema('che');
-    await execCommand('pnpm', ['--filter', '@sammo-ts/infra', 'prisma:db:push:gateway', '--accept-data-loss'], {
+    await execCommand('pnpm', ['--filter', '@sammo-ts/infra', 'prisma:migrate:deploy:gateway'], {
         ...process.env,
         POSTGRES_SCHEMA: 'public',
+        GATEWAY_DATABASE_URL: resolvePostgresConfigFromEnv({ schema: 'public' }).url,
     });
-    await execCommand('pnpm', ['--filter', '@sammo-ts/infra', 'prisma:db:push:game', '--accept-data-loss'], {
+    await execCommand('pnpm', ['--filter', '@sammo-ts/infra', 'prisma:migrate:deploy:game'], {
         ...process.env,
         POSTGRES_SCHEMA: 'che',
+        DATABASE_URL: resolvePostgresConfigFromEnv({ schema: 'che' }).url,
     });
     await truncateSchema('public');
     await truncateSchema('che');
@@ -284,10 +294,11 @@ describe('auction integration flow', () => {
             },
         });
 
-        await gatewayClient.admin.profiles.installNow.mutate({
-            profileName: 'che:908',
-            install: {
-                scenarioId: 908,
+        await seedProfileDatabase({
+            scenarioId: 908,
+            databaseUrl: resolvePostgresConfigFromEnv({ schema: 'che' }).url,
+            adminUser: bootstrap.user,
+            installOptions: {
                 turnTermMinutes: 1,
                 sync: false,
                 fiction: 0,
@@ -300,6 +311,15 @@ describe('auction integration flow', () => {
                 autorunUser: null,
             },
         });
+        const gameDatabaseUrl = resolvePostgresConfigFromEnv({ schema: 'che' }).url;
+        const gatewayDatabaseUrl = resolvePostgresConfigFromEnv({ schema: 'public' }).url;
+        turnDaemon = await createTurnDaemonRuntime({
+            profile: 'che',
+            profileName: 'che:908',
+            databaseUrl: gameDatabaseUrl,
+            gatewayDatabaseUrl,
+        });
+        turnDaemonLoop = turnDaemon.lifecycle.start();
 
         const adminGatewayToken = await gatewayClient.auth.issueGameSession.mutate({
             sessionToken: adminSessionRef.value ?? '',
@@ -342,16 +362,6 @@ describe('auction integration flow', () => {
                 userId: '',
             });
         }
-
-        const gameDatabaseUrl = resolvePostgresConfigFromEnv({ schema: 'che' }).url;
-        const gatewayDatabaseUrl = resolvePostgresConfigFromEnv({ schema: 'public' }).url;
-        turnDaemon = await createTurnDaemonRuntime({
-            profile: 'che',
-            profileName: 'che:908',
-            databaseUrl: gameDatabaseUrl,
-            gatewayDatabaseUrl,
-        });
-        turnDaemonLoop = turnDaemon.lifecycle.start();
 
         const waitForStatus = async (timeoutMs = 10_000) => {
             if (!gameClient) {
@@ -461,7 +471,7 @@ describe('auction integration flow', () => {
         const keys = buildAuctionTimerKeys(gameServer.config.profileName);
         await seedAuctionTimers(prisma, redis, keys);
         const initialScore = await redis.zScore(keys.timerKey, String(auction.id));
-        expect(Number(initialScore)).toBe(initialCloseAt.getTime());
+        expect(Number(initialScore)).toBe(Number(auction.closeTick));
 
         await expect(hostClient.auction.bidBuyRice.mutate({ auctionId: auction.id, amount: 300 })).rejects.toThrow(
             '자신이 연 경매에 입찰할 수 없습니다.'
@@ -484,20 +494,21 @@ describe('auction integration flow', () => {
 
         const updatedAuction = await prisma.auction.findUnique({
             where: { id: auction.id },
-            select: { closeAt: true },
+            select: { closeAt: true, closeTick: true },
         });
         expect(updatedAuction).not.toBeNull();
         expect(updatedAuction!.closeAt.getTime()).toBeGreaterThan(initialCloseAt.getTime());
 
         const updatedScore = await redis.zScore(keys.timerKey, String(auction.id));
-        expect(Number(updatedScore)).toBe(updatedAuction?.closeAt.getTime());
+        expect(Number(updatedScore)).toBe(Number(updatedAuction?.closeTick));
 
-        const finalizeAt = new Date(Date.now() - 1000);
+        const finalizeAt = new Date(turnDaemon!.world.getGameNow(new Date()).getTime() - 1000);
+        const finalizeTick = turnDaemon!.world.dateToGameTick(finalizeAt);
         await prisma.auction.update({
             where: { id: auction.id },
-            data: { closeAt: finalizeAt, status: 'OPEN' },
+            data: { closeAt: finalizeAt, closeTick: BigInt(finalizeTick), status: 'OPEN' },
         });
-        await redis.zAdd(keys.timerKey, [{ score: finalizeAt.getTime(), value: String(auction.id) }]);
+        await redis.zAdd(keys.timerKey, [{ score: finalizeTick, value: String(auction.id) }]);
 
         const transport = new DatabaseTurnDaemonTransport(prisma, 30_000);
         await prisma.$executeRaw(
@@ -576,7 +587,9 @@ describe('auction integration flow', () => {
         });
 
         const now = new Date();
-        const initialCloseAt = new Date(now.getTime() + 10_000);
+        const logicalNow = turnDaemon!.world.getGameNow(now);
+        const initialCloseAt = new Date(logicalNow.getTime() + 10_000);
+        const initialCloseTick = turnDaemon!.world.dateToGameTick(initialCloseAt);
         const auction = await prisma.auction.create({
             data: {
                 type: 'UNIQUE_ITEM',
@@ -586,17 +599,18 @@ describe('auction integration flow', () => {
                 detail: {
                     startBidAmount: 200,
                     isReverse: false,
-                    availableLatestBidCloseDate: new Date(now.getTime() + 10 * 60_000).toISOString(),
+                    availableLatestBidCloseDate: new Date(logicalNow.getTime() + 10 * 60_000).toISOString(),
                 },
                 status: 'OPEN',
                 closeAt: initialCloseAt,
+                closeTick: BigInt(initialCloseTick),
             },
         });
 
         const keys = buildAuctionTimerKeys(gameServer.config.profileName);
         await seedAuctionTimers(prisma, redis, keys);
         const initialScore = await redis.zScore(keys.timerKey, String(auction.id));
-        expect(Number(initialScore)).toBe(initialCloseAt.getTime());
+        expect(Number(initialScore)).toBe(initialCloseTick);
 
         const ownerClient = createGameClient(gameUrl, gameServer.config.trpcPath, {
             value: ownerBidder.accessToken,
@@ -617,16 +631,38 @@ describe('auction integration flow', () => {
         expect(updatedAuction).not.toBeNull();
         expect(updatedAuction!.closeAt.getTime()).toBeGreaterThan(initialCloseAt.getTime());
 
-        await prisma.general.update({
-            where: { id: validBidder.generalId },
-            data: slotUpdate,
-        });
-
         if (turnDaemon) {
             await turnDaemon.lifecycle.stop('integration-test');
             await turnDaemon.close();
             await turnDaemonLoop;
         }
+        // Stop the snapshot before changing the fixture. Otherwise its shutdown
+        // flush can write the older inventory back over this direct DB update.
+        const validBidderRow = await prisma.general.findUniqueOrThrow({
+            where: { id: validBidder.generalId },
+            select: { meta: true },
+        });
+        const validBidderMeta =
+            validBidderRow.meta && typeof validBidderRow.meta === 'object' && !Array.isArray(validBidderRow.meta)
+                ? validBidderRow.meta
+                : {};
+        const occupiedSlots = {
+            horse: null,
+            weapon: null,
+            book: null,
+            item: null,
+            [uniquePair.slot]: uniquePair.keyB,
+        };
+        await prisma.general.update({
+            where: { id: validBidder.generalId },
+            data: {
+                ...slotUpdate,
+                meta: {
+                    ...validBidderMeta,
+                    itemInventory: serializeItemInventory(createItemInventoryFromSlots(occupiedSlots)),
+                },
+            },
+        });
         const gameDatabaseUrl = resolvePostgresConfigFromEnv({ schema: 'che' }).url;
         const gatewayDatabaseUrl = resolvePostgresConfigFromEnv({ schema: 'public' }).url;
         turnDaemon = await createTurnDaemonRuntime({
@@ -638,12 +674,13 @@ describe('auction integration flow', () => {
         turnDaemonLoop = turnDaemon.lifecycle.start();
         await sleep(500);
 
-        const finalizeAt = new Date(Date.now() - 1000);
+        const finalizeAt = new Date(turnDaemon!.world.getGameNow(new Date()).getTime() - 1000);
+        const finalizeTick = turnDaemon!.world.dateToGameTick(finalizeAt);
         await prisma.auction.update({
             where: { id: auction.id },
-            data: { closeAt: finalizeAt, status: 'OPEN' },
+            data: { closeAt: finalizeAt, closeTick: BigInt(finalizeTick), status: 'OPEN' },
         });
-        await redis.zAdd(keys.timerKey, [{ score: finalizeAt.getTime(), value: String(auction.id) }]);
+        await redis.zAdd(keys.timerKey, [{ score: finalizeTick, value: String(auction.id) }]);
 
         const transport = new DatabaseTurnDaemonTransport(prisma, 30_000);
         await prisma.$executeRaw(
@@ -684,14 +721,33 @@ describe('auction integration flow', () => {
             throw new Error('unsupported item slot');
         }
 
-        await prisma.general.update({
-            where: { id: bidderA.generalId },
-            data: { weaponCode: 'None', bookCode: 'None', horseCode: 'None', itemCode: 'None' },
-        });
-        await prisma.general.update({
-            where: { id: bidderB.generalId },
-            data: { weaponCode: 'None', bookCode: 'None', horseCode: 'None', itemCode: 'None' },
-        });
+        if (turnDaemon) {
+            await turnDaemon.lifecycle.stop('integration-test');
+            await turnDaemon.close();
+            await turnDaemonLoop;
+        }
+        for (const bidder of [bidderA, bidderB]) {
+            const row = await prisma.general.findUniqueOrThrow({
+                where: { id: bidder.generalId },
+                select: { meta: true },
+            });
+            const meta = row.meta && typeof row.meta === 'object' && !Array.isArray(row.meta) ? row.meta : {};
+            await prisma.general.update({
+                where: { id: bidder.generalId },
+                data: {
+                    weaponCode: 'None',
+                    bookCode: 'None',
+                    horseCode: 'None',
+                    itemCode: 'None',
+                    meta: {
+                        ...meta,
+                        itemInventory: serializeItemInventory(
+                            createItemInventoryFromSlots({ horse: null, weapon: null, book: null, item: null })
+                        ),
+                    },
+                },
+            });
+        }
         await prisma.general.updateMany({
             where: { [slotField]: uniquePair.keyA } as GamePrisma.GeneralWhereInput,
             data: { [slotField]: 'None' } as GamePrisma.GeneralUpdateManyMutationInput,
@@ -708,11 +764,6 @@ describe('auction integration flow', () => {
             create: { userId: bidderB.userId, key: 'previous', value: 100_000 },
         });
 
-        if (turnDaemon) {
-            await turnDaemon.lifecycle.stop('integration-test');
-            await turnDaemon.close();
-            await turnDaemonLoop;
-        }
         const gameDatabaseUrl = resolvePostgresConfigFromEnv({ schema: 'che' }).url;
         const gatewayDatabaseUrl = resolvePostgresConfigFromEnv({ schema: 'public' }).url;
         turnDaemon = await createTurnDaemonRuntime({
@@ -725,6 +776,7 @@ describe('auction integration flow', () => {
         await sleep(500);
 
         const now = new Date();
+        const logicalNow = turnDaemon!.world.getGameNow(now);
         await prisma.$executeRaw(
             GamePrisma.sql`
                 UPDATE auction
@@ -745,11 +797,14 @@ describe('auction integration flow', () => {
             itemKey: uniquePair.keyA,
             amount: 5000,
         });
-        const limitCloseAt = new Date(now.getTime() + 60_000);
+        const initialCloseAt = new Date(logicalNow.getTime() + 2000);
+        const initialCloseTick = turnDaemon!.world.dateToGameTick(initialCloseAt);
+        const limitCloseAt = new Date(logicalNow.getTime() + 60_000);
         await prisma.$executeRaw(
             GamePrisma.sql`
                 UPDATE auction
-                SET close_at = ${new Date(now.getTime() + 2000)},
+                SET close_at = ${initialCloseAt},
+                    close_tick = ${BigInt(initialCloseTick)},
                     detail = jsonb_set(
                         jsonb_set(
                             detail,
@@ -780,12 +835,13 @@ describe('auction integration flow', () => {
         expect(afterBids).not.toBeNull();
         expect(afterBids!.closeAt.getTime()).toBe(limitCloseAt.getTime());
 
-        const finalizeAt = new Date(Date.now() - 1000);
+        const finalizeAt = new Date(turnDaemon!.world.getGameNow(new Date()).getTime() - 1000);
+        const finalizeTick = turnDaemon!.world.dateToGameTick(finalizeAt);
         await prisma.auction.update({
             where: { id: auction.id },
-            data: { closeAt: finalizeAt, status: 'OPEN' },
+            data: { closeAt: finalizeAt, closeTick: BigInt(finalizeTick), status: 'OPEN' },
         });
-        await redis.zAdd(keys.timerKey, [{ score: finalizeAt.getTime(), value: String(auction.id) }]);
+        await redis.zAdd(keys.timerKey, [{ score: finalizeTick, value: String(auction.id) }]);
 
         const transport = new DatabaseTurnDaemonTransport(prisma, 30_000);
         await prisma.$executeRaw(
@@ -834,7 +890,9 @@ describe('auction integration flow', () => {
                 turnTime: futureTurn,
             },
         });
-        const nationCount = await prisma.nation.count();
+        // Ref's nation scan starts at 1; Core's internal nation 0 must not
+        // consume a monthly nation-power RNG draw.
+        const nationCount = await prisma.nation.count({ where: { id: { gt: 0 } } });
         let hiddenSeed = '';
         let expected = [] as ReturnType<typeof buildNeutralResourceAuctionPlan>;
         for (let index = 0; index < 1_000; index += 1) {
@@ -861,16 +919,27 @@ describe('auction integration flow', () => {
             worldState.meta && typeof worldState.meta === 'object' && !Array.isArray(worldState.meta)
                 ? worldState.meta
                 : {};
+        const clockTick = worldState.clockTick ?? 0n;
+        const previousTurnTick = clockTick - BigInt(GAME_TICKS_PER_TURN);
+        const gameClock = new GameClock({
+            baseTime: worldState.clockBaseTime!,
+            tick: Number(clockTick),
+            mode: worldState.clockMode === 'manual' ? 'manual' : 'realtime',
+            wallAnchor: worldState.clockWallAnchor!,
+            turnSeconds: 60,
+        });
+        const previousTurnTime = gameClock.tickToDate(Number(previousTurnTick));
         await prisma.worldState.update({
             where: { id: worldState.id },
             data: {
                 currentYear: 180,
                 currentMonth: 1,
                 tickSeconds: 60,
+                lastTurnTick: previousTurnTick,
                 meta: {
                     ...worldMeta,
                     hiddenSeed,
-                    lastTurnTime: new Date(Date.now() - 61_000).toISOString(),
+                    lastTurnTime: previousTurnTime.toISOString(),
                     neutralAuctionRegistrationKey: null,
                 },
             },
@@ -925,10 +994,11 @@ describe('auction integration flow', () => {
                 seedMonth: 1,
                 neutralRegistrationKey: '180-02',
             });
-            expect(row.closeAt.getTime() - row.createdAt.getTime()).toBeGreaterThanOrEqual(
+            const logicalCreatedAt = turnDaemon!.world.getGameNow(row.createdAt);
+            expect(row.closeAt.getTime() - logicalCreatedAt.getTime()).toBeGreaterThanOrEqual(
                 plan.closeTurnCnt * 60_000 - 2_000
             );
-            expect(row.closeAt.getTime() - row.createdAt.getTime()).toBeLessThanOrEqual(
+            expect(row.closeAt.getTime() - logicalCreatedAt.getTime()).toBeLessThanOrEqual(
                 plan.closeTurnCnt * 60_000 + 2_000
             );
         }

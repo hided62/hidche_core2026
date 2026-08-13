@@ -321,7 +321,7 @@ integration('mode 1 NPC possession through token reservation and the durable dae
             attempts: 1,
             actorUserId: userId,
         });
-        expect(access.lastRefresh?.getTime()).toBe(event.createdAt.getTime());
+        expect(access.lastRefresh?.getTime()).toBe(runtime!.world.getGameNow(event.createdAt).getTime());
         const logs = await db.logEntry.findMany({
             where: {
                 OR: [
@@ -362,7 +362,7 @@ integration('mode 1 NPC possession through token reservation and the durable dae
         });
     }, 45_000);
 
-    it('keeps an accepted token through wall-clock expiry until the queued ENGINE event finishes', async () => {
+    it('keeps a token accepted in logical time until the queued ENGINE event finishes', async () => {
         const reservation = await appRouter
             .createCaller(buildContext('npc-possession-delayed-token', delayedAuth))
             .join.listPossessCandidates({});
@@ -382,12 +382,17 @@ integration('mode 1 NPC possession through token reservation and the durable dae
         ).rejects.toMatchObject({ code: 'TIMEOUT' });
 
         const event = await db.inputEvent.findUniqueOrThrow({ where: { requestId } });
-        const acceptedSecond = new Date(Math.floor(event.createdAt.getTime() / 1000) * 1000);
+        const acceptedGameAt = new Date(
+            (event.payload as { acceptedGameAt?: string }).acceptedGameAt ?? 'invalid accepted game time'
+        );
+        expect(acceptedGameAt.toString()).not.toBe('Invalid Date');
         await db.npcSelectionToken.update({
             where: { ownerUserId: delayedUserId },
-            data: { validUntil: acceptedSecond },
+            data: { validUntil: acceptedGameAt },
         });
-        await new Promise((resolve) => setTimeout(resolve, 1_100));
+        await db.worldState.updateMany({
+            data: { clockTick: { increment: 1 } },
+        });
 
         await appRouter
             .createCaller(buildContext('npc-possession-cleanup-token', cleanupAuth))

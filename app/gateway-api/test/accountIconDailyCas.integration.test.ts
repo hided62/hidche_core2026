@@ -41,6 +41,7 @@ integration('account icon daily PostgreSQL CAS', () => {
                 picture: 'old.png',
                 imageServer: 1,
                 iconUpdatedAt: new Date('2026-07-30T09:00:00.000Z'),
+                createdAt: new Date('2026-07-30T09:00:00.000Z'),
             },
         });
     });

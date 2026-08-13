@@ -345,7 +345,7 @@ integration('generic general creation through the durable turn daemon', () => {
             attempts: 1,
             actorUserId: userId,
         });
-        expect(access.lastRefresh?.getTime()).toBe(event.createdAt.getTime());
+        expect(access.lastRefresh?.getTime()).toBe(runtime!.world.getGameNow(event.createdAt).getTime());
         const turnGridOffsetSeconds =
             ((created.turnTime.getTime() - runtime!.world.getState().lastTurnTime.getTime()) / 1000 + 300) % 300;
         expect(turnGridOffsetSeconds).toBeGreaterThanOrEqual(35);

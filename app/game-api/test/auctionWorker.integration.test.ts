@@ -524,10 +524,12 @@ liveDescribe('auction worker durable recovery', () => {
                 expect(reopened).toMatchObject({ status: 'OPEN' });
                 expect(reopened!.closeAt.getTime()).toBeGreaterThan(extensionAuction.closeAt.getTime());
 
-                const secondCloseAt = new Date(Date.now() - 1_000);
+                const secondWallNow = new Date();
+                const secondCloseAt = new Date(secondWallNow.getTime() - 1_000);
+                const secondCloseTick = world.dateToGameTick(secondCloseAt);
                 await connector.prisma.auction.update({
                     where: { id: extensionAuction.id },
-                    data: { closeAt: secondCloseAt },
+                    data: { closeAt: secondCloseAt, closeTick: BigInt(secondCloseTick) },
                 });
                 const secondExtensionRequestId = requestIdFor({ id: extensionAuction.id, closeAt: secondCloseAt });
                 await processDueAuctionId({
@@ -536,7 +538,8 @@ liveDescribe('auction worker durable recovery', () => {
                     timerKey: 'timer',
                     historyKey: 'history',
                     id: String(extensionAuction.id),
-                    nowMs: Date.now(),
+                    nowMs: world.getGameNow(secondWallNow).getTime(),
+                    nowTick: world.dateToGameTick(secondWallNow),
                 });
 
                 for (let attempt = 0; attempt < 200; attempt += 1) {
@@ -601,6 +604,10 @@ liveDescribe('auction worker durable recovery', () => {
         { timeout: 15_000 },
         async () => {
             const poisonedAuction = await createAuction('OPEN');
+            await connector.prisma.auction.update({
+                where: { id: poisonedAuction.id },
+                data: { closeTick: 0n },
+            });
             const poisonedRequestId = requestIdFor(poisonedAuction);
             await connector.prisma.inputEvent.create({
                 data: {

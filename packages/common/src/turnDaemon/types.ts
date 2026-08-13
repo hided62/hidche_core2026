@@ -246,6 +246,7 @@ export type TurnDaemonCommand =
           ownerLegacyPenalty?: Record<string, unknown>;
           generalId: number;
           tokenNonce: number;
+          acceptedGameAt?: string;
       }
     | {
           type: 'selectPoolCreate';

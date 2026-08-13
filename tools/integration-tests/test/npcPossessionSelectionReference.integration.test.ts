@@ -76,7 +76,8 @@ type CoreReservationTrace = {
 const configuredWorkspaceRoot = process.env.TURN_DIFFERENTIAL_WORKSPACE_ROOT;
 const workspaceRoot = configuredWorkspaceRoot ?? findTurnDifferentialWorkspaceRoot(process.cwd());
 const databaseUrl = process.env.NPC_POSSESSION_DIFFERENTIAL_DATABASE_URL;
-const integration = describe.skipIf(!workspaceRoot || !databaseUrl || process.env.TURN_DIFFERENTIAL_REFERENCE !== '1');
+const referenceEnabled = process.env.TURN_DIFFERENTIAL_REFERENCE === '1';
+const integration = describe.skipIf(!workspaceRoot || !databaseUrl || !referenceEnabled);
 const ownerUserId = 'npc-possession-differential-owner';
 const reservedOwnerUserId = 'npc-possession-differential-reserved';
 
@@ -227,6 +228,9 @@ const assertDedicatedDatabase = (rawUrl: string): void => {
 };
 
 integration('NPC possession selector Ref differential', () => {
+    if (!workspaceRoot || !databaseUrl || !referenceEnabled) {
+        return;
+    }
     let db: GamePrismaClient;
     let closeDb: (() => Promise<void>) | undefined;
     let worldState: GamePrisma.WorldStateGetPayload<Record<string, never>>;

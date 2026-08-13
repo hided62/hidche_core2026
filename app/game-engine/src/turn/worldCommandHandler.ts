@@ -294,7 +294,9 @@ async function handleNpcPossessGeneral(
         throw new Error('NPC possession world state is missing.');
     }
     const operationalAcceptedAt = await resolveCommandAcceptedAt(db, command);
-    const acceptedAt = ctx.world.getGameNow(operationalAcceptedAt);
+    const acceptedAt = command.acceptedGameAt
+        ? new Date(command.acceptedGameAt)
+        : ctx.world.getGameNow(operationalAcceptedAt);
     try {
         return {
             type: 'npcPossessGeneral',

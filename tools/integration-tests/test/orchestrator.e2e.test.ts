@@ -93,7 +93,8 @@ const truncateSchema = async (schema: string) => {
     await connector.connect();
     try {
         const rows = (await connector.prisma.$queryRawUnsafe(
-            `SELECT tablename FROM pg_tables WHERE schemaname = '${schema}'`
+            `SELECT tablename FROM pg_tables
+             WHERE schemaname = '${schema}' AND tablename <> '_prisma_migrations'`
         )) as Array<{ tablename: string }>;
         if (rows.length === 0) {
             return;
@@ -108,13 +109,15 @@ const truncateSchema = async (schema: string) => {
 const resetDatabase = async (profile: string) => {
     await ensureSchema('public');
     await ensureSchema(profile);
-    await execCommand('pnpm', ['--filter', '@sammo-ts/infra', 'prisma:db:push:gateway', '--accept-data-loss'], {
+    await execCommand('pnpm', ['--filter', '@sammo-ts/infra', 'prisma:migrate:deploy:gateway'], {
         ...process.env,
         POSTGRES_SCHEMA: 'public',
+        GATEWAY_DATABASE_URL: resolvePostgresConfigFromEnv({ schema: 'public' }).url,
     });
-    await execCommand('pnpm', ['--filter', '@sammo-ts/infra', 'prisma:db:push:game', '--accept-data-loss'], {
+    await execCommand('pnpm', ['--filter', '@sammo-ts/infra', 'prisma:migrate:deploy:game'], {
         ...process.env,
         POSTGRES_SCHEMA: profile,
+        DATABASE_URL: resolvePostgresConfigFromEnv({ schema: profile }).url,
     });
     await truncateSchema('public');
     await truncateSchema(profile);

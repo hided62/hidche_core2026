@@ -26,6 +26,14 @@ export const resolveAuctionTimerScore = (time: CurrentGameTime, closeAt: Date, c
     return time.dateToTick(closeAt) ?? closeAt.getTime();
 };
 
+export const resolveAuctionSeedScore = (time: CurrentGameTime, row: AuctionTimerRow): number => {
+    if (row.status === 'FINALIZING') {
+        // 마감 판정은 이미 끝났으므로 원래 deadline을 기다리지 않고 durable event 복구를 즉시 재시도한다.
+        return time.tick ?? time.now.getTime();
+    }
+    return resolveAuctionTimerScore(time, row.closeAt, row.closeTick);
+};
+
 export const seedAuctionTimers = async (
     db: DatabaseClient,
     redis: RedisSortedSetClient,
@@ -44,7 +52,7 @@ export const seedAuctionTimers = async (
 
     const gameTime = await loadCurrentGameTime(db);
     const payload = rows.map((row) => ({
-        score: resolveAuctionTimerScore(gameTime, row.closeAt, row.closeTick),
+        score: resolveAuctionSeedScore(gameTime, row),
         value: String(row.id),
     }));
     await redis.zAdd(keys.timerKey, payload);

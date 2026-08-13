@@ -13,6 +13,7 @@ export type JsonArray = GatewayPrisma.JsonArray;
 export * from './orchestrator/profileRepository.js';
 export * from './orchestrator/gatewayReleaseRepository.js';
 export * from './orchestrator/gatewayOrchestrator.js';
+export * from './orchestrator/seedProfileDatabase.js';
 export * from './orchestrator/workspaceManager.js';
 export * from './orchestrator/buildRunner.js';
 export * from './orchestrator/processManager.js';

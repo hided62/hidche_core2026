@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from 'vitest';
 import type { GamePrismaClient } from '@sammo-ts/infra';
 
 import { processDueAuctionId } from '../src/auction/worker.js';
+import { resolveAuctionSeedScore } from '../src/auction/scheduler.js';
 
 const buildRedis = () => ({
     zRangeByScore: vi.fn(async () => []),
@@ -52,6 +53,34 @@ const buildDb = (options: {
 };
 
 describe('auction worker clock-shift race', () => {
+    it('seeds OPEN at its deadline but retries FINALIZING at the current logical tick', () => {
+        const now = new Date('2026-07-30T12:00:00.000Z');
+        const time = {
+            now,
+            tick: 36_000_000,
+            mode: 'manual' as const,
+            dateToTick: () => 72_000_000,
+        };
+        const closeAt = new Date('2099-01-01T00:00:00.000Z');
+
+        expect(
+            resolveAuctionSeedScore(time, {
+                id: 7,
+                status: 'OPEN',
+                closeAt,
+                closeTick: 72_000_000n,
+            })
+        ).toBe(72_000_000);
+        expect(
+            resolveAuctionSeedScore(time, {
+                id: 7,
+                status: 'FINALIZING',
+                closeAt,
+                closeTick: 72_000_000n,
+            })
+        ).toBe(36_000_000);
+    });
+
     it('requeues an OPEN auction at its current DB deadline when an old due score loses the race', async () => {
         const redis = buildRedis();
         const closeAt = new Date('2026-07-30T12:15:00.000Z');
@@ -123,6 +152,26 @@ describe('auction worker clock-shift race', () => {
                 payload: { type: 'auctionFinalize', requestId, auctionId: 7 },
             },
         });
+    });
+
+    it('records operational history time separately from logical settlement time', async () => {
+        const redis = buildRedis();
+        const closeAt = new Date('2026-07-30T11:00:00.000Z');
+        const { db } = buildDb({ updated: 1, auction: { status: 'FINALIZING', closeAt } });
+        const logicalNowMs = new Date('0190-01-01T00:00:00.000Z').getTime();
+        const operationalNowMs = new Date('2026-07-30T12:00:00.000Z').getTime();
+
+        await processDueAuctionId({
+            db,
+            redis,
+            timerKey: 'timer',
+            historyKey: 'history',
+            id: '7',
+            nowMs: logicalNowMs,
+            historyNowMs: operationalNowMs,
+        });
+
+        expect(redis.zAdd).toHaveBeenCalledWith('history', [{ score: operationalNowMs, value: '7' }]);
     });
 
     it('repairs a pre-existing FINALIZING auction without creating a duplicate command', async () => {

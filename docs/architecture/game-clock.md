@@ -36,3 +36,19 @@ DB migration은 기존 DateTime 값에서 tick을 채웁니다. 새 설치와 mi
 재실행은 `prisma:migrate:deploy:game`으로 수행합니다. 메시지의 연도 9999 같은
 무기한 호환값은 안전한 정수 범위를 넘을 수 있으므로 tick을 `NULL`로 두고
 DateTime fallback을 사용합니다.
+
+## 비동기 작업의 시계 경계
+
+게임 규칙의 수락·입찰·예약 시각은 logical game time을 사용하지만 daemon
+queue의 `InputEvent.createdAt`, worker history retention과 timeout은 운영
+벽시계를 사용합니다. NPC 빙의 enqueue는 현재 logical game time을 event
+payload의 `acceptedGameAt`에 고정합니다. queue에 들어갈 때 유효했던 token은
+처리 전 game tick이 진행해도 이 저장된 논리 수락 시각으로 다시 검증합니다.
+
+경매 입찰은 같은 logical tick에서 여러 번 일어날 수 있습니다. bid 표시
+시각은 같은 game time을 보존하고, optimistic 경합 판정은 임의 UUID의
+사전순이 아니라 읽은 `latest_event_id`를 버전 토큰으로 사용합니다. worker
+재시작 시 `OPEN`은 `close_tick` deadline에, 이미 마감 판정이 끝난
+`FINALIZING`은 현재 tick에 seed하여 durable finalization event 복구를 즉시
+재시도합니다. Redis history의 score는 보존 기간 계산을 위해 운영 벽시계를
+사용합니다.

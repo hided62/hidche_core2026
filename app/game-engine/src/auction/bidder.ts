@@ -27,6 +27,7 @@ interface AuctionRow {
     detail: unknown;
     status: AuctionStatus;
     closeAt: Date;
+    latestEventId: string;
 }
 
 interface AuctionBidRow {
@@ -101,7 +102,8 @@ const loadAuction = async (prisma: QueryClient, auctionId: number): Promise<Auct
                 host_general_id as "hostGeneralId",
                 detail,
                 status,
-                close_at as "closeAt"
+                close_at as "closeAt",
+                latest_event_id as "latestEventId"
             FROM auction
             WHERE id = ${auctionId}
             FOR UPDATE
@@ -375,6 +377,8 @@ export const createAuctionBidder = async (options: {
                         `
                     );
 
+                    // 같은 논리 tick의 연속 입찰은 시각이 같으므로, UUID 정렬이 아니라
+                    // 읽어 둔 이벤트 ID를 버전 토큰으로 사용해 경합만 거절한다.
                     const updated = await tx.$executeRaw(
                         GamePrisma.sql`
                             UPDATE auction
@@ -385,10 +389,7 @@ export const createAuctionBidder = async (options: {
                                 updated_at = ${eventAt}
                             WHERE id = ${command.auctionId}
                               AND status = 'OPEN'
-                              AND (
-                                latest_event_at < ${eventAt}
-                                OR (latest_event_at = ${eventAt} AND latest_event_id < ${eventId})
-                              )
+                              AND latest_event_id = ${auction.latestEventId}
                         `
                     );
 

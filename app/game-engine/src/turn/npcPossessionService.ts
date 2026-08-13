@@ -460,6 +460,7 @@ export const possessNpcGeneral = async (options: {
     acceptedAt: Date;
 }): Promise<{ ok: true; generalId: number }> => {
     const { db, world, worldState, userId, generalId, acceptedAt } = options;
+    // queue 대기 중 만료된 token도 enqueue 시점에는 유효했으므로 저장된 논리 수락 시각으로 다시 검증한다.
     const tokenAcceptedAt = truncateToSeconds(acceptedAt);
     requireNpcPossessionWorld(worldState);
     await lockNpcPossession(db, userId);

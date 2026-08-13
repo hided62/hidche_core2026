@@ -144,7 +144,7 @@ integration('unification finalization transaction', () => {
                 { userId, key: 'tournament', value: 11 },
             ],
         });
-        const futureCloseAt = new Date(Date.now() + 86_400_000);
+        const futureCloseAt = new Date('0190-07-02T00:00:00.000Z');
         const uniqueAuction = await db.auction.create({
             data: {
                 type: 'UNIQUE_ITEM',
@@ -243,11 +243,15 @@ integration('unification finalization transaction', () => {
                 where: { generalId_type: { generalId: fixtureId, type: 'inherit_spent_dyn' } },
             })
         ).toMatchObject({ value: 50 });
-        expect(
-            (await db.auctionBid.findMany({ where: { auctionId: uniqueAuction.id }, orderBy: { id: 'asc' } })).map(
-                (bid) => bid.meta
-            )
-        ).toEqual([
+        const persistedBids = await db.auctionBid.findMany({
+            where: { auctionId: uniqueAuction.id },
+            orderBy: { id: 'asc' },
+        });
+        expect(persistedBids.map((bid) => bid.eventAt.toISOString())).toEqual([
+            '0190-07-01T00:00:00.000Z',
+            '0190-07-01T00:00:00.000Z',
+        ]);
+        expect(persistedBids.map((bid) => bid.meta)).toEqual([
             expect.objectContaining({ inheritSpentTrackedAmount: 30 }),
             expect.objectContaining({ inheritSpentTrackedAmount: 50 }),
         ]);

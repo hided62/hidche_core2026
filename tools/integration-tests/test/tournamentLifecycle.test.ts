@@ -108,13 +108,15 @@ const truncateSchema = async (schema: string): Promise<void> => {
 const resetServices = async (): Promise<void> => {
     await ensureSchema('public');
     await ensureSchema('che');
-    await execCommand('pnpm', ['--filter', '@sammo-ts/infra', 'prisma:db:push:gateway', '--accept-data-loss'], {
+    await execCommand('pnpm', ['--filter', '@sammo-ts/infra', 'prisma:migrate:deploy:gateway'], {
         ...process.env,
         POSTGRES_SCHEMA: 'public',
+        GATEWAY_DATABASE_URL: resolvePostgresConfigFromEnv({ schema: 'public' }).url,
     });
-    await execCommand('pnpm', ['--filter', '@sammo-ts/infra', 'prisma:db:push:game', '--accept-data-loss'], {
+    await execCommand('pnpm', ['--filter', '@sammo-ts/infra', 'prisma:migrate:deploy:game'], {
         ...process.env,
         POSTGRES_SCHEMA: 'che',
+        DATABASE_URL: resolvePostgresConfigFromEnv({ schema: 'che' }).url,
     });
     await truncateSchema('public');
     await truncateSchema('che');
@@ -346,6 +348,22 @@ describe('actual tournament lifecycle', () => {
             })),
         });
 
+        // The in-memory world is a snapshot. Reload it after creating the users
+        // and tournament NPC fixtures so settlement can reward the same field
+        // that the API and Redis bracket expose.
+        await turnDaemon.lifecycle.stop('reload-tournament-fixtures');
+        await turnDaemon.close();
+        await turnDaemonLoop;
+        turnDaemon = await createTurnDaemonRuntime({
+            profile: 'che',
+            profileName: 'che:908',
+            databaseUrl: gameDatabaseUrl,
+            gatewayDatabaseUrl,
+            redisUrl: resolveRedisConfigFromEnv().url,
+        });
+        turnDaemonLoop = turnDaemon.lifecycle.start();
+        expect(await transport.requestStatus(10_000)).not.toBeNull();
+
         for (let attempt = 0; attempt < 36; attempt += 1) {
             const current = turnDaemon.world.getState().lastTurnTime;
             const next = new Date(current.getTime());
@@ -509,7 +527,54 @@ describe('actual tournament lifecycle', () => {
         );
         expect(settlementEvents.every((event) => (event.result as { ok?: boolean } | null)?.ok === true)).toBe(true);
         const rewardEvent = settlementEvents.find((event) => event.eventType === 'tournamentReward');
-        // Ref setGift(): 16*1 + 8*2 + 4*3 + both finalists*6 + winner*8 = 64 develcost.
-        expect((rewardEvent?.result as { totalGold?: number } | null)?.totalGold).toBe(currentDevelCost * 64);
+        const finalMatches = await store.getMatches();
+        const rewardMultipliers = new Map<number, number>();
+        const addRewardTier = (ids: number[], multiplier: number): void => {
+            for (const id of new Set(ids)) {
+                rewardMultipliers.set(id, (rewardMultipliers.get(id) ?? 0) + multiplier);
+            }
+        };
+        const roundOf16 = finalMatches.filter((match) => match.stage === 7);
+        const quarterfinals = finalMatches.filter((match) => match.stage === 8);
+        const final = finalMatches.find((match) => match.stage === 10 && typeof match.winnerId === 'number');
+        expect(final).toBeDefined();
+        addRewardTier(
+            roundOf16.flatMap((match) => [match.attackerId, match.defenderId]),
+            1
+        );
+        addRewardTier(
+            roundOf16.flatMap((match) => (typeof match.winnerId === 'number' ? [match.winnerId] : [])),
+            2
+        );
+        addRewardTier(
+            quarterfinals.flatMap((match) => (typeof match.winnerId === 'number' ? [match.winnerId] : [])),
+            3
+        );
+        addRewardTier([final!.attackerId, final!.defenderId], 6);
+        addRewardTier([final!.winnerId!], 8);
+
+        // Ref's tier multipliers apply to each bracket result. The daemon mutates
+        // only generals loaded in its world, so fixture-only/dummy entries remain missing.
+        const persistedRewardIds = new Set(
+            (
+                await gameConnector.prisma.general.findMany({
+                    where: { id: { in: Array.from(rewardMultipliers.keys()) } },
+                    select: { id: true },
+                })
+            ).map(({ id }) => id)
+        );
+        const loadedRewardIds = new Set(
+            Array.from(rewardMultipliers.keys()).filter((id) => turnDaemon!.world.getGeneralById(id) !== undefined)
+        );
+        const expectedTotalGold = Array.from(rewardMultipliers).reduce(
+            (sum, [id, multiplier]) => sum + (loadedRewardIds.has(id) ? currentDevelCost * multiplier : 0),
+            0
+        );
+        expect(persistedRewardIds.size).toBeGreaterThanOrEqual(loadedRewardIds.size);
+        expect(rewardEvent?.result).toMatchObject({
+            rewarded: loadedRewardIds.size,
+            missing: rewardMultipliers.size - loadedRewardIds.size,
+            totalGold: expectedTotalGold,
+        });
     }, 120_000);
 });

@@ -4,6 +4,7 @@ import { GamePrisma, type DatabaseClient } from '@sammo-ts/infra';
 
 import type { TurnDaemonTransport } from './transport.js';
 import type { TurnDaemonCommand, TurnDaemonCommandResult, TurnDaemonStatus } from './types.js';
+import { loadCurrentGameTime } from '../services/gameClock.js';
 
 const asJson = (value: unknown): GamePrisma.InputJsonValue => value as GamePrisma.InputJsonValue;
 
@@ -19,6 +20,18 @@ const stableJson = (value: unknown): string => {
             .join(',')}}`;
     }
     return JSON.stringify(value) ?? 'null';
+};
+const commandIdentityJson = (value: unknown): string => {
+    if (
+        value &&
+        typeof value === 'object' &&
+        !Array.isArray(value) &&
+        Reflect.get(value, 'type') === 'npcPossessGeneral'
+    ) {
+        const { acceptedGameAt: _acceptedGameAt, ...identity } = value as Record<string, unknown>;
+        return stableJson(identity);
+    }
+    return stableJson(value);
 };
 
 export class ConflictingTurnDaemonCommandError extends Error {
@@ -57,6 +70,9 @@ export class DatabaseTurnDaemonTransport implements TurnDaemonTransport {
     async sendCommand(command: TurnDaemonCommand): Promise<string> {
         const requestId = ('requestId' in command ? command.requestId : undefined) ?? randomUUID();
         const durableCommand = JSON.parse(JSON.stringify({ ...command, requestId })) as TurnDaemonCommand;
+        if (durableCommand.type === 'npcPossessGeneral') {
+            delete durableCommand.acceptedGameAt;
+        }
         if (command.type === 'npcPossessGeneral') {
             const existing = await this.db.inputEvent.findUnique({
                 where: { requestId },
@@ -65,7 +81,7 @@ export class DatabaseTurnDaemonTransport implements TurnDaemonTransport {
             if (existing) {
                 if (
                     existing.eventType !== command.type ||
-                    stableJson(existing.payload) !== stableJson(durableCommand)
+                    commandIdentityJson(existing.payload) !== commandIdentityJson(durableCommand)
                 ) {
                     throw new ConflictingTurnDaemonCommandError(requestId);
                 }
@@ -82,11 +98,12 @@ export class DatabaseTurnDaemonTransport implements TurnDaemonTransport {
                         GamePrisma.sql`SELECT pg_advisory_xact_lock(hashtextextended(${`npc-possession:${command.userId}`}, 1))`
                     );
                     const acceptedAt = new Date(Math.floor(Date.now() / 1000) * 1000);
+                    const acceptedGameAt = (await loadCurrentGameTime(transaction, acceptedAt)).now;
                     const token = await transaction.npcSelectionToken.findFirst({
                         where: {
                             ownerUserId: command.userId,
                             nonce: command.tokenNonce,
-                            validUntil: { gte: acceptedAt },
+                            validUntil: { gte: acceptedGameAt },
                         },
                         select: { pickResult: true },
                     });
@@ -101,7 +118,11 @@ export class DatabaseTurnDaemonTransport implements TurnDaemonTransport {
                     ) {
                         return '선택한 장수가 목록에 없습니다.';
                     }
-                    await this.createInputEvent(transaction, durableCommand, requestId, acceptedAt);
+                    const acceptedCommand: Extract<TurnDaemonCommand, { type: 'npcPossessGeneral' }> = {
+                        ...(durableCommand as Extract<TurnDaemonCommand, { type: 'npcPossessGeneral' }>),
+                        acceptedGameAt: acceptedGameAt.toISOString(),
+                    };
+                    await this.createInputEvent(transaction, acceptedCommand, requestId, acceptedAt);
                     return null;
                 });
                 if (rejectionReason) {
@@ -123,7 +144,10 @@ export class DatabaseTurnDaemonTransport implements TurnDaemonTransport {
                 where: { requestId },
                 select: { eventType: true, payload: true },
             });
-            if (existing.eventType !== command.type || stableJson(existing.payload) !== stableJson(durableCommand)) {
+            if (
+                existing.eventType !== command.type ||
+                commandIdentityJson(existing.payload) !== commandIdentityJson(durableCommand)
+            ) {
                 throw new ConflictingTurnDaemonCommandError(requestId);
             }
         }

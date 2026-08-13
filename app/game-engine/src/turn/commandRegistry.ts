@@ -301,6 +301,7 @@ const zNpcPossessGeneral = z
         ownerLegacyPenalty: zRecord.optional(),
         generalId: z.number().int().positive(),
         tokenNonce: z.number().int().nonnegative(),
+        acceptedGameAt: z.string().refine(isCanonicalIsoTimestamp).optional(),
     })
     .strict();
 

@@ -88,8 +88,9 @@ export const processDueAuctionId = async (options: {
     id: string;
     nowMs: number;
     nowTick?: number | null;
+    historyNowMs?: number;
 }): Promise<'FINALIZING' | 'RESCHEDULED' | 'IGNORED'> => {
-    const { db, redis, timerKey, historyKey, id, nowMs, nowTick = null } = options;
+    const { db, redis, timerKey, historyKey, id, nowMs, nowTick = null, historyNowMs = nowMs } = options;
     const auctionId = Number(id);
     if (!Number.isSafeInteger(auctionId) || auctionId < 1) {
         return 'IGNORED';
@@ -160,7 +161,8 @@ export const processDueAuctionId = async (options: {
     });
 
     if (outcome.status === 'FINALIZING') {
-        await redis.zAdd(historyKey, [{ score: nowMs, value: id }]);
+        // history retention은 운영 경과시간 기준이며 게임의 논리 시각과 분리한다.
+        await redis.zAdd(historyKey, [{ score: historyNowMs, value: id }]);
         return 'FINALIZING';
     }
     if (outcome.status === 'RESCHEDULED') {
@@ -224,6 +226,7 @@ export const runAuctionWorker = async (options: AuctionWorkerOptions = {}): Prom
                             id,
                             nowMs: gameNowMs,
                             nowTick: gameTime.tick,
+                            historyNowMs: operationalNowMs,
                         });
                     } catch (error) {
                         const message = error instanceof Error ? error.message : 'Unknown auction worker error';

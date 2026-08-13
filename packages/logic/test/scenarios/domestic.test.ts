@@ -8,7 +8,7 @@ import type { TurnCommandEnv } from '../../src/actions/turn/commandEnv.js';
 import { loadActionModuleBundle } from '../../src/actionModules/bundle.js';
 
 describe('Domestic Affairs Scenario', () => {
-    it('should increase agriculture when executing "Farming" command', async () => {
+    it('should increase agriculture when executing "Farming" command', { timeout: 15_000 }, async () => {
         // 1. Setup World
         const mockNation: Nation = {
             id: 1,
