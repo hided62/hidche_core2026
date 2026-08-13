@@ -48,6 +48,48 @@ export type NationGeneralDisplaySetting = {
 
 export type NationGeneralSettingKey = [true, NationGeneralViewMode] | [false, string];
 
+export type TextFilterOperator =
+    'contains' | 'notContains' | 'equals' | 'notEqual' | 'startsWith' | 'endsWith' | 'blank' | 'notBlank';
+export type NumberFilterOperator =
+    | 'equals'
+    | 'notEqual'
+    | 'lessThan'
+    | 'lessThanOrEqual'
+    | 'greaterThan'
+    | 'greaterThanOrEqual'
+    | 'inRange'
+    | 'blank'
+    | 'notBlank';
+export type NationGeneralFilterOperator = TextFilterOperator | NumberFilterOperator;
+export type NationGeneralFilterCondition = {
+    operator: NationGeneralFilterOperator;
+    value: string;
+    valueTo: string;
+};
+
+export const textFilterOperators: readonly { value: TextFilterOperator; label: string }[] = [
+    { value: 'contains', label: 'Contains' },
+    { value: 'notContains', label: 'Not contains' },
+    { value: 'equals', label: 'Equals' },
+    { value: 'notEqual', label: 'Not equal' },
+    { value: 'startsWith', label: 'Starts with' },
+    { value: 'endsWith', label: 'Ends with' },
+    { value: 'blank', label: 'Blank' },
+    { value: 'notBlank', label: 'Not blank' },
+];
+
+export const numberFilterOperators: readonly { value: NumberFilterOperator; label: string }[] = [
+    { value: 'equals', label: 'Equals' },
+    { value: 'notEqual', label: 'Not equal' },
+    { value: 'lessThan', label: 'Less than' },
+    { value: 'lessThanOrEqual', label: 'Less than or equals' },
+    { value: 'greaterThan', label: 'Greater than' },
+    { value: 'greaterThanOrEqual', label: 'Greater than or equals' },
+    { value: 'inRange', label: 'In range' },
+    { value: 'blank', label: 'Blank' },
+    { value: 'notBlank', label: 'Not blank' },
+];
+
 export const DISPLAY_SETTINGS_KEY = 'GeneralListDisplaySetting';
 export const DISPLAY_SETTINGS_VERSION = 1;
 export const lastUsedSettingsKey = (role: string): string => `LastUsedSettingsKey_${role}`;
@@ -267,6 +309,78 @@ export const matchesKoreanSearch = (value: string, query: string): boolean => {
         normalizedValue.includes(normalizedQuery) ||
         normalizeSearchText(hangulInitials(value)).includes(normalizedQuery)
     );
+};
+
+const normalizedSearchValues = (value: string): [string, string] => [
+    normalizeSearchText(value),
+    normalizeSearchText(hangulInitials(value)),
+];
+
+export const matchesTextFilterCondition = (value: string | null, condition: NationGeneralFilterCondition): boolean => {
+    const blank = value === null || value === '';
+    if (condition.operator === 'blank') return blank;
+    if (condition.operator === 'notBlank') return !blank;
+
+    const query = normalizeSearchText(condition.value);
+    if (!query) return true;
+    if (value === null) return false;
+    const candidates = normalizedSearchValues(value);
+    const matches = (predicate: (candidate: string) => boolean): boolean => candidates.some(predicate);
+    switch (condition.operator) {
+        case 'notContains':
+            return !matches((candidate) => candidate.includes(query));
+        case 'equals':
+            return matches((candidate) => candidate === query);
+        case 'notEqual':
+            return !matches((candidate) => candidate === query);
+        case 'startsWith':
+            return matches((candidate) => candidate.startsWith(query));
+        case 'endsWith':
+            return matches((candidate) => candidate.endsWith(query));
+        default:
+            return matches((candidate) => candidate.includes(query));
+    }
+};
+
+const parseFiniteNumber = (raw: string): number | null => {
+    const normalized = raw.trim();
+    if (!normalized) return null;
+    const parsed = Number(normalized);
+    return Number.isFinite(parsed) ? parsed : null;
+};
+
+export const matchesNumberFilterCondition = (
+    value: number | null,
+    condition: NationGeneralFilterCondition
+): boolean => {
+    const blank = value === null || !Number.isFinite(value);
+    if (condition.operator === 'blank') return blank;
+    if (condition.operator === 'notBlank') return !blank;
+    if (blank) return false;
+
+    const expected = parseFiniteNumber(condition.value);
+    if (expected === null) return true;
+    switch (condition.operator) {
+        case 'notEqual':
+            return value !== expected;
+        case 'lessThan':
+            return value < expected;
+        case 'lessThanOrEqual':
+            return value <= expected;
+        case 'greaterThan':
+            return value > expected;
+        case 'greaterThanOrEqual':
+            return value >= expected;
+        case 'inRange': {
+            const expectedTo = parseFiniteNumber(condition.valueTo);
+            return (
+                expectedTo === null ||
+                (value >= Math.min(expected, expectedTo) && value <= Math.max(expected, expectedTo))
+            );
+        }
+        default:
+            return value === expected;
+    }
 };
 
 export const matchesNumberSearch = (value: number | null, query: string): boolean => {

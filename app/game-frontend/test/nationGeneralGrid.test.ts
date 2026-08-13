@@ -6,10 +6,14 @@ import {
     compareGridValues,
     defaultNationGeneralDisplaySettings,
     matchesKoreanSearch,
+    matchesNumberFilterCondition,
     matchesNumberSearch,
+    matchesTextFilterCondition,
+    numberFilterOperators,
     parseStoredDisplaySettings,
     parseStoredSettingKey,
     serializeDisplaySettings,
+    textFilterOperators,
 } from '../src/utils/nationGeneralGrid.ts';
 
 void describe('nation general Ref-compatible grid state', () => {
@@ -57,5 +61,54 @@ void describe('nation general Ref-compatible grid state', () => {
         assert.equal(compareGridValues(10, 2) > 0, true);
         assert.equal(compareGridValues(null, 2) > 0, true);
         assert.equal(compareGridValues('가', '나') < 0, true);
+    });
+
+    void it('exposes the Ref text and number filter menus in the same order', () => {
+        assert.deepEqual(
+            textFilterOperators.map((operator) => operator.label),
+            ['Contains', 'Not contains', 'Equals', 'Not equal', 'Starts with', 'Ends with', 'Blank', 'Not blank']
+        );
+        assert.deepEqual(
+            numberFilterOperators.map((operator) => operator.label),
+            [
+                'Equals',
+                'Not equal',
+                'Less than',
+                'Less than or equals',
+                'Greater than',
+                'Greater than or equals',
+                'In range',
+                'Blank',
+                'Not blank',
+            ]
+        );
+    });
+
+    void it('applies Ref text operators to Korean text and initial consonants', () => {
+        assert.equal(
+            matchesTextFilterCondition('테스트장수', { operator: 'contains', value: 'ㅌㅅㅌ', valueTo: '' }),
+            true
+        );
+        assert.equal(
+            matchesTextFilterCondition('테스트장수', { operator: 'notContains', value: '다른', valueTo: '' }),
+            true
+        );
+        assert.equal(
+            matchesTextFilterCondition('테스트장수', { operator: 'startsWith', value: 'ㅌㅅ', valueTo: '' }),
+            true
+        );
+        assert.equal(matchesTextFilterCondition('', { operator: 'blank', value: '', valueTo: '' }), true);
+        assert.equal(matchesTextFilterCondition('장수', { operator: 'notBlank', value: '', valueTo: '' }), true);
+    });
+
+    void it('applies Ref number comparison, range, and blank operators', () => {
+        assert.equal(
+            matchesNumberFilterCondition(70, { operator: 'greaterThanOrEqual', value: '60', valueTo: '' }),
+            true
+        );
+        assert.equal(matchesNumberFilterCondition(70, { operator: 'inRange', value: '65', valueTo: '75' }), true);
+        assert.equal(matchesNumberFilterCondition(40, { operator: 'inRange', value: '65', valueTo: '75' }), false);
+        assert.equal(matchesNumberFilterCondition(null, { operator: 'blank', value: '', valueTo: '' }), true);
+        assert.equal(matchesNumberFilterCondition(0, { operator: 'notBlank', value: '', valueTo: '' }), true);
     });
 });
