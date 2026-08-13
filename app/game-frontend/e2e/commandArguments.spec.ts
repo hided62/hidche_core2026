@@ -30,6 +30,51 @@ const inputOptions = {
     nationTypes: [{ value: 'che_중립', label: '중립' }],
     colors: [{ value: 0, label: '색상 1', color: '#ff0000' }],
     items: { horse: [{ value: 'None', label: '판매/해제' }] },
+    recruitment: {
+        techLevel: 1,
+        leadership: 68,
+        fullLeadership: 70,
+        currentCrewTypeId: 1100,
+        currentCrewTypeName: '보병',
+        crew: 500,
+        gold: 12_345,
+        groups: [
+            {
+                armType: 1,
+                armName: '보병',
+                values: [
+                    {
+                        id: 1100,
+                        armType: 1,
+                        name: '보병',
+                        available: true,
+                        special: false,
+                        attack: 125,
+                        defence: 175,
+                        speed: 7,
+                        avoid: 10,
+                        baseCost: 10.35,
+                        baseRice: 10.35,
+                        info: ['표준적인 보병입니다.', '보병은 방어특화입니다.'],
+                    },
+                    {
+                        id: 1101,
+                        armType: 1,
+                        name: '정예병',
+                        available: false,
+                        special: true,
+                        attack: 175,
+                        defence: 225,
+                        speed: 8,
+                        avoid: 20,
+                        baseCost: 13.8,
+                        baseRice: 11.5,
+                        info: ['강력하지만 기술이 필요합니다.'],
+                    },
+                ],
+            },
+        ],
+    },
     context: {
         actorGold: 1000,
         actorRice: 1000,
@@ -61,6 +106,11 @@ const commandTable = {
                         },
                     ],
                 },
+            ],
+        },
+        {
+            category: '내정',
+            values: [
                 {
                     key: 'che_징병',
                     name: '징병',
@@ -68,13 +118,18 @@ const commandTable = {
                     possible: true,
                     status: 'needsInput',
                     inputFields: [
-                        {
-                            key: 'crewType',
-                            label: '병종',
-                            kind: 'select',
-                            required: true,
-                            optionSource: 'crewTypes',
-                        },
+                        { key: 'crewType', label: '병종', kind: 'select', required: true, optionSource: 'crewTypes' },
+                        { key: 'amount', label: '수량', kind: 'number', required: true, min: 0, step: 1 },
+                    ],
+                },
+                {
+                    key: 'che_모병',
+                    name: '모병',
+                    reqArg: true,
+                    possible: true,
+                    status: 'needsInput',
+                    inputFields: [
+                        { key: 'crewType', label: '병종', kind: 'select', required: true, optionSource: 'crewTypes' },
                         { key: 'amount', label: '수량', kind: 'number', required: true, min: 0, step: 1 },
                     ],
                 },
@@ -151,8 +206,46 @@ const generalContext = {
         dedication: 0,
         items: { horse: 'None', weapon: 'None', book: 'None', item: 'None' },
     },
-    city: { id: 1, name: '업', level: 8, region: 1, population: 1000, populationMax: 2000 },
-    nation: { id: 1, name: '아국', color: '#008000', level: 1 },
+    city: {
+        id: 1,
+        name: '업',
+        level: 8,
+        levelName: '특',
+        region: 1,
+        regionName: '하북',
+        nationId: 1,
+        nationName: '아국',
+        population: 1000,
+        populationMax: 2000,
+        agriculture: 100,
+        agricultureMax: 200,
+        commerce: 100,
+        commerceMax: 200,
+        security: 100,
+        securityMax: 200,
+        trust: 70,
+        trade: 100,
+        defence: 100,
+        defenceMax: 200,
+        wall: 100,
+        wallMax: 200,
+        supplyState: 1,
+        frontState: 0,
+    },
+    nation: {
+        id: 1,
+        name: '아국',
+        color: '#008000',
+        level: 1,
+        levelName: '호족',
+        gold: 5000,
+        rice: 6000,
+        tech: 100,
+        typeCode: 'che_중립',
+        typeName: '중립',
+        capitalCityId: 1,
+        capitalCityName: '업',
+    },
     settings: {},
     penalties: {},
 };
@@ -180,6 +273,7 @@ const install = async (page: Page, rejectGeneral = false) => {
     const nationTurns = turns(12);
     let generalRevision = 0;
     let nationRevision = 0;
+    let dashboardLoaded = false;
     await page.addInitScript((profile) => {
         localStorage.setItem('sammo-game-token', 'ga_commands');
         localStorage.setItem('sammo-game-profile', profile);
@@ -189,16 +283,33 @@ const install = async (page: Page, rejectGeneral = false) => {
         const names = operations(route);
         const body = route.request().postDataJSON();
         const results = names.map((name) => {
-            if (name === 'dashboard.getContextBundleDelta')
+            if (name === 'dashboard.getContextBundleDelta') {
+                const initial = !dashboardLoaded;
+                dashboardLoaded = true;
                 return response({
-                    context: { kind: 'snapshot', revision: 'context-v1', data: generalContext },
-                    commandTable: { kind: 'snapshot', revision: 'commands-v1', data: commandTable },
-                    boardAccess: {
-                        kind: 'snapshot',
-                        revision: 'board-v1',
-                        data: { permission: 0, canMeeting: false, canSecret: false },
-                    },
+                    context: initial
+                        ? {
+                              kind: 'snapshot',
+                              revision: 'AAAAAAAAAAAAAAAAAAAAAA',
+                              data: generalContext,
+                          }
+                        : { kind: 'unchanged', revision: 'AAAAAAAAAAAAAAAAAAAAAA' },
+                    commandTable: initial
+                        ? {
+                              kind: 'snapshot',
+                              revision: 'BBBBBBBBBBBBBBBBBBBBBB',
+                              data: commandTable,
+                          }
+                        : { kind: 'unchanged', revision: 'BBBBBBBBBBBBBBBBBBBBBB' },
+                    boardAccess: initial
+                        ? {
+                              kind: 'snapshot',
+                              revision: 'CCCCCCCCCCCCCCCCCCCCCC',
+                              data: { permission: 4, canMeeting: true, canSecret: true },
+                          }
+                        : { kind: 'unchanged', revision: 'CCCCCCCCCCCCCCCCCCCCCC' },
                 });
+            }
             if (name === 'general.me') return response(generalContext);
             if (name === 'world.getMapLayout')
                 return response({
@@ -375,6 +486,114 @@ test('enters general and nation command arguments and sends exact values', async
     expect(Number.parseFloat(geometry.fontSize)).toBeGreaterThanOrEqual(10);
 });
 
+test('shows Ref recruitment details and preserves the 1000px desktop and 500px mobile information layouts', async ({
+    page,
+}, testInfo) => {
+    const requests = await install(page);
+    await page.setViewportSize({ width: 1200, height: 900 });
+    await page.goto('/');
+
+    await page.getByRole('button', { name: '1턴 명령 입력', exact: true }).click();
+    let picker = page.getByTestId('command-picker');
+    await picker.getByRole('button', { name: '내정', exact: true }).click();
+    await picker.getByRole('button', { name: '징병', exact: true }).click();
+    let form = picker.getByTestId('recruitment-command-form');
+    await expect(form).toContainText('현재 기술력 : 1등급');
+    await expect(form).toContainText('공격');
+    await expect(form).toContainText('방어');
+    await expect(form).toContainText('기동');
+    await expect(form).toContainText('회피');
+    await expect(form).toContainText('가격');
+    await expect(form).toContainText('군량');
+    await expect(form).toContainText('표준적인 보병입니다.');
+    await expect(form.getByRole('button', { name: '정예병 선택 불가', exact: true })).toHaveCount(0);
+    await form.getByRole('button', { name: '선택 할 수 없는 병종도 보기', exact: true }).click();
+    const unavailable = form.getByRole('button', { name: '정예병 선택 불가', exact: true });
+    await expect(unavailable).toBeVisible();
+    await expect(unavailable.locator('.crew-name')).toHaveCSS('background-color', 'rgb(201, 0, 0)');
+
+    const desktopGeometry = await form.evaluate(async (element) => {
+        const row = element.querySelector('.crew-row');
+        const image = row?.querySelector('.crew-image');
+        const info = row?.querySelector('.crew-info');
+        const backgroundImage = image ? getComputedStyle(image).backgroundImage : '';
+        const imageUrl = backgroundImage.match(/^url\(["']?(.*?)["']?\)$/)?.[1];
+        const naturalSize = imageUrl
+            ? await new Promise<{ width: number; height: number } | null>((resolve) => {
+                  const probe = new Image();
+                  probe.onload = () => resolve({ width: probe.naturalWidth, height: probe.naturalHeight });
+                  probe.onerror = () => resolve(null);
+                  probe.src = imageUrl;
+              })
+            : null;
+        return {
+            formWidth: element.getBoundingClientRect().width,
+            rowHeight: row?.getBoundingClientRect().height ?? 0,
+            infoWidth: info?.getBoundingClientRect().width ?? 0,
+            imageNaturalSize: naturalSize,
+            scrollWidth: element.scrollWidth,
+            clientWidth: element.clientWidth,
+        };
+    });
+    expect(desktopGeometry.formWidth).toBeCloseTo(986, 0);
+    expect(desktopGeometry.rowHeight).toBeGreaterThanOrEqual(64);
+    expect(desktopGeometry.infoWidth).toBeCloseTo(250, 0);
+    expect(desktopGeometry.imageNaturalSize).toEqual({ width: 128, height: 128 });
+    expect(desktopGeometry.scrollWidth).toBe(desktopGeometry.clientWidth);
+
+    const infantry = form.getByRole('button', { name: '보병 선택 가능', exact: true });
+    await infantry.getByRole('button', { name: '절반', exact: true }).click();
+    await page.screenshot({ path: testInfo.outputPath('recruitment-desktop.png') });
+    await picker.getByRole('button', { name: '입력', exact: true }).click();
+    await expect(page.locator('[data-command-scope="general"] .action-column > div').first()).toHaveText('징병');
+    expect(JSON.stringify(requests)).toContain('"crewType":1100');
+    expect(JSON.stringify(requests)).toContain('"amount":3500');
+
+    await page.setViewportSize({ width: 390, height: 844 });
+    await page.getByRole('button', { name: '2턴 명령 입력', exact: true }).click();
+    picker = page.getByTestId('command-picker');
+    await picker.getByRole('button', { name: '내정', exact: true }).click();
+    await picker.getByRole('button', { name: '징병', exact: true }).click();
+    form = picker.getByTestId('recruitment-command-form');
+    await page.evaluate(() => window.scrollTo(0, 0));
+    const mobileGeometry = await form.evaluate((element) => {
+        const row = element.querySelector('.crew-row');
+        const image = row?.querySelector('.crew-image');
+        const info = row?.querySelector('.crew-info');
+        const selectedPanel = element.querySelector('.mobile-selected-panel');
+        return {
+            formLeft: element.getBoundingClientRect().left,
+            formWidth: element.getBoundingClientRect().width,
+            rowWidth: row?.getBoundingClientRect().width ?? 0,
+            rowHeight: row?.getBoundingClientRect().height ?? 0,
+            imageWidth: image?.getBoundingClientRect().width ?? 0,
+            infoWidth: info?.getBoundingClientRect().width ?? 0,
+            selectedDisplay: selectedPanel ? getComputedStyle(selectedPanel).display : '',
+            scrollWidth: element.scrollWidth,
+            clientWidth: element.clientWidth,
+            documentScrollWidth: document.documentElement.scrollWidth,
+        };
+    });
+    expect(mobileGeometry.formLeft).toBe(0);
+    expect(mobileGeometry.formWidth).toBe(500);
+    expect(mobileGeometry.rowWidth).toBe(500);
+    expect(mobileGeometry.rowHeight).toBeGreaterThanOrEqual(64);
+    expect(mobileGeometry.rowHeight).toBeLessThanOrEqual(66);
+    expect(mobileGeometry.imageWidth).toBe(64);
+    expect(mobileGeometry.infoWidth).toBe(270);
+    expect(mobileGeometry.selectedDisplay).toBe('grid');
+    expect(mobileGeometry.scrollWidth).toBe(mobileGeometry.clientWidth);
+    expect(mobileGeometry.documentScrollWidth).toBeGreaterThanOrEqual(500);
+    await page.screenshot({ path: testInfo.outputPath('recruitment-mobile.png') });
+
+    await picker.getByRole('button', { name: '명령 다시 선택', exact: true }).click();
+    await picker.getByRole('button', { name: '내정', exact: true }).click();
+    await picker.getByRole('button', { name: '모병', exact: true }).click();
+    const mercenaryForm = picker.getByTestId('recruitment-command-form');
+    await expect(mercenaryForm).toContainText('모병은 가격 2배의 자금이 소요됩니다.');
+    await expect(mercenaryForm.locator('.mobile-selected-panel output')).toHaveText('1,346금');
+});
+
 test('uses the map to choose a nation target in the chief command window', async ({ page }) => {
     await install(page);
     await page.setViewportSize({ width: 1200, height: 900 });
@@ -390,19 +609,6 @@ test('uses the map to choose a nation target in the chief command window', async
     await expect(form.getByTestId('command-map-target-summary')).toContainText('수도 허창 · 도시 1개');
     await expect(page).toHaveURL(/\/che\/chief-center$/);
     await page.screenshot({ path: test.info().outputPath('chief-nation-map-option.png'), fullPage: true });
-});
-
-test('leaves the separately scoped recruitment argument window unchanged', async ({ page }) => {
-    await install(page);
-    await page.setViewportSize({ width: 1200, height: 900 });
-    await page.goto('/');
-    await page.getByRole('button', { name: '1턴 명령 입력', exact: true }).click();
-    const picker = page.getByTestId('command-picker');
-    await picker.getByRole('button', { name: /징병/ }).click();
-    await expect(picker.getByTestId('command-argument-form')).toBeVisible();
-    await expect(picker.getByTestId('command-argument-guidance')).toHaveCount(0);
-    await expect(picker.getByTestId('command-argument-map')).toHaveCount(0);
-    expect((await picker.boundingBox())?.width).toBeLessThan(300);
 });
 
 test('fits the city map option window inside the Ref-compatible 500px mobile page', async ({ page }) => {
@@ -451,7 +657,6 @@ test('uses drag selection, clipboard paste, and a stored template in advanced mo
     await page.goto('/');
 
     const editor = page.locator('[data-command-scope="general"]');
-    if ((await editor.count()) === 0) await page.reload();
     await expect(editor).toBeVisible();
     await editor.getByRole('button', { name: '고급 모드', exact: true }).click();
     const drag = async (first: number, last: number, selector = '.index-column > button') => {
