@@ -455,7 +455,10 @@ watch(
         :tournament-stage="tournamentStage"
         :nation-color="nationColor"
         :npc-mode="npcMode"
+        :realtime-enabled="realtimeEnabled"
+        :refreshing="refreshing"
         @refresh="loadMainData"
+        @toggle-realtime="dashboard.setRealtimeEnabled(!realtimeEnabled)"
         @lobby="moveLobby"
         @quick="moveQuick"
     />
