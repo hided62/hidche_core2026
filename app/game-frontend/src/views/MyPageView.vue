@@ -665,7 +665,7 @@ onMounted(() => {
             </article>
         </section>
         <footer class="legacy-credit">
-            삼국지 모의전투 PHP HiDCHe - core2026 / KOEI의 이미지를 사용, 응용하였습니다 / 제작: HideD / Credit
+            삼국지 모의전투 HiDCHe / KOEI의 이미지를 사용, 응용하였습니다 / 제작: HideD / Credit
         </footer>
     </main>
     <div class="my-page-mobile-scroll-spacer" aria-hidden="true"></div>

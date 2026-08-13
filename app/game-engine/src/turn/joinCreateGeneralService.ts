@@ -79,6 +79,7 @@ const DEFAULT_GENERAL_RICE = 1000;
 const DEFAULT_CREW_TYPE_ID = 1100;
 const MAX_GENERAL_TURNS = 30;
 const DEFAULT_TURN_ACTION = '휴식';
+export const JOIN_WELCOME_MESSAGE = '삼국지 모의전투 HiDCHe의 세계에 오신 것을 환영합니다 ^o^';
 const LEGACY_TIMEZONE_OFFSET_MS = 9 * 60 * 60 * 1000;
 const LEGACY_JOIN_REMOVED_CHARACTERS = /[ⓝⓜⓖⓞⓧ㉥\\/`#|-]/gu;
 
@@ -460,7 +461,7 @@ const pushCreationLogs = (
     logger.pushGeneralHistoryLog(`<Y>${options.name}</>, <G>${options.cityName}</>에서 큰 뜻을 품다.`);
     logger.pushGeneralActionLog(
         [
-            '삼국지 모의전투 PHP의 세계에 오신 것을 환영합니다 ^o^',
+            JOIN_WELCOME_MESSAGE,
             '처음 하시는 경우에는 <D>도움말</>을 참고하시고,',
             '문의사항이 있으시면 게시판에 글을 남겨주시면 되겠네요~',
             '부디 즐거운 삼모전 되시길 바랍니다 ^^',

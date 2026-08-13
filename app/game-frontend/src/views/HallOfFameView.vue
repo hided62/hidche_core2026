@@ -174,7 +174,7 @@ onMounted(loadOptions);
             <button class="legacy-button" type="button" @click="closePage">창 닫기</button>
         </div>
         <footer class="legacy-banner">
-            삼국지 모의전투 HiDCHe core2026 / KOEI의 이미지를 사용, 응용하였습니다 / 제작 : HideD /
+            삼국지 모의전투 HiDCHe / KOEI의 이미지를 사용, 응용하였습니다 / 제작 : HideD /
             <a href="https://sam.hided.net/wiki/hidche/credit" target="_blank" rel="noreferrer">Credit</a>
         </footer>
     </main>

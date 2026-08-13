@@ -217,7 +217,7 @@ onMounted(() => {
                 <tr>
                     <td>
                         <small>
-                            삼국지 모의전투 PHP HiDCHe - unknown / KOEI의 이미지를 사용, 응용하였습니다 / 제작 :
+                            삼국지 모의전투 HiDCHe / KOEI의 이미지를 사용, 응용하였습니다 / 제작 :
                             HideD(hided62@gmail.com) /
                             <a href="https://github.com/hided/SamK" target="_blank" rel="noopener noreferrer">Credit</a>
                         </small>

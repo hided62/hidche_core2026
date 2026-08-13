@@ -113,7 +113,7 @@ onMounted(async () => {
                     <td><button type="button" @click="router.push('/')">돌아가기</button></td>
                 </tr>
                 <tr>
-                    <td class="credit">삼국지 모의전투 PHP HiDCHe / KOEI의 이미지를 사용했습니다 / 제작: Hide.D</td>
+                    <td class="credit">삼국지 모의전투 HiDCHe / KOEI의 이미지를 사용했습니다 / 제작: Hide.D</td>
                 </tr>
             </tbody>
         </table>
