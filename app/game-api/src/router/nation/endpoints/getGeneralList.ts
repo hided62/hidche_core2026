@@ -1,6 +1,8 @@
 import { TRPCError } from '@trpc/server';
+import { asNumber, asRecord } from '@sammo-ts/common';
 
 import { accessAuthedProcedure } from '../../../trpc.js';
+import { resolveDedicationLevelName, sanitizeInternalDisplayCode } from '../../../services/gameDisplayNames.js';
 import { getMyGeneral } from '../../shared/general.js';
 import {
     assertNationAccess,
@@ -15,8 +17,8 @@ const experienceLevel = (experience: number): number =>
         0,
         Math.min(100, experience < 1000 ? Math.floor(experience / 100) : Math.floor(Math.sqrt(experience / 10)))
     );
-const dedicationLevel = (dedication: number): number =>
-    Math.max(0, Math.min(10, Math.ceil(Math.sqrt(dedication) / 10)));
+const dedicationLevel = (dedication: number, maxLevel: number): number =>
+    Math.max(0, Math.min(maxLevel, Math.ceil(Math.sqrt(dedication) / 10)));
 
 export const getGeneralList = accessAuthedProcedure.query(async ({ ctx }) => {
     const general = await getMyGeneral(ctx);
@@ -85,14 +87,22 @@ export const getGeneralList = accessAuthedProcedure.query(async ({ ctx }) => {
     const accessByGeneral = new Map(accessRows.map((entry) => [entry.generalId, entry.refreshScoreTotal]));
     const nationTrait = (await loadTraitNames([nation.typeCode], 'nation')).get(nation.typeCode);
     const permission = resolveNationPermission(general, nation.meta, true);
+    const config = asRecord(worldState?.config);
+    const maxDedicationLevel = Math.max(0, Math.trunc(asNumber(asRecord(config.const).maxDedLevel, 30)));
     const visibleList = list.map((entry) => {
+        const entryDedicationLevel = dedicationLevel(entry.dedication, maxDedicationLevel);
+        const dedicationDisplay = {
+            dedicationLevel: entryDedicationLevel,
+            dedicationText: resolveDedicationLevelName(entryDedicationLevel, maxDedicationLevel),
+            bill: entryDedicationLevel * 200 + 400,
+        };
         const { permission: _targetPermission, ...safeEntry } = entry;
         if (permission >= 1) {
             return {
                 ...safeEntry,
                 refreshScoreTotal: accessByGeneral.get(entry.id) ?? 0,
                 experienceLevel: experienceLevel(entry.experience),
-                dedicationLevel: dedicationLevel(entry.dedication),
+                ...dedicationDisplay,
             };
         }
         const { crew: _crew, experience: _experience, dedication: _dedication, ...visible } = safeEntry;
@@ -105,7 +115,7 @@ export const getGeneralList = accessAuthedProcedure.query(async ({ ctx }) => {
             officerCity: 0,
             officerCityName: null,
             experienceLevel: experienceLevel(entry.experience),
-            dedicationLevel: dedicationLevel(entry.dedication),
+            ...dedicationDisplay,
         };
     });
 
@@ -118,7 +128,7 @@ export const getGeneralList = accessAuthedProcedure.query(async ({ ctx }) => {
             typeCode: nation.typeCode,
             type: {
                 key: nation.typeCode,
-                name: nationTrait?.name ?? nation.typeCode,
+                name: nationTrait?.name ?? sanitizeInternalDisplayCode(nation.typeCode),
                 info: nationTrait?.info ?? '',
             },
             capitalCityId: nation.capitalCityId ?? 0,

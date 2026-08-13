@@ -38,6 +38,8 @@ const resolveErrorMessage = (value: unknown): string => {
 };
 
 const formatNumber = (value: number | null | undefined): string => (value ?? 0).toLocaleString();
+const displayCode = (value: string | null | undefined): string =>
+    !value || /^\d+$/u.test(value) ? '-' : value.replace(/^che_(?:event_)?/u, '');
 const cutDateTime = (value: string | null | undefined, showSecond = false): string => {
     if (!value) {
         return '-';
@@ -395,7 +397,7 @@ onMounted(() => {
                 <h2 class="section-title bg2">경매 {{ uniqueDetail.auction.id }}번 상세</h2>
                 <dl class="detail-grid">
                     <dt class="bg1">경매명</dt>
-                    <dd>{{ uniqueDetail.auction.detail.title ?? uniqueDetail.auction.targetCode }}</dd>
+                    <dd>{{ uniqueDetail.auction.detail.title ?? displayCode(uniqueDetail.auction.targetCode) }}</dd>
                     <dt class="bg1">주최자(익명)</dt>
                     <dd :class="{ 'is-me': uniqueDetail.auction.isCallerHost }">{{ uniqueDetail.auction.hostName }}</dd>
                     <dt class="bg1">종료일시</dt>
@@ -442,7 +444,7 @@ onMounted(() => {
                     @keydown.space.prevent="selectUnique(auction)"
                 >
                     <span>{{ auction.id }}</span
-                    ><span>{{ auction.detail.title ?? auction.targetCode }}</span>
+                    ><span>{{ auction.detail.title ?? displayCode(auction.targetCode) }}</span>
                     <span :class="{ 'is-me': auction.isCallerHost }">{{ auction.hostName }}</span>
                     <span class="tnum">{{ cutDateTime(auction.closeAt) }}</span>
                     <span>{{ (auction.detail.remainCloseDateExtensionCnt ?? 0) > 0 ? '남음' : '소진' }}</span>
@@ -474,7 +476,7 @@ onMounted(() => {
                     @keydown.space.prevent="selectUnique(auction)"
                 >
                     <span>{{ auction.id }}</span
-                    ><span>{{ auction.detail.title ?? auction.targetCode }}</span>
+                    ><span>{{ auction.detail.title ?? displayCode(auction.targetCode) }}</span>
                     <span :class="{ 'is-me': auction.isCallerHost }">{{ auction.hostName }}</span>
                     <span class="tnum">{{ cutDateTime(auction.closeAt) }}</span>
                     <span>{{ (auction.detail.remainCloseDateExtensionCnt ?? 0) > 0 ? '남음' : '소진' }}</span>

@@ -13,6 +13,7 @@ interface GeneralStats {
 interface GeneralProgression {
     experienceLevel: number;
     dedicationLevel: number;
+    dedicationText?: string;
     statExperience?: { leadership: number; strength: number; intelligence: number };
     statUpgradeLimit?: number;
 }
@@ -22,6 +23,7 @@ interface GeneralInfo {
     name: string;
     npcState: number;
     officerLevel: number;
+    officerLevelText: string;
     stats: GeneralStats;
     gold: number;
     rice: number;
@@ -34,6 +36,7 @@ interface GeneralInfo {
     age?: number;
     turnTime?: string;
     crewTypeId?: number;
+    crewTypeName?: string;
     traits?: { personal: string; specialWar: string; specialDomestic: string };
     progression?: GeneralProgression;
 }
@@ -78,7 +81,7 @@ const experiencePercent = computed(() =>
         <div v-else-if="!props.general" class="empty">장수 정보를 불러오지 못했습니다.</div>
         <div v-else class="general-body">
             <div class="general-title">
-                {{ props.general.name }} · 관직 {{ props.general.officerLevel }} · {{ props.general.age ?? '-' }}세 ·
+                {{ props.general.name }} · {{ props.general.officerLevelText }} · {{ props.general.age ?? '-' }}세 ·
                 다음 턴
                 {{ props.general.turnTime?.slice(11, 16) ?? '-' }}
             </div>
@@ -102,11 +105,11 @@ const experiencePercent = computed(() =>
                 ><strong>{{ props.general.crew.toLocaleString() }}</strong> <span>훈련</span
                 ><strong>{{ props.general.train }}</strong> <span>사기</span><strong>{{ props.general.atmos }}</strong>
                 <span>부상</span><strong>{{ props.general.injury }}</strong> <span>병종</span
-                ><strong>{{ props.general.crewTypeId || '-' }}</strong> <span>성격</span
+                ><strong>{{ props.general.crewTypeName ?? '-' }}</strong> <span>성격</span
                 ><strong>{{ props.general.traits?.personal ?? '-' }}</strong> <span>전투특기</span
                 ><strong>{{ props.general.traits?.specialWar ?? '-' }}</strong> <span>내정특기</span
                 ><strong>{{ props.general.traits?.specialDomestic ?? '-' }}</strong> <span>계급</span
-                ><strong>Lv {{ props.general.progression?.dedicationLevel ?? 0 }}</strong> <span>공헌</span
+                ><strong>{{ props.general.progression?.dedicationText ?? '무품관' }}</strong> <span>공헌</span
                 ><strong>{{ props.general.dedication.toLocaleString() }}</strong>
             </div>
 

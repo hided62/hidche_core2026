@@ -269,7 +269,7 @@ onMounted(() => {
                     <SkeletonLines v-if="loading" :lines="5" />
                     <div v-else-if="selectedGeneral" class="battle-general-card">
                         <div class="battle-general-name">
-                            {{ selectedGeneral.name }} (관직 {{ selectedGeneral.officerLevel }})
+                            {{ selectedGeneral.name }} ({{ selectedGeneral.officerLevelText }})
                         </div>
                         <span
                             class="battle-general-portrait"
@@ -293,9 +293,9 @@ onMounted(() => {
                         </div>
                         <div class="battle-general-extra">
                             <span>명성</span><strong>{{ selectedGeneral.experience.toLocaleString('ko-KR') }}</strong>
-                            <span>계급</span><strong>{{ selectedGeneral.dedication.toLocaleString('ko-KR') }}</strong>
+                            <span>계급</span><strong>{{ selectedGeneral.progression.dedicationText }}</strong>
                             <span>나이</span><strong>{{ selectedGeneral.age }}세</strong> <span>병종</span
-                            ><strong>{{ selectedGeneral.crewTypeId }}</strong> <span>승리</span
+                            ><strong>{{ selectedGeneral.crewTypeName }}</strong> <span>승리</span
                             ><strong>{{ selectedGeneral.battleStats.kills }}</strong> <span>패배</span
                             ><strong>{{ selectedGeneral.battleStats.deaths }}</strong> <span>사살</span
                             ><strong>{{ selectedGeneral.battleStats.killCrew.toLocaleString('ko-KR') }}</strong>
