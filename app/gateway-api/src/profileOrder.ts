@@ -1,6 +1,24 @@
 export const GATEWAY_PROFILE_ORDER = ['che', 'kwe', 'pwe', 'twe', 'nya', 'pya', 'hwe'] as const;
 
+export const GATEWAY_PROFILE_KOREAN_NAMES = {
+    che: '체',
+    kwe: '퀘',
+    pwe: '풰',
+    twe: '퉤',
+    nya: '냐',
+    pya: '퍄',
+    hwe: '훼',
+} as const satisfies Record<(typeof GATEWAY_PROFILE_ORDER)[number], string>;
+
 const gatewayProfileOrder = new Map<string, number>(GATEWAY_PROFILE_ORDER.map((profile, index) => [profile, index]));
+const gatewayProfileKoreanNames = new Map<string, string>(Object.entries(GATEWAY_PROFILE_KOREAN_NAMES));
+
+export const resolveGatewayProfileKoreanName = (profile: string, configuredName?: unknown): string => {
+    if (typeof configuredName === 'string' && configuredName.trim()) {
+        return configuredName.trim();
+    }
+    return gatewayProfileKoreanNames.get(profile) ?? profile;
+};
 
 export const compareGatewayProfiles = (
     left: { profile: string; instanceKey: string },

@@ -1,6 +1,11 @@
 import { describe, expect, it } from 'vitest';
 
-import { GATEWAY_PROFILE_ORDER, orderGatewayProfiles } from '../src/profileOrder.js';
+import {
+    GATEWAY_PROFILE_KOREAN_NAMES,
+    GATEWAY_PROFILE_ORDER,
+    orderGatewayProfiles,
+    resolveGatewayProfileKoreanName,
+} from '../src/profileOrder.js';
 
 describe('orderGatewayProfiles', () => {
     it('uses the public server order instead of alphabetical profile order', () => {
@@ -27,5 +32,27 @@ describe('orderGatewayProfiles', () => {
             { profile: 'zeta', instanceKey: 'default' },
         ]);
         expect(profiles[0]?.profile).toBe('zeta');
+    });
+});
+
+describe('resolveGatewayProfileKoreanName', () => {
+    it('uses the canonical Korean labels for every public profile', () => {
+        expect(GATEWAY_PROFILE_ORDER.map((profile) => resolveGatewayProfileKoreanName(profile))).toEqual(
+            GATEWAY_PROFILE_ORDER.map((profile) => GATEWAY_PROFILE_KOREAN_NAMES[profile])
+        );
+        expect(GATEWAY_PROFILE_ORDER.map((profile) => `${resolveGatewayProfileKoreanName(profile)}섭`)).toEqual([
+            '체섭',
+            '퀘섭',
+            '풰섭',
+            '퉤섭',
+            '냐섭',
+            '퍄섭',
+            '훼섭',
+        ]);
+    });
+
+    it('preserves configured and unknown profile names', () => {
+        expect(resolveGatewayProfileKoreanName('che', ' 천하서버 ')).toBe('천하서버');
+        expect(resolveGatewayProfileKoreanName('custom')).toBe('custom');
     });
 });
