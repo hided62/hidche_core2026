@@ -56,7 +56,6 @@ const {
     messageDraftText,
     targetMailbox,
     mailboxGroups,
-    statusLine,
     realtimeLabel,
 } = storeToRefs(dashboard);
 
@@ -141,12 +140,9 @@ watch(
         <MainGlobalMenu data-menu-position="top" :npc-mode="npcMode" :vote-active="voteActive" />
 
         <header class="game-shell__header">
-            <div>
-                <h1 class="game-shell__title">
-                    {{ lobbyInfo?.scenarioTitle || '전장 현황' }}
-                </h1>
-                <p class="game-shell__subtitle">{{ statusLine }}</p>
-            </div>
+            <h1 class="game-shell__title">
+                {{ lobbyInfo?.scenarioTitle || '전장 현황' }}
+            </h1>
             <div class="game-shell__actions desktop-action-controls">
                 <button
                     class="game-shell__action toggle"
@@ -176,7 +172,6 @@ watch(
             <span>NPC: {{ lobbyInfo.npcCnt }}</span>
             <span>국가: {{ lobbyInfo.nationCnt }}</span>
             <span>사실/가상: {{ lobbyInfo.fictionMode }}</span>
-            <span>최근 턴: {{ lobbyInfo.turntime || '-' }}</span>
             <span>{{ lobbyInfo.otherTextInfo || '진행 정보 없음' }}</span>
         </section>
 
@@ -779,6 +774,15 @@ button {
 @media (max-width: 939.98px) {
     .main-mobile-bottom-spacer {
         height: 45px;
+    }
+
+    .desktop-action-controls {
+        gap: 4px;
+    }
+
+    .desktop-action-controls .game-shell__action {
+        padding-right: 8px;
+        padding-left: 8px;
     }
 
     .main-page {
