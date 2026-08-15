@@ -18,13 +18,16 @@ const GENERAL_AI_ACTIONS = [
 
 const NATION_AI_ACTIONS = ['che_몰수', 'che_발령', 'che_선전포고', 'che_천도', 'che_포상'] as const;
 const GENERAL_REF_EDITOR_ACTIONS = [
+    'che_은퇴',
     'che_임관',
     'che_랜덤임관',
+    'che_강행',
     'che_징병',
     'che_출병',
     'che_농지개간',
     'che_화계',
     'che_증여',
+    'che_하야',
     'che_장비매매',
 ] as const;
 const NATION_REF_EDITOR_ACTIONS = ['che_포상', 'che_발령', 'che_증축', 'che_필사즉생'] as const;
