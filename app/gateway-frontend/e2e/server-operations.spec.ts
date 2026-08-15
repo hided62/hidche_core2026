@@ -18,6 +18,15 @@ type Operation = {
     updatedAt: string;
 };
 
+type LogEntry = {
+    cursor: string;
+    operationId: string;
+    level: 'INFO' | 'OUTPUT' | 'ERROR';
+    phase: string;
+    message: string;
+    createdAt: string;
+};
+
 type FixtureState = {
     operations: Operation[];
     gatewayOperations: Array<{
@@ -39,8 +48,12 @@ type FixtureState = {
     profileLogPollCount?: number;
     profileLogProgress?: boolean;
     profileLogsEmpty?: boolean;
+    profileLogBatches?: LogEntry[][];
+    profileLogPollGate?: (pollCount: number) => Promise<void>;
     gatewayLogPollCount?: number;
     gatewayLogsEmpty?: boolean;
+    gatewayLogBatches?: LogEntry[][];
+    gatewayLogPollGate?: (pollCount: number) => Promise<void>;
     gatewayStateFailuresAfterRequest?: number;
     gatewayStateFailuresRemaining?: number;
     gatewayStateFailureCount?: number;
@@ -160,6 +173,12 @@ const installFixture = async (page: Page, state: FixtureState) => {
         if (names.includes('admin.operations.logs') && !state.profileLogProgress) {
             await new Promise((resolve) => setTimeout(resolve, 50));
         }
+        if (names.includes('admin.operations.logs') && state.profileLogPollGate) {
+            await state.profileLogPollGate((state.profileLogPollCount ?? 0) + 1);
+        }
+        if (names.includes('admin.releases.logs') && state.gatewayLogPollGate) {
+            await state.gatewayLogPollGate((state.gatewayLogPollCount ?? 0) + 1);
+        }
         const results = names.map((name) => {
             if (route.request().method() === 'POST') {
                 state.requestBodies.push({ operation: name, body });
@@ -197,6 +216,20 @@ const installFixture = async (page: Page, state: FixtureState) => {
                 const operation = state.operations[0];
                 if (!operation) throw new Error('Profile operation fixture is missing');
                 state.profileLogPollCount = (state.profileLogPollCount ?? 0) + 1;
+                if (state.profileLogBatches) {
+                    const entries = state.profileLogBatches[state.profileLogPollCount - 1] ?? [];
+                    const completed = state.profileLogPollCount >= state.profileLogBatches.length;
+                    const nextOperation = {
+                        ...operation,
+                        status: completed ? ('SUCCEEDED' as const) : ('RUNNING' as const),
+                    };
+                    state.operations[0] = nextOperation;
+                    return response({
+                        operation: nextOperation,
+                        entries,
+                        nextCursor: entries.at(-1)?.cursor,
+                    });
+                }
                 if (['SUCCEEDED', 'FAILED', 'CANCELLED'].includes(operation.status)) {
                     return response({ operation, entries: [] });
                 }
@@ -258,6 +291,20 @@ const installFixture = async (page: Page, state: FixtureState) => {
                 const releaseOperation = state.gatewayOperations[0];
                 if (!releaseOperation) throw new Error('Release operation fixture is missing');
                 state.gatewayLogPollCount = (state.gatewayLogPollCount ?? 0) + 1;
+                if (state.gatewayLogBatches) {
+                    const entries = state.gatewayLogBatches[state.gatewayLogPollCount - 1] ?? [];
+                    const completed = state.gatewayLogPollCount >= state.gatewayLogBatches.length;
+                    const nextOperation = {
+                        ...releaseOperation,
+                        status: completed ? ('SUCCEEDED' as const) : ('RUNNING' as const),
+                    };
+                    state.gatewayOperations[0] = nextOperation;
+                    return response({
+                        operation: nextOperation,
+                        entries,
+                        nextCursor: entries.at(-1)?.cursor,
+                    });
+                }
                 if (state.gatewayLogsEmpty) {
                     return response({ operation: releaseOperation, entries: [] });
                 }
@@ -406,6 +453,27 @@ const installFixture = async (page: Page, state: FixtureState) => {
             ),
         });
     });
+};
+
+const makeLogEntries = (operationId: string, prefix: string, startCursor: number, count: number): LogEntry[] =>
+    Array.from({ length: count }, (_, index) => {
+        const cursor = startCursor + index;
+        return {
+            cursor: String(cursor),
+            operationId,
+            level: 'OUTPUT',
+            phase: 'build',
+            message: `${prefix} ${cursor}`,
+            createdAt: '2026-08-01T01:00:00.000Z',
+        };
+    });
+
+const deferred = () => {
+    let resolve!: () => void;
+    const promise = new Promise<void>((done) => {
+        resolve = done;
+    });
+    return { promise, resolve };
 };
 
 test('separates branch and commit semantics and submits a reset from the dedicated page', async ({
@@ -633,6 +701,142 @@ test('separates DB-preserving profile deployment from DB reset', async ({ page }
     expect(state.requestBodies.some((entry) => entry.operation === 'admin.operations.requestDeploy')).toBe(true);
     expect(state.requestBodies.some((entry) => entry.operation === 'admin.operations.requestReset')).toBe(false);
 });
+
+for (const viewportSize of [
+    { name: 'desktop', width: 1280, height: 720 },
+    { name: 'mobile', width: 390, height: 844 },
+]) {
+    test(`follows new profile and Gateway logs only while each viewport is near the end on ${viewportSize.name}`, async ({
+        page,
+    }, testInfo) => {
+        await page.setViewportSize(viewportSize);
+        const profileOperationId = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
+        const gatewayOperationId = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
+        const profileSecondPoll = deferred();
+        const profileThirdPoll = deferred();
+        const gatewaySecondPoll = deferred();
+        const gatewayThirdPoll = deferred();
+        const state: FixtureState = {
+            operations: [
+                {
+                    id: profileOperationId,
+                    profileName: 'che:default',
+                    type: 'DEPLOY',
+                    status: 'RUNNING',
+                    sourceMode: 'BRANCH',
+                    sourceRef: 'main',
+                    payload: {},
+                    requestedBy: 'admin',
+                    createdAt: '2026-08-01T01:00:00.000Z',
+                    updatedAt: '2026-08-01T01:00:00.000Z',
+                },
+            ],
+            gatewayOperations: [
+                {
+                    id: gatewayOperationId,
+                    type: 'DEPLOY',
+                    status: 'RUNNING',
+                    sourceMode: 'BRANCH',
+                    sourceRef: 'main',
+                    payload: {},
+                    requestedBy: 'admin',
+                    createdAt: '2026-08-01T02:00:00.000Z',
+                    updatedAt: '2026-08-01T02:00:00.000Z',
+                },
+            ],
+            runtimeRunning: true,
+            requestBodies: [],
+            profileLogProgress: true,
+            profileLogBatches: [
+                makeLogEntries(profileOperationId, 'profile history', 1, 80),
+                makeLogEntries(profileOperationId, 'profile while reading', 81, 1),
+                makeLogEntries(profileOperationId, 'profile near end', 82, 1),
+            ],
+            profileLogPollGate: async (pollCount) => {
+                if (pollCount === 2) await profileSecondPoll.promise;
+                if (pollCount === 3) await profileThirdPoll.promise;
+            },
+            gatewayLogBatches: [
+                makeLogEntries(gatewayOperationId, 'gateway history', 1, 80),
+                makeLogEntries(gatewayOperationId, 'gateway while reading', 81, 1),
+                makeLogEntries(gatewayOperationId, 'gateway near end', 82, 1),
+            ],
+            gatewayLogPollGate: async (pollCount) => {
+                if (pollCount === 2) await gatewaySecondPoll.promise;
+                if (pollCount === 3) await gatewayThirdPoll.promise;
+            },
+        };
+        await installFixture(page, state);
+
+        const verifyViewport = async (
+            url: string,
+            testId: 'profile-operation-log' | 'gateway-release-log',
+            historyText: string,
+            readingText: string,
+            nearEndText: string,
+            releaseSecondPoll: () => void,
+            releaseThirdPoll: () => void,
+            screenshotName: string
+        ) => {
+            await page.goto(url);
+            const viewport = page.getByTestId(testId);
+            await expect(viewport).toContainText(historyText);
+            await expect
+                .poll(() =>
+                    viewport.evaluate((element) => element.scrollHeight - element.clientHeight - element.scrollTop)
+                )
+                .toBeLessThanOrEqual(1);
+
+            const readingPosition = await viewport.evaluate((element) => {
+                element.scrollTop = 200;
+                return element.scrollTop;
+            });
+            expect(readingPosition).toBe(200);
+            releaseSecondPoll();
+            await expect(viewport).toContainText(readingText);
+            await expect.poll(() => viewport.evaluate((element) => element.scrollTop)).toBe(readingPosition);
+
+            const nearEndGap = await viewport.evaluate((element) => {
+                element.scrollTop = element.scrollHeight - element.clientHeight - 20;
+                return element.scrollHeight - element.clientHeight - element.scrollTop;
+            });
+            expect(nearEndGap).toBeGreaterThan(0);
+            expect(nearEndGap).toBeLessThanOrEqual(40);
+            releaseThirdPoll();
+            await expect(viewport).toContainText(nearEndText);
+            await expect
+                .poll(() =>
+                    viewport.evaluate((element) => element.scrollHeight - element.clientHeight - element.scrollTop)
+                )
+                .toBeLessThanOrEqual(1);
+            await page.screenshot({
+                path: testInfo.outputPath(`${viewportSize.name}-${screenshotName}`),
+                fullPage: true,
+            });
+        };
+
+        await verifyViewport(
+            'admin/servers/che%3Adefault/version',
+            'profile-operation-log',
+            'profile history 80',
+            'profile while reading 81',
+            'profile near end 82',
+            profileSecondPoll.resolve,
+            profileThirdPoll.resolve,
+            'profile-log-scroll-follow.png'
+        );
+        await verifyViewport(
+            'admin/releases',
+            'gateway-release-log',
+            'gateway history 80',
+            'gateway while reading 81',
+            'gateway near end 82',
+            gatewaySecondPoll.resolve,
+            gatewayThirdPoll.resolve,
+            'gateway-log-scroll-follow.png'
+        );
+    });
+}
 
 test('loads server metadata defaults into the reset form and submits them', async ({ page }) => {
     const state: FixtureState = {
