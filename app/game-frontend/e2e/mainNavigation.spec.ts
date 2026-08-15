@@ -3,6 +3,13 @@ import { resolve } from 'node:path';
 import { expect, test, type Page, type Route } from '@playwright/test';
 
 const response = (data: unknown) => ({ result: { data } });
+const errorResponse = (path: string, message: string) => ({
+    error: {
+        message,
+        code: -32029,
+        data: { code: 'TOO_MANY_REQUESTS', httpStatus: 429, path },
+    },
+});
 const artifactRoot = process.env.MAIN_NAVIGATION_ARTIFACT_DIR;
 const autoRefreshArtifactRoot = process.env.AUTO_REFRESH_ARTIFACT_DIR;
 const productionBundle = process.env.PLAYWRIGHT_FRONTEND_MODE === 'production';
@@ -33,6 +40,7 @@ type NavigationFixture = {
     commandBlockedCount?: number;
     forceSnapshotCalls?: number;
     refreshDelayMs?: number;
+    accessLimitAfterCalls?: number;
     largeCommandTable?: boolean;
     refCommandCategories?: boolean;
     currentYear?: number;
@@ -372,6 +380,14 @@ const installFixture = async (page: Page, state: NavigationFixture) => {
             }
             if (operation === 'dashboard.getContextBundleDelta') {
                 state.generalMeCalls += 1;
+                if (state.accessLimitAfterCalls !== undefined && state.generalMeCalls > state.accessLimitAfterCalls) {
+                    return errorResponse(
+                        operation,
+                        '접속 제한중입니다. 1턴 이내에 너무 많은 갱신을 하셨습니다. ' +
+                            '(다음 접속 가능 시각: 2026-08-15 12:34:56) ' +
+                            '자신의 턴이 되면 다시 접속 가능합니다. 잠시 쉬어보세요.'
+                    );
+                }
                 const input = operationInput(route, index);
                 const include = input.include ?? {};
                 const forceSnapshot = input.forceSnapshot === true;
@@ -503,7 +519,7 @@ const installFixture = async (page: Page, state: NavigationFixture) => {
         operations.forEach((operation, index) => {
             if (operation !== 'dashboard.getContextBundleDelta') return;
             const item = results[index];
-            if (!item) return;
+            if (!item || !('result' in item)) return;
             const data = item.result.data as {
                 context?: { kind: string };
                 commandTable?: { kind: string };
@@ -2060,7 +2076,7 @@ test('realtime read-model events skip clock-only work, merge bursts, patch in pl
     });
     await expect
         .poll(() => state.operations.slice(operationsBeforeSurvey), { timeout: 3_000 })
-        .toEqual(['general.getFrontStatus']);
+        .toEqual(['dashboard.getContextBundleDelta', 'general.getFrontStatus']);
 
     const profile = await page.evaluate(() => {
         const probe = (
@@ -2218,6 +2234,55 @@ test('realtime read-model events skip clock-only work, merge bursts, patch in pl
     expect(state.generalMeCalls).toBe(callsAfterLeavingMain);
 });
 
+test('access limit stops automatic main refresh and closes realtime until a manual retry can pass', async ({
+    page,
+}) => {
+    const state: NavigationFixture = {
+        officerLevel: 5,
+        permission: 2,
+        nationLevel: 3,
+        stage: 0,
+        npcMode: 1,
+        generalMeCalls: 0,
+        operations: [],
+        accessLimitAfterCalls: 1,
+    };
+    await installRealtimeHarness(page);
+    await installFixture(page, state);
+    await page.setViewportSize({ width: 1200, height: 900 });
+    await waitForMain(page);
+    await expect
+        .poll(() =>
+            page.evaluate(() => (window as unknown as { __hasMainRealtime: () => boolean }).__hasMainRealtime())
+        )
+        .toBe(true);
+
+    const operationsBeforeLimit = state.operations.length;
+    await emitReadModelInvalidation(page, readModelInvalidation({ records: true, map: true }));
+
+    await expect(page.getByRole('alert')).toContainText('접속 제한중입니다.');
+    await expect
+        .poll(() =>
+            page.evaluate(() => (window as unknown as { __hasMainRealtime: () => boolean }).__hasMainRealtime())
+        )
+        .toBe(false);
+    expect(state.operations.slice(operationsBeforeLimit)).toEqual(['dashboard.getContextBundleDelta']);
+
+    const operationsAfterLimit = state.operations.length;
+    await emitReadModelInvalidation(page, readModelInvalidation({ context: true, commands: true }));
+    await new Promise((resolve) => setTimeout(resolve, 300));
+    expect(state.operations).toHaveLength(operationsAfterLimit);
+
+    state.accessLimitAfterCalls = undefined;
+    await page.getByRole('button', { name: '갱 신' }).click();
+    await expect(page.getByRole('alert')).toHaveCount(0);
+    await expect
+        .poll(() =>
+            page.evaluate(() => (window as unknown as { __hasMainRealtime: () => boolean }).__hasMainRealtime())
+        )
+        .toBe(true);
+});
+
 test('global activity, world history, and a month boundary refresh their visible main slices', async ({ page }) => {
     const state: NavigationFixture = {
         officerLevel: 5,
@@ -2245,7 +2310,10 @@ test('global activity, world history, and a month boundary refresh their visible
     const operationsBeforeGlobal = state.operations.length;
     await emitReadModelInvalidation(page, readModelInvalidation({ records: true }));
     await expect(page.locator('[data-main-target="global-records"]')).toContainText('자동 갱신된 장수 동향');
-    expect(state.operations.slice(operationsBeforeGlobal)).toEqual(['general.getRecentRecords']);
+    expect(state.operations.slice(operationsBeforeGlobal)).toEqual([
+        'dashboard.getContextBundleDelta',
+        'general.getRecentRecords',
+    ]);
 
     state.worldHistory = [
         { id: 5, text: '자동 갱신된 중원 정세' },
@@ -2254,7 +2322,10 @@ test('global activity, world history, and a month boundary refresh their visible
     const operationsBeforeHistory = state.operations.length;
     await emitReadModelInvalidation(page, readModelInvalidation({ records: true }));
     await expect(page.locator('[data-main-target="world-history"]')).toContainText('자동 갱신된 중원 정세');
-    expect(state.operations.slice(operationsBeforeHistory)).toEqual(['general.getRecentRecords']);
+    expect(state.operations.slice(operationsBeforeHistory)).toEqual([
+        'dashboard.getContextBundleDelta',
+        'general.getRecentRecords',
+    ]);
 
     state.currentMonth = 2;
     const operationsBeforeMonth = state.operations.length;

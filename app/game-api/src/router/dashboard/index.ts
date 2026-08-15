@@ -1,7 +1,7 @@
 import { TRPCError } from '@trpc/server';
 import { z } from 'zod';
 
-import { authedProcedure, router } from '../../trpc.js';
+import { accessLimitAuthedProcedure, router } from '../../trpc.js';
 import { createReadModelDelta } from '../../services/readModelDeltaCache.js';
 import { getBoardAccess } from '../board/index.js';
 import { getGeneralContext } from '../general/index.js';
@@ -31,7 +31,7 @@ const zContextBundleInput = z
     });
 
 export const dashboardRouter = router({
-    getContextBundleDelta: authedProcedure.input(zContextBundleInput).query(async ({ ctx, input }) => {
+    getContextBundleDelta: accessLimitAuthedProcedure.input(zContextBundleInput).query(async ({ ctx, input }) => {
         const viewerId = ctx.auth?.user.id;
         if (!viewerId) {
             throw new TRPCError({ code: 'UNAUTHORIZED' });

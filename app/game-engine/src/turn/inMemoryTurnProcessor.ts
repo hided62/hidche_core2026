@@ -2,7 +2,7 @@ import type { TurnCheckpoint, TurnProcessor, TurnRunBudget, TurnRunResult } from
 import { getNextTickTime } from '../lifecycle/getNextTickTime.js';
 import type { InMemoryTurnWorld } from './inMemoryWorld.js';
 import type { TurnGeneral } from './types.js';
-import { asNumber, asRecord } from '@sammo-ts/common';
+import { asNumber, asRecord, calculateAccessRefreshLimit } from '@sammo-ts/common';
 
 export interface InMemoryTurnProcessorOptions {
     tickMinutes?: number;
@@ -50,6 +50,9 @@ export class InMemoryTurnProcessor implements TurnProcessor {
         const isBudgetExpired = () => Date.now() >= deadlineMs;
 
         this.world.setCheckpoint(checkpoint);
+        this.world.updateWorldMeta({
+            refreshLimit: calculateAccessRefreshLimit(this.world.getState().tickSeconds),
+        });
 
         let processedGenerals = 0;
         let processedTurns = 0;
@@ -97,6 +100,9 @@ export class InMemoryTurnProcessor implements TurnProcessor {
             if (executionError !== undefined) {
                 throw executionError;
             }
+            // Ref의 updateTurnTime()은 장수 명령이 성공한 뒤 그 장수의
+            // 순간 벌점을 같은 턴 flush에서 초기화한다.
+            this.world.markGeneralAccessScoreReset(general.id);
             processedGenerals += 1;
             nextCheckpoint = {
                 turnTime: executedAt.toISOString(),

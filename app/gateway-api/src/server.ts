@@ -26,6 +26,7 @@ import { createGatewayReleaseRepository } from './orchestrator/gatewayReleaseRep
 import { appRouter } from './router.js';
 import { RepositoryProfileStatusService } from './lobby/profileStatusService.js';
 import { registerAccountIconInternalRoute } from './auth/accountIconInternalRoute.js';
+import { registerProfileStatusInternalRoute } from './lobby/profileStatusInternalRoute.js';
 import { installGatewayShutdownController } from './lifecycle/shutdownController.js';
 import { RemoteUserIconStore } from './account/remoteUserIconStore.js';
 import { gatewayFastifyRouterOptions } from './fastifyOptions.js';
@@ -96,6 +97,10 @@ export const createGatewayApiServer = async () => {
     });
     registerAccountIconInternalRoute(app, {
         users,
+        secret: config.gameTokenSecret,
+    });
+    registerProfileStatusInternalRoute(app, {
+        profiles,
         secret: config.gameTokenSecret,
     });
 

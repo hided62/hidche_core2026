@@ -10,6 +10,7 @@ import {
     accessAuthedInputProcedure,
     accessEngineAuthedProcedure,
     accessEngineAuthedInputProcedure,
+    accessLimitAuthedProcedure,
     authedProcedure,
     engineAuthedProcedure,
     router,
@@ -735,7 +736,7 @@ export const generalRouter = router({
                 })),
             };
         }),
-    getRecentRecords: authedProcedure
+    getRecentRecords: accessLimitAuthedProcedure
         .input(
             z.object({
                 lastGeneralRecordId: z.number().int().nonnegative().default(0),

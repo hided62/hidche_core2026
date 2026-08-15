@@ -7,7 +7,13 @@ import type { GameApiContext } from '../../context.js';
 import { zWorldStateConfig, zWorldStateMeta } from '../../context.js';
 import { loadMapLayout } from '../../maps/mapLayout.js';
 import { loadPublicMap } from '../../maps/worldMap.js';
-import { accessPages, recordGeneralAccess } from '../../services/generalAccess.js';
+import {
+    accessPages,
+    formatGeneralAccessLimitMessage,
+    generalAccessLimitPages,
+    getGeneralAccessState,
+    recordGeneralAccess,
+} from '../../services/generalAccess.js';
 import { sanitizeInternalDisplayCode } from '../../services/gameDisplayNames.js';
 import { accessInputProcedure, procedure, router, sessionActivityProcedure } from '../../trpc.js';
 import { loadTraitNames } from '../nation/shared.js';
@@ -248,9 +254,19 @@ const sortNpcList = <
 export const publicRouter = router({
     recordAccess: sessionActivityProcedure
         .input(z.object({ page: z.enum(accessPages) }))
-        .mutation(async ({ ctx, input }) => ({
-            recorded: await recordGeneralAccess(ctx, input.page),
-        })),
+        .mutation(async ({ ctx, input }) => {
+            const recorded = await recordGeneralAccess(ctx, input.page);
+            if (ctx.generalAccessTracking === true && generalAccessLimitPages.has(input.page)) {
+                const state = await getGeneralAccessState(ctx);
+                if (state?.level === 2) {
+                    throw new TRPCError({
+                        code: 'TOO_MANY_REQUESTS',
+                        message: formatGeneralAccessLimitMessage(state),
+                    });
+                }
+            }
+            return { recorded };
+        }),
     getMapLayout: procedure.query(async ({ ctx }) => {
         return loadMapLayout(ctx.profile.scenario);
     }),

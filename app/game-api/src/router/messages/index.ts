@@ -4,7 +4,7 @@ import { asRecord } from '@sammo-ts/common';
 import type { UserSanctions } from '@sammo-ts/common/auth/gameToken';
 import { isMessageAccessBlocked } from '@sammo-ts/common/auth/sanctions';
 
-import { accessAuthedInputProcedure, authedProcedure, router } from '../../trpc.js';
+import { accessAuthedInputProcedure, accessLimitAuthedInputProcedure, authedProcedure, router } from '../../trpc.js';
 import {
     MESSAGE_MAILBOX_NATIONAL_BASE,
     MESSAGE_MAILBOX_PUBLIC,
@@ -73,116 +73,114 @@ const hasPenalty = (penalty: unknown, key: string): boolean => {
 };
 
 export const messagesRouter = router({
-    getRecent: authedProcedure
-        .input(
-            z.object({
-                generalId: z.number().int().positive(),
-                sequence: z.number().int().optional(),
-            })
-        )
-        .query(async ({ ctx, input }) => {
-            const general = await getOwnedGeneral(ctx, input.generalId);
+    getRecent: accessLimitAuthedInputProcedure(
+        z.object({
+            generalId: z.number().int().positive(),
+            sequence: z.number().int().optional(),
+        })
+    ).query(async ({ ctx, input }) => {
+        const general = await getOwnedGeneral(ctx, input.generalId);
 
-            const sequence = input.sequence ?? -1;
-            const nationId = general.nationId;
-            const mailboxes = {
-                private: general.id,
-                public: MESSAGE_MAILBOX_PUBLIC,
-                national: MESSAGE_MAILBOX_NATIONAL_BASE + nationId,
-                diplomacy: MESSAGE_MAILBOX_NATIONAL_BASE + nationId,
-            } satisfies Record<MessageType, number>;
+        const sequence = input.sequence ?? -1;
+        const nationId = general.nationId;
+        const mailboxes = {
+            private: general.id,
+            public: MESSAGE_MAILBOX_PUBLIC,
+            national: MESSAGE_MAILBOX_NATIONAL_BASE + nationId,
+            diplomacy: MESSAGE_MAILBOX_NATIONAL_BASE + nationId,
+        } satisfies Record<MessageType, number>;
 
-            const [privateMessages, publicMessages, nationalMessages, diplomacyMessages, readState, nation] =
-                await Promise.all([
-                    fetchMessagesFromMailbox({
-                        db: ctx.db,
-                        mailbox: mailboxes.private,
-                        msgType: 'private',
-                        limit: 15,
-                        fromSeq: sequence,
-                    }),
-                    fetchMessagesFromMailbox({
-                        db: ctx.db,
-                        mailbox: mailboxes.public,
-                        msgType: 'public',
-                        limit: 15,
-                        fromSeq: sequence,
-                    }),
-                    fetchMessagesFromMailbox({
-                        db: ctx.db,
-                        mailbox: mailboxes.national,
-                        msgType: 'national',
-                        limit: 15,
-                        fromSeq: sequence,
-                    }),
-                    fetchMessagesFromMailbox({
-                        db: ctx.db,
-                        mailbox: mailboxes.diplomacy,
-                        msgType: 'diplomacy',
-                        limit: 15,
-                        fromSeq: sequence,
-                    }),
-                    ctx.db.messageReadState.findUnique({ where: { generalId: general.id } }),
-                    nationId > 0
-                        ? ctx.db.nation.findUnique({
-                              where: { id: nationId },
-                              select: { meta: true },
-                          })
-                        : null,
-                ]);
+        const [privateMessages, publicMessages, nationalMessages, diplomacyMessages, readState, nation] =
+            await Promise.all([
+                fetchMessagesFromMailbox({
+                    db: ctx.db,
+                    mailbox: mailboxes.private,
+                    msgType: 'private',
+                    limit: 15,
+                    fromSeq: sequence,
+                }),
+                fetchMessagesFromMailbox({
+                    db: ctx.db,
+                    mailbox: mailboxes.public,
+                    msgType: 'public',
+                    limit: 15,
+                    fromSeq: sequence,
+                }),
+                fetchMessagesFromMailbox({
+                    db: ctx.db,
+                    mailbox: mailboxes.national,
+                    msgType: 'national',
+                    limit: 15,
+                    fromSeq: sequence,
+                }),
+                fetchMessagesFromMailbox({
+                    db: ctx.db,
+                    mailbox: mailboxes.diplomacy,
+                    msgType: 'diplomacy',
+                    limit: 15,
+                    fromSeq: sequence,
+                }),
+                ctx.db.messageReadState.findUnique({ where: { generalId: general.id } }),
+                nationId > 0
+                    ? ctx.db.nation.findUnique({
+                          where: { id: nationId },
+                          select: { meta: true },
+                      })
+                    : null,
+            ]);
 
-            const permission = nationId > 0 && nation ? resolveNationPermission(general, nation.meta, false) : -1;
-            const messageBuckets: Record<MessageType, MessageView[]> = {
-                private: privateMessages,
-                public: publicMessages,
-                national: nationalMessages,
-                diplomacy: redactDiplomacyMessages(diplomacyMessages, permission),
-            };
+        const permission = nationId > 0 && nation ? resolveNationPermission(general, nation.meta, false) : -1;
+        const messageBuckets: Record<MessageType, MessageView[]> = {
+            private: privateMessages,
+            public: publicMessages,
+            national: nationalMessages,
+            diplomacy: redactDiplomacyMessages(diplomacyMessages, permission),
+        };
 
-            let nextSequence = sequence;
-            let minSequence = sequence;
-            let lastType: MessageType | null = null;
-            const updateSequence = (type: MessageType, messages: Array<{ id: number }>) => {
-                for (const message of messages) {
-                    if (message.id > nextSequence) {
-                        nextSequence = message.id;
-                    }
-                    if (message.id <= minSequence) {
-                        minSequence = message.id;
-                        lastType = type;
-                    }
+        let nextSequence = sequence;
+        let minSequence = sequence;
+        let lastType: MessageType | null = null;
+        const updateSequence = (type: MessageType, messages: Array<{ id: number }>) => {
+            for (const message of messages) {
+                if (message.id > nextSequence) {
+                    nextSequence = message.id;
                 }
-            };
-
-            updateSequence('private', privateMessages);
-            updateSequence('public', publicMessages);
-            updateSequence('national', nationalMessages);
-            updateSequence('diplomacy', diplomacyMessages);
-
-            if (lastType === 'private' && messageBuckets.private.length > 0) {
-                messageBuckets.private.pop();
-            } else if (lastType === 'public' && messageBuckets.public.length > 0) {
-                messageBuckets.public.pop();
-            } else if (lastType === 'national' && messageBuckets.national.length > 0) {
-                messageBuckets.national.pop();
-            } else if (lastType === 'diplomacy' && messageBuckets.diplomacy.length > 0) {
-                messageBuckets.diplomacy.pop();
+                if (message.id <= minSequence) {
+                    minSequence = message.id;
+                    lastType = type;
+                }
             }
+        };
 
-            return {
-                result: true,
-                ...messageBuckets,
-                sequence: nextSequence,
-                nationId: nationId,
-                generalName: general.name,
-                permission,
-                canRespondDiplomacy: permission >= 4 && general.officerLevel > 4,
-                latestRead: {
-                    diplomacy: readState?.latestDiplomacyMessage ?? 0,
-                    private: readState?.latestPrivateMessage ?? 0,
-                },
-            };
-        }),
+        updateSequence('private', privateMessages);
+        updateSequence('public', publicMessages);
+        updateSequence('national', nationalMessages);
+        updateSequence('diplomacy', diplomacyMessages);
+
+        if (lastType === 'private' && messageBuckets.private.length > 0) {
+            messageBuckets.private.pop();
+        } else if (lastType === 'public' && messageBuckets.public.length > 0) {
+            messageBuckets.public.pop();
+        } else if (lastType === 'national' && messageBuckets.national.length > 0) {
+            messageBuckets.national.pop();
+        } else if (lastType === 'diplomacy' && messageBuckets.diplomacy.length > 0) {
+            messageBuckets.diplomacy.pop();
+        }
+
+        return {
+            result: true,
+            ...messageBuckets,
+            sequence: nextSequence,
+            nationId: nationId,
+            generalName: general.name,
+            permission,
+            canRespondDiplomacy: permission >= 4 && general.officerLevel > 4,
+            latestRead: {
+                diplomacy: readState?.latestDiplomacyMessage ?? 0,
+                private: readState?.latestPrivateMessage ?? 0,
+            },
+        };
+    }),
     getContacts: authedProcedure
         .input(z.object({ generalId: z.number().int().positive() }))
         .query(async ({ ctx, input }) => {
