@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { formatServerDateTime } from '@sammo-ts/common';
-import { computed, ref, onMounted, watch } from 'vue';
+import { computed, ref, onMounted, onUnmounted, watch } from 'vue';
 import { useRouter } from 'vue-router';
 import type { inferRouterOutputs } from '@trpc/server';
 import type { AppRouter } from '@sammo-ts/gateway-api';
@@ -26,6 +26,13 @@ type MapPreviewBundle = {
     mapData: PublicMap;
     mapLayout: PublicMapLayout;
 };
+type ProfileLoadState = {
+    status: 'loading' | 'retrying' | 'ready';
+    failures: number;
+};
+
+const PROFILE_REQUEST_TIMEOUT_MS = 10_000;
+const PROFILE_RETRY_DELAYS_MS = [1_000, 2_000, 3_000, 5_000, 8_000, 15_000] as const;
 
 const router = useRouter();
 const me = ref<MeOutput>(null);
@@ -33,11 +40,15 @@ const notice = ref('');
 const profiles = ref<LobbyProfile[]>([]);
 const profileDetails = ref<Record<string, LobbyInfo | undefined>>({});
 const profileMapPreviews = ref<Record<string, MapPreviewBundle | undefined>>({});
+const profileLoadStates = ref<Record<string, ProfileLoadState | undefined>>({});
 const selectedMapProfileName = ref<string | null>(null);
 const entryLoading = ref<Record<string, boolean>>({});
 const logoutLoading = ref(false);
 const logoutError = ref('');
 const { error: showErrorToast } = useToast();
+const profileRetryTimers = new Map<string, number>();
+const profileRequestControllers = new Map<string, AbortController>();
+let lobbyMounted = true;
 
 watch(logoutError, (value) => value && showErrorToast(value), { flush: 'sync' });
 const canAccessAdmin = computed(
@@ -98,6 +109,23 @@ const handleMapTabKeydown = (event: KeyboardEvent, profileName: string): void =>
 
 const formatGraceEndsAt = (value: string | null | undefined): string => formatServerDateTime(value);
 const serverSeasonStatus = (info: LobbyInfo) => resolveServerSeasonStatus(info);
+const profileLoadState = (profileName: string): ProfileLoadState | undefined => profileLoadStates.value[profileName];
+const setProfileLoadState = (profileName: string, state: ProfileLoadState): void => {
+    profileLoadStates.value = {
+        ...profileLoadStates.value,
+        [profileName]: state,
+    };
+};
+const clearProfileRetry = (profileName: string): void => {
+    const timer = profileRetryTimers.get(profileName);
+    if (timer !== undefined) {
+        window.clearTimeout(timer);
+        profileRetryTimers.delete(profileName);
+    }
+};
+const requestOptions = (componentSignal: AbortSignal): { signal: AbortSignal } => ({
+    signal: AbortSignal.any([componentSignal, AbortSignal.timeout(PROFILE_REQUEST_TIMEOUT_MS)]),
+});
 const encodeLegacyIconPath = (value: string): string =>
     value
         .split('/')
@@ -122,6 +150,93 @@ const handleGeneralPictureError = (event: Event): void => {
     image.src = `${sharedIconBaseUrl}/default.jpg`;
 };
 
+const loadProfileDetails = async (profile: LobbyProfile, sessionToken: string | null): Promise<void> => {
+    if (!lobbyMounted || (profile.status !== 'RUNNING' && profile.status !== 'PREOPEN')) {
+        return;
+    }
+    clearProfileRetry(profile.profileName);
+    profileRequestControllers.get(profile.profileName)?.abort();
+    const requestController = new AbortController();
+    profileRequestControllers.set(profile.profileName, requestController);
+    const previousFailures = profileLoadState(profile.profileName)?.failures ?? 0;
+    setProfileLoadState(profile.profileName, { status: 'loading', failures: previousFailures });
+
+    const publicGameTrpc = createGameTrpc(profile.profile, profile.apiPort);
+    let gameTrpc = publicGameTrpc;
+    let authenticated = sessionToken === null;
+    if (sessionToken) {
+        try {
+            const issued = await trpc.auth.issueGameSession.mutate(
+                {
+                    sessionToken,
+                    profile: profile.profileName,
+                },
+                requestOptions(requestController.signal)
+            );
+            const exchanged = await publicGameTrpc.auth.exchangeGatewayToken.mutate(
+                {
+                    gatewayToken: issued.gameToken,
+                },
+                requestOptions(requestController.signal)
+            );
+            gameTrpc = createGameTrpc(profile.profile, profile.apiPort, exchanged.accessToken);
+            authenticated = true;
+        } catch (error) {
+            console.error(`Failed to authenticate lobby game session for ${profile.profileName}`, error);
+        }
+    }
+
+    const [infoResult, layoutResult, mapResult] = await Promise.allSettled([
+        gameTrpc.lobby.info.query(undefined, requestOptions(requestController.signal)),
+        gameTrpc.public.getMapLayout.query(undefined, requestOptions(requestController.signal)),
+        gameTrpc.public.getCachedMap.query(undefined, requestOptions(requestController.signal)),
+    ]);
+    if (profileRequestControllers.get(profile.profileName) !== requestController) {
+        return;
+    }
+    profileRequestControllers.delete(profile.profileName);
+    if (!lobbyMounted) {
+        return;
+    }
+
+    if (infoResult.status === 'fulfilled') {
+        profileDetails.value[profile.profileName] = infoResult.value;
+    } else {
+        console.error(`Failed to fetch info for ${profile.profileName}`, infoResult.reason);
+    }
+    if (layoutResult.status === 'fulfilled' && mapResult.status === 'fulfilled') {
+        profileMapPreviews.value[profile.profileName] = {
+            mapLayout: layoutResult.value,
+            mapData: mapResult.value,
+        };
+    }
+
+    const fullyLoaded =
+        authenticated &&
+        infoResult.status === 'fulfilled' &&
+        layoutResult.status === 'fulfilled' &&
+        mapResult.status === 'fulfilled';
+    if (fullyLoaded) {
+        setProfileLoadState(profile.profileName, { status: 'ready', failures: 0 });
+        return;
+    }
+
+    const failures = previousFailures + 1;
+    setProfileLoadState(profile.profileName, { status: 'retrying', failures });
+    const retryDelay = PROFILE_RETRY_DELAYS_MS[Math.min(failures - 1, PROFILE_RETRY_DELAYS_MS.length - 1)];
+    const timer = window.setTimeout(() => {
+        profileRetryTimers.delete(profile.profileName);
+        void loadProfileDetails(profile, sessionToken);
+    }, retryDelay);
+    profileRetryTimers.set(profile.profileName, timer);
+};
+
+const retryProfileDetails = (profile: LobbyProfile): void => {
+    clearProfileRetry(profile.profileName);
+    setProfileLoadState(profile.profileName, { status: 'loading', failures: 0 });
+    void loadProfileDetails(profile, window.localStorage.getItem('sammo-session-token'));
+};
+
 onMounted(async () => {
     try {
         me.value = await trpc.me.query();
@@ -133,51 +248,22 @@ onMounted(async () => {
         notice.value = await trpc.lobby.notice.query();
         profiles.value = await trpc.lobby.profiles.query();
         const sessionToken = window.localStorage.getItem('sammo-session-token');
-
-        const detailTasks = profiles.value.map(async (profile) => {
-            if (profile.status !== 'RUNNING' && profile.status !== 'PREOPEN') {
-                return;
-            }
-            const publicGameTrpc = createGameTrpc(profile.profile, profile.apiPort);
-            let gameToken: string | undefined;
-            if (sessionToken) {
-                try {
-                    const issued = await trpc.auth.issueGameSession.mutate({
-                        sessionToken,
-                        profile: profile.profileName,
-                    });
-                    const exchanged = await publicGameTrpc.auth.exchangeGatewayToken.mutate({
-                        gatewayToken: issued.gameToken,
-                    });
-                    gameToken = exchanged.accessToken;
-                } catch (error) {
-                    console.error(`Failed to authenticate lobby game session for ${profile.profileName}`, error);
-                }
-            }
-            const gameTrpc = gameToken ? createGameTrpc(profile.profile, profile.apiPort, gameToken) : publicGameTrpc;
-            const [infoResult, layoutResult, mapResult] = await Promise.allSettled([
-                gameTrpc.lobby.info.query(),
-                gameTrpc.public.getMapLayout.query(),
-                gameTrpc.public.getCachedMap.query(),
-            ]);
-
-            if (infoResult.status === 'fulfilled') {
-                profileDetails.value[profile.profileName] = infoResult.value;
-            } else {
-                console.error(`Failed to fetch info for ${profile.profileName}`, infoResult.reason);
-            }
-            if (layoutResult.status === 'fulfilled' && mapResult.status === 'fulfilled') {
-                profileMapPreviews.value[profile.profileName] = {
-                    mapLayout: layoutResult.value,
-                    mapData: mapResult.value,
-                };
-            }
-        });
-
-        await Promise.all(detailTasks);
+        await Promise.all(profiles.value.map((profile) => loadProfileDetails(profile, sessionToken)));
     } catch (e) {
         console.error('Failed to load lobby', e);
     }
+});
+
+onUnmounted(() => {
+    lobbyMounted = false;
+    for (const timer of profileRetryTimers.values()) {
+        window.clearTimeout(timer);
+    }
+    profileRetryTimers.clear();
+    for (const controller of profileRequestControllers.values()) {
+        controller.abort();
+    }
+    profileRequestControllers.clear();
 });
 
 const handleLogout = async () => {
@@ -320,183 +406,206 @@ const handleEnter = async (profile: LobbyProfile, targetPath: string) => {
                 >
                     서 버 선 택
                 </div>
-                <table class="w-full text-sm text-left">
-                    <thead class="bg-zinc-800 text-zinc-400 uppercase text-xs">
-                        <tr>
-                            <th class="px-4 py-3 border-b border-zinc-700 w-24 text-center">서 버</th>
-                            <th class="px-4 py-3 border-b border-zinc-700">정 보</th>
-                            <th class="px-4 py-3 border-b border-zinc-700 w-48 text-center" colspan="2">캐 릭 터</th>
-                            <th class="px-4 py-3 border-b border-zinc-700 w-32 text-center">선 택</th>
-                        </tr>
-                    </thead>
-                    <tbody class="divide-y divide-zinc-800">
-                        <tr
-                            v-for="profile in profiles"
-                            :key="profile.profileName"
-                            class="hover:bg-zinc-800/50 transition-colors"
-                        >
-                            <!-- Server Name -->
-                            <td class="px-4 py-4 text-center border-r border-zinc-800">
-                                <div
-                                    :style="{ color: profile.color }"
-                                    class="text-lg font-bold cursor-help"
-                                    :title="
-                                        profileDetails[profile.profileName]
-                                            ? serverSeasonStatus(profileDetails[profile.profileName]!).period
-                                            : ''
-                                    "
-                                >
-                                    {{ profile.korName }}섭
-                                </div>
-                                <div
-                                    v-if="profileDetails[profile.profileName]"
-                                    class="season-status mt-1 whitespace-nowrap text-xs text-zinc-500"
-                                >
-                                    {{ serverSeasonStatus(profileDetails[profile.profileName]!).label }}
-                                </div>
-                                <div
-                                    v-if="profile.localAccountPolicy?.specialAccess"
-                                    class="mt-2 text-xs text-emerald-300"
-                                >
-                                    특수 접근 · {{ profile.localAccountPolicy.specialAccess.kind }}
-                                </div>
-                                <div
-                                    v-else-if="
-                                        profile.localAccountPolicy?.requiresKakaoVerification &&
-                                        !profile.localAccountPolicy.canCreateGeneral
-                                    "
-                                    class="mt-2 text-xs text-red-400"
-                                >
-                                    인증 전 생성 불가
-                                </div>
-                                <div
-                                    v-else-if="profile.localAccountPolicy?.requiresKakaoVerification"
-                                    class="mt-2 text-xs text-amber-300"
-                                >
-                                    {{ formatGraceEndsAt(profile.localAccountPolicy.graceEndsAt) }}까지 유예
-                                </div>
-                            </td>
-
-                            <!-- Server Info -->
-                            <td class="px-4 py-4 border-r border-zinc-800">
-                                <template v-if="profileDetails[profile.profileName]">
-                                    <div class="space-y-1">
-                                        <div>
-                                            서기 {{ profileDetails[profile.profileName]?.year }}년
-                                            {{ profileDetails[profile.profileName]?.month }}월 (<span
-                                                class="text-orange-400"
-                                                >{{ profile.scenario }}</span
-                                            >)
-                                        </div>
-                                        <div class="text-zinc-400">
-                                            유저 : {{ profileDetails[profile.profileName]?.userCnt }} /
-                                            {{ profileDetails[profile.profileName]?.maxUserCnt }}명
-                                            <span class="text-cyan-400 ml-2"
-                                                >NPC : {{ profileDetails[profile.profileName]?.npcCnt }}명</span
-                                            >
-                                            <span class="text-green-400 ml-2"
-                                                >({{ profileDetails[profile.profileName]?.turnTerm }}분 턴 서버)</span
-                                            >
-                                        </div>
-                                        <div class="text-xs text-zinc-500">
-                                            (상성 설정:{{ profileDetails[profile.profileName]?.fictionMode }}), (기타
-                                            설정:{{ profileDetails[profile.profileName]?.otherTextInfo }})
-                                        </div>
-                                    </div>
-                                </template>
-                                <template v-else-if="profile.status === 'STOPPED'">
-                                    <div class="text-center text-zinc-600 py-2">- 폐 쇄 중 -</div>
-                                </template>
-                                <template v-else>
-                                    <div class="text-center text-zinc-500 py-2">정보를 불러오는 중...</div>
-                                </template>
-                            </td>
-
-                            <!-- Character Info -->
-                            <td class="px-2 py-4 w-16 border-r border-zinc-800">
-                                <div
-                                    v-if="profileDetails[profile.profileName]?.myGeneral"
-                                    class="w-12 h-12 mx-auto bg-zinc-800 rounded overflow-hidden border border-zinc-700"
-                                >
-                                    <img
-                                        :src="resolveGeneralPicture(profileDetails[profile.profileName]!.myGeneral!)"
-                                        class="w-full h-full object-cover"
-                                        @error="handleGeneralPictureError"
-                                    />
-                                </div>
-                            </td>
-                            <td class="px-4 py-4 border-r border-zinc-800 text-center">
-                                <div v-if="profileDetails[profile.profileName]?.myGeneral" class="font-medium">
-                                    {{ profileDetails[profile.profileName]?.myGeneral?.name }}
-                                </div>
-                                <div v-else class="text-zinc-600">- 미 등 록 -</div>
-                            </td>
-
-                            <!-- Action -->
-                            <td class="px-4 py-4 text-center">
-                                <template v-if="profileDetails[profile.profileName]">
-                                    <button
-                                        v-if="profileDetails[profile.profileName]?.myGeneral"
-                                        class="w-full bg-zinc-700 hover:bg-zinc-600 text-white py-1.5 rounded text-sm transition-colors"
-                                        :disabled="entryLoading[profile.profileName]"
-                                        @click="handleEnter(profile, '/')"
+                <div class="overflow-x-auto" data-testid="profile-table-scroll">
+                    <table class="w-full min-w-[760px] text-sm text-left">
+                        <thead class="bg-zinc-800 text-zinc-400 uppercase text-xs">
+                            <tr>
+                                <th class="px-4 py-3 border-b border-zinc-700 w-24 text-center">서 버</th>
+                                <th class="px-4 py-3 border-b border-zinc-700">정 보</th>
+                                <th class="px-4 py-3 border-b border-zinc-700 w-48 text-center" colspan="2">
+                                    캐 릭 터
+                                </th>
+                                <th class="px-4 py-3 border-b border-zinc-700 w-32 text-center">선 택</th>
+                            </tr>
+                        </thead>
+                        <tbody class="divide-y divide-zinc-800">
+                            <tr
+                                v-for="profile in profiles"
+                                :key="profile.profileName"
+                                class="hover:bg-zinc-800/50 transition-colors"
+                            >
+                                <!-- Server Name -->
+                                <td class="px-4 py-4 text-center border-r border-zinc-800">
+                                    <div
+                                        :style="{ color: profile.color }"
+                                        class="text-lg font-bold cursor-help"
+                                        :title="
+                                            profileDetails[profile.profileName]
+                                                ? serverSeasonStatus(profileDetails[profile.profileName]!).period
+                                                : ''
+                                        "
                                     >
-                                        입장
-                                    </button>
+                                        {{ profile.korName }}섭
+                                    </div>
+                                    <div
+                                        v-if="profileDetails[profile.profileName]"
+                                        class="season-status mt-1 whitespace-nowrap text-xs text-zinc-500"
+                                    >
+                                        {{ serverSeasonStatus(profileDetails[profile.profileName]!).label }}
+                                    </div>
+                                    <div
+                                        v-if="profile.localAccountPolicy?.specialAccess"
+                                        class="mt-2 text-xs text-emerald-300"
+                                    >
+                                        특수 접근 · {{ profile.localAccountPolicy.specialAccess.kind }}
+                                    </div>
                                     <div
                                         v-else-if="
-                                            profileDetails[profile.profileName]!.userCnt >=
-                                            profileDetails[profile.profileName]!.maxUserCnt
+                                            profile.localAccountPolicy?.requiresKakaoVerification &&
+                                            !profile.localAccountPolicy.canCreateGeneral
                                         "
-                                        class="text-zinc-500"
+                                        class="mt-2 text-xs text-red-400"
                                     >
-                                        - 장수 등록 마감 -
+                                        인증 전 생성 불가
                                     </div>
-                                    <div v-else class="grid gap-1">
+                                    <div
+                                        v-else-if="profile.localAccountPolicy?.requiresKakaoVerification"
+                                        class="mt-2 text-xs text-amber-300"
+                                    >
+                                        {{ formatGraceEndsAt(profile.localAccountPolicy.graceEndsAt) }}까지 유예
+                                    </div>
+                                </td>
+
+                                <!-- Server Info -->
+                                <td class="px-4 py-4 border-r border-zinc-800">
+                                    <template v-if="profileDetails[profile.profileName]">
+                                        <div class="space-y-1">
+                                            <div>
+                                                서기 {{ profileDetails[profile.profileName]?.year }}년
+                                                {{ profileDetails[profile.profileName]?.month }}월 (<span
+                                                    class="text-orange-400"
+                                                    >{{ profile.scenario }}</span
+                                                >)
+                                            </div>
+                                            <div class="text-zinc-400">
+                                                유저 : {{ profileDetails[profile.profileName]?.userCnt }} /
+                                                {{ profileDetails[profile.profileName]?.maxUserCnt }}명
+                                                <span class="text-cyan-400 ml-2"
+                                                    >NPC : {{ profileDetails[profile.profileName]?.npcCnt }}명</span
+                                                >
+                                                <span class="text-green-400 ml-2"
+                                                    >({{ profileDetails[profile.profileName]?.turnTerm }}분 턴
+                                                    서버)</span
+                                                >
+                                            </div>
+                                            <div class="text-xs text-zinc-500">
+                                                (상성 설정:{{ profileDetails[profile.profileName]?.fictionMode }}),
+                                                (기타 설정:{{ profileDetails[profile.profileName]?.otherTextInfo }})
+                                            </div>
+                                        </div>
+                                    </template>
+                                    <template v-else-if="profile.status === 'STOPPED'">
+                                        <div class="text-center text-zinc-600 py-2">- 폐 쇄 중 -</div>
+                                    </template>
+                                    <template v-else-if="profileLoadState(profile.profileName)?.status === 'retrying'">
+                                        <div
+                                            class="text-center text-zinc-500 py-1"
+                                            role="status"
+                                            data-testid="profile-info-retrying"
+                                        >
+                                            <div>서버 응답을 기다리고 있습니다.</div>
+                                            <button
+                                                type="button"
+                                                class="mt-2 text-xs text-orange-300 underline underline-offset-2 hover:text-orange-200 focus-visible:outline focus-visible:outline-2 focus-visible:outline-orange-300"
+                                                @click="retryProfileDetails(profile)"
+                                            >
+                                                지금 다시 확인
+                                            </button>
+                                        </div>
+                                    </template>
+                                    <template v-else>
+                                        <div class="text-center text-zinc-500 py-2">정보를 불러오는 중...</div>
+                                    </template>
+                                </td>
+
+                                <!-- Character Info -->
+                                <td class="px-2 py-4 w-16 border-r border-zinc-800">
+                                    <div
+                                        v-if="profileDetails[profile.profileName]?.myGeneral"
+                                        class="w-12 h-12 mx-auto bg-zinc-800 rounded overflow-hidden border border-zinc-700"
+                                    >
+                                        <img
+                                            :src="
+                                                resolveGeneralPicture(profileDetails[profile.profileName]!.myGeneral!)
+                                            "
+                                            class="w-full h-full object-cover"
+                                            @error="handleGeneralPictureError"
+                                        />
+                                    </div>
+                                </td>
+                                <td class="px-4 py-4 border-r border-zinc-800 text-center">
+                                    <div v-if="profileDetails[profile.profileName]?.myGeneral" class="font-medium">
+                                        {{ profileDetails[profile.profileName]?.myGeneral?.name }}
+                                    </div>
+                                    <div v-else class="text-zinc-600">- 미 등 록 -</div>
+                                </td>
+
+                                <!-- Action -->
+                                <td class="px-4 py-4 text-center">
+                                    <template v-if="profileDetails[profile.profileName]">
                                         <button
-                                            v-if="profileDetails[profile.profileName]?.selectionPoolEnabled"
+                                            v-if="profileDetails[profile.profileName]?.myGeneral"
                                             class="w-full bg-zinc-700 hover:bg-zinc-600 text-white py-1.5 rounded text-sm transition-colors"
                                             :disabled="entryLoading[profile.profileName]"
-                                            @click="handleEnter(profile, '/select-general')"
+                                            @click="handleEnter(profile, '/')"
                                         >
-                                            장수선택
+                                            입장
                                         </button>
-                                        <template v-else>
+                                        <div
+                                            v-else-if="
+                                                profileDetails[profile.profileName]!.userCnt >=
+                                                profileDetails[profile.profileName]!.maxUserCnt
+                                            "
+                                            class="text-zinc-500"
+                                        >
+                                            - 장수 등록 마감 -
+                                        </div>
+                                        <div v-else class="grid gap-1">
                                             <button
+                                                v-if="profileDetails[profile.profileName]?.selectionPoolEnabled"
                                                 class="w-full bg-zinc-700 hover:bg-zinc-600 text-white py-1.5 rounded text-sm transition-colors"
-                                                :disabled="
-                                                    entryLoading[profile.profileName] ||
-                                                    profile.localAccountPolicy?.canCreateGeneral === false
-                                                "
-                                                @click="handleEnter(profile, '/join')"
+                                                :disabled="entryLoading[profile.profileName]"
+                                                @click="handleEnter(profile, '/select-general')"
                                             >
-                                                {{
-                                                    profile.localAccountPolicy?.canCreateGeneral === false
-                                                        ? '인증 필요'
-                                                        : '장수생성'
-                                                }}
+                                                장수선택
                                             </button>
-                                            <button
-                                                v-if="profileDetails[profile.profileName]?.npcPossessionEnabled"
-                                                class="w-full bg-zinc-700 hover:bg-zinc-600 text-white py-1.5 rounded text-sm transition-colors"
-                                                :disabled="
-                                                    entryLoading[profile.profileName] ||
-                                                    profile.localAccountPolicy?.canCreateGeneral === false
-                                                "
-                                                @click="handleEnter(profile, '/join?tab=possess')"
-                                            >
-                                                장수빙의
-                                            </button>
-                                        </template>
-                                    </div>
-                                </template>
-                                <template v-else-if="profile.status === 'STOPPED'">
-                                    <span class="text-zinc-700">-</span>
-                                </template>
-                            </td>
-                        </tr>
-                    </tbody>
-                </table>
+                                            <template v-else>
+                                                <button
+                                                    class="w-full bg-zinc-700 hover:bg-zinc-600 text-white py-1.5 rounded text-sm transition-colors"
+                                                    :disabled="
+                                                        entryLoading[profile.profileName] ||
+                                                        profile.localAccountPolicy?.canCreateGeneral === false
+                                                    "
+                                                    @click="handleEnter(profile, '/join')"
+                                                >
+                                                    {{
+                                                        profile.localAccountPolicy?.canCreateGeneral === false
+                                                            ? '인증 필요'
+                                                            : '장수생성'
+                                                    }}
+                                                </button>
+                                                <button
+                                                    v-if="profileDetails[profile.profileName]?.npcPossessionEnabled"
+                                                    class="w-full bg-zinc-700 hover:bg-zinc-600 text-white py-1.5 rounded text-sm transition-colors"
+                                                    :disabled="
+                                                        entryLoading[profile.profileName] ||
+                                                        profile.localAccountPolicy?.canCreateGeneral === false
+                                                    "
+                                                    @click="handleEnter(profile, '/join?tab=possess')"
+                                                >
+                                                    장수빙의
+                                                </button>
+                                            </template>
+                                        </div>
+                                    </template>
+                                    <template v-else-if="profile.status === 'STOPPED'">
+                                        <span class="text-zinc-700">-</span>
+                                    </template>
+                                </td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
                 <!-- Footer Info -->
                 <div class="bg-zinc-800/50 p-4 text-xs text-zinc-500 space-y-2 border-t border-zinc-800">
                     <p class="text-red-500 font-bold">

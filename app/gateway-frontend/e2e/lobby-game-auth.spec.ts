@@ -52,6 +52,7 @@ type LobbyFixtureOptions = {
     starttime?: string;
     opentime?: string;
     turntime?: string;
+    lobbyBundleFailures?: number;
 };
 
 const installFixture = async (page: Page, options: LobbyFixtureOptions = {}) => {
@@ -76,7 +77,9 @@ const installFixture = async (page: Page, options: LobbyFixtureOptions = {}) => 
         starttime = '2026-07-30 00:00:00',
         opentime = '2026-07-30 00:00:00',
         turntime = '2026-07-30 00:05:00',
+        lobbyBundleFailures = 0,
     } = options;
+    let remainingLobbyBundleFailures = lobbyBundleFailures;
     const gameOperations: Array<{ operation: string; authorization: string | undefined }> = [];
     if (authenticated) {
         await page.addInitScript(() => {
@@ -143,7 +146,18 @@ const installFixture = async (page: Page, options: LobbyFixtureOptions = {}) => 
     await page.route('**/hwe/api/trpc/**', async (route) => {
         expect(new URL(route.request().url()).pathname).toContain('/hwe/api/trpc/');
         const authorization = route.request().headers().authorization;
-        const results = operationNames(route).map((operation) => {
+        const operations = operationNames(route);
+        if (operations.includes('lobby.info') && remainingLobbyBundleFailures > 0) {
+            remainingLobbyBundleFailures -= 1;
+            gameOperations.push(...operations.map((operation) => ({ operation, authorization })));
+            await route.fulfill({
+                status: 502,
+                contentType: 'application/json',
+                body: JSON.stringify({ error: 'profile runtime is switching' }),
+            });
+            return;
+        }
+        const results = operations.map((operation) => {
             gameOperations.push({ operation, authorization });
             if (operation === 'auth.exchangeGatewayToken') {
                 return response({
@@ -214,6 +228,67 @@ test('exchanges the gateway token before loading authenticated lobby general dat
         operation: 'lobby.info',
         authorization: 'Bearer ga_lobby-access-token',
     });
+});
+
+test('automatically recovers profile details after a transient update outage', async ({ page }) => {
+    const gameOperations = await installFixture(page, { lobbyBundleFailures: 1 });
+
+    await page.goto('lobby');
+    const row = page.locator('tbody tr').filter({ hasText: 'hwe섭' });
+    await expect(row.getByTestId('profile-info-retrying')).toContainText('서버 응답을 기다리고 있습니다.');
+    await expect(row.getByRole('button', { name: '지금 다시 확인' })).toBeVisible();
+    await expect(row).toContainText('선택장수', { timeout: 8_000 });
+    expect(gameOperations.filter(({ operation }) => operation === 'lobby.info')).toHaveLength(2);
+});
+
+test('offers a keyboard-accessible immediate retry without mobile overflow', async ({ page }, testInfo) => {
+    await installFixture(page, { lobbyBundleFailures: 1 });
+    await page.setViewportSize({ width: 390, height: 844 });
+
+    await page.goto('lobby');
+    const row = page.locator('tbody tr').filter({ hasText: 'hwe섭' });
+    const retry = row.getByRole('button', { name: '지금 다시 확인' });
+    const tableScroll = page.getByTestId('profile-table-scroll');
+    await expect(retry).toBeVisible();
+    await retry.focus();
+    await expect(retry).toBeFocused();
+    const geometry = await tableScroll.evaluate((scrollElement) => {
+        const row = scrollElement.querySelector('tbody tr');
+        const button = row?.querySelector('button');
+        if (!row) throw new Error('expected profile row');
+        if (!button) throw new Error('expected profile retry button');
+        const scrollRect = scrollElement.getBoundingClientRect();
+        const rowRect = row.getBoundingClientRect();
+        const buttonRect = button.getBoundingClientRect();
+        const style = getComputedStyle(button);
+        return {
+            pageScrollWidth: document.documentElement.scrollWidth,
+            scroll: {
+                left: scrollRect.left,
+                right: scrollRect.right,
+                clientWidth: scrollElement.clientWidth,
+                scrollWidth: scrollElement.scrollWidth,
+            },
+            row: { left: rowRect.left, right: rowRect.right, width: rowRect.width },
+            button: { left: buttonRect.left, right: buttonRect.right, width: buttonRect.width },
+            viewportWidth: window.innerWidth,
+            outlineStyle: style.outlineStyle,
+            outlineWidth: style.outlineWidth,
+        };
+    });
+    expect(geometry.pageScrollWidth).toBe(geometry.viewportWidth);
+    expect(geometry.scroll.clientWidth).toBeLessThanOrEqual(geometry.viewportWidth);
+    expect(geometry.scroll.scrollWidth).toBe(760);
+    expect(geometry.row.width).toBe(760);
+    expect(geometry.button.left).toBeGreaterThanOrEqual(geometry.scroll.left);
+    expect(geometry.button.right).toBeLessThanOrEqual(geometry.scroll.right);
+    expect(geometry.outlineStyle).toBe('solid');
+    expect(geometry.outlineWidth).toBe('2px');
+    await page.screenshot({ path: testInfo.outputPath('gateway-profile-retry-mobile.png'), fullPage: true });
+
+    await retry.click();
+    await expect(row).toContainText('선택장수');
+    await expect(row.getByTestId('profile-info-retrying')).toHaveCount(0);
 });
 
 test('applies the signed general-acquisition policy to both create and possession actions', async ({ page }) => {

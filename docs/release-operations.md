@@ -78,6 +78,13 @@ profile 범위 권한과 별개인 전역 `admin.releases.manage` 권한이 필�
 데이터를 변환할 수 있으므로 대상 migration의 운영 데이터 영향은 배포 전에
 별도로 검토해 주세요.
 
+Profile process 전환 중에는 frontend/API port가 잠시 닫힐 수 있습니다. 이때 이미
+열린 Gateway 로비의 profile 상세 조회가 실패하면 로비는 10초 request timeout과
+1·2·3·5·8·15초(이후 15초 상한) 재시도로 자동 복구를 시도합니다. 상세가 아직
+없으면 `서버 응답을 기다리고 있습니다.`와 `지금 다시 확인`을
+표시합니다. 정상 응답을 한 번 받은 profile은 실패한 지도·인증 재확인 중에도
+마지막 상세를 유지합니다.
+
 ### 시나리오 초기화
 
 시나리오 초기화는 새 시즌이나 새 scenario로 현 시즌 데이터를 교체할 때
@@ -116,6 +123,22 @@ readiness가 실패하면 작업은 `FAILED`가 됩니다. DB 유지 배포는 �
 process 복구를 시도합니다. 관리자 화면의 오류와 PM2 process 상태를 확인한
 뒤 원인을 해결하고 실패한 작업을 재시도해 주세요. 재시도는 처음 고정된 commit을
 사용합니다.
+
+로비 한 행만 위 안내에 머물 때는 먼저 새 배포를 요청하지 말고 다음 순서로
+구분합니다.
+
+1. 로비의 `지금 다시 확인` 또는 browser 새로고침으로 같은 profile을 다시
+   조회합니다.
+2. 공개 `/<profile>/api/trpc/lobby.info`가 이미 200이면 runtime은 복구된 것이므로
+   `DB 유지 배포`, `중지`, `재개`를 누르지 않습니다. 기존 로비의 전환 중 1회
+   실패였을 가능성이 큽니다.
+3. 응답이 계속 502/connection refused이면 관리자 작업 이력에서 활성 DEPLOY/RESET과
+   terminal 오류, 해당 profile의 API/daemon/worker runtime 상태를 확인합니다. 활성
+   작업이 있으면 중복 작업을 만들지 말고 readiness 또는 rollback 종료를 기다립니다.
+4. profile이 실제 `STOPPED`/`PAUSED`이고 활성 작업이 없을 때만 `재개`를 사용합니다.
+   metadata는 RUNNING인데 process가 계속 없으면 자동 reconcile과 operation 오류를
+   먼저 확인하고, 원인이 없는 상태에서만 마지막 복구 수단으로 `중지` 후 `재개`를
+   사용합니다. DB 보존 배포는 health restart 버튼이 아닙니다.
 
 ## Gateway 전체 배포
 
