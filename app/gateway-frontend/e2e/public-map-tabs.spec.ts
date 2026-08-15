@@ -11,7 +11,7 @@ type ProfileFixture = {
     profile: string;
     korName: string;
     color: string;
-    status: 'RUNNING' | 'PREOPEN' | 'STOPPED';
+    status: 'RUNNING' | 'PREOPEN' | 'PAUSED' | 'COMPLETED' | 'STOPPED';
     apiPort: number;
 };
 
@@ -29,7 +29,7 @@ const profiles: ProfileFixture[] = [
         profile: 'hwe',
         korName: '훼',
         color: '#80c0ff',
-        status: 'PREOPEN',
+        status: 'PAUSED',
         apiPort: 15015,
     },
     {
@@ -369,6 +369,17 @@ test('treats an all-closed profile list as a normal empty login status', async (
     await expect(status).not.toContainText('Failed to fetch');
     expect(gameRequestCount).toBe(0);
     await page.screenshot({ path: testInfo.outputPath('login-no-public-server.png'), fullPage: true });
+});
+
+test('shows a PAUSED profile with a live runtime on the public login status', async ({ page }) => {
+    await installGatewayFixture(page, [profiles[1]!], false);
+    await installGameFixture(page, profiles[1]!, 22);
+
+    await page.goto('/gateway/');
+    const status = page.locator('#map-subframe');
+    await expect(status).toContainText('훼 현황');
+    await expect(status).toContainText('유저 22명');
+    await expect(status).not.toContainText('현재 공개 중인 서버가 없습니다.');
 });
 
 test('renders the Gateway profile order returned by the API', async ({ page }, testInfo) => {

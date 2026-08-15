@@ -33,6 +33,7 @@ type ProfileLoadState = {
 
 const PROFILE_REQUEST_TIMEOUT_MS = 10_000;
 const PROFILE_RETRY_DELAYS_MS = [1_000, 2_000, 3_000, 5_000, 8_000, 15_000] as const;
+const PROFILE_RUNTIME_STATUSES = new Set<LobbyProfile['status']>(['RUNNING', 'PREOPEN', 'PAUSED', 'COMPLETED']);
 
 const router = useRouter();
 const me = ref<MeOutput>(null);
@@ -67,7 +68,7 @@ const needsKakaoVerification = computed(
 const userIconBaseUrl = configuredUserIconPublicUrl();
 const sharedIconBaseUrl = configuredSharedIconPublicUrl();
 const publicMapProfiles = computed(() =>
-    profiles.value.filter((profile) => profile.status === 'RUNNING' || profile.status === 'PREOPEN')
+    profiles.value.filter((profile) => PROFILE_RUNTIME_STATUSES.has(profile.status))
 );
 const selectedMapProfile = computed(
     () => publicMapProfiles.value.find((profile) => profile.profileName === selectedMapProfileName.value) ?? null
@@ -109,6 +110,12 @@ const handleMapTabKeydown = (event: KeyboardEvent, profileName: string): void =>
 
 const formatGraceEndsAt = (value: string | null | undefined): string => formatServerDateTime(value);
 const serverSeasonStatus = (info: LobbyInfo) => resolveServerSeasonStatus(info);
+const isProfileRuntimeAvailable = (profile: LobbyProfile): boolean => PROFILE_RUNTIME_STATUSES.has(profile.status);
+const unavailableProfileText = (profile: LobbyProfile): string => {
+    if (profile.status === 'RESERVED') return '- 준 비 중 -';
+    if (profile.status === 'DISABLED') return '- 비 활 성 -';
+    return '- 폐 쇄 중 -';
+};
 const profileLoadState = (profileName: string): ProfileLoadState | undefined => profileLoadStates.value[profileName];
 const setProfileLoadState = (profileName: string, state: ProfileLoadState): void => {
     profileLoadStates.value = {
@@ -151,7 +158,7 @@ const handleGeneralPictureError = (event: Event): void => {
 };
 
 const loadProfileDetails = async (profile: LobbyProfile, sessionToken: string | null): Promise<void> => {
-    if (!lobbyMounted || (profile.status !== 'RUNNING' && profile.status !== 'PREOPEN')) {
+    if (!lobbyMounted || !isProfileRuntimeAvailable(profile)) {
         return;
     }
     clearProfileRetry(profile.profileName);
@@ -444,6 +451,13 @@ const handleEnter = async (profile: LobbyProfile, targetPath: string) => {
                                         {{ serverSeasonStatus(profileDetails[profile.profileName]!).label }}
                                     </div>
                                     <div
+                                        v-if="profile.status === 'PAUSED'"
+                                        class="mt-1 whitespace-nowrap text-xs text-amber-300"
+                                        data-testid="profile-paused-status"
+                                    >
+                                        턴 진행 일시정지
+                                    </div>
+                                    <div
                                         v-if="profile.localAccountPolicy?.specialAccess"
                                         class="mt-2 text-xs text-emerald-300"
                                     >
@@ -494,8 +508,10 @@ const handleEnter = async (profile: LobbyProfile, targetPath: string) => {
                                             </div>
                                         </div>
                                     </template>
-                                    <template v-else-if="profile.status === 'STOPPED'">
-                                        <div class="text-center text-zinc-600 py-2">- 폐 쇄 중 -</div>
+                                    <template v-else-if="!isProfileRuntimeAvailable(profile)">
+                                        <div class="text-center text-zinc-600 py-2">
+                                            {{ unavailableProfileText(profile) }}
+                                        </div>
                                     </template>
                                     <template v-else-if="profileLoadState(profile.profileName)?.status === 'retrying'">
                                         <div
@@ -598,7 +614,7 @@ const handleEnter = async (profile: LobbyProfile, targetPath: string) => {
                                             </template>
                                         </div>
                                     </template>
-                                    <template v-else-if="profile.status === 'STOPPED'">
+                                    <template v-else-if="!isProfileRuntimeAvailable(profile)">
                                         <span class="text-zinc-700">-</span>
                                     </template>
                                 </td>

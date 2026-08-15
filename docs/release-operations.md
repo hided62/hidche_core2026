@@ -124,21 +124,36 @@ process 복구를 시도합니다. 관리자 화면의 오류와 PM2 process 상
 뒤 원인을 해결하고 실패한 작업을 재시도해 주세요. 재시도는 처음 고정된 commit을
 사용합니다.
 
+Turn daemon의 DB persistence interactive transaction은 기본 30초입니다. 정상 turn
+budget과 같은 Prisma 기본 5초를 그대로 쓰면 populated season의 flush가 경계에서
+rollback되고 profile이 `PAUSED`로 전환될 수 있습니다. timeout을 늘려도 한
+transaction의 계산·RNG·write 순서는 바뀌지 않지만 lock 보유 상한도 함께 늘어나므로
+운영에서는 실제 flush 시간과 DB 경합을 함께 관찰합니다.
+
 로비 한 행만 위 안내에 머물 때는 먼저 새 배포를 요청하지 말고 다음 순서로
 구분합니다.
 
 1. 로비의 `지금 다시 확인` 또는 browser 새로고침으로 같은 profile을 다시
    조회합니다.
-2. 공개 `/<profile>/api/trpc/lobby.info`가 이미 200이면 runtime은 복구된 것이므로
+2. `lobby.profiles`의 상태와 runtime role을 함께 봅니다. `RUNNING`, `PREOPEN`,
+   `PAUSED`, `COMPLETED`는 API process가 유지되는 상태이므로 로비 상세와 공개 지도를
+   조회합니다. `PAUSED`에는 `턴 진행 일시정지`를 함께 표시하며, 상세 조회 실패나
+   폐쇄 상태로 바꾸어 표시하지 않습니다.
+3. 상태가 `RUNNING`/`PREOPEN`/`COMPLETED`이고 공개
+   `/<profile>/api/trpc/lobby.info`가 이미 200이면 runtime은 복구된 것이므로
    `DB 유지 배포`, `중지`, `재개`를 누르지 않습니다. 기존 로비의 전환 중 1회
    실패였을 가능성이 큽니다.
-3. 응답이 계속 502/connection refused이면 관리자 작업 이력에서 활성 DEPLOY/RESET과
+4. 상태가 `PAUSED`이면 turn daemon이 오류 또는 관리자 요청 때문에 턴 진행 gate를
+   닫은 것입니다. 활성 DEPLOY/RESET이 없고 `lastError`의 원인이 일시적이거나 이미
+   해소됐음을 확인한 뒤 `재개`를 한 번 사용합니다. runtime role이 모두 RUNNING이어도
+   profile status가 자동으로 `RUNNING`으로 돌아가지는 않습니다.
+5. 응답이 계속 502/connection refused이면 관리자 작업 이력에서 활성 DEPLOY/RESET과
    terminal 오류, 해당 profile의 API/daemon/worker runtime 상태를 확인합니다. 활성
    작업이 있으면 중복 작업을 만들지 말고 readiness 또는 rollback 종료를 기다립니다.
-4. profile이 실제 `STOPPED`/`PAUSED`이고 활성 작업이 없을 때만 `재개`를 사용합니다.
-   metadata는 RUNNING인데 process가 계속 없으면 자동 reconcile과 operation 오류를
-   먼저 확인하고, 원인이 없는 상태에서만 마지막 복구 수단으로 `중지` 후 `재개`를
-   사용합니다. DB 보존 배포는 health restart 버튼이 아닙니다.
+6. profile이 `STOPPED`이고 활성 작업이 없을 때만 `재개`를 사용합니다. metadata는
+   RUNNING인데 process가 계속 없으면 자동 reconcile과 operation 오류를 먼저 확인하고,
+   원인이 없는 상태에서만 마지막 복구 수단으로 `중지` 후 `재개`를 사용합니다. DB
+   보존 배포는 health restart 버튼이 아닙니다.
 
 ## Gateway 전체 배포
 

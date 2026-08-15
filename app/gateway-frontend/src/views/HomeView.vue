@@ -19,6 +19,7 @@ type LobbyProfile = GatewayOutput['lobby']['profiles'][number];
 type LobbyInfo = GameOutput['lobby']['info'];
 type PublicMap = GameOutput['public']['getCachedMap'];
 type PublicMapLayout = GameOutput['public']['getMapLayout'];
+const PROFILE_PUBLIC_STATUS_ORDER: LobbyProfile['status'][] = ['RUNNING', 'PREOPEN', 'PAUSED', 'COMPLETED'];
 
 const router = useRouter();
 const username = ref('');
@@ -52,9 +53,9 @@ const loadPublicStatus = async (): Promise<void> => {
     try {
         const profiles = await trpc.lobby.profiles.query();
         profile.value =
-            profiles.find((entry) => entry.status === 'RUNNING') ??
-            profiles.find((entry) => entry.status === 'PREOPEN') ??
-            null;
+            PROFILE_PUBLIC_STATUS_ORDER.map((status) => profiles.find((entry) => entry.status === status)).find(
+                (entry) => entry !== undefined
+            ) ?? null;
         if (!profile.value) {
             statusError.value = '현재 공개 중인 서버가 없습니다.';
             return;

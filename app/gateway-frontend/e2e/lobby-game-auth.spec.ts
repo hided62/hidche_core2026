@@ -53,6 +53,7 @@ type LobbyFixtureOptions = {
     opentime?: string;
     turntime?: string;
     lobbyBundleFailures?: number;
+    profileStatus?: 'RUNNING' | 'PREOPEN' | 'PAUSED' | 'COMPLETED';
 };
 
 const installFixture = async (page: Page, options: LobbyFixtureOptions = {}) => {
@@ -78,6 +79,7 @@ const installFixture = async (page: Page, options: LobbyFixtureOptions = {}) => 
         opentime = '2026-07-30 00:00:00',
         turntime = '2026-07-30 00:05:00',
         lobbyBundleFailures = 0,
+        profileStatus = 'RUNNING',
     } = options;
     let remainingLobbyBundleFailures = lobbyBundleFailures;
     const gameOperations: Array<{ operation: string; authorization: string | undefined }> = [];
@@ -111,7 +113,7 @@ const installFixture = async (page: Page, options: LobbyFixtureOptions = {}) => 
                         profileName: 'hwe:903',
                         profile: 'hwe',
                         scenario: '903',
-                        status: 'RUNNING',
+                        status: profileStatus,
                         apiPort: 15015,
                         runtime: {
                             apiRunning: true,
@@ -228,6 +230,23 @@ test('exchanges the gateway token before loading authenticated lobby general dat
         operation: 'lobby.info',
         authorization: 'Bearer ga_lobby-access-token',
     });
+});
+
+test('loads and labels a PAUSED profile whose runtime remains available', async ({ page }, testInfo) => {
+    const gameOperations = await installFixture(page, { profileStatus: 'PAUSED' });
+    await page.setViewportSize({ width: 1365, height: 900 });
+
+    await page.goto('lobby');
+    const row = page.locator('tbody tr').filter({ hasText: 'hwe섭' });
+    const pausedStatus = row.getByTestId('profile-paused-status');
+    await expect(pausedStatus).toHaveText('턴 진행 일시정지');
+    await expect(pausedStatus).toHaveCSS('color', 'oklch(0.879 0.169 91.605)');
+    await expect(row).toContainText('선택장수');
+    await expect(row).not.toContainText('정보를 불러오는 중');
+    await expect(row.getByRole('button', { name: '입장' })).toBeVisible();
+    expect(gameOperations.some(({ operation }) => operation === 'lobby.info')).toBe(true);
+    await expect(page.getByRole('tab', { name: 'hwe섭' })).toBeVisible();
+    await page.screenshot({ path: testInfo.outputPath('gateway-paused-profile-lobby.png'), fullPage: true });
 });
 
 test('automatically recovers profile details after a transient update outage', async ({ page }) => {
