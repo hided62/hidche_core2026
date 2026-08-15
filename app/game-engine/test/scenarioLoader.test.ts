@@ -19,4 +19,20 @@ describe('tracked scenario resources', () => {
         const scenarios = await Promise.all(scenarioIds.map((scenarioId) => loadScenarioDefinitionById(scenarioId)));
         expect(scenarios.every((scenario) => scenario.title.length > 0)).toBe(true);
     });
+
+    it('opens nation betting in the first playable year of every scenario 29 variant', async () => {
+        const scenarioIds = [2900, 2901, 2903, 2904];
+        const scenarios = await Promise.all(scenarioIds.map((scenarioId) => loadScenarioDefinitionById(scenarioId)));
+
+        for (const scenario of scenarios) {
+            expect(scenario.startYear).toBe(2025);
+            expect(scenario.events).toContainEqual([
+                'month',
+                999,
+                ['Date', '==', 2026, 1],
+                ['OpenNationBetting', 1, 2000],
+                ['DeleteEvent'],
+            ]);
+        }
+    });
 });
