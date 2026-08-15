@@ -13,7 +13,22 @@ type ProfileFixture = {
     color: string;
     status: 'RUNNING' | 'PREOPEN' | 'PAUSED' | 'COMPLETED' | 'STOPPED';
     apiPort: number;
+    lifecycle: {
+        runtimeExpected: boolean;
+        userAccessible: boolean;
+        turnsRunning: boolean;
+        operatorResumable: boolean;
+        dataInitialized: boolean;
+    };
 };
+
+const lifecycleFor = (status: ProfileFixture['status']): ProfileFixture['lifecycle'] => ({
+    runtimeExpected: status !== 'STOPPED',
+    userAccessible: status !== 'STOPPED',
+    turnsRunning: status === 'RUNNING',
+    operatorResumable: status === 'PAUSED' || status === 'STOPPED',
+    dataInitialized: true,
+});
 
 const profiles: ProfileFixture[] = [
     {
@@ -23,6 +38,7 @@ const profiles: ProfileFixture[] = [
         color: '#ff8080',
         status: 'RUNNING',
         apiPort: 15003,
+        lifecycle: lifecycleFor('RUNNING'),
     },
     {
         profileName: 'hwe:2',
@@ -31,6 +47,7 @@ const profiles: ProfileFixture[] = [
         color: '#80c0ff',
         status: 'PAUSED',
         apiPort: 15015,
+        lifecycle: lifecycleFor('PAUSED'),
     },
     {
         profileName: 'kwe:2',
@@ -39,6 +56,7 @@ const profiles: ProfileFixture[] = [
         color: '#b0b0b0',
         status: 'STOPPED',
         apiPort: 15005,
+        lifecycle: lifecycleFor('STOPPED'),
     },
 ];
 
@@ -58,6 +76,7 @@ const orderedProfiles: ProfileFixture[] = orderedProfileData.map(([profile, korN
     color: '#b0b0b0',
     status: 'STOPPED',
     apiPort,
+    lifecycle: lifecycleFor('STOPPED'),
 }));
 
 const fulfill = async (route: Route, results: unknown[]): Promise<void> => {

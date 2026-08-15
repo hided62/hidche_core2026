@@ -1,5 +1,11 @@
 <script setup lang="ts">
-import { formatServerDateTime, serverDateTimeInputToIso, toServerDateTimeInputValue } from '@sammo-ts/common';
+import {
+    formatServerDateTime,
+    gatewayProfileCapabilities,
+    serverDateTimeInputToIso,
+    toServerDateTimeInputValue,
+    type GatewayProfileStatus,
+} from '@sammo-ts/common';
 import { computed, onMounted, ref, watch } from 'vue';
 import ServerProfileTabs from '../components/ServerProfileTabs.vue';
 import AdminConsoleLayout from '../layouts/AdminConsoleLayout.vue';
@@ -180,7 +186,7 @@ type AdminProfile = {
     currentScenario: string | null;
     /** @deprecated Rollback-compatible mirror of currentScenario. */
     scenario: string;
-    status: string;
+    status: GatewayProfileStatus;
     apiPort: number;
     runtime: {
         apiRunning: boolean;
@@ -422,6 +428,22 @@ const visibleProfiles = computed(() =>
 const runtimeActionPending = (profile: AdminProfile): boolean => {
     return profile.runtimeActions.some((action) => action.status === 'REQUESTED' || action.status === 'PARTIAL');
 };
+
+const profileLifecycleText = (profile: AdminProfile): string => {
+    if (profile.currentScenario === null) return 'DB 초기화 전 · 게임 접근 불가';
+    if (profile.status === 'PAUSED') return '턴 일시정지 · 게임 조회와 예약턴 입력 가능 · 운영자 재개 가능';
+    if (profile.status === 'STOPPED') return '서버 프로세스 중지 · 게임 접근 불가 · 운영자 서버 재개 가능';
+    if (profile.status === 'RUNNING') return '서버 운영 및 턴 진행 중';
+    if (profile.status === 'PREOPEN') return '서버 접근 가능 · 개장 전 턴 정지';
+    if (profile.status === 'COMPLETED') return '종료 기수 조회 가능 · 턴 정지';
+    if (profile.status === 'DISABLED') return '비활성 · 게임 접근 불가';
+    return '준비 중 · 게임 접근 불가';
+};
+
+const canResumeProfile = (profile: AdminProfile): boolean =>
+    profile.currentScenario !== null && gatewayProfileCapabilities(profile.status).operatorResumable;
+const canPauseProfile = (profile: AdminProfile): boolean => profile.status === 'RUNNING';
+const canStopProfile = (profile: AdminProfile): boolean => gatewayProfileCapabilities(profile.status).runtimeExpected;
 
 const validDuration = (profileName: string): boolean => {
     const value = Number(profileActions.value[profileName]?.durationMinutes);
@@ -2069,6 +2091,12 @@ onMounted(() => {
                                     <div class="text-xs text-zinc-500">
                                         현재 시나리오: {{ profile.currentScenario ?? '미설정' }}
                                     </div>
+                                    <div
+                                        class="mt-1 text-xs text-amber-200"
+                                        data-testid="profile-lifecycle-description"
+                                    >
+                                        {{ profileLifecycleText(profile) }}
+                                    </div>
                                 </div>
                                 <div class="text-xs text-zinc-400">
                                     상태: {{ profile.status }} / API: {{ profile.runtime.apiRunning ? 'ON' : 'OFF' }} /
@@ -2359,19 +2387,30 @@ onMounted(() => {
                                     </div>
                                     <div class="grid grid-cols-2 gap-2 pt-2">
                                         <button
-                                            class="bg-blue-700 hover:bg-blue-600 text-white font-semibold px-3 py-2 rounded"
+                                            class="bg-blue-700 hover:bg-blue-600 text-white font-semibold px-3 py-2 rounded disabled:opacity-40 disabled:cursor-not-allowed"
+                                            :disabled="
+                                                profileActionSubmitting[profile.profileName] ||
+                                                !canResumeProfile(profile)
+                                            "
                                             @click="requestProfileAction(profile.profileName, 'RESUME')"
                                         >
-                                            재개
+                                            {{ profile.status === 'PAUSED' ? '턴 재개' : '서버 재개' }}
                                         </button>
                                         <button
-                                            class="bg-zinc-700 hover:bg-zinc-600 text-white font-semibold px-3 py-2 rounded"
+                                            class="bg-zinc-700 hover:bg-zinc-600 text-white font-semibold px-3 py-2 rounded disabled:opacity-40 disabled:cursor-not-allowed"
+                                            :disabled="
+                                                profileActionSubmitting[profile.profileName] ||
+                                                !canPauseProfile(profile)
+                                            "
                                             @click="requestProfileAction(profile.profileName, 'PAUSE')"
                                         >
                                             일시정지
                                         </button>
                                         <button
-                                            class="bg-red-700 hover:bg-red-600 text-white font-semibold px-3 py-2 rounded"
+                                            class="bg-red-700 hover:bg-red-600 text-white font-semibold px-3 py-2 rounded disabled:opacity-40 disabled:cursor-not-allowed"
+                                            :disabled="
+                                                profileActionSubmitting[profile.profileName] || !canStopProfile(profile)
+                                            "
                                             @click="requestProfileAction(profile.profileName, 'STOP')"
                                         >
                                             중지

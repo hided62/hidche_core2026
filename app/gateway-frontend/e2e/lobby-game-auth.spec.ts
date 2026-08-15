@@ -53,7 +53,7 @@ type LobbyFixtureOptions = {
     opentime?: string;
     turntime?: string;
     lobbyBundleFailures?: number;
-    profileStatus?: 'RUNNING' | 'PREOPEN' | 'PAUSED' | 'COMPLETED';
+    profileStatus?: 'RUNNING' | 'PREOPEN' | 'PAUSED' | 'COMPLETED' | 'STOPPED';
 };
 
 const installFixture = async (page: Page, options: LobbyFixtureOptions = {}) => {
@@ -112,8 +112,17 @@ const installFixture = async (page: Page, options: LobbyFixtureOptions = {}) => 
                     {
                         profileName: 'hwe:903',
                         profile: 'hwe',
+                        instanceKey: '903',
+                        currentScenario: '903',
                         scenario: '903',
                         status: profileStatus,
+                        lifecycle: {
+                            runtimeExpected: profileStatus !== 'STOPPED',
+                            userAccessible: profileStatus !== 'STOPPED',
+                            turnsRunning: profileStatus === 'RUNNING',
+                            operatorResumable: profileStatus === 'PAUSED' || profileStatus === 'STOPPED',
+                            dataInitialized: true,
+                        },
                         apiPort: 15015,
                         runtime: {
                             apiRunning: true,
@@ -239,7 +248,7 @@ test('loads and labels a PAUSED profile whose runtime remains available', async 
     await page.goto('lobby');
     const row = page.locator('tbody tr').filter({ hasText: 'hwe섭' });
     const pausedStatus = row.getByTestId('profile-paused-status');
-    await expect(pausedStatus).toHaveText('턴 진행 일시정지');
+    await expect(pausedStatus).toHaveText('턴 일시정지 · 조회/예약턴 가능');
     await expect(pausedStatus).toHaveCSS('color', 'oklch(0.879 0.169 91.605)');
     await expect(row).toContainText('선택장수');
     await expect(row).not.toContainText('정보를 불러오는 중');
@@ -247,6 +256,19 @@ test('loads and labels a PAUSED profile whose runtime remains available', async 
     expect(gameOperations.some(({ operation }) => operation === 'lobby.info')).toBe(true);
     await expect(page.getByRole('tab', { name: 'hwe섭' })).toBeVisible();
     await page.screenshot({ path: testInfo.outputPath('gateway-paused-profile-lobby.png'), fullPage: true });
+});
+
+test('does not contact a STOPPED game runtime and labels it inaccessible', async ({ page }, testInfo) => {
+    const gameOperations = await installFixture(page, { profileStatus: 'STOPPED' });
+
+    await page.goto('lobby');
+    const row = page.locator('tbody tr').filter({ hasText: 'hwe섭' });
+    await expect(row).toContainText('서버 중지 · 접근 불가');
+    await expect(row).not.toContainText('정보를 불러오는 중');
+    await expect(row.getByRole('button', { name: '입장' })).toHaveCount(0);
+    await expect(page.getByRole('tab', { name: 'hwe섭' })).toHaveCount(0);
+    expect(gameOperations).toEqual([]);
+    await page.screenshot({ path: testInfo.outputPath('gateway-stopped-profile-lobby.png'), fullPage: true });
 });
 
 test('automatically recovers profile details after a transient update outage', async ({ page }) => {

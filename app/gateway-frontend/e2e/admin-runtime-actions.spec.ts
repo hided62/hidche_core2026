@@ -37,6 +37,8 @@ const installFixture = async (
         initialActions?: RuntimeAction[];
         afterRequestActions?: RuntimeAction[];
         pendingProfileReads?: number;
+        profileStatus?: 'RUNNING' | 'PAUSED' | 'STOPPED';
+        currentScenario?: string | null;
     } = {}
 ) => {
     let requested = false;
@@ -151,7 +153,7 @@ const installFixture = async (
                         profileName: 'hwe:default',
                         profile: 'hwe',
                         instanceKey: 'default',
-                        currentScenario: '1010',
+                        currentScenario: options.currentScenario === undefined ? '1010' : options.currentScenario,
                         meta: {},
                     },
                 ]);
@@ -163,10 +165,10 @@ const installFixture = async (
                         profileName: 'hwe:default',
                         profile: 'hwe',
                         instanceKey: 'default',
-                        currentScenario: '1010',
-                        scenario: '1010',
+                        currentScenario: options.currentScenario === undefined ? '1010' : options.currentScenario,
+                        scenario: options.currentScenario ?? 'default',
                         apiPort: 15015,
-                        status: 'RUNNING',
+                        status: options.profileStatus ?? 'RUNNING',
                         buildStatus: 'SUCCEEDED',
                         meta: {},
                         activeOperation: installActive
@@ -284,6 +286,34 @@ test('reports clock-shift acceptance separately from actual application', async 
     expect(JSON.stringify(fixture.requestBodies[0])).toContain('"durationMinutes":15');
     await expect(page.getByRole('button', { name: '설문 오픈 (게임 내 관리)' })).toBeDisabled();
     await expect(page.getByText('설문 생성은 해당 게임의 설문 관리 화면에서 진행해 주세요.')).toBeVisible();
+});
+
+test('distinguishes a turn pause from an inaccessible stopped server in operator controls', async ({ page }) => {
+    await installFixture(page, { profileStatus: 'PAUSED' });
+
+    await page.goto('/gateway/admin/servers/hwe%3Adefault');
+    await expect(page.getByTestId('profile-lifecycle-description')).toContainText('게임 조회와 예약턴 입력 가능');
+    await expect(page.getByRole('button', { name: '턴 재개' })).toBeEnabled();
+    await expect(page.getByRole('button', { name: '일시정지' })).toBeDisabled();
+    await expect(page.getByRole('button', { name: '중지', exact: true })).toBeEnabled();
+});
+
+test('shows an initialized STOPPED server as inaccessible and only restartable', async ({ page }) => {
+    await installFixture(page, { profileStatus: 'STOPPED' });
+
+    await page.goto('/gateway/admin/servers/hwe%3Adefault');
+    await expect(page.getByTestId('profile-lifecycle-description')).toContainText('게임 접근 불가');
+    await expect(page.getByRole('button', { name: '서버 재개' })).toBeEnabled();
+    await expect(page.getByRole('button', { name: '일시정지' })).toBeDisabled();
+    await expect(page.getByRole('button', { name: '중지', exact: true })).toBeDisabled();
+});
+
+test('separates an uninitialized database from an initialized stopped server', async ({ page }) => {
+    await installFixture(page, { profileStatus: 'STOPPED', currentScenario: null });
+
+    await page.goto('/gateway/admin/servers/hwe%3Adefault');
+    await expect(page.getByTestId('profile-lifecycle-description')).toHaveText('DB 초기화 전 · 게임 접근 불가');
+    await expect(page.getByRole('button', { name: '서버 재개' })).toBeDisabled();
 });
 
 test('blocks another clock shift while any recent action is pending', async ({ page }) => {

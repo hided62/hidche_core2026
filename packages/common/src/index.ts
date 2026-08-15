@@ -22,3 +22,4 @@ export * from './ranking/types.js';
 export * from './ranking/legacyColor.js';
 export * from './auth/accountIconProjection.js';
 export * from './logging/formatLegacyLogHtml.js';
+export * from './gateway/profileStatus.js';

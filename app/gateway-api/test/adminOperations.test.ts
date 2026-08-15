@@ -29,7 +29,7 @@ const buildCaller = async (
         runtimeActionCreateError?: unknown;
         initialNotice?: string;
         initialProfileStatus?: GatewayProfileRecord['status'];
-        profileScenario?: string;
+        profileScenario?: string | null;
         profileMeta?: GatewayProfileRecord['meta'];
         initialOperation?: GatewayOperationRecord;
         profileLogVisibilityAfterPolls?: number;
@@ -86,7 +86,7 @@ const buildCaller = async (
         profileName: 'che:2',
         profile: 'che',
         instanceKey: '2',
-        currentScenario: options.profileScenario ?? '2',
+        currentScenario: Object.hasOwn(options, 'profileScenario') ? (options.profileScenario ?? null) : '2',
         scenario: options.profileScenario ?? '2',
         apiPort: 15003,
         status: options.initialProfileStatus ?? ('STOPPED' as const),
@@ -1059,6 +1059,54 @@ describe('admin runtime clock action API', () => {
         });
         expect(harness.updatedStatuses).toEqual([]);
         expect(harness.getReconcileCount()).toBe(0);
+    });
+
+    it('does not turn a stopped profile into an accessible paused runtime', async () => {
+        const harness = await buildCaller(unusedCreateOperation, { initialProfileStatus: 'STOPPED' });
+
+        await expect(
+            harness.caller.admin.profiles.requestAction({
+                profileName: 'che:2',
+                action: 'PAUSE',
+            })
+        ).rejects.toMatchObject({
+            code: 'BAD_REQUEST',
+            message: 'Pause is allowed only for RUNNING profiles.',
+        });
+        expect(harness.updatedStatuses).toEqual([]);
+        expect(harness.getReconcileCount()).toBe(0);
+    });
+
+    it('requires reset before an uninitialized stopped profile can be resumed', async () => {
+        const harness = await buildCaller(unusedCreateOperation, {
+            initialProfileStatus: 'STOPPED',
+            profileScenario: null,
+        });
+
+        await expect(
+            harness.caller.admin.profiles.requestAction({
+                profileName: 'che:2',
+                action: 'RESUME',
+            })
+        ).rejects.toMatchObject({
+            code: 'BAD_REQUEST',
+            message: 'An uninitialized profile must be reset before it can be resumed.',
+        });
+        expect(harness.updatedStatuses).toEqual([]);
+        expect(harness.getReconcileCount()).toBe(0);
+    });
+
+    it('allows stopping an accessible paused profile', async () => {
+        const harness = await buildCaller(unusedCreateOperation, { initialProfileStatus: 'PAUSED' });
+
+        await expect(
+            harness.caller.admin.profiles.requestAction({
+                profileName: 'che:2',
+                action: 'STOP',
+            })
+        ).resolves.toMatchObject({ ok: true });
+        expect(harness.updatedStatuses).toEqual(['STOPPED']);
+        expect(harness.getReconcileCount()).toBe(1);
     });
 
     it('creates a first-class clock action owned by the authenticated administrator', async () => {
