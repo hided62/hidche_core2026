@@ -37,7 +37,7 @@ const findCurrentEntryIndex = (minuteOfDay: number, entries: TurnScheduleEntries
 const getEntryAt = (entries: TurnScheduleEntries, index: number): TurnScheduleEntry =>
     entries[Math.max(0, Math.min(entries.length - 1, index))] ?? entries[0];
 
-export const getTickMinutesAt = (date: Date, schedule: TurnSchedule): number => {
+const getTickMinutesAt = (date: Date, schedule: TurnSchedule): number => {
     const entries = normalizeEntries(schedule.entries);
     const minuteOfDay = toMinuteOfDay(date);
     const index = findCurrentEntryIndex(minuteOfDay, entries);

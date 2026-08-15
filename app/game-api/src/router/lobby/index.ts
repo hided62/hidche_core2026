@@ -3,7 +3,7 @@ import { TRPCError } from '@trpc/server';
 import { asRecord } from '@sammo-ts/common';
 
 import { zWorldStateConfig, zWorldStateMeta } from '../../context.js';
-import { isSelectionPoolWorld, resolveSelectionMaxGeneral } from '../../services/selectPool.js';
+import { isSelectionPoolWorld, resolveSelectionMaxGeneral } from '@sammo-ts/game-engine/turn/selectPoolService.js';
 import { procedure, router } from '../../trpc.js';
 
 export const lobbyRouter = router({

@@ -1,7 +1,6 @@
 import { runTurnDaemonCli } from './turn/cli.js';
 
 export * from './lifecycle/types.js';
-export * from './lifecycle/clock.js';
 export * from './lifecycle/databaseCommandQueue.js';
 export * from './lifecycle/databaseTurnDaemonLease.js';
 export * from './lifecycle/inMemoryControlQueue.js';

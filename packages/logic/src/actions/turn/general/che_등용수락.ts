@@ -9,7 +9,7 @@ import {
     reqGeneralValue,
     reqEnvValue,
     readMetaNumberFromUnknown,
-    alwaysFail,
+    denyWithReason,
 } from '@sammo-ts/logic/constraints/presets.js';
 import type { GeneralActionDefinition } from '@sammo-ts/logic/actions/definition.js';
 import type {
@@ -318,7 +318,7 @@ export class ActionDefinition<
     }
 
     buildPermissionConstraints(_ctx: ConstraintContext, _args: AcceptScoutArgs): Constraint[] {
-        return [alwaysFail('예약 불가능 커맨드')];
+        return [denyWithReason('예약 불가능 커맨드')];
     }
 
     buildConstraints(_ctx: ConstraintContext, _args: AcceptScoutArgs): Constraint[] {

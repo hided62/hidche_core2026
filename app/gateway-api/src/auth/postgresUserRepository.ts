@@ -1,6 +1,6 @@
 import { GatewayPrisma, type GatewayPrismaClient } from '@sammo-ts/infra';
 
-import { createSimplePasswordHasher, type PasswordHasher } from './passwordHasher.js';
+import { createPasswordHasher, type PasswordHasher } from './passwordHasher.js';
 import type {
     AdminUserListItem,
     CreateUserInput,
@@ -158,7 +158,7 @@ const mapSpecialAccessGrant = (row: {
 
 export const createPostgresUserRepository = (
     prisma: GatewayPrismaClient,
-    hasher: PasswordHasher = createSimplePasswordHasher()
+    hasher: PasswordHasher = createPasswordHasher()
 ): UserRepository => {
     return {
         async findById(id: string): Promise<UserRecord | null> {
@@ -406,7 +406,9 @@ export const createPostgresUserRepository = (
             if (result.count !== 1) {
                 return null;
             }
-            return mapSpecialAccessGrant(await prisma.specialAccountAccessGrant.findUniqueOrThrow({ where: { id: grantId } }));
+            return mapSpecialAccessGrant(
+                await prisma.specialAccountAccessGrant.findUniqueOrThrow({ where: { id: grantId } })
+            );
         },
         async updateIcon(userId: string, picture: string, imageServer: number, updatedAt: Date): Promise<void> {
             await prisma.appUser.update({

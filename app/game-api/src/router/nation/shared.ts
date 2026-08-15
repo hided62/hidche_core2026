@@ -210,9 +210,9 @@ export const resolveOfficerCity = (meta: Record<string, unknown>): number => {
     return readMetaNumber(meta, 'officer_city', 0);
 };
 
-export const resolveBelong = (meta: Record<string, unknown>): number => readMetaNumber(meta, 'belong', 0);
+const resolveBelong = (meta: Record<string, unknown>): number => readMetaNumber(meta, 'belong', 0);
 
-export const resolvePermission = (meta: Record<string, unknown>): PermissionKind => {
+const resolvePermission = (meta: Record<string, unknown>): PermissionKind => {
     const value = meta.permission;
     if (value === 'ambassador' || value === 'auditor') {
         return value;

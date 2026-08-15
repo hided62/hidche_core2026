@@ -9,8 +9,6 @@ export const clamp = (value: number, min: number, max: number): number => Math.m
 
 export const clampMin = (value: number, min: number): number => (value < min ? min : value);
 
-export const clampMax = (value: number, max: number): number => (value > max ? max : value);
-
 // REF-COMPAT:BEGIN ref-php-half-rounding
 // PHP's round() compensates for small binary floating-point drift around a
 // half boundary and rounds halves away from zero. War state is persisted to
@@ -34,11 +32,6 @@ export const round = (value: number): number => {
 export const getMetaNumber = (meta: Record<string, TriggerValue>, key: string, fallback = 0): number => {
     const value = meta[key];
     return typeof value === 'number' && Number.isFinite(value) ? value : fallback;
-};
-
-export const getMetaString = (meta: Record<string, TriggerValue>, key: string): string | null => {
-    const value = meta[key];
-    return typeof value === 'string' ? value : null;
 };
 
 export const setMetaNumber = (meta: Record<string, TriggerValue>, key: string, value: number): void => {
@@ -118,23 +111,6 @@ export const sortConflictEntries = (
                     (orderIndex.get(rhsKey) ?? preferredOrder.length + rhsIndex)
         )
         .map(([key, value]) => [key, value] as const);
-};
-
-export const stringifyConflict = (conflict: Record<number, number> | null): string => {
-    if (!conflict) {
-        return '{}';
-    }
-    const sorted = Object.entries(conflict)
-        .map(([key, value]) => [Number(key), value] as const)
-        .filter(([key, value]) => Number.isFinite(key) && typeof value === 'number')
-        .sort(([, lhs], [, rhs]) => rhs - lhs);
-
-    const ordered: Record<string, number> = {};
-    for (const [key, value] of sorted) {
-        ordered[String(key)] = value;
-    }
-
-    return JSON.stringify(ordered);
 };
 
 export const sortConflict = (

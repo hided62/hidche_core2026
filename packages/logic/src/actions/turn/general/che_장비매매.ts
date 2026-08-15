@@ -1,7 +1,7 @@
 import type { GeneralTriggerState } from '@sammo-ts/logic/domain/entities.js';
 import type { Constraint, ConstraintContext } from '@sammo-ts/logic/constraints/types.js';
 import {
-    alwaysFail,
+    denyWithReason,
     reqCityCapacity,
     reqCityTrader,
     reqGeneralGold,
@@ -131,13 +131,13 @@ export class ActionDefinition<
                 }
                 const currentItemCode = general.role.items[args.itemType];
                 if (currentItemCode === args.itemCode) {
-                    return alwaysFail('이미 가지고 있습니다.').test(ctx, view);
+                    return denyWithReason('이미 가지고 있습니다.').test(ctx, view);
                 }
 
                 if (currentItemCode) {
                     const currentItem = readItem(this.env.itemCatalog, currentItemCode);
                     if (currentItem && !currentItem.buyable) {
-                        return alwaysFail('이미 진귀한 것을 가지고 있습니다.').test(ctx, view);
+                        return denyWithReason('이미 진귀한 것을 가지고 있습니다.').test(ctx, view);
                     }
                 }
                 return { kind: 'allow' };

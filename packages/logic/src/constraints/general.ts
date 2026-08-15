@@ -89,25 +89,6 @@ export const beChief = (): Constraint => ({
     },
 });
 
-export const beMonarch = (): Constraint => ({
-    name: 'beMonarch',
-    requires: (ctx) => [{ kind: 'general', id: ctx.actorId }],
-    test: (ctx, view) => {
-        const req: RequirementKey = { kind: 'general', id: ctx.actorId };
-        if (!view.has(req)) {
-            return unknownOrDeny(ctx, [req], '장수 정보가 없습니다.');
-        }
-        const general = view.get(req) as General | null;
-        if (!general) {
-            return unknownOrDeny(ctx, [req], '장수 정보가 없습니다.');
-        }
-        if (general.officerLevel === 12) {
-            return allow();
-        }
-        return { kind: 'deny', reason: '군주가 아닙니다.' };
-    },
-});
-
 export const beLord = (): Constraint => ({
     name: 'beLord',
     requires: (ctx) => [{ kind: 'general', id: ctx.actorId }],
@@ -508,47 +489,6 @@ export const existsDestGeneral = (): Constraint => ({
     },
 });
 
-export const destGeneralInDestNation = (): Constraint => ({
-    name: 'destGeneralInDestNation',
-    requires: (ctx) => {
-        const reqs: RequirementKey[] = [];
-        const destGeneralId = resolveDestGeneralId(ctx);
-        if (destGeneralId !== undefined) {
-            reqs.push({ kind: 'destGeneral', id: destGeneralId });
-        }
-        const destNationId = resolveDestNationId(ctx);
-        if (destNationId !== undefined) {
-            reqs.push({ kind: 'destNation', id: destNationId });
-        }
-        return reqs;
-    },
-    test: (ctx, view) => {
-        const destGeneral = readDestGeneral(ctx, view);
-        if (!destGeneral) {
-            const destGeneralId = resolveDestGeneralId(ctx);
-            if (destGeneralId === undefined) {
-                return unknownOrDeny(ctx, [], '장수 정보가 없습니다.');
-            }
-            const req: RequirementKey = {
-                kind: 'destGeneral',
-                id: destGeneralId,
-            };
-            return unknownOrDeny(ctx, [req], '장수 정보가 없습니다.');
-        }
-        const destNationId = resolveDestNationId(ctx);
-        if (destNationId === undefined) {
-            return unknownOrDeny(ctx, [], '국가 정보가 없습니다.');
-        }
-        if (destGeneral.nationId !== destNationId) {
-            return {
-                kind: 'deny',
-                reason: '제의 장수가 국가 소속이 아닙니다.',
-            };
-        }
-        return allow();
-    },
-});
-
 export const friendlyDestGeneral = (): Constraint => ({
     name: 'friendlyDestGeneral',
     requires: (ctx) => {
@@ -603,29 +543,6 @@ export const mustBeNPC = (): Constraint => ({
     },
 });
 
-export const notSameDestNation = (): Constraint => ({
-    name: 'notSameDestNation',
-    requires: (ctx) => {
-        const reqs: RequirementKey[] = [];
-        const destNationId = resolveDestNationId(ctx);
-        if (destNationId !== undefined) {
-            reqs.push({ kind: 'destNation', id: destNationId });
-        }
-        return reqs;
-    },
-    test: (ctx, _view) => {
-        const destNationId = resolveDestNationId(ctx);
-        if (destNationId === undefined) {
-            return unknownOrDeny(ctx, [], '목표 국가가 없습니다.');
-        }
-
-        if (ctx.nationId === destNationId) {
-            return { kind: 'deny', reason: '이미 소속된 국가입니다.' };
-        }
-        return allow();
-    },
-});
-
 export const notLord = (): Constraint => ({
     name: 'notLord',
     requires: (ctx) => [{ kind: 'general', id: ctx.actorId }],
@@ -638,20 +555,5 @@ export const notLord = (): Constraint => ({
             return allow();
         }
         return { kind: 'deny', reason: '군주는 불가능합니다.' };
-    },
-});
-
-export const notChief = (): Constraint => ({
-    name: 'notChief',
-    requires: (ctx) => [{ kind: 'general', id: ctx.actorId }],
-    test: (ctx, view) => {
-        const req: RequirementKey = { kind: 'general', id: ctx.actorId };
-        const general = view.get(req) as General | null;
-        if (!general) return unknownOrDeny(ctx, [req], '장수 정보가 없습니다.');
-
-        if (general.officerLevel <= 4) {
-            return allow();
-        }
-        return { kind: 'deny', reason: '수뇌입니다.' };
     },
 });

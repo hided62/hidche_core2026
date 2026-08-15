@@ -32,6 +32,3 @@ const buildTournamentSeedKey = (baseSeed: string, context: TournamentRngContext)
 
 export const createTournamentRng = (baseSeed: string, context: TournamentRngContext): RandUtil =>
     new RandUtil(LiteHashDRBG.build(buildTournamentSeedKey(baseSeed, context)));
-
-export const createTournamentSeedKey = (baseSeed: string, context: TournamentRngContext): string =>
-    buildTournamentSeedKey(baseSeed, context);

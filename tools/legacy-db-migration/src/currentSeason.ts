@@ -201,7 +201,7 @@ const migratePaged = async (
     }
 };
 
-export const mapGeneral = (row: SourceRow, options: CurrentSeasonFixtureOptions): TargetRow => {
+const mapGeneral = (row: SourceRow, options: CurrentSeasonFixtureOptions): TargetRow => {
     const id = toNumber(row.no, 'general.no');
     const aux = jsonObjectOrLegacyEmpty(row.aux, `general.${id}.aux`);
     const meta: Record<string, JsonValue> = {
@@ -281,7 +281,7 @@ export const mapGeneral = (row: SourceRow, options: CurrentSeasonFixtureOptions)
     };
 };
 
-export const mapNation = (row: SourceRow, nationEnv: Record<string, JsonValue>): TargetRow => {
+const mapNation = (row: SourceRow, nationEnv: Record<string, JsonValue>): TargetRow => {
     const id = toNumber(row.nation, 'nation.nation');
     const aux = jsonObject(row.aux, `nation.${id}.aux`);
     return {

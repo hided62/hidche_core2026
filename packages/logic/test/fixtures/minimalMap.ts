@@ -1,6 +1,6 @@
 import { type MapDefinition, type MapCityDefinition } from '../../src/world/types.js';
 
-export const MINIMAL_MAP_CITIES: MapCityDefinition[] = [
+const MINIMAL_MAP_CITIES: MapCityDefinition[] = [
     {
         id: 1,
         name: '소성A',

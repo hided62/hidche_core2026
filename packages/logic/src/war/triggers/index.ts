@@ -1,9 +1,6 @@
 import type { WarTriggerModule, WarTriggerModuleExport } from './types.js';
-import type { WarTriggerRegistry } from '@sammo-ts/logic/war/triggers.js';
 
-export const WAR_TRIGGER_KEYS = ['che_필살', 'che_의술'] as const;
-
-export type WarTriggerKey = (typeof WAR_TRIGGER_KEYS)[number];
+export type WarTriggerKey = 'che_필살' | 'che_의술';
 
 export type WarTriggerImporter = () => Promise<WarTriggerModuleExport>;
 
@@ -11,9 +8,6 @@ const defaultImporters: Record<WarTriggerKey, WarTriggerImporter> = {
     che_필살: async () => import('./che_필살.js'),
     che_의술: async () => import('./che_의술.js'),
 };
-
-export const isWarTriggerKey = (value: string): value is WarTriggerKey =>
-    WAR_TRIGGER_KEYS.includes(value as WarTriggerKey);
 
 export class WarTriggerLoader {
     private readonly cache = new Map<WarTriggerKey, Promise<WarTriggerModule>>();
@@ -58,14 +52,6 @@ export const loadWarTriggerModules = async (
         modules.push(await loader.load(key));
     }
     return modules;
-};
-
-export const createWarTriggerRegistry = (modules: WarTriggerModule[]): WarTriggerRegistry => {
-    const registry: WarTriggerRegistry = {};
-    for (const module of modules) {
-        registry[module.key] = (unit) => module.createTriggerList(unit);
-    }
-    return registry;
 };
 
 export type { WarTriggerModule, WarTriggerModuleExport } from './types.js';

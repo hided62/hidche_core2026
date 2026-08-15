@@ -95,9 +95,6 @@ export const authedProcedure: typeof procedure = procedure.use(requireAuthMiddle
 // Ref의 increaseRefresh()는 로그인/제재 확인 뒤, 업무 validation과 mutation
 // transaction보다 먼저 별도 저장된다. access middleware를 input-event보다
 // 앞에 두어 실패하거나 재시도되는 업무 transaction과 접속 기록을 분리한다.
-export const accessProcedure: typeof procedure = t.procedure
-    .use(generalAccessEndpointMiddleware)
-    .use(inputEventMiddleware);
 export const accessAuthedProcedure: typeof procedure = t.procedure
     .use(requireAuthMiddleware)
     .use(generalAccessEndpointMiddleware)
@@ -119,10 +116,6 @@ export const sessionActivityProcedure = t.procedure;
 // 시뮬레이터처럼 게임 상태를 변경하지 않는 계산은 input-event transaction과
 // 이벤트 원장을 만들지 않는다. 인증은 유지하되 lifecycle DB 경계 밖에서 실행한다.
 export const readOnlyAuthedProcedure: typeof procedure = t.procedure.use(requireAuthMiddleware);
-export const accessReadOnlyAuthedProcedure: typeof procedure = t.procedure
-    .use(requireAuthMiddleware)
-    .use(generalAccessEndpointMiddleware);
-
 // 입력이 있는 Ref handler는 request parsing을 마친 뒤 increaseRefresh()를
 // 호출한다. 이 factory들은 parser를 access/input-event middleware 앞에 둔다.
 export const accessInputProcedure: typeof procedure.input = (input) =>

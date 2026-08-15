@@ -755,25 +755,12 @@ export const createItemActionModules = <TriggerState extends GeneralTriggerState
 
 export type { ItemModule, ItemModuleExport, ItemSlot } from './types.js';
 export {
-    canAcquireItem,
-    isInventoryEnabled,
-    listEquippedItemKeys,
-    consumeItemRemain,
-    getItemRemain,
-    setItemRemain,
-} from './utils.js';
-export {
     cloneItemInventory,
-    consumeEquippedItemCharge,
-    createItemInventoryFromSlots,
     ensureItemInventory,
     equipNewItem,
     getEquippedItemInstance,
-    parseItemInventory,
     projectItemSlots,
-    readItemInventory,
     readItemInventoryFromMeta,
     removeEquippedItem,
-    serializeItemInventory,
     withSerializedItemInventory,
 } from './inventory.js';

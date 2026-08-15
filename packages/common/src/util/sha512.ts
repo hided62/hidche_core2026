@@ -26,7 +26,7 @@ function normalizeUint8Array(bytes: Uint8Array): Uint8Array<ArrayBuffer> {
     return out as Uint8Array<ArrayBuffer>;
 }
 
-export function sha512Bytes(data: BytesLike): Uint8Array<ArrayBuffer> {
+function sha512Bytes(data: BytesLike): Uint8Array<ArrayBuffer> {
     const input = convertBytesLikeToUint8Array(data);
     if (nodeCreateHash) {
         const digest = nodeCreateHash('sha512').update(input).digest();

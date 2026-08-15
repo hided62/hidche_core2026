@@ -6,10 +6,10 @@ import type { KakaoOAuthClient, KakaoOAuthToken, KakaoUserInfo } from './kakaoCl
 import type { OAuthSessionStore } from './oauthSessionStore.js';
 import type { UserOAuthInfo, UserRecord, UserRepository } from './userRepository.js';
 
-export const KAKAO_LOGIN_SCOPES = ['account_email', 'talk_message'] as const;
-export const KAKAO_OTP_TTL_SECONDS = 180;
-export const KAKAO_OTP_ATTEMPTS = 3;
-export const KAKAO_TALK_VERIFICATION_DAYS = 10;
+const KAKAO_LOGIN_SCOPES = ['account_email', 'talk_message'] as const;
+const KAKAO_OTP_TTL_SECONDS = 180;
+const KAKAO_OTP_ATTEMPTS = 3;
+const KAKAO_TALK_VERIFICATION_DAYS = 10;
 
 export type KakaoVerificationErrorCode =
     | 'EMAIL_REQUIRED'

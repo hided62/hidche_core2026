@@ -6,6 +6,7 @@ import {
     createEmptyRealtimeReadModelChanges,
     GameClock,
     hasRealtimeReadModelChanges,
+    SystemClock,
     type GameClockMode,
     type RealtimeEvent,
     type RealtimeReadModelChanges,
@@ -13,7 +14,6 @@ import {
 import { createGamePostgresConnector, createRedisConnector, resolveRedisConfigFromEnv } from '@sammo-ts/infra';
 import { NATION_TRAIT_KEYS, NationTraitLoader, loadNationTraitModules } from '@sammo-ts/logic';
 
-import { SystemClock } from '../lifecycle/clock.js';
 import { getNextTickTime } from '../lifecycle/getNextTickTime.js';
 import { InMemoryControlQueue } from '../lifecycle/inMemoryControlQueue.js';
 import type { Clock, TurnDaemonControlQueue, TurnDaemonHooks, TurnRunBudget } from '../lifecycle/types.js';
@@ -193,21 +193,18 @@ const resolveRedisConfig = (redisUrl?: string, env: NodeJS.ProcessEnv = process.
     return resolveRedisConfigFromEnv(env);
 };
 
-const createTurnDaemonRuntimeWithLease = async (
-    options: TurnDaemonRuntimeOptions,
-    databaseFlushEnabled: boolean,
-    turnDaemonLease: DatabaseTurnDaemonLease | null
-): Promise<TurnDaemonRuntime> => {
-    if (options.exclusiveFastForward && options.profileName) {
-        throw new Error('exclusiveFastForward cannot be used with a gateway-managed profile.');
-    }
-    // DB에서 월드를 읽고 턴 데몬을 구동할 런타임을 만든다.
-    const { state, snapshot } = await loadTurnWorldFromDatabase({
-        databaseUrl: options.databaseUrl,
-        mapOptions: options.mapOptions,
-    });
-    const clock = options.clock ?? new SystemClock();
+type LoadedTurnWorld = Awaited<ReturnType<typeof loadTurnWorldFromDatabase>>;
+type MonthlyActionModuleBundle = Awaited<ReturnType<typeof loadActionModuleBundle>>;
+type NationTraitModuleMap = Map<string, Awaited<ReturnType<typeof loadNationTraitModules>>[number]>;
+type ReservedTurnStoreHandle = Awaited<ReturnType<typeof createReservedTurnStore>>;
+type RedisConnector = ReturnType<typeof createRedisConnector>;
+type GamePostgresConnector = ReturnType<typeof createGamePostgresConnector>;
 
+const resolveRuntimeState = (
+    state: LoadedTurnWorld['state'],
+    options: Pick<TurnDaemonRuntimeOptions, 'tickMinutes' | 'gameClockMode'>,
+    clock: Clock
+) => {
     const tickMinutes = resolveTickMinutes(state.tickSeconds, options.tickMinutes);
     const nextTickSeconds = tickMinutes * 60;
     const tickSecondsChanged = options.tickMinutes !== undefined && nextTickSeconds !== state.tickSeconds;
@@ -231,22 +228,420 @@ const createTurnDaemonRuntimeWithLease = async (
         ...(options.gameClockMode ? { clockMode: options.gameClockMode } : {}),
         ...(modeChanged ? { clockWallAnchor: new Date(clock.nowMs()) } : {}),
     };
-    const schedule = options.schedule ?? buildFixedSchedule(tickMinutes);
-    const hasEventAction = (name: string): boolean =>
-        snapshot.events.some(
-            (event) =>
-                Array.isArray(event.action) &&
-                event.action.some((action) => Array.isArray(action) && action[0] === name)
+    return { tickMinutes, resolvedState };
+};
+
+const hasMonthlyEventAction = (events: LoadedTurnWorld['snapshot']['events'], name: string): boolean =>
+    events.some(
+        (event) =>
+            Array.isArray(event.action) && event.action.some((action) => Array.isArray(action) && action[0] === name)
+    );
+
+const requiresReservedTurnStore = (events: LoadedTurnWorld['snapshot']['events']): boolean =>
+    [
+        'UpdateNationLevel',
+        'CreateManyNPC',
+        'RegNPC',
+        'RegNeutralNPC',
+        'RaiseNPCNation',
+        'RaiseInvader',
+        'AutoDeleteInvader',
+        'ProvideNPCTroopLeader',
+    ].some((name) => hasMonthlyEventAction(events, name));
+
+const createMonthlyEventActions = (options: {
+    databaseUrl: string;
+    snapshot: LoadedTurnWorld['snapshot'];
+    getWorld: () => InMemoryTurnWorld | null;
+    reservedTurnStoreHandle: ReservedTurnStoreHandle | null;
+    commandEnv: ReturnType<typeof buildCommandEnv>;
+    actionModules: MonthlyActionModuleBundle;
+    nationTraits: NationTraitModuleMap;
+    incomeHandler: ReturnType<typeof createIncomeHandler>;
+}): Map<string, MonthlyEventActionHandler> => {
+    const eventActions = new Map<string, MonthlyEventActionHandler>();
+    eventActions.set(
+        'RandomizeCityTradeRate',
+        createRandomizeCityTradeRateHandler({
+            getWorld: options.getWorld,
+        })
+    );
+    eventActions.set(
+        'RaiseDisaster',
+        createRaiseDisasterHandler({
+            getWorld: options.getWorld,
+            generalActionModules: options.actionModules.general,
+        })
+    );
+    eventActions.set(
+        'UpdateCitySupply',
+        createUpdateCitySupplyHandler({
+            getWorld: options.getWorld,
+            map: options.snapshot.map,
+        })
+    );
+    eventActions.set(
+        'ProcessSemiAnnual',
+        createProcessSemiAnnualHandler({
+            getWorld: options.getWorld,
+            nationTraits: options.nationTraits,
+        })
+    );
+    eventActions.set(
+        'ProcessWarIncome',
+        createProcessWarIncomeHandler({
+            getWorld: options.getWorld,
+            nationTraits: options.nationTraits,
+        })
+    );
+    eventActions.set('CreateAdminNPC', createCreateAdminNpcHandler());
+    if (options.reservedTurnStoreHandle) {
+        const reservedTurns = options.reservedTurnStoreHandle.store;
+        eventActions.set(
+            'CreateManyNPC',
+            createCreateManyNpcHandler({
+                getWorld: options.getWorld,
+                reservedTurns,
+                env: options.commandEnv,
+            })
         );
-    const eventRequiresReservedTurns =
-        hasEventAction('UpdateNationLevel') ||
-        hasEventAction('CreateManyNPC') ||
-        hasEventAction('RegNPC') ||
-        hasEventAction('RegNeutralNPC') ||
-        hasEventAction('RaiseNPCNation') ||
-        hasEventAction('RaiseInvader') ||
-        hasEventAction('AutoDeleteInvader') ||
-        hasEventAction('ProvideNPCTroopLeader');
+        for (const actionName of ['RegNPC', 'RegNeutralNPC'] as const) {
+            eventActions.set(
+                actionName,
+                createRegisterNpcHandler({
+                    actionName,
+                    getWorld: options.getWorld,
+                    reservedTurns,
+                    env: options.commandEnv,
+                    worldConfig: options.snapshot.worldConfig,
+                    scenarioFiction: options.snapshot.scenarioMeta?.fiction,
+                })
+            );
+        }
+        eventActions.set(
+            'RaiseNPCNation',
+            createRaiseNpcNationHandler({
+                getWorld: options.getWorld,
+                reservedTurns,
+                env: options.commandEnv,
+                map: options.snapshot.map,
+                loadArchivedNationMaxId: (serverId) => loadArchivedNationMaxId(options.databaseUrl, serverId),
+            })
+        );
+        eventActions.set(
+            'RaiseInvader',
+            createRaiseInvaderHandler({
+                getWorld: options.getWorld,
+                reservedTurns,
+                env: options.commandEnv,
+                loadArchivedNationMaxId: (serverId) => loadArchivedNationMaxId(options.databaseUrl, serverId),
+            })
+        );
+        eventActions.set(
+            'AutoDeleteInvader',
+            createAutoDeleteInvaderHandler({
+                getWorld: options.getWorld,
+                reservedTurns,
+            })
+        );
+        eventActions.set(
+            'ProvideNPCTroopLeader',
+            createProvideNpcTroopLeaderHandler({
+                getWorld: options.getWorld,
+                reservedTurns,
+                env: options.commandEnv,
+            })
+        );
+        eventActions.set(
+            'UpdateNationLevel',
+            createUpdateNationLevelHandler({
+                getWorld: options.getWorld,
+                reservedTurns,
+                itemModules: options.actionModules.itemModules,
+                loadAdditionalOccupiedUniqueCounts: () => loadOccupiedAuctionUniqueCounts(options.databaseUrl),
+            })
+        );
+    }
+    eventActions.set('InvaderEnding', createInvaderEndingHandler({ getWorld: options.getWorld }));
+    eventActions.set('ChangeCity', createChangeCityHandler({ getWorld: options.getWorld }));
+    eventActions.set('OpenNationBetting', createOpenNationBettingHandler({ getWorld: options.getWorld }));
+    eventActions.set('FinishNationBetting', createFinishNationBettingHandler({ getWorld: options.getWorld }));
+    for (const actionName of ['BlockScoutAction', 'UnblockScoutAction'] as const) {
+        eventActions.set(
+            actionName,
+            createScoutBlockHandler({
+                actionName,
+                getWorld: options.getWorld,
+            })
+        );
+    }
+    eventActions.set('AssignGeneralSpeciality', createAssignGeneralSpecialityHandler({ getWorld: options.getWorld }));
+    eventActions.set('AddGlobalBetray', createAddGlobalBetrayHandler({ getWorld: options.getWorld }));
+    eventActions.set(
+        'LostUniqueItem',
+        createLostUniqueItemHandler({
+            getWorld: options.getWorld,
+            itemModules: options.actionModules.itemModules,
+        })
+    );
+    eventActions.set('MergeInheritPointRank', createMergeInheritPointRankHandler({ getWorld: options.getWorld }));
+    eventActions.set('ProcessIncome', createProcessIncomeActionHandler(options.incomeHandler));
+    eventActions.set('NoticeToHistoryLog', createNoticeToHistoryLogHandler({ getWorld: options.getWorld }));
+    eventActions.set('NewYear', createNewYearHandler({ getWorld: options.getWorld }));
+    eventActions.set('ResetOfficerLock', createResetOfficerLockHandler({ getWorld: options.getWorld }));
+    return eventActions;
+};
+
+interface MonthlyRuntimeCache {
+    nationPowerRollCount: number;
+    tournamentRollConsumed: boolean;
+}
+
+const createMonthlyCalendarRuntime = async (options: {
+    databaseUrl: string;
+    profileName: string;
+    databaseFlushEnabled: boolean;
+    snapshot: LoadedTurnWorld['snapshot'];
+    currentYear: number;
+    commandEnv: ReturnType<typeof buildCommandEnv>;
+    incomeHandler: ReturnType<typeof createIncomeHandler>;
+    monthlyEventHandler: ReturnType<typeof createMonthlyEventHandler>;
+    hasEventAction: (name: string) => boolean;
+    calendarHandlerOverride?: TurnCalendarHandler;
+    getWorld: () => InMemoryTurnWorld | null;
+    getRedisClient: () => ReturnType<typeof createRedisConnector>['client'] | undefined;
+    clock: Clock;
+}) => {
+    const cache: MonthlyRuntimeCache = {
+        nationPowerRollCount: options.snapshot.nations.length,
+        tournamentRollConsumed: false,
+    };
+    const unification = options.calendarHandlerOverride
+        ? null
+        : createUnificationHandler({
+              profileName: options.profileName,
+              getWorld: options.getWorld,
+              loadPendingUniqueAuctions: options.databaseFlushEnabled
+                  ? () => loadPendingUnificationAuctionCancellations(options.databaseUrl)
+                  : undefined,
+              dispatchUnitedEvents: (context) => options.monthlyEventHandler.dispatchTarget('united', context),
+          });
+    const monthlyBoundaryPreHandler = createMonthlyBoundaryPreHandler({
+        getWorld: options.getWorld,
+        startYear: options.snapshot.scenarioMeta?.startYear ?? options.currentYear,
+        commandEnv: options.commandEnv,
+    });
+    const monthlyNationStatsHandler = createMonthlyNationStatsHandler({
+        getWorld: options.getWorld,
+        onNationPowerRollCount: (count) => {
+            cache.nationPowerRollCount = count;
+        },
+    });
+    const neutralAuctionRegistrar = await createNeutralAuctionRegistrar({
+        databaseUrl: options.databaseUrl,
+        profileName: options.profileName,
+        getWorld: options.getWorld,
+        getRedisClient: options.getRedisClient,
+        getWorldConfig: () => options.snapshot.worldConfig ?? null,
+        getNationPowerRollCount: () => cache.nationPowerRollCount,
+        getTournamentRollConsumed: () => cache.tournamentRollConsumed,
+        now: () => options.getWorld()?.getGameNow(new Date(options.clock.nowMs())) ?? new Date(options.clock.nowMs()),
+    });
+    const tournamentAutoStartHandler = createTournamentAutoStartHandler({
+        profileName: options.profileName,
+        getWorld: options.getWorld,
+        getRedisClient: options.getRedisClient,
+        getWorldConfig: () => options.snapshot.worldConfig ?? null,
+        getNationPowerRollCount: () => cache.nationPowerRollCount,
+        onTournamentRollConsumed: (consumed) => {
+            cache.tournamentRollConsumed = consumed;
+        },
+        // Deterministic/manual runtimes must schedule the tournament from the
+        // same clock that advances the game world. Production still falls
+        // back to the system clock.
+        now: () => options.getWorld()?.getGameNow(new Date(options.clock.nowMs())) ?? new Date(options.clock.nowMs()),
+    });
+    const calendarHandler = composeCalendarHandlers(
+        options.monthlyEventHandler,
+        options.hasEventAction('ProcessIncome') ? null : options.incomeHandler,
+        createYearbookHandler({ profileName: options.profileName, getWorld: options.getWorld }).handler,
+        monthlyBoundaryPreHandler,
+        createNationTurnMonthlyHandler({ getWorld: options.getWorld }),
+        monthlyNationStatsHandler,
+        createMonthlyDiplomacyHandler({ getWorld: options.getWorld }),
+        createMonthlyWarSettingHandler({ getWorld: options.getWorld }),
+        createMonthlyWanderHandler({
+            getWorld: options.getWorld,
+            startYear: options.snapshot.scenarioMeta?.startYear ?? options.currentYear,
+            commandEnv: options.commandEnv,
+        }),
+        createMonthlyNationCountHandler({ getWorld: options.getWorld }),
+        options.calendarHandlerOverride ?? unification?.handler,
+        tournamentAutoStartHandler,
+        neutralAuctionRegistrar.handler,
+        createFrontStateHandler({ getWorld: options.getWorld, map: options.snapshot.map ?? null })
+    );
+    return { calendarHandler, neutralAuctionRegistrar, cache };
+};
+
+const createRealtimeRuntime = async (options: {
+    redisUrl?: string;
+    profileName: string;
+    hooks?: TurnDaemonHooks;
+    takeCommittedReadModelChanges: (() => RealtimeReadModelChanges | null) | null;
+}): Promise<{ redisConnector: RedisConnector | null; hooks?: TurnDaemonHooks }> => {
+    const redisConfig = resolveRedisConfig(options.redisUrl);
+    if (!redisConfig) {
+        return { redisConnector: null, hooks: options.hooks };
+    }
+
+    const redisConnector = createRedisConnector(redisConfig);
+    await redisConnector.connect();
+    const redisClient = redisConnector.client;
+    const realtimeChannel = buildGameEventChannel(options.profileName);
+    const revisionKey = buildGameReadModelRevisionKey(options.profileName);
+    const domainRevisionKey = buildGameReadModelDomainRevisionKey(options.profileName);
+    const publishRealtimeEvent = async (event: RealtimeEvent): Promise<void> => {
+        await redisClient.publish(realtimeChannel, JSON.stringify(event));
+    };
+    const publishReadModelChanges = async (changes: RealtimeReadModelChanges): Promise<number> => {
+        if (
+            changes.worldChanged ||
+            (changes.mapCityIds ?? changes.cityIds).length > 0 ||
+            (changes.mapNationIds ?? changes.nationIds).length > 0
+        ) {
+            await redisClient.hIncrBy(domainRevisionKey, 'world', 1);
+        }
+        return redisClient.incr(revisionKey);
+    };
+    const publishCommittedChanges = async (changes: RealtimeReadModelChanges): Promise<number | undefined> => {
+        if (!hasRealtimeReadModelChanges(changes)) {
+            return undefined;
+        }
+        return publishReadModelChanges(changes);
+    };
+    const basePublishEvents = options.hooks?.publishEvents;
+    const basePublishCommandEvents = options.hooks?.publishCommandEvents;
+    const hooks: TurnDaemonHooks = {
+        ...options.hooks,
+        publishEvents: async (result) => {
+            try {
+                const changes = options.takeCommittedReadModelChanges?.() ?? createEmptyRealtimeReadModelChanges();
+                if (result.processedTurns > 0) {
+                    changes.worldChanged = true;
+                }
+                const revision = await publishCommittedChanges(changes);
+                await publishRealtimeEvent({
+                    type: 'turnCompleted',
+                    at: new Date().toISOString(),
+                    lastTurnTime: result.lastTurnTime,
+                    changes,
+                    revision,
+                });
+            } catch {
+                // 실시간 이벤트 전송 실패는 턴 처리 결과에 영향을 주지 않는다.
+            }
+            await basePublishEvents?.(result);
+        },
+        publishCommandEvents: async (result) => {
+            try {
+                const changes = options.takeCommittedReadModelChanges?.();
+                if (changes && result.type === 'shiftSchedule' && result.ok) {
+                    changes.lobbyChanged = true;
+                }
+                if (changes && hasRealtimeReadModelChanges(changes)) {
+                    const revision = await publishCommittedChanges(changes);
+                    if (revision !== undefined) {
+                        await publishRealtimeEvent({
+                            type: 'readModelChanged',
+                            at: new Date().toISOString(),
+                            changes,
+                            revision,
+                        });
+                    }
+                }
+            } catch {
+                // 명령은 이미 commit되었으므로 이벤트 실패로 되돌리지 않는다.
+            }
+            await basePublishCommandEvents?.(result);
+        },
+    };
+    return { redisConnector, hooks };
+};
+
+const createStartedAdminActionConsumer = async (options: {
+    runtimeOptions: TurnDaemonRuntimeOptions;
+    turnDaemonLease: DatabaseTurnDaemonLease | null;
+    commandConnector: GamePostgresConnector | null;
+    redisConnector: RedisConnector | null;
+    controlQueue: TurnDaemonControlQueue;
+}) => {
+    const profileName = options.runtimeOptions.profileName;
+    if (!profileName) {
+        return null;
+    }
+    const consumer = await createGatewayAdminActionConsumer({
+        databaseUrl: options.runtimeOptions.databaseUrl,
+        gatewayDatabaseUrl: options.runtimeOptions.gatewayDatabaseUrl,
+        profileName,
+        pollIntervalMs: options.runtimeOptions.adminActionIntervalMs,
+        handler: async (action) => {
+            const reason = action.reason ?? `admin:${action.action ?? 'action'}`;
+            if (options.turnDaemonLease?.isLost()) {
+                return { status: 'REQUESTED', detail: 'turn-daemon lease 재획득을 기다리는 중입니다.' };
+            }
+            if (action.action === 'RESET_NOW' || action.action === 'RESET_SCHEDULED') {
+                return { status: 'REQUESTED', detail: 'waiting for orchestrator reset' };
+            }
+            if (action.action === 'ACCELERATE' || action.action === 'DELAY') {
+                if (!options.commandConnector) {
+                    return { status: 'FAILED', detail: '게임 command database 연결이 없습니다.' };
+                }
+                return applyRuntimeClockShift({
+                    action,
+                    profileName,
+                    db: options.commandConnector.prisma,
+                    redis: options.redisConnector?.client,
+                });
+            }
+            switch (action.action) {
+                case 'RESUME':
+                    options.controlQueue.enqueue({ type: 'resume', reason });
+                    return { status: 'APPLIED', detail: 'resume queued' };
+                case 'PAUSE':
+                    options.controlQueue.enqueue({ type: 'pause', reason });
+                    return { status: 'APPLIED', detail: 'pause queued' };
+                case 'STOP':
+                case 'SHUTDOWN':
+                    options.controlQueue.enqueue({ type: 'shutdown', reason });
+                    return { status: 'APPLIED', detail: 'shutdown queued' };
+                default:
+                    return { status: 'IGNORED', detail: 'not implemented' };
+            }
+        },
+    });
+    consumer.start();
+    return consumer;
+};
+
+const createTurnDaemonRuntimeWithLease = async (
+    options: TurnDaemonRuntimeOptions,
+    databaseFlushEnabled: boolean,
+    turnDaemonLease: DatabaseTurnDaemonLease | null
+): Promise<TurnDaemonRuntime> => {
+    if (options.exclusiveFastForward && options.profileName) {
+        throw new Error('exclusiveFastForward cannot be used with a gateway-managed profile.');
+    }
+    // DB에서 월드를 읽고 턴 데몬을 구동할 런타임을 만든다.
+    const { state, snapshot } = await loadTurnWorldFromDatabase({
+        databaseUrl: options.databaseUrl,
+        mapOptions: options.mapOptions,
+    });
+    const clock = options.clock ?? new SystemClock();
+    const { tickMinutes, resolvedState } = resolveRuntimeState(state, options, clock);
+    const schedule = options.schedule ?? buildFixedSchedule(tickMinutes);
+    const hasEventAction = (name: string): boolean => hasMonthlyEventAction(snapshot.events, name);
+    const eventRequiresReservedTurns = requiresReservedTurnStore(snapshot.events);
     const reservedTurnStoreHandle =
         options.generalTurnHandler && !eventRequiresReservedTurns
             ? null
@@ -263,7 +658,7 @@ const createTurnDaemonRuntimeWithLease = async (
               })
             : await loadTurnCommandProfile());
     let worldRef: InMemoryTurnWorld | null = null;
-    let redisConnector: ReturnType<typeof createRedisConnector> | null = null;
+    let redisConnector: RedisConnector | null = null;
     const nationTraits = await loadNationTraitModules([...NATION_TRAIT_KEYS], new NationTraitLoader());
     const nationTraitMap = new Map(nationTraits.map((module) => [module.key, module]));
     const monthlyActionModules = await loadActionModuleBundle(
@@ -276,263 +671,40 @@ const createTurnDaemonRuntimeWithLease = async (
         scenarioConfig: snapshot.scenarioConfig,
         nationTraits: nationTraitMap,
     });
-    const eventActions = new Map<string, MonthlyEventActionHandler>();
-    eventActions.set(
-        'RandomizeCityTradeRate',
-        createRandomizeCityTradeRateHandler({
-            getWorld: () => worldRef,
-        })
-    );
-    eventActions.set(
-        'RaiseDisaster',
-        createRaiseDisasterHandler({
-            getWorld: () => worldRef,
-            generalActionModules: monthlyActionModules.general,
-        })
-    );
-    eventActions.set(
-        'UpdateCitySupply',
-        createUpdateCitySupplyHandler({
-            getWorld: () => worldRef,
-            map: snapshot.map,
-        })
-    );
-    eventActions.set(
-        'ProcessSemiAnnual',
-        createProcessSemiAnnualHandler({
-            getWorld: () => worldRef,
-            nationTraits: nationTraitMap,
-        })
-    );
-    eventActions.set(
-        'ProcessWarIncome',
-        createProcessWarIncomeHandler({
-            getWorld: () => worldRef,
-            nationTraits: nationTraitMap,
-        })
-    );
-    eventActions.set('CreateAdminNPC', createCreateAdminNpcHandler());
-    if (reservedTurnStoreHandle) {
-        eventActions.set(
-            'CreateManyNPC',
-            createCreateManyNpcHandler({
-                getWorld: () => worldRef,
-                reservedTurns: reservedTurnStoreHandle.store,
-                env: monthlyCommandEnv,
-            })
-        );
-        for (const actionName of ['RegNPC', 'RegNeutralNPC'] as const) {
-            eventActions.set(
-                actionName,
-                createRegisterNpcHandler({
-                    actionName,
-                    getWorld: () => worldRef,
-                    reservedTurns: reservedTurnStoreHandle.store,
-                    env: monthlyCommandEnv,
-                    worldConfig: snapshot.worldConfig,
-                    scenarioFiction: snapshot.scenarioMeta?.fiction,
-                })
-            );
-        }
-        eventActions.set(
-            'RaiseNPCNation',
-            createRaiseNpcNationHandler({
-                getWorld: () => worldRef,
-                reservedTurns: reservedTurnStoreHandle.store,
-                env: monthlyCommandEnv,
-                map: snapshot.map,
-                loadArchivedNationMaxId: (serverId) => loadArchivedNationMaxId(options.databaseUrl, serverId),
-            })
-        );
-        eventActions.set(
-            'RaiseInvader',
-            createRaiseInvaderHandler({
-                getWorld: () => worldRef,
-                reservedTurns: reservedTurnStoreHandle.store,
-                env: monthlyCommandEnv,
-                loadArchivedNationMaxId: (serverId) => loadArchivedNationMaxId(options.databaseUrl, serverId),
-            })
-        );
-        eventActions.set(
-            'AutoDeleteInvader',
-            createAutoDeleteInvaderHandler({
-                getWorld: () => worldRef,
-                reservedTurns: reservedTurnStoreHandle.store,
-            })
-        );
-        eventActions.set(
-            'ProvideNPCTroopLeader',
-            createProvideNpcTroopLeaderHandler({
-                getWorld: () => worldRef,
-                reservedTurns: reservedTurnStoreHandle.store,
-                env: monthlyCommandEnv,
-            })
-        );
-        eventActions.set(
-            'UpdateNationLevel',
-            createUpdateNationLevelHandler({
-                getWorld: () => worldRef,
-                reservedTurns: reservedTurnStoreHandle.store,
-                itemModules: monthlyActionModules.itemModules,
-                loadAdditionalOccupiedUniqueCounts: () => loadOccupiedAuctionUniqueCounts(options.databaseUrl),
-            })
-        );
-    }
-    eventActions.set(
-        'InvaderEnding',
-        createInvaderEndingHandler({
-            getWorld: () => worldRef,
-        })
-    );
-    eventActions.set(
-        'ChangeCity',
-        createChangeCityHandler({
-            getWorld: () => worldRef,
-        })
-    );
-    eventActions.set(
-        'OpenNationBetting',
-        createOpenNationBettingHandler({
-            getWorld: () => worldRef,
-        })
-    );
-    eventActions.set(
-        'FinishNationBetting',
-        createFinishNationBettingHandler({
-            getWorld: () => worldRef,
-        })
-    );
-    for (const actionName of ['BlockScoutAction', 'UnblockScoutAction'] as const) {
-        eventActions.set(
-            actionName,
-            createScoutBlockHandler({
-                actionName,
-                getWorld: () => worldRef,
-            })
-        );
-    }
-    eventActions.set(
-        'AssignGeneralSpeciality',
-        createAssignGeneralSpecialityHandler({
-            getWorld: () => worldRef,
-        })
-    );
-    eventActions.set(
-        'AddGlobalBetray',
-        createAddGlobalBetrayHandler({
-            getWorld: () => worldRef,
-        })
-    );
-    eventActions.set(
-        'LostUniqueItem',
-        createLostUniqueItemHandler({
-            getWorld: () => worldRef,
-            itemModules: monthlyActionModules.itemModules,
-        })
-    );
-    eventActions.set(
-        'MergeInheritPointRank',
-        createMergeInheritPointRankHandler({
-            getWorld: () => worldRef,
-        })
-    );
-    eventActions.set('ProcessIncome', createProcessIncomeActionHandler(incomeHandler));
-    eventActions.set('NoticeToHistoryLog', createNoticeToHistoryLogHandler({ getWorld: () => worldRef }));
-    eventActions.set('NewYear', createNewYearHandler({ getWorld: () => worldRef }));
-    eventActions.set('ResetOfficerLock', createResetOfficerLockHandler({ getWorld: () => worldRef }));
+    const eventActions = createMonthlyEventActions({
+        databaseUrl: options.databaseUrl,
+        snapshot,
+        getWorld: () => worldRef,
+        reservedTurnStoreHandle,
+        commandEnv: monthlyCommandEnv,
+        actionModules: monthlyActionModules,
+        nationTraits: nationTraitMap,
+        incomeHandler,
+    });
     const monthlyEventHandler = createMonthlyEventHandler({
         getWorld: () => worldRef,
         startYear: snapshot.scenarioMeta?.startYear ?? state.currentYear,
         actions: eventActions,
     });
-    const unification = options.calendarHandler
-        ? null
-        : createUnificationHandler({
-              profileName: options.profileName ?? options.profile,
-              getWorld: () => worldRef,
-              loadPendingUniqueAuctions: databaseFlushEnabled
-                  ? () => loadPendingUnificationAuctionCancellations(options.databaseUrl)
-                  : undefined,
-              dispatchUnitedEvents: (context) => monthlyEventHandler.dispatchTarget('united', context),
-          });
-    const nationTurnMonthlyHandler = createNationTurnMonthlyHandler({
-        getWorld: () => worldRef,
-    });
-    const monthlyBoundaryPreHandler = createMonthlyBoundaryPreHandler({
-        getWorld: () => worldRef,
-        startYear: snapshot.scenarioMeta?.startYear ?? state.currentYear,
-        commandEnv: monthlyCommandEnv,
-    });
-    let monthlyNationPowerRollCount = snapshot.nations.length;
-    let monthlyTournamentRollConsumed = false;
-    const monthlyNationStatsHandler = createMonthlyNationStatsHandler({
-        getWorld: () => worldRef,
-        onNationPowerRollCount: (count) => {
-            monthlyNationPowerRollCount = count;
-        },
-    });
-    const monthlyDiplomacyHandler = createMonthlyDiplomacyHandler({
-        getWorld: () => worldRef,
-    });
-    const monthlyNationCountHandler = createMonthlyNationCountHandler({
-        getWorld: () => worldRef,
-    });
-    const monthlyWarSettingHandler = createMonthlyWarSettingHandler({
-        getWorld: () => worldRef,
-    });
-    const monthlyWanderHandler = createMonthlyWanderHandler({
-        getWorld: () => worldRef,
-        startYear: snapshot.scenarioMeta?.startYear ?? state.currentYear,
-        commandEnv: monthlyCommandEnv,
-    });
-    const frontStateHandler = createFrontStateHandler({
-        getWorld: () => worldRef,
-        map: snapshot.map ?? null,
-    });
-    const neutralAuctionRegistrar = await createNeutralAuctionRegistrar({
+    const {
+        calendarHandler,
+        neutralAuctionRegistrar,
+        cache: monthlyRuntimeCache,
+    } = await createMonthlyCalendarRuntime({
         databaseUrl: options.databaseUrl,
         profileName: options.profileName ?? options.profile,
-        getWorld: () => worldRef,
-        getRedisClient: () => redisConnector?.client,
-        getWorldConfig: () => snapshot.worldConfig ?? null,
-        getNationPowerRollCount: () => monthlyNationPowerRollCount,
-        getTournamentRollConsumed: () => monthlyTournamentRollConsumed,
-        now: () => worldRef?.getGameNow(new Date(clock.nowMs())) ?? new Date(clock.nowMs()),
-    });
-    const tournamentAutoStartHandler = createTournamentAutoStartHandler({
-        profileName: options.profileName ?? options.profile,
-        getWorld: () => worldRef,
-        getRedisClient: () => redisConnector?.client,
-        getWorldConfig: () => snapshot.worldConfig ?? null,
-        getNationPowerRollCount: () => monthlyNationPowerRollCount,
-        onTournamentRollConsumed: (consumed) => {
-            monthlyTournamentRollConsumed = consumed;
-        },
-        // Deterministic/manual runtimes must schedule the tournament from the
-        // same clock that advances the game world. Production still falls
-        // back to the system clock.
-        now: () => worldRef?.getGameNow(new Date(clock.nowMs())) ?? new Date(clock.nowMs()),
-    });
-    const yearbookHandler = createYearbookHandler({
-        profileName: options.profileName ?? options.profile,
-        getWorld: () => worldRef,
-    });
-    const calendarHandler = composeCalendarHandlers(
+        databaseFlushEnabled,
+        snapshot,
+        currentYear: state.currentYear,
+        commandEnv: monthlyCommandEnv,
+        incomeHandler,
         monthlyEventHandler,
-        hasEventAction('ProcessIncome') ? null : incomeHandler,
-        yearbookHandler.handler,
-        monthlyBoundaryPreHandler,
-        nationTurnMonthlyHandler,
-        monthlyNationStatsHandler,
-        monthlyDiplomacyHandler,
-        monthlyWarSettingHandler,
-        monthlyWanderHandler,
-        monthlyNationCountHandler,
-        options.calendarHandler ?? unification?.handler,
-        tournamentAutoStartHandler,
-        neutralAuctionRegistrar.handler,
-        frontStateHandler
-    );
+        hasEventAction,
+        calendarHandlerOverride: options.calendarHandler,
+        getWorld: () => worldRef,
+        getRedisClient: () => redisConnector?.client,
+        clock,
+    });
     let occupiedAuctionUniqueItemKeys: string[] = [];
     let refreshOccupiedAuctionUniqueItemKeys = async (): Promise<void> => {};
     const prefetchedNationTurns = new Set<string>();
@@ -580,14 +752,14 @@ const createTurnDaemonRuntimeWithLease = async (
     }
     stateManager.register('runtimeCaches', {
         capture: () => ({
-            monthlyNationPowerRollCount,
-            monthlyTournamentRollConsumed,
+            monthlyNationPowerRollCount: monthlyRuntimeCache.nationPowerRollCount,
+            monthlyTournamentRollConsumed: monthlyRuntimeCache.tournamentRollConsumed,
             occupiedAuctionUniqueItemKeys: [...occupiedAuctionUniqueItemKeys],
             prefetchedNationTurns: Array.from(prefetchedNationTurns),
         }),
         restore: (captured) => {
-            monthlyNationPowerRollCount = captured.monthlyNationPowerRollCount;
-            monthlyTournamentRollConsumed = captured.monthlyTournamentRollConsumed;
+            monthlyRuntimeCache.nationPowerRollCount = captured.monthlyNationPowerRollCount;
+            monthlyRuntimeCache.tournamentRollConsumed = captured.monthlyTournamentRollConsumed;
             occupiedAuctionUniqueItemKeys = [...captured.occupiedAuctionUniqueItemKeys];
             prefetchedNationTurns.clear();
             for (const key of captured.prefetchedNationTurns) {
@@ -642,8 +814,6 @@ const createTurnDaemonRuntimeWithLease = async (
     const controlQueue = options.controlQueue ?? new InMemoryControlQueue();
 
     let hooks: TurnDaemonHooks | undefined;
-    let publishRealtimeEvent: ((event: RealtimeEvent) => Promise<void>) | null = null;
-    let publishReadModelChanges: ((changes: RealtimeReadModelChanges) => Promise<number>) | null = null;
     let takeCommittedReadModelChanges: (() => RealtimeReadModelChanges | null) | null = null;
     let close = async () => {};
     let auctionFinalizer: Awaited<ReturnType<typeof createAuctionFinalizer>> | null = null;
@@ -734,84 +904,14 @@ const createTurnDaemonRuntimeWithLease = async (
         };
     }
 
-    const redisConfig = resolveRedisConfig(options.redisUrl);
-    if (redisConfig) {
-        redisConnector = createRedisConnector(redisConfig);
-        await redisConnector.connect();
-        const redisClient = redisConnector.client;
-        const realtimeChannel = buildGameEventChannel(options.profileName ?? options.profile);
-        publishRealtimeEvent = async (event: RealtimeEvent) => {
-            await redisClient.publish(realtimeChannel, JSON.stringify(event));
-        };
-        const revisionKey = buildGameReadModelRevisionKey(options.profileName ?? options.profile);
-        const domainRevisionKey = buildGameReadModelDomainRevisionKey(options.profileName ?? options.profile);
-        publishReadModelChanges = async (changes) => {
-            if (
-                changes.worldChanged ||
-                (changes.mapCityIds ?? changes.cityIds).length > 0 ||
-                (changes.mapNationIds ?? changes.nationIds).length > 0
-            ) {
-                await redisClient.hIncrBy(domainRevisionKey, 'world', 1);
-            }
-            return redisClient.incr(revisionKey);
-        };
-    }
-
-    if (publishRealtimeEvent) {
-        const basePublishEvents = hooks?.publishEvents;
-        const basePublishCommandEvents = hooks?.publishCommandEvents;
-        const publishCommittedChanges = async (changes: RealtimeReadModelChanges): Promise<number | undefined> => {
-            if (!hasRealtimeReadModelChanges(changes)) {
-                return undefined;
-            }
-            return publishReadModelChanges?.(changes);
-        };
-        // Durable mutation summaries invalidate only the affected read models.
-        hooks = {
-            ...hooks,
-            publishEvents: async (result) => {
-                try {
-                    const changes = takeCommittedReadModelChanges?.() ?? createEmptyRealtimeReadModelChanges();
-                    if (result.processedTurns > 0) {
-                        changes.worldChanged = true;
-                    }
-                    const revision = await publishCommittedChanges(changes);
-                    await publishRealtimeEvent({
-                        type: 'turnCompleted',
-                        at: new Date().toISOString(),
-                        lastTurnTime: result.lastTurnTime,
-                        changes,
-                        revision,
-                    });
-                } catch {
-                    // 실시간 이벤트 전송 실패는 턴 처리 결과에 영향을 주지 않는다.
-                }
-                await basePublishEvents?.(result);
-            },
-            publishCommandEvents: async (result) => {
-                try {
-                    const changes = takeCommittedReadModelChanges?.();
-                    if (changes && result.type === 'shiftSchedule' && result.ok) {
-                        changes.lobbyChanged = true;
-                    }
-                    if (changes && hasRealtimeReadModelChanges(changes)) {
-                        const revision = await publishCommittedChanges(changes);
-                        if (revision !== undefined) {
-                            await publishRealtimeEvent({
-                                type: 'readModelChanged',
-                                at: new Date().toISOString(),
-                                changes,
-                                revision,
-                            });
-                        }
-                    }
-                } catch {
-                    // 명령은 이미 commit되었으므로 이벤트 실패로 되돌리지 않는다.
-                }
-                await basePublishCommandEvents?.(result);
-            },
-        };
-    }
+    const realtimeRuntime = await createRealtimeRuntime({
+        redisUrl: options.redisUrl,
+        profileName: options.profileName ?? options.profile,
+        hooks,
+        takeCommittedReadModelChanges,
+    });
+    redisConnector = realtimeRuntime.redisConnector;
+    hooks = realtimeRuntime.hooks;
 
     const commandConnector = hooks ? createGamePostgresConnector({ url: options.databaseUrl }) : null;
     const databaseCommandQueue = commandConnector ? new DatabaseTurnDaemonCommandQueue(commandConnector.prisma) : null;
@@ -880,50 +980,13 @@ const createTurnDaemonRuntimeWithLease = async (
         { profile: options.profile, defaultBudget }
     );
 
-    if (options.profileName) {
-        adminActionConsumer = await createGatewayAdminActionConsumer({
-            databaseUrl: options.databaseUrl,
-            gatewayDatabaseUrl: options.gatewayDatabaseUrl,
-            profileName: options.profileName,
-            pollIntervalMs: options.adminActionIntervalMs,
-            handler: async (action) => {
-                const reason = action.reason ?? `admin:${action.action ?? 'action'}`;
-                if (turnDaemonLease?.isLost()) {
-                    return { status: 'REQUESTED', detail: 'turn-daemon lease 재획득을 기다리는 중입니다.' };
-                }
-                if (action.action === 'RESET_NOW' || action.action === 'RESET_SCHEDULED') {
-                    // 리셋은 오케스트레이터에서 빌드+재기동으로 처리한다.
-                    return { status: 'REQUESTED', detail: 'waiting for orchestrator reset' };
-                }
-                if (action.action === 'ACCELERATE' || action.action === 'DELAY') {
-                    if (!commandConnector) {
-                        return { status: 'FAILED', detail: '게임 command database 연결이 없습니다.' };
-                    }
-                    return applyRuntimeClockShift({
-                        action,
-                        profileName: options.profileName!,
-                        db: commandConnector.prisma,
-                        redis: redisConnector?.client,
-                    });
-                }
-                switch (action.action) {
-                    case 'RESUME':
-                        resolvedControlQueue.enqueue({ type: 'resume', reason });
-                        return { status: 'APPLIED', detail: 'resume queued' };
-                    case 'PAUSE':
-                        resolvedControlQueue.enqueue({ type: 'pause', reason });
-                        return { status: 'APPLIED', detail: 'pause queued' };
-                    case 'STOP':
-                    case 'SHUTDOWN':
-                        resolvedControlQueue.enqueue({ type: 'shutdown', reason });
-                        return { status: 'APPLIED', detail: 'shutdown queued' };
-                    default:
-                        return { status: 'IGNORED', detail: 'not implemented' };
-                }
-            },
-        });
-        adminActionConsumer.start();
-    }
+    adminActionConsumer = await createStartedAdminActionConsumer({
+        runtimeOptions: options,
+        turnDaemonLease,
+        commandConnector,
+        redisConnector,
+        controlQueue: resolvedControlQueue,
+    });
 
     return {
         lifecycle,

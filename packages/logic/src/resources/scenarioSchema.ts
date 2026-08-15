@@ -1,7 +1,7 @@
 import { z } from 'zod';
 import { SCENARIO_EFFECT_KEYS } from '../scenario/scenarioEffect.js';
 
-export const ScenarioStatBlockSchema = z
+const ScenarioStatBlockSchema = z
     .object({
         total: z.number(),
         min: z.number(),
@@ -18,7 +18,7 @@ export const ScenarioDefaultsInputSchema = z.object({
     iconPath: z.string().optional(),
 });
 
-export const ScenarioExtendsInputSchema = z.union([z.string().min(1), z.array(z.string().min(1)).min(1)]);
+const ScenarioExtendsInputSchema = z.union([z.string().min(1), z.array(z.string().min(1)).min(1)]);
 
 const ScenarioConstInputSchema = z
     .object({

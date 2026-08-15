@@ -20,7 +20,7 @@ export const resolveGatewayProfileKoreanName = (profile: string, configuredName?
     return gatewayProfileKoreanNames.get(profile) ?? profile;
 };
 
-export const compareGatewayProfiles = (
+const compareGatewayProfiles = (
     left: { profile: string; instanceKey: string },
     right: { profile: string; instanceKey: string }
 ): number => {

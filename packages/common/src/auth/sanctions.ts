@@ -8,7 +8,7 @@ const FEATURE_ALIASES: Record<SanctionFeature, ReadonlySet<string>> = {
     messages: new Set(['*', 'message', 'messages']),
 };
 
-export const isFutureSanctionDate = (value: string | undefined, now = new Date()): boolean => {
+const isFutureSanctionDate = (value: string | undefined, now = new Date()): boolean => {
     if (!value) {
         return false;
     }

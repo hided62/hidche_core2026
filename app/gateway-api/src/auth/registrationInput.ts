@@ -21,7 +21,7 @@ const isWideCodePoint = (codePoint: number): boolean =>
         (codePoint >= 0x1f900 && codePoint <= 0x1f9ff) ||
         (codePoint >= 0x20000 && codePoint <= 0x3fffd));
 
-export const legacyStringWidth = (value: string): number =>
+const legacyStringWidth = (value: string): number =>
     Array.from(value).reduce((width, character) => {
         const codePoint = character.codePointAt(0) ?? 0;
         return width + (isWideCodePoint(codePoint) ? 2 : 1);

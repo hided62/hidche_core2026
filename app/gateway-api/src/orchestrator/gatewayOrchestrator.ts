@@ -469,10 +469,10 @@ export const buildProcessDefinitions = (
 
 const sanitizeArtifactName = (value: string): string => value.replace(/[^0-9A-Za-z._-]+/g, '_');
 
-export const buildProfileFrontendOutDir = (workspaceRoot: string, profileName: string): string =>
+const buildProfileFrontendOutDir = (workspaceRoot: string, profileName: string): string =>
     path.join(workspaceRoot, '.release-dist', sanitizeArtifactName(profileName), 'game-frontend');
 
-export const buildProfileFrontendCommands = (
+const buildProfileFrontendCommands = (
     workspaceRoot: string,
     profile: Pick<GatewayProfileRecord, 'profileName' | 'profile' | 'apiPort'>,
     env?: Record<string, string>

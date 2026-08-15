@@ -1,6 +1,6 @@
 import { z } from 'zod';
 
-export const MapCityStatsSchema = z.object({
+const MapCityStatsSchema = z.object({
     population: z.number(),
     agriculture: z.number(),
     commerce: z.number(),
@@ -9,7 +9,7 @@ export const MapCityStatsSchema = z.object({
     wall: z.number(),
 });
 
-export const MapCityDefinitionSchema = z.object({
+const MapCityDefinitionSchema = z.object({
     id: z.number(),
     name: z.string(),
     level: z.number(),
@@ -24,7 +24,7 @@ export const MapCityDefinitionSchema = z.object({
     meta: z.record(z.string(), z.unknown()).optional(),
 });
 
-export const MapDefaultsSchema = z
+const MapDefaultsSchema = z
     .object({
         trust: z.number(),
         trade: z.number(),
