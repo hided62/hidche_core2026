@@ -858,7 +858,22 @@ export class GeneralAI {
                 continue;
             }
 
-            if (candidate.stats.leadership >= this.nationPolicy.minNpcWarLeadership) {
+            const fullLeadership = this.commandEnv.generalActionModules
+                ? resolveLegacyAiStatsWithModules(
+                      candidate,
+                      this.nation,
+                      this.commandEnv.maxStatLevel ?? this.scenarioConfig.stat.max,
+                      this.commandEnv.generalActionModules,
+                      this.worldRef,
+                      this.world,
+                      this.startYear
+                  ).fullLeadership
+                : resolveLegacyAiStats(
+                      candidate,
+                      this.nation,
+                      this.commandEnv.maxStatLevel ?? this.scenarioConfig.stat.max
+                  ).fullLeadership;
+            if (fullLeadership >= this.nationPolicy.minNpcWarLeadership) {
                 npcWarGenerals[candidate.id] = candidate;
             } else {
                 npcCivilGenerals[candidate.id] = candidate;

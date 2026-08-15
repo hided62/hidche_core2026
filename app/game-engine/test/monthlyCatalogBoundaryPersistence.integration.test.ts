@@ -68,14 +68,16 @@ integration('monthly catalog boundary persistence', () => {
                     security: 1_000,
                     securityMax: 2_000,
                     trust: 50,
-                    trade: 100,
+                    trade: null,
                     defence: 1_000,
                     defenceMax: 2_000,
                     wall: 1_000,
                     wallMax: 2_000,
                     region: 1,
                     conflict: {},
-                    meta: { state: 31, term: 1, officer_set: 1 },
+                    // Projected columns are deliberately stale in JSON. The
+                    // dedicated nullable columns remain authoritative.
+                    meta: { state: 31, term: 1, officer_set: 1, trust: 1, trade: 0, region: 99 },
                 },
                 {
                     id: 2,
@@ -248,6 +250,8 @@ integration('monthly catalog boundary persistence', () => {
             enableLeaseHeartbeat: false,
         });
         try {
+            expect(runtime.world.getCityById(1)?.meta).toMatchObject({ trust: 50, region: 1 });
+            expect(runtime.world.getCityById(1)?.meta).not.toHaveProperty('trade');
             await runtime.world.advanceMonth(new Date('2026-07-25T02:00:00.000Z'));
             await runtime.hooks?.flushChanges?.({
                 lastTurnTime: runtime.world.getState().lastTurnTime.toISOString(),
@@ -271,6 +275,10 @@ integration('monthly catalog boundary persistence', () => {
                 { id: 1, age: 31, gold: 1_400, meta: expect.objectContaining({ belong: 4, makelimit: 1 }) },
                 { id: 2, age: 26, gold: 500, meta: expect.objectContaining({ belong: 4, makelimit: 0 }) },
             ]);
+            const persistedCityMeta = (await db.city.findUniqueOrThrow({ where: { id: 1 } })).meta;
+            expect(persistedCityMeta).not.toHaveProperty('trust');
+            expect(persistedCityMeta).not.toHaveProperty('trade');
+            expect(persistedCityMeta).not.toHaveProperty('region');
             expect(
                 await db.city.findMany({
                     orderBy: { id: 'asc' },

@@ -1,4 +1,4 @@
-import type { RandomGenerator } from '@sammo-ts/common';
+import { GAME_TICKS_PER_TURN, JosaUtil, type RandomGenerator } from '@sammo-ts/common';
 import type {
     General,
     GeneralMeta,
@@ -25,7 +25,6 @@ import type {
 import { createGeneralAddEffect, createLogEffect } from '@sammo-ts/logic/actions/engine.js';
 import { LogCategory, LogFormat, LogScope } from '@sammo-ts/logic/logging/types.js';
 import { buildRecruitmentGeneral } from '@sammo-ts/logic/actions/turn/general/recruitment.js';
-import { JosaUtil } from '@sammo-ts/common';
 import type { ActionContextBuilder } from '@sammo-ts/logic/actions/turn/actionContext.js';
 import {
     buildAverageNationGeneralCount,
@@ -64,6 +63,8 @@ export interface VolunteerRecruitResolveContext<
     createGeneralId: () => number;
     turnTermSeconds: number;
     turnTimeBase: Date;
+    turnTimeBaseTick?: number;
+    ticksPerSecond: number;
 }
 
 export interface VolunteerRecruitEnvironment {
@@ -398,6 +399,12 @@ export class ActionResolver<
                 candidate.personality ?? legacyChoice(context.rng, this.env.availablePersonalities ?? ['che_안전']);
             const turnSecond = randomRangeInt(context.rng, 0, context.turnTermSeconds - 1);
             const turnFraction = randomRangeInt(context.rng, 0, 999_999);
+            const turnTick =
+                context.turnTimeBaseTick === undefined
+                    ? undefined
+                    : context.turnTimeBaseTick +
+                      turnSecond * context.ticksPerSecond +
+                      Math.floor((turnFraction * context.ticksPerSecond) / 1_000_000);
             const turnTime = new Date(
                 context.turnTimeBase.getTime() + turnSecond * 1_000 + Math.floor(turnFraction / 1_000)
             );
@@ -444,6 +451,7 @@ export class ActionResolver<
                     meta,
                 }),
                 turnTime,
+                ...(turnTick === undefined ? {} : { turnTick }),
             };
             effects.push(createGeneralAddEffect(newGeneral));
         }
@@ -520,6 +528,8 @@ export const actionContextBuilder: ActionContextBuilder = (base, options) => {
         createGeneralId: options.createGeneralId,
         turnTermSeconds: Math.max(1, Math.round(options.world.tickSeconds)),
         turnTimeBase: options.world.lastTurnTime ?? base.general.turnTime,
+        turnTimeBaseTick: options.world.lastTurnTick,
+        ticksPerSecond: GAME_TICKS_PER_TURN / options.world.tickSeconds,
     };
 };
 

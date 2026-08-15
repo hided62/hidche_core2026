@@ -48,7 +48,9 @@ export interface DatabaseTurnHooks {
 }
 
 const uniqueSortedIds = (values: Iterable<number>): number[] =>
-    [...new Set(values)].filter((value) => Number.isSafeInteger(value) && value > 0).sort((left, right) => left - right);
+    [...new Set(values)]
+        .filter((value) => Number.isSafeInteger(value) && value > 0)
+        .sort((left, right) => left - right);
 
 export type ReadModelSignatures = {
     content: string;
@@ -153,7 +155,8 @@ const changedProjectionIds = (
     baseline: ReadonlyMap<number, ReadModelSignatures>,
     final: ReadonlyMap<number, ReadModelSignatures>,
     projection: keyof ReadModelSignatures
-): number[] => uniqueSortedIds(candidateIds.filter((id) => baseline.get(id)?.[projection] !== final.get(id)?.[projection]));
+): number[] =>
+    uniqueSortedIds(candidateIds.filter((id) => baseline.get(id)?.[projection] !== final.get(id)?.[projection]));
 
 const buildFinalSignatures = <Entity extends { id: number }>(
     entities: readonly Entity[],
@@ -219,10 +222,7 @@ export const summarizeRealtimeReadModelChanges = (
         ...changes.deletedNations,
         ...changes.deletedNationSnapshots.map((snapshot) => snapshot.nation.id),
     ]);
-    const finalGenerals = buildFinalSignatures(
-        [...changes.generals, ...changes.createdGenerals],
-        generalSignatures
-    );
+    const finalGenerals = buildFinalSignatures([...changes.generals, ...changes.createdGenerals], generalSignatures);
     const finalCities = buildFinalSignatures(changes.cities, citySignatures);
     const finalNations = buildFinalSignatures([...changes.nations, ...changes.createdNations], nationSignatures);
     const generalIds = baseline
@@ -237,9 +237,7 @@ export const summarizeRealtimeReadModelChanges = (
     const mapGeneralIds = baseline
         ? changedProjectionIds(generalCandidates, baseline.generals, finalGenerals, 'map')
         : generalIds;
-    const mapCityIds = baseline
-        ? changedProjectionIds(cityCandidates, baseline.cities, finalCities, 'map')
-        : cityIds;
+    const mapCityIds = baseline ? changedProjectionIds(cityCandidates, baseline.cities, finalCities, 'map') : cityIds;
     const mapNationIds = baseline
         ? changedProjectionIds(nationCandidates, baseline.nations, finalNations, 'map')
         : nationIds;
@@ -760,13 +758,14 @@ const buildGeneralCreate = (
 const buildCityUpdate = (
     city: ReturnType<InMemoryTurnWorld['consumeDirtyState']>['cities'][number]
 ): TurnEngineCityUpdateInput => {
-    const meta = {
+    const meta: Record<string, unknown> = {
         ...(city.meta as Record<string, unknown>),
         state: city.state,
     };
     const trust = readMetaNumber(meta, 'trust');
     const trade = readMetaNumber(meta, 'trade');
     const region = readMetaNumber(meta, 'region');
+    const { trust: _projectedTrust, trade: _projectedTrade, region: _projectedRegion, ...persistedMeta } = meta;
 
     const data: TurnEngineCityUpdateInput = {
         name: city.name,
@@ -787,7 +786,7 @@ const buildCityUpdate = (
         wall: city.wall,
         wallMax: city.wallMax,
         ...(city.conflict ? { conflict: asJson(city.conflict) } : {}),
-        meta: asJson(meta),
+        meta: asJson(persistedMeta),
     };
 
     if (trust !== null) {

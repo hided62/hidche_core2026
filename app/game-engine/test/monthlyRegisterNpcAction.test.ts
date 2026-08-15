@@ -141,6 +141,9 @@ describe('RegNPC and RegNeutralNPC monthly actions', () => {
         );
 
         const created = world.peekDirtyState().createdGenerals[0]!;
+        expect(created.turnTick).toBeTypeOf('number');
+        expect(created.turnTick! - world.dateToGameTick(created.turnTime)).toBeGreaterThan(0);
+        expect(created.turnTick! - world.dateToGameTick(created.turnTime)).toBeLessThan(60);
         expect(created).toMatchObject({
             name: 'ⓝ등장장수',
             nationId: 1,

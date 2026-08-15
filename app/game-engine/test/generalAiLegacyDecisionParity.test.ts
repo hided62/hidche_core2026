@@ -13,6 +13,7 @@ import { do일반내정, do전쟁내정 } from '../src/turn/ai/generalAi/general
 import { do금쌀구매 } from '../src/turn/ai/generalAi/general/economyActions.js';
 import { do거병, do건국, do국가선택, do중립 } from '../src/turn/ai/generalAi/general/politicsActions.js';
 import { do징병 } from '../src/turn/ai/generalAi/general/recruitActions.js';
+import { doNPC헌납 } from '../src/turn/ai/generalAi/general/npcActions.js';
 import { do전투준비, do출병 } from '../src/turn/ai/generalAi/general/warActions.js';
 import { do내정워프, do전방워프, do집합, do후방워프 } from '../src/turn/ai/generalAi/general/warpActions.js';
 import { doNPC몰수, doNPC포상, do유저장포상 } from '../src/turn/ai/generalAi/nation/rewards.js';
@@ -22,6 +23,10 @@ import {
     doNPC전방발령,
     doNPC후방발령,
 } from '../src/turn/ai/generalAi/nation/assignments/npcAssignments.js';
+import {
+    do부대구출발령,
+    do부대후방발령,
+} from '../src/turn/ai/generalAi/nation/assignments/troopAssignments.js';
 
 type Candidate = {
     action: string;
@@ -398,6 +403,24 @@ const makeAi = (
  * selection and RNG-sensitive gates, not TypeScript implementation details.
  */
 describe('legacy NPC AI final-decision parity', () => {
+    it('rejects the malformed Ref low-rice donation candidate and continues the priority loop', () => {
+        const rng = makeRng([false], [0]);
+        const ai = makeAi({
+            general: { rice: 2_200, gold: 0 },
+            nation: { rice: 400, gold: 20_000 },
+            genType: 4,
+            rng,
+        });
+        ai.nationPolicy.reqNpcWarRice = 1_000;
+        ai.buildGeneralCandidate = ((_action: string, args: Record<string, unknown>) =>
+            typeof args.isGold === 'boolean'
+                ? { action: 'che_헌납', args, reason: 'NPC헌납' }
+                : null) as GeneralAI['buildGeneralCandidate'];
+
+        expect(doNPC헌납(ai)).toBeNull();
+        expect(rng.weightedPairs).toEqual([[[{ isGold: 'rice', amount: 1_100 }, 1_100]]]);
+    });
+
     it('blocks another officer from starting a capital move within half a turn', () => {
         const base = makeAi({ general: { officerLevel: 10, turnTick: 36_000_100 } });
         const ai = Object.assign(Object.create(GeneralAI.prototype), base, {
@@ -1054,6 +1077,67 @@ describe('legacy NPC AI final-decision parity', () => {
         expect(rng.weightedPairs[0]).toHaveLength(1);
     });
 
+    it('uses target action modules for the full leadership in NPC reward costs', () => {
+        const ai = makeAi({
+            nation: { rice: 100_000 },
+            generalActionModules: singleActionModuleStack({
+                eventHandlers: {},
+                onCalcStat: (_context, statName, value) =>
+                    statName === 'leadership' ? Number(value) + 30 : value,
+            }),
+        });
+        ai.maxResourceActionAmount = 100_000;
+        const crewType = ai.unitSet?.crewTypes?.[0];
+        if (!crewType) throw new Error('missing test crew type');
+        crewType.cost = 100;
+        ai.npcWarGenerals = {
+            2: {
+                ...baseGeneral(),
+                id: 2,
+                rice: 0,
+                crewTypeId: crewType.id,
+                meta: { killturn: 100 },
+            },
+        };
+        ai.npcCivilGenerals = {};
+
+        expect(doNPC포상(ai)).toMatchObject({
+            action: 'che_포상',
+            args: { destGeneralId: 2, isGold: false, amount: 88_000 },
+        });
+    });
+
+    it('uses target action modules when classifying NPC war generals', () => {
+        const specialist = {
+            ...baseGeneral(),
+            id: 2,
+            stats: { ...baseGeneral().stats, leadership: 32 },
+            meta: { killturn: 100 },
+        };
+        const base = makeAi({
+            generals: [baseGeneral(), specialist],
+            generalActionModules: singleActionModuleStack({
+                eventHandlers: {},
+                onCalcStat: (context, statName, value) =>
+                    context.general.id === 2 && statName === 'leadership' ? Number(value) + 10 : value,
+            }),
+        });
+        const ai = Object.assign(Object.create(GeneralAI.prototype), base, {
+            categorizedCities: false,
+            categorizedGenerals: false,
+            nationCities: {},
+            frontCities: {},
+            supplyCities: {},
+            backupCities: {},
+        }) as GeneralAI;
+        ai.nationPolicy.minNpcWarLeadership = 40;
+
+        ai.categorizeNationGeneral();
+
+        expect(ai.npcWarGenerals[2]?.id).toBe(2);
+        expect(ai.npcCivilGenerals[2]).toBeUndefined();
+    });
+
     it('excludes no-population recruitment specialists before NPC rear assignment draws RNG', () => {
         const rng = makeRng([], [0, 0]);
         const specialist = {
@@ -1126,6 +1210,48 @@ describe('legacy NPC AI final-decision parity', () => {
             action: 'che_발령',
             args: { destGeneralId: 3, destCityId: 20 },
         });
+    });
+
+    it('draws a rear-assignment troop leader before its destination city', () => {
+        const rng = makeRng([], [1, 0]);
+        const first = { ...baseGeneral(), id: 979, cityId: 2 };
+        const second = { ...baseGeneral(), id: 980, cityId: 2 };
+        const ai = makeAi({ rng });
+        ai.troopLeaders = { 979: first, 980: second };
+        ai.nationPolicy.supportForce = [979, 980];
+        ai.frontCities = { 1: { ...baseCity(), frontState: 3, dev: 1, important: 1 } };
+        ai.supplyCities = {
+            2: { ...baseCity(), id: 2, population: 10_000, dev: 1, important: 1 },
+            3: { ...baseCity(), id: 3, dev: 1, important: 1 },
+        };
+        ai.backupCities = { 3: ai.supplyCities[3]! };
+
+        expect(do부대후방발령(ai)).toMatchObject({
+            action: 'che_발령',
+            args: { destGeneralId: 980, destCityId: 3 },
+        });
+        expect(rng.choices).toEqual([]);
+    });
+
+    it('draws a rescue-assignment troop leader before its destination city', () => {
+        const rng = makeRng([], [1, 0]);
+        const first = { ...baseGeneral(), id: 979, cityId: 99 };
+        const second = { ...baseGeneral(), id: 980, cityId: 99 };
+        const ai = makeAi({ rng });
+        ai.troopLeaders = { 979: first, 980: second };
+        ai.nationPolicy.supportForce = [];
+        ai.nationPolicy.combatForce = {};
+        ai.frontCities = {
+            20: { ...baseCity(), id: 20, frontState: 3, dev: 1, important: 1 },
+            21: { ...baseCity(), id: 21, frontState: 3, dev: 1, important: 1 },
+        };
+        ai.supplyCities = {};
+
+        expect(do부대구출발령(ai)).toMatchObject({
+            action: 'che_발령',
+            args: { destGeneralId: 980, destCityId: 20 },
+        });
+        expect(rng.choices).toEqual([]);
     });
 
     it('seizes a small war-NPC surplus while the treasury is below 1.5x reserve', () => {

@@ -210,6 +210,10 @@ describe('RaiseNPCNation monthly action', () => {
         const dirty = world.peekDirtyState();
         expect(dirty.createdNations).toHaveLength(1);
         expect(dirty.createdGenerals).toHaveLength(1);
+        const created = dirty.createdGenerals[0]!;
+        expect(created.turnTick).toBeTypeOf('number');
+        expect(created.turnTick! - world.dateToGameTick(created.turnTime)).toBeGreaterThan(0);
+        expect(created.turnTick! - world.dateToGameTick(created.turnTime)).toBeLessThan(60);
         expect(dirty.createdNations[0]).toMatchInlineSnapshot(`
           {
             "capitalCityId": 4,

@@ -100,6 +100,7 @@ export class InMemoryTurnProcessor implements TurnProcessor {
             processedGenerals += 1;
             nextCheckpoint = {
                 turnTime: executedAt.toISOString(),
+                turnTick: general.turnTick,
                 generalId: general.id,
                 year: this.world.getState().currentYear,
                 month: this.world.getState().currentMonth,

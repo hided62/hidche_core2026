@@ -10,6 +10,7 @@ export interface TurnRunBudget {
 
 export interface TurnCheckpoint {
     turnTime: string;
+    turnTick?: number;
     generalId?: number;
     year: number;
     month: number;

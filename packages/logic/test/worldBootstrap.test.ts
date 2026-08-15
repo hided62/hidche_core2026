@@ -192,17 +192,17 @@ describe('scenario bootstrap', () => {
         expect(result.snapshot.generals[0]?.role.specialWar).toBeNull();
         expect(result.snapshot.generals[1]?.role).toMatchObject({
             personality: 'che_출세',
-            specialDomestic: 'che_event_의술',
-            specialWar: null,
+            specialDomestic: null,
+            specialWar: 'che_의술',
         });
         expect(result.seed.generals[1]).toMatchObject({
-            special: 'che_event_의술',
-            specialWar: null,
+            special: null,
+            specialWar: 'che_의술',
         });
         expect(result.snapshot.generals[2]?.role).toMatchObject({
             personality: 'che_패권',
-            specialDomestic: 'che_event_돌격',
-            specialWar: null,
+            specialDomestic: null,
+            specialWar: 'che_돌격',
         });
         expect(result.snapshot.generals[0]?.meta).toMatchObject({
             explevel: 0,
