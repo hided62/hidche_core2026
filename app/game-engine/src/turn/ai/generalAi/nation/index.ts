@@ -12,29 +12,6 @@ import { do유저장긴급포상, do유저장포상, doNPC긴급포상, doNPC포
 import { do불가침제의, do선전포고 } from './diplomacy.js';
 import { do천도 } from './capital.js';
 
-export {
-    do부대전방발령,
-    do부대후방발령,
-    do부대구출발령,
-    do부대유저장후방발령,
-    do유저장후방발령,
-    do유저장구출발령,
-    do유저장전방발령,
-    do유저장내정발령,
-    doNPC후방발령,
-    doNPC구출발령,
-    doNPC전방발령,
-    doNPC내정발령,
-    do유저장긴급포상,
-    do유저장포상,
-    doNPC긴급포상,
-    doNPC포상,
-    doNPC몰수,
-    do불가침제의,
-    do선전포고,
-    do천도,
-};
-
 export const nationActionHandlers: Record<
     string,
     (ai: GeneralAI) => ReturnType<GeneralAI['buildNationCandidate']> | null

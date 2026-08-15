@@ -2,7 +2,7 @@ import { z } from 'zod';
 
 import type { BattleSimRequestPayload } from './types.js';
 
-export const zBattleSimGeneral = z.object({
+const zBattleSimGeneral = z.object({
     no: z.number().int().positive(),
     name: z.string().min(1),
     nation: z.number().int().positive(),
@@ -46,7 +46,7 @@ export const zBattleSimGeneral = z.object({
     inheritBuff: z.union([z.record(z.string(), z.number()), z.array(z.number())]).optional(),
 });
 
-export const zBattleSimCity = z.object({
+const zBattleSimCity = z.object({
     city: z.number().int().positive(),
     nation: z.number().int().min(0),
     supply: z.number().int().min(0),
@@ -70,7 +70,7 @@ export const zBattleSimCity = z.object({
     conflict: z.string(),
 });
 
-export const zBattleSimNation = z.object({
+const zBattleSimNation = z.object({
     type: z.string().min(1),
     tech: z.number().min(0),
     level: z.number().int().min(0),

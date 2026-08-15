@@ -70,14 +70,8 @@ export const resolveInheritConstants = (worldState: WorldStateRow): InheritConst
             configConst.inheritBornTurntimePoint,
             DEFAULT_INHERIT_CONST.inheritBornTurntimePoint
         ),
-        inheritBornCityPoint: asNumber(
-            configConst.inheritBornCityPoint,
-            DEFAULT_INHERIT_CONST.inheritBornCityPoint
-        ),
-        inheritBornStatPoint: asNumber(
-            configConst.inheritBornStatPoint,
-            DEFAULT_INHERIT_CONST.inheritBornStatPoint
-        ),
+        inheritBornCityPoint: asNumber(configConst.inheritBornCityPoint, DEFAULT_INHERIT_CONST.inheritBornCityPoint),
+        inheritBornStatPoint: asNumber(configConst.inheritBornStatPoint, DEFAULT_INHERIT_CONST.inheritBornStatPoint),
         inheritItemUniqueMinPoint: asNumber(
             configConst.inheritItemUniqueMinPoint,
             DEFAULT_INHERIT_CONST.inheritItemUniqueMinPoint
@@ -152,18 +146,6 @@ export const setInheritancePoint = async (
     });
 };
 
-export const addInheritancePoint = async (
-    db: DatabaseClient,
-    userId: string,
-    key: InheritPointKey,
-    delta: number
-): Promise<number> => {
-    const current = await readInheritancePoint(db, userId, key);
-    const next = current + delta;
-    await setInheritancePoint(db, userId, key, next);
-    return next;
-};
-
 export const appendInheritanceLog = async (
     db: DatabaseClient,
     userId: string,
@@ -181,7 +163,7 @@ export const appendInheritanceLog = async (
     });
 };
 
-export const readUserMetaValue = (meta: Record<string, unknown>, key: string): number => {
+const readUserMetaValue = (meta: Record<string, unknown>, key: string): number => {
     const value = meta[key];
     if (typeof value !== 'number' || !Number.isFinite(value)) {
         return 0;
@@ -189,7 +171,7 @@ export const readUserMetaValue = (meta: Record<string, unknown>, key: string): n
     return value;
 };
 
-export const computeDexPoint = (meta: Record<string, unknown>): number => {
+const computeDexPoint = (meta: Record<string, unknown>): number => {
     let total = 0;
     for (const [key, value] of Object.entries(meta)) {
         if (!key.startsWith('dex')) {
@@ -251,7 +233,10 @@ export const computeInheritanceItems = async (options: {
 };
 
 export const sumInheritanceItems = (items: Record<InheritPointKey, number>): number => {
-    return Object.entries(items).reduce((acc, [key, value]) => (key === 'previous' ? acc : acc + value), items.previous);
+    return Object.entries(items).reduce(
+        (acc, [key, value]) => (key === 'previous' ? acc : acc + value),
+        items.previous
+    );
 };
 
 export const readUserStateMeta = async (db: DatabaseClient, userId: string): Promise<Record<string, unknown>> => {

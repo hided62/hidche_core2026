@@ -20,12 +20,12 @@ const readJsonFile = async (filePath: string): Promise<unknown> => {
 
 const resolveUnitSetRoot = (options?: UnitSetLoaderOptions): string => options?.unitSetRoot ?? DEFAULT_UNIT_SET_ROOT;
 
-export const resolveUnitSetDefinitionPath = (unitSetName: string, options?: UnitSetLoaderOptions): string => {
+const resolveUnitSetDefinitionPath = (unitSetName: string, options?: UnitSetLoaderOptions): string => {
     const prefix = options?.filePrefix ?? 'unitset_';
     return path.resolve(resolveUnitSetRoot(options), `${prefix}${unitSetName}.json`);
 };
 
-export const loadUnitSetDefinition = async (unitSetPath: string): Promise<UnitSetDefinition> => {
+const loadUnitSetDefinition = async (unitSetPath: string): Promise<UnitSetDefinition> => {
     const raw = await readJsonFile(unitSetPath);
     return parseUnitSetDefinition(raw);
 };

@@ -26,7 +26,7 @@ export interface BuildRunner {
 }
 
 export const MAX_BUILD_OUTPUT_CHARS = 64 * 1024;
-export const DEFAULT_RELEASE_TURBO_CONCURRENCY = 1;
+const DEFAULT_RELEASE_TURBO_CONCURRENCY = 1;
 
 export const resolveReleaseTurboConcurrency = (env?: Record<string, string>): number => {
     const configured = env?.RELEASE_TURBO_CONCURRENCY?.trim();

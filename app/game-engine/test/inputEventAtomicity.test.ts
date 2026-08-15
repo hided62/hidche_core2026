@@ -1,10 +1,9 @@
 import { describe, expect, it, vi } from 'vitest';
-import { asRecord } from '@sammo-ts/common';
+import { asRecord, ManualClock } from '@sammo-ts/common';
 
 import {
     InMemoryControlQueue,
     EngineStateManager,
-    ManualClock,
     TurnDaemonLifecycle,
     type TurnDaemonCommandResult,
     type TurnProcessor,

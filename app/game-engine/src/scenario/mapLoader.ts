@@ -25,12 +25,12 @@ const readJsonFile = async (filePath: string): Promise<unknown> => {
 
 const resolveMapRoot = (options?: MapLoaderOptions): string => options?.mapRoot ?? DEFAULT_MAP_ROOT;
 
-export const resolveMapDefinitionPath = (mapName: string, options?: MapLoaderOptions): string => {
+const resolveMapDefinitionPath = (mapName: string, options?: MapLoaderOptions): string => {
     const prefix = options?.filePrefix ?? 'map_';
     return path.resolve(resolveMapRoot(options), `${prefix}${mapName}.json`);
 };
 
-export const loadMapDefinition = async (mapPath: string): Promise<MapDefinition> => {
+const loadMapDefinition = async (mapPath: string): Promise<MapDefinition> => {
     const raw = await readJsonFile(mapPath);
     return MapDefinitionSchema.parse(raw);
 };

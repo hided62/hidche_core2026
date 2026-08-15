@@ -3,7 +3,7 @@ import { z } from 'zod';
 const numericRecordSchema = z.record(z.string(), z.number());
 const numericArraySchema = z.array(z.number());
 
-export const CrewTypeRequirementSchema = z.union([
+const CrewTypeRequirementSchema = z.union([
     z.object({ type: z.literal('ReqTech'), tech: z.number() }),
     z.object({ type: z.literal('ReqRegions'), regions: z.array(z.string()) }),
     z.object({ type: z.literal('ReqCities'), cities: z.array(z.string()) }),
@@ -22,7 +22,7 @@ export const CrewTypeRequirementSchema = z.union([
     z.object({ type: z.string() }).passthrough(),
 ]);
 
-export const CrewTypeDefinitionInputSchema = z.object({
+const CrewTypeDefinitionInputSchema = z.object({
     id: z.number(),
     armType: z.number(),
     name: z.string(),

@@ -2,7 +2,7 @@ import type { TurnGeneral } from './types.js';
 
 const DEX_LIMIT = 1_275_975;
 
-export const STORED_INHERITANCE_KEYS = [
+const STORED_INHERITANCE_KEYS = [
     'lived_month',
     'max_domestic_critical',
     'active_action',

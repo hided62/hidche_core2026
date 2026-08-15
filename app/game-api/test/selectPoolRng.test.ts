@@ -5,41 +5,19 @@ import { describe, expect, it } from 'vitest';
 
 import { LiteHashDRBG, RandUtil } from '@sammo-ts/common';
 
-import {
-    buildSelectPoolSeed,
-    claimWeightedSelectionCandidates,
-} from '../src/services/selectPool.js';
+import { buildSelectPoolSeed, claimWeightedSelectionCandidates } from '@sammo-ts/game-engine/turn/selectPoolService.js';
 
 interface PoolResource {
-    data: Array<
-        [
-            string,
-            number,
-            number,
-            number,
-            string,
-            [number, number, number, number, number],
-            0 | 1,
-            string,
-        ]
-    >;
+    data: Array<[string, number, number, number, string, [number, number, number, number, number], 0 | 1, string]>;
 }
 
 const loadWeightedRows = async (): Promise<Array<[{ id: number }, number]>> => {
-    const filePath = path.resolve(
-        import.meta.dirname,
-        '../../../resources/general-pool/SPoolUnderU30.json'
-    );
+    const filePath = path.resolve(import.meta.dirname, '../../../resources/general-pool/SPoolUnderU30.json');
     const resource = JSON.parse(await fs.readFile(filePath, 'utf8')) as PoolResource;
-    return resource.data.map((row, index) => [
-        { id: index + 1 },
-        row[5].reduce((sum, value) => sum + value, 0),
-    ]);
+    return resource.data.map((row, index) => [{ id: index + 1 }, row[5].reduce((sum, value) => sum + value, 0)]);
 };
 
-const drawVector = async (
-    hiddenSeed: string
-): Promise<{ selected: number[]; draws: number[] }> => {
+const drawVector = async (hiddenSeed: string): Promise<{ selected: number[]; draws: number[] }> => {
     const weighted = await loadWeightedRows();
     const now = new Date('2026-07-30T03:34:56.000Z');
     const draws: number[] = [];

@@ -87,7 +87,7 @@ export const createIncomeActionContext = (nation: Nation): GeneralActionContext 
     return { general, nation };
 };
 
-export const calcCityGoldIncomeBase = (
+const calcCityGoldIncomeBase = (
     context: NationIncomeContext,
     city: CityIncomeSource,
     officerCnt: number,
@@ -112,7 +112,7 @@ export const calcCityGoldIncomeBase = (
     return Math.round(adjusted);
 };
 
-export const calcCityRiceIncomeBase = (
+const calcCityRiceIncomeBase = (
     context: NationIncomeContext,
     city: CityIncomeSource,
     officerCnt: number,
@@ -137,7 +137,7 @@ export const calcCityRiceIncomeBase = (
     return Math.round(adjusted);
 };
 
-export const calcCityWallIncomeBase = (
+const calcCityWallIncomeBase = (
     context: NationIncomeContext,
     city: CityIncomeSource,
     officerCnt: number,
@@ -161,7 +161,7 @@ export const calcCityWallIncomeBase = (
     return Math.round(adjusted);
 };
 
-export const calcCityWarGoldIncome = (context: NationIncomeContext, city: CityIncomeSource): number => {
+const calcCityWarGoldIncome = (context: NationIncomeContext, city: CityIncomeSource): number => {
     if (city.supplyState === 0) {
         return 0;
     }
@@ -257,7 +257,7 @@ export const getWarGoldIncome = (context: NationIncomeContext, cities: CityIncom
     return total;
 };
 
-export const resolveDedLevel = (dedication: number): number => {
+const resolveDedLevel = (dedication: number): number => {
     const level = Math.ceil(Math.sqrt(Math.max(0, dedication)) / 10);
     return Math.max(0, Math.min(MAX_DED_LEVEL, level));
 };

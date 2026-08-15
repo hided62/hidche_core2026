@@ -14,14 +14,11 @@ export type GatewayProfileStatus = (typeof GATEWAY_PROFILE_STATUSES)[number];
 export const GATEWAY_BUILD_STATUSES = ['IDLE', 'QUEUED', 'RUNNING', 'FAILED', 'SUCCEEDED'] as const;
 export type GatewayBuildStatus = (typeof GATEWAY_BUILD_STATUSES)[number];
 
-export const GATEWAY_OPERATION_TYPES = ['RESET', 'DEPLOY', 'START', 'STOP'] as const;
-export type GatewayOperationType = (typeof GATEWAY_OPERATION_TYPES)[number];
+export type GatewayOperationType = 'RESET' | 'DEPLOY' | 'START' | 'STOP';
 
-export const GATEWAY_OPERATION_STATUSES = ['QUEUED', 'RUNNING', 'SUCCEEDED', 'FAILED', 'CANCELLED'] as const;
-export type GatewayOperationStatus = (typeof GATEWAY_OPERATION_STATUSES)[number];
+export type GatewayOperationStatus = 'QUEUED' | 'RUNNING' | 'SUCCEEDED' | 'FAILED' | 'CANCELLED';
 
-export const GATEWAY_SOURCE_MODES = ['BRANCH', 'COMMIT'] as const;
-export type GatewaySourceMode = (typeof GATEWAY_SOURCE_MODES)[number];
+export type GatewaySourceMode = 'BRANCH' | 'COMMIT';
 
 export interface GatewayOperationRecord {
     id: string;
@@ -57,7 +54,7 @@ export interface GatewayOperationCreateInput {
     scheduledAt?: string;
 }
 
-export const GATEWAY_OPERATION_LOG_LEVELS = ['INFO', 'OUTPUT', 'ERROR'] as const;
+const GATEWAY_OPERATION_LOG_LEVELS = ['INFO', 'OUTPUT', 'ERROR'] as const;
 export type GatewayOperationLogLevel = (typeof GATEWAY_OPERATION_LOG_LEVELS)[number];
 
 export interface GatewayOperationLogRecord {

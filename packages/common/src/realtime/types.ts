@@ -108,10 +108,7 @@ export const resolveRealtimeReadModelInvalidation = (
     const ownGeneralChanged = contains(changes.generalIds, identity.generalId);
     const ownCityChanged = contains(changes.cityIds, identity.cityId);
     const ownNationChanged = contains(changes.nationIds, identity.nationId);
-    const ownFrontStatusNationChanged = contains(
-        changes.frontStatusNationIds ?? changes.nationIds,
-        identity.nationId
-    );
+    const ownFrontStatusNationChanged = contains(changes.frontStatusNationIds ?? changes.nationIds, identity.nationId);
     const ownGeneralMapChanged = contains(changes.mapGeneralIds ?? changes.generalIds, identity.generalId);
     const frontStatusGeneralChanged =
         changes.frontStatusGeneralIds !== undefined
@@ -122,8 +119,7 @@ export const resolveRealtimeReadModelInvalidation = (
     const lobbyChanged = changes.lobbyChanged ?? changes.contactsChanged;
     const entityContextChanged = ownGeneralChanged || ownCityChanged || ownNationChanged;
     const mapEntitiesChanged =
-        (changes.mapCityIds ?? changes.cityIds).length > 0 ||
-        (changes.mapNationIds ?? changes.nationIds).length > 0;
+        (changes.mapCityIds ?? changes.cityIds).length > 0 || (changes.mapNationIds ?? changes.nationIds).length > 0;
     const commandEntitiesChanged = changes.cityIds.length > 0 || changes.nationIds.length > 0;
 
     return {
@@ -165,39 +161,6 @@ export const createEmptyRealtimeReadModelChanges = (): RealtimeReadModelChanges 
     contactsChanged: false,
     frontStatusChanged: false,
     lobbyChanged: false,
-});
-
-const mergeIds = (left: readonly number[], right: readonly number[]): number[] =>
-    [...new Set([...left, ...right])].sort((a, b) => a - b);
-
-export const mergeRealtimeReadModelChanges = (
-    left: RealtimeReadModelChanges,
-    right: RealtimeReadModelChanges
-): RealtimeReadModelChanges => ({
-    generalIds: mergeIds(left.generalIds, right.generalIds),
-    cityIds: mergeIds(left.cityIds, right.cityIds),
-    nationIds: mergeIds(left.nationIds, right.nationIds),
-    mapGeneralIds: mergeIds(left.mapGeneralIds ?? left.generalIds, right.mapGeneralIds ?? right.generalIds),
-    mapCityIds: mergeIds(left.mapCityIds ?? left.cityIds, right.mapCityIds ?? right.cityIds),
-    mapNationIds: mergeIds(left.mapNationIds ?? left.nationIds, right.mapNationIds ?? right.nationIds),
-    frontStatusGeneralIds: mergeIds(
-        left.frontStatusGeneralIds ?? (left.contactsChanged ? left.generalIds : []),
-        right.frontStatusGeneralIds ?? (right.contactsChanged ? right.generalIds : [])
-    ),
-    frontStatusNationIds: mergeIds(
-        left.frontStatusNationIds ?? left.nationIds,
-        right.frontStatusNationIds ?? right.nationIds
-    ),
-    frontStatusActorIds: mergeIds(left.frontStatusActorIds ?? [], right.frontStatusActorIds ?? []),
-    lobbyGeneralIds: mergeIds(left.lobbyGeneralIds ?? left.generalIds, right.lobbyGeneralIds ?? right.generalIds),
-    reservedGeneralIds: mergeIds(left.reservedGeneralIds, right.reservedGeneralIds),
-    recordGeneralIds: mergeIds(left.recordGeneralIds, right.recordGeneralIds),
-    worldChanged: left.worldChanged || right.worldChanged,
-    globalRecordsChanged: left.globalRecordsChanged || right.globalRecordsChanged,
-    worldHistoryChanged: left.worldHistoryChanged || right.worldHistoryChanged,
-    contactsChanged: left.contactsChanged || right.contactsChanged,
-    frontStatusChanged: Boolean(left.frontStatusChanged) || Boolean(right.frontStatusChanged),
-    lobbyChanged: (left.lobbyChanged ?? left.contactsChanged) || (right.lobbyChanged ?? right.contactsChanged),
 });
 
 export const hasRealtimeReadModelChanges = (changes: RealtimeReadModelChanges): boolean =>
@@ -251,7 +214,4 @@ export interface MessagesInvalidatedEvent {
 /** Events safe to expose to an authenticated browser over SSE. */
 export type PublicRealtimeEvent = ReadModelInvalidatedEvent | MessagesInvalidatedEvent;
 
-export type RealtimeEvent =
-    | TurnCompletedEvent
-    | ReadModelChangedEvent
-    | MessageCreatedEvent;
+export type RealtimeEvent = TurnCompletedEvent | ReadModelChangedEvent | MessageCreatedEvent;

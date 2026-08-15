@@ -7,9 +7,6 @@ export const denyWithReason = (reason: string): Constraint => ({
     test: () => ({ kind: 'deny', reason }),
 });
 
-// TODO: 점진 이전을 위해 유지. 신규 코드에서는 denyWithReason을 사용한다.
-export const alwaysFail = denyWithReason;
-
 export const notOpeningPart = (relYear: number, openingPartYear: number): Constraint => ({
     name: 'notOpeningPart',
     requires: () => [],

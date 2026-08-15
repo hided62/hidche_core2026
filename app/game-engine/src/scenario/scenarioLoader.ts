@@ -29,16 +29,16 @@ const resolveScenarioRoot = (options?: ScenarioLoaderOptions): string => options
 export const resolveScenarioDefaultsPath = (options?: ScenarioLoaderOptions): string =>
     path.resolve(resolveScenarioRoot(options), options?.defaultsFileName ?? 'default.json');
 
-export const resolveScenarioPath = (options: ScenarioLoaderOptions | undefined, scenarioId: number): string =>
+const resolveScenarioPath = (options: ScenarioLoaderOptions | undefined, scenarioId: number): string =>
     path.resolve(resolveScenarioRoot(options), `scenario_${scenarioId}.json`);
 
-export const loadScenarioDefaults = async (defaultsPath: string): Promise<ScenarioDefaults> => {
+const loadScenarioDefaults = async (defaultsPath: string): Promise<ScenarioDefaults> => {
     // 기본 시나리오 파일을 읽고 정규화한다.
     const raw = await readJsonFile(defaultsPath);
     return parseScenarioDefaults(raw);
 };
 
-export const loadScenarioDefinition = async (
+const loadScenarioDefinition = async (
     scenarioPath: string,
     defaults: ScenarioDefaults
 ): Promise<ScenarioDefinition> => {

@@ -7,8 +7,7 @@ import { equipNewItem } from '../items/inventory.js';
 
 export type UniqueItemPool = Record<string, Record<string, number>>;
 
-export const UNIQUE_ACQUIRE_TYPES = ['아이템', '설문조사', '랜덤 임관', '건국'] as const;
-export type UniqueAcquireType = (typeof UNIQUE_ACQUIRE_TYPES)[number];
+export type UniqueAcquireType = '아이템' | '설문조사' | '랜덤 임관' | '건국';
 
 export type UniqueLotteryRequest = {
     acquireType: UniqueAcquireType;
@@ -322,7 +321,7 @@ export const rollUniqueLottery = (input: UniqueLotteryInput): string | null => {
     return rng.choiceUsingWeightPair(availableUnique);
 };
 
-export const applyUniqueItemGain = <TriggerState extends GeneralTriggerState = GeneralTriggerState>(
+const applyUniqueItemGain = <TriggerState extends GeneralTriggerState = GeneralTriggerState>(
     context: GeneralActionResolveContext<TriggerState>,
     itemModule: ItemModule,
     acquireType: UniqueAcquireType,

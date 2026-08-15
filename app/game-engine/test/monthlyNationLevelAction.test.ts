@@ -1,6 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
 import {
-    createItemInventoryFromSlots,
     ITEM_KEYS,
     LogCategory,
     LogScope,
@@ -9,6 +8,7 @@ import {
     type ItemModule,
     type Nation,
 } from '@sammo-ts/logic';
+import { createItemInventoryFromSlots } from '@sammo-ts/logic/items/inventory.js';
 
 import { InMemoryTurnWorld } from '../src/turn/inMemoryWorld.js';
 import { createUpdateNationLevelHandler } from '../src/turn/monthlyNationLevelAction.js';
@@ -148,9 +148,7 @@ const buildHarness = async (
         generals: [buildGeneral(1), buildGeneral(2, { meta: { killturn: 850, belong: 30 } })],
         cities: [
             ...Array.from({ length: cityCount }, (_, index) => buildCity(index + 1)),
-            ...Array.from({ length: options.neutralCityCount ?? 0 }, (_, index) =>
-                buildCity(cityCount + index + 1, 0)
-            ),
+            ...Array.from({ length: options.neutralCityCount ?? 0 }, (_, index) => buildCity(cityCount + index + 1, 0)),
         ],
         nations: [
             ...(options.neutralCityCount

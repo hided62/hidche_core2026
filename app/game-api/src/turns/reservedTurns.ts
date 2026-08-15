@@ -1,7 +1,7 @@
 import type { DatabaseClient, GeneralTurnRow, NationTurnRow, InputJsonValue } from '../context.js';
 import { isRecord } from '@sammo-ts/common';
 
-export const DEFAULT_TURN_ACTION = '휴식';
+const DEFAULT_TURN_ACTION = '휴식';
 export const MAX_GENERAL_TURNS = 30;
 export const MAX_NATION_TURNS = 12;
 
@@ -157,17 +157,12 @@ const persistNationTurns = async (
     });
 };
 
-export const loadGeneralTurns = async (db: DatabaseClient, generalId: number): Promise<ReservedTurnEntry[]> => {
+const loadGeneralTurns = async (db: DatabaseClient, generalId: number): Promise<ReservedTurnEntry[]> => {
     const rows = await db.generalTurn.findMany({
         where: { generalId },
         orderBy: [{ turnIdx: 'asc' }],
     });
     return buildTurnListFromRows(rows, MAX_GENERAL_TURNS);
-};
-
-export const listGeneralTurns = async (db: DatabaseClient, generalId: number): Promise<ReservedTurnView[]> => {
-    const turns = await loadGeneralTurns(db, generalId);
-    return serializeTurnList(turns);
 };
 
 export const getGeneralTurnSnapshot = async (db: DatabaseClient, generalId: number): Promise<ReservedTurnSnapshot> => {
@@ -187,7 +182,7 @@ export const getGeneralTurnSnapshot = async (db: DatabaseClient, generalId: numb
     };
 };
 
-export const loadNationTurns = async (
+const loadNationTurns = async (
     db: DatabaseClient,
     nationId: number,
     officerLevel: number
@@ -197,15 +192,6 @@ export const loadNationTurns = async (
         orderBy: [{ turnIdx: 'asc' }],
     });
     return buildTurnListFromRows(rows, MAX_NATION_TURNS);
-};
-
-export const listNationTurns = async (
-    db: DatabaseClient,
-    nationId: number,
-    officerLevel: number
-): Promise<ReservedTurnView[]> => {
-    const turns = await loadNationTurns(db, nationId, officerLevel);
-    return serializeTurnList(turns);
 };
 
 export const getNationTurnSnapshot = async (

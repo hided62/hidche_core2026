@@ -97,6 +97,3 @@ export const createPasswordHasher = (options: { legacyGlobalSalt?: string } = {}
         return { ok: false, needsUpgrade: false };
     },
 });
-
-// 기존 import 지점을 깨지 않되 새 계정은 Argon2id를 사용한다.
-export const createSimplePasswordHasher = createPasswordHasher;

@@ -16,7 +16,11 @@ import {
 import { readInheritancePoint, resolveInheritConstants } from '../../services/inheritance.js';
 import { loadAuthoritativeAccountIcon } from '../../services/accountIconSync.js';
 import { loadCurrentGameTime } from '../../services/gameClock.js';
-import { getSelectionPoolStatus, reserveSelectionPool, resolveSelectionMaxGeneral } from '../../services/selectPool.js';
+import {
+    getSelectionPoolStatus,
+    reserveSelectionPool,
+    resolveSelectionMaxGeneral,
+} from '@sammo-ts/game-engine/turn/selectPoolService.js';
 import {
     ConflictingTurnDaemonCommandError,
     RejectedNpcPossessionCommandError,

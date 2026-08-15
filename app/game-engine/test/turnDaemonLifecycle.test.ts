@@ -1,9 +1,9 @@
 import { describe, expect, it, vi } from 'vitest';
+import { ManualClock } from '@sammo-ts/common';
 
 import {
     InMemoryControlQueue,
     EngineStateManager,
-    ManualClock,
     TurnDaemonLifecycle,
     getNextTickTime,
     type TurnProcessor,

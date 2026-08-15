@@ -11,7 +11,6 @@ export * from './economy/index.js';
 export * from './logging/index.js';
 export * from './messages/index.js';
 export * from './items/index.js';
-export { ITEM_KEYS, createItemActionModules, createItemModuleRegistry, loadItemModules } from './items/index.js';
 export * from './rewards/uniqueLottery.js';
 export * from './inheritance/inheritBuff.js';
 export * from './resources/index.js';

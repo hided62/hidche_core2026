@@ -45,9 +45,9 @@ export interface MessageStore {
     insertMessage(draft: MessageRecordDraft): Promise<number>;
 }
 
-export const isValidMailbox = (mailbox: number): boolean => mailbox > 0 && mailbox <= MESSAGE_MAILBOX_PUBLIC;
+const isValidMailbox = (mailbox: number): boolean => mailbox > 0 && mailbox <= MESSAGE_MAILBOX_PUBLIC;
 
-export const resolveReceiverMailbox = (draft: MessageDraft): number => {
+const resolveReceiverMailbox = (draft: MessageDraft): number => {
     switch (draft.msgType) {
         case 'public':
             return MESSAGE_MAILBOX_PUBLIC;
@@ -59,7 +59,7 @@ export const resolveReceiverMailbox = (draft: MessageDraft): number => {
     }
 };
 
-export const resolveSenderMailbox = (draft: MessageDraft): number | null => {
+const resolveSenderMailbox = (draft: MessageDraft): number | null => {
     switch (draft.msgType) {
         case 'public':
             return null;
