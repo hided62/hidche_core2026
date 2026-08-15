@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed } from 'vue';
+import { legacyNationTextColor } from '../../utils/legacyNationColor';
 import MainNavigationLink from './MainNavigationLink.vue';
 import {
     buildGlobalNavigation,
@@ -31,6 +32,8 @@ const emit = defineEmits<{
 
 const { setRoot, openId, close, toggle } = useMenuPopup();
 const globalEntries = computed(() => buildGlobalNavigation(props.npcMode));
+const nationMenuColor = computed(() => props.nationColor || '#000000');
+const nationMenuTextColor = computed(() => legacyNationTextColor(nationMenuColor.value));
 const isActive = (link: MainNavigationLinkItem) => link.highlightStage === props.tournamentStage;
 
 const onQuick = (item: QuickNavigationItem) => {
@@ -43,12 +46,15 @@ const onQuick = (item: QuickNavigationItem) => {
     <nav
         :ref="setRoot"
         class="main-mobile-bottom"
-        :style="{ '--nation-menu-color': nationColor || '#000000' }"
+        :style="{
+            '--nation-menu-color': nationMenuColor,
+            '--nation-menu-text-color': nationMenuTextColor,
+        }"
         aria-label="모바일 빠른 메뉴"
     >
         <div class="bottom-item">
             <button
-                class="bottom-trigger"
+                class="bottom-trigger ref-navigation-button"
                 type="button"
                 data-bottom-menu="global"
                 :aria-expanded="openId === 'global'"
@@ -185,7 +191,12 @@ const onQuick = (item: QuickNavigationItem) => {
                     </li>
                 </template>
                 <li class="bottom-lobby" role="none">
-                    <button class="quick-link lobby-link" type="button" role="menuitem" @click="emit('lobby')">
+                    <button
+                        class="quick-link lobby-link ref-navigation-button"
+                        type="button"
+                        role="menuitem"
+                        @click="emit('lobby')"
+                    >
                         로비로
                     </button>
                 </li>
@@ -194,7 +205,7 @@ const onQuick = (item: QuickNavigationItem) => {
 
         <div class="bottom-refresh-controls">
             <button
-                class="bottom-trigger auto-refresh-trigger"
+                class="bottom-trigger auto-refresh-trigger ref-navigation-button"
                 :class="{ active: realtimeEnabled }"
                 type="button"
                 data-bottom-menu="auto-refresh"
@@ -270,6 +281,7 @@ const onQuick = (item: QuickNavigationItem) => {
 .nation-trigger {
     border-color: color-mix(in srgb, var(--nation-menu-color) 85%, #000);
     background: var(--nation-menu-color);
+    color: var(--nation-menu-text-color);
 }
 
 .quick-trigger {
@@ -290,10 +302,6 @@ const onQuick = (item: QuickNavigationItem) => {
     color: #bbb;
     font-size: 11px;
     line-height: 1;
-}
-
-.auto-refresh-trigger.active {
-    background-color: #164f2c;
 }
 
 .auto-refresh-trigger.active strong {
@@ -321,6 +329,43 @@ const onQuick = (item: QuickNavigationItem) => {
 
 .bottom-trigger:active {
     filter: brightness(0.82);
+}
+
+/*
+ * Ref's btn-sammo-base2 is a Lumen-style navigation button. Its lower edge
+ * shortens while the control moves down, so hover and pointer-down visibly
+ * feel pressed instead of only changing brightness.
+ */
+.ref-navigation-button {
+    border-color: var(--sammo-button-navigation-border);
+    border-style: solid;
+    border-width: 0 1px 4px;
+    background: var(--sammo-button-navigation-bg);
+    color: #fff;
+    font-weight: 700;
+    transition:
+        color 0.15s,
+        background-color 0.15s,
+        border-color 0.15s,
+        box-shadow 0.15s;
+}
+
+.bottom-trigger.ref-navigation-button:hover,
+.bottom-trigger.ref-navigation-button:focus-visible,
+.bottom-trigger.ref-navigation-button[aria-expanded='true'] {
+    height: 44px;
+    margin-top: 1px;
+    border-bottom-width: 3px;
+    background: var(--sammo-button-navigation-bg);
+    filter: none;
+}
+
+.bottom-trigger.ref-navigation-button:active {
+    height: 43px;
+    margin-top: 2px;
+    border-bottom-width: 2px;
+    background: var(--sammo-button-navigation-bg);
+    filter: none;
 }
 
 .dropup-caret {
@@ -413,8 +458,29 @@ const onQuick = (item: QuickNavigationItem) => {
 }
 
 .lobby-link {
+    width: auto;
     justify-content: center;
-    background: #302016 var(--sammo-texture-walnut);
+    margin-right: auto;
+    margin-left: auto;
+    border-color: var(--sammo-button-navigation-border);
+    border-style: solid;
+    border-width: 0 1px 4px;
+    border-radius: 6px;
+    padding: 6px 12px;
+    background: var(--sammo-button-navigation-bg);
+}
+
+.lobby-link:hover,
+.lobby-link:focus-visible {
+    margin-top: 1px;
+    border-bottom-width: 3px;
+    background: var(--sammo-button-navigation-bg);
+}
+
+.lobby-link:active {
+    margin-top: 2px;
+    border-bottom-width: 2px;
+    background: var(--sammo-button-navigation-bg);
 }
 
 @media (max-width: 939.98px) {
