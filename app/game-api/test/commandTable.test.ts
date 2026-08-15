@@ -137,17 +137,8 @@ describe('buildTurnCommandTable', () => {
             ],
             군사: ['che_징병', 'che_모병', 'che_훈련', 'che_사기진작', 'che_출병', 'che_집합', 'che_소집해제'],
             인사: ['che_이동', 'che_강행', 'che_인재탐색', 'che_귀환', 'che_임관', 'che_랜덤임관'],
-            계략: ['che_화계'],
-            국가: [
-                'che_증여',
-                'che_헌납',
-                'che_물자조달',
-                'che_하야',
-                'che_거병',
-                'che_건국',
-                'che_선양',
-                'che_해산',
-            ],
+            계략: ['che_선동', 'che_탈취', 'che_파괴', 'che_화계'],
+            국가: ['che_증여', 'che_헌납', 'che_물자조달', 'che_하야', 'che_거병', 'che_건국', 'che_선양', 'che_해산'],
         });
     });
 

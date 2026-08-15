@@ -25,11 +25,16 @@ const GENERAL_REF_EDITOR_ACTIONS = [
     'che_징병',
     'che_출병',
     'che_농지개간',
+    'che_선동',
+    'che_탈취',
+    'che_파괴',
     'che_화계',
     'che_증여',
     'che_하야',
     'che_장비매매',
 ] as const;
+const GENERAL_REF_STRATEGY_ACTIONS = ['che_선동', 'che_탈취', 'che_파괴', 'che_화계'] as const;
+const GENERAL_REF_STRATEGY_ACTION_SET = new Set<string>(GENERAL_REF_STRATEGY_ACTIONS);
 const NATION_REF_EDITOR_ACTIONS = ['che_포상', 'che_발령', 'che_증축', 'che_필사즉생'] as const;
 
 describe('default turn command profile AI coverage', () => {
@@ -44,6 +49,9 @@ describe('default turn command profile AI coverage', () => {
         const profile = await loadTurnCommandProfile();
 
         expect(profile.general).toEqual(expect.arrayContaining([...GENERAL_REF_EDITOR_ACTIONS]));
+        expect(profile.general.filter((action) => GENERAL_REF_STRATEGY_ACTION_SET.has(action))).toEqual(
+            GENERAL_REF_STRATEGY_ACTIONS
+        );
         expect(profile.nation).toEqual(expect.arrayContaining([...NATION_REF_EDITOR_ACTIONS]));
     });
 });

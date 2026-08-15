@@ -114,7 +114,7 @@ const inputOptions = {
 const commandTable = {
     general: [
         {
-            category: '군사',
+            category: '계략',
             values: [
                 {
                     key: 'che_화계',
@@ -133,6 +133,26 @@ const commandTable = {
                         },
                     ],
                 },
+                ...[
+                    { key: 'che_선동', name: '선동' },
+                    { key: 'che_탈취', name: '탈취' },
+                    { key: 'che_파괴', name: '파괴' },
+                ].map(({ key, name }) => ({
+                    key,
+                    name,
+                    reqArg: true,
+                    possible: true,
+                    status: 'needsInput',
+                    inputFields: [
+                        {
+                            key: 'destCityId',
+                            label: '대상 도시',
+                            kind: 'select',
+                            required: true,
+                            optionSource: 'cities',
+                        },
+                    ],
+                })),
             ],
         },
         {
@@ -460,6 +480,32 @@ const install = async (page: Page, rejectGeneral = false, commandTableResponse: 
     });
     return requests;
 };
+
+test('renders and accepts every Ref strategy command at mobile width', async ({ page }) => {
+    await install(page);
+    await page.setViewportSize({ width: 500, height: 900 });
+    await page.goto('/');
+    await page.getByRole('button', { name: '1턴 명령 입력', exact: true }).click();
+
+    const picker = page.getByTestId('command-picker');
+    await picker.getByRole('button', { name: '계략', exact: true }).click();
+    const strategies = [
+        { name: '선동', guidance: '선택한 도시에 선동을 실행합니다.' },
+        { name: '탈취', guidance: '선택한 도시에 탈취를 실행합니다.' },
+        { name: '파괴', guidance: '선택한 도시에 파괴를 실행합니다.' },
+        { name: '화계', guidance: '선택한 도시에 화계를 실행합니다.' },
+    ];
+    for (const strategy of strategies) {
+        const button = picker.getByRole('button', { name: strategy.name, exact: true });
+        await expect(button).toBeVisible();
+        await button.click();
+        const form = picker.getByTestId('command-argument-form');
+        await expect(form.getByTestId('command-argument-guidance')).toContainText(strategy.guidance);
+        await expect(form.locator('select option')).toHaveCount(2);
+        await picker.getByRole('button', { name: '명령 다시 선택', exact: true }).click();
+    }
+    await picker.screenshot({ path: test.info().outputPath('all-strategy-commands-mobile.png') });
+});
 
 test('reserves force move, retirement, and resignation from the user command picker', async ({ page }) => {
     const specialCommandTable = {
