@@ -179,26 +179,54 @@ test('prioritizes core general fields and keeps context and inheritance progress
         const rect = element.getBoundingClientRect();
         const style = getComputedStyle(element);
         return {
+            top: rect.top,
             height: rect.height,
             backgroundColor: style.backgroundColor,
             color: style.color,
+            borderTopWidth: style.borderTopWidth,
+            borderRightWidth: style.borderRightWidth,
+            borderBottomWidth: style.borderBottomWidth,
+            borderBottomColor: style.borderBottomColor,
+            marginTop: style.marginTop,
             fontSize: style.fontSize,
             fontWeight: style.fontWeight,
             cursor: style.cursor,
         };
     });
-    expect(defaultButtonStyle).toEqual({
+    expect(defaultButtonStyle).toMatchObject({
         height: 40,
         backgroundColor: 'rgb(0, 88, 44)',
         color: 'rgb(255, 255, 255)',
+        borderTopWidth: '0px',
+        borderRightWidth: '1px',
+        borderBottomWidth: '4px',
+        borderBottomColor: 'rgb(0, 79, 40)',
+        marginTop: '0px',
         fontSize: '14px',
         fontWeight: '700',
         cursor: 'pointer',
     });
     await randomButton.hover();
-    await expect
-        .poll(() => randomButton.evaluate((element) => getComputedStyle(element).backgroundColor))
-        .toBe('rgb(0, 109, 55)');
+    const hoverButtonStyle = await randomButton.evaluate((element) => {
+        const rect = element.getBoundingClientRect();
+        const style = getComputedStyle(element);
+        return {
+            top: rect.top,
+            height: rect.height,
+            backgroundColor: style.backgroundColor,
+            borderBottomWidth: style.borderBottomWidth,
+            borderBottomColor: style.borderBottomColor,
+            marginTop: style.marginTop,
+        };
+    });
+    expect(hoverButtonStyle).toMatchObject({
+        top: defaultButtonStyle.top + 1,
+        height: 39,
+        backgroundColor: 'rgb(0, 88, 44)',
+        borderBottomWidth: '3px',
+        borderBottomColor: 'rgb(0, 79, 40)',
+        marginTop: '1px',
+    });
     await page.screenshot({ path: testInfo.outputPath('join-stat-actions-hover-desktop.png'), fullPage: true });
     await randomButton.focus();
     await expect(randomButton).toBeFocused();
@@ -210,9 +238,26 @@ test('prioritizes core general fields and keeps context and inheritance progress
         randomButtonBox!.y + randomButtonBox!.height / 2
     );
     await page.mouse.down();
-    await expect
-        .poll(() => randomButton.evaluate((element) => getComputedStyle(element).backgroundColor))
-        .toBe('rgb(0, 69, 35)');
+    const activeButtonStyle = await randomButton.evaluate((element) => {
+        const rect = element.getBoundingClientRect();
+        const style = getComputedStyle(element);
+        return {
+            top: rect.top,
+            height: rect.height,
+            backgroundColor: style.backgroundColor,
+            borderBottomWidth: style.borderBottomWidth,
+            borderBottomColor: style.borderBottomColor,
+            marginTop: style.marginTop,
+        };
+    });
+    expect(activeButtonStyle).toMatchObject({
+        top: defaultButtonStyle.top + 2,
+        height: 38,
+        backgroundColor: 'rgb(0, 88, 44)',
+        borderBottomWidth: '2px',
+        borderBottomColor: 'rgb(0, 79, 40)',
+        marginTop: '2px',
+    });
     await page.screenshot({ path: testInfo.outputPath('join-stat-actions-active-desktop.png'), fullPage: true });
     await page.mouse.up();
     const setRandomValues = async (values: number[]) => {
