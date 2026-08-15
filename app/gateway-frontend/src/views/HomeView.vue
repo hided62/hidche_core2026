@@ -3,6 +3,7 @@ import { computed, onMounted, ref } from 'vue';
 import { useRouter } from 'vue-router';
 import type { inferRouterOutputs } from '@trpc/server';
 import type { AppRouter } from '@sammo-ts/gateway-api';
+import { gatewayProfileCapabilities } from '@sammo-ts/common';
 
 import MapPreview from '../components/MapPreview.vue';
 import KakaoOtpDialog from '../components/KakaoOtpDialog.vue';
@@ -53,9 +54,11 @@ const loadPublicStatus = async (): Promise<void> => {
     try {
         const profiles = await trpc.lobby.profiles.query();
         profile.value =
-            PROFILE_PUBLIC_STATUS_ORDER.map((status) => profiles.find((entry) => entry.status === status)).find(
-                (entry) => entry !== undefined
-            ) ?? null;
+            PROFILE_PUBLIC_STATUS_ORDER.map((status) =>
+                profiles.find(
+                    (entry) => entry.status === status && gatewayProfileCapabilities(entry.status).userAccessible
+                )
+            ).find((entry) => entry !== undefined) ?? null;
         if (!profile.value) {
             statusError.value = '현재 공개 중인 서버가 없습니다.';
             return;

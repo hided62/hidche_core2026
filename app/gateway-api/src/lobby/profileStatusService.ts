@@ -1,3 +1,4 @@
+import { gatewayProfileCapabilities, type GatewayProfileCapabilities } from '@sammo-ts/common';
 import type { GatewayOrchestratorHandle } from '../orchestrator/gatewayOrchestrator.js';
 import type {
     GatewayProfileRecord,
@@ -26,6 +27,9 @@ export type LobbyProfileStatus = {
     /** @deprecated Rollback-compatible mirror of currentScenario. */
     scenario: string;
     status: GatewayProfileStatus;
+    lifecycle: GatewayProfileCapabilities & {
+        dataInitialized: boolean;
+    };
     apiPort: number;
     runtime: {
         apiRunning: boolean;
@@ -94,6 +98,10 @@ export class RepositoryProfileStatusService implements GatewayProfileStatusServi
             currentScenario: row.currentScenario,
             scenario: row.scenario,
             status: row.status,
+            lifecycle: {
+                ...gatewayProfileCapabilities(row.status),
+                dataInitialized: row.currentScenario !== null,
+            },
             apiPort: row.apiPort,
             runtime: runtimeMap.get(row.profileName) ?? {
                 apiRunning: false,

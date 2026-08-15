@@ -175,6 +175,13 @@ const buildCaller = (
             currentScenario: profile.currentScenario,
             scenario: profile.scenario,
             status: profile.status,
+            lifecycle: {
+                runtimeExpected: true,
+                userAccessible: true,
+                turnsRunning: true,
+                operatorResumable: false,
+                dataInitialized: profile.currentScenario !== null,
+            },
             apiPort: profile.apiPort,
             runtime: {
                 apiRunning: true,

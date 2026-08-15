@@ -3,6 +3,7 @@ import { randomBytes } from 'node:crypto';
 import { TRPCError } from '@trpc/server';
 import { z } from 'zod';
 
+import { gatewayProfileCapabilities } from '@sammo-ts/common';
 import type { GatewayPrisma } from '@sammo-ts/infra';
 
 import { procedure, router } from './trpc.js';
@@ -2068,6 +2069,22 @@ export const adminRouter = router({
                             message: 'Resume permission is required.',
                         });
                     }
+                    if (profile.currentScenario === null) {
+                        throw new TRPCError({
+                            code: 'BAD_REQUEST',
+                            message: 'An uninitialized profile must be reset before it can be resumed.',
+                        });
+                    }
+                } else if (input.action === 'PAUSE' && profile.status !== 'RUNNING') {
+                    throw new TRPCError({
+                        code: 'BAD_REQUEST',
+                        message: 'Pause is allowed only for RUNNING profiles.',
+                    });
+                } else if (input.action === 'STOP' && !gatewayProfileCapabilities(profile.status).runtimeExpected) {
+                    throw new TRPCError({
+                        code: 'BAD_REQUEST',
+                        message: 'Stop is allowed only while the profile runtime is available.',
+                    });
                 } else if (input.action === 'OPEN_SURVEY') {
                     if (!canOpenSurvey) {
                         throw new TRPCError({

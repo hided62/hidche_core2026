@@ -1,15 +1,7 @@
+import { GATEWAY_PROFILE_STATUSES, type GatewayProfileStatus } from '@sammo-ts/common';
 import type { GatewayPrisma, GatewayPrismaClient } from '@sammo-ts/infra';
 
-export const GATEWAY_PROFILE_STATUSES = [
-    'RESERVED',
-    'PREOPEN',
-    'RUNNING',
-    'PAUSED',
-    'COMPLETED',
-    'STOPPED',
-    'DISABLED',
-] as const;
-export type GatewayProfileStatus = (typeof GATEWAY_PROFILE_STATUSES)[number];
+export { GATEWAY_PROFILE_STATUSES, type GatewayProfileStatus };
 
 export const GATEWAY_BUILD_STATUSES = ['IDLE', 'QUEUED', 'RUNNING', 'FAILED', 'SUCCEEDED'] as const;
 export type GatewayBuildStatus = (typeof GATEWAY_BUILD_STATUSES)[number];

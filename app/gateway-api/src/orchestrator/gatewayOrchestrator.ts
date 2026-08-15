@@ -5,6 +5,7 @@ import { createHash, randomBytes, randomUUID } from 'node:crypto';
 import { stripVTControlCharacters } from 'node:util';
 
 import type { ScenarioInstallOptions } from '@sammo-ts/game-engine/scenario/scenarioSeeder.js';
+import { gatewayProfileCapabilities } from '@sammo-ts/common';
 import {
     createGamePostgresConnector,
     createRedisConnector,
@@ -89,7 +90,7 @@ export const planProfileReconcile = (
     status: GatewayProfileStatus,
     runtime: ProfileRuntimeState
 ): { shouldStart: boolean; shouldStop: boolean } => {
-    if (status === 'RUNNING' || status === 'PREOPEN' || status === 'PAUSED' || status === 'COMPLETED') {
+    if (gatewayProfileCapabilities(status).runtimeExpected) {
         return {
             shouldStart: !(
                 runtime.frontendRunning &&
@@ -1104,7 +1105,7 @@ export class GatewayOrchestrator implements GatewayOrchestratorHandle {
             return { ok: false, detail: 'build already in progress' };
         }
         this.buildInFlight = true;
-        const shouldRun = ['RUNNING', 'PREOPEN', 'PAUSED', 'COMPLETED'].includes(profile.status);
+        const shouldRun = gatewayProfileCapabilities(profile.status).runtimeExpected;
         const updateClaimedProfile = async (patch: GatewayClaimedProfileUpdate): Promise<GatewayProfileRecord> => {
             if (!this.repository.updateProfileForOperation) {
                 throw new Error('Profile deploy requires lease-fenced profile updates.');

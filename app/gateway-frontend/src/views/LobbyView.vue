@@ -33,8 +33,6 @@ type ProfileLoadState = {
 
 const PROFILE_REQUEST_TIMEOUT_MS = 10_000;
 const PROFILE_RETRY_DELAYS_MS = [1_000, 2_000, 3_000, 5_000, 8_000, 15_000] as const;
-const PROFILE_RUNTIME_STATUSES = new Set<LobbyProfile['status']>(['RUNNING', 'PREOPEN', 'PAUSED', 'COMPLETED']);
-
 const router = useRouter();
 const me = ref<MeOutput>(null);
 const notice = ref('');
@@ -67,9 +65,7 @@ const needsKakaoVerification = computed(
 );
 const userIconBaseUrl = configuredUserIconPublicUrl();
 const sharedIconBaseUrl = configuredSharedIconPublicUrl();
-const publicMapProfiles = computed(() =>
-    profiles.value.filter((profile) => PROFILE_RUNTIME_STATUSES.has(profile.status))
-);
+const publicMapProfiles = computed(() => profiles.value.filter((profile) => profile.lifecycle.userAccessible));
 const selectedMapProfile = computed(
     () => publicMapProfiles.value.find((profile) => profile.profileName === selectedMapProfileName.value) ?? null
 );
@@ -110,11 +106,12 @@ const handleMapTabKeydown = (event: KeyboardEvent, profileName: string): void =>
 
 const formatGraceEndsAt = (value: string | null | undefined): string => formatServerDateTime(value);
 const serverSeasonStatus = (info: LobbyInfo) => resolveServerSeasonStatus(info);
-const isProfileRuntimeAvailable = (profile: LobbyProfile): boolean => PROFILE_RUNTIME_STATUSES.has(profile.status);
+const isProfileRuntimeAvailable = (profile: LobbyProfile): boolean => profile.lifecycle.userAccessible;
 const unavailableProfileText = (profile: LobbyProfile): string => {
-    if (profile.status === 'RESERVED') return '- 준 비 중 -';
+    if (!profile.lifecycle.dataInitialized) return '- DB 초기화 전 · 접근 불가 -';
+    if (profile.status === 'RESERVED') return '- 준 비 중 · 접근 불가 -';
     if (profile.status === 'DISABLED') return '- 비 활 성 -';
-    return '- 폐 쇄 중 -';
+    return '- 서버 중지 · 접근 불가 -';
 };
 const profileLoadState = (profileName: string): ProfileLoadState | undefined => profileLoadStates.value[profileName];
 const setProfileLoadState = (profileName: string, state: ProfileLoadState): void => {
@@ -455,7 +452,7 @@ const handleEnter = async (profile: LobbyProfile, targetPath: string) => {
                                         class="mt-1 whitespace-nowrap text-xs text-amber-300"
                                         data-testid="profile-paused-status"
                                     >
-                                        턴 진행 일시정지
+                                        턴 일시정지 · 조회/예약턴 가능
                                     </div>
                                     <div
                                         v-if="profile.localAccountPolicy?.specialAccess"

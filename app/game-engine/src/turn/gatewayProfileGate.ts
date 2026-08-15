@@ -1,3 +1,4 @@
+import { gatewayProfileCapabilities, type GatewayProfileStatus } from '@sammo-ts/common';
 import { createGatewayPostgresConnector } from '@sammo-ts/infra';
 
 export interface GatewayProfileGateOptions {
@@ -14,8 +15,6 @@ export interface GatewayProfileGate {
 }
 
 const DEFAULT_CACHE_MS = 2000;
-
-const isRunningStatus = (status: string | null | undefined): boolean => status === 'RUNNING';
 
 export const createGatewayProfileGate = async (options: GatewayProfileGateOptions): Promise<GatewayProfileGate> => {
     const connector = createGatewayPostgresConnector({
@@ -34,7 +33,7 @@ export const createGatewayProfileGate = async (options: GatewayProfileGateOption
             if (!profile) {
                 return false;
             }
-            return !isRunningStatus(profile.status);
+            return !gatewayProfileCapabilities(profile.status as GatewayProfileStatus).turnsRunning;
         } catch {
             return false;
         }
