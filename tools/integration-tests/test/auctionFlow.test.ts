@@ -28,11 +28,13 @@ import {
 } from '@sammo-ts/infra';
 import {
     buildNeutralResourceAuctionPlan,
-    createItemInventoryFromSlots,
     ItemLoader,
     ITEM_KEYS,
-    serializeItemInventory,
 } from '@sammo-ts/logic';
+import {
+    createItemInventoryFromSlots,
+    serializeItemInventory,
+} from '@sammo-ts/logic/items/inventory.js';
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 const workspaceRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../..');
