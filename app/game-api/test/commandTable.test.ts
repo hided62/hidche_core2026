@@ -100,6 +100,47 @@ const buildNation = (): NationRow =>
     }) as unknown as NationRow;
 
 describe('buildTurnCommandTable', () => {
+    it('projects the main reserved-turn categories and command order from Ref', async () => {
+        const table = await buildTurnCommandTable({
+            worldState: buildWorldState(),
+            general: buildGeneral(),
+            city: buildCity(),
+            nation: buildNation(),
+            nationGenerals: null,
+        });
+
+        expect(table.general.map(({ category }) => category)).toEqual(['개인', '내정', '군사', '인사', '계략', '국가']);
+        expect(
+            Object.fromEntries(table.general.map(({ category, values }) => [category, values.map(({ key }) => key)]))
+        ).toEqual({
+            개인: [
+                '휴식',
+                'che_요양',
+                'che_단련',
+                'che_숙련전환',
+                'che_견문',
+                'che_장비매매',
+                'che_군량매매',
+                'che_내정특기초기화',
+                'che_전투특기초기화',
+            ],
+            내정: [
+                'che_농지개간',
+                'che_상업투자',
+                'che_기술연구',
+                'che_수비강화',
+                'che_성벽보수',
+                'che_치안강화',
+                'che_정착장려',
+                'che_주민선정',
+            ],
+            군사: ['che_징병', 'che_모병', 'che_훈련', 'che_사기진작', 'che_출병', 'che_집합', 'che_소집해제'],
+            인사: ['che_이동', 'che_인재탐색', 'che_귀환', 'che_임관', 'che_랜덤임관'],
+            계략: ['che_화계'],
+            국가: ['che_증여', 'che_헌납', 'che_물자조달', 'che_거병', 'che_건국', 'che_선양', 'che_해산'],
+        });
+    });
+
     it('uses min-condition constraints for availability', async () => {
         const table = await buildTurnCommandTable({
             worldState: buildWorldState(),

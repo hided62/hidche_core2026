@@ -34,6 +34,7 @@ type NavigationFixture = {
     forceSnapshotCalls?: number;
     refreshDelayMs?: number;
     largeCommandTable?: boolean;
+    refCommandCategories?: boolean;
     currentYear?: number;
     currentMonth?: number;
     scenarioTitle?: string;
@@ -110,32 +111,48 @@ const emitReadModelInvalidation = (page: Page, invalidation: ReturnType<typeof r
         );
     }, invalidation);
 
-const commandTableFixture = (large: boolean, blockedCount = 0) => ({
-    general: large
-        ? ['내정', '군사', '계략'].map((category, categoryIndex) => ({
-              category,
-              values: Array.from({ length: 16 }, (_, localIndex) => {
-                  const index = categoryIndex * 16 + localIndex;
-                  return {
-                      key: `command-${index}`,
-                      name: index === 0 ? '주민 선정과 장기 도시 개발' : `명령 ${index}`,
-                      reqArg: index % 2 === 0,
-                      possible: index >= blockedCount,
-                      status: index >= blockedCount ? 'available' : 'blocked',
-                      inputFields: [
-                          {
-                              key: 'amount',
-                              label: '수량',
-                              kind: 'number',
-                              required: true,
-                              min: 1,
-                              max: 10_000,
-                          },
-                      ],
-                  };
-              }),
-          }))
-        : [],
+const refCommandCategoryFixture = ['개인', '내정', '군사', '인사', '계략', '국가'].map((category, index) => ({
+    category,
+    values: [
+        {
+            key: `ref-command-${index}`,
+            name: category === '계략' ? '화계' : `${category} 명령`,
+            reqArg: false,
+            possible: true,
+            status: 'available' as const,
+            inputFields: [],
+        },
+    ],
+}));
+
+const commandTableFixture = (large: boolean, blockedCount = 0, refCategories = false) => ({
+    general: refCategories
+        ? refCommandCategoryFixture
+        : large
+          ? ['내정', '군사', '계략'].map((category, categoryIndex) => ({
+                category,
+                values: Array.from({ length: 16 }, (_, localIndex) => {
+                    const index = categoryIndex * 16 + localIndex;
+                    return {
+                        key: `command-${index}`,
+                        name: index === 0 ? '주민 선정과 장기 도시 개발' : `명령 ${index}`,
+                        reqArg: index % 2 === 0,
+                        possible: index >= blockedCount,
+                        status: index >= blockedCount ? 'available' : 'blocked',
+                        inputFields: [
+                            {
+                                key: 'amount',
+                                label: '수량',
+                                kind: 'number',
+                                required: true,
+                                min: 1,
+                                max: 10_000,
+                            },
+                        ],
+                    };
+                }),
+            }))
+          : [],
     nation: [],
     inputOptions: {
         cities: Array.from({ length: 20 }, (_, index) => ({ value: index + 1, label: `도시 ${index + 1}` })),
@@ -375,7 +392,11 @@ const installFixture = async (page: Page, state: NavigationFixture) => {
                         ? {
                               kind: 'snapshot' as const,
                               revision: currentCommandTableRevision,
-                              data: commandTableFixture(state.largeCommandTable === true, state.commandBlockedCount),
+                              data: commandTableFixture(
+                                  state.largeCommandTable === true,
+                                  state.commandBlockedCount,
+                                  state.refCommandCategories === true
+                              ),
                           }
                         : input.known.commandTable === currentCommandTableRevision
                           ? { kind: 'unchanged' as const, revision: currentCommandTableRevision }
@@ -970,6 +991,57 @@ test('pure NPC message senders are not rendered as reply targets', async ({ page
     await userMessage.getByRole('button', { name: /유저장수:위.*↩/ }).click();
     await expect(page.locator('.desktop-message-panel #mailbox_list')).toHaveValue('21');
     await persistArtifact(page, `${basePath.slice(1)}-npc-reply-targets-desktop-1200`);
+});
+
+test('main reserved-turn picker renders the Ref general category order', async ({ page }) => {
+    const state: NavigationFixture = {
+        officerLevel: 1,
+        permission: 0,
+        nationLevel: 1,
+        stage: 0,
+        npcMode: 1,
+        generalMeCalls: 0,
+        operations: [],
+        refCommandCategories: true,
+        reservedTurns: Array.from({ length: 30 }, (_, index) => ({ index, action: '휴식', args: {} })),
+    };
+    await installFixture(page, state);
+    await page.setViewportSize({ width: 1200, height: 900 });
+    await waitForMain(page);
+
+    await page.getByRole('button', { name: '1턴 명령 입력', exact: true }).click();
+    const picker = page.getByTestId('command-picker');
+    const categoryButtons = picker.locator('.category-btn');
+    await expect(categoryButtons).toHaveText(['개인', '내정', '군사', '인사', '계략', '국가']);
+
+    const desktopGeometry = await picker.evaluate((element) => {
+        const categories = element.querySelector<HTMLElement>('.category-list');
+        if (!categories) throw new Error('command category list is missing');
+        const buttons = [...categories.querySelectorAll<HTMLElement>('.category-btn')];
+        return {
+            columns: getComputedStyle(categories).gridTemplateColumns,
+            rows: new Set(buttons.map((button) => button.getBoundingClientRect().y)).size,
+            horizontalOverflow: element.scrollWidth - element.clientWidth,
+        };
+    });
+    expect(desktopGeometry.columns.split(' ')).toHaveLength(3);
+    expect(desktopGeometry.rows).toBe(2);
+    expect(desktopGeometry.horizontalOverflow).toBeLessThanOrEqual(0);
+
+    const strategyCategory = picker.getByRole('button', { name: '계략', exact: true });
+    await strategyCategory.hover();
+    await strategyCategory.focus();
+    await expect(strategyCategory).toBeFocused();
+    await strategyCategory.click();
+    await expect(strategyCategory).toHaveClass(/active/);
+    await expect(picker.locator('.command-item')).toHaveText(['화계']);
+
+    await page.setViewportSize({ width: 500, height: 900 });
+    await page.getByRole('button', { name: '1턴 명령 입력', exact: true }).click();
+    const mobilePicker = page.getByTestId('command-picker');
+    await expect(mobilePicker.locator('.category-btn')).toHaveText(['개인', '내정', '군사', '인사', '계략', '국가']);
+    expect(await mobilePicker.evaluate((element) => element.scrollWidth - element.clientWidth)).toBeLessThanOrEqual(0);
+    await persistArtifact(page, `${basePath.slice(1)}-main-reserved-ref-categories-mobile-500`);
 });
 
 test('main cards and command input stay inside their Ref-sized grid slots', async ({ page }) => {
