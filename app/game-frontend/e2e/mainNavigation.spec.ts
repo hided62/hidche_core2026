@@ -35,6 +35,7 @@ type NavigationFixture = {
     currentYear?: number;
     currentMonth?: number;
     scenarioTitle?: string;
+    nationColor?: string;
     lastExecuted?: string | null;
     latestVote?: { id: number; title: string; hasVoted: boolean } | null;
     globalRecords?: Array<{ id: number; text: string }>;
@@ -267,7 +268,7 @@ const generalContext = (state: NavigationFixture) => ({
     nation: {
         id: 1,
         name: '위',
-        color: '#008000',
+        color: state.nationColor ?? '#008000',
         level: state.nationLevel,
         gold: 10_000,
         rice: 20_000,
@@ -425,7 +426,7 @@ const installFixture = async (page: Page, state: NavigationFixture) => {
                     year: state.currentYear ?? 185,
                     month: state.currentMonth ?? 1,
                     cityList: [[1, 8, state.cityState ?? 0, 1, 1, 1]],
-                    nationList: [[1, '위', '#008000', 1]],
+                    nationList: [[1, '위', state.nationColor ?? '#008000', 1]],
                     spyList: {},
                     shownByGeneralList: [],
                     myCity: 1,
@@ -1456,6 +1457,111 @@ test('the 939/940 boundary switches to the Ref-style 500px single document', asy
     await persistArtifact(page, `${basePath.slice(1)}-mobile-500`);
 });
 
+test('mobile bottom controls preserve Ref navigation color, contrast, and pressed depth', async ({ page }) => {
+    const state: NavigationFixture = {
+        officerLevel: 5,
+        permission: 2,
+        nationLevel: 3,
+        stage: 0,
+        npcMode: 1,
+        nationColor: '#FFFF00',
+        generalMeCalls: 0,
+        operations: [],
+    };
+    await installFixture(page, state);
+    await page.setViewportSize({ width: 500, height: 900 });
+    await waitForMain(page);
+
+    const buttonStyle = (selector: string) =>
+        page.locator(selector).evaluate((element) => {
+            const style = getComputedStyle(element);
+            const rect = element.getBoundingClientRect();
+            return {
+                backgroundColor: style.backgroundColor,
+                color: style.color,
+                borderBottomWidth: style.borderBottomWidth,
+                marginTop: style.marginTop,
+                fontWeight: style.fontWeight,
+                height: rect.height,
+            };
+        });
+    const pointerDownStyle = async (selector: string) => {
+        const target = page.locator(selector);
+        const box = await target.boundingBox();
+        if (!box) throw new Error(`mobile bottom control is not measurable: ${selector}`);
+        await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+        await page.mouse.down();
+        const activeStyle = await buttonStyle(selector);
+        await page.mouse.move(1, 1);
+        await page.mouse.up();
+        return activeStyle;
+    };
+
+    const globalSelector = '[data-bottom-menu="global"]';
+    await expect(page.locator(globalSelector)).toBeVisible();
+    expect(await buttonStyle(globalSelector)).toMatchObject({
+        backgroundColor: 'rgb(0, 88, 44)',
+        color: 'rgb(255, 255, 255)',
+        borderBottomWidth: '4px',
+        marginTop: '0px',
+        fontWeight: '700',
+        height: 45,
+    });
+    await page.locator(globalSelector).hover();
+    expect(await buttonStyle(globalSelector)).toMatchObject({
+        backgroundColor: 'rgb(0, 88, 44)',
+        borderBottomWidth: '3px',
+        marginTop: '1px',
+        height: 44,
+    });
+    expect(await pointerDownStyle(globalSelector)).toMatchObject({
+        backgroundColor: 'rgb(0, 88, 44)',
+        borderBottomWidth: '2px',
+        marginTop: '2px',
+        height: 43,
+    });
+
+    const nationTrigger = page.locator('[data-bottom-menu="nation"]');
+    await expect(nationTrigger).toHaveCSS('background-color', 'rgb(255, 255, 0)');
+    await expect(nationTrigger).toHaveCSS('color', 'rgb(0, 0, 0)');
+
+    await page.locator('[data-bottom-menu="quick"]').click();
+    const lobbySelector = '#mobile-quick-menu .lobby-link';
+    await expect(page.locator(lobbySelector)).toBeVisible();
+    expect(await buttonStyle(lobbySelector)).toMatchObject({
+        backgroundColor: 'rgb(0, 88, 44)',
+        color: 'rgb(255, 255, 255)',
+        borderBottomWidth: '4px',
+        marginTop: '0px',
+        fontWeight: '700',
+        height: 40,
+    });
+    expect(await pointerDownStyle(lobbySelector)).toMatchObject({
+        backgroundColor: 'rgb(0, 88, 44)',
+        borderBottomWidth: '2px',
+        marginTop: '2px',
+        height: 38,
+    });
+
+    const autoRefreshSelector = '[data-bottom-menu="auto-refresh"]';
+    expect(await buttonStyle(autoRefreshSelector)).toMatchObject({
+        backgroundColor: 'rgb(0, 88, 44)',
+        color: 'rgb(255, 255, 255)',
+        borderBottomWidth: '4px',
+        marginTop: '0px',
+        fontWeight: '700',
+        height: 45,
+    });
+    expect(await pointerDownStyle(autoRefreshSelector)).toMatchObject({
+        backgroundColor: 'rgb(0, 88, 44)',
+        borderBottomWidth: '2px',
+        marginTop: '2px',
+        height: 43,
+    });
+
+    await persistArtifact(page, `${basePath.slice(1)}-mobile-bottom-ref-buttons`);
+});
+
 test('real mobile devices initially fit the complete 500px game canvas', async ({ browser }, testInfo) => {
     test.setTimeout(60_000);
     const configuredBaseUrl = testInfo.project.use.baseURL;
@@ -1676,7 +1782,10 @@ test('mobile single document refreshes once and preserves tokens on lobby return
     await autoRefresh.focus();
     await expect(autoRefresh).toBeFocused();
     await autoRefresh.hover();
-    await expect(autoRefresh).toHaveCSS('filter', 'brightness(1.14)');
+    await expect(autoRefresh).toHaveCSS('filter', 'none');
+    await expect(autoRefresh).toHaveCSS('background-color', 'rgb(0, 88, 44)');
+    await expect(autoRefresh).toHaveCSS('border-bottom-width', '3px');
+    await expect(autoRefresh).toHaveCSS('margin-top', '1px');
     await autoRefresh.click();
     const disabledAutoRefresh = page.getByRole('button', { name: '자동 갱신 OFF' });
     await expect(disabledAutoRefresh).toHaveAttribute('aria-pressed', 'false');
