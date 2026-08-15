@@ -86,9 +86,15 @@ integration('scenario 29 nation betting lifecycle', () => {
                         })
                     )
                 );
-                await prisma.inheritancePoint.createMany({
-                    data: userIds.map((userId) => ({ userId, key: 'previous', value: 1_000 })),
-                });
+                await Promise.all(
+                    userIds.map((userId) =>
+                        prisma.inheritancePoint.upsert({
+                            where: { userId_key: { userId, key: 'previous' } },
+                            create: { userId, key: 'previous', value: 1_000 },
+                            update: { value: 1_000 },
+                        })
+                    )
+                );
             },
         });
         if (!generalIds) {
