@@ -44,7 +44,7 @@ const props = withDefaults(
         mobile: false,
         title: '',
         name: null,
-        currentTime: '--:--',
+        currentTime: '--:--:--',
         mapData: null,
         mapLayout: null,
     }
@@ -333,7 +333,7 @@ const clickOutsideMenu = (event: Event) => {
                     ><span>{{ props.title }}</span>
                 </div>
                 <button type="button" @click="editMode = !editMode">{{ editMode ? '일반 모드' : '고급 모드' }}</button>
-                <div class="clock">{{ props.currentTime }}</div>
+                <div class="clock" data-command-current-time>{{ props.currentTime }}</div>
                 <details class="legacy-menu">
                     <summary>반복</summary>
                     <div class="menu-items">

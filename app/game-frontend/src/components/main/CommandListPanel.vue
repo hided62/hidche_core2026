@@ -2,6 +2,7 @@
 import { computed } from 'vue';
 import { addMinutes } from 'date-fns';
 import ReservedCommandEditor from '../command/ReservedCommandEditor.vue';
+import { formatSeoulTimeSeconds } from '../../utils/legacyDateTime';
 import type {
     CommandMapData,
     CommandMapLayout,
@@ -61,6 +62,10 @@ const rows = computed<ReservedCommandRow[]>(() => {
         };
     });
 });
+
+const currentTurnTime = computed(() =>
+    props.general?.turnTime ? formatSeoulTimeSeconds(props.general.turnTime) : '--:--:--'
+);
 </script>
 
 <template>
@@ -70,7 +75,7 @@ const rows = computed<ReservedCommandRow[]>(() => {
         :command-table="props.commandTable"
         :loading="props.loading"
         :storage-key="props.storageKey ?? `core2026:general:${props.general?.id ?? 0}`"
-        :current-time="rows[0]?.time"
+        :current-time="currentTurnTime"
         :map-data="props.mapData"
         :map-layout="props.mapLayout"
         @reserve-bulk="emit('set-general-turns', $event)"
