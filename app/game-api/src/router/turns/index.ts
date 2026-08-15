@@ -3,7 +3,7 @@ import { z } from 'zod';
 import { loadActionModuleBundle } from '@sammo-ts/logic';
 import { asRecord } from '@sammo-ts/common';
 
-import { authedProcedure, router } from '../../trpc.js';
+import { accessAuthedInputProcedure, authedProcedure, router } from '../../trpc.js';
 import { buildBattleSimEnvironment } from '../../battleSim/environment.js';
 import { loadBattleSimTraitOptions } from '../../battleSim/simulatorOptions.js';
 import {
@@ -283,13 +283,11 @@ export const getTurnCommandTable = async (ctx: GameApiContext, generalId: number
 };
 
 export const turnsRouter = router({
-    getCommandTable: authedProcedure
-        .input(
-            z.object({
-                generalId: z.number().int().positive(),
-            })
-        )
-        .query(({ ctx, input }) => getTurnCommandTable(ctx, input.generalId)),
+    getCommandTable: accessAuthedInputProcedure(
+        z.object({
+            generalId: z.number().int().positive(),
+        })
+    ).query(({ ctx, input }) => getTurnCommandTable(ctx, input.generalId)),
     reserved: router({
         getGeneral: authedProcedure
             .input(

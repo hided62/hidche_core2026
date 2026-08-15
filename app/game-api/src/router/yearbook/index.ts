@@ -7,7 +7,12 @@ import { LogCategory, LogScope } from '@sammo-ts/logic';
 
 import type { GameApiContext } from '../../context.js';
 import { loadPublicMap, type BaseMapResult } from '../../maps/worldMap.js';
-import { generalAccessEndpointWeights, recordGeneralAccessWeight } from '../../services/generalAccess.js';
+import {
+    formatGeneralAccessLimitMessage,
+    generalAccessEndpointWeights,
+    getGeneralAccessState,
+    recordGeneralAccessWeight,
+} from '../../services/generalAccess.js';
 import { authedProcedure, router } from '../../trpc.js';
 import { getMyGeneral } from '../shared/general.js';
 
@@ -31,6 +36,10 @@ const recordHistoryAccess = async (ctx: GameApiContext): Promise<void> => {
         return;
     }
     await recordGeneralAccessWeight(ctx, generalAccessEndpointWeights['yearbook.getHistory']);
+    const state = ctx.generalAccessTracking === true ? await getGeneralAccessState(ctx) : null;
+    if (state?.level === 2) {
+        throw new TRPCError({ code: 'TOO_MANY_REQUESTS', message: formatGeneralAccessLimitMessage(state) });
+    }
 };
 
 const parseTextArray = (value: unknown): string[] =>

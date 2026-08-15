@@ -25,6 +25,7 @@ import { RedisRealtimeEventHub } from './realtime/eventHub.js';
 import { formatSseFrame } from './realtime/sse.js';
 import { shouldReloadRealtimeViewerIdentity, toPublicRealtimeEvent } from './realtime/publicEvent.js';
 import { GatewayHttpAccountIconSource } from './auth/accountIconSource.js';
+import { GatewayHttpProfileStatusSource } from './auth/profileStatusSource.js';
 import { createAdminProfileIconResetFlushHandler } from './services/accountIconSync.js';
 import { AccountIconResetReconciler } from './services/accountIconResetReconciler.js';
 import { createBestEffortResourceCloser } from './services/bestEffortResourceCloser.js';
@@ -92,6 +93,10 @@ export const createGameApiServer = async () => {
         throw error;
     }
     const accountIconSource = new GatewayHttpAccountIconSource(config.gatewayInternalApiUrl, config.gameTokenSecret);
+    const profileStatusSource = new GatewayHttpProfileStatusSource(
+        config.gatewayInternalApiUrl,
+        config.gameTokenSecret
+    );
 
     const turnDaemon = new DatabaseTurnDaemonTransport(postgres.prisma, config.daemonRequestTimeoutMs);
     const accountIconResetReconciler = new AccountIconResetReconciler(
@@ -214,6 +219,7 @@ export const createGameApiServer = async () => {
                     flushStore,
                     gameTokenSecret: config.gameTokenSecret,
                     accountIconSource,
+                    profileStatusSource,
                 });
             },
         },
