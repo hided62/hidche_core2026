@@ -183,6 +183,7 @@ export class ActionDefinition<
         context.addLog(`<Y>${general.name}</>${josaYi} <D><b>${destNation.name}</b></>에 <S>임관</>했습니다.`, {
             scope: LogScope.SYSTEM,
             category: LogCategory.SUMMARY,
+            format: LogFormat.MONTH,
         });
 
         const initialNationGenLimit = context.initialNationGenLimit ?? 10;

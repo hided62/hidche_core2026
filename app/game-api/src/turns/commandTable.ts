@@ -7,6 +7,7 @@ import type {
     GeneralItemSlots,
     GeneralActionDefinition,
     GeneralTurnCommandSpec,
+    GeneralTurnCommandKey,
     MapDefinition,
     Nation,
     NationTurnCommandSpec,
@@ -71,6 +72,83 @@ interface CommandEntry {
     inputFields: TurnCommandInputField[];
     evaluate?: (ctx: ConstraintContext, view: StateView) => AvailabilityCore;
 }
+
+const REF_GENERAL_COMMAND_GROUPS = [
+    {
+        category: '개인',
+        commands: [
+            '휴식',
+            'che_요양',
+            'che_단련',
+            'che_숙련전환',
+            'che_견문',
+            'che_은퇴',
+            'che_장비매매',
+            'che_군량매매',
+            'che_내정특기초기화',
+            'che_전투특기초기화',
+        ],
+    },
+    {
+        category: '내정',
+        commands: [
+            'che_농지개간',
+            'che_상업투자',
+            'che_기술연구',
+            'che_수비강화',
+            'che_성벽보수',
+            'che_치안강화',
+            'che_정착장려',
+            'che_주민선정',
+        ],
+    },
+    {
+        category: '군사',
+        commands: [
+            'che_징병',
+            'che_모병',
+            'che_훈련',
+            'che_사기진작',
+            'che_출병',
+            'che_집합',
+            'che_소집해제',
+            'che_첩보',
+        ],
+    },
+    {
+        category: '인사',
+        commands: [
+            'che_이동',
+            'che_강행',
+            'che_인재탐색',
+            'che_등용',
+            'che_귀환',
+            'che_임관',
+            'che_랜덤임관',
+            'che_장수대상임관',
+        ],
+    },
+    {
+        category: '계략',
+        commands: ['che_선동', 'che_탈취', 'che_파괴', 'che_화계'],
+    },
+    {
+        category: '국가',
+        commands: ['che_증여', 'che_헌납', 'che_물자조달', 'che_하야', 'che_거병', 'che_건국', 'che_선양', 'che_해산'],
+    },
+] as const satisfies ReadonlyArray<{
+    category: string;
+    commands: ReadonlyArray<GeneralTurnCommandKey>;
+}>;
+
+const REF_GENERAL_CATEGORY_ORDER = new Map<string, number>(
+    REF_GENERAL_COMMAND_GROUPS.map(({ category }, index) => [category, index] as const)
+);
+const REF_GENERAL_COMMAND_POSITION = new Map<string, { category: string; index: number }>(
+    REF_GENERAL_COMMAND_GROUPS.flatMap(({ category, commands }) =>
+        commands.map((command, index) => [command, { category, index }] as const)
+    )
+);
 
 const INPUT_REQUIREMENT_KINDS = new Set<RequirementKey['kind']>([
     'destGeneral',
@@ -567,6 +645,26 @@ const buildGroups = (entries: CommandEntry[], ctx: ConstraintContext, view: Stat
     }));
 };
 
+const projectRefGeneralCommandGroups = (entries: CommandEntry[]): CommandEntry[] =>
+    entries
+        .map((entry, profileIndex) => {
+            const refPosition = REF_GENERAL_COMMAND_POSITION.get(entry.definition.key as GeneralTurnCommandKey);
+            return {
+                entry: refPosition ? { ...entry, category: refPosition.category } : entry,
+                categoryIndex:
+                    REF_GENERAL_CATEGORY_ORDER.get(refPosition?.category ?? entry.category) ?? Number.MAX_SAFE_INTEGER,
+                commandIndex: refPosition?.index ?? profileIndex,
+                profileIndex,
+            };
+        })
+        .sort(
+            (left, right) =>
+                left.categoryIndex - right.categoryIndex ||
+                left.commandIndex - right.commandIndex ||
+                left.profileIndex - right.profileIndex
+        )
+        .map(({ entry }) => entry);
+
 export const buildTurnCommandTable = async (options: {
     worldState: WorldStateRow;
     general: GeneralRow;
@@ -598,7 +696,7 @@ export const buildTurnCommandTable = async (options: {
     const nationEntries = buildEntries(env, nationSpecs);
 
     return {
-        general: buildGroups(generalEntries, ctx, view),
+        general: buildGroups(projectRefGeneralCommandGroups(generalEntries), ctx, view),
         nation: buildGroups(nationEntries, ctx, view),
         inputOptions: options.inputOptions ?? {
             cities: [],

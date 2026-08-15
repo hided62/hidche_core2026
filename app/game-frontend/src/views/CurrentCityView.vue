@@ -299,7 +299,7 @@ const generalImage = (general: General): string => resolveGeneralIconUrl(general
                         <td>{{ general.crew ?? '?' }}</td>
                         <td>{{ general.train ?? '?' }}</td>
                         <td>{{ general.atmos ?? '?' }}</td>
-                        <td class="turns">
+                        <td class="turns" :class="{ 'turns--reserved': general.turns.length > 0 }">
                             <template v-if="general.turns.length">
                                 <span v-for="(turn, index) in general.turns" :key="index" class="turn-line"
                                     >{{ index + 1 }} : {{ turn }}</span
@@ -321,8 +321,8 @@ const generalImage = (general: General): string => resolveGeneralIconUrl(general
                 </tr>
                 <tr>
                     <td class="legacy-banner">
-                        삼국지 모의전투 HiDCHe / KOEI의 이미지를 사용, 응용하였습니다 / 제작 :
-                        HideD(hided62@gmail.com) /
+                        삼국지 모의전투 HiDCHe / KOEI의 이미지를 사용, 응용하였습니다 / 제작 : HideD(hided62@gmail.com)
+                        /
                         <a href="https://sam.hided.net/wiki/hidche/credit" target="_blank" rel="noreferrer">Credit</a>
                     </td>
                 </tr>
@@ -335,9 +335,9 @@ const generalImage = (general: General): string => resolveGeneralIconUrl(general
 .city-page {
     width: 1000px;
     margin: 0 auto;
-    font-family: 'Times New Roman', serif;
-    font-size: 16px;
-    line-height: normal;
+    font-family: var(--sammo-font-sans);
+    font-size: 14px;
+    line-height: 1.3;
 }
 .legacy-table {
     width: 100%;
@@ -419,6 +419,7 @@ const generalImage = (general: General): string => resolveGeneralIconUrl(general
 }
 .general-names {
     text-align: left !important;
+    white-space: normal !important;
 }
 .unknown {
     color: gray;
@@ -447,7 +448,7 @@ const generalImage = (general: General): string => resolveGeneralIconUrl(general
     height: 64px;
     object-fit: fill;
 }
-.turns {
+.turns--reserved {
     font-size: x-small;
 }
 .turn-line {

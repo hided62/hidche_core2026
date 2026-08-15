@@ -82,7 +82,7 @@ storage, route guards, and image loading.
 | gateway Kakao OTP    | `index.php#modalOTP`                     | 동일 문구·500px modal, desktop/mobile geometry와 색상·typography, password/OAuth 진입, autofocus·focus-visible·active·disabled·오류 재시도·session 저장                                          |
 | game login hand-off  | unauthenticated `hwe/index.php` redirect | `/che/login` delegates to `/gateway/`                                                                                                                                                            |
 | troop                | `hwe/v_troop.php`                        | existing `app/game-frontend/e2e/troop.spec.ts` desktop/mobile geometry and interaction suite                                                                                                     |
-| current city         | `hwe/b_currentCity.php`                  | ref-specific 16px Times New Roman, 1000px summary/1024px general tables, 400px selector, 64px icon, nation title color, force summary, actor/spy/admin redaction, and map-click query navigation |
+| current city         | `hwe/b_currentCity.php`                  | main-page Pretendard 14px, wrapping general-name summary, small reserved-turn lines but normal-size NPC labels, 1000px summary/1024px general tables, 400px selector, 64px icon, nation title color, force summary, actor/spy/admin redaction, and map-click query navigation |
 | best general         | `hwe/a_bestGeneral.php`                  | authenticated 500/1000px ranking and unique-item grids, user/NPC switch, 100/64px cell/image geometry, title/button computed styles, retained-data API error                                     |
 | hall of fame         | `hwe/a_hallOfFame.php`                   | public 500/1000px container, 100px ranking cells, 64px natural image, title/button/select computed styles, scenario switch and retained-data API error                                           |
 | yearbook             | `hwe/v_history.php`                      | 1000px 700+300 desktop grid, 500px stacked grid, month navigation, legacy textures, success and API-error flows                                                                                  |
@@ -166,6 +166,14 @@ The current-city reference can be collected independently with
 and is never written to the artifact. The matching core fixture is
 `app/game-frontend/e2e/inGameInfo.spec.ts`, which writes its computed DOM and
 screenshot only when `CITY_PARITY_ARTIFACT_DIR` is set.
+
+Ref's standalone current-city document inherits the browser's 16px Times face
+because its page-local includes do not load the in-game Pretendard baseline.
+Core intentionally follows the requested main-page 14px Pretendard typography
+instead. The Ref row contract still applies to commands: only a non-NPC
+general's reserved turns use `general_turn_text`/`x-small`; `NPC 장수`, foreign
+nation, and wanderer labels stay at the table's normal font size. The summary
+general-name cell must remain wrappable when many generals share a city.
 
 징병·모병의 Ref 화면은 다음 collector로 1000/500px DOM, 이미지 natural size,
 불가능 병종 toggle과 hover/focus를 수집합니다. 기본 모드는 현재 Ref session을
