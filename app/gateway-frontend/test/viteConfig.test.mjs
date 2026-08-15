@@ -2,19 +2,8 @@ import assert from 'node:assert/strict';
 import path from 'node:path';
 import { describe, it } from 'node:test';
 import { loadConfigFromFile } from 'vite';
-import { mergeViteEnv } from '../src/config/viteEnv.ts';
 
-void describe('game frontend Vite config', () => {
-    void it('prefers managed runtime values over values loaded from env files', () => {
-        const env = mergeViteEnv(
-            { VITE_APP_BASE_PATH: '/gateway', VITE_GAME_API_URL: '/gateway/api/trpc' },
-            { VITE_APP_BASE_PATH: '/hwe', VITE_GAME_API_URL: '/hwe/api/trpc' }
-        );
-
-        assert.equal(env.VITE_APP_BASE_PATH, '/hwe');
-        assert.equal(env.VITE_GAME_API_URL, '/hwe/api/trpc');
-    });
-
+void describe('gateway frontend Vite config', () => {
     void it('keeps production source maps enabled', async () => {
         const configPath = path.resolve(import.meta.dirname, '../vite.config.ts');
         const loaded = await loadConfigFromFile(

@@ -228,6 +228,11 @@ direct-navigation URL을 사용합니다. `/image/*`는 외부 Caddy가 소유�
 완전한 API·daemon·frontend 배포 bundle은 gateway orchestrator의
 commit-worktree build 경로에서 구성합니다.
 
+Gateway와 game frontend의 production build는 공개 코드의 디버깅과 장애 분석을
+위해 source map을 함께 생성합니다. 일반적인 bundle 크기 또는 build 시간 최적화는
+source map 제거 사유가 아니며, 별도의 보안 요구와 검토가 있을 때만 이 계약을
+변경합니다.
+
 각 서버의 `버전 업데이트`는 profile의 game migration만 적용하고 현재
 게임 DB를 seed하지 않습니다. 별도 `시나리오 초기화`는 Git 업데이트 없이
 현재 게시 commit을 기본으로 사용하며, 필요할 때만 새 버전 배포와 결합합니다.

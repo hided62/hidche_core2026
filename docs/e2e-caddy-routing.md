@@ -100,6 +100,8 @@ HWE는 `/che`를 `/hwe`로 바꿉니다. `VITE_*`는 browser bundle에 포함되
 ## 정적 자산
 
 - Vite asset URL은 frontend base path를 포함합니다.
+- Gateway와 game production build는 공개 코드의 디버깅을 위한 source map을
+  생성하며, frontend 배포 산출물에는 생성된 `.map` 파일도 포함합니다.
 - Router direct navigation과 새로고침은 SPA fallback으로 frontend에
   전달됩니다.
 - API와 events matcher는 frontend fallback보다 먼저 적용합니다.
