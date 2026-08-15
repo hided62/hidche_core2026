@@ -4,6 +4,7 @@ import { asRecord } from '@sammo-ts/common';
 
 import { zWorldStateConfig, zWorldStateMeta } from '../../context.js';
 import { isSelectionPoolWorld, resolveSelectionMaxGeneral } from '@sammo-ts/game-engine/turn/selectPoolService.js';
+import { loadCurrentGameTime } from '../../services/gameClock.js';
 import { procedure, router } from '../../trpc.js';
 
 export const lobbyRouter = router({
@@ -26,6 +27,7 @@ export const lobbyRouter = router({
         const npcCnt = await ctx.db.general.count({ where: { npcState: { gte: 2 } } });
         const nationCnt = await ctx.db.nation.count({ where: { level: { gt: 0 } } });
         const scenarioTitle = asRecord(asRecord(rawWorldState.meta).scenarioMeta).title;
+        const gameTime = await loadCurrentGameTime(ctx.db);
 
         let myGeneral = null;
         if (ctx.auth?.user.id) {
@@ -54,6 +56,8 @@ export const lobbyRouter = router({
             starttime: worldState.meta.starttime ?? '',
             opentime: worldState.meta.opentime ?? '',
             turntime: worldState.meta.turntime ?? '',
+            serverTime: gameTime.now.toISOString(),
+            clockMode: gameTime.mode ?? 'realtime',
             otherTextInfo: worldState.meta.otherTextInfo ?? '',
             isUnited: worldState.meta.isunited ?? worldState.meta.isUnited ?? 0,
             selectionPoolEnabled: isSelectionPoolWorld(rawWorldState),

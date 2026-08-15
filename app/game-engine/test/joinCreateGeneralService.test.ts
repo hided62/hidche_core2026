@@ -4,6 +4,7 @@ import {
     buildJoinCreateGeneralSeed,
     cutJoinTurnTime,
     JOIN_WELCOME_MESSAGE,
+    resolveJoinTurnTime,
 } from '../src/turn/joinCreateGeneralService.js';
 
 describe('generic join legacy time contracts', () => {
@@ -17,6 +18,35 @@ describe('generic join legacy time contracts', () => {
         expect(cutJoinTurnTime(new Date('2026-07-30T03:34:56.789Z'), 120 * 60).toISOString()).toBe(
             '2026-07-30T02:00:00.000Z'
         );
+    });
+
+    it('schedules a new general within one turn of the accepted game time even when the daemon cursor is stale', () => {
+        const calls: Array<[number, number]> = [];
+        const values = [59, 250_000];
+        const rng = {
+            nextRangeInt(min: number, max: number) {
+                calls.push([min, max]);
+                return values.shift() ?? min;
+            },
+        };
+        const acceptedAt = new Date('2026-08-15T17:57:05.837Z');
+        const staleRuntimeTurnTime = new Date('2026-08-15T07:10:00.000Z');
+
+        const turnTime = resolveJoinTurnTime(
+            rng,
+            { tickSeconds: 120 } as Parameters<typeof resolveJoinTurnTime>[1],
+            acceptedAt,
+            staleRuntimeTurnTime,
+            undefined
+        );
+
+        expect(turnTime.toISOString()).toBe('2026-08-15T17:58:05.087Z');
+        expect(turnTime.getTime()).toBeGreaterThan(acceptedAt.getTime());
+        expect(turnTime.getTime()).toBeLessThanOrEqual(acceptedAt.getTime() + 120_000);
+        expect(calls).toEqual([
+            [0, 119],
+            [0, 999_999],
+        ]);
     });
 
     it('uses the HiDCHe product name without the legacy PHP runtime label', () => {

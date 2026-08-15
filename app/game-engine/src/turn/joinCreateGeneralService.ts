@@ -330,8 +330,8 @@ export const cutJoinTurnTime = (value: Date, tickSeconds: number): Date => {
     return new Date(baseTime + alignedSeconds * 1000);
 };
 
-const resolveTurnTime = (
-    rng: RandUtil,
+export const resolveJoinTurnTime = (
+    rng: Pick<RandUtil, 'nextRangeInt'>,
     worldState: WorldStateRow,
     acceptedAt: Date,
     runtimeTurnTime: Date,
@@ -348,7 +348,12 @@ const resolveTurnTime = (
         offsetSeconds = inheritTurntimeZone * legacyTurnTermMinutes + rng.nextRangeInt(0, legacyTurnTermMinutes - 1);
         offsetMicros = rng.nextRangeInt(0, 999_999);
     } else {
-        turnTimeBase = base;
+        // Ref normally uses game_env.turntime as a near-current cursor. Core's
+        // durable daemon can legitimately be catching up from an older cursor,
+        // so scheduling from runtimeTurnTime may put a newly created general
+        // hours behind the game clock. The accepted game time is the equivalent
+        // current-time boundary for a new general.
+        turnTimeBase = acceptedAt;
         offsetSeconds = rng.nextRangeInt(0, tickSeconds - 1);
         offsetMicros = rng.nextRangeInt(0, 999_999);
     }
@@ -662,7 +667,7 @@ export const createGeneralFromJoin = async (options: {
     }
 
     const experience = await resolveCatchupExperience(db, relativeYear);
-    const turnTime = resolveTurnTime(
+    const turnTime = resolveJoinTurnTime(
         rng,
         worldState,
         acceptedAt,
