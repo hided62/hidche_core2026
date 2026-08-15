@@ -63,6 +63,11 @@ type FixtureState = {
     joinConfig?: Record<string, unknown>;
     createGeneralInputs?: Array<Record<string, unknown>>;
     mainTraits?: { personal: string; specialDomestic: string; specialWar: string };
+    recentRecords?: {
+        global: Array<{ id: number; text: string; createdAt?: string }>;
+        general: Array<{ id: number; text: string; createdAt?: string }>;
+        history: Array<{ id: number; text: string; createdAt?: string }>;
+    };
 };
 
 type TrpcRequestPayload = {
@@ -442,7 +447,8 @@ const install = async (page: Page, state: FixtureState) => {
                     canRespondDiplomacy: false,
                 });
             if (operation === 'messages.getContacts') return response({ nation: [] });
-            if (operation === 'general.getRecentRecords') return response({ global: [], general: [], history: [] });
+            if (operation === 'general.getRecentRecords')
+                return response(state.recentRecords ?? { global: [], general: [], history: [] });
             if (operation === 'board.getAccess') return response({ permission: 4, canMeeting: true, canSecret: true });
             if (operation === 'tournament.getState') return response({ stage: 0 });
             if (operation === 'public.getTraffic')
@@ -648,6 +654,76 @@ test('메인 카드의 국가·수도·관직·계급·병종은 Ref 출력명�
     await expect(cityCard.locator('.title')).toContainText('【중원 | 특】 업');
     await expect(cityCard.locator('.title')).toContainText('지배 국가 【 위 】');
     await expect(page.locator('.main-page')).not.toContainText('che_');
+});
+
+test('메인 개인 기록의 전투 결과는 월 표제와 시각을 한 줄에 표시한다', async ({ page }) => {
+    const state: FixtureState = {
+        permission: 'head',
+        myset: 3,
+        settingMutations: [],
+        accessPages: [],
+        recentRecords: {
+            global: [],
+            general: [
+                {
+                    id: 18609,
+                    text:
+                        '<S>◆</>186년 9월:<div class="small_war_log">' +
+                        '<span class="me"><span class="crew_type">귀병</span> ' +
+                        '<span class="name_plate_cover">【<span class="name">Administrator</span>】</span> ' +
+                        '<span class="remain_crew">0</span>(<span class="killed_crew">-2209</span>)</span> ' +
+                        '<span class="war_type war_type_defense">←</span> ' +
+                        '<span class="you"><span class="remain_crew">1361</span>' +
+                        '(<span class="killed_crew">-5539</span>) <span class="crew_type">기병</span> ' +
+                        '<span class="name_plate_cover">【<span class="name">ⓝ뇌동</span>】</span></span></div>',
+                    createdAt: '2026-01-01T03:54:00.000Z',
+                },
+            ],
+            history: [],
+        },
+    };
+    await install(page, state);
+    await page.setViewportSize({ width: 1200, height: 900 });
+    await page.goto('');
+
+    const expectedText = '◆186년 9월:귀병 【Administrator】 0(-2209) ← 1361(-5539) 기병 【ⓝ뇌동】 12:54';
+    const inspect = async (line: Locator) => {
+        await expect(line).toContainText(expectedText);
+        return line.evaluate((element) => {
+            const lineRect = element.getBoundingClientRect();
+            const battle = element.querySelector<HTMLElement>('.small_war_log');
+            if (!battle) throw new Error('전투 요약 markup을 찾지 못했습니다.');
+            const battleRect = battle.getBoundingClientRect();
+            return {
+                line: { top: lineRect.top, height: lineRect.height },
+                battle: {
+                    top: battleRect.top,
+                    height: battleRect.height,
+                    display: getComputedStyle(battle).display,
+                },
+                lineHeight: getComputedStyle(element).lineHeight,
+            };
+        });
+    };
+    const assertSingleLine = (geometry: Awaited<ReturnType<typeof inspect>>) => {
+        expect(geometry.battle.display).toBe('inline-block');
+        expect(geometry.line.height).toBe(21);
+        expect(geometry.battle.height).toBe(21);
+        expect(geometry.battle.top).toBeCloseTo(geometry.line.top, 0);
+    };
+
+    const desktopGeometry = await inspect(
+        page.locator('.record-zone [data-record-bucket="general"] .record-line').first()
+    );
+    assertSingleLine(desktopGeometry);
+    await persistParityArtifact(page, 'core-main-personal-battle-log-inline-desktop', desktopGeometry);
+
+    await page.setViewportSize({ width: 500, height: 900 });
+    const mobileGeometry = await inspect(
+        page.locator('.record-zone-mobile [data-record-bucket="general"] .record-line').first()
+    );
+    assertSingleLine(mobileGeometry);
+    await persistParityArtifact(page, 'core-main-personal-battle-log-inline-mobile', mobileGeometry);
 });
 
 test('접속량정보 keeps the legacy public 1016px chart geometry', async ({ page }) => {
