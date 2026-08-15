@@ -766,7 +766,7 @@ test('desktop menus preserve ref columns, prefix-safe routes, and controlled dro
     await persistArtifact(page, `${basePath.slice(1)}-desktop-1200`);
 });
 
-test('main general card renders Ref title and omitted rows with second precision', async ({ page }) => {
+test('main general card and command clock render the next turn with second precision', async ({ page }) => {
     const state: NavigationFixture = {
         officerLevel: 0,
         permission: 0,
@@ -789,6 +789,9 @@ test('main general card renders Ref title and omitted rows with second precision
     await expect(title).toContainText('용장');
     await expect(title).toContainText('09:07:06');
     await expect(title).not.toContainText('00:07');
+    const commandClock = page.locator('[data-main-target="commands"] [data-command-current-time]').first();
+    await expect(commandClock).toHaveText('09:07:06');
+    await expect(commandClock).not.toHaveText('00:07');
     const generalCard = page.locator('[data-main-target="general"] [data-general-basic-card]').first();
     await expect(generalCard).toContainText('수비 함(훈사80)');
     await expect(generalCard).toContainText('5 턴');
@@ -809,9 +812,25 @@ test('main general card renders Ref title and omitted rows with second precision
             overflow: style.overflow,
         };
     });
+    const desktopClockGeometry = await commandClock.evaluate((element) => {
+        const rect = element.getBoundingClientRect();
+        const style = getComputedStyle(element);
+        return {
+            width: rect.width,
+            height: rect.height,
+            scrollWidth: element.scrollWidth,
+            clientWidth: element.clientWidth,
+            fontSize: style.fontSize,
+            lineHeight: style.lineHeight,
+            display: style.display,
+            placeItems: style.placeItems,
+        };
+    });
     expect(desktopGeometry.width).toBeGreaterThan(0);
     expect(desktopGeometry.height).toBeGreaterThan(0);
     expect(desktopGeometry.scrollWidth - desktopGeometry.clientWidth).toBeLessThanOrEqual(0);
+    expect(desktopClockGeometry.scrollWidth - desktopClockGeometry.clientWidth).toBeLessThanOrEqual(0);
+    expect(desktopClockGeometry.placeItems).toBe('center');
     expect(await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth)).toBeLessThanOrEqual(0);
     if (artifactRoot) {
         const target = resolve(artifactRoot);
@@ -820,7 +839,7 @@ test('main general card renders Ref title and omitted rows with second precision
             page.screenshot({ path: resolve(target, 'main-turn-time-seoul-desktop-1200.png'), fullPage: true }),
             writeFile(
                 resolve(target, 'main-turn-time-seoul-desktop-1200.json'),
-                `${JSON.stringify(desktopGeometry, null, 2)}\n`
+                `${JSON.stringify({ title: desktopGeometry, commandClock: desktopClockGeometry }, null, 2)}\n`
             ),
         ]);
     }
@@ -828,13 +847,41 @@ test('main general card renders Ref title and omitted rows with second precision
     await page.setViewportSize({ width: 500, height: 900 });
     const mobileTitle = page.locator('[data-main-target="general"] .general-title').first();
     await expect(mobileTitle).toContainText('09:07:06');
-    expect(await mobileTitle.evaluate((element) => element.scrollWidth - element.clientWidth)).toBeLessThanOrEqual(0);
+    const mobileCommandClock = page.locator('[data-main-target="commands"] [data-command-current-time]').first();
+    await expect(mobileCommandClock).toHaveText('09:07:06');
+    const mobileGeometry = {
+        title: await mobileTitle.evaluate((element) => ({
+            width: element.getBoundingClientRect().width,
+            height: element.getBoundingClientRect().height,
+            overflow: element.scrollWidth - element.clientWidth,
+            fontSize: getComputedStyle(element).fontSize,
+            lineHeight: getComputedStyle(element).lineHeight,
+        })),
+        commandClock: await mobileCommandClock.evaluate((element) => ({
+            width: element.getBoundingClientRect().width,
+            height: element.getBoundingClientRect().height,
+            overflow: element.scrollWidth - element.clientWidth,
+            fontSize: getComputedStyle(element).fontSize,
+            lineHeight: getComputedStyle(element).lineHeight,
+            display: getComputedStyle(element).display,
+            placeItems: getComputedStyle(element).placeItems,
+        })),
+    };
+    expect(mobileGeometry.title.overflow).toBeLessThanOrEqual(0);
+    expect(mobileGeometry.commandClock.overflow).toBeLessThanOrEqual(0);
+    expect(mobileGeometry.commandClock.placeItems).toBe('center');
     expect(await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth)).toBeLessThanOrEqual(0);
     if (artifactRoot) {
-        await page.screenshot({
-            path: resolve(artifactRoot, 'main-turn-time-seoul-mobile-500.png'),
-            fullPage: true,
-        });
+        await Promise.all([
+            page.screenshot({
+                path: resolve(artifactRoot, 'main-turn-time-seoul-mobile-500.png'),
+                fullPage: true,
+            }),
+            writeFile(
+                resolve(artifactRoot, 'main-turn-time-seoul-mobile-500.json'),
+                `${JSON.stringify(mobileGeometry, null, 2)}\n`
+            ),
+        ]);
     }
 });
 
