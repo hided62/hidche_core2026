@@ -5,6 +5,7 @@
     "type": "module",
     "scripts": {
         "dev": "vite",
+        "test": "node --test test/**/*.test.mjs",
         "test:e2e:operations": "playwright test --config e2e/playwright.config.mjs",
         "test:e2e:hwe-lifecycle": "playwright test --config e2e/hwe-lifecycle.playwright.config.mjs",
         "test:e2e:general-icons": "playwright test --config e2e/general-icon-lifecycle.playwright.config.mjs",

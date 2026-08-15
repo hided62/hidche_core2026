@@ -182,6 +182,10 @@ layout, font, line-height, 줄바꿈, 색상, texture, border, shadow, opacity,
   것으로 가정하지 말아 주세요.
 - `/image/*`를 frontend build artifact로 가져오거나 root 배포 URL로
   하드코딩하지 말아 주세요.
+- Gateway와 game frontend의 production source map은 공개 코드에서 개발·장애
+  분석 편의를 위해 배포하는 산출물입니다. 보안상 비공개가 필요하다는 별도 요구와
+  검토가 없는 한 번들 크기, build 시간 또는 일반적인 "최적화" 지시만으로
+  `build.sourcemap`을 끄거나 `.map` 파일을 배포 산출물에서 제외하지 말아 주세요.
 - 공통화는 동일한 렌더링 계약이 확인된 token/shell에 한합니다. `.error`,
   `.stack`처럼 이름만 같은 page selector를 전역화하지 말아 주세요.
 - `v-html`은 입력 source와 sanitization/allowlist를 확인해 주세요. 기존 warning을

@@ -30,6 +30,9 @@ export default defineConfig(({ mode }) => {
     return {
         base: normalizeBasePath(env.VITE_APP_BASE_PATH),
         plugins: [vue(), tailwindcss()],
+        build: {
+            sourcemap: true,
+        },
         resolve: {
             alias: {
                 '@': path.resolve(import.meta.dirname, './src'),
