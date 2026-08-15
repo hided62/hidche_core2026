@@ -1,4 +1,4 @@
-import { asRecord } from '@sammo-ts/common';
+import { asRecord, resolveAccessLimitLevel, resolveAccessRefreshLimit, type AccessLimitLevel } from '@sammo-ts/common';
 import { GamePrisma } from '@sammo-ts/infra';
 
 import type { GameApiContext } from '../context.js';
@@ -56,6 +56,7 @@ export const generalAccessEndpointWeights = {
     'general.dieOnPrestart': 1,
     'general.instantRetreat': 1,
     'messages.send': 1,
+    'turns.getCommandTable': 1,
     'general.setMySetting': 0,
     'npc.setNationPolicy': 0,
     'npc.setNationPriority': 0,
@@ -64,6 +65,40 @@ export const generalAccessEndpointWeights = {
 } as const satisfies Record<string, 0 | 1 | 2>;
 
 export type GeneralAccessEndpoint = keyof typeof generalAccessEndpointWeights;
+
+export const generalAccessLimitPages = new Set<AccessPage>(['nation-list', 'npc-control']);
+
+export const generalAccessLimitEndpoints = new Set<GeneralAccessEndpoint>([
+    'world.getGeneralDirectory',
+    'tournament.getSnapshot',
+    'nation.getSecretGeneralList',
+    'nation.getGeneralList',
+    'nation.getStratFinan',
+    'nation.getBattleCenter',
+    'nation.getChiefCenter',
+    'board.getArticles',
+    'board.writeArticle',
+    'board.writeComment',
+    'diplomacy.getLetters',
+    'diplomacy.sendLetter',
+    'diplomacy.respondLetter',
+    'diplomacy.rollbackLetter',
+    'diplomacy.destroyLetter',
+    'betting.getList',
+    'general.getFrontStatus',
+    'yearbook.getHistory',
+    'messages.send',
+    'turns.getCommandTable',
+]);
+
+export const generalAccessLimitBeforeRecordEndpoints = new Set<GeneralAccessEndpoint>(['general.getFrontStatus']);
+
+export type GeneralAccessState = {
+    refreshScore: number;
+    refreshLimit: number;
+    level: AccessLimitLevel;
+    nextAccessAt: Date;
+};
 
 export const resolveGeneralAccessEndpointWeight = (
     path: string,
@@ -112,6 +147,58 @@ export const resolveAccessWindows = (
             ? tickStartedAt
             : new Date(now.getTime() - fallbackTickMs);
     return { periodStartedAt: scoreStartedAt, scoreStartedAt };
+};
+
+export const resolveGeneralScoreStartedAt = (tickSeconds: number, nextTurnAt: Date): Date =>
+    new Date(nextTurnAt.getTime() - Math.max(1, Math.floor(tickSeconds)) * 1_000);
+
+const formatAccessTime = (value: Date): string => {
+    const kst = new Date(value.getTime() + 9 * 60 * 60 * 1_000);
+    return kst.toISOString().slice(0, 19).replace('T', ' ');
+};
+
+export const formatGeneralAccessLimitMessage = (state: Pick<GeneralAccessState, 'nextAccessAt'>): string =>
+    `접속 제한중입니다. 1턴 이내에 너무 많은 갱신을 하셨습니다. ` +
+    `(다음 접속 가능 시각: ${formatAccessTime(state.nextAccessAt)}) ` +
+    '자신의 턴이 되면 다시 접속 가능합니다. 잠시 쉬어보세요.';
+
+export const getGeneralAccessState = async (
+    ctx: Pick<GameApiContext, 'auth' | 'db'>
+): Promise<GeneralAccessState | null> => {
+    const user = ctx.auth?.user;
+    if (!user || user.roles.some((role) => adminRoles.has(role))) {
+        return null;
+    }
+    const [general, worldState] = await Promise.all([
+        ctx.db.general.findFirst({
+            where: { userId: user.id },
+            orderBy: { id: 'asc' },
+            select: { id: true, turnTime: true },
+        }),
+        ctx.db.worldState.findFirst({
+            orderBy: { id: 'asc' },
+            select: { tickSeconds: true, meta: true },
+        }),
+    ]);
+    if (!general || !worldState) {
+        return null;
+    }
+    const access = await ctx.db.generalAccessLog.findUnique({
+        where: { generalId: general.id },
+        select: { lastRefresh: true, refreshScore: true },
+    });
+    const scoreStartedAt = resolveGeneralScoreStartedAt(worldState.tickSeconds, general.turnTime);
+    const refreshScore =
+        access?.lastRefresh && access.lastRefresh.getTime() < scoreStartedAt.getTime()
+            ? 0
+            : (access?.refreshScore ?? 0);
+    const refreshLimit = resolveAccessRefreshLimit(worldState.tickSeconds, asRecord(worldState.meta).refreshLimit);
+    return {
+        refreshScore,
+        refreshLimit,
+        level: resolveAccessLimitLevel(refreshScore, refreshLimit),
+        nextAccessAt: general.turnTime,
+    };
 };
 
 export const upsertGeneralAccess = async (
@@ -286,13 +373,13 @@ export const upsertGeneralAccess = async (
 };
 
 export const recordGeneralAccess = async (
-    ctx: Pick<GameApiContext, 'auth' | 'db'>,
+    ctx: Pick<GameApiContext, 'auth' | 'db' | 'profile' | 'profileStatusSource'>,
     page: AccessPage,
     now = new Date()
 ): Promise<boolean> => recordGeneralAccessWeight(ctx, accessPageWeights[page], now);
 
 export const recordGeneralAccessWeight = async (
-    ctx: Pick<GameApiContext, 'auth' | 'db'>,
+    ctx: Pick<GameApiContext, 'auth' | 'db' | 'profile' | 'profileStatusSource'>,
     weight: number,
     now = new Date()
 ): Promise<boolean> => {
@@ -304,11 +391,25 @@ export const recordGeneralAccessWeight = async (
         return false;
     }
 
+    const profileStatusSource = ctx.profileStatusSource;
+    if (!profileStatusSource) {
+        return false;
+    }
+    try {
+        if ((await profileStatusSource.get(ctx.profile.name)) !== 'RUNNING') {
+            return false;
+        }
+    } catch {
+        // 상태를 확인하지 못한 요청으로 사용자를 벌주지 않는다. 업무 요청은
+        // 계속 진행하고 다음 요청에서 gateway 상태를 다시 확인한다.
+        return false;
+    }
+
     const [general, worldState] = await Promise.all([
         ctx.db.general.findFirst({
             where: { userId: user.id },
             orderBy: { id: 'asc' },
-            select: { id: true, userId: true },
+            select: { id: true, userId: true, turnTime: true },
         }),
         ctx.db.worldState.findFirst({
             orderBy: { id: 'asc' },
@@ -332,7 +433,8 @@ export const recordGeneralAccessWeight = async (
         return false;
     }
 
-    const { periodStartedAt, scoreStartedAt } = resolveAccessWindows(now, worldState.tickSeconds, meta);
+    const { periodStartedAt } = resolveAccessWindows(now, worldState.tickSeconds, meta);
+    const scoreStartedAt = resolveGeneralScoreStartedAt(worldState.tickSeconds, general.turnTime);
 
     await upsertGeneralAccess(ctx.db, {
         worldStateId: worldState.id,

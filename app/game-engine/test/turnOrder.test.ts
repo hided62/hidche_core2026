@@ -174,6 +174,8 @@ describe('InMemoryTurnProcessor ordering', () => {
         const tiedGeneralResult = await processor.run(new Date(addMinutes(baseTime, 10).getTime() + 1), budget);
         expect(tiedGeneralResult.processedTurns).toBe(0);
         expect(executed).toEqual([3, 2]);
+        expect(world.peekDirtyState().accessScoreResetGeneralIds).toEqual([2, 3]);
+        expect(world.getState().meta).toMatchObject({ refreshLimit: 350 });
         expect(world.getGeneralById(2)?.recentWarTime?.getTime()).toBe(baseTime.getTime());
         expect(world.getGeneralById(2)?.recentWarTick).not.toBeNull();
         expect(Number(world.getGeneralById(2)?.turnTick) % 10).toBe(4);

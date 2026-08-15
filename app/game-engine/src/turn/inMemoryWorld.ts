@@ -115,6 +115,7 @@ export interface InMemoryGameClockState {
 }
 
 export interface TurnWorldChanges {
+    accessScoreResetGeneralIds: number[];
     generals: TurnGeneral[];
     cities: City[];
     nations: Nation[];
@@ -156,6 +157,7 @@ export interface InMemoryTurnWorldStateSnapshot {
     dirtyNationIds: number[];
     dirtyTroopIds: number[];
     dirtyDiplomacyKeys: string[];
+    accessScoreResetGeneralIds: number[];
     createdGeneralIds: number[];
     createdNationIds: number[];
     createdTroopIds: number[];
@@ -419,6 +421,7 @@ export class InMemoryTurnWorld {
     private readonly dirtyNationIds = new Set<number>();
     private readonly dirtyTroopIds = new Set<number>();
     private readonly dirtyDiplomacyKeys = new Set<string>();
+    private readonly accessScoreResetGeneralIds = new Set<number>();
     private readonly createdGeneralIds = new Set<number>();
     private nextLegacyGeneralScanOrder = 0;
     private readonly createdNationIds = new Set<number>();
@@ -606,6 +609,7 @@ export class InMemoryTurnWorld {
             dirtyNationIds: Array.from(this.dirtyNationIds),
             dirtyTroopIds: Array.from(this.dirtyTroopIds),
             dirtyDiplomacyKeys: Array.from(this.dirtyDiplomacyKeys),
+            accessScoreResetGeneralIds: Array.from(this.accessScoreResetGeneralIds),
             createdGeneralIds: Array.from(this.createdGeneralIds),
             createdNationIds: Array.from(this.createdNationIds),
             createdTroopIds: Array.from(this.createdTroopIds),
@@ -644,6 +648,7 @@ export class InMemoryTurnWorld {
         this.replaceSet(this.dirtyNationIds, restored.dirtyNationIds);
         this.replaceSet(this.dirtyTroopIds, restored.dirtyTroopIds);
         this.replaceSet(this.dirtyDiplomacyKeys, restored.dirtyDiplomacyKeys);
+        this.replaceSet(this.accessScoreResetGeneralIds, restored.accessScoreResetGeneralIds ?? []);
         this.replaceSet(this.createdGeneralIds, restored.createdGeneralIds);
         this.replaceSet(this.createdNationIds, restored.createdNationIds);
         this.replaceSet(this.createdTroopIds, restored.createdTroopIds);
@@ -691,6 +696,12 @@ export class InMemoryTurnWorld {
                 ...patch,
             },
         };
+    }
+
+    markGeneralAccessScoreReset(generalId: number): void {
+        if (Number.isSafeInteger(generalId) && generalId > 0) {
+            this.accessScoreResetGeneralIds.add(generalId);
+        }
     }
 
     changeTurnTerm(tickMinutes: number): void {
@@ -1512,8 +1523,12 @@ export class InMemoryTurnWorld {
         }));
         const pendingYearbookSnapshots = structuredClone(this.pendingYearbookSnapshots);
         const pendingUnificationFinalizations = structuredClone(this.pendingUnificationFinalizations);
+        const accessScoreResetGeneralIds = Array.from(this.accessScoreResetGeneralIds).sort(
+            (left, right) => left - right
+        );
 
         return {
+            accessScoreResetGeneralIds,
             generals,
             cities,
             nations,
@@ -1542,6 +1557,7 @@ export class InMemoryTurnWorld {
     }
 
     acknowledgeDirtyState(changes: TurnWorldChanges): void {
+        for (const id of changes.accessScoreResetGeneralIds) this.accessScoreResetGeneralIds.delete(id);
         for (const general of changes.generals) this.dirtyGeneralIds.delete(general.id);
         for (const city of changes.cities) this.dirtyCityIds.delete(city.id);
         for (const nation of changes.nations) this.dirtyNationIds.delete(nation.id);

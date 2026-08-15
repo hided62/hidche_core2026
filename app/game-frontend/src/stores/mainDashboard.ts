@@ -82,6 +82,16 @@ export const useMainDashboardStore = defineStore('mainDashboard', () => {
     const realtimeEnabled = ref(true);
     const realtimeStatus = ref<'idle' | 'connected' | 'paused'>('idle');
     const realtimeActive = ref(false);
+    const accessLimited = ref(false);
+
+    const handleDashboardError = (value: unknown) => {
+        const message = resolveErrorMessage(value);
+        error.value = message;
+        if (message.startsWith('접속 제한중입니다.')) {
+            accessLimited.value = true;
+            realtimeStatus.value = 'paused';
+        }
+    };
 
     const general = ref<PresentGeneralContext['general'] | null>(null);
     const city = ref<PresentGeneralContext['city'] | null>(null);
@@ -508,6 +518,7 @@ export const useMainDashboardStore = defineStore('mainDashboard', () => {
                 { context: true, commandTable: true, boardAccess: true },
                 true
             );
+            accessLimited.value = false;
             applyDashboardPatch(contextPatch);
             const context = contextSnapshot;
 
@@ -573,7 +584,7 @@ export const useMainDashboardStore = defineStore('mainDashboard', () => {
             }
             initialized = true;
         } catch (err) {
-            error.value = resolveErrorMessage(err);
+            handleDashboardError(err);
         } finally {
             if (isInitialLoad) {
                 loading.value = false;
@@ -626,14 +637,14 @@ export const useMainDashboardStore = defineStore('mainDashboard', () => {
         if (plan.records) recordsError.value = null;
         if (plan.frontStatus) frontStatusError.value = null;
         try {
-            const contextBundlePromise =
-                plan.context || plan.commands || plan.boardAccess
-                    ? fetchContextBundlePatch({
-                          context: plan.context,
-                          commandTable: plan.commands,
-                          boardAccess: plan.boardAccess,
-                      })
-                    : Promise.resolve(undefined);
+            const contextPatch = await fetchContextBundlePatch({
+                // Every automatic refresh crosses this access-limit gate. The
+                // context delta is usually unchanged and therefore stays small.
+                context: true,
+                commandTable: plan.commands,
+                boardAccess: plan.boardAccess,
+            });
+            accessLimited.value = false;
             const lobbyPromise = plan.lobby ? trpc.lobby.info.query() : Promise.resolve(undefined);
             const mapPromise = plan.map
                 ? trpc.world.getMap.query({ generalId: id, showMe: true, useCache: true })
@@ -659,8 +670,7 @@ export const useMainDashboardStore = defineStore('mainDashboard', () => {
                   })
                 : Promise.resolve(undefined);
 
-            const [contextPatch, lobby, map, contacts, generalTurns, records, nextFrontStatus] = await Promise.all([
-                contextBundlePromise,
+            const [lobby, map, contacts, generalTurns, records, nextFrontStatus] = await Promise.all([
                 lobbyPromise,
                 mapPromise,
                 contactsPromise,
@@ -669,7 +679,7 @@ export const useMainDashboardStore = defineStore('mainDashboard', () => {
                 frontPromise,
             ]);
 
-            const patch: DashboardReadModelPatch = contextPatch ? { ...contextPatch } : {};
+            const patch: DashboardReadModelPatch = { ...contextPatch };
             if (lobby !== undefined) patch.lobbyInfo = lobby;
             if (map !== undefined) patch.worldMap = map;
             if (contacts !== undefined) patch.messageContacts = contacts;
@@ -690,7 +700,7 @@ export const useMainDashboardStore = defineStore('mainDashboard', () => {
             applyDashboardPatch(patch);
             publishDashboardPatch(patch);
         } catch (err) {
-            error.value = resolveErrorMessage(err);
+            handleDashboardError(err);
         } finally {
             refreshing.value = false;
         }
@@ -709,7 +719,7 @@ export const useMainDashboardStore = defineStore('mainDashboard', () => {
             applyDashboardPatch(patch);
             publishDashboardPatch(patch);
         } catch (err) {
-            error.value = resolveErrorMessage(err);
+            handleDashboardError(err);
         }
     };
 
@@ -970,6 +980,7 @@ export const useMainDashboardStore = defineStore('mainDashboard', () => {
         realtimeActive.value &&
         document.visibilityState !== 'hidden' &&
         realtimeEnabled.value &&
+        !accessLimited.value &&
         session.isReady &&
         session.hasGeneral &&
         generalId.value !== null;
@@ -1158,11 +1169,12 @@ export const useMainDashboardStore = defineStore('mainDashboard', () => {
             session.profile,
             session.user?.id,
             generalId.value,
+            accessLimited.value,
         ],
-        ([active, enabled, ready, hasGeneral]) => {
-            realtimeStatus.value = !enabled ? 'paused' : realtimeStatus.value;
+        ([active, enabled, ready, hasGeneral, , , , , limited]) => {
+            realtimeStatus.value = !enabled || limited ? 'paused' : realtimeStatus.value;
             if (!active || !ready || !hasGeneral) {
-                realtimeStatus.value = enabled ? 'idle' : 'paused';
+                realtimeStatus.value = enabled && !limited ? 'idle' : 'paused';
             }
             reconcileRealtimeCoordinator();
         }

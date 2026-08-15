@@ -5,7 +5,15 @@ import { isGameAccessBlocked } from '@sammo-ts/common/auth/sanctions';
 import type { GameApiContext } from './context.js';
 import { IdempotentTurnDaemonTransport } from './daemon/idempotentTransport.js';
 import { DuplicateInputEventError, executeInputEvent } from './inputEventBoundary.js';
-import { recordGeneralAccessWeight, resolveGeneralAccessEndpointWeight } from './services/generalAccess.js';
+import {
+    formatGeneralAccessLimitMessage,
+    generalAccessLimitBeforeRecordEndpoints,
+    generalAccessLimitEndpoints,
+    getGeneralAccessState,
+    recordGeneralAccessWeight,
+    resolveGeneralAccessEndpointWeight,
+    type GeneralAccessEndpoint,
+} from './services/generalAccess.js';
 
 const t = initTRPC.context<GameApiContext>().create();
 
@@ -84,7 +92,40 @@ const generalAccessEndpointMiddleware = t.middleware(async ({ ctx, path, input, 
     if (weight === null) {
         return next();
     }
+    const endpoint = path as GeneralAccessEndpoint;
+    if (generalAccessLimitBeforeRecordEndpoints.has(endpoint)) {
+        const state = await getGeneralAccessState(ctx);
+        if (state?.level === 2) {
+            throw new TRPCError({
+                code: 'TOO_MANY_REQUESTS',
+                message: formatGeneralAccessLimitMessage(state),
+            });
+        }
+    }
     await recordGeneralAccessWeight(ctx, weight);
+    if (generalAccessLimitEndpoints.has(endpoint) && !generalAccessLimitBeforeRecordEndpoints.has(endpoint)) {
+        const state = await getGeneralAccessState(ctx);
+        if (state?.level === 2) {
+            throw new TRPCError({
+                code: 'TOO_MANY_REQUESTS',
+                message: formatGeneralAccessLimitMessage(state),
+            });
+        }
+    }
+    return next();
+});
+
+const generalAccessLimitMiddleware = t.middleware(async ({ ctx, next }) => {
+    if (ctx.generalAccessTracking !== true) {
+        return next();
+    }
+    const state = await getGeneralAccessState(ctx);
+    if (state?.level === 2) {
+        throw new TRPCError({
+            code: 'TOO_MANY_REQUESTS',
+            message: formatGeneralAccessLimitMessage(state),
+        });
+    }
     return next();
 });
 
@@ -116,6 +157,9 @@ export const sessionActivityProcedure = t.procedure;
 // 시뮬레이터처럼 게임 상태를 변경하지 않는 계산은 input-event transaction과
 // 이벤트 원장을 만들지 않는다. 인증은 유지하되 lifecycle DB 경계 밖에서 실행한다.
 export const readOnlyAuthedProcedure: typeof procedure = t.procedure.use(requireAuthMiddleware);
+export const accessLimitAuthedProcedure: typeof procedure = t.procedure
+    .use(requireAuthMiddleware)
+    .use(generalAccessLimitMiddleware);
 // 입력이 있는 Ref handler는 request parsing을 마친 뒤 increaseRefresh()를
 // 호출한다. 이 factory들은 parser를 access/input-event middleware 앞에 둔다.
 export const accessInputProcedure: typeof procedure.input = (input) =>
@@ -126,3 +170,5 @@ export const accessEngineAuthedInputProcedure: typeof procedure.input = (input) 
     t.procedure.use(requireAuthMiddleware).input(input).use(generalAccessEndpointMiddleware);
 export const accessReadOnlyAuthedInputProcedure: typeof procedure.input = (input) =>
     t.procedure.use(requireAuthMiddleware).input(input).use(generalAccessEndpointMiddleware);
+export const accessLimitAuthedInputProcedure: typeof procedure.input = (input) =>
+    t.procedure.use(requireAuthMiddleware).input(input).use(generalAccessLimitMiddleware);

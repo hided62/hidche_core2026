@@ -8,6 +8,7 @@ import type { BattleSimTransport } from './battleSim/transport.js';
 import type { FlushStore } from './auth/flushStore.js';
 import type { RedisAccessTokenStore } from './auth/accessTokenStore.js';
 import type { AccountIconSource } from './auth/accountIconSource.js';
+import type { ProfileStatusSource } from './auth/profileStatusSource.js';
 import type { ContentImageUploadStore } from './services/remoteContentImageStore.js';
 
 export interface GameProfile {
@@ -99,6 +100,9 @@ export interface GameApiContext {
     flushStore: FlushStore;
     gameTokenSecret: string;
     accountIconSource?: AccountIconSource;
+    // Runtime context always supplies this. Partial router fixtures may omit it;
+    // access scoring then fails open and never penalizes a test-only request.
+    profileStatusSource?: ProfileStatusSource;
 }
 
 export const createGameApiContext = (options: {
@@ -118,6 +122,7 @@ export const createGameApiContext = (options: {
     flushStore: FlushStore;
     gameTokenSecret: string;
     accountIconSource?: AccountIconSource;
+    profileStatusSource: ProfileStatusSource;
 }): GameApiContext => {
     return {
         requestId: options.requestId,
@@ -137,5 +142,6 @@ export const createGameApiContext = (options: {
         flushStore: options.flushStore,
         gameTokenSecret: options.gameTokenSecret,
         ...(options.accountIconSource ? { accountIconSource: options.accountIconSource } : {}),
+        profileStatusSource: options.profileStatusSource,
     };
 };
