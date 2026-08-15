@@ -77,3 +77,12 @@ textarea {
 .legacy-bg2 {
     background-image: var(--sammo-texture-blue);
 }
+
+/*
+ * Ref emits battle summaries as a classed div inside a single log row, then
+ * turns that div into an inline-level box. Without this rule the month prefix,
+ * battle summary, and action time are forced onto three separate lines.
+ */
+.small_war_log {
+    display: inline-block;
+}
