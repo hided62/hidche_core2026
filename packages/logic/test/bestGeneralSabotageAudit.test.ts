@@ -2,7 +2,17 @@ import { describe, expect, it } from 'vitest';
 
 import type { City, General, Nation } from '../src/domain/entities.js';
 import { commandSpec as fireSpec } from '../src/actions/turn/general/che_화계.js';
+import { commandSpec as agitateSpec } from '../src/actions/turn/general/che_선동.js';
+import { commandSpec as destroySpec } from '../src/actions/turn/general/che_파괴.js';
+import { commandSpec as seizeSpec } from '../src/actions/turn/general/che_탈취.js';
 import type { TurnCommandEnv } from '../src/actions/turn/commandEnv.js';
+import type { GeneralTurnCommandSpec } from '../src/actions/turn/general/index.js';
+import {
+    StrategyActionDefinition,
+    StrategyCommandResolver,
+    type StrategyActionConfig,
+    type StrategyContext,
+} from '../src/actions/turn/general/strategyCommand.js';
 import type { WorldSnapshot } from '../src/world/types.js';
 import { MINIMAL_MAP } from './fixtures/minimalMap.js';
 import { InMemoryWorld, TestGameRunner } from './testEnv.js';
@@ -99,52 +109,123 @@ const makeGeneral = (id: number, nationId: number, cityId: number): General => (
 });
 
 describe('best-general sabotage audit', () => {
-    it('repeats real fire-attack turns until one succeeds and increments firenum', async () => {
-        const attackerNation = makeNation(1);
-        const defenderNation = makeNation(2);
-        const attackerCity = makeCity(1, 1);
-        const defenderCity = makeCity(2, 2);
+    const strategyCases: Array<[GeneralTurnCommandSpec['key'], GeneralTurnCommandSpec, number]> = [
+        ['che_화계', fireSpec, 7],
+        ['che_선동', agitateSpec, 1],
+        ['che_파괴', destroySpec, 5],
+        ['che_탈취', seizeSpec, 3],
+    ];
+
+    it('uses the same Ref probability equation through the shared base command', () => {
         const attacker = makeGeneral(1, 1, 1);
         const defender = makeGeneral(2, 2, 2);
-        const snapshot: WorldSnapshot = {
-            scenarioConfig: { environment: { mapName: 'minimal_map', unitSet: 'default' } } as never,
-            scenarioMeta: { startYear: 180 } as never,
-            map: MINIMAL_MAP,
-            unitSet: { id: 'default', name: 'default', crewTypes: [] },
-            nations: [attackerNation, defenderNation],
-            cities: [attackerCity, defenderCity],
-            generals: [attacker, defender],
-            troops: [],
-            diplomacy: [],
-            events: [],
-            initialEvents: [],
-        };
-        const world = new InMemoryWorld(snapshot);
-        const runner = new TestGameRunner(world, 180, 1, 'best-general-sabotage-audit-2');
-        const fire = fireSpec.createDefinition(commandEnv);
-        let attempts = 0;
+        const sourceCity = makeCity(1, 1);
+        const destCity = makeCity(2, 2);
+        const context = {
+            general: attacker,
+            city: sourceCity,
+            nation: makeNation(1),
+            destCity,
+            destNation: makeNation(2),
+            destGenerals: [defender],
+            distance: 1,
+        } as StrategyContext;
+        const configs: StrategyActionConfig[] = [
+            {
+                key: 'che_화계',
+                name: '화계',
+                statKey: 'intelligence',
+                statExpKey: 'intel_exp',
+                damageMode: 'fire',
+                injuryGeneral: true,
+            },
+            {
+                key: 'che_선동',
+                name: '선동',
+                statKey: 'leadership',
+                statExpKey: 'leadership_exp',
+                damageMode: 'agitate',
+                injuryGeneral: true,
+            },
+            {
+                key: 'che_파괴',
+                name: '파괴',
+                statKey: 'strength',
+                statExpKey: 'strength_exp',
+                damageMode: 'destroy',
+                injuryGeneral: true,
+            },
+            {
+                key: 'che_탈취',
+                name: '탈취',
+                statKey: 'strength',
+                statExpKey: 'strength_exp',
+                damageMode: 'seize',
+                injuryGeneral: false,
+            },
+        ];
 
-        while ((world.getGeneral(attacker.id)?.meta.firenum ?? 0) === 0 && attempts < 20) {
-            attempts += 1;
-            await runner.runTurn([
-                {
-                    generalId: attacker.id,
-                    commandKey: 'che_화계',
-                    resolver: fire,
-                    args: { destCityId: defenderCity.id },
-                    context: {
-                        destCity: world.getCity(defenderCity.id),
-                        destNation: defenderNation,
-                        destGenerals: [world.getGeneral(defender.id)],
-                        distance: 1,
-                        env: commandEnv,
-                        map: MINIMAL_MAP,
-                    },
-                },
-            ]);
+        for (const config of configs) {
+            const probability = new StrategyCommandResolver([], commandEnv, config).getProbability(context);
+
+            expect(probability).toMatchObject({ distance: 1 });
+            expect(probability.success).toBeCloseTo(0.325, 12);
         }
-
-        expect(attempts).toBe(3);
-        expect(world.getGeneral(attacker.id)?.meta.firenum).toBe(1);
+        for (const [, spec] of strategyCases) {
+            expect(spec.createDefinition(commandEnv)).toBeInstanceOf(StrategyActionDefinition);
+            expect(spec.category).toBe('계략');
+        }
     });
+
+    it.each(strategyCases)(
+        '%s repeats real general turns until success and increments firenum',
+        async (key, spec, expectedAttempts) => {
+            const attackerNation = makeNation(1);
+            const defenderNation = makeNation(2);
+            const attackerCity = makeCity(1, 1);
+            const defenderCity = makeCity(2, 2);
+            const attacker = makeGeneral(1, 1, 1);
+            const defender = makeGeneral(2, 2, 2);
+            const snapshot: WorldSnapshot = {
+                scenarioConfig: { environment: { mapName: 'minimal_map', unitSet: 'default' } } as never,
+                scenarioMeta: { startYear: 180 } as never,
+                map: MINIMAL_MAP,
+                unitSet: { id: 'default', name: 'default', crewTypes: [] },
+                nations: [attackerNation, defenderNation],
+                cities: [attackerCity, defenderCity],
+                generals: [attacker, defender],
+                troops: [],
+                diplomacy: [],
+                events: [],
+                initialEvents: [],
+            };
+            const world = new InMemoryWorld(snapshot);
+            const runner = new TestGameRunner(world, 180, 1, `best-general-sabotage-audit-${key}`);
+            const strategy = spec.createDefinition(commandEnv);
+            let attempts = 0;
+
+            while ((world.getGeneral(attacker.id)?.meta.firenum ?? 0) === 0 && attempts < 20) {
+                attempts += 1;
+                await runner.runTurn([
+                    {
+                        generalId: attacker.id,
+                        commandKey: key,
+                        resolver: strategy,
+                        args: { destCityId: defenderCity.id },
+                        context: {
+                            destCity: world.getCity(defenderCity.id),
+                            destNation: defenderNation,
+                            destGenerals: [world.getGeneral(defender.id)],
+                            distance: 1,
+                            env: commandEnv,
+                            map: MINIMAL_MAP,
+                        },
+                    },
+                ]);
+            }
+
+            expect(attempts).toBe(expectedAttempts);
+            expect(world.getGeneral(attacker.id)?.meta.firenum).toBe(1);
+        }
+    );
 });

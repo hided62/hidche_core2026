@@ -2823,6 +2823,142 @@ type SabotageProbabilityClampCase = {
     boundary: 'zero' | 'max';
 };
 
+const sabotageStatProgressionCases = [
+    { action: 'che_화계', stat: 'intelligence', statExp: 'intelExp' },
+    { action: 'che_선동', stat: 'leadership', statExp: 'leadershipExp' },
+    { action: 'che_파괴', stat: 'strength', statExp: 'strengthExp' },
+    { action: 'che_탈취', stat: 'strength', statExp: 'strengthExp' },
+] as const;
+
+const sabotageSuccessfulEffectCases = sabotageStatProgressionCases.map(({ action, stat }) => ({ action, stat }));
+
+const sabotageSuccessfulEffectExpected = {
+    che_화계: { city: { agriculture: 494, commerce: 859, state: 32 } },
+    che_선동: { city: { security: 0, trust: 70.1066, state: 32 } },
+    che_파괴: { city: { defence: 536, wall: 222, state: 32 } },
+    che_탈취: {
+        city: { state: 32 },
+        nation: { gold: 999_341, rice: 999_200 },
+        actor: { gold: 100_108, rice: 100_140 },
+    },
+} as const;
+
+integration('general sabotage successful effect matrix', () => {
+    it.each(sabotageSuccessfulEffectCases)(
+        '$action executes a real general turn at the 0.5 probability clamp',
+        async ({ action, stat }) => {
+            const request = buildRequest(
+                action,
+                { destCityID: 70 },
+                { [stat]: 100 },
+                {
+                    generals: { 2: { [stat]: 10 } },
+                    cities: { 70: { security: 100, securityMax: 2_000, supplyState: 1 } },
+                }
+            );
+            request.setup!.world!.hiddenSeed = 'general-value-0';
+            const reference = runReferenceTurnCommandTraceRequest(
+                workspaceRoot!,
+                request as unknown as Record<string, unknown>
+            );
+            const core = await runCoreTurnCommandTrace(request, reference.before);
+
+            expect(reference.execution.outcome).toMatchObject({ completed: true });
+            expect(core.execution.outcome).toMatchObject({
+                requestedAction: action,
+                actionKey: action,
+                usedFallback: false,
+            });
+            expect(reference.rng[0]).toMatchObject({
+                operation: 'nextBits',
+                arguments: { bits: 1 },
+                result: '01',
+            });
+            expect(hasSuccessfulSabotageLog(reference.after.logs)).toBe(true);
+            expect(hasSuccessfulSabotageLog(core.after.logs)).toBe(true);
+            expect(core.rng).toEqual(reference.rng);
+            const findById = (rows: Array<Record<string, unknown>>, id: number) =>
+                rows.find((entry) => entry.id === id);
+            const expected = sabotageSuccessfulEffectExpected[action];
+            expect(findById(reference.after.cities, 70)).toMatchObject(expected.city);
+            if ('nation' in expected) {
+                expect(findById(reference.after.nations, 2)).toMatchObject(expected.nation);
+            }
+            if ('actor' in expected) {
+                expect(findById(reference.after.generals, 1)).toMatchObject(expected.actor);
+            }
+            expect(
+                compareTurnSnapshotDeltas(reference.before, reference.after, core.before, core.after, {
+                    ignoredPathPatterns: ignoredLifecyclePaths,
+                })
+            ).toEqual([]);
+
+            if (process.env.TURN_DIFFERENTIAL_SABOTAGE_EVIDENCE === '1') {
+                process.stderr.write(
+                    `${JSON.stringify({
+                        action,
+                        probability: 0.5,
+                        rng: reference.rng,
+                        reference: {
+                            actorBefore: findById(reference.before.generals, 1),
+                            actorAfter: findById(reference.after.generals, 1),
+                            targetCityBefore: findById(reference.before.cities, 70),
+                            targetCityAfter: findById(reference.after.cities, 70),
+                            targetNationBefore: findById(reference.before.nations, 2),
+                            targetNationAfter: findById(reference.after.nations, 2),
+                        },
+                        core: {
+                            actorAfter: findById(core.after.generals, 1),
+                            targetCityAfter: findById(core.after.cities, 70),
+                            targetNationAfter: findById(core.after.nations, 2),
+                        },
+                    })}\n`
+                );
+            }
+        },
+        120_000
+    );
+});
+
+integration('general sabotage stat progression matrix', () => {
+    it.each(sabotageStatProgressionCases)(
+        '$action inherits the base strategy stat progression tail',
+        async ({ action, stat, statExp }) => {
+            const request = buildRequest(
+                action,
+                { destCityID: 70 },
+                { [stat]: 100, [statExp]: 29 },
+                {
+                    generals: { 2: { [stat]: 10 } },
+                    cities: { 70: { security: 0, securityMax: 2_000 } },
+                }
+            );
+            request.setup!.world!.hiddenSeed = 'general-value-0';
+            const reference = runReferenceTurnCommandTraceRequest(
+                workspaceRoot!,
+                request as unknown as Record<string, unknown>
+            );
+            const core = await runCoreTurnCommandTrace(request, reference.before);
+
+            expect(reference.execution.outcome).toMatchObject({ completed: true });
+            expect(core.execution.outcome).toMatchObject({
+                requestedAction: action,
+                actionKey: action,
+                usedFallback: false,
+            });
+            expect(core.rng).toEqual(reference.rng);
+            expect(reference.after.generals.find((entry) => entry.id === 1)?.[stat]).toBe(101);
+            expect(core.after.generals.find((entry) => entry.id === 1)?.[stat]).toBe(101);
+            expect(
+                compareTurnSnapshotDeltas(reference.before, reference.after, core.before, core.after, {
+                    ignoredPathPatterns: ignoredLifecyclePaths,
+                })
+            ).toEqual([]);
+        },
+        120_000
+    );
+});
+
 const sabotageProbabilityClampCases: SabotageProbabilityClampCase[] = (
     [
         ['che_화계', 'intelligence'],
