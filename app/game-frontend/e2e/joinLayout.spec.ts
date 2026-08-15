@@ -8,6 +8,8 @@ const operationNames = (route: Route) =>
 type FixtureState = {
     mapRequests: number;
     generalRequests: number;
+    created?: boolean;
+    createRequests?: number;
 };
 
 const installFixture = async (page: Page, state: FixtureState): Promise<void> => {
@@ -28,7 +30,12 @@ const installFixture = async (page: Page, state: FixtureState): Promise<void> =>
         const results = operations.map((operation) => {
             if (operation === 'auth.status') return response({ ok: true });
             if (operation === 'lobby.info') {
-                return response({ myGeneral: null, year: 180, month: 4, turnTerm: 5 });
+                return response({
+                    myGeneral: state.created ? { id: 9, name: '생성장수' } : null,
+                    year: 180,
+                    month: 4,
+                    turnTerm: 5,
+                });
             }
             if (operation === 'join.getConfig') {
                 return response({
@@ -133,6 +140,14 @@ const installFixture = async (page: Page, state: FixtureState): Promise<void> =>
                     },
                 ]);
             }
+            if (operation === 'join.createGeneral') {
+                state.created = true;
+                state.createRequests = (state.createRequests ?? 0) + 1;
+                return response({ generalId: 9 });
+            }
+            if (operation === 'world.getState') {
+                return response({ config: { npcMode: 0 } });
+            }
             return response({});
         });
         await route.fulfill({
@@ -158,12 +173,48 @@ test('prioritizes core general fields and keeps context and inheritance progress
     await expect(page.getByLabel('성격')).toBeVisible();
     await expect(page.locator('.create-form').getByLabel('통솔')).toHaveValue('55');
     const statActions = page.getByRole('group', { name: '능력치 빠른 설정' });
-    await expect(statActions.getByRole('button')).toHaveText([
-        '랜덤형',
-        '통솔무력형',
-        '통솔지력형',
-        '무력지력형',
-    ]);
+    await expect(statActions.getByRole('button')).toHaveText(['랜덤형', '통솔무력형', '통솔지력형', '무력지력형']);
+    const randomButton = statActions.getByRole('button', { name: '랜덤형', exact: true });
+    const defaultButtonStyle = await randomButton.evaluate((element) => {
+        const rect = element.getBoundingClientRect();
+        const style = getComputedStyle(element);
+        return {
+            height: rect.height,
+            backgroundColor: style.backgroundColor,
+            color: style.color,
+            fontSize: style.fontSize,
+            fontWeight: style.fontWeight,
+            cursor: style.cursor,
+        };
+    });
+    expect(defaultButtonStyle).toEqual({
+        height: 40,
+        backgroundColor: 'rgb(0, 88, 44)',
+        color: 'rgb(255, 255, 255)',
+        fontSize: '14px',
+        fontWeight: '700',
+        cursor: 'pointer',
+    });
+    await randomButton.hover();
+    await expect
+        .poll(() => randomButton.evaluate((element) => getComputedStyle(element).backgroundColor))
+        .toBe('rgb(0, 109, 55)');
+    await page.screenshot({ path: testInfo.outputPath('join-stat-actions-hover-desktop.png'), fullPage: true });
+    await randomButton.focus();
+    await expect(randomButton).toBeFocused();
+    await expect.poll(() => randomButton.evaluate((element) => getComputedStyle(element).outlineStyle)).toBe('solid');
+    const randomButtonBox = await randomButton.boundingBox();
+    expect(randomButtonBox).not.toBeNull();
+    await page.mouse.move(
+        randomButtonBox!.x + randomButtonBox!.width / 2,
+        randomButtonBox!.y + randomButtonBox!.height / 2
+    );
+    await page.mouse.down();
+    await expect
+        .poll(() => randomButton.evaluate((element) => getComputedStyle(element).backgroundColor))
+        .toBe('rgb(0, 69, 35)');
+    await page.screenshot({ path: testInfo.outputPath('join-stat-actions-active-desktop.png'), fullPage: true });
+    await page.mouse.up();
     const setRandomValues = async (values: number[]) => {
         await page.evaluate((nextValues) => {
             let index = 0;
@@ -268,8 +319,55 @@ test('keeps the primary creation flow readable without horizontal overflow on mo
         flowWidth: 366,
         tabsWidth: 352,
     });
+    const mobileStatButtons = await page
+        .getByRole('group', { name: '능력치 빠른 설정' })
+        .getByRole('button')
+        .evaluateAll((buttons) =>
+            buttons.map((button) => {
+                const rect = button.getBoundingClientRect();
+                return { width: rect.width, height: rect.height };
+            })
+        );
+    expect(mobileStatButtons).toHaveLength(4);
+    expect(mobileStatButtons.every(({ width, height }) => width >= 160 && height === 40)).toBe(true);
     await expect(page.locator('.advanced-options')).not.toHaveAttribute('open');
     await page.getByRole('tab', { name: '임관 권유' }).focus();
     await expect(page.getByRole('tab', { name: '임관 권유' })).toBeFocused();
     await page.screenshot({ path: testInfo.outputPath('join-layout-mobile.png'), fullPage: true });
+});
+
+test('shows the creation success dialog exactly once before navigating home', async ({ page }, testInfo) => {
+    const state: FixtureState = { mapRequests: 0, generalRequests: 0 };
+    await installFixture(page, state);
+    await page.setViewportSize({ width: 390, height: 844 });
+    await page.goto('join');
+
+    await page.locator('.create-form').getByRole('button', { name: '장수 생성', exact: true }).click();
+
+    const successDialog = page.getByRole('alertdialog', { name: '완료' });
+    await expect(successDialog).toHaveCount(1);
+    await expect(successDialog).toContainText('장수를 생성했습니다!');
+    await expect(successDialog.getByRole('button', { name: '확인' })).toBeFocused();
+    await expect(page).toHaveURL(/\/join(?:\?.*)?$/);
+    expect(state.createRequests).toBe(1);
+
+    const dialogGeometry = await successDialog.evaluate((element) => {
+        const rect = element.getBoundingClientRect();
+        return {
+            left: rect.left,
+            right: window.innerWidth - rect.right,
+            width: rect.width,
+            documentWidth: document.documentElement.scrollWidth,
+        };
+    });
+    expect(dialogGeometry.left).toBeGreaterThanOrEqual(12);
+    expect(dialogGeometry.right).toBeGreaterThanOrEqual(12);
+    expect(dialogGeometry.width).toBeLessThanOrEqual(366);
+    expect(dialogGeometry.documentWidth).toBe(390);
+    await page.screenshot({ path: testInfo.outputPath('join-create-success-dialog-mobile.png'), fullPage: true });
+
+    await successDialog.getByRole('button', { name: '확인' }).click();
+    await expect(successDialog).toHaveCount(0);
+    await expect(page).toHaveURL(new RegExp(`${gameBasePath}/?$`));
+    expect(state.createRequests).toBe(1);
 });

@@ -494,6 +494,7 @@ const submitJoin = async () => {
             clientRequestId: pending.clientRequestId,
         });
         clearPendingJoin(pending);
+        await showDialog({ kind: 'success', message: '장수를 생성했습니다!' });
         await session.refreshGeneralStatus();
         if (session.hasGeneral) {
             await router.push({ name: 'home' });
@@ -1378,14 +1379,32 @@ onUnmounted(() => {
 .stat-actions {
     display: flex;
     flex-wrap: wrap;
-    gap: 6px;
+    gap: 8px;
     margin-top: 12px;
 }
 
 .stat-actions button {
-    border: 1px solid rgba(201, 164, 90, 0.3);
-    padding: 4px 8px;
-    font-size: 0.75rem;
+    flex: 1 1 140px;
+    min-height: 40px;
+    border: 1px solid #004f28;
+    border-radius: 3px;
+    background: #00582c;
+    padding: 8px 14px;
+    color: #fff;
+    font-size: 0.875rem;
+    font-weight: 700;
+    line-height: 1.2;
+    cursor: pointer;
+}
+
+.stat-actions button:hover {
+    border-color: #005f30;
+    background: #006d37;
+}
+
+.stat-actions button:active {
+    border-color: #003d1f;
+    background: #004523;
 }
 
 .stat-summary {
@@ -1503,6 +1522,7 @@ onUnmounted(() => {
 
 .context-tabs button:focus-visible,
 .advanced-options > summary:focus-visible,
+.stat-actions button:focus-visible,
 .form-actions button:focus-visible {
     outline: 2px solid #f0d58f;
     outline-offset: -2px;
