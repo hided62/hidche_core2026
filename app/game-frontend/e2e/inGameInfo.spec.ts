@@ -160,7 +160,8 @@ const install = async (
     mode: 'member' | 'wanderer' | 'admin' = 'member',
     trade: number | null = 100,
     globalNationCount = 2,
-    mapFixture = map
+    mapFixture = map,
+    denseCurrentCity = false
 ) => {
     await page.addInitScript((profile) => {
         localStorage.setItem('sammo-game-token', 'ga_info');
@@ -372,8 +373,32 @@ const install = async (
                                       crew: 500,
                                       train: 90,
                                       atmos: 90,
-                                      turns: ['징병'],
+                                      turns: denseCurrentCity ? ['징병', '훈련'] : ['징병'],
                                   },
+                                  ...(denseCurrentCity
+                                      ? Array.from({ length: 12 }, (_, index) => ({
+                                            id: index + 2,
+                                            name: `NPC장수이름이긴${index + 1}`,
+                                            npcState: 2,
+                                            picture: null,
+                                            imageServer: 0,
+                                            nationId: 1,
+                                            nationName: '아국',
+                                            leadership: 60,
+                                            strength: 60,
+                                            intelligence: 60,
+                                            injury: 0,
+                                            officerLevel: 1,
+                                            leadershipBonus: 0,
+                                            defenceTrain: 80,
+                                            crewTypeId: 1,
+                                            crewTypeName: '보병',
+                                            crew: 500,
+                                            train: 90,
+                                            atmos: 90,
+                                            turns: [],
+                                        }))
+                                      : []),
                               ],
                     forceSummary: {
                         enemyCrew: 0,
@@ -407,7 +432,7 @@ test('four legacy menu pages keep the 1000px desktop table contract', async ({ p
         ['nation/info', '.legacy-info-page', '14px', 'Pretendard', 'collapse'],
         ['nation/cities', '.nation-cities-page', '14px', 'Pretendard', 'collapse'],
         ['global-info', '.global-page', '14px', 'Pretendard', 'collapse'],
-        ['current-city', '.city-page', '16px', 'Times New Roman', 'separate'],
+        ['current-city', '.city-page', '14px', 'Pretendard', 'separate'],
     ] as const) {
         await go(page, path);
         await expect(page.locator(selector)).toBeVisible();
@@ -774,8 +799,8 @@ test('current-city exposes own general details to a member and admin fixture', a
         };
     });
     expect(legacyGeometry.selector).toMatchObject({ width: 400, height: 19 });
-    expect(legacyGeometry.stats).toEqual({ x: 100, y: 178, width: 1000, height: 136 });
-    expect(legacyGeometry.generals).toMatchObject({ x: 88, y: 332, width: 1024 });
+    expect(legacyGeometry.stats).toEqual({ x: 100, y: 165.375, width: 1000, height: 106.9375 });
+    expect(legacyGeometry.generals).toMatchObject({ x: 88, y: 290.3125, width: 1024 });
     expect(legacyGeometry.titleAlign).toBe('start');
     expect(legacyGeometry.icon).toMatchObject({ width: 64, height: 64, naturalWidth: 64, naturalHeight: 64 });
     if (artifactRoot) {
@@ -831,6 +856,67 @@ test('current-city exposes own general details to a member and admin fixture', a
             fullPage: true,
             animations: 'disabled',
         });
+    }
+});
+
+test('current-city wraps dense general names and only shrinks reserved turns', async ({ page }) => {
+    await install(page, 'member', 100, 2, map, true);
+    for (const viewport of [
+        { name: 'desktop', width: 1200, height: 900 },
+        { name: 'mobile', width: 500, height: 900 },
+    ]) {
+        await page.setViewportSize({ width: viewport.width, height: viewport.height });
+        await go(page, 'current-city');
+
+        const pageStyle = await page.locator('.city-page').evaluate((element) => {
+            const style = getComputedStyle(element);
+            return { fontFamily: style.fontFamily, fontSize: style.fontSize };
+        });
+        expect(pageStyle.fontFamily).toContain('Pretendard');
+        expect(pageStyle.fontSize).toBe('14px');
+
+        const names = page.locator('.general-names');
+        await expect(names).toHaveCSS('white-space', 'normal');
+        const nameLineCount = await names.locator('span').evaluateAll((elements) => {
+            const tops = elements.map((element) => Math.round(element.getBoundingClientRect().top));
+            return new Set(tops).size;
+        });
+        expect(nameLineCount).toBeGreaterThan(1);
+
+        const rows = page.locator('.generals tbody tr');
+        const reservedTurns = rows.nth(0).locator('.turns');
+        const npcTurns = rows.nth(1).locator('.turns');
+        await expect(reservedTurns).toContainText('1 : 징병');
+        await expect(reservedTurns).toContainText('2 : 훈련');
+        await expect(reservedTurns).toHaveClass(/turns--reserved/);
+        await expect(npcTurns).toHaveText('NPC 장수');
+        await expect(npcTurns).not.toHaveClass(/turns--reserved/);
+
+        const turnFontSizes = await Promise.all([
+            reservedTurns.evaluate((element) => getComputedStyle(element).fontSize),
+            npcTurns.evaluate((element) => getComputedStyle(element).fontSize),
+        ]);
+        expect(Number.parseFloat(turnFontSizes[0])).toBeLessThan(Number.parseFloat(pageStyle.fontSize));
+        expect(turnFontSizes[1]).toBe(pageStyle.fontSize);
+
+        const reservedLineTops = await reservedTurns
+            .locator('.turn-line')
+            .evaluateAll((elements) => elements.map((element) => Math.round(element.getBoundingClientRect().top)));
+        expect(new Set(reservedLineTops).size).toBe(2);
+
+        if (artifactRoot) {
+            await mkdir(artifactRoot, { recursive: true });
+            await writeFile(
+                resolve(artifactRoot, `core-current-city-dense-${viewport.name}.json`),
+                `${JSON.stringify({ pageStyle, nameLineCount, turnFontSizes, reservedLineTops }, null, 2)}\n`,
+                'utf8'
+            );
+            await page.screenshot({
+                path: resolve(artifactRoot, `core-current-city-dense-${viewport.name}.png`),
+                fullPage: true,
+                animations: 'disabled',
+            });
+        }
     }
 });
 
