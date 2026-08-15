@@ -897,6 +897,10 @@ export const createDatabaseTurnHooks = async (
     const connector = createGamePostgresConnector({ url: databaseUrl });
     await connector.connect();
     const prisma = connector.prisma;
+    // Prisma's 5-second default matches the normal turn execution budget too
+    // closely. A populated season can finish the turn but expire while flushing
+    // it, which rolls the transaction back and marks the profile PAUSED.
+    const transactionOptions = { timeout: options?.transactionTimeoutMs ?? 30_000 };
     let committedReadModelChanges: RealtimeReadModelChanges | null = null;
     const readModelBaseline = createRealtimeReadModelBaseline(world);
 
@@ -1391,10 +1395,7 @@ export const createDatabaseTurnHooks = async (
         if (transaction) {
             await persist(transaction);
         } else {
-            await prisma.$transaction(
-                persist,
-                options?.transactionTimeoutMs ? { timeout: options.transactionTimeoutMs } : undefined
-            );
+            await prisma.$transaction(persist, transactionOptions);
         }
 
         const readModelChanges = mergePersistedVisibleLogChanges(
@@ -1425,21 +1426,18 @@ export const createDatabaseTurnHooks = async (
             committedReadModelChanges = committed.readModelChanges;
         },
         executeCommand: async (requestId, execute) => {
-            const committed = await prisma.$transaction(
-                async (transaction) => {
-                    const directLogFloor =
-                        (
-                            await transaction.logEntry.findFirst({
-                                orderBy: { id: 'desc' },
-                                select: { id: true },
-                            })
-                        )?.id ?? 0;
-                    const result = await execute({ db: transaction });
-                    const persisted = await persistChanges(transaction, { requestId, result }, directLogFloor);
-                    return { result, persisted };
-                },
-                options?.transactionTimeoutMs ? { timeout: options.transactionTimeoutMs } : undefined
-            );
+            const committed = await prisma.$transaction(async (transaction) => {
+                const directLogFloor =
+                    (
+                        await transaction.logEntry.findFirst({
+                            orderBy: { id: 'desc' },
+                            select: { id: true },
+                        })
+                    )?.id ?? 0;
+                const result = await execute({ db: transaction });
+                const persisted = await persistChanges(transaction, { requestId, result }, directLogFloor);
+                return { result, persisted };
+            }, transactionOptions);
             committed.persisted.acknowledge();
             committedReadModelChanges = committed.persisted.readModelChanges;
             return committed.result;
