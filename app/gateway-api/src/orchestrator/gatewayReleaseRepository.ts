@@ -2,8 +2,7 @@ import type { GatewayPrisma, GatewayPrismaClient } from '@sammo-ts/infra';
 
 import type { GatewayOperationStatus, GatewaySourceMode } from './profileRepository.js';
 
-export const GATEWAY_RELEASE_OPERATION_TYPES = ['DEPLOY', 'ROLLBACK'] as const;
-export type GatewayReleaseOperationType = (typeof GATEWAY_RELEASE_OPERATION_TYPES)[number];
+export type GatewayReleaseOperationType = 'DEPLOY' | 'ROLLBACK';
 
 export interface GatewayReleaseStateRecord {
     id: string;
@@ -46,7 +45,7 @@ export interface GatewayReleaseOperationCreateInput {
     requestedBy: string;
 }
 
-export const GATEWAY_RELEASE_LOG_LEVELS = ['INFO', 'OUTPUT', 'ERROR'] as const;
+const GATEWAY_RELEASE_LOG_LEVELS = ['INFO', 'OUTPUT', 'ERROR'] as const;
 export type GatewayReleaseLogLevel = (typeof GATEWAY_RELEASE_LOG_LEVELS)[number];
 
 export interface GatewayReleaseLogRecord {

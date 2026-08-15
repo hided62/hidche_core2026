@@ -48,25 +48,6 @@ export const notWanderingNation = (): Constraint => ({
     },
 });
 
-export const beWanderingNation = (): Constraint => ({
-    name: 'beWanderingNation',
-    requires: (ctx) => (ctx.nationId !== undefined ? [{ kind: 'nation', id: ctx.nationId }] : []),
-    test: (ctx, view) => {
-        const nation = readNation(view, ctx.nationId);
-        if (!nation) {
-            if (ctx.nationId === undefined) {
-                return unknownOrDeny(ctx, [], '국가 정보가 없습니다.');
-            }
-            const req: RequirementKey = { kind: 'nation', id: ctx.nationId };
-            return unknownOrDeny(ctx, [req], '국가 정보가 없습니다.');
-        }
-        if (nation.level === 0) {
-            return allow();
-        }
-        return { kind: 'deny', reason: '방랑군이 아닙니다.' };
-    },
-});
-
 export const wanderingNation = (): Constraint => ({
     name: 'wanderingNation',
     requires: (ctx) => (ctx.nationId !== undefined ? [{ kind: 'nation', id: ctx.nationId }] : []),

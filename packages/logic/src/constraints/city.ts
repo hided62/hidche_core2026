@@ -236,30 +236,6 @@ export const remainCityCapacity = (key: keyof City, label: string): Constraint =
     },
 });
 
-export const remainCityCapacityByMax = (key: keyof City, maxKey: keyof City, label: string): Constraint => ({
-    name: 'remainCityCapacityByMax',
-    requires: (ctx) => (ctx.cityId !== undefined ? [{ kind: 'city', id: ctx.cityId }] : []),
-    test: (ctx, view) => {
-        const city = readCity(view, ctx.cityId);
-        if (!city) {
-            if (ctx.cityId === undefined) {
-                return unknownOrDeny(ctx, [], '도시 정보가 없습니다.');
-            }
-            const req: RequirementKey = { kind: 'city', id: ctx.cityId };
-            return unknownOrDeny(ctx, [req], '도시 정보가 없습니다.');
-        }
-        const current = city[key];
-        const max = city[maxKey];
-        if (typeof current !== 'number' || typeof max !== 'number') {
-            return unknownOrDeny(ctx, [], '도시 정보가 없습니다.');
-        }
-        if (current < max) {
-            return allow();
-        }
-        return { kind: 'deny', reason: `${label}이 충분합니다.` };
-    },
-});
-
 export const reqCityCapacity = (key: keyof City, label: string, required: number | string): Constraint => ({
     name: 'reqCityCapacity',
     requires: (ctx) => (ctx.cityId !== undefined ? [{ kind: 'city', id: ctx.cityId }] : []),
@@ -506,7 +482,7 @@ export const hasRouteWithEnemy = (): Constraint => ({
     },
 });
 
-export const beNeutralCity = (): Constraint => ({
+export const neutralCity = (): Constraint => ({
     name: 'beNeutralCity',
     requires: (ctx) => (ctx.cityId !== undefined ? [{ kind: 'city', id: ctx.cityId }] : []),
     test: (ctx, view) => {
@@ -534,8 +510,6 @@ export const beNeutralCity = (): Constraint => ({
     },
 });
 
-export const neutralCity = (): Constraint => beNeutralCity();
-
 export const constructableCity = (): Constraint => ({
     name: 'constructableCity',
     requires: (ctx) => (ctx.cityId !== undefined ? [{ kind: 'city', id: ctx.cityId }] : []),
@@ -555,25 +529,6 @@ export const constructableCity = (): Constraint => ({
             return { kind: 'deny', reason: '중, 소 도시에만 가능합니다.' };
         }
         return allow();
-    },
-});
-
-export const reqCityLevel = (levels: number[]): Constraint => ({
-    name: 'reqCityLevel',
-    requires: (ctx) => (ctx.cityId !== undefined ? [{ kind: 'city', id: ctx.cityId }] : []),
-    test: (ctx, view) => {
-        const city = readCity(view, ctx.cityId);
-        if (!city) {
-            if (ctx.cityId === undefined) {
-                return unknownOrDeny(ctx, [], '도시 정보가 없습니다.');
-            }
-            const req: RequirementKey = { kind: 'city', id: ctx.cityId };
-            return unknownOrDeny(ctx, [req], '도시 정보가 없습니다.');
-        }
-        if (levels.includes(city.level)) {
-            return allow();
-        }
-        return { kind: 'deny', reason: '규모가 맞지 않습니다.' };
     },
 });
 

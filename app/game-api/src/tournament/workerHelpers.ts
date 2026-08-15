@@ -19,8 +19,6 @@ export type TournamentPrismaClient = {
     $transaction: (actions: Promise<unknown>[]) => Promise<unknown[]>;
 };
 
-export const sleepMs = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));
-
 export const isBattleStage = (stage: number): boolean => stage >= 7 && stage <= 10;
 export const isPreBattleStage = (stage: number): boolean => stage >= 1 && stage <= 6;
 
@@ -50,7 +48,7 @@ export const resolveBettingCloseAt = (state: TournamentState): string => {
     return new Date(resolveScheduledBaseMs(state) + Math.max(1000, bettingTermMs)).toISOString();
 };
 
-export const resolveStatValue = (
+const resolveStatValue = (
     type: TournamentType,
     entry: { leadership: number; strength: number; intel: number }
 ): number => {
@@ -70,13 +68,34 @@ export const resolveStatValue = (
 export const resolveGroupPair = (stage: number, phase: number): [number, number] | null => {
     if (stage === 2) {
         const pairMap: Array<[number, number]> = [
-            [0, 1], [2, 3], [4, 5], [6, 7],
-            [0, 2], [1, 3], [4, 6], [5, 7],
-            [0, 3], [1, 6], [2, 5], [4, 7],
-            [0, 4], [1, 5], [2, 6], [3, 7],
-            [0, 5], [1, 4], [2, 7], [3, 6],
-            [0, 6], [1, 7], [2, 4], [3, 5],
-            [0, 7], [1, 2], [3, 4], [5, 6],
+            [0, 1],
+            [2, 3],
+            [4, 5],
+            [6, 7],
+            [0, 2],
+            [1, 3],
+            [4, 6],
+            [5, 7],
+            [0, 3],
+            [1, 6],
+            [2, 5],
+            [4, 7],
+            [0, 4],
+            [1, 5],
+            [2, 6],
+            [3, 7],
+            [0, 5],
+            [1, 4],
+            [2, 7],
+            [3, 6],
+            [0, 6],
+            [1, 7],
+            [2, 4],
+            [3, 5],
+            [0, 7],
+            [1, 2],
+            [3, 4],
+            [5, 6],
         ];
         const basePair = pairMap[phase % 28];
         if (!basePair) {
@@ -87,9 +106,12 @@ export const resolveGroupPair = (stage: number, phase: number): [number, number]
 
     if (stage === 4) {
         const pairMap: Array<[number, number]> = [
-            [0, 1], [2, 3],
-            [0, 2], [1, 3],
-            [0, 3], [1, 2],
+            [0, 1],
+            [2, 3],
+            [0, 2],
+            [1, 3],
+            [0, 3],
+            [1, 2],
         ];
         return pairMap[phase % 6] ?? null;
     }
@@ -133,10 +155,8 @@ export const assignGroupSlots = (
     });
 };
 
-export const selectWeighted = <T>(
-    rng: ReturnType<typeof createTournamentRng>,
-    pool: Array<{ item: T; weight: number }>
-): T => rng.choiceUsingWeightPair(pool.map((entry) => [entry.item, entry.weight]));
+const selectWeighted = <T>(rng: ReturnType<typeof createTournamentRng>, pool: Array<{ item: T; weight: number }>): T =>
+    rng.choiceUsingWeightPair(pool.map((entry) => [entry.item, entry.weight]));
 
 export const fillParticipants = async (options: {
     prisma: TournamentPrismaClient;
@@ -203,7 +223,10 @@ export const fillParticipants = async (options: {
 
     while (result.length < limit && applicantPool.length > 0) {
         const picked = selectWeighted(applicantRng, applicantPool);
-        applicantPool.splice(applicantPool.findIndex((entry) => entry.item.id === picked.id), 1);
+        applicantPool.splice(
+            applicantPool.findIndex((entry) => entry.item.id === picked.id),
+            1
+        );
         takenIds.add(picked.id);
         result.push(picked);
     }
@@ -262,7 +285,10 @@ export const fillParticipants = async (options: {
 
     while (result.length < limit && npcPool.length > 0) {
         const picked = selectWeighted(npcRng, npcPool);
-        npcPool.splice(npcPool.findIndex((entry) => entry.item.id === picked.id), 1);
+        npcPool.splice(
+            npcPool.findIndex((entry) => entry.item.id === picked.id),
+            1
+        );
         takenIds.add(picked.id);
         result.push(picked);
     }
@@ -344,28 +370,28 @@ export const applyGroupMatch = (
 
     return {
         participants: participants.map((entry) => {
-        if (entry.id !== attacker.id && entry.id !== defender.id) {
-            return entry;
-        }
-        const next = {
-            ...entry,
-            win: entry.win ?? 0,
-            draw: entry.draw ?? 0,
-            lose: entry.lose ?? 0,
-            gl: entry.gl ?? 0,
-        };
-        if (result.draw) {
-            next.draw += 1;
+            if (entry.id !== attacker.id && entry.id !== defender.id) {
+                return entry;
+            }
+            const next = {
+                ...entry,
+                win: entry.win ?? 0,
+                draw: entry.draw ?? 0,
+                lose: entry.lose ?? 0,
+                gl: entry.gl ?? 0,
+            };
+            if (result.draw) {
+                next.draw += 1;
+                return next;
+            }
+            if (result.winnerId === entry.id) {
+                next.win += 1;
+                next.gl += glDelta;
+                return next;
+            }
+            next.lose += 1;
+            next.gl -= glDelta;
             return next;
-        }
-        if (result.winnerId === entry.id) {
-            next.win += 1;
-            next.gl += glDelta;
-            return next;
-        }
-        next.lose += 1;
-        next.gl -= glDelta;
-        return next;
         }),
         outcome,
     };
@@ -573,7 +599,7 @@ export const buildTournamentRewardPayload = (
     };
 };
 
-export const resolveNumber = (source: Record<string, unknown>, keys: string[], fallback: number): number => {
+const resolveNumber = (source: Record<string, unknown>, keys: string[], fallback: number): number => {
     for (const key of keys) {
         const value = source[key];
         if (typeof value === 'number' && Number.isFinite(value)) {
@@ -598,11 +624,7 @@ export const seedNpcBets = async (options: {
 
     const matches = await store.getMatches();
     const candidateIds = Array.from(
-        new Set(
-            matches
-                .filter((match) => match.stage === 7)
-                .flatMap((match) => [match.attackerId, match.defenderId])
-        )
+        new Set(matches.filter((match) => match.stage === 7).flatMap((match) => [match.attackerId, match.defenderId]))
     );
     if (candidateIds.length === 0) {
         return;

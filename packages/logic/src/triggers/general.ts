@@ -18,7 +18,7 @@ export interface GeneralSkillActivation {
     activate(...keys: string[]): void;
 }
 
-export const createGeneralSkillActivation = <TriggerState extends GeneralTriggerState>(
+const createGeneralSkillActivation = <TriggerState extends GeneralTriggerState>(
     general: General<TriggerState>
 ): GeneralSkillActivation => ({
     has: (key: string) => Boolean(general.triggerState.flags[key]),

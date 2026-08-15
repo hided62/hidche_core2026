@@ -6,6 +6,3 @@ export * from './turn/commandModule.js';
 export * from './turn/commandProfile.js';
 export * from './turn/general/index.js';
 export * from './turn/nation/index.js';
-export * from './instant/general/index.js';
-export * from './instant/nation/index.js';
-export * from './admin/index.js';

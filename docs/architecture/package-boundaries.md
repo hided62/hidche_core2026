@@ -50,6 +50,26 @@ Frontend가 tRPC router shape를 참조할 때는 `import type`만 사용하고 
 package를 `devDependencies`에 둡니다. 브라우저에서 실제 실행하는 공유 값만
 `common` 또는 `logic`의 browser-safe export에서 가져옵니다.
 
+## 공개 export와 façade 기준
+
+공개 export는 현재 package 밖의 호출자가 사용하는 값, 동적 module loader가
+정해진 이름으로 읽는 값, 또는 `package.json`의 명시적 subpath 계약에 필요한
+값만 둡니다. 같은 저장소 내부에서만 쓰는 helper와 schema 조각은 선언 파일에
+남기지 않고 module 내부 값으로 둡니다. 정적 분석이 동적 import의
+`ActionDefinition`, `commandSpec`, `actionContextBuilder`를 미사용으로 표시해도
+이 이름들은 turn command protocol이므로 제거하지 않습니다.
+
+소유 package의 안정적인 subpath를 그대로 전달하기만 하는 app-local 파일은
+별도 정책이나 변환을 추가하지 않는 한 만들지 않습니다. 호출자는 실제 소유
+subpath를 직접 import하고, 인증·validation·오류 변환 또는 런타임 주입처럼
+경계 자체가 의미를 가질 때만 façade를 유지합니다. 루트 barrel의 `export *`와
+동일 symbol을 다시 나열하는 중복 export도 두지 않습니다.
+
+함수 분리는 line 수만을 기준으로 하지 않습니다. 계산·effect 적용·dirty-state
+판정, 월간 handler 구성, 실시간 발행처럼 입력과 결과가 독립적인 단계는 별도
+함수로 분리합니다. 반대로 daemon의 resource 획득과 역순 종료처럼 한 수명주기
+계약을 이루는 orchestration은 호출 순서를 한곳에서 검토할 수 있게 유지합니다.
+
 ## 자동 검사
 
 ```sh

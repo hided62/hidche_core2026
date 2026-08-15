@@ -1,5 +1,5 @@
 import type { RandomGenerator } from '@sammo-ts/common';
-import { enablePatches, produceWithPatches, castDraft } from 'immer';
+import { enablePatches, produceWithPatches, castDraft, type Draft, type Patch } from 'immer';
 import type {
     City,
     General,
@@ -82,11 +82,6 @@ export interface LogEffect {
     entry: LogEntryDraft;
 }
 
-export interface NextTurnOverrideEffect {
-    type: 'schedule:override';
-    nextTurnAt: Date;
-}
-
 export interface MessageAddEffect {
     type: 'message:add';
     draft: MessageDraft;
@@ -100,8 +95,7 @@ export type GeneralActionEffect<TriggerState extends GeneralTriggerState = Gener
     | NationAddEffect
     | DiplomacyPatchEffect
     | LogEffect
-    | MessageAddEffect
-    | NextTurnOverrideEffect;
+    | MessageAddEffect;
 
 export interface GeneralActionOutcome<TriggerState extends GeneralTriggerState = GeneralTriggerState> {
     effects: GeneralActionEffect<TriggerState>[];
@@ -229,10 +223,129 @@ export const createMessageEffect = (draft: MessageDraft): MessageAddEffect => ({
     draft,
 });
 
-export const createNextTurnOverrideEffect = (nextTurnAt: Date): NextTurnOverrideEffect => ({
-    type: 'schedule:override',
-    nextTurnAt,
-});
+const createActionLogSink = <TriggerState extends GeneralTriggerState>(
+    context: GeneralActionResolveInputContext<TriggerState>,
+    logs: LogEntryDraft[]
+): GeneralActionResolveContext<TriggerState>['addLog'] => {
+    return (message, options = {}) => {
+        const entry: LogEntryDraft = {
+            scope: options.scope ?? LogScope.GENERAL,
+            category: options.category ?? LogCategory.ACTION,
+            text: message,
+            format: options.format ?? LogFormat.MONTH,
+            ...options,
+        };
+
+        switch (entry.scope) {
+            case LogScope.GENERAL:
+                logs.push({
+                    ...entry,
+                    generalId: entry.generalId ?? context.general.id,
+                });
+                break;
+            case LogScope.NATION:
+                if (entry.nationId !== undefined) {
+                    logs.push(entry);
+                    break;
+                }
+                if (context.nation?.id !== undefined) {
+                    logs.push({
+                        ...entry,
+                        nationId: context.nation.id,
+                    });
+                }
+                break;
+            case LogScope.USER:
+                if (entry.userId) {
+                    logs.push(entry);
+                }
+                break;
+            case LogScope.SYSTEM:
+            default:
+                logs.push(entry);
+                break;
+        }
+    };
+};
+
+interface ActionResolutionAccumulator {
+    createdGenerals: General[];
+    createdNations: Nation[];
+    patches: NonNullable<GeneralActionResolution['patches']>;
+    pendingEffects: GeneralActionEffect[];
+}
+
+const applyGeneralActionEffects = <TriggerState extends GeneralTriggerState>(options: {
+    effects: GeneralActionEffect<TriggerState>[];
+    draft: Draft<WorldState<TriggerState>>;
+    context: GeneralActionResolveInputContext<TriggerState>;
+    addLog: GeneralActionResolveContext<TriggerState>['addLog'];
+    accumulator: ActionResolutionAccumulator;
+}): void => {
+    const { effects, draft, context, addLog, accumulator } = options;
+    for (const effect of effects) {
+        switch (effect.type) {
+            case 'log':
+                addLog(effect.entry.text, effect.entry);
+                break;
+            case 'general:add':
+                accumulator.createdGenerals.push(effect.general as General);
+                break;
+            case 'nation:add':
+                accumulator.createdNations.push(effect.nation as Nation);
+                break;
+            case 'diplomacy:patch':
+            case 'message:add':
+                accumulator.pendingEffects.push(effect);
+                break;
+            case 'general:patch':
+                if (effect.targetId !== undefined && effect.targetId !== context.general.id) {
+                    accumulator.patches.generals.push({
+                        id: effect.targetId,
+                        patch: effect.patch as Partial<General>,
+                    });
+                } else {
+                    Object.assign(draft.general, effect.patch);
+                }
+                break;
+            case 'city:patch':
+                if (effect.targetId !== undefined && effect.targetId !== context.city?.id) {
+                    accumulator.patches.cities.push({ id: effect.targetId, patch: effect.patch });
+                } else if (draft.city) {
+                    Object.assign(draft.city, effect.patch);
+                }
+                break;
+            case 'nation:patch':
+                if (effect.targetId !== undefined && effect.targetId !== context.nation?.id) {
+                    accumulator.patches.nations.push({ id: effect.targetId, patch: effect.patch });
+                } else if (draft.nation) {
+                    Object.assign(draft.nation, effect.patch);
+                }
+                break;
+        }
+    }
+};
+
+const resolveDirtyState = <TriggerState extends GeneralTriggerState>(
+    context: GeneralActionResolveInputContext<TriggerState>,
+    worldPatches: readonly Patch[]
+): NonNullable<GeneralActionResolution['dirty']> => {
+    const dirty: NonNullable<GeneralActionResolution['dirty']> = {
+        general: false,
+        city: false,
+        nation: false,
+        generalId: context.general.id,
+    };
+    if (context.city) dirty.cityId = context.city.id;
+    if (context.nation) dirty.nationId = context.nation.id;
+
+    for (const patch of worldPatches) {
+        if (patch.path[0] === 'general') dirty.general = true;
+        if (patch.path[0] === 'city') dirty.city = true;
+        if (patch.path[0] === 'nation') dirty.nation = true;
+    }
+    return dirty;
+};
 
 // 행동 결과를 Effect로 모아 상태/턴 계산을 수행한다.
 export const resolveGeneralAction = <TriggerState extends GeneralTriggerState = GeneralTriggerState, Args = unknown>(
@@ -242,16 +355,12 @@ export const resolveGeneralAction = <TriggerState extends GeneralTriggerState = 
     args: Args
 ): GeneralActionResolution => {
     const logs: LogEntryDraft[] = [];
-    let nextTurnAtOverride: Date | null = null;
-    const createdGenerals: General[] = [];
-    const createdNations: Nation[] = [];
-    const patches: NonNullable<GeneralActionResolution['patches']> = {
-        generals: [],
-        cities: [],
-        nations: [],
+    const accumulator: ActionResolutionAccumulator = {
+        createdGenerals: [],
+        createdNations: [],
+        patches: { generals: [], cities: [], nations: [] },
+        pendingEffects: [],
     };
-
-    const pendingEffects: GeneralActionEffect[] = [];
     let outcome: GeneralActionOutcome<TriggerState> | undefined;
     const [nextWorld, worldPatches] = produceWithPatches(
         {
@@ -260,45 +369,7 @@ export const resolveGeneralAction = <TriggerState extends GeneralTriggerState = 
             nation: context.nation,
         } as WorldState<TriggerState>,
         (draft) => {
-            const addLog = (message: string, options: Partial<Omit<LogEntryDraft, 'text'>> = {}) => {
-                const entry: LogEntryDraft = {
-                    scope: options.scope ?? LogScope.GENERAL,
-                    category: options.category ?? LogCategory.ACTION,
-                    text: message,
-                    format: options.format ?? LogFormat.MONTH,
-                    ...options,
-                };
-
-                switch (entry.scope) {
-                    case LogScope.GENERAL:
-                        logs.push({
-                            ...entry,
-                            generalId: entry.generalId ?? context.general.id,
-                        });
-                        break;
-                    case LogScope.NATION:
-                        if (entry.nationId !== undefined) {
-                            logs.push(entry);
-                            break;
-                        }
-                        if (context.nation?.id !== undefined) {
-                            logs.push({
-                                ...entry,
-                                nationId: context.nation.id,
-                            });
-                        }
-                        break;
-                    case LogScope.USER:
-                        if (entry.userId) {
-                            logs.push(entry);
-                        }
-                        break;
-                    case LogScope.SYSTEM:
-                    default:
-                        logs.push(entry);
-                        break;
-                }
-            };
+            const addLog = createActionLogSink(context, logs);
 
             outcome = resolver.resolve(
                 {
@@ -312,85 +383,19 @@ export const resolveGeneralAction = <TriggerState extends GeneralTriggerState = 
                 args
             );
 
-            for (const effect of outcome.effects) {
-                switch (effect.type) {
-                    case 'log':
-                        addLog(effect.entry.text, effect.entry);
-                        break;
-                    case 'schedule:override':
-                        nextTurnAtOverride = effect.nextTurnAt;
-                        break;
-                    case 'general:add':
-                        createdGenerals.push(effect.general as General);
-                        break;
-                    case 'nation:add':
-                        createdNations.push(effect.nation as Nation);
-                        break;
-                    case 'diplomacy:patch':
-                    case 'message:add':
-                        pendingEffects.push(effect);
-                        break;
-                    case 'general:patch':
-                    case 'city:patch':
-                    case 'nation:patch':
-                        // 타겟이 다른 경우 patches에 추가
-                        if (
-                            effect.type === 'general:patch' &&
-                            effect.targetId !== undefined &&
-                            effect.targetId !== context.general.id
-                        ) {
-                            patches.generals.push({
-                                id: effect.targetId,
-                                patch: effect.patch as Partial<General>,
-                            });
-                        } else if (effect.type === 'general:patch') {
-                            Object.assign(draft.general, effect.patch);
-                        } else if (
-                            effect.type === 'city:patch' &&
-                            effect.targetId !== undefined &&
-                            effect.targetId !== context.city?.id
-                        ) {
-                            patches.cities.push({
-                                id: effect.targetId,
-                                patch: effect.patch,
-                            });
-                        } else if (effect.type === 'city:patch' && draft.city) {
-                            Object.assign(draft.city, effect.patch);
-                        } else if (
-                            effect.type === 'nation:patch' &&
-                            effect.targetId !== undefined &&
-                            effect.targetId !== context.nation?.id
-                        ) {
-                            patches.nations.push({
-                                id: effect.targetId,
-                                patch: effect.patch,
-                            });
-                        } else if (effect.type === 'nation:patch' && draft.nation) {
-                            Object.assign(draft.nation, effect.patch);
-                        }
-                        break;
-                }
-            }
+            applyGeneralActionEffects({
+                effects: outcome.effects,
+                draft,
+                context,
+                addLog,
+                accumulator,
+            });
         }
     );
 
-    const nextTurnAt = nextTurnAtOverride ?? getNextTurnAt(scheduleContext.now, scheduleContext.schedule);
+    const nextTurnAt = getNextTurnAt(scheduleContext.now, scheduleContext.schedule);
 
-    const dirty: NonNullable<GeneralActionResolution['dirty']> = {
-        general: false,
-        city: false,
-        nation: false,
-        generalId: context.general.id,
-    };
-    if (context.city) dirty.cityId = context.city.id;
-    if (context.nation) dirty.nationId = context.nation.id;
-
-    // worldPatches를 분석하여 dirty 설정
-    for (const patch of worldPatches) {
-        if (patch.path[0] === 'general') dirty.general = true;
-        if (patch.path[0] === 'city') dirty.city = true;
-        if (patch.path[0] === 'nation') dirty.nation = true;
-    }
+    const dirty = resolveDirtyState(context, worldPatches);
 
     const resolution: GeneralActionResolution = {
         general: nextWorld.general as General,
@@ -398,7 +403,7 @@ export const resolveGeneralAction = <TriggerState extends GeneralTriggerState = 
         completed: outcome?.completed !== false,
         nextTurnAt,
         logs,
-        effects: pendingEffects,
+        effects: accumulator.pendingEffects,
         ...(outcome?.alternative ? { alternative: outcome.alternative } : {}),
         ...(outcome?.deletedTroopIds?.length ? { deletedTroopIds: outcome.deletedTroopIds } : {}),
         ...(outcome?.reservedGeneralTurnPlans?.length
@@ -411,13 +416,17 @@ export const resolveGeneralAction = <TriggerState extends GeneralTriggerState = 
     if (dirty.general || dirty.city || dirty.nation) {
         resolution.dirty = dirty;
     }
-    if (patches.generals.length > 0 || patches.cities.length > 0 || patches.nations.length > 0) {
-        resolution.patches = patches;
+    if (
+        accumulator.patches.generals.length > 0 ||
+        accumulator.patches.cities.length > 0 ||
+        accumulator.patches.nations.length > 0
+    ) {
+        resolution.patches = accumulator.patches;
     }
-    if (createdGenerals.length > 0 || createdNations.length > 0) {
+    if (accumulator.createdGenerals.length > 0 || accumulator.createdNations.length > 0) {
         resolution.created = {
-            generals: createdGenerals,
-            ...(createdNations.length > 0 ? { nations: createdNations } : {}),
+            generals: accumulator.createdGenerals,
+            ...(accumulator.createdNations.length > 0 ? { nations: accumulator.createdNations } : {}),
         };
     }
 

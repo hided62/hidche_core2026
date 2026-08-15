@@ -1,4 +1,4 @@
-import type { Constraint, ConstraintContext, ConstraintResult, RequirementKey, StateView } from './types.js';
+import type { Constraint, ConstraintContext, ConstraintResult, StateView } from './types.js';
 
 export const evaluateConstraints = (
     constraints: Constraint[],
@@ -22,14 +22,6 @@ export const evaluateConstraints = (
         }
     }
     return { kind: 'allow' };
-};
-
-export const collectRequirements = (constraints: Constraint[], ctx: ConstraintContext): RequirementKey[] => {
-    const keys: RequirementKey[] = [];
-    for (const constraint of constraints) {
-        keys.push(...constraint.requires(ctx));
-    }
-    return keys;
 };
 
 export interface ActionWithConstraints {

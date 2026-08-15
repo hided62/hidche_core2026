@@ -12,7 +12,7 @@ const DEFENCE_TRAIN_PENALTY_WAIVER_EFFECTS = new Set<ScenarioEffectKey>([
     'event_MoreEffect',
 ]);
 
-export const isScenarioEffectKey = (value: string): value is ScenarioEffectKey =>
+const isScenarioEffectKey = (value: string): value is ScenarioEffectKey =>
     SCENARIO_EFFECT_KEYS.includes(value as ScenarioEffectKey);
 
 export const normalizeScenarioEffect = (value: unknown): ScenarioEffectKey | null => {

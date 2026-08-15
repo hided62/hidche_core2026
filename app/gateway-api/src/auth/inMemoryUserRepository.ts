@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 
-import { createSimplePasswordHasher, type PasswordHasher } from './passwordHasher.js';
+import { createPasswordHasher, type PasswordHasher } from './passwordHasher.js';
 import type {
     AdminUserListItem,
     CreateUserInput,
@@ -24,7 +24,7 @@ const toAdminUserListItem = (user: UserRecord): AdminUserListItem => ({
 });
 
 // 유저 데이터 저장소를 메모리로 대체한 임시 구현.
-export const createInMemoryUserRepository = (hasher: PasswordHasher = createSimplePasswordHasher()): UserRepository => {
+export const createInMemoryUserRepository = (hasher: PasswordHasher = createPasswordHasher()): UserRepository => {
     const usersByName = new Map<string, UserRecord>();
     const usersByOauthId = new Map<string, UserRecord>();
     const usersByEmail = new Map<string, UserRecord>();

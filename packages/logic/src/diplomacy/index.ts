@@ -4,7 +4,6 @@ import { DIPLOMACY_STATE } from './constants.js';
 
 export { DIPLOMACY_STATE } from './constants.js';
 
-export const DEFAULT_DECLARE_WAR_TERM = 24;
 export const DEFAULT_WAR_TERM = 6;
 
 const MAX_WAR_TERM = 13;

@@ -1,8 +1,7 @@
 import { LogFormat } from '@sammo-ts/logic/logging/types.js';
 import { TriggerPriority } from '@sammo-ts/logic/triggers/core.js';
-import { BaseWarUnitTrigger, WarTriggerCaller } from '@sammo-ts/logic/war/triggers.js';
+import { BaseWarUnitTrigger } from '@sammo-ts/logic/war/triggers.js';
 import { WarUnitGeneral, type WarUnit } from '@sammo-ts/logic/war/units.js';
-import type { WarTriggerModule } from './types.js';
 
 export class che_회피시도 extends BaseWarUnitTrigger {
     constructor(unit: WarUnit) {
@@ -41,10 +40,3 @@ export class che_회피발동 extends BaseWarUnitTrigger {
         return true;
     }
 }
-
-export const triggerModule: WarTriggerModule = {
-    key: 'che_회피',
-    name: '회피',
-    info: '[전투] 페이즈마다 확률로 회피 발동',
-    createTriggerList: (unit) => new WarTriggerCaller(new che_회피시도(unit), new che_회피발동(unit)),
-};

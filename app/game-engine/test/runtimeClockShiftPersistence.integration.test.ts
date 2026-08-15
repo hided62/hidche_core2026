@@ -2,7 +2,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 import { createGamePostgresConnector, type GamePrisma, type GamePrismaClient } from '@sammo-ts/infra';
 import { GAME_TICKS_PER_TURN } from '@sammo-ts/common';
-import { SystemClock } from '../src/lifecycle/clock.js';
+import { SystemClock } from '@sammo-ts/common';
 import { DatabaseTurnDaemonCommandQueue } from '../src/lifecycle/databaseCommandQueue.js';
 import { getNextTickTime } from '../src/lifecycle/getNextTickTime.js';
 import { TurnDaemonLifecycle } from '../src/lifecycle/turnDaemonLifecycle.js';

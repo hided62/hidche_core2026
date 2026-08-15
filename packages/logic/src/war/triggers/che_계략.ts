@@ -2,9 +2,8 @@ import { JosaUtil } from '@sammo-ts/common';
 
 import { LogFormat } from '@sammo-ts/logic/logging/types.js';
 import { TriggerPriority } from '@sammo-ts/logic/triggers/core.js';
-import { BaseWarUnitTrigger, WarTriggerCaller } from '@sammo-ts/logic/war/triggers.js';
+import { BaseWarUnitTrigger } from '@sammo-ts/logic/war/triggers.js';
 import { WarUnitCity, WarUnitGeneral, type WarUnit } from '@sammo-ts/logic/war/units.js';
-import type { WarTriggerModule } from './types.js';
 
 const MAGIC_TO_GENERAL = {
     위보: [1.2, 1.1],
@@ -83,13 +82,7 @@ export class che_계략시도 extends BaseWarUnitTrigger {
         const table = oppose instanceof WarUnitCity ? MAGIC_TO_CITY : MAGIC_TO_GENERAL;
         const magic = self.rng.choice(Object.keys(table));
         const [rawSuccessDamage, failDamage] = table[magic as keyof typeof table];
-        const successDamage = applyMagicDamageModifiers(
-            self,
-            oppose,
-            'warMagicSuccessDamage',
-            rawSuccessDamage,
-            magic
-        );
+        const successDamage = applyMagicDamageModifiers(self, oppose, 'warMagicSuccessDamage', rawSuccessDamage, magic);
 
         self.activateSkill('계략시도', magic);
         if (self.rng.nextBool(successProbability)) {
@@ -145,7 +138,8 @@ export class che_계략실패 extends BaseWarUnitTrigger {
         selfEnv: Record<string, unknown>,
         _opposeEnv: Record<string, unknown>
     ): boolean {
-        if (!(self instanceof WarUnitGeneral) || !self.hasActivatedSkill('계략실패') || selfEnv['계략실패']) return true;
+        if (!(self instanceof WarUnitGeneral) || !self.hasActivatedSkill('계략실패') || selfEnv['계략실패'])
+            return true;
         const magicState = readMagic(selfEnv);
         if (!magicState) return true;
         selfEnv['계략실패'] = true;
@@ -159,11 +153,3 @@ export class che_계략실패 extends BaseWarUnitTrigger {
         return true;
     }
 }
-
-export const triggerModule: WarTriggerModule = {
-    key: 'che_계략',
-    name: '계략',
-    info: '[전투] 귀병의 계략 시도/성공/실패',
-    createTriggerList: (unit) =>
-        new WarTriggerCaller(new che_계략시도(unit), new che_계략발동(unit), new che_계략실패(unit)),
-};

@@ -46,13 +46,6 @@ const decodeImage = (input: string): Buffer => {
     return buffer;
 };
 
-const SEOUL_OFFSET_MS = 9 * 60 * 60 * 1000;
-
-export const kstDayStart = (value: Date): Date => {
-    const shifted = new Date(value.getTime() + SEOUL_OFFSET_MS);
-    return new Date(Date.UTC(shifted.getUTCFullYear(), shifted.getUTCMonth(), shifted.getUTCDate()) - SEOUL_OFFSET_MS);
-};
-
 const assertIconChangeAvailable = (user: UserRecord, now: Date): void => {
     if (
         user.picture !== 'default.jpg' &&

@@ -1,33 +1,5 @@
-import type { ScenarioConfig } from '@sammo-ts/logic/scenario/types.js';
 import type { General, GeneralTriggerState } from '@sammo-ts/logic/domain/entities.js';
-import type { ItemModule } from './types.js';
-import {
-    consumeEquippedItemCharge,
-    ensureItemInventory,
-    getEquippedItemInstance,
-    readItemInventory,
-} from './inventory.js';
-
-const toBoolean = (value: unknown): boolean => {
-    if (typeof value === 'boolean') {
-        return value;
-    }
-    if (typeof value === 'number') {
-        return value > 0;
-    }
-    if (typeof value === 'string') {
-        const normalized = value.trim().toLowerCase();
-        return normalized === 'true' || normalized === 'yes' || normalized === '1';
-    }
-    return false;
-};
-
-export const isInventoryEnabled = (config: ScenarioConfig): boolean => {
-    const constConfig = config.const ?? {};
-    return toBoolean(
-        constConfig['allowInventory'] ?? constConfig['inventoryEnabled'] ?? constConfig['enableInventory']
-    );
-};
+import { consumeEquippedItemCharge, readItemInventory } from './inventory.js';
 
 export const listEquippedItemKeys = <TriggerState extends GeneralTriggerState>(
     general: General<TriggerState>
@@ -49,60 +21,10 @@ export const listEquippedItemKeys = <TriggerState extends GeneralTriggerState>(
     return result;
 };
 
-export const getItemRemain = <TriggerState extends GeneralTriggerState>(
-    general: General<TriggerState>,
-    itemKey: string
-): number | null => {
-    const instance = getEquippedItemInstance(general, 'item');
-    const value = instance?.itemKey === itemKey ? instance.state.charges : undefined;
-    return typeof value === 'number' && value > 0 ? value : null;
-};
-
-export const setItemRemain = <TriggerState extends GeneralTriggerState>(
-    general: General<TriggerState>,
-    itemKey: string,
-    remain: number | null
-): void => {
-    ensureItemInventory(general);
-    const instance = getEquippedItemInstance(general, 'item');
-    if (!instance || instance.itemKey !== itemKey) {
-        return;
-    }
-    if (remain === null || remain <= 0) {
-        delete instance.state.charges;
-        return;
-    }
-    instance.state.charges = remain;
-};
-
 export const consumeItemRemain = <TriggerState extends GeneralTriggerState>(
     general: General<TriggerState>,
     itemKey: string,
     fallbackRemain = 1
 ): boolean => {
     return consumeEquippedItemCharge(general, 'item', itemKey, fallbackRemain);
-};
-
-export const canAcquireItem = <TriggerState extends GeneralTriggerState>(options: {
-    general: General<TriggerState>;
-    item: ItemModule;
-    config: ScenarioConfig;
-    registry: Map<string, ItemModule>;
-}): boolean => {
-    const { general, item, config, registry } = options;
-    if (!item.unique) {
-        return true;
-    }
-    if (isInventoryEnabled(config)) {
-        return true;
-    }
-    const slotItemKey = general.role.items[item.slot];
-    if (!slotItemKey) {
-        return true;
-    }
-    const slotItem = registry.get(slotItemKey);
-    if (!slotItem) {
-        return true;
-    }
-    return !slotItem.unique;
 };

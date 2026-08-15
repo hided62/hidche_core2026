@@ -17,7 +17,7 @@ import { buildGatewayMigrationCommand } from './releaseController.js';
 
 const CONTROLLER_PROCESS_NAME = 'sammo:release-controller';
 
-export const buildReleaseControllerCommands = (
+const buildReleaseControllerCommands = (
     workspaceRoot: string,
     needsInstall: boolean,
     config: ReleaseControllerConfig

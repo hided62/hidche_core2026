@@ -1,7 +1,7 @@
-import type { City, Nation } from '@sammo-ts/logic';
-import { asRecord, isRecord } from '@sammo-ts/common';
+import type { City } from '@sammo-ts/logic';
+import { asRecord } from '@sammo-ts/common';
 
-export { asRecord, isRecord };
+export { asRecord };
 
 export const readNumber = (value: unknown, fallback = 0): number => {
     if (typeof value === 'number' && Number.isFinite(value)) {
@@ -15,21 +15,6 @@ export const readNumber = (value: unknown, fallback = 0): number => {
     }
     return fallback;
 };
-
-export const readBoolean = (value: unknown, fallback = false): boolean => {
-    if (typeof value === 'boolean') {
-        return value;
-    }
-    if (typeof value === 'number') {
-        return value !== 0;
-    }
-    if (typeof value === 'string') {
-        return value === 'true' || value === '1';
-    }
-    return fallback;
-};
-
-export const readString = (value: unknown, fallback = ''): string => (typeof value === 'string' ? value : fallback);
 
 export const readMetaNumber = (meta: Record<string, unknown>, key: string, fallback = 0): number =>
     readNumber(meta[key], fallback);
@@ -48,12 +33,6 @@ export const readRequiredMetaNumber = (meta: Record<string, unknown>, key: strin
     const suffix = context ? ` (${context})` : '';
     throw new Error(`meta.${key} is required${suffix}.`);
 };
-
-export const readMetaString = (meta: Record<string, unknown>, key: string, fallback = ''): string =>
-    readString(meta[key], fallback);
-
-export const readMetaBoolean = (meta: Record<string, unknown>, key: string, fallback = false): boolean =>
-    readBoolean(meta[key], fallback);
 
 export const valueFit = (value: number, min?: number | null, max?: number | null): number => {
     let next = value;
@@ -107,11 +86,4 @@ export const calcCityDevRatio = (city: City): number => {
         return 0;
     }
     return total / max;
-};
-
-export const readNationTech = (nation: Nation | null | undefined): number => {
-    if (!nation) {
-        return 0;
-    }
-    return readMetaNumber(asRecord(nation.meta), 'tech', 0);
 };

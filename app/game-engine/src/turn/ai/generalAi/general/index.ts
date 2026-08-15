@@ -7,30 +7,7 @@ import { do후방워프, do전방워프, do내정워프, do귀환, do집합 } fr
 import { doNPC헌납, doNPC사망대비 } from './npcActions.js';
 import { do국가선택, do중립, do거병, do건국, do해산, do선양, do방랑군이동 } from './politicsActions.js';
 
-export {
-    do일반내정,
-    do긴급내정,
-    do전쟁내정,
-    do금쌀구매,
-    do징병,
-    do전투준비,
-    do소집해제,
-    do출병,
-    do후방워프,
-    do전방워프,
-    do내정워프,
-    do귀환,
-    do집합,
-    doNPC헌납,
-    doNPC사망대비,
-    do국가선택,
-    do중립,
-    do거병,
-    do건국,
-    do해산,
-    do선양,
-    do방랑군이동,
-};
+export { do징병 };
 
 export const generalActionHandlers: Record<
     string,

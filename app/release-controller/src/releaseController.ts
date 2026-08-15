@@ -25,7 +25,7 @@ const HEARTBEAT_INTERVAL_MS = 60_000;
 const PROCESS_NAMES = ['sammo:gateway-api', 'sammo:gateway-frontend', 'sammo:gateway-orchestrator'] as const;
 const SENSITIVE_ENV_NAME = /(SECRET|TOKEN|PASSWORD|PASSWD|PRIVATE_KEY|CLIENT_SECRET|DATABASE_URL|REDIS_URL)/iu;
 
-export const buildGatewayReleaseCommands = (
+const buildGatewayReleaseCommands = (
     workspaceRoot: string,
     needsInstall: boolean,
     config: ReleaseControllerConfig
