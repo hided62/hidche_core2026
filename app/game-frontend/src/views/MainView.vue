@@ -205,6 +205,8 @@ watch(
                         :current-year="lobbyInfo?.year"
                         :current-month="lobbyInfo?.month"
                         :turn-term-minutes="lobbyInfo?.turnTerm"
+                        :server-time="lobbyInfo?.serverTime"
+                        :clock-mode="lobbyInfo?.clockMode"
                         :autorun-limit="reservedGeneralAutorunLimit"
                         :map-data="worldMap"
                         :map-layout="mapLayout"
@@ -331,6 +333,8 @@ watch(
                     :current-year="lobbyInfo?.year"
                     :current-month="lobbyInfo?.month"
                     :turn-term-minutes="lobbyInfo?.turnTerm"
+                    :server-time="lobbyInfo?.serverTime"
+                    :clock-mode="lobbyInfo?.clockMode"
                     :autorun-limit="reservedGeneralAutorunLimit"
                     :map-data="worldMap"
                     :map-layout="mapLayout"
@@ -666,9 +670,19 @@ button {
 }
 
 .record-line {
+    box-sizing: border-box;
+    height: 21px;
+    margin: 0;
     overflow: hidden;
     overflow-wrap: normal;
+    line-height: 21px;
     white-space: nowrap;
+}
+
+.record-line :deep(.small_war_log) {
+    height: 21px;
+    line-height: 21px;
+    vertical-align: top;
 }
 
 .record-line :deep(.hidden_but_copyable) {

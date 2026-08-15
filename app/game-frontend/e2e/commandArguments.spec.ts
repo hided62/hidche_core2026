@@ -294,7 +294,7 @@ const chiefCenter = {
     })),
 };
 
-const install = async (page: Page, rejectGeneral = false) => {
+const install = async (page: Page, rejectGeneral = false, commandTableResponse: unknown = commandTable) => {
     const requests: unknown[] = [];
     const generalTurns = turns(30);
     const nationTurns = turns(12);
@@ -344,7 +344,7 @@ const install = async (page: Page, rejectGeneral = false) => {
                         ? {
                               kind: 'snapshot',
                               revision: 'BBBBBBBBBBBBBBBBBBBBBB',
-                              data: commandTable,
+                              data: commandTableResponse,
                           }
                         : { kind: 'unchanged', revision: 'BBBBBBBBBBBBBBBBBBBBBB' },
                     boardAccess: initial
@@ -400,7 +400,7 @@ const install = async (page: Page, rejectGeneral = false) => {
                     myCity: 1,
                     myNation: 1,
                 });
-            if (name === 'turns.getCommandTable') return response(commandTable);
+            if (name === 'turns.getCommandTable') return response(commandTableResponse);
             if (name === 'nation.getChiefCenter') return response(chiefCenter);
             if (name === 'turns.reserved.getGeneral')
                 return response({ turns: generalTurns, revision: generalRevision });
@@ -460,6 +460,117 @@ const install = async (page: Page, rejectGeneral = false) => {
     });
     return requests;
 };
+
+test('reserves force move, retirement, and resignation from the user command picker', async ({ page }) => {
+    const specialCommandTable = {
+        general: [
+            {
+                category: '개인',
+                values: [
+                    {
+                        key: 'che_은퇴',
+                        name: '은퇴',
+                        reqArg: false,
+                        possible: false,
+                        status: 'blocked',
+                        reason: '나이가 60세 이상이어야 합니다.',
+                        inputFields: [],
+                    },
+                ],
+            },
+            {
+                category: '인사',
+                values: [
+                    {
+                        key: 'che_강행',
+                        name: '강행',
+                        reqArg: true,
+                        possible: true,
+                        status: 'available',
+                        inputFields: [
+                            {
+                                key: 'destCityId',
+                                label: '대상 도시',
+                                kind: 'select',
+                                required: true,
+                                optionSource: 'cities',
+                            },
+                        ],
+                    },
+                ],
+            },
+            {
+                category: '국가',
+                values: [
+                    {
+                        key: 'che_하야',
+                        name: '하야',
+                        reqArg: false,
+                        possible: true,
+                        status: 'available',
+                        inputFields: [],
+                    },
+                ],
+            },
+        ],
+        nation: [],
+        inputOptions,
+    };
+    const requests = await install(page, false, specialCommandTable);
+    await page.setViewportSize({ width: 1200, height: 900 });
+    await page.goto('/');
+
+    const editor = page.locator('[data-command-scope="general"]');
+
+    await editor.getByRole('button', { name: '1턴 명령 입력', exact: true }).click();
+    let picker = page.getByTestId('command-picker');
+    const retirement = picker.getByRole('button', { name: '은퇴', exact: true });
+    await expect(retirement).toHaveClass(/blocked/);
+    await expect(retirement).toHaveAttribute('title', '나이가 60세 이상이어야 합니다.');
+    await retirement.hover();
+    await retirement.focus();
+    await expect(retirement).toBeFocused();
+    await picker.screenshot({ path: test.info().outputPath('special-user-commands-desktop-1200.png') });
+    await retirement.click();
+    await expect(editor.locator('.action-column > div').nth(0)).toHaveText('은퇴');
+
+    await editor.getByRole('button', { name: '2턴 명령 입력', exact: true }).click();
+    picker = page.getByTestId('command-picker');
+    await picker.getByRole('button', { name: '국가', exact: true }).click();
+    await picker.getByRole('button', { name: '하야', exact: true }).click();
+    await expect(editor.locator('.action-column > div').nth(1)).toHaveText('하야');
+
+    await editor.getByRole('button', { name: '3턴 명령 입력', exact: true }).click();
+    picker = page.getByTestId('command-picker');
+    await picker.getByRole('button', { name: '인사', exact: true }).click();
+    await picker.getByRole('button', { name: '강행', exact: true }).click();
+    const forceMoveForm = picker.getByTestId('command-argument-form');
+    await expect(forceMoveForm.getByTestId('command-argument-guidance')).toContainText('선택한 도시로 강행합니다.');
+    await forceMoveForm.locator('select').selectOption('2');
+    await picker.getByRole('button', { name: '입력', exact: true }).click();
+    await expect(editor.locator('.action-column > div').nth(2)).toHaveText('강행');
+
+    const serialized = JSON.stringify(requests);
+    expect(serialized).toContain('"action":"che_은퇴","args":{}');
+    expect(serialized).toContain('"action":"che_하야","args":{}');
+    expect(serialized).toContain('"action":"che_강행","args":{"destCityId":2}');
+
+    await page.setViewportSize({ width: 500, height: 900 });
+    await editor.getByRole('button', { name: '4턴 명령 입력', exact: true }).click();
+    picker = page.getByTestId('command-picker');
+    await expect(picker.locator('.category-btn')).toHaveText(['개인', '인사', '국가']);
+    const mobileGeometry = await picker.evaluate((element) => ({
+        width: element.getBoundingClientRect().width,
+        horizontalOverflow: element.scrollWidth - element.clientWidth,
+        categoryColumns: getComputedStyle(element.querySelector<HTMLElement>('.category-list')!).gridTemplateColumns,
+    }));
+    expect(mobileGeometry.width).toBeLessThanOrEqual(500);
+    expect(mobileGeometry.horizontalOverflow).toBeLessThanOrEqual(0);
+    expect(mobileGeometry.categoryColumns.split(' ')).toHaveLength(3);
+    await picker.getByRole('button', { name: '개인', exact: true }).click();
+    await expect(picker.getByRole('button', { name: '은퇴', exact: true })).toBeVisible();
+    await picker.screenshot({ path: test.info().outputPath('special-user-commands-mobile-500.png') });
+});
 
 test('enters general and nation command arguments and sends exact values', async ({ page }) => {
     const requests = await install(page);

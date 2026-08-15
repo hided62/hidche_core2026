@@ -726,10 +726,26 @@ onUnmounted(() => {
                     </div>
 
                     <div class="stat-actions" role="group" aria-label="능력치 빠른 설정">
-                        <button type="button" @click="applyRandomStats">랜덤형</button>
-                        <button type="button" @click="applyLeadpowStats">통솔무력형</button>
-                        <button type="button" @click="applyLeadintStats">통솔지력형</button>
-                        <button type="button" @click="applyPowintStats">무력지력형</button>
+                        <button class="legacy-button legacy-button--navigation" type="button" @click="applyRandomStats">
+                            랜덤형
+                        </button>
+                        <button
+                            class="legacy-button legacy-button--navigation"
+                            type="button"
+                            @click="applyLeadpowStats"
+                        >
+                            통솔무력형
+                        </button>
+                        <button
+                            class="legacy-button legacy-button--navigation"
+                            type="button"
+                            @click="applyLeadintStats"
+                        >
+                            통솔지력형
+                        </button>
+                        <button class="legacy-button legacy-button--navigation" type="button" @click="applyPowintStats">
+                            무력지력형
+                        </button>
                     </div>
 
                     <div v-if="accountIcons.length" class="icon-choice">
@@ -1385,26 +1401,21 @@ onUnmounted(() => {
 
 .stat-actions button {
     flex: 1 1 140px;
+    height: 40px;
     min-height: 40px;
-    border: 1px solid #004f28;
-    border-radius: 3px;
-    background: #00582c;
     padding: 8px 14px;
-    color: #fff;
     font-size: 0.875rem;
-    font-weight: 700;
     line-height: 1.2;
-    cursor: pointer;
 }
 
-.stat-actions button:hover {
-    border-color: #005f30;
-    background: #006d37;
+.stat-actions button:not(:disabled):hover {
+    height: 39px;
+    min-height: 39px;
 }
 
-.stat-actions button:active {
-    border-color: #003d1f;
-    background: #004523;
+.stat-actions button:not(:disabled):active {
+    height: 38px;
+    min-height: 38px;
 }
 
 .stat-summary {

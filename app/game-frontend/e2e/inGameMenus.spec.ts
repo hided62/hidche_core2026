@@ -656,17 +656,32 @@ test('메인 카드의 국가·수도·관직·계급·병종은 Ref 출력명�
     await expect(page.locator('.main-page')).not.toContainText('che_');
 });
 
-test('메인 개인 기록의 전투 결과는 월 표제와 시각을 한 줄에 표시한다', async ({ page }) => {
+test('메인 장수 동향과 개인 전투 기록은 모두 21px 행 간격을 유지한다', async ({ page }) => {
     const state: FixtureState = {
         permission: 'head',
         myset: 3,
         settingMutations: [],
         accessPages: [],
         recentRecords: {
-            global: [],
-            general: [
+            global: [
+                {
+                    id: 18611,
+                    text:
+                        '<C>●</>9월:<D><b>위</b></>의 <Y>Administrator</>가 <G><b>낙양</b></>으로 ' +
+                        '진격합니다.<span class="hidden_but_copyable">(전투시드: 0123456789abcdef)</span>',
+                },
+                {
+                    id: 18610,
+                    text: '<C>●</>9월:<Y>Administrator</>가 <D><b>위</b></>에 <S>임관</>했습니다.',
+                },
                 {
                     id: 18609,
+                    text: '<C>●</>9월:<Y>뇌동</>의 기병이 퇴각했습니다.',
+                },
+            ],
+            general: [
+                {
+                    id: 18608,
                     text:
                         '<S>◆</>186년 9월:<div class="small_war_log">' +
                         '<span class="me"><span class="crew_type">귀병</span> ' +
@@ -685,6 +700,31 @@ test('메인 개인 기록의 전투 결과는 월 표제와 시각을 한 줄�
     await install(page, state);
     await page.setViewportSize({ width: 1200, height: 900 });
     await page.goto('');
+
+    const inspectGlobalRhythm = async (selector: string) => {
+        const lines = page.locator(selector);
+        await expect(lines).toHaveCount(3);
+        return lines.evaluateAll((elements) =>
+            elements.map((element) => {
+                const rect = element.getBoundingClientRect();
+                return {
+                    top: rect.top,
+                    height: rect.height,
+                    lineHeight: getComputedStyle(element).lineHeight,
+                };
+            })
+        );
+    };
+    const assertUniformGlobalRhythm = (geometry: Awaited<ReturnType<typeof inspectGlobalRhythm>>) => {
+        expect(geometry.map((line) => line.height)).toEqual([21, 21, 21]);
+        expect(geometry.map((line) => line.lineHeight)).toEqual(['21px', '21px', '21px']);
+        expect(geometry[1]!.top - geometry[0]!.top).toBe(21);
+        expect(geometry[2]!.top - geometry[1]!.top).toBe(21);
+    };
+
+    const desktopGlobalGeometry = await inspectGlobalRhythm('.record-zone [data-record-bucket="global"] .record-line');
+    assertUniformGlobalRhythm(desktopGlobalGeometry);
+    await persistParityArtifact(page, 'core-main-trend-log-rhythm-desktop', desktopGlobalGeometry);
 
     const expectedText = '◆186년 9월:귀병 【Administrator】 0(-2209) ← 1361(-5539) 기병 【ⓝ뇌동】 12:54';
     const inspect = async (line: Locator) => {
@@ -723,6 +763,11 @@ test('메인 개인 기록의 전투 결과는 월 표제와 시각을 한 줄�
         page.locator('.record-zone-mobile [data-record-bucket="general"] .record-line').first()
     );
     assertSingleLine(mobileGeometry);
+    const mobileGlobalGeometry = await inspectGlobalRhythm(
+        '.record-zone-mobile [data-record-bucket="global"] .record-line'
+    );
+    assertUniformGlobalRhythm(mobileGlobalGeometry);
+    await persistParityArtifact(page, 'core-main-trend-log-rhythm-mobile', mobileGlobalGeometry);
     await persistParityArtifact(page, 'core-main-personal-battle-log-inline-mobile', mobileGeometry);
 });
 

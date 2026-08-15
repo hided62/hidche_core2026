@@ -1,8 +1,8 @@
 <script setup lang="ts">
-import { computed } from 'vue';
+import { computed, onUnmounted, ref, watch } from 'vue';
 import { addMinutes } from 'date-fns';
 import ReservedCommandEditor from '../command/ReservedCommandEditor.vue';
-import { formatSeoulTimeSeconds } from '../../utils/legacyDateTime';
+import { formatLocalTimeSeconds } from '../../utils/legacyDateTime';
 import type {
     CommandMapData,
     CommandMapLayout,
@@ -19,6 +19,8 @@ const props = defineProps<{
     currentYear?: number;
     currentMonth?: number;
     turnTermMinutes?: number;
+    serverTime?: string;
+    clockMode?: 'realtime' | 'manual';
     autorunLimit?: number | null;
     storageKey?: string;
     mapData?: CommandMapData | null;
@@ -56,16 +58,48 @@ const rows = computed<ReservedCommandRow[]>(() => {
             autonomous: props.autorunLimit != null && absoluteMonth <= props.autorunLimit - 1,
             time: date
                 ? term >= 5
-                    ? `${String(date.getUTCHours()).padStart(2, '0')}:${String(date.getUTCMinutes()).padStart(2, '0')}`
-                    : `${String(date.getUTCMinutes()).padStart(2, '0')}:${String(date.getUTCSeconds()).padStart(2, '0')}`
+                    ? `${String(date.getHours()).padStart(2, '0')}:${String(date.getMinutes()).padStart(2, '0')}`
+                    : `${String(date.getMinutes()).padStart(2, '0')}:${String(date.getSeconds()).padStart(2, '0')}`
                 : '--:--',
         };
     });
 });
 
-const currentTurnTime = computed(() =>
-    props.general?.turnTime ? formatSeoulTimeSeconds(props.general.turnTime) : '--:--:--'
+const currentServerTime = ref('--:--:--');
+let sampledServerTimeMs: number | null = null;
+let sampledClientTimeMs = 0;
+let serverClockTimer: ReturnType<typeof setTimeout> | undefined;
+
+const updateServerClock = () => {
+    if (serverClockTimer !== undefined) clearTimeout(serverClockTimer);
+    serverClockTimer = undefined;
+    if (sampledServerTimeMs === null) {
+        currentServerTime.value = '--:--:--';
+        return;
+    }
+    const projectedTime = new Date(
+        props.clockMode === 'manual' ? sampledServerTimeMs : sampledServerTimeMs + Date.now() - sampledClientTimeMs
+    );
+    currentServerTime.value = formatLocalTimeSeconds(projectedTime);
+    if (props.clockMode !== 'manual') {
+        serverClockTimer = setTimeout(updateServerClock, 1_000 - projectedTime.getMilliseconds());
+    }
+};
+
+watch(
+    () => [props.serverTime, props.clockMode] as const,
+    ([serverTime]) => {
+        const parsed = serverTime ? new Date(serverTime).getTime() : Number.NaN;
+        sampledServerTimeMs = Number.isFinite(parsed) ? parsed : null;
+        sampledClientTimeMs = Date.now();
+        updateServerClock();
+    },
+    { immediate: true }
 );
+
+onUnmounted(() => {
+    if (serverClockTimer !== undefined) clearTimeout(serverClockTimer);
+});
 </script>
 
 <template>
@@ -75,7 +109,7 @@ const currentTurnTime = computed(() =>
         :command-table="props.commandTable"
         :loading="props.loading"
         :storage-key="props.storageKey ?? `core2026:general:${props.general?.id ?? 0}`"
-        :current-time="currentTurnTime"
+        :current-time="currentServerTime"
         :map-data="props.mapData"
         :map-layout="props.mapLayout"
         @reserve-bulk="emit('set-general-turns', $event)"
