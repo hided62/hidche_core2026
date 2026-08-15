@@ -115,6 +115,12 @@ let releaseLogLoopGeneration = 0;
 let profileLogLoopGeneration = 0;
 let componentMounted = false;
 let gatewayReleaseTransitionActive = false;
+const LOG_SCROLL_FOLLOW_THRESHOLD_PX = 40;
+
+const isLogViewportNearEnd = (viewport?: HTMLElement): boolean => {
+    if (!viewport) return true;
+    return viewport.scrollHeight - viewport.clientHeight - viewport.scrollTop <= LOG_SCROLL_FOLLOW_THRESHOLD_PX;
+};
 
 const form = reactive({
     sourceMode: (props.mode === 'scenario' ? 'CURRENT' : 'BRANCH') as 'CURRENT' | 'BRANCH' | 'COMMIT',
@@ -326,10 +332,10 @@ const loadState = async (quiet = false) => {
     }
 };
 
-const scrollProfileOperationLogToEnd = async () => {
+const scrollProfileOperationLogToEnd = async (shouldFollow: boolean) => {
     await nextTick();
     const viewport = profileOperationLogViewport.value;
-    if (viewport) viewport.scrollTop = viewport.scrollHeight;
+    if (viewport && shouldFollow) viewport.scrollTop = viewport.scrollHeight;
 };
 
 const pollProfileOperationLogs = async (operationId: string, generation: number) => {
@@ -349,11 +355,12 @@ const pollProfileOperationLogs = async (operationId: string, generation: number)
             profileOperationLogConnection.value = 'connected';
             const entries = result.entries as GatewayReleaseLog[];
             if (entries.length) {
+                const shouldFollow = isLogViewportNearEnd(profileOperationLogViewport.value);
                 const known = new Set(profileOperationLogs.value.map((entry) => entry.cursor));
                 profileOperationLogs.value.push(...entries.filter((entry) => !known.has(entry.cursor)));
                 profileOperationLogs.value = profileOperationLogs.value.slice(-1_000);
                 profileOperationLogCursor.value = result.nextCursor;
-                await scrollProfileOperationLogToEnd();
+                await scrollProfileOperationLogToEnd(shouldFollow);
             }
             const operation = result.operation as Operation;
             profileOperationLogStatus.value = operation.status;
@@ -381,10 +388,10 @@ const selectProfileOperation = (operationId: string) => {
     selectedProfileOperationId.value = operationId;
 };
 
-const scrollReleaseLogToEnd = async () => {
+const scrollReleaseLogToEnd = async (shouldFollow: boolean) => {
     await nextTick();
     const viewport = gatewayReleaseLogViewport.value;
-    if (viewport) viewport.scrollTop = viewport.scrollHeight;
+    if (viewport && shouldFollow) viewport.scrollTop = viewport.scrollHeight;
 };
 
 const pollGatewayReleaseLogs = async (operationId: string, generation: number) => {
@@ -404,11 +411,12 @@ const pollGatewayReleaseLogs = async (operationId: string, generation: number) =
             gatewayReleaseLogConnection.value = 'connected';
             const entries = result.entries as GatewayReleaseLog[];
             if (entries.length) {
+                const shouldFollow = isLogViewportNearEnd(gatewayReleaseLogViewport.value);
                 const known = new Set(gatewayReleaseLogs.value.map((entry) => entry.cursor));
                 gatewayReleaseLogs.value.push(...entries.filter((entry) => !known.has(entry.cursor)));
                 gatewayReleaseLogs.value = gatewayReleaseLogs.value.slice(-1_000);
                 gatewayReleaseLogCursor.value = result.nextCursor;
-                await scrollReleaseLogToEnd();
+                await scrollReleaseLogToEnd(shouldFollow);
             }
             const operation = result.operation as GatewayReleaseOperation;
             gatewayReleaseLogStatus.value = operation.status;
