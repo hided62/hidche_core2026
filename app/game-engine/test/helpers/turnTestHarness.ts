@@ -67,10 +67,12 @@ export type TurnTestHarnessOptions = {
     };
     turnProcessorOptions?: {
         tickMinutes: number;
+        beforeExecuteGeneral?: InMemoryTurnProcessorOptions['beforeExecuteGeneral'];
         afterExecuteGeneral?: InMemoryTurnProcessorOptions['afterExecuteGeneral'];
     };
     worldRef?: { current: InMemoryTurnWorld | null };
     onActionResolved?: Parameters<typeof createReservedTurnHandler>[0]['onActionResolved'];
+    onActionProfiled?: Parameters<typeof createReservedTurnHandler>[0]['onActionProfiled'];
     commandRngFactory?: Parameters<typeof createReservedTurnHandler>[0]['commandRngFactory'];
     wrapGeneralTurnHandler?: (handler: GeneralTurnHandler) => GeneralTurnHandler;
     extraCalendarHandlers?: TurnCalendarHandler[];
@@ -110,6 +112,7 @@ export const createTurnTestHarness = async (options: TurnTestHarnessOptions) => 
         unitSet: options.snapshot.unitSet,
         getWorld: () => worldRef.current,
         onActionResolved: options.onActionResolved,
+        onActionProfiled: options.onActionProfiled,
         commandRngFactory: options.commandRngFactory,
     });
 
@@ -150,6 +153,7 @@ export const createTurnTestHarness = async (options: TurnTestHarnessOptions) => 
 
     const processor = new InMemoryTurnProcessor(world, {
         tickMinutes: options.turnProcessorOptions?.tickMinutes ?? 10,
+        beforeExecuteGeneral: options.turnProcessorOptions?.beforeExecuteGeneral,
         afterExecuteGeneral: options.turnProcessorOptions?.afterExecuteGeneral,
     });
 
