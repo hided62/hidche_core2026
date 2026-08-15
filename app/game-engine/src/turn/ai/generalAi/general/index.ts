@@ -7,8 +7,6 @@ import { do후방워프, do전방워프, do내정워프, do귀환, do집합 } fr
 import { doNPC헌납, doNPC사망대비 } from './npcActions.js';
 import { do국가선택, do중립, do거병, do건국, do해산, do선양, do방랑군이동 } from './politicsActions.js';
 
-export { do징병 };
-
 export const generalActionHandlers: Record<
     string,
     (ai: GeneralAI) => ReturnType<GeneralAI['buildGeneralCandidate']> | null
