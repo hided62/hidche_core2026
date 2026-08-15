@@ -31,8 +31,8 @@ import {
     withCanonicalArgumentAliases,
 } from '../aiUtils.js';
 import { searchAllDistanceByNationList } from '@sammo-ts/logic/world/distance.js';
-import { generalActionHandlers } from '../generalAiGeneralActions.js';
-import { nationActionHandlers } from '../generalAiNationActions.js';
+import { generalActionHandlers } from './general/index.js';
+import { nationActionHandlers } from './nation/index.js';
 import { resolveConstraintEnv, type ConstraintEnv } from './constraint.js';
 import { buildSeedBase } from './seed.js';
 import { WorldStateView } from './worldStateView.js';

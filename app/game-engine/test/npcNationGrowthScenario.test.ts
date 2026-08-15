@@ -12,7 +12,7 @@ import type { TurnGeneral, TurnWorldSnapshot, TurnWorldState } from '../src/turn
 import type { GeneralAiDebugState } from '../src/turn/ai/generalAi.js';
 import type { InMemoryTurnWorld } from '../src/turn/inMemoryWorld.js';
 import { GeneralAI } from '../src/turn/ai/generalAi.js';
-import { do징병 } from '../src/turn/ai/generalAiGeneralActions.js';
+import { do징병 } from '../src/turn/ai/generalAi/general/recruitActions.js';
 import { buildCommandEnv, buildReservedTurnDefinitions } from '../src/turn/reservedTurnCommands.js';
 import { LARGE_TEST_MAP, buildLargeTestCities } from './fixtures/largeTestMap.js';
 import { round } from 'es-toolkit';

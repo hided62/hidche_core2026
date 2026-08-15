@@ -14,7 +14,7 @@ import { createNpcTaxHandler } from '../../src/turn/npcTaxHandler.js';
 import { createFrontStateHandler } from '../../src/turn/frontStateHandler.js';
 import { createNationTurnMonthlyHandler } from '../../src/turn/nationTurnMonthlyHandler.js';
 
-export const createMockPrisma = (initialGeneralRows: any[] = []) => {
+const createMockPrisma = (initialGeneralRows: any[] = []) => {
     let generalRows = [...initialGeneralRows];
     return {
         generalTurn: {
@@ -47,7 +47,7 @@ export const createMockPrisma = (initialGeneralRows: any[] = []) => {
     };
 };
 
-export const addMinutes = (time: Date, minutes: number): Date => new Date(time.getTime() + minutes * 60_000);
+const addMinutes = (time: Date, minutes: number): Date => new Date(time.getTime() + minutes * 60_000);
 
 export type TurnHarnessRunOptions = {
     minutes?: number;
