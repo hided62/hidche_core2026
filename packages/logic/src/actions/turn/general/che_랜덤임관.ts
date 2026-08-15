@@ -272,7 +272,7 @@ export class ActionDefinition<
                 {
                     scope: LogScope.SYSTEM,
                     category: LogCategory.SUMMARY,
-                    format: LogFormat.PLAIN,
+                    format: LogFormat.MONTH,
                 }
             )
         );

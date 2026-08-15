@@ -104,7 +104,7 @@ export class ActionDefinition<
         context.addLog(`<Y>${context.general.name}</>${josaYi} <D><b>${destNationName}</b></>에 <S>임관</>했습니다.`, {
             scope: LogScope.SYSTEM,
             category: LogCategory.SUMMARY,
-            format: LogFormat.RAWTEXT,
+            format: LogFormat.MONTH,
         });
 
         tryApplyUniqueLottery(context, {
