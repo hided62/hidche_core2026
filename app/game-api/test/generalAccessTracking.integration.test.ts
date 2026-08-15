@@ -379,6 +379,7 @@ integration('general access tracking persistence', () => {
                 name: yearbookProfile,
                 scenario: 'default',
             },
+            profileStatusSource: { get: async () => 'RUNNING' as const },
         } as unknown as GameApiContext;
         const boundaryCaller = endpointBoundaryRouter.createCaller(context);
 

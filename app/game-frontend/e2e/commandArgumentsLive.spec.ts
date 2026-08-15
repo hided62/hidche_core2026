@@ -69,29 +69,36 @@ test('reserves an argument command in the real game API and reads it back from P
     try {
         await page.goto('/');
         await expect(page.getByRole('heading', { name: '전장 현황' })).toBeVisible();
-        await page.getByRole('button', { name: '계략', exact: true }).click();
-        await page.getByRole('button', { name: /화계/ }).click();
-        const form = page.getByTestId('command-argument-form');
-        await expect(form).toBeVisible();
-        const citySelect = form.locator('select');
-        const optionValues = await citySelect
-            .locator('option')
-            .evaluateAll((options) => options.map((option) => (option as HTMLOptionElement).value));
-        const targetCityId = Number(optionValues.find((value) => Number(value) !== context.general.cityId));
-        expect(targetCityId).toBeGreaterThan(0);
-        await citySelect.selectOption(String(targetCityId));
-
         const generalSection = page.locator('.reserved-section').filter({ hasText: '일반 예턴' });
         const lastTurn = generalSection.locator('.reserved-item').nth(29);
-        await lastTurn.getByRole('button', { name: '배치' }).click();
-        await expect(lastTurn.locator('.turn-action')).toHaveText('che_화계');
+        const form = page.getByTestId('command-argument-form');
+        for (const strategy of [
+            { key: 'che_선동', name: '선동' },
+            { key: 'che_탈취', name: '탈취' },
+            { key: 'che_파괴', name: '파괴' },
+            { key: 'che_화계', name: '화계' },
+        ]) {
+            await page.getByRole('button', { name: '계략', exact: true }).click();
+            await page.getByRole('button', { name: new RegExp(strategy.name) }).click();
+            await expect(form).toBeVisible();
+            const citySelect = form.locator('select');
+            const optionValues = await citySelect
+                .locator('option')
+                .evaluateAll((options) => options.map((option) => (option as HTMLOptionElement).value));
+            const targetCityId = Number(optionValues.find((value) => Number(value) !== context.general.cityId));
+            expect(targetCityId).toBeGreaterThan(0);
+            await citySelect.selectOption(String(targetCityId));
 
-        const persisted = (await game.turns.reserved.getGeneral.query({ generalId })).turns[29];
-        expect(persisted).toEqual({
-            index: 29,
-            action: 'che_화계',
-            args: { destCityId: targetCityId },
-        });
+            await lastTurn.getByRole('button', { name: '배치' }).click();
+            await expect(lastTurn.locator('.turn-action')).toHaveText(strategy.key);
+
+            const persisted = (await game.turns.reserved.getGeneral.query({ generalId })).turns[29];
+            expect(persisted).toEqual({
+                index: 29,
+                action: strategy.key,
+                args: { destCityId: targetCityId },
+            });
+        }
 
         await page.getByRole('button', { name: '국가:인사', exact: true }).click();
         await page.getByRole('button', { name: /포상/ }).click();

@@ -73,6 +73,7 @@ const buildContext = (authenticated: boolean) => {
             },
             city: { findUnique: async () => null },
             nation: { findUnique: async () => null },
+            generalAccessLog: { findUnique: async () => null },
             worldState: { findFirst: async () => ({ config: { const: {} } }) },
         },
     } as unknown as GameApiContext;

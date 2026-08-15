@@ -914,6 +914,7 @@ export const createDatabaseTurnHooks = async (
         let persistedVisibleLogs: PersistedVisibleLogRow[] = [];
         let visibleLogFloor = directLogFloor;
         const {
+            accessScoreResetGeneralIds,
             generals,
             cities,
             nations,
@@ -1011,6 +1012,13 @@ export const createDatabaseTurnHooks = async (
                 asRecord(world.getScenarioConfig().const),
                 world.gameTickToDate(state.clockTick ?? state.lastTurnTick ?? 0)
             );
+
+            if (accessScoreResetGeneralIds.length > 0) {
+                await prisma.generalAccessLog.updateMany({
+                    where: { generalId: { in: accessScoreResetGeneralIds } },
+                    data: { refreshScore: 0 },
+                });
+            }
 
             if (inheritancePointAdjustments.length > 0) {
                 const grouped = new Map<string, { userId: string; key: string; amount: number }>();

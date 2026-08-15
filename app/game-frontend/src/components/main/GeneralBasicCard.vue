@@ -3,7 +3,7 @@ import { computed } from 'vue';
 
 import SkeletonLines from '../ui/SkeletonLines.vue';
 import LegacyProgressBar from '../ui/LegacyProgressBar.vue';
-import { formatSeoulTimeSeconds } from '../../utils/legacyDateTime';
+import { formatLocalTimeSeconds } from '../../utils/legacyDateTime';
 import { legacyExperiencePercent, ratioPercent } from '../../utils/legacyProgress';
 import { DEFAULT_GENERAL_ICON_URL, resolveGeneralIconBackgroundImage } from '../../utils/generalIcon';
 import { configuredGameAssetUrl } from '../../utils/imageAssets';
@@ -232,7 +232,7 @@ const specialText = computed(() => {
                     {{ props.general.officerLevelText }} | {{ props.general.generalType ?? '-' }} |
                     <span :style="{ color: injuryInfo.color }">{{ injuryInfo.text }}</span> 】
                     <span data-general-turn-time>{{
-                        props.general.turnTime ? formatSeoulTimeSeconds(props.general.turnTime) : '-'
+                        props.general.turnTime ? formatLocalTimeSeconds(props.general.turnTime) : '-'
                     }}</span>
                 </div>
 

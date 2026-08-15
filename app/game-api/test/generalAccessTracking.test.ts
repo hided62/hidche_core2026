@@ -5,15 +5,27 @@ import { z } from 'zod';
 import type { GameApiContext } from '../src/context.js';
 import type { DatabaseClient } from '../src/context.js';
 
-import { accessAuthedInputProcedure, router } from '../src/trpc.js';
+import { accessAuthedInputProcedure, accessLimitAuthedProcedure, router } from '../src/trpc.js';
 import {
     accessPageWeights,
     generalAccessEndpointWeights,
+    getGeneralAccessState,
     recordGeneralAccess,
     recordGeneralAccessWeight,
     resolveGeneralAccessEndpointWeight,
     resolveAccessWindows,
+    resolveGeneralScoreStartedAt,
 } from '../src/services/generalAccess.js';
+
+const profile = { id: 'che', name: 'che:default', scenario: 'default' };
+const profileStatusSource = { get: vi.fn(async () => 'RUNNING' as const) };
+const accessContext = (db: DatabaseClient, token: GameSessionTokenPayload | null = auth()) => ({
+    auth: token,
+    db,
+    profile,
+    profileStatusSource,
+    generalAccessTracking: true as const,
+});
 
 const auth = (roles = ['user']): GameSessionTokenPayload => ({
     version: 1,
@@ -30,7 +42,10 @@ const auth = (roles = ['user']): GameSessionTokenPayload => ({
     sanctions: {},
 });
 
-const buildDb = (meta: Record<string, unknown> = {}) => {
+const buildDb = (
+    meta: Record<string, unknown> = {},
+    access: { lastRefresh: Date | null; refreshScore: number } | null = null
+) => {
     const executeRaw = vi.fn(async (_query: unknown) => 1);
     const queryRaw = vi.fn(async (_query: unknown) => [{ id: 41 }]);
     const transaction = vi.fn(
@@ -38,7 +53,11 @@ const buildDb = (meta: Record<string, unknown> = {}) => {
             callback: (client: { $executeRaw: typeof executeRaw; $queryRaw: typeof queryRaw }) => Promise<unknown>
         ) => callback({ $executeRaw: executeRaw, $queryRaw: queryRaw })
     );
-    const findGeneral = vi.fn(async () => ({ id: 7, userId: 'user-7' }));
+    const findGeneral = vi.fn(async () => ({
+        id: 7,
+        userId: 'user-7',
+        turnTime: new Date('2026-07-26T03:10:00.000Z'),
+    }));
     const findWorld = vi.fn(async () => ({
         id: 3,
         currentYear: 185,
@@ -53,6 +72,7 @@ const buildDb = (meta: Record<string, unknown> = {}) => {
     const db = {
         $transaction: transaction,
         general: { findFirst: findGeneral },
+        generalAccessLog: { findUnique: vi.fn(async () => access) },
         worldState: { findFirst: findWorld },
     } as unknown as DatabaseClient;
     return { db, executeRaw, queryRaw, transaction, findGeneral, findWorld };
@@ -91,6 +111,7 @@ describe('general access tracking', () => {
             'general.dieOnPrestart': 1,
             'general.instantRetreat': 1,
             'messages.send': 1,
+            'turns.getCommandTable': 1,
             'general.setMySetting': 0,
             'npc.setNationPolicy': 0,
             'npc.setNationPriority': 0,
@@ -120,17 +141,20 @@ describe('general access tracking', () => {
             periodStartedAt: new Date('2026-07-26T03:10:00.000Z'),
             scoreStartedAt: new Date('2026-07-26T03:10:00.000Z'),
         });
+        expect(resolveGeneralScoreStartedAt(600, new Date('2026-07-26T03:20:00.000Z'))).toEqual(
+            new Date('2026-07-26T03:10:00.000Z')
+        );
     });
 
     it('uses the session user actor and the legacy page weight in one atomic upsert', async () => {
         const { db, executeRaw, queryRaw, transaction, findGeneral } = buildDb();
         const now = new Date('2026-07-26T03:05:00.000Z');
 
-        await expect(recordGeneralAccess({ auth: auth(), db }, 'nation-list', now)).resolves.toBe(true);
+        await expect(recordGeneralAccess(accessContext(db), 'nation-list', now)).resolves.toBe(true);
         expect(findGeneral).toHaveBeenCalledWith({
             where: { userId: 'user-7' },
             orderBy: { id: 'asc' },
-            select: { id: true, userId: true },
+            select: { id: true, userId: true, turnTime: true },
         });
         expect(transaction).toHaveBeenCalledTimes(1);
         expect(queryRaw).toHaveBeenCalledTimes(1);
@@ -167,7 +191,7 @@ describe('general access tracking', () => {
         const { db, executeRaw, queryRaw, transaction } = buildDb();
         const now = new Date('2026-07-26T03:06:00.000Z');
 
-        await expect(recordGeneralAccessWeight({ auth: auth(), db }, 0, now)).resolves.toBe(true);
+        await expect(recordGeneralAccessWeight(accessContext(db), 0, now)).resolves.toBe(true);
         expect(transaction).toHaveBeenCalledTimes(1);
         expect((queryRaw.mock.calls[0]![0] as { values: unknown[] }).values).toContain(0);
         expect((executeRaw.mock.calls[0]![0] as { values: unknown[] }).values).toContain(0);
@@ -175,14 +199,42 @@ describe('general access tracking', () => {
         expect((executeRaw.mock.calls[1]![0] as { values: unknown[] }).values).toContain(now);
     });
 
+    it('blocks above the strict limit and lazily clears a score from before the own turn', async () => {
+        const blocked = buildDb(
+            { refreshLimit: 120 },
+            { lastRefresh: new Date('2026-07-26T03:05:00.000Z'), refreshScore: 121 }
+        );
+        await expect(getGeneralAccessState(accessContext(blocked.db))).resolves.toMatchObject({
+            refreshScore: 121,
+            refreshLimit: 120,
+            level: 2,
+            nextAccessAt: new Date('2026-07-26T03:10:00.000Z'),
+        });
+
+        const stale = buildDb(
+            { refreshLimit: 120 },
+            { lastRefresh: new Date('2026-07-26T02:59:59.999Z'), refreshScore: 999 }
+        );
+        await expect(getGeneralAccessState(accessContext(stale.db))).resolves.toMatchObject({
+            refreshScore: 0,
+            level: 0,
+        });
+
+        const resolver = vi.fn(() => ({ ok: true }));
+        const limitedRouter = router({ read: accessLimitAuthedProcedure.query(resolver) });
+        await expect(
+            limitedRouter.createCaller(accessContext(blocked.db) as unknown as GameApiContext).read()
+        ).rejects.toMatchObject({
+            code: 'TOO_MANY_REQUESTS',
+            message: expect.stringContaining('자신의 턴이 되면 다시 접속 가능합니다.'),
+        });
+        expect(resolver).not.toHaveBeenCalled();
+    });
+
     it('rejects weights that cannot come from a server-owned Ref call boundary', async () => {
         const fixture = buildDb();
-        await expect(recordGeneralAccessWeight({ auth: auth(), db: fixture.db }, -1)).rejects.toBeInstanceOf(
-            RangeError
-        );
-        await expect(recordGeneralAccessWeight({ auth: auth(), db: fixture.db }, 0.5)).rejects.toBeInstanceOf(
-            RangeError
-        );
+        await expect(recordGeneralAccessWeight(accessContext(fixture.db), -1)).rejects.toBeInstanceOf(RangeError);
+        await expect(recordGeneralAccessWeight(accessContext(fixture.db), 0.5)).rejects.toBeInstanceOf(RangeError);
         expect(fixture.findGeneral).not.toHaveBeenCalled();
     });
 
@@ -201,6 +253,13 @@ describe('general access tracking', () => {
                 findFirst: vi.fn(async () => ({
                     id: 7,
                     userId: 'user-7',
+                    turnTime: new Date('2026-07-26T03:10:00.000Z'),
+                })),
+            },
+            generalAccessLog: {
+                findUnique: vi.fn(async () => ({
+                    lastRefresh: new Date('2026-07-26T03:05:00.000Z'),
+                    refreshScore: 1,
                 })),
             },
             worldState: {
@@ -253,6 +312,7 @@ describe('general access tracking', () => {
             generalAccessTracking: true,
             requestId: 'access-boundary-test',
             profile: { id: 'che:default', name: 'che' },
+            profileStatusSource,
         } as unknown as GameApiContext;
 
         await expect(trackedRouter.createCaller(context).board.writeArticle({ value: 'ok' })).rejects.toMatchObject({
@@ -279,21 +339,37 @@ describe('general access tracking', () => {
 
     it('does not write for anonymous/admin users, a future opening, or a finished world', async () => {
         const anonymous = buildDb();
-        await expect(recordGeneralAccess({ auth: null, db: anonymous.db }, 'traffic')).resolves.toBe(false);
+        await expect(recordGeneralAccess(accessContext(anonymous.db, null), 'traffic')).resolves.toBe(false);
         expect(anonymous.findGeneral).not.toHaveBeenCalled();
 
         const admin = buildDb();
-        await expect(recordGeneralAccess({ auth: auth(['admin']), db: admin.db }, 'traffic')).resolves.toBe(false);
+        await expect(recordGeneralAccess(accessContext(admin.db, auth(['admin'])), 'traffic')).resolves.toBe(false);
         expect(admin.findGeneral).not.toHaveBeenCalled();
 
         const future = buildDb({ opentime: '2026-07-27T00:00:00.000Z' });
         await expect(
-            recordGeneralAccess({ auth: auth(), db: future.db }, 'traffic', new Date('2026-07-26T03:05:00.000Z'))
+            recordGeneralAccess(accessContext(future.db), 'traffic', new Date('2026-07-26T03:05:00.000Z'))
         ).resolves.toBe(false);
         expect(future.transaction).not.toHaveBeenCalled();
 
         const united = buildDb({ isUnited: 2 });
-        await expect(recordGeneralAccess({ auth: auth(), db: united.db }, 'traffic')).resolves.toBe(false);
+        await expect(recordGeneralAccess(accessContext(united.db), 'traffic')).resolves.toBe(false);
         expect(united.transaction).not.toHaveBeenCalled();
+
+        const paused = buildDb();
+        const pausedContext = {
+            ...accessContext(paused.db),
+            profileStatusSource: { get: vi.fn(async () => 'PAUSED' as const) },
+        };
+        await expect(recordGeneralAccess(pausedContext, 'traffic')).resolves.toBe(false);
+        expect(paused.findGeneral).not.toHaveBeenCalled();
+
+        const unavailable = buildDb();
+        const unavailableContext = {
+            ...accessContext(unavailable.db),
+            profileStatusSource: { get: vi.fn(async () => Promise.reject(new Error('gateway unavailable'))) },
+        };
+        await expect(recordGeneralAccess(unavailableContext, 'traffic')).resolves.toBe(false);
+        expect(unavailable.findGeneral).not.toHaveBeenCalled();
     });
 });

@@ -119,6 +119,7 @@ describe('buildTurnCommandTable', () => {
                 'che_단련',
                 'che_숙련전환',
                 'che_견문',
+                'che_은퇴',
                 'che_장비매매',
                 'che_군량매매',
                 'che_내정특기초기화',
@@ -135,9 +136,58 @@ describe('buildTurnCommandTable', () => {
                 'che_주민선정',
             ],
             군사: ['che_징병', 'che_모병', 'che_훈련', 'che_사기진작', 'che_출병', 'che_집합', 'che_소집해제'],
-            인사: ['che_이동', 'che_인재탐색', 'che_귀환', 'che_임관', 'che_랜덤임관'],
-            계략: ['che_화계'],
-            국가: ['che_증여', 'che_헌납', 'che_물자조달', 'che_거병', 'che_건국', 'che_선양', 'che_해산'],
+            인사: ['che_이동', 'che_강행', 'che_인재탐색', 'che_귀환', 'che_임관', 'che_랜덤임관'],
+            계략: ['che_선동', 'che_탈취', 'che_파괴', 'che_화계'],
+            국가: ['che_증여', 'che_헌납', 'che_물자조달', 'che_하야', 'che_거병', 'che_건국', 'che_선양', 'che_해산'],
+        });
+    });
+
+    it('projects the Ref availability boundaries for force move, retirement, and resignation', async () => {
+        const buildTable = (general: GeneralRow, nation: NationRow | null = buildNation()) =>
+            buildTurnCommandTable({
+                worldState: buildWorldState(),
+                general,
+                city: buildCity(),
+                nation,
+                nationGenerals: null,
+            });
+        const findCommand = (table: Awaited<ReturnType<typeof buildTable>>, key: string) =>
+            table.general.flatMap((group) => group.values).find((command) => command.key === key);
+
+        const ordinary = await buildTable(buildGeneral());
+        expect(findCommand(ordinary, 'che_강행')).toMatchObject({
+            name: '강행',
+            reqArg: true,
+            possible: true,
+            inputFields: [{ key: 'destCityId', optionSource: 'cities' }],
+        });
+        expect(findCommand(ordinary, 'che_은퇴')).toMatchObject({
+            name: '은퇴',
+            possible: false,
+            status: 'blocked',
+            reason: '나이가 60세 이상이어야 합니다.',
+        });
+        expect(findCommand(ordinary, 'che_하야')).toMatchObject({
+            name: '하야',
+            possible: true,
+            status: 'available',
+        });
+
+        const oldEnough = await buildTable({ ...buildGeneral(), age: 60 } as GeneralRow);
+        expect(findCommand(oldEnough, 'che_은퇴')).toMatchObject({ possible: true, status: 'available' });
+
+        const ruler = await buildTable({ ...buildGeneral(), officerLevel: 12 } as GeneralRow);
+        expect(findCommand(ruler, 'che_하야')).toMatchObject({
+            possible: false,
+            status: 'blocked',
+            reason: expect.stringContaining('군주'),
+        });
+
+        const neutral = await buildTable({ ...buildGeneral(), nationId: 0, officerLevel: 0 } as GeneralRow, null);
+        expect(findCommand(neutral, 'che_하야')).toMatchObject({
+            possible: false,
+            status: 'blocked',
+            reason: '재야입니다.',
         });
     });
 
