@@ -44,7 +44,6 @@ import { asRecord, JosaUtil, LEGACY_RANK_DATA_TYPES, LiteHashDRBG, RandUtil } fr
 import type { ConstraintContext, StateView } from '@sammo-ts/logic';
 
 import type { GeneralTurnHandler, GeneralTurnResult } from './inMemoryWorld.js';
-import { normalizeGeneralDatabaseIntegers } from './inMemoryWorld.js';
 import type { InMemoryTurnWorld } from './inMemoryWorld.js';
 import type { TurnDiplomacy, TurnGeneral, TurnWorldState } from './types.js';
 import type { ReservedTurnEntry } from './reservedTurnStore.js';
@@ -1692,11 +1691,11 @@ export const createReservedTurnHandler = async (options: {
                     nationAiState = ai.getDebugState();
                 }
                 const nationResult = runAction('nation', nationDefinitions, nationFallback, nationCommand, false);
-                // Ref persists a completed nation command before it chooses and
-                // executes the general command for the same turn. Preserve that
-                // MariaDB INT boundary so fractional rewards cannot leak into the
-                // following command or its AI refresh.
-                currentGeneral = normalizeGeneralDatabaseIntegers(currentGeneral);
+                // Ref persists the nation command here, but LazyVarUpdater only
+                // clears its dirty flags: it does not replace the same PHP
+                // General object's fractional values with the MariaDB INT row.
+                // The following general command therefore observes and adds to
+                // those fractions before the turn's final persistence boundary.
                 worldOverlay?.syncGeneral(currentGeneral);
                 if (
                     worldView &&

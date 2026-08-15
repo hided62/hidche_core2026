@@ -37,7 +37,7 @@ const buildGeneral = (id: number, turnTime: Date): TurnGeneral => ({
 });
 
 describe('InMemoryTurnProcessor ordering', () => {
-    it('executes generals by turnTime then id, not insertion order', async () => {
+    it('executes generals by logical turn tick then id, not projected millisecond or insertion order', async () => {
         const baseTime = new Date('0189-01-01T00:00:00Z');
 
         const generals: TurnGeneral[] = [
@@ -169,17 +169,18 @@ describe('InMemoryTurnProcessor ordering', () => {
         const boundaryResult = await processor.run(addMinutes(baseTime, 10), budget);
         expect(boundaryResult.processedTurns).toBe(1);
         expect(executed).toEqual([]);
+        expect(world.listDueGenerals(addMinutes(baseTime, 10)).map((general) => general.id)).toEqual([3]);
 
         const tiedGeneralResult = await processor.run(new Date(addMinutes(baseTime, 10).getTime() + 1), budget);
         expect(tiedGeneralResult.processedTurns).toBe(0);
-        expect(executed).toEqual([2, 3]);
+        expect(executed).toEqual([3, 2]);
         expect(world.getGeneralById(2)?.recentWarTime?.getTime()).toBe(baseTime.getTime());
         expect(world.getGeneralById(2)?.recentWarTick).not.toBeNull();
         expect(Number(world.getGeneralById(2)?.turnTick) % 10).toBe(4);
 
         await processor.run(addMinutes(baseTime, 30), budget);
 
-        expect(executed).toEqual([2, 3, 1, 2, 3]);
+        expect(executed).toEqual([3, 2, 1, 3, 2]);
         expect(world.getNextGeneralId()).toBe(4);
         expect(world.getNextGeneralId()).toBe(5);
         expect(world.getState().meta).toMatchObject({ lastGeneralId: 5 });
@@ -187,6 +188,7 @@ describe('InMemoryTurnProcessor ordering', () => {
         const overdue = world.getGeneralById(1);
         expect(overdue).toBeDefined();
         overdue!.turnTime = addMinutes(baseTime, 5);
+        overdue!.turnTick = undefined;
         const overdueResult = await processor.run(addMinutes(baseTime, 5), budget);
         expect(overdueResult.processedGenerals).toBe(1);
         expect(executed.at(-1)).toBe(1);

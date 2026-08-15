@@ -1,4 +1,4 @@
-import type { RandomGenerator } from '@sammo-ts/common';
+import { GAME_TICKS_PER_TURN, JosaUtil, type RandomGenerator } from '@sammo-ts/common';
 import type {
     City,
     General,
@@ -19,7 +19,6 @@ import type {
 import { createGeneralAddEffect } from '@sammo-ts/logic/actions/engine.js';
 import { LogCategory, LogFormat, LogScope } from '@sammo-ts/logic/logging/types.js';
 import { buildRecruitmentGeneral } from './recruitment.js';
-import { JosaUtil } from '@sammo-ts/common';
 import type { ActionContextBuilder } from '@sammo-ts/logic/actions/turn/actionContext.js';
 import { buildWorldSummary } from '@sammo-ts/logic/actions/turn/actionContextHelpers.js';
 import type { TurnCommandEnv } from '@sammo-ts/logic/actions/turn/commandEnv.js';
@@ -59,6 +58,8 @@ export interface TalentScoutResolveContext<
     createGeneralId: () => number;
     turnTermMinutes: number;
     turnTimeBase: Date;
+    turnTimeBaseTick?: number;
+    ticksPerSecond: number;
 }
 
 export interface TalentScoutEnvironment {
@@ -439,6 +440,12 @@ export class ActionResolver<
         const cityId = resolveSpawnCityId(context, context.rng, this.env);
         const turnSecond = randomRangeInt(context.rng, 0, context.turnTermMinutes * 60 - 1);
         const turnFraction = randomRangeInt(context.rng, 0, 999_999);
+        const turnTick =
+            context.turnTimeBaseTick === undefined
+                ? undefined
+                : context.turnTimeBaseTick +
+                  turnSecond * context.ticksPerSecond +
+                  Math.floor((turnFraction * context.ticksPerSecond) / 1_000_000);
         const turnTime = new Date(
             context.turnTimeBase.getTime() + turnSecond * 1_000 + Math.floor(turnFraction / 1_000)
         );
@@ -489,6 +496,7 @@ export class ActionResolver<
                 meta,
             }),
             turnTime,
+            ...(turnTick === undefined ? {} : { turnTick }),
             bornYear: birthYear,
             deadYear: deathYear,
             affinity,
@@ -602,6 +610,8 @@ export const actionContextBuilder: ActionContextBuilder = (base, options) => ({
     // GeneralBuilder::build() derives a new NPC turn from gameStor.turntime,
     // not from the scout's own reserved-turn timestamp.
     turnTimeBase: options.world.lastTurnTime ?? base.general.turnTime,
+    turnTimeBaseTick: options.world.lastTurnTick,
+    ticksPerSecond: GAME_TICKS_PER_TURN / options.world.tickSeconds,
 });
 
 export const commandSpec: GeneralTurnCommandSpec = {

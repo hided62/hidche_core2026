@@ -41,7 +41,11 @@ export const doNPC헌납 = (ai: GeneralAI) => {
             genRes >= ai.aiConst.minNationalRice / 2
         ) {
             const amount = genRes < ai.aiConst.minNationalRice ? genRes : genRes / 2;
-            args.push([{ isGold: false, amount }, amount]);
+            // Ref passes the literal string "rice" here. che_헌납::argTest()
+            // rejects that candidate because isGold is not boolean; preserving
+            // the malformed weighted candidate also preserves the RNG draw and
+            // lets the priority loop continue when it is selected.
+            args.push([{ isGold: 'rice', amount }, amount]);
         }
         if (genRes < reqRes * 1.5) {
             continue;

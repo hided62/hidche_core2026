@@ -36,6 +36,7 @@ export interface ActionContextWorldState {
     currentMonth: number;
     tickSeconds: number;
     lastTurnTime?: Date;
+    lastTurnTick?: number;
     meta?: Record<string, unknown>;
 }
 

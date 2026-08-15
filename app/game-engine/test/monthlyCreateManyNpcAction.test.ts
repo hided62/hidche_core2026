@@ -194,6 +194,9 @@ describe('CreateManyNPC monthly action', () => {
             "turnTime": "0200-05-01T00:05:45.821Z",
           }
         `);
+        expect(created.turnTick).toBeTypeOf('number');
+        expect(created.turnTick! - world.dateToGameTick(created.turnTime)).toBeGreaterThan(0);
+        expect(created.turnTick! - world.dateToGameTick(created.turnTime)).toBeLessThan(60);
         expect(reservedTurns.getGeneralTurns(created.id)).toHaveLength(30);
         expect(reservedTurns.peekDirtyState()).toEqual({
             generalIds: [],

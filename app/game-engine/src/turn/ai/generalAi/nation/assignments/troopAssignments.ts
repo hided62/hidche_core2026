@@ -128,11 +128,14 @@ export const do부대후방발령 = (ai: GeneralAI) => {
         return null;
     }
 
+    // Ref consumes the troop-leader draw before the destination-city draw.
+    // Both selections share the nation command RNG, so reversing them can
+    // assign the same two outcomes to different leaders and cities.
+    const leader = ai.rng.choice(troopCandidates);
     const destCityId = Number(ai.rng.choiceUsingWeight(cityCandidates));
     if (!Number.isFinite(destCityId)) {
         return null;
     }
-    const leader = ai.rng.choice(troopCandidates);
     return buildAssignmentCandidate(ai, leader.id, destCityId, '부대후방발령');
 };
 
@@ -162,10 +165,10 @@ export const do부대구출발령 = (ai: GeneralAI) => {
         return null;
     }
 
+    const leader = ai.rng.choice(troopCandidates);
     const destCityId = pickRandomCityId(ai, ai.frontCities);
     if (destCityId === null) {
         return null;
     }
-    const leader = ai.rng.choice(troopCandidates);
     return buildAssignmentCandidate(ai, leader.id, destCityId, '부대구출발령');
 };

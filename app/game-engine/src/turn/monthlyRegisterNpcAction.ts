@@ -1,4 +1,4 @@
-import { JosaUtil, LiteHashDRBG, RandUtil, asRecord } from '@sammo-ts/common';
+import { GAME_TICKS_PER_TURN, JosaUtil, LiteHashDRBG, RandUtil, asRecord } from '@sammo-ts/common';
 import {
     DOMESTIC_TRAIT_KEYS,
     LogCategory,
@@ -307,9 +307,12 @@ export const createRegisterNpcHandler = (options: {
         }
         const turnSecond = rng.nextRangeInt(0, 60 * turnMinutes - 1);
         const turnFraction = rng.nextRangeInt(0, 999_999);
-        const turnTime = new Date(
-            environment.turnTime.getTime() + turnSecond * 1_000 + Math.floor(turnFraction / 1_000)
-        );
+        const ticksPerSecond = GAME_TICKS_PER_TURN / world.getState().tickSeconds;
+        const turnTick =
+            world.dateToGameTick(environment.turnTime) +
+            turnSecond * ticksPerSecond +
+            Math.floor((turnFraction * ticksPerSecond) / 1_000_000);
+        const turnTime = world.gameTickToDate(turnTick);
         const killturn =
             (parsed.deathYear - environment.year) * 12 +
             rng.nextRangeInt(0, 11) +
@@ -358,6 +361,7 @@ export const createRegisterNpcHandler = (options: {
             },
             lastTurn: { command: '휴식' },
             turnTime,
+            turnTick,
             recentWarTime: null,
             meta: {
                 killturn,

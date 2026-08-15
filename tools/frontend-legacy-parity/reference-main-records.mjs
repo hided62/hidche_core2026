@@ -28,8 +28,12 @@ try {
     const response = await context.request.post(new URL('api.php?path=Login/LoginByID', baseUrl).toString(), {
         data: { username, password: passwordHash },
     });
-    if (!response.ok()) {
-        throw new Error(`reference login failed: HTTP ${response.status()}`);
+    const loginPayload = await response.json().catch(() => null);
+    if (!response.ok() || loginPayload?.result !== true) {
+        const reason = String(loginPayload?.reason ?? 'invalid JSON response')
+            .split(/\r?\n/u, 1)[0]
+            .slice(0, 300);
+        throw new Error(`reference login failed: HTTP ${response.status()} ${reason}`);
     }
 
     for (const viewport of [

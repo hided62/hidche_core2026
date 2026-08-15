@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { ConstantRNG, RandUtil } from '@sammo-ts/common';
 import type { TurnSchedule } from '@sammo-ts/logic/turn/calendar.js';
 import type { TurnGeneral, TurnWorldSnapshot, TurnWorldState } from '../src/turn/types.js';
 import { createTurnTestHarness } from './helpers/turnTestHarness.js';
@@ -199,6 +200,67 @@ describe('legacy general-turn execution contract', () => {
             rice: 1_000,
             meta: { killturn: 24, dex4: 101, intel_exp: 30 },
         });
+    });
+
+    it('keeps fractional nation rewards in the same general object until the following command is persisted', async () => {
+        const twoCityMap = {
+            ...map,
+            cities: [
+                { ...map.cities[0]!, connections: [2] },
+                { ...map.cities[0]!, id: 2, name: '두번째성', position: { x: 1, y: 0 }, connections: [1] },
+            ],
+        };
+        const general = makeGeneral({
+            officerLevel: 12,
+            stats: { leadership: 80, strength: 70, intelligence: 52 },
+            role: {
+                personality: 'che_출세',
+                specialDomestic: null,
+                specialWar: null,
+                items: { horse: null, weapon: null, book: null, item: null },
+            },
+        });
+        const snapshot = makeSnapshot(general);
+        snapshot.map = twoCityMap;
+        snapshot.cities.push({
+            ...snapshot.cities[0]!,
+            id: 2,
+            name: '두번째성',
+        });
+        snapshot.nations[0] = {
+            ...snapshot.nations[0]!,
+            chiefGeneralId: 1,
+            meta: {
+                gennum: 1,
+                tech: 0,
+                capset: 0,
+                turn_last_12: {
+                    command: '천도',
+                    arg: { destCityID: 2 },
+                    term: 2,
+                    seq: 0,
+                },
+            },
+        };
+        const harness = await createTurnTestHarness({
+            snapshot,
+            state: makeState(),
+            schedule,
+            map: twoCityMap,
+            commandRngFactory: () => new RandUtil(new ConstantRNG(0)),
+        });
+        harness.reservedTurnStore.getNationTurns(1, 12)[0] = {
+            action: 'che_천도',
+            args: { destCityID: 2 },
+        };
+        harness.reservedTurnStore.getGeneralTurns(1)[0] = { action: 'che_상업투자', args: {} };
+
+        await harness.runOneTick();
+
+        // 천도 15 * 1.1 = 16.5, 상업 투자 6 * 0.7 * 1.1 = 4.62.
+        // Ref keeps 21.12 in the PHP object and rounds it once at persistence.
+        expect(harness.world.getGeneralById(1)?.experience).toBe(21);
+        expect(harness.world.getNationById(1)?.capitalCityId).toBe(2);
     });
 
     it('applies inherited domestic stat progression after farming', async () => {

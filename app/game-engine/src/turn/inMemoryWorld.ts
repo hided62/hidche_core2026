@@ -190,6 +190,12 @@ export interface InMemoryTurnWorldInspection {
 }
 
 const compareTurnOrder = (left: TurnGeneral, right: TurnGeneral): number => {
+    if (left.turnTick !== undefined && right.turnTick !== undefined) {
+        const tickDiff = left.turnTick - right.turnTick;
+        if (tickDiff !== 0) {
+            return tickDiff;
+        }
+    }
     const timeDiff = left.turnTime.getTime() - right.turnTime.getTime();
     if (timeDiff !== 0) {
         return timeDiff;
@@ -200,6 +206,18 @@ const compareTurnOrder = (left: TurnGeneral, right: TurnGeneral): number => {
 const shouldProcessByCheckpoint = (general: TurnGeneral, checkpoint?: TurnCheckpoint): boolean => {
     if (!checkpoint) {
         return true;
+    }
+    if (general.turnTick !== undefined && checkpoint.turnTick !== undefined) {
+        if (general.turnTick < checkpoint.turnTick) {
+            return false;
+        }
+        if (general.turnTick > checkpoint.turnTick) {
+            return true;
+        }
+        if (checkpoint.generalId === undefined) {
+            return false;
+        }
+        return general.id > checkpoint.generalId;
     }
     const generalTime = general.turnTime.getTime();
     const checkpointTime = new Date(checkpoint.turnTime).getTime();
@@ -1211,9 +1229,13 @@ export class InMemoryTurnWorld {
 
     listDueGenerals(targetTime: Date, checkpoint?: TurnCheckpoint): TurnGeneral[] {
         const targetMs = targetTime.getTime();
+        const targetTick = this.getGameClock().dateToTick(targetTime);
         const due = Array.from(this.generals.values()).filter((general) => {
             if (!shouldProcessByCheckpoint(general, checkpoint)) {
                 return false;
+            }
+            if (general.turnTick !== undefined) {
+                return general.turnTick <= targetTick;
             }
             return general.turnTime.getTime() <= targetMs;
         });

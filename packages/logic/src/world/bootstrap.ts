@@ -143,20 +143,35 @@ const canonicalizeWarTrait = (raw: string | null | undefined): string | null => 
 };
 
 // Scenario rows expose one legacy speciality column. GeneralBuilder tries the
-// domestic catalogue first, then the war catalogue, and persists the resolved
-// class code. Preserve unknown values in the domestic slot so custom scenario
-// packs retain their prior data even when their module is not installed here.
+// war catalogue first, then the domestic catalogue, and persists the resolved
+// class code. An explicit war slot keeps the single speciality in the domestic
+// slot. Preserve unknown values in the domestic slot so custom scenario packs
+// retain their prior data even when their module is not installed here.
 const resolveScenarioTraits = (
     special: string | null,
     explicitWar: string | null | undefined
 ): { specialDomestic: string | null; specialWar: string | null } => {
     const domestic = canonicalizeDomesticTrait(special);
-    const inferredWar = domestic === null ? canonicalizeWarTrait(special) : null;
+    const inferredWar = canonicalizeWarTrait(special);
     const retainedDomestic = special && special !== 'None' ? special : null;
     const retainedWar = explicitWar && explicitWar !== 'None' ? explicitWar : null;
+    const resolvedExplicitWar = canonicalizeWarTrait(explicitWar) ?? retainedWar;
+
+    if (resolvedExplicitWar !== null) {
+        return {
+            specialDomestic: domestic ?? retainedDomestic,
+            specialWar: resolvedExplicitWar,
+        };
+    }
+    if (inferredWar !== null) {
+        return {
+            specialDomestic: null,
+            specialWar: inferredWar,
+        };
+    }
     return {
-        specialDomestic: domestic ?? (inferredWar === null ? retainedDomestic : null),
-        specialWar: canonicalizeWarTrait(explicitWar) ?? inferredWar ?? retainedWar,
+        specialDomestic: domestic ?? retainedDomestic,
+        specialWar: null,
     };
 };
 

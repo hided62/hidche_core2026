@@ -278,7 +278,9 @@ const mapGeneralRow = (
 };
 
 const mapCityRow = (row: TurnEngineCityRow): City => {
-    const meta = asTriggerRecord(row.meta);
+    // trust/trade/region are projected columns. Old flushes also copied them
+    // into JSON meta; never let a stale duplicate override a nullable column.
+    const { trust: _storedTrust, trade: _storedTrade, region: _storedRegion, ...meta } = asTriggerRecord(row.meta);
     const state = typeof meta.state === 'number' && Number.isFinite(meta.state) ? Math.floor(meta.state) : 0;
     return {
         id: row.id,
