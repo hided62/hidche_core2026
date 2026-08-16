@@ -54,7 +54,7 @@ const onQuick = (item: QuickNavigationItem) => {
     >
         <div class="bottom-item">
             <button
-                class="bottom-trigger ref-navigation-button"
+                class="bottom-trigger legacy-button legacy-button--navigation"
                 type="button"
                 data-bottom-menu="global"
                 :aria-expanded="openId === 'global'"
@@ -121,7 +121,12 @@ const onQuick = (item: QuickNavigationItem) => {
 
         <div class="bottom-item nation-bottom-item">
             <button
-                class="bottom-trigger nation-trigger"
+                class="bottom-trigger nation-trigger legacy-button legacy-button--lumen"
+                :style="{
+                    '--legacy-button-bg': nationMenuColor,
+                    '--legacy-button-border': 'color-mix(in srgb, var(--nation-menu-color) 90%, #000)',
+                    '--legacy-button-color': nationMenuTextColor,
+                }"
                 type="button"
                 data-bottom-menu="nation"
                 :aria-expanded="openId === 'nation'"
@@ -162,7 +167,7 @@ const onQuick = (item: QuickNavigationItem) => {
 
         <div class="bottom-item">
             <button
-                class="bottom-trigger quick-trigger"
+                class="bottom-trigger quick-trigger legacy-button legacy-button--dark"
                 type="button"
                 data-bottom-menu="quick"
                 :aria-expanded="openId === 'quick'"
@@ -192,7 +197,7 @@ const onQuick = (item: QuickNavigationItem) => {
                 </template>
                 <li class="bottom-lobby" role="none">
                     <button
-                        class="quick-link lobby-link ref-navigation-button"
+                        class="quick-link lobby-link legacy-button legacy-button--navigation"
                         type="button"
                         role="menuitem"
                         @click="emit('lobby')"
@@ -205,7 +210,7 @@ const onQuick = (item: QuickNavigationItem) => {
 
         <div class="bottom-refresh-controls">
             <button
-                class="bottom-trigger auto-refresh-trigger ref-navigation-button"
+                class="bottom-trigger auto-refresh-trigger legacy-button legacy-button--navigation"
                 :class="{ active: realtimeEnabled }"
                 type="button"
                 data-bottom-menu="auto-refresh"
@@ -216,7 +221,7 @@ const onQuick = (item: QuickNavigationItem) => {
                 <strong>{{ realtimeEnabled ? 'ON' : 'OFF' }}</strong>
             </button>
             <button
-                class="bottom-trigger manual-refresh-trigger"
+                class="bottom-trigger manual-refresh-trigger legacy-button legacy-button--dark"
                 type="button"
                 data-bottom-menu="manual-refresh"
                 aria-label="직접 갱신"
@@ -267,25 +272,12 @@ const onQuick = (item: QuickNavigationItem) => {
     box-sizing: border-box;
     width: 125px;
     height: 45px;
-    border: 1px solid #1f1712;
     padding: 6px 4px;
-    background: #302016 var(--sammo-texture-walnut);
-    color: #fff;
     font-family: inherit;
     font-size: 16px;
     line-height: 1.5;
     text-align: center;
     cursor: pointer;
-}
-
-.nation-trigger {
-    border-color: color-mix(in srgb, var(--nation-menu-color) 85%, #000);
-    background: var(--nation-menu-color);
-    color: var(--nation-menu-text-color);
-}
-
-.quick-trigger {
-    background: #212529;
 }
 
 .auto-refresh-trigger {
@@ -310,7 +302,6 @@ const onQuick = (item: QuickNavigationItem) => {
 
 .manual-refresh-trigger {
     padding: 0;
-    background: #212529;
     font-size: 22px;
     line-height: 1;
 }
@@ -321,51 +312,13 @@ const onQuick = (item: QuickNavigationItem) => {
     opacity: 0.55;
 }
 
-.bottom-trigger:hover,
-.bottom-trigger:focus-visible,
-.bottom-trigger[aria-expanded='true'] {
-    filter: brightness(1.14);
-}
-
-.bottom-trigger:active {
-    filter: brightness(0.82);
-}
-
-/*
- * Ref's btn-sammo-base2 is a Lumen-style navigation button. Its lower edge
- * shortens while the control moves down, so hover and pointer-down visibly
- * feel pressed instead of only changing brightness.
- */
-.ref-navigation-button {
-    border-color: var(--sammo-button-navigation-border);
-    border-style: solid;
-    border-width: 0 1px 4px;
-    background: var(--sammo-button-navigation-bg);
-    color: #fff;
-    font-weight: 700;
-    transition:
-        color 0.15s,
-        background-color 0.15s,
-        border-color 0.15s,
-        box-shadow 0.15s;
-}
-
-.bottom-trigger.ref-navigation-button:hover,
-.bottom-trigger.ref-navigation-button:focus-visible,
-.bottom-trigger.ref-navigation-button[aria-expanded='true'] {
+.bottom-trigger.legacy-button:not(:disabled, [aria-disabled='true']):hover,
+.bottom-trigger.legacy-button:not(:disabled, [aria-disabled='true'])[aria-expanded='true'] {
     height: 44px;
-    margin-top: 1px;
-    border-bottom-width: 3px;
-    background: var(--sammo-button-navigation-bg);
-    filter: none;
 }
 
-.bottom-trigger.ref-navigation-button:active {
+.bottom-trigger.legacy-button:not(:disabled, [aria-disabled='true']):active {
     height: 43px;
-    margin-top: 2px;
-    border-bottom-width: 2px;
-    background: var(--sammo-button-navigation-bg);
-    filter: none;
 }
 
 .dropup-caret {
@@ -420,11 +373,7 @@ const onQuick = (item: QuickNavigationItem) => {
     min-height: 34px;
     align-items: center;
     justify-content: flex-start;
-    border: 0;
-    border-radius: 0;
     padding: 5px 16px;
-    background: transparent;
-    color: #fff;
     font-family: inherit;
     font-size: 16px;
     line-height: 1.5;
@@ -434,10 +383,17 @@ const onQuick = (item: QuickNavigationItem) => {
     cursor: pointer;
 }
 
+.quick-link:not(.legacy-button) {
+    border: 0;
+    border-radius: 0;
+    background: transparent;
+    color: #fff;
+}
+
 .bottom-popup :deep(.main-menu-link:hover),
 .bottom-popup :deep(.main-menu-link:focus-visible),
-.quick-link:hover,
-.quick-link:focus-visible {
+.quick-link:not(.legacy-button):hover,
+.quick-link:not(.legacy-button):focus-visible {
     background: #353535;
 }
 
@@ -459,28 +415,23 @@ const onQuick = (item: QuickNavigationItem) => {
 
 .lobby-link {
     width: auto;
+    height: 40px;
+    min-height: 40px;
     justify-content: center;
     margin-right: auto;
     margin-left: auto;
-    border-color: var(--sammo-button-navigation-border);
-    border-style: solid;
-    border-width: 0 1px 4px;
     border-radius: 6px;
     padding: 6px 12px;
-    background: var(--sammo-button-navigation-bg);
 }
 
-.lobby-link:hover,
-.lobby-link:focus-visible {
-    margin-top: 1px;
-    border-bottom-width: 3px;
-    background: var(--sammo-button-navigation-bg);
+.lobby-link:hover {
+    height: 39px;
+    min-height: 39px;
 }
 
 .lobby-link:active {
-    margin-top: 2px;
-    border-bottom-width: 2px;
-    background: var(--sammo-button-navigation-bg);
+    height: 38px;
+    min-height: 38px;
 }
 
 @media (max-width: 939.98px) {
