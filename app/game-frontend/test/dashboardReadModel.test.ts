@@ -2,7 +2,11 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 
 import { createEmptyRealtimeReadModelChanges, createEmptyRealtimeReadModelInvalidation } from '@sammo-ts/common';
-import { createMergedReadModelRefreshQueue, resolveDashboardRefreshPlan } from '../src/utils/dashboardReadModel.ts';
+import {
+    createMergedReadModelRefreshQueue,
+    resolveDashboardContextBundleInclude,
+    resolveDashboardRefreshPlan,
+} from '../src/utils/dashboardReadModel.ts';
 
 void test('last-turn-time-only events do not schedule any dashboard query', () => {
     const plan = resolveDashboardRefreshPlan(createEmptyRealtimeReadModelChanges(), {
@@ -168,6 +172,30 @@ void test('targets a submitted survey projection to its own general', () => {
 
     assert.equal(resolveDashboardRefreshPlan(changes, { generalId: 7, cityId: 3, nationId: 2 }).frontStatus, true);
     assert.equal(resolveDashboardRefreshPlan(changes, { generalId: 8, cityId: 3, nationId: 2 }).frontStatus, false);
+});
+
+void test('keeps the access bundle projection-free for map, records, and front-status-only plans', () => {
+    for (const slice of ['map', 'records', 'frontStatus'] as const) {
+        const plan = { ...createEmptyRealtimeReadModelInvalidation(), [slice]: true };
+        assert.deepEqual(resolveDashboardContextBundleInclude(plan), {
+            context: false,
+            commandTable: false,
+            boardAccess: false,
+        });
+    }
+});
+
+void test('selects only the requested context bundle projections', () => {
+    const plan = {
+        ...createEmptyRealtimeReadModelInvalidation(),
+        context: true,
+        commands: true,
+    };
+    assert.deepEqual(resolveDashboardContextBundleInclude(plan), {
+        context: true,
+        commandTable: true,
+        boardAccess: false,
+    });
 });
 
 void test('merges browser-safe boolean invalidations and starts at most once per interval', async () => {

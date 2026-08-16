@@ -9,11 +9,24 @@ import {
 
 export type DashboardReadModelIdentity = RealtimeViewerIdentity;
 export type DashboardRefreshPlan = RealtimeReadModelInvalidation;
+export type DashboardContextBundleInclude = {
+    context: boolean;
+    commandTable: boolean;
+    boardAccess: boolean;
+};
 
 export const resolveDashboardRefreshPlan = (
     changes: RealtimeReadModelChanges,
     identity: DashboardReadModelIdentity
 ): DashboardRefreshPlan => resolveRealtimeReadModelInvalidation(changes, identity);
+
+export const resolveDashboardContextBundleInclude = (
+    plan: DashboardRefreshPlan
+): DashboardContextBundleInclude => ({
+    context: plan.context,
+    commandTable: plan.commands,
+    boardAccess: plan.boardAccess,
+});
 
 type TimerHandle = ReturnType<typeof setTimeout>;
 

@@ -85,6 +85,8 @@ export type DatabaseClient = InfraDatabaseClient;
 export interface GameApiContext {
     requestId?: string;
     generalAccessTracking?: boolean;
+    /** Request-local identity already resolved by the realtime access gate. */
+    realtimeAccessGeneralId?: number;
     db: DatabaseClient;
     redis: RedisConnector['client'];
     turnDaemon: TurnDaemonTransport;

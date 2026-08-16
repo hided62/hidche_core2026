@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 
 import { applyReadModelDelta } from '@sammo-ts/common';
 import type { GameSessionTokenPayload } from '@sammo-ts/common/auth/gameToken';
@@ -21,12 +21,47 @@ const auth: GameSessionTokenPayload = {
     sanctions: {},
 };
 
-const buildContext = (authenticated: boolean) => {
+const buildContext = (authenticated: boolean, generalAccessTracking = false) => {
     let generalName = '초기 장수';
     const redisValues = new Map<string, string>();
+    const findGeneral = vi.fn(async () => ({
+        id: 7,
+        name: generalName,
+        npcState: 0,
+        nationId: 0,
+        cityId: 0,
+        troopId: 0,
+        picture: null,
+        imageServer: 0,
+        leadership: 70,
+        strength: 60,
+        intel: 50,
+        officerLevel: 0,
+        gold: 1_000,
+        rice: 2_000,
+        crew: 300,
+        train: 80,
+        atmos: 90,
+        injury: 0,
+        experience: 100,
+        dedication: 200,
+        age: 20,
+        turnTime: new Date('2026-08-11T00:10:00.000Z'),
+        crewTypeId: 0,
+        personalCode: 'None',
+        specialCode: 'None',
+        special2Code: 'None',
+        weaponCode: 'None',
+        horseCode: 'None',
+        bookCode: 'None',
+        itemCode: 'None',
+        meta: {},
+        penalty: {},
+    }));
     const context = {
         auth: authenticated ? auth : null,
         profile: { id: 'hwe', scenario: 'default', name: 'hwe:default' },
+        generalAccessTracking,
         redis: {
             get: async (key: string) => redisValues.get(key) ?? null,
             set: async (key: string, value: string) => {
@@ -36,45 +71,20 @@ const buildContext = (authenticated: boolean) => {
         },
         db: {
             general: {
-                findFirst: async () => ({
-                    id: 7,
-                    name: generalName,
-                    npcState: 0,
-                    nationId: 0,
-                    cityId: 0,
-                    troopId: 0,
-                    picture: null,
-                    imageServer: 0,
-                    leadership: 70,
-                    strength: 60,
-                    intel: 50,
-                    officerLevel: 0,
-                    gold: 1_000,
-                    rice: 2_000,
-                    crew: 300,
-                    train: 80,
-                    atmos: 90,
-                    injury: 0,
-                    experience: 100,
-                    dedication: 200,
-                    age: 20,
-                    turnTime: new Date('2026-08-11T00:00:00.000Z'),
-                    crewTypeId: 0,
-                    personalCode: 'None',
-                    specialCode: 'None',
-                    special2Code: 'None',
-                    weaponCode: 'None',
-                    horseCode: 'None',
-                    bookCode: 'None',
-                    itemCode: 'None',
-                    meta: {},
-                    penalty: {},
-                }),
+                findFirst: findGeneral,
             },
             city: { findUnique: async () => null },
             nation: { findUnique: async () => null },
             generalAccessLog: { findUnique: async () => null },
-            worldState: { findFirst: async () => ({ config: { const: {} } }) },
+            worldState: {
+                findFirst: async () => ({
+                    currentYear: 185,
+                    currentMonth: 1,
+                    tickSeconds: 600,
+                    config: { const: {} },
+                    meta: { lastTurnTime: '2026-08-11T00:00:00.000Z' },
+                }),
+            },
         },
     } as unknown as GameApiContext;
 
@@ -83,6 +93,7 @@ const buildContext = (authenticated: boolean) => {
         rename: (name: string) => {
             generalName = name;
         },
+        findGeneral,
     };
 };
 
@@ -128,12 +139,18 @@ describe('dashboardRouter.getContextBundleDelta', () => {
         ).rejects.toMatchObject({ code: 'UNAUTHORIZED' });
     });
 
-    it('rejects an empty bundle request', async () => {
-        const fixture = buildContext(true);
+    it('uses an all-false bundle as an access-only gate without projecting dashboard context', async () => {
+        const fixture = buildContext(true, true);
         await expect(
             dashboardRouter.createCaller(fixture.context).getContextBundleDelta({
                 include: { context: false, commandTable: false, boardAccess: false },
             })
-        ).rejects.toMatchObject({ code: 'BAD_REQUEST' });
+        ).resolves.toEqual({ context: undefined, commandTable: undefined, boardAccess: undefined });
+        expect(fixture.findGeneral).toHaveBeenCalledTimes(1);
+        expect(fixture.findGeneral).toHaveBeenCalledWith({
+            where: { userId: auth.user.id },
+            orderBy: { id: 'asc' },
+            select: { id: true, turnTime: true },
+        });
     });
 });

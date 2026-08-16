@@ -13,7 +13,11 @@ import { useSessionStore } from './session';
 import { createLatestRefreshQueue } from '../utils/latestRefreshQueue';
 import { createRateLimitedRefreshQueue } from '../utils/rateLimitedRefreshQueue';
 import { structurallyShare } from '../utils/structuralShare';
-import { createMergedReadModelRefreshQueue } from '../utils/dashboardReadModel';
+import {
+    createMergedReadModelRefreshQueue,
+    resolveDashboardContextBundleInclude,
+    type DashboardContextBundleInclude,
+} from '../utils/dashboardReadModel';
 import { createBroadcastTabCoordinator, type BroadcastTabCoordinator } from '../utils/broadcastTabCoordinator';
 import { resolveWithReadModelSnapshotFallback } from '../utils/readModelDeltaRecovery';
 
@@ -43,11 +47,6 @@ export const useMainDashboardStore = defineStore('mainDashboard', () => {
     type RecentRecord = Awaited<ReturnType<typeof trpc.general.getRecentRecords.query>>['global'][number];
     type FrontStatus = Awaited<ReturnType<typeof trpc.general.getFrontStatus.query>>;
     type ContextBundleDelta = Awaited<ReturnType<typeof trpc.dashboard.getContextBundleDelta.query>>;
-    type ContextBundleInclude = {
-        context: boolean;
-        commandTable: boolean;
-        boardAccess: boolean;
-    };
     type DashboardReadModelPatch = {
         contextSnapshot?: GeneralContext;
         contextRevision?: string | null;
@@ -479,7 +478,7 @@ export const useMainDashboardStore = defineStore('mainDashboard', () => {
     };
 
     const fetchContextBundlePatch = async (
-        include: ContextBundleInclude,
+        include: DashboardContextBundleInclude,
         forceSnapshot = false
     ): Promise<DashboardReadModelPatch> => {
         const request = (force: boolean) =>
@@ -637,13 +636,10 @@ export const useMainDashboardStore = defineStore('mainDashboard', () => {
         if (plan.records) recordsError.value = null;
         if (plan.frontStatus) frontStatusError.value = null;
         try {
-            const contextPatch = await fetchContextBundlePatch({
-                // Every automatic refresh crosses this access-limit gate. The
-                // context delta is usually unchanged and therefore stays small.
-                context: true,
-                commandTable: plan.commands,
-                boardAccess: plan.boardAccess,
-            });
+            // Every automatic refresh crosses this access-limit gate before
+            // any selected follow-up query starts. An all-false bundle is an
+            // access-only check and does not project general context.
+            const contextPatch = await fetchContextBundlePatch(resolveDashboardContextBundleInclude(plan));
             accessLimited.value = false;
             const lobbyPromise = plan.lobby ? trpc.lobby.info.query() : Promise.resolve(undefined);
             const mapPromise = plan.map

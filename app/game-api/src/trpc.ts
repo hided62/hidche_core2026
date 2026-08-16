@@ -126,7 +126,12 @@ const generalAccessLimitMiddleware = t.middleware(async ({ ctx, next }) => {
             message: formatGeneralAccessLimitMessage(state),
         });
     }
-    return next();
+    return next({
+        ctx: {
+            ...ctx,
+            ...(state ? { realtimeAccessGeneralId: state.generalId } : {}),
+        },
+    });
 });
 
 export const router = t.router;

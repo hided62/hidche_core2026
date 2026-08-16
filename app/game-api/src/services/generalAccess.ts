@@ -94,6 +94,7 @@ export const generalAccessLimitEndpoints = new Set<GeneralAccessEndpoint>([
 export const generalAccessLimitBeforeRecordEndpoints = new Set<GeneralAccessEndpoint>(['general.getFrontStatus']);
 
 export type GeneralAccessState = {
+    generalId: number;
     refreshScore: number;
     refreshLimit: number;
     level: AccessLimitLevel;
@@ -194,6 +195,7 @@ export const getGeneralAccessState = async (
             : (access?.refreshScore ?? 0);
     const refreshLimit = resolveAccessRefreshLimit(worldState.tickSeconds, asRecord(worldState.meta).refreshLimit);
     return {
+        generalId: general.id,
         refreshScore,
         refreshLimit,
         level: resolveAccessLimitLevel(refreshScore, refreshLimit),
