@@ -600,4 +600,68 @@ describe('TurnDaemonLifecycle', () => {
         await lifecycle.stop('test done');
         await loop;
     });
+
+    it('catches up a multi-month realtime backlog one 2-minute month at a time', async () => {
+        const turnTermMinutes = 2;
+        const initialLastTurnTime = new Date('2026-08-15T07:10:00.000Z');
+        const gameNow = addMinutes(initialLastTurnTime, 8);
+        const clock = new ManualClock(gameNow.getTime());
+        const controlQueue = new InMemoryControlQueue();
+        let lastTurnTime = new Date(initialLastTurnTime);
+        let year = 194;
+        let month = 12;
+        const observed: Array<{ target: string; year: number; month: number }> = [];
+
+        const lifecycle = new TurnDaemonLifecycle(
+            {
+                clock,
+                controlQueue,
+                getNextTickTime: (value) => addMinutes(value, turnTermMinutes),
+                stateStore: {
+                    loadLastTurnTime: async () => new Date(lastTurnTime),
+                    loadNextGeneralTurnTime: async () => addMinutes(lastTurnTime, 1),
+                    saveLastTurnTime: async (value) => {
+                        lastTurnTime = value;
+                    },
+                    loadCheckpoint: async () => undefined,
+                    saveCheckpoint: async () => {},
+                    loadGameClock: async () => ({ mode: 'realtime', now: gameNow }),
+                },
+                processor: {
+                    run: async (target): Promise<TurnRunResult> => {
+                        observed.push({ target: target.toISOString(), year, month });
+                        month += 1;
+                        if (month > 12) {
+                            year += 1;
+                            month = 1;
+                        }
+                        if (observed.length === 4) {
+                            controlQueue.enqueue({ type: 'shutdown', reason: 'verified' });
+                        }
+                        return {
+                            lastTurnTime: target.toISOString(),
+                            processedGenerals: 1,
+                            processedTurns: 1,
+                            durationMs: 0,
+                            partial: false,
+                        };
+                    },
+                },
+            },
+            {
+                profile: 'two-minute-multi-month-backlog',
+                defaultBudget: { budgetMs: 100, maxGenerals: 200, catchUpCap: 1 },
+            }
+        );
+
+        await lifecycle.start();
+
+        expect(observed).toEqual([
+            { target: '2026-08-15T07:12:00.000Z', year: 194, month: 12 },
+            { target: '2026-08-15T07:14:00.000Z', year: 195, month: 1 },
+            { target: '2026-08-15T07:16:00.000Z', year: 195, month: 2 },
+            { target: '2026-08-15T07:18:00.000Z', year: 195, month: 3 },
+        ]);
+        expect(lastTurnTime).toEqual(gameNow);
+    });
 });
