@@ -756,6 +756,21 @@ export const createReservedTurnHandler = async (options: {
         blockedReason?: string;
         aiState?: ReturnType<GeneralAI['getDebugState']>;
     }) => void;
+    onActionProfiled?: (payload: {
+        kind: 'nation' | 'general';
+        generalId: number;
+        nationId: number | null;
+        officerLevel: number;
+        npcState: number;
+        year: number;
+        month: number;
+        requestedAction: string;
+        actionKey: string;
+        usedFallback: boolean;
+        usedAi: boolean;
+        aiDecisionDurationNs: bigint;
+        actionDurationNs: bigint;
+    }) => void;
 }): Promise<GeneralTurnHandler> => {
     const env = options.commandEnv ?? buildCommandEnv(options.scenarioConfig, options.unitSet);
     const itemRegistry = createItemModuleRegistry(await loadItemModules([...ITEM_KEYS]));
@@ -1630,7 +1645,11 @@ export const createReservedTurnHandler = async (options: {
                     hasReservedTurn = true;
                 }
                 let nationAiState: ReturnType<GeneralAI['getDebugState']> | undefined;
+                let nationAiDecisionDurationNs = 0n;
+                let nationUsedAi = false;
                 if (worldView && shouldUseAi(currentGeneral, context.world)) {
+                    nationUsedAi = true;
+                    const aiStartedAt = options.onActionProfiled ? process.hrtime.bigint() : 0n;
                     sharedAi = new GeneralAI({
                         general: currentGeneral,
                         city: currentCity,
@@ -1650,6 +1669,9 @@ export const createReservedTurnHandler = async (options: {
                     });
                     const ai = sharedAi;
                     const candidate = ai.chooseNationTurn(nationCommand);
+                    if (options.onActionProfiled) {
+                        nationAiDecisionDurationNs = process.hrtime.bigint() - aiStartedAt;
+                    }
                     if (candidate) {
                         if (
                             (process.env.CORE_AI_TRACE_GENERAL_IDS?.split(',') ?? []).includes(
@@ -1693,7 +1715,11 @@ export const createReservedTurnHandler = async (options: {
                     }
                     nationAiState = ai.getDebugState();
                 }
+                const nationActionStartedAt = options.onActionProfiled ? process.hrtime.bigint() : 0n;
                 const nationResult = runAction('nation', nationDefinitions, nationFallback, nationCommand, false);
+                const nationActionDurationNs = options.onActionProfiled
+                    ? process.hrtime.bigint() - nationActionStartedAt
+                    : 0n;
                 // Ref persists the nation command here, but LazyVarUpdater only
                 // clears its dirty flags: it does not replace the same PHP
                 // General object's fractional values with the MariaDB INT row.
@@ -1725,6 +1751,21 @@ export const createReservedTurnHandler = async (options: {
                     ...(nationResult.blockedReason ? { blockedReason: nationResult.blockedReason } : {}),
                     ...(nationAiState ? { aiState: nationAiState } : {}),
                 });
+                options.onActionProfiled?.({
+                    kind: 'nation',
+                    generalId: currentGeneral.id,
+                    nationId: currentNation?.id ?? null,
+                    officerLevel: currentGeneral.officerLevel,
+                    npcState: currentGeneral.npcState,
+                    year: context.world.currentYear,
+                    month: context.world.currentMonth,
+                    requestedAction: nationCommand.action,
+                    actionKey: nationResult.actionKey,
+                    usedFallback: nationResult.usedFallback,
+                    usedAi: nationUsedAi,
+                    aiDecisionDurationNs: nationAiDecisionDurationNs,
+                    actionDurationNs: nationActionDurationNs,
+                });
                 options.reservedTurns.shiftNationTurns(currentNation.id, currentGeneral.officerLevel, -1);
             }
             if (isBlocked && currentNation && currentGeneral.officerLevel >= 5) {
@@ -1748,7 +1789,11 @@ export const createReservedTurnHandler = async (options: {
             }
             let generalAiState: ReturnType<GeneralAI['getDebugState']> | undefined;
             let generalAutorunMode = false;
+            let generalAiDecisionDurationNs = 0n;
+            let generalUsedAi = false;
             if (!isBlocked && worldView && shouldUseAi(currentGeneral, context.world)) {
+                generalUsedAi = true;
+                const aiStartedAt = options.onActionProfiled ? process.hrtime.bigint() : 0n;
                 const ai =
                     sharedAi ??
                     new GeneralAI({
@@ -1769,6 +1814,9 @@ export const createReservedTurnHandler = async (options: {
                         nationFallback,
                     });
                 const candidate = ai.chooseGeneralTurn(generalCommand);
+                if (options.onActionProfiled) {
+                    generalAiDecisionDurationNs = process.hrtime.bigint() - aiStartedAt;
+                }
                 // Ref GeneralAI::calcDiplomacyState writes
                 // nation_env.last_attackable for ordinary generals too. The
                 // nation-turn path consumes this patch above, but most NPCs
@@ -1821,6 +1869,7 @@ export const createReservedTurnHandler = async (options: {
                 }
                 generalAiState = ai.getDebugState();
             }
+            const generalActionStartedAt = options.onActionProfiled ? process.hrtime.bigint() : 0n;
             const generalResult = isBlocked
                 ? {
                       actionKey: DEFAULT_ACTION,
@@ -1829,6 +1878,9 @@ export const createReservedTurnHandler = async (options: {
                       blockedReason: '블럭 대상자입니다.',
                   }
                 : runAction('general', generalDefinitions, generalFallback, generalCommand, true);
+            const generalActionDurationNs = options.onActionProfiled
+                ? process.hrtime.bigint() - generalActionStartedAt
+                : 0n;
             options.onActionResolved?.({
                 kind: 'general',
                 generalId: currentGeneral.id,
@@ -1839,6 +1891,21 @@ export const createReservedTurnHandler = async (options: {
                 completed: generalResult.completed,
                 ...(generalResult.blockedReason ? { blockedReason: generalResult.blockedReason } : {}),
                 ...(generalAiState ? { aiState: generalAiState } : {}),
+            });
+            options.onActionProfiled?.({
+                kind: 'general',
+                generalId: currentGeneral.id,
+                nationId: currentNation?.id ?? null,
+                officerLevel: currentGeneral.officerLevel,
+                npcState: currentGeneral.npcState,
+                year: context.world.currentYear,
+                month: context.world.currentMonth,
+                requestedAction: generalCommand.action,
+                actionKey: generalResult.actionKey,
+                usedFallback: generalResult.usedFallback,
+                usedAi: generalUsedAi,
+                aiDecisionDurationNs: generalAiDecisionDurationNs,
+                actionDurationNs: generalActionDurationNs,
             });
             let nextTurnAt = 'nextTurnAt' in generalResult ? generalResult.nextTurnAt : undefined;
             options.reservedTurns.shiftGeneralTurns(currentGeneral.id, -1);
