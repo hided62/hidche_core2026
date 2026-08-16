@@ -1,5 +1,6 @@
 import type { GameApiContext, WorldStateRow } from '../context.js';
-import { asRecord, buildGameReadModelDomainRevisionKey, isRecord } from '@sammo-ts/common';
+import { asRecord, isRecord } from '@sammo-ts/common';
+import { readMapWorldSourceRevision } from './worldMapSourceRevision.js';
 
 export type MapCityCompact = [number, number, number, number, number, number];
 export type MapNationCompact = [number, string, string, number];
@@ -116,38 +117,41 @@ const resolveSpyList = (meta: Record<string, unknown>): Record<number, number> =
 const buildBaseMapCacheKey = (ctx: GameApiContext, scope: 'base' | 'public' = 'base'): string =>
     `sammo:map:${scope}:${ctx.profile.id}:${ctx.profile.scenario}`;
 
-const loadWorldMapRevision = async (ctx: GameApiContext): Promise<string> => {
-    const redis = ctx.redis as unknown as {
-        hGet?: (key: string, field: string) => Promise<string | null>;
-    };
-    if (typeof redis.hGet !== 'function') {
-        return '0';
-    }
-    try {
-        return (await redis.hGet(buildGameReadModelDomainRevisionKey(ctx.profile.name), 'world')) ?? '0';
-    } catch {
-        // Cache revision lookup must not make the map unavailable.
-        return '0';
-    }
+export const buildRevisionedBaseMapCacheKey = async (
+    ctx: GameApiContext,
+    scope: 'base' | 'public' = 'base'
+): Promise<string | null> => {
+    const revision = await readMapWorldSourceRevision(ctx.db);
+    return revision === null ? null : `${buildBaseMapCacheKey(ctx, scope)}:pg${revision}`;
 };
-
-export const buildRevisionedBaseMapCacheKey = async (ctx: GameApiContext): Promise<string> =>
-    `${buildBaseMapCacheKey(ctx)}:r${await loadWorldMapRevision(ctx)}`;
 
 const loadBaseMap = async (
     ctx: GameApiContext,
     options?: {
         useCache?: boolean;
         cacheKey?: string;
+        cacheScope?: 'base' | 'public';
         ttlSeconds?: number;
     }
 ): Promise<BaseMapResult | null> => {
-    const useCache = options?.useCache ?? true;
-    const cacheKey = options?.cacheKey ?? (await buildRevisionedBaseMapCacheKey(ctx));
+    let useCache = options?.useCache ?? true;
+    let cacheKey = options?.cacheKey;
+    if (useCache && !cacheKey) {
+        cacheKey = (await buildRevisionedBaseMapCacheKey(ctx, options?.cacheScope)) ?? undefined;
+        if (!cacheKey) {
+            useCache = false;
+        }
+    }
     const ttlSeconds = options?.ttlSeconds ?? BASE_MAP_TTL_SECONDS;
 
     if (useCache) {
-        const cached = await ctx.redis.get(cacheKey);
+        let cached: string | null = null;
+        try {
+            cached = await ctx.redis.get(cacheKey!);
+        } catch {
+            // Redis cache availability must not make the authoritative map unavailable.
+            useCache = false;
+        }
         if (cached) {
             try {
                 return JSON.parse(cached) as BaseMapResult;
@@ -208,9 +212,13 @@ const loadBaseMap = async (
     };
 
     if (useCache) {
-        await ctx.redis.set(cacheKey, JSON.stringify(baseMap), {
-            EX: ttlSeconds,
-        });
+        try {
+            await ctx.redis.set(cacheKey!, JSON.stringify(baseMap), {
+                EX: ttlSeconds,
+            });
+        } catch {
+            // The computed PostgreSQL result remains usable when Redis is unavailable.
+        }
     }
 
     return baseMap;
@@ -219,7 +227,7 @@ const loadBaseMap = async (
 export const loadPublicMap = async (ctx: GameApiContext, useCache = true): Promise<BaseMapResult | null> => {
     return loadBaseMap(ctx, {
         useCache,
-        cacheKey: buildBaseMapCacheKey(ctx, 'public'),
+        cacheScope: 'public',
         ttlSeconds: PUBLIC_MAP_TTL_SECONDS,
     });
 };

@@ -14,7 +14,34 @@ interface RedisClientLike {
         }
     ): Promise<unknown>;
     del?(key: string): Promise<unknown>;
+    eval(script: string, options: { keys: string[]; arguments: string[] }): Promise<unknown>;
+    publish?(channel: string, message: string): Promise<unknown>;
 }
+
+const writeWithSourceRevisionScript = `
+local current = redis.call('GET', KEYS[2])
+if current then
+    if not string.match(current, '^%d+$') then
+        return redis.error_reply('invalid tournament source revision')
+    end
+    if string.len(current) > 18 then
+        return redis.error_reply('tournament source revision exhausted')
+    end
+end
+redis.call('SET', KEYS[1], ARGV[1])
+local revision = redis.call('INCR', KEYS[2])
+return tostring(revision)
+`;
+
+const parseSourceRevision = (value: unknown): string | null => {
+    if (typeof value === 'number') {
+        return Number.isSafeInteger(value) && value >= 0 ? String(value) : null;
+    }
+    if (typeof value === 'bigint') {
+        return value >= 0n ? value.toString() : null;
+    }
+    return typeof value === 'string' && /^(?:0|[1-9]\d*)$/u.test(value) ? value : null;
+};
 
 const safeJsonParse = <T>(raw: string | null): T | null => {
     if (!raw) {
@@ -61,32 +88,59 @@ export class TournamentStore {
         return safeJsonParse<TournamentState>(await this.redis.get(this.keys.stateKey));
     }
 
-    async setState(state: TournamentState): Promise<void> {
-        await this.redis.set(this.keys.stateKey, JSON.stringify(state));
+    async getSourceRevision(): Promise<string | null> {
+        return parseSourceRevision(await this.redis.get(this.keys.sourceRevisionKey));
+    }
+
+    private async writeWithSourceRevision(key: string, value: unknown): Promise<string> {
+        const result = await this.redis.eval(writeWithSourceRevisionScript, {
+            keys: [key, this.keys.sourceRevisionKey],
+            arguments: [JSON.stringify(value)],
+        });
+        const sourceRevision = parseSourceRevision(result);
+        if (sourceRevision === null) {
+            throw new Error('토너먼트 source revision 갱신 결과가 올바르지 않습니다.');
+        }
+
+        if (this.redis.publish) {
+            try {
+                await this.redis.publish(
+                    this.keys.sourceRevisionChannel,
+                    JSON.stringify({ sourceRevision })
+                );
+            } catch {
+                // State and revision are already committed atomically; publication is best effort.
+            }
+        }
+        return sourceRevision;
+    }
+
+    async setState(state: TournamentState): Promise<string> {
+        return this.writeWithSourceRevision(this.keys.stateKey, state);
     }
 
     async getParticipants(): Promise<TournamentParticipantEntry[]> {
         return safeJsonParse<TournamentParticipantEntry[]>(await this.redis.get(this.keys.participantsKey)) ?? [];
     }
 
-    async setParticipants(participants: TournamentParticipantEntry[]): Promise<void> {
-        await this.redis.set(this.keys.participantsKey, JSON.stringify(participants));
+    async setParticipants(participants: TournamentParticipantEntry[]): Promise<string> {
+        return this.writeWithSourceRevision(this.keys.participantsKey, participants);
     }
 
     async getMatches(): Promise<TournamentMatchEntry[]> {
         return safeJsonParse<TournamentMatchEntry[]>(await this.redis.get(this.keys.matchesKey)) ?? [];
     }
 
-    async setMatches(matches: TournamentMatchEntry[]): Promise<void> {
-        await this.redis.set(this.keys.matchesKey, JSON.stringify(matches));
+    async setMatches(matches: TournamentMatchEntry[]): Promise<string> {
+        return this.writeWithSourceRevision(this.keys.matchesKey, matches);
     }
 
     async getBettingEntries(): Promise<TournamentBetEntry[]> {
         return safeJsonParse<TournamentBetEntry[]>(await this.redis.get(this.keys.bettingKey)) ?? [];
     }
 
-    async setBettingEntries(entries: TournamentBetEntry[]): Promise<void> {
-        await this.redis.set(this.keys.bettingKey, JSON.stringify(entries));
+    async setBettingEntries(entries: TournamentBetEntry[]): Promise<string> {
+        return this.writeWithSourceRevision(this.keys.bettingKey, entries);
     }
 
     async appendBettingEntry(entry: TournamentBetEntry): Promise<TournamentBetEntry[]> {

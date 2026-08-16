@@ -160,6 +160,7 @@ const context = (
         diplomacy: { findMany: vi.fn(async () => []) },
         $queryRaw: vi
             .fn()
+            .mockResolvedValueOnce([{ coverageVersion: 0, revision: null }])
             .mockResolvedValueOnce(
                 cities.map((item) => ({
                     id: item.id,

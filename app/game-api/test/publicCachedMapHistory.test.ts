@@ -44,6 +44,7 @@ const buildContext = () => {
         },
         $queryRaw: vi
             .fn()
+            .mockResolvedValueOnce([{ coverageVersion: 0, revision: null }])
             .mockResolvedValueOnce([{ id: 1, level: 5, nationId: 1, region: 1, supplyState: 1, meta: { state: 0 } }])
             .mockResolvedValueOnce([{ id: 1, name: '촉', color: '#ff0000', capitalCityId: 1, meta: {} }]),
     };

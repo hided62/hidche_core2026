@@ -26,6 +26,20 @@ class MemoryRedis {
         this.store.set(key, value);
         return 'OK';
     }
+
+    async eval(_script: string, options: { keys: string[]; arguments: string[] }): Promise<string> {
+        const [valueKey, revisionKey] = options.keys;
+        const [value] = options.arguments;
+        if (!valueKey || !revisionKey || value === undefined) throw new Error('invalid eval arguments');
+        const revision = Number(this.store.get(revisionKey) ?? '0') + 1;
+        this.store.set(valueKey, value);
+        this.store.set(revisionKey, String(revision));
+        return String(revision);
+    }
+
+    async publish(): Promise<number> {
+        return 0;
+    }
 }
 
 const isRecord = (value: unknown): value is Record<string, unknown> => typeof value === 'object' && value !== null;

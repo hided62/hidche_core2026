@@ -131,11 +131,12 @@ export const tournamentRouter = router({
     getSnapshot: accessAuthedProcedure.query(async ({ ctx }) => {
         await getMyGeneral(ctx);
         const store = new TournamentStore(ctx.redis, buildTournamentKeys(ctx.profile.name));
-        const [state, participants, matches, bets] = await Promise.all([
+        const [state, participants, matches, bets, sourceRevision] = await Promise.all([
             store.getState(),
             store.getParticipants(),
             store.getMatches(),
             store.getBettingEntries(),
+            store.getSourceRevision(),
         ]);
         const participantIds = [...new Set(participants.map((participant) => participant.id))];
         const iconRows =
@@ -154,7 +155,7 @@ export const tournamentRouter = router({
                 imageServer: icon?.imageServer ?? 0,
             };
         });
-        return { state, participants: publicParticipants, matches, betCount: bets.length };
+        return { state, participants: publicParticipants, matches, betCount: bets.length, sourceRevision };
     }),
     getRankings: authedProcedure.query(async ({ ctx }) => {
         await getMyGeneral(ctx);

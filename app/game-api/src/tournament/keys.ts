@@ -3,6 +3,8 @@ export interface TournamentKeys {
     participantsKey: string;
     matchesKey: string;
     bettingKey: string;
+    sourceRevisionKey: string;
+    sourceRevisionChannel: string;
 }
 
 export const buildTournamentKeys = (profileName: string): TournamentKeys => ({
@@ -10,4 +12,6 @@ export const buildTournamentKeys = (profileName: string): TournamentKeys => ({
     participantsKey: `sammo:${profileName}:tournament:participants`,
     matchesKey: `sammo:${profileName}:tournament:matches`,
     bettingKey: `sammo:${profileName}:tournament:betting`,
+    sourceRevisionKey: `sammo:${profileName}:tournament:source-revision`,
+    sourceRevisionChannel: `sammo:${profileName}:tournament:source-changed`,
 });

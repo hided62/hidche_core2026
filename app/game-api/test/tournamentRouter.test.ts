@@ -28,6 +28,20 @@ class MemoryRedis {
     async del(key: string): Promise<number> {
         return this.values.delete(key) ? 1 : 0;
     }
+
+    async eval(_script: string, options: { keys: string[]; arguments: string[] }): Promise<string> {
+        const [valueKey, revisionKey] = options.keys;
+        const [value] = options.arguments;
+        if (!valueKey || !revisionKey || value === undefined) throw new Error('invalid eval arguments');
+        const revision = Number(this.values.get(revisionKey) ?? '0') + 1;
+        this.values.set(valueKey, value);
+        this.values.set(revisionKey, String(revision));
+        return String(revision);
+    }
+
+    async publish(): Promise<number> {
+        return 0;
+    }
 }
 
 class TournamentTransport implements TurnDaemonTransport {
@@ -324,6 +338,7 @@ describe('tournament router permissions and mutations', () => {
             termSeconds: 60,
             nextAt: '2026-07-26T01:00:00.000Z',
         });
+        await redis.set('sammo:che:default:tournament:source-revision', '41');
         const caller = appRouter.createCaller(
             buildContext({ redis, transport, generals: [owner, rival], userId: 'user-1' })
         );
@@ -334,6 +349,7 @@ describe('tournament router permissions and mutations', () => {
             expect.objectContaining({ id: 11, picture: '11.jpg', imageServer: 1 }),
             expect.objectContaining({ id: 12, picture: '12.jpg', imageServer: 0 }),
         ]);
+        expect(snapshot.sourceRevision).toBe('41');
     });
 
     it('refunds gold when the tournament bet rank update fails', async () => {
