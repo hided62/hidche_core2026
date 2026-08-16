@@ -653,6 +653,9 @@ const persistArtifact = async (page: Page, name: string) => {
             voteStatus: describe('.vote-status'),
             autoRefresh: describe('[data-bottom-menu="auto-refresh"]'),
             manualRefresh: describe('[data-bottom-menu="manual-refresh"]'),
+            commandPicker: describe('[data-testid="command-picker"]'),
+            commandCategoryButton: describe('[data-testid="command-picker"] .category-btn'),
+            commandItem: describe('[data-testid="command-picker"] .command-item'),
             commandMenu: describe('.reserved-command-editor details[open] .menu-items'),
             commandDividers: [
                 ...document.querySelectorAll<HTMLElement>('.reserved-command-editor details[open] .menu-divider'),
@@ -670,6 +673,10 @@ const persistArtifact = async (page: Page, name: string) => {
     const commandMenu = page.locator('.reserved-command-editor details[open] .menu-items').first();
     if (await commandMenu.isVisible()) {
         await commandMenu.screenshot({ path: resolve(target, `${name}-menu.png`) });
+    }
+    const commandPicker = page.getByTestId('command-picker');
+    if (await commandPicker.isVisible()) {
+        await commandPicker.screenshot({ path: resolve(target, `${name}-command-picker.png`) });
     }
     await Promise.all([
         page.screenshot({ path: resolve(target, `${name}.png`), fullPage: true }),
@@ -1032,17 +1039,33 @@ test('main reserved-turn picker renders the Ref general category order', async (
 
     const desktopGeometry = await picker.evaluate((element) => {
         const categories = element.querySelector<HTMLElement>('.category-list');
-        if (!categories) throw new Error('command category list is missing');
+        const categoryButton = categories?.querySelector<HTMLElement>('.category-btn');
+        const commandButton = element.querySelector<HTMLElement>('.command-item');
+        if (!categories || !categoryButton || !commandButton) throw new Error('command choice geometry is missing');
         const buttons = [...categories.querySelectorAll<HTMLElement>('.category-btn')];
+        const categoryStyle = getComputedStyle(categoryButton);
+        const commandStyle = getComputedStyle(commandButton);
         return {
             columns: getComputedStyle(categories).gridTemplateColumns,
             rows: new Set(buttons.map((button) => button.getBoundingClientRect().y)).size,
             horizontalOverflow: element.scrollWidth - element.clientWidth,
+            categoryButton: {
+                height: categoryButton.getBoundingClientRect().height,
+                paddingTop: categoryStyle.paddingTop,
+                paddingBottom: categoryStyle.paddingBottom,
+            },
+            commandButton: {
+                height: commandButton.getBoundingClientRect().height,
+                paddingTop: commandStyle.paddingTop,
+                paddingBottom: commandStyle.paddingBottom,
+            },
         };
     });
     expect(desktopGeometry.columns.split(' ')).toHaveLength(3);
     expect(desktopGeometry.rows).toBe(2);
     expect(desktopGeometry.horizontalOverflow).toBeLessThanOrEqual(0);
+    expect(desktopGeometry.categoryButton).toEqual({ height: 32, paddingTop: '6px', paddingBottom: '6px' });
+    expect(desktopGeometry.commandButton).toEqual(desktopGeometry.categoryButton);
 
     const strategyCategory = picker.getByRole('button', { name: '계략', exact: true });
     await strategyCategory.hover();
@@ -1051,12 +1074,35 @@ test('main reserved-turn picker renders the Ref general category order', async (
     await strategyCategory.click();
     await expect(strategyCategory).toHaveClass(/active/);
     await expect(picker.locator('.command-item')).toHaveText(['화계']);
+    await persistArtifact(page, `${basePath.slice(1)}-main-reserved-ref-categories-desktop-1200`);
 
     await page.setViewportSize({ width: 500, height: 900 });
     await page.getByRole('button', { name: '1턴 명령 입력', exact: true }).click();
     const mobilePicker = page.getByTestId('command-picker');
     await expect(mobilePicker.locator('.category-btn')).toHaveText(['개인', '내정', '군사', '인사', '계략', '국가']);
-    expect(await mobilePicker.evaluate((element) => element.scrollWidth - element.clientWidth)).toBeLessThanOrEqual(0);
+    const mobileGeometry = await mobilePicker.evaluate((element) => {
+        const categoryButton = element.querySelector<HTMLElement>('.category-btn');
+        const commandButton = element.querySelector<HTMLElement>('.command-item');
+        if (!categoryButton || !commandButton) throw new Error('mobile command choice geometry is missing');
+        const categoryStyle = getComputedStyle(categoryButton);
+        const commandStyle = getComputedStyle(commandButton);
+        return {
+            horizontalOverflow: element.scrollWidth - element.clientWidth,
+            categoryButton: {
+                height: categoryButton.getBoundingClientRect().height,
+                paddingTop: categoryStyle.paddingTop,
+                paddingBottom: categoryStyle.paddingBottom,
+            },
+            commandButton: {
+                height: commandButton.getBoundingClientRect().height,
+                paddingTop: commandStyle.paddingTop,
+                paddingBottom: commandStyle.paddingBottom,
+            },
+        };
+    });
+    expect(mobileGeometry.horizontalOverflow).toBeLessThanOrEqual(0);
+    expect(mobileGeometry.categoryButton).toEqual({ height: 32, paddingTop: '6px', paddingBottom: '6px' });
+    expect(mobileGeometry.commandButton).toEqual(mobileGeometry.categoryButton);
     await persistArtifact(page, `${basePath.slice(1)}-main-reserved-ref-categories-mobile-500`);
 });
 
