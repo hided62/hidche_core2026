@@ -27,6 +27,8 @@ chain을 적용하고 두 번째 실행은 `No pending migrations to apply`여�
 - `world_state`, `nation`, `city`, `general`, `message`, `troop`
 - `general_turn`, `nation_turn`과 revision·lease field
 - `input_event`, `turn_daemon_lease`
+- `read_model_revision`, `read_model_outbox`, `read_model_revision_meta`
+- `read_model_revision_meta.id=1`의 `coverage_version=0`
 - `diplomacy`, `event`, `log_entry`, `error_log`
 - auction, board, vote, yearbook, archive와 inheritance table
 - `nation.chief_general_id`

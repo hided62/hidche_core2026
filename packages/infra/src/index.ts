@@ -6,3 +6,4 @@ export type { GatewayPrismaClient } from './gatewayPrisma.js';
 export * from './db.js';
 export * from './redis.js';
 export * from './turnEngineDb.js';
+export * from './readModelChangeJournal.js';

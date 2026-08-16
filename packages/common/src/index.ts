@@ -18,6 +18,7 @@ export * from './turnDaemon/types.js';
 export * from './realtime/keys.js';
 export * from './realtime/types.js';
 export * from './realtime/delta.js';
+export * from './realtime/changeJournal.js';
 export * from './ranking/types.js';
 export * from './ranking/legacyColor.js';
 export * from './auth/accountIconProjection.js';

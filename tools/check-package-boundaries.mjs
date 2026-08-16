@@ -8,7 +8,7 @@ const workspaceRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)),
 const zones = [
     { name: 'common', root: 'packages/common/src', allowed: [] },
     { name: 'logic', root: 'packages/logic/src', allowed: ['@sammo-ts/common'] },
-    { name: 'infra', root: 'packages/infra/src', allowed: ['@sammo-ts/logic'] },
+    { name: 'infra', root: 'packages/infra/src', allowed: ['@sammo-ts/common', '@sammo-ts/logic'] },
     {
         name: 'game-engine',
         root: 'app/game-engine/src',

@@ -83,6 +83,38 @@ model InputEvent {
   @@map("input_event")
 }
 
+model ReadModelRevision {
+  domain    String
+  entityId  Int      @default(0) @map("entity_id")
+  revision  BigInt   @default(0)
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@id([domain, entityId])
+  @@map("read_model_revision")
+}
+
+model ReadModelOutbox {
+  id          BigInt    @id @default(autoincrement())
+  payload     Json
+  attempts    Int       @default(0)
+  availableAt DateTime  @default(now()) @map("available_at")
+  lockedAt    DateTime? @map("locked_at")
+  lockOwner   String?   @map("lock_owner")
+  deliveredAt DateTime? @map("delivered_at")
+  lastError   String?   @map("last_error")
+  createdAt   DateTime  @default(now()) @map("created_at")
+
+  @@index([deliveredAt, availableAt, id], map: "read_model_outbox_delivered_at_available_at_id_idx")
+  @@map("read_model_outbox")
+}
+
+model ReadModelRevisionMeta {
+  id              Int @id
+  coverageVersion Int @default(0) @map("coverage_version")
+
+  @@map("read_model_revision_meta")
+}
+
 model TurnDaemonLease {
   profile      String   @id
   ownerId      String   @map("owner_id")

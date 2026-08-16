@@ -433,6 +433,9 @@ importers:
       '@prisma/client-runtime-utils':
         specifier: ^7.9.1
         version: 7.9.1
+      '@sammo-ts/common':
+        specifier: workspace:*
+        version: link:../common
       '@sammo-ts/logic':
         specifier: workspace:*
         version: link:../logic
@@ -458,6 +461,9 @@ importers:
       tsdown:
         specifier: ^0.22.14
         version: 0.22.14(@volar/typescript@2.4.28(typescript@6.0.3))(tsx@4.23.12)(typescript@6.0.3)(unrun@0.2.22(@emnapi/core@1.11.2)(@emnapi/runtime@1.11.2)(synckit@0.11.13))(vue-tsc@3.3.9(typescript@6.0.3))
+      vitest:
+        specifier: ^4.1.10
+        version: 4.1.10(@types/node@26.2.0)(vite@8.2.1(@types/node@26.2.0)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.12))
 
   packages/logic:
     dependencies:
@@ -554,6 +560,8 @@ importers:
       vitest:
         specifier: ^4.1.10
         version: 4.1.10(@types/node@26.2.0)(vite@8.2.1(@types/node@26.2.0)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.12))
+
+  tools/load-tests: {}
 
 packages:
 

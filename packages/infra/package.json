@@ -10,7 +10,7 @@
         "dev": "tsdown -c ../../tsdown.config.ts -F @sammo-ts/infra --watch",
         "lint": "eslint .",
         "lint:fix": "eslint . --fix",
-        "test": "node -e \"console.log('test not configured')\"",
+        "test": "vitest run --config vitest.config.ts",
         "prisma:generate": "pnpm prisma:generate:game && pnpm prisma:generate:gateway",
         "typecheck": "pnpm -w tsc7 -b packages/infra/tsconfig.json",
         "prisma:generate:game": "prisma generate --schema prisma/game.prisma",
@@ -28,6 +28,7 @@
         "@prisma/adapter-pg": "^7.9.1",
         "@prisma/client": "^7.9.1",
         "@prisma/client-runtime-utils": "^7.9.1",
+        "@sammo-ts/common": "workspace:*",
         "@sammo-ts/logic": "workspace:*",
         "es-toolkit": "^1.43.0",
         "pg": "^8.16.3",
@@ -37,6 +38,7 @@
         "@types/pg": "^8.21.0",
         "dotenv": "^17.4.2",
         "prisma": "^7.9.1",
-        "tsdown": "^0.22.14"
+        "tsdown": "^0.22.14",
+        "vitest": "^4.1.10"
     }
 }

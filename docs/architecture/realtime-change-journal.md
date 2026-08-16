@@ -169,6 +169,7 @@ statement 수와 row lock 시간을 제한한다. 없는 key의 revision은 0으
 | `nation.content` | nation ID | 현재 국가 context/command/board dependency |
 | `world.content` | 0 | 연월, scenario/config/catalog 성격의 dependency |
 | `map.world` | 0 | shared base map projection |
+| `map.general` | general ID | 현재 장수 이동처럼 actor별 map wake-up에 필요한 변화 |
 | `records.general` | general ID | 개인 최근 기록 |
 | `records.global` | 0 | 장수 동향 |
 | `records.history` | 0 | 중원 정세 |
@@ -177,6 +178,9 @@ statement 수와 row lock 시간을 제한한다. 없는 key의 revision은 0으
 | `front.global` | 0 | 설문과 global front status |
 | `access.general` | general ID | 접속 점수와 제한 상태, public fan-out 없음 |
 | `lobby.world` | 0 | NPC/국가 수, 공용 lobby projection |
+| `lobby.general` | general ID | 본인 lobby에 보이는 이름·아이콘 projection |
+| `contacts.world` | 0 | 장수 목록·외교 연락처 공용 projection |
+| `reserved.general` | general ID | 장수 예약 명령 projection |
 | `tournament` | 0 | 토너먼트 stage/state |
 | `betting` | 0 | 국가/토너먼트 베팅 목록·상태 |
 

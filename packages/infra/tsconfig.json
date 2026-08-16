@@ -5,5 +5,5 @@
         "composite": true
     },
     "include": ["src", "test", "*.ts"],
-    "references": [{ "path": "../logic" }]
+    "references": [{ "path": "../common" }, { "path": "../logic" }]
 }
