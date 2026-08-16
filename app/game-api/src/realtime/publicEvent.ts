@@ -62,8 +62,9 @@ export const toPublicRealtimeEvent = (
     const viewers = uniqueIdentities(
         identities.length > 0 ? identities : [{ generalId: null, cityId: null, nationId: null }]
     );
-    if (event.type === 'messageCreated') {
-        return viewers.some((identity) => isMailboxRelevant(event.mailbox, identity))
+    if (event.type === 'messageCreated' || event.type === 'messagesChanged') {
+        const mailboxes = event.type === 'messageCreated' ? [event.mailbox] : event.mailboxes;
+        return viewers.some((identity) => mailboxes.some((mailbox) => isMailboxRelevant(mailbox, identity)))
             ? { type: 'messagesInvalidated' }
             : null;
     }

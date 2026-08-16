@@ -4,6 +4,7 @@ import { asRecord } from '@sammo-ts/common';
 import type { UserSanctions } from '@sammo-ts/common/auth/gameToken';
 import { isMessageAccessBlocked } from '@sammo-ts/common/auth/sanctions';
 
+import type { GameApiContext } from '../../context.js';
 import { accessAuthedInputProcedure, accessLimitAuthedInputProcedure, authedProcedure, router } from '../../trpc.js';
 import {
     MESSAGE_MAILBOX_NATIONAL_BASE,
@@ -22,7 +23,6 @@ import {
     insertMessage,
     type MessageView,
 } from '../../messages/store.js';
-import { publishRealtimeEvent } from '../../realtime/publisher.js';
 import { getOwnedGeneral } from '../shared/general.js';
 import { resolveNationPermission } from '../nation/shared.js';
 import { respondToDiplomaticMessage } from '../../messages/diplomaticResponse.js';
@@ -70,6 +70,15 @@ const readPenaltyNumber = (penalty: unknown, key: string, fallback: number): num
 const hasPenalty = (penalty: unknown, key: string): boolean => {
     const value = asRecord(penalty)[key];
     return value === true || value === 1 || value === '1';
+};
+
+const markMessageMailboxes = (
+    ctx: Pick<GameApiContext, 'changeJournal'>,
+    mailboxes: Iterable<number>
+): void => {
+    for (const mailbox of mailboxes) {
+        ctx.changeJournal?.mark('messages.mailbox', mailbox);
+    }
 };
 
 export const messagesRouter = router({
@@ -298,6 +307,15 @@ export const messagesRouter = router({
                 ...(shouldDeleteReceiverCopy && typeof receiverMessageId === 'number' ? [receiverMessageId] : []),
             ];
             await invalidateMessages(ctx.db, ids);
+            const receiverMailbox =
+                shouldDeleteReceiverCopy && typeof receiverMessageId === 'number' && message.msgType === 'private'
+                    ? message.payload.dest.generalId
+                    : shouldDeleteReceiverCopy &&
+                        typeof receiverMessageId === 'number' &&
+                        message.msgType === 'national'
+                      ? MESSAGE_MAILBOX_NATIONAL_BASE + message.payload.dest.nationId
+                      : null;
+            markMessageMailboxes(ctx, [message.mailbox, ...(receiverMailbox === null ? [] : [receiverMailbox])]);
             return { ok: true, deletedIds: ids };
         }),
     respond: authedProcedure
@@ -316,21 +334,21 @@ export const messagesRouter = router({
                 messageId: input.messageId,
                 response: input.response,
             });
-            if (result.result) {
-                for (const mailbox of result.affectedMailboxes) {
-                    try {
-                        await publishRealtimeEvent(ctx.redis, ctx.profile.name, {
-                            type: 'messageCreated',
-                            at: new Date().toISOString(),
-                            mailbox,
-                            msgType: 'diplomacy',
-                            messageId: input.messageId,
-                            senderId: general.id,
-                        });
-                    } catch {
-                        // 실시간 알림 실패는 외교 응답 실패로 취급하지 않는다.
-                    }
-                }
+            markMessageMailboxes(ctx, result.affectedMailboxes);
+            for (const generalId of result.affectedGeneralRecordIds) {
+                ctx.changeJournal?.mark('records.general', generalId);
+            }
+            for (const nationId of result.affectedNationIds) {
+                ctx.changeJournal?.mark('nation.content', nationId);
+            }
+            for (const cityId of result.affectedCityIds) {
+                ctx.changeJournal?.mark('city.content', cityId);
+            }
+            if (result.affectedCityIds.length > 0) {
+                ctx.changeJournal?.mark('map.world');
+            }
+            if (result.affectedNationIds.length > 0 || result.affectedCityIds.length > 0) {
+                ctx.changeJournal?.mark('dashboard.global');
             }
             return { result: result.result, reason: result.reason };
         }),
@@ -522,18 +540,13 @@ export const messagesRouter = router({
             draft
         );
 
-        try {
-            await publishRealtimeEvent(ctx.redis, ctx.profile.name, {
-                type: 'messageCreated',
-                at: now.toISOString(),
-                mailbox: receiverMailbox,
-                msgType,
-                messageId: result.receiverId,
-                senderId: general.id,
-            });
-        } catch {
-            // 실시간 알림 실패는 메시지 전송 실패로 취급하지 않는다.
-        }
+        const senderMailbox =
+            result.senderId === undefined
+                ? null
+                : msgType === 'private'
+                  ? general.id
+                  : MESSAGE_MAILBOX_NATIONAL_BASE + general.nationId;
+        markMessageMailboxes(ctx, [receiverMailbox, ...(senderMailbox === null ? [] : [senderMailbox])]);
 
         return { msgType, msgId: result.receiverId };
     }),

@@ -30,3 +30,15 @@ export const publishRealtimeReadModelChanges = async (
     });
     return revision;
 };
+
+export const publishRealtimeMessageChanges = async (
+    redis: RedisConnector['client'],
+    profileName: string,
+    mailboxes: readonly number[]
+): Promise<void> => {
+    if (mailboxes.length === 0) return;
+    await publishRealtimeEvent(redis, profileName, {
+        type: 'messagesChanged',
+        mailboxes: [...new Set(mailboxes)].sort((left, right) => left - right),
+    });
+};

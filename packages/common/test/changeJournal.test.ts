@@ -11,7 +11,14 @@ import {
 describe('ChangeJournal', () => {
     it('keeps viewer-filtering semantics as distinct durable domains', () => {
         expect(READ_MODEL_DOMAINS).toEqual(
-            expect.arrayContaining(['map.general', 'lobby.general', 'contacts.world', 'reserved.general'])
+            expect.arrayContaining([
+                'map.general',
+                'lobby.general',
+                'contacts.world',
+                'reserved.general',
+                'messages.mailbox',
+                'dashboard.global',
+            ])
         );
     });
 

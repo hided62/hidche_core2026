@@ -126,6 +126,23 @@ describe('public realtime event privacy boundary', () => {
         expect(toPublicRealtimeEvent({ ...event, mailbox: MESSAGE_MAILBOX_NATIONAL_BASE + 8 }, [viewer])).toBeNull();
     });
 
+    it('redacts durable mailbox wake-ups to one viewer-safe boolean event', () => {
+        const event: RealtimeEvent = {
+            type: 'messagesChanged',
+            mailboxes: [7, MESSAGE_MAILBOX_NATIONAL_BASE + 8],
+        };
+
+        const publicEvent = toPublicRealtimeEvent(event, [viewer]);
+        expect(publicEvent).toEqual({ type: 'messagesInvalidated' });
+        expect(JSON.stringify(publicEvent)).not.toMatch(/7|9008|mailbox|revision|time/u);
+        expect(
+            toPublicRealtimeEvent(
+                { type: 'messagesChanged', mailboxes: [MESSAGE_MAILBOX_NATIONAL_BASE + 8] },
+                [viewer]
+            )
+        ).toBeNull();
+    });
+
     it('requests an identity refresh only when the viewer general may have changed', () => {
         expect(
             shouldReloadRealtimeViewerIdentity(

@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 
+import { ChangeJournal } from '@sammo-ts/common';
 import type { GameSessionTokenPayload } from '@sammo-ts/common/auth/gameToken';
 import type { RedisConnector } from '@sammo-ts/infra';
 
@@ -70,6 +71,7 @@ const createContext = (
         requestCommand?: ReturnType<typeof vi.fn>;
         requestId?: string;
         transaction?: ReturnType<typeof vi.fn>;
+        changeJournal?: ChangeJournal;
     } = {}
 ): GameApiContext => {
     const requestCommand = options.requestCommand ?? vi.fn();
@@ -86,6 +88,7 @@ const createContext = (
         battleSim: {} as GameApiContext['battleSim'],
         profile: { id: 'che', scenario: 'default', name: 'che:default' },
         auth,
+        ...(options.changeJournal ? { changeJournal: options.changeJournal } : {}),
         ...(options.requestId ? { requestId: options.requestId } : {}),
         uploadDir: 'uploads',
         uploadPath: '/uploads',
@@ -242,10 +245,11 @@ describe('nation personnel router', () => {
             }));
 
         const headCommand = makeCommand();
+        const changeJournal = new ChangeJournal();
         await expect(
-            appRouter.createCaller(createContext({ db: nationDb, requestCommand: headCommand })).nation.setRate({
-                amount: 20,
-            })
+            appRouter
+                .createCaller(createContext({ db: nationDb, requestCommand: headCommand, changeJournal }))
+                .nation.setRate({ amount: 20 })
         ).resolves.toEqual({ ok: true });
         expect(headCommand).toHaveBeenCalledWith({
             type: 'setNationMeta',
@@ -253,6 +257,10 @@ describe('nation personnel router', () => {
             updates: { rate: 20 },
             expectedUpdatedAt: '2026-01-01T00:00:00.000Z',
         });
+        expect(changeJournal.snapshot()).toEqual([
+            { domain: 'dashboard.global', entityId: 0 },
+            { domain: 'nation.content', entityId: 1 },
+        ]);
 
         const ambassadorCommand = makeCommand();
         const ambassador = {

@@ -5,9 +5,11 @@ import type { ReadModelOutboxDatabase } from '@sammo-ts/infra';
 
 import { ReadModelOutboxWorker } from '../src/realtime/outboxWorker.js';
 
-const payload = (domain: 'front.general' | 'access.general' | 'tournament' | 'betting') => ({
+const payload = (
+    domain: 'front.general' | 'access.general' | 'dashboard.global' | 'messages.mailbox' | 'tournament' | 'betting'
+) => ({
     version: 1,
-    changes: [[domain, domain === 'front.general' || domain === 'access.general' ? 7 : 0, '1']],
+    changes: [[domain, domain === 'front.general' || domain === 'access.general' ? 7 : domain === 'messages.mailbox' ? 9999 : 0, '1']],
 });
 
 const createFixture = (rows: readonly object[]) => {
@@ -47,7 +49,7 @@ describe('ReadModelOutboxWorker', () => {
         );
     });
 
-    it.each(['access.general', 'tournament', 'betting'] as const)(
+    it.each(['access.general', 'dashboard.global', 'tournament', 'betting'] as const)(
         'marks a %s-only envelope delivered without dashboard Redis publish',
         async (domain) => {
             const fixture = createFixture([{ id: 12n, payload: payload(domain), attempts: 1 }]);
@@ -64,6 +66,24 @@ describe('ReadModelOutboxWorker', () => {
             expect(fixture.publish).not.toHaveBeenCalled();
         }
     );
+
+    it('publishes a durable mailbox wake-up without the legacy dashboard revision', async () => {
+        const fixture = createFixture([{ id: 14n, payload: payload('messages.mailbox'), attempts: 1 }]);
+        const worker = new ReadModelOutboxWorker(fixture.db, fixture.redis, 'che:default', {
+            owner: 'worker-test',
+            intervalMs: 60_000,
+        });
+
+        worker.start();
+        await vi.waitFor(() => expect(fixture.updateMany).toHaveBeenCalledTimes(1));
+        await worker.stop();
+
+        expect(fixture.incr).not.toHaveBeenCalled();
+        expect(JSON.parse(String(fixture.publish.mock.calls[0]?.[1]))).toEqual({
+            type: 'messagesChanged',
+            mailboxes: [9999],
+        });
+    });
 
     it('coalesces repeated wakeups into one trailing batch and waits for it on shutdown', async () => {
         let releaseFirst: (() => void) | undefined;

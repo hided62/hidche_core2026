@@ -429,7 +429,7 @@ export const assertNationEditable = (
 };
 
 export const updateNationMeta = async (
-    ctx: Pick<GameApiContext, 'turnDaemon'>,
+    ctx: Pick<GameApiContext, 'turnDaemon' | 'changeJournal'>,
     nationId: number,
     updates: Record<string, unknown>,
     currentMeta: Record<string, unknown>
@@ -453,6 +453,8 @@ export const updateNationMeta = async (
         }
         throw new TRPCError({ code: 'BAD_REQUEST', message: result.reason });
     }
+    ctx.changeJournal?.mark('nation.content', nationId);
+    ctx.changeJournal?.mark('dashboard.global');
     return {
         ...currentMeta,
         ...updates,

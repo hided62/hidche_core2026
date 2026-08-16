@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import {
     readModelOutboxPayloadToChanges,
+    readModelOutboxPayloadToMessageMailboxes,
     type ReadModelDomain,
 } from '@sammo-ts/common';
 import {
@@ -11,13 +12,14 @@ import {
     type RedisConnector,
 } from '@sammo-ts/infra';
 
-import { publishRealtimeReadModelChanges } from './publisher.js';
+import { publishRealtimeMessageChanges, publishRealtimeReadModelChanges } from './publisher.js';
 
-// access.general is an authoritative DB-only source revision. Tournament and
-// betting still have separate Redis-owned source revisions. None of the three
-// should wake the legacy dashboard channel solely because its outbox row ran.
+// Source-only/access keys and separately owned tournament/betting state must
+// not wake the legacy dashboard channel solely because an outbox row ran.
 const NON_DASHBOARD_DOMAINS: ReadonlySet<ReadModelDomain> = new Set([
     'access.general',
+    'dashboard.global',
+    'messages.mailbox',
     'tournament',
     'betting',
 ]);
@@ -83,11 +85,14 @@ export class ReadModelOutboxWorker implements ReadModelOutboxWakeup {
         const result = await dispatchReadModelOutboxBatch(
             this.db,
             async (payload) => {
-                if (payload.changes.every(([domain]) => NON_DASHBOARD_DOMAINS.has(domain))) {
-                    return;
+                const mailboxes = readModelOutboxPayloadToMessageMailboxes(payload);
+                if (mailboxes.length > 0) {
+                    await publishRealtimeMessageChanges(this.redis, this.profileName, mailboxes);
                 }
-                const changes = readModelOutboxPayloadToChanges(payload);
-                await publishRealtimeReadModelChanges(this.redis, this.profileName, changes);
+                if (payload.changes.some(([domain]) => !NON_DASHBOARD_DOMAINS.has(domain))) {
+                    const changes = readModelOutboxPayloadToChanges(payload);
+                    await publishRealtimeReadModelChanges(this.redis, this.profileName, changes);
+                }
             },
             {
                 owner: this.owner,

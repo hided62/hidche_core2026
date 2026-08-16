@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 
+import { ChangeJournal } from '@sammo-ts/common';
 import type { GameSessionTokenPayload } from '@sammo-ts/common/auth/gameToken';
 import type { RedisConnector } from '@sammo-ts/infra';
 
@@ -70,6 +71,7 @@ const auth: GameSessionTokenPayload = {
 };
 
 const buildContext = () => {
+    const changeJournal = new ChangeJournal();
     const requestCommand = vi.fn(async (command: unknown) => ({
         type: 'setNationMeta',
         ok: true,
@@ -95,6 +97,7 @@ const buildContext = () => {
         battleSim: {} as GameApiContext['battleSim'],
         profile: { id: 'che', scenario: 'default', name: 'che:default' },
         auth,
+        changeJournal,
         uploadDir: 'uploads',
         uploadPath: '/uploads',
         uploadPublicUrl: null,
@@ -102,7 +105,7 @@ const buildContext = () => {
         flushStore: new InMemoryFlushStore(),
         gameTokenSecret: 'test-secret',
     };
-    return { caller: appRouter.createCaller(context), requestCommand };
+    return { caller: appRouter.createCaller(context), requestCommand, changeJournal };
 };
 
 describe('nation HTML API boundary', () => {
@@ -135,6 +138,11 @@ describe('nation HTML API boundary', () => {
             },
             expectedUpdatedAt: undefined,
         });
+        expect(fixture.changeJournal.snapshot()).toEqual([
+            { domain: 'dashboard.global', entityId: 0 },
+            ...(procedure === 'setNotice' ? [{ domain: 'front.nation' as const, entityId: 1 }] : []),
+            { domain: 'nation.content', entityId: 1 },
+        ]);
     });
 
     it.each(['setNotice', 'setScoutMsg'] as const)(

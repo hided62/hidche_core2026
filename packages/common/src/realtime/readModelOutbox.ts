@@ -8,6 +8,13 @@ import { createEmptyRealtimeReadModelChanges, type RealtimeReadModelChanges } fr
 const uniqueSortedIds = (values: Iterable<number>): number[] =>
     [...new Set(values)].sort((left, right) => left - right);
 
+export const readModelOutboxPayloadToMessageMailboxes = (
+    payload: ReadModelOutboxPayloadV1
+): readonly number[] =>
+    uniqueSortedIds(
+        payload.changes.flatMap(([domain, entityId]) => (domain === 'messages.mailbox' ? [entityId] : []))
+    );
+
 export const parseReadModelOutboxPayload = (value: unknown): ReadModelOutboxPayloadV1 | null => {
     if (!value || typeof value !== 'object' || Array.isArray(value)) {
         return null;
@@ -73,6 +80,8 @@ export const readModelOutboxPayloadToChanges = (
             case 'nation.content':
                 nationIds.push(entityId);
                 break;
+            case 'dashboard.global':
+                break;
             case 'world.content':
                 changes.worldChanged = true;
                 break;
@@ -113,6 +122,7 @@ export const readModelOutboxPayloadToChanges = (
                 reservedGeneralIds.push(entityId);
                 break;
             case 'access.general':
+            case 'messages.mailbox':
             case 'tournament':
             case 'betting':
                 // These domains have no browser-wide dashboard invalidation.

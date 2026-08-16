@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 
+import { ChangeJournal } from '@sammo-ts/common';
 import type { GameSessionTokenPayload } from '@sammo-ts/common/auth/gameToken';
 import { appRouter } from '../src/router.js';
 import type { GameApiContext, GeneralRow } from '../src/context.js';
@@ -208,6 +209,21 @@ describe('messages router missing-flow compatibility', () => {
 
         expect(result.msgType).toBe('national');
         expect(queryRaw.mock.calls[0]?.slice(1)).toEqual(expect.arrayContaining([9001, 'national']));
+    });
+
+    it('journals committed message mailbox copies instead of publishing before commit', async () => {
+        const changeJournal = new ChangeJournal();
+        const queryRaw = vi.fn(async () => [{ id: 51 }]);
+        const { caller, redis } = buildContext({ $queryRaw: queryRaw }, { changeJournal });
+
+        await caller.messages.send({
+            generalId: general.id,
+            mailbox: 9999,
+            text: '공개 메시지',
+        });
+
+        expect(changeJournal.snapshot()).toEqual([{ domain: 'messages.mailbox', entityId: 9999 }]);
+        expect(redis.publish).not.toHaveBeenCalled();
     });
 
     it('allows an ambassador to target a foreign nation mailbox as diplomacy', async () => {
@@ -458,7 +474,8 @@ describe('messages router missing-flow compatibility', () => {
                 },
             },
         ]);
-        const { caller, updateMany } = buildContext({ $queryRaw: queryRaw });
+        const changeJournal = new ChangeJournal();
+        const { caller, updateMany } = buildContext({ $queryRaw: queryRaw }, { changeJournal });
 
         const result = await caller.messages.delete({ generalId: general.id, messageId: 21 });
 
@@ -467,6 +484,10 @@ describe('messages router missing-flow compatibility', () => {
             where: { id: { in: [21, 22] } },
             data: { validUntil: expect.any(Date) },
         });
+        expect(changeJournal.snapshot()).toEqual([
+            { domain: 'messages.mailbox', entityId: 7 },
+            { domain: 'messages.mailbox', entityId: 8 },
+        ]);
     });
 
     it('lets the sender delete a manual diplomacy copy without deleting the receiver copy', async () => {
@@ -671,6 +692,7 @@ describe('messages router missing-flow compatibility', () => {
         const logCreateMany = vi.fn(async () => ({ count: 1 }));
         const messageUpdateMany = vi.fn(async () => ({ count: 1 }));
         const cityUpdate = vi.fn(async () => ({}));
+        const changeJournal = new ChangeJournal();
         const { caller } = buildContext({
             general: {
                 findUnique: vi.fn(async ({ where }: { where: { id: number } }) =>
@@ -748,7 +770,7 @@ describe('messages router missing-flow compatibility', () => {
             logEntry: { createMany: logCreateMany },
             message: { updateMany: messageUpdateMany },
             $queryRaw: queryRaw,
-        });
+        }, { changeJournal });
         return {
             caller,
             actor,
@@ -759,6 +781,7 @@ describe('messages router missing-flow compatibility', () => {
             logCreateMany,
             messageUpdateMany,
             cityUpdate,
+            changeJournal,
         };
     };
 
@@ -841,6 +864,18 @@ describe('messages router missing-flow compatibility', () => {
                 where: { id: 9 },
                 data: { frontState: 0 },
             });
+            expect(setup.changeJournal.snapshot()).toEqual([
+                { domain: 'city.content', entityId: 1 },
+                { domain: 'city.content', entityId: 9 },
+                { domain: 'dashboard.global', entityId: 0 },
+                { domain: 'map.world', entityId: 0 },
+                { domain: 'messages.mailbox', entityId: 9001 },
+                { domain: 'messages.mailbox', entityId: 9002 },
+                { domain: 'nation.content', entityId: 1 },
+                { domain: 'nation.content', entityId: 2 },
+                { domain: 'records.general', entityId: 7 },
+                { domain: 'records.general', entityId: 8 },
+            ]);
         }
     });
 

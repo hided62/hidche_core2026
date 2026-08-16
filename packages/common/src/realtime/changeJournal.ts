@@ -2,6 +2,7 @@ export const READ_MODEL_DOMAINS = [
     'general.content',
     'city.content',
     'nation.content',
+    'dashboard.global',
     'world.content',
     'map.world',
     'map.general',
@@ -16,6 +17,7 @@ export const READ_MODEL_DOMAINS = [
     'lobby.general',
     'contacts.world',
     'reserved.general',
+    'messages.mailbox',
     'tournament',
     'betting',
 ] as const;

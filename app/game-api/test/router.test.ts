@@ -15,6 +15,7 @@ import { InMemoryTurnDaemonTransport } from '../src/daemon/inMemoryTransport.js'
 import { InMemoryFlushStore } from '../src/auth/flushStore.js';
 import { RedisAccessTokenStore } from '../src/auth/accessTokenStore.js';
 import { appRouter } from '../src/router.js';
+import { ChangeJournal } from '@sammo-ts/common';
 import { encryptGameSessionToken, type GameSessionTokenPayload } from '@sammo-ts/common/auth/gameToken';
 
 const profile: GameProfile = {
@@ -118,6 +119,7 @@ const buildContext = (options?: {
     accountIconGet?: (userId: string) => Promise<unknown>;
     accessTokenStore?: RedisAccessTokenStore;
     worldStateReads?: { count: number };
+    changeJournal?: ChangeJournal;
 }): GameApiContext => {
     const transport = options?.transport ?? new InMemoryTurnDaemonTransport();
     const battleSim = options?.battleSim ?? new InMemoryBattleSimTransport();
@@ -227,6 +229,7 @@ const buildContext = (options?: {
         battleSim,
         profile,
         auth,
+        ...(options?.changeJournal ? { changeJournal: options.changeJournal } : {}),
         uploadDir: 'uploads',
         uploadPath: '/uploads',
         uploadPublicUrl: null,
@@ -868,8 +871,9 @@ describe('appRouter', () => {
     it('validates and persists general command arguments from the authenticated owner', async () => {
         const general = buildGeneralRow({ id: 13 });
         const writes: unknown[] = [];
+        const changeJournal = new ChangeJournal();
         const caller = appRouter.createCaller(
-            buildContext({ state: buildWorldState(), general, generalTurnWrites: writes })
+            buildContext({ state: buildWorldState(), general, generalTurnWrites: writes, changeJournal })
         );
 
         const response = await caller.turns.reserved.setGeneral({
@@ -890,6 +894,7 @@ describe('appRouter', () => {
             actionCode: 'che_화계',
             arg: { destCityId: 7 },
         });
+        expect(changeJournal.snapshot()).toEqual([{ domain: 'reserved.general', entityId: 13 }]);
 
         await expect(
             caller.turns.reserved.setGeneral({

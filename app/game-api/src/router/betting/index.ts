@@ -228,6 +228,8 @@ export const bettingRouter = router({
                     amount: input.amount,
                 },
             });
+            ctx.changeJournal?.mark('general.content', general.id);
+            ctx.changeJournal?.mark('betting');
             return { result: true };
         }),
 });

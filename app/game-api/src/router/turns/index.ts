@@ -346,6 +346,7 @@ export const turnsRouter = router({
                 const snapshot = await mutateReservedTurns(() =>
                     setGeneralTurn(ctx.db, input.generalId, input.turnIndex, input.action, args, input.expectedRevision)
                 );
+                ctx.changeJournal?.mark('reserved.general', input.generalId);
                 return { ok: true, ...snapshot };
             }),
         shiftGeneral: authedProcedure
@@ -362,6 +363,7 @@ export const turnsRouter = router({
                 const snapshot = await mutateReservedTurns(() =>
                     shiftGeneralTurns(ctx.db, input.generalId, input.amount, input.expectedRevision)
                 );
+                ctx.changeJournal?.mark('reserved.general', input.generalId);
                 return { ok: true, ...snapshot };
             }),
         repeatGeneral: authedProcedure
@@ -377,6 +379,7 @@ export const turnsRouter = router({
                 const snapshot = await mutateReservedTurns(() =>
                     repeatGeneralTurns(ctx.db, input.generalId, input.amount, input.expectedRevision)
                 );
+                ctx.changeJournal?.mark('reserved.general', input.generalId);
                 return { ok: true, ...snapshot };
             }),
         setGeneralBulk: authedProcedure
@@ -403,6 +406,7 @@ export const turnsRouter = router({
                 const snapshot = await mutateReservedTurns(() =>
                     setGeneralTurns(ctx.db, input.generalId, updates, input.expectedRevision)
                 );
+                ctx.changeJournal?.mark('reserved.general', input.generalId);
                 return { ok: true, ...snapshot };
             }),
         setNation: authedProcedure

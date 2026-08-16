@@ -35,5 +35,6 @@ export const setNotice = authedProcedure
             },
             nationMeta
         );
+        ctx.changeJournal?.mark('front.nation', me.nationId);
         return { ok: true, msg };
     });

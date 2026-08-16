@@ -124,7 +124,7 @@ const persistEffects = async (
     await persistLogs(db, logs, year, month, at);
 };
 
-const refreshFrontStates = async (db: DatabaseClient, mapName: string, nationIds: number[]): Promise<void> => {
+const refreshFrontStates = async (db: DatabaseClient, mapName: string, nationIds: number[]): Promise<number[]> => {
     const [map, cities, diplomacy] = await Promise.all([
         loadMapDefinitionByName(mapName),
         db.city.findMany({
@@ -152,6 +152,7 @@ const refreshFrontStates = async (db: DatabaseClient, mapName: string, nationIds
             data: { frontState: patch.frontState },
         });
     }
+    return patches.map((patch) => patch.id);
 };
 
 const buildFailureLog = (generalId: number, reason: string, actionName: string, response: boolean): LogEntryDraft[] => {
@@ -167,6 +168,9 @@ export interface DiplomaticMessageResponseResult {
     result: boolean;
     reason: string;
     affectedMailboxes: number[];
+    affectedGeneralRecordIds: number[];
+    affectedNationIds: number[];
+    affectedCityIds: number[];
 }
 
 export const respondToDiplomaticMessage = async (options: {
@@ -201,7 +205,14 @@ export const respondToDiplomaticMessage = async (options: {
             world.currentMonth,
             now
         );
-        return { result: false, reason, affectedMailboxes: [] };
+        return {
+            result: false,
+            reason,
+            affectedMailboxes: [],
+            affectedGeneralRecordIds: [actor.id],
+            affectedNationIds: [],
+            affectedCityIds: [],
+        };
     };
 
     const actorNationId = actor.nationId;
@@ -266,6 +277,9 @@ export const respondToDiplomaticMessage = async (options: {
             result: true,
             reason: 'success',
             affectedMailboxes: [MESSAGE_MAILBOX_NATIONAL_BASE + actorNationId],
+            affectedGeneralRecordIds: [actor.id, proposerGeneralId],
+            affectedNationIds: [],
+            affectedCityIds: [],
         };
     }
 
@@ -369,11 +383,12 @@ export const respondToDiplomaticMessage = async (options: {
         }
     );
     await persistEffects(db, resolution.effects, world.currentYear, world.currentMonth, now);
+    let affectedCityIds: number[] = [];
     if (resolution.refreshFront) {
         const worldConfig = asRecord(world.config);
         const environment = asRecord(worldConfig.environment);
         const mapName = typeof environment.mapName === 'string' ? environment.mapName : 'che';
-        await refreshFrontStates(db, mapName, [actorNationId, proposerNationId]);
+        affectedCityIds = await refreshFrontStates(db, mapName, [actorNationId, proposerNationId]);
     }
 
     const proposerMessageNationName = message.payload.src.nationName;
@@ -415,5 +430,8 @@ export const respondToDiplomaticMessage = async (options: {
             MESSAGE_MAILBOX_NATIONAL_BASE + actorNationId,
             MESSAGE_MAILBOX_NATIONAL_BASE + proposerNationId,
         ],
+        affectedGeneralRecordIds: [actor.id, proposerGeneralId],
+        affectedNationIds: [actorNationId, proposerNationId],
+        affectedCityIds,
     };
 };

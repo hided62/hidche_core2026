@@ -206,6 +206,12 @@ export interface MessageCreatedEvent {
     senderId: number;
 }
 
+/** Durable mailbox wake-up derived from committed read-model outbox rows. */
+export interface MessagesChangedEvent {
+    type: 'messagesChanged';
+    mailboxes: number[];
+}
+
 export interface ReadModelInvalidatedEvent {
     type: 'readModelInvalidated';
     invalidation: RealtimeReadModelInvalidation;
@@ -218,4 +224,4 @@ export interface MessagesInvalidatedEvent {
 /** Events safe to expose to an authenticated browser over SSE. */
 export type PublicRealtimeEvent = ReadModelInvalidatedEvent | MessagesInvalidatedEvent;
 
-export type RealtimeEvent = TurnCompletedEvent | ReadModelChangedEvent | MessageCreatedEvent;
+export type RealtimeEvent = TurnCompletedEvent | ReadModelChangedEvent | MessageCreatedEvent | MessagesChangedEvent;

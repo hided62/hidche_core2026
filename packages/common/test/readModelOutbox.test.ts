@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import {
     hasRealtimeReadModelChanges,
     parseReadModelOutboxPayload,
+    readModelOutboxPayloadToMessageMailboxes,
     readModelOutboxPayloadToChanges,
     resolveRealtimeReadModelInvalidation,
 } from '../src/index.js';
@@ -71,16 +72,32 @@ describe('read-model outbox payload', () => {
         );
     });
 
-    it('keeps access-only, tournament, and betting domains off the dashboard channel', () => {
+    it('keeps source-only, access-only, tournament, and betting domains off the dashboard channel', () => {
         const payload = parseReadModelOutboxPayload({
             version: 1,
             changes: [
                 ['access.general', 7, '1'],
+                ['dashboard.global', 0, '1'],
                 ['tournament', 0, '1'],
                 ['betting', 0, '1'],
             ],
         });
         if (!payload) throw new Error('valid payload rejected');
+        expect(hasRealtimeReadModelChanges(readModelOutboxPayloadToChanges(payload))).toBe(false);
+    });
+
+    it('keeps durable mailbox revisions separate from dashboard invalidations', () => {
+        const payload = parseReadModelOutboxPayload({
+            version: 1,
+            changes: [
+                ['messages.mailbox', 9999, '3'],
+                ['messages.mailbox', 7, '2'],
+                ['messages.mailbox', 7, '2'],
+            ],
+        });
+        if (!payload) throw new Error('valid payload rejected');
+
+        expect(readModelOutboxPayloadToMessageMailboxes(payload)).toEqual([7, 9999]);
         expect(hasRealtimeReadModelChanges(readModelOutboxPayloadToChanges(payload))).toBe(false);
     });
 });
