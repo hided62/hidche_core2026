@@ -30,6 +30,8 @@ export interface RealtimeReadModelChanges {
     contactsChanged: boolean;
     /** A global front-status source such as the active survey changed. */
     frontStatusChanged?: boolean;
+    /** Shared base-map projection changed without implying other world slices. */
+    mapChanged?: boolean;
     lobbyChanged?: boolean;
 }
 
@@ -125,7 +127,7 @@ export const resolveRealtimeReadModelInvalidation = (
     return {
         context: entityContextChanged,
         lobby: changes.worldChanged || lobbyChanged || ownLobbyGeneralChanged,
-        map: changes.worldChanged || mapEntitiesChanged || ownGeneralMapChanged,
+        map: changes.worldChanged || Boolean(changes.mapChanged) || mapEntitiesChanged || ownGeneralMapChanged,
         commands: changes.worldChanged || commandEntitiesChanged || ownGeneralChanged,
         contacts: changes.contactsChanged,
         boardAccess: ownGeneralChanged || ownNationChanged,
@@ -160,6 +162,7 @@ export const createEmptyRealtimeReadModelChanges = (): RealtimeReadModelChanges 
     worldHistoryChanged: false,
     contactsChanged: false,
     frontStatusChanged: false,
+    mapChanged: false,
     lobbyChanged: false,
 });
 
@@ -175,6 +178,7 @@ export const hasRealtimeReadModelChanges = (changes: RealtimeReadModelChanges): 
     changes.worldHistoryChanged ||
     changes.contactsChanged ||
     Boolean(changes.frontStatusChanged) ||
+    Boolean(changes.mapChanged) ||
     Boolean(changes.lobbyChanged);
 
 export interface TurnCompletedEvent {
