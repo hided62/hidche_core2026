@@ -40,20 +40,28 @@ the same label.
 | Bootstrap/Lumen danger       | `.legacy-button.legacy-button--danger`     | destructive action only when Ref uses `variant="danger"`                               |
 | Bootstrap/Lumen info         | `.legacy-button.legacy-button--info`       | informational or edit action only when Ref uses `variant="info"`                       |
 | `btn-sammo-base2` navigation | `.legacy-button.legacy-button--navigation` | page back/close and paired reload controls                                             |
+| Bootstrap/Lumen dark         | `.legacy-button.legacy-button--dark`       | dark navigation or utility control when Ref uses `btn-dark`                            |
+| dynamic Lumen color          | `.legacy-button.legacy-button--lumen`      | nation or scenario color supplied through the shared face/edge/text custom properties  |
 | page-specific/native control | feature-namespaced scoped class            | only when Ref computed geometry or interaction differs from the Bootstrap/Lumen family |
 
 The base class supplies accessible link/button normalization and the historical
-`base1` fallback used by already measured screens. New Bootstrap/Lumen controls
-must add an explicit semantic modifier; do not infer a mutation role from a
-label such as `구입` in page CSS. A disabled control keeps its semantic color
-and uses the shared opacity/cursor state. Hover and active use the Ref Lumen
-bottom-border movement rather than an unrelated brightness filter.
+`base1` fallback used by already measured screens. The Lumen family selector
+owns the `0 1px 4px` raised edge and the shared hover/active movement. Its
+semantic modifiers only assign `--legacy-button-bg`, `--legacy-button-border`,
+and `--legacy-button-color`; custom nation colors use the explicit
+`.legacy-button--lumen` structure class and assign those same properties. New
+Bootstrap/Lumen controls must add an explicit family or semantic modifier; do
+not infer a mutation role from a label such as `구입` in page CSS. A disabled
+control keeps its semantic color and uses the shared opacity/cursor state.
+Hover and active use the Ref Lumen bottom-border movement rather than an
+unrelated brightness filter.
 
-Only layout belongs in the SFC: width, grid column, margins required by the
-page, and breakpoint-specific placement. Color, border, font weight,
-hover/focus/active, and disabled presentation belong in
-`legacy-controls.css` when the Ref family is shared. Generic `.btn`, `button`,
-or `.primary` rules must not be promoted globally.
+Only layout belongs in the SFC: width, grid column, fixed-height compensation,
+margins required by the page, and breakpoint-specific placement. Color base
+variables may be supplied by the owner for dynamic nation/scenario colors, but
+border construction, font weight, hover/focus/active, and disabled presentation
+belong in `legacy-controls.css` when the Ref family is shared. Generic `.btn`,
+`button`, or `.primary` rules must not be promoted globally.
 
 ## Class naming
 

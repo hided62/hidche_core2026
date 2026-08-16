@@ -1610,7 +1610,7 @@ test('the 939/940 boundary switches to the Ref-style 500px single document', asy
     await persistArtifact(page, `${basePath.slice(1)}-mobile-500`);
 });
 
-test('mobile bottom controls preserve Ref navigation color, contrast, and pressed depth', async ({ page }) => {
+test('mobile bottom controls share Ref pressed geometry while their color bases vary', async ({ page }, testInfo) => {
     const state: NavigationFixture = {
         officerLevel: 5,
         permission: 2,
@@ -1620,6 +1620,7 @@ test('mobile bottom controls preserve Ref navigation color, contrast, and presse
         nationColor: '#FFFF00',
         generalMeCalls: 0,
         operations: [],
+        refreshDelayMs: 300,
     };
     await installFixture(page, state);
     await page.setViewportSize({ width: 500, height: 900 });
@@ -1632,19 +1633,26 @@ test('mobile bottom controls preserve Ref navigation color, contrast, and presse
             return {
                 backgroundColor: style.backgroundColor,
                 color: style.color,
+                borderTopWidth: style.borderTopWidth,
+                borderLeftWidth: style.borderLeftWidth,
                 borderBottomWidth: style.borderBottomWidth,
+                borderBottomColor: style.borderBottomColor,
                 marginTop: style.marginTop,
                 fontWeight: style.fontWeight,
                 height: rect.height,
+                classNames: [...element.classList],
             };
         });
-    const pointerDownStyle = async (selector: string) => {
+    const pointerDownStyle = async (selector: string, screenshotName?: string) => {
         const target = page.locator(selector);
         const box = await target.boundingBox();
         if (!box) throw new Error(`mobile bottom control is not measurable: ${selector}`);
         await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
         await page.mouse.down();
         const activeStyle = await buttonStyle(selector);
+        if (screenshotName) {
+            await page.screenshot({ path: testInfo.outputPath(screenshotName), fullPage: true });
+        }
         await page.mouse.move(1, 1);
         await page.mouse.up();
         return activeStyle;
@@ -1655,10 +1663,14 @@ test('mobile bottom controls preserve Ref navigation color, contrast, and presse
     expect(await buttonStyle(globalSelector)).toMatchObject({
         backgroundColor: 'rgb(0, 88, 44)',
         color: 'rgb(255, 255, 255)',
+        borderTopWidth: '0px',
+        borderLeftWidth: '1px',
         borderBottomWidth: '4px',
+        borderBottomColor: 'rgb(0, 79, 40)',
         marginTop: '0px',
         fontWeight: '700',
         height: 45,
+        classNames: expect.arrayContaining(['legacy-button', 'legacy-button--navigation']),
     });
     await page.locator(globalSelector).hover();
     expect(await buttonStyle(globalSelector)).toMatchObject({
@@ -1675,19 +1687,78 @@ test('mobile bottom controls preserve Ref navigation color, contrast, and presse
     });
 
     const nationTrigger = page.locator('[data-bottom-menu="nation"]');
-    await expect(nationTrigger).toHaveCSS('background-color', 'rgb(255, 255, 0)');
-    await expect(nationTrigger).toHaveCSS('color', 'rgb(0, 0, 0)');
+    expect(await buttonStyle('[data-bottom-menu="nation"]')).toMatchObject({
+        backgroundColor: 'rgb(255, 255, 0)',
+        color: 'rgb(0, 0, 0)',
+        borderTopWidth: '0px',
+        borderLeftWidth: '1px',
+        borderBottomWidth: '4px',
+        borderBottomColor: 'color(srgb 0.9 0.9 0)',
+        marginTop: '0px',
+        fontWeight: '700',
+        height: 45,
+        classNames: expect.arrayContaining(['legacy-button', 'legacy-button--lumen']),
+    });
+    await nationTrigger.hover();
+    expect(await buttonStyle('[data-bottom-menu="nation"]')).toMatchObject({
+        backgroundColor: 'rgb(255, 255, 0)',
+        borderBottomWidth: '3px',
+        marginTop: '1px',
+        height: 44,
+    });
+    expect(await pointerDownStyle('[data-bottom-menu="nation"]', 'mobile-bottom-nation-active.png')).toMatchObject({
+        backgroundColor: 'rgb(255, 255, 0)',
+        borderBottomWidth: '2px',
+        marginTop: '2px',
+        height: 43,
+    });
 
-    await page.locator('[data-bottom-menu="quick"]').click();
+    const quickSelector = '[data-bottom-menu="quick"]';
+    expect(await buttonStyle(quickSelector)).toMatchObject({
+        backgroundColor: 'rgb(33, 37, 41)',
+        color: 'rgb(255, 255, 255)',
+        borderTopWidth: '0px',
+        borderLeftWidth: '1px',
+        borderBottomWidth: '4px',
+        borderBottomColor: 'rgb(30, 33, 37)',
+        marginTop: '0px',
+        fontWeight: '700',
+        height: 45,
+        classNames: expect.arrayContaining(['legacy-button', 'legacy-button--dark']),
+    });
+    await page.locator(quickSelector).hover();
+    expect(await buttonStyle(quickSelector)).toMatchObject({
+        backgroundColor: 'rgb(33, 37, 41)',
+        borderBottomWidth: '3px',
+        marginTop: '1px',
+        height: 44,
+    });
+    expect(await pointerDownStyle(quickSelector)).toMatchObject({
+        backgroundColor: 'rgb(33, 37, 41)',
+        borderBottomWidth: '2px',
+        marginTop: '2px',
+        height: 43,
+    });
+
+    await page.locator(quickSelector).click();
     const lobbySelector = '#mobile-quick-menu .lobby-link';
     await expect(page.locator(lobbySelector)).toBeVisible();
     expect(await buttonStyle(lobbySelector)).toMatchObject({
         backgroundColor: 'rgb(0, 88, 44)',
         color: 'rgb(255, 255, 255)',
         borderBottomWidth: '4px',
+        borderBottomColor: 'rgb(0, 79, 40)',
         marginTop: '0px',
         fontWeight: '700',
         height: 40,
+        classNames: expect.arrayContaining(['legacy-button', 'legacy-button--navigation']),
+    });
+    await page.locator(lobbySelector).hover();
+    expect(await buttonStyle(lobbySelector)).toMatchObject({
+        backgroundColor: 'rgb(0, 88, 44)',
+        borderBottomWidth: '3px',
+        marginTop: '1px',
+        height: 39,
     });
     expect(await pointerDownStyle(lobbySelector)).toMatchObject({
         backgroundColor: 'rgb(0, 88, 44)',
@@ -1701,9 +1772,18 @@ test('mobile bottom controls preserve Ref navigation color, contrast, and presse
         backgroundColor: 'rgb(0, 88, 44)',
         color: 'rgb(255, 255, 255)',
         borderBottomWidth: '4px',
+        borderBottomColor: 'rgb(0, 79, 40)',
         marginTop: '0px',
         fontWeight: '700',
         height: 45,
+        classNames: expect.arrayContaining(['legacy-button', 'legacy-button--navigation']),
+    });
+    await page.locator(autoRefreshSelector).hover();
+    expect(await buttonStyle(autoRefreshSelector)).toMatchObject({
+        backgroundColor: 'rgb(0, 88, 44)',
+        borderBottomWidth: '3px',
+        marginTop: '1px',
+        height: 44,
     });
     expect(await pointerDownStyle(autoRefreshSelector)).toMatchObject({
         backgroundColor: 'rgb(0, 88, 44)',
@@ -1711,6 +1791,51 @@ test('mobile bottom controls preserve Ref navigation color, contrast, and presse
         marginTop: '2px',
         height: 43,
     });
+
+    const manualRefreshSelector = '[data-bottom-menu="manual-refresh"]';
+    expect(await buttonStyle(manualRefreshSelector)).toMatchObject({
+        backgroundColor: 'rgb(33, 37, 41)',
+        color: 'rgb(255, 255, 255)',
+        borderTopWidth: '0px',
+        borderLeftWidth: '1px',
+        borderBottomWidth: '4px',
+        borderBottomColor: 'rgb(30, 33, 37)',
+        marginTop: '0px',
+        fontWeight: '700',
+        height: 45,
+        classNames: expect.arrayContaining(['legacy-button', 'legacy-button--dark']),
+    });
+    await page.locator(manualRefreshSelector).hover();
+    expect(await buttonStyle(manualRefreshSelector)).toMatchObject({
+        backgroundColor: 'rgb(33, 37, 41)',
+        borderBottomWidth: '3px',
+        marginTop: '1px',
+        height: 44,
+    });
+    expect(await pointerDownStyle(manualRefreshSelector)).toMatchObject({
+        backgroundColor: 'rgb(33, 37, 41)',
+        borderBottomWidth: '2px',
+        marginTop: '2px',
+        height: 43,
+    });
+    await page.keyboard.press('Tab');
+    await page.locator(manualRefreshSelector).focus();
+    await expect
+        .poll(() => page.locator(manualRefreshSelector).evaluate((element) => element.matches(':focus-visible')))
+        .toBe(true);
+    await expect
+        .poll(() => page.locator(manualRefreshSelector).evaluate((element) => getComputedStyle(element).boxShadow))
+        .not.toBe('none');
+    await page.locator(manualRefreshSelector).click();
+    await expect(page.locator(manualRefreshSelector)).toBeDisabled();
+    expect(await buttonStyle(manualRefreshSelector)).toMatchObject({
+        backgroundColor: 'rgb(33, 37, 41)',
+        borderBottomWidth: '4px',
+        marginTop: '0px',
+        height: 45,
+    });
+    await expect(page.locator(manualRefreshSelector)).toHaveCSS('opacity', '0.55');
+    await expect(page.locator(manualRefreshSelector)).toBeEnabled();
 
     await persistArtifact(page, `${basePath.slice(1)}-mobile-bottom-ref-buttons`);
 });
