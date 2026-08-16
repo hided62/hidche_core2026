@@ -165,6 +165,7 @@ integration('game-engine read-model journal PostgreSQL transaction', () => {
             globalRecordsChanged: true,
         });
         expect(stateAndLogReceipt?.invalidation.revisions).toEqual([
+            { domain: 'dashboard.global', entityId: 0, revision: 1n },
             { domain: 'map.world', entityId: 0, revision: 1n },
             { domain: 'records.global', entityId: 0, revision: 1n },
             { domain: 'world.content', entityId: 0, revision: 1n },
@@ -177,6 +178,7 @@ integration('game-engine read-model journal PostgreSQL transaction', () => {
         const monthReceipt = hooks.takeCommittedReadModelChangeReceipt();
         expect(monthReceipt?.changes.worldChanged).toBe(true);
         expect(monthReceipt?.invalidation.revisions).toEqual([
+            { domain: 'dashboard.global', entityId: 0, revision: 2n },
             { domain: 'map.world', entityId: 0, revision: 2n },
             { domain: 'world.content', entityId: 0, revision: 2n },
         ]);

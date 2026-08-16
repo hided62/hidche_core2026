@@ -894,7 +894,10 @@ describe('appRouter', () => {
             actionCode: 'che_화계',
             arg: { destCityId: 7 },
         });
-        expect(changeJournal.snapshot()).toEqual([{ domain: 'reserved.general', entityId: 13 }]);
+        expect(changeJournal.snapshot()).toEqual([
+            { domain: 'dashboard.global', entityId: 0 },
+            { domain: 'reserved.general', entityId: 13 },
+        ]);
 
         await expect(
             caller.turns.reserved.setGeneral({

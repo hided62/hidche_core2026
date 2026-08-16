@@ -8,3 +8,4 @@ export * from './redis.js';
 export * from './turnEngineDb.js';
 export * from './readModelChangeJournal.js';
 export * from './readModelOutboxDispatcher.js';
+export * from './readModelCoverageActivation.js';

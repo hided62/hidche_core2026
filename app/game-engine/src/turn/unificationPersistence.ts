@@ -24,6 +24,7 @@ export interface UnificationFinalizationInput {
 export interface UnificationFinalizationResult {
     status: 'APPLIED' | 'ALREADY_APPLIED';
     generationKey: string;
+    messageMailboxes: number[];
 }
 
 const readNumber = (value: unknown): number => (typeof value === 'number' && Number.isFinite(value) ? value : 0);
@@ -140,7 +141,8 @@ const cancelPendingUniqueAuctions = async (
     transaction: GamePrisma.TransactionClient,
     input: UnificationFinalizationInput,
     world: InMemoryTurnWorld
-): Promise<void> => {
+): Promise<number[]> => {
+    const messageMailboxes: number[] = [];
     const lockedRows = await transaction.$queryRaw<LockedUnificationAuctionRow[]>`
         SELECT
             auction.id AS "auctionId",
@@ -245,9 +247,17 @@ const cancelPendingUniqueAuctions = async (
                 time: input.completedAt,
                 validUntil: new Date('9999-12-31T00:00:00.000Z'),
             };
-            await sendMessage({ insertMessage: (draft) => insertMessage(transaction, draft) }, message, {
-                sendDestOnly: true,
-            });
+            await sendMessage(
+                {
+                    insertMessage: async (draft) => {
+                        const messageId = await insertMessage(transaction, draft);
+                        messageMailboxes.push(draft.mailbox);
+                        return messageId;
+                    },
+                },
+                message,
+                { sendDestOnly: true }
+            );
         }
 
         await transaction.auction.update({
@@ -255,6 +265,7 @@ const cancelPendingUniqueAuctions = async (
             data: { status: 'CANCELED', finishedAt: input.completedAt },
         });
     }
+    return messageMailboxes;
 };
 
 export const persistUnificationFinalization = async (
@@ -267,7 +278,7 @@ export const persistUnificationFinalization = async (
     }
     const claim = await claimGeneration(transaction, input);
     if (claim === 'ALREADY_APPLIED') {
-        return { status: 'ALREADY_APPLIED', generationKey: input.generationKey };
+        return { status: 'ALREADY_APPLIED', generationKey: input.generationKey, messageMailboxes: [] };
     }
 
     const state = world.getState();
@@ -298,7 +309,7 @@ export const persistUnificationFinalization = async (
 
     // Ref cancels and refunds every unfinished unique auction before it merges
     // inheritance. Keep that order inside the generation transaction.
-    await cancelPendingUniqueAuctions(transaction, input, world);
+    const messageMailboxes = await cancelPendingUniqueAuctions(transaction, input, world);
 
     const pointRows = eligibleGenerals.length
         ? await transaction.inheritancePoint.findMany({
@@ -655,5 +666,5 @@ export const persistUnificationFinalization = async (
         },
     });
 
-    return { status: 'APPLIED', generationKey: input.generationKey };
+    return { status: 'APPLIED', generationKey: input.generationKey, messageMailboxes };
 };

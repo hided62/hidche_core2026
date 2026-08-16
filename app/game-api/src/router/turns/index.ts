@@ -347,6 +347,7 @@ export const turnsRouter = router({
                     setGeneralTurn(ctx.db, input.generalId, input.turnIndex, input.action, args, input.expectedRevision)
                 );
                 ctx.changeJournal?.mark('reserved.general', input.generalId);
+                ctx.changeJournal?.mark('dashboard.global');
                 return { ok: true, ...snapshot };
             }),
         shiftGeneral: authedProcedure
@@ -364,6 +365,7 @@ export const turnsRouter = router({
                     shiftGeneralTurns(ctx.db, input.generalId, input.amount, input.expectedRevision)
                 );
                 ctx.changeJournal?.mark('reserved.general', input.generalId);
+                ctx.changeJournal?.mark('dashboard.global');
                 return { ok: true, ...snapshot };
             }),
         repeatGeneral: authedProcedure
@@ -380,6 +382,7 @@ export const turnsRouter = router({
                     repeatGeneralTurns(ctx.db, input.generalId, input.amount, input.expectedRevision)
                 );
                 ctx.changeJournal?.mark('reserved.general', input.generalId);
+                ctx.changeJournal?.mark('dashboard.global');
                 return { ok: true, ...snapshot };
             }),
         setGeneralBulk: authedProcedure
@@ -407,6 +410,7 @@ export const turnsRouter = router({
                     setGeneralTurns(ctx.db, input.generalId, updates, input.expectedRevision)
                 );
                 ctx.changeJournal?.mark('reserved.general', input.generalId);
+                ctx.changeJournal?.mark('dashboard.global');
                 return { ok: true, ...snapshot };
             }),
         setNation: authedProcedure

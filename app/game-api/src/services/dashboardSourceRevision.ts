@@ -12,7 +12,7 @@ import type { DatabaseClient } from '../context.js';
 export const DASHBOARD_SOURCE_REVISION_COVERAGE_VERSION = 1;
 
 const SOURCE_REVISION_LENGTH = 22;
-const SOURCE_REVISION_CODE_VERSION = 'dashboard-private-slices-v1';
+const SOURCE_REVISION_CODE_VERSION = 'dashboard-private-slices-v2';
 
 export type DashboardSourceSlice = 'context' | 'commandTable' | 'boardAccess';
 
@@ -31,6 +31,7 @@ interface DashboardSourceRevisionRow {
     cityId: number;
     nationId: number;
     coverageVersion: number;
+    globalRevision: bigint;
     generalRevision: bigint;
     cityRevision: bigint;
     nationRevision: bigint;
@@ -40,12 +41,25 @@ interface DashboardSourceRevisionRow {
 
 type RevisionTuple = readonly [domain: string, entityId: number, revision: string];
 type DashboardRevisionVector = {
+    global: string;
     general: string;
     city: string;
     nation: string;
     world: string;
     access: string;
 };
+
+export interface DashboardAuthSource {
+    iconUpdatedAt?: string;
+    profileIconResetAt?: string;
+    canUseGeneralPicture?: boolean;
+    icons?: readonly {
+        id: string;
+        picture: string;
+        imageServer: number;
+        createdAt: string;
+    }[];
+}
 type ParsedDashboardRevisionVector = {
     [Key in keyof DashboardRevisionVector]: DashboardRevisionVector[Key] | null;
 };
@@ -76,23 +90,46 @@ const digestSourceRevision = (slice: DashboardSourceSlice, dependencies: readonl
         .digest('base64url')
         .slice(0, SOURCE_REVISION_LENGTH);
 
+export const createDashboardAuthSourceRevision = (source: DashboardAuthSource | undefined): string =>
+    createHash('sha256')
+        .update(
+            JSON.stringify([
+                SOURCE_REVISION_CODE_VERSION,
+                'auth.context',
+                source?.canUseGeneralPicture !== false,
+                source?.iconUpdatedAt ?? null,
+                source?.profileIconResetAt ?? null,
+                (source?.icons ?? []).map(({ id, picture, imageServer, createdAt }) => [
+                    id,
+                    picture,
+                    imageServer,
+                    createdAt,
+                ]),
+            ])
+        )
+        .digest('base64url')
+        .slice(0, SOURCE_REVISION_LENGTH);
+
 const isCompleteRevisionVector = (
     revisions: ParsedDashboardRevisionVector
 ): revisions is DashboardRevisionVector => Object.values(revisions).every((revision) => revision !== null);
 
 const buildSourceRevisions = (
     identity: DashboardSourceRevisionState['identity'],
-    revisions: DashboardRevisionVector
+    revisions: DashboardRevisionVector,
+    authSourceRevision: string
 ): Record<DashboardSourceSlice, string> => {
+    const global = ['dashboard.global', 0, revisions.global] as const;
     const general = ['general.content', identity.generalId, revisions.general] as const;
     const city = ['city.content', identity.cityId, identity.cityId > 0 ? revisions.city : '0'] as const;
     const nation = ['nation.content', identity.nationId, identity.nationId > 0 ? revisions.nation : '0'] as const;
     const world = ['world.content', 0, revisions.world] as const;
     const access = ['access.general', identity.generalId, revisions.access] as const;
+    const auth = ['auth.context', 0, authSourceRevision] as const;
 
     return {
-        context: digestSourceRevision('context', [general, city, nation, world, access]),
-        commandTable: digestSourceRevision('commandTable', [general, city, nation, world]),
+        context: digestSourceRevision('context', [global, general, city, nation, world, access, auth]),
+        commandTable: digestSourceRevision('commandTable', [global, general, city, nation, world]),
         boardAccess: digestSourceRevision('boardAccess', [general, nation]),
     };
 };
@@ -104,7 +141,8 @@ const buildSourceRevisions = (
  */
 export const readDashboardSourceRevisionState = async (
     db: Pick<DatabaseClient, '$queryRaw'>,
-    generalId: number
+    generalId: number,
+    authSource?: DashboardAuthSource
 ): Promise<DashboardSourceRevisionState | null> => {
     if (!Number.isSafeInteger(generalId) || generalId <= 0) {
         return null;
@@ -118,6 +156,7 @@ export const readDashboardSourceRevisionState = async (
                 actor."city_id" AS "cityId",
                 actor."nation_id" AS "nationId",
                 meta."coverage_version" AS "coverageVersion",
+                COALESCE(global_revision."revision", 0) AS "globalRevision",
                 COALESCE(general_revision."revision", 0) AS "generalRevision",
                 COALESCE(city_revision."revision", 0) AS "cityRevision",
                 COALESCE(nation_revision."revision", 0) AS "nationRevision",
@@ -125,6 +164,9 @@ export const readDashboardSourceRevisionState = async (
                 COALESCE(access_revision."revision", 0) AS "accessRevision"
             FROM "general" AS actor
             CROSS JOIN "read_model_revision_meta" AS meta
+            LEFT JOIN "read_model_revision" AS global_revision
+                ON global_revision."domain" = 'dashboard.global'
+               AND global_revision."entity_id" = 0
             LEFT JOIN "read_model_revision" AS general_revision
                 ON general_revision."domain" = 'general.content'
                AND general_revision."entity_id" = actor."id"
@@ -159,6 +201,7 @@ export const readDashboardSourceRevisionState = async (
     };
     const coverageVersion = parseNonNegativeInteger(row.coverageVersion);
     const revisions = {
+        global: parseNonNegativeRevision(row.globalRevision),
         general: parseNonNegativeRevision(row.generalRevision),
         city: parseNonNegativeRevision(row.cityRevision),
         nation: parseNonNegativeRevision(row.nationRevision),
@@ -183,7 +226,11 @@ export const readDashboardSourceRevisionState = async (
     return {
         coverageVersion,
         identity: validIdentity,
-        sourceRevisions: buildSourceRevisions(validIdentity, revisions),
+        sourceRevisions: buildSourceRevisions(
+            validIdentity,
+            revisions,
+            createDashboardAuthSourceRevision(authSource)
+        ),
     };
 };
 

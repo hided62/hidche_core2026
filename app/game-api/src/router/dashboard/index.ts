@@ -82,8 +82,9 @@ const createDashboardSliceDelta = async <T>(options: {
 
 export const dashboardRouter = router({
     getContextBundleDelta: accessLimitAuthedProcedure.input(zContextBundleInput).query(async ({ ctx, input }) => {
-        const viewerId = ctx.auth?.user.id;
-        if (!viewerId) {
+        const authUser = ctx.auth?.user;
+        const viewerId = authUser?.id;
+        if (!authUser || !viewerId) {
             throw new TRPCError({ code: 'UNAUTHORIZED' });
         }
 
@@ -102,7 +103,7 @@ export const dashboardRouter = router({
                 null;
         }
         const sourceState = generalId
-            ? await readDashboardSourceRevisionState(ctx.db, generalId)
+            ? await readDashboardSourceRevisionState(ctx.db, generalId, authUser)
             : null;
 
         const [contextDelta, commandTableDelta, boardAccessDelta] = await Promise.all([

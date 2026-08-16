@@ -117,6 +117,7 @@ const installSourceRevisionState = (
         cityId: 0,
         nationId: 0,
         coverageVersion: 1,
+        globalRevision: 1n,
         generalRevision: 1n,
         cityRevision: 0n,
         nationRevision: 0n,

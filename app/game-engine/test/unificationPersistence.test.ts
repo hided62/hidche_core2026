@@ -175,6 +175,7 @@ describe('persistUnificationFinalization', () => {
         await expect(persistUnificationFinalization(transaction, input, buildWorld())).resolves.toEqual({
             status: 'ALREADY_APPLIED',
             generationKey: input.generationKey,
+            messageMailboxes: [],
         });
         expect(transaction.unificationFinalization.create).not.toHaveBeenCalled();
     });
@@ -221,6 +222,7 @@ describe('persistUnificationFinalization', () => {
         await expect(persistUnificationFinalization(transaction, input, buildWorld())).resolves.toEqual({
             status: 'APPLIED',
             generationKey: input.generationKey,
+            messageMailboxes: [],
         });
 
         expect(inheritanceUpsert).toHaveBeenCalledWith(

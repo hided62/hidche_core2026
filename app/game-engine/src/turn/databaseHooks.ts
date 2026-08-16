@@ -463,6 +463,31 @@ export const createReadModelChangeJournal = (changes: RealtimeReadModelChanges):
     return journal;
 };
 
+/**
+ * Conservative transitive dependency for the private dashboard projections.
+ * Context reads troop/leader-turn state and command options scan the complete
+ * general/city/nation sets, so entity-local heads alone are insufficient.
+ */
+export const hasDashboardSourceMutation = (
+    changes: TurnWorldChanges,
+    readModelChanges: RealtimeReadModelChanges
+): boolean =>
+    readModelChanges.worldChanged ||
+    readModelChanges.reservedGeneralIds.length > 0 ||
+    changes.generals.length > 0 ||
+    changes.createdGenerals.length > 0 ||
+    changes.deletedGenerals.length > 0 ||
+    changes.lifecycleEvents.length > 0 ||
+    changes.cities.length > 0 ||
+    changes.nations.length > 0 ||
+    changes.createdNations.length > 0 ||
+    changes.deletedNations.length > 0 ||
+    changes.troops.length > 0 ||
+    changes.createdTroops.length > 0 ||
+    changes.deletedTroops.length > 0 ||
+    changes.diplomacy.length > 0 ||
+    changes.createdDiplomacy.length > 0;
+
 export const excludeDeletedReservedTurnQueues = (
     changes: ReservedTurnChanges,
     deletedGeneralIds: readonly number[],
@@ -1463,13 +1488,15 @@ export const createDatabaseTurnHooks = async (
             for (const snapshot of pendingYearbookSnapshots) {
                 await persistYearbookSnapshot(prisma, snapshot);
             }
+            const persistedMessageMailboxes: number[] = [];
             for (const finalization of pendingUnificationFinalizations) {
                 if (options?.profileName && finalization.profileName !== options.profileName) {
                     throw new Error(
                         `Unification profile mismatch: pending=${finalization.profileName}, daemon=${options.profileName}.`
                     );
                 }
-                await persistUnificationFinalization(prisma, finalization, world);
+                const result = await persistUnificationFinalization(prisma, finalization, world);
+                persistedMessageMailboxes.push(...result.messageMailboxes);
             }
             for (const message of messages) {
                 await sendMessage(
@@ -1506,6 +1533,7 @@ export const createDatabaseTurnHooks = async (
                             if (!id) {
                                 throw new Error('Failed to persist turn message.');
                             }
+                            persistedMessageMailboxes.push(draft.mailbox);
                             return id;
                         },
                     },
@@ -1555,6 +1583,10 @@ export const createDatabaseTurnHooks = async (
                 readModelChanges.worldChanged = true;
             }
             const journal = createReadModelChangeJournal(readModelChanges);
+            if (hasDashboardSourceMutation(changes, readModelChanges)) {
+                journal.mark('dashboard.global');
+            }
+            markIds(journal, 'messages.mailbox', uniqueSortedIds(persistedMessageMailboxes));
             markIds(journal, 'access.general', accessScoreResetGeneralIds);
             if (pendingNationBettingOpens.length > 0 || pendingNationBettingFinishes.length > 0) {
                 journal.mark('betting');

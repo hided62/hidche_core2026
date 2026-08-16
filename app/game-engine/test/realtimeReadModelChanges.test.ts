@@ -7,6 +7,7 @@ import {
     createReadModelChangeJournal,
     createRealtimeReadModelBaseline,
     createWorldReadModelSignature,
+    hasDashboardSourceMutation,
     mergePersistedVisibleLogChanges,
     summarizeRealtimeReadModelChanges,
 } from '../src/turn/databaseHooks.js';
@@ -57,6 +58,51 @@ describe('durable read-model change journal mapping', () => {
             { domain: 'reserved.general', entityId: 7 },
             { domain: 'world.content', entityId: 0 },
         ]);
+    });
+
+    it('detects troop, leader-turn, and aggregate dashboard dependencies conservatively', () => {
+        const emptyWorldChanges = {
+            accessScoreResetGeneralIds: [],
+            generals: [],
+            cities: [],
+            nations: [],
+            troops: [],
+            deletedTroops: [],
+            deletedGenerals: [],
+            deletedNations: [],
+            deletedNationSnapshots: [],
+            diplomacy: [],
+            logs: [],
+            messages: [],
+            createdGenerals: [],
+            createdNations: [],
+            createdTroops: [],
+            createdDiplomacy: [],
+            createdEvents: [],
+            deletedEvents: [],
+            lifecycleEvents: [],
+            pendingNeutralAuctions: [],
+            inheritancePointAdjustments: [],
+            pendingNationBettingOpens: [],
+            pendingNationBettingFinishes: [],
+            pendingYearbookSnapshots: [],
+            pendingUnificationFinalizations: [],
+        } satisfies TurnWorldChanges;
+        const readModelChanges = createEmptyRealtimeReadModelChanges();
+
+        expect(hasDashboardSourceMutation(emptyWorldChanges, readModelChanges)).toBe(false);
+        expect(
+            hasDashboardSourceMutation(
+                { ...emptyWorldChanges, troops: [{ id: 3 } as TurnWorldChanges['troops'][number]] },
+                readModelChanges
+            )
+        ).toBe(true);
+        expect(
+            hasDashboardSourceMutation(emptyWorldChanges, {
+                ...readModelChanges,
+                reservedGeneralIds: [7],
+            })
+        ).toBe(true);
     });
 
     it('ignores moving clock and lease metadata but detects month, turn-term, config, and gameplay meta', () => {
