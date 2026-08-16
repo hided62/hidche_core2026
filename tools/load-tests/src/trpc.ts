@@ -9,7 +9,7 @@ export interface TrpcRequest {
 export const buildTrpcQuery = (baseUrl: string, trpcPath: string, operation: LoadOperation, token: string): TrpcRequest => {
     const normalizedPath = trpcPath.endsWith('/') ? trpcPath.slice(0, -1) : trpcPath;
     const url = new URL(`${normalizedPath}/${operation.procedure}`, baseUrl);
-    if (operation.input !== undefined) url.searchParams.set('input', JSON.stringify({ json: operation.input }));
+    if (operation.input !== undefined) url.searchParams.set('input', JSON.stringify(operation.input));
     return {
         url: url.toString(),
         init: {

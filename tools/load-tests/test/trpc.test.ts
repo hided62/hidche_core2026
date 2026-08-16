@@ -14,7 +14,7 @@ void test('tRPC query uses bearer auth without putting the token in the URL', ()
     assert.equal(new Headers(request.init.headers).get('authorization'), `Bearer ${token}`);
     assert.equal(request.url.includes(token), false);
     assert.equal(new URL(request.url).pathname, '/api/trpc/dashboard.getContextBundleDelta');
-    assert.deepEqual(JSON.parse(new URL(request.url).searchParams.get('input')!), { json: { include: { context: true } } });
+    assert.deepEqual(JSON.parse(new URL(request.url).searchParams.get('input')!), { include: { context: true } });
 });
 
 void test('dashboard observations retain only opaque revisions and aggregate-safe result kinds', () => {

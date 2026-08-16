@@ -1,6 +1,6 @@
 import { execFile } from 'node:child_process';
-import { randomUUID } from 'node:crypto';
-import { lstat, mkdir, open, realpath } from 'node:fs/promises';
+import { randomBytes, randomUUID } from 'node:crypto';
+import { lstat, mkdir, open, realpath, unlink } from 'node:fs/promises';
 import path from 'node:path';
 import { promisify } from 'node:util';
 
@@ -8,7 +8,7 @@ import { seedScenarioToDatabase } from '@sammo-ts/game-engine';
 import {
     createGamePostgresConnector,
     createRedisConnector,
-    type GamePrisma,
+    GamePrisma,
     type GamePrismaClient,
 } from '@sammo-ts/infra';
 
@@ -19,6 +19,105 @@ const FIXED_NOW = new Date('2026-08-16T00:00:00.000Z');
 const SCENARIO_ID = 2601;
 
 type FixtureEnvironment = { databaseUrl: string; redisUrl: string };
+
+const assertNewSecretPath = async (secretPath: string, workspaceRoot: string): Promise<string> => {
+    const secretRoot = await realpath(path.join(workspaceRoot, 'tools/load-tests/secrets'));
+    const output = path.resolve(secretPath);
+    const relative = path.relative(secretRoot, output);
+    if (!relative || relative.startsWith('..') || path.isAbsolute(relative)) {
+        throw new Error('generated secret files must stay inside tools/load-tests/secrets');
+    }
+    await mkdir(path.dirname(output), { recursive: true, mode: 0o700 });
+    if ((await realpath(path.dirname(output))) !== secretRoot) {
+        throw new Error('generated secret files must not traverse a symbolic-link directory');
+    }
+    try {
+        await lstat(output);
+        throw new Error('generated secret output already exists');
+    } catch (error) {
+        if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
+    }
+    return output;
+};
+
+const writeNewSecret = async (secretPath: string, content: string): Promise<void> => {
+    const handle = await open(secretPath, 'wx', 0o600);
+    try {
+        await handle.writeFile(content, { encoding: 'utf8' });
+    } finally {
+        await handle.close();
+    }
+};
+
+export const prepareCapacitySecrets = async (options: {
+    config: LoadConfig;
+    workspaceRoot: string;
+    env?: NodeJS.ProcessEnv;
+}) => {
+    const env = options.env ?? process.env;
+    const postgresPort = Number(env.CAPACITY_POSTGRES_PORT ?? '15442');
+    const redisPort = Number(env.CAPACITY_REDIS_PORT ?? '16379');
+    if (!Number.isSafeInteger(postgresPort) || postgresPort < 1024 || postgresPort > 65_535) {
+        throw new Error('CAPACITY_POSTGRES_PORT must be an unprivileged TCP port');
+    }
+    if (!Number.isSafeInteger(redisPort) || redisPort < 1024 || redisPort > 65_535) {
+        throw new Error('CAPACITY_REDIS_PORT must be an unprivileged TCP port');
+    }
+    if (postgresPort === redisPort) throw new Error('capacity PostgreSQL and Redis ports must differ');
+
+    const secretRoot = path.join(options.workspaceRoot, 'tools/load-tests/secrets');
+    const postgresPasswordPath = await assertNewSecretPath(
+        path.join(secretRoot, 'postgres-password.txt'),
+        options.workspaceRoot
+    );
+    const imageSecretPath = await assertNewSecretPath(
+        path.join(secretRoot, 'image-upload-secret.txt'),
+        options.workspaceRoot
+    );
+    const capacityEnvPath = await assertNewSecretPath(path.join(secretRoot, 'capacity.env'), options.workspaceRoot);
+
+    const postgresPassword = randomBytes(32).toString('hex');
+    const gameTokenSecret = randomBytes(32).toString('hex');
+    const imageUploadSecret = randomBytes(32).toString('hex');
+    const databaseUrl =
+        `postgresql://sammo_capacity:${postgresPassword}@127.0.0.1:${postgresPort}/sammo_capacity` +
+        `?schema=${options.config.isolation.postgresSchema}`;
+    const redisUrl = `redis://127.0.0.1:${redisPort}/${options.config.isolation.redisDatabase}`;
+    const envLines = [
+        `CAPACITY_POSTGRES_PORT='${postgresPort}'`,
+        `CAPACITY_REDIS_PORT='${redisPort}'`,
+        `LOAD_TEST_DATABASE_URL='${databaseUrl}'`,
+        `LOAD_TEST_REDIS_URL='${redisUrl}'`,
+        `DATABASE_URL='${databaseUrl}'`,
+        `REDIS_URL='${redisUrl}'`,
+        `GAME_TOKEN_SECRET='${gameTokenSecret}'`,
+        `GAME_IMAGE_UPLOAD_SECRET_FILE='${imageSecretPath}'`,
+        `PROFILE='${options.config.isolation.postgresSchema}'`,
+        `SCENARIO='2601'`,
+        `GAME_PROFILE_NAME='${options.config.isolation.profileName}'`,
+        `GAME_API_HOST='127.0.0.1'`,
+        `GAME_API_PORT='${new URL(options.config.target.baseUrl).port || '80'}'`,
+        `GAME_TRPC_PATH='${options.config.target.trpcPath}'`,
+        `GAME_API_EVENTS_PATH='${options.config.target.ssePath}'`,
+        `CAPACITY_NODE_BINARY='${process.execPath}'`,
+        "CAPACITY_CPUSET='0-3'",
+        '',
+    ].join('\n');
+
+    const created: string[] = [];
+    try {
+        await writeNewSecret(postgresPasswordPath, `${postgresPassword}\n`);
+        created.push(postgresPasswordPath);
+        await writeNewSecret(imageSecretPath, `${imageUploadSecret}\n`);
+        created.push(imageSecretPath);
+        await writeNewSecret(capacityEnvPath, envLines);
+        created.push(capacityEnvPath);
+    } catch (error) {
+        await Promise.all(created.map((file) => unlink(file).catch(() => undefined)));
+        throw error;
+    }
+    return { prepared: true, secretFilesWritten: created.length, mode: '0600' };
+};
 
 const requireEnvironment = (env: NodeJS.ProcessEnv): FixtureEnvironment => {
     const databaseUrl = env.LOAD_TEST_DATABASE_URL;
@@ -177,20 +276,9 @@ const resizeSeededGenerals = async (db: GamePrismaClient, config: LoadConfig): P
 };
 
 const assertNewTokenPath = async (tokenPath: string, workspaceRoot: string): Promise<string> => {
-    const secretRoot = await realpath(path.join(workspaceRoot, 'tools/load-tests/secrets'));
-    const output = path.resolve(tokenPath);
-    const relative = path.relative(secretRoot, output);
-    if (!relative || relative.startsWith('..') || path.isAbsolute(relative) || path.extname(output) !== '.json') {
+    const output = await assertNewSecretPath(tokenPath, workspaceRoot);
+    if (path.extname(output) !== '.json') {
         throw new Error('seed token output must be a new JSON file inside tools/load-tests/secrets');
-    }
-    await mkdir(path.dirname(output), { recursive: true, mode: 0o700 });
-    const parent = await realpath(path.dirname(output));
-    if (parent !== secretRoot) throw new Error('seed token output must not traverse a symbolic-link directory');
-    try {
-        await lstat(output);
-        throw new Error('seed token output already exists');
-    } catch (error) {
-        if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
     }
     return output;
 };
@@ -313,7 +401,10 @@ export const verifyCapacityFixture = async (config: LoadConfig, env: NodeJS.Proc
     const redis = createRedisConnector({ url: environment.redisUrl });
     await postgres.connect();
     try {
-        const state = await projectFixtureState(postgres.prisma);
+        const [state, postgresRows] = await Promise.all([
+            projectFixtureState(postgres.prisma),
+            postgres.prisma.$queryRaw<Array<{ version: string }>>(GamePrisma.sql`SELECT version()`),
+        ]);
         const fixtureSha256 = `sha256:${sha256(canonicalJson(state))}`;
         await redis.connect();
         try {
@@ -329,6 +420,8 @@ export const verifyCapacityFixture = async (config: LoadConfig, env: NodeJS.Proc
                 }
             }
             const accessTokens = await countMatchingRedisKeys(redis.client, `${accessKeyPrefix(config)}ga_*`);
+            const redisInfo = await redis.client.info('server');
+            const redisVersion = /^redis_version:(.+)$/mu.exec(redisInfo)?.[1]?.trim() ?? 'unknown';
             const npcGenerals = state.generals.filter((general) => general.npcState >= 2).length;
             const humanGenerals = state.generals.filter(
                 (general) => general.npcState === 0 && general.userId
@@ -348,6 +441,8 @@ export const verifyCapacityFixture = async (config: LoadConfig, env: NodeJS.Proc
                 accessTokens,
                 redisManifestPresent: rawManifest !== null,
                 redisManifestMatches: manifestFixtureSha256 === fixtureSha256,
+                postgresVersion: postgresRows[0]?.version ?? 'unknown',
+                redisVersion,
             };
         } finally {
             await redis.disconnect();
@@ -355,6 +450,54 @@ export const verifyCapacityFixture = async (config: LoadConfig, env: NodeJS.Proc
     } finally {
         await postgres.disconnect();
     }
+};
+
+export const materializeCalibrationConfig = async (options: {
+    config: LoadConfig;
+    outputPath: string;
+    workspaceRoot: string;
+    env?: NodeJS.ProcessEnv;
+}) => {
+    const env = options.env ?? process.env;
+    const output = path.resolve(options.outputPath);
+    const resultsRoot = await realpath(path.join(options.workspaceRoot, 'tools/load-tests/results'));
+    const relative = path.relative(resultsRoot, output);
+    if (!relative || relative.startsWith('..') || path.isAbsolute(relative) || path.extname(output) !== '.json') {
+        throw new Error('calibration config output must be a new JSON file inside tools/load-tests/results');
+    }
+    try {
+        await lstat(output);
+        throw new Error('calibration config output already exists');
+    } catch (error) {
+        if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
+    }
+    const verified = await verifyCapacityFixture(options.config, env);
+    if (!verified.valid) throw new Error('fixture verification failed; refusing to materialize calibration config');
+    const gitCommit = (
+        await execFileAsync('git', ['rev-parse', 'HEAD'], { cwd: options.workspaceRoot })
+    ).stdout.trim();
+    const runtimeConfig: LoadConfig = {
+        ...options.config,
+        name: `${options.config.name}-calibration`,
+        runtimeMetadata: {
+            fixtureSha256: verified.fixtureSha256,
+            imageDigest: env.LOAD_TEST_IMAGE_DIGEST ?? `source-tree:${gitCommit}:dirty`,
+            postgresVersion: verified.postgresVersion,
+            redisVersion: verified.redisVersion,
+        },
+        phases: options.config.phases.map((phase) => ({
+            ...phase,
+            name: phase.name.replace(/-(?:5|10|30)m$/u, '-calibration'),
+            durationMs: phase.kind === 'idle' ? 5_000 : 10_000,
+        })),
+    };
+    await writeNewSecret(output, `${JSON.stringify(runtimeConfig, null, 2)}\n`);
+    return {
+        materialized: true,
+        fixtureSha256: verified.fixtureSha256,
+        phaseDurationMs: runtimeConfig.phases.map((phase) => phase.durationMs),
+        runtimeKind: env.LOAD_TEST_IMAGE_DIGEST ? 'image' : 'dirty-source-tree',
+    };
 };
 
 export const cleanupCapacityFixture = async (

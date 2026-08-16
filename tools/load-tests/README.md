@@ -30,23 +30,22 @@ unchanged/snapshot/patch 경로를 구분하며 raw JSON에는 종류별 count�
 
 ### 1. 격리 PostgreSQL/Redis와 1,200장수 fixture
 
-아래 Compose는 loopback에만 포트를 열고 PostgreSQL 18.4, Redis 8.2.7을 고정한다. 실제 password와 URL은
-Git ignored `secrets/`에 두며 명령행이나 결과 JSON에는 기록하지 않는다. `capacity.env`에는 최소
-`LOAD_TEST_DATABASE_URL`(query의 `schema=load_capacity_300_900_5m` 포함),
-`LOAD_TEST_REDIS_URL`(`/15` 포함), API 기동에 필요한 `GAME_TOKEN_SECRET`,
-`GAME_IMAGE_UPLOAD_SECRET_FILE`을 넣는다. URL의 password는 percent-encoding한다.
+아래 Compose는 loopback에만 포트를 열고 PostgreSQL 18.4, Redis 8.2.7을 고정한다. PostgreSQL 18의
+versioned data-directory 계약에 맞춰 volume은 `/var/lib/postgresql`에 붙인다. host port는 기본
+`15442/16379`이며 `CAPACITY_POSTGRES_PORT`/`CAPACITY_REDIS_PORT`로 충돌 없이 바꿀 수 있다. `prepare`는
+PostgreSQL password, API token/image secret과 정확한 URL을 무작위 생성해 Git ignored `secrets/`의 새
+파일 세 개에 `0600`으로 저장한다. 기존 파일을 덮어쓰거나 비밀값을 stdout에 쓰지 않는다.
 
 ```sh
-install -m 600 /dev/null tools/load-tests/secrets/postgres-password.txt
-install -m 600 /dev/null tools/load-tests/secrets/capacity.env
-# 두 파일은 로컬 편집기로 채우고 내용을 stdout에 출력하지 않는다.
-
-docker compose -f tools/load-tests/compose.capacity.yml config --quiet
-docker compose -f tools/load-tests/compose.capacity.yml up -d --wait
+pnpm --filter @sammo-ts/load-tests prepare:capacity \
+  --config tools/load-tests/config/300-users-900-npcs-5m.json
 
 set -a
 source tools/load-tests/secrets/capacity.env
 set +a
+
+docker compose -f tools/load-tests/compose.capacity.yml config --quiet
+docker compose -f tools/load-tests/compose.capacity.yml up -d --wait
 
 pnpm --filter @sammo-ts/load-tests seed \
   --config tools/load-tests/config/300-users-900-npcs-5m.json \
@@ -64,20 +63,21 @@ fixture와 같은 환경으로 API를 띄울 때 핵심 namespace는 다음과 �
 풀어 쓰지 않는다.
 
 ```sh
-export DATABASE_URL="$LOAD_TEST_DATABASE_URL"
-export REDIS_URL="$LOAD_TEST_REDIS_URL"
-export PROFILE=load_capacity_300_900_5m
-export SCENARIO=2601
-export GAME_PROFILE_NAME=load-tests:capacity-300-900-5m
-export GAME_API_HOST=127.0.0.1
-export GAME_API_PORT=15001
-export GAME_TRPC_PATH=/api/trpc
-export GAME_API_EVENTS_PATH=/events
-pnpm --filter @sammo-ts/game-api start
+pnpm --filter @sammo-ts/common build
+pnpm --filter @sammo-ts/logic build
+pnpm --filter @sammo-ts/infra build
+pnpm --filter @sammo-ts/game-engine build
+pnpm --filter @sammo-ts/game-api build
+
+systemd-run --user --unit=sammo-capacity-api --collect \
+  --property=MemoryMax=8G \
+  --working-directory="$(pwd)" \
+  "$(pwd)/tools/load-tests/scripts/run-capacity-api.sh"
 ```
 
-API와 driver는 별도 terminal/process로 실행한다. dev-sam2026와 같은 판정이 필요하면 API/engine container에
-4 CPU/8 GiB 제한을 주고 driver는 그 cgroup 밖에서 실행하며, image digest를 아래 run config에 기록한다.
+runner script는 `capacity.env`의 Node binary를 사용하고 `taskset 0-3`으로 API를 4 logical CPU에 제한한다.
+systemd unit은 API에 8 GiB memory limit을 적용한다. `systemctl --user show`로 얻은 main PID의 affinity와
+unit `MemoryMax`를 각각 `taskset -pc`와 `systemctl --user show`로 확인한다. API와 driver는 별도 process로 실행한다.
 공개 `dev-sam2026.hided.net` profile에는 이 fixture나 driver를 연결하지 않는다.
 
 ### 2. 인증 HTTP/SSE driver
@@ -90,7 +90,7 @@ pnpm --filter @sammo-ts/load-tests validate --config tools/load-tests/config/300
 pnpm --filter @sammo-ts/load-tests dry-run \
   --config tools/load-tests/config/300-users-900-npcs-5m.json \
   --tokens tools/load-tests/secrets/game-tokens.json
-pnpm --filter @sammo-ts/load-tests run \
+pnpm --filter @sammo-ts/load-tests run run \
   --config tools/load-tests/config/300-users-900-npcs-5m.json \
   --tokens tools/load-tests/secrets/game-tokens.json \
   --output tools/load-tests/results/300-users-900-npcs-5m.json
@@ -100,6 +100,25 @@ pnpm --filter @sammo-ts/load-tests run \
 계획을 검사하지만 network connection을 열지 않는다. driver process는 가능하면 target runtime과 다른
 host/cgroup에서 실행하고 두 host의 CPU quota와 competing load를 별도로 기록한다.
 `run`은 sample의 runtime metadata placeholder가 하나라도 남아 있으면 시작하지 않는다.
+
+300 SSE/HTTP의 짧은 연결·query calibration은 검증된 fixture에서 ignored runtime config를 먼저 만든다.
+기본 calibration은 idle 5초와 own/global/mixed 각 10초이며 capacity 합격 판정용 soak test가 아니다.
+
+```sh
+pnpm --filter @sammo-ts/load-tests materialize-calibration \
+  --config tools/load-tests/config/300-users-900-npcs-5m.json \
+  --output tools/load-tests/results/calibration-config.json
+
+pnpm --filter @sammo-ts/load-tests run run \
+  --config tools/load-tests/results/calibration-config.json \
+  --tokens tools/load-tests/secrets/game-tokens.json \
+  --output tools/load-tests/results/calibration-result.json
+```
+
+`materialize-calibration`은 DB/Redis count와 manifest/hash를 다시 확인하고 실제 PostgreSQL/Redis version을
+기록한다. `LOAD_TEST_IMAGE_DIGEST`가 없으면 image 결과라고 부르지 않고 현재 dirty source-tree commit을
+명시한다. driver JSON의 process CPU/RSS는 driver 자체 값이다. API target 값은 systemd unit의
+`CPUUsageNSec`, `MemoryCurrent`, `MemoryPeak`를 run 직전/직후 별도로 수집한다.
 
 ## 결과와 해석
 

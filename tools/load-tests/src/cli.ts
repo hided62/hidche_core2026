@@ -2,19 +2,25 @@ import { mkdir, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 
 import { assertRuntimeMetadataFinalized, loadConfig, loadTokens } from './config.js';
-import { cleanupCapacityFixture, seedCapacityFixture, verifyCapacityFixture } from './fixture.js';
+import {
+    cleanupCapacityFixture,
+    materializeCalibrationConfig,
+    prepareCapacitySecrets,
+    seedCapacityFixture,
+    verifyCapacityFixture,
+} from './fixture.js';
 import { describeDryRun, runLoadTest } from './runner.js';
 
-type Command = 'run' | 'dry-run' | 'validate' | 'seed' | 'verify-fixture' | 'cleanup';
+type Command = 'run' | 'dry-run' | 'validate' | 'prepare' | 'seed' | 'verify-fixture' | 'materialize-calibration' | 'cleanup';
 
 const usage = (): never => {
-    process.stderr.write('usage: cli.ts <validate|dry-run|run|seed|verify-fixture|cleanup> --config <file> [--tokens <0600-gitignored-file>] [--output <new-json-file>] [--confirm <load_schema>]\n');
+    process.stderr.write('usage: cli.ts <validate|dry-run|run|prepare|seed|verify-fixture|materialize-calibration|cleanup> --config <file> [--tokens <0600-gitignored-file>] [--output <new-json-file>] [--confirm <load_schema>]\n');
     process.exit(64);
 };
 
 const parseArguments = (argv: readonly string[]): { command: Command; config: string; tokens?: string; output?: string; confirm?: string } => {
     const command = argv[0];
-    if (!['run', 'dry-run', 'validate', 'seed', 'verify-fixture', 'cleanup'].includes(command ?? '')) usage();
+    if (!['run', 'dry-run', 'validate', 'prepare', 'seed', 'verify-fixture', 'materialize-calibration', 'cleanup'].includes(command ?? '')) usage();
     const values = new Map<string, string>();
     for (let index = 1; index < argv.length; index += 2) {
         const flag = argv[index];
@@ -26,8 +32,10 @@ const parseArguments = (argv: readonly string[]): { command: Command; config: st
     if (!config) usage();
     if (command === 'run' && (!values.get('--tokens') || !values.get('--output'))) usage();
     if (command === 'seed' && (!values.get('--tokens') || values.has('--output') || values.has('--confirm'))) usage();
+    if (command === 'prepare' && (values.has('--tokens') || values.has('--output') || values.has('--confirm'))) usage();
     if (command === 'cleanup' && (!values.get('--confirm') || values.has('--tokens') || values.has('--output'))) usage();
     if (command === 'verify-fixture' && (values.has('--tokens') || values.has('--output') || values.has('--confirm'))) usage();
+    if (command === 'materialize-calibration' && (!values.get('--output') || values.has('--tokens') || values.has('--confirm'))) usage();
     if (command === 'validate' && (values.has('--tokens') || values.has('--output') || values.has('--confirm'))) usage();
     if (command === 'dry-run' && (values.has('--output') || values.has('--confirm'))) usage();
     if (command === 'run' && values.has('--confirm')) usage();
@@ -57,8 +65,24 @@ const main = async (): Promise<void> => {
         process.stdout.write(`${JSON.stringify(result)}\n`);
         return;
     }
+    if (args.command === 'prepare') {
+        process.stdout.write(`${JSON.stringify(await prepareCapacitySecrets({ config, workspaceRoot }))}\n`);
+        return;
+    }
     if (args.command === 'verify-fixture') {
         process.stdout.write(`${JSON.stringify(await verifyCapacityFixture(config))}\n`);
+        return;
+    }
+    if (args.command === 'materialize-calibration') {
+        process.stdout.write(
+            `${JSON.stringify(
+                await materializeCalibrationConfig({
+                    config,
+                    outputPath: args.output!,
+                    workspaceRoot,
+                })
+            )}\n`
+        );
         return;
     }
     if (args.command === 'cleanup') {
