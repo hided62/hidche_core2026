@@ -52,6 +52,9 @@ export const useMainDashboardStore = defineStore('mainDashboard', () => {
         contextRevision?: string | null;
         commandTableRevision?: string | null;
         boardAccessRevision?: string | null;
+        contextSourceRevision?: string | null;
+        commandTableSourceRevision?: string | null;
+        boardAccessSourceRevision?: string | null;
         general?: PresentGeneralContext['general'] | null;
         city?: PresentGeneralContext['city'] | null;
         nation?: PresentGeneralContext['nation'] | null;
@@ -120,6 +123,9 @@ export const useMainDashboardStore = defineStore('mainDashboard', () => {
     let contextRevision: string | null = null;
     let commandTableRevision: string | null = null;
     let boardAccessRevision: string | null = null;
+    let contextSourceRevision: string | null = null;
+    let commandTableSourceRevision: string | null = null;
+    let boardAccessSourceRevision: string | null = null;
 
     const messageDraftText = ref('');
     const targetMailbox = ref<number>(MESSAGE_MAILBOX_PUBLIC);
@@ -346,6 +352,9 @@ export const useMainDashboardStore = defineStore('mainDashboard', () => {
             resetRecentRecords(null);
             commandTableRevision = null;
             boardAccessRevision = null;
+            contextSourceRevision = null;
+            commandTableSourceRevision = null;
+            boardAccessSourceRevision = null;
         } else if (patch.contextSnapshot !== undefined) {
             contextSnapshot = patch.contextSnapshot;
             general.value = structurallyShare(general.value, patch.contextSnapshot.general);
@@ -368,6 +377,9 @@ export const useMainDashboardStore = defineStore('mainDashboard', () => {
             contextRevision = null;
             commandTableRevision = null;
             boardAccessRevision = null;
+            contextSourceRevision = null;
+            commandTableSourceRevision = null;
+            boardAccessSourceRevision = null;
         } else if (patch.general !== undefined) {
             general.value = structurallyShare(general.value, patch.general);
         }
@@ -418,9 +430,24 @@ export const useMainDashboardStore = defineStore('mainDashboard', () => {
         } else if (patch.frontStatus !== undefined) {
             updateFrontStatus(patch.frontStatus);
         }
-        if (patch.contextRevision !== undefined) contextRevision = patch.contextRevision;
-        if (patch.commandTableRevision !== undefined) commandTableRevision = patch.commandTableRevision;
-        if (patch.boardAccessRevision !== undefined) boardAccessRevision = patch.boardAccessRevision;
+        if (patch.contextRevision !== undefined) {
+            contextRevision = patch.contextRevision;
+            contextSourceRevision = patch.contextSourceRevision ?? null;
+        } else if (patch.contextSourceRevision !== undefined) {
+            contextSourceRevision = patch.contextSourceRevision;
+        }
+        if (patch.commandTableRevision !== undefined) {
+            commandTableRevision = patch.commandTableRevision;
+            commandTableSourceRevision = patch.commandTableSourceRevision ?? null;
+        } else if (patch.commandTableSourceRevision !== undefined) {
+            commandTableSourceRevision = patch.commandTableSourceRevision;
+        }
+        if (patch.boardAccessRevision !== undefined) {
+            boardAccessRevision = patch.boardAccessRevision;
+            boardAccessSourceRevision = patch.boardAccessSourceRevision ?? null;
+        } else if (patch.boardAccessSourceRevision !== undefined) {
+            boardAccessSourceRevision = patch.boardAccessSourceRevision;
+        }
     };
 
     const currentDashboardPatch = (): DashboardReadModelPatch => {
@@ -429,6 +456,9 @@ export const useMainDashboardStore = defineStore('mainDashboard', () => {
         patch.contextRevision = contextRevision;
         patch.commandTableRevision = commandTableRevision;
         patch.boardAccessRevision = boardAccessRevision;
+        patch.contextSourceRevision = contextSourceRevision;
+        patch.commandTableSourceRevision = commandTableSourceRevision;
+        patch.boardAccessSourceRevision = boardAccessSourceRevision;
         patch.general = toRaw(general.value);
         patch.city = toRaw(city.value);
         patch.nation = toRaw(nation.value);
@@ -455,6 +485,7 @@ export const useMainDashboardStore = defineStore('mainDashboard', () => {
         if (bundle.context) {
             const applied = applyReadModelDelta(contextSnapshot, contextRevision, bundle.context);
             patch.contextRevision = applied.revision;
+            patch.contextSourceRevision = applied.sourceRevision ?? null;
             if (bundle.context.kind !== 'unchanged') {
                 patch.contextSnapshot = applied.data;
             }
@@ -462,6 +493,7 @@ export const useMainDashboardStore = defineStore('mainDashboard', () => {
         if (bundle.commandTable) {
             const applied = applyReadModelDelta(commandTableSnapshot, commandTableRevision, bundle.commandTable);
             patch.commandTableRevision = applied.revision;
+            patch.commandTableSourceRevision = applied.sourceRevision ?? null;
             if (bundle.commandTable.kind !== 'unchanged') {
                 patch.commandTable = applied.data;
             }
@@ -469,6 +501,7 @@ export const useMainDashboardStore = defineStore('mainDashboard', () => {
         if (bundle.boardAccess) {
             const applied = applyReadModelDelta(boardAccessSnapshot, boardAccessRevision, bundle.boardAccess);
             patch.boardAccessRevision = applied.revision;
+            patch.boardAccessSourceRevision = applied.sourceRevision ?? null;
             if (bundle.boardAccess.kind !== 'unchanged') {
                 patch.boardAccess = applied.data;
             }
@@ -490,6 +523,13 @@ export const useMainDashboardStore = defineStore('mainDashboard', () => {
                           ...(contextRevision ? { context: contextRevision } : {}),
                           ...(commandTableRevision ? { commandTable: commandTableRevision } : {}),
                           ...(boardAccessRevision ? { boardAccess: boardAccessRevision } : {}),
+                      },
+                knownSource: force
+                    ? undefined
+                    : {
+                          ...(contextSourceRevision ? { context: contextSourceRevision } : {}),
+                          ...(commandTableSourceRevision ? { commandTable: commandTableSourceRevision } : {}),
+                          ...(boardAccessSourceRevision ? { boardAccess: boardAccessSourceRevision } : {}),
                       },
                 forceSnapshot: force || undefined,
             });

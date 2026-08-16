@@ -11,16 +11,19 @@ export type ReadModelDelta<T> =
     | {
           kind: 'snapshot';
           revision: string;
+          sourceRevision?: string;
           data: T;
       }
     | {
           kind: 'unchanged';
           revision: string;
+          sourceRevision?: string;
       }
     | {
           kind: 'patch';
           baseRevision: string;
           revision: string;
+          sourceRevision?: string;
           operations: JsonPatchOperation[];
       };
 
@@ -41,6 +44,7 @@ export class ReadModelDeltaApplyError extends Error {
 export interface AppliedReadModelDelta<T> {
     data: T;
     revision: string;
+    sourceRevision?: string;
 }
 
 /**
@@ -143,6 +147,7 @@ export const applyReadModelDelta = <T>(
         return {
             data: delta.data,
             revision: delta.revision,
+            ...(delta.sourceRevision ? { sourceRevision: delta.sourceRevision } : {}),
         };
     }
 
@@ -159,6 +164,7 @@ export const applyReadModelDelta = <T>(
         return {
             data: current,
             revision: currentRevision,
+            ...(delta.sourceRevision ? { sourceRevision: delta.sourceRevision } : {}),
         };
     }
 
@@ -185,5 +191,6 @@ export const applyReadModelDelta = <T>(
     return {
         data: next,
         revision: delta.revision,
+        ...(delta.sourceRevision ? { sourceRevision: delta.sourceRevision } : {}),
     };
 };

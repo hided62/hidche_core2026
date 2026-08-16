@@ -293,9 +293,11 @@ manual mutation/명시적 제한 endpoint는 기존 server-side gate를 계속 �
 값이고 내부 ID vector 자체를 browser에 내보내지 않는다.
 
 ```ts
-type KnownDashboardRevision = {
-    content?: string;
-    source?: string;
+type DashboardDeltaInput = {
+    // 기존 client가 보내는 content revision 계약을 유지한다.
+    known?: Partial<Record<'context' | 'commandTable' | 'boardAccess', string>>;
+    // revision-first를 이해하는 client만 별도로 보낸다.
+    knownSource?: Partial<Record<'context' | 'commandTable' | 'boardAccess', string>>;
 };
 ```
 
@@ -312,6 +314,23 @@ API는 access gate에서 얻은 현재 general/city/nation identity로 slice dep
   사용하지 않는다.
 - general의 소속·위치가 바뀌면 `general.content`가 먼저 mismatch되므로 새 identity로
   projection과 source revision을 다시 만든다.
+
+현재 dashboard private-slice 구현은 context에
+`general.content/city.content/nation.content/world.content/access.general`, command table에
+`general.content/city.content/nation.content/world.content`, board access에
+`general.content/nation.content`를 사용한다. source hash에는 dependency-vector code version을
+포함하고 browser에는 22자 base64url hash만 반환한다. access gate가 확보한 general ID를
+기준으로 actor city/nation, coverage와 revision head를 payload loader보다 먼저 한 SQL로 읽는다.
+coverage가 낮거나 meta/actor row가 없거나 query/result가 잘못되면 source hash를 authority로
+사용하지 않고 기존 content 계산으로 복구한다.
+
+단, 위 vector는 현재 Phase C protocol 구현 범위이며 아직 activation-safe한 전체 producer
+coverage가 아니다. `getGeneralContext()`는 troop/leader turn, 국가 도시·장수 aggregate,
+top chiefs와 인증 계정 icon 등 own general/city/nation row 밖의 값을 읽고,
+`getTurnCommandTable()`은 전체 city/nation/general option 목록을 읽는다. 이 transitive
+dependency의 revision key와 모든 writer mark/reconciliation이 끝나기 전에는
+`read_model_revision_meta.coverage_version`을 반드시 0으로 유지한다. 현재 migration/runtime도
+0이며, unit test의 coverage 1 fixture는 fast-path 기계적 계약만 검증할 뿐 활성화 근거가 아니다.
 
 ### shared projection
 

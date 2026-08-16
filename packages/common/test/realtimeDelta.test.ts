@@ -118,6 +118,21 @@ describe('applyReadModelDelta', () => {
         expect(applied.data).toBe(current);
     });
 
+    it('carries an optional source revision without changing content revision semantics', () => {
+        const current = { value: 1 };
+        const applied = applyReadModelDelta(current, 'revision-1', {
+            kind: 'unchanged',
+            revision: 'revision-1',
+            sourceRevision: 'source-revision-2',
+        });
+
+        expect(applied).toEqual({
+            data: current,
+            revision: 'revision-1',
+            sourceRevision: 'source-revision-2',
+        });
+    });
+
     it('rejects a patch based on a different snapshot', () => {
         expect(() =>
             applyReadModelDelta({ value: 1 }, 'revision-2', {

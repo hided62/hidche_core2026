@@ -62,6 +62,7 @@ type NavigationFixture = {
         commandTableKind: string | null;
         boardAccessKind: string | null;
     }>;
+    dashboardRequests?: DashboardBundleInput[];
 };
 
 type JsonPatchOperation = {
@@ -73,6 +74,7 @@ type JsonPatchOperation = {
 type DashboardBundleInput = {
     include?: { context?: boolean; commandTable?: boolean; boardAccess?: boolean };
     known?: { context?: string; commandTable?: string; boardAccess?: string };
+    knownSource?: { context?: string; commandTable?: string; boardAccess?: string };
     forceSnapshot?: boolean;
 };
 
@@ -389,18 +391,22 @@ const installFixture = async (page: Page, state: NavigationFixture) => {
                     );
                 }
                 const input = operationInput(route, index);
+                (state.dashboardRequests ??= []).push(structuredClone(input));
                 const include = input.include ?? {};
                 const forceSnapshot = input.forceSnapshot === true;
                 if (forceSnapshot) state.forceSnapshotCalls = (state.forceSnapshotCalls ?? 0) + 1;
                 const revision = contextRevision(state);
                 const context = include.context
-                    ? deltaSlice(
-                          generalContext(state),
-                          revision,
-                          input.known?.context,
-                          forceSnapshot,
-                          state.contextOperations
-                      )
+                    ? {
+                          ...deltaSlice(
+                              generalContext(state),
+                              revision,
+                              input.known?.context,
+                              forceSnapshot,
+                              state.contextOperations
+                          ),
+                          sourceRevision: revision,
+                      }
                     : undefined;
                 const currentCommandTableRevision = state.commandTableRevision ?? COMMAND_TABLE_REVISION;
                 const commandTable = include.commandTable
@@ -408,6 +414,7 @@ const installFixture = async (page: Page, state: NavigationFixture) => {
                         ? {
                               kind: 'snapshot' as const,
                               revision: currentCommandTableRevision,
+                              sourceRevision: currentCommandTableRevision,
                               data: commandTableFixture(
                                   state.largeCommandTable === true,
                                   state.commandBlockedCount,
@@ -415,11 +422,16 @@ const installFixture = async (page: Page, state: NavigationFixture) => {
                               ),
                           }
                         : input.known.commandTable === currentCommandTableRevision
-                          ? { kind: 'unchanged' as const, revision: currentCommandTableRevision }
+                          ? {
+                                kind: 'unchanged' as const,
+                                revision: currentCommandTableRevision,
+                                sourceRevision: currentCommandTableRevision,
+                            }
                           : {
                                 kind: 'patch' as const,
                                 baseRevision: input.known.commandTable,
                                 revision: currentCommandTableRevision,
+                                sourceRevision: currentCommandTableRevision,
                                 operations: state.commandTableOperations ?? [],
                             }
                     : undefined;
@@ -428,13 +440,18 @@ const installFixture = async (page: Page, state: NavigationFixture) => {
                         ? {
                               kind: 'snapshot' as const,
                               revision: BOARD_ACCESS_REVISION,
+                              sourceRevision: BOARD_ACCESS_REVISION,
                               data: {
                                   permission: state.permission,
                                   canMeeting: state.officerLevel >= 1,
                                   canSecret: state.permission >= 2,
                               },
                           }
-                        : { kind: 'unchanged' as const, revision: BOARD_ACCESS_REVISION }
+                        : {
+                              kind: 'unchanged' as const,
+                              revision: BOARD_ACCESS_REVISION,
+                              sourceRevision: BOARD_ACCESS_REVISION,
+                          }
                     : undefined;
                 return response({ context, commandTable, boardAccess });
             }
@@ -2225,6 +2242,18 @@ test('realtime read-model events skip clock-only work, merge bursts, patch in pl
         boardAccessKind: 'unchanged',
     });
     expect(realtimeBundle?.bytes).toBeLessThan(1_000);
+    expect(
+        state.dashboardRequests?.find(
+            (request) =>
+                request.forceSnapshot !== true &&
+                request.include?.context === true &&
+                request.known?.context === CONTEXT_INITIAL_REVISION
+        )?.knownSource
+    ).toEqual({
+        context: CONTEXT_INITIAL_REVISION,
+        commandTable: COMMAND_TABLE_REVISION,
+        boardAccess: BOARD_ACCESS_REVISION,
+    });
 
     const operationsBeforeSurvey = state.operations.length;
     await page.evaluate(() => {
@@ -2248,6 +2277,7 @@ test('realtime read-model events skip clock-only work, merge bursts, patch in pl
     await expect
         .poll(() => state.operations.slice(operationsBeforeSurvey), { timeout: 3_000 })
         .toEqual(['dashboard.getContextBundleDelta', 'general.getFrontStatus']);
+    expect(state.dashboardRequests?.at(-1)?.knownSource?.context).toBe('EEEEEEEEEEEEEEEEEEEEEE');
 
     const profile = await page.evaluate(() => {
         const probe = (

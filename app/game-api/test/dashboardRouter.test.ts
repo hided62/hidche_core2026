@@ -58,6 +58,15 @@ const buildContext = (authenticated: boolean, generalAccessTracking = false) => 
         meta: {},
         penalty: {},
     }));
+    const findCity = vi.fn(async () => null);
+    const findNation = vi.fn(async () => null);
+    const findWorld = vi.fn(async () => ({
+        currentYear: 185,
+        currentMonth: 1,
+        tickSeconds: 600,
+        config: { const: {} },
+        meta: { lastTurnTime: '2026-08-11T00:00:00.000Z' },
+    }));
     const context = {
         auth: authenticated ? auth : null,
         profile: { id: 'hwe', scenario: 'default', name: 'hwe:default' },
@@ -73,18 +82,10 @@ const buildContext = (authenticated: boolean, generalAccessTracking = false) => 
             general: {
                 findFirst: findGeneral,
             },
-            city: { findUnique: async () => null },
-            nation: { findUnique: async () => null },
+            city: { findUnique: findCity },
+            nation: { findUnique: findNation },
             generalAccessLog: { findUnique: async () => null },
-            worldState: {
-                findFirst: async () => ({
-                    currentYear: 185,
-                    currentMonth: 1,
-                    tickSeconds: 600,
-                    config: { const: {} },
-                    meta: { lastTurnTime: '2026-08-11T00:00:00.000Z' },
-                }),
-            },
+            worldState: { findFirst: findWorld },
         },
     } as unknown as GameApiContext;
 
@@ -94,6 +95,43 @@ const buildContext = (authenticated: boolean, generalAccessTracking = false) => 
             generalName = name;
         },
         findGeneral,
+        findCity,
+        findNation,
+        findWorld,
+    };
+};
+
+const installSourceRevisionState = (
+    context: GameApiContext,
+    initial: Partial<{
+        coverageVersion: number;
+        generalRevision: bigint;
+        cityRevision: bigint;
+        nationRevision: bigint;
+        worldRevision: bigint;
+        accessRevision: bigint;
+    }> = {}
+) => {
+    let row = {
+        generalId: 7,
+        cityId: 0,
+        nationId: 0,
+        coverageVersion: 1,
+        generalRevision: 1n,
+        cityRevision: 0n,
+        nationRevision: 0n,
+        worldRevision: 1n,
+        accessRevision: 1n,
+        ...initial,
+    };
+    const queryRaw = vi.fn(async () => [row]);
+    Object.assign(context.db, { $queryRaw: queryRaw });
+    context.realtimeAccessGeneralId = 7;
+    return {
+        queryRaw,
+        update: (next: Partial<typeof row>) => {
+            row = { ...row, ...next };
+        },
     };
 };
 
@@ -141,6 +179,8 @@ describe('dashboardRouter.getContextBundleDelta', () => {
 
     it('uses an all-false bundle as an access-only gate without projecting dashboard context', async () => {
         const fixture = buildContext(true, true);
+        const queryRaw = vi.fn(async (_query: unknown) => []);
+        Object.assign(fixture.context.db, { $queryRaw: queryRaw });
         await expect(
             dashboardRouter.createCaller(fixture.context).getContextBundleDelta({
                 include: { context: false, commandTable: false, boardAccess: false },
@@ -152,5 +192,113 @@ describe('dashboardRouter.getContextBundleDelta', () => {
             orderBy: { id: 'asc' },
             select: { id: true, turnTime: true },
         });
+        expect(queryRaw).not.toHaveBeenCalled();
+    });
+
+    it('returns revision-first unchanged without running the projection loader', async () => {
+        const fixture = buildContext(true);
+        const source = installSourceRevisionState(fixture.context);
+        const caller = dashboardRouter.createCaller(fixture.context);
+        const initial = await caller.getContextBundleDelta({ ...contextOnly, forceSnapshot: true });
+        if (!initial.context || initial.context.kind !== 'snapshot' || !initial.context.sourceRevision) {
+            throw new Error('initial source revision missing');
+        }
+
+        fixture.findGeneral.mockClear();
+        fixture.findCity.mockClear();
+        fixture.findNation.mockClear();
+        fixture.findWorld.mockClear();
+        const unchanged = await caller.getContextBundleDelta({
+            ...contextOnly,
+            known: { context: initial.context.revision },
+            knownSource: { context: initial.context.sourceRevision },
+        });
+
+        expect(unchanged.context).toEqual({
+            kind: 'unchanged',
+            revision: initial.context.revision,
+            sourceRevision: initial.context.sourceRevision,
+        });
+        expect(source.queryRaw).toHaveBeenCalledTimes(2);
+        expect(fixture.findGeneral).not.toHaveBeenCalled();
+        expect(fixture.findCity).not.toHaveBeenCalled();
+        expect(fixture.findNation).not.toHaveBeenCalled();
+        expect(fixture.findWorld).not.toHaveBeenCalled();
+    });
+
+    it('falls back to full computation while coverage is zero', async () => {
+        const fixture = buildContext(true);
+        installSourceRevisionState(fixture.context, { coverageVersion: 0 });
+        const caller = dashboardRouter.createCaller(fixture.context);
+        const initial = await caller.getContextBundleDelta({ ...contextOnly, forceSnapshot: true });
+        if (!initial.context || initial.context.kind !== 'snapshot' || !initial.context.sourceRevision) {
+            throw new Error('initial source revision missing');
+        }
+
+        fixture.findGeneral.mockClear();
+        const unchanged = await caller.getContextBundleDelta({
+            ...contextOnly,
+            known: { context: initial.context.revision },
+            knownSource: { context: initial.context.sourceRevision },
+        });
+
+        expect(unchanged.context).toMatchObject({ kind: 'unchanged', revision: initial.context.revision });
+        expect(fixture.findGeneral).toHaveBeenCalledTimes(1);
+    });
+
+    it('advances source revision when source changes but canonical content does not', async () => {
+        const fixture = buildContext(true);
+        const source = installSourceRevisionState(fixture.context);
+        const caller = dashboardRouter.createCaller(fixture.context);
+        const initial = await caller.getContextBundleDelta({ ...contextOnly, forceSnapshot: true });
+        if (!initial.context || initial.context.kind !== 'snapshot' || !initial.context.sourceRevision) {
+            throw new Error('initial source revision missing');
+        }
+
+        source.update({ generalRevision: 2n });
+        fixture.findGeneral.mockClear();
+        const unchanged = await caller.getContextBundleDelta({
+            ...contextOnly,
+            known: { context: initial.context.revision },
+            knownSource: { context: initial.context.sourceRevision },
+        });
+
+        expect(unchanged.context).toMatchObject({ kind: 'unchanged', revision: initial.context.revision });
+        expect(unchanged.context?.sourceRevision).not.toBe(initial.context.sourceRevision);
+        expect(fixture.findGeneral).toHaveBeenCalledTimes(1);
+    });
+
+    it('keeps old content-only clients on the existing full-computation path', async () => {
+        const fixture = buildContext(true);
+        installSourceRevisionState(fixture.context);
+        const caller = dashboardRouter.createCaller(fixture.context);
+        const initial = await caller.getContextBundleDelta({ ...contextOnly, forceSnapshot: true });
+        if (!initial.context || initial.context.kind !== 'snapshot') throw new Error('initial snapshot missing');
+
+        fixture.findGeneral.mockClear();
+        const unchanged = await caller.getContextBundleDelta({
+            ...contextOnly,
+            known: { context: initial.context.revision },
+        });
+
+        expect(unchanged.context).toMatchObject({ kind: 'unchanged', revision: initial.context.revision });
+        expect(fixture.findGeneral).toHaveBeenCalledTimes(1);
+    });
+
+    it('falls back to full computation when the revision-head query fails', async () => {
+        const fixture = buildContext(true);
+        Object.assign(fixture.context.db, {
+            $queryRaw: vi.fn(async () => Promise.reject(new Error('revision table unavailable'))),
+        });
+        fixture.context.realtimeAccessGeneralId = 7;
+
+        const result = await dashboardRouter.createCaller(fixture.context).getContextBundleDelta({
+            ...contextOnly,
+            known: { context: 'A'.repeat(22) },
+            knownSource: { context: 'B'.repeat(22) },
+        });
+
+        expect(result.context?.kind).toBe('snapshot');
+        expect(fixture.findGeneral).toHaveBeenCalledTimes(1);
     });
 });
