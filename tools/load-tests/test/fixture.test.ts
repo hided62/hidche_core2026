@@ -5,7 +5,7 @@ import path from 'node:path';
 import test from 'node:test';
 
 import { validateLoadConfig } from '../src/config.js';
-import { assertFixtureIsolation, prepareCapacitySecrets } from '../src/fixture.js';
+import { activateCapacityCoverage, assertFixtureIsolation, prepareCapacitySecrets } from '../src/fixture.js';
 
 const samplePath = new URL('../config/300-users-900-npcs-5m.json', import.meta.url);
 
@@ -40,11 +40,17 @@ void test('fixture refuses a shared schema, shared Redis database, and public ho
     assert.throws(
         () =>
             assertFixtureIsolation(config, {
-                databaseUrl: 'postgresql://fixture:secret@database.example.com:5432/sammo?schema=load_capacity_300_900_5m',
+                databaseUrl:
+                    'postgresql://fixture:secret@database.example.com:5432/sammo?schema=load_capacity_300_900_5m',
                 redisUrl: 'redis://127.0.0.1:16379/15',
             }),
         /loopback or private/u
     );
+});
+
+void test('coverage activation requires the exact dedicated schema confirmation before connecting', async () => {
+    const config = validateLoadConfig(JSON.parse(await readFile(samplePath, 'utf8')));
+    await assert.rejects(activateCapacityCoverage(config, 'load_wrong_schema', {}), /confirmation must exactly equal/u);
 });
 
 void test('prepare creates only three 0600 ignored-secret inputs without returning their values', async () => {
@@ -63,10 +69,7 @@ void test('prepare creates only three 0600 ignored-secret inputs without returni
             const info = await stat(path.join(workspaceRoot, 'tools/load-tests/secrets', name));
             assert.equal(info.mode & 0o777, 0o600);
         }
-        const envText = await readFile(
-            path.join(workspaceRoot, 'tools/load-tests/secrets/capacity.env'),
-            'utf8'
-        );
+        const envText = await readFile(path.join(workspaceRoot, 'tools/load-tests/secrets/capacity.env'), 'utf8');
         assert.match(envText, /127\.0\.0\.1:25442/u);
         assert.match(envText, /127\.0\.0\.1:26379\/15/u);
         assert.equal(JSON.stringify(result).includes('postgresql://'), false);

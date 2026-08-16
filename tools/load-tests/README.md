@@ -5,8 +5,9 @@
 phase에서 실제 game API tRPC query를 실행한다. HTTP latency p50/p95/p99, 성공/오류, SSE
 open/close/reconnect/event와 public payload 금지 field 수, driver CPU/RSS/event-loop lag를 raw JSON에
 남긴다. token 값, 사용자/장수/도시/국가 ID와 response/event payload는 출력하지 않는다.
-dashboard query의 opaque revision은 viewer별 메모리에서만 다음 `known` 입력으로 이어서
-unchanged/snapshot/patch 경로를 구분하며 raw JSON에는 종류별 count만 남긴다.
+dashboard query의 opaque content/source revision은 viewer별 메모리에서만 다음 `known`/`knownSource`
+입력으로 이어서 unchanged/snapshot/patch와 source-revision fast-path 조건을 구분한다. raw JSON에는
+종류별 count와 source revision 관측/전송/일치-unchanged aggregate만 남긴다.
 
 ## 안전 경계
 
@@ -52,6 +53,10 @@ pnpm --filter @sammo-ts/load-tests seed \
   --tokens tools/load-tests/secrets/game-tokens.json
 pnpm --filter @sammo-ts/load-tests verify-fixture \
   --config tools/load-tests/config/300-users-900-npcs-5m.json
+
+pnpm --filter @sammo-ts/load-tests activate-coverage \
+  --config tools/load-tests/config/300-users-900-npcs-5m.json \
+  --confirm load_capacity_300_900_5m
 ```
 
 `seed`는 해당 `load_` schema에 migration을 적용하고 scenario 2601을 고정 seed/time으로 설치한 뒤 정확히
@@ -61,6 +66,11 @@ pnpm --filter @sammo-ts/load-tests verify-fixture \
 
 fixture와 같은 환경으로 API를 띄울 때 핵심 namespace는 다음과 같다. `capacity.env` 값을 다시 명령행에
 풀어 쓰지 않는다.
+
+`activate-coverage`는 Redis의 전용 fixture manifest와 schema 확인 문자열을 모두 요구한 뒤, infra의
+advisory-lock/CAS transaction을 그대로 호출해 coverage 1과 초기 shared revision head를 활성화한다.
+공유 schema나 manifest가 없는 runtime에는 실행되지 않는다. activation 전후의 coverage/head/outbox는
+`verify-fixture`의 비밀값 없는 aggregate로 확인할 수 있다.
 
 ```sh
 pnpm --filter @sammo-ts/common build

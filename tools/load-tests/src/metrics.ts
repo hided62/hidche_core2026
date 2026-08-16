@@ -50,6 +50,9 @@ export class PhaseMetrics {
     sseReconnects = 0;
     sseFailures = 0;
     ssePrivacyViolations = 0;
+    httpSourceRevisionObserved = 0;
+    httpSourceRevisionKnownSent = 0;
+    httpSourceRevisionMatchedUnchanged = 0;
 
     recordHttp(name: string, latencyMs: number, outcome: string | null): void {
         const values = this.httpLatencyMs.get(name) ?? [];
@@ -81,6 +84,11 @@ export interface PhaseMetricSummary {
         errors: Record<string, number>;
         results: Record<string, number>;
         latencyMs: Record<string, DistributionSummary>;
+        sourceRevision: {
+            observed: number;
+            knownSent: number;
+            matchedUnchanged: number;
+        };
     };
     sse: {
         attempts: number;
@@ -143,7 +151,10 @@ export class ProcessSampler {
     }
 }
 
-export const summarizePhaseMetrics = (metrics: PhaseMetrics, processSummary: PhaseMetricSummary['process']): PhaseMetricSummary => ({
+export const summarizePhaseMetrics = (
+    metrics: PhaseMetrics,
+    processSummary: PhaseMetricSummary['process']
+): PhaseMetricSummary => ({
     http: {
         success: mapToObject(metrics.httpSuccess),
         errors: mapToObject(metrics.httpErrors),
@@ -153,6 +164,11 @@ export const summarizePhaseMetrics = (metrics: PhaseMetrics, processSummary: Pha
                 .sort(([left], [right]) => left.localeCompare(right))
                 .map(([name, values]) => [name, summarizeDistribution(values)])
         ),
+        sourceRevision: {
+            observed: metrics.httpSourceRevisionObserved,
+            knownSent: metrics.httpSourceRevisionKnownSent,
+            matchedUnchanged: metrics.httpSourceRevisionMatchedUnchanged,
+        },
     },
     sse: {
         attempts: metrics.sseAttempts,

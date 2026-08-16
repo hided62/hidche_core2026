@@ -6,7 +6,12 @@ export interface TrpcRequest {
     init: RequestInit;
 }
 
-export const buildTrpcQuery = (baseUrl: string, trpcPath: string, operation: LoadOperation, token: string): TrpcRequest => {
+export const buildTrpcQuery = (
+    baseUrl: string,
+    trpcPath: string,
+    operation: LoadOperation,
+    token: string
+): TrpcRequest => {
     const normalizedPath = trpcPath.endsWith('/') ? trpcPath.slice(0, -1) : trpcPath;
     const url = new URL(`${normalizedPath}/${operation.procedure}`, baseUrl);
     if (operation.input !== undefined) url.searchParams.set('input', JSON.stringify(operation.input));
@@ -25,7 +30,12 @@ const classifyTrpcPayload = (payload: unknown): string | null => {
         const error = (payload as { error?: unknown }).error;
         if (typeof error === 'object' && error !== null && 'data' in error) {
             const data = (error as { data?: unknown }).data;
-            if (typeof data === 'object' && data !== null && 'code' in data && typeof (data as { code?: unknown }).code === 'string') {
+            if (
+                typeof data === 'object' &&
+                data !== null &&
+                'code' in data &&
+                typeof (data as { code?: unknown }).code === 'string'
+            ) {
                 const code = (data as { code: string }).code;
                 return `trpc-${/^[A-Z_]+$/u.test(code) ? code.toLowerCase() : 'error'}`;
             }
@@ -50,11 +60,20 @@ export interface DashboardRevisions {
     boardAccess?: string;
 }
 
-export const extractDashboardRevisions = (payload: unknown): { revisions: DashboardRevisions; resultKinds: string[] } | null => {
+export interface DashboardObservation {
+    revisions: DashboardRevisions;
+    sourceRevisions: DashboardRevisions;
+    resultKinds: string[];
+    resultKindsBySlice: Partial<Record<keyof DashboardRevisions, string>>;
+}
+
+export const extractDashboardRevisions = (payload: unknown): DashboardObservation | null => {
     const data = asRecord(unwrapTrpcData(payload));
     if (!data) return null;
     const revisions: DashboardRevisions = {};
+    const sourceRevisions: DashboardRevisions = {};
     const resultKinds: string[] = [];
+    const resultKindsBySlice: DashboardObservation['resultKindsBySlice'] = {};
     for (const [wireName, outputName] of [
         ['context', 'context'],
         ['commandTable', 'commandTable'],
@@ -62,11 +81,19 @@ export const extractDashboardRevisions = (payload: unknown): { revisions: Dashbo
     ] as const) {
         const slice = asRecord(data[wireName]);
         if (!slice) continue;
-        if (typeof slice.revision === 'string' && /^[A-Za-z0-9_-]{22}$/u.test(slice.revision)) revisions[outputName] = slice.revision;
-        if (typeof slice.kind === 'string' && ['unchanged', 'snapshot', 'patch'].includes(slice.kind)) resultKinds.push(slice.kind);
-        else resultKinds.push('other');
+        if (typeof slice.revision === 'string' && /^[A-Za-z0-9_-]{22}$/u.test(slice.revision))
+            revisions[outputName] = slice.revision;
+        if (typeof slice.sourceRevision === 'string' && /^[A-Za-z0-9_-]{22}$/u.test(slice.sourceRevision)) {
+            sourceRevisions[outputName] = slice.sourceRevision;
+        }
+        const resultKind =
+            typeof slice.kind === 'string' && ['unchanged', 'snapshot', 'patch'].includes(slice.kind)
+                ? slice.kind
+                : 'other';
+        resultKinds.push(resultKind);
+        resultKindsBySlice[outputName] = resultKind;
     }
-    return { revisions, resultKinds };
+    return { revisions, sourceRevisions, resultKinds, resultKindsBySlice };
 };
 
 export const executeTrpcQuery = async (options: {
@@ -76,7 +103,7 @@ export const executeTrpcQuery = async (options: {
     token: string;
     signal: AbortSignal;
     metrics: PhaseMetrics;
-}): Promise<DashboardRevisions | undefined> => {
+}): Promise<DashboardObservation | undefined> => {
     const started = performance.now();
     let outcome: string | null;
     try {
@@ -90,9 +117,24 @@ export const executeTrpcQuery = async (options: {
             outcome = classifyTrpcPayload(payload);
             if (outcome === null && options.operation.procedure === 'dashboard.getContextBundleDelta') {
                 const dashboard = extractDashboardRevisions(payload);
-                for (const kind of dashboard?.resultKinds ?? []) options.metrics.recordHttpResult(options.operation.name, kind);
+                for (const kind of dashboard?.resultKinds ?? [])
+                    options.metrics.recordHttpResult(options.operation.name, kind);
+                const input = asRecord(options.operation.input);
+                const knownSource = asRecord(input?.knownSource);
+                for (const slice of ['context', 'commandTable', 'boardAccess'] as const) {
+                    const sourceRevision = dashboard?.sourceRevisions[slice];
+                    if (sourceRevision !== undefined) options.metrics.httpSourceRevisionObserved += 1;
+                    if (typeof knownSource?.[slice] === 'string') options.metrics.httpSourceRevisionKnownSent += 1;
+                    if (
+                        dashboard?.resultKindsBySlice[slice] === 'unchanged' &&
+                        sourceRevision !== undefined &&
+                        knownSource?.[slice] === sourceRevision
+                    ) {
+                        options.metrics.httpSourceRevisionMatchedUnchanged += 1;
+                    }
+                }
                 options.metrics.recordHttp(options.operation.name, performance.now() - started, outcome);
-                return dashboard?.revisions;
+                return dashboard ?? undefined;
             }
         }
     } catch (error) {

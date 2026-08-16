@@ -56,8 +56,13 @@ const runtimeAndHost = async () => {
 };
 
 const gitMetadata = async (workspaceRoot: string) => {
-    const run = async (args: string[]): Promise<string> => (await execFileAsync('git', args, { cwd: workspaceRoot })).stdout.trim();
-    const [commit, tree, status] = await Promise.all([run(['rev-parse', 'HEAD']), run(['rev-parse', 'HEAD^{tree}']), run(['status', '--porcelain=v1'])]);
+    const run = async (args: string[]): Promise<string> =>
+        (await execFileAsync('git', args, { cwd: workspaceRoot })).stdout.trim();
+    const [commit, tree, status] = await Promise.all([
+        run(['rev-parse', 'HEAD']),
+        run(['rev-parse', 'HEAD^{tree}']),
+        run(['status', '--porcelain=v1']),
+    ]);
     return { commit, tree, dirty: status.length > 0 };
 };
 
@@ -77,22 +82,28 @@ const runHttpViewers = async (options: {
             await wait(stagger, options.signal);
             let iteration = 0;
             let dashboardRevisions: DashboardRevisions = {};
+            let dashboardSourceRevisions: DashboardRevisions = {};
             while (!options.signal.aborted) {
                 const configuredOperation = schedule[(viewerIndex + iteration) % schedule.length]!;
                 const operation =
-                    configuredOperation.procedure === 'dashboard.getContextBundleDelta' && Object.keys(dashboardRevisions).length > 0
+                    configuredOperation.procedure === 'dashboard.getContextBundleDelta' &&
+                    Object.keys(dashboardRevisions).length > 0
                         ? {
                               ...configuredOperation,
                               input: {
-                                  ...(typeof configuredOperation.input === 'object' && configuredOperation.input !== null
+                                  ...(typeof configuredOperation.input === 'object' &&
+                                  configuredOperation.input !== null
                                       ? configuredOperation.input
                                       : {}),
                                   known: dashboardRevisions,
+                                  ...(Object.keys(dashboardSourceRevisions).length > 0
+                                      ? { knownSource: dashboardSourceRevisions }
+                                      : {}),
                                   forceSnapshot: false,
                               },
                           }
                         : configuredOperation;
-                const observedRevisions = await executeTrpcQuery({
+                const observation = await executeTrpcQuery({
                     baseUrl: options.config.target.baseUrl,
                     trpcPath: options.config.target.trpcPath,
                     operation,
@@ -100,7 +111,13 @@ const runHttpViewers = async (options: {
                     signal: options.signal,
                     metrics: options.metrics,
                 });
-                if (observedRevisions) dashboardRevisions = { ...dashboardRevisions, ...observedRevisions };
+                if (observation) {
+                    dashboardRevisions = { ...dashboardRevisions, ...observation.revisions };
+                    dashboardSourceRevisions = {
+                        ...dashboardSourceRevisions,
+                        ...observation.sourceRevisions,
+                    };
+                }
                 iteration += 1;
                 await wait(interval, options.signal);
             }
@@ -194,7 +211,11 @@ export const runLoadTest = async (options: {
         git,
         runtime: environment.runtime,
         host: environment.host,
-        hashes: { configSha256: options.configSha256, runtimeSha256: environment.runtimeSha256, hostSha256: environment.hostSha256 },
+        hashes: {
+            configSha256: options.configSha256,
+            runtimeSha256: environment.runtimeSha256,
+            hostSha256: environment.hostSha256,
+        },
         targetRuntime: options.config.runtimeMetadata,
         phases,
     };

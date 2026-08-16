@@ -26,6 +26,9 @@ void test('phase aggregation separates success, error, latency, and event counte
     metrics.recordSseEvent('ready');
     metrics.recordSseEvent('ready');
     metrics.recordHttpResult('own', 'unchanged');
+    metrics.httpSourceRevisionObserved = 6;
+    metrics.httpSourceRevisionKnownSent = 3;
+    metrics.httpSourceRevisionMatchedUnchanged = 3;
     metrics.processRssBytes.push(100, 200);
     metrics.sseActiveConnections.push(0, 2);
     const summary = summarizePhaseMetrics(metrics, {
@@ -36,6 +39,7 @@ void test('phase aggregation separates success, error, latency, and event counte
     assert.deepEqual(summary.http.success, { own: 1 });
     assert.deepEqual(summary.http.errors, { 'own:http-500': 1 });
     assert.deepEqual(summary.http.results, { 'own:unchanged': 1 });
+    assert.deepEqual(summary.http.sourceRevision, { observed: 6, knownSent: 3, matchedUnchanged: 3 });
     assert.equal(summary.http.latencyMs.own?.p50, 10);
     assert.deepEqual(summary.sse.events, { ready: 2 });
     assert.equal(summary.sse.activeConnections.max, 2);

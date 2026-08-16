@@ -8,7 +8,13 @@ void test('tRPC query uses bearer auth without putting the token in the URL', ()
     const request = buildTrpcQuery(
         'http://127.0.0.1:15001',
         '/api/trpc',
-        { name: 'own', procedure: 'dashboard.getContextBundleDelta', type: 'query', weight: 1, input: { include: { context: true } } },
+        {
+            name: 'own',
+            procedure: 'dashboard.getContextBundleDelta',
+            type: 'query',
+            weight: 1,
+            input: { include: { context: true } },
+        },
         token
     );
     assert.equal(new Headers(request.init.headers).get('authorization'), `Bearer ${token}`);
@@ -25,11 +31,16 @@ void test('dashboard observations retain only opaque revisions and aggregate-saf
                 data: {
                     json: {
                         context: { kind: 'unchanged', revision, data: { general: { id: 123 } } },
-                        commandTable: { kind: 'snapshot', revision },
+                        commandTable: { kind: 'snapshot', revision, sourceRevision: revision },
                     },
                 },
             },
         }),
-        { revisions: { context: revision, commandTable: revision }, resultKinds: ['unchanged', 'snapshot'] }
+        {
+            revisions: { context: revision, commandTable: revision },
+            sourceRevisions: { commandTable: revision },
+            resultKinds: ['unchanged', 'snapshot'],
+            resultKindsBySlice: { context: 'unchanged', commandTable: 'snapshot' },
+        }
     );
 });

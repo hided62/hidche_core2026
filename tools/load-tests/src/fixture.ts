@@ -6,6 +6,7 @@ import { promisify } from 'node:util';
 
 import { seedScenarioToDatabase } from '@sammo-ts/game-engine';
 import {
+    activateReadModelRevisionCoverage,
     createGamePostgresConnector,
     createRedisConnector,
     GamePrisma,
@@ -264,7 +265,10 @@ const resizeSeededGenerals = async (db: GamePrismaClient, config: LoadConfig): P
             where: { id: world.id },
             data: {
                 tickSeconds: Math.trunc(config.capacity.turnIntervalMs / 1_000),
-                meta: { ...(world.meta as Record<string, unknown>), lastGeneralId: rows.length } as GamePrisma.InputJsonValue,
+                meta: {
+                    ...(world.meta as Record<string, unknown>),
+                    lastGeneralId: rows.length,
+                } as GamePrisma.InputJsonValue,
                 config: {
                     ...(world.config as Record<string, unknown>),
                     maxUserCnt: expectedHuman,
@@ -335,8 +339,9 @@ export const seedCapacityFixture = async (options: {
             await deleteMatchingRedisKeys(redis.client, `${accessKeyPrefix(options.config)}ga_*`);
             const issuedAt = new Date().toISOString();
             const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1_000).toISOString();
-            const tokens = Array.from({ length: options.config.capacity.authenticatedViewers }, () =>
-                `ga_${randomUUID()}`
+            const tokens = Array.from(
+                { length: options.config.capacity.authenticatedViewers },
+                () => `ga_${randomUUID()}`
             );
             await Promise.all(
                 tokens.map((token, index) => {
@@ -401,9 +406,16 @@ export const verifyCapacityFixture = async (config: LoadConfig, env: NodeJS.Proc
     const redis = createRedisConnector({ url: environment.redisUrl });
     await postgres.connect();
     try {
-        const [state, postgresRows] = await Promise.all([
+        const [state, postgresRows, revisionMeta, revisionHeads, pendingOutbox] = await Promise.all([
             projectFixtureState(postgres.prisma),
             postgres.prisma.$queryRaw<Array<{ version: string }>>(GamePrisma.sql`SELECT version()`),
+            postgres.prisma.readModelRevisionMeta.findUnique({ where: { id: 1 } }),
+            postgres.prisma.readModelRevision.findMany({
+                where: { domain: { in: ['dashboard.global', 'map.world'] }, entityId: 0 },
+                orderBy: { domain: 'asc' },
+                select: { domain: true, revision: true },
+            }),
+            postgres.prisma.readModelOutbox.count({ where: { deliveredAt: null } }),
         ]);
         const fixtureSha256 = `sha256:${sha256(canonicalJson(state))}`;
         await redis.connect();
@@ -413,8 +425,7 @@ export const verifyCapacityFixture = async (config: LoadConfig, env: NodeJS.Proc
             if (rawManifest) {
                 try {
                     const parsed = JSON.parse(rawManifest) as Record<string, unknown>;
-                    manifestFixtureSha256 =
-                        typeof parsed.fixtureSha256 === 'string' ? parsed.fixtureSha256 : null;
+                    manifestFixtureSha256 = typeof parsed.fixtureSha256 === 'string' ? parsed.fixtureSha256 : null;
                 } catch {
                     manifestFixtureSha256 = null;
                 }
@@ -423,9 +434,7 @@ export const verifyCapacityFixture = async (config: LoadConfig, env: NodeJS.Proc
             const redisInfo = await redis.client.info('server');
             const redisVersion = /^redis_version:(.+)$/mu.exec(redisInfo)?.[1]?.trim() ?? 'unknown';
             const npcGenerals = state.generals.filter((general) => general.npcState >= 2).length;
-            const humanGenerals = state.generals.filter(
-                (general) => general.npcState === 0 && general.userId
-            ).length;
+            const humanGenerals = state.generals.filter((general) => general.npcState === 0 && general.userId).length;
             const valid =
                 state.generals.length === config.capacity.npcGenerals + config.capacity.humanGenerals &&
                 npcGenerals === config.capacity.npcGenerals &&
@@ -443,10 +452,42 @@ export const verifyCapacityFixture = async (config: LoadConfig, env: NodeJS.Proc
                 redisManifestMatches: manifestFixtureSha256 === fixtureSha256,
                 postgresVersion: postgresRows[0]?.version ?? 'unknown',
                 redisVersion,
+                coverageVersion: revisionMeta?.coverageVersion ?? null,
+                revisionHeads: revisionHeads.map((head) => ({
+                    domain: head.domain,
+                    revision: head.revision.toString(),
+                })),
+                pendingOutbox,
             };
         } finally {
             await redis.disconnect();
         }
+    } finally {
+        await postgres.disconnect();
+    }
+};
+
+export const activateCapacityCoverage = async (
+    config: LoadConfig,
+    confirmation: string,
+    env: NodeJS.ProcessEnv = process.env
+) => {
+    if (confirmation !== config.isolation.postgresSchema) {
+        throw new Error('coverage activation confirmation must exactly equal isolation.postgresSchema');
+    }
+    const environment = requireEnvironment(env);
+    assertFixtureIsolation(config, environment);
+    const fixture = await verifyCapacityFixture(config, env);
+    if (!fixture.valid) {
+        throw new Error('fixture verification failed; refusing coverage activation');
+    }
+    const postgres = createGamePostgresConnector({ url: environment.databaseUrl });
+    await postgres.connect();
+    try {
+        const result = await postgres.prisma.$transaction((transaction) =>
+            activateReadModelRevisionCoverage(transaction, 0)
+        );
+        return { activated: true, ...result };
     } finally {
         await postgres.disconnect();
     }
@@ -473,9 +514,7 @@ export const materializeCalibrationConfig = async (options: {
     }
     const verified = await verifyCapacityFixture(options.config, env);
     if (!verified.valid) throw new Error('fixture verification failed; refusing to materialize calibration config');
-    const gitCommit = (
-        await execFileAsync('git', ['rev-parse', 'HEAD'], { cwd: options.workspaceRoot })
-    ).stdout.trim();
+    const gitCommit = (await execFileAsync('git', ['rev-parse', 'HEAD'], { cwd: options.workspaceRoot })).stdout.trim();
     const runtimeConfig: LoadConfig = {
         ...options.config,
         name: `${options.config.name}-calibration`,
