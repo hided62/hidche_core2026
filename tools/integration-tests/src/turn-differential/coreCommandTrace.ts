@@ -64,6 +64,8 @@ export interface TurnCommandFixtureRequest {
         cities?: Array<Record<string, unknown>>;
         troops?: Array<Record<string, unknown>>;
         diplomacy?: Array<Record<string, unknown>>;
+        generalTurns?: Array<Record<string, unknown>>;
+        nationTurns?: Array<Record<string, unknown>>;
         randomFoundingCandidateCityIds?: number[];
         generalCooldowns?: Array<GeneralCooldownSelector & { nextAvailableTurn: number }>;
     };
@@ -741,18 +743,35 @@ const projectWorld = (
     };
 };
 
-const emptyDatabaseClient = {
+const buildSnapshotReservedTurnDatabaseClient = (snapshot: CanonicalTurnSnapshot) => ({
     generalTurn: {
-        findMany: async () => [],
+        findMany: async () =>
+            snapshot.generalTurns.map((turn, index) => ({
+                id: index + 1,
+                generalId: readNumber(turn, 'generalId'),
+                turnIdx: readNumber(turn, 'turnIndex'),
+                actionCode: readString(turn, 'action', '휴식'),
+                arg: asRecord(turn.args),
+                createdAt: new Date(0),
+            })),
         deleteMany: async () => ({ count: 0 }),
         createMany: async () => ({ count: 0 }),
     },
     nationTurn: {
-        findMany: async () => [],
+        findMany: async () =>
+            snapshot.nationTurns.map((turn, index) => ({
+                id: index + 1,
+                nationId: readNumber(turn, 'nationId'),
+                officerLevel: readNumber(turn, 'officerLevel'),
+                turnIdx: readNumber(turn, 'turnIndex'),
+                actionCode: readString(turn, 'action', '휴식'),
+                arg: asRecord(turn.args),
+                createdAt: new Date(0),
+            })),
         deleteMany: async () => ({ count: 0 }),
         createMany: async () => ({ count: 0 }),
     },
-};
+});
 
 export const runCoreTurnCommandTrace = async (
     request: TurnCommandFixtureRequest,
@@ -776,10 +795,13 @@ export const runCoreTurnCommandTrace = async (
         generalCooldowns: request.observe?.generalCooldowns ?? [],
         nationCooldowns: request.observe?.nationCooldowns ?? [],
     };
-    const reservedTurns = new InMemoryReservedTurnStore(emptyDatabaseClient as never, {
-        maxGeneralTurns: 30,
-        maxNationTurns: 12,
-    });
+    const reservedTurns = new InMemoryReservedTurnStore(
+        buildSnapshotReservedTurnDatabaseClient(referenceBefore) as never,
+        {
+            maxGeneralTurns: 30,
+            maxNationTurns: 12,
+        }
+    );
     await reservedTurns.loadAll();
     const actor = snapshot.generals.find((general) => general.id === request.actorGeneralId);
     if (!actor) {
@@ -851,7 +873,9 @@ export const runCoreTurnCommandTrace = async (
         },
     });
     world = new InMemoryTurnWorld(state, snapshot, {
-        schedule: { entries: [{ startMinute: 0, tickMinutes: 10 }] },
+        schedule: {
+            entries: [{ startMinute: 0, tickMinutes: Math.max(1, Math.round(state.tickSeconds / 60)) }],
+        },
         generalTurnHandler: handler,
     });
     const before = projectWorld(world, reservedTurns, [], [], selector);

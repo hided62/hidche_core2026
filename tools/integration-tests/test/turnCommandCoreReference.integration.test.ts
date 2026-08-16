@@ -212,6 +212,7 @@ integration('core ↔ legacy command-boundary differential', () => {
                 const afterActor = reference.after.generals.find((general) => general.id === actorGeneralId);
                 const coreBeforeActor = core.before.generals.find((general) => general.id === actorGeneralId);
                 const coreAfterActor = core.after.generals.find((general) => general.id === actorGeneralId);
+                const expectedTurnMinutes = Number(reference.before.world.tickMinutes);
                 expect(
                     reference.before.generalTurns.find(
                         (turn) => turn.generalId === actorGeneralId && turn.turnIndex === 0
@@ -223,10 +224,10 @@ integration('core ↔ legacy command-boundary differential', () => {
                     )?.action
                 ).toBe('휴식');
                 expect(timestampMillis(afterActor?.turnTime) - timestampMillis(beforeActor?.turnTime)).toBe(
-                    10 * 60_000
+                    expectedTurnMinutes * 60_000
                 );
                 expect(timestampMillis(coreAfterActor?.turnTime) - timestampMillis(coreBeforeActor?.turnTime)).toBe(
-                    10 * 60_000
+                    expectedTurnMinutes * 60_000
                 );
                 expect(timestampMillis(coreAfterActor?.turnTime)).toBe(timestampMillis(afterActor?.turnTime));
                 expect(afterActor?.mySet).toBe(Math.min(9, Number(beforeActor?.mySet) + 3));
