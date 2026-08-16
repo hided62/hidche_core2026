@@ -1,0 +1,96 @@
+{
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "$id": "https://sammo-ts.local/schemas/load-test.schema.json",
+    "title": "SAMMO authenticated API and SSE load configuration",
+    "type": "object",
+    "additionalProperties": false,
+    "required": ["version", "name", "target", "isolation", "capacity", "runtimeMetadata", "phases"],
+    "properties": {
+        "$schema": { "type": "string" },
+        "version": { "const": 1 },
+        "name": { "type": "string", "pattern": "^[a-z0-9][a-z0-9-]{0,63}$" },
+        "target": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["baseUrl", "trpcPath", "ssePath", "publicProfile", "allowedHosts"],
+            "properties": {
+                "baseUrl": { "type": "string", "format": "uri", "pattern": "^https?://" },
+                "trpcPath": { "type": "string", "pattern": "^/" },
+                "ssePath": { "type": "string", "pattern": "^/" },
+                "publicProfile": { "const": false },
+                "allowedHosts": {
+                    "type": "array",
+                    "minItems": 1,
+                    "uniqueItems": true,
+                    "items": { "type": "string", "minLength": 1 }
+                }
+            }
+        },
+        "isolation": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["postgresSchema", "redisPrefix"],
+            "properties": {
+                "postgresSchema": { "type": "string", "pattern": "^load_[a-z0-9_]+$" },
+                "redisPrefix": { "type": "string", "pattern": "^load-tests:[a-z0-9:_-]+:$" }
+            }
+        },
+        "capacity": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["authenticatedViewers", "npcGenerals", "humanGenerals", "turnIntervalMs"],
+            "properties": {
+                "authenticatedViewers": { "type": "integer", "minimum": 1 },
+                "npcGenerals": { "type": "integer", "minimum": 0 },
+                "humanGenerals": { "type": "integer", "minimum": 0 },
+                "turnIntervalMs": { "type": "integer", "minimum": 1000 }
+            }
+        },
+        "runtimeMetadata": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["fixtureSha256", "imageDigest", "postgresVersion", "redisVersion"],
+            "properties": {
+                "fixtureSha256": { "type": "string", "pattern": "^sha256:[a-f0-9]{64}$" },
+                "imageDigest": { "type": "string", "minLength": 1 },
+                "postgresVersion": { "type": "string", "minLength": 1 },
+                "redisVersion": { "type": "string", "minLength": 1 }
+            }
+        },
+        "phases": {
+            "type": "array",
+            "minItems": 4,
+            "items": { "$ref": "#/$defs/phase" }
+        }
+    },
+    "$defs": {
+        "phase": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["name", "kind", "durationMs", "sseConnections", "requestIntervalMs", "operations"],
+            "properties": {
+                "name": { "type": "string", "pattern": "^[a-z0-9][a-z0-9-]{0,31}$" },
+                "kind": { "enum": ["idle", "own", "global", "mixed"] },
+                "durationMs": { "type": "integer", "minimum": 1000 },
+                "sseConnections": { "type": "integer", "minimum": 0 },
+                "requestIntervalMs": { "type": ["integer", "null"], "minimum": 50 },
+                "operations": {
+                    "type": "array",
+                    "items": { "$ref": "#/$defs/operation" }
+                }
+            }
+        },
+        "operation": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["name", "procedure", "type", "weight"],
+            "properties": {
+                "name": { "type": "string", "pattern": "^[a-z0-9][a-z0-9-]{0,31}$" },
+                "procedure": { "type": "string", "pattern": "^[A-Za-z][A-Za-z0-9_.]+$" },
+                "type": { "const": "query" },
+                "weight": { "type": "integer", "minimum": 1, "maximum": 100 },
+                "input": {}
+            }
+        }
+    }
+}

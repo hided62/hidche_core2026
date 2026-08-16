@@ -1,0 +1,103 @@
+{
+    "$schema": "./load-test.schema.json",
+    "version": 1,
+    "name": "300-users-900-npcs-5m",
+    "target": {
+        "baseUrl": "http://127.0.0.1:15001",
+        "trpcPath": "/api/trpc",
+        "ssePath": "/events",
+        "publicProfile": false,
+        "allowedHosts": ["127.0.0.1", "localhost"]
+    },
+    "isolation": {
+        "postgresSchema": "load_capacity_300_900_5m",
+        "redisPrefix": "load-tests:capacity-300-900-5m:"
+    },
+    "capacity": {
+        "authenticatedViewers": 300,
+        "npcGenerals": 900,
+        "humanGenerals": 300,
+        "turnIntervalMs": 300000
+    },
+    "runtimeMetadata": {
+        "fixtureSha256": "sha256:0000000000000000000000000000000000000000000000000000000000000000",
+        "imageDigest": "replace-before-measurement",
+        "postgresVersion": "replace-before-measurement",
+        "redisVersion": "replace-before-measurement"
+    },
+    "phases": [
+        {
+            "name": "idle-30m",
+            "kind": "idle",
+            "durationMs": 1800000,
+            "sseConnections": 300,
+            "requestIntervalMs": null,
+            "operations": []
+        },
+        {
+            "name": "own-context-5m",
+            "kind": "own",
+            "durationMs": 300000,
+            "sseConnections": 300,
+            "requestIntervalMs": 1000,
+            "operations": [
+                {
+                    "name": "own-context",
+                    "procedure": "dashboard.getContextBundleDelta",
+                    "type": "query",
+                    "weight": 1,
+                    "input": {
+                        "include": { "context": true, "commandTable": true, "boardAccess": true },
+                        "forceSnapshot": false
+                    }
+                }
+            ]
+        },
+        {
+            "name": "global-slices-10m",
+            "kind": "global",
+            "durationMs": 600000,
+            "sseConnections": 300,
+            "requestIntervalMs": 5000,
+            "operations": [
+                {
+                    "name": "global-records",
+                    "procedure": "general.getRecentRecords",
+                    "type": "query",
+                    "weight": 1,
+                    "input": { "lastGeneralRecordId": 0, "lastWorldHistoryId": 0 }
+                },
+                { "name": "global-front", "procedure": "general.getFrontStatus", "type": "query", "weight": 1 },
+                { "name": "global-lobby", "procedure": "lobby.info", "type": "query", "weight": 1 }
+            ]
+        },
+        {
+            "name": "mixed-30m",
+            "kind": "mixed",
+            "durationMs": 1800000,
+            "sseConnections": 300,
+            "requestIntervalMs": 1000,
+            "operations": [
+                {
+                    "name": "own-context",
+                    "procedure": "dashboard.getContextBundleDelta",
+                    "type": "query",
+                    "weight": 5,
+                    "input": {
+                        "include": { "context": true, "commandTable": true, "boardAccess": true },
+                        "forceSnapshot": false
+                    }
+                },
+                {
+                    "name": "global-records",
+                    "procedure": "general.getRecentRecords",
+                    "type": "query",
+                    "weight": 1,
+                    "input": { "lastGeneralRecordId": 0, "lastWorldHistoryId": 0 }
+                },
+                { "name": "global-front", "procedure": "general.getFrontStatus", "type": "query", "weight": 1 },
+                { "name": "global-lobby", "procedure": "lobby.info", "type": "query", "weight": 1 }
+            ]
+        }
+    ]
+}

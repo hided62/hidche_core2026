@@ -1,0 +1,13 @@
+{
+    "name": "@sammo-ts/load-tests",
+    "private": true,
+    "version": "0.0.0",
+    "type": "module",
+    "scripts": {
+        "run": "pnpm -w exec tsx tools/load-tests/src/cli.ts run",
+        "dry-run": "pnpm -w exec tsx tools/load-tests/src/cli.ts dry-run",
+        "validate": "pnpm -w exec tsx tools/load-tests/src/cli.ts validate",
+        "test": "pnpm -w exec tsx --test tools/load-tests/test/*.test.ts",
+        "typecheck": "pnpm -w tsc7 -p tools/load-tests/tsconfig.json --noEmit"
+    }
+}
