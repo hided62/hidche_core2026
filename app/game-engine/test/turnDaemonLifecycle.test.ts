@@ -447,11 +447,11 @@ describe('TurnDaemonLifecycle', () => {
         await loop;
     });
 
-    it('catches up through the observed clock with queue and checkpoint context', async () => {
+    it('limits realtime backlog to the next month with queue and checkpoint context', async () => {
         const turnTermMinutes = 10;
         const lastTurnTime = new Date(2026, 0, 2, 2, 0, 0, 0);
         const generalTurnQueue = [addMinutes(lastTurnTime, 5), addMinutes(lastTurnTime, 20)];
-        const expectedRunTimeMs = addMinutes(lastTurnTime, 30).getTime();
+        const expectedRunTimeMs = addMinutes(lastTurnTime, turnTermMinutes).getTime();
         const checkpoint = {
             turnTime: lastTurnTime.toISOString(),
             generalId: 101,
@@ -524,11 +524,11 @@ describe('TurnDaemonLifecycle', () => {
         await loop;
     });
 
-    it('catches up through the observed clock when tick boundary precedes the queue front', async () => {
+    it('limits realtime backlog to the next month when the boundary precedes the queue front', async () => {
         const turnTermMinutes = 10;
         const lastTurnTime = new Date(2026, 0, 2, 2, 0, 0, 0);
         const generalTurnQueue = [addMinutes(lastTurnTime, 15), addMinutes(lastTurnTime, 30)];
-        const expectedRunTimeMs = addMinutes(lastTurnTime, 30).getTime();
+        const expectedRunTimeMs = addMinutes(lastTurnTime, turnTermMinutes).getTime();
         const checkpoint = {
             turnTime: lastTurnTime.toISOString(),
             generalId: 102,

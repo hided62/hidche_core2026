@@ -393,6 +393,7 @@ export const buildProcessDefinitions = (
     const daemonCwd = path.join(runtimeWorkspace, 'app', 'game-engine');
     const apiScript = path.join(apiCwd, 'dist', 'index.js');
     const daemonScript = path.join(daemonCwd, 'dist', 'index.js');
+    const turnDaemonNodeOptions = baseEnv.TURN_DAEMON_NODE_OPTIONS?.trim();
     const apiEnv = {
         ...baseEnv,
         GAME_API_ROLE: 'server',
@@ -409,6 +410,7 @@ export const buildProcessDefinitions = (
     };
     const daemonEnv = {
         ...baseEnv,
+        ...(turnDaemonNodeOptions ? { NODE_OPTIONS: turnDaemonNodeOptions } : {}),
         GAME_ENGINE_ROLE: 'turn-daemon',
         TURN_PROFILE: profile.profile,
         PROFILE: profile.profile,

@@ -55,6 +55,10 @@ profile 범위 권한과 별개인 전역 `admin.releases.manage` 권한이 필�
   API URL이 다른 frontend artifact를 cache hit로 잘못 복원하지 않습니다.
   `NODE_OPTIONS`와 `RAYON_NUM_THREADS`는 출력에는 영향을 주지 않는 resource 제한으로
   build child에 전달됩니다.
+- `TURN_DAEMON_NODE_OPTIONS`가 설정되어 있으면 Gateway orchestrator는 그 값을
+  turn-daemon PM2 process의 `NODE_OPTIONS`로만 덮어씁니다. API·frontend·worker와
+  build는 공용 `NODE_OPTIONS`를 계속 사용합니다. 전용 heap을 늘릴 때는 runtime
+  container hard limit과 전체 process RSS를 먼저 확인합니다.
 - migration 이후 이전 애플리케이션으로 돌아갈 때 schema 하위 호환성이
   유지됩니다.
 

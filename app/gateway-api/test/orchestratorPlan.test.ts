@@ -233,6 +233,23 @@ describe('buildProcessDefinitions', () => {
         }
         expect(definitions.frontend.env.VITE_APP_BASE_PATH).toBe('/che');
     });
+
+    it('applies a dedicated Node heap option only to the turn daemon', () => {
+        const definitions = buildProcessDefinitions(buildProfile(), {
+            ...processConfig,
+            baseEnv: {
+                NODE_OPTIONS: '--max-old-space-size=1536',
+                TURN_DAEMON_NODE_OPTIONS: '--max-old-space-size=3072',
+            },
+        });
+
+        expect(definitions.daemon.env.NODE_OPTIONS).toBe('--max-old-space-size=3072');
+        expect(definitions.frontend.env.NODE_OPTIONS).toBe('--max-old-space-size=1536');
+        expect(definitions.api.env.NODE_OPTIONS).toBe('--max-old-space-size=1536');
+        expect(definitions.auction.env.NODE_OPTIONS).toBe('--max-old-space-size=1536');
+        expect(definitions.battleSim.env.NODE_OPTIONS).toBe('--max-old-space-size=1536');
+        expect(definitions.tournament.env.NODE_OPTIONS).toBe('--max-old-space-size=1536');
+    });
 });
 
 describe('sanitizeManagedProcessEnv', () => {
