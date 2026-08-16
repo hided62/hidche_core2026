@@ -14,6 +14,7 @@ export * from './util/TournamentRNG.js';
 export * from './util/sha512.js';
 export * from './util/parse.js';
 export * from './tournament/autoStart.js';
+export * from './tournament/sourceRevision.js';
 export * from './turnDaemon/types.js';
 export * from './realtime/keys.js';
 export * from './realtime/types.js';

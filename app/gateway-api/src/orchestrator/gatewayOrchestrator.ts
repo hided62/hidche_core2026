@@ -171,6 +171,7 @@ export const buildTournamentRuntimeKeys = (profileName: string): string[] => [
     `sammo:${profileName}:tournament:participants`,
     `sammo:${profileName}:tournament:matches`,
     `sammo:${profileName}:tournament:betting`,
+    `sammo:${profileName}:tournament:source-revision`,
 ];
 
 export const clearTournamentRuntimeKeys = async (

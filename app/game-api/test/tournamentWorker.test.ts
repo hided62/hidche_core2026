@@ -28,11 +28,12 @@ class MemoryRedis {
     }
 
     async eval(_script: string, options: { keys: string[]; arguments: string[] }): Promise<string> {
-        const [valueKey, revisionKey] = options.keys;
-        const [value] = options.arguments;
-        if (!valueKey || !revisionKey || value === undefined) throw new Error('invalid eval arguments');
+        const revisionKey = options.keys.at(-1);
+        if (!revisionKey || options.keys.length !== options.arguments.length + 1) {
+            throw new Error('invalid eval arguments');
+        }
         const revision = Number(this.store.get(revisionKey) ?? '0') + 1;
-        this.store.set(valueKey, value);
+        options.arguments.forEach((value, index) => this.store.set(options.keys[index]!, value));
         this.store.set(revisionKey, String(revision));
         return String(revision);
     }

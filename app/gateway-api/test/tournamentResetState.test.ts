@@ -12,6 +12,7 @@ describe('tournament reset state', () => {
             'sammo:che:1010:tournament:participants',
             'sammo:che:1010:tournament:matches',
             'sammo:che:1010:tournament:betting',
+            'sammo:che:1010:tournament:source-revision',
         ]);
         expect(buildTournamentRuntimeKeys('hwe:915')).not.toContain('sammo:che:1010:tournament:state');
     });
@@ -28,7 +29,7 @@ describe('tournament reset state', () => {
             'che:1010'
         );
 
-        expect(deleted).toBe(4);
+        expect(deleted).toBe(5);
         expect(calls).toEqual([buildTournamentRuntimeKeys('che:1010')]);
     });
 });

@@ -57,6 +57,13 @@ describe('monthly tournament auto start', () => {
                 values.set(key, value);
                 return 'OK';
             },
+            eval: async (_script: string, options: { keys: string[]; arguments: string[] }) => {
+                const revisionKey = options.keys.at(-1)!;
+                options.arguments.forEach((value, index) => values.set(options.keys[index]!, value));
+                const revision = Number(values.get(revisionKey) ?? '0') + 1;
+                values.set(revisionKey, String(revision));
+                return String(revision);
+            },
         } as unknown as RedisConnector['client'];
         let world: InMemoryTurnWorld | null = null;
         const consumed: boolean[] = [];
@@ -185,6 +192,13 @@ describe('monthly tournament auto start', () => {
                 set: async (key: string, value: string) => {
                     values.set(key, value);
                     return 'OK';
+                },
+                eval: async (_script: string, options: { keys: string[]; arguments: string[] }) => {
+                    const revisionKey = options.keys.at(-1)!;
+                    options.arguments.forEach((value, index) => values.set(options.keys[index]!, value));
+                    const revision = Number(values.get(revisionKey) ?? '0') + 1;
+                    values.set(revisionKey, String(revision));
+                    return String(revision);
                 },
             } as unknown as RedisConnector['client'];
             let world: InMemoryTurnWorld | null = null;

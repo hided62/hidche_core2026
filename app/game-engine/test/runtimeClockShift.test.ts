@@ -244,6 +244,13 @@ describe('runtime clock shift projection', () => {
             },
             del: async (key: string) => (values.delete(key) ? 1 : 0),
             zAdd,
+            eval: async (_script: string, options: { keys: string[]; arguments: string[] }) => {
+                const revisionKey = options.keys.at(-1)!;
+                options.arguments.forEach((value, index) => values.set(options.keys[index]!, value));
+                const revision = Number(values.get(revisionKey) ?? '0') + 1;
+                values.set(revisionKey, String(revision));
+                return String(revision);
+            },
         };
         const action = {
             id: actionId,

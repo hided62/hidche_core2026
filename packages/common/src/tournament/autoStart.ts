@@ -1,4 +1,5 @@
 import { asRecord } from '../util/parse.js';
+import { writeTournamentProjection } from './sourceRevision.js';
 
 interface TournamentState {
     stage: number;
@@ -21,7 +22,8 @@ interface TournamentState {
 
 interface RedisClientLike {
     get(key: string): Promise<string | null>;
-    set(key: string, value: string): Promise<unknown>;
+    eval(script: string, options: { keys: string[]; arguments: string[] }): Promise<unknown>;
+    publish?(channel: string, message: string): Promise<unknown>;
 }
 
 const safeJsonParse = <T>(raw: string | null): T | null => {
@@ -40,6 +42,8 @@ const buildTournamentKeys = (profileName: string) => ({
     participantsKey: `sammo:${profileName}:tournament:participants`,
     matchesKey: `sammo:${profileName}:tournament:matches`,
     bettingKey: `sammo:${profileName}:tournament:betting`,
+    sourceRevisionKey: `sammo:${profileName}:tournament:source-revision`,
+    sourceRevisionChannel: `sammo:${profileName}:tournament:source-changed`,
 });
 
 const resolveTermSeconds = (tickSeconds: number): number => {
@@ -99,10 +103,12 @@ export const createTournamentAutoStartHandler = (options: {
             lastErrorAt: undefined,
         };
 
-        await redis.set(keys.participantsKey, '[]');
-        await redis.set(keys.matchesKey, '[]');
-        await redis.set(keys.bettingKey, '[]');
-        await redis.set(keys.stateKey, JSON.stringify(nextState));
+        await writeTournamentProjection(redis, keys, [
+            { key: keys.participantsKey, value: [] },
+            { key: keys.matchesKey, value: [] },
+            { key: keys.bettingKey, value: [] },
+            { key: keys.stateKey, value: nextState },
+        ]);
     };
 
     return {

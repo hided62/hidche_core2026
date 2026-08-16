@@ -1,7 +1,7 @@
 import type { GamePrisma, GamePrismaClient } from '@sammo-ts/infra';
 import { randomUUID } from 'node:crypto';
 
-import type { TurnDaemonCommand, TurnDaemonCommandResult } from '@sammo-ts/common';
+import { writeTournamentProjection, type TurnDaemonCommand, type TurnDaemonCommandResult } from '@sammo-ts/common';
 
 import type { GatewayAdminActionRecord, GatewayAdminActionResult } from './gatewayAdminActions.js';
 
@@ -17,6 +17,8 @@ interface RuntimeRedisClient {
     ): Promise<unknown>;
     del(key: string): Promise<unknown>;
     zAdd(key: string, values: Array<{ score: number; value: string }>): Promise<number>;
+    eval(script: string, options: { keys: string[]; arguments: string[] }): Promise<unknown>;
+    publish?(channel: string, message: string): Promise<unknown>;
 }
 
 type TournamentClockState = {
@@ -71,6 +73,10 @@ const shiftTournamentClock = async (
     deltaMinutes: number
 ): Promise<boolean> => {
     const stateKey = `sammo:${profileName}:tournament:state`;
+    const sourceKeys = {
+        sourceRevisionKey: `sammo:${profileName}:tournament:source-revision`,
+        sourceRevisionChannel: `sammo:${profileName}:tournament:source-changed`,
+    };
     const lockKey = `${stateKey}:mutation-lock`;
     const token = randomUUID();
     const deadline = Date.now() + 2_000;
@@ -95,7 +101,7 @@ const shiftTournamentClock = async (
                     bettingCloseAt: shiftDateText(state.bettingCloseAt, deltaMinutes) as string | undefined,
                     runtimeClockShiftActionIds: [...applied, actionId],
                 };
-                await redis.set(stateKey, JSON.stringify(nextState));
+                await writeTournamentProjection(redis, sourceKeys, [{ key: stateKey, value: nextState }]);
                 return true;
             } finally {
                 if ((await redis.get(lockKey)) === token) {
