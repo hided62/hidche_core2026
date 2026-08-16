@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
+import { NATION_TURN_COMMAND_KEYS } from '@sammo-ts/logic';
+
 import { compareTurnSnapshotDeltas } from '../src/turn-differential/compare.js';
 import { runCoreTurnCommandTrace, type TurnCommandFixtureRequest } from '../src/turn-differential/coreCommandTrace.js';
 import {
@@ -26,6 +28,12 @@ const readNationMeta = (row: { meta?: unknown } | undefined): Record<string, unk
         : {};
 const readGeneralMeta = readNationMeta;
 const NPC_SEIZURE_MESSAGE_TEXT = '몰수를 하다니... 이것이 윗사람이 할 짓이란 말입니까...';
+
+const timestampMillis = (value: unknown): number => {
+    const raw = String(value);
+    const normalized = raw.includes('T') ? raw : `${raw.replace(' ', 'T').replace(/\.(\d{3})\d*$/, '.$1')}Z`;
+    return new Date(normalized).getTime();
+};
 
 const normalizeStoredLogText = (value: unknown): string =>
     String(value)
@@ -345,6 +353,15 @@ const buildRequest = (
                     };
                 }),
         ],
+        nationTurns: [
+            {
+                nationId: 1,
+                officerLevel: 12,
+                turnIndex: 1,
+                action: 'che_국호변경',
+                args: { nationName: '다음국' },
+            },
+        ],
     },
     observe: {
         generalIds: [
@@ -628,11 +645,18 @@ const cases: NationMatrixCase[] = [
     ],
 ];
 
+describe('nation command differential coverage manifest', () => {
+    it('keeps one successful Ref/Core case for every registered nation turn command', () => {
+        expect(new Set(cases.map(([action]) => action))).toEqual(new Set(NATION_TURN_COMMAND_KEYS));
+    });
+});
+
 integration('nation command success matrix', () => {
     it.each(cases)(
         '%s matches the legacy state delta and command RNG',
         async (action, args, fixturePatches) => {
             const request = buildRequest(action, args, fixturePatches);
+            request.includeLifecycle = true;
             const reference = runReferenceTurnCommandTraceRequest(
                 workspaceRoot!,
                 request as unknown as Record<string, unknown>
@@ -667,6 +691,42 @@ integration('nation command success matrix', () => {
             expect(reference.execution.outcome).toMatchObject({ completed: true });
             expect(core.execution.outcome).not.toHaveProperty('blockedReason');
             expect(core.rng).toEqual(reference.rng);
+
+            const actorGeneralId = request.actorGeneralId;
+            const actorNationId = 1;
+            const actorOfficerLevel = 12;
+            const referenceBeforeActor = reference.before.generals.find((general) => general.id === actorGeneralId);
+            const referenceAfterActor = reference.after.generals.find((general) => general.id === actorGeneralId);
+            const coreBeforeActor = core.before.generals.find((general) => general.id === actorGeneralId);
+            const coreAfterActor = core.after.generals.find((general) => general.id === actorGeneralId);
+            const expectedTurnMinutes = Number(reference.before.world.tickMinutes);
+            const findActorNationTurn = (turns: Array<Record<string, unknown>>, turnIndex: number) =>
+                turns.find(
+                    (turn) =>
+                        turn.nationId === actorNationId &&
+                        turn.officerLevel === actorOfficerLevel &&
+                        turn.turnIndex === turnIndex
+                );
+
+            expect(findActorNationTurn(reference.before.nationTurns, 0)?.action).toBe(action);
+            expect(findActorNationTurn(core.before.nationTurns, 0)?.action).toBe(action);
+            expect(findActorNationTurn(reference.after.nationTurns, 0)).toMatchObject({
+                action: 'che_국호변경',
+                args: { nationName: '다음국' },
+            });
+            expect(findActorNationTurn(core.after.nationTurns, 0)).toMatchObject({
+                action: 'che_국호변경',
+                args: { nationName: '다음국' },
+            });
+            expect(
+                timestampMillis(referenceAfterActor?.turnTime) - timestampMillis(referenceBeforeActor?.turnTime)
+            ).toBe(expectedTurnMinutes * 60_000);
+            expect(timestampMillis(coreAfterActor?.turnTime) - timestampMillis(coreBeforeActor?.turnTime)).toBe(
+                expectedTurnMinutes * 60_000
+            );
+            expect(timestampMillis(coreAfterActor?.turnTime)).toBe(timestampMillis(referenceAfterActor?.turnTime));
+            expect(referenceAfterActor?.mySet).toBe(Math.min(9, Number(referenceBeforeActor?.mySet) + 3));
+            expect(coreAfterActor?.mySet).toBe(referenceAfterActor?.mySet);
             expect(
                 compareTurnSnapshotDeltas(reference.before, reference.after, core.before, core.after, {
                     ignoredPathPatterns: ignoredLifecyclePaths,
@@ -700,6 +760,31 @@ integration('nation command success matrix', () => {
         },
         120_000
     );
+});
+
+integration('legacy nation lifecycle comparison guard', () => {
+    it('does not alter command effects or RNG beyond the explicit queue and turn lifecycle', () => {
+        const request = buildRequest('che_포상', { isGold: true, amount: 100, destGeneralID: 3 });
+        const commandOnly = runReferenceTurnCommandTraceRequest(
+            workspaceRoot!,
+            request as unknown as Record<string, unknown>
+        );
+        const withLifecycle = runReferenceTurnCommandTraceRequest(workspaceRoot!, {
+            ...request,
+            includeLifecycle: true,
+        } as unknown as Record<string, unknown>);
+
+        expect(withLifecycle.rng).toEqual(commandOnly.rng);
+        expect(
+            compareTurnSnapshotDeltas(
+                commandOnly.before,
+                commandOnly.after,
+                withLifecycle.before,
+                withLifecycle.after,
+                { ignoredPathPatterns: ignoredLifecyclePaths }
+            )
+        ).toEqual([]);
+    }, 180_000);
 });
 
 type NationActiveActionInheritanceCase = {
