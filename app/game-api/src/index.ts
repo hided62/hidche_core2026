@@ -29,6 +29,7 @@ export * from './tournament/keys.js';
 export * from './tournament/store.js';
 export * from './tournament/types.js';
 export * from './tournament/worker.js';
+export * from './realtime/outboxWorker.js';
 
 // Types for TRPC consumer
 export type { MessageView } from './messages/store.js';

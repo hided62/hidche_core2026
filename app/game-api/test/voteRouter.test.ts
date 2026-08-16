@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 
+import { ChangeJournal } from '@sammo-ts/common';
 import type { GameSessionTokenPayload } from '@sammo-ts/common/auth/gameToken';
 import type { GamePrisma, RedisConnector } from '@sammo-ts/infra';
 
@@ -106,6 +107,7 @@ const buildContext = (options: {
     }));
     const redisIncr = vi.fn(async (_key: string) => 41);
     const redisPublish = vi.fn(async (_channel: string, _message: string) => 1);
+    const changeJournal = new ChangeJournal();
     const queryRaw = vi.fn(async (query: GamePrisma.Sql) => {
         const text = sqlText(query);
         if (text.includes('FROM vote_poll') && text.includes('LIMIT 1')) {
@@ -193,8 +195,9 @@ const buildContext = (options: {
         accessTokenStore,
         flushStore: new InMemoryFlushStore(),
         gameTokenSecret: 'test-secret',
+        changeJournal,
     };
-    return { context, requestCommand, queryRaw, db, redisIncr, redisPublish };
+    return { context, requestCommand, queryRaw, db, redisIncr, redisPublish, changeJournal };
 };
 
 describe('vote router actor and permission boundaries', () => {
@@ -221,16 +224,9 @@ describe('vote router actor and permission boundaries', () => {
                 goldReward: 90,
             })
         );
-        expect(fixture.redisIncr).toHaveBeenCalledWith('sammo:che:default:read-model:revision');
-        const published = JSON.parse(String(fixture.redisPublish.mock.calls[0]?.[1]));
-        expect(published).toMatchObject({
-            type: 'readModelChanged',
-            revision: 41,
-            changes: {
-                frontStatusActorIds: [7],
-                frontStatusChanged: false,
-            },
-        });
+        expect(fixture.changeJournal.snapshot()).toEqual([{ domain: 'front.general', entityId: 7 }]);
+        expect(fixture.redisIncr).not.toHaveBeenCalled();
+        expect(fixture.redisPublish).not.toHaveBeenCalled();
     });
 
     it('publishes a global front-status projection after creating a survey', async () => {
@@ -244,11 +240,9 @@ describe('vote router actor and permission boundaries', () => {
             })
         ).resolves.toEqual({ ok: true });
 
-        const published = JSON.parse(String(fixture.redisPublish.mock.calls[0]?.[1]));
-        expect(published).toMatchObject({
-            type: 'readModelChanged',
-            changes: { frontStatusChanged: true },
-        });
+        expect(fixture.changeJournal.snapshot()).toEqual([{ domain: 'front.global', entityId: 0 }]);
+        expect(fixture.redisIncr).not.toHaveBeenCalled();
+        expect(fixture.redisPublish).not.toHaveBeenCalled();
     });
 
     it('uses the current world develcost for the legacy five-times survey reward', async () => {

@@ -1,6 +1,8 @@
 import { randomUUID } from 'node:crypto';
 import { initTRPC, TRPCError } from '@trpc/server';
+import { ChangeJournal } from '@sammo-ts/common';
 import { isGameAccessBlocked } from '@sammo-ts/common/auth/sanctions';
+import { writeReadModelChangeJournal } from '@sammo-ts/infra';
 
 import type { GameApiContext } from './context.js';
 import { IdempotentTurnDaemonTransport } from './daemon/idempotentTransport.js';
@@ -45,8 +47,10 @@ const inputEventMiddleware = t.middleware(async ({ ctx, type, path, next }) => {
     }
 
     const requestId = `${ctx.requestId ?? randomUUID()}:${path}`;
+    const changeJournal = new ChangeJournal();
+    let journalPersisted = false;
     try {
-        return await executeInputEvent({
+        const result = await executeInputEvent({
             db: ctx.db,
             requestId,
             eventType: path,
@@ -56,15 +60,21 @@ const inputEventMiddleware = t.middleware(async ({ ctx, type, path, next }) => {
                     ctx: {
                         ...ctx,
                         db: transaction,
+                        changeJournal,
                         turnDaemon: new IdempotentTurnDaemonTransport(ctx.turnDaemon, requestId),
                     },
                 });
                 if (!result.ok) {
                     throw result.error;
                 }
+                journalPersisted = Boolean(await writeReadModelChangeJournal(transaction, changeJournal.snapshot()));
                 return result;
             },
         });
+        if (journalPersisted) {
+            ctx.readModelOutbox?.wake();
+        }
+        return result;
     } catch (error) {
         if (error instanceof DuplicateInputEventError) {
             throw new TRPCError({

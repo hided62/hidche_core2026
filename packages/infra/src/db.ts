@@ -44,4 +44,5 @@ export interface DatabaseClient {
     vote: GamePrisma.VoteDelegate;
     inputEvent: GamePrisma.InputEventDelegate;
     turnDaemonLease: GamePrisma.TurnDaemonLeaseDelegate;
+    readModelOutbox: GamePrisma.ReadModelOutboxDelegate;
 }

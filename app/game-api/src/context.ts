@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import type { ChangeJournal } from '@sammo-ts/common';
 import type { GameSessionTokenPayload } from '@sammo-ts/common/auth/gameToken';
 import type { DatabaseClient as InfraDatabaseClient, RedisConnector, GamePrisma } from '@sammo-ts/infra';
 import { normalizeScenarioEffect, SCENARIO_EFFECT_KEYS } from '@sammo-ts/logic';
@@ -10,6 +11,7 @@ import type { RedisAccessTokenStore } from './auth/accessTokenStore.js';
 import type { AccountIconSource } from './auth/accountIconSource.js';
 import type { ProfileStatusSource } from './auth/profileStatusSource.js';
 import type { ContentImageUploadStore } from './services/remoteContentImageStore.js';
+import type { ReadModelOutboxWakeup } from './realtime/outboxWorker.js';
 
 export interface GameProfile {
     id: string;
@@ -87,6 +89,10 @@ export interface GameApiContext {
     generalAccessTracking?: boolean;
     /** Request-local identity already resolved by the realtime access gate. */
     realtimeAccessGeneralId?: number;
+    /** Set only while an API input-event transaction owns the mutation. */
+    changeJournal?: ChangeJournal;
+    /** Post-commit scheduling hint for the durable outbox dispatcher. */
+    readModelOutbox?: ReadModelOutboxWakeup;
     db: DatabaseClient;
     redis: RedisConnector['client'];
     turnDaemon: TurnDaemonTransport;
@@ -125,6 +131,7 @@ export const createGameApiContext = (options: {
     gameTokenSecret: string;
     accountIconSource?: AccountIconSource;
     profileStatusSource: ProfileStatusSource;
+    readModelOutbox?: ReadModelOutboxWakeup;
 }): GameApiContext => {
     return {
         requestId: options.requestId,
@@ -145,5 +152,6 @@ export const createGameApiContext = (options: {
         gameTokenSecret: options.gameTokenSecret,
         ...(options.accountIconSource ? { accountIconSource: options.accountIconSource } : {}),
         profileStatusSource: options.profileStatusSource,
+        ...(options.readModelOutbox ? { readModelOutbox: options.readModelOutbox } : {}),
     };
 };

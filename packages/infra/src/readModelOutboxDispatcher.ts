@@ -2,6 +2,10 @@ import { parseReadModelOutboxPayload, type ReadModelOutboxPayloadV1 } from '@sam
 
 import { GamePrisma, type GamePrismaClient } from './gamePrisma.js';
 
+export interface ReadModelOutboxDatabase extends Pick<GamePrismaClient, '$queryRaw'> {
+    readModelOutbox: GamePrisma.ReadModelOutboxDelegate;
+}
+
 export interface ClaimedReadModelOutbox {
     id: bigint;
     payload: unknown;
@@ -46,7 +50,7 @@ const retryDelayMs = (attempts: number, baseMs: number, maxMs: number): number =
 };
 
 export const claimReadModelOutboxBatch = async (
-    db: GamePrismaClient,
+    db: ReadModelOutboxDatabase,
     options: Pick<ReadModelOutboxDispatchOptions, 'owner' | 'limit' | 'leaseMs'> & { now?: Date }
 ): Promise<ClaimedReadModelOutbox[]> => {
     if (!options.owner.trim()) {
@@ -82,7 +86,7 @@ export const claimReadModelOutboxBatch = async (
 };
 
 export const markReadModelOutboxDelivered = async (
-    db: GamePrismaClient,
+    db: ReadModelOutboxDatabase,
     input: { id: bigint; owner: string; deliveredAt?: Date }
 ): Promise<boolean> => {
     const result = await db.readModelOutbox.updateMany({
@@ -98,7 +102,7 @@ export const markReadModelOutboxDelivered = async (
 };
 
 export const releaseReadModelOutbox = async (
-    db: GamePrismaClient,
+    db: ReadModelOutboxDatabase,
     input: { id: bigint; owner: string; error: unknown; availableAt: Date }
 ): Promise<boolean> => {
     const result = await db.readModelOutbox.updateMany({
@@ -114,7 +118,7 @@ export const releaseReadModelOutbox = async (
 };
 
 export const dispatchReadModelOutboxBatch = async (
-    db: GamePrismaClient,
+    db: ReadModelOutboxDatabase,
     publish: (payload: ReadModelOutboxPayloadV1, outboxId: bigint) => Promise<void>,
     options: ReadModelOutboxDispatchOptions
 ): Promise<ReadModelOutboxDispatchResult> => {
@@ -156,7 +160,7 @@ export const dispatchReadModelOutboxBatch = async (
 };
 
 export const pruneDeliveredReadModelOutbox = async (
-    db: GamePrismaClient,
+    db: ReadModelOutboxDatabase,
     input: { deliveredBefore: Date; limit?: number }
 ): Promise<number> => {
     const limit = normalizeLimit(input.limit);

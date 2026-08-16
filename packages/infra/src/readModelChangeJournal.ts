@@ -6,7 +6,9 @@ import {
     type ReadModelRevisionKey,
 } from '@sammo-ts/common';
 
-import { GamePrisma } from './gamePrisma.js';
+import { GamePrisma, type GamePrismaClient } from './gamePrisma.js';
+
+export type ReadModelJournalDatabase = Pick<GamePrismaClient, '$queryRaw'>;
 
 interface ReadModelJournalWriteRow {
     domain: string;
@@ -61,7 +63,7 @@ const assertWriteRows = (
  * that owns the domain mutation; this function never opens or commits one.
  */
 export const writeReadModelChangeJournal = async (
-    transaction: GamePrisma.TransactionClient,
+    transaction: ReadModelJournalDatabase,
     candidates: Iterable<ReadModelRevisionKey>
 ): Promise<ReadModelJournalWriteResult | null> => {
     const keys = normalizeReadModelRevisionKeys(candidates);

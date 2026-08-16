@@ -1,5 +1,5 @@
 import { asRecord, resolveAccessLimitLevel, resolveAccessRefreshLimit, type AccessLimitLevel } from '@sammo-ts/common';
-import { GamePrisma } from '@sammo-ts/infra';
+import { GamePrisma, writeReadModelChangeJournal } from '@sammo-ts/infra';
 
 import type { GameApiContext } from '../context.js';
 
@@ -371,17 +371,21 @@ export const upsertGeneralAccess = async (
                         general_access_log.refresh_score_total + EXCLUDED.refresh_score_total
             `
         );
+
+        await writeReadModelChangeJournal(transaction, [
+            { domain: 'access.general', entityId: input.generalId },
+        ]);
     });
 };
 
 export const recordGeneralAccess = async (
-    ctx: Pick<GameApiContext, 'auth' | 'db' | 'profile' | 'profileStatusSource'>,
+    ctx: Pick<GameApiContext, 'auth' | 'db' | 'profile' | 'profileStatusSource' | 'readModelOutbox'>,
     page: AccessPage,
     now = new Date()
 ): Promise<boolean> => recordGeneralAccessWeight(ctx, accessPageWeights[page], now);
 
 export const recordGeneralAccessWeight = async (
-    ctx: Pick<GameApiContext, 'auth' | 'db' | 'profile' | 'profileStatusSource'>,
+    ctx: Pick<GameApiContext, 'auth' | 'db' | 'profile' | 'profileStatusSource' | 'readModelOutbox'>,
     weight: number,
     now = new Date()
 ): Promise<boolean> => {
@@ -450,5 +454,6 @@ export const recordGeneralAccessWeight = async (
         periodStartedAt,
         scoreStartedAt,
     });
+    ctx.readModelOutbox?.wake();
     return true;
 };

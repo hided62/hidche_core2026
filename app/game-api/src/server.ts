@@ -30,6 +30,7 @@ import { createAdminProfileIconResetFlushHandler } from './services/accountIconS
 import { AccountIconResetReconciler } from './services/accountIconResetReconciler.js';
 import { createBestEffortResourceCloser } from './services/bestEffortResourceCloser.js';
 import { RemoteContentImageStore } from './services/remoteContentImageStore.js';
+import { ReadModelOutboxWorker } from './realtime/outboxWorker.js';
 
 const extractBearerToken = (value: string | string[] | undefined): string | null => {
     if (!value) {
@@ -140,9 +141,16 @@ export const createGameApiServer = async () => {
         throw error;
     }
     const realtimeHub = new RedisRealtimeEventHub(realtimeSubscriberClient, buildGameEventChannel(config.profileName));
+    const readModelOutboxWorker = new ReadModelOutboxWorker(postgres.prisma, redis.client, config.profileName, {
+        onError: (error) => app.log.error({ err: error }, 'read-model outbox dispatch failed'),
+    });
     let flushSubscriberStarted = false;
     let realtimeHubStarted = false;
     const closeResources = createBestEffortResourceCloser([
+        {
+            name: 'read-model-outbox-worker',
+            run: () => readModelOutboxWorker.stop(),
+        },
         {
             name: 'account-icon-reset-reconciler',
             run: () => accountIconResetReconciler.stop(),
@@ -220,6 +228,7 @@ export const createGameApiServer = async () => {
                     gameTokenSecret: config.gameTokenSecret,
                     accountIconSource,
                     profileStatusSource,
+                    readModelOutbox: readModelOutboxWorker,
                 });
             },
         },
@@ -334,6 +343,7 @@ export const createGameApiServer = async () => {
         realtimeHubStarted = true;
         await flushSubscriber.start();
         flushSubscriberStarted = true;
+        readModelOutboxWorker.start();
         accountIconResetReconciler.start();
     } catch (error) {
         await closeResources();

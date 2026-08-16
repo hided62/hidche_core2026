@@ -47,7 +47,13 @@ const buildDb = (
     access: { lastRefresh: Date | null; refreshScore: number } | null = null
 ) => {
     const executeRaw = vi.fn(async (_query: unknown) => 1);
-    const queryRaw = vi.fn(async (_query: unknown) => [{ id: 41 }]);
+    const queryRaw = vi.fn(async (query: unknown) => {
+        const sql = (query as { sql?: string }).sql ?? '';
+        if (sql.includes('read_model_revision')) {
+            return [{ domain: 'access.general', entityId: 7, revision: 1n, outboxId: 1n }];
+        }
+        return [{ id: 41 }];
+    });
     const transaction = vi.fn(
         async (
             callback: (client: { $executeRaw: typeof executeRaw; $queryRaw: typeof queryRaw }) => Promise<unknown>
@@ -157,7 +163,7 @@ describe('general access tracking', () => {
             select: { id: true, userId: true, turnTime: true },
         });
         expect(transaction).toHaveBeenCalledTimes(1);
-        expect(queryRaw).toHaveBeenCalledTimes(1);
+        expect(queryRaw).toHaveBeenCalledTimes(2);
         expect(executeRaw).toHaveBeenCalledTimes(2);
 
         const periodStatement = queryRaw.mock.calls[0]![0] as { sql: string; values: unknown[] };
@@ -185,6 +191,11 @@ describe('general access tracking', () => {
         expect(accessStatement.values).toContain(2);
         expect(accessStatement.values).toContain(now);
         expect(accessStatement.values).toContainEqual(new Date('2026-07-26T03:00:00.000Z'));
+
+        const journalStatement = queryRaw.mock.calls[1]![0] as { sql: string; values: unknown[] };
+        expect(journalStatement.sql).toContain('INSERT INTO "read_model_outbox"');
+        expect(journalStatement.values).toContain('access.general');
+        expect(journalStatement.values).toContain(7);
     });
 
     it('accepts legacy weight zero to refresh timestamps without incrementing counters', async () => {
@@ -242,7 +253,12 @@ describe('general access tracking', () => {
         const events: string[] = [];
         let transactionCount = 0;
         const transactionClient = {
-            $queryRaw: vi.fn(async () => [{ id: 41 }]),
+            $queryRaw: vi.fn(async (query: unknown) => {
+                const sql = (query as { sql?: string }).sql ?? '';
+                return sql.includes('read_model_revision')
+                    ? [{ domain: 'access.general', entityId: 7, revision: 1n, outboxId: 1n }]
+                    : [{ id: 41 }];
+            }),
             $executeRaw: vi.fn(async () => 1),
             inputEvent: {
                 update: vi.fn(async () => ({})),
