@@ -167,6 +167,7 @@ statement 수와 row lock 시간을 제한한다. 없는 key의 revision은 0으
 | `general.content` | general ID | 현재 장수 context/command/board dependency |
 | `city.content` | city ID | 현재 도시 context/command dependency |
 | `nation.content` | nation ID | 현재 국가 context/command/board dependency |
+| `dashboard.global` | 0 | 부대·예약턴 및 전체 general/city/nation aggregate를 포괄하는 source-only dependency |
 | `world.content` | 0 | 연월, scenario/config/catalog 성격의 dependency |
 | `map.world` | 0 | shared base map projection |
 | `map.general` | general ID | 현재 장수 이동처럼 actor별 map wake-up에 필요한 변화 |
@@ -181,6 +182,7 @@ statement 수와 row lock 시간을 제한한다. 없는 key의 revision은 0으
 | `lobby.general` | general ID | 본인 lobby에 보이는 이름·아이콘 projection |
 | `contacts.world` | 0 | 장수 목록·외교 연락처 공용 projection |
 | `reserved.general` | general ID | 장수 예약 명령 projection |
+| `messages.mailbox` | mailbox ID | commit된 메시지 mailbox wake-up; public SSE에는 ID 미노출 |
 | `tournament` | 0 | 토너먼트 stage/state |
 | `betting` | 0 | 국가/토너먼트 베팅 목록·상태 |
 
@@ -211,6 +213,19 @@ engine/API/worker writer와 dispatcher가 배포되고 reconciliation이 끝난 
 요구하는 version으로 올린다. coverage가 없거나 낮으면 기존 content-hash full computation
 경로를 사용한다. rollback은 coverage를 0으로 내리는 것만으로 fast path를 끌 수 있다.
 
+현재 binary 요구 version은 1이다. migration은 rolling deployment 중 구버전 writer가
+남을 수 있으므로 0을 seed한다. 배포 완료 뒤 아래 one-off만 실행한다. 이 명령은 advisory
+transaction lock을 얻고 `dashboard.global`/`map.world` head를 `ON CONFLICT DO NOTHING`으로
+seed한 다음 meta를 0→1 CAS한다. concurrent writer revision을 덮어쓰지 않으며 실패·rollback은
+head와 meta를 함께 되돌린다. profile/confirmation은 stdout에 비밀값을 출력하지 않는다.
+
+```sh
+pnpm --filter @sammo-ts/infra build
+READ_MODEL_COVERAGE_PROFILE=hwe \
+READ_MODEL_COVERAGE_CONFIRM=activate:hwe:coverage-v1 \
+pnpm --filter @sammo-ts/infra coverage:activate:game
+```
+
 감사·기록은 outbox payload로 재구성하지 않고 원래 transaction의 domain row와
 `log_entry`를 source of truth로 유지한다.
 
@@ -218,16 +233,16 @@ engine/API/worker writer와 dispatcher가 배포되고 reconciliation이 끝난 
 
 ### game engine
 
-- 현재 dirty general/city/nation/log/reserved state를 `ChangeJournal` adapter에 연결한다.
-- 기존 canonical projection 비교를 유지한다.
-- `persistedVisibleLogs`를 합친 최종 invalidation으로 DB revision을 같은 transaction에서
-  batch increment하고 outbox를 쓴다.
-- transaction이 성공한 뒤에만 dirty baseline을 acknowledge하고 committed receipt를 노출한다.
-  Redis publish는 durable outbox dispatcher가 담당한다.
-- 월 경계는 현재 DB commit 뒤에 `worldChanged`를 덧붙이므로 durable revision과 원자적이지
-  않다. 연·월과 response-relevant config/meta만 포함하고 clock/lease/heartbeat를 제외한
-  world canonical projection을 transaction 전에 비교하여 `world.content`와
-  `map.world`를 같은 transaction에서 올린다.
+- dirty general/city/nation/log/reserved state는 기존 canonical projection 비교 뒤
+  `ChangeJournal` adapter로 변환한다.
+- `persistedVisibleLogs`를 합친 최종 invalidation, DB revision과 outbox는 domain mutation과
+  같은 transaction에 저장한다. 성공 뒤에만 dirty baseline과 committed receipt를 확정한다.
+- 부대/외교, 부대장 예약턴과 전체 entity aggregate는 source-only `dashboard.global`로
+  보수적으로 포괄한다. clock/lease-only flush는 이 key를 올리지 않는다.
+- 일반 turn message와 통일 경매 취소 message는 실제 insert callback의 mailbox를 같은
+  transaction에 기록한다.
+- 연·월과 response-relevant config/meta만 world canonical projection에 포함하고
+  clock/lease/heartbeat를 제외한다. `world.content`와 `map.world`는 state commit과 원자적이다.
 
 ### game API transaction
 
@@ -236,10 +251,10 @@ handler는 성공한 mutation의 닫힌 의미만 mark한다. middleware는 hand
 `input_event=SUCCEEDED`를 저장한 같은 transaction에서 revision을 올리고, outer
 transaction commit 뒤에는 dispatcher wake-up만 시도한다.
 
-설문은 현재 handler 안에서 Redis publish를 실행하므로 DB transaction보다 publish가
-먼저 보일 수 있다. 이를 journal mark로 바꾸어 actor/global front-status revision과
-outbox row를 같은 transaction에서 확정하고, publish는 dispatcher가 commit 뒤에
-수행하게 한다.
+설문의 pre-commit Redis publish는 actor/global front-status journal mark로 바꿨다.
+메시지도 pre-commit `messageCreated`를 제거하고 mailbox outbox 전달 뒤 viewer-safe
+`messagesInvalidated`만 공개한다. 국가 설정, 베팅, 외교 응답과 장수 예약명령 direct writer는
+86개 mutation inventory test가 등록/명시적 비대상 분류를 고정한다.
 
 현재 일부 `authedProcedure`/`accessAuthedProcedure` mutation은 API interactive
 transaction을 잡은 채 `turnDaemon.requestCommand()`의 별도 ENGINE transaction 완료를
@@ -316,28 +331,28 @@ API는 access gate에서 얻은 현재 general/city/nation identity로 slice dep
   projection과 source revision을 다시 만든다.
 
 현재 dashboard private-slice 구현은 context에
-`general.content/city.content/nation.content/world.content/access.general`, command table에
-`general.content/city.content/nation.content/world.content`, board access에
-`general.content/nation.content`를 사용한다. source hash에는 dependency-vector code version을
-포함하고 browser에는 22자 base64url hash만 반환한다. access gate가 확보한 general ID를
-기준으로 actor city/nation, coverage와 revision head를 payload loader보다 먼저 한 SQL로 읽는다.
-coverage가 낮거나 meta/actor row가 없거나 query/result가 잘못되면 source hash를 authority로
-사용하지 않고 기존 content 계산으로 복구한다.
+`dashboard.global/general.content/city.content/nation.content/world.content/access.general`과
+인증 token의 icon projection hash를 사용한다. command table은
+`dashboard.global/general.content/city.content/nation.content/world.content`, board access는
+`general.content/nation.content`를 사용한다. `dashboard.global`은 troop/leader turn,
+국가 도시·장수 aggregate, top chiefs와 전체 command option 목록의 transitive dependency를
+보수적으로 포괄한다. 인증 hash는 icon 목록/권한만 포함하며 session ID나 token 만료처럼
+payload를 바꾸지 않는 값은 제외한다.
 
-단, 위 vector는 현재 Phase C protocol 구현 범위이며 아직 activation-safe한 전체 producer
-coverage가 아니다. `getGeneralContext()`는 troop/leader turn, 국가 도시·장수 aggregate,
-top chiefs와 인증 계정 icon 등 own general/city/nation row 밖의 값을 읽고,
-`getTurnCommandTable()`은 전체 city/nation/general option 목록을 읽는다. 이 transitive
-dependency의 revision key와 모든 writer mark/reconciliation이 끝나기 전에는
-`read_model_revision_meta.coverage_version`을 반드시 0으로 유지한다. 현재 migration/runtime도
-0이며, unit test의 coverage 1 fixture는 fast-path 기계적 계약만 검증할 뿐 활성화 근거가 아니다.
+source hash에는 dependency-vector code version을 포함하고 browser에는 22자 base64url hash만
+반환한다. access gate가 확보한 general ID를 기준으로 actor city/nation, coverage와 여섯 DB
+head를 payload loader보다 먼저 한 SQL로 읽는다. coverage가 낮거나 meta/actor row가 없거나
+query/result가 잘못되면 source hash를 authority로 사용하지 않고 기존 content 계산으로 복구한다.
+Migration/runtime 기본은 0이지만 writer reconciliation과 activation v1 PostgreSQL rollback
+test가 완료되어 post-deploy one-off로 안전하게 활성화할 수 있다.
 
 ### shared projection
 
-- world map base cache key는 Redis에서 best-effort로 증가한 값이 아니라 DB의
-  `map.world` revision을 사용한다.
+- world map base/public cache key는 coverage v1이 확인된 DB `map.world` revision만 사용한다.
+  meta/head 누락, DB/Redis 오류에는 shared cache를 완전히 우회해 full compute한다.
 - 개인 `spyList`, `shownByGeneralList`, `myCity`, `myNation`은 request에서 계속 조합한다.
-- tournament는 Redis atomic state revision을 cache/source revision으로 사용한다.
+- tournament는 API store, 월 자동 개막과 runtime clock shift 모두 payload와 profile source
+  revision을 같은 Lua invocation으로 갱신하고 commit 뒤에만 best-effort publish한다.
 - records는 기존 `lastGeneralRecordId`/`lastWorldHistoryId` 증분 조회를 유지하되 해당
   domain이 선택되지 않으면 query하지 않는다.
 
@@ -399,6 +414,19 @@ snapshot을 한 번 읽는다. 숫자는 실제 혼합 부하 결과에 따라 �
 5. 결과에 따라 pool, cadence, cache와 worker concurrency를 조정하고 전체 benchmark를
    다시 실행한다.
 
+### 2026-08-16 구현 상태
+
+| Phase | 상태 | 현재 근거 |
+| --- | --- | --- |
+| A | 완료 | all-false access gate, frontend 강제 context 제거, Chromium realtime trace |
+| B | 완료 | typed journal, PostgreSQL revision/outbox/meta, engine/API 원자 writer, retry dispatcher, 86 mutation inventory |
+| C | 완료 | dashboard revision-first, auth/global dependency, durable map cache, 모든 tournament Redis writer 원자화, coverage v1 activation/rollback integration |
+| D | 부분 완료 | E1 1,200장수 1개월 deterministic profile과 300 SSE/HTTP 짧은 calibration 완료. E2 actual daemon DB flush 및 30분 M1/R1은 미실행 |
+
+`부분 완료`는 capacity 합격을 뜻하지 않는다. 이 작업의 수용 추산은 아래 실제 짧은
+calibration과 E1 결과를 함께 사용하되, 장기 soak/daemon flush 경계는 별도 admission
+run 전까지 미검증으로 남긴다.
+
 각 phase는 독립 commit으로 유지한다. broad refactor 뒤에는
 `pnpm exec turbo typecheck --force`, lint/build와 architecture check를 실행한다.
 
@@ -451,6 +479,77 @@ API와 process 경합을 제외하므로 production 수용 근거로 단독 사�
 계측하여 수정하고 M1/R1을 다시 실행한다. dev host의 다른 workload가 결과에 영향을
 주면 container CPU/memory limit과 host steal/load를 함께 기록한다.
 
+## 2026-08-16 실측과 수용 판정
+
+### E1: 1,200장수 고정 seed 계산 profile
+
+로컬 source-tree에서 정확히 900 NPC와 300 synthetic human 장수, 5분 turn 간격,
+1개월/1,200 general turn을 두 번 실행했다. 두 실행의 최종 state SHA-256은 모두
+`d14a5f451385095bb56f9459928f100bf81864178bac9861686e06001a7f02a0`이었다.
+
+| 관찰값 | 결과 |
+| --- | ---: |
+| 처리량 | 1,283.986 general turns/s |
+| general turn p95 / p99 | 2.793 / 3.393 ms |
+| month wall p95 | 934.590 ms |
+| max RSS | 681,316,352 bytes |
+
+이는 평균 필요량 4 turns/s와 설계 burst 12 turns/s보다 계산량 자체가 충분히 작다는
+근거다. 그러나 DB-free in-memory profile이며 local CPU는 운영 후보 host와 다르다.
+PostgreSQL flush, Redis/outbox, API 경합을 포함한 E2/M1의 대체 근거로 사용하지 않는다.
+
+### 300 SSE + 실제 HTTP/PostgreSQL/Redis 짧은 calibration
+
+같은 deterministic fixture SHA-256
+`de8a5b459ca80c85c83dbdf0504203d3d3297dbd55226e57988b1c5d870d30cb`를 사용했다.
+PostgreSQL 18.4와 Redis 8.2.7을 loopback 전용 격리 stack에 두고 API만 CPU `0-3` affinity와
+`MemoryMax=8 GiB`로 제한했다. local host CPU는 Ryzen 7 9800X3D이므로 dev-sam2026의
+Ryzen 7 5800X와 동급이라고 간주하지 않는다. 각 run은 idle 5초, own/global/mixed 각
+10초이며, 각 phase에서 300 SSE를 열고 닫았다. 이는 30분 A1/M1 soak가 아니다.
+
+두 번째 run은 activation transaction으로 coverage 0→1과
+`dashboard.global`/`map.world` 초기 head를 확정한 뒤 실행했다. 300 SSE는 모든 phase에서
+300/300 open/close했고 failure, reconnect, privacy violation은 0이었다. HTTP 5,839건도
+모두 성공했다. 3,607 dashboard 응답, 즉 10,821개 slice에서 전송한 `knownSource`가
+응답 source와 같았고 전부 payload loader 이전 `unchanged`로 반환됐다.
+
+| 지표 | coverage 0 | coverage 1 | 변화 |
+| --- | ---: | ---: | ---: |
+| own dashboard 요청 | 1,347 | 2,454 | +82.2% |
+| mixed dashboard 요청 | 1,222 | 1,753 | +43.5% |
+| unchanged slice | 5,907 | 10,821 | +83.2% |
+| API CPU time / 약 35초 | 27.377 s | 15.505 s | -43.4% |
+| API MemoryPeak | 728.1 MB | 682.5 MB | -6.3% |
+| DB transaction delta | 52,367 | 34,237 | -34.6% |
+| DB tuple returned delta | 5,026,942 | 2,053,957 | -59.1% |
+| own mean / p50 | 1,107.4 / 1,113.0 ms | 214.2 / 4.7 ms | -80.7% / -99.6% |
+| own p95 / p99 | 1,460.6 / 1,564.7 ms | 1,566.1 / 1,869.2 ms | +7.2% / +19.5% |
+| mixed own mean / p50 | 498.0 / 493.1 ms | 76.5 / 4.5 ms | -84.6% / -99.1% |
+| mixed own p95 / p99 | 653.7 / 738.9 ms | 583.1 / 782.9 ms | -10.8% / +6.0% |
+
+coverage 1 run에서 API CPU는 wall time 대비 약 한 core의 44.1%, 할당 4 CPU의 11.0%였다.
+global-only front/lobby/records p95는 각각 6.7/6.4/5.7ms였다. source-fast-path가 반복
+`unchanged`의 평균 비용과 DB read amplification을 크게 줄였다는 결론은 성립한다.
+
+반면 own p95/p99는 각 dashboard phase 시작 때 300명이 동시에 최초 full snapshot을
+계산하는 cold-start 군집 때문에 provisional 500ms/1.5s gate를 넘었다. mixed phase의
+일부 global tail도 같은 군집과 경합했다. 따라서 현재 판정은 다음과 같다.
+
+- 300 SSE 연결과 정상상태 revision-equal read는 이 짧은 조건에서 충분한 여유가 있다.
+- 900 NPC 계산량도 E1에서는 큰 여유가 있다.
+- 300명 동시 최초 진입 tail은 합격하지 않았다. connection/request staggering,
+  bounded snapshot concurrency 또는 안전한 shared subprojection 확대를 검토해야 한다.
+- E2 actual daemon flush, 30분 A1/M1, 실제 mutation fan-out A2/A3, Redis/API restart R1이
+  없으므로 “dev-sam2026 동급 운영 서버가 300명+900 NPC 혼합 부하를 수용한다”는 최종
+  admission은 아직 내리지 않는다.
+
+coverage 0 run의 최초 산출물은 tRPC v11 GET input을 잘못 감싼 harness 결함으로 폐기했다.
+위 비교는 수정 뒤의 `calibration-result-2.json`과 coverage 활성화 뒤의
+`calibration-result-3.json`만 사용한다. raw result와 token은 Git 제외 0600 파일이며,
+보고서에는 aggregate만 남긴다. PostgreSQL 통계는 계측 query를 소량 포함한
+`pg_stat_database` 전후 delta이고, 두 번째 run은 DB/Redis 재기동·재시드로 cold cache였으므로
+`blks_read`는 직접 비교하지 않는다.
+
 ## 검증 matrix
 
 ### unit
@@ -493,9 +592,13 @@ repo-local `tools/load-tests` package를 추가한다. synthetic token은 Git �
 ```text
 tools/load-tests/
   config/300-users-900-npcs-5m.json
-  src/seed-capacity-fixture.ts
-  src/api-sse-load.ts
-  src/mixed-orchestrator.ts
+  compose.capacity.yml
+  scripts/run-capacity-api.sh
+  src/cli.ts
+  src/fixture.ts
+  src/runner.ts
+  src/sse.ts
+  src/trpc.ts
   src/metrics.ts
 ```
 
@@ -528,3 +631,6 @@ fixture hash와 실패 run도 남긴다.
 5. 300 viewer·900 NPC·5분 서버 pass gate가 실제 측정으로 확인된다.
 6. 전용 branch를 최신 main에 통합한 뒤 핵심 검증을 재실행한다.
 7. local main, tracking branch와 `git ls-remote` hash/ancestry를 확인하고 push한다.
+
+2026-08-16 작업은 1~3의 Phase A~C 범위와 E1/짧은 calibration까지만 충족했다.
+Phase D의 E2/A1~A3/M1/R1과 위 4~5는 운영 admission 전 후속 완료 조건이다.

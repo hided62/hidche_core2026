@@ -24,9 +24,10 @@
 - `Redis projection`: 토너먼트의 authoritative state가 현재 Redis이고 PostgreSQL
   journal과 원자적이지 않다.
 
-`coverageVersion`은 이 inventory가 존재한다는 이유로 올리지 않으며 계속 `0`이다.
-특히 mixed saga, Redis tournament state와 ENGINE writer inventory의 reconciliation이
-끝나기 전 revision equality fast path를 활성화하지 않는다.
+Migration 기본 `coverageVersion`은 계속 `0`이다. 현재 binary는 ENGINE의 보수적
+`dashboard.global`, API direct writer, engine message mailbox와 모든 tournament Redis
+writer reconciliation을 포함한다. rolling deployment가 끝난 뒤에만
+`coverage:activate:game` one-off가 shared head를 seed하고 version 1을 CAS로 활성화한다.
 
 ## 전수 목록
 
@@ -53,8 +54,8 @@
 | `messages.send` | 생성된 수신/송신 복사본의 `messages.mailbox:<mailbox>` | 해당 mailbox viewer에게 ID 없는 `messagesInvalidated` | 기존 pre-commit Redis `messageCreated`를 제거했다. outbox publish 뒤에도 browser에는 mailbox/message/sender/time/revision이 노출되지 않는다. |
 | `messages.delete` | 실제로 만료한 송신/수신 mailbox | 동일 | sender copy만 지우는 수동 외교 메시지는 그 mailbox만 표시한다. |
 | `messages.respond` | 영향 mailbox, `records.general`, 실제 외교 변경 국가의 `nation.content`, front-state patch 도시의 `city.content`, 필요 시 `map.world`, transitive aggregate용 `dashboard.global` | mailbox boolean 및 해당 dashboard slice | 실패 로그도 commit되면 actor 개인 기록을 표시한다. 외교 수락이 실제 diplomacy/city/nation dependency를 바꿀 때만 broad source key를 표시한다. |
-| nation metadata 7개 및 NPC policy 3개 | `nation.content:<nation>`, `dashboard.global:0`; notice만 추가로 `front.nation:<nation>` | 해당 국가 context/command/board, notice front status | `updateNationMeta()` 성공 뒤 공통 표식을 사용한다. 다만 현재 mutation 자체는 ENGINE `setNationMeta`이고 API journal transaction과 단일 DB transaction이 아닌 기존 saga다. coverage 활성화 전에 ENGINE command 소유로 합쳐야 한다. |
-| general reserved turn 4개 | `reserved.general:<general>` | 본인 reserved-turn slice | queue row와 CAS revision을 쓴 같은 API transaction에서 표시한다. nation reserved turns는 main SSE consumer가 없어 명시적 no-op이다. |
+| nation metadata 7개 및 NPC policy 3개 | `nation.content:<nation>`, `dashboard.global:0`; notice만 추가로 `front.nation:<nation>` | 해당 국가 context/command/board, notice front status | `updateNationMeta()` 성공 뒤 API 표식을 사용하고, ENGINE 소유 transaction도 nation 변화와 `dashboard.global`을 함께 기록한다. 두 input-event의 업무 원자성은 기존 saga지만 source coverage는 ENGINE commit으로 보존된다. |
+| general reserved turn 4개 | `reserved.general:<general>`, `dashboard.global:0` | 본인 reserved-turn slice | queue row와 CAS revision을 쓴 같은 API transaction에서 표시한다. global key는 troop leader 첫 예약턴에 의존하는 다른 장수 context를 위한 source-only 표식이다. nation reserved turns는 main SSE consumer가 없어 명시적 no-op이다. |
 | vote 4개 | 기존 `front.general`/`front.global` | front-status boolean | vote producer 작업에서 pre-commit publish를 journal로 이미 치환했다. 댓글은 active survey 제목을 바꾸지 않아 별도 화면 no-op이다. |
 | `public.recordAccess` | `access.general:<general>` | 없음 | Ref 순서상 gameplay transaction 밖의 별도 access transaction에 저장한다. |
 
@@ -76,14 +77,16 @@ public dashboard event로 내보내지 않는다. browser wake-up은 정밀 enti
 - image upload는 외부 content store write이며 game PostgreSQL read model이 아니다.
 - battle simulation은 호환상 mutation transport를 쓰지만 read-only 계산이다.
 
-## 남은 원자성/coverage gap
+## 남은 업무 원자성 gap과 coverage 판정
 
-1. nation metadata/NPC policy는 ENGINE DB commit 뒤 API input-event transaction이
-   journal을 쓴다. API rollback과 ENGINE commit이 분리되는 기존 gap이 남는다.
-2. inheritance와 tournament는 보상 가능한 saga지만 단일 transaction이 아니다.
-3. Redis tournament state에는 PostgreSQL revision과 원자적인 Lua/MULTI revision이
-   아직 없다.
-4. ENGINE에서 생성하는 message row도 `messages.mailbox`에 연결해야 전체 mailbox
-   producer coverage가 된다.
-5. 위 gap과 초기 reconciliation이 끝나기 전 `read_model_revision_meta.coverage_version`
-   은 반드시 `0`으로 유지한다.
+1. nation metadata/NPC policy의 API input-event와 ENGINE input-event는 여전히 하나의
+   업무 transaction이 아니다. 다만 실제 state 소유 ENGINE commit이 precise entity와
+   `dashboard.global`을 기록하므로 revision-first source coverage는 빠지지 않는다.
+2. inheritance/tournament command 일부는 보상 가능한 saga다. tournament payload와
+   profile source revision 자체는 API store, 월 자동 개막, runtime clock shift 모두 공통
+   Lua writer 한 번으로 원자화했다.
+3. ENGINE 일반 메시지와 통일 경매 취소 메시지는 실제 insert callback에서 mailbox를
+   모아 같은 PostgreSQL transaction의 journal/outbox에 쓴다.
+4. 따라서 dashboard/map coverage v1 코드 조건은 충족했지만 migration은 rolling deploy
+   안전을 위해 0을 유지한다. 전체 writer binary 배포가 확인된 뒤에만 activation command를
+   실행하며, 문제 시 meta를 0으로 내려 즉시 full-compute fallback한다.
