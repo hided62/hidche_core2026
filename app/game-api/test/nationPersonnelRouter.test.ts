@@ -68,11 +68,14 @@ const createContext = (
         me?: GeneralRow;
         db?: Record<string, unknown>;
         requestCommand?: ReturnType<typeof vi.fn>;
+        requestId?: string;
+        transaction?: ReturnType<typeof vi.fn>;
     } = {}
 ): GameApiContext => {
     const requestCommand = options.requestCommand ?? vi.fn();
     const redisClient = { get: async () => null, set: async () => null };
     const db = {
+        ...(options.transaction ? { $transaction: options.transaction } : {}),
         general: { findFirst: vi.fn(async () => options.me ?? baseGeneral) },
         ...options.db,
     };
@@ -83,6 +86,7 @@ const createContext = (
         battleSim: {} as GameApiContext['battleSim'],
         profile: { id: 'che', scenario: 'default', name: 'che:default' },
         auth,
+        ...(options.requestId ? { requestId: options.requestId } : {}),
         uploadDir: 'uploads',
         uploadPath: '/uploads',
         uploadPublicUrl: null,
@@ -137,6 +141,25 @@ describe('nation personnel router', () => {
             [{ type: 'kick', generalId: 22, destGeneralId: 8 }],
             [{ type: 'changePermission', generalId: 22, isAmbassador: true, targetGeneralIds: [9] }],
         ]);
+    });
+
+    it('keeps nation personnel commands out of the API transaction and gives ENGINE a stable request id', async () => {
+        const transaction = vi.fn(async () => {
+            throw new Error('API transaction must not run');
+        });
+        const requestCommand = vi.fn(async () => ({ type: 'kick', ok: true, generalId: 22 }));
+        const caller = appRouter.createCaller(
+            createContext({ requestId: 'http-nation-kick', transaction, requestCommand })
+        );
+
+        await expect(caller.nation.kick({ destGeneralId: 8 })).resolves.toEqual({ ok: true });
+        expect(transaction).not.toHaveBeenCalled();
+        expect(requestCommand).toHaveBeenCalledWith({
+            type: 'kick',
+            requestId: 'http-nation-kick:nation.kick:engine:0:kick',
+            generalId: 22,
+            destGeneralId: 8,
+        });
     });
 
     it('rejects oversized and duplicate permission selections before daemon dispatch', async () => {

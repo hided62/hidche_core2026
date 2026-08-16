@@ -1,7 +1,7 @@
 import { TRPCError } from '@trpc/server';
 import { z } from 'zod';
 
-import { authedProcedure, router } from '../../trpc.js';
+import { authedProcedure, engineAuthedProcedure, router } from '../../trpc.js';
 import { asNumber, asRecord, parseJson, LiteHashDRBG } from '@sammo-ts/common';
 import {
     ItemLoader,
@@ -791,7 +791,7 @@ export const inheritRouter = router({
         );
         return { ok: true };
     }),
-    openUniqueAuction: authedProcedure
+    openUniqueAuction: engineAuthedProcedure
         .input(
             z.object({
                 itemId: z.string(),
@@ -819,11 +819,16 @@ export const inheritRouter = router({
             if (!general) {
                 throw new TRPCError({ code: 'PRECONDITION_FAILED', message: '장수가 존재하지 않습니다.' });
             }
-            const result = await openAuctionWithDaemon(ctx, general.id, {
-                auctionType: 'UNIQUE_ITEM',
-                itemKey: input.itemId,
-                amount: input.amount,
-            });
+            const result = await openAuctionWithDaemon(
+                ctx,
+                general.id,
+                {
+                    auctionType: 'UNIQUE_ITEM',
+                    itemKey: input.itemId,
+                    amount: input.amount,
+                },
+                ctx.requestId ? `${ctx.requestId}:inherit.openUniqueAuction:engine:0:auctionOpen` : undefined
+            );
             return { ok: true, ...result };
         }),
     checkOwner: authedProcedure

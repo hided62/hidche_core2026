@@ -1,7 +1,7 @@
 import { TRPCError } from '@trpc/server';
 import { z } from 'zod';
 
-import { authedProcedure, router } from '../../trpc.js';
+import { authedProcedure, engineAuthedProcedure, router } from '../../trpc.js';
 import type { DatabaseClient, GameApiContext, GeneralRow } from '../../context.js';
 import { buildAuctionTimerKeys } from '../../auction/keys.js';
 import { GamePrisma } from '@sammo-ts/infra';
@@ -322,29 +322,44 @@ export const auctionRouter = router({
                 remainPoint: point?.value ?? 0,
             };
         }),
-    openBuyRice: authedProcedure.input(zOpenResourceInput).mutation(async ({ ctx, input }) => {
+    openBuyRice: engineAuthedProcedure.input(zOpenResourceInput).mutation(async ({ ctx, input }) => {
         const auth = requireAuth(ctx);
         const general = await ensureGeneral(ctx.db, auth.user.id);
         await ensureAuctionSeasonActive(ctx.db);
-        return openAuctionWithDaemon(ctx, general.id, { auctionType: 'BUY_RICE', ...input });
+        return openAuctionWithDaemon(
+            ctx,
+            general.id,
+            { auctionType: 'BUY_RICE', ...input },
+            ctx.requestId ? `${ctx.requestId}:auction.openBuyRice:engine:0:auctionOpen` : undefined
+        );
     }),
-    openSellRice: authedProcedure.input(zOpenResourceInput).mutation(async ({ ctx, input }) => {
+    openSellRice: engineAuthedProcedure.input(zOpenResourceInput).mutation(async ({ ctx, input }) => {
         const auth = requireAuth(ctx);
         const general = await ensureGeneral(ctx.db, auth.user.id);
         await ensureAuctionSeasonActive(ctx.db);
-        return openAuctionWithDaemon(ctx, general.id, { auctionType: 'SELL_RICE', ...input });
+        return openAuctionWithDaemon(
+            ctx,
+            general.id,
+            { auctionType: 'SELL_RICE', ...input },
+            ctx.requestId ? `${ctx.requestId}:auction.openSellRice:engine:0:auctionOpen` : undefined
+        );
     }),
-    openUnique: authedProcedure.input(zOpenUniqueInput).mutation(async ({ ctx, input }) => {
+    openUnique: engineAuthedProcedure.input(zOpenUniqueInput).mutation(async ({ ctx, input }) => {
         const auth = requireAuth(ctx);
         const general = await ensureGeneral(ctx.db, auth.user.id);
         await ensureAuctionSeasonActive(ctx.db);
-        return openAuctionWithDaemon(ctx, general.id, {
-            auctionType: 'UNIQUE_ITEM',
-            itemKey: input.itemKey,
-            amount: input.amount,
-        });
+        return openAuctionWithDaemon(
+            ctx,
+            general.id,
+            {
+                auctionType: 'UNIQUE_ITEM',
+                itemKey: input.itemKey,
+                amount: input.amount,
+            },
+            ctx.requestId ? `${ctx.requestId}:auction.openUnique:engine:0:auctionOpen` : undefined
+        );
     }),
-    bidBuyRice: authedProcedure.input(zBidInput).mutation(async ({ ctx, input }) => {
+    bidBuyRice: engineAuthedProcedure.input(zBidInput).mutation(async ({ ctx, input }) => {
         const auth = requireAuth(ctx);
         const general = await ensureGeneral(ctx.db, auth.user.id);
         await ensureAuctionSeasonActive(ctx.db);
@@ -398,6 +413,7 @@ export const auctionRouter = router({
 
         const result = await ctx.turnDaemon.requestCommand({
             type: 'auctionBid',
+            ...(ctx.requestId ? { requestId: `${ctx.requestId}:auction.bidBuyRice:engine:0:auctionBid` } : {}),
             auctionId: auction.id,
             generalId: general.id,
             amount: input.amount,
@@ -419,7 +435,7 @@ export const auctionRouter = router({
 
         return { ok: true };
     }),
-    bidSellRice: authedProcedure.input(zBidInput).mutation(async ({ ctx, input }) => {
+    bidSellRice: engineAuthedProcedure.input(zBidInput).mutation(async ({ ctx, input }) => {
         const auth = requireAuth(ctx);
         const general = await ensureGeneral(ctx.db, auth.user.id);
         await ensureAuctionSeasonActive(ctx.db);
@@ -473,6 +489,7 @@ export const auctionRouter = router({
 
         const result = await ctx.turnDaemon.requestCommand({
             type: 'auctionBid',
+            ...(ctx.requestId ? { requestId: `${ctx.requestId}:auction.bidSellRice:engine:0:auctionBid` } : {}),
             auctionId: auction.id,
             generalId: general.id,
             amount: input.amount,
@@ -494,7 +511,7 @@ export const auctionRouter = router({
 
         return { ok: true };
     }),
-    bidUnique: authedProcedure.input(zUniqueBidInput).mutation(async ({ ctx, input }) => {
+    bidUnique: engineAuthedProcedure.input(zUniqueBidInput).mutation(async ({ ctx, input }) => {
         const auth = requireAuth(ctx);
         const general = await ensureGeneral(ctx.db, auth.user.id);
         await ensureAuctionSeasonActive(ctx.db);
@@ -609,6 +626,7 @@ export const auctionRouter = router({
 
         const result = await ctx.turnDaemon.requestCommand({
             type: 'auctionBid',
+            ...(ctx.requestId ? { requestId: `${ctx.requestId}:auction.bidUnique:engine:0:auctionBid` } : {}),
             auctionId: auction.id,
             generalId: general.id,
             amount: input.amount,

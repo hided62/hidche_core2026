@@ -85,6 +85,8 @@ const createContext = (options: {
     troopLeaderAction?: string | null;
     refreshScore?: number;
     refreshScoreTotal?: number;
+    requestId?: string;
+    transaction?: ReturnType<typeof vi.fn>;
 }) => {
     const me = options.me === undefined ? buildGeneral() : options.me;
     const targets = options.targets ?? (me ? [me] : []);
@@ -94,6 +96,7 @@ const createContext = (options: {
         async ({ where }: { where: { id: number } }) => targets.find((general) => general.id === where.id) ?? null
     );
     const db = {
+        ...(options.transaction ? { $transaction: options.transaction } : {}),
         general: {
             findFirst: vi.fn(async () => me),
             findUnique: generalFindUnique,
@@ -190,6 +193,7 @@ const createContext = (options: {
         battleSim: {} as GameApiContext['battleSim'],
         profile: { id: 'che', scenario: 'default', name: 'che:default' },
         auth,
+        ...(options.requestId ? { requestId: options.requestId } : {}),
         uploadDir: 'uploads',
         uploadPath: '/uploads',
         uploadPublicUrl: null,
@@ -444,6 +448,29 @@ describe('in-game my information ownership', () => {
             settings: { tnmt: 1, defence_train: 999 },
         });
         expect(fixture.db.general.update).not.toHaveBeenCalled();
+    });
+
+    it('sends settings directly to ENGINE without creating an API input event', async () => {
+        const transaction = vi.fn(async () => {
+            throw new Error('API transaction must not run');
+        });
+        const requestCommand = vi.fn(async () => ({ type: 'setMySetting', ok: true, generalId: 7 }));
+        const fixture = createContext({
+            requestId: 'http-general-setting',
+            transaction,
+            requestCommand,
+        });
+
+        await expect(
+            appRouter.createCaller(fixture.context).general.setMySetting({ tnmt: 1 })
+        ).resolves.toEqual({ ok: true });
+        expect(transaction).not.toHaveBeenCalled();
+        expect(requestCommand).toHaveBeenCalledWith({
+            type: 'setMySetting',
+            requestId: 'http-general-setting:general.setMySetting:engine:0:setMySetting',
+            generalId: 7,
+            settings: { tnmt: 1 },
+        });
     });
 
     it('uses the authenticated user for both the page and its logs without accepting a target general id', async () => {

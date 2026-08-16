@@ -1,10 +1,10 @@
 import { TRPCError } from '@trpc/server';
 import { z } from 'zod';
 
-import { authedProcedure } from '../../../trpc.js';
+import { engineAuthedProcedure } from '../../../trpc.js';
 import { getMyGeneral } from '../../shared/general.js';
 
-export const changePermission = authedProcedure
+export const changePermission = engineAuthedProcedure
     .input(
         z.object({
             isAmbassador: z.boolean(),
@@ -18,6 +18,9 @@ export const changePermission = authedProcedure
         const general = await getMyGeneral(ctx);
         const result = await ctx.turnDaemon.requestCommand({
             type: 'changePermission',
+            ...(ctx.requestId
+                ? { requestId: `${ctx.requestId}:nation.changePermission:engine:0:changePermission` }
+                : {}),
             generalId: general.id,
             isAmbassador: input.isAmbassador,
             targetGeneralIds: input.targetGeneralIds,

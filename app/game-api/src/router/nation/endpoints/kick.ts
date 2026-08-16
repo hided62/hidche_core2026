@@ -1,15 +1,16 @@
 import { TRPCError } from '@trpc/server';
 import { z } from 'zod';
 
-import { authedProcedure } from '../../../trpc.js';
+import { engineAuthedProcedure } from '../../../trpc.js';
 import { getMyGeneral } from '../../shared/general.js';
 
-export const kick = authedProcedure
+export const kick = engineAuthedProcedure
     .input(z.object({ destGeneralId: z.number().int().positive() }))
     .mutation(async ({ ctx, input }) => {
         const general = await getMyGeneral(ctx);
         const result = await ctx.turnDaemon.requestCommand({
             type: 'kick',
+            ...(ctx.requestId ? { requestId: `${ctx.requestId}:nation.kick:engine:0:kick` } : {}),
             generalId: general.id,
             destGeneralId: input.destGeneralId,
         });

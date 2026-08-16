@@ -7,7 +7,6 @@ import { asRecord } from '@sammo-ts/common';
 import type { GameApiContext } from '../../context.js';
 import {
     accessAuthedProcedure,
-    accessAuthedInputProcedure,
     accessEngineAuthedProcedure,
     accessEngineAuthedInputProcedure,
     accessLimitAuthedProcedure,
@@ -655,10 +654,11 @@ export const generalRouter = router({
     instantRetreat: accessEngineAuthedInputProcedure(zImmediateActionInput).mutation(({ ctx, input }) =>
         requestImmediateAction(ctx, input, 'instantRetreat')
     ),
-    vacation: authedProcedure.mutation(async ({ ctx }) => {
+    vacation: engineAuthedProcedure.mutation(async ({ ctx }) => {
         const general = await getMyGeneral(ctx);
         const result = await ctx.turnDaemon.requestCommand({
             type: 'vacation',
+            ...(ctx.requestId ? { requestId: `${ctx.requestId}:general.vacation:engine:0:vacation` } : {}),
             generalId: general.id,
         });
         if (!result || result.type !== 'vacation') {
@@ -669,10 +669,13 @@ export const generalRouter = router({
         }
         return { ok: true };
     }),
-    setMySetting: accessAuthedInputProcedure(zGeneralSettings).mutation(async ({ ctx, input }) => {
+    setMySetting: accessEngineAuthedInputProcedure(zGeneralSettings).mutation(async ({ ctx, input }) => {
         const general = await getMyGeneral(ctx);
         const result = await ctx.turnDaemon.requestCommand({
             type: 'setMySetting',
+            ...(ctx.requestId
+                ? { requestId: `${ctx.requestId}:general.setMySetting:engine:0:setMySetting` }
+                : {}),
             generalId: general.id,
             settings: input,
         });
@@ -685,10 +688,11 @@ export const generalRouter = router({
 
         return { ok: true };
     }),
-    dropItem: authedProcedure.input(z.object({ itemType: z.string() })).mutation(async ({ ctx, input }) => {
+    dropItem: engineAuthedProcedure.input(z.object({ itemType: z.string() })).mutation(async ({ ctx, input }) => {
         const general = await getMyGeneral(ctx);
         const result = await ctx.turnDaemon.requestCommand({
             type: 'dropItem',
+            ...(ctx.requestId ? { requestId: `${ctx.requestId}:general.dropItem:engine:0:dropItem` } : {}),
             generalId: general.id,
             itemType: input.itemType,
         });

@@ -22,10 +22,12 @@ export type OpenAuctionInput =
 export const openAuctionWithDaemon = async (
     ctx: GameApiContext,
     generalId: number,
-    input: OpenAuctionInput
+    input: OpenAuctionInput,
+    requestId?: string
 ): Promise<{ auctionId: number; closeAt: string }> => {
     const result = await ctx.turnDaemon.requestCommand({
         type: 'auctionOpen',
+        ...(requestId ? { requestId } : {}),
         generalId,
         ...input,
     });

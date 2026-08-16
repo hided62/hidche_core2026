@@ -75,11 +75,14 @@ const buildContext = (options: {
     troop?: { troopLeaderId: number; nationId: number; name: string } | null;
     nationMeta?: Record<string, unknown>;
     auth?: GameSessionTokenPayload | null;
+    requestId?: string;
+    transaction?: ReturnType<typeof vi.fn>;
     result: Awaited<ReturnType<TurnDaemonTransport['requestCommand']>>;
 }) => {
     const me = options.me ?? buildGeneral();
     const requestCommand = vi.fn(async () => options.result);
     const db = {
+        ...(options.transaction ? { $transaction: options.transaction } : {}),
         general: {
             findFirst: vi.fn(async ({ where }: { where: { userId: string } }) =>
                 me.userId === where.userId ? me : null
@@ -123,6 +126,7 @@ const buildContext = (options: {
         battleSim: {} as GameApiContext['battleSim'],
         profile: { id: 'che', scenario: 'default', name: 'che:default' },
         auth: options.auth === undefined ? auth : options.auth,
+        ...(options.requestId ? { requestId: options.requestId } : {}),
         uploadDir: 'uploads',
         uploadPath: '/uploads',
         uploadPublicUrl: null,
@@ -184,6 +188,28 @@ describe('troop router permissions and mutations', () => {
         });
         expect(requestCommand).toHaveBeenCalledWith({
             type: 'troopCreate',
+            generalId: 1,
+            troopName: '백마대',
+        });
+    });
+
+    it('dispatches a stable ENGINE request without opening an API input-event transaction', async () => {
+        const transaction = vi.fn(async () => {
+            throw new Error('API transaction must not run');
+        });
+        const { context, requestCommand } = buildContext({
+            requestId: 'http-troop-create',
+            transaction,
+            result: { type: 'troopCreate', ok: true, generalId: 1, troopId: 1, troopName: '백마대' },
+        });
+
+        await expect(appRouter.createCaller(context).troop.create({ troopName: '백마대' })).resolves.toMatchObject({
+            ok: true,
+        });
+        expect(transaction).not.toHaveBeenCalled();
+        expect(requestCommand).toHaveBeenCalledWith({
+            type: 'troopCreate',
+            requestId: 'http-troop-create:troop.create:engine:0:troopCreate',
             generalId: 1,
             troopName: '백마대',
         });

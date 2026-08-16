@@ -1,10 +1,10 @@
 import { TRPCError } from '@trpc/server';
 import { z } from 'zod';
 
-import { authedProcedure } from '../../../trpc.js';
+import { engineAuthedProcedure } from '../../../trpc.js';
 import { getMyGeneral } from '../../shared/general.js';
 
-export const appoint = authedProcedure
+export const appoint = engineAuthedProcedure
     .input(
         z.object({
             destGeneralId: z.number().int().nonnegative(),
@@ -16,6 +16,7 @@ export const appoint = authedProcedure
         const general = await getMyGeneral(ctx);
         const result = await ctx.turnDaemon.requestCommand({
             type: 'appoint',
+            ...(ctx.requestId ? { requestId: `${ctx.requestId}:nation.appoint:engine:0:appoint` } : {}),
             generalId: general.id,
             destGeneralId: input.destGeneralId,
             destCityId: input.destCityId,

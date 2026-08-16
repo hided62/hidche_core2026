@@ -78,6 +78,8 @@ const buildContext = (options: {
     queryRaw?: (query: GamePrisma.Sql) => Promise<unknown>;
     isUnited?: number;
     isunited?: number;
+    requestId?: string;
+    transaction?: ReturnType<typeof vi.fn>;
 }) => {
     const auth = options.auth === undefined ? buildAuth() : options.auth;
     const general = options.general === undefined ? buildGeneral() : options.general;
@@ -114,6 +116,7 @@ const buildContext = (options: {
         updatedAt: new Date('2026-07-26T00:00:00Z'),
     };
     const db = {
+        ...(options.transaction ? { $transaction: options.transaction } : {}),
         $queryRaw: queryRaw,
         general: {
             findFirst: vi.fn(async ({ where }: { where: { userId: string } }) =>
@@ -154,6 +157,7 @@ const buildContext = (options: {
         battleSim: {} as GameApiContext['battleSim'],
         profile: { id: 'che', scenario: 'default', name: 'che:default' },
         auth,
+        ...(options.requestId ? { requestId: options.requestId } : {}),
         uploadDir: 'uploads',
         uploadPath: '/uploads',
         uploadPublicUrl: null,
@@ -212,6 +216,34 @@ describe('auction router actor and permission boundaries', () => {
 
         expect(fixture.requestCommand).toHaveBeenCalledWith({
             type: 'auctionOpen',
+            auctionType: 'BUY_RICE',
+            generalId: 7,
+            amount: 1000,
+            closeTurnCnt: 3,
+            startBidAmount: 500,
+            finishBidAmount: 2000,
+        });
+    });
+
+    it('opens an auction without an API input-event transaction and preserves the ENGINE request identity', async () => {
+        const transaction = vi.fn(async () => {
+            throw new Error('API transaction must not run');
+        });
+        const fixture = buildContext({ requestId: 'http-auction-open', transaction });
+
+        await expect(
+            appRouter.createCaller(fixture.context).auction.openBuyRice({
+                amount: 1000,
+                closeTurnCnt: 3,
+                startBidAmount: 500,
+                finishBidAmount: 2000,
+            })
+        ).resolves.toMatchObject({ auctionId: 91 });
+
+        expect(transaction).not.toHaveBeenCalled();
+        expect(fixture.requestCommand).toHaveBeenCalledWith({
+            type: 'auctionOpen',
+            requestId: 'http-auction-open:auction.openBuyRice:engine:0:auctionOpen',
             auctionType: 'BUY_RICE',
             generalId: 7,
             amount: 1000,

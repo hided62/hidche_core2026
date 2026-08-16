@@ -4,7 +4,7 @@ import { z } from 'zod';
 import { asRecord, type TurnDaemonCommandResult } from '@sammo-ts/common';
 import { isValidTroopNameWidth, normalizeTroopName, resolveTroopSecretPermission } from '@sammo-ts/logic';
 
-import { accessAuthedProcedure, authedProcedure, router } from '../../trpc.js';
+import { accessAuthedProcedure, engineAuthedProcedure, router } from '../../trpc.js';
 import { getMyGeneral } from '../shared/general.js';
 
 const troopNameSchema = z
@@ -162,7 +162,7 @@ export const troopRouter = router({
             troops: mappedTroops,
         };
     }),
-    create: authedProcedure.input(z.object({ troopName: troopNameSchema })).mutation(async ({ ctx, input }) => {
+    create: engineAuthedProcedure.input(z.object({ troopName: troopNameSchema })).mutation(async ({ ctx, input }) => {
         const me = await getMyGeneral(ctx);
         const troopName = normalizeRequiredTroopName(input.troopName);
         if (me.troopId !== 0) {
@@ -179,6 +179,7 @@ export const troopRouter = router({
         }
         const result = await ctx.turnDaemon.requestCommand({
             type: 'troopCreate',
+            ...(ctx.requestId ? { requestId: `${ctx.requestId}:troop.create:engine:0:troopCreate` } : {}),
             generalId: me.id,
             troopName,
         });
@@ -190,25 +191,29 @@ export const troopRouter = router({
         }
         return { ok: true, troopId: result.troopId, troopName: result.troopName };
     }),
-    join: authedProcedure.input(z.object({ troopId: z.number().int().positive() })).mutation(async ({ ctx, input }) => {
-        const me = await getMyGeneral(ctx);
-        const result = await ctx.turnDaemon.requestCommand({
-            type: 'troopJoin',
-            generalId: me.id,
-            troopId: input.troopId,
-        });
-        if (!result || result.type !== 'troopJoin') {
-            return assertCommandResult(result, 'troopJoin');
-        }
-        if (!result.ok) {
-            throw new TRPCError({ code: 'PRECONDITION_FAILED', message: result.reason });
-        }
-        return { ok: true };
-    }),
-    exit: authedProcedure.mutation(async ({ ctx }) => {
+    join: engineAuthedProcedure
+        .input(z.object({ troopId: z.number().int().positive() }))
+        .mutation(async ({ ctx, input }) => {
+            const me = await getMyGeneral(ctx);
+            const result = await ctx.turnDaemon.requestCommand({
+                type: 'troopJoin',
+                ...(ctx.requestId ? { requestId: `${ctx.requestId}:troop.join:engine:0:troopJoin` } : {}),
+                generalId: me.id,
+                troopId: input.troopId,
+            });
+            if (!result || result.type !== 'troopJoin') {
+                return assertCommandResult(result, 'troopJoin');
+            }
+            if (!result.ok) {
+                throw new TRPCError({ code: 'PRECONDITION_FAILED', message: result.reason });
+            }
+            return { ok: true };
+        }),
+    exit: engineAuthedProcedure.mutation(async ({ ctx }) => {
         const me = await getMyGeneral(ctx);
         const result = await ctx.turnDaemon.requestCommand({
             type: 'troopExit',
+            ...(ctx.requestId ? { requestId: `${ctx.requestId}:troop.exit:engine:0:troopExit` } : {}),
             generalId: me.id,
         });
         if (!result || result.type !== 'troopExit') {
@@ -219,7 +224,7 @@ export const troopRouter = router({
         }
         return { ok: true, wasLeader: result.wasLeader };
     }),
-    kick: authedProcedure
+    kick: engineAuthedProcedure
         .input(
             z.object({
                 troopId: z.number().int().positive(),
@@ -250,6 +255,7 @@ export const troopRouter = router({
 
             const result = await ctx.turnDaemon.requestCommand({
                 type: 'troopKick',
+                ...(ctx.requestId ? { requestId: `${ctx.requestId}:troop.kick:engine:0:troopKick` } : {}),
                 generalId: me.id,
                 troopId: input.troopId,
                 targetGeneralId: input.targetGeneralId,
@@ -263,7 +269,7 @@ export const troopRouter = router({
             }
             return { ok: true };
         }),
-    rename: authedProcedure
+    rename: engineAuthedProcedure
         .input(
             z.object({
                 troopId: z.number().int().positive(),
@@ -291,6 +297,7 @@ export const troopRouter = router({
 
             const result = await ctx.turnDaemon.requestCommand({
                 type: 'troopRename',
+                ...(ctx.requestId ? { requestId: `${ctx.requestId}:troop.rename:engine:0:troopRename` } : {}),
                 generalId: me.id,
                 troopId: input.troopId,
                 troopName,
