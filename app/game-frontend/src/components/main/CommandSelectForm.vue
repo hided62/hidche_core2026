@@ -173,12 +173,17 @@ const commandTitle = (command: CommandAvailability) =>
     gap: 0;
 }
 
+.category-btn,
+.command-item {
+    min-height: 32px;
+    padding-block: 6px;
+}
+
 .category-btn {
-    min-height: 24px;
     border: 0;
     border-right: 1px solid #666;
     border-bottom: 1px solid #666;
-    padding: 2px 4px;
+    padding-inline: 4px;
     background: #173d27;
     color: #fff;
     font-size: 12px;
@@ -197,11 +202,10 @@ const commandTitle = (command: CommandAvailability) =>
 }
 
 .command-item {
-    min-height: 24px;
     border: 0;
     border-right: 1px solid #666;
     border-bottom: 1px solid #666;
-    padding: 2px 5px;
+    padding-inline: 5px;
     display: flex;
     align-items: center;
     justify-content: center;
