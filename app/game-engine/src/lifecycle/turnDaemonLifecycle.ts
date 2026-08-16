@@ -183,11 +183,15 @@ export class TurnDaemonLifecycle {
             const gameNowMs = gameClock?.now.getTime() ?? nowMs;
             const nextTurnMs = nextRunTime.getTime();
             if (gameNowMs >= nextTurnMs) {
-                // Ref checkDelay() executes every turn due at the observed
-                // wall-clock time in one snapshot. Using only the oldest due
-                // timestamp lets generals created by that batch run before a
-                // monthly boundary, although Ref defers them to the next pass.
-                await this.runOnce({ reason: 'schedule', targetTime: new Date(gameNowMs) });
+                // Preserve Ref's chronological boundary even when realtime has
+                // fallen multiple months behind. Draining every general through
+                // gameNow before advancing the first pending month labels and
+                // resolves all of those future commands in the stale month and
+                // can build an unbounded same-month catch-up backlog. Within the current
+                // month we still observe every due general through gameNow; once
+                // a month boundary is overdue, process only through that boundary.
+                const nextMonthMs = this.getNextTickTime(new Date(this.status.lastTurnTime!)).getTime();
+                await this.runOnce({ reason: 'schedule', targetTime: new Date(Math.min(gameNowMs, nextMonthMs)) });
                 continue;
             }
 
