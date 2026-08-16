@@ -10,6 +10,7 @@ import type {
     GeneralTurnCommandKey,
     MapDefinition,
     Nation,
+    NationTurnCommandKey,
     NationTurnCommandSpec,
     RequirementKey,
     StateView,
@@ -146,6 +147,54 @@ const REF_GENERAL_CATEGORY_ORDER = new Map<string, number>(
 );
 const REF_GENERAL_COMMAND_POSITION = new Map<string, { category: string; index: number }>(
     REF_GENERAL_COMMAND_GROUPS.flatMap(({ category, commands }) =>
+        commands.map((command, index) => [command, { category, index }] as const)
+    )
+);
+
+const REF_NATION_COMMAND_GROUPS = [
+    {
+        category: '휴식',
+        commands: ['휴식'],
+    },
+    {
+        category: '인사',
+        commands: ['che_발령', 'che_포상', 'che_몰수', 'che_부대탈퇴지시'],
+    },
+    {
+        category: '외교',
+        commands: ['che_물자원조', 'che_불가침제의', 'che_선전포고', 'che_종전제의', 'che_불가침파기제의'],
+    },
+    {
+        category: '특수',
+        commands: ['che_초토화', 'che_천도', 'che_증축', 'che_감축'],
+    },
+    {
+        category: '전략',
+        commands: [
+            'che_필사즉생',
+            'che_백성동원',
+            'che_수몰',
+            'che_허보',
+            'che_의병모집',
+            'che_이호경식',
+            'che_급습',
+            'che_피장파장',
+        ],
+    },
+    {
+        category: '기타',
+        commands: ['che_국기변경', 'che_국호변경'],
+    },
+] as const satisfies ReadonlyArray<{
+    category: string;
+    commands: ReadonlyArray<NationTurnCommandKey>;
+}>;
+
+const REF_NATION_CATEGORY_ORDER = new Map<string, number>(
+    REF_NATION_COMMAND_GROUPS.map(({ category }, index) => [category, index] as const)
+);
+const REF_NATION_COMMAND_POSITION = new Map<string, { category: string; index: number }>(
+    REF_NATION_COMMAND_GROUPS.flatMap(({ category, commands }) =>
         commands.map((command, index) => [command, { category, index }] as const)
     )
 );
@@ -665,6 +714,26 @@ const projectRefGeneralCommandGroups = (entries: CommandEntry[]): CommandEntry[]
         )
         .map(({ entry }) => entry);
 
+const projectRefNationCommandGroups = (entries: CommandEntry[]): CommandEntry[] =>
+    entries
+        .map((entry, profileIndex) => {
+            const refPosition = REF_NATION_COMMAND_POSITION.get(entry.definition.key as NationTurnCommandKey);
+            return {
+                entry: refPosition ? { ...entry, category: refPosition.category } : entry,
+                categoryIndex:
+                    REF_NATION_CATEGORY_ORDER.get(refPosition?.category ?? entry.category) ?? Number.MAX_SAFE_INTEGER,
+                commandIndex: refPosition?.index ?? profileIndex,
+                profileIndex,
+            };
+        })
+        .sort(
+            (left, right) =>
+                left.categoryIndex - right.categoryIndex ||
+                left.commandIndex - right.commandIndex ||
+                left.profileIndex - right.profileIndex
+        )
+        .map(({ entry }) => entry);
+
 export const buildTurnCommandTable = async (options: {
     worldState: WorldStateRow;
     general: GeneralRow;
@@ -697,7 +766,7 @@ export const buildTurnCommandTable = async (options: {
 
     return {
         general: buildGroups(projectRefGeneralCommandGroups(generalEntries), ctx, view),
-        nation: buildGroups(nationEntries, ctx, view),
+        nation: buildGroups(projectRefNationCommandGroups(nationEntries), ctx, view),
         inputOptions: options.inputOptions ?? {
             cities: [],
             nations: [],

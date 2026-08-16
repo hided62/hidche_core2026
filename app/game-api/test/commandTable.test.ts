@@ -100,7 +100,7 @@ const buildNation = (): NationRow =>
     }) as unknown as NationRow;
 
 describe('buildTurnCommandTable', () => {
-    it('projects the main reserved-turn categories and command order from Ref', async () => {
+    it('projects the general and chief reserved-turn categories and command order from Ref', async () => {
         const table = await buildTurnCommandTable({
             worldState: buildWorldState(),
             general: buildGeneral(),
@@ -139,6 +139,36 @@ describe('buildTurnCommandTable', () => {
             인사: ['che_이동', 'che_강행', 'che_인재탐색', 'che_귀환', 'che_임관', 'che_랜덤임관'],
             계략: ['che_선동', 'che_탈취', 'che_파괴', 'che_화계'],
             국가: ['che_증여', 'che_헌납', 'che_물자조달', 'che_하야', 'che_거병', 'che_건국', 'che_선양', 'che_해산'],
+        });
+        expect(table.nation.map(({ category }) => category)).toEqual(['휴식', '인사', '외교', '특수', '전략', '기타']);
+        expect(
+            Object.fromEntries(table.nation.map(({ category, values }) => [category, values.map(({ key }) => key)]))
+        ).toEqual({
+            휴식: ['휴식'],
+            인사: ['che_발령', 'che_포상', 'che_몰수', 'che_부대탈퇴지시'],
+            외교: ['che_물자원조', 'che_불가침제의', 'che_선전포고', 'che_종전제의', 'che_불가침파기제의'],
+            특수: ['che_초토화', 'che_천도', 'che_증축', 'che_감축'],
+            전략: [
+                'che_필사즉생',
+                'che_백성동원',
+                'che_수몰',
+                'che_허보',
+                'che_의병모집',
+                'che_이호경식',
+                'che_급습',
+                'che_피장파장',
+            ],
+            기타: ['che_국기변경', 'che_국호변경'],
+        });
+        expect(
+            Object.fromEntries(table.nation.map(({ category, values }) => [category, values.map(({ name }) => name)]))
+        ).toEqual({
+            휴식: ['휴식'],
+            인사: ['발령', '포상', '몰수', '부대 탈퇴 지시'],
+            외교: ['원조', '불가침 제의', '선전포고', '종전 제의', '불가침 파기 제의'],
+            특수: ['초토화', '천도', '증축', '감축'],
+            전략: ['필사즉생', '백성동원', '수몰', '허보', '의병모집', '이호경식', '급습', '피장파장'],
+            기타: ['국기변경', '국호변경'],
         });
     });
 

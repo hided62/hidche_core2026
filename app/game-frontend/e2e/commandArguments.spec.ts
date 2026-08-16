@@ -231,6 +231,66 @@ const commandTable = {
     ],
     inputOptions,
 };
+const buildSimpleCommand = (key: string, name: string) => ({
+    key,
+    name,
+    reqArg: false,
+    possible: true,
+    status: 'available',
+    inputFields: [],
+});
+const refChiefCommandTable = {
+    general: [],
+    nation: [
+        { category: '휴식', values: [buildSimpleCommand('휴식', '휴식')] },
+        {
+            category: '인사',
+            values: [
+                buildSimpleCommand('che_발령', '발령'),
+                buildSimpleCommand('che_포상', '포상'),
+                buildSimpleCommand('che_몰수', '몰수'),
+                buildSimpleCommand('che_부대탈퇴지시', '부대 탈퇴 지시'),
+            ],
+        },
+        {
+            category: '외교',
+            values: [
+                buildSimpleCommand('che_물자원조', '원조'),
+                buildSimpleCommand('che_불가침제의', '불가침 제의'),
+                buildSimpleCommand('che_선전포고', '선전포고'),
+                buildSimpleCommand('che_종전제의', '종전 제의'),
+                buildSimpleCommand('che_불가침파기제의', '불가침 파기 제의'),
+            ],
+        },
+        {
+            category: '특수',
+            values: [
+                buildSimpleCommand('che_초토화', '초토화'),
+                buildSimpleCommand('che_천도', '천도'),
+                buildSimpleCommand('che_증축', '증축'),
+                buildSimpleCommand('che_감축', '감축'),
+            ],
+        },
+        {
+            category: '전략',
+            values: [
+                buildSimpleCommand('che_필사즉생', '필사즉생'),
+                buildSimpleCommand('che_백성동원', '백성동원'),
+                buildSimpleCommand('che_수몰', '수몰'),
+                buildSimpleCommand('che_허보', '허보'),
+                buildSimpleCommand('che_의병모집', '의병모집'),
+                buildSimpleCommand('che_이호경식', '이호경식'),
+                buildSimpleCommand('che_급습', '급습'),
+                buildSimpleCommand('che_피장파장', '피장파장'),
+            ],
+        },
+        {
+            category: '기타',
+            values: [buildSimpleCommand('che_국기변경', '국기변경'), buildSimpleCommand('che_국호변경', '국호변경')],
+        },
+    ],
+    inputOptions,
+};
 const generalContext = {
     general: {
         id: 1,
@@ -616,6 +676,51 @@ test('reserves force move, retirement, and resignation from the user command pic
     await picker.getByRole('button', { name: '개인', exact: true }).click();
     await expect(picker.getByRole('button', { name: '은퇴', exact: true })).toBeVisible();
     await picker.screenshot({ path: test.info().outputPath('special-user-commands-mobile-500.png') });
+});
+
+test('shows every Ref chief command in the exact category and command order', async ({ page }) => {
+    await install(page, false, refChiefCommandTable);
+    await page.setViewportSize({ width: 1200, height: 900 });
+    await page.goto('/che/chief-center');
+
+    const editor = page.locator('[data-command-scope="nation"]');
+    await editor.getByRole('button', { name: '1턴 명령 입력', exact: true }).click();
+    const picker = page.getByTestId('command-picker');
+    const expected = {
+        휴식: ['휴식'],
+        인사: ['발령', '포상', '몰수', '부대 탈퇴 지시'],
+        외교: ['원조', '불가침 제의', '선전포고', '종전 제의', '불가침 파기 제의'],
+        특수: ['초토화', '천도', '증축', '감축'],
+        전략: ['필사즉생', '백성동원', '수몰', '허보', '의병모집', '이호경식', '급습', '피장파장'],
+        기타: ['국기변경', '국호변경'],
+    } as const;
+
+    await expect(picker.locator('.category-btn')).toHaveText(Object.keys(expected));
+    for (const [category, commands] of Object.entries(expected)) {
+        await picker.locator('.category-btn').filter({ hasText: category }).click();
+        await expect(picker.locator('.command-grid .command-item')).toHaveText([...commands]);
+    }
+    const rename = picker.getByRole('button', { name: '국호변경', exact: true });
+    await rename.hover();
+    await rename.focus();
+    await expect(rename).toBeFocused();
+    await picker.screenshot({ path: test.info().outputPath('ref-chief-command-list-desktop-1200.png') });
+
+    await picker.getByRole('button', { name: '명령 입력 닫기', exact: true }).click();
+    await page.setViewportSize({ width: 500, height: 900 });
+    const mobileEditor = page.locator('[data-command-scope="nation"]:visible');
+    await mobileEditor.getByRole('button', { name: '1턴 명령 입력', exact: true }).click();
+    const mobilePicker = page.locator('[data-testid="command-picker"]:visible');
+    await expect(mobilePicker.locator('.category-btn')).toHaveText(Object.keys(expected));
+    const mobileGeometry = await mobilePicker.evaluate((element) => ({
+        width: element.getBoundingClientRect().width,
+        horizontalOverflow: element.scrollWidth - element.clientWidth,
+        categoryColumns: getComputedStyle(element.querySelector<HTMLElement>('.category-list')!).gridTemplateColumns,
+    }));
+    expect(mobileGeometry.width).toBeLessThanOrEqual(500);
+    expect(mobileGeometry.horizontalOverflow).toBeLessThanOrEqual(0);
+    expect(mobileGeometry.categoryColumns.split(' ')).toHaveLength(3);
+    await mobilePicker.screenshot({ path: test.info().outputPath('ref-chief-command-list-mobile-500.png') });
 });
 
 test('enters general and nation command arguments and sends exact values', async ({ page }) => {
