@@ -20,7 +20,7 @@ import type { Clock, TurnDaemonControlQueue, TurnDaemonHooks, TurnRunBudget } fr
 import { TurnDaemonLifecycle } from '../lifecycle/turnDaemonLifecycle.js';
 import { DatabaseTurnDaemonCommandQueue } from '../lifecycle/databaseCommandQueue.js';
 import type { MapLoaderOptions } from '../scenario/mapLoader.js';
-import { createDatabaseTurnHooks } from './databaseHooks.js';
+import { createDatabaseTurnHooks, type CommittedReadModelChangeReceipt } from './databaseHooks.js';
 import type { GeneralTurnHandler, InMemoryTurnWorldOptions, TurnCalendarHandler } from './inMemoryWorld.js';
 import { InMemoryTurnWorld } from './inMemoryWorld.js';
 import { InMemoryTurnProcessor } from './inMemoryTurnProcessor.js';
@@ -488,7 +488,7 @@ const createRealtimeRuntime = async (options: {
     redisUrl?: string;
     profileName: string;
     hooks?: TurnDaemonHooks;
-    takeCommittedReadModelChanges: (() => RealtimeReadModelChanges | null) | null;
+    takeCommittedReadModelChangeReceipt: (() => CommittedReadModelChangeReceipt | null) | null;
 }): Promise<{ redisConnector: RedisConnector | null; hooks?: TurnDaemonHooks }> => {
     const redisConfig = resolveRedisConfig(options.redisUrl);
     if (!redisConfig) {
@@ -526,10 +526,8 @@ const createRealtimeRuntime = async (options: {
         ...options.hooks,
         publishEvents: async (result) => {
             try {
-                const changes = options.takeCommittedReadModelChanges?.() ?? createEmptyRealtimeReadModelChanges();
-                if (result.processedTurns > 0) {
-                    changes.worldChanged = true;
-                }
+                const changes =
+                    options.takeCommittedReadModelChangeReceipt?.()?.changes ?? createEmptyRealtimeReadModelChanges();
                 const revision = await publishCommittedChanges(changes);
                 await publishRealtimeEvent({
                     type: 'turnCompleted',
@@ -545,10 +543,7 @@ const createRealtimeRuntime = async (options: {
         },
         publishCommandEvents: async (result) => {
             try {
-                const changes = options.takeCommittedReadModelChanges?.();
-                if (changes && result.type === 'shiftSchedule' && result.ok) {
-                    changes.lobbyChanged = true;
-                }
+                const changes = options.takeCommittedReadModelChangeReceipt?.()?.changes;
                 if (changes && hasRealtimeReadModelChanges(changes)) {
                     const revision = await publishCommittedChanges(changes);
                     if (revision !== undefined) {
@@ -814,7 +809,7 @@ const createTurnDaemonRuntimeWithLease = async (
     const controlQueue = options.controlQueue ?? new InMemoryControlQueue();
 
     let hooks: TurnDaemonHooks | undefined;
-    let takeCommittedReadModelChanges: (() => RealtimeReadModelChanges | null) | null = null;
+    let takeCommittedReadModelChangeReceipt: (() => CommittedReadModelChangeReceipt | null) | null = null;
     let close = async () => {};
     let auctionFinalizer: Awaited<ReturnType<typeof createAuctionFinalizer>> | null = null;
     let auctionBidder: Awaited<ReturnType<typeof createAuctionBidder>> | null = null;
@@ -858,7 +853,7 @@ const createTurnDaemonRuntimeWithLease = async (
                 await gatewayGate?.markPaused(error);
             },
         };
-        takeCommittedReadModelChanges = dbHooks.takeCommittedReadModelChanges;
+        takeCommittedReadModelChangeReceipt = dbHooks.takeCommittedReadModelChangeReceipt;
         close = async () => {
             if (auctionBidder) {
                 await auctionBidder.close();
@@ -908,7 +903,7 @@ const createTurnDaemonRuntimeWithLease = async (
         redisUrl: options.redisUrl,
         profileName: options.profileName ?? options.profile,
         hooks,
-        takeCommittedReadModelChanges,
+        takeCommittedReadModelChangeReceipt,
     });
     redisConnector = realtimeRuntime.redisConnector;
     hooks = realtimeRuntime.hooks;

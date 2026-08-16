@@ -1,7 +1,9 @@
 import {
     createGamePostgresConnector,
     GamePrisma,
+    writeReadModelChangeJournal,
     type InputJsonValue,
+    type ReadModelJournalWriteResult,
     type TurnEngineCityUpdateInput,
     type TurnEngineDiplomacyCreateManyInput,
     type TurnEngineDiplomacyUpdateInput,
@@ -24,7 +26,13 @@ import {
     type MessageRecordDraft,
     type Nation,
 } from '@sammo-ts/logic';
-import { asRecord, type RealtimeReadModelChanges } from '@sammo-ts/common';
+import {
+    asRecord,
+    ChangeJournal,
+    type CommittedReadModelInvalidation,
+    type ReadModelDomain,
+    type RealtimeReadModelChanges,
+} from '@sammo-ts/common';
 
 import type { TurnDaemonCommandResult, TurnDaemonHooks } from '../lifecycle/types.js';
 import type { InMemoryTurnWorld, TurnWorldChanges } from './inMemoryWorld.js';
@@ -44,7 +52,15 @@ import { persistYearbookSnapshot } from './yearbookPersistence.js';
 export interface DatabaseTurnHooks {
     hooks: TurnDaemonHooks;
     takeCommittedReadModelChanges(): RealtimeReadModelChanges | null;
+    takeCommittedReadModelChangeReceipt(): CommittedReadModelChangeReceipt | null;
     close(): Promise<void>;
+}
+
+export interface CommittedReadModelChangeReceipt {
+    /** Delivery identity only; this is not a projection revision. */
+    outboxId: bigint;
+    invalidation: CommittedReadModelInvalidation;
+    changes: RealtimeReadModelChanges;
 }
 
 const uniqueSortedIds = (values: Iterable<number>): number[] =>
@@ -93,6 +109,50 @@ const canonicalizeReadModelValue = (value: unknown): unknown => {
 };
 
 const signature = (value: unknown): string => JSON.stringify(canonicalizeReadModelValue(value)) ?? 'undefined';
+
+const CLOCK_ONLY_WORLD_META_KEYS = new Set([
+    'clockBaseTime',
+    'clock_base_time',
+    'clockMode',
+    'clock_mode',
+    'clockTick',
+    'clock_tick',
+    'clockWallAnchor',
+    'clock_wall_anchor',
+    'heartbeat',
+    'heartbeatAt',
+    'heartbeat_at',
+    'lastExecuted',
+    'last_executed',
+    'lastTurnTick',
+    'last_turn_tick',
+    'lastTurnTime',
+    'last_turn_time',
+    'lease',
+    'leaseOwner',
+    'lease_owner',
+    'leaseUntil',
+    'lease_until',
+]);
+
+const projectWorldMeta = (meta: Record<string, unknown>): Record<string, unknown> =>
+    Object.fromEntries(Object.entries(meta).filter(([key]) => !CLOCK_ONLY_WORLD_META_KEYS.has(key)));
+
+/**
+ * Canonical fields consumed by world-scoped screens. Moving clock cursors and
+ * lease/heartbeat bookkeeping are deliberately absent, while turn term,
+ * calendar, scenario config, and gameplay meta remain visible.
+ */
+export const createWorldReadModelSignature = (world: InMemoryTurnWorld): string => {
+    const state = world.getState();
+    return signature({
+        currentYear: state.currentYear,
+        currentMonth: state.currentMonth,
+        tickSeconds: state.tickSeconds,
+        config: world.getScenarioConfig(),
+        meta: projectWorldMeta(state.meta),
+    });
+};
 
 const generalSignatures = (general: TurnGeneral): ReadModelSignatures => ({
     content: signature(general),
@@ -350,6 +410,58 @@ export const mergePersistedVisibleLogChanges = (
         changes.worldHistoryChanged ||
         rows.some((entry) => entry.scope === LogScope.SYSTEM && entry.category === LogCategory.HISTORY),
 });
+
+const markIds = (journal: ChangeJournal, domain: ReadModelDomain, ids: readonly number[]): void => {
+    for (const id of ids) {
+        journal.mark(domain, id);
+    }
+};
+
+/**
+ * Converts the final legacy internal invalidation into durable domain keys.
+ * City/nation map changes are shared-map changes; general movement remains
+ * actor-targeted. General name/nation changes affect the global online list,
+ * while frontStatusActorIds is the private actor projection.
+ */
+export const createReadModelChangeJournal = (changes: RealtimeReadModelChanges): ChangeJournal => {
+    const journal = new ChangeJournal();
+    markIds(journal, 'general.content', changes.generalIds);
+    markIds(journal, 'city.content', changes.cityIds);
+    markIds(journal, 'nation.content', changes.nationIds);
+    markIds(journal, 'map.general', changes.mapGeneralIds ?? []);
+    markIds(journal, 'front.nation', changes.frontStatusNationIds ?? []);
+    markIds(journal, 'front.general', changes.frontStatusActorIds ?? []);
+    markIds(journal, 'lobby.general', changes.lobbyGeneralIds ?? []);
+    markIds(journal, 'reserved.general', changes.reservedGeneralIds);
+    markIds(journal, 'records.general', changes.recordGeneralIds);
+
+    if (changes.worldChanged) {
+        journal.mark('world.content').mark('map.world');
+    }
+    if (
+        changes.mapChanged ||
+        (changes.mapCityIds ?? []).length > 0 ||
+        (changes.mapNationIds ?? []).length > 0
+    ) {
+        journal.mark('map.world');
+    }
+    if ((changes.frontStatusGeneralIds ?? []).length > 0 || changes.frontStatusChanged) {
+        journal.mark('front.global');
+    }
+    if (changes.globalRecordsChanged) {
+        journal.mark('records.global');
+    }
+    if (changes.worldHistoryChanged) {
+        journal.mark('records.history');
+    }
+    if (changes.contactsChanged) {
+        journal.mark('contacts.world');
+    }
+    if (changes.lobbyChanged) {
+        journal.mark('lobby.world');
+    }
+    return journal;
+};
 
 export const excludeDeletedReservedTurnQueues = (
     changes: ReservedTurnChanges,
@@ -901,14 +1013,42 @@ export const createDatabaseTurnHooks = async (
     // closely. A populated season can finish the turn but expire while flushing
     // it, which rolls the transaction back and marks the profile PAUSED.
     const transactionOptions = { timeout: options?.transactionTimeoutMs ?? 30_000 };
-    let committedReadModelChanges: RealtimeReadModelChanges | null = null;
     const readModelBaseline = createRealtimeReadModelBaseline(world);
+    let worldReadModelBaseline = createWorldReadModelSignature(world);
+    const committedReceipts = new Map<bigint, CommittedReadModelChangeReceipt>();
+
+    const enqueueCommittedReceipt = (
+        changes: RealtimeReadModelChanges,
+        journalWrite: ReadModelJournalWriteResult | null
+    ): void => {
+        if (!journalWrite) {
+            return;
+        }
+        committedReceipts.set(journalWrite.outboxId, {
+            outboxId: journalWrite.outboxId,
+            invalidation: journalWrite.invalidation,
+            changes,
+        });
+    };
+    const takeCommittedReceipt = (): CommittedReadModelChangeReceipt | null => {
+        const next = committedReceipts.entries().next();
+        if (next.done) {
+            return null;
+        }
+        const [outboxId, receipt] = next.value;
+        committedReceipts.delete(outboxId);
+        return receipt;
+    };
 
     const persistChanges = async (
         transaction?: GamePrisma.TransactionClient,
         commandCompletion?: { requestId: string; result: TurnDaemonCommandResult },
         directLogFloor?: number
-    ): Promise<{ acknowledge: () => void; readModelChanges: RealtimeReadModelChanges }> => {
+    ): Promise<{
+        acknowledge: () => void;
+        readModelChanges: RealtimeReadModelChanges;
+        journalWrite: ReadModelJournalWriteResult | null;
+    }> => {
         const state = world.getState();
         const changes = world.peekDirtyState();
         let persistedVisibleLogs: PersistedVisibleLogRow[] = [];
@@ -956,7 +1096,13 @@ export const createDatabaseTurnHooks = async (
             lastTurnTick: BigInt(state.lastTurnTick ?? world.dateToGameTick(state.lastTurnTime)),
             meta: asJson(state.meta),
         };
-        const persist = async (prisma: GamePrisma.TransactionClient): Promise<void> => {
+        const persist = async (
+            prisma: GamePrisma.TransactionClient
+        ): Promise<{
+            readModelChanges: RealtimeReadModelChanges;
+            journalWrite: ReadModelJournalWriteResult | null;
+            worldReadModelSignature: string;
+        }> => {
             visibleLogFloor ??=
                 (
                     await prisma.logEntry.findFirst({
@@ -1399,17 +1545,26 @@ export const createDatabaseTurnHooks = async (
                 orderBy: { id: 'asc' },
                 select: { id: true, scope: true, category: true, generalId: true },
             });
-        };
-        if (transaction) {
-            await persist(transaction);
-        } else {
-            await prisma.$transaction(persist, transactionOptions);
-        }
 
-        const readModelChanges = mergePersistedVisibleLogChanges(
-            summarizeRealtimeReadModelChanges(changes, persistedReservedTurnChanges, readModelBaseline),
-            persistedVisibleLogs
-        );
+            const worldReadModelSignature = createWorldReadModelSignature(world);
+            const readModelChanges = mergePersistedVisibleLogChanges(
+                summarizeRealtimeReadModelChanges(changes, persistedReservedTurnChanges, readModelBaseline),
+                persistedVisibleLogs
+            );
+            if (worldReadModelSignature !== worldReadModelBaseline) {
+                readModelChanges.worldChanged = true;
+            }
+            const journal = createReadModelChangeJournal(readModelChanges);
+            markIds(journal, 'access.general', accessScoreResetGeneralIds);
+            if (pendingNationBettingOpens.length > 0 || pendingNationBettingFinishes.length > 0) {
+                journal.mark('betting');
+            }
+            const journalWrite = await writeReadModelChangeJournal(prisma, journal.snapshot());
+            return { readModelChanges, journalWrite, worldReadModelSignature };
+        };
+        const persisted = transaction
+            ? await persist(transaction)
+            : await prisma.$transaction(persist, transactionOptions);
         return {
             acknowledge: () => {
                 world.acknowledgeDirtyState(changes);
@@ -1417,8 +1572,10 @@ export const createDatabaseTurnHooks = async (
                     options.reservedTurns.acknowledgeDirtyState(reservedTurnChanges);
                 }
                 applyRealtimeReadModelBaseline(readModelBaseline, changes);
+                worldReadModelBaseline = persisted.worldReadModelSignature;
             },
-            readModelChanges,
+            readModelChanges: persisted.readModelChanges,
+            journalWrite: persisted.journalWrite,
         };
     };
 
@@ -1426,12 +1583,12 @@ export const createDatabaseTurnHooks = async (
         flushChanges: async () => {
             const committed = await persistChanges();
             committed.acknowledge();
-            committedReadModelChanges = committed.readModelChanges;
+            enqueueCommittedReceipt(committed.readModelChanges, committed.journalWrite);
         },
         commitCommand: async (requestId, result) => {
             const committed = await persistChanges(undefined, { requestId, result });
             committed.acknowledge();
-            committedReadModelChanges = committed.readModelChanges;
+            enqueueCommittedReceipt(committed.readModelChanges, committed.journalWrite);
         },
         executeCommand: async (requestId, execute) => {
             const committed = await prisma.$transaction(async (transaction) => {
@@ -1447,7 +1604,7 @@ export const createDatabaseTurnHooks = async (
                 return { result, persisted };
             }, transactionOptions);
             committed.persisted.acknowledge();
-            committedReadModelChanges = committed.persisted.readModelChanges;
+            enqueueCommittedReceipt(committed.persisted.readModelChanges, committed.persisted.journalWrite);
             return committed.result;
         },
     };
@@ -1455,10 +1612,9 @@ export const createDatabaseTurnHooks = async (
     return {
         hooks,
         takeCommittedReadModelChanges: () => {
-            const changes = committedReadModelChanges;
-            committedReadModelChanges = null;
-            return changes;
+            return takeCommittedReceipt()?.changes ?? null;
         },
+        takeCommittedReadModelChangeReceipt: takeCommittedReceipt,
         close: () => connector.disconnect(),
     };
 };
