@@ -99,6 +99,7 @@
         "lint:fix": "eslint . --fix",
         "profile:npc-unification-memory": "node scripts/profile-npc-unification-memory.mjs",
         "profile:npc-unification-timing": "node scripts/profile-npc-unification-timing.mjs",
+        "profile:npc-capacity-1200": "node scripts/profile-npc-capacity-1200.mjs",
         "test": "vitest run --config vitest.config.ts",
         "typecheck": "pnpm -w tsc7 -b app/game-engine/tsconfig.json"
     },

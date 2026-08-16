@@ -39,6 +39,8 @@ export interface LoadConfig {
     isolation: {
         postgresSchema: string;
         redisPrefix: string;
+        redisDatabase: number;
+        profileName: string;
     };
     capacity: {
         authenticatedViewers: number;
@@ -64,7 +66,7 @@ const integerAtLeast = (value: unknown, minimum: number): boolean =>
 const hasOnlyKeys = (value: Record<string, unknown>, allowed: readonly string[]): boolean =>
     Object.keys(value).every((key) => allowed.includes(key));
 
-const isPrivateTargetHost = (hostname: string): boolean => {
+export const isPrivateTargetHost = (hostname: string): boolean => {
     const normalized = hostname.toLowerCase().replace(/^\[|\]$/gu, '');
     if (normalized === 'localhost' || normalized === '::1' || normalized.endsWith('.localhost')) return true;
     if (normalized.endsWith('.internal') || normalized.endsWith('.local')) return true;
@@ -116,12 +118,20 @@ export const validateLoadConfig = (raw: unknown): LoadConfig => {
     if (!isRecord(isolation)) {
         issues.push('isolation must be an object');
     } else {
-        if (!hasOnlyKeys(isolation, ['postgresSchema', 'redisPrefix'])) issues.push('isolation contains unknown fields');
+        if (!hasOnlyKeys(isolation, ['postgresSchema', 'redisPrefix', 'redisDatabase', 'profileName'])) issues.push('isolation contains unknown fields');
         if (typeof isolation.postgresSchema !== 'string' || !/^load_[a-z0-9_]+$/u.test(isolation.postgresSchema)) {
             issues.push('isolation.postgresSchema must start with load_');
         }
         if (typeof isolation.redisPrefix !== 'string' || !/^load-tests:[a-z0-9:_-]+:$/u.test(isolation.redisPrefix)) {
             issues.push('isolation.redisPrefix must be load-tests scoped and end with a colon');
+        }
+        if (!integerAtLeast(isolation.redisDatabase, 1) || Number(isolation.redisDatabase) > 15) {
+            issues.push('isolation.redisDatabase must be a dedicated Redis database in the range 1..15');
+        }
+        if (typeof isolation.profileName !== 'string' || !/^load-tests:[a-z0-9:_-]+$/u.test(isolation.profileName)) {
+            issues.push('isolation.profileName must be load-tests scoped');
+        } else if (typeof isolation.redisPrefix === 'string' && `${isolation.profileName}:` !== isolation.redisPrefix) {
+            issues.push('isolation.profileName must match isolation.redisPrefix without the trailing colon');
         }
     }
 

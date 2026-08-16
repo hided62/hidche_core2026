@@ -1,4 +1,4 @@
-secrets/*.json
+secrets/*
 results/*.json
 !secrets/.gitkeep
 !results/.gitkeep

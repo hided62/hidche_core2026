@@ -29,10 +29,12 @@
         "isolation": {
             "type": "object",
             "additionalProperties": false,
-            "required": ["postgresSchema", "redisPrefix"],
+            "required": ["postgresSchema", "redisPrefix", "redisDatabase", "profileName"],
             "properties": {
                 "postgresSchema": { "type": "string", "pattern": "^load_[a-z0-9_]+$" },
-                "redisPrefix": { "type": "string", "pattern": "^load-tests:[a-z0-9:_-]+:$" }
+                "redisPrefix": { "type": "string", "pattern": "^load-tests:[a-z0-9:_-]+:$" },
+                "redisDatabase": { "type": "integer", "minimum": 1, "maximum": 15 },
+                "profileName": { "type": "string", "pattern": "^load-tests:[a-z0-9:_-]+$" }
             }
         },
         "capacity": {

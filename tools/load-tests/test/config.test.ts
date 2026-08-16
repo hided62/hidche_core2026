@@ -11,7 +11,10 @@ void test('the 300 viewer, 900 NPC, five-minute sample validates', async () => {
     const config = validateLoadConfig(JSON.parse(await readFile(samplePath, 'utf8')));
     assert.equal(config.capacity.authenticatedViewers, 300);
     assert.equal(config.capacity.npcGenerals, 900);
+    assert.equal(config.capacity.humanGenerals, 300);
     assert.equal(config.capacity.turnIntervalMs, 300_000);
+    assert.equal(config.isolation.redisDatabase, 15);
+    assert.equal(config.isolation.profileName, 'load-tests:capacity-300-900-5m');
     assert.deepEqual(new Set(config.phases.map((phase) => phase.kind)), new Set(['idle', 'own', 'global', 'mixed']));
 });
 

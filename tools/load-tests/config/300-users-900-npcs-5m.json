@@ -11,7 +11,9 @@
     },
     "isolation": {
         "postgresSchema": "load_capacity_300_900_5m",
-        "redisPrefix": "load-tests:capacity-300-900-5m:"
+        "redisPrefix": "load-tests:capacity-300-900-5m:",
+        "redisDatabase": 15,
+        "profileName": "load-tests:capacity-300-900-5m"
     },
     "capacity": {
         "authenticatedViewers": 300,

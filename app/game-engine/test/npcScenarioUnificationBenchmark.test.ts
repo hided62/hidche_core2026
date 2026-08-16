@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 
@@ -18,7 +19,65 @@ const benchmarkEnabled = process.env.NPC_UNIFICATION_BENCHMARK === '1';
 const benchmarkDescribe = describe.runIf(benchmarkEnabled);
 const SCENARIO_ID = 2601;
 const HIDDEN_SEED = 'scenario-2601-npc-unification-benchmark-v1';
-const TURN_MINUTES = 10;
+const CAPACITY_PROFILE = '1200-generals-5m';
+
+const canonicalize = (value: unknown): string => {
+    if (value instanceof Date) return JSON.stringify(value.toISOString());
+    if (typeof value === 'bigint') return JSON.stringify(value.toString());
+    if (Array.isArray(value)) return `[${value.map(canonicalize).join(',')}]`;
+    if (value && typeof value === 'object') {
+        const record = value as Record<string, unknown>;
+        return `{${Object.keys(record)
+            .sort()
+            .map((key) => `${JSON.stringify(key)}:${canonicalize(record[key])}`)
+            .join(',')}}`;
+    }
+    return JSON.stringify(value);
+};
+
+const hashWorldState = (world: InMemoryTurnWorld): string =>
+    createHash('sha256')
+        .update(
+            canonicalize({
+                state: world.getState(),
+                generals: world.listGenerals().sort((left, right) => left.id - right.id),
+                cities: world.listCities().sort((left, right) => left.id - right.id),
+                nations: world.listNations().sort((left, right) => left.id - right.id),
+            })
+        )
+        .digest('hex');
+
+const buildCapacityGenerals = (
+    sourceGenerals: readonly TurnGeneral[],
+    npcCount: number,
+    humanCount: number
+): TurnGeneral[] => {
+    if (sourceGenerals.length === 0) throw new Error('capacity benchmark requires scenario generals');
+    const ordered = [...sourceGenerals].sort((left, right) => left.id - right.id);
+    const clone = (source: TurnGeneral, id: number, humanIndex: number | null): TurnGeneral => ({
+        ...source,
+        id,
+        name: id === source.id ? source.name : `${source.name}#L${id}`,
+        userId: humanIndex === null ? null : `load-user-${String(humanIndex + 1).padStart(4, '0')}`,
+        npcState: humanIndex === null ? Math.max(2, source.npcState) : 0,
+        turnTime: new Date(source.turnTime),
+        recentWarTime: source.recentWarTime ? new Date(source.recentWarTime) : null,
+        lastTurn: source.lastTurn ? { ...source.lastTurn } : undefined,
+        meta: { ...source.meta },
+        penalty: source.penalty && typeof source.penalty === 'object' ? { ...source.penalty } : source.penalty,
+        inheritancePoints: source.inheritancePoints ? { ...source.inheritancePoints } : undefined,
+    });
+    const result: TurnGeneral[] = [];
+    for (let index = 0; index < npcCount; index += 1) {
+        const source = ordered[index % ordered.length]!;
+        result.push(clone(source, index + 1, null));
+    }
+    for (let index = 0; index < humanCount; index += 1) {
+        const source = ordered[(npcCount + index) % ordered.length]!;
+        result.push(clone(source, npcCount + index + 1, index));
+    }
+    return result;
+};
 
 const createGameDate = (year: number, month: number): Date => {
     const date = new Date(0);
@@ -117,6 +176,9 @@ benchmarkDescribe('scenario 2601 NPC 완전 인메모리 천통 벤치마크', (
         const unitSet = await loadUnitSetDefinitionByName(scenario.config.environment.unitSet);
         const startYear = scenario.startYear ?? 180;
         const startMonth = 1;
+        const capacityProfile = process.env.NPC_UNIFICATION_BENCHMARK_PROFILE ?? '';
+        const capacityMode = capacityProfile === CAPACITY_PROFILE;
+        const turnMinutes = capacityMode ? 5 : 10;
         const startTime = createGameDate(startYear, startMonth);
         const bootstrap = buildScenarioBootstrap({
             scenario,
@@ -126,7 +188,7 @@ benchmarkDescribe('scenario 2601 NPC 완전 인메모리 천통 벤치마크', (
                 hiddenSeed: HIDDEN_SEED,
                 initialYear: startYear,
                 initialMonth: startMonth,
-                turnTermMinutes: TURN_MINUTES,
+                turnTermMinutes: turnMinutes,
                 includeNeutralNationInSeed: true,
             },
         });
@@ -136,11 +198,16 @@ benchmarkDescribe('scenario 2601 NPC 완전 인메모리 천통 벤치마크', (
             buildTurnCity
         );
         const domainGeneralById = new Map(bootstrap.snapshot.generals.map((general) => [general.id, general]));
-        const generals = bootstrap.seed.generals.map((seedGeneral) => {
+        const scenarioGenerals = bootstrap.seed.generals.map((seedGeneral) => {
             const domainGeneral = domainGeneralById.get(seedGeneral.id);
             if (!domainGeneral) throw new Error(`missing domain general ${seedGeneral.id}`);
             return buildTurnGeneral(domainGeneral, seedGeneral, startTime, startYear, startMonth);
         });
+        const expectedNpcGenerals = capacityMode ? 900 : scenarioGenerals.length;
+        const expectedHumanGenerals = capacityMode ? 300 : 0;
+        const generals = capacityMode
+            ? buildCapacityGenerals(scenarioGenerals, expectedNpcGenerals, expectedHumanGenerals)
+            : scenarioGenerals;
 
         const snapshot: TurnWorldSnapshot = {
             scenarioConfig: bootstrap.snapshot.scenarioConfig,
@@ -148,7 +215,7 @@ benchmarkDescribe('scenario 2601 NPC 완전 인메모리 천통 벤치마크', (
             worldConfig: {
                 fiction: scenario.fiction,
                 npcMode: 2,
-                turnTermMinutes: TURN_MINUTES,
+                turnTermMinutes: turnMinutes,
                 tournamentTrig: false,
             },
             map,
@@ -174,7 +241,7 @@ benchmarkDescribe('scenario 2601 NPC 완전 인메모리 천통 벤치마크', (
             id: 1,
             currentYear: startYear,
             currentMonth: startMonth,
-            tickSeconds: TURN_MINUTES * 60,
+            tickSeconds: turnMinutes * 60,
             lastTurnTime: startTime,
             clockBaseTime: startTime,
             clockTick: 0,
@@ -189,7 +256,7 @@ benchmarkDescribe('scenario 2601 NPC 완전 인메모리 천통 벤치마크', (
                 initYear: startYear,
                 initMonth: startMonth,
                 fiction: scenario.fiction,
-                killturn: 4800 / TURN_MINUTES,
+                killturn: 4800 / turnMinutes,
                 develcost: 20,
                 isUnited: 0,
                 isunited: 0,
@@ -198,7 +265,7 @@ benchmarkDescribe('scenario 2601 NPC 완전 인메모리 천통 벤치마크', (
                 serverId: 'benchmark-scenario-2601',
             },
         };
-        const schedule: TurnSchedule = { entries: [{ startMinute: 0, tickMinutes: TURN_MINUTES }] };
+        const schedule: TurnSchedule = { entries: [{ startMinute: 0, tickMinutes: turnMinutes }] };
         const worldRef = { current: null as InMemoryTurnWorld | null };
         const profiler = new NpcUnificationTimingProfiler();
         const turnStartedAt = new Map<number, bigint>();
@@ -220,7 +287,7 @@ benchmarkDescribe('scenario 2601 NPC 완전 인메모리 천통 벤치마크', (
             extraCalendarHandlers: [unification.handler],
             onActionProfiled: (payload) => profiler.observeAction(payload),
             turnProcessorOptions: {
-                tickMinutes: TURN_MINUTES,
+                tickMinutes: turnMinutes,
                 beforeExecuteGeneral: async (general) => {
                     turnStartedAt.set(general.id, process.hrtime.bigint());
                 },
@@ -241,6 +308,8 @@ benchmarkDescribe('scenario 2601 NPC 완전 인메모리 천통 벤치마크', (
         });
 
         const maximumYear = Number(process.env.NPC_UNIFICATION_BENCHMARK_MAX_YEAR ?? 300);
+        const fixedCapacityMonths = Number(process.env.NPC_UNIFICATION_BENCHMARK_FIXED_MONTHS ?? 1);
+        let simulatedCapacityMonths = 0;
         while (true) {
             const before = harness.world.getState();
             const monthStartedAtNs = process.hrtime.bigint();
@@ -263,8 +332,10 @@ benchmarkDescribe('scenario 2601 NPC 완전 인메모리 천통 벤치마크', (
             harness.reservedTurnStore.acknowledgeDirtyState(reservedChanges);
 
             const current = harness.world.getState();
+            simulatedCapacityMonths += 1;
             const meta = current.meta as Record<string, unknown>;
             if ((meta.isUnited ?? meta.isunited ?? 0) !== 0) break;
+            if (capacityMode && simulatedCapacityMonths >= fixedCapacityMonths) break;
             if (current.currentYear >= maximumYear) break;
         }
 
@@ -289,6 +360,18 @@ benchmarkDescribe('scenario 2601 NPC 완전 인메모리 천통 벤치마크', (
             unificationReached,
             convergenceAssist,
             discardedDrafts,
+            ...(capacityMode
+                ? {
+                      capacity: {
+                          profile: capacityProfile,
+                          expectedNpcGenerals,
+                          expectedHumanGenerals,
+                          turnMinutes,
+                          fixedMonths: fixedCapacityMonths,
+                          finalStateSha256: hashWorldState(harness.world),
+                      },
+                  }
+                : {}),
         });
         const reportPath = resolve(
             process.env.NPC_UNIFICATION_BENCHMARK_REPORT_PATH ?? 'test-results/npc-scenario-unification-benchmark.json'
@@ -306,8 +389,16 @@ benchmarkDescribe('scenario 2601 NPC 완전 인메모리 천통 벤치마크', (
             })}`
         );
 
-        expect(generals.length).toBeGreaterThanOrEqual(600);
+        if (capacityMode) {
+            expect(generals).toHaveLength(1_200);
+            expect(generals.filter((general) => general.npcState >= 2)).toHaveLength(900);
+            expect(generals.filter((general) => general.npcState === 0 && general.userId)).toHaveLength(300);
+            expect(report.capacity?.generalTurns.count).toBeGreaterThanOrEqual(1_200);
+            expect(report.capacity?.finalStateSha256).toMatch(/^[a-f0-9]{64}$/u);
+        } else {
+            expect(generals.length).toBeGreaterThanOrEqual(600);
+            expect(unificationReached).toBe(true);
+        }
         expect(cities.length).toBeGreaterThanOrEqual(90);
-        expect(unificationReached).toBe(true);
     }, 1_800_000);
 });

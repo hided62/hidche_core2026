@@ -7,6 +7,9 @@
         "run": "pnpm -w exec tsx tools/load-tests/src/cli.ts run",
         "dry-run": "pnpm -w exec tsx tools/load-tests/src/cli.ts dry-run",
         "validate": "pnpm -w exec tsx tools/load-tests/src/cli.ts validate",
+        "seed": "pnpm -w exec tsx tools/load-tests/src/cli.ts seed",
+        "verify-fixture": "pnpm -w exec tsx tools/load-tests/src/cli.ts verify-fixture",
+        "cleanup": "pnpm -w exec tsx tools/load-tests/src/cli.ts cleanup",
         "test": "pnpm -w exec tsx --test tools/load-tests/test/*.test.ts",
         "typecheck": "pnpm -w tsc7 -p tools/load-tests/tsconfig.json --noEmit"
     }

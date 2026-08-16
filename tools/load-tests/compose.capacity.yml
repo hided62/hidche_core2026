@@ -1,0 +1,42 @@
+name: sammo-capacity-fixture
+
+services:
+  postgres:
+    image: postgres:18.4-bookworm
+    environment:
+      POSTGRES_DB: sammo_capacity
+      POSTGRES_USER: sammo_capacity
+      POSTGRES_PASSWORD_FILE: /run/secrets/postgres_password
+    secrets:
+      - postgres_password
+    ports:
+      - "127.0.0.1:${CAPACITY_POSTGRES_PORT:-15442}:5432"
+    volumes:
+      # PostgreSQL 18 declares the versioned data directory below this root.
+      - capacity_postgres_data:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U sammo_capacity -d sammo_capacity"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+    restart: "no"
+
+  redis:
+    image: redis:8.2.7-bookworm
+    command: ["redis-server", "--save", "", "--appendonly", "no", "--databases", "16"]
+    ports:
+      - "127.0.0.1:${CAPACITY_REDIS_PORT:-16379}:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+    restart: "no"
+
+secrets:
+  postgres_password:
+    file: ./secrets/postgres-password.txt
+
+volumes:
+  capacity_postgres_data:
+    name: sammo_capacity_fixture_postgres_data

@@ -15,6 +15,10 @@ unchanged/snapshot/patch 경로를 구분하며 raw JSON에는 종류별 count�
   guard를 우회하는 CLI flag는 없다.
 - 전용 PostgreSQL schema는 `load_`로, Redis prefix는 `load-tests:`로 시작해야 한다. fixture/runtime을
   기동하는 외부 orchestration에도 같은 값을 주어 공유 개발·운영 profile과 분리한다.
+- fixture CLI는 config와 DB URL의 schema가 정확히 같고, Redis DB가 config의 전용 `1..15` DB와 정확히
+  같을 때만 동작한다. 둘 다 loopback/private host만 허용한다. cleanup은 전용 Redis manifest와 schema명을
+  다시 확인한 뒤 그 `load_` schema와 해당 profile의 access token만 지운다. Redis `FLUSHDB`와 공유 schema
+  삭제는 하지 않는다.
 - driver는 query만 허용한다. own/global phase 이름은 invalidation 뒤 viewer read fan-out을 뜻하며 mutation을
   만들지 않는다. 실제 own/global change stimulus는 격리 runtime에서 별도 orchestration으로 발생시킨다.
 - token 파일은 이 workspace 안의 Git ignored path여야 하고 정확히 `0600`이어야 한다. 권장 위치는
@@ -24,13 +28,64 @@ unchanged/snapshot/patch 경로를 구분하며 raw JSON에는 종류별 count�
 
 ## 재현 명령
 
-먼저 sample의 `runtimeMetadata` placeholder를 실제 fixture SHA-256, image digest, PostgreSQL/Redis
-version으로 바꾼 복사본을 만든다. secret이나 ID를 config에 넣지 않는다.
+### 1. 격리 PostgreSQL/Redis와 1,200장수 fixture
+
+아래 Compose는 loopback에만 포트를 열고 PostgreSQL 18.4, Redis 8.2.7을 고정한다. 실제 password와 URL은
+Git ignored `secrets/`에 두며 명령행이나 결과 JSON에는 기록하지 않는다. `capacity.env`에는 최소
+`LOAD_TEST_DATABASE_URL`(query의 `schema=load_capacity_300_900_5m` 포함),
+`LOAD_TEST_REDIS_URL`(`/15` 포함), API 기동에 필요한 `GAME_TOKEN_SECRET`,
+`GAME_IMAGE_UPLOAD_SECRET_FILE`을 넣는다. URL의 password는 percent-encoding한다.
 
 ```sh
-install -m 600 /dev/null tools/load-tests/secrets/game-tokens.json
-# 편집기로 300개 synthetic game bearer token을 tokens 배열에 입력
+install -m 600 /dev/null tools/load-tests/secrets/postgres-password.txt
+install -m 600 /dev/null tools/load-tests/secrets/capacity.env
+# 두 파일은 로컬 편집기로 채우고 내용을 stdout에 출력하지 않는다.
 
+docker compose -f tools/load-tests/compose.capacity.yml config --quiet
+docker compose -f tools/load-tests/compose.capacity.yml up -d --wait
+
+set -a
+source tools/load-tests/secrets/capacity.env
+set +a
+
+pnpm --filter @sammo-ts/load-tests seed \
+  --config tools/load-tests/config/300-users-900-npcs-5m.json \
+  --tokens tools/load-tests/secrets/game-tokens.json
+pnpm --filter @sammo-ts/load-tests verify-fixture \
+  --config tools/load-tests/config/300-users-900-npcs-5m.json
+```
+
+`seed`는 해당 `load_` schema에 migration을 적용하고 scenario 2601을 고정 seed/time으로 설치한 뒤 정확히
+900 NPC + 300 synthetic 사용자 장수로 재구성한다. 각 사용자의 24시간 access token은 Redis 전용 DB와
+새 `0600` JSON에만 저장한다. stdout에는 token, user/general ID, DB/Redis URL을 내보내지 않고 count와
+비밀값을 제외한 fixture SHA-256만 기록한다. token 파일이 이미 있으면 DB 작업 전에 실패한다.
+
+fixture와 같은 환경으로 API를 띄울 때 핵심 namespace는 다음과 같다. `capacity.env` 값을 다시 명령행에
+풀어 쓰지 않는다.
+
+```sh
+export DATABASE_URL="$LOAD_TEST_DATABASE_URL"
+export REDIS_URL="$LOAD_TEST_REDIS_URL"
+export PROFILE=load_capacity_300_900_5m
+export SCENARIO=2601
+export GAME_PROFILE_NAME=load-tests:capacity-300-900-5m
+export GAME_API_HOST=127.0.0.1
+export GAME_API_PORT=15001
+export GAME_TRPC_PATH=/api/trpc
+export GAME_API_EVENTS_PATH=/events
+pnpm --filter @sammo-ts/game-api start
+```
+
+API와 driver는 별도 terminal/process로 실행한다. dev-sam2026와 같은 판정이 필요하면 API/engine container에
+4 CPU/8 GiB 제한을 주고 driver는 그 cgroup 밖에서 실행하며, image digest를 아래 run config에 기록한다.
+공개 `dev-sam2026.hided.net` profile에는 이 fixture나 driver를 연결하지 않는다.
+
+### 2. 인증 HTTP/SSE driver
+
+먼저 sample의 `runtimeMetadata` placeholder를 실제 fixture SHA-256, image digest, PostgreSQL/Redis
+version으로 바꾼 ignored 복사본을 만든다. secret이나 ID를 config에 넣지 않는다.
+
+```sh
 pnpm --filter @sammo-ts/load-tests validate --config tools/load-tests/config/300-users-900-npcs-5m.json
 pnpm --filter @sammo-ts/load-tests dry-run \
   --config tools/load-tests/config/300-users-900-npcs-5m.json \
@@ -53,19 +108,42 @@ fixture/image/PostgreSQL/Redis metadata, phase별 metric을 포함한다. 이 �
 아니다. `runtimeMetadata` placeholder가 남은 run과 외부 stimulus가 없던 own/global phase를 capacity pass로
 보고하지 않는다.
 
-E1의 DB-free 자연 통일 계산은 기존 실행 가능한 benchmark를 그대로 사용한다.
+### 3. E1 결정론적 engine capacity profile
+
+E1은 DB/Redis 없이 scenario 2601을 정확히 900 NPC + 300 synthetic 사용자 장수로 확장해 5분 턴 한 달을
+실행한다. report에는 정확한 초기 count, 전체 장수턴 처리량, 장수턴 및 월 wall-time p50/p95/p99/max,
+RSS/heap과 최종 상태 SHA-256이 들어간다. 같은 commit/Node/fixture에서 상태 hash가 같아야 한다.
 
 ```sh
-NPC_UNIFICATION_BENCHMARK_CONVERGENCE_ASSIST=none \
-NPC_UNIFICATION_BENCHMARK_MAX_YEAR=300 \
-NPC_UNIFICATION_BENCHMARK_REPORT_PATH=/dev/shm/npc-unification.json \
-pnpm --filter @sammo-ts/game-engine profile:npc-unification-timing
+NPC_UNIFICATION_BENCHMARK_FIXED_MONTHS=1 \
+NPC_UNIFICATION_BENCHMARK_REPORT_PATH=/dev/shm/npc-capacity-1200.json \
+pnpm --filter @sammo-ts/game-engine profile:npc-capacity-1200
 ```
 
-현재 E1 command의 기본 fixture는 문서상 880 NPC/10분 턴이므로 900 NPC/5분 또는 총 1,200장수 E1이라고
-바꿔 부르지 않는다. E2는 실제 daemon fast-forward, PostgreSQL flush, Redis publish와 schedule-lag/DB
-statement 계측을 한 lifecycle로 묶는 안전한 fixture API가 아직 없어 stub을 추가하지 않았다. 따라서 이
-package 단독 실행은 E2나 M1 전체 합격 근거가 아니다.
+이 프로필은 자연 통일 소요시간 시험이 아니라 고정 1개월 engine 처리량 시험이다. 기존
+`profile:npc-unification-timing`의 무보정 자연 진행 의미는 바꾸지 않는다.
+
+### 4. 명시적 cleanup
+
+token 파일은 별도로 안전하게 삭제하고, fixture schema/Redis token은 schema명을 그대로 확인 인자로 주어
+정리한다. named volume은 보존한다. 데이터 폐기가 필요하지 않으면 이 명령을 실행하지 않는다.
+
+```sh
+pnpm --filter @sammo-ts/load-tests cleanup \
+  --config tools/load-tests/config/300-users-900-npcs-5m.json \
+  --confirm load_capacity_300_900_5m
+docker compose -f tools/load-tests/compose.capacity.yml down
+```
+
+## 아직 남은 측정 경계
+
+- `seed`/`verify-fixture`는 실제 PostgreSQL schema와 Redis access-token 상태를 만든다. 그러나 E2의 daemon
+  fast-forward, 한 달치 PostgreSQL flush/outbox publish, schedule lag와 DB statement count를 하나로
+  계측하는 실행기는 아직 없다. 따라서 E1이나 API/SSE driver 결과를 E2 합격으로 대체하지 않는다.
+- own/global phase의 mutation stimulus는 driver가 만들지 않는다. 격리 runtime의 실제 engine/API mutation과
+  함께 실행하지 않았다면 A2/A3/M1 전체 합격으로 보고하지 않는다.
+- 이 repository에서 실행한 로컬 E1 수치는 source-tree 회귀 근거다. dev-sam2026 동급 4 CPU/8 GiB container
+  결과로 부르려면 동일 image/fixture와 cgroup에서 다시 측정해야 한다.
 
 ## 도구 자체 검증
 

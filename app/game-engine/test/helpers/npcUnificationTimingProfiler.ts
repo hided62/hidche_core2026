@@ -54,6 +54,7 @@ const summarizeSeries = (series: DurationSeries) => ({
 const monthKey = (year: number, month: number): string => `${year}-${String(month).padStart(2, '0')}`;
 
 export class NpcUnificationTimingProfiler {
+    private readonly allTurnSeries = createSeries();
     private readonly commandSeries = new Map<string, DurationSeries>();
     private readonly commandAiSeries = new Map<string, DurationSeries>();
     private readonly decisionSeries = new Map<'chief' | 'ordinary', DurationSeries>([
@@ -120,6 +121,8 @@ export class NpcUnificationTimingProfiler {
 
     observeGeneralTurn(input: { year: number; month: number; officerLevel: number; durationNs: bigint }): void {
         const durationNs = Number(input.durationNs);
+        this.allTurnSeries.durationsNs.push(durationNs);
+        this.allTurnSeries.totalNs += durationNs;
         const officerGroup = input.officerLevel >= 5 ? 'chief' : 'ordinary';
         const series = this.turnSeries.get(officerGroup)!;
         series.durationsNs.push(durationNs);
@@ -165,6 +168,14 @@ export class NpcUnificationTimingProfiler {
         unificationReached: boolean;
         convergenceAssist: string;
         discardedDrafts: { logs: number; messages: number; neutralAuctions: number };
+        capacity?: {
+            profile: string;
+            expectedNpcGenerals: number;
+            expectedHumanGenerals: number;
+            turnMinutes: number;
+            fixedMonths: number;
+            finalStateSha256: string;
+        };
     }) {
         const commandKeys = Array.from(this.commandSeries.keys()).sort();
         const commands = commandKeys.map((key) => ({
@@ -199,6 +210,12 @@ export class NpcUnificationTimingProfiler {
         const startIndex = input.startYear * 12 + input.startMonth - 1;
         const finalIndex = input.finalYear * 12 + input.finalMonth - 1;
 
+        const wallDurationMs = Number(process.hrtime.bigint() - input.startedAtNs) / 1_000_000;
+        const monthWallSeries = {
+            durationsNs: Array.from(this.monthWallMs.values(), (value) => value * 1_000_000),
+            totalNs: Array.from(this.monthWallMs.values()).reduce((total, value) => total + value * 1_000_000, 0),
+        };
+        const capacityWindowMs = monthWallSeries.totalNs / 1_000_000;
         return {
             schemaVersion: 1,
             runtime: {
@@ -227,7 +244,7 @@ export class NpcUnificationTimingProfiler {
                 finalGeneralCount: input.finalGeneralCount,
                 foundedNationCount: input.foundedNationCount,
                 finalNationCount: input.finalNationCount,
-                wallDurationMs: Number(process.hrtime.bigint() - input.startedAtNs) / 1_000_000,
+                wallDurationMs,
                 discardedDrafts: input.discardedDrafts,
             },
             npcDecisionByOfficerGroup: {
@@ -238,6 +255,19 @@ export class NpcUnificationTimingProfiler {
                 chief: summarizeSeries(this.turnSeries.get('chief')!),
                 ordinary: summarizeSeries(this.turnSeries.get('ordinary')!),
             },
+            ...(input.capacity
+                ? {
+                      capacity: {
+                          ...input.capacity,
+                          generalTurns: summarizeSeries(this.allTurnSeries),
+                          monthWall: summarizeSeries(monthWallSeries),
+                          generalTurnsPerSecond:
+                              capacityWindowMs > 0
+                                  ? this.allTurnSeries.durationsNs.length / (capacityWindowMs / 1_000)
+                                  : 0,
+                      },
+                  }
+                : {}),
             memory: {
                 maxObservedHeapUsedBytes: this.maxHeapUsedBytes,
                 maxObservedRssBytes: this.maxRssBytes,
