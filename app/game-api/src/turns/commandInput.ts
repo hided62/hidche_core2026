@@ -71,6 +71,7 @@ export interface TurnCommandInputOptions {
     cities: TurnCommandOption[];
     nations: TurnCommandOption[];
     generals: TurnCommandOption[];
+    generalTargets?: Record<string, TurnCommandOption[]>;
     crewTypes: TurnCommandOption[];
     armTypes: TurnCommandOption[];
     nationTypes: TurnCommandOption[];
