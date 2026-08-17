@@ -35,6 +35,7 @@ chain을 적용하고 두 번째 실행은 `No pending migrations to apply`여�
 - `city.trade` nullable, `city.trust` REAL
 - `auction_bid.meta` JSONB NOT NULL
 - `traffic_period`, `traffic_period_general`과 unique key
+- `general_access_batch`, primary key와 `created_at` index
 - `select_npc_token`, `select_npc_token_valid_until_idx`
 - `general_user_id_key`
 

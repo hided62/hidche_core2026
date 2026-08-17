@@ -89,8 +89,6 @@ export interface GameApiContext {
     generalAccessTracking?: boolean;
     /** Validated server-issued proof for one realtime refresh burst. */
     realtimeAccessGranted?: boolean;
-    /** Request-local identity already resolved by the realtime access gate. */
-    realtimeAccessGeneralId?: number;
     /** Set only while an API input-event transaction owns the mutation. */
     changeJournal?: ChangeJournal;
     /** Post-commit scheduling hint for the durable outbox dispatcher. */

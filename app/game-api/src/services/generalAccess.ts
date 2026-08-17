@@ -1,5 +1,5 @@
 import { asRecord, resolveAccessLimitLevel, resolveAccessRefreshLimit, type AccessLimitLevel } from '@sammo-ts/common';
-import { GamePrisma, writeReadModelChangeJournal } from '@sammo-ts/infra';
+import { GamePrisma } from '@sammo-ts/infra';
 
 import type { GameApiContext } from '../context.js';
 
@@ -371,8 +371,6 @@ export const upsertGeneralAccess = async (
                         general_access_log.refresh_score_total + EXCLUDED.refresh_score_total
             `
         );
-
-        await writeReadModelChangeJournal(transaction, [{ domain: 'access.general', entityId: input.generalId }]);
     });
 };
 

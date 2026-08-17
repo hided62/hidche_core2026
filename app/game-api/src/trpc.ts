@@ -15,6 +15,7 @@ import {
     resolveGeneralAccessEndpointWeight,
     type GeneralAccessEndpoint,
 } from './services/generalAccess.js';
+import { getDeferredGeneralAccessLimit } from './services/deferredGeneralAccess.js';
 
 const t = initTRPC.context<GameApiContext>().create();
 
@@ -126,12 +127,21 @@ const generalAccessLimitMiddleware = t.middleware(async ({ ctx, next }) => {
             message: formatGeneralAccessLimitMessage(state),
         });
     }
-    return next({
-        ctx: {
-            ...ctx,
-            ...(state ? { realtimeAccessGeneralId: state.generalId } : {}),
-        },
-    });
+    return next();
+});
+
+const deferredGeneralAccessLimitMiddleware = t.middleware(async ({ ctx, next }) => {
+    if (ctx.generalAccessTracking !== true) {
+        return next();
+    }
+    const state = await getDeferredGeneralAccessLimit(ctx.redis, ctx.profile.name, ctx.auth);
+    if (state) {
+        throw new TRPCError({
+            code: 'TOO_MANY_REQUESTS',
+            message: formatGeneralAccessLimitMessage(state),
+        });
+    }
+    return next();
 });
 
 export const router = t.router;
@@ -165,6 +175,9 @@ export const readOnlyAuthedProcedure: typeof procedure = t.procedure.use(require
 export const accessLimitAuthedProcedure: typeof procedure = t.procedure
     .use(requireAuthMiddleware)
     .use(generalAccessLimitMiddleware);
+export const deferredAccessLimitAuthedProcedure: typeof procedure = t.procedure
+    .use(requireAuthMiddleware)
+    .use(deferredGeneralAccessLimitMiddleware);
 // 입력이 있는 Ref handler는 request parsing을 마친 뒤 increaseRefresh()를
 // 호출한다. 이 factory들은 parser를 access/input-event middleware 앞에 둔다.
 export const accessInputProcedure: typeof procedure.input = (input) =>

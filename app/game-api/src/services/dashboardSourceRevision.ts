@@ -12,7 +12,7 @@ import type { DatabaseClient } from '../context.js';
 export const DASHBOARD_SOURCE_REVISION_COVERAGE_VERSION = 1;
 
 const SOURCE_REVISION_LENGTH = 22;
-const SOURCE_REVISION_CODE_VERSION = 'dashboard-private-slices-v2';
+const SOURCE_REVISION_CODE_VERSION = 'dashboard-private-slices-v3';
 
 export type DashboardSourceSlice = 'context' | 'commandTable' | 'boardAccess';
 
@@ -36,7 +36,6 @@ interface DashboardSourceRevisionRow {
     cityRevision: bigint;
     nationRevision: bigint;
     worldRevision: bigint;
-    accessRevision: bigint;
 }
 
 type RevisionTuple = readonly [domain: string, entityId: number, revision: string];
@@ -46,7 +45,6 @@ type DashboardRevisionVector = {
     city: string;
     nation: string;
     world: string;
-    access: string;
 };
 
 export interface DashboardAuthSource {
@@ -124,11 +122,10 @@ const buildSourceRevisions = (
     const city = ['city.content', identity.cityId, identity.cityId > 0 ? revisions.city : '0'] as const;
     const nation = ['nation.content', identity.nationId, identity.nationId > 0 ? revisions.nation : '0'] as const;
     const world = ['world.content', 0, revisions.world] as const;
-    const access = ['access.general', identity.generalId, revisions.access] as const;
     const auth = ['auth.context', 0, authSourceRevision] as const;
 
     return {
-        context: digestSourceRevision('context', [global, general, city, nation, world, access, auth]),
+        context: digestSourceRevision('context', [global, general, city, nation, world, auth]),
         commandTable: digestSourceRevision('commandTable', [global, general, city, nation, world]),
         boardAccess: digestSourceRevision('boardAccess', [general, nation]),
     };
@@ -139,15 +136,11 @@ const buildSourceRevisions = (
  * dependency heads in one indexed statement. Missing revision rows are revision 0.
  * A missing actor/meta row, query failure, or malformed result disables the optimization.
  */
-export const readDashboardSourceRevisionState = async (
+const readDashboardSourceRevisionStateByActor = async (
     db: Pick<DatabaseClient, '$queryRaw'>,
-    generalId: number,
+    actorCondition: GamePrisma.Sql,
     authSource?: DashboardAuthSource
 ): Promise<DashboardSourceRevisionState | null> => {
-    if (!Number.isSafeInteger(generalId) || generalId <= 0) {
-        return null;
-    }
-
     let rows: DashboardSourceRevisionRow[];
     try {
         rows = await db.$queryRaw<DashboardSourceRevisionRow[]>(GamePrisma.sql`
@@ -160,8 +153,7 @@ export const readDashboardSourceRevisionState = async (
                 COALESCE(general_revision."revision", 0) AS "generalRevision",
                 COALESCE(city_revision."revision", 0) AS "cityRevision",
                 COALESCE(nation_revision."revision", 0) AS "nationRevision",
-                COALESCE(world_revision."revision", 0) AS "worldRevision",
-                COALESCE(access_revision."revision", 0) AS "accessRevision"
+                COALESCE(world_revision."revision", 0) AS "worldRevision"
             FROM "general" AS actor
             CROSS JOIN "read_model_revision_meta" AS meta
             LEFT JOIN "read_model_revision" AS global_revision
@@ -179,10 +171,7 @@ export const readDashboardSourceRevisionState = async (
             LEFT JOIN "read_model_revision" AS world_revision
                 ON world_revision."domain" = 'world.content'
                AND world_revision."entity_id" = 0
-            LEFT JOIN "read_model_revision" AS access_revision
-                ON access_revision."domain" = 'access.general'
-               AND access_revision."entity_id" = actor."id"
-            WHERE actor."id" = ${generalId}
+            WHERE ${actorCondition}
               AND meta."id" = 1
         `);
     } catch {
@@ -206,10 +195,9 @@ export const readDashboardSourceRevisionState = async (
         city: parseNonNegativeRevision(row.cityRevision),
         nation: parseNonNegativeRevision(row.nationRevision),
         world: parseNonNegativeRevision(row.worldRevision),
-        access: parseNonNegativeRevision(row.accessRevision),
     };
     if (
-        identity.generalId !== generalId ||
+        identity.generalId === null ||
         identity.cityId === null ||
         identity.nationId === null ||
         coverageVersion === null ||
@@ -219,7 +207,7 @@ export const readDashboardSourceRevisionState = async (
     }
 
     const validIdentity = {
-        generalId,
+        generalId: identity.generalId,
         cityId: identity.cityId,
         nationId: identity.nationId,
     };
@@ -232,6 +220,28 @@ export const readDashboardSourceRevisionState = async (
             createDashboardAuthSourceRevision(authSource)
         ),
     };
+};
+
+export const readDashboardSourceRevisionState = async (
+    db: Pick<DatabaseClient, '$queryRaw'>,
+    generalId: number,
+    authSource?: DashboardAuthSource
+): Promise<DashboardSourceRevisionState | null> => {
+    if (!Number.isSafeInteger(generalId) || generalId <= 0) {
+        return null;
+    }
+    return readDashboardSourceRevisionStateByActor(db, GamePrisma.sql`actor."id" = ${generalId}`, authSource);
+};
+
+export const readDashboardSourceRevisionStateForUser = async (
+    db: Pick<DatabaseClient, '$queryRaw'>,
+    userId: string,
+    authSource?: DashboardAuthSource
+): Promise<DashboardSourceRevisionState | null> => {
+    if (!userId) {
+        return null;
+    }
+    return readDashboardSourceRevisionStateByActor(db, GamePrisma.sql`actor."user_id" = ${userId}`, authSource);
 };
 
 export const canUseDashboardSourceRevision = (options: {
