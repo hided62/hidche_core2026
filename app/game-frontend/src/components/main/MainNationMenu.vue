@@ -35,7 +35,7 @@ const isActive = (link: MainNavigationLinkItem) => link.highlightStage === props
                 :active="isActive(entry)"
                 lumen-variant="lumen"
             />
-            <div v-else-if="entry.kind === 'split'" class="nation-menu-split">
+            <div v-else-if="entry.kind === 'split'" class="nation-menu-split legacy-split-button">
                 <MainNavigationLink
                     :link="entry.main"
                     :enabled="isNationNavigationEnabled(entry.main, access)"
@@ -43,7 +43,7 @@ const isActive = (link: MainNavigationLinkItem) => link.highlightStage === props
                     lumen-variant="lumen"
                 />
                 <button
-                    class="main-menu-button nation-menu-split__toggle legacy-button legacy-button--lumen"
+                    class="main-menu-button nation-menu-split__toggle legacy-split-button__toggle legacy-button legacy-button--lumen"
                     type="button"
                     :data-menu-id="entry.id"
                     :aria-label="`${entry.main.label} 하위 메뉴`"
@@ -108,12 +108,6 @@ const isActive = (link: MainNavigationLinkItem) => link.highlightStage === props
     min-width: 28px;
     width: 28px;
     padding: 0;
-    border-left-width: 0;
-    border-radius: 0 5.25px 5.25px 0;
-}
-
-.nation-menu-split > :deep(.main-menu-link) {
-    border-radius: 5.25px 0 0 5.25px;
 }
 
 .menu-caret {

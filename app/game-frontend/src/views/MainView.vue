@@ -20,11 +20,13 @@ import type { QuickNavigationItem } from '../components/main/mainNavigation';
 import { formatLog } from '../utils/formatLog';
 import { useSessionStore } from '../stores/session';
 import { useMainDashboardStore } from '../stores/mainDashboard';
+import { useGameFeedback } from '../composables/useGameFeedback';
 import { trpc } from '../utils/trpc';
 import type { CommandPatternEntry } from '../components/command/types';
 
 const session = useSessionStore();
 const dashboard = useMainDashboardStore();
+const { info: showInfoToast } = useGameFeedback();
 const isMobile = useMediaQuery('(max-width: 939.98px)');
 
 const npcMode = ref(0);
@@ -115,6 +117,14 @@ const loadMainData = async () => {
     npcMode.value = worldState?.config.npcMode ?? 0;
 };
 
+const requestManualRefresh = () => {
+    if (refreshing.value) {
+        showInfoToast('이미 정보를 갱신하고 있습니다.');
+        return;
+    }
+    void loadMainData();
+};
+
 const moveLobby = () => {
     window.location.replace(import.meta.env.VITE_GATEWAY_WEB_URL?.trim() || '/gateway/');
 };
@@ -154,9 +164,8 @@ watch(
                 <button
                     class="game-shell__action legacy-button legacy-button--navigation"
                     type="button"
-                    :disabled="refreshing"
                     :aria-busy="refreshing"
-                    @click="loadMainData"
+                    @click="requestManualRefresh"
                 >
                     갱 신
                 </button>
@@ -451,7 +460,7 @@ watch(
         :npc-mode="npcMode"
         :realtime-enabled="realtimeEnabled"
         :refreshing="refreshing"
-        @refresh="loadMainData"
+        @refresh="requestManualRefresh"
         @toggle-realtime="dashboard.setRealtimeEnabled(!realtimeEnabled)"
         @lobby="moveLobby"
         @quick="moveQuick"

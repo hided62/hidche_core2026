@@ -153,3 +153,18 @@
     border-color: var(--legacy-button-border);
     background: var(--legacy-button-bg);
 }
+
+/*
+ * Split controls share one outer silhouette. Keep the main control's right
+ * border as the subtle divider while removing every inner corner and the
+ * toggle's overlapping left border. These rules intentionally follow the
+ * Lumen family so its border shorthand cannot restore the inner rounding.
+ */
+.legacy-split-button > .main-menu-link {
+    border-radius: 5.25px 0 0 5.25px;
+}
+
+.legacy-split-button > .legacy-split-button__toggle {
+    border-left-width: 0;
+    border-radius: 0 5.25px 5.25px 0;
+}

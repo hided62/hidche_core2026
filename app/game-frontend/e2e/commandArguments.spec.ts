@@ -265,6 +265,71 @@ const commandTable = {
     ],
     inputOptions,
 };
+const basicRecruitmentCrewTypes = [
+    {
+        id: 1100,
+        armType: 1,
+        name: '보병',
+        attack: 100,
+        defence: 150,
+        speed: 7,
+        avoid: 10,
+        baseCost: 9,
+        baseRice: 9,
+        info: ['표준적인 보병입니다.'],
+    },
+    {
+        id: 1200,
+        armType: 2,
+        name: '궁병',
+        attack: 100,
+        defence: 100,
+        speed: 7,
+        avoid: 20,
+        baseCost: 10,
+        baseRice: 10,
+        info: ['표준적인 궁병입니다.'],
+    },
+    {
+        id: 1300,
+        armType: 3,
+        name: '기병',
+        attack: 150,
+        defence: 100,
+        speed: 7,
+        avoid: 5,
+        baseCost: 11,
+        baseRice: 11,
+        info: ['표준적인 기병입니다.'],
+    },
+    {
+        id: 1400,
+        armType: 4,
+        name: '귀병',
+        attack: 80,
+        defence: 80,
+        speed: 7,
+        avoid: 5,
+        baseCost: 9,
+        baseRice: 9,
+        info: ['계략을 사용하는 병종입니다.'],
+    },
+].map((crewType) => ({ ...crewType, available: true, special: false }));
+const fourArmRecruitmentCommandTable = {
+    ...commandTable,
+    inputOptions: {
+        ...inputOptions,
+        crewTypes: basicRecruitmentCrewTypes.map((crewType) => ({ value: crewType.id, label: crewType.name })),
+        recruitment: {
+            ...inputOptions.recruitment,
+            groups: basicRecruitmentCrewTypes.map((crewType) => ({
+                armType: crewType.armType,
+                armName: crewType.name,
+                values: [crewType],
+            })),
+        },
+    },
+};
 const buildSimpleCommand = (key: string, name: string) => ({
     key,
     name,
@@ -379,14 +444,25 @@ const generalContext = {
         name: '아국',
         color: '#008000',
         level: 1,
-        levelName: '호족',
         gold: 5000,
         rice: 6000,
         tech: 100,
-        typeCode: 'che_중립',
         typeName: '중립',
-        capitalCityId: 1,
-        capitalCityName: '업',
+        typePros: '',
+        typeCons: '',
+        population: { cityCount: 1, current: 1000, max: 2000 },
+        crew: { generalCount: 2, current: 500, max: 7000 },
+        power: 1234,
+        bill: 100,
+        taxRate: 20,
+        strategicCommandLimit: 0,
+        diplomaticLimit: 0,
+        prohibitScout: false,
+        prohibitWar: false,
+        techLevel: 1,
+        techLimited: false,
+        topChiefs: {},
+        impossibleStrategicCommands: [],
     },
     settings: {},
     penalties: {},
@@ -1208,6 +1284,79 @@ test('uses a Ref-style full recruitment page without horizontal overflow on desk
     await page.keyboard.press('Escape');
     await expect(picker).toHaveCount(0);
     await expect.poll(() => page.evaluate(() => getComputedStyle(document.body).overflow)).not.toBe('hidden');
+});
+
+test('keeps arbitrary direct recruitment and mercenary amounts for all four arms after turn refresh', async ({
+    page,
+}, testInfo) => {
+    const requests = await install(page, false, fourArmRecruitmentCommandTable);
+    await page.setViewportSize({ width: 1200, height: 900 });
+    await page.goto('/');
+
+    const entries = [
+        { turn: 1, command: '징병', crewTypeId: 1100, name: '보병', inputAmount: 13, savedAmount: 1300 },
+        { turn: 2, command: '징병', crewTypeId: 1200, name: '궁병', inputAmount: 27, savedAmount: 2700 },
+        { turn: 3, command: '징병', crewTypeId: 1300, name: '기병', inputAmount: 41, savedAmount: 4100 },
+        { turn: 4, command: '징병', crewTypeId: 1400, name: '귀병', inputAmount: 59, savedAmount: 5900 },
+        { turn: 5, command: '모병', crewTypeId: 1100, name: '보병', inputAmount: 17, savedAmount: 1700 },
+        { turn: 6, command: '모병', crewTypeId: 1200, name: '궁병', inputAmount: 31, savedAmount: 3100 },
+        { turn: 7, command: '모병', crewTypeId: 1300, name: '기병', inputAmount: 43, savedAmount: 4300 },
+        { turn: 8, command: '모병', crewTypeId: 1400, name: '귀병', inputAmount: 61, savedAmount: 6100 },
+    ];
+
+    for (const entry of entries) {
+        await page.getByRole('button', { name: `${entry.turn}턴 명령 입력`, exact: true }).click();
+        const picker = page.getByTestId('command-picker');
+        await picker.getByRole('button', { name: '내정', exact: true }).click();
+        await picker.getByRole('button', { name: entry.command, exact: true }).click();
+
+        const row = picker.getByRole('button', { name: `${entry.name} 선택 가능`, exact: true });
+        const amountInput = row.locator('input[type=number]');
+        await amountInput.fill(String(entry.inputAmount));
+        await expect(amountInput).toHaveValue(String(entry.inputAmount));
+        if (entry.turn === 1) {
+            const inputGeometry = await amountInput.evaluate((element) => {
+                if (!(element instanceof HTMLInputElement)) throw new Error('Expected recruitment amount input');
+                const rect = element.getBoundingClientRect();
+                return {
+                    width: rect.width,
+                    height: rect.height,
+                    textAlign: getComputedStyle(element).textAlign,
+                    value: element.value,
+                };
+            });
+            expect(inputGeometry).toMatchObject({ height: 28, textAlign: 'right', value: '13' });
+            expect(inputGeometry.width).toBeGreaterThan(0);
+            await picker.screenshot({ path: testInfo.outputPath('recruitment-direct-amount-desktop.png') });
+        }
+        await row.getByRole('button', { name: entry.command, exact: true }).click();
+
+        await expect(picker).toHaveCount(0);
+        await expect(page.locator('[data-command-scope="general"] .action-column > div').nth(entry.turn - 1)).toHaveText(
+            `【${entry.name}】 ${entry.savedAmount}명 ${entry.command}`
+        );
+    }
+
+    const refreshResponse = page.waitForResponse((apiResponse) =>
+        decodeURIComponent(apiResponse.url()).includes('turns.reserved.getGeneral')
+    );
+    await page.getByRole('button', { name: '갱 신', exact: true }).click();
+    await refreshResponse;
+
+    for (const entry of entries) {
+        await expect(page.locator('[data-command-scope="general"] .action-column > div').nth(entry.turn - 1)).toHaveText(
+            `【${entry.name}】 ${entry.savedAmount}명 ${entry.command}`
+        );
+    }
+    await page
+        .locator('[data-command-scope="general"]')
+        .screenshot({ path: testInfo.outputPath('recruitment-arbitrary-amounts-after-refresh.png') });
+
+    const serializedRequests = JSON.stringify(requests);
+    for (const entry of entries) {
+        expect(serializedRequests).toContain(`"crewType":${entry.crewTypeId}`);
+        expect(serializedRequests).toContain(`"amount":${entry.savedAmount}`);
+    }
 });
 
 test('uses the map to choose a nation target in the chief command window', async ({ page }) => {
