@@ -4,10 +4,12 @@ import type { BattleSimRequestPayload, BattleSimResultPayload } from '@sammo-ts/
 import PanelCard from '../components/ui/PanelCard.vue';
 import SkeletonLines from '../components/ui/SkeletonLines.vue';
 import BattleGeneralCard from '../components/battle/BattleGeneralCard.vue';
+import { useGameFeedback } from '../composables/useGameFeedback';
 import { trpc } from '../utils/trpc';
 import { getNpcColor } from '../utils/npcColor';
 import type { BattleSimOptions, GeneralDraft, InheritBuff } from '../utils/battleSimulatorTypes';
 import { BattleSimulatorWorkerClient } from '../utils/battleSimulatorWorkerClient';
+import { formatSeoulDateTime } from '../utils/legacyDateTime';
 
 type GeneralExport = Omit<GeneralDraft, 'id'>;
 
@@ -67,8 +69,8 @@ const attackerGeneral = ref<GeneralDraft | null>(null);
 const defenders = ref<GeneralDraft[]>([]);
 
 const isSimulating = ref(false);
-const statusMessage = ref<string | null>(null);
 const simulationWorker = new BattleSimulatorWorkerClient();
+const { info: showInfoToast, dismissToast } = useGameFeedback();
 
 onBeforeUnmount(() => {
     simulationWorker.dispose();
@@ -428,13 +430,6 @@ const normalizeGeneralExport = (raw: Record<string, unknown>): GeneralExport => 
     inheritBuff: normalizeInheritBuff(raw.inheritBuff),
 });
 
-const formatBattleTime = (date: Date): string => {
-    const pad = (value: number) => String(value).padStart(2, '0');
-    return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${pad(date.getHours())}:${pad(
-        date.getMinutes()
-    )}`;
-};
-
 const buildGeneralPayload = (
     general: GeneralDraft,
     nationId: number,
@@ -492,7 +487,7 @@ const buildBattlePayload = (action: BattleSimRequestPayload['action']): BattleSi
     if (!attackerGeneral.value) {
         throw new Error('attacker_general_missing');
     }
-    const now = formatBattleTime(new Date());
+    const now = formatSeoulDateTime(new Date());
 
     const attackerNationPayload = {
         nation: 1,
@@ -583,7 +578,10 @@ const runSimulation = async (action: BattleSimRequestPayload['action']) => {
     if (action === 'battle') {
         battleResult.value = null;
     }
-    statusMessage.value = action === 'battle' ? '전투를 진행 중입니다.' : '수비자 순서를 계산 중입니다.';
+    const progressToastId = showInfoToast(
+        action === 'battle' ? '전투를 진행 중입니다.' : '수비자 순서를 계산 중입니다.',
+        0
+    );
 
     try {
         const payload = buildBattlePayload(action);
@@ -605,7 +603,7 @@ const runSimulation = async (action: BattleSimRequestPayload['action']) => {
         error.value = resolveErrorMessage(err);
     } finally {
         isSimulating.value = false;
-        statusMessage.value = null;
+        dismissToast(progressToastId);
     }
 };
 
@@ -952,8 +950,8 @@ const summaryRows = computed(() => {
         ];
     }
     return [
-        { label: '전투 일시', value: battleResult.value.datetime ?? '-' },
-        { label: '전투 횟수', value: formatNumber(battleResult.value.avgWar) },
+        { label: '전투 일시', value: formatSeoulDateTime(battleResult.value.datetime ?? '') || '-' },
+        { label: '전투 횟수', value: formatNumber(battleResult.value.repeatCnt) },
         { label: '전투 페이즈', value: formatNumber(battleResult.value.phase) },
         {
             label: '준 피해',
@@ -1001,7 +999,6 @@ const shouldShowUI = computed(() => !loading.value && !!options.value);
             <button v-for="index in 5" :key="`legacy-button-${index}`" type="button"></button>
         </div>
         <div v-if="error" class="error">{{ error }}</div>
-        <div v-if="statusMessage" class="status">{{ statusMessage }}</div>
 
         <PanelCard data-parity-id="world-settings" title="전역 설정">
             <div v-if="loading">

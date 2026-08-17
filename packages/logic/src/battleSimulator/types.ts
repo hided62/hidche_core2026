@@ -121,6 +121,8 @@ export interface BattleSimResultPayload {
     result: boolean;
     reason: string;
     datetime?: string;
+    /** Number of battles actually evaluated. A fixed seed intentionally collapses a repeated request to one run. */
+    repeatCnt?: number;
     lastWarLog?: BattleSimLogBuckets;
     avgWar?: number;
     phase?: number;
