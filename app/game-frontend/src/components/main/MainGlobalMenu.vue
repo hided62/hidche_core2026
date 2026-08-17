@@ -26,10 +26,11 @@ const isActive = (link: MainNavigationLinkItem) => link.id === 'survey' && props
                 :link="entry"
                 :enabled="isNavigationConfigured(entry)"
                 :active="isActive(entry)"
+                lumen-variant="navigation"
             />
             <div v-else-if="entry.kind === 'group'" class="main-menu-popup">
                 <button
-                    class="main-menu-button"
+                    class="main-menu-button legacy-button legacy-button--navigation"
                     type="button"
                     :data-menu-id="entry.id"
                     :aria-expanded="openId === entry.id"
@@ -63,9 +64,10 @@ const isActive = (link: MainNavigationLinkItem) => link.id === 'survey' && props
                     :link="entry.main"
                     :enabled="isNavigationConfigured(entry.main)"
                     :active="isActive(entry.main)"
+                    lumen-variant="navigation"
                 />
                 <button
-                    class="main-menu-button main-menu-split__toggle"
+                    class="main-menu-button main-menu-split__toggle legacy-button legacy-button--navigation"
                     type="button"
                     :data-menu-id="entry.id"
                     :aria-label="`${entry.main.label} 하위 메뉴`"
@@ -115,33 +117,6 @@ const isActive = (link: MainNavigationLinkItem) => link.id === 'survey' && props
     min-width: 0;
 }
 
-.main-global-menu > :deep(.main-menu-link),
-.main-menu-popup > .main-menu-button,
-.main-menu-split > :deep(.main-menu-link),
-.main-menu-split > .main-menu-split__toggle {
-    border-color: var(--sammo-button-navigation-border);
-    background-color: var(--sammo-button-navigation-bg);
-    background-image: none;
-}
-
-.main-global-menu > :deep(.main-menu-link:hover),
-.main-global-menu > :deep(.main-menu-link:focus-visible),
-.main-global-menu > :deep(.main-menu-link:active),
-.main-menu-popup > .main-menu-button:hover,
-.main-menu-popup > .main-menu-button:focus-visible,
-.main-menu-popup > .main-menu-button:active,
-.main-menu-popup > .main-menu-button[aria-expanded='true'],
-.main-menu-split > :deep(.main-menu-link:hover),
-.main-menu-split > :deep(.main-menu-link:focus-visible),
-.main-menu-split > :deep(.main-menu-link:active),
-.main-menu-split > .main-menu-split__toggle:hover,
-.main-menu-split > .main-menu-split__toggle:focus-visible,
-.main-menu-split > .main-menu-split__toggle:active,
-.main-menu-split > .main-menu-split__toggle[aria-expanded='true'] {
-    border-color: var(--sammo-button-navigation-border);
-    background-color: var(--sammo-button-navigation-bg);
-}
-
 .main-menu-popup > .main-menu-button,
 .main-menu-split > :deep(.main-menu-link) {
     width: 100%;
@@ -157,7 +132,11 @@ const isActive = (link: MainNavigationLinkItem) => link.id === 'survey' && props
     width: 28px;
     padding: 0;
     border-left-width: 0;
-    border-radius: 0 3px 3px 0;
+    border-radius: 0 5.25px 5.25px 0;
+}
+
+.main-menu-split > :deep(.main-menu-link) {
+    border-radius: 5.25px 0 0 5.25px;
 }
 
 .menu-caret {
@@ -182,6 +161,17 @@ const isActive = (link: MainNavigationLinkItem) => link.id === 'survey' && props
     background: #202020;
     box-shadow: 0 8px 18px rgb(0 0 0 / 45%);
     list-style: none;
+}
+
+.main-global-menu[data-menu-position='bottom'] .main-menu-popup__list {
+    top: auto;
+    bottom: calc(100% + 2px);
+    box-shadow: 0 -8px 18px rgb(0 0 0 / 45%);
+}
+
+.main-global-menu[data-menu-position='bottom'] .menu-caret {
+    border-top-width: 0;
+    border-bottom: 4px solid currentColor;
 }
 
 .main-menu-split .main-menu-popup__list {

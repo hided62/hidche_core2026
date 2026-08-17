@@ -19,6 +19,17 @@ export const NATION_TRAIT_KEYS = [
 
 export type NationTraitKey = (typeof NATION_TRAIT_KEYS)[number];
 
+// Ref GameConst::$availableNationType excludes the neutral storage/default trait.
+// Founding, NPC founding, and the battle simulator must only expose this list.
+export type AvailableNationTraitKey = Exclude<NationTraitKey, 'che_중립'>;
+
+export const AVAILABLE_NATION_TRAIT_KEYS: readonly AvailableNationTraitKey[] = NATION_TRAIT_KEYS.filter(
+    (key): key is Exclude<NationTraitKey, 'che_중립'> => key !== 'che_중립'
+);
+
+export const isAvailableNationTraitKey = (value: string): value is AvailableNationTraitKey =>
+    AVAILABLE_NATION_TRAIT_KEYS.includes(value as AvailableNationTraitKey);
+
 export type NationTraitModule = TraitModule;
 
 export type NationTraitImporter = () => Promise<TraitModuleExport>;

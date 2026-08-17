@@ -58,7 +58,7 @@ const simulatorOptions = {
             { id: 200, name: '궁병', armType: 2 },
         ],
     },
-    nationTypes: [{ key: 'che_중립', name: '중립', info: '특별한 효과 없음' }],
+    nationTypes: [{ key: 'che_도적', name: '도적', info: '금 수입 증가, 쌀 수입 감소' }],
     eventDomesticTraits: [{ key: 'che_event_신산', name: '신산', info: '계략 강화' }],
     warTraits: [{ key: 'che_필살', name: '필살', info: '필살 확률 증가' }],
     personalities: [{ key: 'che_대담', name: '대담', info: '공격적인 성격' }],
@@ -355,6 +355,10 @@ test('operates independent/game presets, imports my general, and renders battle 
     await installApi(page, fixture);
     await page.setViewportSize({ width: 1280, height: 900 });
     await gotoSimulator(page);
+
+    const nationTypeSelects = page.locator('[data-parity-id="attacker-nation"] select').first();
+    await expect(nationTypeSelects).toHaveValue('che_도적');
+    await expect(nationTypeSelects.locator('option[value="che_중립"]')).toHaveCount(0);
 
     const notice = page.getByLabel('시뮬레이터 데이터 안내');
     const noticeRect = await notice.boundingBox();
