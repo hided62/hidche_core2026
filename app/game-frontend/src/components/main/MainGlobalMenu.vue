@@ -184,6 +184,17 @@ const isActive = (link: MainNavigationLinkItem) => link.id === 'survey' && props
     list-style: none;
 }
 
+.main-global-menu[data-menu-position='bottom'] .main-menu-popup__list {
+    top: auto;
+    bottom: calc(100% + 2px);
+    box-shadow: 0 -8px 18px rgb(0 0 0 / 45%);
+}
+
+.main-global-menu[data-menu-position='bottom'] .menu-caret {
+    border-top-width: 0;
+    border-bottom: 4px solid currentColor;
+}
+
 .main-menu-split .main-menu-popup__list {
     right: 0;
     left: auto;
