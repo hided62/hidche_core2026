@@ -286,28 +286,26 @@ onMounted(() => {
                                 ><strong>{{ selectedGeneral.battleStats.killCrew.toLocaleString('ko-KR') }}</strong>
                                 <span>피살</span
                                 ><strong>{{ selectedGeneral.battleStats.deathCrew.toLocaleString('ko-KR') }}</strong>
-                                <span>최근 전투</span><strong>{{ selectedGeneral.recentWar || '-' }}</strong>
+                                <span class="battle-general-extra__recent-label">최근 전투</span>
+                                <strong class="battle-general-extra__recent-value">
+                                    {{
+                                        formatServerDateTime(selectedGeneral.recentWar, {
+                                            format: 'monthDayTime',
+                                            fallback: '-',
+                                        })
+                                    }}
+                                </strong>
                             </div>
                             <LegacyGeneralProgress :general="selectedGeneral" :show-primary="false" />
                         </template>
                     </GeneralBasicCard>
-                    <div v-if="selectedGeneral" class="general-meta">
-                        <div>
-                            최근 턴:
-                            {{
-                                formatServerDateTime(selectedGeneral.turnTime, { format: 'hourMinute', fallback: '-' })
-                            }}
-                        </div>
-                        <div>최근 전투: {{ selectedGeneral.recentWar || '-' }}</div>
-                        <div>전투 횟수: {{ selectedGeneral.warnum }}</div>
-                    </div>
                 </PanelCard>
             </div>
 
             <div class="stack">
                 <PanelCard title="장수 기록" subtitle="열전과 전투 기록">
                     <div class="log-grid">
-                        <div v-for="type in logTypes" :key="type" class="log-block">
+                        <div v-for="type in logTypes" :key="type" class="log-block" :data-log-type="type">
                             <div class="log-title">{{ logLabels[type] }}</div>
                             <SkeletonLines v-if="loading || logLoading" :lines="3" />
                             <template v-else>
@@ -356,14 +354,6 @@ onMounted(() => {
     font: inherit;
 }
 
-.general-meta {
-    margin: 0;
-    padding: 6px 8px;
-    color: #ccc;
-    display: grid;
-    gap: 4px;
-}
-
 .battle-general-extra {
     display: grid;
     grid-template-columns: repeat(6, 1fr);
@@ -390,6 +380,15 @@ onMounted(() => {
     white-space: nowrap;
 }
 
+.battle-general-extra > .battle-general-extra__recent-label {
+    grid-column: 1;
+}
+
+.battle-general-extra > .battle-general-extra__recent-value {
+    grid-column: 2 / -1;
+    text-align: left;
+}
+
 .log-grid {
     display: contents;
 }
@@ -397,7 +396,8 @@ onMounted(() => {
 .log-block {
     border: 1px solid #666;
     padding: 0;
-    background: #000;
+    background-color: #302016;
+    background-image: var(--sammo-texture-walnut);
     min-height: 0;
 }
 
@@ -492,8 +492,8 @@ onMounted(() => {
     margin: 0 auto;
     padding: 0;
     gap: 0;
-    height: 1268px;
-    overflow: hidden;
+    height: auto;
+    overflow: visible;
 }
 .battle-top {
     height: 32px;
@@ -530,7 +530,6 @@ onMounted(() => {
 @media (max-width: 991px) {
     .battle-page {
         width: 500px;
-        height: 1411px;
     }
     .battle-top {
         grid-template-columns: 89px 89px 1fr 0 0;
