@@ -6,7 +6,6 @@ import { asRecord } from '@sammo-ts/common';
 
 import type { GameApiContext } from '../../context.js';
 import {
-    accessAuthedProcedure,
     accessEngineAuthedProcedure,
     accessEngineAuthedInputProcedure,
     accessLimitAuthedProcedure,
@@ -790,7 +789,10 @@ export const generalRouter = router({
                 history: trimRecentRecords(history, input.lastWorldHistoryId),
             };
         }),
-    getFrontStatus: accessAuthedProcedure.query(async ({ ctx }) => {
+    // 메인 화면은 SSE invalidation, 탭 복귀와 직접 갱신이 같은 read model을
+    // 호출한다. 클라이언트가 주장하는 갱신 원인을 신뢰해 구분하지 않고 이
+    // projection 전체를 무가점으로 두되, 이미 제한된 사용자의 gate는 유지한다.
+    getFrontStatus: accessLimitAuthedProcedure.query(async ({ ctx }) => {
         const me = await getMyGeneral(ctx);
         const worldState = await ctx.db.worldState.findFirst({
             orderBy: { id: 'asc' },

@@ -51,6 +51,8 @@ export interface RealtimeReadModelInvalidation {
     reservedTurns: boolean;
     records: boolean;
     frontStatus: boolean;
+    /** Shared tournament stage shown by the main dashboard changed. */
+    tournament: boolean;
 }
 
 export interface RealtimeViewerIdentity {
@@ -69,6 +71,7 @@ export const createEmptyRealtimeReadModelInvalidation = (): RealtimeReadModelInv
     reservedTurns: false,
     records: false,
     frontStatus: false,
+    tournament: false,
 });
 
 export const createFullRealtimeReadModelInvalidation = (): RealtimeReadModelInvalidation => ({
@@ -81,6 +84,7 @@ export const createFullRealtimeReadModelInvalidation = (): RealtimeReadModelInva
     reservedTurns: true,
     records: true,
     frontStatus: true,
+    tournament: true,
 });
 
 export const mergeRealtimeReadModelInvalidations = (
@@ -96,6 +100,7 @@ export const mergeRealtimeReadModelInvalidations = (
     reservedTurns: left.reservedTurns || right.reservedTurns,
     records: left.records || right.records,
     frontStatus: left.frontStatus || right.frontStatus,
+    tournament: left.tournament || right.tournament,
 });
 
 export const hasRealtimeReadModelInvalidation = (invalidation: RealtimeReadModelInvalidation): boolean =>
@@ -141,6 +146,7 @@ export const resolveRealtimeReadModelInvalidation = (
             frontStatusGeneralChanged ||
             ownFrontStatusNationChanged ||
             ownFrontStatusActorChanged,
+        tournament: false,
     };
 };
 
@@ -212,6 +218,11 @@ export interface MessagesChangedEvent {
     mailboxes: number[];
 }
 
+/** Redis-owned tournament stage changed after its atomic source revision commit. */
+export interface TournamentChangedEvent {
+    type: 'tournamentChanged';
+}
+
 export interface ReadModelInvalidatedEvent {
     type: 'readModelInvalidated';
     invalidation: RealtimeReadModelInvalidation;
@@ -224,4 +235,9 @@ export interface MessagesInvalidatedEvent {
 /** Events safe to expose to an authenticated browser over SSE. */
 export type PublicRealtimeEvent = ReadModelInvalidatedEvent | MessagesInvalidatedEvent;
 
-export type RealtimeEvent = TurnCompletedEvent | ReadModelChangedEvent | MessageCreatedEvent | MessagesChangedEvent;
+export type RealtimeEvent =
+    | TurnCompletedEvent
+    | ReadModelChangedEvent
+    | MessageCreatedEvent
+    | MessagesChangedEvent
+    | TournamentChangedEvent;

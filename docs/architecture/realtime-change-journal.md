@@ -272,9 +272,14 @@ transaction을 잡은 채 `turnDaemon.requestCommand()`의 별도 ENGINE transac
 
 토너먼트 state/participants/matches/bets는 현재 Redis가 원본이므로 PostgreSQL
 revision과 원자적으로 묶을 수 없다. `TournamentStore`가 state write와 Redis domain
-revision 증가를 같은 Redis transaction 또는 Lua script로 수행한다. 저장 뒤 별도
-`publish()` 두 호출로 끝내지 않는다. 장기 durability 요구가 생기면 tournament state
-자체를 PostgreSQL 소유로 옮기는 별도 migration으로 다룬다.
+revision 증가를 같은 Lua script로 수행한다. source revision은 참가자·대진·베팅을
+포함한 모든 projection write에서 증가하지만 메인 화면 wake-up은 Lua 안에서 이전/다음
+`state.stage`를 비교해 실제 단계가 바뀔 때만 결정한다. commit 뒤
+`tournamentChanged`를 공용 game event channel에 best-effort publish하며, API는 이를
+식별자·revision 없는 public `tournament: true` invalidation으로 바꾼다. 참가 등록,
+대진 결과, 같은 stage 안의 phase/timer/정산 flag write는 300 viewer를 깨우지 않는다.
+장기 durability 요구가 생기면 tournament state 자체를 PostgreSQL 소유로 옮기는 별도
+migration으로 다룬다.
 
 ### 국가 베팅과 direct writer
 
@@ -352,7 +357,9 @@ test가 완료되어 post-deploy one-off로 안전하게 활성화할 수 있다
   meta/head 누락, DB/Redis 오류에는 shared cache를 완전히 우회해 full compute한다.
 - 개인 `spyList`, `shownByGeneralList`, `myCity`, `myNation`은 request에서 계속 조합한다.
 - tournament는 API store, 월 자동 개막과 runtime clock shift 모두 payload와 profile source
-  revision을 같은 Lua invocation으로 갱신하고 commit 뒤에만 best-effort publish한다.
+  revision을 같은 Lua invocation으로 갱신한다. stage transition만 main realtime channel에
+  best-effort publish하고, 같은 stage의 phase/participant/match/bet write는 source revision만
+  진행한다.
 - records는 기존 `lastGeneralRecordId`/`lastWorldHistoryId` 증분 조회를 유지하되 해당
   domain이 선택되지 않으면 query하지 않는다.
 
@@ -373,6 +380,13 @@ BroadcastChannel 계약을 유지한다. 변경 ID set/boolean은 drop하지 않
 manual refresh, visible 복귀와 realtime 재활성화는 cadence를 기다리지 않고 fresh
 snapshot을 한 번 읽는다. 숫자는 실제 혼합 부하 결과에 따라 조정하며, 부하만 낮추기
 위해 5초를 초과하지 않는다.
+
+메인 dashboard의 `tournamentStage`는 store가 소유한다. visible leader 탭이
+`tournament: true`를 받으면 기존 access-only gate 뒤 `tournament.getState`만 읽어 stage
+patch를 만들고, 같은 profile/account의 follower 탭은 BroadcastChannel patch를 적용한다.
+따라서 상단 `토너먼트:` 문구, 국가 메뉴와 모바일 메뉴의 stage 강조가 한 값으로 함께
+갱신된다. Redis/API 오류에는 현재 stage를 거짓 0으로 덮지 않고 다음 event, 사용자
+`갱 신`, visible 복귀 snapshot으로 복구한다.
 
 ## 구현 단계와 commit 경계
 
@@ -414,13 +428,13 @@ snapshot을 한 번 읽는다. 숫자는 실제 혼합 부하 결과에 따라 �
 5. 결과에 따라 pool, cadence, cache와 worker concurrency를 조정하고 전체 benchmark를
    다시 실행한다.
 
-### 2026-08-16 구현 상태
+### 2026-08-17 구현 상태
 
 | Phase | 상태 | 현재 근거 |
 | --- | --- | --- |
 | A | 완료 | all-false access gate, frontend 강제 context 제거, Chromium realtime trace |
 | B | 완료 | typed journal, PostgreSQL revision/outbox/meta, engine/API 원자 writer, retry dispatcher, 86 mutation inventory |
-| C | 완료 | dashboard revision-first, auth/global dependency, durable map cache, 모든 tournament Redis writer 원자화, coverage v1 activation/rollback integration |
+| C | 완료 | dashboard revision-first, auth/global dependency, durable map cache, 모든 tournament Redis writer 원자화, stage-only main realtime invalidation, coverage v1 activation/rollback integration |
 | D | 부분 완료 | E1 1,200장수 1개월 deterministic profile과 300 SSE/HTTP 짧은 calibration 완료. E2 actual daemon DB flush 및 30분 M1/R1은 미실행 |
 
 `부분 완료`는 capacity 합격을 뜻하지 않는다. 이 작업의 수용 추산은 아래 실제 짧은

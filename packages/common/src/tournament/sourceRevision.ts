@@ -1,6 +1,8 @@
 export interface TournamentSourceKeys {
+    stateKey: string;
     sourceRevisionKey: string;
     sourceRevisionChannel: string;
+    realtimeEventChannel: string;
 }
 
 export interface TournamentProjectionRedis {
@@ -24,11 +26,25 @@ if current then
         return redis.error_reply('tournament source revision exhausted')
     end
 end
+local stage_changed = false
 for index = 1, #KEYS - 1 do
+    local next_ok, next_value = pcall(cjson.decode, ARGV[index])
+    if next_ok and type(next_value) == 'table' and next_value['stage'] ~= nil then
+        local previous = redis.call('GET', KEYS[index])
+        local previous_stage = nil
+        if previous then
+            local previous_ok, previous_value = pcall(cjson.decode, previous)
+            if previous_ok and type(previous_value) == 'table' then
+                previous_stage = previous_value['stage']
+            end
+        end
+        local next_stage = next_value['stage']
+        stage_changed = (not previous) or previous_stage ~= next_stage
+    end
     redis.call('SET', KEYS[index], ARGV[index])
 end
 local revision = redis.call('INCR', revision_key)
-return tostring(revision)
+return tostring(revision) .. ':' .. (stage_changed and '1' or '0')
 `;
 
 export const parseTournamentSourceRevision = (value: unknown): string | null => {
@@ -54,11 +70,16 @@ export const writeTournamentProjection = async (
         throw new Error('Tournament projection write keys must be unique.');
     }
 
+    const writesState = writes.some(({ key }) => key === keys.stateKey);
     const result = await redis.eval(WRITE_TOURNAMENT_PROJECTION_SCRIPT, {
         keys: [...writes.map(({ key }) => key), keys.sourceRevisionKey],
         arguments: writes.map(({ value }) => JSON.stringify(value)),
     });
-    const sourceRevision = parseTournamentSourceRevision(result);
+    const scriptResult = typeof result === 'string' ? /^(\d+):([01])$/u.exec(result) : null;
+    const sourceRevision = parseTournamentSourceRevision(scriptResult?.[1] ?? result);
+    // Plain revision results remain accepted for rolling deployments and small
+    // Redis fakes; only the current Lua contract can suppress same-stage writes.
+    const stageChanged = writesState && (scriptResult ? scriptResult[2] === '1' : true);
     if (sourceRevision === null) {
         throw new Error('토너먼트 source revision 갱신 결과가 올바르지 않습니다.');
     }
@@ -68,6 +89,13 @@ export const writeTournamentProjection = async (
             await redis.publish(keys.sourceRevisionChannel, JSON.stringify({ sourceRevision }));
         } catch {
             // Payload and revision are committed; publication remains best effort.
+        }
+        if (stageChanged) {
+            try {
+                await redis.publish(keys.realtimeEventChannel, JSON.stringify({ type: 'tournamentChanged' }));
+            } catch {
+                // The source-revision wake-up and main SSE wake-up are independent best-effort fan-out.
+            }
         }
     }
     return sourceRevision;

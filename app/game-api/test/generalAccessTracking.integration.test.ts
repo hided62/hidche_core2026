@@ -383,6 +383,10 @@ integration('general access tracking persistence', () => {
         } as unknown as GameApiContext;
         const boundaryCaller = endpointBoundaryRouter.createCaller(context);
 
+        const dashboardCaller = appRouter.createCaller(context);
+        await expect(dashboardCaller.general.getFrontStatus()).resolves.toBeDefined();
+        await expect(db.generalAccessLog.findUnique({ where: { generalId: endpointGeneralId } })).resolves.toBeNull();
+
         await expect(boundaryCaller.world.getGeneralDirectory({ accepted: false as true })).rejects.toMatchObject({
             code: 'BAD_REQUEST',
         });

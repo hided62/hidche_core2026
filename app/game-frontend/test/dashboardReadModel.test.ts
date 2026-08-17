@@ -25,6 +25,7 @@ void test('last-turn-time-only events do not schedule any dashboard query', () =
         reservedTurns: false,
         records: false,
         frontStatus: false,
+        tournament: false,
     });
 });
 
@@ -46,6 +47,7 @@ void test('selects only the read models affected by the current identity', () =>
         reservedTurns: true,
         records: true,
         frontStatus: false,
+        tournament: false,
     });
 });
 
@@ -79,6 +81,7 @@ void test('routes defence, tax-rate, and current-city-state events to their exac
         reservedTurns: false,
         records: false,
         frontStatus: false,
+        tournament: false,
     });
 
     const taxRate = resolveDashboardRefreshPlan(
@@ -100,6 +103,7 @@ void test('routes defence, tax-rate, and current-city-state events to their exac
         reservedTurns: false,
         records: false,
         frontStatus: false,
+        tournament: false,
     });
 
     const cityState = resolveDashboardRefreshPlan(
@@ -161,6 +165,7 @@ void test('refreshes only front status for a global survey projection change', (
         reservedTurns: false,
         records: false,
         frontStatus: true,
+        tournament: false,
     });
 });
 
@@ -174,8 +179,8 @@ void test('targets a submitted survey projection to its own general', () => {
     assert.equal(resolveDashboardRefreshPlan(changes, { generalId: 8, cityId: 3, nationId: 2 }).frontStatus, false);
 });
 
-void test('keeps the access bundle projection-free for map, records, and front-status-only plans', () => {
-    for (const slice of ['map', 'records', 'frontStatus'] as const) {
+void test('keeps the access bundle projection-free for independent read-model plans', () => {
+    for (const slice of ['map', 'records', 'frontStatus', 'tournament'] as const) {
         const plan = { ...createEmptyRealtimeReadModelInvalidation(), [slice]: true };
         assert.deepEqual(resolveDashboardContextBundleInclude(plan), {
             context: false,

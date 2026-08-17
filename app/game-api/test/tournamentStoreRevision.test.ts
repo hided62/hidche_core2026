@@ -35,7 +35,8 @@ class AtomicMemoryRedis {
     }
 
     async publish(channel: string, message: string): Promise<number> {
-        this.events.push(`publish:${JSON.parse(message).sourceRevision as string}`);
+        const payload = JSON.parse(message) as { sourceRevision?: string; type?: string };
+        this.events.push(`publish:${payload.sourceRevision ?? payload.type ?? 'unknown'}`);
         this.published.push({ channel, message });
         return 1;
     }
@@ -69,6 +70,29 @@ describe('TournamentStore source revision', () => {
         await expect(store.getParticipants()).resolves.toEqual([]);
         await expect(store.getSourceRevision()).resolves.toBeNull();
         expect(redis.published).toEqual([]);
+    });
+
+    it('wakes the main realtime channel only for shared state writes', async () => {
+        const redis = new AtomicMemoryRedis();
+        const keys = buildTournamentKeys('che:default');
+        const store = new TournamentStore(redis, keys);
+
+        await store.setState({
+            stage: 1,
+            phase: 0,
+            type: 0,
+            auto: true,
+            openYear: 185,
+            openMonth: 2,
+            termSeconds: 10,
+            nextAt: '2026-08-17T00:00:00.000Z',
+        });
+
+        expect(redis.events).toEqual(['commit:1', 'publish:1', 'publish:tournamentChanged']);
+        expect(redis.published).toEqual([
+            { channel: keys.sourceRevisionChannel, message: JSON.stringify({ sourceRevision: '1' }) },
+            { channel: keys.realtimeEventChannel, message: JSON.stringify({ type: 'tournamentChanged' }) },
+        ]);
     });
 
     it('serializes concurrent writes into monotonic per-profile revisions', async () => {

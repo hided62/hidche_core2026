@@ -1,6 +1,6 @@
 import { mkdir, writeFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
-import { expect, test, type Page, type Route } from '@playwright/test';
+import { expect, test, type Locator, type Page, type Route } from '@playwright/test';
 
 const response = (data: unknown) => ({ result: { data } });
 const errorResponse = (path: string, message: string) => ({
@@ -97,6 +97,7 @@ const readModelInvalidation = (
         reservedTurns: boolean;
         records: boolean;
         frontStatus: boolean;
+        tournament: boolean;
     }>
 ) => ({
     context: false,
@@ -108,6 +109,7 @@ const readModelInvalidation = (
     reservedTurns: false,
     records: false,
     frontStatus: false,
+    tournament: false,
     ...overrides,
 });
 
@@ -619,6 +621,97 @@ const gridColumnCount = async (page: Page, selector: string) =>
         .first()
         .evaluate((element) => getComputedStyle(element).gridTemplateColumns.split(' ').length);
 
+const raisedButtonState = async (target: Locator) =>
+    target.evaluate((element) => {
+        const rect = element.getBoundingClientRect();
+        const style = getComputedStyle(element);
+        return {
+            top: rect.top,
+            bottom: rect.bottom,
+            height: rect.height,
+            backgroundColor: style.backgroundColor,
+            borderTopWidth: style.borderTopWidth,
+            borderLeftWidth: style.borderLeftWidth,
+            borderBottomWidth: style.borderBottomWidth,
+            borderBottomColor: style.borderBottomColor,
+            borderRadius: style.borderRadius,
+            marginTop: style.marginTop,
+            paddingTop: style.paddingTop,
+            paddingBottom: style.paddingBottom,
+            classNames: [...element.classList],
+        };
+    });
+
+const pointerDownButtonState = async (page: Page, target: Locator) => {
+    const box = await target.boundingBox();
+    if (!box) throw new Error('raised button is not measurable');
+    await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+    await page.mouse.down();
+    const state = await raisedButtonState(target);
+    await page.mouse.move(1, 1);
+    await page.mouse.up();
+    return state;
+};
+
+const persistEnlargedRaisedButtonProbe = async (page: Page, source: Locator, name: string) => {
+    if (!artifactRoot) return;
+    const target = resolve(artifactRoot);
+    await mkdir(target, { recursive: true });
+    const probeId = `raised-button-probe-${name}`;
+    const hostId = `${probeId}-host`;
+    await source.evaluate(
+        (element, ids) => {
+            const host = document.createElement('div');
+            host.id = ids.hostId;
+            Object.assign(host.style, {
+                position: 'fixed',
+                inset: '20px auto auto 20px',
+                width: '390px',
+                height: '170px',
+                padding: '10px',
+                background: '#000',
+                zIndex: '2147483647',
+                overflow: 'hidden',
+            });
+            const stage = document.createElement('div');
+            Object.assign(stage.style, {
+                display: 'flow-root',
+                width: '90px',
+                transform: 'scale(4)',
+                transformOrigin: 'top left',
+            });
+            const probe = element.cloneNode(true) as HTMLElement;
+            probe.id = ids.probeId;
+            probe.classList.remove('active');
+            probe.removeAttribute('disabled');
+            probe.style.width = '90px';
+            stage.append(probe);
+            host.append(stage);
+            document.body.append(host);
+        },
+        { hostId, probeId }
+    );
+
+    const host = page.locator(`#${hostId}`);
+    const probe = page.locator(`#${probeId}`);
+    const states: Record<string, Awaited<ReturnType<typeof raisedButtonState>>> = {};
+    states.default = await raisedButtonState(probe);
+    await host.screenshot({ path: resolve(target, `${name}-large-default.png`) });
+    await probe.hover();
+    states.hover = await raisedButtonState(probe);
+    await host.screenshot({ path: resolve(target, `${name}-large-hover.png`) });
+    const box = await probe.boundingBox();
+    if (!box) throw new Error('enlarged raised button is not measurable');
+    await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+    await page.mouse.down();
+    states.pointerDown = await raisedButtonState(probe);
+    await host.screenshot({ path: resolve(target, `${name}-large-pointer-down.png`) });
+    await page.mouse.move(1, 1);
+    await page.mouse.up();
+    await writeFile(resolve(target, `${name}-large-states.json`), `${JSON.stringify(states, null, 2)}\n`);
+    await host.evaluate((element) => element.remove());
+};
+
 const persistArtifact = async (page: Page, name: string) => {
     if (!artifactRoot) return;
     const target = resolve(artifactRoot);
@@ -1033,7 +1126,7 @@ test('pure NPC message senders are not rendered as reply targets', async ({ page
     await persistArtifact(page, `${basePath.slice(1)}-npc-reply-targets-desktop-1200`);
 });
 
-test('main reserved-turn picker renders the Ref general category order', async ({ page }) => {
+test('main reserved-turn picker renders the Ref category order and raised button depth', async ({ page }) => {
     const state: NavigationFixture = {
         officerLevel: 1,
         permission: 0,
@@ -1081,16 +1174,68 @@ test('main reserved-turn picker renders the Ref general category order', async (
     expect(desktopGeometry.columns.split(' ')).toHaveLength(3);
     expect(desktopGeometry.rows).toBe(2);
     expect(desktopGeometry.horizontalOverflow).toBeLessThanOrEqual(0);
-    expect(desktopGeometry.categoryButton).toEqual({ height: 32, paddingTop: '6px', paddingBottom: '6px' });
+    expect(desktopGeometry.categoryButton).toEqual({ height: 35.5, paddingTop: '5.25px', paddingBottom: '5.25px' });
     expect(desktopGeometry.commandButton).toEqual(desktopGeometry.categoryButton);
 
     const strategyCategory = picker.getByRole('button', { name: '계략', exact: true });
+    await page.mouse.move(1, 1);
+    const categoryDefault = await raisedButtonState(strategyCategory);
+    expect(categoryDefault).toMatchObject({
+        height: 35.5,
+        backgroundColor: 'rgb(23, 61, 39)',
+        borderTopWidth: '0px',
+        borderLeftWidth: '1px',
+        borderBottomWidth: '4px',
+        borderBottomColor: 'rgb(21, 55, 35)',
+        borderRadius: '5.25px',
+        marginTop: '0px',
+        classNames: expect.arrayContaining(['legacy-button', 'legacy-button--lumen']),
+    });
     await strategyCategory.hover();
+    const categoryHover = await raisedButtonState(strategyCategory);
+    expect(categoryHover).toMatchObject({ height: 34.5, borderBottomWidth: '3px', marginTop: '1px' });
+    expect(categoryHover.top).toBe(categoryDefault.top + 1);
+    expect(categoryHover.bottom).toBe(categoryDefault.bottom);
+    const categoryPointerDown = await pointerDownButtonState(page, strategyCategory);
+    expect(categoryPointerDown).toMatchObject({ height: 33.5, borderBottomWidth: '2px', marginTop: '2px' });
+    expect(categoryPointerDown.top).toBe(categoryDefault.top + 2);
+    expect(categoryPointerDown.bottom).toBe(categoryDefault.bottom);
+    await page.keyboard.press('Tab');
     await strategyCategory.focus();
     await expect(strategyCategory).toBeFocused();
+    await expect.poll(() => strategyCategory.evaluate((element) => element.matches(':focus-visible'))).toBe(true);
     await strategyCategory.click();
     await expect(strategyCategory).toHaveClass(/active/);
     await expect(picker.locator('.command-item')).toHaveText(['화계']);
+    await page.mouse.move(1, 1);
+    const commandButton = picker.locator('.command-item').first();
+    const commandDefault = await raisedButtonState(commandButton);
+    expect(commandDefault).toMatchObject({
+        height: 35.5,
+        backgroundColor: 'rgb(48, 32, 22)',
+        borderTopWidth: '0px',
+        borderLeftWidth: '1px',
+        borderBottomWidth: '4px',
+        borderBottomColor: 'rgb(43, 29, 20)',
+        borderRadius: '5.25px',
+        marginTop: '0px',
+        classNames: expect.arrayContaining(['legacy-button', 'legacy-button--lumen']),
+    });
+    await commandButton.hover();
+    const commandHover = await raisedButtonState(commandButton);
+    expect(commandHover).toMatchObject({ height: 34.5, borderBottomWidth: '3px', marginTop: '1px' });
+    expect(commandHover.top).toBe(commandDefault.top + 1);
+    expect(commandHover.bottom).toBe(commandDefault.bottom);
+    const commandPointerDown = await pointerDownButtonState(page, commandButton);
+    expect(commandPointerDown).toMatchObject({ height: 33.5, borderBottomWidth: '2px', marginTop: '2px' });
+    expect(commandPointerDown.top).toBe(commandDefault.top + 2);
+    expect(commandPointerDown.bottom).toBe(commandDefault.bottom);
+    await page.keyboard.press('Tab');
+    await commandButton.focus();
+    await expect(commandButton).toBeFocused();
+    await expect.poll(() => commandButton.evaluate((element) => element.matches(':focus-visible'))).toBe(true);
+    await persistEnlargedRaisedButtonProbe(page, strategyCategory, 'turn-selector-category');
+    await persistEnlargedRaisedButtonProbe(page, commandButton, 'turn-selector-command');
     await persistArtifact(page, `${basePath.slice(1)}-main-reserved-ref-categories-desktop-1200`);
 
     await page.setViewportSize({ width: 500, height: 900 });
@@ -1118,7 +1263,11 @@ test('main reserved-turn picker renders the Ref general category order', async (
         };
     });
     expect(mobileGeometry.horizontalOverflow).toBeLessThanOrEqual(0);
-    expect(mobileGeometry.categoryButton).toEqual({ height: 32, paddingTop: '6px', paddingBottom: '6px' });
+    expect(mobileGeometry.categoryButton).toEqual({
+        height: 35.5,
+        paddingTop: '5.25px',
+        paddingBottom: '5.25px',
+    });
     expect(mobileGeometry.commandButton).toEqual(mobileGeometry.categoryButton);
     await persistArtifact(page, `${basePath.slice(1)}-main-reserved-ref-categories-mobile-500`);
 });
@@ -1327,6 +1476,9 @@ test('main cards and command input stay inside their Ref-sized grid slots', asyn
     await page.locator('[data-main-target="commands"] .select-command').click();
     const picker = page.getByTestId('command-picker');
     await expect(picker).toBeVisible();
+    // The trigger can end up directly above a newly opened category button.
+    // Measure the default grid after leaving the intentional Lumen hover state.
+    await page.mouse.move(1, 1);
     const pickerGeometry = await picker.evaluate((element) => {
         const rect = element.getBoundingClientRect();
         const editor = element.closest('.reserved-command-editor')?.getBoundingClientRect();
@@ -2150,6 +2302,22 @@ test('realtime read-model events skip clock-only work, merge bursts, patch in pl
     await page.setViewportSize({ width: 1200, height: 900 });
     await waitForMain(page);
     await expect(page.locator('.general-title')).toContainText('메뉴검증장수');
+    await expect
+        .poll(() =>
+            page.evaluate(() => (window as unknown as { __hasMainRealtime: () => boolean }).__hasMainRealtime())
+        )
+        .toBe(true);
+    await expect(page.locator('.tournament-status')).toHaveText('토너먼트: 경기 없음');
+    await expect(page.locator('[data-navigation-id="tournament"]')).not.toHaveClass(/highlight/u);
+
+    const operationsBeforeTournament = state.operations.length;
+    state.stage = 1;
+    await emitReadModelInvalidation(page, readModelInvalidation({ tournament: true }));
+    await expect
+        .poll(() => state.operations.slice(operationsBeforeTournament), { timeout: 3_000 })
+        .toEqual(['dashboard.getContextBundleDelta', 'tournament.getState']);
+    await expect(page.locator('.tournament-status')).toHaveText('토너먼트: 참가 모집중');
+    await expect(page.locator('[data-navigation-id="tournament"]')).toHaveClass(/highlight/u);
 
     await page.evaluate(() => {
         const general = document.querySelector('[data-main-target="general"]');
@@ -2202,6 +2370,7 @@ test('realtime read-model events skip clock-only work, merge bursts, patch in pl
                     reservedTurns: false,
                     records: false,
                     frontStatus: false,
+                    tournament: false,
                 },
             });
         }
@@ -2270,6 +2439,7 @@ test('realtime read-model events skip clock-only work, merge bursts, patch in pl
                     reservedTurns: false,
                     records: false,
                     frontStatus: true,
+                    tournament: false,
                 },
             }
         );
@@ -2427,6 +2597,7 @@ test('realtime read-model events skip clock-only work, merge bursts, patch in pl
                     reservedTurns: false,
                     records: false,
                     frontStatus: false,
+                    tournament: false,
                 },
             }
         );
@@ -2601,6 +2772,23 @@ test('same-account main tabs share one realtime diff and exclude a tab while syn
     const followerPage = pages[followerIndex];
     if (!leaderPage || !followerPage) throw new Error('realtime leader election failed');
 
+    const operationsBeforeTournament = state.operations.length;
+    state.stage = 1;
+    await emitReadModelInvalidation(leaderPage, readModelInvalidation({ tournament: true }));
+    await expect
+        .poll(() => state.operations.slice(operationsBeforeTournament), { timeout: 3_000 })
+        .toEqual(['dashboard.getContextBundleDelta', 'tournament.getState']);
+    await Promise.all(
+        pages.map((currentPage) =>
+            expect(currentPage.locator('.tournament-status')).toHaveText('토너먼트: 참가 모집중')
+        )
+    );
+    await Promise.all(
+        pages.map((currentPage) =>
+            expect(currentPage.locator('[data-navigation-id="tournament"]')).toHaveClass(/highlight/u)
+        )
+    );
+
     const callsBeforeSharedRefresh = state.generalMeCalls;
     state.generalName = '탭공유갱신장수';
     await leaderPage.evaluate(() => {
@@ -2617,6 +2805,7 @@ test('same-account main tabs share one realtime diff and exclude a tab while syn
                     reservedTurns: false,
                     records: false,
                     frontStatus: false,
+                    tournament: false,
                 },
             }
         );
@@ -2644,6 +2833,7 @@ test('same-account main tabs share one realtime diff and exclude a tab while syn
                     reservedTurns: false,
                     records: false,
                     frontStatus: false,
+                    tournament: false,
                 },
             }
         );

@@ -40,7 +40,6 @@ export const generalAccessEndpointWeights = {
     'diplomacy.getLetters': 2,
     'battle.getGeneralDetail': 1,
     'betting.getList': 1,
-    'general.getFrontStatus': 1,
     'yearbook.getHistory': 1,
     'world.getGlobalInfo': 1,
     'nation.getBattleCenter': 1,
@@ -86,13 +85,10 @@ export const generalAccessLimitEndpoints = new Set<GeneralAccessEndpoint>([
     'diplomacy.rollbackLetter',
     'diplomacy.destroyLetter',
     'betting.getList',
-    'general.getFrontStatus',
     'yearbook.getHistory',
     'messages.send',
     'turns.getCommandTable',
 ]);
-
-export const generalAccessLimitBeforeRecordEndpoints = new Set<GeneralAccessEndpoint>(['general.getFrontStatus']);
 
 export type GeneralAccessState = {
     generalId: number;

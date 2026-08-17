@@ -101,7 +101,6 @@ describe('general access tracking', () => {
             'diplomacy.getLetters': 2,
             'battle.getGeneralDetail': 1,
             'betting.getList': 1,
-            'general.getFrontStatus': 1,
             'yearbook.getHistory': 1,
             'world.getGlobalInfo': 1,
             'nation.getBattleCenter': 1,
@@ -131,6 +130,7 @@ describe('general access tracking', () => {
         expect(resolveGeneralAccessEndpointWeight('yearbook.getHistory', {}, 'che')).toBe(1);
         expect(resolveGeneralAccessEndpointWeight('yearbook.getHistory', { serverID: 'che' }, 'che')).toBe(1);
         expect(resolveGeneralAccessEndpointWeight('yearbook.getHistory', { serverID: 'hwe' }, 'che')).toBeNull();
+        expect(resolveGeneralAccessEndpointWeight('general.getFrontStatus', {}, 'che')).toBeUndefined();
         expect(resolveGeneralAccessEndpointWeight('unknown.path', {}, 'che')).toBeUndefined();
     });
 

@@ -130,7 +130,12 @@ const commandTitle = (command: CommandAvailability) =>
                 <button
                     v-for="category in categories"
                     :key="category.id"
-                    :class="['category-btn', { active: selectedCategory === category.id }]"
+                    :class="[
+                        'category-btn',
+                        'legacy-button',
+                        'legacy-button--lumen',
+                        { active: selectedCategory === category.id },
+                    ]"
                     @click="selectedCategory = category.id"
                 >
                     {{ category.label }}
@@ -143,6 +148,8 @@ const commandTitle = (command: CommandAvailability) =>
                     :key="command.key"
                     :class="[
                         'command-item',
+                        'legacy-button',
+                        'legacy-button--lumen',
                         command.status === 'available' ? 'ok' : '',
                         command.status === 'blocked' ? 'blocked' : '',
                         command.status === 'blocked' && props.allowBlocked ? 'reservable' : '',
@@ -173,26 +180,19 @@ const commandTitle = (command: CommandAvailability) =>
     gap: 0;
 }
 
-.category-btn,
-.command-item {
-    min-height: 32px;
-    padding-block: 6px;
-}
-
-.category-btn {
-    border: 0;
-    border-right: 1px solid #666;
-    border-bottom: 1px solid #666;
+.category-btn.legacy-button--lumen {
+    --legacy-button-bg: #173d27;
+    --legacy-button-border: #153723;
+    --legacy-button-color: #fff;
+    min-height: 0;
     padding-inline: 4px;
-    background: #173d27;
-    color: #fff;
     font-size: 12px;
-    cursor: pointer;
 }
 
-.category-btn.active {
-    background: #28633f;
-    color: #ffe38a;
+.category-btn.legacy-button--lumen.active {
+    --legacy-button-bg: #28633f;
+    --legacy-button-border: #245939;
+    --legacy-button-color: #ffe38a;
 }
 
 .command-grid {
@@ -201,19 +201,17 @@ const commandTitle = (command: CommandAvailability) =>
     gap: 0;
 }
 
-.command-item {
-    border: 0;
-    border-right: 1px solid #666;
-    border-bottom: 1px solid #666;
+.command-item.legacy-button--lumen {
+    --legacy-button-bg: #302016 var(--sammo-texture-walnut);
+    --legacy-button-border: #2b1d14;
+    --legacy-button-color: #fff;
+    min-height: 0;
     padding-inline: 5px;
     display: flex;
     align-items: center;
     justify-content: center;
-    background: #302016 var(--sammo-texture-walnut);
-    color: #fff;
     text-align: center;
     font-size: 12px;
-    cursor: pointer;
 }
 
 .command-item.ok {

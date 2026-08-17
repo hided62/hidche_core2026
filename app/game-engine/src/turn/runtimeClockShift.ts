@@ -1,7 +1,12 @@
 import type { GamePrisma, GamePrismaClient } from '@sammo-ts/infra';
 import { randomUUID } from 'node:crypto';
 
-import { writeTournamentProjection, type TurnDaemonCommand, type TurnDaemonCommandResult } from '@sammo-ts/common';
+import {
+    buildGameEventChannel,
+    writeTournamentProjection,
+    type TurnDaemonCommand,
+    type TurnDaemonCommandResult,
+} from '@sammo-ts/common';
 
 import type { GatewayAdminActionRecord, GatewayAdminActionResult } from './gatewayAdminActions.js';
 
@@ -74,8 +79,10 @@ const shiftTournamentClock = async (
 ): Promise<boolean> => {
     const stateKey = `sammo:${profileName}:tournament:state`;
     const sourceKeys = {
+        stateKey,
         sourceRevisionKey: `sammo:${profileName}:tournament:source-revision`,
         sourceRevisionChannel: `sammo:${profileName}:tournament:source-changed`,
+        realtimeEventChannel: buildGameEventChannel(profileName),
     };
     const lockKey = `${stateKey}:mutation-lock`;
     const token = randomUUID();
