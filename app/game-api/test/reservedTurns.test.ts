@@ -10,6 +10,7 @@ import {
     setGeneralTurn,
     setGeneralTurns,
     setNationTurn,
+    setNationTurnAtCurrentPosition,
     setNationTurns,
     setNationTurnsAtCurrentPositions,
     shiftGeneralTurns,
@@ -420,6 +421,37 @@ describe('reservedTurns', () => {
         await expect(setGeneralTurn(db, 9, 0, 'che_훈련', {}, 0)).rejects.toBeInstanceOf(
             ReservedTurnRevisionConflictError
         );
+        expect(deleteMany).not.toHaveBeenCalled();
+        expect(createMany).not.toHaveBeenCalled();
+    });
+
+    it('does not rebase a current-position nation write while the daemon lease holds the same revision', async () => {
+        const deleteMany = vi.fn(async () => ({}));
+        const createMany = vi.fn(async () => ({}));
+        const db = {
+            nationTurnRevision: {
+                updateMany: vi.fn(async () => ({ count: 0 })),
+                createMany: vi.fn(async () => ({ count: 0 })),
+                findUnique: vi.fn(async () => ({
+                    nationId: 6,
+                    officerLevel: 12,
+                    revision: 4,
+                    leaseOwner: 'daemon-1',
+                    leaseExpiresAt: new Date(Date.now() + 60_000),
+                    updatedAt: new Date(),
+                })),
+            },
+            nationTurn: {
+                findMany: vi.fn(async () => []),
+                deleteMany,
+                createMany,
+            },
+        } as unknown as DatabaseClient;
+
+        await expect(setNationTurnAtCurrentPosition(db, 6, 12, 2, 'che_증축', {}, 4)).rejects.toMatchObject({
+            expectedRevision: 4,
+            currentRevision: 4,
+        });
         expect(deleteMany).not.toHaveBeenCalled();
         expect(createMany).not.toHaveBeenCalled();
     });
