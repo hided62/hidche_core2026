@@ -700,12 +700,6 @@ const handleEnter = async (profile: LobbyProfile, targetPath: string) => {
                         class="map-preview-panel"
                         data-testid="public-map-preview-panel"
                     >
-                        <div class="flex items-center justify-between text-xs text-zinc-400 mb-2">
-                            <span class="font-semibold" :style="{ color: selectedMapProfile.color }">
-                                {{ selectedMapProfile.korName }}섭
-                            </span>
-                            <span>{{ selectedMapProfile.status }}</span>
-                        </div>
                         <div v-if="selectedMapPreview">
                             <MapPreview
                                 :map-data="selectedMapPreview.mapData"
@@ -714,12 +708,18 @@ const handleEnter = async (profile: LobbyProfile, targetPath: string) => {
                             />
                             <div
                                 v-if="profileDetails[selectedMapProfile.profileName]"
-                                class="text-xs text-zinc-400 mt-2"
+                                class="map-preview-summary"
+                                data-testid="public-map-preview-summary"
                             >
-                                유저 {{ profileDetails[selectedMapProfile.profileName]?.userCnt ?? '-' }} /
-                                {{ profileDetails[selectedMapProfile.profileName]?.maxUserCnt ?? '-' }} ·
-                                {{ profileDetails[selectedMapProfile.profileName]?.nationCnt ?? '-' }}국 ·
-                                {{ profileDetails[selectedMapProfile.profileName]?.turnTerm ?? '-' }}분 턴
+                                <span class="map-preview-runtime-status" :style="{ color: selectedMapProfile.color }">
+                                    {{ selectedMapProfile.status }}
+                                </span>
+                                <span>
+                                    유저 {{ profileDetails[selectedMapProfile.profileName]?.userCnt ?? '-' }} /
+                                    {{ profileDetails[selectedMapProfile.profileName]?.maxUserCnt ?? '-' }}
+                                </span>
+                                <span>{{ profileDetails[selectedMapProfile.profileName]?.nationCnt ?? '-' }}국</span>
+                                <span>{{ profileDetails[selectedMapProfile.profileName]?.turnTerm ?? '-' }}분 턴</span>
                             </div>
                         </div>
                         <div v-else class="text-xs text-zinc-500 py-8 text-center">지도를 불러오는 중...</div>
@@ -830,6 +830,26 @@ const handleEnter = async (profile: LobbyProfile, targetPath: string) => {
     border-radius: 0 0 6px 6px;
     background: rgb(9 9 11 / 50%);
     padding: 12px;
+}
+
+.map-preview-summary {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 2px 0;
+    margin-top: 8px;
+    color: #a1a1aa;
+    font-size: 12px;
+    line-height: 18px;
+}
+
+.map-preview-summary > span + span::before {
+    margin-inline: 6px;
+    color: #52525b;
+    content: '·';
+}
+
+.map-preview-runtime-status {
+    font-weight: 600;
 }
 
 .legacy-logout-button:hover,
