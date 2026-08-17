@@ -348,10 +348,6 @@ const clickOutsideMenu = (event: Event) => {
             <span>{{ props.title }} :</span><strong>{{ props.name ?? '-' }}</strong>
         </header>
 
-        <div v-if="props.autonomousUntil" class="autorun-status" data-command-autorun-status role="status">
-            자율 행동: {{ props.autonomousUntil }}
-        </div>
-
         <div class="editor-layout">
             <aside class="control-pad">
                 <div v-if="props.mobile && props.compact" class="mobile-identity legacy-bg1">
@@ -640,10 +636,17 @@ const clickOutsideMenu = (event: Event) => {
                         <div
                             v-for="row in displayRows"
                             :key="row.index"
-                            :title="
-                                row.autonomous
-                                    ? `${rowLabel(row)} · 자율 행동${props.autonomousUntil ? ` (${props.autonomousUntil})` : ''}`
-                                    : rowLabel(row)
+                            :title="row.autonomous ? undefined : rowLabel(row)"
+                            :data-autorun-tooltip="
+                                row.autonomous && props.autonomousUntil
+                                    ? `자율 행동: ${props.autonomousUntil}`
+                                    : undefined
+                            "
+                            :tabindex="row.autonomous && props.autonomousUntil ? 0 : undefined"
+                            :aria-label="
+                                row.autonomous && props.autonomousUntil
+                                    ? `${rowLabel(row)}. 자율 행동: ${props.autonomousUntil}`
+                                    : undefined
                             "
                             :class="{ autonomous: row.autonomous }"
                         >
@@ -887,15 +890,6 @@ const clickOutsideMenu = (event: Event) => {
     display: grid;
     grid-template-columns: 75px 40px minmax(0, 1fr) 38px;
 }
-.autorun-status {
-    padding: 3px 6px;
-    border-bottom: 1px solid #2d6574;
-    background: #102c35;
-    color: #aaffff;
-    font-size: 0.78rem;
-    line-height: 1.35;
-    text-align: center;
-}
 .queue-grid.advanced {
     grid-template-columns: 34px 75px 40px minmax(0, 1fr);
 }
@@ -964,6 +958,52 @@ const clickOutsideMenu = (event: Event) => {
 }
 .action-column > div.autonomous {
     color: #aaffff;
+}
+.action-column > div.autonomous[data-autorun-tooltip] {
+    position: relative;
+    overflow: visible;
+    outline-offset: -2px;
+}
+.action-column > div.autonomous[data-autorun-tooltip] > span {
+    min-width: 0;
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+.action-column > div.autonomous[data-autorun-tooltip]::after {
+    content: attr(data-autorun-tooltip);
+    position: absolute;
+    z-index: 30;
+    right: 0;
+    bottom: calc(100% + 3px);
+    box-sizing: border-box;
+    width: min(200px, calc(100vw - 16px));
+    padding: 5px 7px;
+    border: 1px solid #2d6574;
+    border-radius: 3px;
+    background: #102c35;
+    box-shadow: 0 3px 8px #000;
+    color: #aaffff;
+    font-size: 0.78rem;
+    font-weight: 400;
+    line-height: 1.35;
+    text-align: left;
+    white-space: normal;
+    opacity: 0;
+    visibility: hidden;
+    pointer-events: none;
+    transition:
+        opacity 80ms ease-out,
+        visibility 80ms ease-out;
+}
+.action-column > div.autonomous[data-autorun-tooltip]:hover,
+.action-column > div.autonomous[data-autorun-tooltip]:focus {
+    z-index: 25;
+}
+.action-column > div.autonomous[data-autorun-tooltip]:hover::after,
+.action-column > div.autonomous[data-autorun-tooltip]:focus::after {
+    opacity: 1;
+    visibility: visible;
 }
 .action-column small {
     font-size: 0.72em;

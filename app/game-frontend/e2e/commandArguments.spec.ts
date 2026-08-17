@@ -1300,17 +1300,35 @@ test('keeps the entered command visible and reports a server validation error', 
     await expect(page.getByTestId('command-argument-form').locator('select')).toHaveValue('2');
 });
 
-test('keeps Ref command briefs and autonomous-action state after a turn mutation', async ({ page }) => {
+test('keeps Ref command briefs and autonomous-action state after a turn mutation', async ({ page, context }) => {
     await install(page);
     await page.setViewportSize({ width: 1200, height: 900 });
     await page.goto('/');
 
     const editor = page.locator('[data-command-scope="general"]');
-    const status = editor.locator('[data-command-autorun-status]');
     const firstRow = editor.locator('.action-column > div').first();
-    await expect(status).toHaveText(/자율 행동: 200年 3月 · \d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}까지/u);
+    await expect(editor.locator('[data-command-autorun-status]')).toHaveCount(0);
     await expect(firstRow).toContainText('휴식(자율 행동)');
+    await expect(firstRow).toHaveAttribute(
+        'data-autorun-tooltip',
+        /자율 행동: 200年 3月 · \d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}까지/u
+    );
     expect(await firstRow.evaluate((element) => getComputedStyle(element).color)).toBe('rgb(170, 255, 255)');
+
+    const tooltipStyle = () =>
+        firstRow.evaluate((element) => {
+            const style = getComputedStyle(element, '::after');
+            return { content: style.content, opacity: style.opacity, visibility: style.visibility };
+        });
+    expect((await tooltipStyle()).visibility).toBe('hidden');
+    const heightBeforeHover = await editor.evaluate((element) => element.getBoundingClientRect().height);
+    await firstRow.hover();
+    await expect.poll(async () => (await tooltipStyle()).visibility).toBe('visible');
+    expect((await tooltipStyle()).content).toContain('자율 행동: 200年 3月');
+    expect(await editor.evaluate((element) => element.getBoundingClientRect().height)).toBe(heightBeforeHover);
+    await page.screenshot({ path: test.info().outputPath('command-brief-autorun-hover-desktop-1200.png'), fullPage: true });
+    await page.mouse.move(0, 0);
+    await expect.poll(async () => (await tooltipStyle()).visibility).toBe('hidden');
 
     await page.getByRole('button', { name: '1턴 명령 입력', exact: true }).click();
     const picker = page.getByTestId('command-picker');
@@ -1320,31 +1338,46 @@ test('keeps Ref command briefs and autonomous-action state after a turn mutation
     await picker.getByRole('button', { name: '입력', exact: true }).click();
 
     await expect(firstRow).toHaveText('【단양】으로 출병');
-    await expect(firstRow).toHaveAttribute('title', /자율 행동/u);
+    await expect(firstRow).toHaveAttribute('data-autorun-tooltip', /자율 행동: 200年 3月 · .*까지/u);
     expect(await firstRow.evaluate((element) => getComputedStyle(element).color)).toBe('rgb(170, 255, 255)');
-    await expect(status).toHaveText(/자율 행동: 200年 3月 · .*까지/u);
+    await firstRow.focus();
+    await expect.poll(async () => (await tooltipStyle()).visibility).toBe('visible');
+    await expect(firstRow).toBeFocused();
 
     const desktopGeometry = await editor.evaluate((element) => {
-        const statusElement = element.querySelector<HTMLElement>('[data-command-autorun-status]');
+        const layout = element.querySelector<HTMLElement>('.editor-layout');
+        const controlPad = element.querySelector<HTMLElement>('.control-pad');
         const row = element.querySelector<HTMLElement>('.action-column > div');
-        if (!statusElement || !row) throw new Error('autonomous command geometry is missing');
+        if (!layout || !controlPad || !row) throw new Error('autonomous command geometry is missing');
         return {
             horizontalOverflow: element.scrollWidth - element.clientWidth,
-            statusWidth: statusElement.getBoundingClientRect().width,
-            editorWidth: element.getBoundingClientRect().width,
+            controlPadOffset: controlPad.getBoundingClientRect().top - layout.getBoundingClientRect().top,
             rowHeight: row.getBoundingClientRect().height,
         };
     });
     expect(desktopGeometry.horizontalOverflow).toBeLessThanOrEqual(0);
-    expect(desktopGeometry.statusWidth).toBeLessThanOrEqual(desktopGeometry.editorWidth);
+    expect(desktopGeometry.controlPadOffset).toBe(0);
     expect(desktopGeometry.rowHeight).toBeGreaterThanOrEqual(20);
-    await page.screenshot({ path: test.info().outputPath('command-brief-autorun-desktop-1200.png'), fullPage: true });
+    await page.screenshot({ path: test.info().outputPath('command-brief-autorun-focus-desktop-1200.png'), fullPage: true });
 
-    await page.setViewportSize({ width: 500, height: 900 });
-    await expect(firstRow).toHaveText('【단양】으로 출병');
-    await expect(status).toBeVisible();
-    expect(await editor.evaluate((element) => element.scrollWidth - element.clientWidth)).toBeLessThanOrEqual(0);
-    await page.screenshot({ path: test.info().outputPath('command-brief-autorun-mobile-500.png'), fullPage: true });
+    const mobilePage = await context.newPage();
+    await install(mobilePage);
+    await mobilePage.setViewportSize({ width: 500, height: 900 });
+    await mobilePage.goto('/');
+    const mobileEditor = mobilePage.locator('[data-command-scope="general"]');
+    const mobileFirstRow = mobileEditor.locator('.action-column > div').first();
+    await expect(mobileFirstRow).toContainText('휴식(자율 행동)');
+    await expect(mobileFirstRow).toHaveAttribute('data-autorun-tooltip', /자율 행동: 200年 3月 · .*까지/u);
+    await mobileFirstRow.focus();
+    await expect
+        .poll(() => mobileFirstRow.evaluate((element) => getComputedStyle(element, '::after').visibility))
+        .toBe('visible');
+    expect(await mobileEditor.evaluate((element) => element.scrollWidth - element.clientWidth)).toBeLessThanOrEqual(0);
+    await mobilePage.screenshot({
+        path: test.info().outputPath('command-brief-autorun-focus-mobile-500.png'),
+        fullPage: true,
+    });
+    await mobilePage.close();
 });
 
 test('uses drag selection, clipboard paste, and a stored template in advanced mode', async ({ page }) => {
