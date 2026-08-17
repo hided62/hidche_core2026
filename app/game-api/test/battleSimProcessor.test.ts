@@ -230,12 +230,14 @@ const buildPayload = (action: BattleSimJobPayload['action']): BattleSimJobPayloa
 describe('battle sim processor', () => {
     it('returns the fixed-seed battle summary instead of only a successful shape', () => {
         const payload = buildPayload('battle');
+        payload.repeatCnt = 1000;
         const result = processBattleSimJob(payload);
 
         expect(result).toMatchObject({
             result: true,
             reason: 'success',
             datetime: '2026-01-01 00:00:00',
+            repeatCnt: 1,
             avgWar: 1,
             phase: 2,
             killed: 626,
@@ -277,6 +279,7 @@ describe('battle sim processor', () => {
         const second = processBattleSimJob(secondPayload);
 
         expect(first).toEqual(second);
+        expect(first.repeatCnt).toBe(2);
         expect(observedSeeds).toEqual(['server-repeat-0', 'server-repeat-1']);
     });
 
