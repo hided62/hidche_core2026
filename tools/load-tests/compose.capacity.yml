@@ -1,4 +1,4 @@
-name: sammo-capacity-fixture
+name: ${CAPACITY_COMPOSE_PROJECT_NAME:-sammo-capacity-fixture}
 
 services:
   postgres:
@@ -39,4 +39,4 @@ secrets:
 
 volumes:
   capacity_postgres_data:
-    name: sammo_capacity_fixture_postgres_data
+    name: ${CAPACITY_POSTGRES_VOLUME_NAME:-sammo_capacity_fixture_postgres_data}
