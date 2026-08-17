@@ -226,7 +226,6 @@ const onQuick = (item: QuickNavigationItem) => {
                 data-bottom-menu="manual-refresh"
                 aria-label="직접 갱신"
                 title="직접 갱신"
-                :disabled="refreshing"
                 :aria-busy="refreshing"
                 @click="emit('refresh')"
             >
@@ -304,12 +303,6 @@ const onQuick = (item: QuickNavigationItem) => {
     padding: 0;
     font-size: 22px;
     line-height: 1;
-}
-
-.manual-refresh-trigger:disabled {
-    cursor: wait;
-    filter: grayscale(0.6);
-    opacity: 0.55;
 }
 
 .bottom-trigger.legacy-button:not(:disabled, [aria-disabled='true']):hover,

@@ -2107,16 +2107,24 @@ test('mobile bottom controls share Ref pressed geometry while their color bases 
     await expect
         .poll(() => page.locator(manualRefreshSelector).evaluate((element) => getComputedStyle(element).boxShadow))
         .not.toBe('none');
+    const callsBeforeManualRefresh = state.generalMeCalls;
     await page.locator(manualRefreshSelector).click();
-    await expect(page.locator(manualRefreshSelector)).toBeDisabled();
+    await expect(page.locator(manualRefreshSelector)).toBeEnabled();
+    await expect(page.locator(manualRefreshSelector)).toHaveAttribute('aria-busy', 'true');
+    await page.locator(manualRefreshSelector).click();
+    await expect(page.getByTestId('game-toast')).toContainText('이미 정보를 갱신하고 있습니다.');
+    await page.mouse.move(1, 1);
     expect(await buttonStyle(manualRefreshSelector)).toMatchObject({
         backgroundColor: 'rgb(33, 37, 41)',
         borderBottomWidth: '4px',
         marginTop: '0px',
         height: 45,
     });
-    await expect(page.locator(manualRefreshSelector)).toHaveCSS('opacity', '0.55');
+    await expect(page.locator(manualRefreshSelector)).toHaveCSS('opacity', '1');
+    await page.screenshot({ path: testInfo.outputPath('mobile-refresh-busy-toast.png'), fullPage: true });
+    await expect(page.locator(manualRefreshSelector)).toHaveAttribute('aria-busy', 'false');
     await expect(page.locator(manualRefreshSelector)).toBeEnabled();
+    expect(state.generalMeCalls).toBe(callsBeforeManualRefresh + 1);
 
     await persistArtifact(page, `${basePath.slice(1)}-mobile-bottom-ref-buttons`);
 });
@@ -2685,6 +2693,7 @@ test('realtime read-model events skip clock-only work, merge bursts, patch in pl
 
     const operationsBeforeChangedBurst = state.operations.length;
     state.generalName = '부드럽게갱신된장수';
+    state.refreshDelayMs = 1_000;
     await page.evaluate(() => {
         const emit = (window as unknown as { __emitMainRealtime: (type: string, payload: unknown) => void })
             .__emitMainRealtime;
@@ -2706,7 +2715,20 @@ test('realtime read-model events skip clock-only work, merge bursts, patch in pl
         }
     });
 
+    const manualRefresh = page.getByRole('button', { name: '갱 신' });
+    await expect(manualRefresh).toHaveAttribute('aria-busy', 'true');
+    await expect(manualRefresh).toBeEnabled();
+    await manualRefresh.click();
+    await expect(page.getByTestId('game-toast')).toContainText('이미 정보를 갱신하고 있습니다.');
+    if (autoRefreshArtifactRoot) {
+        await page.screenshot({
+            path: resolve(autoRefreshArtifactRoot, 'auto-refresh-busy-feedback.png'),
+            fullPage: true,
+        });
+    }
+
     await expect.poll(() => state.generalMeCalls, { timeout: 3_000 }).toBe(callsBeforeRefresh + 1);
+    state.refreshDelayMs = 300;
     await expect(page.locator('[data-main-target="general"] .skeleton-line')).toHaveCount(0);
     await expect(page.locator('[data-main-target="city"] .skeleton-line')).toHaveCount(0);
     await expect(page.getByRole('button', { name: '갱 신' })).toHaveAttribute('aria-busy', 'false');
