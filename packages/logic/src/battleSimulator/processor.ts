@@ -481,6 +481,7 @@ export const processBattleSimJob = (
         result: true,
         reason: 'success',
         datetime: payload.attackerGeneral.turntime,
+        repeatCnt,
         lastWarLog: logBuckets,
         avgWar,
         phase: avgPhase,
