@@ -1,0 +1,116 @@
+<script setup lang="ts">
+defineProps<{
+    activePage: 'tournament' | 'betting';
+    title: string;
+}>();
+</script>
+
+<template>
+    <header class="tournament-page-header">
+        <strong class="tournament-page-title">{{ title }}</strong>
+        <div class="tournament-page-actions">
+            <nav class="tournament-page-tabs" role="tablist" aria-label="토너먼트와 베팅장 이동">
+                <RouterLink v-slot="{ navigate }" custom to="/tournament">
+                    <button
+                        type="button"
+                        role="tab"
+                        :aria-selected="activePage === 'tournament'"
+                        :class="{ active: activePage === 'tournament' }"
+                        @click="navigate"
+                    >
+                        토너먼트
+                    </button>
+                </RouterLink>
+                <RouterLink v-slot="{ navigate }" custom to="/betting">
+                    <button
+                        type="button"
+                        role="tab"
+                        :aria-selected="activePage === 'betting'"
+                        :class="{ active: activePage === 'betting' }"
+                        @click="navigate"
+                    >
+                        베팅장
+                    </button>
+                </RouterLink>
+            </nav>
+            <RouterLink v-slot="{ navigate }" custom to="/">
+                <button class="close-button" type="button" @click="navigate">창 닫기</button>
+            </RouterLink>
+        </div>
+    </header>
+</template>
+
+<style scoped>
+.tournament-page-header {
+    display: flex;
+    min-height: 48px;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    padding: 2px 4px;
+}
+.tournament-page-title {
+    min-width: 0;
+    overflow: hidden;
+    font-size: 16px;
+    font-weight: 400;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+.tournament-page-actions,
+.tournament-page-tabs {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+}
+button {
+    height: 44px;
+    margin: 0;
+    border: 1px solid #666;
+    border-radius: 5.25px;
+    background: #444;
+    color: #fff;
+    font-size: 14px;
+    line-height: 18px;
+    cursor: pointer;
+}
+.tournament-page-tabs button {
+    min-width: 72px;
+    padding: 10px 12px;
+}
+.tournament-page-tabs button.active {
+    border-color: #f39c12;
+    background: #8a5b13;
+}
+.close-button {
+    width: 88px;
+    padding: 10px 16px;
+    border-color: #375a7f;
+    background: #375a7f;
+}
+button:hover,
+button:focus {
+    filter: brightness(1.25);
+}
+button:focus-visible {
+    outline: 2px solid #f39c12;
+    outline-offset: 1px;
+}
+@media (max-width: 800px) {
+    .tournament-page-header {
+        gap: 4px;
+        padding-inline: 2px;
+    }
+    .tournament-page-title {
+        font-size: 13px;
+    }
+    .tournament-page-actions,
+    .tournament-page-tabs {
+        gap: 2px;
+    }
+    .tournament-page-tabs button {
+        min-width: 68px;
+        padding-inline: 8px;
+    }
+}
+</style>

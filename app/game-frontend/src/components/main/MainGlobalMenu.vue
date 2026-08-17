@@ -59,7 +59,7 @@ const isActive = (link: MainNavigationLinkItem) => link.id === 'survey' && props
                     </template>
                 </ul>
             </div>
-            <div v-else class="main-menu-split">
+            <div v-else class="main-menu-split legacy-split-button">
                 <MainNavigationLink
                     :link="entry.main"
                     :enabled="isNavigationConfigured(entry.main)"
@@ -67,7 +67,7 @@ const isActive = (link: MainNavigationLinkItem) => link.id === 'survey' && props
                     lumen-variant="navigation"
                 />
                 <button
-                    class="main-menu-button main-menu-split__toggle legacy-button legacy-button--navigation"
+                    class="main-menu-button main-menu-split__toggle legacy-split-button__toggle legacy-button legacy-button--navigation"
                     type="button"
                     :data-menu-id="entry.id"
                     :aria-label="`${entry.main.label} 하위 메뉴`"
@@ -131,12 +131,6 @@ const isActive = (link: MainNavigationLinkItem) => link.id === 'survey' && props
     min-width: 28px;
     width: 28px;
     padding: 0;
-    border-left-width: 0;
-    border-radius: 0 5.25px 5.25px 0;
-}
-
-.main-menu-split > :deep(.main-menu-link) {
-    border-radius: 5.25px 0 0 5.25px;
 }
 
 .menu-caret {

@@ -995,6 +995,123 @@ test('desktop menus preserve ref columns, prefix-safe routes, and controlled dro
     await persistArtifact(page, `${basePath.slice(1)}-desktop-1200`);
 });
 
+test('split buttons keep square inner corners and a single divider in every interaction state', async ({
+    page,
+}, testInfo) => {
+    const state: NavigationFixture = {
+        officerLevel: 5,
+        permission: 2,
+        nationLevel: 3,
+        stage: 1,
+        npcMode: 1,
+        scenarioTitle: '분할 버튼 이음새 검증 시나리오',
+        generalMeCalls: 0,
+        operations: [],
+        nationColor: '#663399',
+    };
+    await installFixture(page, state);
+    if (artifactRoot) await mkdir(resolve(artifactRoot), { recursive: true });
+
+    const measure = (main: Locator, toggle: Locator) =>
+        Promise.all([
+            main.evaluate((element) => {
+                const rect = element.getBoundingClientRect();
+                const style = getComputedStyle(element);
+                return {
+                    rect: rect.toJSON(),
+                    borderRightWidth: style.borderRightWidth,
+                    borderTopLeftRadius: style.borderTopLeftRadius,
+                    borderTopRightRadius: style.borderTopRightRadius,
+                    borderBottomRightRadius: style.borderBottomRightRadius,
+                    borderBottomLeftRadius: style.borderBottomLeftRadius,
+                };
+            }),
+            toggle.evaluate((element) => {
+                const rect = element.getBoundingClientRect();
+                const style = getComputedStyle(element);
+                return {
+                    rect: rect.toJSON(),
+                    borderLeftWidth: style.borderLeftWidth,
+                    borderTopLeftRadius: style.borderTopLeftRadius,
+                    borderTopRightRadius: style.borderTopRightRadius,
+                    borderBottomRightRadius: style.borderBottomRightRadius,
+                    borderBottomLeftRadius: style.borderBottomLeftRadius,
+                };
+            }),
+        ]);
+
+    const expectAttached = async (main: Locator, toggle: Locator) => {
+        const [mainStyle, toggleStyle] = await measure(main, toggle);
+        expect(mainStyle).toMatchObject({
+            borderRightWidth: '1px',
+            borderTopLeftRadius: '5.25px',
+            borderTopRightRadius: '0px',
+            borderBottomRightRadius: '0px',
+            borderBottomLeftRadius: '5.25px',
+        });
+        expect(toggleStyle).toMatchObject({
+            borderLeftWidth: '0px',
+            borderTopLeftRadius: '0px',
+            borderTopRightRadius: '5.25px',
+            borderBottomRightRadius: '5.25px',
+            borderBottomLeftRadius: '0px',
+        });
+        expect(toggleStyle.rect.left).toBeCloseTo(mainStyle.rect.right, 2);
+    };
+
+    for (const width of [1200, 500]) {
+        await page.setViewportSize({ width, height: 900 });
+        await waitForMain(page);
+        const globalSplit = page.locator('.main-global-menu:visible .main-menu-split').first();
+        const nationSplit = page.locator('.main-nation-menu:visible .nation-menu-split').first();
+        const pairs: Array<[string, Locator, Locator]> = [
+            [
+                'global',
+                globalSplit.locator('[data-navigation-id="board-community"]'),
+                globalSplit.locator('[data-menu-id="boards"]'),
+            ],
+            [
+                'nation',
+                nationSplit.locator('[data-navigation-id="auction-resource"]'),
+                nationSplit.locator('[data-menu-id="auction"]'),
+            ],
+        ];
+
+        for (const [label, main, toggle] of pairs) {
+            await expect(main).toBeVisible();
+            await expect(toggle).toBeVisible();
+            await page.mouse.move(width - 1, 899);
+            await expectAttached(main, toggle);
+
+            await toggle.focus();
+            await expect(toggle).toBeFocused();
+            await expectAttached(main, toggle);
+
+            await toggle.hover();
+            await expectAttached(main, toggle);
+
+            const box = await toggle.boundingBox();
+            if (!box) throw new Error(`${label} split toggle is not measurable`);
+            await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+            await page.mouse.down();
+            await expectAttached(main, toggle);
+            await page.mouse.move(width - 1, 899);
+            await page.mouse.up();
+
+            await toggle.click();
+            await expect(toggle).toHaveAttribute('aria-expanded', 'true');
+            await expectAttached(main, toggle);
+            await page.keyboard.press('Escape');
+
+            await toggle.locator('..').screenshot({
+                path: artifactRoot
+                    ? resolve(artifactRoot, `${basePath.slice(1)}-${width}-${label}-split-button.png`)
+                    : testInfo.outputPath(`${width}-${label}-split-button.png`),
+            });
+        }
+    }
+});
+
 test('the repeated bottom global menu opens upward on the mobile document', async ({ page }, testInfo) => {
     const state: NavigationFixture = {
         officerLevel: 5,
