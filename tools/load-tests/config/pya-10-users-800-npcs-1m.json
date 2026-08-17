@@ -1,0 +1,89 @@
+{
+    "$schema": "./load-test.schema.json",
+    "version": 1,
+    "name": "pya-10-users-800-npcs-1m",
+    "target": {
+        "baseUrl": "http://127.0.0.1:15001",
+        "trpcPath": "/api/trpc",
+        "ssePath": "/events",
+        "publicProfile": false,
+        "allowedHosts": ["127.0.0.1", "localhost"]
+    },
+    "isolation": {
+        "postgresSchema": "load_capacity_pya_10_800_1m",
+        "redisPrefix": "load-tests:capacity-pya-10-800-1m:",
+        "redisDatabase": 13,
+        "profileName": "load-tests:capacity-pya-10-800-1m"
+    },
+    "capacity": {
+        "authenticatedViewers": 10,
+        "npcGenerals": 800,
+        "humanGenerals": 10,
+        "turnIntervalMs": 60000
+    },
+    "runtimeMetadata": {
+        "fixtureSha256": "sha256:0000000000000000000000000000000000000000000000000000000000000000",
+        "imageDigest": "replace-before-measurement",
+        "postgresVersion": "replace-before-measurement",
+        "redisVersion": "replace-before-measurement"
+    },
+    "phases": [
+        {
+            "name": "idle-calibration",
+            "kind": "idle",
+            "durationMs": 1000,
+            "sseConnections": 10,
+            "requestIntervalMs": null,
+            "operations": []
+        },
+        {
+            "name": "own-calibration",
+            "kind": "own",
+            "durationMs": 1000,
+            "sseConnections": 10,
+            "requestIntervalMs": 1000,
+            "operations": [
+                {
+                    "name": "own-context",
+                    "procedure": "dashboard.getContextBundleDelta",
+                    "type": "query",
+                    "weight": 1,
+                    "input": {
+                        "include": { "context": true, "commandTable": true, "boardAccess": true },
+                        "forceSnapshot": false
+                    }
+                }
+            ]
+        },
+        {
+            "name": "global-calibration",
+            "kind": "global",
+            "durationMs": 1000,
+            "sseConnections": 10,
+            "requestIntervalMs": 1000,
+            "operations": [
+                { "name": "global-front", "procedure": "general.getFrontStatus", "type": "query", "weight": 1 }
+            ]
+        },
+        {
+            "name": "mixed-calibration",
+            "kind": "mixed",
+            "durationMs": 1000,
+            "sseConnections": 10,
+            "requestIntervalMs": 1000,
+            "operations": [
+                {
+                    "name": "own-context",
+                    "procedure": "dashboard.getContextBundleDelta",
+                    "type": "query",
+                    "weight": 1,
+                    "input": {
+                        "include": { "context": true, "commandTable": true, "boardAccess": true },
+                        "forceSnapshot": false
+                    }
+                },
+                { "name": "global-front", "procedure": "general.getFrontStatus", "type": "query", "weight": 1 }
+            ]
+        }
+    ]
+}

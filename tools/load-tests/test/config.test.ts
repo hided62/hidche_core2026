@@ -6,6 +6,10 @@ import test from 'node:test';
 import { assertRuntimeMetadataFinalized, canonicalJson, expandWeightedOperations, loadTokens, validateLoadConfig } from '../src/config.js';
 
 const samplePath = new URL('../config/300-users-900-npcs-5m.json', import.meta.url);
+const oneMinuteProfilePaths = [
+    new URL('../config/nya-10-users-800-npcs-1m.json', import.meta.url),
+    new URL('../config/pya-10-users-800-npcs-1m.json', import.meta.url),
+];
 
 void test('the 300 viewer, 900 NPC, five-minute sample validates', async () => {
     const config = validateLoadConfig(JSON.parse(await readFile(samplePath, 'utf8')));
@@ -16,6 +20,24 @@ void test('the 300 viewer, 900 NPC, five-minute sample validates', async () => {
     assert.equal(config.isolation.redisDatabase, 15);
     assert.equal(config.isolation.profileName, 'load-tests:capacity-300-900-5m');
     assert.deepEqual(new Set(config.phases.map((phase) => phase.kind)), new Set(['idle', 'own', 'global', 'mixed']));
+});
+
+void test('nya and pya one-minute profiles use distinct database and Redis isolation', async () => {
+    const configs = await Promise.all(
+        oneMinuteProfilePaths.map(async (configPath) =>
+            validateLoadConfig(JSON.parse(await readFile(configPath, 'utf8')))
+        )
+    );
+    assert.deepEqual(
+        configs.map((config) => config.capacity),
+        [
+            { authenticatedViewers: 10, npcGenerals: 800, humanGenerals: 10, turnIntervalMs: 60_000 },
+            { authenticatedViewers: 10, npcGenerals: 800, humanGenerals: 10, turnIntervalMs: 60_000 },
+        ]
+    );
+    assert.equal(new Set(configs.map((config) => config.isolation.postgresSchema)).size, 2);
+    assert.equal(new Set(configs.map((config) => config.isolation.redisDatabase)).size, 2);
+    assert.equal(new Set(configs.map((config) => config.isolation.profileName)).size, 2);
 });
 
 void test('validation rejects public, non-allowlisted, and mutating targets', async () => {
