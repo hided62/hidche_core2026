@@ -9,7 +9,6 @@ import { IdempotentTurnDaemonTransport } from './daemon/idempotentTransport.js';
 import { DuplicateInputEventError, executeInputEvent } from './inputEventBoundary.js';
 import {
     formatGeneralAccessLimitMessage,
-    generalAccessLimitBeforeRecordEndpoints,
     generalAccessLimitEndpoints,
     getGeneralAccessState,
     recordGeneralAccessWeight,
@@ -103,17 +102,8 @@ const generalAccessEndpointMiddleware = t.middleware(async ({ ctx, path, input, 
         return next();
     }
     const endpoint = path as GeneralAccessEndpoint;
-    if (generalAccessLimitBeforeRecordEndpoints.has(endpoint)) {
-        const state = await getGeneralAccessState(ctx);
-        if (state?.level === 2) {
-            throw new TRPCError({
-                code: 'TOO_MANY_REQUESTS',
-                message: formatGeneralAccessLimitMessage(state),
-            });
-        }
-    }
     await recordGeneralAccessWeight(ctx, weight);
-    if (generalAccessLimitEndpoints.has(endpoint) && !generalAccessLimitBeforeRecordEndpoints.has(endpoint)) {
+    if (generalAccessLimitEndpoints.has(endpoint)) {
         const state = await getGeneralAccessState(ctx);
         if (state?.level === 2) {
             throw new TRPCError({
