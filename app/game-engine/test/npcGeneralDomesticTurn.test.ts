@@ -299,4 +299,141 @@ describe('NPC 일반 내정 턴', () => {
             })
         );
     });
+
+    it('NPC 군주 국가턴에서 신규 유저의 수뇌 직책과 외교 권한을 월드 상태에 반영한다', async () => {
+        const buildGeneral = (overrides: Partial<TurnGeneral>): TurnGeneral => {
+            const base: TurnGeneral = {
+                id: 1,
+                name: 'NPC군주',
+                nationId: 1,
+                cityId: 1,
+                troopId: 0,
+                stats: { leadership: 80, strength: 80, intelligence: 80 },
+                turnTime: mockDate,
+                role: {
+                    items: { horse: null, weapon: null, book: null, item: null },
+                    personality: null,
+                    specialDomestic: null,
+                    specialWar: null,
+                },
+                triggerState: { flags: {}, counters: {}, modifiers: {}, meta: {} },
+                meta: { killturn: 100, belong: 2 },
+                officerLevel: 12,
+                experience: 0,
+                dedication: 0,
+                injury: 0,
+                gold: 2_000,
+                rice: 2_000,
+                crew: 0,
+                crewTypeId: 0,
+                train: 0,
+                atmos: 0,
+                age: 30,
+                npcState: 2,
+            };
+            return {
+                ...base,
+                ...overrides,
+                stats: { ...base.stats, ...overrides.stats },
+                meta: { ...base.meta, ...overrides.meta },
+            };
+        };
+        const ruler = buildGeneral({});
+        const user = buildGeneral({
+            id: 2,
+            name: '신규유저',
+            npcState: 0,
+            officerLevel: 1,
+            meta: { killturn: 100, belong: 1 },
+        });
+        const city = {
+            id: 1,
+            name: '소성A',
+            nationId: 1,
+            level: 1,
+            state: 0,
+            population: 10_000,
+            populationMax: 20_000,
+            agriculture: 1_000,
+            agricultureMax: 2_000,
+            commerce: 1_000,
+            commerceMax: 2_000,
+            security: 1_000,
+            securityMax: 2_000,
+            supplyState: 1,
+            frontState: 0,
+            defence: 500,
+            defenceMax: 1_000,
+            wall: 500,
+            wallMax: 1_000,
+            meta: { trust: 98 },
+        };
+        const nation = {
+            id: 1,
+            name: 'NPC국가',
+            color: '#FF0000',
+            capitalCityId: 1,
+            chiefGeneralId: 1,
+            gold: 50_000,
+            rice: 50_000,
+            power: 0,
+            level: 1,
+            typeCode: 'che_def',
+            meta: { chief_set: 0 },
+        };
+        const snapshot: TurnWorldSnapshot = {
+            generals: [ruler, user],
+            cities: [city] as any,
+            nations: [nation] as any,
+            troops: [],
+            diplomacy: [],
+            events: [],
+            initialEvents: [],
+            map: MINIMAL_MAP as any,
+            scenarioConfig: {
+                stat: { total: 300, min: 10, max: 100, npcTotal: 150, npcMax: 50, npcMin: 10, chiefMin: 70 },
+                iconPath: '',
+                map: {},
+                const: { npcMessageFreqByDay: 144 },
+                environment: { mapName: 'npc_domestic_map', unitSet: 'default' },
+            },
+            scenarioMeta: { startYear: 189 } as any,
+            unitSet: {} as any,
+        };
+        const state: TurnWorldState = {
+            id: 1,
+            currentYear: 189,
+            currentMonth: 3,
+            tickSeconds: 600,
+            lastTurnTime: mockDate,
+            meta: { seed: 1, killturn: 100 },
+        };
+        const reservedTurnStore = new InMemoryReservedTurnStore(createMockPrisma() as any, {
+            maxGeneralTurns: 10,
+            maxNationTurns: 10,
+        });
+        await reservedTurnStore.loadAll();
+        const wrapper = { world: null as InMemoryTurnWorld | null };
+        const handler = await createReservedTurnHandler({
+            reservedTurns: reservedTurnStore,
+            scenarioConfig: snapshot.scenarioConfig,
+            scenarioMeta: snapshot.scenarioMeta,
+            map: MINIMAL_MAP as any,
+            unitSet: snapshot.unitSet,
+            getWorld: () => wrapper.world,
+        });
+        const world = new InMemoryTurnWorld(state, snapshot, {
+            schedule: { entries: [{ startMinute: 0, tickMinutes: 10 }] },
+            generalTurnHandler: handler,
+        });
+        wrapper.world = world;
+
+        world.executeGeneralTurn(ruler);
+
+        expect(world.getGeneralById(user.id)).toMatchObject({
+            officerLevel: 11,
+            meta: expect.objectContaining({ officer_city: 0, permission: 'ambassador' }),
+        });
+        expect(world.getNationById(nation.id)?.meta).toMatchObject({ chief_set: 1 << 11 });
+    });
 });
