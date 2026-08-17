@@ -25,6 +25,7 @@ export * from './ranking/types.js';
 export * from './ranking/legacyColor.js';
 export * from './auth/accountIconProjection.js';
 export * from './logging/formatLegacyLogHtml.js';
+export * from './legacyArchive/ArchivedGeneralSnapshot.js';
 export * from './gateway/profileStatus.js';
 export * from './game/accessPenalty.js';
 export * from './http/trpcTransport.js';

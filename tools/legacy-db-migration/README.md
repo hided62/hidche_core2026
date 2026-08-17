@@ -5,9 +5,10 @@ into the core2026 PostgreSQL schemas. It is CLI-only; no HTTP or administrator
 route invokes it.
 
 The default mode is a read-only dry-run. `--apply` is required before any target
-write. PostgreSQL advisory locks prevent two applies for the same target. Every
-write uses a stable legacy key and `ON CONFLICT`, so a completed or interrupted
-run can be repeated.
+write. PostgreSQL advisory locks prevent two applies for the same target.
+Gateway writes are transactional. Game archive writes and their completed
+`legacy_archive.import_run` record are transactional. Stable legacy keys make
+completed or interrupted runs repeatable.
 
 ## Source restore
 
@@ -36,6 +37,13 @@ LEGACY_GAME_DATABASE_URL=... pnpm --filter @sammo-ts/legacy-db-migration migrate
 
 After reviewing the JSON counts and excluded-table reasons, add
 `GATEWAY_DATABASE_URL` or `GAME_DATABASE_URL` and repeat with `--apply`.
+
+For game archives, `GAME_DATABASE_URL` points at that profile's Core schema.
+The importer writes completed-history data to the shared
+`legacy_archive` PostgreSQL schema and writes only inheritance projections to
+the selected current profile schema. Accepted profiles are
+`che,kwe,pwe,twe,nya,pya,hwe`; run them separately against the same PostgreSQL
+database.
 
 ### Isolated current-season comparison fixture
 
@@ -77,13 +85,17 @@ listed in the JSON result. This fixture is evidence for persisted-state and GUI
 comparison, not proof that the two engines consume RNG identically after the
 next turn.
 
-Kakao members retain their OAuth ID, email, and OAuth metadata.
-`kakao_verified_at` and `kakao_grace_started_at` are set to the migration time.
+Kakao members retain their OAuth ID, email, and OAuth metadata. Only a row with
+a non-empty OAuth ID receives `kakao_verified_at`.
+`kakao_grace_started_at` is set to the migration time.
 The existing `token_valid_until` is copied to `kakao_talk_verified_until` for
 Kakao rows so a still-current “send to me” proof remains current after cutover.
-Legacy password hashes and salts are retained and upgraded to Argon2id after
-the first successful login when
-`GATEWAY_LEGACY_PASSWORD_GLOBAL_SALT` is configured in gateway-api.
+Imported 128-hex password hashes are marked for reset. They can be upgraded to
+Argon2id after the first successful login only when the DB-external
+`GATEWAY_LEGACY_PASSWORD_GLOBAL_SALT` is safely recovered. Otherwise, a verified
+Kakao flow requires a new password before session issuance. A non-Kakao account
+uses the CLI reset below. Reapplying a dump preserves the target account's
+current credential, OAuth, identity, roles, sanctions, consent, and login state.
 
 Only tables present in the checked ref schemas are eligible. Extra tables found
 in a dump, such as an old root `config` table, are left in the recovery dump and

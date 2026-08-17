@@ -38,8 +38,8 @@ describe('readReleaseManifest', () => {
 
         await expect(readReleaseManifest(workspaceRoot)).resolves.toMatchObject({
             controllerProtocol: RELEASE_CONTROLLER_PROTOCOL,
-            gatewaySchemaHead: '20260813000000_split_gateway_profile_identity',
-            gameSchemaHead: '20260816000000_add_read_model_change_journal',
+            gatewaySchemaHead: '20260817000000_add_password_reset_required',
+            gameSchemaHead: '20260817001000_add_dedicated_legacy_archive',
         });
     });
 
@@ -61,11 +61,7 @@ describe('readReleaseManifest', () => {
 
     it('allows only the explicit controller self-upgrade boundary to cross protocol versions', async () => {
         const futureProtocol = RELEASE_CONTROLLER_PROTOCOL + 1;
-        const workspace = await createWorkspace(
-            '20260801000000_gateway',
-            '20260801000000_game',
-            futureProtocol
-        );
+        const workspace = await createWorkspace('20260801000000_gateway', '20260801000000_game', futureProtocol);
 
         await expect(readReleaseManifest(workspace)).rejects.toThrow(
             `Release requires controller protocol ${futureProtocol}`

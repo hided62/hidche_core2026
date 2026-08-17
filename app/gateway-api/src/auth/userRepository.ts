@@ -24,6 +24,7 @@ export interface UserRecord {
     deleteAfter?: string;
     passwordHash: string;
     passwordSalt: string;
+    passwordResetRequired: boolean;
     createdAt: string;
     legacyMemberNo?: number;
     legacyGrade?: number;
@@ -128,7 +129,7 @@ export const toPublicUser = (user: UserRecord): PublicUser => ({
     displayName: user.displayName,
     roles: user.roles,
     picture: user.picture,
-    kakaoVerified: user.oauthType === 'KAKAO' && Boolean(user.kakaoVerifiedAt),
+    kakaoVerified: user.oauthType === 'KAKAO' && Boolean(user.oauthId?.trim()) && Boolean(user.kakaoVerifiedAt),
     kakaoGraceStartedAt: user.kakaoGraceStartedAt,
     createdAt: user.createdAt,
 });

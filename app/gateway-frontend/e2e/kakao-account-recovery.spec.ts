@@ -1,9 +1,48 @@
+import { generateKeyPairSync } from 'node:crypto';
+
 import { expect, test, type Page, type Route } from '@playwright/test';
 
 const response = (data: unknown) => ({ result: { data } });
 const operationNames = (route: Route): string[] => {
     const url = new URL(route.request().url());
     return decodeURIComponent(url.pathname.slice(url.pathname.lastIndexOf('/trpc/') + 6)).split(',');
+};
+
+const { publicKey } = generateKeyPairSync('rsa', { modulusLength: 2048 });
+const publicKeyPem = publicKey.export({ type: 'spki', format: 'pem' }).toString();
+
+const installPasswordSetupFixture = async (page: Page) => {
+    const calls: string[] = [];
+    await page.route('**/gateway/api/trpc/**', async (route) => {
+        const results = operationNames(route).map((operation) => {
+            calls.push(operation);
+            if (operation === 'me') return response(null);
+            if (operation === 'lobby.notice') return response('');
+            if (operation === 'lobby.profiles') return response([]);
+            if (operation === 'auth.passwordKey') {
+                return response({ keyId: 'password-setup-key', publicKeyPem, algorithm: 'RSA-OAEP-256' });
+            }
+            if (operation === 'auth.kakaoExchange') {
+                return response({
+                    status: 'password_setup',
+                    oauthSessionId: '11111111-1111-4111-8111-111111111112',
+                    email: 'migrated@example.test',
+                    successStatus: 'login',
+                });
+            }
+            if (operation === 'auth.kakaoSetPassword') {
+                return response({
+                    status: 'otp',
+                    challengeId: '11111111-1111-4111-8111-111111111111',
+                    expiresAt: '2026-08-17T12:03:00.000Z',
+                    attemptsRemaining: 3,
+                });
+            }
+            throw new Error(`Unhandled password setup fixture operation: ${operation}`);
+        });
+        await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(results) });
+    });
+    return calls;
 };
 
 const installFixture = async (page: Page, action: 'link_existing' | 'rejoin') => {
@@ -107,5 +146,28 @@ for (const viewport of [
         await expect(page.getByLabel('카카오 이메일')).toHaveValue('retained@example.test');
         expect(calls.filter((operation) => operation === 'auth.kakaoResolveAccount')).toHaveLength(1);
         expect(geometry.width).toBe(viewport.name === 'desktop' ? 698 : 372);
+    });
+
+    test(`sets a migrated password before opening the OTP dialog on ${viewport.name}`, async ({ page }) => {
+        const calls = await installPasswordSetupFixture(page);
+        await page.setViewportSize(viewport);
+        await page.goto('/gateway/oauth/callback?code=oauth-code&state=oauth-state');
+
+        const form = page.getByRole('form', { name: '새 비밀번호 설정' });
+        await expect(form).toBeVisible();
+        await expect(form).toContainText('카카오 인증으로 기존 계정을 확인했습니다.');
+        await expect(form.getByLabel('카카오 이메일')).toHaveValue('migrated@example.test');
+        const geometry = await form.evaluate((element) => {
+            const rect = element.getBoundingClientRect();
+            return { width: rect.width, right: rect.right };
+        });
+        await form.getByLabel('새 비밀번호').fill('new-password-value');
+        await form.getByLabel('비밀번호 확인').fill('new-password-value');
+        await form.getByRole('button', { name: '새 비밀번호 설정' }).click();
+
+        await expect(page.getByRole('dialog', { name: '인증 코드 필요' })).toBeVisible();
+        expect(calls.filter((operation) => operation === 'auth.kakaoSetPassword')).toHaveLength(1);
+        expect(geometry.width).toBeGreaterThan(300);
+        expect(geometry.right).toBeLessThanOrEqual(viewport.width);
     });
 }

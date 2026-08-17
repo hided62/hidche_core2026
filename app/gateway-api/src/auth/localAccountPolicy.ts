@@ -35,7 +35,9 @@ export const hasActiveSpecialAccountGrant = (
     grants: readonly SpecialAccountAccessGrantRecord[],
     now: Date = new Date()
 ): boolean =>
-    grants.some((grant) => !grant.revokedAt && (!grant.expiresAt || new Date(grant.expiresAt).getTime() > now.getTime()));
+    grants.some(
+        (grant) => !grant.revokedAt && (!grant.expiresAt || new Date(grant.expiresAt).getTime() > now.getTime())
+    );
 
 const appliesToProfile = (grant: SpecialAccountAccessGrantRecord, profile: string, profileName: string): boolean =>
     grant.profiles.length === 0 || grant.profiles.includes(profile) || grant.profiles.includes(profileName);
@@ -67,9 +69,7 @@ const resolveSpecialAccess = (options: {
     const selected = active.find((grant) => grant.allowsGeneralCreation) ?? active[0]!;
     const expiresAt = active.some((grant) => !grant.expiresAt)
         ? null
-        : active
-              .map((grant) => grant.expiresAt!)
-              .sort((left, right) => right.localeCompare(left))[0] ?? null;
+        : (active.map((grant) => grant.expiresAt!).sort((left, right) => right.localeCompare(left))[0] ?? null);
     return {
         kind: selected.kind,
         grantId: selected.id,
@@ -98,7 +98,10 @@ export const resolveLocalAccountProfilePolicy = (options: {
         'localAccountGeneralCreationGraceDays',
         generalCreationDefault
     );
-    const kakaoVerified = options.user.oauthType === 'KAKAO' && Boolean(options.user.kakaoVerifiedAt);
+    const kakaoVerified =
+        options.user.oauthType === 'KAKAO' &&
+        Boolean(options.user.oauthId?.trim()) &&
+        Boolean(options.user.kakaoVerifiedAt);
     const graceStartedAt = new Date(options.user.kakaoGraceStartedAt);
     const now = options.now ?? new Date();
     const specialAccess = resolveSpecialAccess({
@@ -116,7 +119,9 @@ export const resolveLocalAccountProfilePolicy = (options: {
     const generalCreationEndsAt = new Date(graceStartedAt.getTime() + generalCreationGraceDays * DAY_MS);
     const accessAllowed = kakaoVerified || specialAccess !== null || now < accessEndsAt;
     const canCreateGeneral =
-        kakaoVerified || specialAccess?.allowsGeneralCreation === true || (accessAllowed && now < generalCreationEndsAt);
+        kakaoVerified ||
+        specialAccess?.allowsGeneralCreation === true ||
+        (accessAllowed && now < generalCreationEndsAt);
 
     return {
         requiresKakaoVerification: !kakaoVerified && specialAccess === null,
