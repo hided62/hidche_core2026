@@ -2,6 +2,7 @@
 import { formatServerDateTime } from '@sammo-ts/common';
 import { computed, onMounted, ref } from 'vue';
 import TournamentBracket from '../components/tournament/TournamentBracket.vue';
+import TournamentPageHeader from '../components/tournament/TournamentPageHeader.vue';
 import GeneralIdentity from '../components/ui/GeneralIdentity.vue';
 import { trpc } from '../utils/trpc';
 import { resolveTournamentStageName } from '../utils/tournamentStatus';
@@ -58,6 +59,7 @@ const openingTime = computed(() =>
     formatServerDateTime(snapshot.value?.state?.nextAt, { format: 'hourMinute', fallback: '--:--' })
 );
 const betTotals = computed(() => betting.value?.totals as Record<number, number> | undefined);
+const myBetTotals = computed(() => betting.value?.myTotals as Record<number, number> | undefined);
 const isParticipant = computed(() =>
     (snapshot.value?.participants ?? []).some((participant) => participant.id === myGeneralId.value)
 );
@@ -71,8 +73,25 @@ const groups = computed(() =>
 const preliminaryGroups = computed(() =>
     Array.from({ length: 8 }, (_, index) =>
         (snapshot.value?.participants ?? [])
-            .filter((participant) => participant.groupId === index)
-            .sort((a, b) => (a.seedRank ?? 99) - (b.seedRank ?? 99) || (a.groupNo ?? 99) - (b.groupNo ?? 99))
+            .filter((participant) => {
+                const groupId =
+                    participant.preliminaryGroupId ??
+                    (participant.groupId !== undefined && participant.groupId < 8 ? participant.groupId : undefined);
+                return groupId === index;
+            })
+            .map((participant) => ({
+                ...participant,
+                groupNo: participant.preliminaryGroupNo ?? participant.groupNo,
+                win: participant.preliminaryWin ?? participant.win,
+                draw: participant.preliminaryDraw ?? participant.draw,
+                lose: participant.preliminaryLose ?? participant.lose,
+                gl: participant.preliminaryGl ?? participant.gl,
+            }))
+            .sort(
+                (a, b) =>
+                    (a.preliminaryRank ?? a.seedRank ?? 99) - (b.preliminaryRank ?? b.seedRank ?? 99) ||
+                    (a.groupNo ?? 99) - (b.groupNo ?? 99)
+            )
     )
 );
 const groupNames = ['一', '二', '三', '四', '五', '六', '七', '八'];
@@ -141,12 +160,7 @@ const start = async () => {
 
 <template>
     <main id="tournament-container" class="legacy-page">
-        <section class="legacy-title bg0">
-            <div>삼모전 토너먼트</div>
-            <RouterLink v-slot="{ navigate }" custom to="/">
-                <button class="close-button" type="button" @click="navigate">창 닫기</button>
-            </RouterLink>
-        </section>
+        <TournamentPageHeader class="bg0" active-page="tournament" title="삼모전 토너먼트" />
 
         <section class="toolbar bg0">
             <button type="button" @click="load">갱신</button>
@@ -177,6 +191,7 @@ const start = async () => {
             :matches="snapshot?.matches ?? []"
             :winner-id="snapshot?.state?.winnerId"
             :bet-totals="betTotals"
+            :my-bet-totals="myBetTotals"
             :total-bet="totalBet"
         />
 
@@ -384,25 +399,6 @@ const start = async () => {
 .bg2 {
     background: #142b42 var(--sammo-texture-blue);
 }
-.legacy-title {
-    min-height: 68px;
-    padding: 0;
-    font-size: 14px;
-    line-height: 19.1875px;
-}
-.close-button {
-    display: block;
-    width: 88px;
-    height: 44px;
-    padding: 10px 16px;
-    border: 1px solid #375a7f;
-    border-radius: 5.25px;
-    background: #375a7f;
-    color: #fff;
-    font-size: 14px;
-    line-height: 18px;
-    text-decoration: none;
-}
 .toolbar {
     min-height: 46px;
     padding: 1px;
@@ -432,10 +428,6 @@ button {
 button:hover,
 button:focus {
     filter: brightness(1.25);
-}
-.close-button:hover,
-.close-button:focus {
-    filter: brightness(1.2);
 }
 button:focus-visible {
     outline: 2px solid #f39c12;
@@ -531,10 +523,6 @@ td {
     .legacy-page {
         max-width: 100%;
         font-size: 13px;
-    }
-    .legacy-title {
-        height: auto;
-        min-height: 55px;
     }
     .state-row {
         font-size: 18px;

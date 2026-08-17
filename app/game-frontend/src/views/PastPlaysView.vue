@@ -1,21 +1,102 @@
 <script setup lang="ts">
-import { onMounted, ref } from 'vue';
+import { computed, onMounted, ref } from 'vue';
 
+import GeneralBasicCard from '../components/main/GeneralBasicCard.vue';
+import GeneralBattleSummary, { type GeneralBattleSummaryData } from '../components/main/GeneralBattleSummary.vue';
+import GeneralRecordPanels from '../components/main/GeneralRecordPanels.vue';
+import {
+    GENERAL_RECORD_TYPES,
+    type GeneralRecordCollection,
+    type GeneralRecordType,
+} from '../components/generalRecords';
+import LegacyGeneralProgress from '../components/ui/LegacyGeneralProgress.vue';
+import PanelCard from '../components/ui/PanelCard.vue';
+import SkeletonLines from '../components/ui/SkeletonLines.vue';
 import { trpc } from '../utils/trpc';
 
 type Archive = Awaited<ReturnType<typeof trpc.archive.myPastPlays.query>>;
-type PastPlayDetail = Awaited<ReturnType<typeof trpc.archive.myPastPlayDetail.query>>;
-type DetailState = {
-    open: boolean;
-    loading: boolean;
-    error: string | null;
-    detail: PastPlayDetail | null;
+type ArchiveSeason = Archive['seasons'][number] & {
+    sourceProfile?: string;
+    source?: string;
+    openedAt?: string | null;
+    date?: string | null;
 };
+
+type ArchiveGeneral = {
+    id: number;
+    name: string;
+    picture?: string | null;
+    imageServer?: number | null;
+    npcState: number;
+    officerLevel: number;
+    officerLevelText: string;
+    officerCityName?: string | null;
+    generalType?: string;
+    leadershipBonus?: number;
+    stats: { leadership: number; strength: number; intelligence: number };
+    gold: number;
+    rice: number;
+    crew: number;
+    train: number;
+    atmos: number;
+    injury: number;
+    experience: number;
+    dedication: number;
+    age?: number;
+    retirementYear?: number;
+    turnTime?: string | null;
+    crewTypeId?: number;
+    crewTypeName?: string;
+    traits?: { personal: string; specialWar: string; specialDomestic: string };
+    progression: {
+        experienceLevel: number;
+        dedicationLevel: number;
+        dedicationText: string;
+        statExperience: { leadership: number; strength: number; intelligence: number };
+        statUpgradeLimit: number;
+        dex: number[];
+    };
+};
+
+type ArchiveLogChannel = {
+    available: boolean;
+    entries: Array<{ id: number | string; text: string }>;
+};
+
+type PastPlayDetail = {
+    sourceProfile: string;
+    source: string;
+    serverId: string;
+    generalNo: number;
+    dynastyPath: string | null;
+    nation: { name: string; color: string } | null;
+    general: ArchiveGeneral;
+    masteryAvailable: boolean;
+    battle: GeneralBattleSummaryData & {
+        winRate?: number | null;
+        killRate?: number | null;
+    };
+    logs: Partial<Record<GeneralRecordType, ArchiveLogChannel>>;
+};
+
+type PastPlayDetailInput = {
+    sourceProfile: string;
+    source: string;
+    serverId: string;
+    generalNo: number;
+};
+
+const queryPastPlayDetail = trpc.archive.myPastPlayDetail.query as unknown as (
+    input: PastPlayDetailInput
+) => Promise<PastPlayDetail>;
 
 const archive = ref<Archive | null>(null);
 const loading = ref(false);
 const error = ref<string | null>(null);
-const details = ref<Record<string, DetailState>>({});
+const selectedKey = ref<string | null>(null);
+const detail = ref<PastPlayDetail | null>(null);
+const detailLoading = ref(false);
+const detailError = ref<string | null>(null);
 
 const loadArchive = async () => {
     if (loading.value) return;
@@ -33,42 +114,73 @@ const loadArchive = async () => {
 const yearMonth = (value: number): string => `${Math.floor(value / 100)}년 ${value % 100}월`;
 const valueOrDash = (value: number | string | null): string => (value === null || value === '' ? '-' : String(value));
 const plainLog = (value: string): string => value.replace(/<[^>]+>/g, '');
-const detailKey = (serverId: string, generalNo: number): string => `${serverId}:${generalNo}`;
+const seasonSourceProfile = (season: ArchiveSeason): string => season.sourceProfile ?? '현재 서버';
+const seasonSource = (season: ArchiveSeason): string => season.source ?? 'current';
+const detailKey = (season: ArchiveSeason, generalNo: number): string =>
+    `${seasonSourceProfile(season)}:${seasonSource(season)}:${season.serverId}:${generalNo}`;
+const isSelectedSeason = (season: ArchiveSeason): boolean =>
+    selectedKey.value?.startsWith(`${seasonSourceProfile(season)}:${seasonSource(season)}:${season.serverId}:`) ??
+    false;
 
-const toggleHistory = async (serverId: string, generalNo: number): Promise<void> => {
-    const key = detailKey(serverId, generalNo);
-    const current = details.value[key];
-    if (current?.open) {
-        details.value = { ...details.value, [key]: { ...current, open: false } };
+const formatOpenedAt = (season: ArchiveSeason): string => {
+    const value = season.openedAt ?? season.date;
+    if (!value) return '개장일 미상';
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) return '개장일 미상';
+    return `${new Intl.DateTimeFormat('ko-KR', { dateStyle: 'medium', timeZone: 'Asia/Seoul' }).format(date)} 개장`;
+};
+
+const selectGeneral = async (season: ArchiveSeason, generalNo: number): Promise<void> => {
+    const key = detailKey(season, generalNo);
+    if (selectedKey.value === key) {
+        selectedKey.value = null;
+        detail.value = null;
+        detailError.value = null;
         return;
     }
-    if (current?.detail) {
-        details.value = { ...details.value, [key]: { ...current, open: true } };
-        return;
-    }
 
-    details.value = {
-        ...details.value,
-        [key]: { open: true, loading: true, error: null, detail: null },
-    };
+    selectedKey.value = key;
+    detail.value = null;
+    detailError.value = null;
+    detailLoading.value = true;
     try {
-        const detail = await trpc.archive.myPastPlayDetail.query({ serverId, generalNo });
-        details.value = {
-            ...details.value,
-            [key]: { open: true, loading: false, error: null, detail },
-        };
+        const result = await queryPastPlayDetail({
+            sourceProfile: seasonSourceProfile(season),
+            source: seasonSource(season),
+            serverId: season.serverId,
+            generalNo,
+        });
+        if (selectedKey.value === key) detail.value = result;
     } catch (cause) {
-        details.value = {
-            ...details.value,
-            [key]: {
-                open: true,
-                loading: false,
-                error: cause instanceof Error ? cause.message : '장수 열전을 불러오지 못했습니다.',
-                detail: null,
-            },
-        };
+        if (selectedKey.value === key) {
+            detailError.value = cause instanceof Error ? cause.message : '지난 장수 상세 기록을 불러오지 못했습니다.';
+        }
+    } finally {
+        if (selectedKey.value === key) detailLoading.value = false;
     }
 };
+
+const archiveRecords = computed<GeneralRecordCollection>(() => {
+    const result: GeneralRecordCollection = {};
+    for (const type of GENERAL_RECORD_TYPES) {
+        const channel = detail.value?.logs[type];
+        result[type] = (channel?.entries ?? []).map((entry) => ({ id: entry.id, content: plainLog(entry.text) }));
+    }
+    return result;
+});
+
+const unavailableRecords = computed<GeneralRecordType[]>(() =>
+    GENERAL_RECORD_TYPES.filter((type) => {
+        const channel = detail.value?.logs[type];
+        return channel ? !channel.available : type !== 'generalHistory';
+    })
+);
+
+const battleSummary = computed<GeneralBattleSummaryData>(() => ({
+    ...detail.value?.battle,
+    experience: detail.value?.general.experience ?? null,
+    dedicationText: detail.value?.general.progression.dedicationText ?? null,
+}));
 
 onMounted(() => {
     void loadArchive();
@@ -85,28 +197,27 @@ onMounted(() => {
             </nav>
         </header>
 
-        <p class="page-note">종료된 기수에 보관된 내 장수 기록입니다.</p>
+        <p class="page-note">이전 서버에서 종료된 기수에 보관된 내 장수 기록입니다.</p>
         <p v-if="error" class="error-row">{{ error }}</p>
         <p v-else-if="loading && !archive" class="empty-row">불러오는 중...</p>
         <p v-else-if="archive?.seasons.length === 0" class="empty-row">보관된 지난 플레이가 없습니다.</p>
 
-        <section v-for="season in archive?.seasons ?? []" :key="season.serverId" class="season-card">
+        <section v-for="season in archive?.seasons ?? []" :key="detailKey(season, 0)" class="season-card">
             <div class="season-heading legacy-bg2">
-                <strong>{{ season.serverId }}</strong>
-                <div class="season-actions">
+                <div class="season-identity">
+                    <strong class="archive-label">이전 서버 기록</strong>
+                    <strong>{{ seasonSourceProfile(season) }}</strong>
+                    <span>{{ season.serverId }}</span>
+                </div>
+                <div class="season-meta">
+                    <span>{{ formatOpenedAt(season) }}</span>
                     <span>
                         {{ season.scenarioName ?? '시나리오 미상' }}
                         <template v-if="season.season !== null"> · {{ season.season }}기</template>
                     </span>
-                    <RouterLink
-                        v-if="season.dynastyId !== null"
-                        class="legacy-button nation-archive-link"
-                        :to="`/dynasty/${season.dynastyId}`"
-                    >
-                        이 기수 국가 정보
-                    </RouterLink>
                 </div>
             </div>
+
             <div class="table-scroll">
                 <table>
                     <thead>
@@ -121,84 +232,82 @@ onMounted(() => {
                             <th>성격</th>
                             <th>내정 특기</th>
                             <th>전투 특기</th>
-                            <th>장수 열전</th>
+                            <th>상세</th>
                         </tr>
                     </thead>
                     <tbody>
-                        <template v-for="general in season.generals" :key="general.generalNo">
-                            <tr>
-                                <td class="general-name">{{ general.name }}</td>
-                                <td>
-                                    <span
-                                        class="nation-name"
-                                        :style="{ backgroundColor: general.nationColor, color: '#ffffff' }"
-                                    >
-                                        {{ general.nationName }}
-                                    </span>
-                                </td>
-                                <td>{{ yearMonth(general.lastYearMonth) }}</td>
-                                <td>{{ valueOrDash(general.leadership) }}</td>
-                                <td>{{ valueOrDash(general.strength) }}</td>
-                                <td>{{ valueOrDash(general.intel) }}</td>
-                                <td>{{ valueOrDash(general.officerLevelText) }}</td>
-                                <td>{{ valueOrDash(general.personal) }}</td>
-                                <td>{{ valueOrDash(general.special) }}</td>
-                                <td>{{ valueOrDash(general.special2) }}</td>
-                                <td>
-                                    <button
-                                        class="legacy-button history-toggle"
-                                        type="button"
-                                        :aria-expanded="
-                                            details[detailKey(season.serverId, general.generalNo)]?.open ?? false
-                                        "
-                                        @click="toggleHistory(season.serverId, general.generalNo)"
-                                    >
-                                        {{
-                                            details[detailKey(season.serverId, general.generalNo)]?.open
-                                                ? '접기'
-                                                : `보기 (${general.historyCount})`
-                                        }}
-                                    </button>
-                                </td>
-                            </tr>
-                            <tr v-if="details[detailKey(season.serverId, general.generalNo)]?.open" class="history-row">
-                                <td colspan="11">
-                                    <p
-                                        v-if="details[detailKey(season.serverId, general.generalNo)]?.loading"
-                                        role="status"
-                                    >
-                                        장수 열전을 불러오는 중...
-                                    </p>
-                                    <p
-                                        v-else-if="details[detailKey(season.serverId, general.generalNo)]?.error"
-                                        class="history-error"
-                                        role="alert"
-                                    >
-                                        {{ details[detailKey(season.serverId, general.generalNo)]?.error }}
-                                    </p>
-                                    <p
-                                        v-else-if="
-                                            details[detailKey(season.serverId, general.generalNo)]?.detail?.history
-                                                .length === 0
-                                        "
-                                    >
-                                        보관된 장수 열전이 없습니다.
-                                    </p>
-                                    <ol v-else class="history-list">
-                                        <li
-                                            v-for="(entry, index) in details[
-                                                detailKey(season.serverId, general.generalNo)
-                                            ]?.detail?.history ?? []"
-                                            :key="index"
-                                        >
-                                            {{ plainLog(entry) }}
-                                        </li>
-                                    </ol>
-                                </td>
-                            </tr>
-                        </template>
+                        <tr v-for="general in season.generals" :key="general.generalNo">
+                            <td class="general-name">{{ general.name }}</td>
+                            <td>
+                                <span
+                                    class="nation-name"
+                                    :style="{ backgroundColor: general.nationColor, color: '#fff' }"
+                                >
+                                    {{ general.nationName }}
+                                </span>
+                            </td>
+                            <td>{{ yearMonth(general.lastYearMonth) }}</td>
+                            <td>{{ valueOrDash(general.leadership) }}</td>
+                            <td>{{ valueOrDash(general.strength) }}</td>
+                            <td>{{ valueOrDash(general.intel) }}</td>
+                            <td>{{ valueOrDash(general.officerLevelText) }}</td>
+                            <td>{{ valueOrDash(general.personal) }}</td>
+                            <td>{{ valueOrDash(general.special) }}</td>
+                            <td>{{ valueOrDash(general.special2) }}</td>
+                            <td>
+                                <button
+                                    class="legacy-button detail-toggle"
+                                    type="button"
+                                    :aria-expanded="selectedKey === detailKey(season, general.generalNo)"
+                                    @click="selectGeneral(season, general.generalNo)"
+                                >
+                                    {{ selectedKey === detailKey(season, general.generalNo) ? '접기' : '상세 보기' }}
+                                </button>
+                            </td>
+                        </tr>
                     </tbody>
                 </table>
+            </div>
+            <div v-if="isSelectedSeason(season)" class="detail-region">
+                <SkeletonLines v-if="detailLoading" :lines="8" />
+                <p v-else-if="detailError" class="detail-error" role="alert">{{ detailError }}</p>
+                <div v-else-if="detail" class="detail-shell">
+                    <div class="detail-source">
+                        <span>{{ detail.sourceProfile }} · {{ detail.source }}</span>
+                        <RouterLink
+                            v-if="detail.dynastyPath"
+                            class="legacy-button nation-archive-link"
+                            :to="detail.dynastyPath"
+                        >
+                            이 기수 국가 정보
+                        </RouterLink>
+                    </div>
+                    <div class="detail-grid">
+                        <PanelCard title="장수 정보">
+                            <GeneralBasicCard
+                                class="archive-general-card"
+                                :general="detail.general"
+                                :loading="false"
+                                :nation-color="detail.nation?.color"
+                            >
+                                <template #details>
+                                    <GeneralBattleSummary :summary="battleSummary" show-win-rate rate-scale="percent" />
+                                    <LegacyGeneralProgress
+                                        v-if="detail.masteryAvailable"
+                                        :general="detail.general"
+                                        :show-primary="false"
+                                    />
+                                    <div v-else class="archive-unavailable">
+                                        이 기수에는 숙련도 기록이 보존되지 않았습니다.
+                                    </div>
+                                </template>
+                            </GeneralBasicCard>
+                        </PanelCard>
+                        <PanelCard title="장수 기록" subtitle="보존된 과거 기록">
+                            <GeneralRecordPanels :records="archiveRecords" :unavailable="unavailableRecords" />
+                        </PanelCard>
+                    </div>
+                </div>
             </div>
         </section>
     </main>
@@ -210,13 +319,17 @@ onMounted(() => {
     min-height: 100vh;
     margin: 0 auto;
     color: #eee;
-    background: #151515;
+    background-color: #302016;
+    background-image: var(--sammo-texture-walnut);
+    font-family: var(--sammo-font-sans);
+    font-size: 14px;
 }
 
 .title-row,
 .season-heading {
-    border: 1px solid #555;
-    background: #2b2b2b;
+    border: 1px solid #666;
+    background-color: #14241b;
+    background-image: var(--sammo-texture-green);
 }
 
 .title-row {
@@ -233,8 +346,12 @@ onMounted(() => {
     font-size: 18px;
 }
 
-.title-row nav {
+.title-row nav,
+.season-identity,
+.season-meta,
+.detail-source {
     display: flex;
+    align-items: center;
     gap: 6px;
 }
 
@@ -242,11 +359,12 @@ onMounted(() => {
     box-sizing: border-box;
     min-height: 28px;
     padding: 4px 9px;
-    border: 1px solid #777;
-    border-radius: 0;
-    color: #eee;
-    background: #333;
+    border: 1px solid #2d5d7f;
+    border-radius: 4px;
+    color: #fff;
+    background: #315f86;
     font: inherit;
+    font-weight: 700;
     text-decoration: none;
     cursor: pointer;
 }
@@ -255,6 +373,10 @@ onMounted(() => {
 .legacy-button:focus-visible {
     border-color: skyblue;
     color: skyblue;
+}
+
+.legacy-button:active {
+    transform: translateY(1px);
 }
 
 .legacy-button:disabled {
@@ -267,15 +389,17 @@ onMounted(() => {
 .error-row {
     margin: 0;
     padding: 12px 10px;
-    border-inline: 1px solid #555;
-    border-bottom: 1px solid #555;
+    border-inline: 1px solid #666;
+    border-bottom: 1px solid #666;
 }
 
-.page-note {
+.page-note,
+.season-heading span {
     color: #bbb;
 }
 
-.error-row {
+.error-row,
+.detail-error {
     color: #ff8d8d;
 }
 
@@ -294,19 +418,15 @@ onMounted(() => {
     color: skyblue;
 }
 
-.season-heading span {
-    color: #bbb;
+.archive-label {
+    padding: 2px 5px;
+    border: 1px solid #777;
+    color: #fff !important;
+    background: #00582c;
 }
 
-.season-actions {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-}
-
-.nation-archive-link {
-    min-height: 24px;
-    padding-block: 2px;
+.season-meta {
+    justify-content: flex-end;
 }
 
 .table-scroll {
@@ -324,7 +444,7 @@ table {
 th,
 td {
     padding: 6px 7px;
-    border: 1px solid #555;
+    border: 1px solid #666;
     text-align: center;
     white-space: nowrap;
 }
@@ -348,45 +468,75 @@ th {
     text-shadow: 0 1px 1px #000;
 }
 
-.history-toggle {
+.detail-toggle,
+.nation-archive-link {
     min-height: 24px;
     padding-block: 2px;
 }
 
-.history-row td {
-    padding: 10px 12px;
-    text-align: left;
-    white-space: normal;
+.detail-region {
+    border: 1px solid #666;
     background: #101010;
 }
 
-.history-row p {
+.detail-error {
     margin: 0;
-    color: #bbb;
+    padding: 10px 12px;
 }
 
-.history-error {
-    color: #ff8d8d !important;
+.detail-source {
+    justify-content: space-between;
+    min-height: 34px;
+    padding: 4px 8px;
+    border-bottom: 1px solid #666;
+    background-color: #14241b;
+    background-image: var(--sammo-texture-green);
 }
 
-.history-list {
+.detail-grid {
     display: grid;
-    gap: 5px;
-    margin: 0;
-    padding-left: 26px;
-    color: #ddd;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.detail-grid :deep(.panel-card) {
+    height: 100%;
+    border-radius: 0;
+    box-shadow: none;
+}
+
+.detail-grid :deep(.panel-body) {
+    padding: 0;
+}
+
+.detail-grid :deep(.panel-title) {
+    color: skyblue;
+    font-size: 18px;
+    font-weight: 500;
+}
+
+.archive-unavailable {
+    min-height: 28px;
+    padding: 5px 8px;
+    border-top: 1px solid #666;
+    color: #bbb;
+    text-align: center;
 }
 
 @media (max-width: 640px) {
     .title-row,
-    .season-heading {
+    .season-heading,
+    .season-identity,
+    .season-meta {
         align-items: flex-start;
         flex-direction: column;
     }
 
-    .season-actions {
-        align-items: flex-start;
-        flex-direction: column;
+    .season-meta {
+        justify-content: flex-start;
+    }
+
+    .detail-grid {
+        grid-template-columns: 1fr;
     }
 }
 </style>

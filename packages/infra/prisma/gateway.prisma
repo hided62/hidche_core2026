@@ -82,6 +82,7 @@ model AppUser {
   displayName            String                      @unique @map("display_name")
   passwordHash           String                      @map("password_hash")
   passwordSalt           String                      @map("password_salt")
+  passwordResetRequired  Boolean                     @default(false) @map("password_reset_required")
   roles                  Json                        @default(dbgenerated("'[]'::jsonb"))
   sanctions              Json                        @default(dbgenerated("'{}'::jsonb"))
   oauthType              OAuthType                   @default(NONE) @map("oauth_type")

@@ -3,9 +3,15 @@ import { formatServerDateTime } from '@sammo-ts/common';
 import { computed, onMounted, reactive, ref, watch } from 'vue';
 import { useRoute } from 'vue-router';
 import PanelCard from '../components/ui/PanelCard.vue';
-import SkeletonLines from '../components/ui/SkeletonLines.vue';
 import LegacyGeneralProgress from '../components/ui/LegacyGeneralProgress.vue';
 import GeneralBasicCard from '../components/main/GeneralBasicCard.vue';
+import GeneralBattleSummary from '../components/main/GeneralBattleSummary.vue';
+import GeneralRecordPanels from '../components/main/GeneralRecordPanels.vue';
+import {
+    GENERAL_RECORD_TYPES,
+    type GeneralRecordCollection,
+    type GeneralRecordType,
+} from '../components/generalRecords';
 import { trpc } from '../utils/trpc';
 import { getNpcColor } from '../utils/npcColor';
 import { formatLog } from '../utils/formatLog';
@@ -13,17 +19,10 @@ import { formatLog } from '../utils/formatLog';
 type BattleCenterResponse = Awaited<ReturnType<typeof trpc.nation.getBattleCenter.query>>;
 type GeneralEntry = BattleCenterResponse['generals'][number];
 
-type LogType = 'generalHistory' | 'battleResult' | 'battleDetail' | 'generalAction';
+type LogType = GeneralRecordType;
 type LogLine = { id: number; html: string };
 
-const logTypes: LogType[] = ['generalHistory', 'battleDetail', 'battleResult', 'generalAction'];
-
-const logLabels: Record<LogType, string> = {
-    generalHistory: '장수 열전',
-    battleDetail: '전투 기록',
-    battleResult: '전투 결과',
-    generalAction: '개인 기록',
-};
+const logTypes: LogType[] = [...GENERAL_RECORD_TYPES];
 
 const orderOptions = [
     { key: 'recentWar', label: '최근 전투' },
@@ -48,6 +47,12 @@ const logs = reactive<Record<LogType, LogLine[]>>({
     battleResult: [],
     generalAction: [],
 });
+
+const currentRecords = computed<GeneralRecordCollection>(() =>
+    Object.fromEntries(
+        logTypes.map((type) => [type, logs[type].map((entry) => ({ id: entry.id, content: entry.html }))])
+    )
+);
 
 const resolveErrorMessage = (value: unknown): string => {
     if (value instanceof Error) {
@@ -275,27 +280,20 @@ onMounted(() => {
                         :nation-color="data?.nation.color"
                     >
                         <template v-if="selectedGeneral" #details>
-                            <div class="battle-general-extra">
-                                <span>명성</span
-                                ><strong>{{ selectedGeneral.experience.toLocaleString('ko-KR') }}</strong>
-                                <span>계급</span><strong>{{ selectedGeneral.progression.dedicationText }}</strong>
-                                <span>전투</span><strong>{{ selectedGeneral.warnum }}회</strong> <span>승리</span
-                                ><strong>{{ selectedGeneral.battleStats.kills }}</strong> <span>패배</span
-                                ><strong>{{ selectedGeneral.battleStats.deaths }}</strong> <span>계략</span
-                                ><strong>{{ selectedGeneral.battleStats.fire }}</strong> <span>사살</span
-                                ><strong>{{ selectedGeneral.battleStats.killCrew.toLocaleString('ko-KR') }}</strong>
-                                <span>피살</span
-                                ><strong>{{ selectedGeneral.battleStats.deathCrew.toLocaleString('ko-KR') }}</strong>
-                                <span class="battle-general-extra__recent-label">최근 전투</span>
-                                <strong class="battle-general-extra__recent-value">
-                                    {{
-                                        formatServerDateTime(selectedGeneral.recentWar, {
-                                            format: 'monthDayTime',
-                                            fallback: '-',
-                                        })
-                                    }}
-                                </strong>
-                            </div>
+                            <GeneralBattleSummary
+                                :summary="{
+                                    available: true,
+                                    experience: selectedGeneral.experience,
+                                    dedicationText: selectedGeneral.progression.dedicationText,
+                                    warnum: selectedGeneral.warnum,
+                                    wins: selectedGeneral.battleStats.kills,
+                                    losses: selectedGeneral.battleStats.deaths,
+                                    strategies: selectedGeneral.battleStats.fire,
+                                    killCrew: selectedGeneral.battleStats.killCrew,
+                                    deathCrew: selectedGeneral.battleStats.deathCrew,
+                                    recentWar: selectedGeneral.recentWar,
+                                }"
+                            />
                             <LegacyGeneralProgress :general="selectedGeneral" :show-primary="false" />
                         </template>
                     </GeneralBasicCard>
@@ -304,16 +302,7 @@ onMounted(() => {
 
             <div class="stack">
                 <PanelCard title="장수 기록" subtitle="열전과 전투 기록">
-                    <div class="log-grid">
-                        <div v-for="type in logTypes" :key="type" class="log-block" :data-log-type="type">
-                            <div class="log-title">{{ logLabels[type] }}</div>
-                            <SkeletonLines v-if="loading || logLoading" :lines="3" />
-                            <template v-else>
-                                <div v-if="logs[type].length === 0" class="empty">기록이 없습니다.</div>
-                                <div v-for="entry in logs[type]" :key="entry.id" class="log-line" v-html="entry.html" />
-                            </template>
-                        </div>
-                    </div>
+                    <GeneralRecordPanels :records="currentRecords" :loading="loading || logLoading" trusted-html />
                 </PanelCard>
             </div>
         </section>
@@ -354,81 +343,6 @@ onMounted(() => {
     font: inherit;
 }
 
-.battle-general-extra {
-    display: grid;
-    grid-template-columns: repeat(6, 1fr);
-}
-
-.battle-general-extra > * {
-    min-height: 24px;
-    box-sizing: border-box;
-    border-right: 1px solid #777;
-    border-bottom: 1px solid #777;
-    padding: 2px 5px;
-}
-
-.battle-general-extra > span {
-    background-color: rgb(20 75 42 / 70%);
-    text-align: center;
-}
-
-.battle-general-extra > strong {
-    overflow: hidden;
-    font-weight: 500;
-    text-align: right;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-}
-
-.battle-general-extra > .battle-general-extra__recent-label {
-    grid-column: 1;
-}
-
-.battle-general-extra > .battle-general-extra__recent-value {
-    grid-column: 2 / -1;
-    text-align: left;
-}
-
-.log-grid {
-    display: contents;
-}
-
-.log-block {
-    border: 1px solid #666;
-    padding: 0;
-    background-color: #302016;
-    background-image: var(--sammo-texture-walnut);
-    min-height: 0;
-}
-
-.log-title {
-    min-height: 34px;
-    margin: 0;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    border-bottom: 1px solid #666;
-    color: orange;
-    background: #000;
-    font-size: 1.3em;
-    font-weight: 500;
-}
-
-.log-line {
-    padding: 2px 8px;
-    border-bottom: 0;
-}
-
-.log-line :deep(.hidden_but_copyable) {
-    color: transparent !important;
-    font-size: 0;
-}
-
-.empty {
-    padding: 2px 8px;
-    color: #999;
-}
-
 /* PanelCard is retained as a data wrapper, but its presentation follows the
    flat bootstrap rows used by the reference page. */
 :deep(.panel-card) {
@@ -466,8 +380,7 @@ onMounted(() => {
     font-size: 18px;
     font-weight: 500;
 }
-:deep(.panel-header),
-.log-title {
+:deep(.panel-header) {
     background-image: var(--sammo-texture-green);
 }
 

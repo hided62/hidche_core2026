@@ -123,6 +123,72 @@ const buildContext = (
     oldNations: Array<Record<string, unknown>> = [oldNation, deletedOldNation]
 ): GameApiContext => {
     const db = {
+        $queryRaw: async (query: { strings?: readonly string[] }) => {
+            const sql = query.strings?.join(' ') ?? '';
+            if (sql.includes('legacy_archive"."emperor')) {
+                return [
+                    {
+                        id: 101n,
+                        sourceProfile: 'hwe',
+                        legacyId: 7,
+                        serverId: emperor.serverId,
+                        data: {
+                            phase: '이전 훼2기',
+                            nation_count: emperor.nationCount,
+                            nation_name: emperor.nationName,
+                            nation_hist: emperor.nationHist,
+                            gen_count: emperor.genCount,
+                            personal_hist: emperor.personalHist,
+                            special_hist: emperor.specialHist,
+                            name: emperor.name,
+                            type: emperor.type,
+                            color: emperor.color,
+                            year: emperor.year,
+                            month: emperor.month,
+                            power: emperor.power,
+                            gennum: emperor.gennum,
+                            citynum: emperor.citynum,
+                            pop: emperor.pop,
+                            poprate: emperor.poprate,
+                            gold: emperor.gold,
+                            rice: emperor.rice,
+                            l12name: emperor.l12name,
+                            l11name: emperor.l11name,
+                            l10name: emperor.l10name,
+                            l9name: emperor.l9name,
+                            l8name: emperor.l8name,
+                            l7name: emperor.l7name,
+                            l6name: emperor.l6name,
+                            l5name: emperor.l5name,
+                            tiger: emperor.tiger,
+                            eagle: emperor.eagle,
+                            gen: emperor.gen,
+                            history: emperor.history,
+                            aux: emperor.aux,
+                        },
+                    },
+                ];
+            }
+            if (sql.includes('legacy_archive"."nation')) {
+                return [
+                    {
+                        sourceProfile: 'hwe',
+                        legacyId: oldNation.id,
+                        serverId: oldNation.serverId,
+                        nation: oldNation.nation,
+                        data: oldNation.data,
+                        archivedAt: oldNation.date,
+                    },
+                ];
+            }
+            if (sql.includes('legacy_archive"."general')) {
+                return [
+                    { generalNo: 11, name: '유비', lastYearMonth: 21504 },
+                    { generalNo: 12, name: '제갈량', lastYearMonth: 21504 },
+                ];
+            }
+            return [];
+        },
         worldState: {
             findFirst: async () => ({ currentYear: 220, currentMonth: 1 }),
         },
@@ -184,6 +250,39 @@ describe('dynasty public read model', () => {
                 l5name: '마량',
             }),
         ]);
+    });
+
+    it('reads previous-server dynasties only when the archive source is selected', async () => {
+        const caller = appRouter.createCaller(buildContext(null));
+        const list = await caller.dynasty.getList({ source: 'legacy' });
+        expect(list).toMatchObject({
+            source: 'legacy',
+            current: null,
+            entries: [
+                expect.objectContaining({
+                    id: 101,
+                    source: 'legacy',
+                    sourceProfile: 'hwe',
+                    phase: '이전 훼2기',
+                }),
+            ],
+        });
+
+        const detail = await caller.dynasty.getDetail({ emperorId: 101, source: 'legacy' });
+        expect(detail).toMatchObject({
+            source: 'legacy',
+            sourceProfile: 'hwe',
+            emperor: expect.objectContaining({ id: 101, phase: '이전 훼2기', name: '촉' }),
+            nations: [
+                expect.objectContaining({
+                    name: '촉',
+                    generalsFull: [
+                        { generalNo: 11, name: '유비', lastYearMonth: 21504 },
+                        { generalNo: 12, name: '제갈량', lastYearMonth: 21504 },
+                    ],
+                }),
+            ],
+        });
     });
 
     it('exposes the same public DTO to anonymous, general owners and admins', async () => {

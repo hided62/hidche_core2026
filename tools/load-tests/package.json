@@ -11,6 +11,7 @@
         "seed": "pnpm -w exec tsx tools/load-tests/src/cli.ts seed",
         "verify-fixture": "pnpm -w exec tsx tools/load-tests/src/cli.ts verify-fixture",
         "activate-coverage": "pnpm -w exec tsx tools/load-tests/src/cli.ts activate-coverage",
+        "measure-turn-flush": "pnpm -w exec tsx tools/load-tests/src/cli.ts measure-turn-flush",
         "materialize-calibration": "pnpm -w exec tsx tools/load-tests/src/cli.ts materialize-calibration",
         "cleanup": "pnpm -w exec tsx tools/load-tests/src/cli.ts cleanup",
         "test": "pnpm -w exec tsx --test tools/load-tests/test/*.test.ts",

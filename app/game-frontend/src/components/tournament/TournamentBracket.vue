@@ -12,6 +12,7 @@ const props = defineProps<{
     matches: TournamentBracketMatch[];
     winnerId?: number;
     betTotals?: Record<number, number>;
+    myBetTotals?: Record<number, number>;
     totalBet: number;
     showLegend?: boolean;
 }>();
@@ -66,6 +67,7 @@ const odds = (id: number | null) => {
     if (!amount) return '∞';
     return (props.totalBet / amount).toFixed(2);
 };
+const myBet = (id: number | null) => (id === null ? 0 : (props.myBetTotals?.[id] ?? 0));
 const mobilePairs = computed(() => {
     const column = roundColumns.value[activeMobileRound.value] ?? [];
     if (activeMobileRound.value === roundColumns.value.length - 1) return column.map((slot) => [slot]);
@@ -116,7 +118,10 @@ const mobilePairs = computed(() => {
                         }"
                     >
                         <GeneralIdentity :name="slot.name" :picture="slot.picture" :image-server="slot.imageServer" />
-                        <small v-if="columnIndex === 0" class="bracket-odds">배당 {{ odds(slot.id) }}</small>
+                        <div v-if="columnIndex === 0" class="bracket-bet-summary">
+                            <small class="bracket-odds">배당 {{ odds(slot.id) }}</small>
+                            <small class="bracket-my-bet">내 투자 금{{ myBet(slot.id) }}</small>
+                        </div>
                     </article>
                 </template>
             </div>
@@ -146,7 +151,10 @@ const mobilePairs = computed(() => {
                         :data-general-id="slot.id ?? undefined"
                     >
                         <GeneralIdentity :name="slot.name" :picture="slot.picture" :image-server="slot.imageServer" />
-                        <small v-if="activeMobileRound === 0" class="bracket-odds">배당 {{ odds(slot.id) }}</small>
+                        <div v-if="activeMobileRound === 0" class="bracket-bet-summary">
+                            <small class="bracket-odds">배당 {{ odds(slot.id) }}</small>
+                            <small class="bracket-my-bet">내 투자 금{{ myBet(slot.id) }}</small>
+                        </div>
                     </div>
                     <strong v-if="pair.length === 2" class="versus" aria-hidden="true">VS</strong>
                 </article>
@@ -220,12 +228,26 @@ const mobilePairs = computed(() => {
     width: 100%;
     justify-content: flex-start;
 }
-.bracket-odds {
+.bracket-bet-summary {
+    display: flex;
+    min-width: 0;
+    align-items: center;
+    justify-content: space-between;
+    gap: 4px;
+    white-space: nowrap;
+}
+.bracket-odds,
+.bracket-my-bet {
     display: block;
+    min-width: 0;
     color: skyblue;
     font-size: 11px;
     line-height: 12px;
-    text-align: right;
+}
+.bracket-my-bet {
+    overflow: hidden;
+    color: orange;
+    text-overflow: ellipsis;
 }
 .mobile-bracket {
     display: none;

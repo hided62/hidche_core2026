@@ -17,6 +17,20 @@
 Gateway API와 game API는 기본적으로 `0.0.0.0`에 bind합니다. 실제 port와
 prefix는 환경 변수와 배포 profile이 결정합니다.
 
+현재 PM2 조립에서 game profile 하나는 frontend, API, turn daemon, auction,
+battle-sim, tournament worker의 여섯 process를 만듭니다. 각 정의에는
+`instances`나 cluster `exec_mode`가 없으므로 모두 단일 fork입니다. frontend도
+Caddy 정적 파일이 아니라 profile별 Vite preview Node process이고, API도 하나의
+Fastify process입니다. worker 역할 분리는 API event loop의 작업을 줄이지만
+frontend/API replica나 장애 대체 backend를 제공하지는 않습니다.
+
+Profile은 PostgreSQL schema와 Redis namespace를 분리하지만 같은 database,
+PostgreSQL instance, runtime cgroup을 공유합니다. 현재 `PrismaPg` adapter에는
+role별 pool 상한을 명시하지 않아 각 DB 사용 process가 `pg` 기본 pool 상한을
+독립적으로 가질 수 있습니다. 따라서 profile 수를 늘릴 때는 process RSS뿐 아니라
+API, daemon, 세 worker와 Gateway 계열의 합산 connection budget을 PostgreSQL
+`max_connections` 안에서 먼저 정해야 합니다.
+
 ## Gateway 실행
 
 `resolveGatewayApiConfigFromEnv()`가 PostgreSQL schema, Redis prefix, session
@@ -177,6 +191,22 @@ Checkpoint의 단일 소유자는 `InMemoryTurnWorld`이며 state store는 이�
 
 예약 턴은 revision/CAS와 lease를 사용합니다. API의 편집과 daemon의 실행이
 경합해도 오래된 revision이 새 queue를 덮어쓰지 않게 합니다.
+
+정상 gameplay 경로는 table 전체를 배타 잠그지 않습니다. 서로 다른 profile
+schema의 row lock은 직접 충돌하지 않지만 다음 직렬화 지점은 남습니다.
+
+- daemon flush마다 profile별 `turn_daemon_lease`와 단일 `world_state` 행을 갱신합니다.
+- `read_model_revision`의 전역 entity와 input-event revision/CAS는 같은 profile에서 hot row가 될 수 있습니다.
+- outbox dispatcher는 `FOR UPDATE SKIP LOCKED`로 claim 경쟁을 분산합니다.
+- 경매, 베팅, 메시지, 장수 선택·생성은 대상 row lock 또는 advisory lock을 사용합니다.
+- PostgreSQL advisory lock은 schema가 아니라 database 범위입니다. key에 profile/schema를 포함하지 않은 일부
+  기능별 lock은 서로 다른 profile 사이에서도 같은 key일 때 잠깐 직렬화될 수 있습니다.
+
+월 경계 flush는 dirty world, 장수·국가·도시, 로그와 outbox를 한 transaction에
+저장하므로 일반 장수 1턴보다 lock 보유 시간이 깁니다. profile별 월 경계 시각이
+겹치면 row 자체는 달라도 PostgreSQL CPU/I/O, connection과 runtime memory에서
+경합합니다. Migration과 `RESET`의 강한 lock은 일반 운영 중 실행하지 않고
+orchestrator의 process 정지·배포 경계에서 다룹니다.
 
 ## 월간 경계
 

@@ -246,8 +246,9 @@ describe('tournament worker schedule compatibility', () => {
                 groupNo,
             };
         });
-        const groupCounts = Array.from({ length: 8 }, (_, groupId) =>
-            current.filter((entry) => entry.groupId === groupId).length
+        const groupCounts = Array.from(
+            { length: 8 },
+            (_, groupId) => current.filter((entry) => entry.groupId === groupId).length
         );
         const openGroupId = groupCounts.findIndex((count) => count === 7);
         expect(openGroupId).toBeGreaterThanOrEqual(0);
@@ -267,7 +268,16 @@ describe('tournament worker schedule compatibility', () => {
             },
         });
 
-        expect(applicant).toMatchObject({ groupId: openGroupId, groupNo: 7, win: 0, draw: 0, lose: 0, gl: 0 });
+        expect(applicant).toMatchObject({
+            groupId: openGroupId,
+            groupNo: 7,
+            preliminaryGroupId: openGroupId,
+            preliminaryGroupNo: 7,
+            win: 0,
+            draw: 0,
+            lose: 0,
+            gl: 0,
+        });
     });
 
     it('catches up from the stored schedule instead of discarding elapsed legacy phases', () => {
@@ -334,6 +344,7 @@ describe('tournament worker (in-memory)', () => {
             expect(entries.map((entry) => entry.groupNo).sort((a, b) => Number(a) - Number(b))).toEqual([
                 0, 1, 2, 3, 4, 5, 6, 7,
             ]);
+            expect(entries.every((entry) => entry.preliminaryGroupId === groupId)).toBe(true);
         }
     });
 
@@ -648,14 +659,30 @@ describe('tournament worker (in-memory)', () => {
         expect(participants.find((entry) => entry.id === 1)).toMatchObject({ groupId: expect.any(Number) });
         expect(participants.find((entry) => entry.id === 1001)).toMatchObject({ groupId: expect.any(Number) });
         expect(
-            Array.from({ length: 8 }, (_, groupId) =>
-                participants.filter((entry) => entry.groupId === groupId).length
-            )
+            Array.from({ length: 8 }, (_, groupId) => participants.filter((entry) => entry.groupId === groupId).length)
         ).toEqual(Array.from({ length: 8 }, () => 8));
 
         await store.setState(afterJoin);
         const finalState = await runTournamentToCompletion({ store, prisma, baseSeed: 'seed' });
+        const finalParticipants = await store.getParticipants();
         expect(finalState.stage).toBe(0);
         expect(finalState.winnerId).toBeDefined();
+        for (let groupId = 0; groupId < 8; groupId += 1) {
+            const preliminaryEntries = finalParticipants
+                .filter((entry) => entry.preliminaryGroupId === groupId)
+                .sort((lhs, rhs) => (lhs.preliminaryRank ?? 99) - (rhs.preliminaryRank ?? 99));
+            expect(preliminaryEntries).toHaveLength(8);
+            expect(preliminaryEntries.map((entry) => entry.preliminaryRank)).toEqual([1, 2, 3, 4, 5, 6, 7, 8]);
+            expect(
+                preliminaryEntries.every(
+                    (entry) =>
+                        entry.preliminaryGroupNo !== undefined &&
+                        entry.preliminaryWin !== undefined &&
+                        entry.preliminaryDraw !== undefined &&
+                        entry.preliminaryLose !== undefined &&
+                        entry.preliminaryGl !== undefined
+                )
+            ).toBe(true);
+        }
     });
 });

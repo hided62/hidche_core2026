@@ -1,6 +1,6 @@
 <script setup lang="ts">
-import { onMounted, ref } from 'vue';
-import { useRouter } from 'vue-router';
+import { onMounted, ref, watch } from 'vue';
+import { useRoute, useRouter } from 'vue-router';
 
 import { legacyNationTextColor } from '../utils/legacyNationColor';
 import { trpc } from '../utils/trpc';
@@ -8,9 +8,11 @@ import { trpc } from '../utils/trpc';
 type DynastyListPayload = Awaited<ReturnType<typeof trpc.dynasty.getList.query>>;
 
 const router = useRouter();
+const route = useRoute();
 const loading = ref(false);
 const errorMessage = ref('');
 const data = ref<DynastyListPayload | null>(null);
+const selectedSource = ref<'current' | 'legacy'>(route.query.source === 'legacy' ? 'legacy' : 'current');
 
 const closePage = async (): Promise<void> => {
     if (window.opener) {
@@ -24,7 +26,7 @@ const loadDynasty = async (): Promise<void> => {
     loading.value = true;
     errorMessage.value = '';
     try {
-        data.value = await trpc.dynasty.getList.query();
+        data.value = await trpc.dynasty.getList.query({ source: selectedSource.value });
     } catch (error) {
         errorMessage.value = error instanceof Error ? error.message : '왕조일람을 불러오지 못했습니다.';
     } finally {
@@ -33,6 +35,7 @@ const loadDynasty = async (): Promise<void> => {
 };
 
 onMounted(loadDynasty);
+watch(selectedSource, loadDynasty);
 </script>
 
 <template>
@@ -48,6 +51,14 @@ onMounted(loadDynasty);
             </tbody>
         </table>
 
+        <div class="record-source legacy-bg0">
+            기록 구분 :
+            <select v-model="selectedSource" aria-label="기록 구분">
+                <option value="current">현재 서버 기록</option>
+                <option value="legacy">이전 서버 기록</option>
+            </select>
+        </div>
+
         <div v-if="errorMessage" class="legacy-message error" role="alert">{{ errorMessage }}</div>
         <div v-else-if="loading && !data" class="legacy-message" role="status">불러오는 중...</div>
 
@@ -57,7 +68,9 @@ onMounted(loadDynasty);
                     <tr>
                         <td class="current-heading" colspan="8">
                             <span class="large-text">현재 ({{ data.current.year }}年 {{ data.current.month }}月)</span>
-                            <RouterLink to="/yearbook"><button class="native-button" type="button">역사 보기</button></RouterLink>
+                            <RouterLink to="/yearbook"
+                                ><button class="native-button" type="button">역사 보기</button></RouterLink
+                            >
                         </td>
                     </tr>
                 </tbody>
@@ -83,11 +96,24 @@ onMounted(loadDynasty);
                 <tbody>
                     <tr>
                         <td class="phase-heading" colspan="8">
-                            <span class="large-text">{{ entry.phase }}</span>
-                            <RouterLink :to="`/dynasty/${entry.id}`">
+                            <span class="large-text"
+                                >{{ entry.phase
+                                }}<template v-if="entry.source === 'legacy'">
+                                    [{{ entry.sourceProfile.toUpperCase() }} 이전 서버]</template
+                                ></span
+                            >
+                            <RouterLink
+                                :to="{
+                                    path: `/dynasty/${entry.id}`,
+                                    query: entry.source === 'legacy' ? { source: 'legacy' } : {},
+                                }"
+                            >
                                 <button class="native-button" type="button">자세히</button>
                             </RouterLink>
-                            <RouterLink v-if="entry.serverId" :to="{ path: '/yearbook', query: { serverID: entry.serverId } }">
+                            <RouterLink
+                                v-if="entry.serverId && entry.source === 'current'"
+                                :to="{ path: '/yearbook', query: { serverID: entry.serverId } }"
+                            >
                                 <button class="native-button" type="button">역사 보기</button>
                             </RouterLink>
                         </td>
@@ -138,14 +164,10 @@ onMounted(loadDynasty);
         <table class="legacy-table legacy-bg0 footer-table spaced-table">
             <tbody>
                 <tr>
-                    <td>
-                        <button class="native-button" type="button" @click="closePage">창 닫기</button><br />
-                    </td>
+                    <td><button class="native-button" type="button" @click="closePage">창 닫기</button><br /></td>
                 </tr>
                 <tr>
-                    <td class="banner">
-                        삼국지 모의전투 HiDCHe / KOEI의 이미지를 사용, 응용하였습니다 / 제작 : HideD
-                    </td>
+                    <td class="banner">삼국지 모의전투 HiDCHe / KOEI의 이미지를 사용, 응용하였습니다 / 제작 : HideD</td>
                 </tr>
             </tbody>
         </table>
@@ -181,6 +203,18 @@ onMounted(loadDynasty);
 
 .spaced-table {
     margin-top: 10px;
+}
+
+.record-source {
+    box-sizing: border-box;
+    width: 1000px;
+    border: 1px solid gray;
+    padding: 3px;
+    text-align: center;
+}
+
+.record-source select {
+    height: 22px;
 }
 
 .title-table {

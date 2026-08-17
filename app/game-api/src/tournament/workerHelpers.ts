@@ -195,17 +195,20 @@ export const assignManualApplicantGroup = (options: {
         extraSeed: `manual-group:${options.current.map((entry) => entry.id).join('-')}:${openGroupIds.join('-')}`,
     });
     const groupId = rng.choice(openGroupIds);
+    const groupNo = groupCounts[groupId] ?? 0;
 
     return {
         ...options.applicant,
         groupId,
-        groupNo: groupCounts[groupId] ?? 0,
+        groupNo,
         win: 0,
         draw: 0,
         lose: 0,
         gl: 0,
         seedRank: 0,
         finalRank: 0,
+        preliminaryGroupId: groupId,
+        preliminaryGroupNo: groupNo,
     };
 };
 
