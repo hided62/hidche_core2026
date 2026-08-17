@@ -10,6 +10,11 @@
 남은 턴 수가 보존됩니다. DateTime 필드는 이전 데이터와 화면을 위한 투영값이며
 tick 필드가 존재하면 tick이 우선합니다.
 
+운영 중 턴 간격 변경은 Gateway의 내구성 런타임 작업으로만 수행합니다. 같은
+transaction에서 `world_state`, 장수·경매·메시지·설문 투영값과 checkpoint를
+갱신하며 기존 역사/행동 로그의 `created_at`은 다시 쓰지 않습니다. 토너먼트의
+Redis 투영은 DB commit 뒤 action ID로 멱등 적용됩니다.
+
 ## 실행 모드
 
 - `GAME_CLOCK_MODE=realtime`: `clock_wall_anchor` 이후의 실제 경과시간을

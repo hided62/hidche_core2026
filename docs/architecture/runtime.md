@@ -44,7 +44,8 @@ Gateway API는 다음 저장 경계를 사용합니다.
 - `GatewayProfile`: profile, scenario, port, 상태와 build 결과
 - `GatewayOperation`: build/reset/open/close 등 실행 요청과 결과
 - `GatewayReleaseOperation`, `GatewayReleaseState`: Gateway 전체 릴리스 queue와 현재·이전 commit
-- `GatewayRuntimeAction`: profile별 시간 가속·연기 요청, 부분 적용과 최종 결과
+- `GatewayRuntimeAction`: profile별 시간 가속·연기와 현재 기수 설정 변경 요청,
+  payload, 부분 적용과 최종 결과
 - Redis: gateway session, OAuth 임시 상태, KakaoTalk 로그인 challenge, flush channel
 
 Kakao 로그인은 URL 이름만으로 사용자를 연결하지 않습니다. `account_email`과
@@ -115,6 +116,15 @@ DB partial unique index로 한 건만 허용합니다. Turn daemon은 자신의 
 경매 timer와 활성 토너먼트 시각을 Redis에 idempotent하게 투영합니다.
 Redis 단계가 실패하면 action은 `PARTIAL`과 backoff 상태로 남고 DB 시간은
 다시 이동하지 않습니다.
+
+현재 기수의 턴 간격·장수 생성 제한·유저 자동턴도 같은
+`GatewayRuntimeAction`/`InputEvent` 경계를 사용합니다. Turn daemon은 세 값을
+한 transaction에서 `world_state.config`와 `meta`에 저장합니다. 턴 간격이
+바뀌면 현재 표시 게임 시각과 game tick을 고정한 채 `clock_base_time`, 장수
+턴·최근 전쟁, checkpoint, 경매·메시지·설문 DateTime 투영값을 새 간격으로
+다시 계산합니다. 기존 `log_entry.created_at`은 갱신하지 않고 변경을 알리는 새
+역사 로그만 추가합니다. Redis 토너먼트의 tick 소유 시각도 action ID로 한 번만
+재투영하며 실패하면 `PARTIAL`에서 재시도합니다.
 
 Gateway API와 독립 orchestrator의 SIGINT·SIGTERM은
 `installGatewayShutdownController()`가 하나의 종료 Promise로 합칩니다.

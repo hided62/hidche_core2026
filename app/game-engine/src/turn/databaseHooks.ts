@@ -149,7 +149,7 @@ export const createWorldReadModelSignature = (world: InMemoryTurnWorld): string 
         currentYear: state.currentYear,
         currentMonth: state.currentMonth,
         tickSeconds: state.tickSeconds,
-        config: world.getScenarioConfig(),
+        config: world.getWorldConfig(),
         meta: projectWorldMeta(state.meta),
     });
 };
@@ -438,11 +438,7 @@ export const createReadModelChangeJournal = (changes: RealtimeReadModelChanges):
     if (changes.worldChanged) {
         journal.mark('world.content').mark('map.world');
     }
-    if (
-        changes.mapChanged ||
-        (changes.mapCityIds ?? []).length > 0 ||
-        (changes.mapNationIds ?? []).length > 0
-    ) {
+    if (changes.mapChanged || (changes.mapCityIds ?? []).length > 0 || (changes.mapNationIds ?? []).length > 0) {
         journal.mark('map.world');
     }
     if ((changes.frontStatusGeneralIds ?? []).length > 0 || changes.frontStatusChanged) {
@@ -1119,6 +1115,7 @@ export const createDatabaseTurnHooks = async (
             clockMode: state.clockMode ?? 'manual',
             clockWallAnchor: state.clockWallAnchor ?? state.lastTurnTime,
             lastTurnTick: BigInt(state.lastTurnTick ?? world.dateToGameTick(state.lastTurnTime)),
+            config: asJson(world.getWorldConfig()),
             meta: asJson(state.meta),
         };
         const persist = async (

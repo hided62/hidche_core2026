@@ -15,6 +15,7 @@ export interface GatewayAdminActionRecord {
     handledAt?: string | null;
     handler?: string | null;
     detail?: string | null;
+    payload?: Record<string, unknown>;
     install?: {
         scenarioId?: number;
         turnTermMinutes?: number;
@@ -103,6 +104,7 @@ export const createGatewayAdminActionConsumer = async (
                 handledAt: action.handledAt?.toISOString() ?? null,
                 handler: action.handler,
                 detail: action.detail,
+                payload: normalizeMeta(action.payload),
             };
             let result: GatewayAdminActionResult;
             try {

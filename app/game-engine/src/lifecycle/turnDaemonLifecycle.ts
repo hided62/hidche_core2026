@@ -348,7 +348,7 @@ export class TurnDaemonLifecycle {
             return;
         }
 
-        if (result.type === 'shiftSchedule' && result.ok) {
+        if ((result.type === 'shiftSchedule' || result.type === 'updateRuntimeSettings') && result.ok) {
             this.status.lastTurnTime = result.lastTurnTime;
             this.status.checkpoint = result.checkpoint;
             await this.stateStore.saveCheckpoint(result.checkpoint);

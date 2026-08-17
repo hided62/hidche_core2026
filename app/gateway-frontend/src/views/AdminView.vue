@@ -12,6 +12,7 @@ import AdminConsoleLayout from '../layouts/AdminConsoleLayout.vue';
 import { useToast } from '../composables/useToast';
 import {
     normalizeProfileResetDefaults,
+    PROFILE_TURN_TERM_MINUTES,
     type ProfileResetDefaults,
     type ResetAutorunOption,
 } from '../utils/resetDefaults';
@@ -201,6 +202,7 @@ type AdminProfile = {
         status: 'QUEUED' | 'RUNNING';
     } | null;
     meta: Record<string, unknown>;
+    runtimeSettings: ProfileRuntimeSettings | null;
     runtimeActions: Array<{
         id: string;
         action: string;
@@ -210,11 +212,22 @@ type AdminProfile = {
         handler: string | null;
         handledAt: string | null;
         createdAt: string;
+        payload?: Record<string, unknown>;
     }>;
 };
 
+type ProfileRuntimeSettings = Pick<ProfileResetDefaults, 'turnTermMinutes' | 'blockGeneralCreate' | 'autorunUser'>;
+
 type AdminAction =
-    'RESUME' | 'PAUSE' | 'STOP' | 'ACCELERATE' | 'DELAY' | 'RESET_NOW' | 'RESET_SCHEDULED' | 'OPEN_SURVEY' | 'SHUTDOWN';
+    | 'RESUME'
+    | 'PAUSE'
+    | 'STOP'
+    | 'ACCELERATE'
+    | 'DELAY'
+    | 'UPDATE_RUNTIME_SETTINGS'
+    | 'RESET_NOW'
+    | 'RESET_SCHEDULED'
+    | 'SHUTDOWN';
 
 type AdminClient = {
     capabilities: {
@@ -351,6 +364,7 @@ type AdminClient = {
                 profileName: string;
                 action: AdminAction;
                 durationMinutes?: number;
+                runtimeSettings?: ProfileRuntimeSettings;
                 scheduledAt?: string;
                 reason?: string;
             }) => Promise<{ ok: boolean; action?: AdminProfile['runtimeActions'][number] }>;
@@ -409,6 +423,11 @@ const profileActions = ref<
             durationMinutes: string;
             scheduledAt: string;
             reason: string;
+            turnTermMinutes: number;
+            blockGeneralCreate: 0 | 1 | 2;
+            autorunEnabled: boolean;
+            autorunUserMinutes: string;
+            autorunOptions: ResetAutorunOption[];
         }
     >
 >({});
@@ -416,8 +435,10 @@ const resetAutorunLabels: Array<{ value: ResetAutorunOption; label: string }> = 
     { value: 'develop', label: '내정' },
     { value: 'warp', label: '이동' },
     { value: 'recruit', label: '징병' },
+    { value: 'recruit_high', label: '고급 징병' },
     { value: 'train', label: '훈련' },
     { value: 'battle', label: '전투' },
+    { value: 'chief', label: '참모' },
 ];
 const profileActionStatus = ref<Record<string, string>>({});
 const profileActionSubmitting = ref<Record<string, boolean>>({});
@@ -448,6 +469,16 @@ const canStopProfile = (profile: AdminProfile): boolean => gatewayProfileCapabil
 const validDuration = (profileName: string): boolean => {
     const value = Number(profileActions.value[profileName]?.durationMinutes);
     return Number.isInteger(value) && value >= 1 && value <= 1440;
+};
+
+const validRuntimeSettings = (profileName: string): boolean => {
+    const value = profileActions.value[profileName];
+    if (!value || !PROFILE_TURN_TERM_MINUTES.some((minutes) => minutes === value.turnTermMinutes)) return false;
+    if (!value.autorunEnabled) return true;
+    const limitMinutes = Number(value.autorunUserMinutes);
+    return (
+        Number.isInteger(limitMinutes) && limitMinutes >= 1 && limitMinutes <= 43200 && value.autorunOptions.length > 0
+    );
 };
 
 const runtimeActionStatusClass = (status: AdminProfile['runtimeActions'][number]['status']): string => {
@@ -647,12 +678,29 @@ const ensureProfileBuffers = (profile: AdminProfile) => {
         };
     }
     if (!profileActions.value[profile.profileName]) {
+        const settings = profile.runtimeSettings ?? normalizeProfileResetDefaults(profile.meta?.resetDefaults);
         profileActions.value[profile.profileName] = {
             durationMinutes: '',
             scheduledAt: '',
             reason: '',
+            turnTermMinutes: settings.turnTermMinutes,
+            blockGeneralCreate: settings.blockGeneralCreate,
+            autorunEnabled: settings.autorunUser !== null,
+            autorunUserMinutes: String(settings.autorunUser?.limitMinutes ?? 1440),
+            autorunOptions: settings.autorunUser?.options.slice() ?? resetAutorunLabels.map(({ value }) => value),
         };
     }
+};
+
+const syncRuntimeSettingsBuffer = (profile: AdminProfile): void => {
+    const settings = profile.runtimeSettings;
+    const buffer = profileActions.value[profile.profileName];
+    if (!settings || !buffer) return;
+    buffer.turnTermMinutes = settings.turnTermMinutes;
+    buffer.blockGeneralCreate = settings.blockGeneralCreate;
+    buffer.autorunEnabled = settings.autorunUser !== null;
+    buffer.autorunUserMinutes = String(settings.autorunUser?.limitMinutes ?? 1440);
+    buffer.autorunOptions = settings.autorunUser?.options.slice() ?? resetAutorunLabels.map(({ value }) => value);
 };
 
 const toLocalInputValue = (value: string): string => toServerDateTimeInputValue(value);
@@ -688,6 +736,8 @@ const refreshRuntimeActionUntilTerminal = async (profileName: string, actionId: 
             .find((profile) => profile.profileName === profileName)
             ?.runtimeActions.find((action) => action.id === actionId);
         if (current && isRuntimeActionTerminal(current.status)) {
+            const profile = profiles.value.find((item) => item.profileName === profileName);
+            if (profile && current.status === 'APPLIED') syncRuntimeSettingsBuffer(profile);
             profileActionStatus.value = {
                 ...profileActionStatus.value,
                 [profileName]: '',
@@ -701,6 +751,13 @@ const refreshRuntimeActionUntilTerminal = async (profileName: string, actionId: 
                 ensureProfileBuffers(profile);
             });
             profiles.value = result;
+            const refreshedAction = result
+                .find((profile) => profile.profileName === profileName)
+                ?.runtimeActions.find((action) => action.id === actionId);
+            if (refreshedAction?.status === 'APPLIED') {
+                const profile = result.find((item) => item.profileName === profileName);
+                if (profile) syncRuntimeSettingsBuffer(profile);
+            }
         } catch {
             // 일시적인 조회 실패는 다음 bounded poll에서 다시 확인합니다.
         }
@@ -816,12 +873,37 @@ const requestProfileAction = async (profileName: string, action: AdminAction) =>
             ? serverDateTimeInputToIso(actionState.scheduledAt)
             : undefined;
     const reason = actionState?.reason.trim() || undefined;
+    const runtimeSettings: ProfileRuntimeSettings | undefined =
+        action === 'UPDATE_RUNTIME_SETTINGS' && actionState
+            ? {
+                  turnTermMinutes: actionState.turnTermMinutes,
+                  blockGeneralCreate: actionState.blockGeneralCreate,
+                  autorunUser: actionState.autorunEnabled
+                      ? {
+                            limitMinutes: Number(actionState.autorunUserMinutes),
+                            options: actionState.autorunOptions,
+                        }
+                      : null,
+              }
+            : undefined;
+    if (action === 'UPDATE_RUNTIME_SETTINGS' && (!validRuntimeSettings(profileName) || !reason || reason.length < 3)) {
+        profileActionStatus.value = {
+            ...profileActionStatus.value,
+            [profileName]:
+                !reason || reason.length < 3
+                    ? '현재 기수 설정 변경 사유를 입력하세요.'
+                    : '턴 간격과 유저 자동턴 값을 확인하세요.',
+        };
+        profileActionSubmitting.value = { ...profileActionSubmitting.value, [profileName]: false };
+        return;
+    }
     let runtimeActionId: string | undefined;
     try {
         const result = await adminClient.profiles.requestAction.mutate({
             profileName,
             action,
             durationMinutes: durationValue,
+            runtimeSettings,
             scheduledAt,
             reason,
         });
@@ -830,7 +912,9 @@ const requestProfileAction = async (profileName: string, action: AdminAction) =>
             [profileName]:
                 result.action && (action === 'ACCELERATE' || action === 'DELAY')
                     ? `접수됨 · ${result.action.status} · ${action} ${result.action.durationMinutes ?? ''}분`
-                    : `요청 접수: ${action}`,
+                    : result.action && action === 'UPDATE_RUNTIME_SETTINGS'
+                      ? `접수됨 · ${result.action.status} · 현재 기수 설정 변경`
+                      : `요청 접수: ${action}`,
         };
         if (result.action) {
             runtimeActionId = result.action.id;
@@ -2166,9 +2250,7 @@ onMounted(() => {
                                                     data-testid="meta-reset-turn-term"
                                                 >
                                                     <option
-                                                        v-for="minutes in [
-                                                            1, 2, 3, 4, 5, 6, 10, 12, 15, 20, 24, 30, 40, 60, 120,
-                                                        ]"
+                                                        v-for="minutes in PROFILE_TURN_TERM_MINUTES"
                                                         :key="minutes"
                                                         :value="minutes"
                                                     >
@@ -2207,9 +2289,9 @@ onMounted(() => {
                                                     "
                                                     class="mt-1 w-full rounded border border-zinc-700 bg-zinc-900 px-2 py-2"
                                                 >
-                                                    <option :value="0">없음</option>
-                                                    <option :value="1">제한</option>
-                                                    <option :value="2">차단</option>
+                                                    <option :value="0">가능</option>
+                                                    <option :value="2">장수명 무작위</option>
+                                                    <option :value="1">불가</option>
                                                 </select>
                                             </label>
                                             <label>
@@ -2351,6 +2433,102 @@ onMounted(() => {
                                     v-if="hasCapability('admin.profiles.runtime', profile.profileName)"
                                     class="space-y-2"
                                 >
+                                    <fieldset
+                                        class="space-y-3 rounded border border-zinc-700 bg-zinc-950/60 p-3"
+                                        data-testid="runtime-settings"
+                                    >
+                                        <legend class="px-1 text-sm font-semibold text-zinc-200">
+                                            실행 중 게임 옵션
+                                        </legend>
+                                        <p class="text-xs text-zinc-500">
+                                            현재 기수에 즉시 적용합니다. 턴 간격 변경 시 tick 기준 게임 시각은 같은 게임
+                                            시각을 유지하도록 재계산하고, 기존 로그 시각은 유지합니다.
+                                        </p>
+                                        <p v-if="!profile.runtimeSettings" class="text-xs text-amber-400" role="alert">
+                                            게임 DB에서 현재 설정을 읽지 못해 변경할 수 없습니다. 실제 처리 상태를
+                                            새로고침해 주세요.
+                                        </p>
+                                        <label class="block text-xs text-zinc-400">
+                                            턴 간격
+                                            <select
+                                                v-model.number="profileActions[profile.profileName].turnTermMinutes"
+                                                class="mt-1 w-full rounded border border-zinc-700 bg-zinc-900 px-2 py-2 text-sm text-white"
+                                                data-testid="runtime-turn-term"
+                                            >
+                                                <option
+                                                    v-for="minutes in PROFILE_TURN_TERM_MINUTES"
+                                                    :key="minutes"
+                                                    :value="minutes"
+                                                >
+                                                    {{ minutes }}분
+                                                </option>
+                                            </select>
+                                        </label>
+                                        <label class="block text-xs text-zinc-400">
+                                            장수 생성 제한
+                                            <select
+                                                v-model.number="profileActions[profile.profileName].blockGeneralCreate"
+                                                class="mt-1 w-full rounded border border-zinc-700 bg-zinc-900 px-2 py-2 text-sm text-white"
+                                                data-testid="runtime-block-general-create"
+                                            >
+                                                <option :value="0">가능</option>
+                                                <option :value="2">장수명 무작위</option>
+                                                <option :value="1">불가</option>
+                                            </select>
+                                        </label>
+                                        <label class="flex items-center gap-2 text-xs text-zinc-300">
+                                            <input
+                                                v-model="profileActions[profile.profileName].autorunEnabled"
+                                                type="checkbox"
+                                                data-testid="runtime-autorun-enabled"
+                                            />
+                                            유저 자동턴 사용
+                                        </label>
+                                        <template v-if="profileActions[profile.profileName].autorunEnabled">
+                                            <label class="block text-xs text-zinc-400">
+                                                자동턴 제한 분
+                                                <input
+                                                    v-model="profileActions[profile.profileName].autorunUserMinutes"
+                                                    type="number"
+                                                    min="1"
+                                                    max="43200"
+                                                    step="1"
+                                                    class="mt-1 w-full rounded border border-zinc-700 bg-zinc-900 px-2 py-2 text-sm text-white"
+                                                    data-testid="runtime-autorun-minutes"
+                                                />
+                                            </label>
+                                            <div class="flex flex-wrap items-center gap-3 text-xs text-zinc-300">
+                                                <label
+                                                    v-for="option in resetAutorunLabels"
+                                                    :key="`runtime-${option.value}`"
+                                                    class="flex items-center gap-1"
+                                                >
+                                                    <input
+                                                        v-model="profileActions[profile.profileName].autorunOptions"
+                                                        type="checkbox"
+                                                        :value="option.value"
+                                                    />
+                                                    {{ option.label }}
+                                                </label>
+                                            </div>
+                                        </template>
+                                        <button
+                                            class="w-full rounded bg-cyan-600 px-4 py-2 font-semibold text-black hover:bg-cyan-500 disabled:cursor-not-allowed disabled:opacity-40"
+                                            data-testid="runtime-settings-submit"
+                                            :disabled="
+                                                profileActionSubmitting[profile.profileName] ||
+                                                !profile.runtimeSettings ||
+                                                !gatewayProfileCapabilities(profile.status).runtimeExpected ||
+                                                !validRuntimeSettings(profile.profileName) ||
+                                                runtimeActionPending(profile)
+                                            "
+                                            @click="
+                                                requestProfileAction(profile.profileName, 'UPDATE_RUNTIME_SETTINGS')
+                                            "
+                                        >
+                                            현재 기수에 적용
+                                        </button>
+                                    </fieldset>
                                     <label class="text-xs text-zinc-400">특수 동작 메모</label>
                                     <input
                                         v-model="profileActions[profile.profileName].reason"
@@ -2438,15 +2616,7 @@ onMounted(() => {
                                             연기
                                         </button>
                                         <button
-                                            class="bg-zinc-800 text-zinc-500 font-semibold px-3 py-2 rounded cursor-not-allowed"
-                                            disabled
-                                            title="게임 내 설문 관리 화면에서 생성해 주세요."
-                                            :aria-describedby="`survey-action-help-${profile.profileName}`"
-                                        >
-                                            설문 오픈 (게임 내 관리)
-                                        </button>
-                                        <button
-                                            class="bg-black hover:bg-zinc-800 text-white font-semibold px-3 py-2 rounded col-span-2"
+                                            class="bg-black hover:bg-zinc-800 text-white font-semibold px-3 py-2 rounded"
                                             @click="requestProfileAction(profile.profileName, 'SHUTDOWN')"
                                         >
                                             서버 폐쇄
@@ -2486,12 +2656,6 @@ onMounted(() => {
                                                     : ''
                                             }}
                                         </div>
-                                    </div>
-                                    <div
-                                        :id="`survey-action-help-${profile.profileName}`"
-                                        class="text-xs text-zinc-500"
-                                    >
-                                        설문 생성은 해당 게임의 설문 관리 화면에서 진행해 주세요.
                                     </div>
                                     <button type="button" class="text-xs text-zinc-400 underline" @click="loadProfiles">
                                         실제 처리 상태 새로고침

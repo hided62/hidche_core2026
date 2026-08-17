@@ -70,6 +70,23 @@ export interface ProfileRuntimeSnapshot extends ProfileRuntimeState {
     profileName: string;
 }
 
+export interface ProfileRuntimeSettingsSnapshot {
+    profileName: string;
+    turnTermMinutes: number;
+    blockGeneralCreate: 0 | 1 | 2;
+    autorunUser: {
+        limitMinutes: number;
+        options: Array<'develop' | 'warp' | 'recruit' | 'recruit_high' | 'train' | 'battle' | 'chief'>;
+    } | null;
+}
+
+type RuntimeAutorunOption =
+    NonNullable<ProfileRuntimeSettingsSnapshot['autorunUser']> extends {
+        options: Array<infer Option>;
+    }
+        ? Option
+        : never;
+
 export interface GatewayOrchestratorHandle {
     start(): void;
     stop(): Promise<void>;
@@ -82,6 +99,7 @@ export interface GatewayOrchestratorHandle {
         skipped: string[];
     }>;
     listRuntimeStates(profileNames: string[]): Promise<ProfileRuntimeSnapshot[]>;
+    listRuntimeSettings?(profileNames: string[]): Promise<ProfileRuntimeSettingsSnapshot[]>;
 }
 
 const SENSITIVE_ENV_NAME = /(SECRET|TOKEN|PASSWORD|PASSWD|PRIVATE_KEY|CLIENT_SECRET|DATABASE_URL|REDIS_URL)/iu;
@@ -704,6 +722,67 @@ export class GatewayOrchestrator implements GatewayOrchestratorHandle {
     async listRuntimeStates(profileNames: string[]): Promise<ProfileRuntimeSnapshot[]> {
         const processStates = await this.loadProcessStatusMap();
         return mapRuntimeStates(profileNames, processStates);
+    }
+
+    async listRuntimeSettings(profileNames: string[]): Promise<ProfileRuntimeSettingsSnapshot[]> {
+        const allowedAutorunOptions = new Set<RuntimeAutorunOption>([
+            'develop',
+            'warp',
+            'recruit',
+            'recruit_high',
+            'train',
+            'battle',
+            'chief',
+        ] as const);
+        const snapshots = await Promise.all(
+            profileNames.map(async (profileName): Promise<ProfileRuntimeSettingsSnapshot | null> => {
+                const profile = await this.repository.getProfile(profileName);
+                if (!profile || profile.currentScenario === null) return null;
+                const connector = createGamePostgresConnector({ url: this.resolveProfileDatabaseUrl(profile) });
+                try {
+                    await connector.connect();
+                    const row = await connector.prisma.worldState.findFirst({
+                        select: { tickSeconds: true, config: true, meta: true },
+                    });
+                    if (!row) return null;
+                    const config = isRecord(row.config) ? row.config : {};
+                    const meta = isRecord(row.meta) ? row.meta : {};
+                    const rawBlock = Number(config.blockGeneralCreate ?? 0);
+                    const blockGeneralCreate = ([0, 1, 2].includes(rawBlock) ? rawBlock : 0) as 0 | 1 | 2;
+                    const rawAutorun = isRecord(meta.autorun_user) ? meta.autorun_user : null;
+                    const limitMinutes = rawAutorun ? Number(rawAutorun.limit_minutes ?? 0) : 0;
+                    const rawOptions = rawAutorun
+                        ? Array.isArray(rawAutorun.options)
+                            ? rawAutorun.options
+                            : isRecord(rawAutorun.options)
+                              ? Object.entries(rawAutorun.options)
+                                    .filter(([, enabled]) => enabled === true)
+                                    .map(([option]) => option)
+                              : []
+                        : [];
+                    const autorunOptions = rawOptions.filter(
+                        (
+                            option
+                        ): option is 'develop' | 'warp' | 'recruit' | 'recruit_high' | 'train' | 'battle' | 'chief' =>
+                            typeof option === 'string' && allowedAutorunOptions.has(option as RuntimeAutorunOption)
+                    );
+                    return {
+                        profileName,
+                        turnTermMinutes: Math.max(1, Math.round(row.tickSeconds / 60)),
+                        blockGeneralCreate,
+                        autorunUser:
+                            Number.isInteger(limitMinutes) && limitMinutes > 0 && autorunOptions.length > 0
+                                ? { limitMinutes, options: autorunOptions }
+                                : null,
+                    };
+                } catch {
+                    return null;
+                } finally {
+                    await connector.disconnect().catch(() => undefined);
+                }
+            })
+        );
+        return snapshots.filter((snapshot): snapshot is ProfileRuntimeSettingsSnapshot => snapshot !== null);
     }
 
     async reconcileNow(): Promise<void> {

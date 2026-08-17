@@ -33,13 +33,13 @@ const isWorldUnited = (world: InMemoryTurnWorld): boolean => {
 export class InMemoryTurnProcessor implements TurnProcessor {
     // 인메모리 월드로 턴을 실행하고 월/연 갱신까지 처리한다.
     private readonly world: InMemoryTurnWorld;
-    private readonly tickMinutes: number;
+    private readonly tickMinutesOverride?: number;
     private readonly beforeExecuteGeneral?: (general: TurnGeneral) => Promise<void>;
     private readonly afterExecuteGeneral?: (general: TurnGeneral, result: TurnGeneralExecutionResult) => Promise<void>;
 
     constructor(world: InMemoryTurnWorld, options: InMemoryTurnProcessorOptions = {}) {
         this.world = world;
-        this.tickMinutes = resolveTickMinutes(world, options.tickMinutes);
+        this.tickMinutesOverride = options.tickMinutes;
         this.beforeExecuteGeneral = options.beforeExecuteGeneral;
         this.afterExecuteGeneral = options.afterExecuteGeneral;
     }
@@ -53,6 +53,7 @@ export class InMemoryTurnProcessor implements TurnProcessor {
         this.world.updateWorldMeta({
             refreshLimit: calculateAccessRefreshLimit(this.world.getState().tickSeconds),
         });
+        const tickMinutes = resolveTickMinutes(this.world, this.tickMinutesOverride);
 
         let processedGenerals = 0;
         let processedTurns = 0;
@@ -61,7 +62,7 @@ export class InMemoryTurnProcessor implements TurnProcessor {
         let nextCheckpoint: TurnCheckpoint | undefined = undefined;
 
         const previousLastTurnTime = this.world.getState().lastTurnTime;
-        const firstTickTime = getNextTickTime(previousLastTurnTime, this.tickMinutes);
+        const firstTickTime = getNextTickTime(previousLastTurnTime, tickMinutes);
         // Ref processes `turntime < monthlyBoundary` before the monthly turn. A
         // general exactly on the boundary therefore runs only after that month
         // has advanced, on the daemon's following pass.
@@ -114,7 +115,7 @@ export class InMemoryTurnProcessor implements TurnProcessor {
         }
 
         if (!partial) {
-            let nextTickTime = getNextTickTime(this.world.getState().lastTurnTime, this.tickMinutes);
+            let nextTickTime = getNextTickTime(this.world.getState().lastTurnTime, tickMinutes);
             while (!isWorldUnited(this.world) && nextTickTime.getTime() <= targetTime.getTime()) {
                 if (processedTurns >= budget.catchUpCap || isBudgetExpired()) {
                     partial = true;
@@ -125,7 +126,7 @@ export class InMemoryTurnProcessor implements TurnProcessor {
                 if (isWorldUnited(this.world)) {
                     break;
                 }
-                nextTickTime = getNextTickTime(this.world.getState().lastTurnTime, this.tickMinutes);
+                nextTickTime = getNextTickTime(this.world.getState().lastTurnTime, tickMinutes);
             }
         }
 

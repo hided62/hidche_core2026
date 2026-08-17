@@ -127,6 +127,7 @@ describe('durable read-model change journal mapping', () => {
         const world = {
             getState: () => ({ ...state, meta: { ...state.meta } }),
             getScenarioConfig: () => config,
+            getWorldConfig: () => config,
         } as unknown as InMemoryTurnWorld;
         const baseline = createWorldReadModelSignature(world);
 

@@ -117,6 +117,7 @@ export const resolveAdminActionCapability = (path: string, rawInput?: unknown): 
         const action = (rawInput as { action?: unknown }).action;
         if (action === 'RESET_SCHEDULED') return 'admin.reset.schedule';
         if (action === 'RESUME') return 'admin.resume.when-stopped';
+        if (action === 'UPDATE_RUNTIME_SETTINGS') return 'admin.profiles.runtime';
         if (action === 'OPEN_SURVEY') return 'admin.survey.open';
         return 'admin.profiles.runtime';
     }
