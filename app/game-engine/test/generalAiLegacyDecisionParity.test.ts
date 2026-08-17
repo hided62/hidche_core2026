@@ -3,6 +3,7 @@ import type { City, General, Nation } from '@sammo-ts/logic';
 import { createRefOrderedActionStack } from '@sammo-ts/logic/actionModules/bundle.js';
 
 import { GeneralAI } from '../src/turn/ai/generalAi.js';
+import type { TurnGeneral } from '../src/turn/types.js';
 import {
     calculateRecentWarTurn,
     resolveLegacyAiStats,
@@ -23,10 +24,7 @@ import {
     doNPC전방발령,
     doNPC후방발령,
 } from '../src/turn/ai/generalAi/nation/assignments/npcAssignments.js';
-import {
-    do부대구출발령,
-    do부대후방발령,
-} from '../src/turn/ai/generalAi/nation/assignments/troopAssignments.js';
+import { do부대구출발령, do부대후방발령 } from '../src/turn/ai/generalAi/nation/assignments/troopAssignments.js';
 
 type Candidate = {
     action: string;
@@ -396,6 +394,311 @@ const makeAi = (
         },
     } as unknown as GeneralAI;
 };
+
+const makePromotionGeneral = (overrides: Partial<TurnGeneral>): TurnGeneral => ({
+    ...baseGeneral(),
+    ...overrides,
+    stats: { ...baseGeneral().stats, ...overrides.stats },
+    meta: { ...baseGeneral().meta, belong: 1, ...overrides.meta },
+});
+
+const makePromotionAi = (options: {
+    ruler: TurnGeneral;
+    generals: TurnGeneral[];
+    nation?: Partial<Nation>;
+    userGenerals?: TurnGeneral[];
+    chiefGenerals?: TurnGeneral[];
+    npcWarGenerals?: TurnGeneral[];
+    npcCivilGenerals?: TurnGeneral[];
+    userWarGenerals?: TurnGeneral[];
+    userCivilGenerals?: TurnGeneral[];
+    rng?: ScriptedRng;
+    currentMonth?: number;
+}): GeneralAI => {
+    const nation = {
+        ...baseNation(),
+        level: 1,
+        ...options.nation,
+        meta: { chief_set: 0, ...options.nation?.meta },
+    };
+    const asGeneralRecord = (entries: TurnGeneral[] = []): Record<number, TurnGeneral> =>
+        Object.fromEntries(entries.map((general) => [general.id, general]));
+    const asChiefRecord = (entries: TurnGeneral[] = []): Record<number, TurnGeneral> =>
+        Object.fromEntries(entries.map((general) => [general.officerLevel, general]));
+
+    return Object.assign(Object.create(GeneralAI.prototype), {
+        general: options.ruler,
+        nation,
+        world: {
+            id: 1,
+            currentYear: 190,
+            currentMonth: options.currentMonth ?? 3,
+            tickSeconds: 600,
+            lastTurnTime: new Date('0190-03-01T00:00:00Z'),
+            meta: { killturn: 100 },
+        },
+        worldRef: {
+            listGenerals: () => options.generals,
+        },
+        turnTermMinutes: 10,
+        aiConst: { chiefStatMin: 70 },
+        rng: options.rng ?? makeRng(),
+        userGenerals: asGeneralRecord(options.userGenerals),
+        chiefGenerals: asChiefRecord(options.chiefGenerals),
+        npcWarGenerals: asGeneralRecord(options.npcWarGenerals),
+        npcCivilGenerals: asGeneralRecord(options.npcCivilGenerals),
+        userWarGenerals: asGeneralRecord(options.userWarGenerals),
+        userCivilGenerals: asGeneralRecord(options.userCivilGenerals),
+        promotionPatches: [],
+        promotionNationMeta: null,
+    }) as GeneralAI;
+};
+
+const chooseNpcPromotion = (ai: GeneralAI): void =>
+    (ai as unknown as { chooseNpcPromotion: () => void }).chooseNpcPromotion();
+
+const chooseNonLordPromotion = (ai: GeneralAI): void =>
+    (ai as unknown as { chooseNonLordPromotion: () => void }).chooseNonLordPromotion();
+
+describe('legacy NPC user-chief promotion parity', () => {
+    it('appoints the first active user as advisor when the NPC ruler tenure threshold is already met', () => {
+        const ruler = makePromotionGeneral({
+            id: 1,
+            officerLevel: 12,
+            npcState: 2,
+            meta: { killturn: 100, belong: 2 },
+        });
+        const user = makePromotionGeneral({
+            id: 2,
+            name: '신규유저',
+            npcState: 0,
+            stats: { leadership: 40, strength: 40, intelligence: 40 },
+            meta: { killturn: 100, belong: 1 },
+        });
+        const ai = makePromotionAi({
+            ruler,
+            generals: [ruler, user],
+            userGenerals: [user],
+            chiefGenerals: [ruler],
+        });
+
+        chooseNpcPromotion(ai);
+
+        expect(ai.consumePromotionPatches()).toEqual({
+            generals: [{ generalId: 2, officerLevel: 11, officerCity: 0, permission: 'ambassador' }],
+            nationMeta: expect.objectContaining({ chief_set: 1 << 11 }),
+        });
+    });
+
+    it('waits for belong 3 before forcing a user over a stronger NPC under an established NPC ruler', () => {
+        const run = (belong: number) => {
+            const ruler = makePromotionGeneral({
+                id: 1,
+                officerLevel: 12,
+                npcState: 2,
+                meta: { killturn: 100, belong: 4 },
+            });
+            const npc = makePromotionGeneral({
+                id: 2,
+                name: '강한NPC',
+                npcState: 2,
+                stats: { leadership: 100, strength: 100, intelligence: 100 },
+                meta: { killturn: 100, belong: 4 },
+            });
+            const user = makePromotionGeneral({
+                id: 3,
+                name: '유저후보',
+                npcState: 0,
+                stats: { leadership: 80, strength: 80, intelligence: 80 },
+                meta: { killturn: 100, belong },
+            });
+            const ai = makePromotionAi({
+                ruler,
+                generals: [ruler, npc, user],
+                userGenerals: [user],
+                chiefGenerals: [ruler],
+            });
+            chooseNpcPromotion(ai);
+            return ai.consumePromotionPatches().generals;
+        };
+
+        expect(run(1)).toEqual([{ generalId: 2, officerLevel: 11, officerCity: 0 }]);
+        expect(run(3)).toEqual([{ generalId: 3, officerLevel: 11, officerCity: 0, permission: 'ambassador' }]);
+    });
+
+    it('prefers an ambassador-eligible user over a higher-leadership no-ambassador user', () => {
+        const ruler = makePromotionGeneral({
+            id: 1,
+            officerLevel: 12,
+            npcState: 2,
+            meta: { killturn: 100, belong: 2 },
+        });
+        const blockedAmbassador = makePromotionGeneral({
+            id: 2,
+            npcState: 0,
+            stats: { leadership: 95, strength: 80, intelligence: 80 },
+            meta: { killturn: 100, belong: 1 },
+            penalty: { noAmbassador: true },
+        });
+        const eligible = makePromotionGeneral({
+            id: 3,
+            npcState: 0,
+            stats: { leadership: 70, strength: 80, intelligence: 80 },
+            meta: { killturn: 100, belong: 1 },
+        });
+        const ai = makePromotionAi({
+            ruler,
+            generals: [ruler, blockedAmbassador, eligible],
+            userGenerals: [blockedAmbassador, eligible],
+            chiefGenerals: [ruler],
+        });
+
+        chooseNpcPromotion(ai);
+
+        expect(ai.consumePromotionPatches().generals).toEqual([
+            { generalId: 3, officerLevel: 11, officerCity: 0, permission: 'ambassador' },
+        ]);
+    });
+
+    it('does not appoint a user carrying the no-chief penalty', () => {
+        const ruler = makePromotionGeneral({
+            id: 1,
+            officerLevel: 12,
+            npcState: 2,
+            meta: { killturn: 100, belong: 2 },
+        });
+        const blocked = makePromotionGeneral({
+            id: 2,
+            npcState: 0,
+            stats: { leadership: 100, strength: 100, intelligence: 100 },
+            meta: { killturn: 100, belong: 1 },
+            penalty: { noChief: true },
+        });
+        const ai = makePromotionAi({
+            ruler,
+            generals: [ruler, blocked],
+            userGenerals: [blocked],
+            chiefGenerals: [ruler],
+        });
+
+        chooseNpcPromotion(ai);
+
+        expect(ai.consumePromotionPatches()).toEqual({ generals: [], nationMeta: null });
+    });
+
+    it('does not appoint a fourth user chief in the ordinary NPC-ruler fill pass', () => {
+        const ruler = makePromotionGeneral({
+            id: 1,
+            officerLevel: 12,
+            npcState: 2,
+            meta: { killturn: 100, belong: 4 },
+        });
+        const existingChiefs = [11, 10, 9].map((officerLevel, index) =>
+            makePromotionGeneral({
+                id: index + 2,
+                npcState: 0,
+                officerLevel,
+                meta: { killturn: 100, belong: 4, officer_city: 0 },
+            })
+        );
+        const candidate = makePromotionGeneral({
+            id: 5,
+            npcState: 0,
+            stats: { leadership: 100, strength: 100, intelligence: 100 },
+            meta: { killturn: 100, belong: 4 },
+        });
+        const ai = makePromotionAi({
+            ruler,
+            generals: [ruler, ...existingChiefs, candidate],
+            nation: { level: 6 },
+            userGenerals: [...existingChiefs, candidate],
+            chiefGenerals: [ruler, ...existingChiefs],
+        });
+
+        chooseNpcPromotion(ai);
+
+        const promotion = ai.consumePromotionPatches();
+        const result = promotion.generals;
+        expect(result.filter((entry) => entry.generalId === candidate.id)).toEqual([]);
+        expect(result).toHaveLength(3);
+        expect(promotion.nationMeta).toBeNull();
+        expect(result).toEqual(
+            expect.arrayContaining(
+                existingChiefs.map((chief) => ({
+                    generalId: chief.id,
+                    officerLevel: chief.officerLevel,
+                    officerCity: 0,
+                    permission: 'ambassador',
+                }))
+            )
+        );
+    });
+
+    it('lets an NPC non-ruler fill an open seat with a user immediately when no NPC pool exists', () => {
+        const actor = makePromotionGeneral({
+            id: 1,
+            officerLevel: 10,
+            npcState: 2,
+            meta: { killturn: 100, belong: 4 },
+        });
+        const user = makePromotionGeneral({
+            id: 2,
+            npcState: 0,
+            stats: { leadership: 40, strength: 40, intelligence: 40 },
+            meta: { killturn: 100, belong: 1 },
+        });
+        const ai = makePromotionAi({
+            ruler: actor,
+            generals: [actor, user],
+            userWarGenerals: [user],
+            chiefGenerals: [actor],
+        });
+
+        chooseNonLordPromotion(ai);
+
+        expect(ai.consumePromotionPatches().generals).toEqual([{ generalId: 2, officerLevel: 11, officerCity: 0 }]);
+    });
+
+    it('runs automatic appointments only on the quarterly NPC nation turn', () => {
+        const run = (currentMonth: number) => {
+            const ruler = makePromotionGeneral({
+                id: 1,
+                officerLevel: 12,
+                npcState: 2,
+                meta: { killturn: 100, belong: 2 },
+            });
+            const user = makePromotionGeneral({
+                id: 2,
+                npcState: 0,
+                meta: { killturn: 100, belong: 1 },
+            });
+            const ai = makePromotionAi({
+                ruler,
+                generals: [ruler, user],
+                userGenerals: [user],
+                chiefGenerals: [ruler],
+                currentMonth,
+            });
+            Object.assign(ai as unknown as Record<string, unknown>, {
+                updateInstance: () => undefined,
+                categorizeNationCities: () => undefined,
+                categorizeNationGeneral: () => undefined,
+                nationPolicy: { priority: [] },
+                buildNationCandidate: (action: string, args: Record<string, unknown>, reason: string) => ({
+                    action,
+                    args,
+                    reason,
+                }),
+            });
+
+            ai.chooseNationTurn({ action: '휴식', args: {} });
+            return ai.consumePromotionPatches().generals;
+        };
+
+        expect(run(2)).toEqual([]);
+        expect(run(3)).toEqual([{ generalId: 2, officerLevel: 11, officerCity: 0, permission: 'ambassador' }]);
+    });
+});
 
 /**
  * Expected branches are extracted from ref/sam hwe/sammo/GeneralAI.php
@@ -1082,8 +1385,7 @@ describe('legacy NPC AI final-decision parity', () => {
             nation: { rice: 100_000 },
             generalActionModules: singleActionModuleStack({
                 eventHandlers: {},
-                onCalcStat: (_context, statName, value) =>
-                    statName === 'leadership' ? Number(value) + 30 : value,
+                onCalcStat: (_context, statName, value) => (statName === 'leadership' ? Number(value) + 30 : value),
             }),
         });
         ai.maxResourceActionAmount = 100_000;

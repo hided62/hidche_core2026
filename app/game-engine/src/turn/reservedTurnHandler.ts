@@ -1690,7 +1690,13 @@ export const createReservedTurnHandler = async (options: {
                         const patch = {
                             officerLevel: entry.officerLevel,
                             ...(promotedGeneral
-                                ? { meta: { ...promotedGeneral.meta, officer_city: entry.officerCity } }
+                                ? {
+                                      meta: {
+                                          ...promotedGeneral.meta,
+                                          officer_city: entry.officerCity,
+                                          ...(entry.permission ? { permission: entry.permission } : {}),
+                                      },
+                                  }
                                 : {}),
                         };
                         patches.generals.push({ id: entry.generalId, patch });
