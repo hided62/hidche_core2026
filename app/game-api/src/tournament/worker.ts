@@ -186,6 +186,8 @@ export const applyPreBattleStage = async (
             gl: 0,
             seedRank: 0,
             finalRank: 0,
+            preliminaryGroupId: entry.groupId,
+            preliminaryGroupNo: entry.groupNo,
         }));
         await store.setParticipants(grouped);
         const nextState: TournamentState = {
@@ -244,10 +246,17 @@ export const applyPreBattleStage = async (
             for (let groupId = 0; groupId < 8; groupId += 1) {
                 const groupEntries = ranked.filter((entry) => entry.groupId === groupId);
                 const ordered = sortByRanking(groupEntries);
-                ordered.slice(0, 4).forEach((entry, idx) => {
+                ordered.forEach((entry, idx) => {
                     const target = ranked.find((item) => item.id === entry.id);
                     if (target) {
-                        target.seedRank = idx + 1;
+                        target.preliminaryGroupId = groupId;
+                        target.preliminaryGroupNo = entry.groupNo;
+                        target.preliminaryRank = idx + 1;
+                        target.preliminaryWin = entry.win ?? 0;
+                        target.preliminaryDraw = entry.draw ?? 0;
+                        target.preliminaryLose = entry.lose ?? 0;
+                        target.preliminaryGl = entry.gl ?? 0;
+                        target.seedRank = idx < 4 ? idx + 1 : 0;
                     }
                 });
             }

@@ -249,6 +249,7 @@ describe('tournament router permissions and mutations', () => {
         expect(results.filter((result) => result.status === 'rejected')).toHaveLength(1);
         const summary = await caller.tournament.getBettingSummary();
         expect(summary.myAmount).toBe(600);
+        expect(Object.values(summary.myTotals)).toEqual([600]);
         expect(summary.totalAmount).toBe(600);
         expect(transport.gold.get(general.id)).toBe(2_400);
     });
