@@ -276,8 +276,7 @@ const stateClass = (state: number): string => {
 
 <template>
     <div class="map-preview" :class="`map-preview-${props.mode}`">
-        <div class="map-preview-header">
-            <span class="map-preview-title">{{ props.mapLayout.mapName }}</span>
+        <div class="map-preview-date-bar">
             <span class="map-preview-date">{{ props.mapData.year }}년 {{ props.mapData.month }}월</span>
         </div>
         <div ref="mapBody" class="map-preview-body" :style="{ backgroundImage: `url('${mapBackground}')` }">
@@ -358,18 +357,22 @@ const stateClass = (state: number): string => {
     width: min(100%, 700px);
     margin-inline: auto;
     flex-direction: column;
-    gap: 6px;
 }
 
-.map-preview-header {
+.map-preview-date-bar {
     display: flex;
-    justify-content: space-between;
-    font-size: 0.7rem;
-    color: rgba(232, 221, 196, 0.7);
+    height: 20px;
+    justify-content: center;
+    background: #000;
+    color: rgba(232, 221, 196, 0.82);
 }
 
-.map-preview-title {
-    font-weight: 600;
+.map-preview-date {
+    display: block;
+    width: 160px;
+    font-size: 14px;
+    line-height: 20px;
+    text-align: center;
 }
 
 .map-preview-body {
