@@ -145,6 +145,7 @@ export interface TurnWorldChanges {
 export interface InMemoryTurnWorldStateSnapshot {
     schedule: TurnSchedule;
     state: TurnWorldState;
+    worldConfig: Record<string, unknown>;
     checkpoint?: TurnCheckpoint;
     generals: Array<[number, TurnGeneral]>;
     cities: Array<[number, City]>;
@@ -181,6 +182,7 @@ export interface InMemoryTurnWorldStateSnapshot {
 
 export interface InMemoryTurnWorldInspection {
     state: TurnWorldState;
+    worldConfig: Record<string, unknown>;
     checkpoint?: TurnCheckpoint;
     generals: TurnGeneral[];
     cities: City[];
@@ -447,6 +449,7 @@ export class InMemoryTurnWorld {
     private readonly pendingYearbookSnapshots: PendingYearbookSnapshot[] = [];
     private readonly pendingUnificationFinalizations: PendingUnificationFinalization[] = [];
     private readonly scenarioConfig: ScenarioConfig;
+    private readonly worldConfig: Record<string, unknown>;
     private readonly unitSet?: UnitSetDefinition;
     private checkpoint?: TurnCheckpoint;
     private state: TurnWorldState;
@@ -483,6 +486,10 @@ export class InMemoryTurnWorld {
             meta: { ...state.meta, lastTurnTime: lastTurnTime.toISOString() },
         };
         this.scenarioConfig = snapshot.scenarioConfig;
+        // Runtime callbacks created before the world keep the original object
+        // reference. Mutate this object in place so a live settings action is
+        // observed by monthly handlers without restarting the daemon.
+        this.worldConfig = snapshot.worldConfig ?? {};
         this.unitSet = snapshot.unitSet;
         this.schedule = options.schedule;
         this.generalTurnHandler =
@@ -597,6 +604,7 @@ export class InMemoryTurnWorld {
         return structuredClone({
             schedule: this.schedule,
             state: this.state,
+            worldConfig: this.worldConfig,
             checkpoint: this.checkpoint,
             generals: Array.from(this.generals.entries()),
             cities: Array.from(this.cities.entries()),
@@ -636,6 +644,10 @@ export class InMemoryTurnWorld {
         const restored = structuredClone(snapshot);
         this.schedule = restored.schedule;
         this.state = restored.state;
+        for (const key of Object.keys(this.worldConfig)) {
+            delete this.worldConfig[key];
+        }
+        Object.assign(this.worldConfig, restored.worldConfig);
         this.checkpoint = restored.checkpoint;
         this.replaceMap(this.generals, restored.generals);
         this.replaceMap(this.cities, restored.cities);
@@ -673,6 +685,7 @@ export class InMemoryTurnWorld {
     inspectState(): InMemoryTurnWorldInspection {
         return structuredClone({
             state: this.state,
+            worldConfig: this.worldConfig,
             checkpoint: this.checkpoint,
             generals: Array.from(this.generals.values()),
             cities: Array.from(this.cities.values()),
@@ -698,46 +711,107 @@ export class InMemoryTurnWorld {
         };
     }
 
+    updateWorldConfig(patch: Record<string, unknown>): void {
+        Object.assign(this.worldConfig, patch);
+    }
+
     markGeneralAccessScoreReset(generalId: number): void {
         if (Number.isSafeInteger(generalId) && generalId > 0) {
             this.accessScoreResetGeneralIds.add(generalId);
         }
     }
 
-    changeTurnTerm(tickMinutes: number): void {
+    changeTurnTerm(
+        tickMinutes: number,
+        wallNow = new Date()
+    ): {
+        changed: boolean;
+        previousTurnTermMinutes: number;
+        turnTermMinutes: number;
+        previousClockBaseTime: string;
+        clockBaseTime: string;
+        shiftedGenerals: number;
+        lastTurnTime: string;
+    } {
         if (!Number.isInteger(tickMinutes) || tickMinutes <= 0) {
             throw new Error('Turn term must be a positive integer.');
         }
         const previousTickSeconds = this.state.tickSeconds;
         const nextTickSeconds = tickMinutes * 60;
-        if (previousTickSeconds === nextTickSeconds) {
-            return;
-        }
         const previousClock = this.getGameClock();
-        const anchorTick = this.state.clockTick ?? previousClock.tick;
+        const previousClockBaseTime = previousClock.baseTime.toISOString();
+        if (previousTickSeconds === nextTickSeconds) {
+            this.updateWorldConfig({ turnTermMinutes: tickMinutes });
+            return {
+                changed: false,
+                previousTurnTermMinutes: previousTickSeconds / 60,
+                turnTermMinutes: tickMinutes,
+                previousClockBaseTime,
+                clockBaseTime: previousClockBaseTime,
+                shiftedGenerals: 0,
+                lastTurnTime: this.state.lastTurnTime.toISOString(),
+            };
+        }
+        const currentWallAnchor = this.state.clockWallAnchor ?? previousClock.wallAnchor;
+        const anchorWall = wallNow.getTime() < currentWallAnchor.getTime() ? currentWallAnchor : wallNow;
+        const anchorTick = previousClock.nowTick(anchorWall);
         const anchorDisplay = previousClock.tickToDate(anchorTick);
         const nextBaseTime = GameClock.baseTimeForProjection(anchorDisplay, anchorTick, nextTickSeconds);
-        const ratio = nextTickSeconds / previousTickSeconds;
-        const baseTime = this.state.lastTurnTime.getTime();
-        const nextGeneralTimes = new Map(
-            Array.from(this.generals.values(), (general) => [
-                general.id,
-                new Date(baseTime + (general.turnTime.getTime() - baseTime) * ratio),
-            ])
-        );
+        const nextClock = new GameClock({
+            baseTime: nextBaseTime,
+            tick: anchorTick,
+            mode: this.state.clockMode ?? 'manual',
+            wallAnchor: anchorWall,
+            turnSeconds: nextTickSeconds,
+        });
+        const lastTurnTick = this.state.lastTurnTick ?? previousClock.dateToTick(this.state.lastTurnTime);
+        const nextLastTurnTime = nextClock.tickToDate(lastTurnTick);
         this.schedule = { entries: [{ startMinute: 0, tickMinutes }] };
         this.state = {
             ...this.state,
             tickSeconds: nextTickSeconds,
             clockBaseTime: nextBaseTime,
+            clockTick: anchorTick,
+            clockWallAnchor: new Date(anchorWall.getTime()),
+            lastTurnTick,
+            lastTurnTime: nextLastTurnTime,
+            meta: {
+                ...this.state.meta,
+                turnterm: tickMinutes,
+                lastTurnTime: nextLastTurnTime.toISOString(),
+            },
         };
+        this.updateWorldConfig({ turnTermMinutes: tickMinutes });
         for (const general of this.generals.values()) {
-            const nextTurnTime = nextGeneralTimes.get(general.id);
-            if (!nextTurnTime) {
-                throw new Error(`Missing projected turn time for general ${general.id}.`);
-            }
-            this.updateGeneral(general.id, { turnTime: nextTurnTime });
+            const turnTick = general.turnTick ?? previousClock.dateToTick(general.turnTime);
+            const recentWarTick =
+                general.recentWarTick ??
+                (general.recentWarTime ? previousClock.dateToTick(general.recentWarTime) : null);
+            this.updateGeneral(general.id, {
+                turnTick,
+                turnTime: nextClock.tickToDate(turnTick),
+                recentWarTick,
+                recentWarTime: recentWarTick === null ? null : nextClock.tickToDate(recentWarTick),
+            });
         }
+        if (this.checkpoint) {
+            const checkpointTick =
+                this.checkpoint.turnTick ?? previousClock.dateToTick(new Date(this.checkpoint.turnTime));
+            this.checkpoint = {
+                ...this.checkpoint,
+                turnTick: checkpointTick,
+                turnTime: nextClock.tickToDate(checkpointTick).toISOString(),
+            };
+        }
+        return {
+            changed: true,
+            previousTurnTermMinutes: previousTickSeconds / 60,
+            turnTermMinutes: tickMinutes,
+            previousClockBaseTime,
+            clockBaseTime: nextBaseTime.toISOString(),
+            shiftedGenerals: this.generals.size,
+            lastTurnTime: nextLastTurnTime.toISOString(),
+        };
     }
 
     pushLog(entry: LogEntryDraft): void {
@@ -791,6 +865,10 @@ export class InMemoryTurnWorld {
 
     getScenarioConfig(): ScenarioConfig {
         return this.scenarioConfig;
+    }
+
+    getWorldConfig(): Record<string, unknown> {
+        return this.worldConfig;
     }
 
     getUnitSet(): UnitSetDefinition | undefined {

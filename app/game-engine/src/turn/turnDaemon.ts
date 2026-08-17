@@ -89,6 +89,7 @@ import { buildCommandEnv } from './reservedTurnCommands.js';
 import { DatabaseTurnDaemonLease, TurnDaemonLeaseUnavailableError } from '../lifecycle/databaseTurnDaemonLease.js';
 import { EngineStateManager } from './engineStateManager.js';
 import { applyRuntimeClockShift } from './runtimeClockShift.js';
+import { applyRuntimeGameSettings } from './runtimeGameSettings.js';
 
 export interface TurnDaemonRuntimeOptions {
     profile: string;
@@ -442,7 +443,7 @@ const createMonthlyCalendarRuntime = async (options: {
         profileName: options.profileName,
         getWorld: options.getWorld,
         getRedisClient: options.getRedisClient,
-        getWorldConfig: () => options.snapshot.worldConfig ?? null,
+        getWorldConfig: () => options.getWorld()?.getWorldConfig() ?? options.snapshot.worldConfig ?? null,
         getNationPowerRollCount: () => cache.nationPowerRollCount,
         getTournamentRollConsumed: () => cache.tournamentRollConsumed,
         now: () => options.getWorld()?.getGameNow(new Date(options.clock.nowMs())) ?? new Date(options.clock.nowMs()),
@@ -451,7 +452,7 @@ const createMonthlyCalendarRuntime = async (options: {
         profileName: options.profileName,
         getWorld: options.getWorld,
         getRedisClient: options.getRedisClient,
-        getWorldConfig: () => options.snapshot.worldConfig ?? null,
+        getWorldConfig: () => options.getWorld()?.getWorldConfig() ?? options.snapshot.worldConfig ?? null,
         getNationPowerRollCount: () => cache.nationPowerRollCount,
         onTournamentRollConsumed: (consumed) => {
             cache.tournamentRollConsumed = consumed;
@@ -593,6 +594,17 @@ const createStartedAdminActionConsumer = async (options: {
                     return { status: 'FAILED', detail: '게임 command database 연결이 없습니다.' };
                 }
                 return applyRuntimeClockShift({
+                    action,
+                    profileName,
+                    db: options.commandConnector.prisma,
+                    redis: options.redisConnector?.client,
+                });
+            }
+            if (action.action === 'UPDATE_RUNTIME_SETTINGS') {
+                if (!options.commandConnector) {
+                    return { status: 'FAILED', detail: '게임 command database 연결이 없습니다.' };
+                }
+                return applyRuntimeGameSettings({
                     action,
                     profileName,
                     db: options.commandConnector.prisma,
@@ -766,7 +778,6 @@ const createTurnDaemonRuntimeWithLease = async (
     const stateStore = new InMemoryTurnStateStore(world);
     let fastForwardPreparedMonth = '';
     const processor = new InMemoryTurnProcessor(world, {
-        tickMinutes,
         beforeExecuteGeneral: reservedTurnStoreHandle
             ? async (general) => {
                   if (options.exclusiveFastForward) {
@@ -959,7 +970,8 @@ const createTurnDaemonRuntimeWithLease = async (
         {
             clock,
             controlQueue: resolvedControlQueue,
-            getNextTickTime: (lastTurnTime) => getNextTickTime(lastTurnTime, tickMinutes),
+            getNextTickTime: (lastTurnTime) =>
+                getNextTickTime(lastTurnTime, Math.max(1, Math.round(world.getState().tickSeconds / 60))),
             stateStore,
             processor,
             hooks,

@@ -171,6 +171,7 @@ export interface TurnEngineWorldStateUpdateInput {
     clockMode: string;
     clockWallAnchor: Date;
     lastTurnTick: bigint;
+    config: InputJsonValue;
     meta: InputJsonValue;
 }
 
