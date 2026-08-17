@@ -1,6 +1,8 @@
 import { GATEWAY_PROFILE_STATUSES, type GatewayProfileStatus } from '@sammo-ts/common';
 import type { GatewayPrisma, GatewayPrismaClient } from '@sammo-ts/infra';
 
+export const CONTROL_PLANE_OPERATION_CLAIM_LOCK = 'gateway_control_plane_operation_claim';
+
 export { GATEWAY_PROFILE_STATUSES, type GatewayProfileStatus };
 
 export const GATEWAY_BUILD_STATUSES = ['IDLE', 'QUEUED', 'RUNNING', 'FAILED', 'SUCCEEDED'] as const;
@@ -625,8 +627,17 @@ export const createGatewayProfileRepository = (prisma: GatewayPrismaClient): Gat
     ): Promise<GatewayOperationRecord | null> {
         const row = await prisma.$transaction(async (tx) => {
             await tx.$queryRaw<Array<{ lock_result: string }>>`
-                SELECT pg_advisory_xact_lock(hashtextextended('gateway_operation_claim', 0))::text AS lock_result
+                SELECT pg_advisory_xact_lock(
+                    hashtextextended(${CONTROL_PLANE_OPERATION_CLAIM_LOCK}, 0)
+                )::text AS lock_result
             `;
+            const runningRelease = await tx.gatewayReleaseOperation.findFirst({
+                where: { status: 'RUNNING' },
+                select: { id: true },
+            });
+            if (runningRelease) {
+                return null;
+            }
             const staleBefore = lease ? new Date(now.getTime() - lease.durationMs) : now;
             const running = await tx.gatewayOperation.findFirst({
                 where: { status: 'RUNNING' },

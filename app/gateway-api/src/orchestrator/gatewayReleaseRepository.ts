@@ -1,6 +1,10 @@
 import type { GatewayPrisma, GatewayPrismaClient } from '@sammo-ts/infra';
 
-import type { GatewayOperationStatus, GatewaySourceMode } from './profileRepository.js';
+import {
+    CONTROL_PLANE_OPERATION_CLAIM_LOCK,
+    type GatewayOperationStatus,
+    type GatewaySourceMode,
+} from './profileRepository.js';
 
 export type GatewayReleaseOperationType = 'DEPLOY' | 'ROLLBACK';
 
@@ -230,8 +234,17 @@ export const createGatewayReleaseRepository = (prisma: GatewayPrismaClient): Gat
     async claimNextOperation(now, lease) {
         const row = await prisma.$transaction(async (tx) => {
             await tx.$queryRaw<Array<{ lock_result: string }>>`
-                SELECT pg_advisory_xact_lock(hashtextextended('gateway_release_operation_claim', 0))::text AS lock_result
+                SELECT pg_advisory_xact_lock(
+                    hashtextextended(${CONTROL_PLANE_OPERATION_CLAIM_LOCK}, 0)
+                )::text AS lock_result
             `;
+            const runningProfileOperation = await tx.gatewayOperation.findFirst({
+                where: { status: 'RUNNING' },
+                select: { id: true },
+            });
+            if (runningProfileOperation) {
+                return null;
+            }
             const staleBefore = new Date(now.getTime() - lease.durationMs);
             const running = await tx.gatewayReleaseOperation.findFirst({
                 where: { status: 'RUNNING' },

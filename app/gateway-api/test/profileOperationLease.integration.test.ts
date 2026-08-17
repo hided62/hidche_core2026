@@ -1,6 +1,7 @@
 import { createGatewayPostgresConnector } from '@sammo-ts/infra';
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
 
+import { createGatewayReleaseRepository } from '../src/orchestrator/gatewayReleaseRepository.js';
 import { createGatewayProfileRepository } from '../src/orchestrator/profileRepository.js';
 
 const databaseUrl = process.env.GATEWAY_OPERATION_DATABASE_URL;
@@ -11,6 +12,7 @@ const secondProfileName = 'lease-test-2:1010';
 describeDatabase('gateway operation lease and profile serialization', () => {
     const connector = createGatewayPostgresConnector({ url: databaseUrl ?? '' });
     const repository = createGatewayProfileRepository(connector.prisma);
+    const releaseRepository = createGatewayReleaseRepository(connector.prisma);
 
     beforeAll(async () => {
         await connector.connect();
@@ -29,6 +31,8 @@ describeDatabase('gateway operation lease and profile serialization', () => {
     });
 
     afterEach(async () => {
+        await connector.prisma.gatewayReleaseOperation.deleteMany();
+        await connector.prisma.gatewayReleaseState.deleteMany();
         await connector.prisma.gatewayOperation.deleteMany({
             where: { profileName: { in: [profileName, secondProfileName] } },
         });
@@ -113,6 +117,45 @@ describeDatabase('gateway operation lease and profile serialization', () => {
         await expect(
             repository.claimNextOperation(now, { ownerId: 'worker-b', durationMs: 1_000 })
         ).resolves.toMatchObject({ id: second.id, leaseOwner: 'worker-b' });
+    });
+
+    it('serializes profile and Gateway release claims under one control-plane lock', async () => {
+        const profileOperation = await repository.createOperation({
+            profileName,
+            type: 'RESET',
+            sourceMode: 'COMMIT',
+            sourceRef: 'a'.repeat(40),
+            requestedBy: 'profile-admin',
+        });
+        const releaseOperation = await releaseRepository.createOperation({
+            type: 'DEPLOY',
+            sourceMode: 'COMMIT',
+            sourceRef: 'b'.repeat(40),
+            requestedBy: 'release-admin',
+        });
+        const now = new Date('2030-01-01T00:00:00.000Z');
+
+        const [profileClaim, releaseClaim] = await Promise.all([
+            repository.claimNextOperation(now, { ownerId: 'profile-worker', durationMs: 1_000 }),
+            releaseRepository.claimNextOperation(now, { ownerId: 'release-worker', durationMs: 1_000 }),
+        ]);
+
+        expect([profileClaim, releaseClaim].filter(Boolean)).toHaveLength(1);
+        if (profileClaim) {
+            expect(profileClaim.id).toBe(profileOperation.id);
+            expect(releaseClaim).toBeNull();
+            await repository.completeOperation(profileOperation.id, 'SUCCEEDED', { error: null }, 'profile-worker');
+            await expect(
+                releaseRepository.claimNextOperation(now, { ownerId: 'release-worker', durationMs: 1_000 })
+            ).resolves.toMatchObject({ id: releaseOperation.id });
+            return;
+        }
+
+        expect(releaseClaim?.id).toBe(releaseOperation.id);
+        await releaseRepository.completeOperation(releaseOperation.id, 'SUCCEEDED', { error: null }, 'release-worker');
+        await expect(
+            repository.claimNextOperation(now, { ownerId: 'profile-worker', durationMs: 1_000 })
+        ).resolves.toMatchObject({ id: profileOperation.id });
     });
 
     it('does not let a future queued operation suppress runtime reconciliation early', async () => {
