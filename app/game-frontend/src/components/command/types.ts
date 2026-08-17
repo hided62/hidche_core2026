@@ -95,6 +95,7 @@ export type CommandTable = {
         cities: CommandOption[];
         nations: CommandOption[];
         generals: CommandOption[];
+        generalTargets?: Record<string, CommandOption[]>;
         crewTypes: CommandOption[];
         armTypes: CommandOption[];
         nationTypes: CommandOption[];

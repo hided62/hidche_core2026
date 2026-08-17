@@ -385,16 +385,16 @@ const start = async () => {
     background: #142b42 var(--sammo-texture-blue);
 }
 .legacy-title {
-    height: 55.6875px;
+    min-height: 68px;
     padding: 0;
     font-size: 14px;
     line-height: 19.1875px;
 }
 .close-button {
     display: block;
-    width: 62px;
-    height: 35.5px;
-    padding: 8px 12px;
+    width: 88px;
+    height: 44px;
+    padding: 10px 16px;
     border: 1px solid #375a7f;
     border-radius: 5.25px;
     background: #375a7f;
@@ -404,8 +404,14 @@ const start = async () => {
     text-decoration: none;
 }
 .toolbar {
-    min-height: 36.5px;
+    min-height: 46px;
     padding: 1px;
+}
+.toolbar button {
+    min-width: 72px;
+    height: 44px;
+    padding: 10px 16px;
+    font-size: 14px;
 }
 .operator-row,
 .state-row,

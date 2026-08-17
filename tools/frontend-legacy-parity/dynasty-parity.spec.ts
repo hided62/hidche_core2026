@@ -221,19 +221,19 @@ test('dynasty list matches the ref Chromium table geometry and interactions', as
         { y: 65, height: 37 },
         { y: 112, height: 139 },
     ]);
-    expect(geometry.tables[0]!.fontFamily).toContain('Times New Roman');
-    expect(geometry.tables[0]!.fontSize).toBe('16px');
-    expect(geometry.tables[0]!.lineHeight).toBe('normal');
-    expect(geometry.button).toEqual({
+    expect(geometry.tables[0]!.fontFamily).toContain('Pretendard');
+    expect(geometry.tables[0]!.fontSize).toBe('14px');
+    expect(geometry.tables[0]!.lineHeight).toBe('18.2px');
+    expect(geometry.button.fontFamily).toContain('Pretendard');
+    expect(geometry.button).toMatchObject({
         height: 22,
         borderWidth: '2px',
         borderRadius: '0px',
         padding: '1px 6px',
-        fontFamily: 'Arial',
         fontSize: '13.3333px',
         cursor: 'default',
     });
-    expect(geometry.firstCell).toEqual({ padding: '1px', borderWidth: '0px', textAlign: 'start' });
+    expect(geometry.firstCell).toEqual({ padding: '0px', borderWidth: '1px', textAlign: 'start' });
 
     const historyLink = page.getByRole('link', { name: '역사 보기' }).last();
     await expect(historyLink).toHaveAttribute('href', '/che/yearbook?serverID=hwe_260725_u3uE');
@@ -276,17 +276,23 @@ test('dynasty detail preserves the legacy fields, old-nation table and error flo
         const first = container.querySelector<HTMLTableElement>('table')!.getBoundingClientRect();
         const emperor = container.querySelector<HTMLTableElement>('.emperor-table')!.getBoundingClientRect();
         const oldNation = container.querySelector<HTMLTableElement>('.old-nation-table')!.getBoundingClientRect();
+        const containerStyle = getComputedStyle(container);
+        const buttonStyle = getComputedStyle(container.querySelector<HTMLButtonElement>('button')!);
         return {
             container: { x: rect.x, y: rect.y, width: rect.width },
             first: { x: first.x, y: first.y, width: first.width, height: first.height },
             emperor: { x: emperor.x, y: emperor.y, width: emperor.width },
             oldNation: { x: oldNation.x, width: oldNation.width },
+            fontFamily: containerStyle.fontFamily,
+            buttonFontFamily: buttonStyle.fontFamily,
         };
     });
     expect(geometry.container).toEqual({ x: 140, y: 8, width: 1000 });
     expect(geometry.first).toEqual({ x: 140, y: 8, width: 1000, height: 47 });
     expect(geometry.emperor).toEqual({ x: 140, y: 55, width: 1000 });
     expect(geometry.oldNation).toEqual({ x: 140, width: 1000 });
+    expect(geometry.fontFamily).toContain('Pretendard');
+    expect(geometry.buttonFontFamily).toContain('Pretendard');
 
     await page.goto(`${gameOrigin}/che/dynasty/999`);
     await expect(page.getByRole('alert')).toHaveText('왕조 정보를 찾을 수 없습니다.');

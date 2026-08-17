@@ -10,13 +10,15 @@ import {
     setGeneralTurn,
     setGeneralTurns,
     setNationTurn,
+    setNationTurnAtCurrentPosition,
     setNationTurns,
+    setNationTurnsAtCurrentPositions,
     shiftGeneralTurns,
     shiftNationTurns,
     ReservedTurnRevisionConflictError,
 } from '../src/turns/reservedTurns.js';
 
-const buildDb = () => {
+const buildDb = (autorunLimit: number | null = null) => {
     const generalTurns = new Map<number, GeneralTurnRow[]>();
     const nationTurns = new Map<string, NationTurnRow[]>();
     const generalRevisions = new Map<number, number>();
@@ -45,7 +47,7 @@ const buildDb = () => {
             findFirst: async () => null,
         },
         general: {
-            findUnique: async () => null,
+            findUnique: async () => ({ meta: autorunLimit === null ? {} : { autorun_limit: autorunLimit } }),
         },
         city: {
             findUnique: async () => null,
@@ -195,27 +197,30 @@ const buildDb = () => {
         },
     } as unknown as DatabaseClient;
 
-    return { db };
+    return { db, nationTurns, nationRevisions };
 };
 
 describe('reservedTurns', () => {
     it('sets and shifts general turns', async () => {
-        const { db } = buildDb();
+        const { db } = buildDb(2408);
 
         const initial = await setGeneralTurn(db, 1, 0, 'che_화계', { destCityId: 10 }, 0);
 
         expect(initial.revision).toBe(1);
         expect(initial.turns).toHaveLength(MAX_GENERAL_TURNS);
         expect(initial.turns[0]?.action).toBe('che_화계');
+        expect(initial.autorunLimit).toBe(2408);
 
         const pushed = await shiftGeneralTurns(db, 1, 1, initial.revision);
         expect(pushed.revision).toBe(2);
         expect(pushed.turns[0]?.action).toBe('휴식');
         expect(pushed.turns[1]?.action).toBe('che_화계');
+        expect(pushed.autorunLimit).toBe(2408);
 
         const pulled = await shiftGeneralTurns(db, 1, -1, pushed.revision);
         expect(pulled.turns[0]?.action).toBe('che_화계');
         expect(pulled.turns[MAX_GENERAL_TURNS - 1]?.action).toBe('휴식');
+        expect(pulled.autorunLimit).toBe(2408);
 
         await expect(setGeneralTurn(db, 1, 2, 'che_훈련', {}, 1)).rejects.toBeInstanceOf(
             ReservedTurnRevisionConflictError
@@ -285,7 +290,7 @@ describe('reservedTurns', () => {
     });
 
     it('repeats the leading general pattern at the legacy interval', async () => {
-        const { db } = buildDb();
+        const { db } = buildDb(2408);
         const seeded = await setGeneralTurns(
             db,
             4,
@@ -309,6 +314,7 @@ describe('reservedTurns', () => {
             'che_사기진작',
             'che_징병',
         ]);
+        expect(repeated.autorunLimit).toBe(2408);
     });
 
     it('supports nation bulk/repeat and preserves the legacy amount-12 no-op', async () => {
@@ -339,6 +345,61 @@ describe('reservedTurns', () => {
         expect(noOpPush).toEqual(repeated);
     });
 
+    it('rebases stale nation slot input onto the current queue after a turn advances', async () => {
+        const { db, nationTurns, nationRevisions } = buildDb();
+        const seeded = await setNationTurns(
+            db,
+            6,
+            12,
+            [
+                { turnIndices: [0], action: 'che_증축', args: {} },
+                { turnIndices: [1], action: 'che_감축', args: {} },
+                { turnIndices: [2], action: 'che_천도', args: { destCityId: 3 } },
+            ],
+            0
+        );
+        expect(seeded.revision).toBe(1);
+
+        // daemon이 한 턴을 소비한 뒤의 현재 큐를 모사한다.
+        nationRevisions.set('6:12', 2);
+        nationTurns.set('6:12', [
+            {
+                id: 1,
+                nationId: 6,
+                officerLevel: 12,
+                turnIdx: 0,
+                actionCode: 'che_감축',
+                arg: {},
+                createdAt: new Date(),
+            },
+            {
+                id: 2,
+                nationId: 6,
+                officerLevel: 12,
+                turnIdx: 1,
+                actionCode: 'che_천도',
+                arg: { destCityId: 3 },
+                createdAt: new Date(),
+            },
+        ]);
+
+        const result = await setNationTurnsAtCurrentPositions(
+            db,
+            6,
+            12,
+            [{ turnIndices: [2], action: 'che_포상', args: { destGeneralId: 77, amount: 100, isGold: true } }],
+            1
+        );
+
+        expect(result.revision).toBe(3);
+        expect(result.turns[0]?.action).toBe('che_감축');
+        expect(result.turns[1]?.action).toBe('che_천도');
+        expect(result.turns[2]).toMatchObject({
+            action: 'che_포상',
+            args: { destGeneralId: 77, amount: 100, isGold: true },
+        });
+    });
+
     it('rejects an API writer while the daemon holds the queue lease without touching turns', async () => {
         const deleteMany = vi.fn(async () => ({}));
         const createMany = vi.fn(async () => ({}));
@@ -364,6 +425,37 @@ describe('reservedTurns', () => {
         await expect(setGeneralTurn(db, 9, 0, 'che_훈련', {}, 0)).rejects.toBeInstanceOf(
             ReservedTurnRevisionConflictError
         );
+        expect(deleteMany).not.toHaveBeenCalled();
+        expect(createMany).not.toHaveBeenCalled();
+    });
+
+    it('does not rebase a current-position nation write while the daemon lease holds the same revision', async () => {
+        const deleteMany = vi.fn(async () => ({}));
+        const createMany = vi.fn(async () => ({}));
+        const db = {
+            nationTurnRevision: {
+                updateMany: vi.fn(async () => ({ count: 0 })),
+                createMany: vi.fn(async () => ({ count: 0 })),
+                findUnique: vi.fn(async () => ({
+                    nationId: 6,
+                    officerLevel: 12,
+                    revision: 4,
+                    leaseOwner: 'daemon-1',
+                    leaseExpiresAt: new Date(Date.now() + 60_000),
+                    updatedAt: new Date(),
+                })),
+            },
+            nationTurn: {
+                findMany: vi.fn(async () => []),
+                deleteMany,
+                createMany,
+            },
+        } as unknown as DatabaseClient;
+
+        await expect(setNationTurnAtCurrentPosition(db, 6, 12, 2, 'che_증축', {}, 4)).rejects.toMatchObject({
+            expectedRevision: 4,
+            currentRevision: 4,
+        });
         expect(deleteMany).not.toHaveBeenCalled();
         expect(createMany).not.toHaveBeenCalled();
     });

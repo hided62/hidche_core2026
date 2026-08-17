@@ -21,6 +21,7 @@ import type {
     CommandTable,
     ReservedCommandRow,
 } from './types';
+import { formatReservedCommandBrief } from './reservedCommandBrief';
 
 const props = withDefaults(
     defineProps<{
@@ -37,6 +38,7 @@ const props = withDefaults(
         currentTime?: string;
         mapData?: CommandMapData | null;
         mapLayout?: CommandMapLayout | null;
+        autonomousUntil?: string | null;
     }>(),
     {
         maxPushTurn: 6,
@@ -47,6 +49,7 @@ const props = withDefaults(
         currentTime: '--:--:--',
         mapData: null,
         mapLayout: null,
+        autonomousUntil: null,
     }
 );
 
@@ -70,6 +73,7 @@ const commandArgsValid = ref(false);
 const expanded = ref(false);
 const menuRevision = ref(0);
 const pendingReservation = ref<CommandPatternEntry | null>(null);
+const editorElement = ref<HTMLElement | null>(null);
 const pickerElement = ref<HTMLElement | null>(null);
 const collapsedRowCount = 15;
 
@@ -133,12 +137,16 @@ const labelMap = computed(() => {
 const displayRows = computed(() =>
     props.rows.slice(0, expanded.value || props.compact ? props.rows.length : collapsedRowCount)
 );
-const quickPickerTop = computed(() => `${70 + (quickTarget.value ?? 0) * 34.4}px`);
+const quickPickerTop = ref('38px');
 const isRecruitmentCommand = computed(
     () => selectedCommand.value?.key === 'che_징병' || selectedCommand.value?.key === 'che_모병'
 );
 const isRecruitmentOverlayOpen = computed(() => pickerOpen.value && isRecruitmentCommand.value);
-const rowLabel = (row: ReservedCommandRow): string => row.label ?? labelMap.value.get(row.action) ?? row.action;
+const rowLabel = (row: ReservedCommandRow): string =>
+    formatReservedCommandBrief(props.scope, row.action, row.args, props.commandTable) ||
+    row.label ||
+    labelMap.value.get(row.action) ||
+    row.action;
 const selectedIndices = () => normalizedSelection(selected.value, previousSelected.value, props.rows.length);
 const pattern = () => extractPattern(props.rows, selectedIndices());
 const touchMenus = () => (menuRevision.value += 1);
@@ -163,6 +171,19 @@ const finishDrag = (next: Set<number>) => {
 };
 
 const openPicker = (turnIndex?: number) => {
+    if (!props.compact && editorElement.value) {
+        const editorRect = editorElement.value.getBoundingClientRect();
+        const anchor =
+            turnIndex === undefined
+                ? editorElement.value.querySelector<HTMLElement>('.control-pad')
+                : editorElement.value.querySelector<HTMLElement>(`[data-turn-index="${turnIndex}"]`);
+        if (anchor) {
+            const anchorRect = anchor.getBoundingClientRect();
+            quickPickerTop.value = `${
+                turnIndex === undefined ? anchorRect.bottom - editorRect.top : anchorRect.top - editorRect.top + 30
+            }px`;
+        }
+    }
     quickTarget.value = turnIndex ?? null;
     pickerOpen.value = true;
     selectedCommand.value = null;
@@ -281,7 +302,7 @@ const rearrange = (direction: 'pull' | 'push') => {
 const textCopy = async () => {
     const lines = selectedIndices().map((index) => {
         const row = props.rows[index];
-        return `${index + 1}턴 ${row?.label ?? labelMap.value.get(row?.action ?? '') ?? row?.action ?? ''}`;
+        return `${index + 1}턴 ${row ? rowLabel(row) : ''}`;
     });
     await navigator.clipboard.writeText(lines.join('\n'));
     releaseSelection();
@@ -310,6 +331,7 @@ const clickOutsideMenu = (event: Event) => {
 
 <template>
     <article
+        ref="editorElement"
         class="reserved-command-editor"
         :class="{
             compact: props.compact,
@@ -325,6 +347,10 @@ const clickOutsideMenu = (event: Event) => {
         <header v-if="props.compact && !props.mobile" class="identity legacy-bg1">
             <span>{{ props.title }} :</span><strong>{{ props.name ?? '-' }}</strong>
         </header>
+
+        <div v-if="props.autonomousUntil" class="autorun-status" data-command-autorun-status role="status">
+            자율 행동: {{ props.autonomousUntil }}
+        </div>
 
         <div class="editor-layout">
             <aside class="control-pad">
@@ -614,7 +640,11 @@ const clickOutsideMenu = (event: Event) => {
                         <div
                             v-for="row in displayRows"
                             :key="row.index"
-                            :title="row.autonomous ? `${rowLabel(row)} · 자율 행동` : rowLabel(row)"
+                            :title="
+                                row.autonomous
+                                    ? `${rowLabel(row)} · 자율 행동${props.autonomousUntil ? ` (${props.autonomousUntil})` : ''}`
+                                    : rowLabel(row)
+                            "
                             :class="{ autonomous: row.autonomous }"
                         >
                             <span>{{ rowLabel(row) }}</span>
@@ -655,7 +685,9 @@ const clickOutsideMenu = (event: Event) => {
                 class="command-picker"
                 :class="{ 'recruitment-picker': isRecruitmentCommand }"
                 data-testid="command-picker"
-                :style="isRecruitmentCommand || quickTarget === null || props.compact ? undefined : { top: quickPickerTop }"
+                :style="
+                    isRecruitmentCommand || quickTarget === null || props.compact ? undefined : { top: quickPickerTop }
+                "
                 :role="isRecruitmentCommand ? 'dialog' : undefined"
                 :aria-modal="isRecruitmentCommand ? 'true' : undefined"
                 :aria-label="
@@ -854,6 +886,15 @@ const clickOutsideMenu = (event: Event) => {
 .queue-grid {
     display: grid;
     grid-template-columns: 75px 40px minmax(0, 1fr) 38px;
+}
+.autorun-status {
+    padding: 3px 6px;
+    border-bottom: 1px solid #2d6574;
+    background: #102c35;
+    color: #aaffff;
+    font-size: 0.78rem;
+    line-height: 1.35;
+    text-align: center;
 }
 .queue-grid.advanced {
     grid-template-columns: 34px 75px 40px minmax(0, 1fr);
@@ -1107,12 +1148,15 @@ const clickOutsideMenu = (event: Event) => {
 }
 
 .mobile.compact .editor-layout {
-    height: 360px;
+    min-height: 370px;
     display: grid;
     grid-template-columns: 109px 391px;
+    grid-template-rows: auto auto;
 }
 .mobile.compact .control-pad {
     order: initial;
+    grid-column: 1;
+    grid-row: 1 / -1;
     min-height: 0;
     padding: 0;
     grid-template-columns: 1fr;
@@ -1120,6 +1164,8 @@ const clickOutsideMenu = (event: Event) => {
 }
 .mobile.compact .queue-area {
     order: initial;
+    grid-column: 2;
+    grid-row: 1;
     padding-top: 10px;
 }
 .mobile.compact .queue-grid {
@@ -1150,9 +1196,8 @@ const clickOutsideMenu = (event: Event) => {
     overflow: visible;
 }
 .mobile.compact .advanced-actions {
-    right: 0;
-    bottom: 0;
-    left: 109px;
+    position: static;
+    grid-column: 2;
+    grid-row: 2;
 }
-
 </style>

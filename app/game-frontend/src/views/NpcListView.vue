@@ -165,7 +165,7 @@ onMounted(() => {
     min-height: 100vh;
     margin: 0 auto;
     color: #fff;
-    font-family: Pretendard, 'Apple SD Gothic Neo', 'Noto Sans KR', 'Malgun Gothic';
+    font-family: var(--sammo-font-sans);
     font-size: 14px;
     line-height: 1.3;
 }

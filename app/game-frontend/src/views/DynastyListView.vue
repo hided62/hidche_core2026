@@ -231,7 +231,7 @@ onMounted(loadDynasty);
     padding: 1px 6px;
     background: buttonface;
     color: buttontext;
-    font-family: Arial;
+    font-family: var(--sammo-font-sans);
     font-size: 13.3333px;
     font-weight: 400;
     line-height: normal;
