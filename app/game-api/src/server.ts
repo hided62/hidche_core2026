@@ -41,6 +41,7 @@ import { AccountIconResetReconciler } from './services/accountIconResetReconcile
 import { createBestEffortResourceCloser } from './services/bestEffortResourceCloser.js';
 import { RemoteContentImageStore } from './services/remoteContentImageStore.js';
 import { ReadModelOutboxWorker } from './realtime/outboxWorker.js';
+import { DeferredGeneralAccessWorker } from './services/deferredGeneralAccess.js';
 
 const extractBearerToken = (value: string | string[] | undefined): string | null => {
     if (!value) {
@@ -154,9 +155,22 @@ export const createGameApiServer = async () => {
     const readModelOutboxWorker = new ReadModelOutboxWorker(postgres.prisma, redis.client, config.profileName, {
         onError: (error) => app.log.error({ err: error }, 'read-model outbox dispatch failed'),
     });
+    const deferredGeneralAccessWorker = new DeferredGeneralAccessWorker(
+        postgres.prisma,
+        redis.client,
+        config.profileName,
+        profileStatusSource,
+        {
+            onError: (error) => app.log.error({ err: error }, 'deferred general access flush failed'),
+        }
+    );
     let flushSubscriberStarted = false;
     let realtimeHubStarted = false;
     const closeResources = createBestEffortResourceCloser([
+        {
+            name: 'deferred-general-access-worker',
+            run: () => deferredGeneralAccessWorker.stop(),
+        },
         {
             name: 'read-model-outbox-worker',
             run: () => readModelOutboxWorker.stop(),
@@ -374,6 +388,7 @@ export const createGameApiServer = async () => {
         await flushSubscriber.start();
         flushSubscriberStarted = true;
         readModelOutboxWorker.start();
+        deferredGeneralAccessWorker.start();
         accountIconResetReconciler.start();
     } catch (error) {
         await closeResources();

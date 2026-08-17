@@ -73,6 +73,7 @@ const buildContext = (authenticated: boolean, generalAccessTracking = false) => 
         generalAccessTracking,
         redis: {
             get: async (key: string) => redisValues.get(key) ?? null,
+            eval: async () => 1,
             set: async (key: string, value: string) => {
                 redisValues.set(key, value);
                 return 'OK';
@@ -109,7 +110,6 @@ const installSourceRevisionState = (
         cityRevision: bigint;
         nationRevision: bigint;
         worldRevision: bigint;
-        accessRevision: bigint;
     }> = {}
 ) => {
     let row = {
@@ -122,12 +122,10 @@ const installSourceRevisionState = (
         cityRevision: 0n,
         nationRevision: 0n,
         worldRevision: 1n,
-        accessRevision: 1n,
         ...initial,
     };
     const queryRaw = vi.fn(async () => [row]);
     Object.assign(context.db, { $queryRaw: queryRaw });
-    context.realtimeAccessGeneralId = 7;
     return {
         queryRaw,
         update: (next: Partial<typeof row>) => {
@@ -227,7 +225,7 @@ describe('dashboardRouter.getContextBundleDelta', () => {
         ).rejects.toMatchObject({ code: 'UNAUTHORIZED' });
     });
 
-    it('uses an all-false bundle as an access-only gate without projecting dashboard context', async () => {
+    it('uses an all-false bundle as a Redis-only access gate without projecting dashboard context', async () => {
         const fixture = buildContext(true, true);
         const queryRaw = vi.fn(async (_query: unknown) => []);
         Object.assign(fixture.context.db, { $queryRaw: queryRaw });
@@ -236,12 +234,7 @@ describe('dashboardRouter.getContextBundleDelta', () => {
                 include: { context: false, commandTable: false, boardAccess: false },
             })
         ).resolves.toEqual({ context: undefined, commandTable: undefined, boardAccess: undefined });
-        expect(fixture.findGeneral).toHaveBeenCalledTimes(1);
-        expect(fixture.findGeneral).toHaveBeenCalledWith({
-            where: { userId: auth.user.id },
-            orderBy: { id: 'asc' },
-            select: { id: true, turnTime: true },
-        });
+        expect(fixture.findGeneral).not.toHaveBeenCalled();
         expect(queryRaw).not.toHaveBeenCalled();
     });
 
@@ -340,8 +333,6 @@ describe('dashboardRouter.getContextBundleDelta', () => {
         Object.assign(fixture.context.db, {
             $queryRaw: vi.fn(async () => Promise.reject(new Error('revision table unavailable'))),
         });
-        fixture.context.realtimeAccessGeneralId = 7;
-
         const result = await dashboardRouter.createCaller(fixture.context).getContextBundleDelta({
             ...contextOnly,
             known: { context: 'A'.repeat(22) },
@@ -349,6 +340,6 @@ describe('dashboardRouter.getContextBundleDelta', () => {
         });
 
         expect(result.context?.kind).toBe('snapshot');
-        expect(fixture.findGeneral).toHaveBeenCalledTimes(1);
+        expect(fixture.findGeneral).toHaveBeenCalledTimes(2);
     });
 });

@@ -1,4 +1,4 @@
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { TRPCError } from '@trpc/server';
 import type { GameSessionTokenPayload } from '@sammo-ts/common/auth/gameToken';
 import { createGamePostgresConnector, type GamePrismaClient } from '@sammo-ts/infra';
@@ -7,6 +7,7 @@ import { z } from 'zod';
 import type { GameApiContext } from '../src/context.js';
 import { appRouter } from '../src/router.js';
 import { upsertGeneralAccess } from '../src/services/generalAccess.js';
+import { flushDeferredGeneralAccessBatch } from '../src/services/deferredGeneralAccess.js';
 import { accessAuthedInputProcedure, router } from '../src/trpc.js';
 
 const databaseUrl = process.env.INPUT_EVENT_DATABASE_URL;
@@ -20,6 +21,7 @@ const endpointUserId = `access-endpoint-user-${endpointGeneralId}`;
 const scenarioCode = `traffic-period-${generalId}`;
 const endpointRequestPrefix = `access-endpoint-${endpointGeneralId}`;
 const yearbookProfile = `access-profile-${endpointGeneralId}`;
+const deferredBatchId = `deferred-access-${endpointGeneralId}`;
 
 const endpointAuth = (roles = ['user']): GameSessionTokenPayload => ({
     version: 1,
@@ -84,6 +86,7 @@ integration('general access tracking persistence', () => {
                 },
             },
         });
+        await db.generalAccessBatch.deleteMany({ where: { id: deferredBatchId } });
         await db.inputEvent.deleteMany({ where: { requestId: { startsWith: endpointRequestPrefix } } });
         await db.worldState.deleteMany({ where: { scenarioCode } });
         const world = await db.worldState.create({
@@ -135,6 +138,7 @@ integration('general access tracking persistence', () => {
                 },
             },
         });
+        await db.generalAccessBatch.deleteMany({ where: { id: deferredBatchId } });
         await db.inputEvent.deleteMany({ where: { requestId: { startsWith: endpointRequestPrefix } } });
         await db.yearbookHistory.deleteMany({ where: { profileName: yearbookProfile } });
         await db.general.deleteMany({ where: { id: endpointGeneralId } });
@@ -390,6 +394,7 @@ integration('general access tracking persistence', () => {
     });
 
     it('runs parser, access, business event, zero-weight, admin, and yearbook cache boundaries on PostgreSQL', async () => {
+        const redisEval = vi.fn(async () => 1);
         const context = {
             auth: endpointAuth(),
             db,
@@ -404,6 +409,7 @@ integration('general access tracking persistence', () => {
             redis: {
                 get: async () => null,
                 set: async () => 'OK',
+                eval: redisEval,
             },
         } as unknown as GameApiContext;
         const boundaryCaller = endpointBoundaryRouter.createCaller(context);
@@ -419,8 +425,21 @@ integration('general access tracking persistence', () => {
         expect(initialDashboard).toMatchObject({ context: { kind: 'snapshot' } });
         const initialContext = initialDashboard.context;
         if (!initialContext?.sourceRevision) {
-            throw new Error('dashboard snapshot did not include its post-access source revision');
+            throw new Error('dashboard snapshot did not include its source revision');
         }
+        await expect(
+            db.generalAccessLog.findUnique({ where: { generalId: endpointGeneralId } })
+        ).resolves.toBeNull();
+        expect(redisEval).toHaveBeenCalledTimes(1);
+
+        await flushDeferredGeneralAccessBatch(db, deferredBatchId, [
+            {
+                generalId: endpointGeneralId,
+                userId: endpointUserId,
+                weight: 1,
+                lastRefresh: new Date('2026-07-26T02:55:00.000Z'),
+            },
+        ]);
         await expect(
             db.generalAccessLog.findUniqueOrThrow({ where: { generalId: endpointGeneralId } })
         ).resolves.toMatchObject({ refresh: 1, refreshTotal: 1 });

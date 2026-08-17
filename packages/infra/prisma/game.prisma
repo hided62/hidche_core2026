@@ -280,6 +280,14 @@ model GeneralAccessLog {
   @@map("general_access_log")
 }
 
+model GeneralAccessBatch {
+  id        String   @id @db.VarChar(64)
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@index([createdAt])
+  @@map("general_access_batch")
+}
+
 model TrafficPeriod {
   id           Int      @id @default(autoincrement())
   worldStateId Int      @map("world_state_id")

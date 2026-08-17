@@ -2,20 +2,19 @@ import { TRPCError } from '@trpc/server';
 import type { ReadModelDelta } from '@sammo-ts/common';
 import { z } from 'zod';
 
-import { accessLimitAuthedProcedure, router } from '../../trpc.js';
+import { deferredAccessLimitAuthedProcedure, router } from '../../trpc.js';
 import {
     canUseDashboardSourceRevision,
-    readDashboardSourceRevisionState,
+    readDashboardSourceRevisionStateForUser,
     type DashboardSourceRevisionState,
     type DashboardSourceSlice,
 } from '../../services/dashboardSourceRevision.js';
 import { createReadModelDelta } from '../../services/readModelDeltaCache.js';
 import {
     DASHBOARD_PROJECTION_ACCESS_WEIGHT,
-    formatGeneralAccessLimitMessage,
-    getGeneralAccessState,
     recordGeneralAccessWeight,
 } from '../../services/generalAccess.js';
+import { enqueueDeferredGeneralAccess } from '../../services/deferredGeneralAccess.js';
 import { getBoardAccess } from '../board/index.js';
 import { getGeneralContext } from '../general/index.js';
 import { getTurnCommandTable } from '../turns/index.js';
@@ -102,7 +101,7 @@ const createDashboardSliceDelta = async <T>(options: {
 };
 
 export const dashboardRouter = router({
-    getContextBundleDelta: accessLimitAuthedProcedure.input(zContextBundleInput).query(async ({ ctx, input }) => {
+    getContextBundleDelta: deferredAccessLimitAuthedProcedure.input(zContextBundleInput).query(async ({ ctx, input }) => {
         const authUser = ctx.auth?.user;
         const viewerId = authUser?.id;
         if (!authUser || !viewerId) {
@@ -110,10 +109,13 @@ export const dashboardRouter = router({
         }
 
         const includesProjection = Object.values(input.include).some(Boolean);
-        let generalId: number | null = null;
+        const sourceState = includesProjection
+            ? await readDashboardSourceRevisionStateForUser(ctx.db, viewerId, authUser)
+            : null;
+        let generalId: number | null = sourceState?.identity.generalId ?? null;
         if (includesProjection) {
             generalId =
-                ctx.realtimeAccessGeneralId ??
+                generalId ??
                 (
                     await ctx.db.general.findFirst({
                         where: { userId: viewerId },
@@ -123,7 +125,6 @@ export const dashboardRouter = router({
                 )?.id ??
                 null;
         }
-        let sourceState = generalId ? await readDashboardSourceRevisionState(ctx.db, generalId, authUser) : null;
         const buildSliceRequests = (): DashboardSliceRequest[] => [
             {
                 included: input.include.context,
@@ -152,17 +153,21 @@ export const dashboardRouter = router({
         ];
         const sliceRequests = buildSliceRequests();
         const rebuildsPostgresProjection = sliceRequests.some(requiresDashboardProjection);
-        if (rebuildsPostgresProjection && ctx.generalAccessTracking === true && ctx.realtimeAccessGranted !== true) {
-            const recorded = await recordGeneralAccessWeight(ctx, DASHBOARD_PROJECTION_ACCESS_WEIGHT);
-            const accessState = await getGeneralAccessState(ctx);
-            if (accessState?.level === 2) {
-                throw new TRPCError({
-                    code: 'TOO_MANY_REQUESTS',
-                    message: formatGeneralAccessLimitMessage(accessState),
-                });
-            }
-            if (recorded && generalId !== null) {
-                sourceState = await readDashboardSourceRevisionState(ctx.db, generalId, authUser);
+        if (ctx.generalAccessTracking === true) {
+            if (rebuildsPostgresProjection && ctx.realtimeAccessGranted !== true && generalId !== null) {
+                try {
+                    await enqueueDeferredGeneralAccess(
+                        ctx.redis,
+                        ctx.profile.name,
+                        ctx.auth,
+                        generalId,
+                        DASHBOARD_PROJECTION_ACCESS_WEIGHT
+                    );
+                } catch {
+                    // Redis is the low-cost path. Preserve the access record when it is
+                    // unavailable, accepting the older synchronous SQL only on failure.
+                    await recordGeneralAccessWeight(ctx, DASHBOARD_PROJECTION_ACCESS_WEIGHT);
+                }
             }
         }
 
