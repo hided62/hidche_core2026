@@ -443,8 +443,8 @@ importers:
         specifier: ^1.43.0
         version: 1.43.0
       pg:
-        specifier: ^8.16.3
-        version: 8.16.3
+        specifier: 8.23.0
+        version: 8.23.0
       redis:
         specifier: ^5.10.0
         version: 5.10.0

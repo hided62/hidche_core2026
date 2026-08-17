@@ -1,4 +1,5 @@
 import { GamePrisma, type GamePrismaClient } from './gamePrisma.js';
+import { acquireGameSchemaAdvisoryXactLock } from './gameSchemaAdvisoryLock.js';
 
 export const READ_MODEL_REVISION_COVERAGE_VERSION = 1;
 
@@ -27,12 +28,10 @@ export const activateReadModelRevisionCoverage = async (
         throw new RangeError('Expected read-model coverage version must be a non-negative safe integer.');
     }
 
-    await transaction.$executeRaw(GamePrisma.sql`
-        SELECT pg_advisory_xact_lock(
-            hashtext('read-model-revision-coverage'),
-            ${READ_MODEL_REVISION_COVERAGE_VERSION}
-        )
-    `);
+    await acquireGameSchemaAdvisoryXactLock(
+        transaction,
+        `read-model-revision-coverage:${READ_MODEL_REVISION_COVERAGE_VERSION}`
+    );
     const rows = await transaction.$queryRaw<CoverageRow[]>(GamePrisma.sql`
         SELECT "coverage_version" AS "coverageVersion"
         FROM "read_model_revision_meta"
@@ -40,7 +39,10 @@ export const activateReadModelRevisionCoverage = async (
         FOR UPDATE
     `);
     const current = rows.length === 1 ? rows[0]?.coverageVersion : undefined;
-    if (!Number.isSafeInteger(current) || (current !== expectedVersion && current !== READ_MODEL_REVISION_COVERAGE_VERSION)) {
+    if (
+        !Number.isSafeInteger(current) ||
+        (current !== expectedVersion && current !== READ_MODEL_REVISION_COVERAGE_VERSION)
+    ) {
         throw new Error(
             `Read-model coverage activation expected ${expectedVersion} or ${READ_MODEL_REVISION_COVERAGE_VERSION}, received ${String(current)}.`
         );

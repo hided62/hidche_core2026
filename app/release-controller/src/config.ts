@@ -1,6 +1,7 @@
 import path from 'node:path';
 
 import { sanitizeManagedProcessEnv } from '@sammo-ts/gateway-api';
+import { resolvePostgresPoolMax } from '@sammo-ts/infra';
 
 const parsePositiveInt = (value: string | undefined, fallback: number, name: string): number => {
     if (!value) return fallback;
@@ -25,6 +26,7 @@ export interface ReleaseControllerConfig {
     gatewayBasePath: string;
     pollIntervalMs: number;
     readinessTimeoutMs: number;
+    postgresPoolMax: number;
     baseEnv: Record<string, string>;
 }
 
@@ -54,6 +56,7 @@ export const resolveReleaseControllerConfig = (env: NodeJS.ProcessEnv = process.
             60000,
             'RELEASE_CONTROLLER_READINESS_TIMEOUT_MS'
         ),
+        postgresPoolMax: resolvePostgresPoolMax(env.RELEASE_CONTROLLER_POSTGRES_POOL_MAX ?? env.POSTGRES_POOL_MAX, 2),
         baseEnv: {
             ...sanitizeManagedProcessEnv(env),
             REDIS_URL: env.REDIS_URL.trim(),

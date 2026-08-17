@@ -379,6 +379,7 @@ export const createGameApiServer = async () => {
     app.get('/healthz', async () => ({
         ok: true,
         profile: config.profileName,
+        postgresPool: postgres.getPoolStats(),
         accountIconReconciliation: accountIconResetReconciler.getHealth(),
     }));
 

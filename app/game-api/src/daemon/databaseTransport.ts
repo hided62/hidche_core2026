@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 
-import { GamePrisma, type DatabaseClient } from '@sammo-ts/infra';
+import { acquireGameSchemaAdvisoryXactLock, type DatabaseClient, type GamePrisma } from '@sammo-ts/infra';
 
 import type { TurnDaemonTransport } from './transport.js';
 import type { TurnDaemonCommand, TurnDaemonCommandResult, TurnDaemonStatus } from './types.js';
@@ -91,12 +91,8 @@ export class DatabaseTurnDaemonTransport implements TurnDaemonTransport {
         try {
             if (command.type === 'npcPossessGeneral' && this.db.$transaction) {
                 const rejectionReason = await this.db.$transaction(async (transaction) => {
-                    await transaction.$executeRaw(
-                        GamePrisma.sql`SELECT pg_advisory_xact_lock(hashtextextended('npc-possession', 1))`
-                    );
-                    await transaction.$executeRaw(
-                        GamePrisma.sql`SELECT pg_advisory_xact_lock(hashtextextended(${`npc-possession:${command.userId}`}, 1))`
-                    );
+                    await acquireGameSchemaAdvisoryXactLock(transaction, 'npc-possession:global');
+                    await acquireGameSchemaAdvisoryXactLock(transaction, `npc-possession:user:${command.userId}`);
                     const acceptedAt = new Date(Math.floor(Date.now() / 1000) * 1000);
                     const acceptedGameAt = (await loadCurrentGameTime(transaction, acceptedAt)).now;
                     const token = await transaction.npcSelectionToken.findFirst({

@@ -1,4 +1,5 @@
 import { asRecord, HALL_OF_FAME_TYPES, resolveLegacyTextColor, type HallOfFameType } from '@sammo-ts/common';
+import { acquireGameSchemaAdvisoryXactLock } from '@sammo-ts/infra';
 import type { GamePrisma, InputJsonValue } from '@sammo-ts/infra';
 import { LogCategory, LogScope, sendMessage, type MessageDraft, type MessageRecordDraft } from '@sammo-ts/logic';
 
@@ -68,12 +69,7 @@ const claimGeneration = async (
     transaction: GamePrisma.TransactionClient,
     input: UnificationFinalizationInput
 ): Promise<'CLAIMED' | 'ALREADY_APPLIED'> => {
-    await transaction.$executeRaw`
-        SELECT pg_advisory_xact_lock(
-            hashtext(${'unification-finalization'}),
-            hashtext(${input.generationKey})
-        )
-    `;
+    await acquireGameSchemaAdvisoryXactLock(transaction, `unification-finalization:${input.generationKey}`);
     const existing = await transaction.unificationFinalization.findUnique({
         where: { generationKey: input.generationKey },
     });

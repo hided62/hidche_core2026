@@ -25,11 +25,33 @@ Fastify process입니다. worker 역할 분리는 API event loop의 작업을 �
 frontend/API replica나 장애 대체 backend를 제공하지는 않습니다.
 
 Profile은 PostgreSQL schema와 Redis namespace를 분리하지만 같은 database,
-PostgreSQL instance, runtime cgroup을 공유합니다. 현재 `PrismaPg` adapter에는
-role별 pool 상한을 명시하지 않아 각 DB 사용 process가 `pg` 기본 pool 상한을
-독립적으로 가질 수 있습니다. 따라서 profile 수를 늘릴 때는 process RSS뿐 아니라
-API, daemon, 세 worker와 Gateway 계열의 합산 connection budget을 PostgreSQL
-`max_connections` 안에서 먼저 정해야 합니다.
+PostgreSQL instance, runtime cgroup을 공유합니다. 관리되는 PM2 정의는 game API 4,
+turn daemon 2, auction/battle/tournament worker 각 1, Gateway API 4, Gateway
+orchestrator/release-controller 각 2, profile seed 1을 기본 pool 상한으로 전달합니다.
+각 값은 대응하는 `*_POSTGRES_POOL_MAX`로 바꿀 수 있고, 명시적 공통
+`POSTGRES_POOL_MAX`는 role별 값이 없을 때 기본값보다 우선합니다. 수치는 고정 성능
+계약이 아니라 PostgreSQL `max_connections`, pool waiting과 응답 p95를 함께 보고
+조정하는 최초 admission budget입니다.
+
+한 process에서 같은 URL·schema·상한으로 생성되는 여러 Prisma client는 하나의
+`pg.Pool`을 공유합니다. 따라서 turn daemon 내부의 loader, command, persistence
+client 수를 곱해 상한을 초과하지 않습니다. 마지막 connector가 disconnect할 때만
+pool을 닫고, API `/healthz`는 `postgresPool.max/total/active/idle/waiting`을
+노출합니다. 다른 schema는 `search_path`가 다르므로 pool을 공유하지 않으며 Gateway
+orchestrator가 여러 profile schema를 동시에 읽는 경우는 합산 connection budget에
+별도로 포함해야 합니다. turn daemon도 game schema pool max 2와 Gateway profile
+gate/admin action용 schema pool max 2를 각각 유지합니다. 같은 daemon의 두 Gateway
+connector끼리는 pool 하나를 공유하지만 game pool과는 합쳐지지 않습니다. 여섯
+profile의 이론 상주 상한은 game schema 54 + daemon Gateway control 12 + 중앙 Gateway
+API/orchestrator/release-controller 8 = 74이며 migration, seed와 운영 명령 reserve가
+추가로 필요합니다.
+
+Game schema 내부의 기능성 PostgreSQL advisory lock은
+`hashtextextended(current_schema() + logical key)`라는 공통 64-bit key를 사용합니다.
+NPC 빙의, select/join, 경매, 중립 경매 등록, 통일 finalization과 read-model coverage는
+같은 schema 안에서는 기존 직렬화 순서를 유지하지만 같은 ID/key를 쓰는 다른 profile
+schema와는 충돌하지 않습니다. Gateway operation/release claim lock은 여러 profile의
+제어 plane을 의도적으로 직렬화하므로 schema namespace로 바꾸지 않습니다.
 
 ## Gateway 실행
 

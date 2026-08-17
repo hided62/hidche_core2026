@@ -1,7 +1,12 @@
 import { randomInt } from 'node:crypto';
 
 import { asNumber, asRecord, JosaUtil, LiteHashDRBG, RandUtil, type RNG } from '@sammo-ts/common';
-import { GamePrisma, type DatabaseClient, type GamePrisma as GamePrismaTypes } from '@sammo-ts/infra';
+import {
+    acquireGameSchemaAdvisoryXactLock,
+    GamePrisma,
+    type DatabaseClient,
+    type GamePrisma as GamePrismaTypes,
+} from '@sammo-ts/infra';
 import {
     ActionLogger,
     DomesticTraitLoader,
@@ -150,10 +155,8 @@ const requireNpcPossessionWorld = (worldState: WorldStateRow): void => {
 const lockNpcPossession = async (db: DatabaseClient, userId: string): Promise<void> => {
     // Ref의 서로 다른 owner token 중복과 동일 owner 다중 빙의 race는 데이터 손상
     // 가능성이 있어, 후보 예약과 최종 점유 모두 같은 lock 순서로 직렬화한다.
-    await db.$executeRaw(GamePrisma.sql`SELECT pg_advisory_xact_lock(hashtextextended('npc-possession', 1))`);
-    await db.$executeRaw(
-        GamePrisma.sql`SELECT pg_advisory_xact_lock(hashtextextended(${`npc-possession:${userId}`}, 1))`
-    );
+    await acquireGameSchemaAdvisoryXactLock(db, 'npc-possession:global');
+    await acquireGameSchemaAdvisoryXactLock(db, `npc-possession:user:${userId}`);
 };
 
 const parsePickResult = (value: unknown): Record<string, NpcPossessionCandidate> => {

@@ -10,6 +10,7 @@ import {
     createGamePostgresConnector,
     createRedisConnector,
     resolvePostgresConfigFromEnv,
+    resolvePostgresPoolMax,
     resolveRedisConfigFromEnv,
 } from '@sammo-ts/infra';
 import { isRecord } from '@sammo-ts/common';
@@ -103,6 +104,9 @@ export interface GatewayOrchestratorHandle {
 }
 
 const SENSITIVE_ENV_NAME = /(SECRET|TOKEN|PASSWORD|PASSWD|PRIVATE_KEY|CLIENT_SECRET|DATABASE_URL|REDIS_URL)/iu;
+
+const managedPostgresPoolMax = (env: Record<string, string>, roleVariable: string, fallback: number): string =>
+    String(resolvePostgresPoolMax(env[roleVariable] ?? env.POSTGRES_POOL_MAX, fallback));
 
 export const planProfileReconcile = (
     status: GatewayProfileStatus,
@@ -415,6 +419,7 @@ export const buildProcessDefinitions = (
     const turnDaemonNodeOptions = baseEnv.TURN_DAEMON_NODE_OPTIONS?.trim();
     const apiEnv = {
         ...baseEnv,
+        POSTGRES_POOL_MAX: managedPostgresPoolMax(baseEnv, 'GAME_API_POSTGRES_POOL_MAX', 4),
         GAME_API_ROLE: 'server',
         PROFILE: profile.profile,
         SCENARIO: profile.currentScenario ?? 'default',
@@ -430,6 +435,7 @@ export const buildProcessDefinitions = (
     const daemonEnv = {
         ...baseEnv,
         ...(turnDaemonNodeOptions ? { NODE_OPTIONS: turnDaemonNodeOptions } : {}),
+        POSTGRES_POOL_MAX: managedPostgresPoolMax(baseEnv, 'TURN_DAEMON_POSTGRES_POOL_MAX', 2),
         GAME_ENGINE_ROLE: 'turn-daemon',
         TURN_PROFILE: profile.profile,
         PROFILE: profile.profile,
@@ -465,6 +471,7 @@ export const buildProcessDefinitions = (
             cwd: apiCwd,
             env: {
                 ...apiEnv,
+                POSTGRES_POOL_MAX: managedPostgresPoolMax(baseEnv, 'AUCTION_WORKER_POSTGRES_POOL_MAX', 1),
                 GAME_API_ROLE: 'auction-worker',
             },
         },
@@ -474,6 +481,7 @@ export const buildProcessDefinitions = (
             cwd: apiCwd,
             env: {
                 ...apiEnv,
+                POSTGRES_POOL_MAX: managedPostgresPoolMax(baseEnv, 'BATTLE_WORKER_POSTGRES_POOL_MAX', 1),
                 GAME_API_ROLE: 'battle-sim-worker',
             },
         },
@@ -483,6 +491,7 @@ export const buildProcessDefinitions = (
             cwd: apiCwd,
             env: {
                 ...apiEnv,
+                POSTGRES_POOL_MAX: managedPostgresPoolMax(baseEnv, 'TOURNAMENT_WORKER_POSTGRES_POOL_MAX', 1),
                 GAME_API_ROLE: 'tournament-worker',
             },
         },
@@ -1857,6 +1866,11 @@ export class GatewayOrchestrator implements GatewayOrchestratorHandle {
                         env: {
                             ...(this.processConfig.baseEnv ?? {}),
                             DATABASE_URL: options.databaseUrl,
+                            POSTGRES_POOL_MAX: managedPostgresPoolMax(
+                                this.processConfig.baseEnv ?? {},
+                                'PROFILE_SEED_POSTGRES_POOL_MAX',
+                                1
+                            ),
                             GATEWAY_ROLE: 'profile-seed',
                             PROFILE_SEED_REQUEST_FILE: requestFile,
                         },

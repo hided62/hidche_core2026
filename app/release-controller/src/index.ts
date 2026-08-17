@@ -16,7 +16,10 @@ export * from './selfUpgrade.js';
 
 const main = async (): Promise<void> => {
     const config = resolveReleaseControllerConfig();
-    const postgres = createGatewayPostgresConnector({ url: config.gatewayDatabaseUrl });
+    const postgres = createGatewayPostgresConnector({
+        url: config.gatewayDatabaseUrl,
+        maxConnections: config.postgresPoolMax,
+    });
     await postgres.connect();
     const repository = createGatewayReleaseRepository(postgres.prisma as GatewayPrismaClient);
     const workspaceManager = new GitWorkspaceManager({

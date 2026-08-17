@@ -29,6 +29,10 @@ Gateway process 환경에 전달하지 않습니다. 이 값이 frontend 정의�
   frontend build 계약입니다.
 - `RELEASE_CONTROLLER_POLL_MS`, `RELEASE_CONTROLLER_READINESS_TIMEOUT_MS`: queue
   poll과 준비 제한 시간입니다.
+- `RELEASE_CONTROLLER_POSTGRES_POOL_MAX`: controller 자체 Gateway DB pool 상한이며
+  기본값은 2입니다. Gateway API/orchestrator는 각각
+  `GATEWAY_API_POSTGRES_POOL_MAX`(기본 4),
+  `GATEWAY_ORCHESTRATOR_POSTGRES_POOL_MAX`(기본 2)를 사용합니다.
 - `TURBO_CACHE_DIR`: 선택 사항인 공유 local cache 경로입니다. 없으면 원래
   `RELEASE_CONTROLLER_WORKSPACE_ROOT/.turbo/release-cache`를 사용합니다. 상대 경로는
   원래 workspace 기준으로 해석합니다.

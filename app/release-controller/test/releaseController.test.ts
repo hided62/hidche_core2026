@@ -73,6 +73,7 @@ const config: ReleaseControllerConfig = {
     gatewayBasePath: '/gateway',
     pollIntervalMs: 5,
     readinessTimeoutMs: 10,
+    postgresPoolMax: 2,
     baseEnv: {
         REDIS_URL: 'redis://integration.invalid:6379/0',
         GATEWAY_BOOTSTRAP_TOKEN: 'bootstrap-secret-value',
@@ -134,6 +135,14 @@ it('runs Gateway preview from the frontend workspace dependency', () => {
     const definitions = buildGatewayProcessDefinitions('/srv/sammo/release', config);
     const frontend = definitions.find((definition) => definition.name === 'sammo:gateway-frontend');
     expect(frontend?.script).toBe('/srv/sammo/release/app/gateway-frontend/node_modules/vite/bin/vite.js');
+    expect(definitions.find((definition) => definition.name === 'sammo:gateway-api')?.env).toHaveProperty(
+        'POSTGRES_POOL_MAX',
+        '4'
+    );
+    expect(definitions.find((definition) => definition.name === 'sammo:gateway-orchestrator')?.env).toHaveProperty(
+        'POSTGRES_POOL_MAX',
+        '2'
+    );
 });
 
 it('does not forward release-controller PM2 identity to Gateway processes', () => {
@@ -323,6 +332,17 @@ describe('resolveReleaseControllerConfig', () => {
         });
 
         expect(new URL(resolved.gatewayDatabaseUrl).searchParams.get('schema')).toBe('gateway_release');
+        expect(resolved.postgresPoolMax).toBe(2);
+    });
+
+    it('applies a dedicated release-controller pool budget', () => {
+        const resolved = resolveReleaseControllerConfig({
+            GATEWAY_DATABASE_URL: 'postgresql://user:pass@127.0.0.1:5432/sammo',
+            REDIS_URL: 'redis://127.0.0.1:6379/0',
+            RELEASE_CONTROLLER_POSTGRES_POOL_MAX: '3',
+        });
+
+        expect(resolved.postgresPoolMax).toBe(3);
     });
 
     it('removes PM2 metadata from the inherited controller environment', () => {
@@ -371,6 +391,7 @@ describe('upgradeReleaseController', () => {
 
         expect(definition.env).toMatchObject({ DATABASE_URL: 'postgresql://integration.invalid/sammo' });
         expect(definition.env).toHaveProperty('RELEASE_CONTROLLER_WORKSPACE_ROOT', config.workspaceRoot);
+        expect(definition.env).toHaveProperty('POSTGRES_POOL_MAX', '2');
         expect(definition.env).not.toHaveProperty('pm_id');
         expect(definition.env).not.toHaveProperty('pm_exec_path');
         expect(definition.env).not.toHaveProperty('name');

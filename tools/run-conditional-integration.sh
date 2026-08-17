@@ -483,10 +483,18 @@ export TURN_DIFFERENTIAL_DATABASE_URL=$database_url
 export RESERVED_TURN_DATABASE_URL=$database_url
 export PROFILE_SEED_CLI_DATABASE_URL=$database_url
 export PROFILE_SEED_DATABASE_URL=$database_url
+profile_lock_secondary_database_url=$(build_database_url "$scenario_schema")
+export PROFILE_LOCK_SECONDARY_DATABASE_URL=$profile_lock_secondary_database_url
+export READ_MODEL_JOURNAL_DATABASE_URL=$database_url
 
-pnpm --filter @sammo-ts/infra prisma:db:push:game
+# The infra PostgreSQL boundary tests assert migration-owned seed rows, CHECK
+# constraints, and indexes. `prisma db push` only materializes the Prisma data
+# model, so provision the primary integration schema through the production
+# migration chain.
+pnpm --filter @sammo-ts/infra prisma:migrate:deploy:game
 
 core_database_markers=$(markers_for_mode core)
+run_marked_tests packages/infra "$core_database_markers" "infra_postgresql"
 run_marked_tests app/game-api "$core_database_markers" "game_api_postgresql"
 run_marked_tests app/game-engine "$core_database_markers" "game_engine_postgresql"
 run_marked_tests tools/integration-tests "$core_database_markers" "snapshot_postgresql"
