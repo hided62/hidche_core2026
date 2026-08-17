@@ -287,6 +287,14 @@ const buildCaller = async (
                     }
                 },
                 cleanupStaleWorkspaces: async () => ({ removed: [], skipped: [] }),
+                listRuntimeSettings: async () => [
+                    {
+                        profileName: 'che:2',
+                        turnTermMinutes: 20,
+                        blockGeneralCreate: 2,
+                        autorunUser: { limitMinutes: 720, options: ['develop', 'recruit_high', 'chief'] },
+                    },
+                ],
                 listRuntimeStates: async () => {
                     runtimeStateListCount += 1;
                     return [];
@@ -299,6 +307,7 @@ const buildCaller = async (
                     findFirst: async () => ({ id: options.firstUserIsAdmin === false ? 'bootstrap-user' : admin.id }),
                 },
                 gatewayRuntimeAction: {
+                    findMany: async () => [],
                     create: async ({ data }: { data: Record<string, unknown> }) => {
                         if (options.runtimeActionCreateError) {
                             throw options.runtimeActionCreateError;
@@ -316,6 +325,9 @@ const buildCaller = async (
                             updatedAt: new Date('2026-07-30T01:00:00.000Z'),
                         };
                     },
+                },
+                gatewayOperation: {
+                    findMany: async () => [],
                 },
                 systemSetting: {
                     findUnique: async () => ({ id: 1, notice: storedNotice }),
@@ -370,6 +382,32 @@ describe('admin profile navigation API', () => {
             },
         ]);
         expect(harness.getRuntimeStateListCount()).toBe(0);
+    });
+
+    it('returns live settings from the profile database separately from reset defaults', async () => {
+        const harness = await buildCaller(
+            async () => {
+                throw new Error('not used');
+            },
+            {
+                profileMeta: {
+                    resetDefaults: {
+                        turnTermMinutes: 60,
+                        blockGeneralCreate: 0,
+                        autorunUser: null,
+                    },
+                },
+            }
+        );
+
+        const result = await harness.caller.admin.profiles.list();
+
+        expect(result[0]?.runtimeSettings).toEqual({
+            profileName: 'che:2',
+            turnTermMinutes: 20,
+            blockGeneralCreate: 2,
+            autorunUser: { limitMinutes: 720, options: ['develop', 'recruit_high', 'chief'] },
+        });
     });
 });
 
@@ -1131,6 +1169,7 @@ describe('admin runtime clock action API', () => {
             {
                 profileName: 'che:2',
                 action: 'ACCELERATE',
+                payload: {},
                 durationMinutes: 15,
                 reason: '운영 일정 조정',
                 requestedBy: harness.admin.id,
@@ -1151,8 +1190,76 @@ describe('admin runtime clock action API', () => {
             })
         ).rejects.toMatchObject({
             code: 'CONFLICT',
-            message: '이 프로필의 이전 시간 조정 요청이 아직 처리 중입니다.',
+            message: '이 프로필의 이전 런타임 변경 요청이 아직 처리 중입니다.',
         });
+    });
+
+    it('queues all live game settings as one durable runtime action', async () => {
+        const harness = await buildCaller(unusedCreateOperation, { initialProfileStatus: 'RUNNING' });
+
+        const result = await harness.caller.admin.profiles.requestAction({
+            profileName: 'che:2',
+            action: 'UPDATE_RUNTIME_SETTINGS',
+            runtimeSettings: {
+                turnTermMinutes: 20,
+                blockGeneralCreate: 2,
+                autorunUser: {
+                    limitMinutes: 720,
+                    options: ['develop', 'recruit_high', 'chief'],
+                },
+            },
+            reason: '운영 중 규칙 변경',
+        });
+
+        expect(result).toMatchObject({
+            ok: true,
+            action: { action: 'UPDATE_RUNTIME_SETTINGS', status: 'REQUESTED' },
+        });
+        expect(harness.createdRuntimeActions).toEqual([
+            {
+                profileName: 'che:2',
+                action: 'UPDATE_RUNTIME_SETTINGS',
+                payload: {
+                    settings: {
+                        turnTermMinutes: 20,
+                        blockGeneralCreate: 2,
+                        autorunUser: {
+                            limitMinutes: 720,
+                            options: ['develop', 'recruit_high', 'chief'],
+                        },
+                    },
+                },
+                durationMinutes: undefined,
+                reason: '운영 중 규칙 변경',
+                requestedBy: harness.admin.id,
+            },
+        ]);
+    });
+
+    it('rejects a live game setting change without a reason or running database', async () => {
+        const running = await buildCaller(unusedCreateOperation, { initialProfileStatus: 'RUNNING' });
+        await expect(
+            running.caller.admin.profiles.requestAction({
+                profileName: 'che:2',
+                action: 'UPDATE_RUNTIME_SETTINGS',
+                runtimeSettings: { turnTermMinutes: 20 },
+            })
+        ).rejects.toMatchObject({ code: 'BAD_REQUEST', message: '변경 사유를 입력해 주세요.' });
+
+        const stopped = await buildCaller(unusedCreateOperation, { initialProfileStatus: 'STOPPED' });
+        await expect(
+            stopped.caller.admin.profiles.requestAction({
+                profileName: 'che:2',
+                action: 'UPDATE_RUNTIME_SETTINGS',
+                runtimeSettings: { blockGeneralCreate: 1 },
+                reason: '운영 정책 변경',
+            })
+        ).rejects.toMatchObject({
+            code: 'BAD_REQUEST',
+            message: '실행 중인 프로필에서만 현재 기수 설정을 바꿀 수 있습니다.',
+        });
+        expect(running.createdRuntimeActions).toEqual([]);
+        expect(stopped.createdRuntimeActions).toEqual([]);
     });
 
     it('rejects a scheduled clock shift instead of silently applying it immediately', async () => {

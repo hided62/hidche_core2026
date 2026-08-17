@@ -41,6 +41,7 @@ const zServerAction = z.enum([
     'STOP',
     'ACCELERATE',
     'DELAY',
+    'UPDATE_RUNTIME_SETTINGS',
     'RESET_NOW',
     'RESET_SCHEDULED',
     'OPEN_SURVEY',
@@ -440,6 +441,30 @@ const zInstallAutorun = z.object({
 });
 
 const isAllowedTurnTerm = (value: number): boolean => TURN_TERM_MINUTES.some((term) => term === value);
+
+const zRuntimeSettings = z
+    .object({
+        turnTermMinutes: z
+            .number()
+            .int()
+            .refine((value) => isAllowedTurnTerm(value), {
+                message: 'turnTermMinutes must divide 120.',
+            })
+            .optional(),
+        blockGeneralCreate: z.union([z.literal(0), z.literal(1), z.literal(2)]).optional(),
+        autorunUser: z
+            .object({
+                limitMinutes: z.number().int().min(1).max(43200),
+                options: z.array(z.enum(AUTORUN_USER_OPTIONS)).min(1),
+            })
+            .nullable()
+            .optional(),
+    })
+    .strict()
+    .refine((settings) => Object.values(settings).some((value) => value !== undefined), {
+        message: 'At least one runtime setting is required.',
+    });
+
 const isUniqueConstraintError = (error: unknown): boolean =>
     Boolean(error && typeof error === 'object' && 'code' in error && error.code === 'P2002');
 
@@ -1596,7 +1621,7 @@ export const adminRouter = router({
                 canReadProfile(adminAuth, profile.profileName)
             );
             const profileNames = profiles.map((profile) => profile.profileName);
-            const [runtimeActions, activeOperations] = await Promise.all([
+            const [runtimeActions, activeOperations, runtimeSettings] = await Promise.all([
                 ctx.prisma.gatewayRuntimeAction.findMany({
                     where: { profileName: { in: profileNames } },
                     orderBy: { createdAt: 'desc' },
@@ -1608,6 +1633,7 @@ export const adminRouter = router({
                     },
                     select: { id: true, profileName: true, status: true },
                 }),
+                ctx.orchestrator.listRuntimeSettings?.(profileNames) ?? Promise.resolve([]),
             ]);
             const activeOperationByProfile = new Map(
                 activeOperations.map((operation) => [operation.profileName, operation])
@@ -1624,9 +1650,11 @@ export const adminRouter = router({
                 profiles.map((profile) => profile.profileName)
             );
             const runtimeMap = new Map(runtimeStates.map((state) => [state.profileName, state]));
+            const runtimeSettingsMap = new Map(runtimeSettings.map((settings) => [settings.profileName, settings]));
             return profiles.map((profile) => ({
                 ...profile,
                 runtimeActions: runtimeActionsByProfile.get(profile.profileName) ?? [],
+                runtimeSettings: runtimeSettingsMap.get(profile.profileName) ?? null,
                 activeOperation: activeOperationByProfile.get(profile.profileName) ?? null,
                 runtime: runtimeMap.get(profile.profileName) ?? {
                     profileName: profile.profileName,
@@ -2014,6 +2042,7 @@ export const adminRouter = router({
                     profileName: z.string().min(1),
                     action: zServerAction,
                     durationMinutes: z.number().int().min(1).max(1440).optional(),
+                    runtimeSettings: zRuntimeSettings.optional(),
                     scheduledAt: z.string().datetime().optional(),
                     reason: z.string().max(200).optional(),
                 })
@@ -2030,6 +2059,19 @@ export const adminRouter = router({
                     throw new TRPCError({
                         code: 'BAD_REQUEST',
                         message: 'durationMinutes is required for acceleration or delay.',
+                    });
+                }
+                if (input.action === 'UPDATE_RUNTIME_SETTINGS') {
+                    if (!input.runtimeSettings) {
+                        throw new TRPCError({ code: 'BAD_REQUEST', message: 'runtimeSettings is required.' });
+                    }
+                    if (!input.reason || input.reason.trim().length < 3) {
+                        throw new TRPCError({ code: 'BAD_REQUEST', message: '변경 사유를 입력해 주세요.' });
+                    }
+                } else if (input.runtimeSettings) {
+                    throw new TRPCError({
+                        code: 'BAD_REQUEST',
+                        message: 'runtimeSettings is not valid for this action.',
                     });
                 }
                 if (input.scheduledAt) {
@@ -2092,6 +2134,19 @@ export const adminRouter = router({
                             message: 'Survey permission is required.',
                         });
                     }
+                } else if (input.action === 'UPDATE_RUNTIME_SETTINGS') {
+                    if (!gatewayProfileCapabilities(profile.status).runtimeExpected) {
+                        throw new TRPCError({
+                            code: 'BAD_REQUEST',
+                            message: '실행 중인 프로필에서만 현재 기수 설정을 바꿀 수 있습니다.',
+                        });
+                    }
+                    if (!canManageProfiles) {
+                        throw new TRPCError({
+                            code: 'FORBIDDEN',
+                            message: 'Profile management permission is required.',
+                        });
+                    }
                 } else if (!canManageProfiles) {
                     throw new TRPCError({
                         code: 'FORBIDDEN',
@@ -2106,12 +2161,17 @@ export const adminRouter = router({
                     });
                 }
 
-                if (input.action === 'ACCELERATE' || input.action === 'DELAY') {
+                if (
+                    input.action === 'ACCELERATE' ||
+                    input.action === 'DELAY' ||
+                    input.action === 'UPDATE_RUNTIME_SETTINGS'
+                ) {
                     try {
                         const runtimeAction = await ctx.prisma.gatewayRuntimeAction.create({
                             data: {
                                 profileName: input.profileName,
                                 action: input.action,
+                                payload: input.runtimeSettings ? { settings: input.runtimeSettings } : {},
                                 durationMinutes: input.durationMinutes,
                                 reason: input.reason,
                                 requestedBy: adminAuth.user.id,
@@ -2124,7 +2184,7 @@ export const adminRouter = router({
                         }
                         throw new TRPCError({
                             code: 'CONFLICT',
-                            message: '이 프로필의 이전 시간 조정 요청이 아직 처리 중입니다.',
+                            message: '이 프로필의 이전 런타임 변경 요청이 아직 처리 중입니다.',
                         });
                     }
                 }

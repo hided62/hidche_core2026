@@ -5,7 +5,14 @@ import type {
     TurnDaemonCommandResult,
 } from '../lifecycle/types.js';
 import { GamePrisma, type DatabaseClient } from '@sammo-ts/infra';
-import { asRecord, isCanonicalIsoTimestamp, JosaUtil, LiteHashDRBG, RandUtil } from '@sammo-ts/common';
+import {
+    asRecord,
+    GAME_TICKS_PER_TURN,
+    isCanonicalIsoTimestamp,
+    JosaUtil,
+    LiteHashDRBG,
+    RandUtil,
+} from '@sammo-ts/common';
 import {
     LogCategory,
     LogFormat,
@@ -917,6 +924,130 @@ async function handleShiftSchedule(
         lastTurnTime: shifted.lastTurnTime,
         shiftedGenerals: shifted.shiftedGenerals,
         shiftedAuctions,
+        checkpoint: ctx.world.getCheckpoint(),
+    };
+}
+
+async function handleUpdateRuntimeSettings(
+    ctx: CommandHandlerContext,
+    command: Extract<TurnDaemonCommand, { type: 'updateRuntimeSettings' }>
+): Promise<TurnDaemonCommandResult> {
+    if (!ctx.commandDb) {
+        return {
+            type: 'updateRuntimeSettings',
+            ok: false,
+            actionId: command.actionId,
+            reason: '런타임 설정 변경은 데이터베이스 transaction 경계에서만 실행할 수 있습니다.',
+        };
+    }
+
+    const operationalAcceptedAt = await resolveOperationalAcceptedAt(ctx.commandDb, command);
+    if (command.settings.blockGeneralCreate !== undefined) {
+        ctx.world.updateWorldConfig({ blockGeneralCreate: command.settings.blockGeneralCreate });
+    }
+    if (command.settings.autorunUser !== undefined) {
+        ctx.world.updateWorldMeta({
+            autorun_user:
+                command.settings.autorunUser === null
+                    ? null
+                    : {
+                          limit_minutes: command.settings.autorunUser.limitMinutes,
+                          options: Object.fromEntries(
+                              command.settings.autorunUser.options.map((option) => [option, true])
+                          ),
+                      },
+        });
+    }
+
+    const currentState = ctx.world.getState();
+    const currentTermMinutes = Math.max(1, Math.round(currentState.tickSeconds / 60));
+    const term =
+        command.settings.turnTermMinutes === undefined
+            ? {
+                  changed: false,
+                  previousTurnTermMinutes: currentTermMinutes,
+                  turnTermMinutes: currentTermMinutes,
+                  previousClockBaseTime: (currentState.clockBaseTime ?? currentState.lastTurnTime).toISOString(),
+                  clockBaseTime: (currentState.clockBaseTime ?? currentState.lastTurnTime).toISOString(),
+                  shiftedGenerals: 0,
+                  lastTurnTime: currentState.lastTurnTime.toISOString(),
+              }
+            : ctx.world.changeTurnTerm(command.settings.turnTermMinutes, operationalAcceptedAt);
+
+    let reprojectedAuctions = 0;
+    let reprojectedMessages = 0;
+    let reprojectedVotes = 0;
+    if (term.changed) {
+        const ticksPerSecond = BigInt(GAME_TICKS_PER_TURN / (term.turnTermMinutes * 60));
+        const baseTime = new Date(term.clockBaseTime);
+        reprojectedAuctions = await ctx.commandDb.$executeRaw(
+            GamePrisma.sql`
+                UPDATE auction
+                SET close_at = CAST(${baseTime} AS timestamp)
+                    + (close_tick / ${ticksPerSecond}) * INTERVAL '1 second'
+                    + (((close_tick % ${ticksPerSecond}) * 1000) / ${ticksPerSecond}) * INTERVAL '1 millisecond',
+                    updated_at = NOW()
+                WHERE close_tick IS NOT NULL
+            `
+        );
+        reprojectedMessages = await ctx.commandDb.$executeRaw(
+            GamePrisma.sql`
+                UPDATE message
+                SET time = CASE
+                        WHEN time_tick IS NULL THEN time
+                        ELSE CAST(${baseTime} AS timestamp)
+                            + (time_tick / ${ticksPerSecond}) * INTERVAL '1 second'
+                            + (((time_tick % ${ticksPerSecond}) * 1000) / ${ticksPerSecond}) * INTERVAL '1 millisecond'
+                    END,
+                    valid_until = CASE
+                        WHEN valid_until_tick IS NULL THEN valid_until
+                        ELSE CAST(${baseTime} AS timestamp)
+                            + (valid_until_tick / ${ticksPerSecond}) * INTERVAL '1 second'
+                            + (((valid_until_tick % ${ticksPerSecond}) * 1000) / ${ticksPerSecond}) * INTERVAL '1 millisecond'
+                    END
+                WHERE time_tick IS NOT NULL OR valid_until_tick IS NOT NULL
+            `
+        );
+        reprojectedVotes = await ctx.commandDb.$executeRaw(
+            GamePrisma.sql`
+                UPDATE vote_poll
+                SET start_at = CASE
+                        WHEN start_tick IS NULL THEN start_at
+                        ELSE CAST(${baseTime} AS timestamp)
+                            + (start_tick / ${ticksPerSecond}) * INTERVAL '1 second'
+                            + (((start_tick % ${ticksPerSecond}) * 1000) / ${ticksPerSecond}) * INTERVAL '1 millisecond'
+                    END,
+                    end_at = CASE
+                        WHEN end_tick IS NULL THEN end_at
+                        ELSE CAST(${baseTime} AS timestamp)
+                            + (end_tick / ${ticksPerSecond}) * INTERVAL '1 second'
+                            + (((end_tick % ${ticksPerSecond}) * 1000) / ${ticksPerSecond}) * INTERVAL '1 millisecond'
+                    END
+                WHERE start_tick IS NOT NULL OR end_tick IS NOT NULL
+            `
+        );
+        ctx.world.pushLog({
+            scope: LogScope.SYSTEM,
+            category: LogCategory.HISTORY,
+            text: `<R>★</>턴시간이 <C>${term.turnTermMinutes}분</>으로 변경됩니다.`,
+        });
+    }
+
+    return {
+        type: 'updateRuntimeSettings',
+        ok: true,
+        actionId: command.actionId,
+        settings: command.settings,
+        termChanged: term.changed,
+        previousTurnTermMinutes: term.previousTurnTermMinutes,
+        turnTermMinutes: term.turnTermMinutes,
+        previousClockBaseTime: term.previousClockBaseTime,
+        clockBaseTime: term.clockBaseTime,
+        lastTurnTime: term.lastTurnTime,
+        shiftedGenerals: term.shiftedGenerals,
+        reprojectedAuctions,
+        reprojectedMessages,
+        reprojectedVotes,
         checkpoint: ctx.world.getCheckpoint(),
     };
 }
@@ -2505,6 +2636,8 @@ export const createTurnDaemonCommandHandler = (options: {
             handleSelectPoolReselect(ctx, command as Extract<TurnDaemonCommand, { type: 'selectPoolReselect' }>),
         shiftSchedule: (command) =>
             handleShiftSchedule(ctx, command as Extract<TurnDaemonCommand, { type: 'shiftSchedule' }>),
+        updateRuntimeSettings: (command) =>
+            handleUpdateRuntimeSettings(ctx, command as Extract<TurnDaemonCommand, { type: 'updateRuntimeSettings' }>),
     };
 
     return {

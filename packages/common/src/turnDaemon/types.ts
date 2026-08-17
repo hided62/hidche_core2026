@@ -41,6 +41,19 @@ export interface TurnDaemonStatus {
     checkpoint?: TurnCheckpoint;
 }
 
+export type RuntimeAutorunUserOption = 'develop' | 'warp' | 'recruit' | 'recruit_high' | 'train' | 'battle' | 'chief';
+
+export interface RuntimeAutorunUserSettings {
+    limitMinutes: number;
+    options: RuntimeAutorunUserOption[];
+}
+
+export interface RuntimeGameSettingsPatch {
+    turnTermMinutes?: number;
+    blockGeneralCreate?: 0 | 1 | 2;
+    autorunUser?: RuntimeAutorunUserSettings | null;
+}
+
 export type TurnDaemonCommand =
     | {
           type: 'run';
@@ -48,6 +61,12 @@ export type TurnDaemonCommand =
           reason: RunReason;
           targetTime?: string;
           budget?: TurnRunBudget;
+      }
+    | {
+          type: 'updateRuntimeSettings';
+          requestId?: string;
+          actionId: string;
+          settings: RuntimeGameSettingsPatch;
       }
     | { type: 'pause'; requestId?: string; reason?: string }
     | { type: 'resume'; requestId?: string; reason?: string }
@@ -282,6 +301,29 @@ export type TurnDaemonCommandResult =
           type: 'commandRejected';
           ok: false;
           commandType: TurnDaemonCommand['type'];
+          reason: string;
+      }
+    | {
+          type: 'updateRuntimeSettings';
+          ok: true;
+          actionId: string;
+          settings: RuntimeGameSettingsPatch;
+          termChanged: boolean;
+          previousTurnTermMinutes: number;
+          turnTermMinutes: number;
+          previousClockBaseTime: string;
+          clockBaseTime: string;
+          lastTurnTime: string;
+          shiftedGenerals: number;
+          reprojectedAuctions: number;
+          reprojectedMessages: number;
+          reprojectedVotes: number;
+          checkpoint?: TurnCheckpoint;
+      }
+    | {
+          type: 'updateRuntimeSettings';
+          ok: false;
+          actionId: string;
           reason: string;
       }
     | {

@@ -368,6 +368,30 @@ const zShiftSchedule = z.object({
         .refine((value) => value !== 0),
 });
 
+const zRuntimeAutorunOption = z.enum(['develop', 'warp', 'recruit', 'recruit_high', 'train', 'battle', 'chief']);
+
+const zUpdateRuntimeSettings = z.object({
+    type: z.literal('updateRuntimeSettings'),
+    actionId: z.string().uuid(),
+    settings: z
+        .object({
+            turnTermMinutes: z
+                .number()
+                .int()
+                .refine((value) => [1, 2, 5, 10, 20, 30, 60, 120].includes(value))
+                .optional(),
+            blockGeneralCreate: z.union([z.literal(0), z.literal(1), z.literal(2)]).optional(),
+            autorunUser: z
+                .object({
+                    limitMinutes: z.number().int().min(1).max(43200),
+                    options: z.array(zRuntimeAutorunOption).min(1),
+                })
+                .nullable()
+                .optional(),
+        })
+        .refine((settings) => Object.values(settings).some((value) => value !== undefined)),
+});
+
 const normalizeAuctionFinalize: CommandNormalizer<'auctionFinalize'> = (envelope) => {
     const command = parseWith(zAuctionFinalize, envelope.command);
     if (!command) {
@@ -660,6 +684,14 @@ const normalizeShiftSchedule: CommandNormalizer<'shiftSchedule'> = (envelope) =>
     return { ...command, requestId: envelope.requestId };
 };
 
+const normalizeUpdateRuntimeSettings: CommandNormalizer<'updateRuntimeSettings'> = (envelope) => {
+    const command = parseWith(zUpdateRuntimeSettings, envelope.command);
+    if (!command) {
+        return null;
+    }
+    return { ...command, requestId: envelope.requestId };
+};
+
 const normalizers: CommandNormalizerMap = {
     auctionFinalize: normalizeAuctionFinalize,
     auctionOpen: normalizeAuctionOpen,
@@ -699,6 +731,7 @@ const normalizers: CommandNormalizerMap = {
     resume: normalizeResume,
     shutdown: normalizeShutdown,
     shiftSchedule: normalizeShiftSchedule,
+    updateRuntimeSettings: normalizeUpdateRuntimeSettings,
 };
 
 export const normalizeTurnDaemonCommand = (envelope: TurnDaemonCommandEnvelope): TurnDaemonCommand | null => {

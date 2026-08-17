@@ -1,4 +1,13 @@
-export const RESET_AUTORUN_OPTIONS = ['develop', 'warp', 'recruit', 'train', 'battle'] as const;
+export const PROFILE_TURN_TERM_MINUTES = [1, 2, 5, 10, 20, 30, 60, 120] as const;
+export const RESET_AUTORUN_OPTIONS = [
+    'develop',
+    'warp',
+    'recruit',
+    'recruit_high',
+    'train',
+    'battle',
+    'chief',
+] as const;
 
 export type ResetAutorunOption = (typeof RESET_AUTORUN_OPTIONS)[number];
 
@@ -48,7 +57,7 @@ export const normalizeProfileResetDefaults = (value: unknown): ProfileResetDefau
     const autorunLimit = rawAutorun?.limitMinutes;
 
     return {
-        turnTermMinutes: enumNumber(raw.turnTermMinutes, [1, 2, 3, 4, 5, 6, 10, 12, 15, 20, 24, 30, 40, 60, 120], 60),
+        turnTermMinutes: enumNumber(raw.turnTermMinutes, PROFILE_TURN_TERM_MINUTES, 60),
         sync: typeof raw.sync === 'boolean' ? raw.sync : SYSTEM_PROFILE_RESET_DEFAULTS.sync,
         fiction: enumNumber(raw.fiction, [0, 1], SYSTEM_PROFILE_RESET_DEFAULTS.fiction),
         extend: typeof raw.extend === 'boolean' ? raw.extend : SYSTEM_PROFILE_RESET_DEFAULTS.extend,

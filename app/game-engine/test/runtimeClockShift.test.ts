@@ -3,6 +3,8 @@ import { describe, expect, it, vi } from 'vitest';
 import type { GamePrismaClient } from '@sammo-ts/infra';
 import { InMemoryTurnWorld } from '../src/turn/inMemoryWorld.js';
 import { applyRuntimeClockShift } from '../src/turn/runtimeClockShift.js';
+import { applyRuntimeGameSettings } from '../src/turn/runtimeGameSettings.js';
+import { createTurnDaemonCommandHandler } from '../src/turn/worldCommandHandler.js';
 import type { TurnGeneral, TurnWorldSnapshot, TurnWorldState } from '../src/turn/types.js';
 
 const buildGeneral = (id: number, turnTime: string): TurnGeneral =>
@@ -160,6 +162,107 @@ describe('runtime clock shift', () => {
     });
 });
 
+describe('runtime turn term change', () => {
+    it('preserves the current game display while reprojecting tick-owned dates', () => {
+        const wallAnchor = new Date('2026-07-30T10:00:00.000Z');
+        const changedAt = new Date('2026-07-30T10:05:00.000Z');
+        const world = buildWorld({
+            clockBaseTime: wallAnchor,
+            clockTick: 0,
+            clockMode: 'realtime',
+            clockWallAnchor: wallAnchor,
+            lastTurnTick: 0,
+        });
+        world.setCheckpoint({
+            turnTime: '2026-07-30T10:10:00.000Z',
+            turnTick: 36_000_000,
+            generalId: 1,
+            year: 190,
+            month: 1,
+        });
+
+        const before = world.getGameNow(changedAt);
+        const result = world.changeTurnTerm(20, changedAt);
+
+        expect(result).toMatchObject({
+            changed: true,
+            previousTurnTermMinutes: 10,
+            turnTermMinutes: 20,
+            previousClockBaseTime: '2026-07-30T10:00:00.000Z',
+            clockBaseTime: '2026-07-30T09:55:00.000Z',
+            lastTurnTime: '2026-07-30T09:55:00.000Z',
+            shiftedGenerals: 2,
+        });
+        expect(world.getGameNow(changedAt)).toEqual(before);
+        expect(world.getGeneralById(1)?.turnTime.toISOString()).toBe('2026-07-30T10:15:00.000Z');
+        expect(world.getGeneralById(1)?.turnTick).toBe(36_000_000);
+        expect(world.getCheckpoint()?.turnTime).toBe('2026-07-30T10:15:00.000Z');
+        expect(world.getState()).toMatchObject({
+            tickSeconds: 1200,
+            clockTick: 18_000_000,
+            lastTurnTick: 0,
+        });
+        expect(world.getWorldConfig()).toMatchObject({ turnTermMinutes: 20 });
+    });
+
+    it('updates all three live settings and only emits a new history log', async () => {
+        const changedAt = new Date('2026-07-30T10:05:00.000Z');
+        const world = buildWorld({
+            clockBaseTime: new Date('2026-07-30T10:00:00.000Z'),
+            clockTick: 0,
+            clockMode: 'realtime',
+            clockWallAnchor: new Date('2026-07-30T10:00:00.000Z'),
+            lastTurnTick: 0,
+        });
+        const executeRaw = vi.fn(async () => 1);
+        const db = {
+            inputEvent: {
+                findUnique: vi.fn(async () => ({
+                    createdAt: changedAt,
+                    target: 'ENGINE',
+                    eventType: 'updateRuntimeSettings',
+                })),
+            },
+            $executeRaw: executeRaw,
+        } as unknown as GamePrismaClient;
+        const handler = createTurnDaemonCommandHandler({ world });
+
+        const result = await handler.handle(
+            {
+                type: 'updateRuntimeSettings',
+                requestId: 'runtime-settings:test',
+                actionId: 'action-test',
+                settings: {
+                    turnTermMinutes: 20,
+                    blockGeneralCreate: 2,
+                    autorunUser: { limitMinutes: 720, options: ['develop', 'recruit_high', 'chief'] },
+                },
+            },
+            { db }
+        );
+
+        expect(result).toMatchObject({
+            type: 'updateRuntimeSettings',
+            ok: true,
+            termChanged: true,
+            reprojectedAuctions: 1,
+            reprojectedMessages: 1,
+            reprojectedVotes: 1,
+        });
+        expect(executeRaw).toHaveBeenCalledTimes(3);
+        expect(world.getWorldConfig()).toMatchObject({ turnTermMinutes: 20, blockGeneralCreate: 2 });
+        expect(world.getState().meta).toMatchObject({
+            autorun_user: {
+                limit_minutes: 720,
+                options: { develop: true, recruit_high: true, chief: true },
+            },
+        });
+        expect(world.peekDirtyState().logs).toEqual([
+            expect.objectContaining({ text: '<R>★</>턴시간이 <C>20분</>으로 변경됩니다.' }),
+        ]);
+    });
+});
+
 describe('runtime clock shift projection', () => {
     it('waits for the durable engine event and applies Redis projections idempotently', async () => {
         const actionId = '68f1f0e4-3b95-4aeb-9925-c7e93caf1ba7';
@@ -283,5 +386,128 @@ describe('runtime clock shift projection', () => {
         });
         expect(zAdd).toHaveBeenCalledTimes(2);
         expect(inputEventCreate).toHaveBeenCalledTimes(3);
+    });
+});
+
+describe('runtime game settings projection', () => {
+    it('waits for the engine result and reprojects tournament tick dates idempotently', async () => {
+        const actionId = '98f1f0e4-3b95-4aeb-9925-c7e93caf1ba7';
+        let eventStatus: 'PENDING' | 'SUCCEEDED' = 'PENDING';
+        let created = false;
+        const db = {
+            inputEvent: {
+                create: vi.fn(async () => {
+                    if (created) throw { code: 'P2002' };
+                    created = true;
+                    return {};
+                }),
+                findUniqueOrThrow: vi.fn(async () =>
+                    eventStatus === 'PENDING'
+                        ? {
+                              eventType: 'updateRuntimeSettings',
+                              payload: {
+                                  type: 'updateRuntimeSettings',
+                                  actionId,
+                                  settings: {
+                                      turnTermMinutes: 20,
+                                      blockGeneralCreate: 2,
+                                      autorunUser: { limitMinutes: 720, options: ['develop', 'chief'] },
+                                  },
+                              },
+                              status: 'PENDING',
+                              result: null,
+                              error: null,
+                          }
+                        : {
+                              eventType: 'updateRuntimeSettings',
+                              payload: {
+                                  type: 'updateRuntimeSettings',
+                                  actionId,
+                                  settings: {
+                                      turnTermMinutes: 20,
+                                      blockGeneralCreate: 2,
+                                      autorunUser: { limitMinutes: 720, options: ['develop', 'chief'] },
+                                  },
+                              },
+                              status: 'SUCCEEDED',
+                              result: {
+                                  type: 'updateRuntimeSettings',
+                                  ok: true,
+                                  actionId,
+                                  settings: {
+                                      turnTermMinutes: 20,
+                                      blockGeneralCreate: 2,
+                                      autorunUser: { limitMinutes: 720, options: ['develop', 'chief'] },
+                                  },
+                                  termChanged: true,
+                                  previousTurnTermMinutes: 10,
+                                  turnTermMinutes: 20,
+                                  previousClockBaseTime: '2026-07-30T10:00:00.000Z',
+                                  clockBaseTime: '2026-07-30T09:55:00.000Z',
+                                  lastTurnTime: '2026-07-30T09:55:00.000Z',
+                                  shiftedGenerals: 2,
+                                  reprojectedAuctions: 1,
+                                  reprojectedMessages: 1,
+                                  reprojectedVotes: 1,
+                              },
+                              error: null,
+                          }
+                ),
+            },
+        } as unknown as GamePrismaClient;
+        const stateKey = 'sammo:hwe:default:tournament:state';
+        const values = new Map<string, string>([
+            [
+                stateKey,
+                JSON.stringify({
+                    stage: 1,
+                    nextAt: '2026-07-30T10:10:00.000Z',
+                    bettingCloseAt: '2026-07-30T10:05:00.000Z',
+                }),
+            ],
+        ]);
+        const redis = {
+            get: async (key: string) => values.get(key) ?? null,
+            set: async (key: string, value: string, options?: { NX?: boolean }) => {
+                if (options?.NX && values.has(key)) return null;
+                values.set(key, value);
+                return 'OK';
+            },
+            del: async (key: string) => (values.delete(key) ? 1 : 0),
+            eval: async (_script: string, options: { keys: string[]; arguments: string[] }) => {
+                options.arguments.forEach((value, index) => values.set(options.keys[index]!, value));
+                return '1';
+            },
+        };
+        const action = {
+            id: actionId,
+            profileName: 'hwe:default',
+            action: 'UPDATE_RUNTIME_SETTINGS',
+            durationMinutes: null,
+            payload: {
+                settings: {
+                    turnTermMinutes: 20,
+                    blockGeneralCreate: 2,
+                    autorunUser: { limitMinutes: 720, options: ['develop', 'chief'] },
+                },
+            },
+        };
+
+        await expect(
+            applyRuntimeGameSettings({ action, profileName: 'hwe:default', db, redis })
+        ).resolves.toMatchObject({ status: 'REQUESTED' });
+        eventStatus = 'SUCCEEDED';
+        await expect(
+            applyRuntimeGameSettings({ action, profileName: 'hwe:default', db, redis })
+        ).resolves.toMatchObject({ status: 'APPLIED' });
+        await expect(
+            applyRuntimeGameSettings({ action, profileName: 'hwe:default', db, redis })
+        ).resolves.toMatchObject({ status: 'APPLIED' });
+
+        expect(JSON.parse(values.get(stateKey) ?? '{}')).toMatchObject({
+            nextAt: '2026-07-30T10:15:00.000Z',
+            bettingCloseAt: '2026-07-30T10:05:00.000Z',
+            runtimeSettingsActionIds: [actionId],
+        });
     });
 });

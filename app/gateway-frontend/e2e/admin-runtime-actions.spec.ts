@@ -8,8 +8,8 @@ const operationNames = (route: Route): string[] => {
 
 type RuntimeAction = {
     id: string;
-    action: 'ACCELERATE' | 'DELAY';
-    durationMinutes: number;
+    action: 'ACCELERATE' | 'DELAY' | 'UPDATE_RUNTIME_SETTINGS';
+    durationMinutes: number | null;
     status: 'REQUESTED' | 'PARTIAL' | 'APPLIED' | 'FAILED' | 'IGNORED';
     detail: string;
     handler: string | null;
@@ -45,6 +45,7 @@ const installFixture = async (
     let installRequested = false;
     let installActive = false;
     let postRequestProfileReads = 0;
+    let requestedRuntimeSettings = false;
     const requestBodies: unknown[] = [];
     let releaseRequest = (): void => {};
     const requestGate = options.deferRequest
@@ -66,6 +67,7 @@ const installFixture = async (
         const operations = operationNames(route);
         if (operations.includes('admin.profiles.requestAction')) {
             requested = true;
+            requestedRuntimeSettings = JSON.stringify(body).includes('UPDATE_RUNTIME_SETTINGS');
             requestBodies.push(body);
             await requestGate;
         }
@@ -171,6 +173,20 @@ const installFixture = async (
                         status: options.profileStatus ?? 'RUNNING',
                         buildStatus: 'SUCCEEDED',
                         meta: {},
+                        runtimeSettings: requestedRuntimeSettings
+                            ? {
+                                  turnTermMinutes: 20,
+                                  blockGeneralCreate: 1,
+                                  autorunUser: {
+                                      limitMinutes: 720,
+                                      options: ['develop', 'recruit_high', 'chief'],
+                                  },
+                              }
+                            : {
+                                  turnTermMinutes: 10,
+                                  blockGeneralCreate: 2,
+                                  autorunUser: null,
+                              },
                         activeOperation: installActive
                             ? {
                                   id: '77777777-7777-4777-8777-777777777777',
@@ -189,11 +205,20 @@ const installFixture = async (
                         runtimeActions: keepPending
                             ? [runtimeAction('REQUESTED')]
                             : requested
-                              ? (options.afterRequestActions ?? [
-                                    runtimeAction('APPLIED', {
-                                        detail: '15분 가속 · 장수 2명 · 경매 1건',
-                                    }),
-                                ])
+                              ? (options.afterRequestActions ??
+                                (requestedRuntimeSettings
+                                    ? [
+                                          runtimeAction('APPLIED', {
+                                              action: 'UPDATE_RUNTIME_SETTINGS',
+                                              durationMinutes: null,
+                                              detail: '턴 20분 · 장수 생성 불가 · 유저 자동턴 적용',
+                                          }),
+                                      ]
+                                    : [
+                                          runtimeAction('APPLIED', {
+                                              detail: '15분 가속 · 장수 2명 · 경매 1건',
+                                          }),
+                                      ]))
                               : (options.initialActions ?? []),
                     },
                 ]);
@@ -203,8 +228,8 @@ const installFixture = async (
                     ok: true,
                     action: {
                         id: '68f1f0e4-3b95-4aeb-9925-c7e93caf1ba7',
-                        action: 'ACCELERATE',
-                        durationMinutes: 15,
+                        action: requestedRuntimeSettings ? 'UPDATE_RUNTIME_SETTINGS' : 'ACCELERATE',
+                        durationMinutes: requestedRuntimeSettings ? null : 15,
                         status: 'REQUESTED',
                         detail: null,
                         handler: null,
@@ -284,8 +309,69 @@ test('reports clock-shift acceptance separately from actual application', async 
     expect(fixture.requestBodies).toHaveLength(1);
     expect(JSON.stringify(fixture.requestBodies[0])).toContain('"ACCELERATE"');
     expect(JSON.stringify(fixture.requestBodies[0])).toContain('"durationMinutes":15');
-    await expect(page.getByRole('button', { name: '설문 오픈 (게임 내 관리)' })).toBeDisabled();
-    await expect(page.getByText('설문 생성은 해당 게임의 설문 관리 화면에서 진행해 주세요.')).toBeVisible();
+    await expect(page.getByRole('button', { name: '설문 오픈 (게임 내 관리)' })).toHaveCount(0);
+    await expect(page.getByText('설문 생성은 해당 게임의 설문 관리 화면에서 진행해 주세요.')).toHaveCount(0);
+});
+
+test('updates live game options from the authoritative database snapshot', async ({ page }, testInfo) => {
+    const fixture = await installFixture(page);
+    await page.goto('/gateway/admin/servers/hwe%3Adefault');
+
+    const settings = page.getByTestId('runtime-settings');
+    await expect(settings).toBeVisible();
+    await expect(page.getByTestId('runtime-turn-term')).toHaveValue('10');
+    await expect(page.getByTestId('runtime-block-general-create')).toHaveValue('2');
+    await expect(page.getByTestId('runtime-autorun-enabled')).not.toBeChecked();
+    await expect(page.getByRole('button', { name: '설문 오픈 (게임 내 관리)' })).toHaveCount(0);
+
+    await page.getByTestId('runtime-turn-term').selectOption('20');
+    await page.getByTestId('runtime-block-general-create').selectOption('1');
+    await page.getByTestId('runtime-autorun-enabled').check();
+    await page.getByTestId('runtime-autorun-minutes').fill('720');
+    for (const label of ['이동', '징병', '훈련', '전투']) {
+        await settings.getByLabel(label, { exact: true }).uncheck();
+    }
+    await page.getByPlaceholder('사유 / 메모').fill('운영 중 설정 변경');
+
+    const submit = page.getByTestId('runtime-settings-submit');
+    await submit.hover();
+    const hoverBackground = await submit.evaluate((element) => getComputedStyle(element).backgroundColor);
+    await submit.focus();
+    await expect(submit).toBeFocused();
+    const click = submit.click();
+    await expect.poll(() => fixture.requestBodies.length).toBe(1);
+    await click;
+
+    const requestJson = JSON.stringify(fixture.requestBodies[0]);
+    expect(requestJson).toContain('UPDATE_RUNTIME_SETTINGS');
+    expect(requestJson).toContain('"turnTermMinutes":20');
+    expect(requestJson).toContain('"blockGeneralCreate":1');
+    expect(requestJson).toContain('"limitMinutes":720');
+    expect(requestJson).toContain('"recruit_high"');
+    expect(requestJson).toContain('"chief"');
+    expect(hoverBackground).not.toBe('rgba(0, 0, 0, 0)');
+    await expect(page.getByText('APPLIED · UPDATE_RUNTIME_SETTINGS')).toBeVisible();
+    await expect(page.getByTestId('runtime-turn-term')).toHaveValue('20');
+    await expect(page.getByTestId('runtime-block-general-create')).toHaveValue('1');
+    await expect(page.getByTestId('runtime-autorun-enabled')).toBeChecked();
+
+    const geometry = await settings.evaluate((element) => {
+        const rect = element.getBoundingClientRect();
+        return { left: rect.left, right: rect.right, width: rect.width, viewport: window.innerWidth };
+    });
+    expect(geometry.left).toBeGreaterThanOrEqual(0);
+    expect(geometry.right).toBeLessThanOrEqual(geometry.viewport);
+    expect(geometry.width).toBeGreaterThan(250);
+    await page.screenshot({ path: testInfo.outputPath('runtime-settings-desktop.png'), fullPage: true });
+
+    await page.setViewportSize({ width: 390, height: 844 });
+    const mobileGeometry = await settings.evaluate((element) => {
+        const rect = element.getBoundingClientRect();
+        return { left: rect.left, right: rect.right, viewport: window.innerWidth };
+    });
+    expect(mobileGeometry.left).toBeGreaterThanOrEqual(0);
+    expect(mobileGeometry.right).toBeLessThanOrEqual(mobileGeometry.viewport);
+    await page.screenshot({ path: testInfo.outputPath('runtime-settings-mobile.png'), fullPage: true });
 });
 
 test('distinguishes a turn pause from an inaccessible stopped server in operator controls', async ({ page }) => {
