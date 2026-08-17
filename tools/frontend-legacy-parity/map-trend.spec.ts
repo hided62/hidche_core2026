@@ -179,6 +179,15 @@ const installMainFixture = async (page: Page, failRecords = false) => {
                     myNation: 1,
                 });
             }
+            if (operation === 'public.getMapLayout') return response(fixture.game.mapLayout);
+            if (operation === 'public.getCachedMap') {
+                return response({ ...fixture.game.map, history: cachedHistory });
+            }
+            if (operation === 'public.getWorldTrend') {
+                return response({ year: 200, month: 1, turnTerm: 10 });
+            }
+            if (operation === 'public.getNationList') return response([]);
+            if (operation === 'public.getGeneralList') return response([]);
             if (operation === 'turns.getCommandTable') return response({ general: [], nation: [] });
             if (operation === 'turns.reserved.getGeneral') return response([]);
             if (operation === 'messages.getRecent') return response(emptyMessages);
@@ -262,6 +271,40 @@ test('shows the current in-game map and all three recent record streams', async 
             fullPage: true,
             animations: 'disabled',
         });
+    }
+});
+
+test('uses the shared content font for public game history on desktop and mobile', async ({ page }) => {
+    await installMainFixture(page);
+
+    for (const viewport of [
+        { width: 1200, height: 900 },
+        { width: 500, height: 900 },
+    ]) {
+        await page.setViewportSize(viewport);
+        await page.goto(gameUrl('/public'));
+        await expect(page.locator('.recent-log-list')).toContainText('유비가 촉을 건국하였습니다.');
+
+        const font = await page.locator('.recent-log-list').evaluate((element) => {
+            const style = getComputedStyle(element);
+            return { family: style.fontFamily, size: style.fontSize };
+        });
+        expect(font.family).toContain('Pretendard');
+        expect(font.size).toBe('14px');
+
+        const pretendardFont = await page.evaluate(async () => {
+            await document.fonts.load('400 14px Pretendard', '유비가 촉을 건국하였습니다.');
+            await document.fonts.ready;
+            const statuses = [...document.fonts]
+                .filter((face) => face.family.replaceAll('"', '') === 'Pretendard')
+                .map((face) => face.status);
+            return {
+                statuses,
+                koreanGlyphsLoaded: document.fonts.check('400 14px Pretendard', '유비가 촉을 건국하였습니다.'),
+            };
+        });
+        expect(pretendardFont.statuses).toContain('loaded');
+        expect(pretendardFont.koreanGlyphsLoaded).toBe(true);
     }
 });
 

@@ -41,7 +41,7 @@ const formattedLogs = computed(() =>
 .recent-log-list {
     min-width: 0;
     color: #fff;
-    font-family: 'Times New Roman', serif;
+    font-family: var(--sammo-font-sans);
     font-size: 14px;
     line-height: 1.35;
 }

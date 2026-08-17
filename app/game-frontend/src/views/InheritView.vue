@@ -778,12 +778,7 @@ onMounted(() => {
     padding: 0 7px;
     color: #fff;
     height: 1597px;
-    font:
-        14px/21px Pretendard,
-        'Apple SD Gothic Neo',
-        'Noto Sans KR',
-        'Malgun Gothic',
-        sans-serif;
+    font: 14px/21px var(--sammo-font-sans);
 }
 
 .inherit-page.legacy-bg0 {
