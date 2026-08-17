@@ -18,9 +18,9 @@ const turnDaemonAdminProcedure = authedProcedure.use(({ ctx, next }) => {
         roles.includes('superuser') ||
         roles.includes('admin') ||
         roles.includes('admin.superuser') ||
-        roles.includes('admin.profiles.manage') ||
-        roles.includes('admin.profiles.manage:*') ||
-        roles.includes(`admin.profiles.manage:${profileName}`);
+        roles.includes('admin.profiles.runtime') ||
+        roles.includes('admin.profiles.runtime:*') ||
+        roles.includes(`admin.profiles.runtime:${profileName}`);
     if (!canManageProfile) {
         throw new TRPCError({
             code: 'FORBIDDEN',

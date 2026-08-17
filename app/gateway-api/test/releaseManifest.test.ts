@@ -38,7 +38,7 @@ describe('readReleaseManifest', () => {
 
         await expect(readReleaseManifest(workspaceRoot)).resolves.toMatchObject({
             controllerProtocol: RELEASE_CONTROLLER_PROTOCOL,
-            gatewaySchemaHead: '20260817000000_add_password_reset_required',
+            gatewaySchemaHead: '20260817002000_remove_profile_manage_capability',
             gameSchemaHead: '20260817001000_add_dedicated_legacy_archive',
         });
     });

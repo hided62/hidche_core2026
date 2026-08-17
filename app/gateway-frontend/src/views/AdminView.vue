@@ -534,7 +534,7 @@ const rolesStatus = ref('');
 const capabilities = ref<AdminCapability[]>([]);
 const hasCapability = (permission: string, profileName?: string): boolean =>
     capabilities.value.some((entry) => {
-        if (entry.permission !== permission && entry.permission !== 'admin.profiles.manage') return false;
+        if (entry.permission !== permission) return false;
         if (!profileName || entry.scope === 'GLOBAL') return true;
         return !entry.scopes?.length || entry.scopes.includes('*') || entry.scopes.includes(profileName);
     });

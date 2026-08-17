@@ -39,13 +39,6 @@ export const ADMIN_CAPABILITIES: readonly AdminCapabilityDefinition[] = [
         scope: 'GLOBAL',
     },
     {
-        permission: 'admin.profiles.manage',
-        label: 'Profile 전체 운영 (호환)',
-        description: '기존 운영자를 위한 포괄 권한입니다. 새 역할에는 세분화 권한을 사용합니다.',
-        risk: 'CRITICAL',
-        scope: 'PROFILE',
-    },
-    {
         permission: 'admin.profiles.runtime',
         label: 'Profile 실행 관리',
         description: '지정 profile의 시작, 정지와 실행 상태를 관리합니다.',
@@ -126,17 +119,30 @@ export const resolveAdminActionCapability = (path: string, rawInput?: unknown): 
         if (action === 'RESUME') return 'admin.resume.when-stopped';
         if (action === 'UPDATE_RUNTIME_SETTINGS') return 'admin.profiles.runtime';
         if (action === 'OPEN_SURVEY') return 'admin.survey.open';
+        return 'admin.profiles.runtime';
     }
     if (path.endsWith('.operations.requestDeploy')) return 'admin.profiles.deploy';
     if (path.endsWith('.operations.requestReset')) return 'admin.scenarios.reset';
     if (path.endsWith('.operations.requestRuntime')) return 'admin.profiles.runtime';
-    if (path.endsWith('.profiles.updateMeta')) return 'admin.profiles.settings';
+    if (path.endsWith('.profiles.upsert') || path.endsWith('.profiles.updateMeta')) return 'admin.profiles.settings';
+    if (path.endsWith('.profiles.setStatus') || path.endsWith('.profiles.reconcileNow')) {
+        return 'admin.profiles.runtime';
+    }
+    if (path.endsWith('.profiles.install') || path.endsWith('.profiles.installNow')) {
+        return 'admin.scenarios.reset';
+    }
+    if (
+        path.endsWith('.profiles.requestBuild') ||
+        path.endsWith('.profiles.setBuildStatus') ||
+        path.endsWith('.profiles.cleanupWorkspaces')
+    ) {
+        return 'admin.profiles.deploy';
+    }
     if (path.endsWith('.profiles.listScenarios')) {
         const sourceMode =
             rawInput && typeof rawInput === 'object' ? (rawInput as { sourceMode?: unknown }).sourceMode : undefined;
         return sourceMode === undefined || sourceMode === 'CURRENT' ? 'admin.scenarios.reset' : 'admin.profiles.deploy';
     }
-    if (path.includes('.operations.') || path.includes('.profiles.')) return 'admin.profiles.manage';
     return undefined;
 };
 

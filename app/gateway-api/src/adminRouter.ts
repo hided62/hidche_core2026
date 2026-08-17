@@ -56,7 +56,6 @@ const ADMIN_ROLE_SUPERUSER = 'admin.superuser';
 const ROLE_SUPERUSER = 'superuser';
 const ROLE_ADMIN_USERS = 'admin.users.manage';
 const ROLE_ADMIN_USERS_CREATE = 'admin.users.create';
-const ROLE_ADMIN_PROFILES = 'admin.profiles.manage';
 const ROLE_ADMIN_PROFILE_RUNTIME = 'admin.profiles.runtime';
 const ROLE_ADMIN_PROFILE_SETTINGS = 'admin.profiles.settings';
 const ROLE_ADMIN_PROFILE_DEPLOY = 'admin.profiles.deploy';
@@ -153,21 +152,6 @@ const hasScopedPermission = (adminAuth: AdminAuthContext, permission: string, pr
     return adminAuth.roles.some((role: string) => roleMatchesScope(role, permission, profileName));
 };
 
-const hasAnyScopedPermission = (
-    adminAuth: AdminAuthContext,
-    permissions: readonly string[],
-    profileName?: string
-): boolean => permissions.some((permission) => hasScopedPermission(adminAuth, permission, profileName));
-
-const assertAnyPermission = (
-    adminAuth: AdminAuthContext,
-    permissions: readonly string[],
-    profileName?: string
-): void => {
-    if (hasAnyScopedPermission(adminAuth, permissions, profileName)) return;
-    throw new TRPCError({ code: 'FORBIDDEN', message: 'Permission denied.' });
-};
-
 const splitRoleScope = (role: string): { permission: string; scope?: string } => {
     const separator = role.indexOf(':');
     if (separator < 0) {
@@ -239,6 +223,16 @@ const assertPermission = (adminAuth: AdminAuthContext, permission: string, profi
         code: 'FORBIDDEN',
         message: 'Permission denied.',
     });
+};
+
+const assertAllPermissions = (
+    adminAuth: AdminAuthContext,
+    permissions: readonly string[],
+    profileName?: string
+): void => {
+    for (const permission of permissions) {
+        assertPermission(adminAuth, permission, profileName);
+    }
 };
 
 const assertTargetUserManageable = (adminAuth: AdminAuthContext, target: { id: string; roles: string[] }): void => {
@@ -371,12 +365,6 @@ const userCreateProcedure = adminProcedure.use(({ ctx, next }) => {
             message: 'Permission denied.',
         });
     }
-    return next();
-});
-
-const profileAdminProcedure = adminProcedure.use(({ ctx, next }) => {
-    const adminAuth = requireAdminAuth(ctx);
-    assertPermission(adminAuth, ROLE_ADMIN_PROFILES);
     return next();
 });
 
@@ -1165,12 +1153,12 @@ export const adminRouter = router({
             )
             .mutation(async ({ ctx, input }) => {
                 const adminAuth = requireAdminAuth(ctx);
-                assertAnyPermission(adminAuth, [ROLE_ADMIN_PROFILES, ROLE_ADMIN_SCENARIO_RESET], input.profileName);
+                assertPermission(adminAuth, ROLE_ADMIN_SCENARIO_RESET, input.profileName);
                 if (input.sourceMode !== 'CURRENT') {
-                    assertAnyPermission(adminAuth, [ROLE_ADMIN_PROFILES, ROLE_ADMIN_PROFILE_DEPLOY], input.profileName);
+                    assertPermission(adminAuth, ROLE_ADMIN_PROFILE_DEPLOY, input.profileName);
                 }
                 if (input.scheduledAt) {
-                    assertAnyPermission(adminAuth, [ROLE_ADMIN_PROFILES, ROLE_RESET_SCHEDULE], input.profileName);
+                    assertPermission(adminAuth, ROLE_RESET_SCHEDULE, input.profileName);
                 }
                 const profile = await ctx.profiles.getProfile(input.profileName);
                 if (!profile) {
@@ -1291,7 +1279,7 @@ export const adminRouter = router({
             )
             .mutation(async ({ ctx, input }) => {
                 const adminAuth = requireAdminAuth(ctx);
-                assertAnyPermission(adminAuth, [ROLE_ADMIN_PROFILES, ROLE_ADMIN_PROFILE_DEPLOY], input.profileName);
+                assertPermission(adminAuth, ROLE_ADMIN_PROFILE_DEPLOY, input.profileName);
                 const profile = await ctx.profiles.getProfile(input.profileName);
                 if (!profile) {
                     throw new TRPCError({ code: 'NOT_FOUND', message: 'Profile not found.' });
@@ -1347,7 +1335,7 @@ export const adminRouter = router({
             )
             .mutation(async ({ ctx, input }) => {
                 const adminAuth = requireAdminAuth(ctx);
-                assertAnyPermission(adminAuth, [ROLE_ADMIN_PROFILES, ROLE_ADMIN_PROFILE_RUNTIME], input.profileName);
+                assertPermission(adminAuth, ROLE_ADMIN_PROFILE_RUNTIME, input.profileName);
                 const profile = await ctx.profiles.getProfile(input.profileName);
                 if (!profile) {
                     throw new TRPCError({ code: 'NOT_FOUND', message: 'Profile not found.' });
@@ -1376,13 +1364,13 @@ export const adminRouter = router({
             if (!previous) {
                 throw new TRPCError({ code: 'NOT_FOUND', message: 'Operation not found.' });
             }
-            const permissions =
+            const permission =
                 previous.type === 'RESET'
-                    ? [ROLE_ADMIN_PROFILES, ROLE_ADMIN_SCENARIO_RESET]
+                    ? ROLE_ADMIN_SCENARIO_RESET
                     : previous.type === 'DEPLOY'
-                      ? [ROLE_ADMIN_PROFILES, ROLE_ADMIN_PROFILE_DEPLOY]
-                      : [ROLE_ADMIN_PROFILES, ROLE_ADMIN_PROFILE_RUNTIME];
-            assertAnyPermission(adminAuth, permissions, previous.profileName);
+                      ? ROLE_ADMIN_PROFILE_DEPLOY
+                      : ROLE_ADMIN_PROFILE_RUNTIME;
+            assertPermission(adminAuth, permission, previous.profileName);
             const cancelled = await ctx.profiles.cancelOperation(input.id);
             if (!cancelled) {
                 throw new TRPCError({
@@ -1398,24 +1386,20 @@ export const adminRouter = router({
             if (!previous) {
                 throw new TRPCError({ code: 'NOT_FOUND', message: 'Operation not found.' });
             }
-            const permissions =
+            const permission =
                 previous.type === 'RESET'
-                    ? [ROLE_ADMIN_PROFILES, ROLE_ADMIN_SCENARIO_RESET]
+                    ? ROLE_ADMIN_SCENARIO_RESET
                     : previous.type === 'DEPLOY'
-                      ? [ROLE_ADMIN_PROFILES, ROLE_ADMIN_PROFILE_DEPLOY]
-                      : [ROLE_ADMIN_PROFILES, ROLE_ADMIN_PROFILE_RUNTIME];
-            assertAnyPermission(adminAuth, permissions, previous.profileName);
+                      ? ROLE_ADMIN_PROFILE_DEPLOY
+                      : ROLE_ADMIN_PROFILE_RUNTIME;
+            assertPermission(adminAuth, permission, previous.profileName);
             if (previous.type === 'RESET') {
                 const payload = readMetaObject(previous.payload);
                 if (payload.requestedSource !== 'CURRENT') {
-                    assertAnyPermission(
-                        adminAuth,
-                        [ROLE_ADMIN_PROFILES, ROLE_ADMIN_PROFILE_DEPLOY],
-                        previous.profileName
-                    );
+                    assertPermission(adminAuth, ROLE_ADMIN_PROFILE_DEPLOY, previous.profileName);
                 }
                 if (previous.scheduledAt) {
-                    assertAnyPermission(adminAuth, [ROLE_ADMIN_PROFILES, ROLE_RESET_SCHEDULE], previous.profileName);
+                    assertPermission(adminAuth, ROLE_RESET_SCHEDULE, previous.profileName);
                 }
             }
             try {
@@ -1593,7 +1577,7 @@ export const adminRouter = router({
             .input(z.object({ profileName: z.string().min(1) }))
             .query(async ({ ctx, input }) => {
                 const adminAuth = requireAdminAuth(ctx);
-                assertAnyPermission(adminAuth, [ROLE_ADMIN_PROFILES, ROLE_ADMIN_SCENARIO_RESET], input.profileName);
+                assertPermission(adminAuth, ROLE_ADMIN_SCENARIO_RESET, input.profileName);
                 const profile = await ctx.profiles.getProfile(input.profileName);
                 if (!profile) {
                     throw new TRPCError({ code: 'NOT_FOUND', message: 'Profile not found.' });
@@ -1688,11 +1672,7 @@ export const adminRouter = router({
                             throw new TRPCError({ code: 'BAD_REQUEST', message: 'profileName is required.' });
                         }
                     } else {
-                        assertAnyPermission(
-                            adminAuth,
-                            [ROLE_ADMIN_PROFILES, ROLE_ADMIN_SCENARIO_RESET],
-                            input.profileName
-                        );
+                        assertPermission(adminAuth, ROLE_ADMIN_SCENARIO_RESET, input.profileName);
                         const profile = await ctx.profiles.getProfile(input.profileName);
                         if (!profile) throw new TRPCError({ code: 'NOT_FOUND', message: 'Profile not found.' });
                         const parsedScenarioId =
@@ -1707,9 +1687,9 @@ export const adminRouter = router({
                         }
                     }
                 } else if (input?.profileName) {
-                    assertAnyPermission(adminAuth, [ROLE_ADMIN_PROFILES, ROLE_ADMIN_PROFILE_DEPLOY], input.profileName);
+                    assertPermission(adminAuth, ROLE_ADMIN_PROFILE_DEPLOY, input.profileName);
                 } else {
-                    assertAnyPermission(adminAuth, [ROLE_ADMIN_PROFILES, ROLE_ADMIN_PROFILE_DEPLOY]);
+                    assertPermission(adminAuth, ROLE_ADMIN_PROFILE_DEPLOY);
                 }
                 const scenarios = !gitRef
                     ? await listScenarioPreviews()
@@ -1724,7 +1704,7 @@ export const adminRouter = router({
                     isCurrent: currentScenarioId === scenario.id,
                 }));
             }),
-        upsert: profileAdminProcedure
+        upsert: adminProcedure
             .input(
                 z.object({
                     profile: z.string().regex(/^[a-z0-9-]{1,32}$/),
@@ -1743,6 +1723,12 @@ export const adminRouter = router({
                 })
             )
             .mutation(async ({ ctx, input }) => {
+                assertAllPermissions(requireAdminAuth(ctx), [
+                    ROLE_ADMIN_PROFILE_RUNTIME,
+                    ROLE_ADMIN_PROFILE_SETTINGS,
+                    ROLE_ADMIN_PROFILE_DEPLOY,
+                    ROLE_ADMIN_SCENARIO_RESET,
+                ]);
                 const status = input.status ?? 'STOPPED';
                 return ctx.profiles.upsertProfile({
                     profile: input.profile,
@@ -1757,7 +1743,7 @@ export const adminRouter = router({
                     buildCommitSha: input.buildCommitSha,
                 });
             }),
-        setStatus: profileAdminProcedure
+        setStatus: adminProcedure
             .input(
                 z.object({
                     profileName: z.string().min(1),
@@ -1769,6 +1755,11 @@ export const adminRouter = router({
                 })
             )
             .mutation(async ({ ctx, input }) => {
+                const adminAuth = requireAdminAuth(ctx);
+                assertPermission(adminAuth, ROLE_ADMIN_PROFILE_RUNTIME);
+                if (input.buildCommitSha) {
+                    assertPermission(adminAuth, ROLE_ADMIN_PROFILE_DEPLOY);
+                }
                 if (input.status === 'RESERVED' && (!input.preopenAt || !input.openAt)) {
                     throw new TRPCError({
                         code: 'BAD_REQUEST',
@@ -1806,11 +1797,7 @@ export const adminRouter = router({
                 })
             )
             .mutation(async ({ ctx, input }) => {
-                assertAnyPermission(
-                    requireAdminAuth(ctx),
-                    [ROLE_ADMIN_PROFILES, ROLE_ADMIN_PROFILE_SETTINGS],
-                    input.profileName
-                );
+                assertPermission(requireAdminAuth(ctx), ROLE_ADMIN_PROFILE_SETTINGS, input.profileName);
                 const profile = await ctx.profiles.getProfile(input.profileName);
                 if (!profile) {
                     throw new TRPCError({
@@ -1822,7 +1809,7 @@ export const adminRouter = router({
                 const nextMeta = applyMetaPatch(meta, input.patch);
                 return ctx.profiles.updateMeta(input.profileName, nextMeta);
             }),
-        install: profileAdminProcedure
+        install: adminProcedure
             .input(
                 z.object({
                     profileName: z.string().min(1),
@@ -1832,6 +1819,7 @@ export const adminRouter = router({
             )
             .mutation(async ({ ctx, input }) => {
                 const adminAuth = requireAdminAuth(ctx);
+                assertAllPermissions(adminAuth, [ROLE_ADMIN_SCENARIO_RESET, ROLE_ADMIN_PROFILE_DEPLOY]);
                 const profile = await ctx.profiles.getProfile(input.profileName);
                 if (!profile) {
                     throw new TRPCError({
@@ -1907,6 +1895,9 @@ export const adminRouter = router({
                 }
 
                 const scheduledAt = openAt ? (preopenAt ?? openAt).toISOString() : null;
+                if (scheduledAt) {
+                    assertPermission(adminAuth, ROLE_RESET_SCHEDULE);
+                }
                 const action = scheduledAt ? 'RESET_SCHEDULED' : 'RESET_NOW';
                 const actionRecord = {
                     action,
@@ -1954,7 +1945,7 @@ export const adminRouter = router({
                     });
                 }
             }),
-        installNow: profileAdminProcedure
+        installNow: adminProcedure
             .input(
                 z.object({
                     profileName: z.string().min(1),
@@ -1964,6 +1955,7 @@ export const adminRouter = router({
             )
             .mutation(async ({ ctx, input }) => {
                 const adminAuth = requireAdminAuth(ctx);
+                assertAllPermissions(adminAuth, [ROLE_ADMIN_SCENARIO_RESET, ROLE_ADMIN_PROFILE_DEPLOY]);
                 const profile = await ctx.profiles.getProfile(input.profileName);
                 if (!profile) {
                     throw new TRPCError({
@@ -2088,9 +2080,9 @@ export const adminRouter = router({
                     });
                 }
 
-                const canManageProfiles = hasAnyScopedPermission(
+                const canManageProfiles = hasScopedPermission(
                     adminAuth,
-                    [ROLE_ADMIN_PROFILES, ROLE_ADMIN_PROFILE_RUNTIME],
+                    ROLE_ADMIN_PROFILE_RUNTIME,
                     profile.profileName
                 );
                 const canResume =
@@ -2232,7 +2224,7 @@ export const adminRouter = router({
                 }
                 return { ok: true, action: actionRecord };
             }),
-        requestBuild: profileAdminProcedure
+        requestBuild: adminProcedure
             .input(
                 z.object({
                     profileName: z.string().min(1),
@@ -2240,6 +2232,7 @@ export const adminRouter = router({
                 })
             )
             .mutation(async ({ ctx, input }) => {
+                assertPermission(requireAdminAuth(ctx), ROLE_ADMIN_PROFILE_DEPLOY);
                 const requestedAt = new Date().toISOString();
                 const result = await ctx.profiles.updateBuildStatus(input.profileName, 'QUEUED', {
                     requestedAt,
@@ -2248,19 +2241,24 @@ export const adminRouter = router({
                 });
                 return result;
             }),
-        setBuildStatus: profileAdminProcedure
+        setBuildStatus: adminProcedure
             .input(
                 z.object({
                     profileName: z.string().min(1),
                     status: zBuildStatus,
                 })
             )
-            .mutation(async ({ ctx, input }) => ctx.profiles.updateBuildStatus(input.profileName, input.status)),
-        reconcileNow: profileAdminProcedure.mutation(async ({ ctx }) => {
+            .mutation(async ({ ctx, input }) => {
+                assertPermission(requireAdminAuth(ctx), ROLE_ADMIN_PROFILE_DEPLOY);
+                return ctx.profiles.updateBuildStatus(input.profileName, input.status);
+            }),
+        reconcileNow: adminProcedure.mutation(async ({ ctx }) => {
+            assertPermission(requireAdminAuth(ctx), ROLE_ADMIN_PROFILE_RUNTIME);
             await ctx.orchestrator.reconcileNow();
             return { ok: true };
         }),
-        cleanupWorkspaces: profileAdminProcedure.mutation(async ({ ctx }) => {
+        cleanupWorkspaces: adminProcedure.mutation(async ({ ctx }) => {
+            assertPermission(requireAdminAuth(ctx), ROLE_ADMIN_PROFILE_DEPLOY);
             const result = await ctx.orchestrator.cleanupStaleWorkspaces();
             return {
                 removed: result.removed,

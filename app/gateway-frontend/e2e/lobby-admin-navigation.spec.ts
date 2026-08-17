@@ -219,7 +219,7 @@ test('legacy server operations URL keeps query parameters and redirects to the s
 test('scoped administrators see the same navigation while ordinary users do not', async ({ browser }) => {
     const scopedContext = await browser.newContext();
     const scopedPage = await scopedContext.newPage();
-    await installGatewayFixture(scopedPage, ['admin.profiles.manage:hwe:2']);
+    await installGatewayFixture(scopedPage, ['admin.profiles.runtime:hwe:2']);
     await scopedPage.goto('lobby');
     await expect(scopedPage.getByRole('link', { name: '관리자 페이지' })).toBeVisible();
     await scopedPage.getByRole('link', { name: '관리자 페이지' }).click();

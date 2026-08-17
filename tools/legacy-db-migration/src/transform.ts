@@ -33,15 +33,15 @@ const asObject = (value: JsonValue): Record<string, JsonValue> =>
 const asStringArray = (value: JsonValue | undefined): string[] =>
     Array.isArray(value) ? value.filter((item): item is string => typeof item === 'string') : [];
 
-const legacyAclRoleMap: Record<string, string> = {
-    openClose: 'admin.profiles.manage',
-    reset: 'admin.reset.schedule',
-    update: 'admin.profiles.manage',
-    fullUpdate: 'admin.profiles.manage',
-    vote: 'admin.survey.open',
-    globalNotice: 'admin.notice.manage',
-    notice: 'admin.notice.manage',
-    blockGeneral: 'admin.users.manage',
+const legacyAclRoleMap: Record<string, readonly string[]> = {
+    openClose: ['admin.profiles.runtime'],
+    reset: ['admin.scenarios.reset', 'admin.reset.schedule'],
+    update: ['admin.profiles.deploy'],
+    fullUpdate: ['admin.profiles.deploy'],
+    vote: ['admin.survey.open'],
+    globalNotice: ['admin.notice.manage'],
+    notice: ['admin.notice.manage'],
+    blockGeneral: ['admin.users.manage'],
 };
 
 export const mapLegacyRoles = (grade: number, rawAcl: JsonValue): string[] => {
@@ -49,7 +49,10 @@ export const mapLegacyRoles = (grade: number, rawAcl: JsonValue): string[] => {
     if (grade >= 7) {
         roles.add('superuser');
     } else if (grade === 6) {
-        roles.add('admin.profiles.manage');
+        roles.add('admin.profiles.runtime');
+        roles.add('admin.profiles.settings');
+        roles.add('admin.profiles.deploy');
+        roles.add('admin.scenarios.reset');
         roles.add('admin.notice.manage');
         roles.add('admin.reset.schedule');
         roles.add('admin.resume.when-stopped');
@@ -60,9 +63,11 @@ export const mapLegacyRoles = (grade: number, rawAcl: JsonValue): string[] => {
 
     for (const [profile, permissions] of Object.entries(asObject(rawAcl))) {
         for (const permission of asStringArray(permissions)) {
-            const mapped = legacyAclRoleMap[permission];
-            if (mapped) {
-                roles.add(`${mapped}:${profile}:default`);
+            const mappedRoles = legacyAclRoleMap[permission];
+            if (mappedRoles) {
+                for (const mappedRole of mappedRoles) {
+                    roles.add(`${mappedRole}:${profile}:default`);
+                }
             } else {
                 roles.add(`legacy.acl.${permission}:${profile}`);
             }

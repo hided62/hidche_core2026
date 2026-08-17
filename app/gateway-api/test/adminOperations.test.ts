@@ -369,7 +369,7 @@ describe('admin profile navigation API', () => {
             async () => {
                 throw new Error('not used');
             },
-            { adminRoles: ['admin.profiles.manage:che:2'], firstUserIsAdmin: false }
+            { adminRoles: ['admin.profiles.settings:che:2'], firstUserIsAdmin: false }
         );
 
         await expect(harness.caller.admin.profiles.listNavigation()).resolves.toEqual([
@@ -775,9 +775,11 @@ describe('admin operation API', () => {
             { adminRoles: ['admin.scenarios.reset:che:2'], firstUserIsAdmin: false }
         );
 
-        await expect(harness.caller.admin.capabilities.list()).resolves.toContainEqual(
+        const capabilities = await harness.caller.admin.capabilities.list();
+        expect(capabilities).toContainEqual(
             expect.objectContaining({ permission: 'admin.scenarios.reset', scopes: ['che:2'] })
         );
+        expect(capabilities).not.toContainEqual(expect.objectContaining({ permission: 'admin.profiles.manage' }));
     });
 });
 
@@ -940,7 +942,7 @@ describe('gateway release API', () => {
             async () => {
                 throw new Error('not used');
             },
-            { adminRoles: ['admin.profiles.manage:che:2'], firstUserIsAdmin: false }
+            { adminRoles: ['admin.profiles.runtime:che:2'], firstUserIsAdmin: false }
         );
 
         await expect(harness.caller.admin.releases.gatewayState()).rejects.toMatchObject({ code: 'FORBIDDEN' });
@@ -1563,6 +1565,25 @@ describe('Gateway administrator account controls', () => {
         ).rejects.toMatchObject({ code: 'BAD_REQUEST' });
         expect(harness.auditEvents.map((event) => event.outcome)).toEqual(['STARTED', 'FAILED']);
         expect(harness.auditEvents.at(-1)).toMatchObject({ errorCode: 'BAD_REQUEST' });
+        expect((await harness.users.findById(target.id))?.roles).toEqual(['user']);
+    });
+
+    it('rejects the removed umbrella profile capability', async () => {
+        const harness = await buildCaller(unusedCreateOperation);
+        const target = await harness.users.createUser({
+            username: 'removed-profile-capability-target',
+            password: 'secretpass',
+            displayName: 'Removed Profile Capability Target',
+        });
+
+        await expect(
+            harness.caller.admin.users.updateRoles({
+                userId: target.id,
+                roles: ['admin.profiles.manage:che:default'],
+                mode: 'grant',
+                reason: '제거한 포괄 권한 거부 확인',
+            })
+        ).rejects.toMatchObject({ code: 'BAD_REQUEST' });
         expect((await harness.users.findById(target.id))?.roles).toEqual(['user']);
     });
 

@@ -51,10 +51,10 @@ const installFixture = async (page: Page) => {
                         scope: 'GLOBAL',
                     },
                     {
-                        permission: 'admin.profiles.manage',
-                        label: 'Profile 운영',
-                        description: '지정 profile을 관리합니다.',
-                        risk: 'CRITICAL',
+                        permission: 'admin.profiles.runtime',
+                        label: 'Profile 실행 관리',
+                        description: '지정 profile의 시작, 정지와 실행 상태를 관리합니다.',
+                        risk: 'HIGH',
                         scope: 'PROFILE',
                     },
                     {
@@ -217,6 +217,8 @@ test('operates OAuth grace and scheduled deletion with reasoned audit history', 
     await expect(page.getByRole('navigation', { name: '사용자 관리 기능' })).toBeVisible();
     await expect(page.getByRole('heading', { name: '비밀번호 리셋' })).toBeHidden();
     await page.getByRole('button', { name: /접근 · 권한/ }).click();
+    await expect(page.getByRole('option', { name: /Profile 전체 운영/ })).toHaveCount(0);
+    await expect(page.getByRole('option', { name: /Profile 실행 관리/ })).toHaveCount(1);
     await expect(page.getByRole('cell', { name: 'che:default' })).toBeVisible();
     await page.screenshot({ path: testInfo.outputPath('gateway-admin-account-controls-desktop.png'), fullPage: true });
     await page.getByPlaceholder('권한·제재·복구·탈퇴 조치 사유 (필수)').fill('본인 확인 처리 중');

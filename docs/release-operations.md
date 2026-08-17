@@ -16,7 +16,7 @@ Profile 화면은 `/gateway/admin/servers/:profileName/version`과
 `/gateway/admin/servers/:profileName/scenario`, Gateway 화면은
 `/gateway/admin/releases`입니다. 이전 `/gateway/admin/server-operations`는
 호환성을 위해 서버 목록으로 이동합니다. Profile 작업은 runtime/settings/deploy/reset
-capability로 분리되며 기존 `admin.profiles.manage`는 포괄 호환 권한입니다. Gateway 전체 릴리스에는
+capability로 분리되며 포괄 운영 권한은 사용하지 않습니다. Gateway 전체 릴리스에는
 profile 범위 권한과 별개인 전역 `admin.releases.manage` 권한이 필요합니다.
 일반 사용자와 권한이 없는 관리자는 Gateway 릴리스 영역을 사용할 수 없습니다.
 
