@@ -398,6 +398,32 @@ export const setNationTurns = async (
     return { revision, turns: serializeTurnList(turns) };
 };
 
+/**
+ * 국가 턴 입력은 화면을 연 뒤 daemon이 선두 턴을 소비했더라도 사용자가 고른
+ * 슬롯 번호를 현재 큐에 적용한다. 큐 lease가 실제로 잡혀 있는 충돌은 그대로
+ * 거절하고, revision이 앞으로 진행한 경우에만 새 revision으로 재기준화한다.
+ */
+export const setNationTurnsAtCurrentPositions = async (
+    db: DatabaseClient,
+    nationId: number,
+    officerLevel: number,
+    updates: readonly ReservedTurnUpdate[],
+    expectedRevision: number
+): Promise<ReservedTurnSnapshot> => {
+    let revision = expectedRevision;
+    for (let attempt = 0; attempt < 8; attempt += 1) {
+        try {
+            return await setNationTurns(db, nationId, officerLevel, updates, revision);
+        } catch (error) {
+            if (!(error instanceof ReservedTurnRevisionConflictError) || error.currentRevision === revision) {
+                throw error;
+            }
+            revision = error.currentRevision;
+        }
+    }
+    throw new ReservedTurnRevisionConflictError(revision, revision);
+};
+
 export const setNationTurn = async (
     db: DatabaseClient,
     nationId: number,
@@ -408,6 +434,23 @@ export const setNationTurn = async (
     expectedRevision: number
 ): Promise<ReservedTurnSnapshot> =>
     setNationTurns(db, nationId, officerLevel, [{ turnIndices: [turnIndex], action, args }], expectedRevision);
+
+export const setNationTurnAtCurrentPosition = async (
+    db: DatabaseClient,
+    nationId: number,
+    officerLevel: number,
+    turnIndex: number,
+    action: string,
+    args: unknown,
+    expectedRevision: number
+): Promise<ReservedTurnSnapshot> =>
+    setNationTurnsAtCurrentPositions(
+        db,
+        nationId,
+        officerLevel,
+        [{ turnIndices: [turnIndex], action, args }],
+        expectedRevision
+    );
 
 export const shiftNationTurns = async (
     db: DatabaseClient,

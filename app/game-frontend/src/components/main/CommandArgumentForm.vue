@@ -33,6 +33,9 @@ const visibleFields = computed(() => props.fields.filter((entry) => entry.kind !
 const optionsFor = (field: CommandInputField): CommandOption[] => {
     if (field.options) return field.options;
     if (!field.optionSource) return [];
+    if (field.optionSource === 'generals') {
+        return props.options.generalTargets?.[props.commandKey] ?? props.options.generals;
+    }
     if (field.optionSource === 'items') {
         return props.options.items[String(values.itemType ?? '')] ?? [];
     }

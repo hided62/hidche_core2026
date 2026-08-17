@@ -10,7 +10,9 @@ import {
     setGeneralTurn,
     setGeneralTurns,
     setNationTurn,
+    setNationTurnAtCurrentPosition,
     setNationTurns,
+    setNationTurnsAtCurrentPositions,
     shiftGeneralTurns,
     shiftNationTurns,
     ReservedTurnRevisionConflictError,
@@ -195,7 +197,7 @@ const buildDb = (autorunLimit: number | null = null) => {
         },
     } as unknown as DatabaseClient;
 
-    return { db };
+    return { db, nationTurns, nationRevisions };
 };
 
 describe('reservedTurns', () => {
@@ -343,6 +345,61 @@ describe('reservedTurns', () => {
         expect(noOpPush).toEqual(repeated);
     });
 
+    it('rebases stale nation slot input onto the current queue after a turn advances', async () => {
+        const { db, nationTurns, nationRevisions } = buildDb();
+        const seeded = await setNationTurns(
+            db,
+            6,
+            12,
+            [
+                { turnIndices: [0], action: 'che_증축', args: {} },
+                { turnIndices: [1], action: 'che_감축', args: {} },
+                { turnIndices: [2], action: 'che_천도', args: { destCityId: 3 } },
+            ],
+            0
+        );
+        expect(seeded.revision).toBe(1);
+
+        // daemon이 한 턴을 소비한 뒤의 현재 큐를 모사한다.
+        nationRevisions.set('6:12', 2);
+        nationTurns.set('6:12', [
+            {
+                id: 1,
+                nationId: 6,
+                officerLevel: 12,
+                turnIdx: 0,
+                actionCode: 'che_감축',
+                arg: {},
+                createdAt: new Date(),
+            },
+            {
+                id: 2,
+                nationId: 6,
+                officerLevel: 12,
+                turnIdx: 1,
+                actionCode: 'che_천도',
+                arg: { destCityId: 3 },
+                createdAt: new Date(),
+            },
+        ]);
+
+        const result = await setNationTurnsAtCurrentPositions(
+            db,
+            6,
+            12,
+            [{ turnIndices: [2], action: 'che_포상', args: { destGeneralId: 77, amount: 100, isGold: true } }],
+            1
+        );
+
+        expect(result.revision).toBe(3);
+        expect(result.turns[0]?.action).toBe('che_감축');
+        expect(result.turns[1]?.action).toBe('che_천도');
+        expect(result.turns[2]).toMatchObject({
+            action: 'che_포상',
+            args: { destGeneralId: 77, amount: 100, isGold: true },
+        });
+    });
+
     it('rejects an API writer while the daemon holds the queue lease without touching turns', async () => {
         const deleteMany = vi.fn(async () => ({}));
         const createMany = vi.fn(async () => ({}));
@@ -368,6 +425,37 @@ describe('reservedTurns', () => {
         await expect(setGeneralTurn(db, 9, 0, 'che_훈련', {}, 0)).rejects.toBeInstanceOf(
             ReservedTurnRevisionConflictError
         );
+        expect(deleteMany).not.toHaveBeenCalled();
+        expect(createMany).not.toHaveBeenCalled();
+    });
+
+    it('does not rebase a current-position nation write while the daemon lease holds the same revision', async () => {
+        const deleteMany = vi.fn(async () => ({}));
+        const createMany = vi.fn(async () => ({}));
+        const db = {
+            nationTurnRevision: {
+                updateMany: vi.fn(async () => ({ count: 0 })),
+                createMany: vi.fn(async () => ({ count: 0 })),
+                findUnique: vi.fn(async () => ({
+                    nationId: 6,
+                    officerLevel: 12,
+                    revision: 4,
+                    leaseOwner: 'daemon-1',
+                    leaseExpiresAt: new Date(Date.now() + 60_000),
+                    updatedAt: new Date(),
+                })),
+            },
+            nationTurn: {
+                findMany: vi.fn(async () => []),
+                deleteMany,
+                createMany,
+            },
+        } as unknown as DatabaseClient;
+
+        await expect(setNationTurnAtCurrentPosition(db, 6, 12, 2, 'che_증축', {}, 4)).rejects.toMatchObject({
+            expectedRevision: 4,
+            currentRevision: 4,
+        });
         expect(deleteMany).not.toHaveBeenCalled();
         expect(createMany).not.toHaveBeenCalled();
     });

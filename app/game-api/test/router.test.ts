@@ -1021,7 +1021,22 @@ describe('appRouter', () => {
 
         expect(response.turns[0]?.args).toEqual({ isGold: true, amount: 1, destGeneralId: 7 });
         expect(response.turns[2]?.args).toEqual({ isGold: false, amount: 2, destGeneralId: 8 });
-        expect(nationWrites).toHaveLength(1);
+
+        const rebased = await caller.turns.reserved.setNationBulk({
+            generalId: general.id,
+            entries: [
+                {
+                    turnList: [2],
+                    action: 'che_포상',
+                    args: { isGold: true, amount: 3, destGeneralId: 9 },
+                },
+            ],
+            // 첫 요청 뒤 턴이 진행한 화면의 stale revision을 그대로 보낸 상황입니다.
+            expectedRevision: 0,
+        });
+        expect(rebased.revision).toBe(2);
+        expect(rebased.turns[2]?.args).toEqual({ isGold: true, amount: 3, destGeneralId: 9 });
+        expect(nationWrites).toHaveLength(2);
     });
 
     it('enforces only legacy reservation permissions without applying full execution constraints', async () => {

@@ -771,6 +771,7 @@ export const buildTurnCommandTable = async (options: {
             cities: [],
             nations: [],
             generals: [],
+            generalTargets: {},
             crewTypes: [],
             armTypes: [],
             nationTypes: [],
