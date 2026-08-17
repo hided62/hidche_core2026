@@ -283,7 +283,8 @@ test('automatically recovers profile details after a transient update outage', a
 });
 
 test('offers a keyboard-accessible immediate retry without mobile overflow', async ({ page }, testInfo) => {
-    await installFixture(page, { lobbyBundleFailures: 1 });
+    // Keep the scheduled retry in the error state so it cannot race the manual retry after the screenshot.
+    await installFixture(page, { lobbyBundleFailures: 2 });
     await page.setViewportSize({ width: 390, height: 844 });
 
     await page.goto('lobby');
