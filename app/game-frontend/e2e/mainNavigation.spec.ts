@@ -65,6 +65,12 @@ type NavigationFixture = {
         boardAccessKind: string | null;
     }>;
     dashboardRequests?: DashboardBundleInput[];
+    trpcRequests?: Array<{
+        operations: string[];
+        method: string;
+        url: string;
+        body: unknown;
+    }>;
     dashboardGrantHeaders?: Array<string | null>;
 };
 
@@ -82,9 +88,13 @@ type DashboardBundleInput = {
 };
 
 const operationInput = (route: Route, index: number): DashboardBundleInput => {
-    const input = new URL(route.request().url()).searchParams.get('input');
-    if (!input) return {};
-    const parsed = JSON.parse(input) as Record<string, unknown>;
+    const request = route.request();
+    const queryInput = new URL(request.url()).searchParams.get('input');
+    const parsed = (request.postData()
+        ? request.postDataJSON()
+        : queryInput
+          ? JSON.parse(queryInput)
+          : {}) as Record<string, unknown>;
     const entry = (parsed[String(index)] ?? parsed) as { json?: DashboardBundleInput };
     return entry.json ?? (entry as DashboardBundleInput);
 };
@@ -364,6 +374,12 @@ const installFixture = async (page: Page, state: NavigationFixture) => {
     });
     await page.route(`**${basePath}/api/trpc/**`, async (route) => {
         const operations = operationNames(route);
+        (state.trpcRequests ??= []).push({
+            operations,
+            method: route.request().method(),
+            url: route.request().url(),
+            body: route.request().postDataJSON(),
+        });
         state.operations.push(...operations);
         if (
             operations.some((operation) => ['general.me', 'dashboard.getContextBundleDelta'].includes(operation)) &&
@@ -2725,6 +2741,14 @@ test('realtime read-model events skip clock-only work, merge bursts, patch in pl
         boardAccessKind: 'unchanged',
     });
     expect(realtimeBundle?.bytes).toBeLessThan(1_000);
+    const dashboardTransport = state.trpcRequests?.find(
+        ({ operations, body }) =>
+            operations.includes('dashboard.getContextBundleDelta') && JSON.stringify(body).includes('knownSource')
+    );
+    expect(dashboardTransport).toMatchObject({ method: 'POST' });
+    expect(new URL(dashboardTransport?.url ?? '').searchParams.has('input')).toBe(false);
+    expect(dashboardTransport?.body).toBeTruthy();
+    expect(state.trpcRequests?.every(({ method }) => method === 'POST')).toBe(true);
     expect(
         state.dashboardRequests?.find(
             (request) =>

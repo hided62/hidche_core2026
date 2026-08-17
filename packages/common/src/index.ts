@@ -27,3 +27,4 @@ export * from './auth/accountIconProjection.js';
 export * from './logging/formatLegacyLogHtml.js';
 export * from './gateway/profileStatus.js';
 export * from './game/accessPenalty.js';
+export * from './http/trpcTransport.js';

@@ -4,6 +4,7 @@ import fastifyStatic from '@fastify/static';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { fastifyTRPCPlugin } from '@trpc/server/adapters/fastify';
+import { trpcJsonBodyHttpServerOptions } from '@sammo-ts/common';
 import {
     createGatewayPostgresConnector,
     createRedisConnector,
@@ -108,6 +109,7 @@ export const createGatewayApiServer = async () => {
         prefix: config.trpcPath,
         trpcOptions: {
             router: appRouter,
+            ...trpcJsonBodyHttpServerOptions,
             createContext: ({ req }: { req: FastifyRequest }) =>
                 createGatewayApiContext({
                     users,

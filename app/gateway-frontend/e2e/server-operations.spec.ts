@@ -180,9 +180,7 @@ const installFixture = async (page: Page, state: FixtureState) => {
             await state.gatewayLogPollGate((state.gatewayLogPollCount ?? 0) + 1);
         }
         const results = names.map((name) => {
-            if (route.request().method() === 'POST') {
-                state.requestBodies.push({ operation: name, body });
-            }
+            state.requestBodies.push({ operation: name, body });
             if (name === 'admin.profiles.list') {
                 return response([profile(state.runtimeRunning, state.resetDefaults)]);
             }

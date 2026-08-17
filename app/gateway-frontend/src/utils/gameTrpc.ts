@@ -1,3 +1,4 @@
+import { trpcJsonBodyHttpClientOptions } from '@sammo-ts/common';
 import { createTRPCProxyClient, httpBatchLink } from '@trpc/client';
 import type { appRouter } from '@sammo-ts/game-api';
 
@@ -15,6 +16,7 @@ export const createGameTrpc = (profile: string, port: number, gameToken?: string
         links: [
             httpBatchLink({
                 url,
+                ...trpcJsonBodyHttpClientOptions,
                 headers: gameToken ? { authorization: `Bearer ${gameToken}` } : undefined,
             }),
         ],

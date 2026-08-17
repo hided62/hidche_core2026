@@ -8,7 +8,7 @@ const operationNames = (route: Route): string[] => {
 };
 
 const installFixture = async (page: Page) => {
-    const mutations: Array<{ operation: string; body: unknown }> = [];
+    const requests: Array<{ operation: string; body: unknown }> = [];
     let deleteAfter: string | null = null;
     let graceUntil: string | null = null;
     let specialGrants: Array<Record<string, unknown>> = [];
@@ -31,7 +31,7 @@ const installFixture = async (page: Page) => {
         const operations = operationNames(route);
         const body = route.request().postDataJSON() as unknown;
         const results = operations.map((operation) => {
-            if (route.request().method() === 'POST') mutations.push({ operation, body });
+            requests.push({ operation, body });
             if (operation === 'me') {
                 return response({
                     id: 'admin-user',
@@ -202,11 +202,11 @@ const installFixture = async (page: Page) => {
             body: JSON.stringify(isBatch ? results : results[0]),
         });
     });
-    return mutations;
+    return requests;
 };
 
 test('operates OAuth grace and scheduled deletion with reasoned audit history', async ({ page }, testInfo) => {
-    const mutations = await installFixture(page);
+    const requests = await installFixture(page);
     page.on('dialog', (dialog) => dialog.accept());
     await page.goto('admin/users');
     await expect(page.getByRole('region', { name: '계정 목록' })).toBeVisible();
@@ -247,9 +247,9 @@ test('operates OAuth grace and scheduled deletion with reasoned audit history', 
     await page.getByLabel('탈퇴 전 보존 일수').fill('30');
     await deletionButton.click();
     await expect(page.getByText(/탈퇴 예약 완료/).first()).toBeVisible();
-    expect(mutations.some(({ operation }) => operation === 'admin.users.updateKakaoGrace')).toBe(true);
-    expect(mutations.some(({ operation }) => operation === 'admin.users.grantSpecialAccess')).toBe(true);
-    expect(mutations.some(({ operation }) => operation === 'admin.users.scheduleDeletion')).toBe(true);
+    expect(requests.some(({ operation }) => operation === 'admin.users.updateKakaoGrace')).toBe(true);
+    expect(requests.some(({ operation }) => operation === 'admin.users.grantSpecialAccess')).toBe(true);
+    expect(requests.some(({ operation }) => operation === 'admin.users.scheduleDeletion')).toBe(true);
 
     await page.setViewportSize({ width: 390, height: 844 });
     const userDirectoryGeometry = await page.getByRole('region', { name: '계정 목록' }).evaluate((directory) => {
