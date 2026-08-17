@@ -378,10 +378,10 @@ onMounted(async () => {
     grid-column: 1 / -1;
 }
 .history-log:first-of-type {
-    height: 128px;
+    min-height: 128px;
 }
 .history-log:last-of-type {
-    height: 65px;
+    min-height: 65px;
 }
 .dropdown-compat-buttons {
     display: none;
@@ -441,7 +441,7 @@ onMounted(async () => {
         order: 4;
     }
     .history-log:first-of-type {
-        height: 149px;
+        min-height: 149px;
         margin-bottom: 0;
     }
 }

@@ -955,6 +955,63 @@ test.describe('yearbook legacy parity', () => {
         });
     }
 
+    for (const viewport of [
+        { name: 'desktop', width: 1365, height: 768, minimumWorldHeight: 128 },
+        { name: 'mobile', width: 390, height: 844, minimumWorldHeight: 149 },
+    ]) {
+        test(`grows record blocks with long content on ${viewport.name}`, async ({ page }) => {
+            const longWorldHistory = Array.from(
+                { length: 12 },
+                (_, index) => `<C>●</> 중원 정세 긴 기록 ${index + 1}번째 줄입니다.`
+            );
+            const longGlobalAction = Array.from(
+                { length: 8 },
+                (_, index) => `<L>●</> 장수 동향 긴 기록 ${index + 1}번째 줄입니다.`
+            );
+            await page.route('**/che/api/trpc/**', async (route) => {
+                if (!operationNames(route).includes('yearbook.getHistory')) {
+                    await route.fallback();
+                    return;
+                }
+                await fulfillOperations(route, () => ({
+                    ...fixture.game.yearbook,
+                    data: {
+                        ...fixture.game.yearbook.data,
+                        globalHistory: longWorldHistory,
+                        globalAction: longGlobalAction,
+                    },
+                }));
+            });
+
+            await page.setViewportSize(viewport);
+            await page.goto(gameUrl('/yearbook'));
+            await expect(page.getByText('중원 정세 긴 기록 12번째 줄입니다.')).toBeVisible();
+            await expect(page.getByText('장수 동향 긴 기록 8번째 줄입니다.')).toBeVisible();
+            if (artifactRoot) {
+                await page.screenshot({
+                    path: resolve(artifactRoot, `yearbook-long-content-${viewport.name}.png`),
+                    fullPage: true,
+                    animations: 'disabled',
+                });
+            }
+
+            const geometry = await page.locator('.history-log').evaluateAll((blocks) =>
+                blocks.map((block) => {
+                    const element = block as HTMLElement;
+                    return {
+                        height: element.getBoundingClientRect().height,
+                        clientHeight: element.clientHeight,
+                        scrollHeight: element.scrollHeight,
+                    };
+                })
+            );
+            expect(geometry[0]?.height).toBeGreaterThan(viewport.minimumWorldHeight);
+            expect(geometry[1]?.height).toBeGreaterThan(65);
+            expect(geometry[0]?.clientHeight).toBe(geometry[0]?.scrollHeight);
+            expect(geometry[1]?.clientHeight).toBe(geometry[1]?.scrollHeight);
+        });
+    }
+
     test('shows the history API error while keeping month navigation available', async ({ page }) => {
         await page.route('**/che/api/trpc/**', async (route) => {
             if (operationNames(route).includes('yearbook.getHistory')) {
