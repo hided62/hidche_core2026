@@ -219,7 +219,13 @@ test('shows one public map panel and switches it by hover, click, and keyboard',
     await expect(tablist.getByRole('tab', { name: '퀘섭' })).toHaveCount(0);
     await expect(panel).toHaveCount(1);
     await expect(cheTab).toHaveAttribute('aria-selected', 'true');
-    await expect(panel).toContainText('유저 11 / 500');
+    await expect(panel.getByText('체섭', { exact: true })).toHaveCount(0);
+    await expect(panel.locator('.map-preview-title')).toHaveCount(0);
+    const dateBar = panel.locator('.map-preview-date-bar');
+    await expect(dateBar).toHaveText('200년 1월');
+    const summary = panel.getByTestId('public-map-preview-summary');
+    await expect(summary).toContainText('RUNNING');
+    await expect(summary).toContainText('유저 11 / 500');
 
     const roadLayer = panel.getByTestId('map-preview-road');
     const castles = panel.getByTestId('map-preview-castle');
@@ -250,6 +256,32 @@ test('shows one public map panel and switches it by hover, click, and keyboard',
         road: { width: 700, height: 500 },
         largeCastle: { width: 32, height: 24 },
         largeNationBackground: { width: 96, height: 72 },
+    });
+    const dateGeometry = await dateBar.evaluate((element) => {
+        const rect = element.getBoundingClientRect();
+        const bodyRect = element.nextElementSibling?.getBoundingClientRect();
+        const style = getComputedStyle(element);
+        const textStyle = getComputedStyle(element.firstElementChild!);
+        return {
+            width: rect.width,
+            height: rect.height,
+            bottom: rect.bottom,
+            bodyTop: bodyRect?.top,
+            backgroundColor: style.backgroundColor,
+            justifyContent: style.justifyContent,
+            fontSize: textStyle.fontSize,
+            lineHeight: textStyle.lineHeight,
+        };
+    });
+    expect(dateGeometry).toEqual({
+        width: 700,
+        height: 20,
+        bottom: dateGeometry.bodyTop,
+        bodyTop: dateGeometry.bodyTop,
+        backgroundColor: 'rgb(0, 0, 0)',
+        justifyContent: 'center',
+        fontSize: '14px',
+        lineHeight: '20px',
     });
     if (requestedAssets) {
         await expect.poll(() => requestedAssets.has('/game/map/che/che_road.png')).toBe(true);
@@ -297,7 +329,9 @@ test('shows one public map panel and switches it by hover, click, and keyboard',
 
     await hweTab.hover();
     await expect(hweTab).toHaveAttribute('aria-selected', 'true');
-    await expect(panel).toContainText('유저 22 / 500');
+    await expect(panel.getByText('훼섭', { exact: true })).toHaveCount(0);
+    await expect(summary).toContainText('PAUSED');
+    await expect(summary).toContainText('유저 22 / 500');
 
     await cheTab.click();
     await expect(cheTab).toHaveAttribute('aria-selected', 'true');
@@ -322,7 +356,7 @@ test('shows one public map panel and switches it by hover, click, and keyboard',
     await page.screenshot({ path: testInfo.outputPath('public-map-tabs-desktop.png'), fullPage: true });
     await testInfo.attach('public-map-tabs-desktop-geometry', {
         body: Buffer.from(
-            `${JSON.stringify({ panel: geometry, map: mapGeometry, tooltip: tooltipGeometry }, null, 2)}\n`
+            `${JSON.stringify({ panel: geometry, date: dateGeometry, map: mapGeometry, tooltip: tooltipGeometry }, null, 2)}\n`
         ),
         contentType: 'application/json',
     });
@@ -344,13 +378,20 @@ test.describe('touch navigation', () => {
         await hweTab.tap();
         await expect(hweTab).toHaveAttribute('aria-selected', 'true');
         const panel = page.getByTestId('public-map-preview-panel');
-        await expect(panel).toContainText('유저 22 / 500');
+        await expect(panel.getByText('훼섭', { exact: true })).toHaveCount(0);
+        await expect(panel.locator('.map-preview-title')).toHaveCount(0);
+        await expect(panel.locator('.map-preview-date-bar')).toHaveText('200년 1월');
+        const summary = panel.getByTestId('public-map-preview-summary');
+        await expect(summary).toContainText('PAUSED');
+        await expect(summary).toContainText('유저 22 / 500');
         await expect(panel.getByTestId('map-preview-road')).toBeVisible();
         await expect(panel.getByTestId('map-preview-castle')).toHaveCount(2);
         const mapBox = await panel.locator('.map-preview-body').boundingBox();
         expect(mapBox?.width).toBeGreaterThan(280);
         expect(mapBox?.width).toBeLessThanOrEqual(366);
         expect(mapBox?.height).toBeCloseTo((mapBox?.width ?? 0) * (5 / 7), 0);
+        const horizontalOverflow = await panel.evaluate((element) => element.scrollWidth - element.clientWidth);
+        expect(horizontalOverflow).toBe(0);
         const rightCity = panel.getByTestId('map-preview-city').nth(1);
         await rightCity.hover();
         const tooltip = panel.getByTestId('map-preview-city-tooltip');
