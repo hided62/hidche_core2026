@@ -7,6 +7,7 @@ import type { TournamentState } from '../../tournament/types.js';
 
 import { TournamentStore } from '../../tournament/store.js';
 import { buildTournamentKeys } from '../../tournament/keys.js';
+import { assignManualApplicantGroup } from '../../tournament/workerHelpers.js';
 import { accessAuthedProcedure, authedProcedure, router } from '../../trpc.js';
 import { getMyGeneral } from '../shared/general.js';
 import { loadCurrentGameTime } from '../../services/gameClock.js';
@@ -412,52 +413,31 @@ export const tournamentRouter = router({
                 });
             }
 
-            const settingResult = await ctx.turnDaemon.requestCommand({
-                type: 'setMySetting',
-                generalId: general.id,
-                settings: { tnmt: 1 },
+            const meta = asRecord(general.meta);
+            const level = typeof meta.explevel === 'number' ? meta.explevel : 0;
+            const applicant = assignManualApplicantGroup({
+                state,
+                baseSeed: String(asRecord(worldState?.meta).hiddenSeed ?? 'tournament'),
+                current: participants,
+                applicant: {
+                    id: general.id,
+                    name: general.name,
+                    leadership: general.leadership,
+                    strength: general.strength,
+                    intel: general.intel,
+                    level,
+                },
             });
-            if (!settingResult || settingResult.type !== 'setMySetting' || !settingResult.ok) {
+            const next = participants.concat(applicant);
+
+            try {
+                await store.setParticipants(next);
+            } catch (error) {
                 await ctx.turnDaemon.requestCommand({
                     type: 'adjustGeneralResources',
                     reason: 'tournamentJoinRollback',
                     adjustments: [{ generalId: general.id, goldDelta: develCost }],
                 });
-                throw new TRPCError({
-                    code: 'BAD_REQUEST',
-                    message:
-                        settingResult && settingResult.type === 'setMySetting'
-                            ? (settingResult.reason ?? '요청에 실패했습니다.')
-                            : 'Unexpected response',
-                });
-            }
-
-            const meta = asRecord(general.meta);
-            const level = typeof meta.explevel === 'number' ? meta.explevel : 0;
-            const next = participants.concat({
-                id: general.id,
-                name: general.name,
-                leadership: general.leadership,
-                strength: general.strength,
-                intel: general.intel,
-                level,
-            });
-
-            try {
-                await store.setParticipants(next);
-            } catch (error) {
-                await Promise.all([
-                    ctx.turnDaemon.requestCommand({
-                        type: 'adjustGeneralResources',
-                        reason: 'tournamentJoinRollback',
-                        adjustments: [{ generalId: general.id, goldDelta: develCost }],
-                    }),
-                    ctx.turnDaemon.requestCommand({
-                        type: 'setMySetting',
-                        generalId: general.id,
-                        settings: { tnmt: 0 },
-                    }),
-                ]);
                 throw error;
             }
             return { ok: true, count: next.length };
