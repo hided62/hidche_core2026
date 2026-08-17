@@ -35,6 +35,7 @@ const names = [
     '허저',
     '주태',
     longGeneralName,
+    ...Array.from({ length: 48 }, (_, index) => `예선장수${index + 17}`),
 ];
 const participants = names.map((name, index) => ({
     id: index + 1,
@@ -45,13 +46,20 @@ const participants = names.map((name, index) => ({
     level: 10,
     picture: 'default.jpg',
     imageServer: 0,
-    groupId: 10 + (index % 8),
+    groupId: Math.floor(index / 8) < 4 ? 10 + (index % 8) : index % 8,
     groupNo: Math.floor(index / 8),
-    win: 3 - (index % 2),
+    win: Math.floor(index / 8) < 4 ? 3 - (index % 2) : 7 - Math.floor(index / 8),
     draw: index % 2,
-    lose: 0,
-    gl: 12 - index,
+    lose: Math.floor(index / 8) < 4 ? 0 : Math.floor(index / 8),
+    gl: 64 - index,
     finalRank: Math.floor(index / 8) + 1,
+    preliminaryGroupId: index % 8,
+    preliminaryGroupNo: Math.floor(index / 8),
+    preliminaryRank: Math.floor(index / 8) + 1,
+    preliminaryWin: 7 - Math.floor(index / 8),
+    preliminaryDraw: index % 2,
+    preliminaryLose: Math.floor(index / 8),
+    preliminaryGl: 64 - index,
 }));
 const matches = [
     ...Array.from({ length: 8 }, (_, index) => ({
@@ -181,11 +189,11 @@ const installFixture = async (page: Page, options: { applicationOpen?: boolean }
             if (operation === 'tournament.getBettingSummary') {
                 return response({
                     totals: Object.fromEntries(
-                        participants.map((participant, index) => [participant.id, 100 + index * 10])
+                        participants.slice(0, 16).map((participant, index) => [participant.id, 100 + index * 10])
                     ),
-                    myTotals: {},
+                    myTotals: { 1: 120, 2: 40 },
                     totalAmount: 2800,
-                    myAmount: 0,
+                    myAmount: 160,
                 });
             }
             if (operation === 'tournament.getRankings') {
@@ -297,6 +305,14 @@ test('desktop bracket connects every real general slot to the next round', async
     expect(oddsContainment.cardHeight).toBeGreaterThanOrEqual(82);
     expect(oddsContainment.oddsTop).toBeGreaterThanOrEqual(oddsContainment.cardTop);
     expect(oddsContainment.oddsBottom).toBeLessThanOrEqual(oddsContainment.cardBottom);
+    await expect(firstSlot.locator('.bracket-my-bet')).toHaveText('내 투자 금120');
+
+    const preliminaryTables = page.locator('.preliminary-grid table');
+    await expect(preliminaryTables).toHaveCount(8);
+    for (let groupIndex = 0; groupIndex < 8; groupIndex += 1) {
+        await expect(preliminaryTables.nth(groupIndex).locator('tbody tr')).toHaveCount(8);
+        await expect(preliminaryTables.nth(groupIndex).locator('.general-identity')).toHaveCount(8);
+    }
 
     await persistScreenshot(page, 'tournament-desktop', testInfo.outputPath('tournament-bracket-desktop.webp'));
 });
@@ -413,11 +429,38 @@ test('mobile bracket exposes every round through tabs with standard horizontal i
     });
     expect(mobileOddsContainment.cardHeight).toBeGreaterThanOrEqual(82);
     expect(mobileOddsContainment.oddsBottom).toBeLessThanOrEqual(mobileOddsContainment.cardBottom);
+    await expect(firstMobileSlot.locator('.bracket-my-bet')).toHaveText('내 투자 금120');
     await expect(page.getByRole('tablist', { name: '본선 조 선택' })).toBeVisible();
     await page.getByRole('tab', { name: '二조' }).first().click();
     await expect(page.getByRole('tab', { name: '二조' }).first()).toHaveAttribute('aria-selected', 'true');
     expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
     await persistScreenshot(page, 'tournament-mobile', testInfo.outputPath('tournament-bracket-mobile.webp'));
+});
+
+test('tournament and betting pages expose same-row navigation tabs beside close', async ({ page }) => {
+    await page.setViewportSize({ width: 390, height: 844 });
+    await openTournament(page);
+
+    const navigation = page.getByRole('tablist', { name: '토너먼트와 베팅장 이동' });
+    const tournamentTab = navigation.getByRole('tab', { name: '토너먼트' });
+    const bettingTab = navigation.getByRole('tab', { name: '베팅장' });
+    const close = page.getByRole('button', { name: '창 닫기' }).first();
+    await expect(tournamentTab).toHaveAttribute('aria-selected', 'true');
+
+    const headerCenters = await Promise.all(
+        [tournamentTab, bettingTab, close].map(async (control) => {
+            const box = await control.boundingBox();
+            return box ? box.y + box.height / 2 : -1;
+        })
+    );
+    expect(Math.max(...headerCenters) - Math.min(...headerCenters)).toBeLessThan(1);
+
+    await bettingTab.click();
+    await expect(page).toHaveURL(/\/betting$/);
+    await expect(page.getByRole('tab', { name: '베팅장' })).toHaveAttribute('aria-selected', 'true');
+    await page.getByRole('tab', { name: '토너먼트' }).click();
+    await expect(page).toHaveURL(/\/tournament$/);
+    expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
 });
 
 test('mobile betting rankings use tabs and keep dedicated icons beside general names', async ({ page }, testInfo) => {
@@ -426,6 +469,7 @@ test('mobile betting rankings use tabs and keep dedicated icons beside general n
     await page.goto('betting');
 
     await expect(page.locator('.candidate-card')).toHaveCount(16);
+    await expect(page.locator('.betting-bracket .bracket-my-bet').first()).toHaveText('내 투자 금120');
     await expect(page.getByRole('tablist', { name: '토너먼트 랭킹 종목 선택' })).toBeVisible();
     await expect(page.locator('.ranking-table:visible')).toHaveCount(1);
     await page.getByRole('tab', { name: '통솔전' }).click();
