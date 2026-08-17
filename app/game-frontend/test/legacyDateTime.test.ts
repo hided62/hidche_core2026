@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 
 import {
+    formatLocalDateTime,
     formatLocalTimeSeconds,
     formatSeoulDateTime,
     formatSeoulHourMinute,
@@ -28,4 +29,13 @@ void test('formats an ISO instant with the client local clock', () => {
     assert.equal(formatLocalTimeSeconds(instant), expected);
     assert.equal(formatLocalTimeSeconds(instant.toISOString()), expected);
     assert.equal(formatLocalTimeSeconds('invalid'), '-');
+});
+
+void test('formats an autorun expiry instant with the client local date and seconds', () => {
+    const instant = new Date('2026-08-13T00:07:06.713Z');
+    const expectedDate = [instant.getFullYear(), instant.getMonth() + 1, instant.getDate()]
+        .map((part, index) => String(part).padStart(index === 0 ? 4 : 2, '0'))
+        .join('-');
+    assert.equal(formatLocalDateTime(instant), `${expectedDate} ${formatLocalTimeSeconds(instant)}`);
+    assert.equal(formatLocalDateTime('invalid'), '-');
 });
