@@ -437,12 +437,7 @@ onMounted(() => void loadStratFinan());
     margin: 0 auto;
     color: #fff;
     background: var(--sammo-texture-walnut);
-    font:
-        14px/1.3 Pretendard,
-        'Apple SD Gothic Neo',
-        'Noto Sans KR',
-        'Malgun Gothic',
-        sans-serif;
+    font: 14px/1.3 var(--sammo-font-sans);
 }
 .tiptap-compat-controls {
     display: none;

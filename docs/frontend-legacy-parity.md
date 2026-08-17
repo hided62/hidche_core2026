@@ -122,6 +122,21 @@ Adding or changing a frontend route requires:
 Pixel snapshots may be added after these structural assertions pass. Dynamic
 regions must not be hidden merely to make a pixel threshold pass.
 
+개인 공격·수비 기록의 Ref 글자 크기는 checkout의 실제 `formatLog.ts`와 빌드된
+`v_main.css`를 사용하는 정적 Chromium fixture로 독립 재현할 수 있습니다. 이
+helper는 고정된 비민감 기록 문구만 렌더링하므로 live PHP session이나 DB 저장
+경로 검증을 대신하지 않습니다.
+
+```sh
+REF_SAM_ROOT=/path/to/ref/sam \
+REF_PERSONAL_WAR_LOG_ARTIFACT_DIR=/path/to/ignored/artifacts \
+  node tools/frontend-legacy-parity/reference-personal-war-log-font.mjs
+```
+
+대응하는 Core 검증은 `inGameMenus.spec.ts`의 “공격·수비 시각” test이며,
+`MENU_PARITY_ARTIFACT_DIR`를 지정하면 1200×900·500×900 screenshot과 computed
+style JSON을 남깁니다.
+
 To refresh the PHP ranking evidence after building the ignored reference
 webpack assets, run:
 

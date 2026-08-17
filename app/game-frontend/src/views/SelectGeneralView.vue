@@ -515,8 +515,6 @@ onBeforeUnmount(() => {
 </template>
 
 <style scoped>
-@import url('https://cdn.jsdelivr.net/gh/orioncactus/pretendard/dist/web/static/pretendard.css');
-
 .select-pool-page {
     width: 1000px;
     min-width: 1000px;

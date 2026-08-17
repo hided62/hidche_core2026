@@ -28,13 +28,14 @@ import {
     repeatNationTurns,
     setGeneralTurn,
     setGeneralTurns,
-    setNationTurn,
-    setNationTurns,
+    setNationTurnAtCurrentPosition,
+    setNationTurnsAtCurrentPositions,
     shiftGeneralTurns,
     shiftNationTurns,
 } from '../../turns/reservedTurns.js';
 import { getOwnedGeneral } from '../shared/general.js';
 import type { GameApiContext, GeneralRow, WorldStateRow } from '../../context.js';
+import { buildRefGeneralTargetOptions } from '../../turns/commandTargets.js';
 
 const zPushAmount = z
     .number()
@@ -181,9 +182,15 @@ export const getTurnCommandTable = async (ctx: GameApiContext, generalId: number
                 orderBy: { id: 'asc' },
             }),
             ctx.db.general.findMany({
-                where: { npcState: { lt: 2 } },
-                select: { id: true, name: true, nationId: true, cityId: true },
-                orderBy: { id: 'asc' },
+                select: {
+                    id: true,
+                    name: true,
+                    nationId: true,
+                    cityId: true,
+                    npcState: true,
+                    officerLevel: true,
+                },
+                orderBy: [{ npcState: 'asc' }, { name: 'asc' }, { id: 'asc' }],
             }),
             environmentPromise,
             loadBattleSimTraitOptions(),
@@ -192,7 +199,13 @@ export const getTurnCommandTable = async (ctx: GameApiContext, generalId: number
         ]);
 
     const nationById = new Map(nations.map((entry) => [entry.id, entry]));
-    const cityById = new Map(cities.map((entry) => [entry.id, entry]));
+    const generalTargetOptions = buildRefGeneralTargetOptions({
+        actorId: general.id,
+        actorNationId: general.nationId,
+        generals,
+        nationNames: new Map(nations.map((entry) => [entry.id, entry.name])),
+        cityNames: new Map(cities.map((entry) => [entry.id, entry.name])),
+    });
     const items: TurnCommandInputOptions['items'] = {
         horse: [{ value: 'None', label: '판매/해제' }],
         weapon: [{ value: 'None', label: '판매/해제' }],
@@ -226,12 +239,8 @@ export const getTurnCommandTable = async (ctx: GameApiContext, generalId: number
             label: entry.name,
             color: entry.color,
         })),
-        generals: generals.map((entry) => ({
-            value: entry.id,
-            label: `${entry.name} (${nationById.get(entry.nationId)?.name ?? '무소속'} · ${
-                cityById.get(entry.cityId)?.name ?? '재야'
-            })`,
-        })),
+        generals: generalTargetOptions.generals,
+        generalTargets: generalTargetOptions.generalTargets,
         crewTypes: (environment.unitSet.crewTypes ?? [])
             .filter((entry) => !entry.requirements.some((requirement) => requirement.type === 'Impossible'))
             .map((entry) => ({ value: entry.id, label: entry.name })),
@@ -446,7 +455,7 @@ export const turnsRouter = router({
                 await assertReservedTurnPermission(worldState, general, 'nation', input.action, args);
 
                 const snapshot = await mutateReservedTurns(() =>
-                    setNationTurn(
+                    setNationTurnAtCurrentPosition(
                         ctx.db,
                         general.nationId,
                         general.officerLevel,
@@ -559,7 +568,13 @@ export const turnsRouter = router({
                     await assertReservedTurnPermission(worldState, general, 'nation', update.action, update.args);
                 }
                 const snapshot = await mutateReservedTurns(() =>
-                    setNationTurns(ctx.db, general.nationId, general.officerLevel, updates, input.expectedRevision)
+                    setNationTurnsAtCurrentPositions(
+                        ctx.db,
+                        general.nationId,
+                        general.officerLevel,
+                        updates,
+                        input.expectedRevision
+                    )
                 );
                 return { ok: true, ...snapshot };
             }),

@@ -827,6 +827,7 @@ test('desktop menus preserve ref columns, prefix-safe routes, and controlled dro
     await installFixture(page, state);
     await page.setViewportSize({ width: 1200, height: 900 });
     await waitForMain(page);
+    if (artifactRoot) await mkdir(resolve(artifactRoot), { recursive: true });
 
     await expect(page.locator('.main-global-menu')).toHaveCount(3);
     expect(await gridColumnCount(page, '.main-global-menu')).toBe(8);
@@ -2253,6 +2254,222 @@ test('nation menu presentation follows the server-derived permission matrix', as
         'href',
         `${basePath}/nation/secret`
     );
+});
+
+test('all main Lumen button families share the rounded pressed geometry', async ({ page }) => {
+    const state: NavigationFixture = {
+        officerLevel: 5,
+        permission: 2,
+        nationLevel: 3,
+        stage: 0,
+        npcMode: 1,
+        generalMeCalls: 0,
+        operations: [],
+        nationColor: '#663399',
+    };
+    await installFixture(page, state);
+    await page.setViewportSize({ width: 1200, height: 900 });
+    await waitForMain(page);
+
+    const controls: Array<[string, Locator]> = [
+        [
+            '천통국 베팅',
+            page.locator('.main-global-menu[data-menu-position="top"] [data-navigation-id="nation-betting"]'),
+        ],
+        [
+            '게임정보',
+            page.locator('.main-global-menu[data-menu-position="top"]').getByRole('button', {
+                name: '게임정보',
+                exact: true,
+            }),
+        ],
+        ['회 의 실', page.locator('.layout-desktop [data-navigation-id="meeting"]')],
+        ['기 밀 실', page.locator('.layout-desktop [data-navigation-id="secret-board"]')],
+        [
+            '당기기',
+            page.locator('[data-main-target="commands"] .bottom-actions').getByRole('button', { name: '당기기' }),
+        ],
+        [
+            '미루기',
+            page.locator('[data-main-target="commands"] .bottom-actions').getByRole('button', { name: '미루기' }),
+        ],
+        [
+            '펼치기',
+            page.locator('[data-main-target="commands"] .bottom-actions').getByRole('button', { name: '펼치기' }),
+        ],
+        ['실시간 동기화', page.locator('.desktop-action-controls').getByRole('button', { name: /실시간 동기화:/u })],
+        ['갱 신', page.locator('.desktop-action-controls').getByRole('button', { name: '갱 신' })],
+        ['로비로', page.locator('.desktop-action-controls').getByRole('button', { name: '로비로' })],
+    ];
+
+    const measure = (control: Locator) =>
+        control.evaluate((element) => {
+            const rect = element.getBoundingClientRect();
+            const style = getComputedStyle(element);
+            return {
+                top: rect.top,
+                bottom: rect.bottom,
+                height: rect.height,
+                marginTop: style.marginTop,
+                borderTop: style.borderTopWidth,
+                borderRight: style.borderRightWidth,
+                borderBottom: style.borderBottomWidth,
+                borderLeft: style.borderLeftWidth,
+                radius: style.borderRadius,
+                background: style.backgroundColor,
+                filter: style.filter,
+            };
+        });
+
+    const evidence: Record<string, Record<string, unknown>> = {};
+    for (const [index, [label, control]] of controls.entries()) {
+        await expect(control, `${label} control`).toBeVisible();
+        await expect(control).toHaveClass(/legacy-button/u);
+        await control.scrollIntoViewIfNeeded();
+        await page.mouse.move(1195, 895);
+        const base = await measure(control);
+        evidence[label] = { default: base };
+        if (artifactRoot) {
+            await control.screenshot({ path: resolve(artifactRoot, `${index + 1}-default.png`) });
+        }
+        expect(base, `${label} default geometry`).toMatchObject({
+            marginTop: '0px',
+            borderTop: '0px',
+            borderRight: '1px',
+            borderBottom: '4px',
+            borderLeft: '1px',
+            radius: '5.25px',
+            filter: 'none',
+        });
+
+        await control.focus();
+        await expect(control, `${label} keyboard focus`).toBeFocused();
+        const focused = await measure(control);
+        evidence[label].focus = focused;
+        if (artifactRoot) {
+            await control.screenshot({ path: resolve(artifactRoot, `${index + 1}-focus.png`) });
+        }
+        expect(focused.borderBottom, `${label} focus edge`).toBe('4px');
+        expect(focused.marginTop, `${label} focus position`).toBe('0px');
+
+        await control.hover();
+        const hovered = await measure(control);
+        evidence[label].hover = hovered;
+        if (artifactRoot) {
+            await control.screenshot({ path: resolve(artifactRoot, `${index + 1}-hover.png`) });
+        }
+        expect(hovered.borderBottom, `${label} hover edge`).toBe('3px');
+        expect(hovered.marginTop, `${label} hover position`).toBe('1px');
+        expect(hovered.top, `${label} hover top`).toBeCloseTo(base.top + 1, 2);
+        expect(hovered.height, `${label} hover height`).toBeCloseTo(base.height - 1, 2);
+        expect(hovered.bottom, `${label} hover bottom`).toBeCloseTo(base.bottom, 2);
+        expect(hovered.background, `${label} hover face`).toBe(base.background);
+
+        const box = await control.boundingBox();
+        if (!box) throw new Error(`${label} control has no bounding box`);
+        await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+        await page.mouse.down();
+        const pressed = await measure(control);
+        evidence[label].pointerDown = pressed;
+        if (artifactRoot) {
+            await control.screenshot({ path: resolve(artifactRoot, `${index + 1}-pointer-down.png`) });
+        }
+        expect(pressed.borderBottom, `${label} pressed edge`).toBe('2px');
+        expect(pressed.marginTop, `${label} pressed position`).toBe('2px');
+        expect(pressed.top, `${label} pressed top`).toBeCloseTo(base.top + 2, 2);
+        expect(pressed.height, `${label} pressed height`).toBeCloseTo(base.height - 2, 2);
+        expect(pressed.bottom, `${label} pressed bottom`).toBeCloseTo(base.bottom, 2);
+        expect(pressed.background, `${label} pressed face`).toBe(base.background);
+        await page.mouse.move(1195, 895);
+        await page.mouse.up();
+    }
+
+    state.permission = 0;
+    await page.locator('.desktop-action-controls').getByRole('button', { name: '갱 신' }).click();
+    const disabledSecret = page.locator('.layout-desktop [data-navigation-id="secret-board"]');
+    await expect(disabledSecret).toHaveAttribute('aria-disabled', 'true');
+    await disabledSecret.scrollIntoViewIfNeeded();
+    const disabledBase = await measure(disabledSecret);
+    await disabledSecret.hover({ force: true });
+    const disabledHover = await measure(disabledSecret);
+    evidence['기 밀 실 disabled'] = { default: disabledBase, hover: disabledHover };
+    expect(disabledHover.borderBottom).toBe('4px');
+    expect(disabledHover.marginTop).toBe('0px');
+    expect(disabledHover.top).toBeCloseTo(disabledBase.top, 2);
+    if (artifactRoot) {
+        await disabledSecret.screenshot({ path: resolve(artifactRoot, 'disabled-secret-hover.png') });
+        await writeFile(
+            resolve(artifactRoot, 'main-lumen-button-states.json'),
+            `${JSON.stringify(evidence, null, 2)}\n`
+        );
+    }
+
+    await persistArtifact(page, `${basePath.slice(1)}-main-lumen-button-families`);
+});
+
+test('mobile main Lumen button families keep the same state geometry without overflow', async ({ page }) => {
+    const state: NavigationFixture = {
+        officerLevel: 5,
+        permission: 2,
+        nationLevel: 3,
+        stage: 0,
+        npcMode: 1,
+        generalMeCalls: 0,
+        operations: [],
+        nationColor: '#663399',
+    };
+    await installFixture(page, state);
+    await page.setViewportSize({ width: 500, height: 900 });
+    await waitForMain(page);
+
+    const controls = [
+        page.locator('.main-global-menu[data-menu-position="top"] [data-navigation-id="nation-betting"]'),
+        page.locator('.main-global-menu[data-menu-position="top"]').getByRole('button', {
+            name: '게임정보',
+            exact: true,
+        }),
+        page.locator('.layout-mobile [data-navigation-id="meeting"]'),
+        page.locator('.layout-mobile [data-navigation-id="secret-board"]'),
+        page.locator('[data-main-target="commands"] .bottom-actions').getByRole('button', { name: '당기기' }),
+        page.locator('[data-main-target="commands"] .bottom-actions').getByRole('button', { name: '미루기' }),
+        page.locator('[data-main-target="commands"] .bottom-actions').getByRole('button', { name: '펼치기' }),
+        page.locator('.desktop-action-controls').getByRole('button', { name: /실시간 동기화:/u }),
+        page.locator('.desktop-action-controls').getByRole('button', { name: '갱 신' }),
+        page.locator('.desktop-action-controls').getByRole('button', { name: '로비로' }),
+    ];
+    for (const control of controls) {
+        await expect(control).toBeVisible();
+        await expect(control).toHaveClass(/legacy-button/u);
+        await expect(control).toHaveCSS('border-radius', '5.25px');
+        await expect(control).toHaveCSS('border-bottom-width', '4px');
+    }
+
+    for (const control of [controls[0], controls[2], controls[4], controls[7]]) {
+        if (!control) throw new Error('mobile Lumen control is missing');
+        await control.scrollIntoViewIfNeeded();
+        await control.focus();
+        await expect(control).toBeFocused();
+        await expect(control).toHaveCSS('border-bottom-width', '4px');
+        await control.hover();
+        await expect(control).toHaveCSS('border-bottom-width', '3px');
+        await expect(control).toHaveCSS('margin-top', '1px');
+        const box = await control.boundingBox();
+        if (!box) throw new Error('mobile Lumen control is not measurable');
+        await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+        await page.mouse.down();
+        await expect(control).toHaveCSS('border-bottom-width', '2px');
+        await expect(control).toHaveCSS('margin-top', '2px');
+        await page.mouse.move(499, 899);
+        await page.mouse.up();
+    }
+
+    expect(
+        await page.evaluate(() => ({
+            document: document.documentElement.scrollWidth - document.documentElement.clientWidth,
+            body: document.body.scrollWidth - document.body.clientWidth,
+        }))
+    ).toEqual({ document: 0, body: 0 });
+    await persistArtifact(page, `${basePath.slice(1)}-mobile-main-lumen-button-families`);
 });
 
 test('mobile single document refreshes once and preserves tokens on lobby return', async ({ page }) => {

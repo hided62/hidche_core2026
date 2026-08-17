@@ -117,7 +117,7 @@ const buildBattleRequest = () => ({
         conflict: '{}',
     },
     attackerNation: {
-        type: 'test',
+        type: 'che_도적',
         tech: 1000,
         level: 1,
         capital: 1,
@@ -193,7 +193,7 @@ const buildBattleRequest = () => ({
         conflict: '{}',
     },
     defenderNation: {
-        type: 'test',
+        type: 'che_도적',
         tech: 1000,
         level: 1,
         capital: 2,
@@ -306,6 +306,27 @@ describe('battle router orchestration', () => {
 
         expect(prepared.seed).toBe('test-seed');
         expect(prepared.seeds).toEqual([]);
+        expect(battleSim.simulateCalls).toBe(0);
+    });
+
+    it('rejects the neutral storage nation type before preparing or queuing a simulation', async () => {
+        const battleSim = new QueuedBattleSimTransport();
+        const state: WorldStateRow = {
+            id: 1,
+            scenarioCode: 'default',
+            currentYear: 200,
+            currentMonth: 1,
+            tickSeconds: 600,
+            config: {},
+            meta: {},
+            updatedAt: new Date('2026-01-01T00:00:00Z'),
+        };
+        const caller = appRouter.createCaller(buildContext({ state, battleSim }));
+        const request = buildBattleRequest();
+        request.attackerNation.type = 'che_중립';
+
+        await expect(caller.battle.prepareSimulation(request)).rejects.toMatchObject({ code: 'BAD_REQUEST' });
+        await expect(caller.battle.simulate(request)).rejects.toMatchObject({ code: 'BAD_REQUEST' });
         expect(battleSim.simulateCalls).toBe(0);
     });
 

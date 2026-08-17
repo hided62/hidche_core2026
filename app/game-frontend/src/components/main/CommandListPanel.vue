@@ -2,7 +2,7 @@
 import { computed, onUnmounted, ref, watch } from 'vue';
 import { addMinutes } from 'date-fns';
 import ReservedCommandEditor from '../command/ReservedCommandEditor.vue';
-import { formatLocalTimeSeconds } from '../../utils/legacyDateTime';
+import { formatLocalDateTime, formatLocalTimeSeconds } from '../../utils/legacyDateTime';
 import type {
     CommandMapData,
     CommandMapLayout,
@@ -65,6 +65,26 @@ const rows = computed<ReservedCommandRow[]>(() => {
     });
 });
 
+const autonomousUntil = computed(() => {
+    if (props.autorunLimit == null) return null;
+    const baseYear = props.currentYear ?? 0;
+    const baseMonth = props.currentMonth ?? 1;
+    const currentAbsoluteMonth = baseYear * 12 + baseMonth - 1;
+    const lastAutonomousMonth = props.autorunLimit - 1;
+    if (lastAutonomousMonth < currentAbsoluteMonth) return null;
+
+    const untilYear = Math.floor(lastAutonomousMonth / 12);
+    const untilMonth = (lastAutonomousMonth % 12) + 1;
+    const base = props.general?.turnTime ? new Date(props.general.turnTime) : null;
+    const term = props.turnTermMinutes ?? 0;
+    const expiresAt =
+        base && Number.isFinite(base.getTime())
+            ? addMinutes(base, (lastAutonomousMonth - currentAbsoluteMonth) * term)
+            : null;
+    const currentTimeLabel = expiresAt ? formatLocalDateTime(expiresAt) : '현재시각 확인 불가';
+    return `${untilYear}年 ${untilMonth}月 · ${currentTimeLabel}까지`;
+});
+
 const currentServerTime = ref('--:--:--');
 let sampledServerTimeMs: number | null = null;
 let sampledClientTimeMs = 0;
@@ -112,6 +132,7 @@ onUnmounted(() => {
         :current-time="currentServerTime"
         :map-data="props.mapData"
         :map-layout="props.mapLayout"
+        :autonomous-until="autonomousUntil"
         @reserve-bulk="emit('set-general-turns', $event)"
         @shift="emit('shift-general-turns', $event)"
         @repeat="emit('repeat-general-turns', $event)"

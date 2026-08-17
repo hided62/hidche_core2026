@@ -56,7 +56,6 @@
     --legacy-button-bg: var(--sammo-button-primary-bg);
     --legacy-button-border: var(--sammo-button-primary-border);
     --legacy-button-color: #fff;
-    min-height: 35.5px;
     margin-top: 0;
     border-color: var(--legacy-button-border);
     border-style: solid;
@@ -65,6 +64,7 @@
     padding: 5.25px 10.5px;
     background: var(--legacy-button-bg);
     color: var(--legacy-button-color);
+    filter: none;
     line-height: 21px;
     /* Ref's framework baseline for these controls. */
     vertical-align: middle;

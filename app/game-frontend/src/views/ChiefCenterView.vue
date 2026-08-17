@@ -352,22 +352,34 @@ const repeatTurns = async (amount: number) => {
             </div>
             <div class="chief-overview-frame">
                 <div class="chief-overview">
-                    <template v-for="chief in chiefViews" :key="chief.officerLevel">
-                        <ChiefTurnCard
-                            v-if="chief.name"
-                            :officer-level-text="chief.officerLevelText"
-                            :name="chief.name"
-                            :npc-state="chief.npcState"
-                            :rows="chief.rows"
-                            :compact="true"
-                            :selected="chief.officerLevel === selectedChief?.officerLevel"
-                            :is-me="chief.officerLevel === data.me.officerLevel"
-                            :clickable="true"
-                            :turn-time-label="chief.rows[0]?.time"
-                            @select="selectedChiefLevel = chief.officerLevel"
-                        />
-                        <div v-else class="empty-chief-slot" aria-hidden="true"></div>
-                    </template>
+                    <div
+                        v-for="(rowChiefs, rowIndex) in [chiefViews.slice(0, 4), chiefViews.slice(4, 8)]"
+                        :key="rowIndex"
+                        class="chief-overview-row"
+                    >
+                        <div class="overview-turn-index legacy-bg0" :aria-label="`${rowIndex + 1}행 턴 번호`">
+                            <span></span><span v-for="idx in data.maxTurns" :key="idx">{{ idx }}</span>
+                        </div>
+                        <template v-for="chief in rowChiefs" :key="chief.officerLevel">
+                            <ChiefTurnCard
+                                v-if="chief.name"
+                                :officer-level-text="chief.officerLevelText"
+                                :name="chief.name"
+                                :npc-state="chief.npcState"
+                                :rows="chief.rows"
+                                :compact="true"
+                                :selected="chief.officerLevel === selectedChief?.officerLevel"
+                                :is-me="chief.officerLevel === data.me.officerLevel"
+                                :clickable="true"
+                                :turn-time-label="chief.rows[0]?.time"
+                                @select="selectedChiefLevel = chief.officerLevel"
+                            />
+                            <div v-else class="empty-chief-slot" aria-hidden="true"></div>
+                        </template>
+                        <div class="overview-turn-index legacy-bg0" :aria-label="`${rowIndex + 1}행 턴 번호`">
+                            <span></span><span v-for="idx in data.maxTurns" :key="idx">{{ idx }}</span>
+                        </div>
+                    </div>
                 </div>
             </div>
         </section>
@@ -750,20 +762,25 @@ const repeatTurns = async (amount: number) => {
 .chief-overview-frame {
     width: 500px;
     height: 310px;
-    margin-top: -3px;
+    margin-top: 0;
     margin-bottom: 11px;
     overflow: hidden;
 }
 .chief-overview {
-    width: 445px;
+    width: 500px;
     height: 310px;
     margin-top: 0;
+    display: flex;
+    flex-direction: column;
+}
+.chief-overview-row {
+    width: 500px;
+    height: 155px;
     display: grid;
-    grid-template-columns: repeat(4, 111.25px);
-    grid-auto-rows: 155px;
+    grid-template-columns: 12px repeat(4, 119px) 12px;
 }
 .chief-overview :deep(.chief-card) {
-    width: 111.25px;
+    width: 119px;
     height: 155px;
     border: 0;
     border-left: 1px solid #fff;
@@ -787,10 +804,31 @@ const repeatTurns = async (amount: number) => {
     box-sizing: border-box;
     height: 20px !important;
     min-height: 20px !important;
-    grid-template-rows: none;
+    grid-template-columns: 1fr;
+    grid-template-rows: 10px 10px;
+    line-height: 10px;
+}
+.chief-overview :deep(.compact-name),
+.chief-overview :deep(.compact-meta) {
+    height: 10px;
+    line-height: 10px;
 }
 .chief-overview :deep(.row-time),
 .chief-overview :deep(.row-action) {
+    display: grid;
+    place-items: center;
+}
+.overview-turn-index {
+    display: grid;
+    grid-template-rows: 20px repeat(12, 11.25px);
+    width: 12px;
+    height: 155px;
+    color: #fff;
+    font-size: 0.55rem;
+    line-height: 11.25px;
+    text-align: center;
+}
+.overview-turn-index span {
     display: grid;
     place-items: center;
 }
@@ -879,7 +917,7 @@ const repeatTurns = async (amount: number) => {
 
 @media (max-width: 1024px) {
     .chief-overview {
-        grid-template-columns: repeat(4, 111.25px);
+        width: 500px;
     }
 }
 
@@ -891,8 +929,8 @@ const repeatTurns = async (amount: number) => {
 .chief-grid-row > .empty-chief-slot {
     height: 384px;
 }
-.chief-overview > .empty-chief-slot {
-    width: 111.25px;
+.chief-overview-row > .empty-chief-slot {
+    width: 119px;
     height: 155px;
 }
 </style>

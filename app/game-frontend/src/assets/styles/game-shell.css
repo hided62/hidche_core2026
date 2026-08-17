@@ -48,26 +48,6 @@
     cursor: pointer;
 }
 
-/*
- * Ref renders the dashboard reload control with the Lumen navigation family:
- * the bottom edge shortens on hover and again while pressed.
- */
-.game-shell__action--navigation {
-    border-color: var(--sammo-button-navigation-border);
-    border-width: 0 1px 4px;
-    background: var(--sammo-button-navigation-bg);
-}
-
-.game-shell__action--navigation:not(:disabled):hover {
-    margin-top: 1px;
-    border-bottom-width: 3px;
-}
-
-.game-shell__action--navigation:not(:disabled):active {
-    margin-top: 2px;
-    border-bottom-width: 2px;
-}
-
 .game-feedback--error {
     color: var(--sammo-color-error);
     font-size: 0.85rem;

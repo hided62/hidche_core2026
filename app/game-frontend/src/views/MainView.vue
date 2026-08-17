@@ -66,11 +66,12 @@ const nationAccess = computed(() => ({
 }));
 const nationColor = computed(() => nation.value?.color ?? '#000000');
 const voteActive = computed(() => Boolean(frontStatus.value?.latestVote));
+const recordTimeSuffixPattern = /\d{2}:\d{2}(?:<\/>)?\s*$/u;
 const formatRecord = (entry: { text: string; createdAt?: string | Date }, appendTime = false): string => {
-    if (!appendTime || /\d{2}:\d{2}\s*$/u.test(entry.text)) return formatLog(entry.text);
+    if (!appendTime || recordTimeSuffixPattern.test(entry.text)) return formatLog(entry.text);
     const time = formatServerDateTime(entry.createdAt, { format: 'hourMinute', fallback: '' });
     if (!time) return formatLog(entry.text);
-    return formatLog(`${entry.text} ${time}`);
+    return formatLog(`${entry.text} <1>${time}</>`);
 };
 
 let surveyNoticeTimer: ReturnType<typeof setTimeout> | null = null;
@@ -143,7 +144,7 @@ watch(
             </h1>
             <div class="game-shell__actions desktop-action-controls">
                 <button
-                    class="game-shell__action toggle"
+                    class="game-shell__action toggle legacy-button legacy-button--navigation"
                     :class="{ active: realtimeEnabled }"
                     type="button"
                     @click="dashboard.setRealtimeEnabled(!realtimeEnabled)"
@@ -151,7 +152,7 @@ watch(
                     실시간 동기화: {{ realtimeLabel }}
                 </button>
                 <button
-                    class="game-shell__action game-shell__action--navigation"
+                    class="game-shell__action legacy-button legacy-button--navigation"
                     type="button"
                     :disabled="refreshing"
                     :aria-busy="refreshing"
@@ -159,7 +160,13 @@ watch(
                 >
                     갱 신
                 </button>
-                <button class="game-shell__action" type="button" @click="moveLobby">로비로</button>
+                <button
+                    class="game-shell__action legacy-button legacy-button--navigation"
+                    type="button"
+                    @click="moveLobby"
+                >
+                    로비로
+                </button>
             </div>
         </header>
 
@@ -475,10 +482,6 @@ button {
     background-image: var(--sammo-texture-walnut);
 }
 
-.toggle.active {
-    background: rgba(201, 164, 90, 0.2);
-}
-
 .game-shell__action.highlight {
     border-color: #f39c12;
     background: #8a5b13;
@@ -750,29 +753,8 @@ button {
     margin-top: 31px;
 }
 
-/*
- * Ref renders these dashboard controls with the Lumen navigation family: no top
- * border, 1px sides and a 4px bottom edge that shortens on hover and press
- * while the control moves down.
- */
 .desktop-action-controls .game-shell__action {
-    border-color: #004f28;
-    border-style: solid;
-    border-width: 0 1px 4px;
-    background: #006b36;
-    color: #fff;
-}
-
-.desktop-action-controls .game-shell__action:hover {
-    margin-top: 1px;
-    border-bottom-width: 3px;
-    background: #00582c;
-}
-
-.desktop-action-controls .game-shell__action:active {
-    margin-top: 2px;
-    border-bottom-width: 2px;
-    background: #005128;
+    font-weight: 400;
 }
 
 .placeholder {
@@ -793,8 +775,8 @@ button {
     }
 
     .desktop-action-controls .game-shell__action {
-        padding-right: 8px;
-        padding-left: 8px;
+        padding-right: 4px;
+        padding-left: 4px;
     }
 
     .main-page {
