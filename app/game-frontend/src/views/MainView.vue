@@ -66,11 +66,12 @@ const nationAccess = computed(() => ({
 }));
 const nationColor = computed(() => nation.value?.color ?? '#000000');
 const voteActive = computed(() => Boolean(frontStatus.value?.latestVote));
+const recordTimeSuffixPattern = /\d{2}:\d{2}(?:<\/>)?\s*$/u;
 const formatRecord = (entry: { text: string; createdAt?: string | Date }, appendTime = false): string => {
-    if (!appendTime || /\d{2}:\d{2}\s*$/u.test(entry.text)) return formatLog(entry.text);
+    if (!appendTime || recordTimeSuffixPattern.test(entry.text)) return formatLog(entry.text);
     const time = formatServerDateTime(entry.createdAt, { format: 'hourMinute', fallback: '' });
     if (!time) return formatLog(entry.text);
-    return formatLog(`${entry.text} ${time}`);
+    return formatLog(`${entry.text} <1>${time}</>`);
 };
 
 let surveyNoticeTimer: ReturnType<typeof setTimeout> | null = null;

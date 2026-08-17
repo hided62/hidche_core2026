@@ -791,6 +791,97 @@ test('메인 장수 동향과 개인 전투 기록은 모두 21px 행 간격을 
     await persistParityArtifact(page, 'core-main-personal-battle-log-inline-mobile', mobileGeometry);
 });
 
+test('메인 개인 기록의 공격·수비 시각은 Ref와 같은 90% 글자 크기로 표시한다', async ({ page }) => {
+    const state: FixtureState = {
+        permission: 'head',
+        myset: 3,
+        settingMutations: [],
+        accessPages: [],
+        recentRecords: {
+            global: [],
+            general: [
+                {
+                    id: 18703,
+                    text: '<C>●</>10월:천귀병으로 <Y>ⓝ염행</>의 보병을 <M>수비</>합니다.',
+                    createdAt: '2026-01-01T03:54:00.000Z',
+                },
+                {
+                    id: 18702,
+                    text: '<C>●</>10월:천귀병으로 <Y>ⓝ염행</>의 보병을 <M>공격</>합니다.',
+                    createdAt: '2026-01-01T03:55:00.000Z',
+                },
+                {
+                    id: 18701,
+                    text: '<C>●</>10월:이미 기록된 시각 <1>12:34</>',
+                    createdAt: '2026-01-01T03:56:00.000Z',
+                },
+            ],
+            history: [],
+        },
+    };
+    await install(page, state);
+    await page.setViewportSize({ width: 1200, height: 900 });
+    await page.goto('');
+
+    const inspect = async (selector: string) => {
+        const lines = page.locator(selector);
+        await expect(lines).toHaveCount(3);
+        await expect(lines.nth(0)).toHaveText('●10월:천귀병으로 ⓝ염행의 보병을 수비합니다. 12:54');
+        await expect(lines.nth(1)).toHaveText('●10월:천귀병으로 ⓝ염행의 보병을 공격합니다. 12:55');
+        await expect(lines.nth(2)).toHaveText('●10월:이미 기록된 시각 12:34');
+
+        return lines.evaluateAll((elements) =>
+            elements.map((element) => {
+                const spans = [...element.querySelectorAll<HTMLElement>('span')];
+                const time = spans.find((span) => /^\d{2}:\d{2}$/u.test(span.textContent ?? ''));
+                const name = spans.find((span) => span.textContent === 'ⓝ염행');
+                const action = spans.find((span) => span.textContent === '수비' || span.textContent === '공격');
+                if (!time) throw new Error('개인 기록 시각 span을 찾지 못했습니다.');
+                const rect = element.getBoundingClientRect();
+                return {
+                    text: element.textContent,
+                    row: {
+                        width: rect.width,
+                        height: rect.height,
+                        clientWidth: element.clientWidth,
+                        scrollWidth: element.scrollWidth,
+                        fontSize: getComputedStyle(element).fontSize,
+                        lineHeight: getComputedStyle(element).lineHeight,
+                    },
+                    time: {
+                        fontSize: getComputedStyle(time).fontSize,
+                        lineHeight: getComputedStyle(time).lineHeight,
+                    },
+                    nameFontSize: name ? getComputedStyle(name).fontSize : null,
+                    actionFontSize: action ? getComputedStyle(action).fontSize : null,
+                    timeSpanCount: spans.filter((span) => /^\d{2}:\d{2}$/u.test(span.textContent ?? '')).length,
+                };
+            })
+        );
+    };
+    const assertFontContract = (measurements: Awaited<ReturnType<typeof inspect>>) => {
+        expect(measurements.map((entry) => entry.row.fontSize)).toEqual(['14px', '14px', '14px']);
+        expect(measurements.map((entry) => entry.row.lineHeight)).toEqual(['21px', '21px', '21px']);
+        expect(measurements.map((entry) => entry.row.height)).toEqual([21, 21, 21]);
+        expect(measurements.map((entry) => entry.time.fontSize)).toEqual(['12.6px', '12.6px', '12.6px']);
+        expect(measurements.map((entry) => entry.timeSpanCount)).toEqual([1, 1, 1]);
+        expect(measurements[0]?.nameFontSize).toBe('14px');
+        expect(measurements[0]?.actionFontSize).toBe('14px');
+        expect(measurements[1]?.nameFontSize).toBe('14px');
+        expect(measurements[1]?.actionFontSize).toBe('14px');
+        expect(measurements.every((entry) => entry.row.scrollWidth <= entry.row.clientWidth)).toBe(true);
+    };
+
+    const desktop = await inspect('.record-zone [data-record-bucket="general"] .record-line');
+    assertFontContract(desktop);
+    await persistParityArtifact(page, 'core-main-personal-war-log-time-font-desktop', desktop);
+
+    await page.setViewportSize({ width: 500, height: 900 });
+    const mobile = await inspect('.record-zone-mobile [data-record-bucket="general"] .record-line');
+    assertFontContract(mobile);
+    await persistParityArtifact(page, 'core-main-personal-war-log-time-font-mobile', mobile);
+});
+
 test('접속량정보 keeps the legacy public 1016px chart geometry', async ({ page }) => {
     const state: FixtureState = { permission: 'member', myset: 0, settingMutations: [], accessPages: [] };
     await install(page, state);
