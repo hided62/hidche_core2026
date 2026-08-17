@@ -2,6 +2,7 @@
 import { formatServerDateTime } from '@sammo-ts/common';
 import { computed, onMounted, ref } from 'vue';
 import TournamentBracket from '../components/tournament/TournamentBracket.vue';
+import TournamentPageHeader from '../components/tournament/TournamentPageHeader.vue';
 import GeneralIdentity from '../components/ui/GeneralIdentity.vue';
 import { trpc } from '../utils/trpc';
 
@@ -72,6 +73,7 @@ const candidates = computed(() =>
 const totalAmount = computed(() => summary.value?.totalAmount ?? 0);
 const myAmount = computed(() => summary.value?.myAmount ?? 0);
 const betTotals = computed(() => summary.value?.totals as Record<number, number> | undefined);
+const myBetTotals = computed(() => summary.value?.myTotals as Record<number, number> | undefined);
 const ratio = (id: number) => {
     const totals = summary.value?.totals as Record<number, number> | undefined;
     const amount = totals?.[id] ?? 0;
@@ -110,12 +112,7 @@ const placeBet = async (targetId: number) => {
 
 <template>
     <main id="tournament-betting-container" class="betting-page">
-        <section class="title bg0">
-            베 팅 장<br />
-            <RouterLink v-slot="{ navigate }" custom to="/">
-                <button class="close-button" type="button" @click="navigate">창 닫기</button>
-            </RouterLink>
-        </section>
+        <TournamentPageHeader class="bg0" active-page="betting" title="베 팅 장" />
         <section class="toolbar bg0">
             <button type="button" @click="load">갱신</button>
             <span v-if="loading">불러오는 중...</span>
@@ -138,6 +135,7 @@ const placeBet = async (targetId: number) => {
             :matches="snapshot?.matches ?? []"
             :winner-id="snapshot?.state?.winnerId"
             :bet-totals="betTotals"
+            :my-bet-totals="myBetTotals"
             :total-bet="totalAmount"
             :show-legend="false"
         />
@@ -303,25 +301,6 @@ const placeBet = async (targetId: number) => {
 .bg2 {
     background: #142b42 var(--sammo-texture-blue);
 }
-.title {
-    min-height: 68px;
-    padding: 0;
-    font-size: 14px;
-    line-height: 19.1875px;
-}
-.close-button {
-    display: block;
-    width: 88px;
-    height: 44px;
-    padding: 10px 16px;
-    border: 1px solid #375a7f;
-    border-radius: 5.25px;
-    background: #375a7f;
-    color: #fff;
-    font-size: 14px;
-    line-height: 18px;
-    text-decoration: none;
-}
 .toolbar {
     min-height: 46px;
     padding: 1px;
@@ -417,10 +396,6 @@ button:hover,
 button:focus {
     filter: brightness(1.25);
 }
-.close-button:hover,
-.close-button:focus {
-    filter: brightness(1.2);
-}
 button:focus-visible,
 select:focus-visible {
     outline: 2px solid #f39c12;
@@ -506,10 +481,6 @@ select:disabled {
     .betting-page {
         max-width: 100%;
         font-size: 13px;
-    }
-    .title {
-        height: auto;
-        min-height: 55px;
     }
     .state {
         font-size: 18px;
