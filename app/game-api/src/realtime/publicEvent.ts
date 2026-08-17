@@ -69,6 +69,24 @@ export const toPublicRealtimeEvent = (
             : null;
     }
 
+    if (event.type === 'tournamentChanged') {
+        return {
+            type: 'readModelInvalidated',
+            invalidation: {
+                context: false,
+                lobby: false,
+                map: false,
+                commands: false,
+                contacts: false,
+                boardAccess: false,
+                reservedTurns: false,
+                records: false,
+                frontStatus: false,
+                tournament: true,
+            },
+        };
+    }
+
     if (event.type === 'turnCompleted' && !event.changes) {
         return {
             type: 'readModelInvalidated',

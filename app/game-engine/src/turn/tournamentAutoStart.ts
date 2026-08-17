@@ -1,4 +1,10 @@
-import { asRecord, LiteHashDRBG, RandUtil, writeTournamentProjection } from '@sammo-ts/common';
+import {
+    asRecord,
+    buildGameEventChannel,
+    LiteHashDRBG,
+    RandUtil,
+    writeTournamentProjection,
+} from '@sammo-ts/common';
 import type { RedisConnector } from '@sammo-ts/infra';
 import { LogCategory, LogFormat, LogScope } from '@sammo-ts/logic';
 import { simpleSerialize } from '@sammo-ts/logic/war/utils.js';
@@ -69,12 +75,13 @@ export const createTournamentAutoStartHandler = (options: {
     now?: () => Date;
 }): TurnCalendarHandler => {
     const keys = {
-        state: `sammo:${options.profileName}:tournament:state`,
+        stateKey: `sammo:${options.profileName}:tournament:state`,
         participants: `sammo:${options.profileName}:tournament:participants`,
         matches: `sammo:${options.profileName}:tournament:matches`,
         betting: `sammo:${options.profileName}:tournament:betting`,
         sourceRevisionKey: `sammo:${options.profileName}:tournament:source-revision`,
         sourceRevisionChannel: `sammo:${options.profileName}:tournament:source-changed`,
+        realtimeEventChannel: buildGameEventChannel(options.profileName),
     };
     return {
         onMonthChanged: async (context) => {
@@ -85,7 +92,7 @@ export const createTournamentAutoStartHandler = (options: {
             if (!world || !redis || config.tournamentTrig !== true) {
                 return;
             }
-            const previousState = safeJsonParse<TournamentState>(await redis.get(keys.state));
+            const previousState = safeJsonParse<TournamentState>(await redis.get(keys.stateKey));
             if (previousState && previousState.stage > 0) {
                 return;
             }
@@ -145,7 +152,7 @@ export const createTournamentAutoStartHandler = (options: {
                 { key: keys.participants, value: [] },
                 { key: keys.matches, value: [] },
                 { key: keys.betting, value: [] },
-                { key: keys.state, value: nextState },
+                { key: keys.stateKey, value: nextState },
             ]);
 
             const [typeText, generalTypeText] = TOURNAMENT_TEXT[type] ?? TOURNAMENT_TEXT[0];

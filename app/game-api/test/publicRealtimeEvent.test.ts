@@ -52,6 +52,7 @@ describe('public realtime event privacy boundary', () => {
                 reservedTurns: true,
                 records: true,
                 frontStatus: false,
+                tournament: false,
             },
         });
         const serialized = JSON.stringify(publicEvent);
@@ -108,8 +109,31 @@ describe('public realtime event privacy boundary', () => {
                 reservedTurns: true,
                 records: true,
                 frontStatus: true,
+                tournament: true,
             },
         });
+    });
+
+    it('redacts tournament state changes to one global boolean invalidation', () => {
+        const publicEvent = toPublicRealtimeEvent({ type: 'tournamentChanged' }, [viewer]);
+
+        expect(publicEvent).toEqual({
+            type: 'readModelInvalidated',
+            invalidation: {
+                context: false,
+                lobby: false,
+                map: false,
+                commands: false,
+                contacts: false,
+                boardAccess: false,
+                reservedTurns: false,
+                records: false,
+                frontStatus: false,
+                tournament: true,
+            },
+        });
+        expect(JSON.stringify(publicEvent)).not.toMatch(/revision|source|channel|time|generalId/u);
+        expect(shouldReloadRealtimeViewerIdentity({ type: 'tournamentChanged' }, viewer)).toBe(false);
     });
 
     it('filters message events per viewer and removes mailbox, sender, message, and time fields', () => {

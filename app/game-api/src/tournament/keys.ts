@@ -1,3 +1,5 @@
+import { buildGameEventChannel } from '@sammo-ts/common';
+
 export interface TournamentKeys {
     stateKey: string;
     participantsKey: string;
@@ -5,6 +7,7 @@ export interface TournamentKeys {
     bettingKey: string;
     sourceRevisionKey: string;
     sourceRevisionChannel: string;
+    realtimeEventChannel: string;
 }
 
 export const buildTournamentKeys = (profileName: string): TournamentKeys => ({
@@ -14,4 +17,5 @@ export const buildTournamentKeys = (profileName: string): TournamentKeys => ({
     bettingKey: `sammo:${profileName}:tournament:betting`,
     sourceRevisionKey: `sammo:${profileName}:tournament:source-revision`,
     sourceRevisionChannel: `sammo:${profileName}:tournament:source-changed`,
+    realtimeEventChannel: buildGameEventChannel(profileName),
 });

@@ -97,6 +97,7 @@ const readModelInvalidation = (
         reservedTurns: boolean;
         records: boolean;
         frontStatus: boolean;
+        tournament: boolean;
     }>
 ) => ({
     context: false,
@@ -108,6 +109,7 @@ const readModelInvalidation = (
     reservedTurns: false,
     records: false,
     frontStatus: false,
+    tournament: false,
     ...overrides,
 });
 
@@ -2300,6 +2302,22 @@ test('realtime read-model events skip clock-only work, merge bursts, patch in pl
     await page.setViewportSize({ width: 1200, height: 900 });
     await waitForMain(page);
     await expect(page.locator('.general-title')).toContainText('메뉴검증장수');
+    await expect
+        .poll(() =>
+            page.evaluate(() => (window as unknown as { __hasMainRealtime: () => boolean }).__hasMainRealtime())
+        )
+        .toBe(true);
+    await expect(page.locator('.tournament-status')).toHaveText('토너먼트: 경기 없음');
+    await expect(page.locator('[data-navigation-id="tournament"]')).not.toHaveClass(/highlight/u);
+
+    const operationsBeforeTournament = state.operations.length;
+    state.stage = 1;
+    await emitReadModelInvalidation(page, readModelInvalidation({ tournament: true }));
+    await expect
+        .poll(() => state.operations.slice(operationsBeforeTournament), { timeout: 3_000 })
+        .toEqual(['dashboard.getContextBundleDelta', 'tournament.getState']);
+    await expect(page.locator('.tournament-status')).toHaveText('토너먼트: 참가 모집중');
+    await expect(page.locator('[data-navigation-id="tournament"]')).toHaveClass(/highlight/u);
 
     await page.evaluate(() => {
         const general = document.querySelector('[data-main-target="general"]');
@@ -2352,6 +2370,7 @@ test('realtime read-model events skip clock-only work, merge bursts, patch in pl
                     reservedTurns: false,
                     records: false,
                     frontStatus: false,
+                    tournament: false,
                 },
             });
         }
@@ -2420,6 +2439,7 @@ test('realtime read-model events skip clock-only work, merge bursts, patch in pl
                     reservedTurns: false,
                     records: false,
                     frontStatus: true,
+                    tournament: false,
                 },
             }
         );
@@ -2577,6 +2597,7 @@ test('realtime read-model events skip clock-only work, merge bursts, patch in pl
                     reservedTurns: false,
                     records: false,
                     frontStatus: false,
+                    tournament: false,
                 },
             }
         );
@@ -2751,6 +2772,23 @@ test('same-account main tabs share one realtime diff and exclude a tab while syn
     const followerPage = pages[followerIndex];
     if (!leaderPage || !followerPage) throw new Error('realtime leader election failed');
 
+    const operationsBeforeTournament = state.operations.length;
+    state.stage = 1;
+    await emitReadModelInvalidation(leaderPage, readModelInvalidation({ tournament: true }));
+    await expect
+        .poll(() => state.operations.slice(operationsBeforeTournament), { timeout: 3_000 })
+        .toEqual(['dashboard.getContextBundleDelta', 'tournament.getState']);
+    await Promise.all(
+        pages.map((currentPage) =>
+            expect(currentPage.locator('.tournament-status')).toHaveText('토너먼트: 참가 모집중')
+        )
+    );
+    await Promise.all(
+        pages.map((currentPage) =>
+            expect(currentPage.locator('[data-navigation-id="tournament"]')).toHaveClass(/highlight/u)
+        )
+    );
+
     const callsBeforeSharedRefresh = state.generalMeCalls;
     state.generalName = '탭공유갱신장수';
     await leaderPage.evaluate(() => {
@@ -2767,6 +2805,7 @@ test('same-account main tabs share one realtime diff and exclude a tab while syn
                     reservedTurns: false,
                     records: false,
                     frontStatus: false,
+                    tournament: false,
                 },
             }
         );
@@ -2794,6 +2833,7 @@ test('same-account main tabs share one realtime diff and exclude a tab while syn
                     reservedTurns: false,
                     records: false,
                     frontStatus: false,
+                    tournament: false,
                 },
             }
         );

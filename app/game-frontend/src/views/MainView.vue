@@ -27,7 +27,6 @@ const session = useSessionStore();
 const dashboard = useMainDashboardStore();
 const isMobile = useMediaQuery('(max-width: 939.98px)');
 
-const tournamentStage = ref(0);
 const npcMode = ref(0);
 
 const {
@@ -52,6 +51,7 @@ const {
     generalRecords,
     worldHistory,
     frontStatus,
+    tournamentStage,
     surveyNotice,
     messageDraftText,
     targetMailbox,
@@ -107,12 +107,10 @@ const repeatGeneralTurns = (amount: number) => {
 };
 
 const loadMainData = async () => {
-    const [, state, worldState] = await Promise.all([
+    const [, worldState] = await Promise.all([
         dashboard.loadMainData(),
-        trpc.tournament.getState.query().catch(() => null),
         trpc.world.getState.query().catch(() => null),
     ]);
-    tournamentStage.value = state?.stage ?? 0;
     npcMode.value = worldState?.config.npcMode ?? 0;
 };
 

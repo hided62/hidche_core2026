@@ -1,4 +1,5 @@
 import { asRecord } from '../util/parse.js';
+import { buildGameEventChannel } from '../realtime/keys.js';
 import { writeTournamentProjection } from './sourceRevision.js';
 
 interface TournamentState {
@@ -44,6 +45,7 @@ const buildTournamentKeys = (profileName: string) => ({
     bettingKey: `sammo:${profileName}:tournament:betting`,
     sourceRevisionKey: `sammo:${profileName}:tournament:source-revision`,
     sourceRevisionChannel: `sammo:${profileName}:tournament:source-changed`,
+    realtimeEventChannel: buildGameEventChannel(profileName),
 });
 
 const resolveTermSeconds = (tickSeconds: number): number => {

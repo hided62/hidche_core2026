@@ -42,6 +42,12 @@ describe('parseRealtimeEvent', () => {
         expect(parseRealtimeEvent('not-json')).toBeNull();
         expect(parseRealtimeEvent(JSON.stringify({}))).toBeNull();
     });
+
+    it('accepts the minimal tournament state wake-up', () => {
+        expect(parseRealtimeEvent(JSON.stringify({ type: 'tournamentChanged' }))).toEqual({
+            type: 'tournamentChanged',
+        });
+    });
 });
 
 describe('buildGameEventChannel', () => {
