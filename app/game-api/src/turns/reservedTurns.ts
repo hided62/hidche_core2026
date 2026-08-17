@@ -165,20 +165,22 @@ const loadGeneralTurns = async (db: DatabaseClient, generalId: number): Promise<
     return buildTurnListFromRows(rows, MAX_GENERAL_TURNS);
 };
 
+const loadGeneralAutorunLimit = async (db: DatabaseClient, generalId: number): Promise<number | null> => {
+    const general = await db.general.findUnique({ where: { id: generalId }, select: { meta: true } });
+    const rawAutorunLimit = isRecord(general?.meta) ? general.meta.autorun_limit : undefined;
+    return typeof rawAutorunLimit === 'number' && Number.isFinite(rawAutorunLimit) ? Math.trunc(rawAutorunLimit) : null;
+};
+
 export const getGeneralTurnSnapshot = async (db: DatabaseClient, generalId: number): Promise<ReservedTurnSnapshot> => {
-    const [turns, revisionRow, general] = await Promise.all([
+    const [turns, revisionRow, autorunLimit] = await Promise.all([
         loadGeneralTurns(db, generalId),
         db.generalTurnRevision.findUnique({ where: { generalId } }),
-        db.general.findUnique({ where: { id: generalId }, select: { meta: true } }),
+        loadGeneralAutorunLimit(db, generalId),
     ]);
-    const rawAutorunLimit = isRecord(general?.meta) ? general.meta.autorun_limit : undefined;
     return {
         revision: revisionRow?.revision ?? 0,
         turns: serializeTurnList(turns),
-        autorunLimit:
-            typeof rawAutorunLimit === 'number' && Number.isFinite(rawAutorunLimit)
-                ? Math.trunc(rawAutorunLimit)
-                : null,
+        autorunLimit,
     };
 };
 
@@ -331,7 +333,7 @@ export const setGeneralTurns = async (
         }
     }
     await persistGeneralTurns(db, generalId, turns);
-    return { revision, turns: serializeTurnList(turns) };
+    return { revision, turns: serializeTurnList(turns), autorunLimit: await loadGeneralAutorunLimit(db, generalId) };
 };
 
 export const setGeneralTurn = async (
@@ -357,7 +359,7 @@ export const shiftGeneralTurns = async (
     const turns = await loadGeneralTurns(db, generalId);
     const shifted = applyShift(turns, amount);
     await persistGeneralTurns(db, generalId, shifted);
-    return { revision, turns: serializeTurnList(shifted) };
+    return { revision, turns: serializeTurnList(shifted), autorunLimit: await loadGeneralAutorunLimit(db, generalId) };
 };
 
 export const repeatGeneralTurns = async (
@@ -372,7 +374,7 @@ export const repeatGeneralTurns = async (
     const revision = await claimGeneralRevision(db, generalId, expectedRevision);
     const turns = applyRepeat(await loadGeneralTurns(db, generalId), amount);
     await persistGeneralTurns(db, generalId, turns);
-    return { revision, turns: serializeTurnList(turns) };
+    return { revision, turns: serializeTurnList(turns), autorunLimit: await loadGeneralAutorunLimit(db, generalId) };
 };
 
 export const setNationTurns = async (

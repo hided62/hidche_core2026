@@ -869,7 +869,7 @@ describe('appRouter', () => {
     });
 
     it('validates and persists general command arguments from the authenticated owner', async () => {
-        const general = buildGeneralRow({ id: 13 });
+        const general = buildGeneralRow({ id: 13, meta: { autorun_limit: 2408 } });
         const writes: unknown[] = [];
         const changeJournal = new ChangeJournal();
         const caller = appRouter.createCaller(
@@ -885,6 +885,7 @@ describe('appRouter', () => {
         });
 
         expect(response.turns[0]).toMatchObject({ action: 'che_화계', args: { destCityId: 7 } });
+        expect(response.autorunLimit).toBe(2408);
         expect(writes).toHaveLength(1);
         const written = writes[0] as { data: unknown[] };
         expect(written.data).toHaveLength(30);
