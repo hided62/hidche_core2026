@@ -1,5 +1,7 @@
 import { z } from 'zod';
 
+import { isAvailableNationTraitKey } from '@sammo-ts/logic';
+
 import type { BattleSimRequestPayload } from './types.js';
 
 const zBattleSimGeneral = z.object({
@@ -71,7 +73,7 @@ const zBattleSimCity = z.object({
 });
 
 const zBattleSimNation = z.object({
-    type: z.string().min(1),
+    type: z.string().refine(isAvailableNationTraitKey),
     tech: z.number().min(0),
     level: z.number().int().min(0),
     capital: z.number().int().min(0),

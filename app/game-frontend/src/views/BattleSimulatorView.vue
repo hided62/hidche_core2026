@@ -254,6 +254,11 @@ const toExportedGeneral = (general: GeneralDraft): GeneralExport => ({
     inheritBuff: { ...general.inheritBuff },
 });
 
+const resolveAvailableNationType = (candidate?: string | null): string => {
+    const available = options.value?.nationTypes ?? [];
+    return available.some((entry) => entry.key === candidate) ? (candidate as string) : (available[0]?.key ?? '');
+};
+
 const initializeDefaults = async () => {
     loading.value = true;
     error.value = null;
@@ -267,9 +272,9 @@ const initializeDefaults = async () => {
         repeatCnt.value = 1;
         seed.value = '';
 
-        const nationTypeDefault = context.nationTypes[0]?.key ?? 'che_중립';
-        attackerNation.type = me?.nation?.typeCode ?? nationTypeDefault;
-        defenderNation.type = me?.nation?.typeCode ?? nationTypeDefault;
+        const nationTypeDefault = resolveAvailableNationType(me?.nation?.typeCode);
+        attackerNation.type = nationTypeDefault;
+        defenderNation.type = nationTypeDefault;
 
         attackerNation.level = me?.nation?.level ?? 0;
         defenderNation.level = me?.nation?.level ?? 0;
@@ -302,10 +307,10 @@ const applyGameEnvironment = () => {
         return;
     }
     const me = gameDefaults.value;
-    const nationTypeDefault = options.value.nationTypes[0]?.key ?? 'che_중립';
+    const nationTypeDefault = resolveAvailableNationType(me?.nation?.typeCode);
     year.value = options.value.world.currentYear;
     month.value = options.value.world.currentMonth;
-    attackerNation.type = me?.nation?.typeCode ?? nationTypeDefault;
+    attackerNation.type = nationTypeDefault;
     defenderNation.type = attackerNation.type;
     attackerNation.level = me?.nation?.level ?? 0;
     defenderNation.level = attackerNation.level;
@@ -324,7 +329,7 @@ const applyIndependentEnvironment = () => {
     if (!options.value) {
         return;
     }
-    const nationTypeDefault = options.value.nationTypes[0]?.key ?? 'che_중립';
+    const nationTypeDefault = resolveAvailableNationType();
     year.value = options.value.world.startYear;
     month.value = 1;
     seed.value = '';
@@ -742,13 +747,13 @@ const importBattle = (data: BattleExport) => {
     month.value = data.month;
     repeatCnt.value = data.repeatCnt;
 
-    attackerNation.type = data.attackerNation.type;
+    attackerNation.type = resolveAvailableNationType(data.attackerNation.type);
     attackerNation.level = data.attackerNation.level;
     attackerNation.tech = Math.floor(data.attackerNation.tech / 1000);
     attackerNation.isCapital = data.attackerNation.capital === 1;
     attackerCity.level = data.attackerCity.level;
 
-    defenderNation.type = data.defenderNation.type;
+    defenderNation.type = resolveAvailableNationType(data.defenderNation.type);
     defenderNation.level = data.defenderNation.level;
     defenderNation.tech = Math.floor(data.defenderNation.tech / 1000);
     defenderNation.isCapital = data.defenderNation.capital === 3;

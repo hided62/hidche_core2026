@@ -13,7 +13,10 @@ import type { ConstraintContext } from '@sammo-ts/logic';
 import { GAME_TICKS_PER_TURN, LiteHashDRBG, RandUtil } from '@sammo-ts/common';
 import { simpleSerialize } from '@sammo-ts/logic/war/utils.js';
 import { resolveStartYear, resolveTurnTermMinutes } from '@sammo-ts/logic/actions/turn/actionContextHelpers.js';
-import { NATION_TRAIT_KEYS } from '@sammo-ts/logic/actionModules/traits/nation/index.js';
+import {
+    AVAILABLE_NATION_TRAIT_KEYS,
+    isAvailableNationTraitKey,
+} from '@sammo-ts/logic/actionModules/traits/nation/index.js';
 import { GeneralActionPipeline } from '@sammo-ts/logic/actionModules/general.js';
 
 import type { ReservedTurnEntry } from '../../reservedTurnStore.js';
@@ -348,8 +351,10 @@ export class GeneralAI {
             chiefStatMin: this.scenarioConfig.stat.chiefMin,
             npcMessageFreqByDay: readNumber(constValues.npcMessageFreqByDay, 0),
             availableNationTypes: Array.isArray(constValues.availableNationType)
-                ? constValues.availableNationType.filter((value) => typeof value === 'string')
-                : NATION_TRAIT_KEYS.filter((value) => value !== 'che_중립'),
+                ? constValues.availableNationType.filter(
+                      (value): value is string => typeof value === 'string' && isAvailableNationTraitKey(value)
+                  )
+                : [...AVAILABLE_NATION_TRAIT_KEYS],
         };
 
         const generalPolicy = new AutorunGeneralPolicy(

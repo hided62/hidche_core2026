@@ -3,7 +3,7 @@ import {
     LogCategory,
     LogFormat,
     LogScope,
-    NATION_TRAIT_KEYS,
+    AVAILABLE_NATION_TRAIT_KEYS,
     getCityDistance,
     type City,
     type MapDefinition,
@@ -54,7 +54,6 @@ const NATION_COLORS = [
     '#FFFFFF',
     '#A9A9A9',
 ] as const;
-const AVAILABLE_NATION_TYPES = NATION_TRAIT_KEYS.filter((key) => key !== 'che_중립');
 const NPC_TYPE = 6;
 const NPC_PREFIX = 'ⓤ';
 const STAT_TYPE_WEIGHTS = { 무: 1, 지: 1 } as const;
@@ -301,7 +300,7 @@ export const createRaiseNpcNationHandler = (options: {
 
             const nationId = world.getNextNationId();
             const color = rng.choice([...NATION_COLORS]);
-            const typeCode = rng.choice([...AVAILABLE_NATION_TYPES]);
+            const typeCode = rng.choice([...AVAILABLE_NATION_TRAIT_KEYS]);
             const nation: Nation = {
                 id: nationId,
                 name: `${NPC_PREFIX}${city.name}`,
