@@ -34,6 +34,13 @@ export interface TournamentParticipantEntry {
     gl?: number;
     seedRank?: number;
     finalRank?: number;
+    preliminaryGroupId?: number;
+    preliminaryGroupNo?: number;
+    preliminaryRank?: number;
+    preliminaryWin?: number;
+    preliminaryDraw?: number;
+    preliminaryLose?: number;
+    preliminaryGl?: number;
 }
 
 export interface TournamentMatchEntry {
