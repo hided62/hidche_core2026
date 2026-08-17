@@ -15,6 +15,7 @@
         "migrate": "tsx src/cli.ts"
     },
     "dependencies": {
+        "@sammo-ts/common": "workspace:*",
         "mariadb": "3.5.3",
         "pg": "^8.16.3"
     },

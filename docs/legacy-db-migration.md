@@ -9,6 +9,13 @@ PostgreSQL advisory locks serialize an apply per profile, and every target row
 uses a stable legacy key with `ON CONFLICT`, so an interrupted run is
 repeatable.
 
+Gateway apply is one PostgreSQL transaction. A game apply records a
+`legacy_archive.import_run`: archive and current-user projection writes commit
+together with `COMPLETED`, while a rollback leaves a `FAILED` run record. A
+repeat import updates archive-owned rows but does not replace a live Gateway
+account's password, reset status, login/display identity, OAuth connection,
+roles, sanctions, consent, icon or login timestamps.
+
 The source of truth for eligibility is the checked ref schema, not every table
 that happens to exist in a dump. Tables outside that schema remain only in the
 recovery dump.
@@ -28,18 +35,26 @@ Legacy member numbers map to deterministic UUIDs. Existing rows are updated by
 that UUID, so references such as `ng_old_generals.owner` remain stable even
 when an old account was deleted before the dump.
 
-Kakao members retain `oauth_id`, email and metadata. A parseable legacy
+Kakao members retain `oauth_id`, email and metadata. A non-empty provider ID is
+required before an imported row is marked Kakao-verified. A parseable legacy
 `token_valid_until` is copied to `kakao_talk_verified_until`, preserving the
 remaining KakaoTalk ownership-proof interval instead of forcing an immediate
-message at cutover. Cutover also sets `kakao_verified_at` and
+message at cutover. Valid provider rows also receive `kakao_verified_at`; all
+rows receive
 `kakao_grace_started_at` to the migration time and starts the local-account
 verification grace period there. Source rows without an OAuth ID retain their
-metadata, but the importer does not invent a provider identifier.
+metadata but are not treated as verified, and the importer never invents a
+provider identifier.
 
-Legacy password hashes remain usable when gateway-api has
-`GATEWAY_LEGACY_PASSWORD_GLOBAL_SALT`; a successful login upgrades the stored
-value to Argon2id. A test-only account can instead be reset with the CLI and a
-mode-0600 password file:
+Every imported 128-hex legacy password is marked `password_reset_required`.
+The dump contains the per-user salt but not Ref's installation-wide salt, so
+the dump alone cannot validate the old plaintext password. If the original
+`GATEWAY_LEGACY_PASSWORD_GLOBAL_SALT` is recovered through the runtime secret,
+a successful password login upgrades the value to Argon2id and clears the
+flag. Otherwise, a Kakao login (including a confirmed retained-email relink)
+issues a one-time password-setup challenge before any normal session; the new
+password is sent in the existing RSA envelope and clears the flag. Accounts
+without usable Kakao recovery require the CLI and a mode-0600 password file:
 
 ```sh
 GATEWAY_DATABASE_URL=... pnpm migrate:legacy -- \
@@ -50,24 +65,43 @@ The password is never accepted as an argument or printed.
 
 ### Game profiles
 
-| Legacy table                    | Target                   | Policy                                                                |
-| ------------------------------- | ------------------------ | --------------------------------------------------------------------- |
-| `ng_games`                      | `ng_games`               | Preserve completed season metadata                                    |
-| `hall`                          | `hall`                   | Preserve hall-of-fame rows                                            |
-| `ng_old_generals`               | `ng_old_generals`        | Preserve full JSON snapshots and owner                                |
-| `ng_old_nations`                | `ng_old_nations`         | Preserve all versions, including duplicate server/nation pairs        |
-| `emperior`                      | `emperior`               | Preserve dynasty detail and legacy key                                |
-| `inheritance_result`            | `inheritance_result`     | Preserve result JSON/string and legacy key                            |
-| `user_record`                   | `inheritance_log`        | Preserve complete long-lived user record                              |
-| persistent `storage` namespaces | `legacy_game_storage`    | Preserve raw `inheritance_*` and `user_*` rows before projection      |
-| `storage:inheritance_point`     | `inheritance_point`      | Project the numeric first tuple item; retain the tuple in raw storage |
-| `storage:user`                  | `inheritance_user_state` | Project known current inheritance state; retain raw storage           |
-| `ng_history`                    | `yearbook_history`       | Preserve map, nation, global history and global action snapshots      |
+| Legacy table                    | Dedicated target              | Policy                                                                |
+| ------------------------------- | ----------------------------- | --------------------------------------------------------------------- |
+| `ng_games`                      | `legacy_archive.game_history` | Preserve source profile, opening date, scenario and raw environment   |
+| `hall`                          | `legacy_archive.hall`         | Preserve hall-of-fame rows without mixing current records             |
+| `ng_old_generals`               | `legacy_archive.general`      | Preserve canonical V1 plus private raw JSON and owner                 |
+| `ng_old_nations`                | `legacy_archive.nation`       | Preserve all versions with profile and legacy primary key             |
+| `emperior`                      | `legacy_archive.emperor`      | Preserve dynasty detail under a central archive ID                    |
+| `inheritance_result`            | `inheritance_result`          | Preserve result JSON/string and legacy key                            |
+| `user_record`                   | `inheritance_log`             | Preserve complete long-lived user record                              |
+| persistent `storage` namespaces | `legacy_game_storage`         | Preserve raw `inheritance_*` and `user_*` rows before projection      |
+| `storage:inheritance_point`     | `inheritance_point`           | Project the numeric first tuple item; retain the tuple in raw storage |
+| `storage:user`                  | `inheritance_user_state`      | Project known current inheritance state; retain raw storage           |
+| `ng_history`                    | `legacy_archive.yearbook`     | Preserve map, nation, global history and global action snapshots      |
+
+The archive schema is shared by all game-profile schemas in the PostgreSQL
+database. Every natural key contains `source_profile`; the accepted profiles
+are `che`, `kwe`, `pwe`, `twe`, `nya`, `pya`, and `hwe`. This prevents equal
+legacy IDs from different servers from colliding while allowing any profile API
+to read one central archive.
+
+`ng_games.date` is retained as `legacy_date`. The displayed opening date uses
+`env.opentime`, then `env.starttime`, then `ng_games.date`. The dumps do not
+carry a trustworthy completion timestamp, so `completed_at` remains null
+instead of treating the opening date as completion.
+
+`ng_old_generals.data` is adapted at import time to
+`ArchivedGeneralSnapshotV1`. Both old `leader/power` with
+`dex0/10/20/30/40` and newer `leadership/strength` with `dex1..5` map to one
+shape. Missing battle aggregates and logs are `null` plus explicit
+`availability`, never fabricated zeroes. The source JSON remains in
+`legacy_archive.general.raw_data` for recovery, but no API returns it.
 
 The source contains legitimate duplicate `(server_id, nation)` old-nation rows
 and `(server_id, year, month)` history rows. `source_id` is consequently part of
-the archive unique keys. Runtime-generated rows use `source_id = 0`; migrated
-rows use the legacy primary key. This avoids a lossy last-row-wins upsert.
+their current-schema archive keys, while the dedicated legacy archive uses
+`(source_profile, legacy_id)` from the original primary key. This avoids a lossy
+last-row-wins upsert and keeps runtime current archives separate.
 
 Current-season actor/world/queue/lock/message/market/vote state is explicitly
 excluded. In particular, `general`, `city`, `nation`, their turn queues,
@@ -108,35 +142,44 @@ season or as a substitute for the long-lived archive cutover procedure.
 archive owner from the game session and never accepts an owner ID from the
 browser.
 
-- `archive.myPastPlays` combines the owner's `ng_old_generals` rows with
-  `ng_games`, the latest matching `ng_old_nations` snapshot and an optional
-  `emperior` row. It returns summary fields and a link target for the existing
-  public dynasty/nation detail.
-- `archive.myPastPlayDetail(serverId, generalNo)` includes the session owner in
-  the database predicate before returning `data.history`. A foreign or missing
-  record uses the same not-found response.
-- Legacy `data.history` may be either an array or a `<br>`-joined string. The API
-  normalizes both to a newest-first string array, and the frontend renders plain
-  text rather than archived markup.
+- `archive.myPastPlays` reads the central legacy archive across profiles and
+  current runtime archives, tags each source, and suppresses a current-schema
+  duplicate when the central legacy copy exists.
+- `archive.myPastPlayDetail(source, sourceProfile, serverId, generalNo)` includes
+  the session owner in the database predicate. A foreign or missing record uses
+  the same not-found response.
+- The detail DTO feeds the same `GeneralBasicCard`, battle summary,
+  `LegacyGeneralProgress`, and record panels used by My Page/Battle Center.
+  Missing battle/mastery/log channels show an explicit not-preserved state.
+- Legacy `data.history` may be either an array or a `<br>`-joined string. It is
+  normalized to plain-text archive entries; archived markup is never rendered
+  as trusted HTML.
 - Runtime death and unification archival writes the current general
   `GENERAL/HISTORY` rows into the same `data.history` field, so newly completed
   seasons remain compatible with imported rows.
+
+Hall-of-fame and dynasty APIs and pages take an explicit `current` or `legacy`
+source. Legacy results use the central archive and show the source profile;
+they are never merged into the current rankings or current dynasty list.
 
 ## Cutover procedure
 
 1. Keep the original compressed dumps immutable and restore each source to a
    private MariaDB instance.
 2. Deploy the gateway and game Prisma migrations to empty staging databases.
-3. Run gateway and each non-empty profile without `--apply`; archive the JSON
+3. Run gateway and each non-empty official profile without `--apply`; archive the JSON
    counts and excluded-table reasons.
 4. Compare source counts, malformed JSON checks and duplicate natural-key
    counts. Stop on unexplained drift.
 5. Put the affected target in maintenance mode, take a PostgreSQL backup, then
    run the same commands with `--apply`.
-6. Repeat each apply. Counts must remain unchanged.
-7. Verify Kakao migration timestamps including `kakao_talk_verified_until`, password-hash shapes, archive ownership,
-   old-nation/history duplicate preservation, `/past-plays` list/detail access,
-   foreign-owner denial and the dynasty link.
+6. Repeat each apply. Counts must remain unchanged; verify the newest
+   `legacy_archive.import_run` is `COMPLETED` and current Gateway credentials
+   are unchanged.
+7. Verify valid/invalid Kakao-ID classification, password-reset-required rows,
+   Kakao password setup, CLI fallback, archive ownership, canonical source
+   format counts, opening dates, `/past-plays`, foreign-owner denial, legacy
+   Hall and legacy Dynasty source switches.
 8. Retain the MariaDB dumps as rollback evidence. Rollback restores the
    pre-cutover PostgreSQL backup; it does not reverse individual importer
    upserts.

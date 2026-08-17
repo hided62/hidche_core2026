@@ -24,6 +24,14 @@ const quoteIdentifier = (value: string): string => {
     return `"${value}"`;
 };
 
+export const quoteQualifiedIdentifier = (value: string): string => {
+    const parts = value.split('.');
+    if (parts.length < 1 || parts.length > 2 || parts.some((part) => !IDENTIFIER.test(part))) {
+        throw new Error(`Unsafe SQL identifier: ${value}`);
+    }
+    return parts.map((part) => `"${part}"`).join('.');
+};
+
 export const createMariaPool = (uri: string): MariaPool => mariadb.createPool(uri);
 
 export const createPostgresPool = (connectionString: string): pg.Pool => {
@@ -94,7 +102,8 @@ export const upsertRows = async (
     client: PoolClient,
     table: string,
     rows: readonly TargetRow[],
-    conflictColumns: readonly string[]
+    conflictColumns: readonly string[],
+    options: { preserveOnConflict?: readonly string[] } = {}
 ): Promise<void> => {
     if (rows.length === 0) {
         return;
@@ -116,12 +125,13 @@ export const upsertRows = async (
         });
         return `(${placeholders.join(', ')})`;
     });
+    const preserved = new Set(options.preserveOnConflict ?? []);
     const updates = columns
-        .filter((column) => !conflictColumns.includes(column))
+        .filter((column) => !conflictColumns.includes(column) && !preserved.has(column))
         .map((column) => `${quoteIdentifier(column)} = EXCLUDED.${quoteIdentifier(column)}`);
     const conflictAction = updates.length ? `DO UPDATE SET ${updates.join(', ')}` : 'DO NOTHING';
     await client.query(
-        `INSERT INTO ${quoteIdentifier(table)} (${columns.map(quoteIdentifier).join(', ')})
+        `INSERT INTO ${quoteQualifiedIdentifier(table)} (${columns.map(quoteIdentifier).join(', ')})
          VALUES ${tuples.join(', ')}
          ON CONFLICT (${conflictColumns.map(quoteIdentifier).join(', ')}) ${conflictAction}`,
         values

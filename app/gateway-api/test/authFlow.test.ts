@@ -631,7 +631,7 @@ describe('gateway auth flow', () => {
     });
 
     it('asks before relinking a new Kakao identity to the permanently retained email owner', async () => {
-        const { caller, users, kakaoProfile, sentTalkMessages, flushPublisher } = buildCaller();
+        const { caller, users, kakaoProfile, sealPassword, sentTalkMessages, flushPublisher } = buildCaller();
         const emailOwner = await users.createUser({
             username: 'email-owner',
             password: 'owner-password',
@@ -642,6 +642,7 @@ describe('gateway auth flow', () => {
                 info: {},
             },
         });
+        emailOwner.passwordResetRequired = true;
         await users.markKakaoTalkVerified(emailOwner.id, new Date(Date.now() + 60_000));
         kakaoProfile.id = 'different-kakao-id';
 
@@ -659,7 +660,14 @@ describe('gateway auth flow', () => {
             oauthSessionId: recovery.oauthSessionId,
             action: 'link_existing',
         });
-        expect(linked.status).toBe('otp');
+        expect(linked.status).toBe('password_setup');
+        if (linked.status !== 'password_setup') throw new Error('Expected migrated password setup.');
+        expect(sentTalkMessages).toHaveLength(0);
+        const passwordSet = await caller.auth.kakaoSetPassword({
+            oauthSessionId: linked.oauthSessionId,
+            credential: sealPassword('replacement-password'),
+        });
+        expect(passwordSet.status).toBe('otp');
         expect(sentTalkMessages).toHaveLength(1);
         expect(await users.findByOauthId('KAKAO', 'original-kakao-id')).toBeNull();
         expect(await users.findByOauthId('KAKAO', 'different-kakao-id')).toMatchObject({
@@ -668,6 +676,108 @@ describe('gateway auth flow', () => {
             email: 'tester@example.com',
         });
         expect(flushPublisher.publishUserFlush).toHaveBeenCalledWith(emailOwner.id, 'kakao-account-relinked');
+        expect(flushPublisher.publishUserFlush).toHaveBeenCalledWith(emailOwner.id, 'password-changed');
+    });
+
+    it('requires a one-time password setup before an imported Kakao account can receive a session', async () => {
+        const { caller, users, sessions, kakaoProfile, sealPassword, sentTalkMessages } = buildCaller({
+            kakaoId: 'imported-kakao-id',
+            kakaoEmail: 'imported@example.com',
+        });
+        const user = await users.createUser({
+            username: 'imported-kakao-user',
+            password: 'legacy-password',
+            oauth: {
+                type: 'KAKAO',
+                id: kakaoProfile.id,
+                email: kakaoProfile.email,
+                info: {},
+            },
+        });
+        user.passwordResetRequired = true;
+        const createSession = vi.spyOn(sessions, 'createSession');
+
+        const start = await caller.auth.kakaoStart({ mode: 'login' });
+        const login = await caller.auth.kakaoExchange({ code: 'oauth-code', state: start.state });
+        expect(login).toMatchObject({
+            status: 'password_setup',
+            email: 'imported@example.com',
+            successStatus: 'login',
+        });
+        if (login.status !== 'password_setup') throw new Error('Expected migrated password setup.');
+        expect(login).not.toHaveProperty('sessionToken');
+        expect(createSession).not.toHaveBeenCalled();
+        expect(sentTalkMessages).toHaveLength(0);
+
+        const setup = await caller.auth.kakaoSetPassword({
+            oauthSessionId: login.oauthSessionId,
+            credential: sealPassword('new-imported-password'),
+        });
+        expect(setup.status).toBe('otp');
+        expect((await users.findById(user.id))?.passwordResetRequired).toBe(false);
+        expect(await users.verifyPassword(user, 'new-imported-password')).toBe(true);
+        await expect(
+            caller.auth.kakaoSetPassword({
+                oauthSessionId: login.oauthSessionId,
+                credential: sealPassword('another-password'),
+            })
+        ).rejects.toMatchObject({ code: 'UNAUTHORIZED' });
+    });
+
+    it('rechecks sanctions before consuming a migrated password setup', async () => {
+        const { caller, users, kakaoProfile, sealPassword } = buildCaller({
+            kakaoId: 'sanctioned-setup-id',
+            kakaoEmail: 'sanctioned-setup@example.com',
+        });
+        const user = await users.createUser({
+            username: 'sanctioned-setup-user',
+            password: 'legacy-password',
+            oauth: { type: 'KAKAO', id: kakaoProfile.id, email: kakaoProfile.email, info: {} },
+        });
+        user.passwordResetRequired = true;
+        const start = await caller.auth.kakaoStart({ mode: 'login' });
+        const login = await caller.auth.kakaoExchange({ code: 'oauth-code', state: start.state });
+        if (login.status !== 'password_setup') throw new Error('Expected migrated password setup.');
+        await users.updateSanctions(user.id, { bannedUntil: '2099-01-01T00:00:00.000Z' });
+
+        await expect(
+            caller.auth.kakaoSetPassword({
+                oauthSessionId: login.oauthSessionId,
+                credential: sealPassword('blocked-password'),
+            })
+        ).rejects.toMatchObject({ code: 'FORBIDDEN' });
+        expect((await users.findById(user.id))?.passwordResetRequired).toBe(true);
+    });
+
+    it('consumes password setup when the provider identity changes before submission', async () => {
+        const { caller, users, kakaoProfile, sealPassword } = buildCaller({
+            kakaoId: 'setup-target-id',
+            kakaoEmail: 'setup-target@example.com',
+        });
+        const user = await users.createUser({
+            username: 'setup-target-user',
+            password: 'legacy-password',
+            oauth: { type: 'KAKAO', id: kakaoProfile.id, email: kakaoProfile.email, info: {} },
+        });
+        user.passwordResetRequired = true;
+        const start = await caller.auth.kakaoStart({ mode: 'login' });
+        const login = await caller.auth.kakaoExchange({ code: 'oauth-code', state: start.state });
+        if (login.status !== 'password_setup') throw new Error('Expected migrated password setup.');
+        kakaoProfile.id = 'changed-provider-id';
+
+        await expect(
+            caller.auth.kakaoSetPassword({
+                oauthSessionId: login.oauthSessionId,
+                credential: sealPassword('new-target-password'),
+            })
+        ).rejects.toMatchObject({ code: 'UNAUTHORIZED' });
+        expect((await users.findById(user.id))?.passwordResetRequired).toBe(true);
+        await expect(
+            caller.auth.kakaoSetPassword({
+                oauthSessionId: login.oauthSessionId,
+                credential: sealPassword('new-target-password'),
+            })
+        ).rejects.toMatchObject({ code: 'UNAUTHORIZED' });
     });
 
     it('asks for rejoin confirmation when Kakao is already registered but no retained email owner exists', async () => {
@@ -1147,6 +1257,7 @@ describe('account self service', () => {
             username: 'self-service',
             password: 'current-password',
         });
+        user.passwordResetRequired = true;
         const session = await sessions.createSession(user);
 
         await expect(
@@ -1165,6 +1276,7 @@ describe('account self service', () => {
 
         const refreshed = await users.findById(user.id);
         expect(refreshed && (await users.verifyPassword(refreshed, 'next-password'))).toBe(true);
+        expect(refreshed?.passwordResetRequired).toBe(false);
     });
 
     it('revokes the session and schedules deletion after 30 days', async () => {

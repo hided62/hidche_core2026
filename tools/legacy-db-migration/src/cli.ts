@@ -5,7 +5,7 @@ import path from 'node:path';
 import process from 'node:process';
 
 import { createMariaPool, createPostgresPool } from './db.js';
-import { migrateGame } from './game.js';
+import { isLegacyArchiveProfile, LEGACY_ARCHIVE_PROFILES, migrateGame } from './game.js';
 import { migrateGateway } from './gateway.js';
 import { hashPasswordForReset } from './password.js';
 import { migrateCurrentSeasonFixture } from './currentSeason.js';
@@ -122,7 +122,10 @@ const resetPassword = async (options: CliOptions): Promise<Record<string, unknow
         const hashed = await hashPasswordForReset(password);
         await pool.query(
             `UPDATE "app_user"
-             SET "password_hash" = $1, "password_salt" = $2, "updated_at" = CURRENT_TIMESTAMP
+             SET "password_hash" = $1,
+                 "password_salt" = $2,
+                 "password_reset_required" = FALSE,
+                 "updated_at" = CURRENT_TIMESTAMP
              WHERE "id" = $3`,
             [hashed.hash, hashed.salt, existing.rows[0]!.id]
         );
@@ -142,7 +145,11 @@ const run = async (): Promise<void> => {
     const migratedAt = new Date();
     if (options.command === 'gateway') {
         const source = createMariaPool(requireEnvironment('LEGACY_ROOT_DATABASE_URL'));
-        const target = options.apply ? createPostgresPool(requireEnvironment('GATEWAY_DATABASE_URL')) : null;
+        const targetUrl = process.env.GATEWAY_DATABASE_URL?.trim();
+        if (options.apply && !targetUrl) {
+            throw new Error('GATEWAY_DATABASE_URL is required with --apply');
+        }
+        const target = targetUrl ? createPostgresPool(targetUrl) : null;
         try {
             const summary = await migrateGateway(source, target, options.apply, migratedAt);
             console.log(JSON.stringify(summary, null, 2));
@@ -155,6 +162,9 @@ const run = async (): Promise<void> => {
 
     if (!options.profile || !/^[a-z][a-z0-9_-]{1,31}$/.test(options.profile)) {
         throw new Error(`${options.command} requires a safe --profile value\n\n${usage}`);
+    }
+    if (options.command === 'game' && !isLegacyArchiveProfile(options.profile)) {
+        throw new Error(`game requires --profile ${LEGACY_ARCHIVE_PROFILES.join('|')}\n\n${usage}`);
     }
     const source = createMariaPool(requireEnvironment('LEGACY_GAME_DATABASE_URL'));
     const target =

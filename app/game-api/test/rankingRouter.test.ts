@@ -110,6 +110,42 @@ const buildContext = (options?: {
 }): GameApiContext => {
     const selectedGeneralRows = options?.generals ?? generalRows;
     const db = {
+        $queryRaw: async (query: { strings?: readonly string[]; values?: unknown[] }) => {
+            const sql = query.strings?.join(' ') ?? '';
+            if (sql.includes('legacy_archive"."game_history')) {
+                return [
+                    {
+                        sourceProfile: 'hwe',
+                        season: 1,
+                        scenario: 7,
+                        scenarioName: '이전 시나리오',
+                        count: 2n,
+                    },
+                ];
+            }
+            if (sql.includes('legacy_archive"."hall')) {
+                return query.values?.includes('experience')
+                    ? [
+                          {
+                              sourceProfile: 'hwe',
+                              serverId: 'hwe-old-1',
+                              generalNo: 9,
+                              type: 'experience',
+                              value: 777,
+                              owner: 'private-legacy-owner-id',
+                              aux: {
+                                  name: '과거장수',
+                                  ownerDisplayName: '과거소유자',
+                                  nationName: '과거국',
+                                  bgColor: '#330000',
+                                  fgColor: '#ffffff',
+                              },
+                          },
+                      ]
+                    : [];
+            }
+            return [];
+        },
         worldState: {
             findFirst: async () => ({
                 meta: { isUnited: options?.isUnited ? 1 : 0 },
@@ -289,8 +325,14 @@ describe('ranking.getBestGeneral', () => {
                 value:
                     type === 'warnum' || type === 'deathcrew' || type === 'deathcrew_person'
                         ? 1_000
-                        : type === 'ttd' || type === 'ttl' || type === 'tld' || type === 'tll' ||
-                            type === 'tsd' || type === 'tsl' || type === 'tid' || type === 'til' ||
+                        : type === 'ttd' ||
+                            type === 'ttl' ||
+                            type === 'tld' ||
+                            type === 'tll' ||
+                            type === 'tsd' ||
+                            type === 'tsl' ||
+                            type === 'tid' ||
+                            type === 'til' ||
                             type === 'betgold'
                           ? 1_000
                           : general.id * 1_000,
@@ -304,11 +346,14 @@ describe('ranking.getBestGeneral', () => {
         for (const section of result.sections) {
             expect(section.entries, section.title).toHaveLength(10);
             expect(new Set(section.entries.map((entry) => entry.id)).size, section.title).toBe(10);
-            expect(section.entries.every((entry) => entry.value > 0), section.title).toBe(true);
+            expect(
+                section.entries.every((entry) => entry.value > 0),
+                section.title
+            ).toBe(true);
         }
-        expect(result.sections.find((section) => section.title === '계 략 성 공')?.entries.map((entry) => entry.id)).toEqual([
-            12, 11, 10, 9, 8, 7, 6, 5, 4, 3,
-        ]);
+        expect(
+            result.sections.find((section) => section.title === '계 략 성 공')?.entries.map((entry) => entry.id)
+        ).toEqual([12, 11, 10, 9, 8, 7, 6, 5, 4, 3]);
     });
 
     it('matches PHP number_format rounding and the legacy fixed color table', () => {
@@ -326,10 +371,36 @@ describe('ranking hall of fame', () => {
             .ranking.getHallOfFameOptions();
         expect(options).toEqual([
             {
+                sourceProfile: 'che',
                 season: 3,
                 scenarios: [{ id: 22, name: '가상모드22', count: 2 }],
             },
         ]);
+    });
+
+    it('keeps previous-server options and rankings in the dedicated archive source', async () => {
+        const caller = appRouter.createCaller(buildContext({ authenticated: false }));
+        await expect(caller.ranking.getHallOfFameOptions({ source: 'legacy' })).resolves.toEqual([
+            {
+                sourceProfile: 'hwe',
+                season: 1,
+                scenarios: [{ id: 7, name: '이전 시나리오', count: 2 }],
+            },
+        ]);
+
+        const result = await caller.ranking.getHallOfFame({
+            source: 'legacy',
+            sourceProfile: 'hwe',
+            season: 1,
+            scenario: 7,
+        });
+        expect(result.source).toBe('legacy');
+        expect(result.sourceProfile).toBe('hwe');
+        expect(result.sections[0]).toMatchObject({
+            title: '명 성',
+            entries: [expect.objectContaining({ generalId: 9, name: '과거장수', ownerName: '과거소유자' })],
+        });
+        expect(JSON.stringify(result)).not.toContain('private-legacy-owner-id');
     });
 
     it('returns an explicit display name but never exposes the stored account identifier', async () => {

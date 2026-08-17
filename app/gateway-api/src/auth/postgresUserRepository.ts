@@ -59,6 +59,7 @@ const mapUser = (row: {
     displayName: string;
     passwordHash: string;
     passwordSalt: string;
+    passwordResetRequired: boolean;
     roles: GatewayPrisma.JsonValue;
     sanctions: GatewayPrisma.JsonValue;
     oauthType: 'NONE' | 'KAKAO';
@@ -107,6 +108,7 @@ const mapUser = (row: {
     deleteAfter: row.deleteAfter?.toISOString(),
     passwordHash: row.passwordHash,
     passwordSalt: row.passwordSalt,
+    passwordResetRequired: row.passwordResetRequired,
     createdAt: row.createdAt.toISOString(),
     legacyMemberNo: readLegacyMemberNo(row.legacyData),
     legacyGrade: readLegacyGrade(row.legacyData),
@@ -250,6 +252,7 @@ export const createPostgresUserRepository = (
                     displayName: input.displayName ?? input.username,
                     passwordHash: password.hash,
                     passwordSalt: password.salt,
+                    passwordResetRequired: false,
                     roles: ['user'] satisfies GatewayPrisma.JsonArray,
                     sanctions: {} satisfies GatewayPrisma.JsonObject,
                     oauthType,
@@ -274,10 +277,12 @@ export const createPostgresUserRepository = (
                     data: {
                         passwordHash: upgraded.hash,
                         passwordSalt: upgraded.salt,
+                        passwordResetRequired: false,
                     },
                 });
                 user.passwordHash = upgraded.hash;
                 user.passwordSalt = upgraded.salt;
+                user.passwordResetRequired = false;
             }
             return verified.ok;
         },
@@ -288,6 +293,7 @@ export const createPostgresUserRepository = (
                 data: {
                     passwordHash: next.hash,
                     passwordSalt: next.salt,
+                    passwordResetRequired: false,
                 },
             });
         },
