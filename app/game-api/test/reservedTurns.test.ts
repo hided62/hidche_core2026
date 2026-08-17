@@ -16,7 +16,7 @@ import {
     ReservedTurnRevisionConflictError,
 } from '../src/turns/reservedTurns.js';
 
-const buildDb = () => {
+const buildDb = (autorunLimit: number | null = null) => {
     const generalTurns = new Map<number, GeneralTurnRow[]>();
     const nationTurns = new Map<string, NationTurnRow[]>();
     const generalRevisions = new Map<number, number>();
@@ -45,7 +45,7 @@ const buildDb = () => {
             findFirst: async () => null,
         },
         general: {
-            findUnique: async () => null,
+            findUnique: async () => ({ meta: autorunLimit === null ? {} : { autorun_limit: autorunLimit } }),
         },
         city: {
             findUnique: async () => null,
@@ -200,22 +200,25 @@ const buildDb = () => {
 
 describe('reservedTurns', () => {
     it('sets and shifts general turns', async () => {
-        const { db } = buildDb();
+        const { db } = buildDb(2408);
 
         const initial = await setGeneralTurn(db, 1, 0, 'che_화계', { destCityId: 10 }, 0);
 
         expect(initial.revision).toBe(1);
         expect(initial.turns).toHaveLength(MAX_GENERAL_TURNS);
         expect(initial.turns[0]?.action).toBe('che_화계');
+        expect(initial.autorunLimit).toBe(2408);
 
         const pushed = await shiftGeneralTurns(db, 1, 1, initial.revision);
         expect(pushed.revision).toBe(2);
         expect(pushed.turns[0]?.action).toBe('휴식');
         expect(pushed.turns[1]?.action).toBe('che_화계');
+        expect(pushed.autorunLimit).toBe(2408);
 
         const pulled = await shiftGeneralTurns(db, 1, -1, pushed.revision);
         expect(pulled.turns[0]?.action).toBe('che_화계');
         expect(pulled.turns[MAX_GENERAL_TURNS - 1]?.action).toBe('휴식');
+        expect(pulled.autorunLimit).toBe(2408);
 
         await expect(setGeneralTurn(db, 1, 2, 'che_훈련', {}, 1)).rejects.toBeInstanceOf(
             ReservedTurnRevisionConflictError
@@ -285,7 +288,7 @@ describe('reservedTurns', () => {
     });
 
     it('repeats the leading general pattern at the legacy interval', async () => {
-        const { db } = buildDb();
+        const { db } = buildDb(2408);
         const seeded = await setGeneralTurns(
             db,
             4,
@@ -309,6 +312,7 @@ describe('reservedTurns', () => {
             'che_사기진작',
             'che_징병',
         ]);
+        expect(repeated.autorunLimit).toBe(2408);
     });
 
     it('supports nation bulk/repeat and preserves the legacy amount-12 no-op', async () => {

@@ -1,4 +1,4 @@
-import { NATION_TRAIT_KEYS } from '@sammo-ts/logic/actionModules/traits/nation/index.js';
+import { isAvailableNationTraitKey } from '@sammo-ts/logic/actionModules/traits/nation/index.js';
 import { getLegacyStringWidth } from '@sammo-ts/logic/troop/management.js';
 import { z } from 'zod';
 
@@ -38,14 +38,12 @@ export const NATION_COLORS = [
     '#A9A9A9',
 ] as const;
 
-const SELECTABLE_NATION_TYPES = new Set<string>(NATION_TRAIT_KEYS.filter((key) => key !== 'che_중립'));
-
 export const FOUNDING_ARGS_SCHEMA = z.object({
     nationName: z
         .string()
         .min(1)
         .refine((value) => getLegacyStringWidth(value) <= 18),
-    nationType: z.string().refine((value) => SELECTABLE_NATION_TYPES.has(value)),
+    nationType: z.string().refine(isAvailableNationTraitKey),
     colorType: z
         .number()
         .int()

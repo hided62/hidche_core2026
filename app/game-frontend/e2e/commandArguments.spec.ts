@@ -43,6 +43,7 @@ const inputOptions = {
     cities: [
         { value: 1, label: '업 (아국)' },
         { value: 2, label: '허창 (적국)', description: '적국 · 예주 · 대도시' },
+        { value: 3, label: '단양 (오)' },
     ],
     nations: [
         { value: 1, label: '아국', color: '#008000' },
@@ -54,7 +55,7 @@ const inputOptions = {
     ],
     crewTypes: [{ value: 1100, label: '보병' }],
     armTypes: [{ value: 1, label: '보병' }],
-    nationTypes: [{ value: 'che_중립', label: '중립' }],
+    nationTypes: [{ value: 'che_도적', label: '도적', description: '금 수입 증가, 쌀 수입 감소' }],
     colors: [{ value: 0, label: '색상 1', color: '#ff0000' }],
     items: { horse: [{ value: 'None', label: '판매/해제' }] },
     recruitment: {
@@ -178,6 +179,27 @@ const commandTable = {
                     inputFields: [
                         { key: 'crewType', label: '병종', kind: 'select', required: true, optionSource: 'crewTypes' },
                         { key: 'amount', label: '수량', kind: 'number', required: true, min: 0, step: 1 },
+                    ],
+                },
+            ],
+        },
+        {
+            category: '군사',
+            values: [
+                {
+                    key: 'che_출병',
+                    name: '출병',
+                    reqArg: true,
+                    possible: true,
+                    status: 'needsInput',
+                    inputFields: [
+                        {
+                            key: 'destCityId',
+                            label: '대상 도시',
+                            kind: 'select',
+                            required: true,
+                            optionSource: 'cities',
+                        },
                     ],
                 },
             ],
@@ -312,6 +334,7 @@ const generalContext = {
         experience: 0,
         dedication: 0,
         items: { horse: 'None', weapon: 'None', book: 'None', item: 'None' },
+        turnTime: '2026-08-17T12:00:00.000Z',
     },
     city: {
         id: 1,
@@ -483,7 +506,7 @@ const install = async (page: Page, rejectGeneral = false, commandTableResponse: 
             if (name === 'turns.getCommandTable') return response(commandTableResponse);
             if (name === 'nation.getChiefCenter') return response(chiefCenter);
             if (name === 'turns.reserved.getGeneral')
-                return response({ turns: generalTurns, revision: generalRevision });
+                return response({ turns: generalTurns, revision: generalRevision, autorunLimit: 2403 });
             if (name === 'turns.reserved.getNation') return response({ turns: nationTurns, revision: nationRevision });
             if (name === 'general.getRecentRecords') return response({ global: [], general: [], history: [] });
             if (name === 'general.getFrontStatus')
@@ -520,7 +543,7 @@ const install = async (page: Page, rejectGeneral = false, commandTableResponse: 
                         generalTurns[index] = { index, action: entry.action, args: entry.args ?? {} };
                 }
                 generalRevision += 1;
-                return response({ ok: true, revision: generalRevision, turns: generalTurns });
+                return response({ ok: true, revision: generalRevision, turns: generalTurns, autorunLimit: 2403 });
             }
             if (name === 'turns.reserved.setNationBulk') {
                 requests.push(body);
@@ -561,10 +584,65 @@ test('renders and accepts every Ref strategy command at mobile width', async ({ 
         await button.click();
         const form = picker.getByTestId('command-argument-form');
         await expect(form.getByTestId('command-argument-guidance')).toContainText(strategy.guidance);
-        await expect(form.locator('select option')).toHaveCount(2);
+        await expect(form.locator('select option')).toHaveCount(3);
         await picker.getByRole('button', { name: '명령 다시 선택', exact: true }).click();
     }
     await picker.screenshot({ path: test.info().outputPath('all-strategy-commands-mobile.png') });
+});
+
+test('defaults founding to a Ref-selectable nation trait without exposing the neutral storage trait', async ({
+    page,
+}) => {
+    const foundingCommandTable = {
+        general: [
+            {
+                category: '국가',
+                values: [
+                    {
+                        key: 'che_건국',
+                        name: '건국',
+                        reqArg: true,
+                        possible: true,
+                        status: 'needsInput',
+                        inputFields: [
+                            { key: 'nationName', label: '국가명', kind: 'text', required: true, min: 1, max: 18 },
+                            {
+                                key: 'nationType',
+                                label: '국가 성향',
+                                kind: 'select',
+                                required: true,
+                                optionSource: 'nationTypes',
+                            },
+                            {
+                                key: 'colorType',
+                                label: '국기 색상',
+                                kind: 'select',
+                                required: true,
+                                optionSource: 'colors',
+                            },
+                        ],
+                    },
+                ],
+            },
+        ],
+        nation: [],
+        inputOptions,
+    };
+    await install(page, false, foundingCommandTable);
+    await page.setViewportSize({ width: 1200, height: 900 });
+    await page.goto('/');
+    await page.getByRole('button', { name: '1턴 명령 입력', exact: true }).click();
+
+    const picker = page.getByTestId('command-picker');
+    await picker.getByRole('button', { name: '국가', exact: true }).click();
+    await picker.getByRole('button', { name: '건국', exact: true }).click();
+    const nationType = picker.getByLabel('국가 성향');
+    await expect(nationType).toHaveValue('che_도적');
+    await expect(nationType.locator('option[value="che_중립"]')).toHaveCount(0);
+    await expect(nationType.locator('option')).toHaveText(['도적']);
+    await nationType.focus();
+    await expect(nationType).toBeFocused();
+    await picker.screenshot({ path: test.info().outputPath('founding-selectable-nation-trait-desktop-1200.png') });
 });
 
 test('reserves force move, retirement, and resignation from the user command picker', async ({ page }) => {
@@ -654,7 +732,7 @@ test('reserves force move, retirement, and resignation from the user command pic
     await expect(forceMoveForm.getByTestId('command-argument-guidance')).toContainText('선택한 도시로 강행합니다.');
     await forceMoveForm.locator('select').selectOption('2');
     await picker.getByRole('button', { name: '입력', exact: true }).click();
-    await expect(editor.locator('.action-column > div').nth(2)).toHaveText('강행');
+    await expect(editor.locator('.action-column > div').nth(2)).toHaveText('【허창】으로 강행');
 
     const serialized = JSON.stringify(requests);
     expect(serialized).toContain('"action":"che_은퇴","args":{}');
@@ -801,7 +879,9 @@ test('enters general and nation command arguments and sends exact values', async
         return { width: rect.width, height: rect.height };
     });
     await page.getByTestId('command-picker').getByRole('button', { name: '입력', exact: true }).click();
-    await expect(page.locator('[data-command-scope="general"] .action-column > div').first()).toHaveText('화계');
+    await expect(page.locator('[data-command-scope="general"] .action-column > div').first()).toHaveText(
+        '【허창】에 화계실행'
+    );
 
     await page.goto('/che/chief-center');
     await page.getByRole('button', { name: '1턴 명령 입력', exact: true }).click();
@@ -824,7 +904,9 @@ test('enters general and nation command arguments and sends exact values', async
         };
     });
     await chiefPicker.getByRole('button', { name: '입력', exact: true }).click();
-    await expect(page.locator('[data-command-scope="nation"] .action-column > div').first()).toHaveText('포상');
+    await expect(page.locator('[data-command-scope="nation"] .action-column > div').first()).toHaveText(
+        '【관우】 쌀 300 포상'
+    );
 
     expect(JSON.stringify(requests)).toContain('"destCityId":2');
     expect(JSON.stringify(requests)).toContain('"isGold":false');
@@ -906,7 +988,9 @@ test('uses a Ref-style full recruitment page without horizontal overflow on desk
     await infantry.getByRole('button', { name: '절반', exact: true }).click();
     await page.screenshot({ path: testInfo.outputPath('recruitment-desktop.png') });
     await picker.getByRole('button', { name: '입력', exact: true }).click();
-    await expect(page.locator('[data-command-scope="general"] .action-column > div').first()).toHaveText('징병');
+    await expect(page.locator('[data-command-scope="general"] .action-column > div').first()).toHaveText(
+        '【보병】 3500명 징병'
+    );
     expect(JSON.stringify(requests)).toContain('"crewType":1100');
     expect(JSON.stringify(requests)).toContain('"amount":3500');
 
@@ -1112,6 +1196,53 @@ test('keeps the entered command visible and reports a server validation error', 
     await expect(page.getByTestId('command-argument-form').locator('select')).toHaveValue('2');
 });
 
+test('keeps Ref command briefs and autonomous-action state after a turn mutation', async ({ page }) => {
+    await install(page);
+    await page.setViewportSize({ width: 1200, height: 900 });
+    await page.goto('/');
+
+    const editor = page.locator('[data-command-scope="general"]');
+    const status = editor.locator('[data-command-autorun-status]');
+    const firstRow = editor.locator('.action-column > div').first();
+    await expect(status).toHaveText(/자율 행동: 200年 3月 · \d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}까지/u);
+    await expect(firstRow).toContainText('휴식(자율 행동)');
+    expect(await firstRow.evaluate((element) => getComputedStyle(element).color)).toBe('rgb(170, 255, 255)');
+
+    await page.getByRole('button', { name: '1턴 명령 입력', exact: true }).click();
+    const picker = page.getByTestId('command-picker');
+    await picker.getByRole('button', { name: '군사', exact: true }).click();
+    await picker.getByRole('button', { name: '출병', exact: true }).click();
+    await picker.getByTestId('command-argument-form').locator('select').selectOption('3');
+    await picker.getByRole('button', { name: '입력', exact: true }).click();
+
+    await expect(firstRow).toHaveText('【단양】으로 출병');
+    await expect(firstRow).toHaveAttribute('title', /자율 행동/u);
+    expect(await firstRow.evaluate((element) => getComputedStyle(element).color)).toBe('rgb(170, 255, 255)');
+    await expect(status).toHaveText(/자율 행동: 200年 3月 · .*까지/u);
+
+    const desktopGeometry = await editor.evaluate((element) => {
+        const statusElement = element.querySelector<HTMLElement>('[data-command-autorun-status]');
+        const row = element.querySelector<HTMLElement>('.action-column > div');
+        if (!statusElement || !row) throw new Error('autonomous command geometry is missing');
+        return {
+            horizontalOverflow: element.scrollWidth - element.clientWidth,
+            statusWidth: statusElement.getBoundingClientRect().width,
+            editorWidth: element.getBoundingClientRect().width,
+            rowHeight: row.getBoundingClientRect().height,
+        };
+    });
+    expect(desktopGeometry.horizontalOverflow).toBeLessThanOrEqual(0);
+    expect(desktopGeometry.statusWidth).toBeLessThanOrEqual(desktopGeometry.editorWidth);
+    expect(desktopGeometry.rowHeight).toBeGreaterThanOrEqual(20);
+    await page.screenshot({ path: test.info().outputPath('command-brief-autorun-desktop-1200.png'), fullPage: true });
+
+    await page.setViewportSize({ width: 500, height: 900 });
+    await expect(firstRow).toHaveText('【단양】으로 출병');
+    await expect(status).toBeVisible();
+    expect(await editor.evaluate((element) => element.scrollWidth - element.clientWidth)).toBeLessThanOrEqual(0);
+    await page.screenshot({ path: test.info().outputPath('command-brief-autorun-mobile-500.png'), fullPage: true });
+});
+
 test('uses drag selection, clipboard paste, and a stored template in advanced mode', async ({ page }) => {
     const requests = await install(page);
     await page.goto('/');
@@ -1139,7 +1270,7 @@ test('uses drag selection, clipboard paste, and a stored template in advanced mo
     await blockedFire.click();
     await picker.getByTestId('command-argument-form').locator('select').selectOption('2');
     await picker.getByRole('button', { name: '입력', exact: true }).click();
-    await expect(editor.locator('.action-column > div').nth(2)).toHaveText('화계');
+    await expect(editor.locator('.action-column > div').nth(2)).toHaveText('【허창】에 화계실행');
 
     await drag(0, 2);
     await editor.locator('details.selected-menu > summary').click();
@@ -1150,7 +1281,7 @@ test('uses drag selection, clipboard paste, and a stored template in advanced mo
     await expect(editor.locator('.index-column > button.selected')).toHaveCount(15);
     await editor.locator('details.selected-menu > summary').click();
     await editor.getByRole('button', { name: '붙여넣기', exact: true }).click();
-    await expect(editor.locator('.action-column > div').nth(5)).toHaveText('화계');
+    await expect(editor.locator('.action-column > div').nth(5)).toHaveText('【허창】에 화계실행');
 
     await drag(0, 2);
     page.once('dialog', (dialog) => dialog.accept('화계 세트'));
@@ -1229,7 +1360,9 @@ test('keeps the shared main and chief shell geometry and interaction states', as
     await chiefArgumentForm.locator('input[type=number]').fill('300');
     await chiefArgumentForm.locator('select').selectOption('2');
     await page.getByTestId('command-picker').getByRole('button', { name: '입력', exact: true }).click();
-    await expect(page.locator('[data-command-scope="nation"] .action-column > div').first()).toHaveText('포상');
+    await expect(page.locator('[data-command-scope="nation"] .action-column > div').first()).toHaveText(
+        '【관우】 쌀 300 포상'
+    );
     expect(JSON.stringify(requests)).toContain('"action":"che_포상"');
     expect(JSON.stringify(requests)).toContain('"destGeneralId":2');
     const chiefDesktop = await page.locator('.chief-page').evaluate((element) => ({

@@ -8,11 +8,13 @@ const props = withDefaults(
         enabled?: boolean;
         compact?: boolean;
         active?: boolean;
+        lumenVariant?: 'navigation' | 'lumen';
     }>(),
     {
         enabled: true,
         compact: false,
         active: false,
+        lumenVariant: undefined,
     }
 );
 
@@ -22,13 +24,16 @@ const emit = defineEmits<{
 
 const label = computed(() => (props.compact ? (props.link.compactLabel ?? props.link.label) : props.link.label));
 const rel = computed(() => (props.link.newTab ? 'noopener noreferrer' : undefined));
+const lumenClasses = computed(() =>
+    props.lumenVariant ? ['legacy-button', `legacy-button--${props.lumenVariant}`] : []
+);
 </script>
 
 <template>
     <RouterLink
         v-if="enabled && link.to"
         class="main-menu-link"
-        :class="{ highlight: active }"
+        :class="[lumenClasses, { highlight: active }]"
         :to="link.to"
         :target="link.newTab ? '_blank' : undefined"
         :rel="rel"
@@ -40,7 +45,7 @@ const rel = computed(() => (props.link.newTab ? 'noopener noreferrer' : undefine
     <a
         v-else-if="enabled && link.href"
         class="main-menu-link"
-        :class="{ highlight: active }"
+        :class="[lumenClasses, { highlight: active }]"
         :href="link.href"
         :target="link.newTab ? '_blank' : undefined"
         :rel="rel"
@@ -52,6 +57,7 @@ const rel = computed(() => (props.link.newTab ? 'noopener noreferrer' : undefine
     <span
         v-else
         class="main-menu-link disabled"
+        :class="lumenClasses"
         role="link"
         aria-disabled="true"
         :title="link.unavailableReason"

@@ -1,4 +1,5 @@
 import {
+    AVAILABLE_NATION_TRAIT_KEYS,
     ITEM_KEYS,
     EVENT_DOMESTIC_TRAIT_KEYS,
     loadEventDomesticTraitModules,
@@ -6,7 +7,6 @@ import {
     loadNationTraitModules,
     loadPersonalityTraitModules,
     loadWarTraitModules,
-    NATION_TRAIT_KEYS,
     PERSONALITY_TRAIT_KEYS,
     WAR_TRAIT_KEYS,
     type ItemModule,
@@ -110,7 +110,7 @@ export const loadBattleSimTraitOptions = async (): Promise<{
 }> => {
     if (!cachedTraitOptions) {
         cachedTraitOptions = Promise.all([
-            loadNationTraitModules([...NATION_TRAIT_KEYS]),
+            loadNationTraitModules([...AVAILABLE_NATION_TRAIT_KEYS]),
             loadEventDomesticTraitModules([...EVENT_DOMESTIC_TRAIT_KEYS]),
             loadWarTraitModules([...WAR_TRAIT_KEYS]),
             loadPersonalityTraitModules([...PERSONALITY_TRAIT_KEYS]),
