@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { LiteHashDRBG, RandUtil } from '@sammo-ts/common';
 
 import type { BattleSimJobPayload } from '../src/battleSim/types.js';
 import { processBattleSimJob } from '../src/battleSim/processor.js';
@@ -257,6 +258,26 @@ describe('battle sim processor', () => {
         delete legacyPayload.scenarioEffect;
 
         expect(processBattleSimJob(legacyPayload)).toEqual(processBattleSimJob(baselinePayload));
+    });
+
+    it('uses server-issued per-repeat seeds deterministically when no fixed seed is supplied', () => {
+        const firstPayload = buildPayload('battle');
+        delete firstPayload.seed;
+        firstPayload.repeatCnt = 2;
+        firstPayload.seeds = ['server-repeat-0', 'server-repeat-1'];
+        const secondPayload = structuredClone(firstPayload);
+        const observedSeeds: string[] = [];
+
+        const first = processBattleSimJob(firstPayload, {
+            rngFactory: (seed) => {
+                observedSeeds.push(seed);
+                return new RandUtil(LiteHashDRBG.build(seed));
+            },
+        });
+        const second = processBattleSimJob(secondPayload);
+
+        expect(first).toEqual(second);
+        expect(observedSeeds).toEqual(['server-repeat-0', 'server-repeat-1']);
     });
 
     it('returns the fixed defender ID order for reorder action', () => {

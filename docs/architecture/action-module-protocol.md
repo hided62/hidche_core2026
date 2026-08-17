@@ -61,9 +61,11 @@ scenario parser, resource schema, PostgreSQL world loader와 battle simulator
 않습니다.
 
 전투 시뮬레이터의 효과는 공개 request가 아니라 저장된 world config에서
-서버가 파생합니다. 내부 queue payload의 필드는 optional이므로 배포 전에
-생성된 payload는 효과 없음으로 처리하며, 신·구 API/worker 혼재 시에는
-효과 누락을 피하기 위해 queue를 비우거나 API와 worker를 함께 재시작합니다.
+서버가 파생합니다. `battle.prepareSimulation`은 해당 효과와 전체 병종 정의,
+전투 상수, 시나리오 시작 연도, 반복별 seed를 권위 payload로 만들고 브라우저
+Web Worker가 `@sammo-ts/logic`의 공용 프로세서를 실행합니다. 기존
+`battle.simulate`와 Redis worker도 같은 processor와 payload를 사용하므로
+검증·호환 fallback 경로에서 결과를 대조할 수 있습니다.
 
 ## 닫힌 의미 이벤트
 

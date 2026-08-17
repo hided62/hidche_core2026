@@ -2,6 +2,12 @@ import { expect, test, type Page, type Route } from '@playwright/test';
 import { readFile } from 'node:fs/promises';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import {
+    processBattleSimJob,
+    type BattleSimJobPayload,
+    type BattleSimRequestPayload,
+    type BattleSimResultPayload,
+} from '@sammo-ts/logic';
 import { gameProfile, gameTrpcRoute } from './gameTestPaths.js';
 
 const repositoryRoot = resolve(dirname(fileURLToPath(import.meta.url)), '../../..');
@@ -71,6 +77,67 @@ const simulatorOptions = {
     ],
 };
 
+const engineUnitSet: BattleSimJobPayload['unitSet'] = {
+    id: 'playwright',
+    name: 'playwright',
+    crewTypes: [
+        {
+            id: 100,
+            armType: 1,
+            name: '보병',
+            attack: 100,
+            defence: 100,
+            speed: 7,
+            avoid: 10,
+            magicCoef: 0,
+            cost: 9,
+            rice: 9,
+            requirements: [],
+            attackCoef: {},
+            defenceCoef: {},
+            info: [],
+            initSkillTrigger: null,
+            phaseSkillTrigger: null,
+            iActionList: null,
+        },
+        {
+            id: 999,
+            armType: 9,
+            name: '성벽',
+            attack: 0,
+            defence: 0,
+            speed: 1,
+            avoid: 0,
+            magicCoef: 0,
+            cost: 0,
+            rice: 9,
+            requirements: [],
+            attackCoef: {},
+            defenceCoef: {},
+            info: [],
+            initSkillTrigger: null,
+            phaseSkillTrigger: null,
+            iActionList: null,
+        },
+    ],
+};
+
+const engineConfig: BattleSimJobPayload['config'] = {
+    armPerPhase: 500,
+    maxTrainByCommand: 100,
+    maxAtmosByCommand: 100,
+    maxTrainByWar: 110,
+    maxAtmosByWar: 150,
+    castleCrewTypeId: 999,
+    armTypes: {
+        footman: 1,
+        wizard: 4,
+        siege: 5,
+        misc: 6,
+        castle: 9,
+    },
+};
+
 const generalMe = {
     general: {
         id: 7,
@@ -132,40 +199,25 @@ const importedGeneral = {
     },
 };
 
-const simulationResult = {
-    result: true,
-    reason: 'success',
-    datetime: '205-08',
-    avgWar: 5,
-    phase: 13,
-    killed: 1234,
-    maxKilled: 1400,
-    minKilled: 1100,
-    dead: 432,
-    maxDead: 500,
-    minDead: 400,
-    attackerRice: 321,
-    defenderRice: 654,
-    attackerSkills: { 필살: 2 },
-    defendersSkills: [{ 회피: 1 }],
-    lastWarLog: {
-        generalHistoryLog: '',
-        generalActionLog: '',
-        generalBattleResultLog: '<span>유비가 모의전에서 승리했습니다.</span>',
-        generalBattleDetailLog: '<span>필살 발동, 피해 1,234</span>',
-        nationalHistoryLog: '',
-        globalHistoryLog: '',
-        globalActionLog: '',
-    },
-};
-
 type Fixture = {
     hasGeneral: boolean;
     failNextSimulation?: boolean;
-    queueFirst?: boolean;
-    pollingCount: number;
     requests: string[];
-    simulationPayloads: unknown[];
+    preparedPayloads: BattleSimJobPayload[];
+    serverResults: BattleSimResultPayload[];
+};
+
+const readOperationInput = (
+    requestBody: Record<string, unknown>,
+    operationCount: number,
+    operationIndex: number
+): unknown => {
+    const rawPayload = requestBody[String(operationIndex)] ?? (operationCount === 1 ? requestBody : undefined);
+    if (!rawPayload || typeof rawPayload !== 'object') {
+        return rawPayload;
+    }
+    const payload = rawPayload as { json?: unknown; input?: { json?: unknown } };
+    return payload.json ?? payload.input?.json ?? rawPayload;
 };
 
 const installImages = async (page: Page) => {
@@ -182,6 +234,22 @@ const installImages = async (page: Page) => {
 
 const installApi = async (page: Page, fixture: Fixture) => {
     await installImages(page);
+    await page.addInitScript(() => {
+        const nativeWorker = window.Worker;
+        const testWindow = window as unknown as {
+            __battleWorkerResponses: unknown[];
+            __battleWorkerUrls: string[];
+        };
+        testWindow.__battleWorkerResponses = [];
+        testWindow.__battleWorkerUrls = [];
+        window.Worker = class TrackedWorker extends nativeWorker {
+            constructor(scriptURL: string | URL, options?: WorkerOptions) {
+                super(scriptURL, options);
+                testWindow.__battleWorkerUrls.push(String(scriptURL));
+                this.addEventListener('message', (event) => testWindow.__battleWorkerResponses.push(event.data));
+            }
+        };
+    });
     await page.addInitScript((profile) => {
         window.localStorage.setItem('sammo-game-token', 'ga_battle_sim_playwright');
         window.localStorage.setItem('sammo-game-profile', profile);
@@ -212,36 +280,29 @@ const installApi = async (page: Page, fixture: Fixture) => {
                 });
             }
             if (operation === 'battle.getGeneralDetail') return response(importedGeneral);
-            if (operation === 'battle.simulate') {
-                const rawPayload =
-                    requestBody[String(operationIndex)] ?? (operations.length === 1 ? requestBody : undefined);
-                const payload =
-                    rawPayload && typeof rawPayload === 'object'
-                        ? (rawPayload as {
-                              json?: unknown;
-                              input?: { json?: unknown };
-                          })
-                        : undefined;
-                fixture.simulationPayloads.push(payload?.json ?? payload?.input?.json ?? rawPayload);
+            if (operation === 'battle.prepareSimulation') {
                 if (fixture.failNextSimulation) {
                     fixture.failNextSimulation = false;
                     return errorResponse(operation, '시뮬레이터 입력 오류');
                 }
-                if (fixture.queueFirst) {
-                    return response({ status: 'queued', jobId: 'job-playwright' });
-                }
-                return response({ status: 'completed', jobId: 'job-playwright', payload: simulationResult });
-            }
-            if (operation === 'battle.getSimulation') {
-                fixture.pollingCount += 1;
-                if (fixture.pollingCount === 1) {
-                    return response({ status: 'queued', jobId: 'job-playwright' });
-                }
-                return response({
-                    status: 'completed',
-                    jobId: 'job-playwright',
-                    payload: simulationResult,
-                });
+                const request = readOperationInput(
+                    requestBody,
+                    operations.length,
+                    operationIndex
+                ) as BattleSimRequestPayload;
+                const prepared: BattleSimJobPayload = {
+                    ...request,
+                    seeds: request.seed
+                        ? []
+                        : Array.from({ length: request.repeatCnt }, (_, index) => `playwright-repeat-${index}`),
+                    unitSet: engineUnitSet,
+                    config: engineConfig,
+                    time: { year: request.year, month: request.month, startYear: 190 },
+                    scenarioEffect: null,
+                };
+                fixture.preparedPayloads.push(prepared);
+                fixture.serverResults.push(processBattleSimJob(structuredClone(prepared)));
+                return response(prepared);
             }
             return errorResponse(operation, `Unhandled battle simulator fixture operation: ${operation}`);
         });
@@ -251,6 +312,26 @@ const installApi = async (page: Page, fixture: Fixture) => {
             body: JSON.stringify(results),
         });
     });
+};
+
+const readBrowserWorkerResult = async (page: Page, resultIndex: number): Promise<BattleSimResultPayload> => {
+    await expect
+        .poll(async () =>
+            page.evaluate((index) => {
+                const testWindow = window as unknown as { __battleWorkerResponses?: unknown[] };
+                return Boolean(testWindow.__battleWorkerResponses?.[index]);
+            }, resultIndex)
+        )
+        .toBe(true);
+    const response = (await page.evaluate((index) => {
+        const testWindow = window as unknown as { __battleWorkerResponses?: unknown[] };
+        return testWindow.__battleWorkerResponses?.[index];
+    }, resultIndex)) as {
+        ok: boolean;
+        result: BattleSimResultPayload;
+    };
+    expect(response.ok).toBe(true);
+    return response.result;
 };
 
 const gotoSimulator = async (page: Page) => {
@@ -263,10 +344,9 @@ const gotoSimulator = async (page: Page) => {
 test('operates independent/game presets, imports my general, and renders battle logs', async ({ page }) => {
     const fixture: Fixture = {
         hasGeneral: true,
-        queueFirst: true,
-        pollingCount: 0,
         requests: [],
-        simulationPayloads: [],
+        preparedPayloads: [],
+        serverResults: [],
     };
     await installApi(page, fixture);
     await page.setViewportSize({ width: 1280, height: 900 });
@@ -295,11 +375,22 @@ test('operates independent/game presets, imports my general, and renders battle 
     await page.getByLabel('시드').fill('playwright-fixed-seed');
     await battleButton.click();
 
-    await expect(page.getByText('유비가 모의전에서 승리했습니다.')).toBeVisible();
-    await expect(page.getByText('5', { exact: true })).toBeVisible();
-    expect(fixture.pollingCount).toBe(2);
-    expect(fixture.requests).toContain('battle.getSimulation');
-    expect(fixture.simulationPayloads[0]).toMatchObject({
+    await expect(page.getByText('전투를 진행 중입니다.')).toHaveCount(0);
+    expect(await readBrowserWorkerResult(page, 0)).toEqual(fixture.serverResults[0]);
+    for (const [parityId, html] of [
+        ['battle-log', fixture.serverResults[0]?.lastWarLog?.generalBattleResultLog ?? ''],
+        ['battle-detail-log', fixture.serverResults[0]?.lastWarLog?.generalBattleDetailLog ?? ''],
+    ] as const) {
+        const browserNormalizedHtml = await page.evaluate((rawHtml) => {
+            const element = document.createElement('div');
+            element.innerHTML = rawHtml;
+            return element.innerHTML;
+        }, html);
+        expect(await page.locator(`[data-parity-id="${parityId}"]`).innerHTML()).toBe(browserNormalizedHtml);
+    }
+    expect(fixture.requests).not.toContain('battle.simulate');
+    expect(fixture.requests).not.toContain('battle.getSimulation');
+    expect(fixture.preparedPayloads[0]).toMatchObject({
         attackerGeneral: { special: 'che_event_신산' },
     });
 
@@ -318,8 +409,9 @@ test('operates independent/game presets, imports my general, and renders battle 
     await page.locator('.header-actions input[type="file"]').setInputFiles(downloadPath!);
 
     await battleButton.click();
-    await expect.poll(() => fixture.simulationPayloads.length).toBe(2);
-    expect(fixture.simulationPayloads[1]).toMatchObject({
+    await expect.poll(() => fixture.preparedPayloads.length).toBe(2);
+    expect(await readBrowserWorkerResult(page, 1)).toEqual(fixture.serverResults[1]);
+    expect(fixture.preparedPayloads[1]).toMatchObject({
         attackerGeneral: { special: 'che_event_신산' },
     });
 
@@ -336,9 +428,9 @@ test('keeps simulation available without a game general and preserves input afte
     const fixture: Fixture = {
         hasGeneral: false,
         failNextSimulation: true,
-        pollingCount: 0,
         requests: [],
-        simulationPayloads: [],
+        preparedPayloads: [],
+        serverResults: [],
     };
     await installApi(page, fixture);
     await page.setViewportSize({ width: 500, height: 900 });
@@ -355,8 +447,9 @@ test('keeps simulation available without a game general and preserves input afte
     await expect(page.getByLabel('시드')).toHaveValue('keep-this-seed');
 
     await page.getByRole('button', { name: '전투', exact: true }).click();
-    await expect(page.getByText('유비가 모의전에서 승리했습니다.')).toBeVisible();
+    await expect(page.getByText('전투를 진행 중입니다.')).toHaveCount(0);
     await expect(page.getByText('시뮬레이터 입력 오류')).toHaveCount(0);
+    expect(await readBrowserWorkerResult(page, 0)).toEqual(fixture.serverResults[0]);
 
     const notice = page.getByLabel('시뮬레이터 데이터 안내');
     expect(await notice.evaluate((element) => getComputedStyle(element).position)).toBe('absolute');
@@ -369,4 +462,34 @@ test('keeps simulation available without a game general and preserves input afte
             animations: 'disabled',
         });
     }
+});
+
+test('runs 1000 battles in the Chromium worker and matches the Node processor exactly', async ({ page }) => {
+    test.setTimeout(60_000);
+    const fixture: Fixture = {
+        hasGeneral: false,
+        requests: [],
+        preparedPayloads: [],
+        serverResults: [],
+    };
+    await installApi(page, fixture);
+    await page.setViewportSize({ width: 1280, height: 900 });
+    await gotoSimulator(page);
+
+    await page.getByLabel('반복 횟수').selectOption('1000');
+    await page.getByLabel('시드').fill('');
+    await page.getByRole('button', { name: '전투', exact: true }).click();
+    await expect(page.getByText('전투를 진행 중입니다.')).toHaveCount(0, { timeout: 30_000 });
+
+    expect(fixture.preparedPayloads).toHaveLength(1);
+    expect(fixture.preparedPayloads[0]?.seeds).toHaveLength(1000);
+    expect(new Set(fixture.preparedPayloads[0]?.seeds).size).toBe(1000);
+    expect(await readBrowserWorkerResult(page, 0)).toEqual(fixture.serverResults[0]);
+    expect(fixture.requests).not.toContain('battle.simulate');
+    expect(fixture.requests).not.toContain('battle.getSimulation');
+    const workerUrls = await page.evaluate(() => {
+        const testWindow = window as unknown as { __battleWorkerUrls?: string[] };
+        return testWindow.__battleWorkerUrls ?? [];
+    });
+    expect(workerUrls.some((url) => url.includes('battleSimulator.worker'))).toBe(true);
 });

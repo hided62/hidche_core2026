@@ -62,6 +62,17 @@ const resolveDexValue = (meta: Record<string, unknown>, key: string): number => 
 };
 
 export const battleRouter = router({
+    prepareSimulation: accessReadOnlyAuthedInputProcedure(zBattleSimRequest).mutation(async ({ ctx, input }) => {
+        const worldState = await ctx.db.worldState.findFirst();
+        if (!worldState) {
+            throw new TRPCError({
+                code: 'PRECONDITION_FAILED',
+                message: 'World state is not initialized.',
+            });
+        }
+
+        return buildBattleSimJobPayload(worldState, input, ctx.profile.id);
+    }),
     simulate: accessReadOnlyAuthedInputProcedure(zBattleSimRequest).mutation(async ({ ctx, input }) => {
         const worldState = await ctx.db.worldState.findFirst();
         if (!worldState) {
@@ -176,122 +187,120 @@ export const battleRouter = router({
         };
     }),
     getGeneralDetail: accessAuthedInputProcedure(
-            z.object({
-                generalId: z.number().int().positive(),
-            })
-        )
-        .query(async ({ ctx, input }) => {
-            const worldState = await ctx.db.worldState.findFirst();
-            if (!worldState) {
-                throw new TRPCError({
-                    code: 'PRECONDITION_FAILED',
-                    message: 'World state is not initialized.',
-                });
-            }
-
-            const me = await getMyGeneral(ctx);
-            const general = await ctx.db.general.findUnique({
-                where: { id: input.generalId },
-                select: {
-                    id: true,
-                    name: true,
-                    npcState: true,
-                    nationId: true,
-                    leadership: true,
-                    strength: true,
-                    intel: true,
-                    officerLevel: true,
-                    injury: true,
-                    rice: true,
-                    crew: true,
-                    crewTypeId: true,
-                    atmos: true,
-                    train: true,
-                    experience: true,
-                    horseCode: true,
-                    weaponCode: true,
-                    bookCode: true,
-                    itemCode: true,
-                    personalCode: true,
-                    specialCode: true,
-                    special2Code: true,
-                    meta: true,
-                },
+        z.object({
+            generalId: z.number().int().positive(),
+        })
+    ).query(async ({ ctx, input }) => {
+        const worldState = await ctx.db.worldState.findFirst();
+        if (!worldState) {
+            throw new TRPCError({
+                code: 'PRECONDITION_FAILED',
+                message: 'World state is not initialized.',
             });
+        }
 
-            if (!general) {
-                throw new TRPCError({
-                    code: 'NOT_FOUND',
-                    message: 'General not found.',
-                });
-            }
+        const me = await getMyGeneral(ctx);
+        const general = await ctx.db.general.findUnique({
+            where: { id: input.generalId },
+            select: {
+                id: true,
+                name: true,
+                npcState: true,
+                nationId: true,
+                leadership: true,
+                strength: true,
+                intel: true,
+                officerLevel: true,
+                injury: true,
+                rice: true,
+                crew: true,
+                crewTypeId: true,
+                atmos: true,
+                train: true,
+                experience: true,
+                horseCode: true,
+                weaponCode: true,
+                bookCode: true,
+                itemCode: true,
+                personalCode: true,
+                specialCode: true,
+                special2Code: true,
+                meta: true,
+            },
+        });
 
-            const environment = await buildBattleSimEnvironment(worldState, ctx.profile.id);
-            const defaultCrewTypeId =
-                environment.unitSet.defaultCrewTypeId ?? environment.unitSet.crewTypes?.[0]?.id ?? 0;
+        if (!general) {
+            throw new TRPCError({
+                code: 'NOT_FOUND',
+                message: 'General not found.',
+            });
+        }
 
-            const meta = asRecord(general.meta);
-            const isSameNation = me.nationId > 0 && me.nationId === general.nationId;
+        const environment = await buildBattleSimEnvironment(worldState, ctx.profile.id);
+        const defaultCrewTypeId = environment.unitSet.defaultCrewTypeId ?? environment.unitSet.crewTypes?.[0]?.id ?? 0;
 
-            const base = {
-                no: general.id,
-                name: general.name,
-                officer_level: general.officerLevel,
-                explevel: resolveExpLevel(meta, general.experience),
-                leadership: general.leadership,
-                horse: normalizeOptionalKey(general.horseCode),
-                strength: general.strength,
-                weapon: normalizeOptionalKey(general.weaponCode),
-                intel: general.intel,
-                book: normalizeOptionalKey(general.bookCode),
-                item: normalizeOptionalKey(general.itemCode),
-                injury: general.injury,
-                rice: general.rice,
-                personal: normalizeOptionalKey(general.personalCode),
-                special: normalizeOptionalKey(general.specialCode),
-                special2: normalizeOptionalKey(general.special2Code),
-                crew: general.crew,
-                crewtype: general.crewTypeId,
-                atmos: general.atmos,
-                train: general.train,
-                dex1: resolveDexValue(meta, 'dex1'),
-                dex2: resolveDexValue(meta, 'dex2'),
-                dex3: resolveDexValue(meta, 'dex3'),
-                dex4: resolveDexValue(meta, 'dex4'),
-                dex5: resolveDexValue(meta, 'dex5'),
-                defence_train: readNumber(meta.defenceTrain, 80),
-                warnum: readNumber(meta.rank_warnum, 0),
-                killnum: readNumber(meta.rank_killnum, 0),
-                killcrew: readNumber(meta.rank_killcrew, 0),
+        const meta = asRecord(general.meta);
+        const isSameNation = me.nationId > 0 && me.nationId === general.nationId;
+
+        const base = {
+            no: general.id,
+            name: general.name,
+            officer_level: general.officerLevel,
+            explevel: resolveExpLevel(meta, general.experience),
+            leadership: general.leadership,
+            horse: normalizeOptionalKey(general.horseCode),
+            strength: general.strength,
+            weapon: normalizeOptionalKey(general.weaponCode),
+            intel: general.intel,
+            book: normalizeOptionalKey(general.bookCode),
+            item: normalizeOptionalKey(general.itemCode),
+            injury: general.injury,
+            rice: general.rice,
+            personal: normalizeOptionalKey(general.personalCode),
+            special: normalizeOptionalKey(general.specialCode),
+            special2: normalizeOptionalKey(general.special2Code),
+            crew: general.crew,
+            crewtype: general.crewTypeId,
+            atmos: general.atmos,
+            train: general.train,
+            dex1: resolveDexValue(meta, 'dex1'),
+            dex2: resolveDexValue(meta, 'dex2'),
+            dex3: resolveDexValue(meta, 'dex3'),
+            dex4: resolveDexValue(meta, 'dex4'),
+            dex5: resolveDexValue(meta, 'dex5'),
+            defence_train: readNumber(meta.defenceTrain, 80),
+            warnum: readNumber(meta.rank_warnum, 0),
+            killnum: readNumber(meta.rank_killnum, 0),
+            killcrew: readNumber(meta.rank_killcrew, 0),
+        };
+
+        if (!isSameNation) {
+            return {
+                general: {
+                    ...base,
+                    officer_level: 1,
+                    horse: null,
+                    weapon: null,
+                    book: null,
+                    item: null,
+                    crew: 0,
+                    crewtype: defaultCrewTypeId,
+                    rice: 10000,
+                    train: environment.config.maxTrainByCommand,
+                    atmos: environment.config.maxAtmosByCommand,
+                    dex1: 0,
+                    dex2: 0,
+                    dex3: 0,
+                    dex4: 0,
+                    dex5: 0,
+                    defence_train: 80,
+                    warnum: 0,
+                    killnum: 0,
+                    killcrew: 0,
+                },
             };
+        }
 
-            if (!isSameNation) {
-                return {
-                    general: {
-                        ...base,
-                        officer_level: 1,
-                        horse: null,
-                        weapon: null,
-                        book: null,
-                        item: null,
-                        crew: 0,
-                        crewtype: defaultCrewTypeId,
-                        rice: 10000,
-                        train: environment.config.maxTrainByCommand,
-                        atmos: environment.config.maxAtmosByCommand,
-                        dex1: 0,
-                        dex2: 0,
-                        dex3: 0,
-                        dex4: 0,
-                        dex5: 0,
-                        defence_train: 80,
-                        warnum: 0,
-                        killnum: 0,
-                        killcrew: 0,
-                    },
-                };
-            }
-
-            return { general: base };
-        }),
+        return { general: base };
+    }),
 });

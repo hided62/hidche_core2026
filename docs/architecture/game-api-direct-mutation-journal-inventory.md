@@ -41,10 +41,10 @@ writer reconciliation을 포함한다. rolling deployment가 끝난 뒤에만
 | Redis projection | 6 | `tournament.patchState`, `tournament.seedParticipants`, `tournament.setBettingEntries`, `tournament.setMatches`, `tournament.setParticipants`, `tournament.setState` |
 | operational | 3 | `turnDaemon.pause`, `turnDaemon.resume`, `turnDaemon.run` |
 | external upload | 1 | `board.uploadImage` |
-| read-only mutation transport | 1 | `battle.simulate` |
+| read-only mutation transport | 2 | `battle.prepareSimulation`, `battle.simulate` |
 | session only | 1 | `auth.exchangeGatewayToken` |
 
-합계는 86개다.
+합계는 87개다.
 
 ## durable journal dependency 매핑
 
@@ -75,7 +75,8 @@ public dashboard event로 내보내지 않는다. browser wake-up은 정밀 enti
 - nation reserved turn, selection-pool reservation, possession 후보, inheritance owner
   확인은 각각 전용 화면/request response가 최신 상태를 소유한다.
 - image upload는 외부 content store write이며 game PostgreSQL read model이 아니다.
-- battle simulation은 호환상 mutation transport를 쓰지만 read-only 계산이다.
+- battle simulation 준비와 서버 fallback은 호환상 mutation transport를 쓰지만
+  read-only 계산이며 input event transaction을 열지 않는다.
 
 ## 남은 업무 원자성 gap과 coverage 판정
 

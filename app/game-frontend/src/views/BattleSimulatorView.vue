@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, reactive, ref } from 'vue';
+import { computed, onBeforeUnmount, onMounted, reactive, ref } from 'vue';
 import type { BattleSimRequestPayload, BattleSimResultPayload } from '@sammo-ts/game-api';
 import PanelCard from '../components/ui/PanelCard.vue';
 import SkeletonLines from '../components/ui/SkeletonLines.vue';
@@ -7,6 +7,7 @@ import BattleGeneralCard from '../components/battle/BattleGeneralCard.vue';
 import { trpc } from '../utils/trpc';
 import { getNpcColor } from '../utils/npcColor';
 import type { BattleSimOptions, GeneralDraft, InheritBuff } from '../utils/battleSimulatorTypes';
+import { BattleSimulatorWorkerClient } from '../utils/battleSimulatorWorkerClient';
 
 type GeneralExport = Omit<GeneralDraft, 'id'>;
 
@@ -67,6 +68,11 @@ const defenders = ref<GeneralDraft[]>([]);
 
 const isSimulating = ref(false);
 const statusMessage = ref<string | null>(null);
+const simulationWorker = new BattleSimulatorWorkerClient();
+
+onBeforeUnmount(() => {
+    simulationWorker.dispose();
+});
 
 const importOpen = ref(false);
 const importTarget = ref<GeneralDraft | null>(null);
@@ -567,20 +573,6 @@ const buildBattlePayload = (action: BattleSimRequestPayload['action']): BattleSi
     };
 };
 
-const delay = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
-
-const waitForSimulationResult = async (jobId: string): Promise<BattleSimResultPayload> => {
-    const deadline = Date.now() + 15000;
-    while (Date.now() < deadline) {
-        const response = await trpc.battle.getSimulation.query({ jobId });
-        if ('payload' in response && response.payload) {
-            return response.payload;
-        }
-        await delay(800);
-    }
-    throw new Error('simulation_timeout');
-};
-
 const runSimulation = async (action: BattleSimRequestPayload['action']) => {
     if (!options.value) {
         return;
@@ -595,11 +587,8 @@ const runSimulation = async (action: BattleSimRequestPayload['action']) => {
 
     try {
         const payload = buildBattlePayload(action);
-        const response = await trpc.battle.simulate.mutate(payload);
-        const result =
-            'payload' in response && response.payload
-                ? response.payload
-                : await waitForSimulationResult(response.jobId);
+        const preparedPayload = await trpc.battle.prepareSimulation.mutate(payload);
+        const result = await simulationWorker.run(preparedPayload);
 
         if (!result.result) {
             error.value = result.reason || 'battle_failed';

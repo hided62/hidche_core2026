@@ -96,7 +96,7 @@ const classifications = {
     ],
     operational: ['turnDaemon.pause', 'turnDaemon.resume', 'turnDaemon.run'],
     externalUpload: ['board.uploadImage'],
-    readOnlyMutationTransport: ['battle.simulate'],
+    readOnlyMutationTransport: ['battle.prepareSimulation', 'battle.simulate'],
     sessionOnly: ['auth.exchangeGatewayToken'],
 } as const;
 
@@ -142,7 +142,7 @@ describe('game-api direct mutation journal inventory', () => {
         const classified = Object.values(classifications).flat().sort();
 
         expect(new Set(classified).size).toBe(classified.length);
-        expect(classified).toHaveLength(86);
+        expect(classified).toHaveLength(87);
         expect(actual).toEqual(classified);
     });
 });

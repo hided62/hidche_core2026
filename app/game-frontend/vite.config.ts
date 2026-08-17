@@ -33,6 +33,14 @@ export default defineConfig(({ mode }) => {
         build: {
             sourcemap: true,
         },
+        worker: {
+            format: 'es',
+            rolldownOptions: {
+                output: {
+                    codeSplitting: false,
+                },
+            },
+        },
         resolve: {
             alias: {
                 '@': path.resolve(import.meta.dirname, './src'),
