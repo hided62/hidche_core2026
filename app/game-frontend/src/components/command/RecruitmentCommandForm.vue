@@ -69,7 +69,7 @@ const updateAmount = (event: Event) => {
 };
 
 const submit = async (crewType?: RecruitmentCrewType) => {
-    if (crewType) selectCrewType(crewType);
+    if (crewType && crewType.id !== selectedCrewTypeId.value) selectCrewType(crewType);
     await nextTick();
     if (valid.value) emit('submit');
 };
