@@ -11,6 +11,7 @@ import {
     verifyCapacityFixture,
 } from './fixture.js';
 import { describeDryRun, runLoadTest } from './runner.js';
+import { measureTurnFlush } from './turnFlush.js';
 
 type Command =
     | 'run'
@@ -20,12 +21,13 @@ type Command =
     | 'seed'
     | 'verify-fixture'
     | 'activate-coverage'
+    | 'measure-turn-flush'
     | 'materialize-calibration'
     | 'cleanup';
 
 const usage = (): never => {
     process.stderr.write(
-        'usage: cli.ts <validate|dry-run|run|prepare|seed|verify-fixture|activate-coverage|materialize-calibration|cleanup> --config <file> [--tokens <0600-gitignored-file>] [--output <new-json-file>] [--confirm <load_schema>]\n'
+        'usage: cli.ts <validate|dry-run|run|prepare|seed|verify-fixture|activate-coverage|measure-turn-flush|materialize-calibration|cleanup> --config <file> [--tokens <0600-gitignored-file>] [--output <new-json-file>] [--confirm <load_schema>]\n'
     );
     process.exit(64);
 };
@@ -43,6 +45,7 @@ const parseArguments = (
             'seed',
             'verify-fixture',
             'activate-coverage',
+            'measure-turn-flush',
             'materialize-calibration',
             'cleanup',
         ].includes(command ?? '')
@@ -67,6 +70,11 @@ const parseArguments = (
     if (
         command === 'activate-coverage' &&
         (!values.get('--confirm') || values.has('--tokens') || values.has('--output'))
+    )
+        usage();
+    if (
+        command === 'measure-turn-flush' &&
+        (!values.get('--confirm') || !values.get('--output') || values.has('--tokens'))
     )
         usage();
     if (
@@ -114,6 +122,20 @@ const main = async (): Promise<void> => {
     }
     if (args.command === 'activate-coverage') {
         process.stdout.write(`${JSON.stringify(await activateCapacityCoverage(config, args.confirm!))}\n`);
+        return;
+    }
+    if (args.command === 'measure-turn-flush') {
+        const output = path.resolve(args.output!);
+        await mkdir(path.dirname(output), { recursive: true });
+        const result = await measureTurnFlush({ config, confirmation: args.confirm! });
+        await writeFile(output, `${JSON.stringify(result, null, 2)}\n`, {
+            encoding: 'utf8',
+            flag: 'wx',
+            mode: 0o600,
+        });
+        process.stdout.write(
+            `${JSON.stringify({ completed: true, processedGenerals: result.throughput.processedGenerals, outputWritten: true })}\n`
+        );
         return;
     }
     if (args.command === 'materialize-calibration') {

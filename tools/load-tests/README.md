@@ -36,6 +36,8 @@ versioned data-directory 계약에 맞춰 volume은 `/var/lib/postgresql`에 붙
 `15442/16379`이며 `CAPACITY_POSTGRES_PORT`/`CAPACITY_REDIS_PORT`로 충돌 없이 바꿀 수 있다. `prepare`는
 PostgreSQL password, API token/image secret과 정확한 URL을 무작위 생성해 Git ignored `secrets/`의 새
 파일 세 개에 `0600`으로 저장한다. 기존 파일을 덮어쓰거나 비밀값을 stdout에 쓰지 않는다.
+기존 fixture volume을 보존하면서 별도 실행이 필요하면
+`CAPACITY_COMPOSE_PROJECT_NAME`과 `CAPACITY_POSTGRES_VOLUME_NAME`을 함께 고유하게 지정한다.
 
 ```sh
 pnpm --filter @sammo-ts/load-tests prepare:capacity \
@@ -152,7 +154,34 @@ pnpm --filter @sammo-ts/game-engine profile:npc-capacity-1200
 이 프로필은 자연 통일 소요시간 시험이 아니라 고정 1개월 engine 처리량 시험이다. 기존
 `profile:npc-unification-timing`의 무보정 자연 진행 의미는 바꾸지 않는다.
 
-### 4. 명시적 cleanup
+### 4. E2 PostgreSQL flush와 profile 간 경합
+
+`measure-turn-flush`는 검증된 fixture를 production loader로 읽고 daemon lease/fencing, 장수 턴,
+dirty-state transaction, journal/outbox와 commit 이후 Redis 발행을 거쳐 정확히 한 월 경계를 실행한다.
+정상 realtime daemon처럼 장수는 한 transaction에 하나씩 commit한다. 권위 순서는 `turn_tick`이며,
+JavaScript `Date`의 밀리초보다 세밀한 tick을 포함하도록 cutoff를 보정한다.
+
+```sh
+pnpm --filter @sammo-ts/load-tests measure-turn-flush \
+  --config tools/load-tests/config/300-users-900-npcs-5m.json \
+  --confirm load_capacity_300_900_5m \
+  --output tools/load-tests/results/turn-flush.json
+```
+
+결과에는 장수 transaction과 월 transaction/Redis 발행 latency, 처리량, 시작·종료 장수 수,
+process CPU/RSS/event-loop lag, database-wide `pg_stat_database` delta와 connection/active/lock-wait 최대값이
+들어간다. PostgreSQL delta에는 별도 observer sampler의 read transaction도 포함되므로 transaction 수를
+daemon commit 수와 동일하다고 해석하지 않는다.
+
+`nya`와 `pya` 동시 1분 경합용 config는 각각 Redis DB 14/13과 별도 `load_` schema를 사용한다.
+같은 PostgreSQL/CPU에서 두 fixture를 seed한 뒤 두 `measure-turn-flush` process를 동시에 시작하여
+schema 간 row-lock 격리와 공유 CPU/I/O/connection 경합을 확인한다. 이 실행은 실제 운영 profile이나
+공개 URL을 대상으로 하지 않는다.
+
+- `tools/load-tests/config/nya-10-users-800-npcs-1m.json`
+- `tools/load-tests/config/pya-10-users-800-npcs-1m.json`
+
+### 5. 명시적 cleanup
 
 token 파일은 별도로 안전하게 삭제하고, fixture schema/Redis token은 schema명을 그대로 확인 인자로 주어
 정리한다. named volume은 보존한다. 데이터 폐기가 필요하지 않으면 이 명령을 실행하지 않는다.
@@ -166,9 +195,11 @@ docker compose -f tools/load-tests/compose.capacity.yml down
 
 ## 아직 남은 측정 경계
 
-- `seed`/`verify-fixture`는 실제 PostgreSQL schema와 Redis access-token 상태를 만든다. 그러나 E2의 daemon
-  fast-forward, 한 달치 PostgreSQL flush/outbox publish, schedule lag와 DB statement count를 하나로
-  계측하는 실행기는 아직 없다. 따라서 E1이나 API/SSE driver 결과를 E2 합격으로 대체하지 않는다.
+- `measure-turn-flush`는 한 달을 wall-clock보다 빠르게 replay하는 처리량 시험이다. 실제 schedule lag,
+  장시간 pool wait와 autovacuum/checkpoint 영향을 보려면 profile별 속도로 pacing한 soak가 별도로 필요하다.
+- 월 경계 latency는 실행당 표본이 하나다. scenario 진행 시점과 월별 event 차이를 포괄하지 않는다.
+- 두 1분 profile 동시 실행은 최악 turn-rate 조합의 국소 증거이며, 여섯 profile의 전체 PM2 RSS,
+  Gateway·worker connection과 운영 container cgroup을 재현하지 않는다.
 - own/global phase의 mutation stimulus는 driver가 만들지 않는다. 격리 runtime의 실제 engine/API mutation과
   함께 실행하지 않았다면 A2/A3/M1 전체 합격으로 보고하지 않는다.
 - 이 repository에서 실행한 로컬 E1 수치는 source-tree 회귀 근거다. dev-sam2026 동급 4 CPU/8 GiB container
