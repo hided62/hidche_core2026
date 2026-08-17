@@ -66,7 +66,7 @@ const inputOptions = {
     },
     crewTypes: [{ value: 1100, label: '보병' }],
     armTypes: [{ value: 1, label: '보병' }],
-    nationTypes: [{ value: 'che_중립', label: '중립' }],
+    nationTypes: [{ value: 'che_도적', label: '도적', description: '금 수입 증가, 쌀 수입 감소' }],
     colors: [{ value: 0, label: '색상 1', color: '#ff0000' }],
     items: { horse: [{ value: 'None', label: '판매/해제' }] },
     recruitment: {
@@ -577,6 +577,61 @@ test('renders and accepts every Ref strategy command at mobile width', async ({ 
         await picker.getByRole('button', { name: '명령 다시 선택', exact: true }).click();
     }
     await picker.screenshot({ path: test.info().outputPath('all-strategy-commands-mobile.png') });
+});
+
+test('defaults founding to a Ref-selectable nation trait without exposing the neutral storage trait', async ({
+    page,
+}) => {
+    const foundingCommandTable = {
+        general: [
+            {
+                category: '국가',
+                values: [
+                    {
+                        key: 'che_건국',
+                        name: '건국',
+                        reqArg: true,
+                        possible: true,
+                        status: 'needsInput',
+                        inputFields: [
+                            { key: 'nationName', label: '국가명', kind: 'text', required: true, min: 1, max: 18 },
+                            {
+                                key: 'nationType',
+                                label: '국가 성향',
+                                kind: 'select',
+                                required: true,
+                                optionSource: 'nationTypes',
+                            },
+                            {
+                                key: 'colorType',
+                                label: '국기 색상',
+                                kind: 'select',
+                                required: true,
+                                optionSource: 'colors',
+                            },
+                        ],
+                    },
+                ],
+            },
+        ],
+        nation: [],
+        inputOptions,
+    };
+    await install(page, false, foundingCommandTable);
+    await page.setViewportSize({ width: 1200, height: 900 });
+    await page.goto('/');
+    await page.getByRole('button', { name: '1턴 명령 입력', exact: true }).click();
+
+    const picker = page.getByTestId('command-picker');
+    await picker.getByRole('button', { name: '국가', exact: true }).click();
+    await picker.getByRole('button', { name: '건국', exact: true }).click();
+    const nationType = picker.getByLabel('국가 성향');
+    await expect(nationType).toHaveValue('che_도적');
+    await expect(nationType.locator('option[value="che_중립"]')).toHaveCount(0);
+    await expect(nationType.locator('option')).toHaveText(['도적']);
+    await nationType.focus();
+    await expect(nationType).toBeFocused();
+    await picker.screenshot({ path: test.info().outputPath('founding-selectable-nation-trait-desktop-1200.png') });
 });
 
 test('reserves force move, retirement, and resignation from the user command picker', async ({ page }) => {

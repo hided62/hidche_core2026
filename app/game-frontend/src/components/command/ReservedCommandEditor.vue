@@ -635,9 +635,15 @@ const clickOutsideMenu = (event: Event) => {
                 </div>
 
                 <div v-if="!props.compact" class="bottom-actions">
-                    <button type="button" @click="emit('shift', -1)">당기기</button>
-                    <button type="button" @click="emit('shift', 1)">미루기</button>
-                    <button type="button" @click="expanded = !expanded">{{ expanded ? '접기' : '펼치기' }}</button>
+                    <button class="legacy-button legacy-button--secondary" type="button" @click="emit('shift', -1)">
+                        당기기
+                    </button>
+                    <button class="legacy-button legacy-button--secondary" type="button" @click="emit('shift', 1)">
+                        미루기
+                    </button>
+                    <button class="legacy-button legacy-button--secondary" type="button" @click="expanded = !expanded">
+                        {{ expanded ? '접기' : '펼치기' }}
+                    </button>
                 </div>
             </div>
         </div>
@@ -762,7 +768,6 @@ const clickOutsideMenu = (event: Event) => {
 .control-pad > button,
 .clock,
 .legacy-menu > summary,
-.bottom-actions button,
 .select-command {
     box-sizing: border-box;
     min-height: 34px;

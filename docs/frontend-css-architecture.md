@@ -56,6 +56,22 @@ control keeps its semantic color and uses the shared opacity/cursor state.
 Hover and active use the Ref Lumen bottom-border movement rather than an
 unrelated brightness filter.
 
+The shared family is opt-in at each rendered control; defining the primitive
+does not connect an existing `.main-menu-link`, `.game-shell__action`, or
+feature button automatically. `MainNavigationLink.vue` exposes
+`lumenVariant="navigation|lumen"` so top-level global and nation links can opt
+in while flat popup menu items stay outside the raised family. The main page's
+global menu, nation menu, desktop synchronization/reload/lobby controls, and
+reserved-turn pull/push/expand row all use the same primitive. When adding a
+new main-page control, inventory every desktop/mobile render site instead of
+validating one representative button.
+
+The primitive does not set a fixed `min-height`: Ref's 35.5px default height is
+the result of line-height, padding, and the 4px edge, so it naturally becomes
+34.5px/33.5px while the 1px/2px top margin keeps the bottom coordinate fixed.
+Only a fixed-height owner such as the mobile bottom bar supplies explicit
+45px/44px/43px state compensation.
+
 Only layout belongs in the SFC: width, grid column, fixed-height compensation,
 margins required by the page, and breakpoint-specific placement. Color base
 variables may be supplied by the owner for dynamic nation/scenario colors, but

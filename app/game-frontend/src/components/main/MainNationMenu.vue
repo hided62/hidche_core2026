@@ -33,15 +33,17 @@ const isActive = (link: MainNavigationLinkItem) => link.highlightStage === props
                 :link="entry"
                 :enabled="isNationNavigationEnabled(entry, access)"
                 :active="isActive(entry)"
+                lumen-variant="lumen"
             />
             <div v-else-if="entry.kind === 'split'" class="nation-menu-split">
                 <MainNavigationLink
                     :link="entry.main"
                     :enabled="isNationNavigationEnabled(entry.main, access)"
                     :active="isActive(entry.main)"
+                    lumen-variant="lumen"
                 />
                 <button
-                    class="main-menu-button nation-menu-split__toggle"
+                    class="main-menu-button nation-menu-split__toggle legacy-button legacy-button--lumen"
                     type="button"
                     :data-menu-id="entry.id"
                     :aria-label="`${entry.main.label} 하위 메뉴`"
@@ -81,13 +83,14 @@ const isActive = (link: MainNavigationLinkItem) => link.highlightStage === props
 
 .main-nation-menu :deep(.main-menu-link),
 .main-nation-menu .main-menu-button {
-    border-color: color-mix(in srgb, var(--nation-menu-color) 85%, #000);
-    background-color: var(--nation-menu-color);
+    --legacy-button-bg: var(--nation-menu-color);
+    --legacy-button-border: color-mix(in srgb, var(--nation-menu-color) 90%, #000);
+    --legacy-button-color: #fff;
     background-image: none;
 }
 .main-nation-menu.dark-label :deep(.main-menu-link),
 .main-nation-menu.dark-label .main-menu-button {
-    color: #000;
+    --legacy-button-color: #000;
 }
 
 .nation-menu-split {
@@ -106,7 +109,11 @@ const isActive = (link: MainNavigationLinkItem) => link.highlightStage === props
     width: 28px;
     padding: 0;
     border-left-width: 0;
-    border-radius: 0 3px 3px 0;
+    border-radius: 0 5.25px 5.25px 0;
+}
+
+.nation-menu-split > :deep(.main-menu-link) {
+    border-radius: 5.25px 0 0 5.25px;
 }
 
 .menu-caret {
