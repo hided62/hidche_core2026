@@ -133,6 +133,7 @@ export const createInMemoryUserRepository = (hasher: PasswordHasher = createPass
                 kakaoGraceStartedAt: now.toISOString(),
                 passwordSalt: password.salt,
                 passwordHash: password.hash,
+                passwordResetRequired: false,
                 createdAt: now.toISOString(),
             };
             usersByName.set(input.username, user);
@@ -150,6 +151,7 @@ export const createInMemoryUserRepository = (hasher: PasswordHasher = createPass
                 const upgraded = await hasher.hash(password);
                 user.passwordSalt = upgraded.salt;
                 user.passwordHash = upgraded.hash;
+                user.passwordResetRequired = false;
             }
             return verified.ok;
         },
@@ -159,6 +161,7 @@ export const createInMemoryUserRepository = (hasher: PasswordHasher = createPass
                     const next = await hasher.hash(password);
                     user.passwordSalt = next.salt;
                     user.passwordHash = next.hash;
+                    user.passwordResetRequired = false;
                     return;
                 }
             }

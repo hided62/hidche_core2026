@@ -4,10 +4,23 @@ import { z } from 'zod';
 import { asRecord } from '@sammo-ts/common';
 
 import { procedure, router } from '../../trpc.js';
+import {
+    findLegacyEmperor,
+    findLegacyEmperors,
+    findLegacyGeneralsForServer,
+    findLegacyNations,
+} from '../../services/legacyArchiveStore.js';
 
 const zDynastyDetailInput = z.object({
     emperorId: z.number().int().positive(),
+    source: z.enum(['current', 'legacy']).default('current'),
 });
+
+const zDynastyListInput = z
+    .object({
+        source: z.enum(['current', 'legacy']).default('current'),
+    })
+    .optional();
 
 const parseNumberArray = (value: unknown): number[] =>
     Array.isArray(value)
@@ -42,6 +55,41 @@ const firstFiniteNumber = (...values: unknown[]): number | null => {
         if (typeof parsed === 'number' && Number.isFinite(parsed)) return parsed;
     }
     return null;
+};
+
+const firstText = (...values: unknown[]): string => {
+    for (const value of values) {
+        if (typeof value === 'string') return value;
+        if (typeof value === 'number' && Number.isFinite(value)) return String(value);
+    }
+    return '';
+};
+
+const legacyEmperorListEntry = (row: Awaited<ReturnType<typeof findLegacyEmperors>>[number]) => {
+    const data = asRecord(row.data);
+    return {
+        id: Number(row.id),
+        source: 'legacy' as const,
+        sourceProfile: row.sourceProfile,
+        serverId: row.serverId ?? '',
+        phase: firstText(data.phase),
+        name: firstText(data.name),
+        year: firstFiniteNumber(data.year) ?? 0,
+        month: firstFiniteNumber(data.month) ?? 0,
+        color: firstText(data.color) || '#000000',
+        type: firstText(data.type),
+        power: firstFiniteNumber(data.power) ?? 0,
+        gennum: firstFiniteNumber(data.gennum) ?? 0,
+        citynum: firstFiniteNumber(data.citynum) ?? 0,
+        l12name: firstText(data.l12name),
+        l11name: firstText(data.l11name),
+        l10name: firstText(data.l10name),
+        l9name: firstText(data.l9name),
+        l8name: firstText(data.l8name),
+        l7name: firstText(data.l7name),
+        l6name: firstText(data.l6name),
+        l5name: firstText(data.l5name),
+    };
 };
 
 const firstDisplayArray = (...values: unknown[]): Array<string | number> => {
@@ -82,7 +130,15 @@ const formatNationLevel = (level: number | null): string => {
 };
 
 export const dynastyRouter = router({
-    getList: procedure.query(async ({ ctx }) => {
+    getList: procedure.input(zDynastyListInput).query(async ({ ctx, input }) => {
+        if ((input?.source ?? 'current') === 'legacy') {
+            const rows = await findLegacyEmperors(ctx.db);
+            return {
+                source: 'legacy' as const,
+                current: null,
+                entries: rows.map(legacyEmperorListEntry),
+            };
+        }
         const [worldState, rows] = await Promise.all([
             ctx.db.worldState.findFirst({
                 select: {
@@ -96,6 +152,7 @@ export const dynastyRouter = router({
         ]);
 
         return {
+            source: 'current' as const,
             current: worldState
                 ? {
                       year: worldState.currentYear,
@@ -104,6 +161,8 @@ export const dynastyRouter = router({
                 : null,
             entries: rows.map((row) => ({
                 id: row.id,
+                source: 'current' as const,
+                sourceProfile: ctx.profile.id,
                 serverId: row.serverId ?? '',
                 phase: row.phase ?? '',
                 name: row.name ?? '',
@@ -126,6 +185,103 @@ export const dynastyRouter = router({
         };
     }),
     getDetail: procedure.input(zDynastyDetailInput).query(async ({ ctx, input }) => {
+        if (input.source === 'legacy') {
+            const archived = await findLegacyEmperor(ctx.db, input.emperorId);
+            if (!archived) {
+                throw new TRPCError({ code: 'NOT_FOUND', message: '이전 서버 왕조 정보를 찾을 수 없습니다.' });
+            }
+            const emperor = asRecord(archived.data);
+            const aux = asRecord(emperor.aux);
+            const winnerNationId = firstFiniteNumber(aux.winnerNationId, aux.winner_nation_id);
+            const serverId = archived.serverId ?? '';
+            const oldNationRows = serverId
+                ? await findLegacyNations(ctx.db, [{ sourceProfile: archived.sourceProfile, serverId }])
+                : [];
+            const nationEntries = oldNationRows
+                .map((row) => {
+                    const normalized = normalizeOldNationData(row.data);
+                    const { data } = normalized;
+                    const nationId = row.nation ?? firstFiniteNumber(data.nation) ?? 0;
+                    return {
+                        archiveId: row.legacyId,
+                        nation: nationId,
+                        isWinner: winnerNationId !== null && nationId === winnerNationId,
+                        name: typeof data.name === 'string' ? data.name : nationId === 0 ? '재야' : '미상',
+                        color: typeof data.color === 'string' ? data.color : '#000000',
+                        type: normalized.typeCode,
+                        typeName: formatNationType(normalized.typeCode),
+                        level: firstFiniteNumber(data.level),
+                        tech: normalized.tech,
+                        maxPower: normalized.maxPower,
+                        maxCrew: normalized.maxCrew,
+                        maxCities: normalized.maxCities,
+                        generals: parseNumberArray(data.generals),
+                        history: parseTextArray(data.history),
+                        date: row.archivedAt.toISOString(),
+                    };
+                })
+                .filter((entry) => entry.nation !== 0);
+            const generalIds = Array.from(new Set(nationEntries.flatMap((entry) => entry.generals)));
+            const generalRows = serverId
+                ? await findLegacyGeneralsForServer(ctx.db, {
+                      sourceProfile: archived.sourceProfile,
+                      serverId,
+                      generalNos: generalIds,
+                  })
+                : [];
+            const generalMap = new Map(
+                generalRows.map((row) => [row.generalNo, { name: row.name, lastYearMonth: row.lastYearMonth }])
+            );
+            return {
+                source: 'legacy' as const,
+                sourceProfile: archived.sourceProfile,
+                emperor: {
+                    id: Number(archived.id),
+                    serverId,
+                    winnerNationId,
+                    phase: firstText(emperor.phase),
+                    nationCount: firstText(emperor.nation_count, emperor.nationCount),
+                    nationName: firstText(emperor.nation_name, emperor.nationName),
+                    nationHist: firstText(emperor.nation_hist, emperor.nationHist),
+                    genCount: firstText(emperor.gen_count, emperor.genCount),
+                    personalHist: firstText(emperor.personal_hist, emperor.personalHist),
+                    specialHist: firstText(emperor.special_hist, emperor.specialHist),
+                    name: firstText(emperor.name),
+                    type: firstText(emperor.type),
+                    color: firstText(emperor.color) || '#000000',
+                    year: firstFiniteNumber(emperor.year) ?? 0,
+                    month: firstFiniteNumber(emperor.month) ?? 0,
+                    power: firstFiniteNumber(emperor.power) ?? 0,
+                    gennum: firstFiniteNumber(emperor.gennum) ?? 0,
+                    citynum: firstFiniteNumber(emperor.citynum) ?? 0,
+                    pop: firstText(emperor.pop) || '0',
+                    poprate: firstText(emperor.poprate),
+                    gold: firstFiniteNumber(emperor.gold) ?? 0,
+                    rice: firstFiniteNumber(emperor.rice) ?? 0,
+                    l12name: firstText(emperor.l12name),
+                    l11name: firstText(emperor.l11name),
+                    l10name: firstText(emperor.l10name),
+                    l9name: firstText(emperor.l9name),
+                    l8name: firstText(emperor.l8name),
+                    l7name: firstText(emperor.l7name),
+                    l6name: firstText(emperor.l6name),
+                    l5name: firstText(emperor.l5name),
+                    tiger: firstText(emperor.tiger),
+                    eagle: firstText(emperor.eagle),
+                    gen: firstText(emperor.gen),
+                    history: parseTextArray(emperor.history),
+                },
+                nations: nationEntries.map((entry) => ({
+                    ...entry,
+                    levelName: formatNationLevel(entry.level),
+                    generalsFull: entry.generals.map((id) => ({
+                        generalNo: id,
+                        name: generalMap.get(id)?.name ?? `#${id}`,
+                        lastYearMonth: generalMap.get(id)?.lastYearMonth ?? null,
+                    })),
+                })),
+            };
+        }
         const emperor = await ctx.db.emperor.findUnique({
             where: { id: input.emperorId },
         });
@@ -192,6 +348,8 @@ export const dynastyRouter = router({
         }));
 
         return {
+            source: 'current' as const,
+            sourceProfile: ctx.profile.id,
             emperor: {
                 id: emperor.id,
                 serverId,

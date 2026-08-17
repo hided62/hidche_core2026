@@ -34,10 +34,12 @@ describe('password credential compatibility', () => {
         });
         user.passwordSalt = 'core-salt';
         user.passwordHash = createHash('sha256').update('core-salt:current-password').digest('hex');
+        user.passwordResetRequired = true;
 
         expect(await users.verifyPassword(user, 'current-password')).toBe(true);
         expect(user.passwordHash.startsWith('$argon2id$')).toBe(true);
         expect(user.passwordSalt).toBe('');
+        expect(user.passwordResetRequired).toBe(false);
     });
 
     it('upgrades an imported ref double-SHA-512 credential after a successful login', async () => {
@@ -52,10 +54,12 @@ describe('password credential compatibility', () => {
         const browserHash = createHash('sha512').update(`${globalSalt}current-password${globalSalt}`).digest('hex');
         user.passwordSalt = userSalt;
         user.passwordHash = createHash('sha512').update(`${userSalt}${browserHash}${userSalt}`).digest('hex');
+        user.passwordResetRequired = true;
 
         expect(await users.verifyPassword(user, 'current-password')).toBe(true);
         expect(user.passwordHash.startsWith('$argon2id$')).toBe(true);
         expect(user.passwordSalt).toBe('');
+        expect(user.passwordResetRequired).toBe(false);
     });
 
     it('does not accept an imported ref credential without the matching global salt', async () => {

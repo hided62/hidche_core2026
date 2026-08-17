@@ -16,6 +16,7 @@ const buildLocalUser = (graceStartedAt: Date): UserRecord => ({
     kakaoGraceStartedAt: graceStartedAt.toISOString(),
     passwordHash: 'unused',
     passwordSalt: '',
+    passwordResetRequired: false,
     createdAt: graceStartedAt.toISOString(),
 });
 
@@ -87,6 +88,25 @@ describe('local account profile policy', () => {
             accessAllowed: true,
             canCreateGeneral: true,
             graceEndsAt: null,
+        });
+    });
+
+    it('does not trust a migrated Kakao marker without a valid provider ID', () => {
+        const user = buildLocalUser(new Date('2020-01-01T00:00:00.000Z'));
+        user.oauthType = 'KAKAO';
+        user.oauthId = '   ';
+        user.kakaoVerifiedAt = '2026-07-26T00:00:00.000Z';
+        const policy = resolveLocalAccountProfilePolicy({
+            profile: 'che',
+            defaultGraceDays: 0,
+            user,
+            now: new Date('2026-07-26T00:00:00.000Z'),
+        });
+
+        expect(policy).toMatchObject({
+            kakaoVerified: false,
+            requiresKakaoVerification: true,
+            accessAllowed: false,
         });
     });
 

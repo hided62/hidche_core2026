@@ -61,13 +61,15 @@ describe.skipIf(!redisUrl)('RedisOAuthSessionStore Kakao state', () => {
         });
         sessionIds.add(session.id);
 
-        await expect(store.consumeSession(session.id)).resolves.toMatchObject({
+        await expect(client.ttl(`${prefix}:oauth-session:${session.id}`)).resolves.toBeGreaterThan(0);
+        const consumed = await Promise.all([store.consumeSession(session.id), store.consumeSession(session.id)]);
+        expect(consumed.filter((value) => value !== null)).toHaveLength(1);
+        expect(consumed.find((value) => value !== null)).toMatchObject({
             id: session.id,
             intent: 'link_existing',
             targetUserId,
             email: 'retained@example.test',
         });
-        await expect(store.consumeSession(session.id)).resolves.toBeNull();
     });
 
     it('atomically consumes a successful code once', async () => {

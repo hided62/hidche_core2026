@@ -14,6 +14,8 @@ const submitting = ref(false);
 const errorMessage = ref('');
 const infoMessage = ref('');
 const oauthSessionId = ref('');
+const passwordSetupSessionId = ref('');
+const passwordSetupSuccessStatus = ref<'login' | 'verified'>('login');
 const email = ref('');
 const username = ref('');
 const password = ref('');
@@ -60,6 +62,12 @@ const completeExchange = async (): Promise<void> => {
             infoMessage.value = '카카오톡으로 임시 비밀번호를 보냈습니다.';
             return;
         }
+        if (result.status === 'password_setup') {
+            passwordSetupSessionId.value = result.oauthSessionId;
+            passwordSetupSuccessStatus.value = result.successStatus;
+            email.value = result.email;
+            return;
+        }
         if (result.status === 'account_recovery') {
             accountRecovery.value = result;
             email.value = result.email;
@@ -94,10 +102,46 @@ const resolveAccount = async (): Promise<void> => {
             await router.replace('/lobby');
             return;
         }
+        if (result.status === 'password_setup') {
+            passwordSetupSessionId.value = result.oauthSessionId;
+            passwordSetupSuccessStatus.value = result.successStatus;
+            email.value = result.email;
+            return;
+        }
         oauthSessionId.value = result.oauthSessionId;
         email.value = result.email;
     } catch (error) {
         errorMessage.value = error instanceof Error ? error.message : '카카오 계정 연결을 완료하지 못했습니다.';
+    } finally {
+        submitting.value = false;
+    }
+};
+
+const setMigratedPassword = async (): Promise<void> => {
+    errorMessage.value = '';
+    if (password.value !== confirmPassword.value) {
+        errorMessage.value = '비밀번호 확인이 일치하지 않습니다.';
+        return;
+    }
+    submitting.value = true;
+    try {
+        const credential = await sealPassword(password.value);
+        const result = await trpc.auth.kakaoSetPassword.mutate({
+            oauthSessionId: passwordSetupSessionId.value,
+            credential,
+        });
+        password.value = '';
+        confirmPassword.value = '';
+        passwordSetupSessionId.value = '';
+        if (result.status === 'otp') {
+            otpChallenge.value = result;
+            otpSuccessStatus.value = passwordSetupSuccessStatus.value;
+            return;
+        }
+        window.localStorage.setItem('sammo-session-token', result.sessionToken);
+        await router.replace(result.status === 'verified' ? '/lobby?verified=1' : '/lobby');
+    } catch (error) {
+        errorMessage.value = error instanceof Error ? error.message : '새 비밀번호를 설정하지 못했습니다.';
     } finally {
         submitting.value = false;
     }
@@ -156,7 +200,15 @@ onMounted(() => {
         <main id="oauth-container">
             <h1>삼국지 모의전투 HiDCHe</h1>
             <section class="oauth-card">
-                <h2>{{ accountRecovery ? '카카오 계정 연결 확인' : '회원가입' }}</h2>
+                <h2>
+                    {{
+                        accountRecovery
+                            ? '카카오 계정 연결 확인'
+                            : passwordSetupSessionId
+                              ? '새 비밀번호 설정'
+                              : '회원가입'
+                    }}
+                </h2>
                 <p v-if="loading" class="oauth-message">카카오 인증을 확인하는 중...</p>
                 <p v-else-if="infoMessage" class="oauth-message" role="status">{{ infoMessage }}</p>
                 <div v-else-if="accountRecovery" class="recovery-panel" role="group" aria-label="카카오 계정 연결 확인">
@@ -181,6 +233,46 @@ onMounted(() => {
                         <RouterLink class="back-link" to="/">취소</RouterLink>
                     </div>
                 </div>
+                <form
+                    v-else-if="passwordSetupSessionId"
+                    class="password-setup-form"
+                    aria-label="새 비밀번호 설정"
+                    @submit.prevent="setMigratedPassword"
+                >
+                    <p class="oauth-message">
+                        카카오 인증으로 기존 계정을 확인했습니다. 앞으로 사용할 새 비밀번호를 설정해 주세요.
+                    </p>
+                    <div class="form-row">
+                        <label for="migrated-password-email">카카오 이메일</label>
+                        <input id="migrated-password-email" :value="email" readonly />
+                    </div>
+                    <div class="form-row">
+                        <label for="migrated-password">새 비밀번호</label>
+                        <input
+                            id="migrated-password"
+                            v-model="password"
+                            type="password"
+                            minlength="6"
+                            autocomplete="new-password"
+                            required
+                        />
+                    </div>
+                    <div class="form-row">
+                        <label for="migrated-password-confirm">비밀번호 확인</label>
+                        <input
+                            id="migrated-password-confirm"
+                            v-model="confirmPassword"
+                            type="password"
+                            minlength="6"
+                            autocomplete="new-password"
+                            required
+                        />
+                    </div>
+                    <button class="register-button" type="submit" :disabled="submitting">
+                        {{ submitting ? '설정 중...' : '새 비밀번호 설정' }}
+                    </button>
+                    <RouterLink class="back-link" to="/">취소</RouterLink>
+                </form>
                 <form v-else-if="oauthSessionId" @submit.prevent="register">
                     <div class="form-row">
                         <label for="oauth-email">카카오 이메일</label>
