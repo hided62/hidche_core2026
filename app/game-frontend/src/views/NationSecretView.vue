@@ -174,12 +174,7 @@ onMounted(load);
 .secret-page {
     width: auto;
     margin: 0;
-    font:
-        14px Pretendard,
-        'Apple SD Gothic Neo',
-        'Noto Sans KR',
-        'Malgun Gothic',
-        sans-serif;
+    font: 14px var(--sammo-font-sans);
     color: #fff;
 }
 .layout {

@@ -305,7 +305,7 @@ onMounted(loadDetail);
     width: 1000px;
     margin: 8px auto 0;
     color: #fff;
-    font-family: 'Times New Roman', serif;
+    font-family: var(--sammo-font-sans);
     font-size: 16px;
     line-height: normal;
 }
@@ -384,7 +384,7 @@ onMounted(loadDetail);
     padding: 1px 6px;
     background: buttonface;
     color: buttontext;
-    font-family: Arial;
+    font-family: var(--sammo-font-sans);
     font-size: 13.3333px;
     font-weight: 400;
     line-height: normal;

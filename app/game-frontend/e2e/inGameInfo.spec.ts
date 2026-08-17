@@ -875,6 +875,18 @@ test('current-city wraps dense general names and only shrinks reserved turns', a
         expect(pageStyle.fontFamily).toContain('Pretendard');
         expect(pageStyle.fontSize).toBe('14px');
 
+        const controlFonts = await page
+            .locator('.city-page')
+            .evaluate(() =>
+                ['#citySelector', '.back-link'].map(
+                    (selector) => getComputedStyle(document.querySelector(selector)!).fontFamily
+                )
+            );
+        expect(controlFonts).toHaveLength(2);
+        for (const fontFamily of controlFonts) {
+            expect(fontFamily).toContain('Pretendard');
+        }
+
         const names = page.locator('.general-names');
         await expect(names).toHaveCSS('white-space', 'normal');
         const nameLineCount = await names.locator('span').evaluateAll((elements) => {

@@ -252,9 +252,7 @@ onMounted(() => {
     padding: 8px;
     color: #000;
     background: #fff;
-    font:
-        16px/normal 'Times New Roman',
-        serif;
+    font: 16px/normal var(--sammo-font-sans);
 }
 
 .legacy-board-page {
