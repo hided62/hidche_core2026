@@ -67,6 +67,11 @@ profile 범위 권한과 별개인 전역 `admin.releases.manage` 권한이 필�
 버전 업데이트 화면에서 profile의 branch 또는 commit을 선택합니다. Branch는 worker가
 작업을 claim할 때 commit으로 해석하며, commit 입력은 전체 SHA로 고정됩니다.
 같은 profile에는 `QUEUED` 또는 `RUNNING` 작업을 동시에 하나만 둘 수 있습니다.
+Profile 작업과 Gateway 전체 릴리스 claim도 같은 PostgreSQL advisory lock으로
+직렬화합니다. 따라서 profile `RESET`/`DEPLOY`가 실행 중이면 Gateway 릴리스는
+queue에서 기다리고, Gateway 릴리스가 실행 중이면 새 profile 작업이 기다립니다.
+Gateway process 전환이 진행 중인 profile migration·seed 실행자를 중단하지 않는
+운영 계약입니다.
 
 ### DB 유지 배포
 
