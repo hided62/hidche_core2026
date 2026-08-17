@@ -649,7 +649,9 @@ const clickOutsideMenu = (event: Event) => {
                 class="command-picker"
                 :class="{ 'recruitment-picker': isRecruitmentCommand }"
                 data-testid="command-picker"
-                :style="isRecruitmentCommand || quickTarget === null || props.compact ? undefined : { top: quickPickerTop }"
+                :style="
+                    isRecruitmentCommand || quickTarget === null || props.compact ? undefined : { top: quickPickerTop }
+                "
                 :role="isRecruitmentCommand ? 'dialog' : undefined"
                 :aria-modal="isRecruitmentCommand ? 'true' : undefined"
                 :aria-label="
@@ -1102,12 +1104,15 @@ const clickOutsideMenu = (event: Event) => {
 }
 
 .mobile.compact .editor-layout {
-    height: 360px;
+    min-height: 370px;
     display: grid;
     grid-template-columns: 109px 391px;
+    grid-template-rows: auto auto;
 }
 .mobile.compact .control-pad {
     order: initial;
+    grid-column: 1;
+    grid-row: 1 / -1;
     min-height: 0;
     padding: 0;
     grid-template-columns: 1fr;
@@ -1115,6 +1120,8 @@ const clickOutsideMenu = (event: Event) => {
 }
 .mobile.compact .queue-area {
     order: initial;
+    grid-column: 2;
+    grid-row: 1;
     padding-top: 10px;
 }
 .mobile.compact .queue-grid {
@@ -1145,9 +1152,8 @@ const clickOutsideMenu = (event: Event) => {
     overflow: visible;
 }
 .mobile.compact .advanced-actions {
-    right: 0;
-    bottom: 0;
-    left: 109px;
+    position: static;
+    grid-column: 2;
+    grid-row: 2;
 }
-
 </style>
