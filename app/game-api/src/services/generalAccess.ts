@@ -61,6 +61,7 @@ export const generalAccessEndpointWeights = {
     'npc.setNationPolicy': 0,
     'npc.setNationPriority': 0,
     'npc.setGeneralPriority': 0,
+    'battle.prepareSimulation': 0,
     'battle.simulate': 0,
 } as const satisfies Record<string, 0 | 1 | 2>;
 

@@ -1,9 +1,12 @@
-import type { WorldStateRow } from '../context.js';
-import type { BattleSimJobPayload, BattleSimRequestPayload } from './types.js';
+import { randomUUID } from 'node:crypto';
+
 import { loadUnitSetDefinitionByName } from '@sammo-ts/game-engine/scenario/unitSetLoader.js';
 import { normalizeScenarioEffect, type ScenarioEffectKey, type WarEngineConfig } from '@sammo-ts/logic';
 import { asRecord } from '@sammo-ts/common';
 import type { UnitSetDefinition } from '@sammo-ts/logic';
+
+import type { WorldStateRow } from '../context.js';
+import type { BattleSimJobPayload, BattleSimRequestPayload } from './types.js';
 
 const DEFAULT_WAR_CONFIG = {
     armPerPhase: 500,
@@ -133,6 +136,7 @@ export const buildBattleSimJobPayload = async (
 
     return {
         ...request,
+        seeds: request.seed ? [] : Array.from({ length: request.repeatCnt }, () => randomUUID()),
         unitSet: environment.unitSet,
         config: environment.config,
         time: {

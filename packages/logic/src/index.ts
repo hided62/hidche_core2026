@@ -4,6 +4,7 @@ export * from './actions/index.js';
 export * from './actionModules/index.js';
 export * from './auction/alias.js';
 export * from './auction/neutral.js';
+export * from './battleSimulator/index.js';
 export * from './constraints/index.js';
 export * from './crewType/index.js';
 export * from './diplomacy/index.js';

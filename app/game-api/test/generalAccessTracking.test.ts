@@ -122,6 +122,7 @@ describe('general access tracking', () => {
             'npc.setNationPolicy': 0,
             'npc.setNationPriority': 0,
             'npc.setGeneralPriority': 0,
+            'battle.prepareSimulation': 0,
             'battle.simulate': 0,
         });
     });
