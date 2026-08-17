@@ -238,7 +238,12 @@ export class GeneralAI {
     private devRate: Record<string, number> | null = null;
     private categorizedCities = false;
     private categorizedGenerals = false;
-    private promotionPatches: Array<{ generalId: number; officerLevel: number; officerCity: number }> = [];
+    private promotionPatches: Array<{
+        generalId: number;
+        officerLevel: number;
+        officerCity: number;
+        permission?: string;
+    }> = [];
     private promotionNationMeta: Record<string, unknown> | null = null;
     private readonly initialGeneralMeta: Record<string, unknown>;
 
@@ -433,7 +438,7 @@ export class GeneralAI {
     }
 
     consumePromotionPatches(): {
-        generals: Array<{ generalId: number; officerLevel: number; officerCity: number }>;
+        generals: Array<{ generalId: number; officerLevel: number; officerCity: number; permission?: string }>;
         nationMeta: Record<string, unknown> | null;
     } {
         const result = {
@@ -1068,6 +1073,7 @@ export class GeneralAI {
         }
         const minChiefLevel = this.nation.level >= 6 ? 5 : this.nation.level >= 4 ? 7 : this.nation.level >= 2 ? 9 : 11;
         let chiefSet = readMetaNumber(asRecord(this.nation.meta), 'chief_set', 0);
+        const initialChiefSet = chiefSet;
         const generals = this.worldRef
             .listGenerals()
             .filter((candidate) => candidate.nationId === this.nation!.id)
@@ -1080,12 +1086,102 @@ export class GeneralAI {
             });
         const effectiveOfficerLevel = new Map(generals.map((candidate) => [candidate.id, candidate.officerLevel]));
 
+        let userChiefCount = 0;
+        const worldKillturn = readMetaNumber(asRecord(this.world.meta), 'killturn', 0);
+        const minUserKillturn = worldKillturn - Math.trunc(240 / this.turnTermMinutes);
+        const minNpcKillturn = 36;
+
+        for (let chiefLevel = minChiefLevel; chiefLevel <= 12; chiefLevel += 1) {
+            const chief = this.chiefGenerals[chiefLevel];
+            if (!chief) {
+                continue;
+            }
+            const penalty = asRecord(chief.penalty);
+            const killturn = readRequiredMetaNumber(asRecord(chief.meta), 'killturn', `generalId=${chief.id}`);
+            if (chief.npcState < 2 && killturn >= minUserKillturn && penalty.noAmbassador !== true) {
+                userChiefCount += 1;
+                chief.meta = { ...chief.meta, permission: 'ambassador' };
+                this.promotionPatches.push({
+                    generalId: chief.id,
+                    officerLevel: chief.officerLevel,
+                    officerCity: readMetaNumber(asRecord(chief.meta), 'officer_city', 0),
+                    permission: 'ambassador',
+                });
+            }
+        }
+
+        const minBelong = Math.min(readMetaNumber(asRecord(this.general.meta), 'belong', 0) - 1, 3);
+        const availableUserChiefCount = Object.values(this.userGenerals).filter((candidate) => {
+            const penalty = asRecord(candidate.penalty);
+            const killturn = readRequiredMetaNumber(asRecord(candidate.meta), 'killturn', `generalId=${candidate.id}`);
+            return (
+                killturn >= minUserKillturn &&
+                readMetaNumber(asRecord(candidate.meta), 'belong', 0) >= minBelong &&
+                penalty.noChief !== true
+            );
+        }).length;
+
+        if (userChiefCount === 0 && availableUserChiefCount > 0 && (chiefSet & (1 << 11)) === 0) {
+            const userCandidates = Object.values(this.userGenerals).sort((left, right) => {
+                const leftPenalty = asRecord(left.penalty);
+                const rightPenalty = asRecord(right.penalty);
+                if ((leftPenalty.noChief === true) !== (rightPenalty.noChief === true)) {
+                    return leftPenalty.noChief === true ? 1 : -1;
+                }
+                if ((leftPenalty.noAmbassador === true) !== (rightPenalty.noAmbassador === true)) {
+                    return leftPenalty.noAmbassador === true ? 1 : -1;
+                }
+                return right.stats.leadership - left.stats.leadership;
+            });
+            for (const candidate of userCandidates) {
+                const penalty = asRecord(candidate.penalty);
+                const killturn = readRequiredMetaNumber(
+                    asRecord(candidate.meta),
+                    'killturn',
+                    `generalId=${candidate.id}`
+                );
+                if (
+                    penalty.noChief === true ||
+                    killturn < minUserKillturn ||
+                    readMetaNumber(asRecord(candidate.meta), 'belong', 0) < minBelong ||
+                    candidate.officerLevel > 4
+                ) {
+                    continue;
+                }
+                const permission = penalty.noAmbassador === true ? undefined : 'ambassador';
+                candidate.officerLevel = 11;
+                candidate.meta = {
+                    ...candidate.meta,
+                    officer_city: 0,
+                    ...(permission ? { permission } : {}),
+                };
+                this.promotionPatches.push({
+                    generalId: candidate.id,
+                    officerLevel: 11,
+                    officerCity: 0,
+                    ...(permission ? { permission } : {}),
+                });
+                effectiveOfficerLevel.set(candidate.id, 11);
+                chiefSet |= 1 << 11;
+                userChiefCount += 1;
+                break;
+            }
+        }
+
         for (let chiefLevel = 11; chiefLevel >= minChiefLevel; chiefLevel -= 1) {
             if ((chiefSet & (1 << chiefLevel)) !== 0 || this.general.officerLevel === chiefLevel) {
                 continue;
             }
             const oldChief = generals.find((candidate) => candidate.officerLevel === chiefLevel);
             if (oldChief) {
+                const oldChiefKillturn = readRequiredMetaNumber(
+                    asRecord(oldChief.meta),
+                    'killturn',
+                    `generalId=${oldChief.id}`
+                );
+                if (oldChief.npcState < 2 && oldChiefKillturn >= minChiefLevel) {
+                    continue;
+                }
                 const newChiefProbability = this.rng.nextBool(0.1) ? 1 : 0;
                 // GeneralAI.php performs a second nextBool(0) call on the
                 // rejection path. Preserve that consumption for the shared
@@ -1095,7 +1191,7 @@ export class GeneralAI {
                 }
             }
             const nextChief = generals.find((candidate) => {
-                if ((effectiveOfficerLevel.get(candidate.id) ?? candidate.officerLevel) > 4 || candidate.npcState < 2) {
+                if ((effectiveOfficerLevel.get(candidate.id) ?? candidate.officerLevel) > 4) {
                     return false;
                 }
                 const killturn = readRequiredMetaNumber(
@@ -1103,7 +1199,13 @@ export class GeneralAI {
                     'killturn',
                     `generalId=${candidate.id}`
                 );
-                if (killturn < 36) {
+                if (candidate.npcState < 2 && killturn < minUserKillturn) {
+                    return false;
+                }
+                if (candidate.npcState >= 2 && killturn < minNpcKillturn) {
+                    return false;
+                }
+                if (asRecord(candidate.penalty).noChief === true) {
                     return false;
                 }
                 if (chiefLevel !== 11 && chiefLevel % 2 === 0 && candidate.stats.strength < this.aiConst.chiefStatMin) {
@@ -1116,6 +1218,9 @@ export class GeneralAI {
                 ) {
                     return false;
                 }
+                if (candidate.npcState < 2 && userChiefCount >= 3) {
+                    return false;
+                }
                 return true;
             });
             if (!nextChief) {
@@ -1124,18 +1229,37 @@ export class GeneralAI {
             if (oldChief) {
                 this.promotionPatches.push({ generalId: oldChief.id, officerLevel: 1, officerCity: 0 });
             }
-            this.promotionPatches.push({ generalId: nextChief.id, officerLevel: chiefLevel, officerCity: 0 });
+            const permission =
+                nextChief.npcState < 2 && asRecord(nextChief.penalty).noAmbassador !== true ? 'ambassador' : undefined;
+            if (nextChief.npcState < 2) {
+                userChiefCount += 1;
+            }
+            this.promotionPatches.push({
+                generalId: nextChief.id,
+                officerLevel: chiefLevel,
+                officerCity: 0,
+                ...(permission ? { permission } : {}),
+            });
             if (process.env.CORE_AI_TRACE_SEQUENCE === '1') {
                 process.stdout.write(
                     `AI_PROMOTION_TRACE ${JSON.stringify({ engine: 'core', mode: 'lord', actor: this.general.id, chiefLevel, picked: nextChief.id })}\n`
                 );
             }
+            nextChief.meta = {
+                ...nextChief.meta,
+                officer_city: 0,
+                ...(permission ? { permission } : {}),
+            };
             effectiveOfficerLevel.set(nextChief.id, chiefLevel);
             chiefSet |= 1 << chiefLevel;
         }
 
-        if (this.promotionPatches.length > 0) {
-            this.promotionNationMeta = { ...this.nation.meta, chief_set: chiefSet };
+        if (chiefSet !== initialChiefSet) {
+            this.promotionNationMeta = {
+                ...this.nation.meta,
+                ...(this.promotionNationMeta ?? {}),
+                chief_set: chiefSet,
+            };
         }
     }
 
