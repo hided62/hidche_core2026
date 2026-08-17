@@ -207,10 +207,10 @@ void test('merges browser-safe boolean invalidations and starts at most once per
     let nowMs = 0;
     let nextTimerId = 1;
     const timers = new Map<number, { callback: () => void; at: number }>();
-    const observed: Array<{ context: boolean; records: boolean }> = [];
+    const observed: Array<{ context: boolean; records: boolean; refreshGrant: string }> = [];
     const queue = createMergedReadModelRefreshQueue(
-        async (invalidation) => {
-            observed.push({ context: invalidation.context, records: invalidation.records });
+        async (invalidation, refreshGrant) => {
+            observed.push({ context: invalidation.context, records: invalidation.records, refreshGrant });
         },
         {
             minIntervalMs: 1_000,
@@ -232,13 +232,13 @@ void test('merges browser-safe boolean invalidations and starts at most once per
         }
     };
 
-    queue.request({ ...createEmptyRealtimeReadModelInvalidation(), context: true });
+    queue.request({ ...createEmptyRealtimeReadModelInvalidation(), context: true }, 'grant-a');
     runDueTimers();
     await new Promise<void>((resolve) => setImmediate(resolve));
-    assert.deepEqual(observed, [{ context: true, records: false }]);
+    assert.deepEqual(observed, [{ context: true, records: false, refreshGrant: 'grant-a' }]);
 
-    queue.request({ ...createEmptyRealtimeReadModelInvalidation(), context: true });
-    queue.request({ ...createEmptyRealtimeReadModelInvalidation(), records: true });
+    queue.request({ ...createEmptyRealtimeReadModelInvalidation(), context: true }, 'grant-b');
+    queue.request({ ...createEmptyRealtimeReadModelInvalidation(), records: true }, 'grant-c');
     nowMs = 999;
     runDueTimers();
     assert.equal(observed.length, 1);
@@ -246,7 +246,7 @@ void test('merges browser-safe boolean invalidations and starts at most once per
     runDueTimers();
     await new Promise<void>((resolve) => setImmediate(resolve));
     assert.deepEqual(observed, [
-        { context: true, records: false },
-        { context: true, records: true },
+        { context: true, records: false, refreshGrant: 'grant-a' },
+        { context: true, records: true, refreshGrant: 'grant-c' },
     ]);
 });

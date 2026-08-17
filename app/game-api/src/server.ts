@@ -6,6 +6,7 @@ import fs from 'node:fs/promises';
 import { fastifyTRPCPlugin } from '@trpc/server/adapters/fastify';
 import {
     buildGameEventChannel,
+    REALTIME_ACCESS_GRANT_HEADER,
     trpcJsonBodyHttpServerOptions,
     type RealtimeViewerIdentity,
 } from '@sammo-ts/common';
@@ -22,6 +23,11 @@ import { createGameApiContext, type DatabaseClient as _DatabaseClient } from './
 import { DatabaseTurnDaemonTransport } from './daemon/databaseTransport.js';
 import { InMemoryFlushStore, RedisGatewayFlushSubscriber, type FlushStore } from './auth/flushStore.js';
 import { RedisAccessTokenStore } from './auth/accessTokenStore.js';
+import {
+    consumeRealtimeAccessGrantHeader,
+    createRealtimeAccessGrant,
+    registerRealtimeAccessGrant,
+} from './auth/realtimeAccessGrant.js';
 import { appRouter } from './router.js';
 import { buildBattleSimQueueKeys } from './battleSim/keys.js';
 import { RedisBattleSimTransport } from './battleSim/redisTransport.js';
@@ -227,6 +233,13 @@ export const createGameApiServer = async () => {
                     uploadPublicUrl: config.uploadPublicUrl,
                     contentImageUpload,
                     auth,
+                    realtimeAccessGranted: await consumeRealtimeAccessGrantHeader(
+                        redis.client,
+                        req.headers[REALTIME_ACCESS_GRANT_HEADER],
+                        auth,
+                        config.profileName,
+                        config.gameTokenSecret
+                    ),
                     ...(auth && token ? { accessToken: token } : {}),
                     accessTokenStore,
                     flushStore,
@@ -304,8 +317,20 @@ export const createGameApiServer = async () => {
                         identities.push(nextIdentity);
                         viewerIdentity = nextIdentity;
                     }
-                    const publicEvent = toPublicRealtimeEvent(event, identities);
+                    let refreshGrant: string | undefined;
+                    const publicEvent = toPublicRealtimeEvent(event, identities, () => {
+                        refreshGrant ??= createRealtimeAccessGrant(auth, config.profileName, config.gameTokenSecret);
+                        return refreshGrant;
+                    });
                     if (!publicEvent || closed) return;
+                    if (refreshGrant) {
+                        try {
+                            await registerRealtimeAccessGrant(redis.client, refreshGrant, config.profileName);
+                        } catch {
+                            // Preserve the invalidation. An unregistered grant safely falls back
+                            // to the normal scored refresh path.
+                        }
+                    }
                     sendFrame(
                         formatSseFrame({
                             event: publicEvent.type,

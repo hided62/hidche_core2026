@@ -15,6 +15,8 @@ const autoRefreshArtifactRoot = process.env.AUTO_REFRESH_ARTIFACT_DIR;
 const productionBundle = process.env.PLAYWRIGHT_FRONTEND_MODE === 'production';
 const basePath = `/${(process.env.PLAYWRIGHT_GAME_BASE_PATH ?? 'che').replace(/^\/+|\/+$/g, '')}`;
 const gameProfile = process.env.PLAYWRIGHT_GAME_PROFILE ?? 'che:default';
+const realtimeAccessGrantHeader = 'x-sammo-realtime-access-grant';
+const fixtureRealtimeAccessGrant = 'fixture-realtime-grant';
 const operationNames = (route: Route) =>
     decodeURIComponent(new URL(route.request().url()).pathname.split('/trpc/')[1] ?? '').split(',');
 
@@ -69,6 +71,7 @@ type NavigationFixture = {
         url: string;
         body: unknown;
     }>;
+    dashboardGrantHeaders?: Array<string | null>;
 };
 
 type JsonPatchOperation = {
@@ -400,7 +403,13 @@ const installFixture = async (page: Page, state: NavigationFixture) => {
             }
             if (operation === 'dashboard.getContextBundleDelta') {
                 state.generalMeCalls += 1;
-                if (state.accessLimitAfterCalls !== undefined && state.generalMeCalls > state.accessLimitAfterCalls) {
+                const refreshGrant = route.request().headers()[realtimeAccessGrantHeader] ?? null;
+                (state.dashboardGrantHeaders ??= []).push(refreshGrant);
+                if (
+                    state.accessLimitAfterCalls !== undefined &&
+                    state.generalMeCalls > state.accessLimitAfterCalls &&
+                    refreshGrant !== fixtureRealtimeAccessGrant
+                ) {
                     return errorResponse(
                         operation,
                         '접속 제한중입니다. 1턴 이내에 너무 많은 갱신을 하셨습니다. ' +
@@ -604,7 +613,15 @@ const installRealtimeHarness = async (page: Page) => {
             configurable: true,
             value: (type: string, payload: unknown) => {
                 TestEventSource.latest?.dispatchEvent(
-                    new MessageEvent(type, { data: JSON.stringify({ type, ...((payload as object) ?? {}) }) })
+                    new MessageEvent(type, {
+                        data: JSON.stringify({
+                            type,
+                            ...(type === 'readModelInvalidated' || type === 'messagesInvalidated'
+                                ? { refreshGrant: 'fixture-realtime-grant' }
+                                : {}),
+                            ...((payload as object) ?? {}),
+                        }),
+                    })
                 );
             },
         });
@@ -2620,6 +2637,7 @@ test('realtime read-model events skip clock-only work, merge bursts, patch in pl
         .toBe(true);
     await expect(page.locator('.tournament-status')).toHaveText('토너먼트: 경기 없음');
     await expect(page.locator('[data-navigation-id="tournament"]')).not.toHaveClass(/highlight/u);
+    expect(state.dashboardGrantHeaders).toContain(null);
 
     const operationsBeforeTournament = state.operations.length;
     state.stage = 1;
@@ -2629,6 +2647,7 @@ test('realtime read-model events skip clock-only work, merge bursts, patch in pl
         .toEqual(['dashboard.getContextBundleDelta', 'tournament.getState']);
     await expect(page.locator('.tournament-status')).toHaveText('토너먼트: 참가 모집중');
     await expect(page.locator('[data-navigation-id="tournament"]')).toHaveClass(/highlight/u);
+    expect(state.dashboardGrantHeaders?.at(-1)).toBe(fixtureRealtimeAccessGrant);
 
     await page.evaluate(() => {
         const general = document.querySelector('[data-main-target="general"]');
@@ -2949,7 +2968,15 @@ test('access limit stops automatic main refresh and closes realtime until a manu
         .toBe(true);
 
     const operationsBeforeLimit = state.operations.length;
-    await emitReadModelInvalidation(page, readModelInvalidation({ records: true, map: true }));
+    await page.evaluate(
+        (invalidation) => {
+            (window as unknown as { __emitMainRealtime: (type: string, payload: unknown) => void }).__emitMainRealtime(
+                'readModelInvalidated',
+                { invalidation, refreshGrant: 'expired-grant' }
+            );
+        },
+        readModelInvalidation({ records: true, map: true })
+    );
 
     await expect(page.getByRole('alert')).toContainText('접속 제한중입니다.');
     await expect
@@ -2972,6 +2999,7 @@ test('access limit stops automatic main refresh and closes realtime until a manu
             page.evaluate(() => (window as unknown as { __hasMainRealtime: () => boolean }).__hasMainRealtime())
         )
         .toBe(true);
+    expect(state.dashboardGrantHeaders?.at(-1)).toBeNull();
 });
 
 test('global activity, world history, and a month boundary refresh their visible main slices', async ({ page }) => {

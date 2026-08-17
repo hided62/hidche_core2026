@@ -20,9 +20,7 @@ export const resolveDashboardRefreshPlan = (
     identity: DashboardReadModelIdentity
 ): DashboardRefreshPlan => resolveRealtimeReadModelInvalidation(changes, identity);
 
-export const resolveDashboardContextBundleInclude = (
-    plan: DashboardRefreshPlan
-): DashboardContextBundleInclude => ({
+export const resolveDashboardContextBundleInclude = (plan: DashboardRefreshPlan): DashboardContextBundleInclude => ({
     context: plan.context,
     commandTable: plan.commands,
     boardAccess: plan.boardAccess,
@@ -31,12 +29,12 @@ export const resolveDashboardContextBundleInclude = (
 type TimerHandle = ReturnType<typeof setTimeout>;
 
 export interface MergedReadModelRefreshQueue {
-    request(invalidation: RealtimeReadModelInvalidation): void;
+    request(invalidation: RealtimeReadModelInvalidation, refreshGrant: string): void;
     cancelPending(): void;
 }
 
 export const createMergedReadModelRefreshQueue = (
-    refresh: (invalidation: RealtimeReadModelInvalidation) => Promise<void>,
+    refresh: (invalidation: RealtimeReadModelInvalidation, refreshGrant: string) => Promise<void>,
     options: {
         minIntervalMs?: number;
         now?: () => number;
@@ -49,6 +47,7 @@ export const createMergedReadModelRefreshQueue = (
     const setTimer = options.setTimer ?? ((callback, delayMs) => setTimeout(callback, delayMs));
     const clearTimer = options.clearTimer ?? ((handle) => clearTimeout(handle));
     let pending = createEmptyRealtimeReadModelInvalidation();
+    let pendingRefreshGrant = '';
     let hasPending = false;
     let running = false;
     let timer: TimerHandle | null = null;
@@ -65,11 +64,13 @@ export const createMergedReadModelRefreshQueue = (
                 return;
             }
             const next = pending;
+            const nextRefreshGrant = pendingRefreshGrant;
             pending = createEmptyRealtimeReadModelInvalidation();
+            pendingRefreshGrant = '';
             hasPending = false;
             running = true;
             lastStartedAt = now();
-            void refresh(next).finally(() => {
+            void refresh(next, nextRefreshGrant).finally(() => {
                 running = false;
                 schedule();
             });
@@ -77,14 +78,16 @@ export const createMergedReadModelRefreshQueue = (
     };
 
     return {
-        request: (invalidation) => {
+        request: (invalidation, refreshGrant) => {
             pending = hasPending ? mergeRealtimeReadModelInvalidations(pending, invalidation) : invalidation;
+            pendingRefreshGrant = refreshGrant;
             hasPending = true;
             schedule();
         },
         cancelPending: () => {
             hasPending = false;
             pending = createEmptyRealtimeReadModelInvalidation();
+            pendingRefreshGrant = '';
             if (timer !== null) {
                 clearTimer(timer);
                 timer = null;
