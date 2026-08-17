@@ -75,7 +75,10 @@ export const formatReservedCommandBrief = (
     const commandName = commandNames.get(action) ?? defaultCommandName(action);
     const cityName = optionLabel(input?.cities ?? [], firstValue(args, ['destCityId', 'destCityID']));
     const nationName = optionLabel(input?.nations ?? [], firstValue(args, ['destNationId', 'destNationID']));
-    const generalName = optionLabel(input?.generals ?? [], firstValue(args, ['destGeneralId', 'destGeneralID']));
+    const generalName = optionLabel(
+        input?.generalTargets?.[action] ?? input?.generals ?? [],
+        firstValue(args, ['destGeneralId', 'destGeneralID'])
+    );
 
     if (CITY_TO_COMMANDS.has(action) && cityName) {
         return `${wrappedWithParticle(cityName, '으로')} ${commandName}`;

@@ -53,6 +53,18 @@ const inputOptions = {
         { value: 1, label: '장수 (아국 · 업)' },
         { value: 2, label: '관우 (아국 · 업)' },
     ],
+    generalTargets: {
+        che_포상: [
+            { value: 1, label: '장수 (아국 · 업)' },
+            { value: 2, label: '관우 (아국 · 업)' },
+            { value: 3, label: '여포NPC (아국 · 업)' },
+        ],
+        che_몰수: [
+            { value: 1, label: '장수 (아국 · 업)' },
+            { value: 2, label: '관우 (아국 · 업)' },
+            { value: 3, label: '여포NPC (아국 · 업)' },
+        ],
+    },
     crewTypes: [{ value: 1100, label: '보병' }],
     armTypes: [{ value: 1, label: '보병' }],
     nationTypes: [{ value: 'che_도적', label: '도적', description: '금 수입 증가, 쌀 수입 감소' }],
@@ -389,8 +401,8 @@ const chiefCenter = {
     maxTurns: 12,
     chiefs: [12, 10, 8, 6, 11, 9, 7, 5].map((officerLevel) => ({
         officerLevel,
-        name: officerLevel === 5 ? '장수' : null,
-        npcState: officerLevel === 5 ? 0 : null,
+        name: officerLevel === 5 ? '장수' : `수뇌${officerLevel}`,
+        npcState: officerLevel === 8 ? 2 : 0,
         turnTime: null,
         revision: 0,
         turns: turns(12),
@@ -801,6 +813,92 @@ test('shows every Ref chief command in the exact category and command order', as
     await mobilePicker.screenshot({ path: test.info().outputPath('ref-chief-command-list-mobile-500.png') });
 });
 
+test('shows all 12 advanced chief turns before the actions and uses the full mobile chief matrix', async ({ page }) => {
+    await install(page);
+    await page.setViewportSize({ width: 500, height: 900 });
+    await page.goto('/che/chief-center');
+
+    const editor = page.locator('[data-command-scope="nation"]:visible');
+    await editor.getByRole('button', { name: '고급 모드', exact: true }).click();
+    await expect(editor.locator('.index-column > button')).toHaveCount(12);
+    await expect(editor.locator('.index-column > button').last()).toHaveText('12');
+    await expect(editor.locator('.advanced-actions')).toContainText('선택한 턴을');
+    await expect(editor.locator('.advanced-actions')).toContainText('명령 선택');
+
+    const frame = page.locator('.chief-overview-frame');
+    await expect(frame.locator('.chief-overview-row')).toHaveCount(2);
+    await expect(frame.locator('.overview-turn-index')).toHaveCount(4);
+    for (const gutter of await frame.locator('.overview-turn-index').all()) {
+        await expect(gutter.locator('span').filter({ hasText: /\d+/u })).toHaveText(
+            Array.from({ length: 12 }, (_, index) => String(index + 1))
+        );
+    }
+    await expect(frame.locator('.compact-name')).toHaveCount(8);
+
+    const geometry = await page.locator('.chief-page').evaluate((element) => {
+        const editorElement = element.querySelector<HTMLElement>('[data-command-scope="nation"]')!;
+        const queue = editorElement.querySelector<HTMLElement>('.queue-grid')!;
+        const lastTurn = editorElement.querySelectorAll<HTMLElement>('.action-column > div')[11]!;
+        const actions = editorElement.querySelector<HTMLElement>('.advanced-actions')!;
+        const overviewFrame = element.querySelector<HTMLElement>('.chief-overview-frame')!;
+        const firstOverviewRow = element.querySelector<HTMLElement>('.chief-overview-row')!;
+        const overviewRows = [...element.querySelectorAll<HTMLElement>('.chief-overview-row')];
+        const gutters = [...firstOverviewRow.querySelectorAll<HTMLElement>('.overview-turn-index')];
+        const cards = [...firstOverviewRow.querySelectorAll<HTMLElement>('.chief-card')];
+        const names = [...overviewFrame.querySelectorAll<HTMLElement>('.compact-name')];
+        const frameRect = overviewFrame.getBoundingClientRect();
+        const editorRect = editorElement.getBoundingClientRect();
+        const actionsRect = actions.getBoundingClientRect();
+        return {
+            editorBottom: editorRect.bottom,
+            editorHeight: editorRect.height,
+            queueBottom: queue.getBoundingClientRect().bottom,
+            lastTurnBottom: lastTurn.getBoundingClientRect().bottom,
+            actionsTop: actionsRect.top,
+            actionsBottom: actionsRect.bottom,
+            frameTop: frameRect.top,
+            frameWidth: frameRect.width,
+            rowWidth: firstOverviewRow.getBoundingClientRect().width,
+            rowEdges: overviewRows.map((item) => ({
+                top: item.getBoundingClientRect().top - frameRect.top,
+                bottom: item.getBoundingClientRect().bottom - frameRect.top,
+            })),
+            gutterWidths: gutters.map((item) => item.getBoundingClientRect().width),
+            gutterEdges: gutters.map((item) => ({
+                left: item.getBoundingClientRect().left - frameRect.left,
+                right: item.getBoundingClientRect().right - frameRect.left,
+            })),
+            cardWidths: cards.map((item) => item.getBoundingClientRect().width),
+            namesInsideFrame: names.every((item) => {
+                const rect = item.getBoundingClientRect();
+                return rect.top >= frameRect.top && rect.bottom <= frameRect.bottom && rect.height > 0;
+            }),
+            documentOverflow: document.documentElement.scrollWidth - document.documentElement.clientWidth,
+        };
+    });
+
+    expect(geometry.lastTurnBottom).toBeLessThanOrEqual(geometry.actionsTop);
+    expect(geometry.queueBottom).toBeLessThanOrEqual(geometry.actionsTop);
+    expect(geometry.actionsBottom).toBeLessThanOrEqual(geometry.editorBottom);
+    expect(geometry.frameTop).toBeGreaterThanOrEqual(geometry.editorBottom);
+    expect(geometry.editorHeight).toBeGreaterThanOrEqual(404);
+    expect(geometry.frameWidth).toBe(500);
+    expect(geometry.rowWidth).toBe(500);
+    expect(geometry.rowEdges).toEqual([
+        { top: 0, bottom: 155 },
+        { top: 155, bottom: 310 },
+    ]);
+    expect(geometry.gutterWidths).toEqual([12, 12]);
+    expect(geometry.gutterEdges).toEqual([
+        { left: 0, right: 12 },
+        { left: 488, right: 500 },
+    ]);
+    expect(geometry.cardWidths).toEqual([119, 119, 119, 119]);
+    expect(geometry.namesInsideFrame).toBe(true);
+    expect(geometry.documentOverflow).toBeLessThanOrEqual(0);
+    await page.screenshot({ path: test.info().outputPath('chief-advanced-mobile-500.png'), fullPage: true });
+});
+
 test('enters general and nation command arguments and sends exact values', async ({ page }) => {
     const requests = await install(page);
     await page.setViewportSize({ width: 1200, height: 900 });
@@ -891,7 +989,13 @@ test('enters general and nation command arguments and sends exact values', async
     const chiefForm = chiefPicker.getByTestId('command-argument-form');
     await chiefForm.getByRole('button', { name: '쌀' }).click();
     await chiefForm.locator('input[type=number]').fill('300');
-    await chiefForm.locator('select').selectOption('2');
+    const chiefTarget = chiefForm.locator('select');
+    await expect(chiefTarget.locator('option')).toHaveText([
+        '장수 (아국 · 업)',
+        '관우 (아국 · 업)',
+        '여포NPC (아국 · 업)',
+    ]);
+    await chiefTarget.selectOption('3');
     const geometry = await chiefForm.evaluate((element) => {
         const row = element.querySelector('.argument-row');
         const rect = element.getBoundingClientRect();
@@ -905,13 +1009,13 @@ test('enters general and nation command arguments and sends exact values', async
     });
     await chiefPicker.getByRole('button', { name: '입력', exact: true }).click();
     await expect(page.locator('[data-command-scope="nation"] .action-column > div').first()).toHaveText(
-        '【관우】 쌀 300 포상'
+        '【여포NPC】 쌀 300 포상'
     );
 
     expect(JSON.stringify(requests)).toContain('"destCityId":2');
     expect(JSON.stringify(requests)).toContain('"isGold":false');
     expect(JSON.stringify(requests)).toContain('"amount":300');
-    expect(JSON.stringify(requests)).toContain('"destGeneralId":2');
+    expect(JSON.stringify(requests)).toContain('"destGeneralId":3');
 
     expect(mapGeometry.width).toBeGreaterThan(650);
     expect(mapGeometry.height / mapGeometry.width).toBeCloseTo(5 / 7, 2);

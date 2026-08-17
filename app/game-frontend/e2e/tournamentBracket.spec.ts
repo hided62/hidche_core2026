@@ -118,7 +118,8 @@ const persistScreenshot = async (page: Page, name: string, fallbackPath: string)
     await page.screenshot({ path: resolve(responsiveArtifactDir, `${name}.webp`), fullPage: true });
 };
 
-const installFixture = async (page: Page) => {
+const installFixture = async (page: Page, options: { applicationOpen?: boolean } = {}) => {
+    let joined = false;
     await page.addInitScript((profile) => {
         window.localStorage.setItem('sammo-game-token', 'ga_tournament_bracket_playwright');
         window.localStorage.setItem('sammo-game-profile', profile);
@@ -141,7 +142,7 @@ const installFixture = async (page: Page) => {
             if (operation === 'tournament.getSnapshot') {
                 return response({
                     state: {
-                        stage: 0,
+                        stage: options.applicationOpen ? 1 : 0,
                         phase: 0,
                         type: 0,
                         auto: false,
@@ -151,10 +152,31 @@ const installFixture = async (page: Page) => {
                         nextAt: '2026-08-02T00:00:00.000Z',
                         winnerId: 1,
                     },
-                    participants,
+                    participants:
+                        options.applicationOpen && !joined
+                            ? []
+                            : options.applicationOpen
+                              ? [
+                                    {
+                                        ...participants[0],
+                                        groupId: 0,
+                                        groupNo: 0,
+                                        win: 0,
+                                        draw: 0,
+                                        lose: 0,
+                                        gl: 0,
+                                        seedRank: 0,
+                                        finalRank: 0,
+                                    },
+                                ]
+                              : participants,
                     matches,
                     betCount: 16,
                 });
+            }
+            if (operation === 'tournament.join') {
+                joined = true;
+                return response({ ok: true, count: 1 });
             }
             if (operation === 'tournament.getBettingSummary') {
                 return response({
@@ -245,7 +267,65 @@ test('desktop bracket connects every real general slot to the next round', async
     expect(geometry.horizontalIdentities).toBe(true);
     expect(Math.abs(geometry.firstParentY - geometry.firstPairAverageY)).toBeLessThan(1);
 
+    const controls = await page.locator('#tournament-container').evaluate((container) => {
+        const bounds = (selector: string) => container.querySelector<HTMLElement>(selector)!.getBoundingClientRect();
+        const refresh = bounds('.toolbar button:first-child');
+        const join = bounds('.join-button');
+        const close = bounds('.close-button');
+        return {
+            refresh: { width: refresh.width, height: refresh.height },
+            join: { width: join.width, height: join.height },
+            close: { width: close.width, height: close.height },
+        };
+    });
+    expect(controls.refresh).toEqual({ width: 72, height: 44 });
+    expect(controls.join).toEqual({ width: 72, height: 44 });
+    expect(controls.close).toEqual({ width: 88, height: 44 });
+
+    const firstSlot = page.locator('.desktop-bracket-name').first();
+    const oddsContainment = await firstSlot.evaluate((slot) => {
+        const card = slot.getBoundingClientRect();
+        const odds = slot.querySelector<HTMLElement>('.bracket-odds')!.getBoundingClientRect();
+        return {
+            cardTop: card.top,
+            cardBottom: card.bottom,
+            oddsTop: odds.top,
+            oddsBottom: odds.bottom,
+            cardHeight: card.height,
+        };
+    });
+    expect(oddsContainment.cardHeight).toBeGreaterThanOrEqual(82);
+    expect(oddsContainment.oddsTop).toBeGreaterThanOrEqual(oddsContainment.cardTop);
+    expect(oddsContainment.oddsBottom).toBeLessThanOrEqual(oddsContainment.cardBottom);
+
     await persistScreenshot(page, 'tournament-desktop', testInfo.outputPath('tournament-bracket-desktop.webp'));
+});
+
+test('join refresh shows the assigned preliminary group immediately with accessible controls', async ({ page }) => {
+    await page.setViewportSize({ width: 390, height: 844 });
+    await installFixture(page, { applicationOpen: true });
+    await page.goto('tournament');
+
+    const refresh = page.getByRole('button', { name: '갱신' });
+    const join = page.getByRole('button', { name: '참가' });
+    const close = page.getByRole('button', { name: '창 닫기' }).first();
+    await expect(join).toBeEnabled();
+    await join.click();
+
+    await expect(page.getByRole('status')).toHaveText('참가 신청이 반영되었습니다.');
+    await expect(join).toBeDisabled();
+    await expect(page.locator('.preliminary-grid .general-identity', { hasText: names[0] })).toBeVisible();
+
+    for (const control of [refresh, join, close]) {
+        const box = await control.boundingBox();
+        expect(box?.height).toBe(44);
+        expect(box?.width).toBeGreaterThanOrEqual(72);
+    }
+    await refresh.focus();
+    await expect(refresh).toBeFocused();
+    await refresh.hover();
+    await expect(refresh).toHaveCSS('filter', 'brightness(1.25)');
+    expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
 });
 
 test('mobile bracket exposes every round through tabs with standard horizontal identities', async ({
@@ -325,6 +405,14 @@ test('mobile bracket exposes every round through tabs with standard horizontal i
     expect(identity.nameLeft).toBeGreaterThanOrEqual(identity.iconRight - 1);
     expect(identity.nameTop).toBeLessThan(identity.iconBottom);
     expect(identity.nameBottom).toBeGreaterThan(identity.iconTop);
+    const firstMobileSlot = bracket.locator('.mobile-bracket-name').first();
+    const mobileOddsContainment = await firstMobileSlot.evaluate((slot) => {
+        const card = slot.getBoundingClientRect();
+        const odds = slot.querySelector<HTMLElement>('.bracket-odds')!.getBoundingClientRect();
+        return { cardBottom: card.bottom, oddsBottom: odds.bottom, cardHeight: card.height };
+    });
+    expect(mobileOddsContainment.cardHeight).toBeGreaterThanOrEqual(82);
+    expect(mobileOddsContainment.oddsBottom).toBeLessThanOrEqual(mobileOddsContainment.cardBottom);
     await expect(page.getByRole('tablist', { name: '본선 조 선택' })).toBeVisible();
     await page.getByRole('tab', { name: '二조' }).first().click();
     await expect(page.getByRole('tab', { name: '二조' }).first()).toHaveAttribute('aria-selected', 'true');

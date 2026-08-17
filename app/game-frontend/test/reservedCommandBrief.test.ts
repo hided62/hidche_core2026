@@ -81,6 +81,12 @@ const table: CommandTable = {
             { value: 8, label: '손권 (오 · 단양)' },
             { value: 9, label: '조조 (위 · 업)' },
         ],
+        generalTargets: {
+            che_포상: [
+                { value: 8, label: '손권 (오 · 단양)' },
+                { value: 10, label: '여포NPC (오 · 단양)' },
+            ],
+        },
         crewTypes: [{ value: 1100, label: '보병' }],
         armTypes: [
             { value: 0, label: '보병' },
@@ -165,6 +171,10 @@ test('국가 명령의 도시·국가·장수·자원 인자를 Ref brief로 표
     for (const [action, args, expected] of cases) {
         assert.equal(formatReservedCommandBrief('nation', action, args, table), expected, action);
     }
+    assert.equal(
+        formatReservedCommandBrief('nation', 'che_포상', { destGeneralId: 10, amount: 300, isGold: false }, table),
+        '【여포NPC】 쌀 300 포상'
+    );
 });
 
 test('Ref가 getBrief를 재정의하지 않은 명령은 실제 표시명을 유지한다', () => {

@@ -155,6 +155,60 @@ export const assignGroupSlots = (
     });
 };
 
+/**
+ * Ref assigns a manual applicant to one uniformly selected non-full preliminary
+ * group as part of the join request. Keeping that assignment in the persisted
+ * participant projection lets the applicant see the group immediately while
+ * the later participant-fill pass can still balance automatic applicants.
+ */
+export const assignManualApplicantGroup = (options: {
+    state: TournamentState;
+    baseSeed: string;
+    current: TournamentParticipantEntry[];
+    applicant: TournamentParticipantEntry;
+    groupCount?: number;
+    groupSize?: number;
+}): TournamentParticipantEntry => {
+    const groupCount = options.groupCount ?? 8;
+    const groupSize = options.groupSize ?? 8;
+    const groupCounts = Array.from({ length: groupCount }, () => 0);
+
+    for (const participant of options.current) {
+        const groupId = participant.groupId;
+        if (groupId !== undefined && groupId >= 0 && groupId < groupCount) {
+            groupCounts[groupId] = (groupCounts[groupId] ?? 0) + 1;
+        }
+    }
+
+    const openGroupIds = groupCounts.flatMap((count, groupId) => (count < groupSize ? [groupId] : []));
+    if (openGroupIds.length === 0) {
+        throw new Error('참가 인원이 가득 찼습니다.');
+    }
+
+    const rng = createTournamentRng(options.baseSeed, {
+        openYear: options.state.openYear,
+        openMonth: options.state.openMonth,
+        stage: 1,
+        phase: options.state.phase,
+        matchIndex: options.applicant.id,
+        participantIndex: options.current.length,
+        extraSeed: `manual-group:${options.current.map((entry) => entry.id).join('-')}:${openGroupIds.join('-')}`,
+    });
+    const groupId = rng.choice(openGroupIds);
+
+    return {
+        ...options.applicant,
+        groupId,
+        groupNo: groupCounts[groupId] ?? 0,
+        win: 0,
+        draw: 0,
+        lose: 0,
+        gl: 0,
+        seedRank: 0,
+        finalRank: 0,
+    };
+};
+
 const selectWeighted = <T>(rng: ReturnType<typeof createTournamentRng>, pool: Array<{ item: T; weight: number }>): T =>
     rng.choiceUsingWeightPair(pool.map((entry) => [entry.item, entry.weight]));
 

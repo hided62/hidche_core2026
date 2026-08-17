@@ -204,6 +204,20 @@ describe('tournament router permissions and mutations', () => {
 
         expect(transport.gold.get(general.id)).toBe(1_800);
         expect(transport.commands.filter((command) => command.type === 'adjustGeneralResources')).toHaveLength(1);
+        expect(transport.commands.filter((command) => command.type === 'setMySetting')).toHaveLength(0);
+        const snapshot = await caller.tournament.getSnapshot();
+        expect(snapshot.participants).toHaveLength(1);
+        expect(snapshot.participants[0]).toMatchObject({
+            id: general.id,
+            groupId: expect.any(Number),
+            groupNo: 0,
+            win: 0,
+            draw: 0,
+            lose: 0,
+            gl: 0,
+        });
+        expect(snapshot.participants[0]!.groupId).toBeGreaterThanOrEqual(0);
+        expect(snapshot.participants[0]!.groupId).toBeLessThan(8);
     });
 
     it('serializes concurrent bets and enforces the legacy per-user 1000 limit', async () => {

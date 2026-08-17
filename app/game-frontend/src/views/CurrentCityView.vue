@@ -366,7 +366,7 @@ const generalImage = (general: General): string => resolveGeneralIconUrl(general
     border: 1px solid #767676;
     background: #6b6b6b;
     color: #fff;
-    font-family: Arial, sans-serif;
+    font-family: var(--sammo-font-sans);
     font-size: 13.3333px;
 }
 .selector {
@@ -470,7 +470,7 @@ const generalImage = (general: General): string => resolveGeneralIconUrl(general
     background: #6c757d;
     color: #fff;
     padding: 0.25rem 0.5rem;
-    font-family: Arial, sans-serif;
+    font-family: var(--sammo-font-sans);
     font-size: 14px;
     line-height: 1;
     text-decoration: none;

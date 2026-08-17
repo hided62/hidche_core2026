@@ -522,12 +522,7 @@ onMounted(() => void loadPersonnel());
     min-height: 100vh;
     margin: 0 auto;
     color: #fff;
-    font:
-        14px/1.3 Pretendard,
-        'Apple SD Gothic Neo',
-        'Noto Sans KR',
-        'Malgun Gothic',
-        sans-serif;
+    font: 14px/1.3 var(--sammo-font-sans);
 }
 .legacy-table {
     width: 1000px;
