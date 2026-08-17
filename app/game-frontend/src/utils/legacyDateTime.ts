@@ -15,3 +15,12 @@ export const formatLocalTimeSeconds = (value: string | Date): string => {
         .map((part) => String(part).padStart(2, '0'))
         .join(':');
 };
+
+export const formatLocalDateTime = (value: string | Date): string => {
+    const parsed = value instanceof Date ? value : new Date(value);
+    if (!Number.isFinite(parsed.getTime())) return '-';
+    const date = [parsed.getFullYear(), parsed.getMonth() + 1, parsed.getDate()]
+        .map((part, index) => String(part).padStart(index === 0 ? 4 : 2, '0'))
+        .join('-');
+    return `${date} ${formatLocalTimeSeconds(parsed)}`;
+};
