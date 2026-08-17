@@ -1,4 +1,5 @@
 import {
+    acquireGameSchemaAdvisoryXactLock,
     createGamePostgresConnector,
     GamePrisma,
     writeReadModelChangeJournal,
@@ -1140,12 +1141,7 @@ export const createDatabaseTurnHooks = async (
             if (pendingNeutralAuctions.length > 0) {
                 const latestRegistrationKey =
                     pendingNeutralAuctions[pendingNeutralAuctions.length - 1]!.registrationKey;
-                await prisma.$executeRaw`
-                    SELECT pg_advisory_xact_lock(
-                        hashtext(${'neutral-auction-registration'}),
-                        ${state.id}
-                    )
-                `;
+                await acquireGameSchemaAdvisoryXactLock(prisma, `neutral-auction-registration:world-state:${state.id}`);
                 const persistedRows = await prisma.$queryRaw<Array<{ meta: unknown }>>`
                     SELECT meta
                     FROM world_state

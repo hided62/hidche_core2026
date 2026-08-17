@@ -17,6 +17,7 @@ import {
     readReleaseManifest,
     sanitizeManagedProcessEnv,
 } from '@sammo-ts/gateway-api';
+import { resolvePostgresPoolMax } from '@sammo-ts/infra';
 
 import type { ReleaseControllerConfig } from './config.js';
 
@@ -24,6 +25,9 @@ const LEASE_DURATION_MS = 10 * 60_000;
 const HEARTBEAT_INTERVAL_MS = 60_000;
 const PROCESS_NAMES = ['sammo:gateway-api', 'sammo:gateway-frontend', 'sammo:gateway-orchestrator'] as const;
 const SENSITIVE_ENV_NAME = /(SECRET|TOKEN|PASSWORD|PASSWD|PRIVATE_KEY|CLIENT_SECRET|DATABASE_URL|REDIS_URL)/iu;
+
+const managedPostgresPoolMax = (env: Record<string, string>, roleVariable: string, fallback: number): string =>
+    String(resolvePostgresPoolMax(env[roleVariable] ?? env.POSTGRES_POOL_MAX, fallback));
 
 const buildGatewayReleaseCommands = (
     workspaceRoot: string,
@@ -78,7 +82,16 @@ export const buildGatewayProcessDefinitions = (
         GATEWAY_DATABASE_URL: config.gatewayDatabaseUrl,
     };
     return [
-        { name: 'sammo:gateway-api', script: apiScript, cwd: apiCwd, env: { ...env, GATEWAY_ROLE: 'api' } },
+        {
+            name: 'sammo:gateway-api',
+            script: apiScript,
+            cwd: apiCwd,
+            env: {
+                ...env,
+                POSTGRES_POOL_MAX: managedPostgresPoolMax(config.baseEnv, 'GATEWAY_API_POSTGRES_POOL_MAX', 4),
+                GATEWAY_ROLE: 'api',
+            },
+        },
         {
             name: 'sammo:gateway-frontend',
             script: frontendScript,
@@ -90,7 +103,11 @@ export const buildGatewayProcessDefinitions = (
             name: 'sammo:gateway-orchestrator',
             script: apiScript,
             cwd: apiCwd,
-            env: { ...env, GATEWAY_ROLE: 'orchestrator' },
+            env: {
+                ...env,
+                POSTGRES_POOL_MAX: managedPostgresPoolMax(config.baseEnv, 'GATEWAY_ORCHESTRATOR_POSTGRES_POOL_MAX', 2),
+                GATEWAY_ROLE: 'orchestrator',
+            },
         },
     ];
 };

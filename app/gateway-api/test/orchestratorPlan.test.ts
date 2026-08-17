@@ -139,6 +139,7 @@ describe('buildProcessDefinitions', () => {
         expect(definitions.api.script).toBe(path.join(buildWorkspace, 'app', 'game-api', 'dist', 'index.js'));
         expect(definitions.api.env).toMatchObject({
             GAME_PROFILE_NAME: 'che:2',
+            POSTGRES_POOL_MAX: '4',
             GAME_TRPC_PATH: '/che/api/trpc',
             GAME_API_EVENTS_PATH: '/che/api/events',
             GATEWAY_INTERNAL_API_URL: 'http://127.0.0.1:13000',
@@ -146,20 +147,21 @@ describe('buildProcessDefinitions', () => {
         });
         expect(definitions.daemon.cwd).toBe(path.join(buildWorkspace, 'app', 'game-engine'));
         expect(definitions.daemon.script).toBe(path.join(buildWorkspace, 'app', 'game-engine', 'dist', 'index.js'));
+        expect(definitions.daemon.env.POSTGRES_POOL_MAX).toBe('2');
         expect(definitions.auction).toMatchObject({
             cwd: path.join(buildWorkspace, 'app', 'game-api'),
             script: path.join(buildWorkspace, 'app', 'game-api', 'dist', 'index.js'),
-            env: { GAME_API_ROLE: 'auction-worker' },
+            env: { GAME_API_ROLE: 'auction-worker', POSTGRES_POOL_MAX: '1' },
         });
         expect(definitions.battleSim).toMatchObject({
             cwd: path.join(buildWorkspace, 'app', 'game-api'),
             script: path.join(buildWorkspace, 'app', 'game-api', 'dist', 'index.js'),
-            env: { GAME_API_ROLE: 'battle-sim-worker' },
+            env: { GAME_API_ROLE: 'battle-sim-worker', POSTGRES_POOL_MAX: '1' },
         });
         expect(definitions.tournament).toMatchObject({
             cwd: path.join(buildWorkspace, 'app', 'game-api'),
             script: path.join(buildWorkspace, 'app', 'game-api', 'dist', 'index.js'),
-            env: { GAME_API_ROLE: 'tournament-worker' },
+            env: { GAME_API_ROLE: 'tournament-worker', POSTGRES_POOL_MAX: '1' },
         });
     });
 
@@ -249,6 +251,21 @@ describe('buildProcessDefinitions', () => {
         expect(definitions.auction.env.NODE_OPTIONS).toBe('--max-old-space-size=1536');
         expect(definitions.battleSim.env.NODE_OPTIONS).toBe('--max-old-space-size=1536');
         expect(definitions.tournament.env.NODE_OPTIONS).toBe('--max-old-space-size=1536');
+    });
+
+    it('accepts role-specific pool budget overrides without changing sibling roles', () => {
+        const definitions = buildProcessDefinitions(buildProfile(), {
+            ...processConfig,
+            baseEnv: {
+                GAME_API_POSTGRES_POOL_MAX: '6',
+                AUCTION_WORKER_POSTGRES_POOL_MAX: '2',
+            },
+        });
+
+        expect(definitions.api.env.POSTGRES_POOL_MAX).toBe('6');
+        expect(definitions.daemon.env.POSTGRES_POOL_MAX).toBe('2');
+        expect(definitions.auction.env.POSTGRES_POOL_MAX).toBe('2');
+        expect(definitions.tournament.env.POSTGRES_POOL_MAX).toBe('1');
     });
 });
 

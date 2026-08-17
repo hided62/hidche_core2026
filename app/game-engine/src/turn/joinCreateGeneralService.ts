@@ -1,5 +1,5 @@
 import { asNumber, asRecord, JosaUtil, LiteHashDRBG, RandUtil } from '@sammo-ts/common';
-import { GamePrisma } from '@sammo-ts/infra';
+import { acquireGameSchemaAdvisoryXactLock, GamePrisma } from '@sammo-ts/infra';
 import {
     ActionLogger,
     buildAuctionAlias,
@@ -165,7 +165,7 @@ export const buildJoinCreateGeneralSeed = (
 ): string => simpleSerialize(hiddenSeed, 'MakeGeneral', ownerIdentity, acceptedTick);
 
 const lockJoinMutation = async (db: DatabaseClient, userId: string): Promise<void> => {
-    await db.$executeRaw(GamePrisma.sql`SELECT pg_advisory_xact_lock(hashtextextended(${`join-create:${userId}`}, 0))`);
+    await acquireGameSchemaAdvisoryXactLock(db, `join-create:user:${userId}`);
     await db.$executeRaw(GamePrisma.sql`LOCK TABLE "general" IN SHARE ROW EXCLUSIVE MODE`);
 };
 

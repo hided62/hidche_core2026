@@ -1,7 +1,7 @@
 import { z } from 'zod';
 
 import { asNumber, asRecord, JosaUtil, LiteHashDRBG, RandUtil } from '@sammo-ts/common';
-import { GamePrisma } from '@sammo-ts/infra';
+import { acquireGameSchemaAdvisoryXactLock, GamePrisma } from '@sammo-ts/infra';
 import {
     EventDomesticTraitLoader,
     isEventDomesticTraitKey,
@@ -266,9 +266,7 @@ const getWorldHiddenSeed = (worldState: WorldStateRow): string | number => {
 };
 
 const lockSelectionUser = async (db: DatabaseClient, userId: string): Promise<void> => {
-    await db.$executeRaw(
-        GamePrisma.sql`SELECT pg_advisory_xact_lock(hashtextextended(${`select_pool:${userId}`}, 903))`
-    );
+    await acquireGameSchemaAdvisoryXactLock(db, `select-pool:user:${userId}`);
 };
 
 const requireSelectionToken = async (

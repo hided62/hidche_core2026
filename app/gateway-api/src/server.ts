@@ -140,6 +140,7 @@ export const createGatewayApiServer = async () => {
 
     app.get('/healthz', async () => ({
         ok: true,
+        postgresPool: postgres.getPoolStats(),
     }));
 
     app.addHook('onClose', async () => {

@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto';
 
 import { asRecord, JosaUtil } from '@sammo-ts/common';
-import { GamePrisma } from '@sammo-ts/infra';
+import { acquireGameSchemaAdvisoryXactLock, GamePrisma } from '@sammo-ts/infra';
 import {
     ActionLogger,
     ItemLoader,
@@ -71,7 +71,7 @@ const openResourceAuction = async (
         return fail('즉시거래가는 시작판매가의 110% 이상이어야 합니다.');
     }
 
-    await db.$executeRaw(GamePrisma.sql`SELECT pg_advisory_xact_lock(${command.generalId}, 41001)`);
+    await acquireGameSchemaAdvisoryXactLock(db, `auction:resource:host:${command.generalId}`);
     const previous = await db.auction.findFirst({
         where: {
             hostGeneralId: command.generalId,
@@ -162,8 +162,8 @@ const openUniqueAuction = async (
         }
     }
 
-    await db.$executeRaw(GamePrisma.sql`SELECT pg_advisory_xact_lock(hashtext(${`auction:unique:item:${itemKey}`}))`);
-    await db.$executeRaw(GamePrisma.sql`SELECT pg_advisory_xact_lock(${command.generalId}, 41002)`);
+    await acquireGameSchemaAdvisoryXactLock(db, `auction:unique:item:${itemKey}`);
+    await acquireGameSchemaAdvisoryXactLock(db, `auction:unique:host:${command.generalId}`);
     const [sameItemAuction, previousHostAuction] = await Promise.all([
         db.auction.findFirst({
             where: {

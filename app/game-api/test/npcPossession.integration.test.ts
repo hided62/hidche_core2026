@@ -2,7 +2,13 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 import type { GameSessionTokenPayload } from '@sammo-ts/common/auth/gameToken';
 import { createTurnDaemonRuntime, seedScenarioToDatabase, type TurnDaemonRuntime } from '@sammo-ts/game-engine';
-import { createGamePostgresConnector, GamePrisma, type GamePrismaClient, type RedisConnector } from '@sammo-ts/infra';
+import {
+    acquireGameSchemaAdvisoryXactLock,
+    createGamePostgresConnector,
+    type GamePrisma,
+    type GamePrismaClient,
+    type RedisConnector,
+} from '@sammo-ts/infra';
 
 import { RedisAccessTokenStore } from '../src/auth/accessTokenStore.js';
 import { InMemoryFlushStore } from '../src/auth/flushStore.js';
@@ -446,9 +452,7 @@ integration('mode 1 NPC possession through token reservation and the durable dae
         });
         const blocker = db.$transaction(
             async (transaction) => {
-                await transaction.$executeRaw(
-                    GamePrisma.sql`SELECT pg_advisory_xact_lock(hashtextextended('npc-possession', 1))`
-                );
+                await acquireGameSchemaAdvisoryXactLock(transaction, 'npc-possession:global');
                 markLockReady();
                 await lockRelease;
             },
