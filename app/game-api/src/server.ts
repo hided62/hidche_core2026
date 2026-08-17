@@ -4,7 +4,11 @@ import fastifyStatic from '@fastify/static';
 import path from 'path';
 import fs from 'node:fs/promises';
 import { fastifyTRPCPlugin } from '@trpc/server/adapters/fastify';
-import { buildGameEventChannel, type RealtimeViewerIdentity } from '@sammo-ts/common';
+import {
+    buildGameEventChannel,
+    trpcJsonBodyHttpServerOptions,
+    type RealtimeViewerIdentity,
+} from '@sammo-ts/common';
 import type { GameSessionTokenPayload } from '@sammo-ts/common/auth/gameToken';
 import {
     createGamePostgresConnector,
@@ -200,6 +204,7 @@ export const createGameApiServer = async () => {
         prefix: config.trpcPath,
         trpcOptions: {
             router: appRouter,
+            ...trpcJsonBodyHttpServerOptions,
             createContext: async ({ req }: { req: FastifyRequest }) => {
                 const token = extractBearerToken(req.headers.authorization);
                 const auth = await resolveAuthFromToken(token, accessTokenStore, flushStore);

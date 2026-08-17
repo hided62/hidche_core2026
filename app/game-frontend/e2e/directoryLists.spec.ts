@@ -131,11 +131,15 @@ const generals = [
 ];
 
 const parseSort = (route: Route): number => {
-    const raw = new URL(route.request().url()).searchParams.get('input');
-    if (!raw) return 9;
     try {
-        const input = JSON.parse(raw) as { 0?: { sort?: number }; json?: { sort?: number } };
-        return input[0]?.sort ?? input.json?.sort ?? 9;
+        const request = route.request();
+        const queryInput = new URL(request.url()).searchParams.get('input');
+        const input = (request.postData()
+            ? request.postDataJSON()
+            : queryInput
+              ? JSON.parse(queryInput)
+              : {}) as { 0?: { json?: { sort?: number }; sort?: number }; json?: { sort?: number } };
+        return input[0]?.json?.sort ?? input[0]?.sort ?? input.json?.sort ?? 9;
     } catch {
         return 9;
     }

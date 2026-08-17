@@ -2,6 +2,7 @@ import fastify, { type FastifyRequest } from 'fastify';
 import { fastifyTRPCPlugin } from '@trpc/server/adapters/fastify';
 import { afterEach, describe, expect, it } from 'vitest';
 
+import { trpcJsonBodyHttpServerOptions } from '@sammo-ts/common';
 import type { GatewayPrismaClient } from '@sammo-ts/infra';
 
 import { InMemoryGatewaySessionService } from '../src/auth/inMemorySessionService.js';
@@ -94,6 +95,7 @@ const createHarness = async (adminRoles = ['user', 'admin.users.manage', 'admin.
         prefix: '/trpc',
         trpcOptions: {
             router: appRouter,
+            ...trpcJsonBodyHttpServerOptions,
             createContext: ({ req }: { req: FastifyRequest }) =>
                 createGatewayApiContext({
                     users,
@@ -168,6 +170,33 @@ const postTrpc = async (
 };
 
 describe('admin security over HTTP transport', () => {
+    it('accepts query input from a POST JSON body but still rejects a mutation sent as GET', async () => {
+        const harness = await createHarness();
+
+        const query = await postTrpc(harness.baseUrl, 'me', null, harness.adminSessionToken);
+        expect(query.response.status).toBe(200);
+        expect(query.body).toMatchObject({
+            result: {
+                data: {
+                    id: harness.admin.id,
+                },
+            },
+        });
+
+        const mutationInput = encodeURIComponent(
+            JSON.stringify({ json: { sessionToken: harness.adminSessionToken } })
+        );
+        const mutation = await fetch(`${harness.baseUrl}/trpc/auth.logout?input=${mutationInput}`);
+        expect(mutation.status).toBe(405);
+        expect(await mutation.json()).toMatchObject({
+            error: {
+                data: {
+                    code: 'METHOD_NOT_SUPPORTED',
+                },
+            },
+        });
+    });
+
     it('does not expose the removed public user-flush mutation', async () => {
         const harness = await createHarness();
 

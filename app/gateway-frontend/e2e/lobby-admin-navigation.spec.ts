@@ -9,10 +9,16 @@ const operationNames = (route: Route): string[] => {
 };
 
 const installGatewayFixture = async (page: Page, roles: string[]) => {
+    const requests: Array<{ method: string; url: string; body: unknown }> = [];
     await page.addInitScript(() => {
         window.localStorage.setItem('sammo-session-token', 'playwright-admin-session');
     });
     await page.route('**/gateway/api/trpc/**', async (route) => {
+        requests.push({
+            method: route.request().method(),
+            url: route.request().url(),
+            body: route.request().postDataJSON(),
+        });
         const results = operationNames(route).map((operation) => {
             if (operation === 'me') {
                 return response({
@@ -107,10 +113,11 @@ const installGatewayFixture = async (page: Page, roles: string[]) => {
             ),
         });
     });
+    return requests;
 };
 
 test('bootstrap superuser can navigate the administrator workspace from the lobby', async ({ page }, testInfo) => {
-    await installGatewayFixture(page, ['superuser']);
+    const requests = await installGatewayFixture(page, ['superuser']);
 
     await page.goto('lobby');
     const adminLink = page.getByRole('link', { name: '관리자 페이지' });
@@ -144,6 +151,10 @@ test('bootstrap superuser can navigate the administrator workspace from the lobb
     await navigation.getByRole('link', { name: 'Gateway 릴리스' }).click();
     await expect(page).toHaveURL(/\/gateway\/admin\/releases$/);
     await expect(page.getByRole('heading', { name: 'Gateway 릴리스', level: 1 })).toBeVisible();
+    expect(requests.length).toBeGreaterThan(0);
+    expect(requests.every(({ method }) => method === 'POST')).toBe(true);
+    expect(requests.every(({ url }) => !new URL(url).searchParams.has('input'))).toBe(true);
+    expect(requests.some(({ body }) => JSON.stringify(body).includes('"limit":30'))).toBe(true);
 });
 
 test('desktop administrator sidebar follows the navbar away and then sticks to the viewport top', async ({

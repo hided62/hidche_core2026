@@ -147,7 +147,7 @@ const installFixture = async (page: Page): Promise<void> => {
                 return response(listPayload);
             }
             if (operation === 'dynasty.getDetail') {
-                const input = new URL(route.request().url()).searchParams.get('input') ?? '';
+                const input = route.request().postData() ?? new URL(route.request().url()).searchParams.get('input') ?? '';
                 return input.includes('999')
                     ? errorResponse(operation, 'NOT_FOUND', '왕조 정보를 찾을 수 없습니다.')
                     : response(detailPayload);

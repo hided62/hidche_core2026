@@ -167,6 +167,26 @@ integration('game API security over HTTP transport', () => {
         restoreEnv();
     }, 30_000);
 
+    it('accepts an authenticated query from a POST JSON body', async () => {
+        const accessToken = await createAccessToken('json-query-body', {});
+        const general = await requestTrpc('general.me', {
+            method: 'POST',
+            input: null,
+            accessToken,
+        });
+
+        expect(general.response.status).toBe(200);
+        expect(general.body).toMatchObject({
+            result: {
+                data: {
+                    general: {
+                        id: generalId,
+                    },
+                },
+            },
+        });
+    });
+
     it.each([
         {
             label: 'global suspension',
