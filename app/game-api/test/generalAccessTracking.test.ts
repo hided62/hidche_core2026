@@ -5,7 +5,12 @@ import { z } from 'zod';
 import type { GameApiContext } from '../src/context.js';
 import type { DatabaseClient } from '../src/context.js';
 
-import { accessAuthedInputProcedure, accessLimitAuthedProcedure, router } from '../src/trpc.js';
+import {
+    accessAuthedInputProcedure,
+    accessLimitAuthedProcedure,
+    deferredAccessLimitAuthedProcedure,
+    router,
+} from '../src/trpc.js';
 import {
     accessPageWeights,
     generalAccessEndpointWeights,
@@ -164,7 +169,7 @@ describe('general access tracking', () => {
             select: { id: true, userId: true, turnTime: true },
         });
         expect(transaction).toHaveBeenCalledTimes(1);
-        expect(queryRaw).toHaveBeenCalledTimes(2);
+        expect(queryRaw).toHaveBeenCalledTimes(1);
         expect(executeRaw).toHaveBeenCalledTimes(2);
 
         const periodStatement = queryRaw.mock.calls[0]![0] as { sql: string; values: unknown[] };
@@ -193,10 +198,6 @@ describe('general access tracking', () => {
         expect(accessStatement.values).toContain(now);
         expect(accessStatement.values).toContainEqual(new Date('2026-07-26T03:00:00.000Z'));
 
-        const journalStatement = queryRaw.mock.calls[1]![0] as { sql: string; values: unknown[] };
-        expect(journalStatement.sql).toContain('INSERT INTO "read_model_outbox"');
-        expect(journalStatement.values).toContain('access.general');
-        expect(journalStatement.values).toContain(7);
     });
 
     it('accepts legacy weight zero to refresh timestamps without incrementing counters', async () => {
@@ -240,6 +241,32 @@ describe('general access tracking', () => {
             code: 'TOO_MANY_REQUESTS',
             message: expect.stringContaining('자신의 턴이 되면 다시 접속 가능합니다.'),
         });
+        expect(resolver).not.toHaveBeenCalled();
+    });
+
+    it('checks a deferred limit with Redis only and does not query PostgreSQL', async () => {
+        const fixture = buildDb();
+        const resolver = vi.fn(() => ({ ok: true }));
+        const limitedRouter = router({ read: deferredAccessLimitAuthedProcedure.query(resolver) });
+        const get = vi.fn(async () =>
+            JSON.stringify({ nextAccessAt: '2099-07-26T03:10:00.000Z' })
+        );
+
+        await expect(
+            limitedRouter
+                .createCaller({
+                    ...accessContext(fixture.db),
+                    redis: { get },
+                } as unknown as GameApiContext)
+                .read()
+        ).rejects.toMatchObject({
+            code: 'TOO_MANY_REQUESTS',
+            message: expect.stringContaining('다음 접속 가능 시각'),
+        });
+        expect(get).toHaveBeenCalledTimes(1);
+        expect(fixture.findGeneral).not.toHaveBeenCalled();
+        expect(fixture.findWorld).not.toHaveBeenCalled();
+        expect(fixture.db.generalAccessLog.findUnique).not.toHaveBeenCalled();
         expect(resolver).not.toHaveBeenCalled();
     });
 
