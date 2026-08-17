@@ -26,6 +26,7 @@ export default defineConfig({
         'legacyLogHtml.spec.ts',
         'directoryLists.spec.ts',
         'pastPlays.spec.ts',
+        'legacyArchiveViews.spec.ts',
         'nationGeneralSecret.spec.ts',
         'npcPolicy.spec.ts',
         'auction.spec.ts',
