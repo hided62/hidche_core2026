@@ -75,7 +75,6 @@ Gateway 관리자 콘솔은 `/gateway/admin`에서 시작합니다. 공개 로�
 | `admin.profiles.deploy:<name>`   | DB를 유지하는 Git 버전 업데이트, 초기화와 새 버전 결합    |
 | `admin.scenarios.reset:<name>`   | 현재 배포 버전으로 시나리오 초기화                        |
 | `admin.reset.schedule:<name>`    | 허용된 시나리오 초기화를 미래 시각에 예약                 |
-| `admin.profiles.manage:<name>`   | 기존 역할 호환용 포괄 권한                                |
 | `admin.releases.manage`          | profile과 분리된 Gateway control plane 배포·rollback      |
 
 기존 상태 화면의 `즉시 리셋`·`리셋 예약` 버튼은 실제 DB 초기화 operation과

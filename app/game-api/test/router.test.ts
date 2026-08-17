@@ -803,6 +803,26 @@ describe('appRouter', () => {
         });
     });
 
+    it('accepts the scoped profile runtime permission for turn daemon control', async () => {
+        const auth = buildAuth();
+        auth.user.roles = ['admin.profiles.runtime:che:default'];
+        const caller = appRouter.createCaller(buildContext({ auth }));
+
+        await expect(caller.turnDaemon.run({ reason: 'manual' })).resolves.toMatchObject({ accepted: true });
+        await expect(caller.turnDaemon.pause()).resolves.toMatchObject({ accepted: true });
+        await expect(caller.turnDaemon.resume()).resolves.toMatchObject({ accepted: true });
+        await expect(caller.turnDaemon.status()).resolves.toBeDefined();
+    });
+
+    it('rejects the removed umbrella profile permission for turn daemon control', async () => {
+        const auth = buildAuth();
+        auth.user.roles = ['admin.profiles.manage:che:default'];
+        const caller = appRouter.createCaller(buildContext({ auth }));
+
+        await expect(caller.turnDaemon.run({ reason: 'manual' })).rejects.toMatchObject({ code: 'FORBIDDEN' });
+        await expect(caller.turnDaemon.status()).rejects.toMatchObject({ code: 'FORBIDDEN' });
+    });
+
     it('rejects unauthenticated turn daemon control', async () => {
         const caller = appRouter.createCaller(buildContext({ auth: null }));
 

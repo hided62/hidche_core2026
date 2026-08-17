@@ -16,6 +16,22 @@ describe('legacy database transforms', () => {
         expect(mapLegacyRoles(1, { che: ['reset', 'notice'] })).toEqual([
             'admin.notice.manage:che:default',
             'admin.reset.schedule:che:default',
+            'admin.scenarios.reset:che:default',
+            'user',
+        ]);
+        expect(mapLegacyRoles(1, { hwe: ['openClose', 'update', 'fullUpdate'] })).toEqual([
+            'admin.profiles.deploy:hwe:default',
+            'admin.profiles.runtime:hwe:default',
+            'user',
+        ]);
+        expect(mapLegacyRoles(6, {})).toEqual([
+            'admin.notice.manage',
+            'admin.profiles.deploy',
+            'admin.profiles.runtime',
+            'admin.profiles.settings',
+            'admin.reset.schedule',
+            'admin.resume.when-stopped',
+            'admin.scenarios.reset',
             'user',
         ]);
     });
