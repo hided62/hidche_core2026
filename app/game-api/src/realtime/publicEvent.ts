@@ -31,10 +31,7 @@ const eventChanges = (event: RealtimeEvent): RealtimeReadModelChanges | null => 
     return null;
 };
 
-export const shouldReloadRealtimeViewerIdentity = (
-    event: RealtimeEvent,
-    identity: RealtimeViewerIdentity
-): boolean => {
+export const shouldReloadRealtimeViewerIdentity = (event: RealtimeEvent, identity: RealtimeViewerIdentity): boolean => {
     if (identity.generalId === null) return false;
     const changes = eventChanges(event);
     if (!changes) return false;
@@ -57,7 +54,8 @@ export const shouldReloadRealtimeViewerIdentity = (
  */
 export const toPublicRealtimeEvent = (
     event: RealtimeEvent,
-    identities: readonly RealtimeViewerIdentity[]
+    identities: readonly RealtimeViewerIdentity[],
+    createRefreshGrant: () => string
 ): PublicRealtimeEvent | null => {
     const viewers = uniqueIdentities(
         identities.length > 0 ? identities : [{ generalId: null, cityId: null, nationId: null }]
@@ -65,13 +63,14 @@ export const toPublicRealtimeEvent = (
     if (event.type === 'messageCreated' || event.type === 'messagesChanged') {
         const mailboxes = event.type === 'messageCreated' ? [event.mailbox] : event.mailboxes;
         return viewers.some((identity) => mailboxes.some((mailbox) => isMailboxRelevant(mailbox, identity)))
-            ? { type: 'messagesInvalidated' }
+            ? { type: 'messagesInvalidated', refreshGrant: createRefreshGrant() }
             : null;
     }
 
     if (event.type === 'tournamentChanged') {
         return {
             type: 'readModelInvalidated',
+            refreshGrant: createRefreshGrant(),
             invalidation: {
                 context: false,
                 lobby: false,
@@ -90,6 +89,7 @@ export const toPublicRealtimeEvent = (
     if (event.type === 'turnCompleted' && !event.changes) {
         return {
             type: 'readModelInvalidated',
+            refreshGrant: createRefreshGrant(),
             invalidation: createFullRealtimeReadModelInvalidation(),
         };
     }
@@ -100,5 +100,5 @@ export const toPublicRealtimeEvent = (
         .map((identity) => resolveRealtimeReadModelInvalidation(changes, identity))
         .reduce(mergeRealtimeReadModelInvalidations);
     if (!hasRealtimeReadModelInvalidation(invalidation)) return null;
-    return { type: 'readModelInvalidated', invalidation };
+    return { type: 'readModelInvalidated', invalidation, refreshGrant: createRefreshGrant() };
 };

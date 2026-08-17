@@ -4,7 +4,7 @@ import { applyReadModelDelta } from '@sammo-ts/common';
 import type { GameSessionTokenPayload } from '@sammo-ts/common/auth/gameToken';
 
 import type { GameApiContext } from '../src/context.js';
-import { dashboardRouter } from '../src/router/dashboard/index.js';
+import { dashboardRouter, requiresDashboardProjection } from '../src/router/dashboard/index.js';
 
 const auth: GameSessionTokenPayload = {
     version: 1,
@@ -141,6 +141,55 @@ const contextOnly = {
 };
 
 describe('dashboardRouter.getContextBundleDelta', () => {
+    it('classifies revision-only checks separately from PostgreSQL projection rebuilds', () => {
+        const sourceRevision = 'S'.repeat(22);
+        const sourceState = {
+            coverageVersion: 1,
+            identity: { generalId: 7, cityId: 0, nationId: 0 },
+            sourceRevisions: {
+                context: sourceRevision,
+                commandTable: 'T'.repeat(22),
+                boardAccess: 'B'.repeat(22),
+            },
+        };
+
+        expect(
+            requiresDashboardProjection({
+                included: true,
+                sourceState,
+                slice: 'context',
+                knownContent: 'C'.repeat(22),
+                knownSource: sourceRevision,
+            })
+        ).toBe(false);
+        expect(
+            requiresDashboardProjection({
+                included: true,
+                sourceState,
+                slice: 'context',
+                knownContent: 'C'.repeat(22),
+                knownSource: 'X'.repeat(22),
+            })
+        ).toBe(true);
+        expect(
+            requiresDashboardProjection({
+                included: true,
+                sourceState,
+                slice: 'context',
+                knownContent: 'C'.repeat(22),
+                knownSource: sourceRevision,
+                forceSnapshot: true,
+            })
+        ).toBe(true);
+        expect(
+            requiresDashboardProjection({
+                included: false,
+                sourceState,
+                slice: 'context',
+            })
+        ).toBe(false);
+    });
+
     it('returns a snapshot, unchanged revision, and applicable patch for the authenticated viewer', async () => {
         const fixture = buildContext(true);
         const caller = dashboardRouter.createCaller(fixture.context);

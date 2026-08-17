@@ -58,12 +58,25 @@ integration('general access tracking persistence', () => {
     let db: GamePrismaClient;
     let closeDb: (() => Promise<void>) | undefined;
     let worldStateId: number;
+    let previousCoverageVersion: number | null;
 
     beforeAll(async () => {
         const connector = createGamePostgresConnector({ url: databaseUrl! });
         await connector.connect();
         db = connector.prisma;
         closeDb = () => connector.disconnect();
+        previousCoverageVersion =
+            (
+                await db.readModelRevisionMeta.findUnique({
+                    where: { id: 1 },
+                    select: { coverageVersion: true },
+                })
+            )?.coverageVersion ?? null;
+        await db.readModelRevisionMeta.upsert({
+            where: { id: 1 },
+            create: { id: 1, coverageVersion: 1 },
+            update: { coverageVersion: 1 },
+        });
         await db.generalAccessLog.deleteMany({
             where: {
                 generalId: {
@@ -126,6 +139,14 @@ integration('general access tracking persistence', () => {
         await db.yearbookHistory.deleteMany({ where: { profileName: yearbookProfile } });
         await db.general.deleteMany({ where: { id: endpointGeneralId } });
         await db.worldState.deleteMany({ where: { id: worldStateId } });
+        if (previousCoverageVersion === null) {
+            await db.readModelRevisionMeta.deleteMany({ where: { id: 1 } });
+        } else {
+            await db.readModelRevisionMeta.update({
+                where: { id: 1 },
+                data: { coverageVersion: previousCoverageVersion },
+            });
+        }
         await closeDb?.();
     });
 
@@ -380,6 +401,10 @@ integration('general access tracking persistence', () => {
                 scenario: 'default',
             },
             profileStatusSource: { get: async () => 'RUNNING' as const },
+            redis: {
+                get: async () => null,
+                set: async () => 'OK',
+            },
         } as unknown as GameApiContext;
         const boundaryCaller = endpointBoundaryRouter.createCaller(context);
 
@@ -387,12 +412,52 @@ integration('general access tracking persistence', () => {
         await expect(dashboardCaller.general.getFrontStatus()).resolves.toBeDefined();
         await expect(db.generalAccessLog.findUnique({ where: { generalId: endpointGeneralId } })).resolves.toBeNull();
 
+        const initialDashboard = await dashboardCaller.dashboard.getContextBundleDelta({
+            include: { context: true, commandTable: false, boardAccess: false },
+            forceSnapshot: true,
+        });
+        expect(initialDashboard).toMatchObject({ context: { kind: 'snapshot' } });
+        const initialContext = initialDashboard.context;
+        if (!initialContext?.sourceRevision) {
+            throw new Error('dashboard snapshot did not include its post-access source revision');
+        }
+        await expect(
+            db.generalAccessLog.findUniqueOrThrow({ where: { generalId: endpointGeneralId } })
+        ).resolves.toMatchObject({ refresh: 1, refreshTotal: 1 });
+
+        await expect(
+            dashboardCaller.dashboard.getContextBundleDelta({
+                include: { context: true, commandTable: false, boardAccess: false },
+                known: { context: initialContext.revision },
+                knownSource: { context: initialContext.sourceRevision },
+            })
+        ).resolves.toMatchObject({ context: { kind: 'unchanged' } });
+        await expect(
+            db.generalAccessLog.findUniqueOrThrow({ where: { generalId: endpointGeneralId } })
+        ).resolves.toMatchObject({ refresh: 1, refreshTotal: 1 });
+
+        await db.generalAccessLog.delete({ where: { generalId: endpointGeneralId } });
+        const realtimeDashboardCaller = appRouter.createCaller({ ...context, realtimeAccessGranted: true });
+        await expect(
+            realtimeDashboardCaller.dashboard.getContextBundleDelta({
+                include: { context: true, commandTable: false, boardAccess: false },
+                forceSnapshot: true,
+            })
+        ).resolves.toMatchObject({ context: { kind: 'snapshot' } });
+        await expect(db.generalAccessLog.findUnique({ where: { generalId: endpointGeneralId } })).resolves.toBeNull();
+
         await expect(boundaryCaller.world.getGeneralDirectory({ accepted: false as true })).rejects.toMatchObject({
             code: 'BAD_REQUEST',
         });
         await expect(db.generalAccessLog.findUnique({ where: { generalId: endpointGeneralId } })).resolves.toBeNull();
 
-        await expect(boundaryCaller.world.getGeneralDirectory({ accepted: true })).resolves.toEqual({ ok: true });
+        const grantedBoundaryCaller = endpointBoundaryRouter.createCaller({
+            ...context,
+            realtimeAccessGranted: true,
+        });
+        await expect(grantedBoundaryCaller.world.getGeneralDirectory({ accepted: true })).resolves.toEqual({
+            ok: true,
+        });
         await expect(
             db.generalAccessLog.findUniqueOrThrow({ where: { generalId: endpointGeneralId } })
         ).resolves.toMatchObject({

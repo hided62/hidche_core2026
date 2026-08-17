@@ -3,9 +3,15 @@ import { describe, expect, it } from 'vitest';
 import { createEmptyRealtimeReadModelChanges, type RealtimeEvent } from '@sammo-ts/common';
 import { MESSAGE_MAILBOX_NATIONAL_BASE } from '@sammo-ts/logic';
 
-import { shouldReloadRealtimeViewerIdentity, toPublicRealtimeEvent } from '../src/realtime/publicEvent.js';
+import {
+    shouldReloadRealtimeViewerIdentity,
+    toPublicRealtimeEvent as convertPublicRealtimeEvent,
+} from '../src/realtime/publicEvent.js';
 
 const viewer = { generalId: 7, cityId: 3, nationId: 2 } as const;
+const refreshGrant = 'opaque-grant';
+const toPublicRealtimeEvent = (event: RealtimeEvent, identities: Parameters<typeof convertPublicRealtimeEvent>[1]) =>
+    convertPublicRealtimeEvent(event, identities, () => refreshGrant);
 
 const turnEvent = (changes = createEmptyRealtimeReadModelChanges()): RealtimeEvent => ({
     type: 'turnCompleted',
@@ -42,6 +48,7 @@ describe('public realtime event privacy boundary', () => {
 
         expect(publicEvent).toEqual({
             type: 'readModelInvalidated',
+            refreshGrant,
             invalidation: {
                 context: true,
                 lobby: false,
@@ -99,6 +106,7 @@ describe('public realtime event privacy boundary', () => {
             )
         ).toEqual({
             type: 'readModelInvalidated',
+            refreshGrant,
             invalidation: {
                 context: true,
                 lobby: true,
@@ -119,6 +127,7 @@ describe('public realtime event privacy boundary', () => {
 
         expect(publicEvent).toEqual({
             type: 'readModelInvalidated',
+            refreshGrant,
             invalidation: {
                 context: false,
                 lobby: false,
@@ -146,7 +155,7 @@ describe('public realtime event privacy boundary', () => {
             senderId: 99,
         };
 
-        expect(toPublicRealtimeEvent(event, [viewer])).toEqual({ type: 'messagesInvalidated' });
+        expect(toPublicRealtimeEvent(event, [viewer])).toEqual({ type: 'messagesInvalidated', refreshGrant });
         expect(toPublicRealtimeEvent({ ...event, mailbox: MESSAGE_MAILBOX_NATIONAL_BASE + 8 }, [viewer])).toBeNull();
     });
 
@@ -157,13 +166,10 @@ describe('public realtime event privacy boundary', () => {
         };
 
         const publicEvent = toPublicRealtimeEvent(event, [viewer]);
-        expect(publicEvent).toEqual({ type: 'messagesInvalidated' });
+        expect(publicEvent).toEqual({ type: 'messagesInvalidated', refreshGrant });
         expect(JSON.stringify(publicEvent)).not.toMatch(/7|9008|mailbox|revision|time/u);
         expect(
-            toPublicRealtimeEvent(
-                { type: 'messagesChanged', mailboxes: [MESSAGE_MAILBOX_NATIONAL_BASE + 8] },
-                [viewer]
-            )
+            toPublicRealtimeEvent({ type: 'messagesChanged', mailboxes: [MESSAGE_MAILBOX_NATIONAL_BASE + 8] }, [viewer])
         ).toBeNull();
     });
 
@@ -195,9 +201,7 @@ describe('public realtime event privacy boundary', () => {
             },
         };
 
-        expect(
-            toPublicRealtimeEvent(event, [viewer, { generalId: 7, cityId: 4, nationId: 3 }])
-        ).toMatchObject({
+        expect(toPublicRealtimeEvent(event, [viewer, { generalId: 7, cityId: 4, nationId: 3 }])).toMatchObject({
             type: 'readModelInvalidated',
             invalidation: {
                 context: true,

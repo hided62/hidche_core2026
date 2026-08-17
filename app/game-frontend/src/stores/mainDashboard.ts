@@ -20,6 +20,7 @@ import {
 } from '../utils/dashboardReadModel';
 import { createBroadcastTabCoordinator, type BroadcastTabCoordinator } from '../utils/broadcastTabCoordinator';
 import { resolveWithReadModelSnapshotFallback } from '../utils/readModelDeltaRecovery';
+import { createRealtimeRequestOptions } from '../utils/realtimeAccessGrant';
 
 const REALTIME_FULL_REFRESH_MIN_INTERVAL_MS = 5_000;
 
@@ -519,27 +520,32 @@ export const useMainDashboardStore = defineStore('mainDashboard', () => {
 
     const fetchContextBundlePatch = async (
         include: DashboardContextBundleInclude,
-        forceSnapshot = false
+        forceSnapshot = false,
+        refreshGrant?: string
     ): Promise<DashboardReadModelPatch> => {
+        const queryOptions = createRealtimeRequestOptions(refreshGrant);
         const request = (force: boolean) =>
-            trpc.dashboard.getContextBundleDelta.query({
-                include,
-                known: force
-                    ? undefined
-                    : {
-                          ...(contextRevision ? { context: contextRevision } : {}),
-                          ...(commandTableRevision ? { commandTable: commandTableRevision } : {}),
-                          ...(boardAccessRevision ? { boardAccess: boardAccessRevision } : {}),
-                      },
-                knownSource: force
-                    ? undefined
-                    : {
-                          ...(contextSourceRevision ? { context: contextSourceRevision } : {}),
-                          ...(commandTableSourceRevision ? { commandTable: commandTableSourceRevision } : {}),
-                          ...(boardAccessSourceRevision ? { boardAccess: boardAccessSourceRevision } : {}),
-                      },
-                forceSnapshot: force || undefined,
-            });
+            trpc.dashboard.getContextBundleDelta.query(
+                {
+                    include,
+                    known: force
+                        ? undefined
+                        : {
+                              ...(contextRevision ? { context: contextRevision } : {}),
+                              ...(commandTableRevision ? { commandTable: commandTableRevision } : {}),
+                              ...(boardAccessRevision ? { boardAccess: boardAccessRevision } : {}),
+                          },
+                    knownSource: force
+                        ? undefined
+                        : {
+                              ...(contextSourceRevision ? { context: contextSourceRevision } : {}),
+                              ...(commandTableSourceRevision ? { commandTable: commandTableSourceRevision } : {}),
+                              ...(boardAccessSourceRevision ? { boardAccess: boardAccessSourceRevision } : {}),
+                          },
+                    forceSnapshot: force || undefined,
+                },
+                queryOptions
+            );
 
         return resolveWithReadModelSnapshotFallback({
             request,
@@ -674,7 +680,7 @@ export const useMainDashboardStore = defineStore('mainDashboard', () => {
         }
     );
 
-    const refreshChangedReadModels = async (plan: RealtimeReadModelInvalidation) => {
+    const refreshChangedReadModels = async (plan: RealtimeReadModelInvalidation, refreshGrant: string) => {
         const id = generalId.value;
         if (!id) {
             return;
@@ -688,37 +694,44 @@ export const useMainDashboardStore = defineStore('mainDashboard', () => {
         if (plan.records) recordsError.value = null;
         if (plan.frontStatus) frontStatusError.value = null;
         try {
+            const queryOptions = createRealtimeRequestOptions(refreshGrant);
             // Every automatic refresh crosses this access-limit gate before
             // any selected follow-up query starts. An all-false bundle is an
             // access-only check and does not project general context.
-            const contextPatch = await fetchContextBundlePatch(resolveDashboardContextBundleInclude(plan));
+            const contextPatch = await fetchContextBundlePatch(
+                resolveDashboardContextBundleInclude(plan),
+                false,
+                refreshGrant
+            );
             accessLimited.value = false;
-            const lobbyPromise = plan.lobby ? trpc.lobby.info.query() : Promise.resolve(undefined);
+            const lobbyPromise = plan.lobby
+                ? trpc.lobby.info.query(undefined, queryOptions)
+                : Promise.resolve(undefined);
             const mapPromise = plan.map
-                ? trpc.world.getMap.query({ generalId: id, showMe: true, useCache: true })
+                ? trpc.world.getMap.query({ generalId: id, showMe: true, useCache: true }, queryOptions)
                 : Promise.resolve(undefined);
             const contactsPromise = plan.contacts
-                ? trpc.messages.getContacts.query({ generalId: id })
+                ? trpc.messages.getContacts.query({ generalId: id }, queryOptions)
                 : Promise.resolve(undefined);
             const reservedPromise = plan.reservedTurns
-                ? trpc.turns.reserved.getGeneral.query({ generalId: id })
+                ? trpc.turns.reserved.getGeneral.query({ generalId: id }, queryOptions)
                 : Promise.resolve(undefined);
             const recordsPromise = plan.records
                 ? trpc.general.getRecentRecords
-                      .query({ lastGeneralRecordId, lastWorldHistoryId })
+                      .query({ lastGeneralRecordId, lastWorldHistoryId }, queryOptions)
                       .catch((err: unknown) => {
                           recordsError.value = resolveErrorMessage(err);
                           return null;
                       })
                 : Promise.resolve(undefined);
             const frontPromise = plan.frontStatus
-                ? trpc.general.getFrontStatus.query().catch((err: unknown) => {
+                ? trpc.general.getFrontStatus.query(undefined, queryOptions).catch((err: unknown) => {
                       frontStatusError.value = resolveErrorMessage(err);
                       return null;
                   })
                 : Promise.resolve(undefined);
             const tournamentPromise: Promise<TournamentState | undefined> = plan.tournament
-                ? trpc.tournament.getState.query().catch(() => undefined)
+                ? trpc.tournament.getState.query(undefined, queryOptions).catch(() => undefined)
                 : Promise.resolve(undefined);
 
             const [lobby, map, contacts, generalTurns, records, nextFrontStatus, tournamentState] = await Promise.all([
@@ -761,13 +774,16 @@ export const useMainDashboardStore = defineStore('mainDashboard', () => {
 
     const readModelRefreshQueue = createMergedReadModelRefreshQueue(refreshChangedReadModels);
 
-    const refreshMessages = async () => {
+    const refreshMessages = async (refreshGrant?: string) => {
         const id = generalId.value;
         if (!id) {
             return;
         }
         try {
-            const nextMessages = await trpc.messages.getRecent.query({ generalId: id });
+            const nextMessages = await trpc.messages.getRecent.query(
+                { generalId: id },
+                createRealtimeRequestOptions(refreshGrant)
+            );
             const patch = { messages: nextMessages } satisfies DashboardReadModelPatch;
             applyDashboardPatch(patch);
             publishDashboardPatch(patch);
@@ -1145,7 +1161,7 @@ export const useMainDashboardStore = defineStore('mainDashboard', () => {
             if (!payload || payload.type !== 'readModelInvalidated') {
                 return;
             }
-            readModelRefreshQueue.request(payload.invalidation);
+            readModelRefreshQueue.request(payload.invalidation, payload.refreshGrant);
         });
         source.addEventListener('messagesInvalidated', (event) => {
             if (realtimeCoordinator !== null && !realtimeCoordinator.isLeader()) return;
@@ -1153,7 +1169,7 @@ export const useMainDashboardStore = defineStore('mainDashboard', () => {
             if (!payload || payload.type !== 'messagesInvalidated') {
                 return;
             }
-            void refreshMessages();
+            void refreshMessages(payload.refreshGrant);
         });
 
         // Rolling deployment fallback: an older API may still expose internal
