@@ -202,6 +202,7 @@ const importedGeneral = {
 type Fixture = {
     hasGeneral: boolean;
     failNextSimulation?: boolean;
+    prepareDelayMs?: number;
     requests: string[];
     preparedPayloads: BattleSimJobPayload[];
     serverResults: BattleSimResultPayload[];
@@ -256,6 +257,9 @@ const installApi = async (page: Page, fixture: Fixture) => {
     }, gameProfile);
     await page.route(gameTrpcRoute, async (route) => {
         const operations = operationNames(route);
+        if (fixture.prepareDelayMs && operations.includes('battle.prepareSimulation')) {
+            await new Promise((resolveDelay) => setTimeout(resolveDelay, fixture.prepareDelayMs));
+        }
         const rawRequestBody: unknown = route.request().postData() ? route.request().postDataJSON() : {};
         const requestBody =
             rawRequestBody && typeof rawRequestBody === 'object' ? (rawRequestBody as Record<string, unknown>) : {};
@@ -450,8 +454,21 @@ test('keeps simulation available without a game general and preserves input afte
     await expect(page.getByText('시뮬레이터 입력 오류')).toBeVisible();
     await expect(page.getByLabel('시드')).toHaveValue('keep-this-seed');
 
+    fixture.prepareDelayMs = 1_500;
     await page.getByRole('button', { name: '전투', exact: true }).click();
-    await expect(page.getByText('전투를 진행 중입니다.')).toHaveCount(0);
+    const progressToast = page.getByTestId('game-toast').filter({ hasText: '전투를 진행 중입니다.' });
+    await expect(progressToast).toBeVisible();
+    const progressToastRect = await progressToast.boundingBox();
+    expect(progressToastRect?.x).toBeGreaterThanOrEqual(0);
+    expect((progressToastRect?.x ?? 0) + (progressToastRect?.width ?? 0)).toBeLessThanOrEqual(500);
+    if (artifactRoot) {
+        await page.screenshot({
+            path: resolve(artifactRoot, 'battle-simulator-progress-mobile.png'),
+            fullPage: true,
+            animations: 'disabled',
+        });
+    }
+    await expect(progressToast).toHaveCount(0);
     await expect(page.getByText('시뮬레이터 입력 오류')).toHaveCount(0);
     expect(await readBrowserWorkerResult(page, 0)).toEqual(fixture.serverResults[0]);
 
@@ -472,6 +489,7 @@ test('runs 1000 battles in the Chromium worker and matches the Node processor ex
     test.setTimeout(60_000);
     const fixture: Fixture = {
         hasGeneral: false,
+        prepareDelayMs: 500,
         requests: [],
         preparedPayloads: [],
         serverResults: [],
@@ -482,13 +500,35 @@ test('runs 1000 battles in the Chromium worker and matches the Node processor ex
 
     await page.getByLabel('반복 횟수').selectOption('1000');
     await page.getByLabel('시드').fill('');
+    const worldSettings = page.locator('[data-parity-id="world-settings"]');
+    const worldSettingsTop = (await worldSettings.boundingBox())?.y;
     await page.getByRole('button', { name: '전투', exact: true }).click();
-    await expect(page.getByText('전투를 진행 중입니다.')).toHaveCount(0, { timeout: 30_000 });
+
+    const progressToast = page.getByTestId('game-toast').filter({ hasText: '전투를 진행 중입니다.' });
+    await expect(progressToast).toBeVisible();
+    expect(await page.locator('.game-toast-viewport').evaluate((element) => getComputedStyle(element).position)).toBe(
+        'fixed'
+    );
+    expect((await worldSettings.boundingBox())?.y).toBe(worldSettingsTop);
+    if (artifactRoot) {
+        await page.screenshot({
+            path: resolve(artifactRoot, 'battle-simulator-progress-desktop.png'),
+            fullPage: true,
+            animations: 'disabled',
+        });
+    }
+    await expect(progressToast).toHaveCount(0, { timeout: 30_000 });
 
     expect(fixture.preparedPayloads).toHaveLength(1);
     expect(fixture.preparedPayloads[0]?.seeds).toHaveLength(1000);
     expect(new Set(fixture.preparedPayloads[0]?.seeds).size).toBe(1000);
     expect(await readBrowserWorkerResult(page, 0)).toEqual(fixture.serverResults[0]);
+    const battleSummary = page.locator('[data-parity-id="battle-summary"]');
+    await expect(battleSummary.locator('tr').filter({ hasText: '전투 횟수' }).locator('td')).toHaveText('1,000');
+    await expect(battleSummary.locator('tr').filter({ hasText: '전투 일시' }).locator('td')).toHaveText(
+        /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/u
+    );
+    expect(fixture.preparedPayloads[0]?.attackerGeneral.turntime).toMatch(/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/u);
     expect(fixture.requests).not.toContain('battle.simulate');
     expect(fixture.requests).not.toContain('battle.getSimulation');
     const workerUrls = await page.evaluate(() => {

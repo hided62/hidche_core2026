@@ -748,6 +748,7 @@ const persistArtifact = async (page: Page, name: string) => {
         return {
             viewport: { width: innerWidth, height: innerHeight },
             global: describe('.main-global-menu'),
+            bottomGlobalPopup: describe('[data-menu-position="bottom"] .main-menu-popup__list'),
             nation: describe('.main-nation-menu'),
             bottom: describe('.main-mobile-bottom'),
             globalPopup: describe('#mobile-global-menu'),
@@ -914,6 +915,20 @@ test('desktop menus preserve ref columns, prefix-safe routes, and controlled dro
     await gameInfoButton.press('Enter');
     await expect(gameInfoButton).toHaveAttribute('aria-expanded', 'true');
     await expect(global.locator('#global-menu-game-info')).toBeVisible();
+    const topMenuGeometry = await gameInfoButton.evaluate((button) => {
+        const popup = button.parentElement?.querySelector<HTMLElement>('.main-menu-popup__list');
+        const caret = button.querySelector<HTMLElement>('.menu-caret');
+        if (!popup || !caret) throw new Error('top global menu popup geometry is incomplete');
+        return {
+            trigger: button.getBoundingClientRect().toJSON(),
+            popup: popup.getBoundingClientRect().toJSON(),
+            caretBorderTopWidth: getComputedStyle(caret).borderTopWidth,
+            caretBorderBottomWidth: getComputedStyle(caret).borderBottomWidth,
+        };
+    });
+    expect(topMenuGeometry.popup.top).toBeGreaterThanOrEqual(topMenuGeometry.trigger.bottom + 1);
+    expect(topMenuGeometry.caretBorderTopWidth).toBe('4px');
+    expect(topMenuGeometry.caretBorderBottomWidth).toBe('0px');
     await page.keyboard.press('Escape');
     await expect(gameInfoButton).toHaveAttribute('aria-expanded', 'false');
     await expect(gameInfoButton).toBeFocused();
@@ -921,7 +936,70 @@ test('desktop menus preserve ref columns, prefix-safe routes, and controlled dro
     await gameInfoButton.click();
     await page.getByRole('heading', { name: '메인 화면 검증 시나리오' }).click();
     await expect(gameInfoButton).toHaveAttribute('aria-expanded', 'false');
+
+    const bottomGlobal = page.locator('[data-menu-position="bottom"]');
+    const bottomGameInfoButton = bottomGlobal.locator('[data-menu-id="game-info"]');
+    await bottomGameInfoButton.click();
+    await expect(bottomGameInfoButton).toHaveAttribute('aria-expanded', 'true');
+    await expect(bottomGlobal.locator('#global-menu-game-info')).toBeVisible();
+    const bottomMenuGeometry = await bottomGameInfoButton.evaluate((button) => {
+        const popup = button.parentElement?.querySelector<HTMLElement>('.main-menu-popup__list');
+        const caret = button.querySelector<HTMLElement>('.menu-caret');
+        if (!popup || !caret) throw new Error('bottom global menu popup geometry is incomplete');
+        return {
+            trigger: button.getBoundingClientRect().toJSON(),
+            popup: popup.getBoundingClientRect().toJSON(),
+            caretBorderTopWidth: getComputedStyle(caret).borderTopWidth,
+            caretBorderBottomWidth: getComputedStyle(caret).borderBottomWidth,
+            boxShadow: getComputedStyle(popup).boxShadow,
+        };
+    });
+    expect(bottomMenuGeometry.popup.bottom).toBeLessThanOrEqual(bottomMenuGeometry.trigger.top - 1);
+    expect(bottomMenuGeometry.caretBorderTopWidth).toBe('0px');
+    expect(bottomMenuGeometry.caretBorderBottomWidth).toBe('4px');
+    expect(bottomMenuGeometry.boxShadow).toContain('0px -8px 18px');
     await persistArtifact(page, `${basePath.slice(1)}-desktop-1200`);
+});
+
+test('the repeated bottom global menu opens upward on the mobile document', async ({ page }, testInfo) => {
+    const state: NavigationFixture = {
+        officerLevel: 5,
+        permission: 2,
+        nationLevel: 3,
+        stage: 1,
+        npcMode: 1,
+        scenarioTitle: '하단 메뉴 방향 검증 시나리오',
+        generalMeCalls: 0,
+        operations: [],
+    };
+    await installFixture(page, state);
+    await page.setViewportSize({ width: 500, height: 900 });
+    await waitForMain(page);
+
+    const bottomGlobal = page.locator('[data-menu-position="bottom"]');
+    const gameInfoButton = bottomGlobal.locator('[data-menu-id="game-info"]');
+    await gameInfoButton.click();
+    await expect(gameInfoButton).toHaveAttribute('aria-expanded', 'true');
+    await expect(bottomGlobal.locator('#global-menu-game-info')).toBeVisible();
+    const geometry = await gameInfoButton.evaluate((button) => {
+        const popup = button.parentElement?.querySelector<HTMLElement>('.main-menu-popup__list');
+        const caret = button.querySelector<HTMLElement>('.menu-caret');
+        if (!popup || !caret) throw new Error('mobile bottom global menu popup geometry is incomplete');
+        return {
+            trigger: button.getBoundingClientRect().toJSON(),
+            popup: popup.getBoundingClientRect().toJSON(),
+            caretBorderTopWidth: getComputedStyle(caret).borderTopWidth,
+            caretBorderBottomWidth: getComputedStyle(caret).borderBottomWidth,
+            viewportHeight: window.innerHeight,
+        };
+    });
+    expect(geometry.popup.bottom).toBeLessThanOrEqual(geometry.trigger.top - 1);
+    expect(geometry.popup.top).toBeGreaterThanOrEqual(0);
+    expect(geometry.popup.bottom).toBeLessThanOrEqual(geometry.viewportHeight);
+    expect(geometry.caretBorderTopWidth).toBe('0px');
+    expect(geometry.caretBorderBottomWidth).toBe('4px');
+    await bottomGlobal.screenshot({ path: testInfo.outputPath('mobile-bottom-global-dropup.png') });
+    await persistArtifact(page, `${basePath.slice(1)}-mobile-bottom-dropup`);
 });
 
 test('main general card uses local turn time and command clock tracks corrected server time', async ({ page }) => {

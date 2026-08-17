@@ -327,9 +327,27 @@ const install = async (page: Page, state: FixtureState) => {
         const rawRequestBody: unknown = route.request().postData() ? route.request().postDataJSON() : {};
         const requestBody =
             rawRequestBody && typeof rawRequestBody === 'object' ? (rawRequestBody as Record<string, unknown>) : {};
+        const queryInputText = new URL(route.request().url()).searchParams.get('input');
+        let queryInput: Record<string, unknown> = {};
+        if (queryInputText) {
+            try {
+                const parsed: unknown = JSON.parse(queryInputText);
+                if (parsed && typeof parsed === 'object') {
+                    queryInput = parsed as Record<string, unknown>;
+                }
+            } catch {
+                queryInput = {};
+            }
+        }
         const results = operations.map((operation, operationIndex) => {
             const rawPayload =
-                requestBody[String(operationIndex)] ?? (operations.length === 1 ? requestBody : undefined);
+                requestBody[String(operationIndex)] ??
+                queryInput[String(operationIndex)] ??
+                (operations.length === 1
+                    ? Object.keys(requestBody).length > 0
+                        ? requestBody
+                        : queryInput
+                    : undefined);
             const payload =
                 rawPayload && typeof rawPayload === 'object' ? (rawPayload as TrpcRequestPayload) : undefined;
             const jsonInput =
@@ -537,10 +555,12 @@ const install = async (page: Page, state: FixtureState) => {
                 return response(battleCenter(state));
             }
             if (operation === 'nation.getGeneralLog') {
-                const type = new URL(route.request().url()).searchParams.get('input')?.includes('generalAction')
-                    ? 'generalAction'
-                    : operation;
-                return response({ type, generalId: 7, logs: [{ id: 1, text: '<Y>감찰 기록</>' }] });
+                const type =
+                    typeof jsonInput.type === 'string' &&
+                    ['generalHistory', 'battleDetail', 'battleResult', 'generalAction'].includes(jsonInput.type)
+                        ? jsonInput.type
+                        : 'generalAction';
+                return response({ type, generalId: 7, logs: [{ id: 1, text: `<Y>${type} 감찰 기록</>` }] });
             }
             return response({ ok: true });
         });
@@ -1310,7 +1330,9 @@ test('감찰부 keeps the selector interaction and shows the permission error pa
     await expect(page.locator('.selector-row select').nth(1)).toHaveValue('8');
     await page.getByRole('button', { name: '다음 ▶' }).click();
     await expect(page.locator('.selector-row select').nth(1)).toHaveValue('7');
-    await expect(page.locator('.battle-general-name')).toContainText('검증장수 【 간의대부 | 건강 】');
+    await expect(page.locator('.battle-general-name')).toContainText('검증장수');
+    await expect(page.locator('.battle-general-name')).toContainText('간의대부');
+    await expect(page.locator('.battle-general-name')).toContainText('건강');
     await expect(page.locator('.battle-general-extra')).toContainText('계급29품관');
     await expect(page.locator('.battle-general-card')).toContainText('병종보병');
     await expect(page.locator('.battle-general-card')).not.toContainText('che_');
@@ -1321,6 +1343,11 @@ test('감찰부 keeps the selector interaction and shows the permission error pa
     expect(battleImages[1]?.backgroundImage).toContain('/game/crewtype1.png');
     await expect(page.locator('.battle-general-card [role="progressbar"]')).toHaveCount(14);
     await expect(page.locator('.battle-general-card [aria-label*="1,275,975 (EX+)"]')).toHaveCount(5);
+    await expect(page.locator('.general-meta')).toHaveCount(0);
+    await expect(page.locator('.battle-general-extra__recent-value')).toHaveText('01-01 00:00');
+    await expect(page.locator('.battle-general-extra__recent-value')).not.toContainText('2026');
+    await expect(page.locator('.log-block')).toHaveCount(4);
+    await expect(page.locator('.log-block[data-log-type="battleResult"]')).toContainText('battleResult 감찰 기록');
     expect(
         await page
             .locator('.battle-general-card [role="progressbar"]')
@@ -1330,7 +1357,11 @@ test('감찰부 keeps the selector interaction and shows the permission error pa
     const geometry = await page.locator('.battle-page').evaluate((element) => {
         const selector = element.querySelector<HTMLElement>('.selector-row')!;
         const controls = [...selector.children].map((child) => (child as HTMLElement).getBoundingClientRect());
-        const logBlock = element.querySelector<HTMLElement>('.log-block')!.getBoundingClientRect();
+        const logBlocks = [...element.querySelectorAll<HTMLElement>('.log-block')];
+        const logBlock = logBlocks[0]!.getBoundingClientRect();
+        const recentLabel = element.querySelector<HTMLElement>('.battle-general-extra__recent-label')!;
+        const recentValue = element.querySelector<HTMLElement>('.battle-general-extra__recent-value')!;
+        const previousStat = recentLabel.previousElementSibling as HTMLElement;
         return {
             width: element.getBoundingClientRect().width,
             fontSize: getComputedStyle(element).fontSize,
@@ -1341,6 +1372,11 @@ test('감찰부 keeps the selector interaction and shows the permission error pa
             backgroundImage: getComputedStyle(element).backgroundImage,
             generalBackgroundImage: getComputedStyle(element.querySelector<HTMLElement>('.battle-general-card')!)
                 .backgroundImage,
+            logBackgroundImages: logBlocks.map((block) => getComputedStyle(block).backgroundImage),
+            recentLabelTop: recentLabel.getBoundingClientRect().top,
+            recentValueTop: recentValue.getBoundingClientRect().top,
+            recentValueWidth: recentValue.getBoundingClientRect().width,
+            previousStatTop: previousStat.getBoundingClientRect().top,
         };
     });
     expect(geometry.width).toBe(1000);
@@ -1352,16 +1388,41 @@ test('감찰부 keeps the selector interaction and shows the permission error pa
     expect(geometry.logBlockWidth).toBeCloseTo(500, 0);
     expect(geometry.backgroundImage).toContain('back_walnut.jpg');
     expect(geometry.generalBackgroundImage).toContain('back_blue.jpg');
+    expect(geometry.logBackgroundImages).toHaveLength(4);
+    expect(geometry.logBackgroundImages.every((background) => background.includes('back_walnut.jpg'))).toBe(true);
+    expect(geometry.recentLabelTop).toBeCloseTo(geometry.recentValueTop, 0);
+    expect(geometry.recentLabelTop).toBeGreaterThan(geometry.previousStatTop);
+    expect(geometry.recentValueWidth).toBeGreaterThan(400);
     await persistParityArtifact(page, 'core-battle-center-desktop', geometry);
 
     await page.setViewportSize({ width: 500, height: 900 });
-    const mobileGeometry = await page.locator('.selector-row').evaluate((element) => ({
-        columns: getComputedStyle(element).gridTemplateColumns,
-        controlWidths: [...element.children].map((child) => (child as HTMLElement).getBoundingClientRect().width),
-    }));
+    const mobileGeometry = await page.locator('.battle-page').evaluate((element) => {
+        const selector = element.querySelector<HTMLElement>('.selector-row')!;
+        const battleResult = element.querySelector<HTMLElement>('.log-block[data-log-type="battleResult"]')!;
+        const footer = element.querySelector<HTMLElement>('.battle-footer')!;
+        const pageRect = element.getBoundingClientRect();
+        const resultRect = battleResult.getBoundingClientRect();
+        const footerRect = footer.getBoundingClientRect();
+        return {
+            columns: getComputedStyle(selector).gridTemplateColumns,
+            controlWidths: [...selector.children].map((child) => (child as HTMLElement).getBoundingClientRect().width),
+            pageHeight: pageRect.height,
+            pageOverflow: getComputedStyle(element).overflow,
+            resultBottomWithinPage: resultRect.bottom <= pageRect.bottom,
+            footerAfterResult: footerRect.top >= resultRect.bottom,
+            resultBackgroundImage: getComputedStyle(battleResult).backgroundImage,
+        };
+    });
     expect(mobileGeometry.columns.split(' ')).toHaveLength(4);
     expect(mobileGeometry.controlWidths[0]).toBeCloseTo(83.33, 0);
     expect(mobileGeometry.controlWidths[1]).toBeCloseTo(125, 0);
+    expect(mobileGeometry.pageHeight).toBeGreaterThan(0);
+    expect(mobileGeometry.pageOverflow).toBe('visible');
+    expect(mobileGeometry.resultBottomWithinPage).toBe(true);
+    expect(mobileGeometry.footerAfterResult).toBe(true);
+    expect(mobileGeometry.resultBackgroundImage).toContain('back_walnut.jpg');
+    await page.locator('.log-block[data-log-type="battleResult"]').scrollIntoViewIfNeeded();
+    await expect(page.locator('.log-block[data-log-type="battleResult"]')).toBeInViewport();
     await persistParityArtifact(page, 'core-battle-center-mobile', mobileGeometry);
 
     await page.unrouteAll({ behavior: 'wait' });
