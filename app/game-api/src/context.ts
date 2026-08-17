@@ -87,6 +87,8 @@ export type DatabaseClient = InfraDatabaseClient;
 export interface GameApiContext {
     requestId?: string;
     generalAccessTracking?: boolean;
+    /** Validated server-issued proof for one realtime refresh burst. */
+    realtimeAccessGranted?: boolean;
     /** Request-local identity already resolved by the realtime access gate. */
     realtimeAccessGeneralId?: number;
     /** Set only while an API input-event transaction owns the mutation. */
@@ -115,6 +117,7 @@ export interface GameApiContext {
 
 export const createGameApiContext = (options: {
     requestId?: string;
+    realtimeAccessGranted?: boolean;
     db: DatabaseClient;
     redis: RedisConnector['client'];
     turnDaemon: TurnDaemonTransport;
@@ -136,6 +139,7 @@ export const createGameApiContext = (options: {
     return {
         requestId: options.requestId,
         generalAccessTracking: true,
+        ...(options.realtimeAccessGranted ? { realtimeAccessGranted: true } : {}),
         db: options.db,
         redis: options.redis,
         turnDaemon: options.turnDaemon,

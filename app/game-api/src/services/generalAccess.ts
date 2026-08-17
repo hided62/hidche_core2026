@@ -25,6 +25,9 @@ export const accessPageWeights: Record<AccessPage, number> = {
     'npc-control': 1,
 };
 
+/** One user-visible refresh that has to rebuild PostgreSQL-backed dashboard data. */
+export const DASHBOARD_PROJECTION_ACCESS_WEIGHT = 1;
+
 export const generalAccessEndpointWeights = {
     'world.getGeneralDirectory': 2,
     'public.getNpcList': 2,
@@ -369,9 +372,7 @@ export const upsertGeneralAccess = async (
             `
         );
 
-        await writeReadModelChangeJournal(transaction, [
-            { domain: 'access.general', entityId: input.generalId },
-        ]);
+        await writeReadModelChangeJournal(transaction, [{ domain: 'access.general', entityId: input.generalId }]);
     });
 };
 

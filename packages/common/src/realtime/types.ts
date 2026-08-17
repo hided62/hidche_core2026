@@ -226,18 +226,20 @@ export interface TournamentChangedEvent {
 export interface ReadModelInvalidatedEvent {
     type: 'readModelInvalidated';
     invalidation: RealtimeReadModelInvalidation;
+    /** Opaque, short-lived proof that the server initiated this refresh. */
+    refreshGrant: string;
 }
 
 export interface MessagesInvalidatedEvent {
     type: 'messagesInvalidated';
+    /** Opaque, short-lived proof that the server initiated this refresh. */
+    refreshGrant: string;
 }
+
+export const REALTIME_ACCESS_GRANT_HEADER = 'x-sammo-realtime-access-grant';
 
 /** Events safe to expose to an authenticated browser over SSE. */
 export type PublicRealtimeEvent = ReadModelInvalidatedEvent | MessagesInvalidatedEvent;
 
 export type RealtimeEvent =
-    | TurnCompletedEvent
-    | ReadModelChangedEvent
-    | MessageCreatedEvent
-    | MessagesChangedEvent
-    | TournamentChangedEvent;
+    TurnCompletedEvent | ReadModelChangedEvent | MessageCreatedEvent | MessagesChangedEvent | TournamentChangedEvent;
