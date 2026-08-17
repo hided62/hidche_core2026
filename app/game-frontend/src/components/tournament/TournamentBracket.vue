@@ -28,8 +28,10 @@ const roundColumns = computed(() => [
 ]);
 const desktopX = [110, 355, 600, 845, 1090];
 const cardWidth = 190;
+const desktopSlotHeight = 88;
+const desktopCanvasHeight = desktopSlotHeight * 16;
 const slotY = (columnIndex: number, slotIndex: number) => {
-    const slotHeight = 72 * 2 ** columnIndex;
+    const slotHeight = desktopSlotHeight * 2 ** columnIndex;
     return slotHeight / 2 + slotIndex * slotHeight;
 };
 const connections = computed(() =>
@@ -77,8 +79,8 @@ const mobilePairs = computed(() => {
             <div class="desktop-round-labels" aria-hidden="true">
                 <strong v-for="label in roundLabels" :key="label">{{ label }}</strong>
             </div>
-            <div class="desktop-bracket-canvas">
-                <svg viewBox="0 0 1200 1152" aria-hidden="true">
+            <div class="desktop-bracket-canvas" :style="{ height: `${desktopCanvasHeight}px` }">
+                <svg :viewBox="`0 0 1200 ${desktopCanvasHeight}`" aria-hidden="true">
                     <g v-for="connection in connections" :key="connection.id">
                         <path
                             class="bracket-connector"
@@ -177,7 +179,6 @@ const mobilePairs = computed(() => {
 .desktop-bracket-canvas {
     position: relative;
     width: 100%;
-    height: 1152px;
 }
 .desktop-bracket-canvas svg {
     position: absolute;
@@ -200,7 +201,7 @@ const mobilePairs = computed(() => {
     display: grid;
     box-sizing: border-box;
     width: clamp(140px, 16vw, 190px);
-    min-height: 68px;
+    min-height: 82px;
     align-items: center;
     overflow: hidden;
     transform: translate(-50%, -50%);
@@ -265,7 +266,7 @@ const mobilePairs = computed(() => {
 .mobile-bracket-name {
     box-sizing: border-box;
     min-width: 0;
-    min-height: 68px;
+    min-height: 82px;
     overflow: hidden;
     border: 1px solid #555;
     background: rgb(58 33 24 / 94%);

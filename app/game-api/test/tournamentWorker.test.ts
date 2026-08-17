@@ -12,7 +12,12 @@ import type {
     TournamentState,
 } from '../src/tournament/types.js';
 import { applyBattle, applyPreBattleStage, settleTournamentOutcome } from '../src/tournament/worker.js';
-import { buildBettingPayouts, resolveBettingCloseAt, resolveNextAt } from '../src/tournament/workerHelpers.js';
+import {
+    assignManualApplicantGroup,
+    buildBettingPayouts,
+    resolveBettingCloseAt,
+    resolveNextAt,
+} from '../src/tournament/workerHelpers.js';
 import type { TurnDaemonTransport } from '../src/daemon/transport.js';
 
 class MemoryRedis {
@@ -226,6 +231,45 @@ const runTournamentToCompletion = async (options: {
 const delayTick = async (): Promise<void> => new Promise((resolve) => setTimeout(resolve, 0));
 
 describe('tournament worker schedule compatibility', () => {
+    it('수동 참가자를 즉시 남은 예선 조의 다음 슬롯에 배치한다', () => {
+        const current = Array.from({ length: 63 }, (_, index): TournamentParticipantEntry => {
+            const groupId = index < 47 ? index % 8 : (index + 1) % 8;
+            const groupNo = Math.floor(index / 8);
+            return {
+                id: index + 1,
+                name: `참가자${index + 1}`,
+                leadership: 70,
+                strength: 70,
+                intel: 70,
+                level: 10,
+                groupId,
+                groupNo,
+            };
+        });
+        const groupCounts = Array.from({ length: 8 }, (_, groupId) =>
+            current.filter((entry) => entry.groupId === groupId).length
+        );
+        const openGroupId = groupCounts.findIndex((count) => count === 7);
+        expect(openGroupId).toBeGreaterThanOrEqual(0);
+        expect(groupCounts.filter((count) => count === 7)).toHaveLength(1);
+
+        const applicant = assignManualApplicantGroup({
+            state: createTournamentState(),
+            baseSeed: 'manual-join-seed',
+            current,
+            applicant: {
+                id: 100,
+                name: '즉시배치',
+                leadership: 80,
+                strength: 81,
+                intel: 82,
+                level: 20,
+            },
+        });
+
+        expect(applicant).toMatchObject({ groupId: openGroupId, groupNo: 7, win: 0, draw: 0, lose: 0, gl: 0 });
+    });
+
     it('catches up from the stored schedule instead of discarding elapsed legacy phases', () => {
         const state = createTournamentState({
             termSeconds: 600,
@@ -600,6 +644,14 @@ describe('tournament worker (in-memory)', () => {
         expect(participants.some((entry) => entry.id === 99)).toBe(false);
         expect(participants.some((entry) => entry.id === 1001)).toBe(true);
         expect(participants.some((entry) => entry.id < 0)).toBe(true);
+        expect(participants.every((entry) => entry.groupId !== undefined && entry.groupNo !== undefined)).toBe(true);
+        expect(participants.find((entry) => entry.id === 1)).toMatchObject({ groupId: expect.any(Number) });
+        expect(participants.find((entry) => entry.id === 1001)).toMatchObject({ groupId: expect.any(Number) });
+        expect(
+            Array.from({ length: 8 }, (_, groupId) =>
+                participants.filter((entry) => entry.groupId === groupId).length
+            )
+        ).toEqual(Array.from({ length: 8 }, () => 8));
 
         await store.setState(afterJoin);
         const finalState = await runTournamentToCompletion({ store, prisma, baseSeed: 'seed' });
