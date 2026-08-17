@@ -6,6 +6,7 @@ import { resolveGeneralIconUrl, useDefaultGeneralIcon } from '../utils/generalIc
 import { trpc } from '../utils/trpc';
 
 type HallOption = {
+    sourceProfile: string;
     season: number;
     scenarios: Array<{ id: number; name: string; count: number }>;
 };
@@ -42,6 +43,8 @@ const router = useRouter();
 const loading = ref(false);
 const errorMessage = ref('');
 const options = ref<HallOption[]>([]);
+const selectedSource = ref<'current' | 'legacy'>('current');
+const selectedProfile = ref<string | null>(null);
 const selectedSeason = ref<number | null>(null);
 const selectedScenario = ref<number | null>(null);
 const data = ref<HallPayload | null>(null);
@@ -51,10 +54,11 @@ const selection = computed({
         selectedSeason.value === null
             ? ''
             : selectedScenario.value === null
-              ? `season:${selectedSeason.value}`
-              : `scenario:${selectedSeason.value}:${selectedScenario.value}`,
+              ? `season:${selectedProfile.value ?? ''}:${selectedSeason.value}`
+              : `scenario:${selectedProfile.value ?? ''}:${selectedSeason.value}:${selectedScenario.value}`,
     set: (value: string) => {
-        const [kind, season, scenario] = value.split(':');
+        const [kind, profile, season, scenario] = value.split(':');
+        selectedProfile.value = profile || null;
         selectedSeason.value = Number(season);
         selectedScenario.value = kind === 'scenario' ? Number(scenario) : null;
     },
@@ -72,9 +76,17 @@ const closePage = async (): Promise<void> => {
 
 const loadOptions = async (): Promise<void> => {
     try {
-        options.value = await trpc.ranking.getHallOfFameOptions.query();
-        if (options.value.length > 0 && selectedSeason.value === null) {
-            selectedSeason.value = options.value[0]!.season;
+        options.value = await trpc.ranking.getHallOfFameOptions.query({ source: selectedSource.value });
+        const first = options.value[0];
+        if (first) {
+            selectedProfile.value = first.sourceProfile;
+            selectedSeason.value = first.season;
+            selectedScenario.value = null;
+        } else {
+            selectedProfile.value = null;
+            selectedSeason.value = null;
+            selectedScenario.value = null;
+            data.value = null;
         }
     } catch (error) {
         errorMessage.value = error instanceof Error ? error.message : '명예의 전당 옵션을 불러오지 못했습니다.';
@@ -90,6 +102,11 @@ const loadHall = async (): Promise<void> => {
     errorMessage.value = '';
     try {
         data.value = (await trpc.ranking.getHallOfFame.query({
+            source: selectedSource.value,
+            sourceProfile:
+                selectedSource.value === 'legacy'
+                    ? (selectedProfile.value as 'che' | 'kwe' | 'pwe' | 'twe' | 'nya' | 'pya' | 'hwe')
+                    : undefined,
             season: selectedSeason.value,
             scenario: selectedScenario.value ?? undefined,
         })) as HallPayload;
@@ -100,8 +117,12 @@ const loadHall = async (): Promise<void> => {
     }
 };
 
-watch([selectedSeason, selectedScenario], () => {
+watch([selectedProfile, selectedSeason, selectedScenario], () => {
     void loadHall();
+});
+
+watch(selectedSource, () => {
+    void loadOptions();
 });
 
 onMounted(loadOptions);
@@ -114,17 +135,29 @@ onMounted(loadOptions);
             <button class="legacy-button" type="button" @click="closePage">창 닫기</button>
         </div>
 
+        <label class="archive-source">
+            기록 구분 :
+            <select v-model="selectedSource" aria-label="기록 구분">
+                <option value="current">현재 서버 기록</option>
+                <option value="legacy">이전 서버 기록</option>
+            </select>
+        </label>
+
         <label class="scenario-search">
             시나리오 검색 :
             <select v-model="selection" aria-label="시나리오 검색">
-                <template v-for="season in options" :key="season.season">
-                    <option :value="`season:${season.season}`">* 시즌 : {{ season.season }} 종합 *</option>
+                <template v-for="season in options" :key="`${season.sourceProfile}:${season.season}`">
+                    <option :value="`season:${season.sourceProfile}:${season.season}`">
+                        * {{ selectedSource === 'legacy' ? `${season.sourceProfile.toUpperCase()} / ` : '' }}시즌 :
+                        {{ season.season }} 종합 *
+                    </option>
                     <option
                         v-for="scenario in season.scenarios"
-                        :key="`${season.season}:${scenario.id}`"
-                        :value="`scenario:${season.season}:${scenario.id}`"
+                        :key="`${season.sourceProfile}:${season.season}:${scenario.id}`"
+                        :value="`scenario:${season.sourceProfile}:${season.season}:${scenario.id}`"
                     >
-                        {{ scenario.name }}({{ scenario.count }}회)
+                        {{ selectedSource === 'legacy' ? `${season.sourceProfile.toUpperCase()} / ` : ''
+                        }}{{ scenario.name }}({{ scenario.count }}회)
                     </option>
                 </template>
             </select>
@@ -208,6 +241,19 @@ onMounted(loadOptions);
     display: block;
     padding: 2px 0;
     text-align: center;
+}
+
+.archive-source {
+    display: block;
+    padding: 2px 0 0;
+    text-align: center;
+}
+
+.archive-source select {
+    height: 20px;
+    border: 1px solid #555;
+    background: #ddd;
+    color: #303030;
 }
 
 .scenario-search select {

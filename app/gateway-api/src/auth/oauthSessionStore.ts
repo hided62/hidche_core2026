@@ -14,7 +14,7 @@ export interface OAuthPendingState {
 export interface OAuthSession {
     id: string;
     mode: OAuthMode;
-    intent?: 'register' | 'link_existing' | 'rejoin';
+    intent?: 'register' | 'link_existing' | 'rejoin' | 'password_setup';
     targetUserId?: string;
     kakaoId: string;
     email: string;
@@ -93,6 +93,14 @@ end
 return cjson.encode({ status = 'verified', userId = challenge.userId })
 `;
 
+const consumeOnceScript = `
+local raw = redis.call('GET', KEYS[1])
+if raw then
+    redis.call('DEL', KEYS[1])
+end
+return raw
+`;
+
 export class RedisOAuthSessionStore implements OAuthSessionStore {
     private readonly client: RedisClientLike;
     private readonly prefix: string;
@@ -161,12 +169,11 @@ export class RedisOAuthSessionStore implements OAuthSessionStore {
 
     async consumeSession(sessionId: string): Promise<OAuthSession | null> {
         const key = this.sessionKey(sessionId);
-        const raw = await this.client.get(key);
+        const raw = await this.client.eval(consumeOnceScript, { keys: [key], arguments: [] });
         if (!raw) {
             return null;
         }
-        await this.client.del(key);
-        return parseJson<OAuthSession>(raw);
+        return typeof raw === 'string' ? parseJson<OAuthSession>(raw) : null;
     }
 
     async getLoginChallengeForUser(userId: string): Promise<KakaoLoginChallenge | null> {

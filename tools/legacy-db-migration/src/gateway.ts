@@ -24,17 +24,83 @@ export interface MigrationSummary {
     apply: boolean;
     counts: Record<string, number>;
     excluded: Record<string, string>;
+    importRunId?: string | null;
+    sourceFormatSummary?: Record<string, number>;
 }
 
 const batchSize = 500;
 
-const mapMember = (row: SourceRow, migratedAt: Date, lastLoginAt: Date | null): TargetRow => {
+export const MEMBER_PRESERVED_COLUMNS = [
+    'login_id',
+    'display_name',
+    'password_hash',
+    'password_salt',
+    'password_reset_required',
+    'roles',
+    'sanctions',
+    'oauth_type',
+    'oauth_id',
+    'email',
+    'oauth_info',
+    'picture',
+    'image_server',
+    'icon_updated_at',
+    'third_party_use',
+    'terms_accepted_at',
+    'privacy_accepted_at',
+    'kakao_verified_at',
+    'kakao_talk_verified_until',
+    'kakao_grace_started_at',
+    'delete_after',
+    'updated_at',
+    'last_login_at',
+    'created_at',
+] as const;
+
+export const preflightMemberConflicts = async (target: PoolClient, rows: readonly TargetRow[]): Promise<void> => {
+    if (rows.length === 0) return;
+    const ids = rows.map((row) => String(row.id));
+    const loginIds = rows.map((row) => String(row.login_id));
+    const displayNames = rows.map((row) => String(row.display_name));
+    const emails = rows.map((row) => row.email).filter((value): value is string => typeof value === 'string');
+    const existing = await target.query<{
+        id: string;
+        login_id: string;
+        display_name: string;
+        email: string | null;
+    }>(
+        `SELECT "id", "login_id", "display_name", "email"
+         FROM "app_user"
+         WHERE "id" = ANY($1::text[])
+            OR "login_id" = ANY($2::text[])
+            OR "display_name" = ANY($3::text[])
+            OR "email" = ANY($4::text[])`,
+        [ids, loginIds, displayNames, emails]
+    );
+    for (const row of rows) {
+        const id = String(row.id);
+        const collision = existing.rows.find(
+            (candidate) =>
+                candidate.id !== id &&
+                (candidate.login_id === row.login_id ||
+                    candidate.display_name === row.display_name ||
+                    (row.email !== null && candidate.email === row.email))
+        );
+        if (collision) {
+            throw new Error('Target account identity collision in legacy member batch');
+        }
+    }
+};
+
+export const mapMember = (row: SourceRow, migratedAt: Date, lastLoginAt: Date | null): TargetRow => {
     const memberNo = toNumber(row.NO, 'member.NO');
     const grade = toNumber(row.GRADE, `member.${memberNo}.GRADE`);
     const acl = parseJson(row.acl, `member.${memberNo}.acl`);
     const penalty = parseJson(row.penalty, `member.${memberNo}.penalty`);
     const oauthInfo = parseJson(row.oauth_info, `member.${memberNo}.oauth_info`);
     const oauthType = row.oauth_type === 'KAKAO' ? 'KAKAO' : 'NONE';
+    const oauthId = toNullableString(row.oauth_id)?.trim() || null;
+    const passwordHash = toStringValue(row.PW, `member.${memberNo}.PW`);
     const legacyData: JsonValue = {
         memberNo,
         grade,
@@ -49,12 +115,13 @@ const mapMember = (row: SourceRow, migratedAt: Date, lastLoginAt: Date | null): 
         id: legacyUserId(memberNo),
         login_id: toStringValue(row.ID, `member.${memberNo}.ID`).toLowerCase(),
         display_name: toStringValue(row.NAME, `member.${memberNo}.NAME`),
-        password_hash: toStringValue(row.PW, `member.${memberNo}.PW`),
+        password_hash: passwordHash,
         password_salt: toStringValue(row.salt, `member.${memberNo}.salt`),
+        password_reset_required: /^[a-f0-9]{128}$/i.test(passwordHash),
         roles: jsonParameter(mapLegacyRoles(grade, acl)),
         sanctions: jsonParameter(mapLegacySanctions(grade, penalty)),
         oauth_type: oauthType,
-        oauth_id: toNullableString(row.oauth_id),
+        oauth_id: oauthId,
         email: toNullableString(row.EMAIL)?.toLowerCase() ?? null,
         oauth_info: jsonParameter(oauthInfo),
         picture: toNullableString(row.PICTURE) ?? 'default.jpg',
@@ -63,9 +130,9 @@ const mapMember = (row: SourceRow, migratedAt: Date, lastLoginAt: Date | null): 
         third_party_use: toNumber(row.third_use ?? 0, `member.${memberNo}.third_use`) !== 0,
         terms_accepted_at: null,
         privacy_accepted_at: null,
-        kakao_verified_at: oauthType === 'KAKAO' ? migratedAt : null,
+        kakao_verified_at: oauthType === 'KAKAO' && oauthId ? migratedAt : null,
         kakao_talk_verified_until:
-            oauthType === 'KAKAO'
+            oauthType === 'KAKAO' && oauthId
                 ? toNullableDate(row.token_valid_until, `member.${memberNo}.token_valid_until`)
                 : null,
         kakao_grace_started_at: migratedAt,
@@ -93,6 +160,7 @@ const loadLastLogins = async (source: MariaPool): Promise<Map<number, Date>> => 
 const processMembers = async (
     source: MariaPool,
     target: PoolClient | null,
+    apply: boolean,
     migratedAt: Date,
     counts: Record<string, number>
 ): Promise<void> => {
@@ -103,7 +171,10 @@ const processMembers = async (
             return mapMember(row, migratedAt, lastLogins.get(memberNo) ?? null);
         });
         if (target) {
-            await upsertRows(target, 'app_user', mapped, ['id']);
+            await preflightMemberConflicts(target, mapped);
+        }
+        if (target && apply) {
+            await upsertRows(target, 'app_user', mapped, ['id'], { preserveOnConflict: MEMBER_PRESERVED_COLUMNS });
         }
         counts.member = (counts.member ?? 0) + mapped.length;
     }
@@ -206,17 +277,26 @@ export const migrateGateway = async (
         login_token:
             'Legacy bearer tokens, IP addresses, and expired sessions are not valid in the Redis session model.',
     };
-    const client = apply && targetPool ? await targetPool.connect() : null;
+    const client = targetPool ? await targetPool.connect() : null;
     try {
         const run = async (): Promise<void> => {
-            await processMembers(source, client, migratedAt, counts);
-            await processMemberLogs(source, client, counts);
-            await processBannedMembers(source, client, counts);
-            await processRootKeyValues(source, client, counts);
-            await processSystem(source, client, counts);
+            await processMembers(source, client, apply, migratedAt, counts);
+            await processMemberLogs(source, apply ? client : null, counts);
+            await processBannedMembers(source, apply ? client : null, counts);
+            await processRootKeyValues(source, apply ? client : null, counts);
+            await processSystem(source, apply ? client : null, counts);
         };
-        if (client) {
-            await withMigrationLock(client, 'sammo-legacy-gateway-v1', run);
+        if (client && apply) {
+            await withMigrationLock(client, 'sammo-legacy-gateway-v1', async () => {
+                await client.query('BEGIN');
+                try {
+                    await run();
+                    await client.query('COMMIT');
+                } catch (error) {
+                    await client.query('ROLLBACK');
+                    throw error;
+                }
+            });
         } else {
             await run();
         }

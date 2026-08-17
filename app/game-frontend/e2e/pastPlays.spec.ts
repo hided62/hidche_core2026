@@ -8,7 +8,7 @@ const response = (data: unknown) => ({ result: { data } });
 const operationNames = (route: Route) =>
     decodeURIComponent(new URL(route.request().url()).pathname.split('/trpc/')[1] ?? '').split(',');
 
-const installArchive = async (page: Page) => {
+const installArchive = async (page: Page, options: { battleAvailable?: boolean } = {}) => {
     await page.addInitScript((profile) => {
         localStorage.setItem('sammo-game-token', 'ga_archive');
         localStorage.setItem('sammo-game-profile', profile);
@@ -21,7 +21,10 @@ const installArchive = async (page: Page) => {
                 return response({
                     seasons: [
                         {
+                            sourceProfile: 'che',
+                            source: 'legacy',
                             serverId: 'che_2024_01',
+                            openedAt: '2024-01-31T00:00:00.000Z',
                             date: '2024-01-31T00:00:00.000Z',
                             season: 51,
                             scenario: 2,
@@ -54,11 +57,67 @@ const installArchive = async (page: Page) => {
             }
             if (operation === 'archive.myPastPlayDetail') {
                 return response({
+                    sourceProfile: 'che',
+                    source: 'legacy',
                     serverId: 'che_2024_01',
                     generalNo: 17,
-                    name: '관우',
-                    lastYearMonth: 21403,
-                    history: ['<C>●</>214년 3월: 촉에 임관', '<Y>●</>214년 1월: 성도에서 거병'],
+                    dynastyPath: '/dynasty/7?source=legacy',
+                    nation: { name: '촉', color: '#800000' },
+                    general: {
+                        id: 17,
+                        name: '관우',
+                        picture: null,
+                        imageServer: 0,
+                        npcState: 0,
+                        officerLevel: 12,
+                        officerLevelText: '황제',
+                        generalType: '용장',
+                        stats: { leadership: 91, strength: 98, intelligence: 77 },
+                        gold: 12_000,
+                        rice: 8_000,
+                        crew: 7_000,
+                        train: 100,
+                        atmos: 100,
+                        injury: 0,
+                        experience: 23_000,
+                        dedication: 1_200,
+                        crewTypeId: 1,
+                        crewTypeName: '보병',
+                        traits: { personal: '대담', specialDomestic: '상재', specialWar: '신산' },
+                        progression: {
+                            experienceLevel: 12,
+                            dedicationLevel: 8,
+                            dedicationText: '황제',
+                            statExperience: { leadership: 12, strength: 14, intelligence: 8 },
+                            statUpgradeLimit: 30,
+                            dex: [125_000, 250_000, 375_000, 500_000, 625_000],
+                        },
+                    },
+                    masteryAvailable: true,
+                    battle: {
+                        available: options.battleAvailable ?? true,
+                        warnum: 16,
+                        wins: 10,
+                        losses: 6,
+                        strategies: 4,
+                        killCrew: 12_000,
+                        deathCrew: 8_000,
+                        winRate: 62.5,
+                        killRate: 75,
+                        recentWar: '2024-01-30T03:00:00.000Z',
+                    },
+                    logs: {
+                        generalHistory: {
+                            available: true,
+                            entries: [
+                                { id: 2, text: '<C>●</>214년 3월: 촉에 임관' },
+                                { id: 1, text: '<Y>●</>214년 1월: 성도에서 거병' },
+                            ],
+                        },
+                        battleDetail: { available: false, entries: [] },
+                        battleResult: { available: false, entries: [] },
+                        generalAction: { available: false, entries: [] },
+                    },
                 });
             }
             return { error: { message: `unhandled ${operation}`, data: { code: 'BAD_REQUEST' } } };
@@ -76,6 +135,15 @@ test('지난 플레이 관직은 숫자 대신 저장된 Ref 표시명으로 나
     await expect(generalRow).not.toContainText('che_');
 });
 
+test('보존되지 않은 과거 전투 집계는 0으로 꾸미지 않고 가용성 경계를 표시한다', async ({ page }) => {
+    await installArchive(page, { battleAvailable: false });
+    await page.goto('past-plays');
+    await page.locator('.detail-toggle').click();
+
+    await expect(page.locator('[data-general-battle-summary]')).toHaveText('전투 집계가 보존되지 않았습니다.');
+    await expect(page.locator('[data-general-battle-summary]')).not.toContainText('승률');
+});
+
 test('past plays is available without a current general and preserves desktop interaction geometry', async ({
     page,
 }) => {
@@ -87,19 +155,46 @@ test('past plays is available without a current general and preserves desktop in
     await expect(root).toBeVisible();
     await expect(page.getByRole('heading', { name: '내 지난 플레이 보기' })).toBeVisible();
     await expect(page.getByText('천하쟁패 · 51기')).toBeVisible();
+    await expect(page.getByText('이전 서버 기록')).toBeVisible();
+    await expect(page.getByText('che', { exact: true })).toBeVisible();
+    await expect(page.getByText(/2024.*개장/)).toBeVisible();
     await expect(page.locator('.general-name')).toHaveText('관우');
     await expect(page.locator('tbody tr').filter({ hasText: '관우' })).toContainText('황제');
-    await expect(page.getByRole('link', { name: '이 기수 국가 정보' })).toHaveAttribute('href', gamePath('/dynasty/7'));
-    const historyToggle = page.locator('.history-toggle');
-    await expect(historyToggle).toHaveText('보기 (2)');
-    await historyToggle.click();
+    const detailToggle = page.locator('.detail-toggle');
+    await expect(detailToggle).toHaveText('상세 보기');
+    await detailToggle.hover();
+    const beforePress = await detailToggle.boundingBox();
+    await page.mouse.down();
+    expect(await detailToggle.evaluate((element) => getComputedStyle(element).transform)).not.toBe('none');
+    await page.mouse.up();
+    expect((await detailToggle.boundingBox())?.y).toBeCloseTo(beforePress?.y ?? 0, 0);
     await expect(page.getByText('214년 3월: 촉에 임관')).toBeVisible();
-    await expect(historyToggle).toHaveAttribute('aria-expanded', 'true');
+    await expect(detailToggle).toHaveAttribute('aria-expanded', 'true');
+    await expect(page.locator('.archive-general-card')).toHaveAttribute('data-general-basic-card', '');
+    await expect(page.locator('.archive-general-card [role="progressbar"]')).toHaveCount(14);
+    await expect(page.locator('[data-general-battle-summary]')).toContainText('승률62.5%');
+    await expect(page.locator('[data-general-battle-summary]')).toContainText('살상률75.0%');
+    await expect(page.locator('[data-log-type="battleDetail"]')).toContainText(
+        '이 기수에는 전투 기록이 보존되지 않았습니다.'
+    );
+    await expect(page.locator('[data-log-type="battleResult"]')).toContainText(
+        '이 기수에는 전투 결과가 보존되지 않았습니다.'
+    );
+    await expect(page.locator('[data-log-type="generalAction"]')).toContainText(
+        '이 기수에는 개인 기록이 보존되지 않았습니다.'
+    );
+    await expect(page.locator('[data-log-type="generalHistory"] C')).toHaveCount(0);
+    await expect(page.getByRole('link', { name: '이 기수 국가 정보' })).toHaveAttribute(
+        'href',
+        `${gamePath('/dynasty/7')}?source=legacy`
+    );
 
     const geometry = await root.evaluate((element) => {
         const rect = element.getBoundingClientRect();
         const titleRect = element.querySelector('.title-row')!.getBoundingClientRect();
         const tableRect = element.querySelector('table')!.getBoundingClientRect();
+        const detailGrid = element.querySelector('.detail-grid')!;
+        const card = element.querySelector('[data-general-basic-card]')!.getBoundingClientRect();
         const style = getComputedStyle(element);
         return {
             x: rect.x,
@@ -107,6 +202,8 @@ test('past plays is available without a current general and preserves desktop in
             minHeight: rect.height,
             title: { x: titleRect.x, y: titleRect.y, width: titleRect.width },
             tableWidth: tableRect.width,
+            detailColumns: getComputedStyle(detailGrid).gridTemplateColumns,
+            cardWidth: card.width,
             color: style.color,
             backgroundColor: style.backgroundColor,
         };
@@ -116,13 +213,14 @@ test('past plays is available without a current general and preserves desktop in
         width: 1000,
         title: { x: 100, y: 0, width: 1000 },
         tableWidth: 1000,
+        cardWidth: 497,
         color: 'rgb(238, 238, 238)',
-        backgroundColor: 'rgb(21, 21, 21)',
+        backgroundColor: 'rgb(48, 32, 22)',
     });
 
     const refresh = page.getByRole('button', { name: '새로고침' });
     await refresh.hover();
-    expect(await refresh.evaluate((element) => getComputedStyle(element).color)).toBe('rgb(135, 206, 235)');
+    await expect(refresh).toHaveCSS('color', 'rgb(135, 206, 235)');
     await refresh.focus();
     expect(await refresh.evaluate((element) => document.activeElement === element)).toBe(true);
 
@@ -140,6 +238,9 @@ test('past plays keeps the legacy-width table scrollable on a mobile viewport', 
     await page.setViewportSize({ width: 390, height: 844 });
     await page.goto('past-plays');
 
+    await page.locator('.detail-toggle').click();
+    await expect(page.locator('.archive-general-card')).toBeVisible();
+
     const scroll = page.locator('.table-scroll');
     const metrics = await scroll.evaluate((element) => ({
         clientWidth: element.clientWidth,
@@ -149,4 +250,14 @@ test('past plays keeps the legacy-width table scrollable on a mobile viewport', 
     // The shared legacy shell keeps its historical 500 px minimum canvas.
     expect(metrics).toEqual({ clientWidth: 500, scrollWidth: 940, overflowX: 'auto' });
     await expect(page.locator('.title-row')).toHaveCSS('flex-direction', 'column');
+    await expect(page.locator('.detail-grid')).toHaveCSS('grid-template-columns', '498px');
+    const detailMetrics = await page.locator('.detail-shell').evaluate((element) => ({
+        width: element.getBoundingClientRect().width,
+        scrollWidth: element.scrollWidth,
+        recordBottom: element.querySelector('[data-general-record-panels]')!.getBoundingClientRect().bottom,
+        shellBottom: element.getBoundingClientRect().bottom,
+    }));
+    expect(detailMetrics.width).toBe(498);
+    expect(detailMetrics.scrollWidth).toBe(498);
+    expect(detailMetrics.recordBottom).toBeLessThanOrEqual(detailMetrics.shellBottom);
 });

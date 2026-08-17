@@ -4,6 +4,16 @@ import type { Pool as MariaPool } from 'mariadb';
 import type { Pool as PgPool, PoolClient } from 'pg';
 
 import {
+    isLegacyArchiveProfile,
+    normalizeArchivedGeneral,
+    type ArchivedGeneralSourceFormat,
+    type ArchivedJsonValue,
+    type LegacyArchiveProfile,
+} from '@sammo-ts/common';
+
+export { isLegacyArchiveProfile, LEGACY_ARCHIVE_PROFILES, type LegacyArchiveProfile } from '@sammo-ts/common';
+
+import {
     paginateSource,
     jsonParameter,
     toDate,
@@ -29,6 +39,12 @@ import {
 
 const batchSize = 250;
 
+interface ArchiveMigrationContext {
+    profile: LegacyArchiveProfile;
+    importRunId: string;
+    sourceFormats: Record<ArchivedGeneralSourceFormat, number>;
+}
+
 const parseNullableJson = (value: unknown, fallback: JsonValue, context: string): JsonValue =>
     value === null || value === undefined ? fallback : parseJson(value, context);
 
@@ -43,17 +59,17 @@ const ownerId = (value: unknown): string | null => {
     return memberNo > 0 ? legacyUserId(memberNo) : null;
 };
 
-const hashYearbook = (row: TargetRow): string =>
-    createHash('sha256')
-        .update(
-            JSON.stringify({
-                map: row.map,
-                nations: row.nations,
-                globalHistory: row.global_history,
-                globalAction: row.global_action,
-            })
-        )
-        .digest('hex');
+const hashYearbook = (map: JsonValue, nations: JsonValue, globalHistory: JsonValue, globalAction: JsonValue): string =>
+    createHash('sha256').update(JSON.stringify({ map, nations, globalHistory, globalAction })).digest('hex');
+
+const asJsonRecord = (value: JsonValue): Record<string, JsonValue> =>
+    value !== null && !Array.isArray(value) && typeof value === 'object' ? value : {};
+
+export const resolveLegacyGameOpenedAt = (env: JsonValue, legacyDate: Date, context: string): Date => {
+    const record = asJsonRecord(env);
+    const candidate = record.opentime ?? record.starttime;
+    return candidate === null || candidate === undefined || candidate === '' ? legacyDate : toDate(candidate, context);
+};
 
 const migrateSimpleTable = async (
     source: MariaPool,
@@ -75,17 +91,24 @@ const migrateSimpleTable = async (
     }
 };
 
-const migrateHall = (source: MariaPool, target: PoolClient | null, counts: Record<string, number>): Promise<void> =>
+const migrateHall = (
+    source: MariaPool,
+    target: PoolClient | null,
+    counts: Record<string, number>,
+    archive: ArchiveMigrationContext
+): Promise<void> =>
     migrateSimpleTable(
         source,
         target,
         'hall',
         'id',
-        'hall',
-        ['server_id', 'type', 'general_no'],
+        'legacy_archive.hall',
+        ['source_profile', 'server_id', 'type', 'general_no'],
         (row) => {
             const sourceId = toNumber(row.id, 'hall.id');
             return {
+                source_profile: archive.profile,
+                legacy_id: sourceId,
                 server_id: toStringValue(row.server_id, `hall.${sourceId}.server_id`),
                 season: toNumber(row.season, `hall.${sourceId}.season`),
                 scenario: toNumber(row.scenario, `hall.${sourceId}.scenario`),
@@ -94,24 +117,36 @@ const migrateHall = (source: MariaPool, target: PoolClient | null, counts: Recor
                 value: toFloat(row.value, `hall.${sourceId}.value`),
                 owner: ownerId(row.owner),
                 aux: parseJson(row.aux, `hall.${sourceId}.aux`),
+                import_run_id: archive.importRunId,
             };
         },
         counts
     );
 
-const migrateGames = (source: MariaPool, target: PoolClient | null, counts: Record<string, number>): Promise<void> =>
+const migrateGames = (
+    source: MariaPool,
+    target: PoolClient | null,
+    counts: Record<string, number>,
+    archive: ArchiveMigrationContext
+): Promise<void> =>
     migrateSimpleTable(
         source,
         target,
         'ng_games',
         'id',
-        'ng_games',
-        ['server_id'],
+        'legacy_archive.game_history',
+        ['source_profile', 'server_id'],
         (row) => {
             const sourceId = toNumber(row.id, 'ng_games.id');
+            const legacyDate = toDate(row.date, `ng_games.${sourceId}.date`);
+            const env = parseJson(row.env, `ng_games.${sourceId}.env`);
             return {
+                source_profile: archive.profile,
                 server_id: toStringValue(row.server_id, `ng_games.${sourceId}.server_id`),
-                date: toDate(row.date, `ng_games.${sourceId}.date`),
+                legacy_id: sourceId,
+                opened_at: resolveLegacyGameOpenedAt(env, legacyDate, `ng_games.${sourceId}.opened_at`),
+                completed_at: null,
+                legacy_date: legacyDate,
                 winner_nation:
                     row.winner_nation === null
                         ? null
@@ -120,7 +155,8 @@ const migrateGames = (source: MariaPool, target: PoolClient | null, counts: Reco
                 season: toNumber(row.season, `ng_games.${sourceId}.season`),
                 scenario: toNumber(row.scenario, `ng_games.${sourceId}.scenario`),
                 scenario_name: toStringValue(row.scenario_name, `ng_games.${sourceId}.scenario_name`),
-                env: parseJson(row.env, `ng_games.${sourceId}.env`),
+                raw_env: jsonParameter(env),
+                import_run_id: archive.importRunId,
             };
         },
         counts
@@ -129,25 +165,36 @@ const migrateGames = (source: MariaPool, target: PoolClient | null, counts: Reco
 const migrateOldGenerals = (
     source: MariaPool,
     target: PoolClient | null,
-    counts: Record<string, number>
+    counts: Record<string, number>,
+    archive: ArchiveMigrationContext
 ): Promise<void> =>
     migrateSimpleTable(
         source,
         target,
         'ng_old_generals',
         'id',
-        'ng_old_generals',
-        ['server_id', 'general_no'],
+        'legacy_archive.general',
+        ['source_profile', 'server_id', 'general_no'],
         (row) => {
             const sourceId = toNumber(row.id, 'ng_old_generals.id');
+            const name = toStringValue(row.name, `ng_old_generals.${sourceId}.name`);
+            const rawData = parseJson(row.data, `ng_old_generals.${sourceId}.data`);
+            const normalized = normalizeArchivedGeneral(rawData as ArchivedJsonValue, name);
+            archive.sourceFormats[normalized.sourceFormat] += 1;
             return {
+                source_profile: archive.profile,
                 server_id: toStringValue(row.server_id, `ng_old_generals.${sourceId}.server_id`),
                 general_no: toNumber(row.general_no, `ng_old_generals.${sourceId}.general_no`),
+                legacy_id: sourceId,
                 owner: ownerId(row.owner),
-                name: toStringValue(row.name, `ng_old_generals.${sourceId}.name`),
+                name,
                 last_yearmonth: toNumber(row.last_yearmonth, `ng_old_generals.${sourceId}.last_yearmonth`),
                 turntime: toDate(row.turntime, `ng_old_generals.${sourceId}.turntime`),
-                data: parseJson(row.data, `ng_old_generals.${sourceId}.data`),
+                schema_version: normalized.snapshot.schemaVersion,
+                source_format: normalized.sourceFormat,
+                data: jsonParameter(normalized.snapshot),
+                raw_data: jsonParameter(rawData),
+                import_run_id: archive.importRunId,
             };
         },
         counts
@@ -156,41 +203,47 @@ const migrateOldGenerals = (
 const migrateOldNations = (
     source: MariaPool,
     target: PoolClient | null,
-    counts: Record<string, number>
+    counts: Record<string, number>,
+    archive: ArchiveMigrationContext
 ): Promise<void> =>
     migrateSimpleTable(
         source,
         target,
         'ng_old_nations',
         'id',
-        'ng_old_nations',
-        ['server_id', 'nation', 'source_id'],
+        'legacy_archive.nation',
+        ['source_profile', 'legacy_id'],
         (row) => {
             const sourceId = toNumber(row.id, 'ng_old_nations.id');
             return {
+                source_profile: archive.profile,
+                legacy_id: sourceId,
                 server_id: toStringValue(row.server_id, `ng_old_nations.${sourceId}.server_id`),
                 nation: toNumber(row.nation, `ng_old_nations.${sourceId}.nation`),
-                source_id: sourceId,
-                data: parseJson(row.data, `ng_old_nations.${sourceId}.data`),
-                date: toDate(row.date, `ng_old_nations.${sourceId}.date`),
+                data: jsonParameter(parseJson(row.data, `ng_old_nations.${sourceId}.data`)),
+                archived_at: toDate(row.date, `ng_old_nations.${sourceId}.date`),
+                import_run_id: archive.importRunId,
             };
         },
         counts
     );
 
-const migrateEmperors = (source: MariaPool, target: PoolClient | null, counts: Record<string, number>): Promise<void> =>
+const migrateEmperors = (
+    source: MariaPool,
+    target: PoolClient | null,
+    counts: Record<string, number>,
+    archive: ArchiveMigrationContext
+): Promise<void> =>
     migrateSimpleTable(
         source,
         target,
         'emperior',
         'no',
-        'emperior',
-        ['legacy_id'],
+        'legacy_archive.emperor',
+        ['source_profile', 'legacy_id'],
         (row) => {
             const id = toNumber(row.no, 'emperior.no');
-            return {
-                legacy_id: id,
-                server_id: toNullableString(row.server_id),
+            const data = {
                 phase: toNullableString(row.phase),
                 nation_count: toNullableString(row.nation_count),
                 nation_name: toNullableString(row.nation_name),
@@ -231,6 +284,13 @@ const migrateEmperors = (source: MariaPool, target: PoolClient | null, counts: R
                 gen: toNullableString(row.gen),
                 history: parseNullableJson(row.history, [], `emperior.${id}.history`),
                 aux: parseNullableJson(row.aux, {}, `emperior.${id}.aux`),
+            };
+            return {
+                source_profile: archive.profile,
+                legacy_id: id,
+                server_id: toNullableString(row.server_id),
+                data: jsonParameter(data),
+                import_run_id: archive.importRunId,
             };
         },
         counts
@@ -295,30 +355,35 @@ const migrateUserRecords = (
 const migrateYearbook = async (
     source: MariaPool,
     target: PoolClient | null,
-    counts: Record<string, number>
+    counts: Record<string, number>,
+    archive: ArchiveMigrationContext
 ): Promise<void> => {
     await migrateSimpleTable(
         source,
         target,
         'ng_history',
         'no',
-        'yearbook_history',
-        ['profile_name', 'year', 'month', 'source_id'],
+        'legacy_archive.yearbook',
+        ['source_profile', 'legacy_id'],
         (row) => {
             const id = toNumber(row.no, 'ng_history.no');
+            const map = parseNullableJson(row.map, {}, `ng_history.${id}.map`);
+            const nations = parseNullableJson(row.nations, [], `ng_history.${id}.nations`);
+            const globalHistory = parseNullableJson(row.global_history, [], `ng_history.${id}.global_history`);
+            const globalAction = parseNullableJson(row.global_action, [], `ng_history.${id}.global_action`);
             const mapped: TargetRow = {
+                source_profile: archive.profile,
+                legacy_id: id,
                 profile_name: toStringValue(row.server_id, `ng_history.${id}.server_id`),
-                source_id: id,
                 year: toNumber(row.year, `ng_history.${id}.year`),
                 month: toNumber(row.month, `ng_history.${id}.month`),
-                map: parseNullableJson(row.map, {}, `ng_history.${id}.map`),
-                nations: parseNullableJson(row.nations, [], `ng_history.${id}.nations`),
-                global_history: parseNullableJson(row.global_history, [], `ng_history.${id}.global_history`),
-                global_action: parseNullableJson(row.global_action, [], `ng_history.${id}.global_action`),
-                hash: '',
-                created_at: new Date(0),
+                map: jsonParameter(map),
+                nations: jsonParameter(nations),
+                global_history: jsonParameter(globalHistory),
+                global_action: jsonParameter(globalAction),
+                content_hash: hashYearbook(map, nations, globalHistory, globalAction),
+                import_run_id: archive.importRunId,
             };
-            mapped.hash = hashYearbook(mapped);
             return mapped;
         },
         counts,
@@ -388,7 +453,16 @@ export const migrateGame = async (
     apply: boolean,
     profile: string
 ): Promise<MigrationSummary> => {
+    if (!isLegacyArchiveProfile(profile)) {
+        throw new Error(`Unsupported legacy archive profile: ${profile}`);
+    }
     const counts: Record<string, number> = {};
+    const sourceFormats: Record<ArchivedGeneralSourceFormat, number> = {
+        'legacy-flat-v0': 0,
+        'ref-flat-v1': 0,
+        'core-snapshot-v1': 0,
+        unknown: 0,
+    };
     const excluded = {
         general: 'Current-season actor state is intentionally not transferred.',
         city: 'Current-season world state is intentionally not transferred.',
@@ -421,25 +495,59 @@ export const migrateGame = async (
         'storage:season-state': 'Only inheritance_* and user_* long-lived namespaces are archived or projected.',
     };
     const client = apply && targetPool ? await targetPool.connect() : null;
+    let importRunId: string | null = null;
     try {
-        const run = async (): Promise<void> => {
-            await migrateGames(source, client, counts);
-            await migrateHall(source, client, counts);
-            await migrateOldGenerals(source, client, counts);
-            await migrateOldNations(source, client, counts);
-            await migrateEmperors(source, client, counts);
+        const run = async (archive: ArchiveMigrationContext): Promise<void> => {
+            await migrateGames(source, client, counts, archive);
+            await migrateHall(source, client, counts, archive);
+            await migrateOldGenerals(source, client, counts, archive);
+            await migrateOldNations(source, client, counts, archive);
+            await migrateEmperors(source, client, counts, archive);
             await migrateInheritanceResults(source, client, counts);
             await migrateUserRecords(source, client, counts);
             await migrateStorage(source, client, counts);
-            await migrateYearbook(source, client, counts);
+            await migrateYearbook(source, client, counts, archive);
         };
         if (client) {
-            await withMigrationLock(client, `sammo-legacy-game-v1:${profile}`, run);
+            await withMigrationLock(client, `sammo-legacy-archive-v2:${profile}`, async () => {
+                const created = await client.query<{ id: string }>(
+                    `INSERT INTO "legacy_archive"."import_run" ("source_profile", "status")
+                     VALUES ($1, 'RUNNING') RETURNING "id"`,
+                    [profile]
+                );
+                importRunId = created.rows[0]?.id ?? null;
+                if (!importRunId) throw new Error('Failed to create legacy archive import run');
+                const archive: ArchiveMigrationContext = { profile, importRunId, sourceFormats };
+                await client.query('BEGIN');
+                try {
+                    await run(archive);
+                    await client.query(
+                        `UPDATE "legacy_archive"."import_run"
+                         SET "status" = 'COMPLETED', "finished_at" = CURRENT_TIMESTAMP,
+                             "counts" = $2::jsonb, "source_format_summary" = $3::jsonb
+                        WHERE "id" = $1`,
+                        [importRunId, JSON.stringify(counts), JSON.stringify(sourceFormats)]
+                    );
+                    await client.query('COMMIT');
+                } catch (error) {
+                    await client.query('ROLLBACK');
+                    const message =
+                        error instanceof Error ? error.message.slice(0, 2000) : String(error).slice(0, 2000);
+                    await client.query(
+                        `UPDATE "legacy_archive"."import_run"
+                         SET "status" = 'FAILED', "finished_at" = CURRENT_TIMESTAMP,
+                             "counts" = $2::jsonb, "source_format_summary" = $3::jsonb, "error" = $4
+                         WHERE "id" = $1`,
+                        [importRunId, JSON.stringify(counts), JSON.stringify(sourceFormats), message]
+                    );
+                    throw error;
+                }
+            });
         } else {
-            await run();
+            await run({ profile, importRunId: '0', sourceFormats });
         }
     } finally {
         client?.release();
     }
-    return { command: 'game', apply, counts, excluded };
+    return { command: 'game', apply, counts, excluded, importRunId, sourceFormatSummary: sourceFormats };
 };

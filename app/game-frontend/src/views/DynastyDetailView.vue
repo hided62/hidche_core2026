@@ -14,6 +14,7 @@ const router = useRouter();
 const loading = ref(false);
 const errorMessage = ref('');
 const data = ref<DynastyDetailPayload | null>(null);
+const source = computed<'current' | 'legacy'>(() => (route.query.source === 'legacy' ? 'legacy' : 'current'));
 
 const emperorId = computed(() => {
     const idParam = route.params.id;
@@ -39,7 +40,7 @@ const loadDetail = async (): Promise<void> => {
     loading.value = true;
     errorMessage.value = '';
     try {
-        data.value = await trpc.dynasty.getDetail.query({ emperorId: emperorId.value });
+        data.value = await trpc.dynasty.getDetail.query({ emperorId: emperorId.value, source: source.value });
     } catch (error) {
         data.value = null;
         errorMessage.value = error instanceof Error ? error.message : '왕조 정보를 불러오지 못했습니다.';
@@ -50,7 +51,7 @@ const loadDetail = async (): Promise<void> => {
 
 const formatArchiveDate = (value: string): string => formatServerDateTime(value);
 
-watch(emperorId, loadDetail);
+watch([emperorId, source], loadDetail);
 onMounted(loadDetail);
 </script>
 
@@ -63,7 +64,8 @@ onMounted(loadDetail);
                         역 대 왕 조<br />
                         <button class="native-button" type="button" @click="closePage">창 닫기</button>
                         <span class="all-link">
-                            <RouterLink to="/dynasty"
+                            <RouterLink
+                                :to="{ path: '/dynasty', query: source === 'legacy' ? { source: 'legacy' } : {} }"
                                 ><button class="native-button" type="button">전체보기</button></RouterLink
                             >
                         </span>
@@ -88,7 +90,12 @@ onMounted(loadDetail);
                 <tbody>
                     <tr>
                         <td class="phase-heading centered" colspan="6">
-                            <span class="large-text">{{ data.emperor.phase }}</span>
+                            <span class="large-text">
+                                {{ data.emperor.phase }}
+                                <template v-if="data.source === 'legacy'">
+                                    [{{ data.sourceProfile.toUpperCase() }} 이전 서버]
+                                </template>
+                            </span>
                         </td>
                     </tr>
                     <tr>

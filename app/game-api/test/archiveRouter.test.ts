@@ -25,8 +25,132 @@ const auth: GameSessionTokenPayload = {
     sanctions: {},
 };
 
-const context = (session: GameSessionTokenPayload | null): GameApiContext => {
+const context = (session: GameSessionTokenPayload | null, includeLegacy = false): GameApiContext => {
     const db = {
+        $queryRaw: async (query: { strings?: readonly string[] }) => {
+            if (!includeLegacy) return [];
+            const sql = query.strings?.join(' ') ?? '';
+            if (sql.includes('legacy_archive"."general')) {
+                return [
+                    {
+                        sourceProfile: 'hwe',
+                        serverId: 'hwe_archive_1',
+                        generalNo: 21,
+                        legacyId: 21,
+                        owner: 'user-1',
+                        name: '이전서버장수',
+                        lastYearMonth: 21012,
+                        turnTime: new Date('2020-01-02T00:00:00.000Z'),
+                        schemaVersion: 1,
+                        sourceFormat: 'legacy-flat-v0',
+                        data: {
+                            schemaVersion: 1,
+                            identity: {
+                                name: '이전서버장수',
+                                picture: null,
+                                imageServer: 0,
+                                npcState: 0,
+                                nationId: 2,
+                                cityId: 1,
+                                officerLevel: 7,
+                                officerCity: 1,
+                            },
+                            stats: {
+                                leadership: 91,
+                                strength: 81,
+                                intelligence: 71,
+                                leadershipExperience: 3,
+                                strengthExperience: 4,
+                                intelligenceExperience: 5,
+                            },
+                            progression: {
+                                experience: 900,
+                                experienceLevel: 3,
+                                dedication: 800,
+                                dedicationLevel: 2,
+                                age: 30,
+                                startAge: 20,
+                                bornYear: 180,
+                                deadYear: 250,
+                            },
+                            traits: { personality: null, specialDomestic: null, specialWar: null },
+                            resources: {
+                                gold: 100,
+                                rice: 200,
+                                crew: 300,
+                                crewType: '1',
+                                train: 90,
+                                morale: 80,
+                                injury: 0,
+                            },
+                            items: { horse: null, weapon: null, book: null, item: null },
+                            mastery: { infantry: 1000, archery: 2000, cavalry: 3000, special: 4000, siege: 5000 },
+                            battle: {
+                                battles: 10,
+                                wins: 6,
+                                losses: 4,
+                                fireSuccesses: 2,
+                                kills: 6,
+                                deaths: 4,
+                                killedCrew: 1000,
+                                lostCrew: 500,
+                                winRate: 60,
+                                killRate: 200,
+                                recentWar: null,
+                                tactics: {
+                                    total: { wins: null, draws: null, losses: null },
+                                    leadership: { wins: null, draws: null, losses: null },
+                                    intelligence: { wins: null, draws: null, losses: null },
+                                },
+                            },
+                            history: ['이전 서버 열전'],
+                            availability: {
+                                mastery: true,
+                                battleAggregates: true,
+                                tactics: false,
+                                history: true,
+                                battleDetailLogs: false,
+                                battleResultLogs: false,
+                            },
+                        },
+                    },
+                ];
+            }
+            if (sql.includes('legacy_archive"."game_history')) {
+                return [
+                    {
+                        sourceProfile: 'hwe',
+                        serverId: 'hwe_archive_1',
+                        legacyId: 1,
+                        openedAt: new Date('2019-09-21T00:00:00.000Z'),
+                        completedAt: null,
+                        legacyDate: new Date('2019-09-21T00:00:00.000Z'),
+                        winnerNation: 2,
+                        map: 'legacy',
+                        season: 1,
+                        scenario: 7,
+                        scenarioName: '이전 시나리오',
+                        rawEnv: {},
+                    },
+                ];
+            }
+            if (sql.includes('legacy_archive"."nation')) {
+                return [
+                    {
+                        sourceProfile: 'hwe',
+                        legacyId: 1,
+                        serverId: 'hwe_archive_1',
+                        nation: 2,
+                        data: { name: '이전국', color: '#0000ff', level: 7 },
+                        archivedAt: new Date('2020-01-02T00:00:00.000Z'),
+                    },
+                ];
+            }
+            if (sql.includes('legacy_archive"."emperor')) {
+                return [{ id: 99n, sourceProfile: 'hwe', legacyId: 1, serverId: 'hwe_archive_1', data: {} }];
+            }
+            return [];
+        },
         oldGeneral: {
             findMany: async ({ where }: { where: { owner: string } }) =>
                 where.owner === 'user-1'
@@ -82,6 +206,11 @@ const context = (session: GameSessionTokenPayload | null): GameApiContext => {
                           lastYearMonth: 22012,
                           turnTime: new Date('2025-01-01T00:00:00.000Z'),
                           data: {
+                              nation: 3,
+                              leader: 80,
+                              power: 70,
+                              intel: 60,
+                              officer_level: 8,
                               history: '<C>●</>첫 기록<br><Y>●</>둘째 기록<br>',
                           },
                       }
@@ -116,6 +245,7 @@ const context = (session: GameSessionTokenPayload | null): GameApiContext => {
         },
         emperor: {
             findMany: async () => [{ id: 7, serverId: 'che_legacy_1' }],
+            findFirst: async () => ({ id: 7, serverId: 'che_legacy_1' }),
         },
     };
     const redis = {
@@ -146,6 +276,8 @@ describe('archive.myPastPlays', () => {
         const result = await appRouter.createCaller(context(auth)).archive.myPastPlays();
         expect(result.seasons).toEqual([
             expect.objectContaining({
+                source: 'current',
+                sourceProfile: 'che',
                 serverId: 'che_legacy_1',
                 scenarioName: '테스트',
                 dynastyId: 7,
@@ -185,12 +317,27 @@ describe('archive.myPastPlays', () => {
         });
 
         const result = await appRouter.createCaller(context(auth)).archive.myPastPlayDetail(input);
-        expect(result).toEqual({
+        expect(result).toMatchObject({
+            source: 'current',
+            sourceProfile: 'che',
             serverId: 'che_legacy_1',
             generalNo: 10,
-            name: '과거장수',
-            lastYearMonth: 22012,
-            history: ['<C>●</>첫 기록', '<Y>●</>둘째 기록'],
+            dynastyPath: '/dynasty/7',
+            nation: { id: 3, name: '촉', color: '#ff0000' },
+            general: expect.objectContaining({ id: 10, name: '과거장수' }),
+            battle: expect.objectContaining({ available: false }),
+            logs: {
+                generalHistory: {
+                    available: true,
+                    entries: [
+                        { id: 1, text: '<C>●</>첫 기록' },
+                        { id: 2, text: '<Y>●</>둘째 기록' },
+                    ],
+                },
+                battleDetail: { available: false, entries: [] },
+                battleResult: { available: false, entries: [] },
+                generalAction: { available: false, entries: [] },
+            },
         });
 
         const otherUser = {
@@ -201,5 +348,45 @@ describe('archive.myPastPlays', () => {
         await expect(appRouter.createCaller(context(otherUser)).archive.myPastPlayDetail(input)).rejects.toMatchObject({
             code: 'NOT_FOUND',
         });
+    });
+
+    it('returns normalized previous-server detail from the dedicated archive without exposing raw data', async () => {
+        const caller = appRouter.createCaller(context(auth, true));
+        const list = await caller.archive.myPastPlays();
+        expect(list.seasons).toContainEqual(
+            expect.objectContaining({
+                source: 'legacy',
+                sourceProfile: 'hwe',
+                serverId: 'hwe_archive_1',
+                openedAt: '2019-09-21T00:00:00.000Z',
+                dynastyId: 99,
+                generals: [expect.objectContaining({ name: '이전서버장수', nationName: '이전국' })],
+            })
+        );
+
+        const detail = await caller.archive.myPastPlayDetail({
+            source: 'legacy',
+            sourceProfile: 'hwe',
+            serverId: 'hwe_archive_1',
+            generalNo: 21,
+        });
+        expect(detail).toMatchObject({
+            source: 'legacy',
+            sourceProfile: 'hwe',
+            dynastyPath: '/dynasty/99?source=legacy',
+            nation: { id: 2, name: '이전국', color: '#0000ff' },
+            general: expect.objectContaining({
+                id: 21,
+                name: '이전서버장수',
+                stats: { leadership: 91, strength: 81, intelligence: 71 },
+                progression: expect.objectContaining({ dex: [1000, 2000, 3000, 4000, 5000] }),
+            }),
+            battle: expect.objectContaining({ available: true, warnum: 10, wins: 6, winRate: 60 }),
+            logs: expect.objectContaining({
+                generalHistory: { available: true, entries: [{ id: 1, text: '이전 서버 열전' }] },
+                battleDetail: { available: false, entries: [] },
+            }),
+        });
+        expect(JSON.stringify(detail)).not.toContain('raw_data');
     });
 });
