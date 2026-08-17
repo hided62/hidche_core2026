@@ -71,6 +71,13 @@ const zParticipant = z.object({
     gl: z.number().int().optional(),
     seedRank: z.number().int().optional(),
     finalRank: z.number().int().optional(),
+    preliminaryGroupId: z.number().int().min(0).max(7).optional(),
+    preliminaryGroupNo: z.number().int().min(0).max(7).optional(),
+    preliminaryRank: z.number().int().min(1).max(8).optional(),
+    preliminaryWin: z.number().int().min(0).optional(),
+    preliminaryDraw: z.number().int().min(0).optional(),
+    preliminaryLose: z.number().int().min(0).optional(),
+    preliminaryGl: z.number().int().optional(),
 });
 
 const zMatch = z.object({
