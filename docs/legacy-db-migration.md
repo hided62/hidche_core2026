@@ -124,6 +124,17 @@ shape. Missing battle aggregates and logs are `null` plus explicit
 `availability`, never fabricated zeroes. The source JSON remains in
 `legacy_archive.general.raw_data` for recovery, but no API returns it.
 
+Ref also retains per-season filesystem trees under `logs/preserved`. They are
+not a MariaDB source: season reset moves the whole prior log directory there,
+and the tree mixes legacy `gen*`, `batlog*`, `batres*`, tournament `fight*`,
+SQLite API logs, and administrative/operational logs. The long-lived importer
+therefore never reads a local or remote filesystem path. The required condensed
+general history is already embedded by Ref in `ng_old_generals.data.history`,
+and yearbook history comes from `ng_history`. Importing the other file artifacts
+would require a separately reviewed archive format, ownership mapping, privacy
+policy, and storage budget; their absence is reported as not preserved rather
+than guessed from filenames.
+
 The source contains legitimate duplicate `(server_id, nation)` old-nation rows
 and `(server_id, year, month)` history rows. `source_id` is consequently part of
 their current-schema archive keys, while the dedicated legacy archive uses
