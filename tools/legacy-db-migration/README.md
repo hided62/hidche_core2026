@@ -89,6 +89,13 @@ archive rows are immutable. Incremental mode does not mirror source deletions.
 If either assumption is false, take a new reviewed backup and run full mode;
 do not edit checkpoint rows by hand.
 
+The command reads MariaDB only. Ref `logs/preserved/<season>/` directories are
+heterogeneous filesystem archives (old general/battle text, tournament text,
+SQLite API logs, and operational logs), not an incremental database feed.
+`ng_old_generals.data.history` and `ng_history` carry the supported long-lived
+history. Do not point this CLI at, copy, or infer database rows from preserved
+log files; a file-log archive needs a separate reviewed migration contract.
+
 ## Commands
 
 ```sh
