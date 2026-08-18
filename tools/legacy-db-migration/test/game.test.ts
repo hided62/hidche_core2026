@@ -114,6 +114,20 @@ describe('legacy archive game migration', () => {
         expect(resolveLegacyGameOpenedAt({}, new Date('2020-01-01T00:00:00.000Z'), 'fixture').toISOString()).toBe(
             '2020-01-01T00:00:00.000Z'
         );
+        expect(
+            resolveLegacyGameOpenedAt(
+                { opentime: -324000000, starttime: 0 },
+                new Date('2026-08-10T22:00:00.000Z'),
+                'fixture'
+            ).toISOString()
+        ).toBe('2026-08-10T22:00:00.000Z');
+        expect(
+            resolveLegacyGameOpenedAt(
+                { opentime: 'not-a-date' },
+                new Date('2026-08-10T22:00:00.000Z'),
+                'fixture'
+            ).toISOString()
+        ).toBe('2026-08-10T22:00:00.000Z');
     });
 
     it('keeps dry-run target-read-only while reporting normalized formats', async () => {

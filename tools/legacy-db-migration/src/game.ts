@@ -83,7 +83,16 @@ const asJsonRecord = (value: JsonValue): Record<string, JsonValue> =>
 export const resolveLegacyGameOpenedAt = (env: JsonValue, legacyDate: Date, context: string): Date => {
     const record = asJsonRecord(env);
     const candidate = record.opentime ?? record.starttime;
-    return candidate === null || candidate === undefined || candidate === '' ? legacyDate : toDate(candidate, context);
+    if (candidate === null || candidate === undefined || candidate === '') {
+        return legacyDate;
+    }
+    try {
+        return toDate(candidate, context);
+    } catch {
+        // 후기 레거시 기수는 개장 전 sentinel(-324000000/0)을 기록하기도 한다.
+        // raw_env는 그대로 보존하고, 유효한 ng_games.date만 파생 시각에 사용한다.
+        return legacyDate;
+    }
 };
 
 const migrateSimpleTable = async (
