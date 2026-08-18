@@ -30,6 +30,10 @@
             "types": "./dist/scenario/scenarioSeeder.d.ts",
             "default": "./dist/scenario/scenarioSeeder.js"
         },
+        "./scenario/gameCancellation.js": {
+            "types": "./dist/scenario/gameCancellation.d.ts",
+            "default": "./dist/scenario/gameCancellation.js"
+        },
         "./scenario/unitSetLoader.js": {
             "types": "./dist/scenario/unitSetLoader.d.ts",
             "default": "./dist/scenario/unitSetLoader.js"

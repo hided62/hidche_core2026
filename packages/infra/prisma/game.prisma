@@ -375,20 +375,72 @@ model HallOfFame {
   @@map("hall")
 }
 
+enum GameHistoryStatus {
+  OPEN
+  COMPLETED
+  ABANDONED
+}
+
+enum GameCancellationHistoryMode {
+  RETAIN_ABANDONED
+  DELETE
+}
+
+enum GameCancellationGeneralMode {
+  RETAIN
+  DELETE
+}
+
 model GameHistory {
-  id           Int      @id @default(autoincrement())
-  serverId     String   @map("server_id")
+  id           Int               @id @default(autoincrement())
+  serverId     String            @map("server_id")
   date         DateTime
-  winnerNation Int?     @map("winner_nation")
-  map          String?  @map("map")
+  winnerNation Int?              @map("winner_nation")
+  map          String?           @map("map")
   season       Int
   scenario     Int
-  scenarioName String   @map("scenario_name")
-  env          Json     @default(dbgenerated("'{}'::jsonb"))
+  scenarioName String            @map("scenario_name")
+  status       GameHistoryStatus @default(OPEN)
+  env          Json              @default(dbgenerated("'{}'::jsonb"))
 
   @@unique([serverId])
   @@index([date])
   @@map("ng_games")
+}
+
+model GameInheritanceBaseline {
+  serverId     String   @map("server_id")
+  userId       String   @map("user_id")
+  openingPoint Float    @map("opening_point")
+  source       String   @default("OPENING")
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @updatedAt @map("updated_at")
+
+  @@id([serverId, userId])
+  @@index([userId, createdAt])
+  @@map("game_inheritance_baseline")
+}
+
+model GameCancellation {
+  id                          String                      @id
+  serverId                    String                      @unique @map("server_id")
+  originalSeason              Int                         @map("original_season")
+  scenario                    Int
+  scenarioName                String                      @map("scenario_name")
+  openedAt                    DateTime                    @map("opened_at")
+  cancelledAt                 DateTime                    @map("cancelled_at")
+  cancelledBy                 String                      @map("cancelled_by")
+  reason                      String
+  historyMode                 GameCancellationHistoryMode @map("history_mode")
+  generalMode                 GameCancellationGeneralMode @map("general_mode")
+  earnedPointRetentionPercent Int                         @map("earned_point_retention_percent")
+  participantCount            Int                         @map("participant_count")
+  preservedGeneralCount       Int                         @map("preserved_general_count")
+  settlement                  Json                        @default(dbgenerated("'{}'::jsonb"))
+  createdAt                   DateTime                    @default(now()) @map("created_at")
+
+  @@index([cancelledAt])
+  @@map("game_cancellation")
 }
 
 model OldNation {

@@ -21,6 +21,6 @@ describe('gateway profile status capabilities', () => {
     });
 
     it('defines capabilities for every persisted status', () => {
-        expect(GATEWAY_PROFILE_STATUSES.map((status) => gatewayProfileCapabilities(status))).toHaveLength(7);
+        expect(GATEWAY_PROFILE_STATUSES.map((status) => gatewayProfileCapabilities(status))).toHaveLength(8);
     });
 });

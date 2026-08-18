@@ -62,6 +62,12 @@ const router = createRouter({
             props: (route) => ({ mode: 'scenario', profileName: route.params.profileName }),
         },
         {
+            path: '/admin/servers/:profileName/cancel',
+            name: 'admin-server-cancel',
+            component: ServerOperationsView,
+            props: (route) => ({ mode: 'cancel', profileName: route.params.profileName }),
+        },
+        {
             path: '/admin/system',
             name: 'admin-system',
             component: AdminView,

@@ -1,13 +1,14 @@
 <script setup lang="ts">
 import { computed } from 'vue';
 
-type ServerProfileTab = 'status' | 'version' | 'scenario';
+type ServerProfileTab = 'status' | 'version' | 'scenario' | 'cancel';
 
 const props = defineProps<{
     profileName: string;
     activeTab: ServerProfileTab;
     canDeploy: boolean;
     canReset: boolean;
+    canCancel: boolean;
 }>();
 
 const tabs = computed(() =>
@@ -29,6 +30,12 @@ const tabs = computed(() =>
             label: '시나리오 초기화',
             to: `/admin/servers/${encodeURIComponent(props.profileName)}/scenario`,
             visible: props.canReset,
+        },
+        {
+            id: 'cancel' as const,
+            label: '게임 취소',
+            to: `/admin/servers/${encodeURIComponent(props.profileName)}/cancel`,
+            visible: props.canCancel,
         },
     ].filter((tab) => tab.visible)
 );

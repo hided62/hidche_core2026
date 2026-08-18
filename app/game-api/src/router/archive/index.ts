@@ -240,30 +240,51 @@ export const archiveRouter = router({
         const currentServerIds = Array.from(
             new Set(entries.filter((entry) => entry.source === 'current').map((entry) => entry.serverId))
         );
-        const [legacyGames, legacyNationRows, legacyEmperors, currentGames, currentNationRows, currentEmperors] =
-            await Promise.all([
-                findLegacyGames(ctx.db, legacyKeys),
-                findLegacyNations(ctx.db, legacyKeys),
-                findLegacyEmperors(ctx.db, legacyKeys),
-                currentServerIds.length
-                    ? ctx.db.gameHistory.findMany({ where: { serverId: { in: currentServerIds } } })
-                    : [],
-                currentServerIds.length
-                    ? ctx.db.oldNation.findMany({
-                          where: { serverId: { in: currentServerIds } },
-                          orderBy: [{ date: 'desc' }, { id: 'desc' }],
-                      })
-                    : [],
-                currentServerIds.length
-                    ? ctx.db.emperor.findMany({
-                          where: { serverId: { in: currentServerIds } },
-                          orderBy: { id: 'desc' },
-                          select: { id: true, serverId: true },
-                      })
-                    : [],
-            ]);
+        const [
+            legacyGames,
+            legacyNationRows,
+            legacyEmperors,
+            currentGames,
+            currentCancellations,
+            currentNationRows,
+            currentEmperors,
+        ] = await Promise.all([
+            findLegacyGames(ctx.db, legacyKeys),
+            findLegacyNations(ctx.db, legacyKeys),
+            findLegacyEmperors(ctx.db, legacyKeys),
+            currentServerIds.length
+                ? ctx.db.gameHistory.findMany({ where: { serverId: { in: currentServerIds } } })
+                : [],
+            currentServerIds.length
+                ? ctx.db.gameCancellation.findMany({ where: { serverId: { in: currentServerIds } } })
+                : [],
+            currentServerIds.length
+                ? ctx.db.oldNation.findMany({
+                      where: { serverId: { in: currentServerIds } },
+                      orderBy: [{ date: 'desc' }, { id: 'desc' }],
+                  })
+                : [],
+            currentServerIds.length
+                ? ctx.db.emperor.findMany({
+                      where: { serverId: { in: currentServerIds } },
+                      orderBy: { id: 'desc' },
+                      select: { id: true, serverId: true },
+                  })
+                : [],
+        ]);
 
-        const games = new Map<string, { openedAt: Date; season: number; scenario: number; scenarioName: string }>();
+        const games = new Map<
+            string,
+            {
+                openedAt: Date;
+                season: number;
+                scenario: number;
+                scenarioName: string;
+                status?: 'OPEN' | 'COMPLETED' | 'ABANDONED';
+                cancellationId?: string;
+                cancelledAt?: Date;
+            }
+        >();
         for (const row of legacyGames) {
             games.set(key('legacy', row.sourceProfile, row.serverId), row);
         }
@@ -273,6 +294,18 @@ export const archiveRouter = router({
                 season: row.season,
                 scenario: row.scenario,
                 scenarioName: row.scenarioName,
+                status: row.status,
+            });
+        }
+        for (const row of currentCancellations) {
+            games.set(key('current', ctx.profile.id, row.serverId), {
+                openedAt: row.openedAt,
+                season: row.originalSeason,
+                scenario: row.scenario,
+                scenarioName: row.scenarioName,
+                status: 'ABANDONED',
+                cancellationId: row.id,
+                cancelledAt: row.cancelledAt,
             });
         }
         const nations = new Map<string, ArchiveNationEntry>();
@@ -326,6 +359,9 @@ export const archiveRouter = router({
                 season: number | null;
                 scenario: number | null;
                 scenarioName: string | null;
+                status: 'OPEN' | 'COMPLETED' | 'ABANDONED' | 'LEGACY';
+                cancellationId: string | null;
+                cancelledAt: string | null;
                 dynastyId: number | null;
                 generals: Array<{
                     generalNo: number;
@@ -360,10 +396,13 @@ export const archiveRouter = router({
                     serverId: entry.serverId,
                     openedAt,
                     date: openedAt,
-                    season: game?.season ?? null,
+                    season: game?.status === 'ABANDONED' ? null : (game?.season ?? null),
                     scenario: game?.scenario ?? null,
                     scenarioName: game?.scenarioName ?? null,
-                    dynastyId: dynastyIds.get(entryKey) ?? null,
+                    status: entry.source === 'legacy' ? 'LEGACY' : (game?.status ?? 'COMPLETED'),
+                    cancellationId: game?.cancellationId ?? null,
+                    cancelledAt: game?.cancelledAt?.toISOString() ?? null,
+                    dynastyId: game?.status === 'ABANDONED' ? null : (dynastyIds.get(entryKey) ?? null),
                     generals: [],
                 };
                 seasons.set(entryKey, season);

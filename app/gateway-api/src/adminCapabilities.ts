@@ -67,6 +67,13 @@ export const ADMIN_CAPABILITIES: readonly AdminCapabilityDefinition[] = [
         scope: 'PROFILE',
     },
     {
+        permission: 'admin.games.cancel',
+        label: '진행 게임 취소',
+        description: '지정 profile의 진행 중 게임을 취소하고 기록과 유산 포인트를 정산합니다.',
+        risk: 'CRITICAL',
+        scope: 'PROFILE',
+    },
+    {
         permission: 'admin.reset.schedule',
         label: 'Profile 초기화 예약',
         description: '완료된 profile의 다음 초기화를 예약합니다.',
@@ -123,6 +130,7 @@ export const resolveAdminActionCapability = (path: string, rawInput?: unknown): 
     }
     if (path.endsWith('.operations.requestDeploy')) return 'admin.profiles.deploy';
     if (path.endsWith('.operations.requestReset')) return 'admin.scenarios.reset';
+    if (path.endsWith('.operations.requestGameCancellation')) return 'admin.games.cancel';
     if (path.endsWith('.operations.requestRuntime')) return 'admin.profiles.runtime';
     if (path.endsWith('.profiles.upsert') || path.endsWith('.profiles.updateMeta')) return 'admin.profiles.settings';
     if (path.endsWith('.profiles.setStatus') || path.endsWith('.profiles.reconcileNow')) {

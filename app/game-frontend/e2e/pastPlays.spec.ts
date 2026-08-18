@@ -8,7 +8,7 @@ const response = (data: unknown) => ({ result: { data } });
 const operationNames = (route: Route) =>
     decodeURIComponent(new URL(route.request().url()).pathname.split('/trpc/')[1] ?? '').split(',');
 
-const installArchive = async (page: Page, options: { battleAvailable?: boolean } = {}) => {
+const installArchive = async (page: Page, options: { battleAvailable?: boolean; abandoned?: boolean } = {}) => {
     await page.addInitScript((profile) => {
         localStorage.setItem('sammo-game-token', 'ga_archive');
         localStorage.setItem('sammo-game-profile', profile);
@@ -22,14 +22,17 @@ const installArchive = async (page: Page, options: { battleAvailable?: boolean }
                     seasons: [
                         {
                             sourceProfile: 'che',
-                            source: 'legacy',
+                            source: options.abandoned ? 'current' : 'legacy',
                             serverId: 'che_2024_01',
                             openedAt: '2024-01-31T00:00:00.000Z',
                             date: '2024-01-31T00:00:00.000Z',
-                            season: 51,
+                            season: options.abandoned ? null : 51,
                             scenario: 2,
                             scenarioName: '천하쟁패',
-                            dynastyId: 7,
+                            status: options.abandoned ? 'ABANDONED' : 'LEGACY',
+                            cancellationId: options.abandoned ? '12345678-full-id' : null,
+                            cancelledAt: options.abandoned ? '2024-02-01T00:00:00.000Z' : null,
+                            dynastyId: options.abandoned ? null : 7,
                             generals: [
                                 {
                                     generalNo: 17,
@@ -151,6 +154,45 @@ test('보존되지 않은 과거 전투 집계는 0으로 꾸미지 않고 가�
 
     await expect(page.locator('[data-general-battle-summary]')).toHaveText('전투 집계가 보존되지 않았습니다.');
     await expect(page.locator('[data-general-battle-summary]')).not.toContainText('승률');
+});
+
+test('취소 게임은 정식 기수 번호와 왕조 링크 없이 별도 기록으로 표시된다', async ({ page }, testInfo) => {
+    await installArchive(page, { abandoned: true });
+    await page.setViewportSize({ width: 1200, height: 900 });
+    await page.goto('past-plays');
+
+    const seasonCard = page.locator('.season-card');
+    await expect(seasonCard.getByText('취소 게임', { exact: true })).toBeVisible();
+    await expect(seasonCard.getByText('취소 ID 12345678')).toBeVisible();
+    await expect(seasonCard).toContainText('천하쟁패');
+    await expect(seasonCard).not.toContainText('51기');
+    await expect(seasonCard.getByRole('link', { name: '이 기수 국가 정보' })).toHaveCount(0);
+    const desktop = await seasonCard.evaluate((element) => {
+        const rect = element.getBoundingClientRect();
+        const heading = element.querySelector('.season-heading')!.getBoundingClientRect();
+        return { x: rect.x, width: rect.width, headingHeight: heading.height };
+    });
+    expect(desktop).toMatchObject({ x: 100, width: 1000 });
+    await page.screenshot({ path: testInfo.outputPath('abandoned-past-play-desktop.png'), fullPage: true });
+
+    await page.setViewportSize({ width: 390, height: 844 });
+    const mobile = await seasonCard.evaluate((element) => {
+        const rect = element.getBoundingClientRect();
+        return {
+            x: rect.x,
+            width: rect.width,
+            viewportWidth: document.documentElement.clientWidth,
+            documentScrollWidth: document.documentElement.scrollWidth,
+        };
+    });
+    expect(mobile.x).toBeGreaterThanOrEqual(0);
+    expect(mobile.x + mobile.width).toBeLessThanOrEqual(mobile.viewportWidth);
+    expect(mobile.documentScrollWidth).toBeLessThanOrEqual(mobile.viewportWidth);
+    await writeFile(
+        testInfo.outputPath('abandoned-past-play-metrics.json'),
+        JSON.stringify({ desktop, mobile }, null, 2)
+    );
+    await page.screenshot({ path: testInfo.outputPath('abandoned-past-play-mobile.png'), fullPage: true });
 });
 
 test('past plays is available without a current general and preserves desktop interaction geometry', async ({

@@ -5,6 +5,14 @@ import { createHash, randomBytes, randomUUID } from 'node:crypto';
 import { stripVTControlCharacters } from 'node:util';
 
 import type { ScenarioInstallOptions } from '@sammo-ts/game-engine/scenario/scenarioSeeder.js';
+import {
+    cancelGame as defaultCancelGame,
+    GAME_CANCELLATION_GENERAL_MODES,
+    GAME_CANCELLATION_HISTORY_MODES,
+    type GameCancellationGeneralMode,
+    type GameCancellationHistoryMode,
+    type GameCancellationResult,
+} from '@sammo-ts/game-engine/scenario/gameCancellation.js';
 import { gatewayProfileCapabilities } from '@sammo-ts/common';
 import {
     createGamePostgresConnector,
@@ -56,6 +64,7 @@ export interface GatewayOrchestratorOptions {
     now?: () => Date;
     fetchImpl?: typeof fetch;
     clearTournamentRuntimeState?: (profileName: string) => Promise<void>;
+    cancelGame?: typeof defaultCancelGame;
 }
 
 export interface ProfileRuntimeState {
@@ -596,6 +605,7 @@ export class GatewayOrchestrator implements GatewayOrchestratorHandle {
     private readonly now: () => Date;
     private readonly fetchImpl: typeof fetch;
     private readonly clearTournamentRuntimeState: (profileName: string) => Promise<void>;
+    private readonly cancelGame: typeof defaultCancelGame;
     private reconcileTimer?: NodeJS.Timeout;
     private scheduleTimer?: NodeJS.Timeout;
     private buildTimer?: NodeJS.Timeout;
@@ -627,6 +637,7 @@ export class GatewayOrchestrator implements GatewayOrchestratorHandle {
         this.clearTournamentRuntimeState =
             options.clearTournamentRuntimeState ??
             ((profileName) => this.clearTournamentRuntimeStateFromRedis(profileName));
+        this.cancelGame = options.cancelGame ?? defaultCancelGame;
     }
 
     private sanitizeOperationLogMessage(message: string): string {
@@ -1029,6 +1040,9 @@ export class GatewayOrchestrator implements GatewayOrchestratorHandle {
         let resolvedCommitSha: string | undefined;
         try {
             if (operation.type === 'START') {
+                if (!gatewayProfileCapabilities(profile.status).operatorResumable) {
+                    throw new Error(`Profile status ${profile.status} cannot be started by an operator.`);
+                }
                 await this.appendOperationLog(operation.id, 'runtime', '프로필 process를 시작합니다.');
                 const updated = await updateOperationProfile(
                     {
@@ -1066,6 +1080,9 @@ export class GatewayOrchestrator implements GatewayOrchestratorHandle {
                 return;
             }
             if (operation.type === 'STOP') {
+                if (!gatewayProfileCapabilities(profile.status).runtimeExpected && profile.status !== 'STOPPED') {
+                    throw new Error(`Profile status ${profile.status} cannot be stopped by an operator.`);
+                }
                 await this.appendOperationLog(operation.id, 'runtime', '프로필 process를 정지합니다.');
                 await updateOperationProfile({ status: 'STOPPED' }, () =>
                     this.repository.updateStatus(profile.profileName, 'STOPPED')
@@ -1082,7 +1099,7 @@ export class GatewayOrchestrator implements GatewayOrchestratorHandle {
             }
 
             if (!operation.sourceMode || !operation.sourceRef) {
-                throw new Error('Reset source mode and ref are required.');
+                throw new Error('Operation source mode and ref are required.');
             }
             await this.appendOperationLog(
                 operation.id,
@@ -1105,6 +1122,48 @@ export class GatewayOrchestrator implements GatewayOrchestratorHandle {
             }
             await this.appendOperationLog(operation.id, 'resolve', `대상 커밋을 ${commitSha}로 고정했습니다.`);
             await assertLease();
+            if (operation.type === 'CANCEL_GAME') {
+                const payload = normalizeMeta(operation.payload);
+                const historyMode = payload.historyMode;
+                const generalMode = payload.generalMode;
+                const retention = payload.earnedPointRetentionPercent;
+                if (
+                    typeof historyMode !== 'string' ||
+                    !GAME_CANCELLATION_HISTORY_MODES.includes(historyMode as GameCancellationHistoryMode) ||
+                    typeof generalMode !== 'string' ||
+                    !GAME_CANCELLATION_GENERAL_MODES.includes(generalMode as GameCancellationGeneralMode) ||
+                    typeof retention !== 'number' ||
+                    !Number.isInteger(retention) ||
+                    retention < 0 ||
+                    retention > 100 ||
+                    !operation.reason
+                ) {
+                    throw new Error('Game cancellation payload is invalid.');
+                }
+                const result = await this.handleGameCancellation(
+                    profile,
+                    operation,
+                    commitSha,
+                    {
+                        historyMode: historyMode as GameCancellationHistoryMode,
+                        generalMode: generalMode as GameCancellationGeneralMode,
+                        earnedPointRetentionPercent: retention,
+                    },
+                    assertLease
+                );
+                await this.appendOperationLog(
+                    operation.id,
+                    'complete',
+                    `게임 취소가 완료되었습니다. 참여자 ${result.participantCount}명, 보존 장수 ${result.preservedGeneralCount}명.`
+                );
+                await this.repository.completeOperation(
+                    operation.id,
+                    'SUCCEEDED',
+                    { resolvedCommitSha: commitSha, error: null },
+                    this.operationLeaseOwner
+                );
+                return;
+            }
             if (operation.type === 'DEPLOY') {
                 const result = await this.handleProfileDeploy(profile, commitSha, assertLease, operation.id);
                 if (!result.ok) {
@@ -1183,6 +1242,115 @@ export class GatewayOrchestrator implements GatewayOrchestratorHandle {
                 }
                 throw completionError;
             }
+        }
+    }
+
+    private async handleGameCancellation(
+        profile: GatewayProfileRecord,
+        operation: GatewayOperationRecord,
+        commitSha: string,
+        options: {
+            historyMode: GameCancellationHistoryMode;
+            generalMode: GameCancellationGeneralMode;
+            earnedPointRetentionPercent: number;
+        },
+        assertLease: () => Promise<void>
+    ): Promise<GameCancellationResult> {
+        if (!['PREOPEN', 'RUNNING', 'PAUSED', 'STOPPED'].includes(profile.status)) {
+            throw new Error(`Profile status ${profile.status} cannot be cancelled.`);
+        }
+        if (this.buildInFlight) throw new Error('build already in progress');
+        this.buildInFlight = true;
+        let runtimeStopped = profile.status === 'STOPPED';
+        let cancellationCommitted = false;
+        const updateClaimedProfile = async (patch: GatewayClaimedProfileUpdate): Promise<GatewayProfileRecord> => {
+            if (!this.repository.updateProfileForOperation) {
+                throw new Error('Game cancellation requires lease-fenced profile updates.');
+            }
+            const updated = await this.repository.updateProfileForOperation(
+                operation.id,
+                this.operationLeaseOwner,
+                profile.profileName,
+                patch
+            );
+            if (!updated) {
+                throw new OperationLeaseLostError(`Operation lease lost while cancelling game: ${operation.id}`);
+            }
+            return updated;
+        };
+        try {
+            await this.appendOperationLog(
+                operation.id,
+                'build',
+                '현재 profile 커밋의 취소 도구와 migration을 준비합니다.'
+            );
+            const { result: buildResult, workspace } = await this.runBuildCommands(commitSha, profile, operation.id);
+            await assertLease();
+            if (!buildResult.ok) throw new Error(buildResult.output.slice(-4000) || 'profile build failed');
+
+            const databaseUrl = this.resolveProfileDatabaseUrl(profile);
+            await this.appendOperationLog(operation.id, 'migration', '게임 취소 schema migration을 적용합니다.');
+            const migration = await this.runProfileMigration(
+                workspace.root,
+                databaseUrl,
+                this.buildProgress(operation.id, 'migration')
+            );
+            await assertLease();
+            if (!migration.ok) throw new Error(migration.output.slice(-4000) || 'profile database migration failed');
+
+            if (!runtimeStopped) {
+                await updateClaimedProfile({ status: 'STOPPED' });
+                await this.appendOperationLog(
+                    operation.id,
+                    'runtime',
+                    '쓰기 차단을 위해 profile process를 정지합니다.'
+                );
+                await this.stopProfile(profile, assertLease);
+                runtimeStopped = true;
+            }
+            await assertLease();
+            await this.appendOperationLog(
+                operation.id,
+                'settlement',
+                '기수·장수 기록과 유산 포인트를 원자적으로 정산합니다.'
+            );
+            const result = await this.cancelGame({
+                cancellationId: operation.id,
+                databaseUrl,
+                cancelledBy: operation.requestedBy,
+                reason: operation.reason ?? '',
+                ...options,
+                cancelledAt: this.now(),
+            });
+            cancellationCommitted = true;
+            await assertLease();
+            await updateClaimedProfile({
+                status: 'CANCELLED',
+                preopenAt: null,
+                openAt: null,
+                scheduledStartAt: null,
+                lastError: null,
+            });
+            await this.appendOperationLog(
+                operation.id,
+                'publish',
+                `profile을 재개할 수 없는 CANCELLED 상태로 전환했습니다. 취소 ID: ${result.cancellationId}`
+            );
+            return result;
+        } catch (error) {
+            if (error instanceof OperationLeaseLostError) throw error;
+            if (runtimeStopped && !cancellationCommitted && profile.status !== 'STOPPED') {
+                try {
+                    await updateClaimedProfile({ status: profile.status, lastError: null });
+                    await this.startProfile(profile, assertLease);
+                    runtimeStopped = false;
+                } catch {
+                    // The original cancellation failure remains authoritative.
+                }
+            }
+            throw error;
+        } finally {
+            this.buildInFlight = false;
         }
     }
 

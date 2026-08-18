@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { GatewayOrchestrator } from '../src/orchestrator/gatewayOrchestrator.js';
+import { GatewayOrchestrator, type GatewayOrchestratorOptions } from '../src/orchestrator/gatewayOrchestrator.js';
 import type { ProcessDefinition, ProcessManager } from '../src/orchestrator/processManager.js';
 import type {
     GatewayOperationRecord,
@@ -45,8 +45,13 @@ const createHarness = (
     processesPresent = true,
     missingOnDelete = false,
     workspaceManager?: GitWorkspaceManager,
-    startGate?: Promise<void>
+    startGate?: Promise<void>,
+    options: {
+        profile?: GatewayProfileRecord;
+        cancelGame?: GatewayOrchestratorOptions['cancelGame'];
+    } = {}
 ) => {
+    const harnessProfile = options.profile ?? profile;
     let nextOperation: GatewayOperationRecord | null = operation;
     const statuses: string[] = [];
     const completions: GatewayOperationStatus[] = [];
@@ -57,23 +62,23 @@ const createHarness = (
     const logs: Array<{ phase: string; message: string; level: string }> = [];
 
     const repository: GatewayProfileRepository = {
-        listProfiles: async () => [profile],
-        getProfile: async () => profile,
-        upsertProfile: async () => profile,
-        updateCurrentScenario: async () => profile,
+        listProfiles: async () => [harnessProfile],
+        getProfile: async () => harnessProfile,
+        upsertProfile: async () => harnessProfile,
+        updateCurrentScenario: async () => harnessProfile,
         updateStatus: async (_profileName, status) => {
             statuses.push(status);
-            return { ...profile, status };
+            return { ...harnessProfile, status };
         },
-        updateBuildStatus: async () => profile,
-        updateMeta: async () => profile,
+        updateBuildStatus: async () => harnessProfile,
+        updateMeta: async () => harnessProfile,
         listReservedToStart: async () => [],
         findQueuedBuild: async () => null,
         updateLastError: async () => {},
         updateWorkspaceUsage: async () => {},
         clearWorkspaceUsage: async () => {},
         listOperations: async () => [],
-        listActiveOperationProfileNames: async () => [profile.profileName],
+        listActiveOperationProfileNames: async () => [harnessProfile.profileName],
         getOperation: async () => operation,
         listOperationLogs: async () => [],
         appendOperationLog: async (operationId, input) => {
@@ -99,6 +104,10 @@ const createHarness = (
         requeueOperation: async () => ({ ...operation, status: 'QUEUED' }),
         cancelOperation: async () => false,
         retryOperation: async () => null,
+        updateProfileForOperation: async (_id, _ownerId, _profileName, patch) => {
+            if (patch.status) statuses.push(patch.status);
+            return { ...harnessProfile, status: patch.status ?? harnessProfile.status };
+        },
     };
     const processManager: ProcessManager = {
         list: async () =>
@@ -152,17 +161,102 @@ const createHarness = (
             redisKeyPrefix: 'sammo:test',
             gameTokenSecret: 'test-secret',
             gatewayInternalApiUrl: 'http://127.0.0.1:13000',
+            baseEnv: { DATABASE_URL: 'postgresql://test:test@127.0.0.1:15432/test' },
         },
         reconcileIntervalMs: 60_000,
         scheduleIntervalMs: 60_000,
         buildIntervalMs: 60_000,
         adminActionIntervalMs: 60_000,
+        cancelGame: options.cancelGame,
     });
 
     return { orchestrator, statuses, completions, completionFields, started, stopped, deleted, logs };
 };
 
 describe('GatewayOrchestrator first-class operations', () => {
+    it('stops runtime, settles once, and seals a cancelled profile', async () => {
+        const operation: GatewayOperationRecord = {
+            id: '88888888-8888-4888-8888-888888888888',
+            profileName: profile.profileName,
+            type: 'CANCEL_GAME',
+            status: 'RUNNING',
+            sourceMode: 'COMMIT',
+            sourceRef: profile.buildCommitSha,
+            resolvedCommitSha: profile.buildCommitSha,
+            payload: {
+                historyMode: 'RETAIN_ABANDONED',
+                generalMode: 'RETAIN',
+                earnedPointRetentionPercent: 40,
+            },
+            reason: '잘못 연 게임 취소',
+            requestedBy: 'admin',
+            createdAt: '2026-08-18T00:00:00.000Z',
+            startedAt: '2026-08-18T00:00:00.000Z',
+            updatedAt: '2026-08-18T00:00:00.000Z',
+        };
+        const workspaceManager = {
+            resolveCommit: async () => profile.buildCommitSha!,
+            prepare: async () => ({ root: process.cwd(), needsInstall: false }),
+            remove: async () => {},
+        } as unknown as GitWorkspaceManager;
+        const settlementRequests: Array<Record<string, unknown>> = [];
+        const cancellationProfile = { ...profile, status: 'RUNNING' as const };
+        const cancelGame: NonNullable<GatewayOrchestratorOptions['cancelGame']> = async (request) => {
+            settlementRequests.push(request as unknown as Record<string, unknown>);
+            return {
+                cancellationId: operation.id,
+                serverId: 'che_260818_fixture',
+                originalSeason: 7,
+                participantCount: 2,
+                preservedGeneralCount: 2,
+                historyMode: 'RETAIN_ABANDONED',
+                generalMode: 'RETAIN',
+                earnedPointRetentionPercent: 40,
+                alreadyApplied: false,
+                settlements: {},
+            };
+        };
+        const harness = createHarness(operation, false, false, true, false, workspaceManager, undefined, {
+            profile: cancellationProfile,
+            cancelGame,
+        });
+
+        await harness.orchestrator.runOperationsNow();
+
+        expect(settlementRequests).toHaveLength(1);
+        expect(settlementRequests[0]).toMatchObject({
+            cancellationId: operation.id,
+            cancelledBy: 'admin',
+            reason: '잘못 연 게임 취소',
+            historyMode: 'RETAIN_ABANDONED',
+            generalMode: 'RETAIN',
+            earnedPointRetentionPercent: 40,
+        });
+        expect(harness.statuses).toEqual(['STOPPED', 'CANCELLED']);
+        expect(harness.stopped).toHaveLength(6);
+        expect(harness.completions).toEqual(['SUCCEEDED']);
+        expect(harness.logs).toEqual(
+            expect.arrayContaining([
+                expect.objectContaining({ phase: 'settlement' }),
+                expect.objectContaining({ phase: 'publish', message: expect.stringContaining('CANCELLED') }),
+            ])
+        );
+    });
+
+    it('does not let a stale START operation reopen a cancelled profile', async () => {
+        const cancelledProfile = { ...profile, status: 'CANCELLED' as const };
+        const operation = buildOperation('START');
+        const harness = createHarness(operation, false, false, true, false, undefined, undefined, {
+            profile: cancelledProfile,
+        });
+
+        await harness.orchestrator.runOperationsNow();
+
+        expect(harness.started).toEqual([]);
+        expect(harness.completions).toEqual(['FAILED']);
+        expect(harness.completionFields[0]?.error).toContain('CANCELLED');
+    });
+
     it('does not reconcile a profile while a durable operation is active', async () => {
         const harness = createHarness(buildOperation('START'));
 

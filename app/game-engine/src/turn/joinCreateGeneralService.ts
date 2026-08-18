@@ -245,6 +245,23 @@ const setInheritancePoint = async (db: DatabaseClient, userId: string, value: nu
     });
 };
 
+const ensureGameInheritanceBaseline = async (
+    db: DatabaseClient,
+    worldMeta: Record<string, unknown>,
+    userId: string,
+    openingPoint: number
+): Promise<void> => {
+    const serverId = typeof worldMeta.serverId === 'string' ? worldMeta.serverId.trim() : '';
+    if (!serverId) {
+        throw new Error('현재 게임의 serverId가 없어 유산 포인트 원금을 기록할 수 없습니다.');
+    }
+    await db.gameInheritanceBaseline.upsert({
+        where: { serverId_userId: { serverId, userId } },
+        update: {},
+        create: { serverId, userId, openingPoint, source: 'FIRST_ACTIVITY' },
+    });
+};
+
 const appendInheritanceLog = async (
     db: DatabaseClient,
     userId: string,
@@ -583,6 +600,7 @@ export const createGeneralFromJoin = async (options: {
 
     const inheritBonus = validateAndNormalizeBonus(input.inheritBonusStat);
     const inheritConstants = resolveInheritConstants(worldState);
+    const worldMeta = asRecord(worldState.meta);
     const inheritRequiredPoint = calculateInheritanceCost(input, inheritConstants, inheritBonus);
     const currentInheritancePoint = await applyInheritanceUser(
         db,
@@ -590,6 +608,7 @@ export const createGeneralFromJoin = async (options: {
         worldState.currentYear,
         worldState.currentMonth
     );
+    await ensureGameInheritanceBaseline(db, worldMeta, input.userId, currentInheritancePoint);
     if (currentInheritancePoint < inheritRequiredPoint) {
         fail('BAD_REQUEST', '유산 포인트가 부족합니다. 다시 가입해주세요!');
     }
@@ -613,7 +632,6 @@ export const createGeneralFromJoin = async (options: {
             buildJoinCreateGeneralSeed(hiddenSeed, input.seedOwnerIdentity, world.dateToGameTick(acceptedAt))
         )
     );
-    const worldMeta = asRecord(worldState.meta);
     const currentGenius = Math.max(
         0,
         Math.floor(asNumber(worldMeta.genius, asNumber(configConst.defaultMaxGenius, DEFAULT_MAX_GENIUS)))

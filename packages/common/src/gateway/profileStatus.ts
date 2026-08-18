@@ -4,6 +4,7 @@ export const GATEWAY_PROFILE_STATUSES = [
     'RUNNING',
     'PAUSED',
     'COMPLETED',
+    'CANCELLED',
     'STOPPED',
     'DISABLED',
 ] as const;
@@ -49,6 +50,12 @@ const CAPABILITIES: Record<GatewayProfileStatus, GatewayProfileCapabilities> = {
     COMPLETED: {
         runtimeExpected: true,
         userAccessible: true,
+        turnsRunning: false,
+        operatorResumable: false,
+    },
+    CANCELLED: {
+        runtimeExpected: false,
+        userAccessible: false,
         turnsRunning: false,
         operatorResumable: false,
     },

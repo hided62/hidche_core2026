@@ -482,7 +482,7 @@ export const persistUnificationFinalization = async (
 
     await transaction.gameHistory.update({
         where: { serverId },
-        data: { winnerNation: input.winnerNationId, date: input.completedAt },
+        data: { winnerNation: input.winnerNationId, date: input.completedAt, status: 'COMPLETED' },
     });
 
     const nationHistoryRows = await transaction.logEntry.findMany({

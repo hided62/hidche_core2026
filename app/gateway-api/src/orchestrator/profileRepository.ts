@@ -8,7 +8,7 @@ export { GATEWAY_PROFILE_STATUSES, type GatewayProfileStatus };
 export const GATEWAY_BUILD_STATUSES = ['IDLE', 'QUEUED', 'RUNNING', 'FAILED', 'SUCCEEDED'] as const;
 export type GatewayBuildStatus = (typeof GATEWAY_BUILD_STATUSES)[number];
 
-export type GatewayOperationType = 'RESET' | 'DEPLOY' | 'START' | 'STOP';
+export type GatewayOperationType = 'RESET' | 'DEPLOY' | 'CANCEL_GAME' | 'START' | 'STOP';
 
 export type GatewayOperationStatus = 'QUEUED' | 'RUNNING' | 'SUCCEEDED' | 'FAILED' | 'CANCELLED';
 
