@@ -22,6 +22,7 @@ const props = defineProps<{
     showName: boolean;
     mapScale: number;
     selectOnly?: boolean;
+    readonly?: boolean;
 }>();
 
 const emit = defineEmits<{
@@ -33,18 +34,27 @@ const emit = defineEmits<{
 const size = computed(() => (6 + props.city.level * 2) * props.mapScale);
 const stateSize = computed(() => 8 * props.mapScale);
 const stateOffset = computed(() => -6 * props.mapScale);
-const selectCity = () => emit('select', props.city.id);
+const selectCity = () => {
+    if (!props.readonly) emit('select', props.city.id);
+};
 </script>
 
 <template>
     <component
-        :is="props.selectOnly ? 'button' : RouterLink"
+        :is="props.readonly ? 'div' : props.selectOnly ? 'button' : RouterLink"
         class="map-city"
-        :type="props.selectOnly ? 'button' : undefined"
-        :to="props.selectOnly ? undefined : { name: 'current-city', query: { cityId: props.city.id } }"
+        :type="!props.readonly && props.selectOnly ? 'button' : undefined"
+        :to="
+            props.selectOnly || props.readonly ? undefined : { name: 'current-city', query: { cityId: props.city.id } }
+        "
         :class="[
             `state-${props.city.stateClass}`,
-            { mine: props.city.isMyCity, selected: props.city.selected, 'supply-off': !props.city.supply },
+            {
+                mine: props.city.isMyCity,
+                selected: props.city.selected,
+                'supply-off': !props.city.supply,
+                readonly: props.readonly,
+            },
         ]"
         :style="{ left: `${props.city.x}px`, top: `${props.city.y}px` }"
         @mouseenter="emit('hover', props.city.id)"
@@ -84,6 +94,10 @@ const selectCity = () => emit('select', props.city.id);
     padding: 0;
     border: 0;
     background: transparent;
+}
+
+.map-city.readonly {
+    cursor: default;
 }
 
 .city-dot {

@@ -16,6 +16,19 @@ export interface TurnCommandOption {
     label: string;
     color?: string;
     description?: string;
+    availableNow?: boolean;
+    gold?: number;
+    rice?: number;
+    crew?: number;
+    troopId?: number;
+}
+
+export interface TurnCommandAmountPreset {
+    values: number[];
+    defaultValue: number;
+    min: number;
+    max: number;
+    step: number;
 }
 
 export interface TurnCommandRecruitmentCrewType {
@@ -70,6 +83,7 @@ export interface TurnCommandInputField {
 export interface TurnCommandInputOptions {
     cities: TurnCommandOption[];
     nations: TurnCommandOption[];
+    nationTargets?: Record<string, TurnCommandOption[]>;
     generals: TurnCommandOption[];
     generalTargets?: Record<string, TurnCommandOption[]>;
     crewTypes: TurnCommandOption[];
@@ -78,6 +92,7 @@ export interface TurnCommandInputOptions {
     colors: TurnCommandOption[];
     items: Record<string, TurnCommandOption[]>;
     recruitment: TurnCommandRecruitmentInfo | null;
+    amountPresets?: Record<string, TurnCommandAmountPreset>;
     context?: {
         actorGold: number;
         actorRice: number;

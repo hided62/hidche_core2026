@@ -251,7 +251,8 @@ const selectCommand = (commandKey: string) => {
     selectedCommand.value = command;
     commandArgs.value = {};
     commandArgsValid.value = !command.reqArg;
-    if (!command.reqArg) submitCommand();
+    const needsInformationalConfirmation = commandArgumentPresentation(command.key).mapTarget === 'capital';
+    if (!command.reqArg && !needsInformationalConfirmation) submitCommand();
 };
 const submitCommand = () => {
     const command = selectedCommand.value;
@@ -737,7 +738,11 @@ const clickOutsideMenu = (event: Event) => {
                         @submit="submitCommand"
                     />
                     <CommandArgumentForm
-                        v-else-if="selectedCommand.reqArg && props.commandTable"
+                        v-else-if="
+                            props.commandTable &&
+                            (selectedCommand.reqArg ||
+                                commandArgumentPresentation(selectedCommand.key).mapTarget === 'capital')
+                        "
                         :command-key="selectedCommand.key"
                         :fields="selectedCommand.inputFields"
                         :options="props.commandTable.inputOptions"
