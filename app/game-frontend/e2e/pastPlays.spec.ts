@@ -175,7 +175,8 @@ test('취소 게임은 정식 기수 번호와 왕조 링크 없이 별도 기�
     expect(desktop).toMatchObject({ x: 100, width: 1000 });
     await page.screenshot({ path: testInfo.outputPath('abandoned-past-play-desktop.png'), fullPage: true });
 
-    await page.setViewportSize({ width: 390, height: 844 });
+    // Ref game pages and the shared Core shell use a fixed 500px mobile document contract.
+    await page.setViewportSize({ width: 500, height: 900 });
     const mobile = await seasonCard.evaluate((element) => {
         const rect = element.getBoundingClientRect();
         return {
