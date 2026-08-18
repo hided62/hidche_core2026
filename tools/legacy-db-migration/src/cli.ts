@@ -9,8 +9,11 @@ import { isLegacyArchiveProfile, LEGACY_ARCHIVE_PROFILES, migrateGame } from './
 import { migrateGateway } from './gateway.js';
 import { hashPasswordForReset } from './password.js';
 import { migrateCurrentSeasonFixture } from './currentSeason.js';
+import { loadMigrationPlan } from './config.js';
+import { fingerprintMariaConnection, type MigrationMode } from './incremental.js';
+import { checkMigrationPlan, runMigrationPlan } from './plan.js';
 
-type Command = 'gateway' | 'game' | 'current-season-fixture' | 'reset-password';
+type Command = 'gateway' | 'game' | 'current-season-fixture' | 'reset-password' | 'check-plan' | 'run-plan';
 
 interface CliOptions {
     command: Command;
@@ -22,11 +25,17 @@ interface CliOptions {
     expectedYear?: number;
     expectedMonth?: number;
     replaceCurrentSeason: boolean;
+    config?: string;
+    mode: MigrationMode;
+    sourceKey?: string;
 }
 
 const usage = `Usage:
   pnpm --filter @sammo-ts/legacy-db-migration migrate gateway [--apply]
   pnpm --filter @sammo-ts/legacy-db-migration migrate game --profile <profile> [--apply]
+  pnpm --filter @sammo-ts/legacy-db-migration migrate check-plan --config <secure-plan.json>
+  pnpm --filter @sammo-ts/legacy-db-migration migrate run-plan --config <secure-plan.json> \
+    [--mode full|incremental] [--apply]
   pnpm --filter @sammo-ts/legacy-db-migration migrate current-season-fixture --profile <profile> \
     --expected-scenario <id> --expected-year <year> --expected-month <month> \
     [--replace-current-season --apply]
@@ -47,11 +56,13 @@ const parseArguments = (argv: readonly string[]): CliOptions => {
         command !== 'gateway' &&
         command !== 'game' &&
         command !== 'current-season-fixture' &&
-        command !== 'reset-password'
+        command !== 'reset-password' &&
+        command !== 'check-plan' &&
+        command !== 'run-plan'
     ) {
         throw new Error(usage);
     }
-    const options: CliOptions = { command, apply: false, replaceCurrentSeason: false };
+    const options: CliOptions = { command, apply: false, replaceCurrentSeason: false, mode: 'full' };
     for (let index = 1; index < argv.length; index += 1) {
         const argument = argv[index];
         if (argument === '--apply') {
@@ -68,6 +79,15 @@ const parseArguments = (argv: readonly string[]): CliOptions => {
         }
         if (argument === '--profile') {
             options.profile = next;
+        } else if (argument === '--config') {
+            options.config = next;
+        } else if (argument === '--mode') {
+            if (next !== 'full' && next !== 'incremental') {
+                throw new Error(`--mode must be full or incremental\n\n${usage}`);
+            }
+            options.mode = next;
+        } else if (argument === '--source-key') {
+            options.sourceKey = next;
         } else if (argument === '--login-id') {
             options.loginId = next;
         } else if (argument === '--password-file') {
@@ -94,6 +114,9 @@ const requireEnvironment = (name: string): string => {
     return value;
 };
 
+const resolveInvocationPath = (value: string): string =>
+    path.resolve(process.env.INIT_CWD?.trim() || process.cwd(), value);
+
 const resetPassword = async (options: CliOptions): Promise<Record<string, unknown>> => {
     if (!options.apply) {
         throw new Error('reset-password requires --apply');
@@ -101,7 +124,7 @@ const resetPassword = async (options: CliOptions): Promise<Record<string, unknow
     if (!options.loginId || !options.passwordFile) {
         throw new Error(`reset-password requires --login-id and --password-file\n\n${usage}`);
     }
-    const passwordPath = path.resolve(options.passwordFile);
+    const passwordPath = resolveInvocationPath(options.passwordFile);
     const passwordStat = await stat(passwordPath);
     if ((passwordStat.mode & 0o077) !== 0) {
         throw new Error('Password file must not be readable or writable by group/other (expected mode 0600)');
@@ -136,7 +159,23 @@ const resetPassword = async (options: CliOptions): Promise<Record<string, unknow
 };
 
 const run = async (): Promise<void> => {
-    const options = parseArguments(process.argv.slice(2));
+    const argumentsAfterScript = process.argv.slice(2);
+    if (argumentsAfterScript[0] === '--') argumentsAfterScript.shift();
+    if (argumentsAfterScript[0] === '--help' || argumentsAfterScript[0] === '-h') {
+        console.log(usage);
+        return;
+    }
+    const options = parseArguments(argumentsAfterScript);
+    if (options.command === 'check-plan' || options.command === 'run-plan') {
+        if (!options.config) throw new Error(`${options.command} requires --config\n\n${usage}`);
+        const plan = await loadMigrationPlan(resolveInvocationPath(options.config));
+        const result =
+            options.command === 'check-plan'
+                ? await checkMigrationPlan(plan)
+                : await runMigrationPlan(plan, options.mode, options.apply);
+        console.log(JSON.stringify(result, null, 2));
+        return;
+    }
     if (options.command === 'reset-password') {
         console.log(JSON.stringify(await resetPassword(options), null, 2));
         return;
@@ -144,14 +183,21 @@ const run = async (): Promise<void> => {
 
     const migratedAt = new Date();
     if (options.command === 'gateway') {
-        const source = createMariaPool(requireEnvironment('LEGACY_ROOT_DATABASE_URL'));
+        const sourceUrl = requireEnvironment('LEGACY_ROOT_DATABASE_URL');
+        const source = createMariaPool(sourceUrl);
         const targetUrl = process.env.GATEWAY_DATABASE_URL?.trim();
         if (options.apply && !targetUrl) {
             throw new Error('GATEWAY_DATABASE_URL is required with --apply');
         }
         const target = targetUrl ? createPostgresPool(targetUrl) : null;
         try {
-            const summary = await migrateGateway(source, target, options.apply, migratedAt);
+            const summary = await migrateGateway(source, target, options.apply, migratedAt, {
+                mode: options.mode,
+                source: {
+                    key: options.sourceKey ?? process.env.LEGACY_SOURCE_KEY?.trim() ?? 'legacy-root',
+                    fingerprint: fingerprintMariaConnection(sourceUrl),
+                },
+            });
             console.log(JSON.stringify(summary, null, 2));
         } finally {
             await source.end();
@@ -166,9 +212,10 @@ const run = async (): Promise<void> => {
     if (options.command === 'game' && !isLegacyArchiveProfile(options.profile)) {
         throw new Error(`game requires --profile ${LEGACY_ARCHIVE_PROFILES.join('|')}\n\n${usage}`);
     }
-    const source = createMariaPool(requireEnvironment('LEGACY_GAME_DATABASE_URL'));
+    const sourceUrl = requireEnvironment('LEGACY_GAME_DATABASE_URL');
+    const source = createMariaPool(sourceUrl);
     const target =
-        options.apply || options.command === 'current-season-fixture'
+        options.apply || options.mode === 'incremental' || options.command === 'current-season-fixture'
             ? createPostgresPool(requireEnvironment('GAME_DATABASE_URL'))
             : null;
     try {
@@ -199,7 +246,13 @@ const run = async (): Promise<void> => {
             console.log(JSON.stringify(summary, null, 2));
             return;
         }
-        const summary = await migrateGame(source, target, options.apply, options.profile);
+        const summary = await migrateGame(source, target, options.apply, options.profile, {
+            mode: options.mode,
+            source: {
+                key: options.sourceKey ?? process.env.LEGACY_SOURCE_KEY?.trim() ?? `legacy-game-${options.profile}`,
+                fingerprint: fingerprintMariaConnection(sourceUrl),
+            },
+        });
         console.log(JSON.stringify(summary, null, 2));
     } finally {
         await source.end();
@@ -208,7 +261,9 @@ const run = async (): Promise<void> => {
 };
 
 run().catch((error: unknown) => {
-    const message = error instanceof Error ? error.message : String(error);
+    const message = (error instanceof Error ? error.message : String(error))
+        .replace(/((?:mariadb|mysql|postgres(?:ql)?):\/\/[^:\s/@]+:)[^@\s/]+@/giu, '$1***@')
+        .replace(/([?&](?:pass(?:word)?|secret|token)=)[^&\s]+/giu, '$1***');
     console.error(`[legacy-db-migration] ${message}`);
     process.exitCode = 1;
 });

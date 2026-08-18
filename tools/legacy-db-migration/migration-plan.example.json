@@ -1,0 +1,41 @@
+{
+    "version": 1,
+    "sourceSet": "ref-production-cutover",
+    "gateway": {
+        "source": {
+            "host": "mysql.internal.example",
+            "port": 3306,
+            "database": "sammo_root",
+            "user": "sammo_migration",
+            "passwordFile": "./secrets/mysql-root-password",
+            "tls": true
+        },
+        "targetUrlEnv": "GATEWAY_DATABASE_URL"
+    },
+    "profiles": [
+        {
+            "profile": "che",
+            "source": {
+                "host": "mysql.internal.example",
+                "port": 3306,
+                "database": "sammo_che",
+                "user": "sammo_migration",
+                "passwordFile": "./secrets/mysql-che-password",
+                "tls": true
+            },
+            "targetUrlEnv": "CHE_GAME_DATABASE_URL"
+        },
+        {
+            "profile": "hwe",
+            "enabled": false,
+            "source": {
+                "host": "mysql.internal.example",
+                "port": 3306,
+                "database": "sammo_hwe",
+                "user": "sammo_migration",
+                "passwordEnv": "LEGACY_HWE_DATABASE_PASSWORD"
+            },
+            "targetUrlEnv": "HWE_GAME_DATABASE_URL"
+        }
+    ]
+}

@@ -16,6 +16,7 @@ export { isLegacyArchiveProfile, LEGACY_ARCHIVE_PROFILES, type LegacyArchiveProf
 import {
     paginateSource,
     jsonParameter,
+    sourceMaxId,
     toDate,
     toFloat,
     toNullableDate,
@@ -28,6 +29,15 @@ import {
     type TargetRow,
 } from './db.js';
 import type { MigrationSummary } from './gateway.js';
+import {
+    defaultExecutionOptions,
+    loadCheckpoint,
+    requireIncrementalCheckpoint,
+    saveCheckpoint,
+    validateSourceIdentity,
+    type MigrationExecutionOptions,
+    type MigrationProgress,
+} from './incremental.js';
 import { legacyUserId } from './identity.js';
 import {
     classifyGameStorage,
@@ -43,6 +53,11 @@ interface ArchiveMigrationContext {
     profile: LegacyArchiveProfile;
     importRunId: string;
     sourceFormats: Record<ArchivedGeneralSourceFormat, number>;
+}
+
+interface AppendCursor {
+    afterId: bigint;
+    endAtId: bigint;
 }
 
 const parseNullableJson = (value: unknown, fallback: JsonValue, context: string): JsonValue =>
@@ -80,22 +95,33 @@ const migrateSimpleTable = async (
     conflictColumns: readonly string[],
     mapper: (row: SourceRow) => TargetRow,
     counts: Record<string, number>,
-    size = batchSize
+    progress: MigrationProgress,
+    cursor: AppendCursor,
+    size = batchSize,
+    strategy: 'append' | 'rescan' = 'append'
 ): Promise<void> => {
-    for await (const rows of paginateSource(source, sourceTable, sourceIdColumn, size)) {
+    for await (const rows of paginateSource(source, sourceTable, sourceIdColumn, size, cursor.afterId)) {
         const mapped = rows.map(mapper);
         if (target) {
             await upsertRows(target, targetTable, mapped, conflictColumns);
         }
         counts[sourceTable] = (counts[sourceTable] ?? 0) + mapped.length;
     }
+    progress[sourceTable] = {
+        strategy,
+        startAfterId: cursor.afterId < 0n ? null : cursor.afterId.toString(),
+        endAtId: cursor.endAtId < 0n ? null : cursor.endAtId.toString(),
+        processed: counts[sourceTable] ?? 0,
+    };
 };
 
 const migrateHall = (
     source: MariaPool,
     target: PoolClient | null,
     counts: Record<string, number>,
-    archive: ArchiveMigrationContext
+    archive: ArchiveMigrationContext,
+    progress: MigrationProgress,
+    cursor: AppendCursor
 ): Promise<void> =>
     migrateSimpleTable(
         source,
@@ -120,14 +146,18 @@ const migrateHall = (
                 import_run_id: archive.importRunId,
             };
         },
-        counts
+        counts,
+        progress,
+        cursor
     );
 
 const migrateGames = (
     source: MariaPool,
     target: PoolClient | null,
     counts: Record<string, number>,
-    archive: ArchiveMigrationContext
+    archive: ArchiveMigrationContext,
+    progress: MigrationProgress,
+    cursor: AppendCursor
 ): Promise<void> =>
     migrateSimpleTable(
         source,
@@ -159,14 +189,20 @@ const migrateGames = (
                 import_run_id: archive.importRunId,
             };
         },
-        counts
+        counts,
+        progress,
+        cursor,
+        batchSize,
+        'rescan'
     );
 
 const migrateOldGenerals = (
     source: MariaPool,
     target: PoolClient | null,
     counts: Record<string, number>,
-    archive: ArchiveMigrationContext
+    archive: ArchiveMigrationContext,
+    progress: MigrationProgress,
+    cursor: AppendCursor
 ): Promise<void> =>
     migrateSimpleTable(
         source,
@@ -197,14 +233,18 @@ const migrateOldGenerals = (
                 import_run_id: archive.importRunId,
             };
         },
-        counts
+        counts,
+        progress,
+        cursor
     );
 
 const migrateOldNations = (
     source: MariaPool,
     target: PoolClient | null,
     counts: Record<string, number>,
-    archive: ArchiveMigrationContext
+    archive: ArchiveMigrationContext,
+    progress: MigrationProgress,
+    cursor: AppendCursor
 ): Promise<void> =>
     migrateSimpleTable(
         source,
@@ -225,14 +265,18 @@ const migrateOldNations = (
                 import_run_id: archive.importRunId,
             };
         },
-        counts
+        counts,
+        progress,
+        cursor
     );
 
 const migrateEmperors = (
     source: MariaPool,
     target: PoolClient | null,
     counts: Record<string, number>,
-    archive: ArchiveMigrationContext
+    archive: ArchiveMigrationContext,
+    progress: MigrationProgress,
+    cursor: AppendCursor
 ): Promise<void> =>
     migrateSimpleTable(
         source,
@@ -293,13 +337,17 @@ const migrateEmperors = (
                 import_run_id: archive.importRunId,
             };
         },
-        counts
+        counts,
+        progress,
+        cursor
     );
 
 const migrateInheritanceResults = (
     source: MariaPool,
     target: PoolClient | null,
-    counts: Record<string, number>
+    counts: Record<string, number>,
+    progress: MigrationProgress,
+    cursor: AppendCursor
 ): Promise<void> =>
     migrateSimpleTable(
         source,
@@ -321,13 +369,17 @@ const migrateInheritanceResults = (
                 created_at: new Date(0),
             };
         },
-        counts
+        counts,
+        progress,
+        cursor
     );
 
 const migrateUserRecords = (
     source: MariaPool,
     target: PoolClient | null,
-    counts: Record<string, number>
+    counts: Record<string, number>,
+    progress: MigrationProgress,
+    cursor: AppendCursor
 ): Promise<void> =>
     migrateSimpleTable(
         source,
@@ -349,14 +401,18 @@ const migrateUserRecords = (
                 created_at: toNullableDate(row.date, `user_record.${id}.date`) ?? new Date(0),
             };
         },
-        counts
+        counts,
+        progress,
+        cursor
     );
 
 const migrateYearbook = async (
     source: MariaPool,
     target: PoolClient | null,
     counts: Record<string, number>,
-    archive: ArchiveMigrationContext
+    archive: ArchiveMigrationContext,
+    progress: MigrationProgress,
+    cursor: AppendCursor
 ): Promise<void> => {
     await migrateSimpleTable(
         source,
@@ -387,6 +443,8 @@ const migrateYearbook = async (
             return mapped;
         },
         counts,
+        progress,
+        cursor,
         25
     );
 };
@@ -451,12 +509,18 @@ export const migrateGame = async (
     source: MariaPool,
     targetPool: PgPool | null,
     apply: boolean,
-    profile: string
+    profile: string,
+    execution: MigrationExecutionOptions = defaultExecutionOptions(`legacy-game-${profile}`)
 ): Promise<MigrationSummary> => {
     if (!isLegacyArchiveProfile(profile)) {
         throw new Error(`Unsupported legacy archive profile: ${profile}`);
     }
+    validateSourceIdentity(execution.source);
+    if (execution.mode === 'incremental' && !targetPool) {
+        throw new Error('Incremental game migration requires the target database to read checkpoints');
+    }
     const counts: Record<string, number> = {};
+    const progress: MigrationProgress = {};
     const sourceFormats: Record<ArchivedGeneralSourceFormat, number> = {
         'legacy-flat-v0': 0,
         'ref-flat-v1': 0,
@@ -494,26 +558,88 @@ export const migrateGame = async (
         vote_comment: 'Current-season vote comments.',
         'storage:season-state': 'Only inheritance_* and user_* long-lived namespaces are archived or projected.',
     };
-    const client = apply && targetPool ? await targetPool.connect() : null;
+    const client = targetPool ? await targetPool.connect() : null;
     let importRunId: string | null = null;
     try {
         const run = async (archive: ArchiveMigrationContext): Promise<void> => {
-            await migrateGames(source, client, counts, archive);
-            await migrateHall(source, client, counts, archive);
-            await migrateOldGenerals(source, client, counts, archive);
-            await migrateOldNations(source, client, counts, archive);
-            await migrateEmperors(source, client, counts, archive);
-            await migrateInheritanceResults(source, client, counts);
-            await migrateUserRecords(source, client, counts);
-            await migrateStorage(source, client, counts);
-            await migrateYearbook(source, client, counts, archive);
+            const writeClient = apply ? client : null;
+            const cursorSpecs = [
+                ['hall', 'id'],
+                ['ng_old_generals', 'id'],
+                ['ng_old_nations', 'id'],
+                ['emperior', 'no'],
+                ['inheritance_result', 'id'],
+                ['user_record', 'id'],
+                ['ng_history', 'no'],
+            ] as const;
+            const cursors = new Map<string, AppendCursor>();
+            for (const [sourceTable, idColumn] of cursorSpecs) {
+                const endAtId = (await sourceMaxId(source, sourceTable, idColumn)) ?? -1n;
+                const checkpoint =
+                    execution.mode === 'incremental' && client
+                        ? await loadCheckpoint(
+                              client,
+                              {
+                                  tableSql: '"legacy_archive"."import_checkpoint"',
+                                  scope: { columnSql: '"source_profile"', value: profile },
+                              },
+                              execution.source.key,
+                              sourceTable
+                          )
+                        : null;
+                const afterId =
+                    execution.mode === 'incremental'
+                        ? requireIncrementalCheckpoint(checkpoint, execution.source, sourceTable)
+                        : -1n;
+                if (endAtId < afterId) {
+                    throw new Error(`Legacy source ${sourceTable} maximum ID regressed; run a reviewed full migration`);
+                }
+                cursors.set(sourceTable, { afterId, endAtId });
+            }
+            const cursor = (table: string): AppendCursor => {
+                const value = cursors.get(table);
+                if (!value) throw new Error(`Missing migration cursor for ${table}`);
+                return value;
+            };
+            const maxGameId = (await sourceMaxId(source, 'ng_games', 'id')) ?? -1n;
+            await migrateGames(source, writeClient, counts, archive, progress, { afterId: -1n, endAtId: maxGameId });
+            await migrateHall(source, writeClient, counts, archive, progress, cursor('hall'));
+            await migrateOldGenerals(source, writeClient, counts, archive, progress, cursor('ng_old_generals'));
+            await migrateOldNations(source, writeClient, counts, archive, progress, cursor('ng_old_nations'));
+            await migrateEmperors(source, writeClient, counts, archive, progress, cursor('emperior'));
+            await migrateInheritanceResults(source, writeClient, counts, progress, cursor('inheritance_result'));
+            await migrateUserRecords(source, writeClient, counts, progress, cursor('user_record'));
+            await migrateStorage(source, writeClient, counts);
+            progress.storage = {
+                strategy: 'rescan',
+                startAfterId: null,
+                endAtId: null,
+                processed: counts.storage_inspected ?? 0,
+            };
+            await migrateYearbook(source, writeClient, counts, archive, progress, cursor('ng_history'));
+            if (apply && client && archive.importRunId !== '0') {
+                for (const [sourceTable] of cursorSpecs) {
+                    await saveCheckpoint(
+                        client,
+                        {
+                            tableSql: '"legacy_archive"."import_checkpoint"',
+                            scope: { columnSql: '"source_profile"', value: profile },
+                        },
+                        execution.source,
+                        sourceTable,
+                        cursor(sourceTable).endAtId,
+                        archive.importRunId
+                    );
+                }
+            }
         };
-        if (client) {
-            await withMigrationLock(client, `sammo-legacy-archive-v2:${profile}`, async () => {
+        if (client && apply) {
+            await withMigrationLock(client, `sammo-legacy-archive-v3:${profile}:${execution.source.key}`, async () => {
                 const created = await client.query<{ id: string }>(
-                    `INSERT INTO "legacy_archive"."import_run" ("source_profile", "status")
-                     VALUES ($1, 'RUNNING') RETURNING "id"`,
-                    [profile]
+                    `INSERT INTO "legacy_archive"."import_run"
+                            ("source_profile", "source_key", "source_fingerprint", "mode", "status")
+                         VALUES ($1, $2, $3, $4, 'RUNNING') RETURNING "id"`,
+                    [profile, execution.source.key, execution.source.fingerprint, execution.mode]
                 );
                 importRunId = created.rows[0]?.id ?? null;
                 if (!importRunId) throw new Error('Failed to create legacy archive import run');
@@ -523,10 +649,11 @@ export const migrateGame = async (
                     await run(archive);
                     await client.query(
                         `UPDATE "legacy_archive"."import_run"
-                         SET "status" = 'COMPLETED', "finished_at" = CURRENT_TIMESTAMP,
-                             "counts" = $2::jsonb, "source_format_summary" = $3::jsonb
-                        WHERE "id" = $1`,
-                        [importRunId, JSON.stringify(counts), JSON.stringify(sourceFormats)]
+                             SET "status" = 'COMPLETED', "finished_at" = CURRENT_TIMESTAMP,
+                                 "counts" = $2::jsonb, "source_format_summary" = $3::jsonb,
+                                 "progress" = $4::jsonb
+                            WHERE "id" = $1`,
+                        [importRunId, JSON.stringify(counts), JSON.stringify(sourceFormats), JSON.stringify(progress)]
                     );
                     await client.query('COMMIT');
                 } catch (error) {
@@ -535,10 +662,17 @@ export const migrateGame = async (
                         error instanceof Error ? error.message.slice(0, 2000) : String(error).slice(0, 2000);
                     await client.query(
                         `UPDATE "legacy_archive"."import_run"
-                         SET "status" = 'FAILED', "finished_at" = CURRENT_TIMESTAMP,
-                             "counts" = $2::jsonb, "source_format_summary" = $3::jsonb, "error" = $4
-                         WHERE "id" = $1`,
-                        [importRunId, JSON.stringify(counts), JSON.stringify(sourceFormats), message]
+                             SET "status" = 'FAILED', "finished_at" = CURRENT_TIMESTAMP,
+                                 "counts" = $2::jsonb, "source_format_summary" = $3::jsonb,
+                                 "progress" = $4::jsonb, "error" = $5
+                             WHERE "id" = $1`,
+                        [
+                            importRunId,
+                            JSON.stringify(counts),
+                            JSON.stringify(sourceFormats),
+                            JSON.stringify(progress),
+                            message,
+                        ]
                     );
                     throw error;
                 }
@@ -549,5 +683,15 @@ export const migrateGame = async (
     } finally {
         client?.release();
     }
-    return { command: 'game', apply, counts, excluded, importRunId, sourceFormatSummary: sourceFormats };
+    return {
+        command: 'game',
+        apply,
+        counts,
+        excluded,
+        importRunId,
+        sourceFormatSummary: sourceFormats,
+        mode: execution.mode,
+        sourceKey: execution.source.key,
+        progress,
+    };
 };

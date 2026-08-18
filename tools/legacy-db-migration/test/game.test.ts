@@ -35,16 +35,30 @@ const sourceRows = {
 const sourcePool = (): MariaPool => {
     const seen = new Set<string>();
     return {
-        query: vi.fn(async (sql: string) => {
+        query: vi.fn(async (sql: string, values: readonly unknown[] = []) => {
             const table = /FROM `([a-z_]+)`/u.exec(sql)?.[1] ?? '';
+            if (sql.includes('SELECT MAX(')) {
+                const rows = (sourceRows[table as keyof typeof sourceRows] ?? []) as Array<Record<string, unknown>>;
+                const idColumn = /MAX\(`([a-z_]+)`\)/u.exec(sql)?.[1] ?? 'id';
+                return [{ max_id: rows.length ? rows.at(-1)?.[idColumn] : null }];
+            }
             if (seen.has(table)) return [];
             seen.add(table);
-            return sourceRows[table as keyof typeof sourceRows] ?? [];
+            const afterId = BigInt(String(values[0] ?? -1));
+            return ((sourceRows[table as keyof typeof sourceRows] ?? []) as Array<Record<string, unknown>>).filter(
+                (row) => {
+                    const idColumn = /WHERE `([a-z_]+)` >/u.exec(sql)?.[1] ?? 'id';
+                    return BigInt(String(row[idColumn])) > afterId;
+                }
+            );
         }),
     } as unknown as MariaPool;
 };
 
-const targetPool = (failPattern?: string) => {
+const targetPool = (
+    failPattern?: string,
+    checkpoints?: Record<string, { fingerprint: string; lastLegacyId: string }>
+) => {
     const queries: Array<{ sql: string; values: readonly unknown[] }> = [];
     const query = vi.fn(async (sql: string, values: readonly unknown[] = []) => {
         queries.push({ sql, values });
@@ -54,6 +68,20 @@ const targetPool = (failPattern?: string) => {
         }
         if (sql.includes('INSERT INTO "legacy_archive"."import_run"')) {
             return { rows: [{ id: '77' }], rowCount: 1 } as QueryResult<{ id: string }>;
+        }
+        if (sql.includes('FROM "legacy_archive"."import_checkpoint"')) {
+            const checkpoint = checkpoints?.[String(values[1])];
+            return {
+                rows: checkpoint
+                    ? [
+                          {
+                              source_fingerprint: checkpoint.fingerprint,
+                              last_legacy_id: checkpoint.lastLegacyId,
+                          },
+                      ]
+                    : [],
+                rowCount: checkpoint ? 1 : 0,
+            } as unknown as QueryResult;
         }
         return { rows: [], rowCount: 0 } as unknown as QueryResult;
     });
@@ -142,5 +170,40 @@ describe('legacy archive game migration', () => {
         await expect(migrateGame(sourcePool(), null, false, 'custom')).rejects.toThrow(
             'Unsupported legacy archive profile'
         );
+    });
+
+    it('uses checkpoints for append-only tables while rescanning mutable game history', async () => {
+        const fingerprint = 'a'.repeat(64);
+        const checkpoints = Object.fromEntries(
+            ['hall', 'ng_old_nations', 'emperior', 'inheritance_result', 'user_record', 'ng_history'].map((table) => [
+                table,
+                { fingerprint, lastLegacyId: '-1' },
+            ])
+        );
+        checkpoints.ng_old_generals = { fingerprint, lastLegacyId: '1' };
+        const target = targetPool(undefined, checkpoints);
+
+        const summary = await migrateGame(sourcePool(), target.pool, false, 'che', {
+            mode: 'incremental',
+            source: { key: 'fixture:che', fingerprint },
+        });
+
+        expect(summary.counts).toMatchObject({ ng_games: 1, ng_old_generals: 1 });
+        expect(summary.progress).toMatchObject({
+            ng_games: { strategy: 'rescan', startAfterId: null, processed: 1 },
+            ng_old_generals: { strategy: 'append', startAfterId: '1', endAtId: '2', processed: 1 },
+        });
+        expect(target.queries.some((entry) => entry.sql.includes('INSERT INTO "legacy_archive"."general"'))).toBe(
+            false
+        );
+    });
+
+    it('refuses incremental mode without a completed full checkpoint', async () => {
+        await expect(
+            migrateGame(sourcePool(), targetPool().pool, false, 'che', {
+                mode: 'incremental',
+                source: { key: 'fixture:che', fingerprint: 'a'.repeat(64) },
+            })
+        ).rejects.toThrow('requires a completed full checkpoint');
     });
 });

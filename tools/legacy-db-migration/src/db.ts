@@ -68,12 +68,13 @@ export const paginateSource = async function* (
     pool: MariaPool,
     table: string,
     idColumn: string,
-    batchSize: number
+    batchSize: number,
+    afterId: bigint = -1n
 ): AsyncGenerator<SourceRow[]> {
     if (!MARIA_IDENTIFIER.test(table) || !MARIA_IDENTIFIER.test(idColumn)) {
         throw new Error('Unsafe MariaDB table or ID column');
     }
-    let lastId = -1n;
+    let lastId = afterId;
     for (;;) {
         const rows = await querySource(
             pool,
@@ -86,6 +87,15 @@ export const paginateSource = async function* (
         yield rows;
         lastId = toBigInt(rows.at(-1)?.[idColumn], `${table}.${idColumn}`);
     }
+};
+
+export const sourceMaxId = async (pool: MariaPool, table: string, idColumn: string): Promise<bigint | null> => {
+    if (!MARIA_IDENTIFIER.test(table) || !MARIA_IDENTIFIER.test(idColumn)) {
+        throw new Error('Unsafe MariaDB table or ID column');
+    }
+    const rows = await querySource(pool, `SELECT MAX(\`${idColumn}\`) AS max_id FROM \`${table}\``);
+    const value = rows[0]?.max_id;
+    return value === null || value === undefined ? null : toBigInt(value, `${table}.${idColumn}`);
 };
 
 const targetValue = (value: unknown): unknown => {

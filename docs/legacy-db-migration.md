@@ -4,17 +4,44 @@
 
 `tools/legacy-db-migration` is the only supported importer. It has no HTTP
 entrypoint, defaults to a read-only dry-run, and requires `--apply` for target
-writes. Database URLs are accepted only through environment variables.
-PostgreSQL advisory locks serialize an apply per profile, and every target row
-uses a stable legacy key with `ON CONFLICT`, so an interrupted run is
-repeatable.
+writes. The normal `run-plan` command reads a mode-0600 JSON file containing
+structured MariaDB host/database/user settings and a password, password-file
+reference or password environment name. PostgreSQL URLs remain in environment
+variables; no URL or password is accepted as a command-line value or returned
+in JSON output. PostgreSQL advisory locks serialize an apply per source/profile,
+and every target row uses a stable legacy key with `ON CONFLICT`, so an
+interrupted run is repeatable.
 
-Gateway apply is one PostgreSQL transaction. A game apply records a
-`legacy_archive.import_run`: archive and current-user projection writes commit
-together with `COMPLETED`, while a rollback leaves a `FAILED` run record. A
-repeat import updates archive-owned rows but does not replace a live Gateway
-account's password, reset status, login/display identity, OAuth connection,
-roles, sanctions, consent, icon or login timestamps.
+Gateway apply is one PostgreSQL transaction and records `legacy_import_run`.
+A game apply records `legacy_archive.import_run`: archive and current-user
+projection writes commit together with `COMPLETED`, while a rollback leaves a
+`FAILED` run record. Their checkpoint updates commit in the same transaction as
+the imported rows. A repeat import updates archive-owned rows but does not
+replace a live Gateway account's password, reset status, login/display identity,
+OAuth connection, roles, sanctions, consent, icon or login timestamps.
+
+### Full and incremental execution
+
+`run-plan` first connects to every configured MariaDB and PostgreSQL target and
+checks that the checkpoint migrations exist. Only after all stages pass does it
+run Gateway, then `che,kwe,pwe,twe,nya,pya,hwe` in that order, skipping disabled
+profiles. Dry-run and apply use the same transformations and return per-table
+`progress` with strategy, start cursor, end cursor and processed count.
+
+The initial apply uses `--mode full`. A later `--mode incremental` requires the
+same `sourceSet` and a completed checkpoint for every append-only table.
+`member_log`, `hall`, `ng_old_generals`, `ng_old_nations`, `emperior`,
+`inheritance_result`, `user_record` and `ng_history` continue strictly after the
+stored primary-key cursor. Mutable `member`, root/game `storage`, `system`, bans
+and `ng_games` are rescanned and upserted. The source fingerprint includes
+protocol, host, port, database, user and non-secret connection options but not
+the password, so password rotation is safe while an accidental database switch
+is rejected. A regressed maximum ID is also rejected.
+
+This is an append-plus-rescan importer, not bidirectional replication. It does
+not copy source deletions and cannot discover an in-place edit to a completed
+append-only row behind the high-water mark. Such a source requires a reviewed
+full re-import and count/hash investigation.
 
 The source of truth for eligibility is the checked ref schema, not every table
 that happens to exist in a dump. Tables outside that schema remain only in the
@@ -165,21 +192,28 @@ they are never merged into the current rankings or current dynasty list.
 ## Cutover procedure
 
 1. Keep the original compressed dumps immutable and restore each source to a
-   private MariaDB instance.
-2. Deploy the gateway and game Prisma migrations to empty staging databases.
-3. Run gateway and each non-empty official profile without `--apply`; archive the JSON
-   counts and excluded-table reasons.
-4. Compare source counts, malformed JSON checks and duplicate natural-key
+   private MariaDB instance. Record checksums and the snapshot boundary.
+2. Copy `migration-plan.example.json` to the ignored `migration-plan.json`, give
+   it and every password file mode 0600, and enter one stable `sourceSet`.
+3. Deploy the gateway and game Prisma migrations to staging, then run
+   `check-plan`. Fix every connection, source-table and target-migration failure
+   before continuing.
+4. Run `run-plan --mode full` without `--apply`; archive the redacted JSON counts,
+   excluded-table reasons and source-format summary.
+5. Compare source counts, malformed JSON checks and duplicate natural-key
    counts. Stop on unexplained drift.
-5. Put the affected target in maintenance mode, take a PostgreSQL backup, then
-   run the same commands with `--apply`.
-6. Repeat each apply. Counts must remain unchanged; verify the newest
-   `legacy_archive.import_run` is `COMPLETED` and current Gateway credentials
-   are unchanged.
-7. Verify valid/invalid Kakao-ID classification, password-reset-required rows,
+6. Put the affected target in maintenance mode, take a PostgreSQL backup, then
+   run the identical plan with `--mode full --apply`.
+7. Verify every Gateway/game run is `COMPLETED`, checkpoints equal the source
+   maxima, target counts match, and current Gateway credentials are unchanged.
+8. Verify valid/invalid Kakao-ID classification, password-reset-required rows,
    Kakao password setup, CLI fallback, archive ownership, canonical source
-   format counts, opening dates, `/past-plays`, foreign-owner denial, legacy
-   Hall and legacy Dynasty source switches.
-8. Retain the MariaDB dumps as rollback evidence. Rollback restores the
-   pre-cutover PostgreSQL backup; it does not reverse individual importer
-   upserts.
+   format counts, opening dates, `/past-plays`, foreign-owner denial, legacy Hall
+   and legacy Dynasty source switches.
+9. For the later snapshot, retain the same `sourceSet`, run `check-plan`, then
+   `run-plan --mode incremental` and review every start/end cursor before adding
+   `--apply`. Repeat once: append-table processed counts must be zero and target
+   row counts must remain unchanged.
+10. Retain both MariaDB snapshots and plan-output evidence. Rollback restores the
+    pre-cutover PostgreSQL backup; it does not reverse individual importer
+    upserts or edit checkpoint rows by hand.
