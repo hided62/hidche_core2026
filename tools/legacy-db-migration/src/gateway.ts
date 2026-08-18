@@ -6,6 +6,7 @@ import {
     paginateSource,
     jsonParameter,
     querySource,
+    sourceMaxId,
     toBigInt,
     toDate,
     toNullableDate,
@@ -17,6 +18,15 @@ import {
     type SourceRow,
     type TargetRow,
 } from './db.js';
+import {
+    defaultExecutionOptions,
+    loadCheckpoint,
+    requireIncrementalCheckpoint,
+    saveCheckpoint,
+    validateSourceIdentity,
+    type MigrationExecutionOptions,
+    type MigrationProgress,
+} from './incremental.js';
 import { mapLegacyRoles, mapLegacySanctions, parseJson, type JsonValue } from './transform.js';
 
 export interface MigrationSummary {
@@ -26,6 +36,9 @@ export interface MigrationSummary {
     excluded: Record<string, string>;
     importRunId?: string | null;
     sourceFormatSummary?: Record<string, number>;
+    mode?: 'full' | 'incremental';
+    sourceKey?: string;
+    progress?: MigrationProgress;
 }
 
 const batchSize = 500;
@@ -183,9 +196,10 @@ const processMembers = async (
 const processMemberLogs = async (
     source: MariaPool,
     target: PoolClient | null,
-    counts: Record<string, number>
+    counts: Record<string, number>,
+    afterId = -1n
 ): Promise<void> => {
-    for await (const rows of paginateSource(source, 'member_log', 'id', batchSize)) {
+    for await (const rows of paginateSource(source, 'member_log', 'id', batchSize, afterId)) {
         const mapped = rows.map<TargetRow>((row) => {
             const id = toBigInt(row.id, 'member_log.id');
             const memberNo = toNumber(row.member_no, `member_log.${id}.member_no`);
@@ -270,38 +284,126 @@ export const migrateGateway = async (
     source: MariaPool,
     targetPool: PgPool | null,
     apply: boolean,
-    migratedAt: Date
+    migratedAt: Date,
+    execution: MigrationExecutionOptions = defaultExecutionOptions('legacy-root')
 ): Promise<MigrationSummary> => {
+    validateSourceIdentity(execution.source);
+    if (execution.mode === 'incremental' && !targetPool) {
+        throw new Error('Incremental gateway migration requires the target database to read checkpoints');
+    }
     const counts: Record<string, number> = {};
+    const progress: MigrationProgress = {};
     const excluded = {
         login_token:
             'Legacy bearer tokens, IP addresses, and expired sessions are not valid in the Redis session model.',
     };
     const client = targetPool ? await targetPool.connect() : null;
+    let importRunId: string | null = null;
     try {
-        const run = async (): Promise<void> => {
+        const run = async (runId: string | null): Promise<void> => {
             await processMembers(source, client, apply, migratedAt, counts);
-            await processMemberLogs(source, apply ? client : null, counts);
+            progress.member = {
+                strategy: 'rescan',
+                startAfterId: null,
+                endAtId: null,
+                processed: counts.member ?? 0,
+            };
+
+            const maxMemberLogId = (await sourceMaxId(source, 'member_log', 'id')) ?? -1n;
+            const checkpoint =
+                execution.mode === 'incremental' && client
+                    ? await loadCheckpoint(
+                          client,
+                          { tableSql: '"legacy_import_checkpoint"' },
+                          execution.source.key,
+                          'member_log'
+                      )
+                    : null;
+            const memberLogAfter =
+                execution.mode === 'incremental'
+                    ? requireIncrementalCheckpoint(checkpoint, execution.source, 'member_log')
+                    : -1n;
+            if (maxMemberLogId < memberLogAfter) {
+                throw new Error('Legacy source member_log maximum ID regressed; run a reviewed full migration');
+            }
+            await processMemberLogs(source, apply ? client : null, counts, memberLogAfter);
+            progress.member_log = {
+                strategy: 'append',
+                startAfterId: memberLogAfter < 0n ? null : memberLogAfter.toString(),
+                endAtId: maxMemberLogId < 0n ? null : maxMemberLogId.toString(),
+                processed: counts.member_log ?? 0,
+            };
             await processBannedMembers(source, apply ? client : null, counts);
             await processRootKeyValues(source, apply ? client : null, counts);
             await processSystem(source, apply ? client : null, counts);
+            for (const table of ['banned_member', 'root_key_value', 'system'] as const) {
+                progress[table] = {
+                    strategy: 'rescan',
+                    startAfterId: null,
+                    endAtId: null,
+                    processed: counts[table] ?? 0,
+                };
+            }
+            if (apply && client && runId) {
+                await saveCheckpoint(
+                    client,
+                    { tableSql: '"legacy_import_checkpoint"' },
+                    execution.source,
+                    'member_log',
+                    maxMemberLogId,
+                    runId
+                );
+            }
         };
         if (client && apply) {
-            await withMigrationLock(client, 'sammo-legacy-gateway-v1', async () => {
+            await withMigrationLock(client, `sammo-legacy-gateway-v2:${execution.source.key}`, async () => {
+                const created = await client.query<{ id: string }>(
+                    `INSERT INTO "legacy_import_run"
+                        ("source_key", "source_fingerprint", "mode", "status")
+                     VALUES ($1, $2, $3, 'RUNNING') RETURNING "id"`,
+                    [execution.source.key, execution.source.fingerprint, execution.mode]
+                );
+                importRunId = created.rows[0]?.id ?? null;
+                if (!importRunId) throw new Error('Failed to create legacy gateway import run');
                 await client.query('BEGIN');
                 try {
-                    await run();
+                    await run(importRunId);
+                    await client.query(
+                        `UPDATE "legacy_import_run"
+                         SET "status" = 'COMPLETED', "finished_at" = CURRENT_TIMESTAMP,
+                             "counts" = $2::jsonb, "progress" = $3::jsonb
+                         WHERE "id" = $1`,
+                        [importRunId, JSON.stringify(counts), JSON.stringify(progress)]
+                    );
                     await client.query('COMMIT');
                 } catch (error) {
                     await client.query('ROLLBACK');
+                    const message =
+                        error instanceof Error ? error.message.slice(0, 2000) : String(error).slice(0, 2000);
+                    await client.query(
+                        `UPDATE "legacy_import_run"
+                         SET "status" = 'FAILED', "finished_at" = CURRENT_TIMESTAMP,
+                             "counts" = $2::jsonb, "progress" = $3::jsonb, "error" = $4
+                         WHERE "id" = $1`,
+                        [importRunId, JSON.stringify(counts), JSON.stringify(progress), message]
+                    );
                     throw error;
                 }
             });
         } else {
-            await run();
+            await run(null);
         }
     } finally {
         client?.release();
     }
-    return { command: 'gateway', apply, counts, excluded };
+    return {
+        command: 'gateway',
+        apply,
+        counts,
+        excluded,
+        importRunId,
+        mode: execution.mode,
+        sourceKey: execution.source.key,
+        progress,
+    };
 };

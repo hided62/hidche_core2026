@@ -89,6 +89,8 @@ web_modules/
 .env.local
 .env.ci
 .env.ops
+tools/legacy-db-migration/migration-plan.json
+tools/legacy-db-migration/secrets/
 
 # parcel-bundler cache (https://parceljs.org/)
 .cache

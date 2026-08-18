@@ -1,14 +1,17 @@
 # Legacy DB migration CLI
 
-This package migrates the long-lived parts of a restored ref MariaDB database
-into the core2026 PostgreSQL schemas. It is CLI-only; no HTTP or administrator
-route invokes it.
+This package migrates the long-lived parts of a restored or still-readable ref
+MariaDB database into the core2026 PostgreSQL schemas. It is CLI-only; no HTTP
+or administrator route invokes it. `run-plan` is the normal operator entrypoint:
+it validates every configured connection first, then runs Gateway followed by
+the enabled game profiles in the official order.
 
 The default mode is a read-only dry-run. `--apply` is required before any target
 write. PostgreSQL advisory locks prevent two applies for the same target.
 Gateway writes are transactional. Game archive writes and their completed
-`legacy_archive.import_run` record are transactional. Stable legacy keys make
-completed or interrupted runs repeatable.
+`legacy_archive.import_run` record are transactional. Both paths record an
+import run and durable per-table checkpoints. Stable legacy keys make completed
+or interrupted runs repeatable.
 
 ## Source restore
 
@@ -28,6 +31,64 @@ keeps the original dump as the recovery source.
 Database URLs belong in a Git-ignored environment file or injected process
 environment. They are deliberately not accepted as command-line flags.
 
+## Ordered migration plan
+
+Copy `migration-plan.example.json` to the Git-ignored `migration-plan.json`.
+Set its mode to 0600, then enter the MariaDB host, port, database and user for
+Gateway and each game profile. A password can come from a separate mode-0600
+file (recommended), an environment variable, or directly from the mode-0600
+plan. Target PostgreSQL URLs remain in the named environment variables.
+
+```sh
+mkdir -p tools/legacy-db-migration/secrets
+chmod 700 tools/legacy-db-migration/secrets
+cp tools/legacy-db-migration/migration-plan.example.json \
+  tools/legacy-db-migration/migration-plan.json
+chmod 600 tools/legacy-db-migration/migration-plan.json
+chmod 600 tools/legacy-db-migration/secrets/*
+
+pnpm migrate:legacy -- check-plan \
+  --config tools/legacy-db-migration/migration-plan.json
+pnpm migrate:legacy -- run-plan \
+  --config tools/legacy-db-migration/migration-plan.json --mode full
+pnpm migrate:legacy -- run-plan \
+  --config tools/legacy-db-migration/migration-plan.json --mode full --apply
+```
+
+`check-plan` opens every source and target without writing. `run-plan` also
+preflights every stage before the first import, is a dry-run without `--apply`,
+and stops at the first failed stage. Completed earlier stages remain committed;
+rerunning is safe because the Gateway and each profile have independent locks,
+transactions and run records. The JSON output never includes a connection URL
+or password.
+
+For a later delta, keep the same `sourceSet`, connection identity and source
+databases, restore or expose the newer snapshot, then run:
+
+```sh
+pnpm migrate:legacy -- run-plan \
+  --config tools/legacy-db-migration/migration-plan.json --mode incremental
+pnpm migrate:legacy -- run-plan \
+  --config tools/legacy-db-migration/migration-plan.json --mode incremental --apply
+```
+
+Incremental mode refuses to start without checkpoints from a completed full
+apply. It also refuses a changed host/database/user identity or a source table
+whose maximum ID moved behind its checkpoint. Password rotation does not change
+the source fingerprint.
+
+| Source data                                   | Incremental policy                                                    |
+| --------------------------------------------- | --------------------------------------------------------------------- |
+| `member_log`                                  | Read only IDs after the committed high-water mark.                    |
+| game archive/event-history tables             | Read only IDs after the profile checkpoint.                           |
+| `member`, root/game `storage`, `system`, bans | Rescan and idempotently upsert because old rows are mutable.          |
+| `ng_games`                                    | Rescan because a season row can gain its final winner after creation. |
+
+The append policy assumes Ref primary keys are never reused and completed
+archive rows are immutable. Incremental mode does not mirror source deletions.
+If either assumption is false, take a new reviewed backup and run full mode;
+do not edit checkpoint rows by hand.
+
 ## Commands
 
 ```sh
@@ -44,6 +105,10 @@ The importer writes completed-history data to the shared
 the selected current profile schema. Accepted profiles are
 `che,kwe,pwe,twe,nya,pya,hwe`; run them separately against the same PostgreSQL
 database.
+
+The individual commands also accept `--mode incremental` and `--source-key`.
+Use the ordered plan for production so every configured connection is checked
+before the Gateway stage starts.
 
 ### Isolated current-season comparison fixture
 

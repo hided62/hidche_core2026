@@ -1,8 +1,9 @@
-import type { PoolClient } from 'pg';
+import type { Pool as MariaPool } from 'mariadb';
+import type { Pool as PgPool, PoolClient, QueryResult } from 'pg';
 import { describe, expect, it, vi } from 'vitest';
 
 import { upsertRows } from '../src/db.js';
-import { mapMember, MEMBER_PRESERVED_COLUMNS, preflightMemberConflicts } from '../src/gateway.js';
+import { mapMember, MEMBER_PRESERVED_COLUMNS, migrateGateway, preflightMemberConflicts } from '../src/gateway.js';
 
 const memberRow = (overrides: Record<string, unknown> = {}) => ({
     NO: 7,
@@ -109,5 +110,58 @@ describe('legacy gateway member migration', () => {
             'Target account identity collision in legacy member batch'
         );
         expect(String(query.mock.calls[0]?.[0])).toContain('FROM "app_user"');
+    });
+
+    it('reads only new immutable member logs during an incremental dry-run', async () => {
+        const fingerprint = 'a'.repeat(64);
+        const seen = new Set<string>();
+        const source = {
+            query: vi.fn(async (sql: string, values: readonly unknown[] = []) => {
+                if (sql.includes('MAX(`id`)') && sql.includes('member_log')) return [{ max_id: 2 }];
+                if (sql.includes('MAX(`date`)')) return [];
+                if (sql.includes('FROM `member`')) return [];
+                if (sql.includes('FROM `member_log`')) {
+                    if (seen.has('member_log')) return [];
+                    seen.add('member_log');
+                    return Number(values[0]) < 2
+                        ? [
+                              {
+                                  id: 2,
+                                  member_no: 7,
+                                  date: new Date('2026-08-18T00:00:00.000Z'),
+                                  action_type: 'login',
+                                  action: null,
+                              },
+                          ]
+                        : [];
+                }
+                return [];
+            }),
+        } as unknown as MariaPool;
+        const query = vi.fn(async (sql: string) => {
+            if (sql.includes('FROM "legacy_import_checkpoint"')) {
+                return {
+                    rows: [{ source_fingerprint: fingerprint, last_legacy_id: '1' }],
+                    rowCount: 1,
+                } as QueryResult;
+            }
+            return { rows: [], rowCount: 0 } as unknown as QueryResult;
+        });
+        const client = { query, release: vi.fn() } as unknown as PoolClient;
+        const target = { connect: vi.fn(async () => client) } as unknown as PgPool;
+
+        const summary = await migrateGateway(source, target, false, new Date('2026-08-18T00:00:00.000Z'), {
+            mode: 'incremental',
+            source: { key: 'fixture:gateway', fingerprint },
+        });
+
+        expect(summary.counts.member_log).toBe(1);
+        expect(summary.progress?.member_log).toMatchObject({
+            strategy: 'append',
+            startAfterId: '1',
+            endAtId: '2',
+            processed: 1,
+        });
+        expect(query.mock.calls.some(([sql]) => String(sql).includes('INSERT INTO "legacy_member_log"'))).toBe(false);
     });
 });
