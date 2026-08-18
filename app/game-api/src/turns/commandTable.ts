@@ -770,6 +770,7 @@ export const buildTurnCommandTable = async (options: {
         inputOptions: options.inputOptions ?? {
             cities: [],
             nations: [],
+            nationTargets: {},
             generals: [],
             generalTargets: {},
             crewTypes: [],
@@ -778,6 +779,7 @@ export const buildTurnCommandTable = async (options: {
             colors: [],
             items: {},
             recruitment: null,
+            amountPresets: {},
         },
     };
 };

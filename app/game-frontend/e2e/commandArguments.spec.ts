@@ -48,21 +48,184 @@ const inputOptions = {
     nations: [
         { value: 1, label: '아국', color: '#008000' },
         { value: 2, label: '적국', color: '#800000', description: '수도 허창' },
+        { value: 3, label: '불가침국', color: '#000080', description: '수도 단양' },
     ],
+    nationTargets: {
+        che_물자원조: [
+            { value: 2, label: '적국', color: '#800000', availableNow: true, description: '현재 원조 대상 · 교역' },
+            {
+                value: 3,
+                label: '불가침국',
+                color: '#000080',
+                availableNow: true,
+                description: '현재 원조 대상 · 불가침 12턴',
+            },
+            { value: 1, label: '아국', color: '#008000', availableNow: false, description: '아국은 대상이 아닙니다.' },
+        ],
+        che_불가침제의: [
+            { value: 2, label: '적국', color: '#800000', availableNow: true, description: '현재 제의 가능 · 교역' },
+            {
+                value: 3,
+                label: '불가침국',
+                color: '#000080',
+                availableNow: true,
+                description: '현재 제의 가능 · 불가침 12턴',
+            },
+            { value: 1, label: '아국', color: '#008000', availableNow: false, description: '아국은 대상이 아닙니다.' },
+        ],
+        che_선전포고: [
+            { value: 2, label: '적국', color: '#800000', availableNow: true, description: '현재 선전포고 가능 · 교역' },
+            {
+                value: 3,
+                label: '불가침국',
+                color: '#000080',
+                availableNow: false,
+                description: '현재 외교 관계에서는 선전포고 불가',
+            },
+            { value: 1, label: '아국', color: '#008000', availableNow: false, description: '아국은 대상이 아닙니다.' },
+        ],
+        che_종전제의: [
+            {
+                value: 2,
+                label: '적국',
+                color: '#800000',
+                availableNow: true,
+                description: '현재 종전 제의 가능 · 전쟁 6턴',
+            },
+            {
+                value: 3,
+                label: '불가침국',
+                color: '#000080',
+                availableNow: false,
+                description: '전쟁·선포 중인 국가가 아닙니다.',
+            },
+            { value: 1, label: '아국', color: '#008000', availableNow: false, description: '아국은 대상이 아닙니다.' },
+        ],
+        che_불가침파기제의: [
+            {
+                value: 3,
+                label: '불가침국',
+                color: '#000080',
+                availableNow: true,
+                description: '현재 불가침 파기 제의 가능 · 불가침 12턴',
+            },
+            {
+                value: 2,
+                label: '적국',
+                color: '#800000',
+                availableNow: false,
+                description: '불가침 중인 국가가 아닙니다.',
+            },
+            { value: 1, label: '아국', color: '#008000', availableNow: false, description: '아국은 대상이 아닙니다.' },
+        ],
+    },
     generals: [
         { value: 1, label: '장수 (아국 · 업)' },
         { value: 2, label: '관우 (아국 · 업)' },
     ],
     generalTargets: {
         che_포상: [
-            { value: 1, label: '장수 (아국 · 업)' },
-            { value: 2, label: '관우 (아국 · 업)' },
-            { value: 3, label: '여포NPC (아국 · 업)' },
+            {
+                value: 1,
+                label: '장수 (아국 · 업)',
+                gold: 5000,
+                rice: 400,
+                crew: 500,
+                description: '금 5,000 · 쌀 400 · 병력 500 · 탑승 부대 없음',
+            },
+            {
+                value: 2,
+                label: '관우 (아국 · 업)',
+                gold: 100,
+                rice: 4000,
+                crew: 1200,
+                troopId: 2,
+                description: '금 100 · 쌀 4,000 · 병력 1,200 · 탑승 부대 청룡대 (부대장)',
+            },
+            {
+                value: 3,
+                label: '여포NPC (아국 · 업)',
+                gold: 3000,
+                rice: 500,
+                crew: 1500,
+                troopId: 2,
+                description: '금 3,000 · 쌀 500 · 병력 1,500 · 탑승 부대 청룡대',
+            },
         ],
         che_몰수: [
-            { value: 1, label: '장수 (아국 · 업)' },
-            { value: 2, label: '관우 (아국 · 업)' },
-            { value: 3, label: '여포NPC (아국 · 업)' },
+            {
+                value: 1,
+                label: '장수 (아국 · 업)',
+                gold: 5000,
+                rice: 400,
+                crew: 500,
+                description: '금 5,000 · 쌀 400 · 병력 500 · 탑승 부대 없음',
+            },
+            {
+                value: 2,
+                label: '관우 (아국 · 업)',
+                gold: 100,
+                rice: 4000,
+                crew: 1200,
+                troopId: 2,
+                description: '금 100 · 쌀 4,000 · 병력 1,200 · 탑승 부대 청룡대 (부대장)',
+            },
+            {
+                value: 3,
+                label: '여포NPC (아국 · 업)',
+                gold: 3000,
+                rice: 500,
+                crew: 1500,
+                troopId: 2,
+                description: '금 3,000 · 쌀 500 · 병력 1,500 · 탑승 부대 청룡대',
+            },
+        ],
+        che_발령: [
+            {
+                value: 1,
+                label: '장수 (아국 · 업)',
+                crew: 500,
+                description: '금 5,000 · 쌀 400 · 병력 500 · 탑승 부대 없음',
+            },
+            {
+                value: 2,
+                label: '관우 (아국 · 업)',
+                crew: 1200,
+                troopId: 2,
+                description: '금 100 · 쌀 4,000 · 병력 1,200 · 탑승 부대 청룡대 (부대장)',
+            },
+            {
+                value: 3,
+                label: '여포NPC (아국 · 업)',
+                crew: 1500,
+                troopId: 2,
+                description: '금 3,000 · 쌀 500 · 병력 1,500 · 탑승 부대 청룡대',
+            },
+        ],
+        che_부대탈퇴지시: [
+            {
+                value: 3,
+                label: '여포NPC (아국 · 업)',
+                availableNow: true,
+                crew: 1500,
+                troopId: 2,
+                description: '현재 탈퇴 지시 가능 · 병력 1,500 · 탑승 부대 청룡대',
+            },
+            {
+                value: 1,
+                label: '장수 (아국 · 업)',
+                availableNow: false,
+                crew: 500,
+                description: '현재 탈퇴 지시 불가 · 탑승 부대 없음',
+            },
+            {
+                value: 2,
+                label: '관우 (아국 · 업)',
+                availableNow: false,
+                crew: 1200,
+                troopId: 2,
+                description: '현재 탈퇴 지시 불가 · 탑승 부대 청룡대 (부대장)',
+            },
         ],
     },
     crewTypes: [{ value: 1100, label: '보병' }],
@@ -115,6 +278,11 @@ const inputOptions = {
             },
         ],
     },
+    amountPresets: {
+        che_포상: { values: [100, 500, 1000, 5000, 10000], defaultValue: 1000, min: 100, max: 10000, step: 1 },
+        che_몰수: { values: [100, 500, 1000, 5000, 10000], defaultValue: 1000, min: 100, max: 10000, step: 1 },
+        che_물자원조: { values: [10000, 20000, 30000], defaultValue: 1000, min: 1000, max: 30000, step: 10 },
+    },
     context: {
         actorGold: 1000,
         actorRice: 1000,
@@ -124,6 +292,40 @@ const inputOptions = {
         nationLevel: 1,
     },
 };
+const buildCityCommand = (key: string, name: string) => ({
+    key,
+    name,
+    reqArg: true,
+    possible: true,
+    status: 'needsInput',
+    inputFields: [{ key: 'destCityId', label: '대상 도시', kind: 'select', required: true, optionSource: 'cities' }],
+});
+const buildNationCommand = (key: string, name: string) => ({
+    key,
+    name,
+    reqArg: true,
+    possible: true,
+    status: 'needsInput',
+    inputFields: [{ key: 'destNationId', label: '대상 국가', kind: 'select', required: true, optionSource: 'nations' }],
+});
+const buildGeneralCommand = (key: string, name: string) => ({
+    key,
+    name,
+    reqArg: true,
+    possible: true,
+    status: 'needsInput',
+    inputFields: [
+        { key: 'destGeneralId', label: '대상 장수', kind: 'select', required: true, optionSource: 'generals' },
+    ],
+});
+const buildSimpleCommand = (key: string, name: string) => ({
+    key,
+    name,
+    reqArg: false,
+    possible: true,
+    status: 'available',
+    inputFields: [],
+});
 const commandTable = {
     general: [
         {
@@ -222,6 +424,13 @@ const commandTable = {
             category: '인사',
             values: [
                 {
+                    ...buildGeneralCommand('che_발령', '발령'),
+                    inputFields: [
+                        ...buildGeneralCommand('che_발령', '발령').inputFields,
+                        ...buildCityCommand('che_발령', '발령').inputFields,
+                    ],
+                },
+                {
                     key: 'che_포상',
                     name: '포상',
                     reqArg: true,
@@ -239,27 +448,64 @@ const commandTable = {
                         },
                     ],
                 },
+                {
+                    key: 'che_몰수',
+                    name: '몰수',
+                    reqArg: true,
+                    possible: true,
+                    status: 'needsInput',
+                    inputFields: [
+                        { key: 'isGold', label: '물자', kind: 'boolean', required: true },
+                        { key: 'amount', label: '수량', kind: 'number', required: true, min: 0, step: 1 },
+                        ...buildGeneralCommand('che_몰수', '몰수').inputFields,
+                    ],
+                },
+                buildGeneralCommand('che_부대탈퇴지시', '부대 탈퇴 지시'),
             ],
         },
         {
             category: '외교',
             values: [
                 {
-                    key: 'che_선전포고',
-                    name: '선전포고',
+                    key: 'che_물자원조',
+                    name: '원조',
                     reqArg: true,
                     possible: true,
                     status: 'needsInput',
                     inputFields: [
+                        ...buildNationCommand('che_물자원조', '원조').inputFields,
                         {
-                            key: 'destNationId',
-                            label: '대상 국가',
-                            kind: 'select',
+                            key: 'amountList',
+                            label: '지원 물자',
+                            kind: 'numberTuple',
                             required: true,
-                            optionSource: 'nations',
+                            min: 0,
+                            step: 1,
+                            tupleLabels: ['금', '쌀'],
                         },
                     ],
                 },
+                buildNationCommand('che_불가침제의', '불가침 제의'),
+                buildNationCommand('che_선전포고', '선전포고'),
+                buildNationCommand('che_종전제의', '종전 제의'),
+                buildNationCommand('che_불가침파기제의', '불가침 파기 제의'),
+            ],
+        },
+        {
+            category: '특수',
+            values: [
+                buildCityCommand('che_초토화', '초토화'),
+                buildCityCommand('che_천도', '천도'),
+                buildSimpleCommand('che_증축', '증축'),
+                buildSimpleCommand('che_감축', '감축'),
+            ],
+        },
+        {
+            category: '전략',
+            values: [
+                buildCityCommand('che_백성동원', '백성동원'),
+                buildCityCommand('che_수몰', '수몰'),
+                buildCityCommand('che_허보', '허보'),
             ],
         },
     ],
@@ -330,14 +576,6 @@ const fourArmRecruitmentCommandTable = {
         },
     },
 };
-const buildSimpleCommand = (key: string, name: string) => ({
-    key,
-    name,
-    reqArg: false,
-    possible: true,
-    status: 'available',
-    inputFields: [],
-});
 const refChiefCommandTable = {
     general: [],
     nation: [
@@ -1063,13 +1301,13 @@ test('enters general and nation command arguments and sends exact values', async
     await chiefPicker.getByRole('button', { name: /^(?:국가:)?인사$/, exact: true }).click();
     await chiefPicker.getByRole('button', { name: /포상/ }).click();
     const chiefForm = chiefPicker.getByTestId('command-argument-form');
-    await chiefForm.getByRole('button', { name: '쌀' }).click();
+    await chiefForm.getByRole('button', { name: '쌀', exact: true }).click();
     await chiefForm.locator('input[type=number]').fill('300');
-    const chiefTarget = chiefForm.locator('select');
+    const chiefTarget = chiefForm.locator('#command-arg-destGeneralId');
     await expect(chiefTarget.locator('option')).toHaveText([
         '장수 (아국 · 업)',
-        '관우 (아국 · 업)',
         '여포NPC (아국 · 업)',
+        '관우 (아국 · 업)',
     ]);
     await chiefTarget.selectOption('3');
     const geometry = await chiefForm.evaluate((element) => {
@@ -1332,9 +1570,9 @@ test('keeps arbitrary direct recruitment and mercenary amounts for all four arms
         await row.getByRole('button', { name: entry.command, exact: true }).click();
 
         await expect(picker).toHaveCount(0);
-        await expect(page.locator('[data-command-scope="general"] .action-column > div').nth(entry.turn - 1)).toHaveText(
-            `【${entry.name}】 ${entry.savedAmount}명 ${entry.command}`
-        );
+        await expect(
+            page.locator('[data-command-scope="general"] .action-column > div').nth(entry.turn - 1)
+        ).toHaveText(`【${entry.name}】 ${entry.savedAmount}명 ${entry.command}`);
     }
 
     const refreshResponse = page.waitForResponse((apiResponse) =>
@@ -1344,9 +1582,9 @@ test('keeps arbitrary direct recruitment and mercenary amounts for all four arms
     await refreshResponse;
 
     for (const entry of entries) {
-        await expect(page.locator('[data-command-scope="general"] .action-column > div').nth(entry.turn - 1)).toHaveText(
-            `【${entry.name}】 ${entry.savedAmount}명 ${entry.command}`
-        );
+        await expect(
+            page.locator('[data-command-scope="general"] .action-column > div').nth(entry.turn - 1)
+        ).toHaveText(`【${entry.name}】 ${entry.savedAmount}명 ${entry.command}`);
     }
     await page
         .locator('[data-command-scope="general"]')
@@ -1377,6 +1615,214 @@ test('uses the map to choose a nation target in the chief command window', async
     await expect(form.getByTestId('command-map-target-summary')).toContainText('수도 허창 · 도시 1개');
     await expect(page).toHaveURL(/\/che\/chief-center$/);
     await page.screenshot({ path: test.info().outputPath('chief-nation-map-option.png'), fullPage: true });
+});
+
+test('shows city or capital maps for every requested chief command', async ({ page }) => {
+    await install(page);
+    await page.setViewportSize({ width: 1200, height: 900 });
+    const cases = [
+        { category: '인사', action: '발령', mode: 'city' },
+        { category: '특수', action: '초토화', mode: 'city' },
+        { category: '특수', action: '천도', mode: 'city' },
+        { category: '특수', action: '증축', mode: 'capital' },
+        { category: '특수', action: '감축', mode: 'capital' },
+        { category: '전략', action: '수몰', mode: 'city' },
+        { category: '전략', action: '허보', mode: 'city' },
+        { category: '전략', action: '백성동원', mode: 'city' },
+    ];
+
+    for (const entry of cases) {
+        await page.goto('/che/chief-center');
+        await page.getByRole('button', { name: '1턴 명령 입력', exact: true }).click();
+        const picker = page.getByTestId('command-picker');
+        await picker.getByRole('button', { name: new RegExp(`^(?:국가:)?${entry.category}$`) }).click();
+        await picker.getByRole('button', { name: new RegExp(entry.action) }).click();
+        const form = picker.getByTestId('command-argument-form');
+        const map = form.getByTestId('command-argument-map');
+        await expect(map, `${entry.action} 지도`).toBeVisible();
+        await expect(form.getByTestId('command-argument-guidance')).toBeVisible();
+
+        if (entry.mode === 'capital') {
+            await expect(form.getByTestId('command-map-selection-status')).toContainText('현재 수도업');
+            await expect(form.getByTestId('command-map-target-summary')).toContainText('현재 수도');
+            await expect(map.locator('.city-base').first()).toHaveJSProperty('tagName', 'DIV');
+            expect(
+                await map
+                    .locator('.city-base')
+                    .first()
+                    .evaluate((node) => getComputedStyle(node).cursor)
+            ).toBe('default');
+        } else {
+            await map.locator('.city-base').nth(1).click();
+            await expect(form.locator('#command-arg-destCityId')).toHaveValue('2');
+            await expect(form.getByTestId('command-map-selection-status')).toContainText('선택 도시허창');
+        }
+    }
+
+    await page.screenshot({ path: test.info().outputPath('chief-command-map-guidance.png'), fullPage: true });
+});
+
+test('prioritizes current nation targets while preserving every choice', async ({ page }) => {
+    await install(page);
+    await page.setViewportSize({ width: 1200, height: 900 });
+    const cases = [
+        { action: '원조', first: '적국' },
+        { action: '불가침 제의', first: '적국' },
+        { action: '선전포고', first: '적국' },
+        { action: '종전 제의', first: '적국' },
+        { action: '불가침 파기 제의', first: '불가침국' },
+    ];
+
+    for (const entry of cases) {
+        await page.goto('/che/chief-center');
+        await page.getByRole('button', { name: '1턴 명령 입력', exact: true }).click();
+        const picker = page.getByTestId('command-picker');
+        await picker.getByRole('button', { name: /^(?:국가:)?외교$/, exact: true }).click();
+        await picker.getByRole('button', { name: new RegExp(entry.action) }).click();
+        const form = picker.getByTestId('command-argument-form');
+        const targetList = form.getByTestId('nation-target-list');
+        const targets = targetList.locator('.target-option');
+        await expect(targets).toHaveCount(3);
+        await expect(targets.first().locator('strong')).toHaveText(entry.first);
+        await expect(targets.first().locator('.target-state')).toHaveText('우선 대상');
+        await expect(targets.last().locator('.target-state')).toHaveText('현재 불가');
+        await expect(form.locator('#command-arg-destNationId')).toHaveValue(entry.first === '불가침국' ? '3' : '2');
+        await expect(form.getByTestId('command-argument-map')).toBeVisible();
+    }
+
+    const form = page.getByTestId('command-picker').getByTestId('command-argument-form');
+    const targets = form.getByTestId('nation-target-list').locator('.target-option');
+    await targets.filter({ hasText: '적국' }).click();
+    await expect(form.locator('#command-arg-destNationId')).toHaveValue('2');
+    await expect(targets.filter({ hasText: '적국' })).toHaveClass(/selected/);
+    await expect(form.getByTestId('command-map-target-summary')).toContainText('수도 허창');
+    await page.screenshot({ path: test.info().outputPath('chief-nation-target-priority.png'), fullPage: true });
+
+    await page.setViewportSize({ width: 500, height: 900 });
+    await page.goto('/che/chief-center');
+    await page.getByRole('button', { name: '1턴 명령 입력', exact: true }).click();
+    const mobilePicker = page.getByTestId('command-picker');
+    await mobilePicker.getByRole('button', { name: /^(?:국가:)?외교$/, exact: true }).click();
+    await mobilePicker.getByRole('button', { name: /불가침 파기 제의/ }).click();
+    const mobileTargets = mobilePicker.getByTestId('nation-target-list').locator('.target-option');
+    await mobileTargets.nth(1).hover();
+    expect(await mobileTargets.nth(1).evaluate((element) => getComputedStyle(element).cursor)).toBe('pointer');
+    await mobileTargets.nth(1).focus();
+    await expect(mobileTargets.nth(1)).toBeFocused();
+    const mobileGeometry = await mobilePicker.evaluate((element) => {
+        const list = element.querySelector<HTMLElement>('[data-testid="nation-target-list"]')!;
+        const cards = Array.from(list.querySelectorAll<HTMLElement>('.target-option'));
+        const listRect = list.getBoundingClientRect();
+        return {
+            pickerWidth: element.getBoundingClientRect().width,
+            pickerOverflow: element.scrollWidth - element.clientWidth,
+            documentOverflow: document.documentElement.scrollWidth - document.documentElement.clientWidth,
+            cardsInsideList: cards.every((card) => {
+                const rect = card.getBoundingClientRect();
+                return rect.left >= listRect.left && rect.right <= listRect.right;
+            }),
+        };
+    });
+    expect(mobileGeometry).toEqual({
+        pickerWidth: 500,
+        pickerOverflow: 0,
+        documentOverflow: 0,
+        cardsInsideList: true,
+    });
+    await page.screenshot({ path: test.info().outputPath('chief-nation-target-priority-mobile.png'), fullPage: true });
+});
+
+test('offers Ref amount presets and rich, command-specific general lists', async ({ page }) => {
+    const requests = await install(page);
+    await page.setViewportSize({ width: 1200, height: 900 });
+
+    await page.goto('/che/chief-center');
+    await page.getByRole('button', { name: '1턴 명령 입력', exact: true }).click();
+    let picker = page.getByTestId('command-picker');
+    await picker.getByRole('button', { name: /^(?:국가:)?인사$/, exact: true }).click();
+    await picker.getByRole('button', { name: /포상/ }).click();
+    let form = picker.getByTestId('command-argument-form');
+    const amount = form.locator('#command-arg-amount');
+    const amountPreset = form.getByRole('combobox', { name: '금액 프리셋' });
+    await expect(amount).toHaveValue('1000');
+    await expect(amountPreset.locator('option')).toHaveText(['프리셋', '100', '500', '1,000', '5,000', '10,000']);
+    await amountPreset.selectOption('5000');
+    await expect(amount).toHaveValue('5000');
+    await amount.fill('1375');
+    await expect(amount).toHaveValue('1375');
+
+    let generalList = form.getByTestId('general-target-list');
+    await expect(generalList.locator('.target-option strong')).toHaveText([
+        '관우 (아국 · 업)',
+        '여포NPC (아국 · 업)',
+        '장수 (아국 · 업)',
+    ]);
+    await expect(generalList).toContainText('금 100 · 쌀 4,000 · 병력 1,200 · 탑승 부대 청룡대 (부대장)');
+    await form.getByRole('button', { name: '쌀', exact: true }).click();
+    await expect(generalList.locator('.target-option strong')).toHaveText([
+        '장수 (아국 · 업)',
+        '여포NPC (아국 · 업)',
+        '관우 (아국 · 업)',
+    ]);
+    await generalList.locator('.target-option').filter({ hasText: '여포NPC' }).click();
+    const awardResponse = page.waitForResponse((response) => response.url().includes('turns.reserved.setNationBulk'));
+    await picker.getByRole('button', { name: '입력', exact: true }).click();
+    await awardResponse;
+
+    await page.goto('/che/chief-center');
+    await page.getByRole('button', { name: '2턴 명령 입력', exact: true }).click();
+    picker = page.getByTestId('command-picker');
+    await picker.getByRole('button', { name: /^(?:국가:)?인사$/, exact: true }).click();
+    await picker.getByRole('button', { name: /몰수/ }).click();
+    form = picker.getByTestId('command-argument-form');
+    generalList = form.getByTestId('general-target-list');
+    await expect(generalList.locator('.target-option strong')).toHaveText([
+        '장수 (아국 · 업)',
+        '여포NPC (아국 · 업)',
+        '관우 (아국 · 업)',
+    ]);
+
+    await page.goto('/che/chief-center');
+    await page.getByRole('button', { name: '3턴 명령 입력', exact: true }).click();
+    picker = page.getByTestId('command-picker');
+    await picker.getByRole('button', { name: /^(?:국가:)?인사$/, exact: true }).click();
+    await picker.getByRole('button', { name: /발령/ }).click();
+    form = picker.getByTestId('command-argument-form');
+    await expect(form.getByTestId('general-target-list')).toContainText('병력 1,200 · 탑승 부대 청룡대 (부대장)');
+
+    await page.goto('/che/chief-center');
+    await page.getByRole('button', { name: '4턴 명령 입력', exact: true }).click();
+    picker = page.getByTestId('command-picker');
+    await picker.getByRole('button', { name: /^(?:국가:)?인사$/, exact: true }).click();
+    await picker.getByRole('button', { name: /부대 탈퇴 지시/ }).click();
+    form = picker.getByTestId('command-argument-form');
+    generalList = form.getByTestId('general-target-list');
+    await expect(generalList.locator('.target-option strong').first()).toHaveText('여포NPC (아국 · 업)');
+    await expect(generalList.locator('.target-option').first().locator('.target-state')).toHaveText('우선 대상');
+    await expect(generalList.locator('.target-option').nth(1).locator('.target-state')).toHaveText('현재 불가');
+
+    await page.goto('/che/chief-center');
+    await page.getByRole('button', { name: '5턴 명령 입력', exact: true }).click();
+    picker = page.getByTestId('command-picker');
+    await picker.getByRole('button', { name: /^(?:국가:)?외교$/, exact: true }).click();
+    await picker.getByRole('button', { name: /원조/ }).click();
+    form = picker.getByTestId('command-argument-form');
+    const tupleInputs = form.locator('.tuple-options input[type=number]');
+    await expect(tupleInputs.nth(0)).toHaveValue('1000');
+    await expect(tupleInputs.nth(1)).toHaveValue('1000');
+    await form.getByRole('combobox', { name: '금 금액 프리셋' }).selectOption('20000');
+    await tupleInputs.nth(1).fill('1370');
+    await expect(tupleInputs.nth(0)).toHaveValue('20000');
+    await expect(tupleInputs.nth(1)).toHaveValue('1370');
+    const aidResponse = page.waitForResponse((response) => response.url().includes('turns.reserved.setNationBulk'));
+    await picker.getByRole('button', { name: '입력', exact: true }).click();
+    await aidResponse;
+
+    const serialized = JSON.stringify(requests);
+    expect(serialized).toContain('"amount":1375');
+    expect(serialized).toContain('"destGeneralId":3');
+    expect(serialized).toContain('"amountList":[20000,1370]');
+    await page.screenshot({ path: test.info().outputPath('chief-ref-guidance-controls.png'), fullPage: true });
 });
 
 test('fits the city map option window inside the Ref-compatible 500px mobile page', async ({ page }) => {
@@ -1475,7 +1921,10 @@ test('keeps Ref command briefs and autonomous-action state after a turn mutation
     await expect.poll(async () => (await tooltipStyle()).visibility).toBe('visible');
     expect((await tooltipStyle()).content).toContain('자율 행동: 200年 3月');
     expect(await editor.evaluate((element) => element.getBoundingClientRect().height)).toBe(heightBeforeHover);
-    await page.screenshot({ path: test.info().outputPath('command-brief-autorun-hover-desktop-1200.png'), fullPage: true });
+    await page.screenshot({
+        path: test.info().outputPath('command-brief-autorun-hover-desktop-1200.png'),
+        fullPage: true,
+    });
     await page.mouse.move(0, 0);
     await expect.poll(async () => (await tooltipStyle()).visibility).toBe('hidden');
 
@@ -1507,7 +1956,10 @@ test('keeps Ref command briefs and autonomous-action state after a turn mutation
     expect(desktopGeometry.horizontalOverflow).toBeLessThanOrEqual(0);
     expect(desktopGeometry.controlPadOffset).toBe(0);
     expect(desktopGeometry.rowHeight).toBeGreaterThanOrEqual(20);
-    await page.screenshot({ path: test.info().outputPath('command-brief-autorun-focus-desktop-1200.png'), fullPage: true });
+    await page.screenshot({
+        path: test.info().outputPath('command-brief-autorun-focus-desktop-1200.png'),
+        fullPage: true,
+    });
 
     const mobilePage = await context.newPage();
     await install(mobilePage);

@@ -30,11 +30,31 @@ const values = reactive<Record<string, unknown>>({});
 const presentation = computed(() => commandArgumentPresentation(props.commandKey));
 const visibleFields = computed(() => props.fields.filter((entry) => entry.kind !== 'hidden'));
 
+const amountPreset = computed(() => props.options.amountPresets?.[props.commandKey]);
+
+const sortGeneralOptions = (options: CommandOption[]): CommandOption[] => {
+    const result = [...options];
+    const resourceKey = values.isGold === false ? 'rice' : 'gold';
+    if (props.commandKey === 'che_포상') {
+        return result.sort((left, right) => (left[resourceKey] ?? 0) - (right[resourceKey] ?? 0));
+    }
+    if (props.commandKey === 'che_몰수') {
+        return result.sort((left, right) => (right[resourceKey] ?? 0) - (left[resourceKey] ?? 0));
+    }
+    if (props.commandKey === 'che_부대탈퇴지시') {
+        return result.sort((left, right) => Number(right.availableNow) - Number(left.availableNow));
+    }
+    return result;
+};
+
 const optionsFor = (field: CommandInputField): CommandOption[] => {
     if (field.options) return field.options;
     if (!field.optionSource) return [];
     if (field.optionSource === 'generals') {
-        return props.options.generalTargets?.[props.commandKey] ?? props.options.generals;
+        return sortGeneralOptions(props.options.generalTargets?.[props.commandKey] ?? props.options.generals);
+    }
+    if (field.optionSource === 'nations') {
+        return props.options.nationTargets?.[props.commandKey] ?? props.options.nations;
     }
     if (field.optionSource === 'items') {
         return props.options.items[String(values.itemType ?? '')] ?? [];
@@ -45,10 +65,16 @@ const optionsFor = (field: CommandInputField): CommandOption[] => {
 const defaultValue = (field: CommandInputField): unknown => {
     if (field.kind === 'hidden') return field.constValue;
     if (field.kind === 'boolean') return true;
-    if (field.kind === 'numberTuple') return [field.min ?? 0, field.min ?? 0];
-    if (field.kind === 'number') return field.min ?? 0;
+    if (field.kind === 'numberTuple') {
+        const value = amountPreset.value?.defaultValue ?? field.min ?? 0;
+        return [value, value];
+    }
+    if (field.kind === 'number') return amountPreset.value?.defaultValue ?? field.min ?? 0;
     if (field.kind === 'select') {
         const options = optionsFor(field);
+        const commandSpecificNationTargets =
+            field.optionSource === 'nations' ? props.options.nationTargets?.[props.commandKey] : undefined;
+        if (commandSpecificNationTargets?.length) return commandSpecificNationTargets[0]?.value ?? '';
         const mapDefault =
             field.optionSource === 'cities' && (field.key === 'destCityId' || field.key === 'destCityID')
                 ? props.mapData?.myCity
@@ -96,7 +122,8 @@ const showMap = computed(
     () =>
         Boolean(props.mapData && props.mapLayout) &&
         ((presentation.value.mapTarget === 'city' && cityTargetField.value) ||
-            (presentation.value.mapTarget === 'nation' && nationTargetField.value))
+            (presentation.value.mapTarget === 'nation' && nationTargetField.value) ||
+            presentation.value.mapTarget === 'capital')
 );
 const mapSelectedCityId = computed<number | null>(() => {
     if (!props.mapData) return null;
@@ -107,7 +134,15 @@ const mapSelectedCityId = computed<number | null>(() => {
     if (presentation.value.mapTarget === 'nation' && nationTargetField.value) {
         const value = values[nationTargetField.value.key];
         if (typeof value !== 'number') return null;
-        return props.mapData.cityList.find((entry) => entry[3] === value)?.[0] ?? null;
+        return (
+            props.mapData.nationList.find((entry) => entry[0] === value)?.[3] ??
+            props.mapData.cityList.find((entry) => entry[3] === value)?.[0] ??
+            null
+        );
+    }
+    if (presentation.value.mapTarget === 'capital') {
+        const myNation = props.mapData.myNation;
+        return props.mapData.nationList.find((entry) => entry[0] === myNation)?.[3] ?? null;
     }
     return null;
 });
@@ -128,6 +163,11 @@ const selectedMapTargetName = computed(() => {
         const nationId = values[nationTargetField.value.key];
         if (typeof nationId !== 'number') return '-';
         return props.mapData?.nationList.find((nation) => nation[0] === nationId)?.[1] ?? '-';
+    }
+    if (presentation.value.mapTarget === 'capital') {
+        const cityId = mapSelectedCityId.value;
+        if (!cityId) return '-';
+        return props.mapLayout?.cityList.find((city) => city.id === cityId)?.name ?? '-';
     }
     return '-';
 });
@@ -181,6 +221,14 @@ const mapTargetSummary = computed(() => {
         const cityCount = props.mapData.cityList.filter((entry) => entry[3] === value).length;
         return `${nation[1]} · 수도 ${capital?.name ?? '-'} · 도시 ${cityCount.toLocaleString()}개`;
     }
+    if (presentation.value.mapTarget === 'capital' && mapSelectedCityId.value) {
+        const city = props.mapLayout.cityList.find((entry) => entry.id === mapSelectedCityId.value);
+        const dynamic = props.mapData.cityList.find((entry) => entry[0] === mapSelectedCityId.value);
+        if (!city) return '';
+        return `${city.name} · ${props.mapLayout.regionMap[dynamic?.[4] ?? city.region]} · ${
+            props.mapLayout.levelMap[dynamic?.[1] ?? city.level]
+        } · 현재 수도`;
+    }
     return '';
 });
 
@@ -225,6 +273,35 @@ const setTupleValue = (field: CommandInputField, index: number, rawValue: string
     values[field.key] = tuple;
 };
 
+const setNumberPreset = (field: CommandInputField, rawValue: string, tupleIndex?: number) => {
+    if (!rawValue) return;
+    if (tupleIndex === undefined) {
+        values[field.key] = Number(rawValue);
+        return;
+    }
+    setTupleValue(field, tupleIndex, rawValue);
+};
+
+const effectiveMin = (field: CommandInputField): number | undefined => amountPreset.value?.min ?? field.min;
+const effectiveMax = (field: CommandInputField): number | undefined => amountPreset.value?.max ?? field.max;
+const effectiveStep = (field: CommandInputField): number | undefined => amountPreset.value?.step ?? field.step;
+
+const OPTION_CARD_COMMANDS = new Set([
+    'che_물자원조',
+    'che_불가침제의',
+    'che_선전포고',
+    'che_종전제의',
+    'che_불가침파기제의',
+    'che_포상',
+    'che_발령',
+    'che_몰수',
+    'che_부대탈퇴지시',
+]);
+const showOptionCards = (field: CommandInputField): boolean =>
+    field.kind === 'select' &&
+    Boolean(field.optionSource && ['nations', 'generals'].includes(field.optionSource)) &&
+    OPTION_CARD_COMMANDS.has(props.commandKey);
+
 const isValid = computed(() =>
     props.fields.every((field) => {
         const value = values[field.key];
@@ -237,14 +314,18 @@ const isValid = computed(() =>
             );
         }
         if (field.kind === 'number') {
+            const min = effectiveMin(field);
+            const max = effectiveMax(field);
             return (
                 typeof value === 'number' &&
                 Number.isFinite(value) &&
-                (field.min === undefined || value >= field.min) &&
-                (field.max === undefined || value <= field.max)
+                (min === undefined || value >= min) &&
+                (max === undefined || value <= max)
             );
         }
         if (field.kind === 'numberTuple') {
+            const min = effectiveMin(field);
+            const max = effectiveMax(field);
             return (
                 Array.isArray(value) &&
                 value.length === 2 &&
@@ -252,8 +333,8 @@ const isValid = computed(() =>
                     (entry) =>
                         typeof entry === 'number' &&
                         Number.isFinite(entry) &&
-                        (field.min === undefined || entry >= field.min) &&
-                        (field.max === undefined || entry <= field.max)
+                        (min === undefined || entry >= min) &&
+                        (max === undefined || entry <= max)
                 )
             );
         }
@@ -274,7 +355,11 @@ watch(
 </script>
 
 <template>
-    <div v-if="props.fields.length" class="command-argument-form" data-testid="command-argument-form">
+    <div
+        v-if="props.fields.length || showMap || presentation.lines.length"
+        class="command-argument-form"
+        data-testid="command-argument-form"
+    >
         <div v-if="showMap" class="command-map" data-testid="command-argument-map">
             <MapViewer
                 :map-data="props.mapData ?? null"
@@ -284,18 +369,24 @@ watch(
                 :detail-mode="true"
                 :fit-container="true"
                 :show-current-city-marker="true"
+                :readonly="presentation.mapTarget === 'capital'"
                 @select-city="selectMapCity"
             />
-            <small>지도에서 도시를 클릭하거나 아래 목록에서 대상을 선택하세요.</small>
+            <small v-if="presentation.mapTarget === 'capital'">현재 명령이 적용될 수도를 지도에서 확인하세요.</small>
+            <small v-else>지도에서 도시를 클릭하거나 아래 목록에서 대상을 선택하세요.</small>
             <div class="map-selection-status" aria-live="polite" data-testid="command-map-selection-status">
-                <span class="current-city-status">
+                <span v-if="presentation.mapTarget !== 'capital'" class="current-city-status">
                     <span class="status-key">현재 도시</span>
                     <strong>{{ currentCityName }}</strong>
                 </span>
-                <span aria-hidden="true">→</span>
+                <span v-if="presentation.mapTarget !== 'capital'" aria-hidden="true">→</span>
                 <span class="selected-target-status">
                     <span class="status-key">{{
-                        presentation.mapTarget === 'nation' ? '선택 국가' : '선택 도시'
+                        presentation.mapTarget === 'nation'
+                            ? '선택 국가'
+                            : presentation.mapTarget === 'capital'
+                              ? '현재 수도'
+                              : '선택 도시'
                     }}</span>
                     <strong>{{ selectedMapTargetName }}</strong>
                 </span>
@@ -320,16 +411,29 @@ watch(
                 :maxlength="field.max"
                 @input="values[field.key] = ($event.target as HTMLInputElement).value"
             />
-            <input
-                v-else-if="field.kind === 'number'"
-                :id="`command-arg-${field.key}`"
-                type="number"
-                :value="Number(values[field.key] ?? 0)"
-                :min="field.min"
-                :max="field.max"
-                :step="field.step"
-                @input="values[field.key] = Number(($event.target as HTMLInputElement).value)"
-            />
+            <div v-else-if="field.kind === 'number'" class="number-options">
+                <input
+                    :id="`command-arg-${field.key}`"
+                    type="number"
+                    :value="Number(values[field.key] ?? 0)"
+                    :min="effectiveMin(field)"
+                    :max="effectiveMax(field)"
+                    :step="effectiveStep(field)"
+                    @input="values[field.key] = Number(($event.target as HTMLInputElement).value)"
+                />
+                <select
+                    v-if="amountPreset"
+                    aria-label="금액 프리셋"
+                    class="amount-preset"
+                    value=""
+                    @change="setNumberPreset(field, ($event.target as HTMLSelectElement).value)"
+                >
+                    <option value="" disabled>프리셋</option>
+                    <option v-for="preset in amountPreset.values" :key="preset" :value="preset">
+                        {{ preset.toLocaleString() }}
+                    </option>
+                </select>
+            </div>
             <select
                 v-else-if="field.kind === 'select'"
                 :id="`command-arg-${field.key}`"
@@ -362,11 +466,23 @@ watch(
                     <input
                         type="number"
                         :value="(values[field.key] as number[] | undefined)?.[index] ?? 0"
-                        :min="field.min"
-                        :max="field.max"
-                        :step="field.step"
+                        :min="effectiveMin(field)"
+                        :max="effectiveMax(field)"
+                        :step="effectiveStep(field)"
                         @input="setTupleValue(field, index, ($event.target as HTMLInputElement).value)"
                     />
+                    <select
+                        v-if="amountPreset"
+                        :aria-label="`${tupleLabel} 금액 프리셋`"
+                        class="amount-preset"
+                        value=""
+                        @change="setNumberPreset(field, ($event.target as HTMLSelectElement).value, index)"
+                    >
+                        <option value="" disabled>프리셋</option>
+                        <option v-for="preset in amountPreset.values" :key="preset" :value="preset">
+                            {{ preset.toLocaleString() }}
+                        </option>
+                    </select>
                 </label>
             </div>
             <div
@@ -383,6 +499,30 @@ watch(
                     aria-hidden="true"
                 />
                 <span>{{ selectedOptionFor(field)?.description }}</span>
+            </div>
+            <div
+                v-if="showOptionCards(field)"
+                class="target-option-list"
+                :data-testid="field.optionSource === 'nations' ? 'nation-target-list' : 'general-target-list'"
+            >
+                <button
+                    v-for="option in optionsFor(field)"
+                    :key="String(option.value)"
+                    type="button"
+                    class="target-option"
+                    :class="{
+                        selected: option.value === values[field.key],
+                        unavailable: option.availableNow === false,
+                    }"
+                    @click="setSelectValue(field, String(option.value))"
+                >
+                    <span v-if="option.color" class="option-color" :style="{ backgroundColor: option.color }" />
+                    <strong>{{ option.label }}</strong>
+                    <span class="target-state">{{
+                        option.availableNow === false ? '현재 불가' : option.availableNow ? '우선 대상' : '대상'
+                    }}</span>
+                    <small>{{ option.description }}</small>
+                </button>
             </div>
         </div>
         <div v-if="!isValid" class="argument-error" role="alert">필수 입력을 확인하세요.</div>
@@ -484,6 +624,74 @@ watch(
     line-height: 1.35;
 }
 
+.target-option-list {
+    grid-column: 1 / -1;
+    display: grid;
+    max-height: 230px;
+    overflow-y: auto;
+    border-top: 1px solid rgba(201, 164, 90, 0.2);
+}
+
+.target-option {
+    display: grid;
+    grid-template-columns: 18px minmax(0, auto) max-content;
+    align-items: center;
+    gap: 3px 7px;
+    border: 0;
+    border-bottom: 1px solid rgba(201, 164, 90, 0.16);
+    padding: 6px 8px;
+    background: rgba(7, 9, 12, 0.82);
+    color: #e8ddc4;
+    font: inherit;
+    text-align: left;
+    cursor: pointer;
+}
+
+.target-option:hover,
+.target-option:focus-visible {
+    background: rgba(201, 164, 90, 0.13);
+    outline: 1px solid rgba(201, 164, 90, 0.6);
+    outline-offset: -1px;
+}
+
+.target-option.selected {
+    background: rgba(201, 164, 90, 0.2);
+    box-shadow: inset 3px 0 #e0bc6d;
+}
+
+.target-option.unavailable {
+    color: rgba(232, 221, 196, 0.58);
+}
+
+.target-option > strong {
+    grid-column: 2;
+}
+
+.target-option > .option-color + strong {
+    grid-column: 2;
+}
+
+.target-option > strong:first-child {
+    grid-column: 1 / 3;
+}
+
+.target-state {
+    grid-column: 3;
+    color: #aee6a7;
+    font-size: 10px;
+    text-align: right;
+}
+
+.target-option.unavailable .target-state {
+    color: #e9a29a;
+}
+
+.target-option small {
+    grid-column: 1 / -1;
+    color: inherit;
+    line-height: 1.35;
+}
+
 .option-color {
     width: 18px;
     height: 18px;
@@ -511,6 +719,19 @@ select {
     font: inherit;
 }
 
+.number-options {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(90px, 0.45fr);
+    gap: 5px;
+    padding-right: 6px;
+}
+
+.number-options input,
+.number-options select {
+    width: 100%;
+    margin-right: 0;
+}
+
 .boolean-options,
 .tuple-options {
     display: flex;
@@ -531,15 +752,32 @@ select {
 }
 
 .tuple-options label {
-    display: flex;
+    display: grid;
+    grid-template-columns: max-content minmax(68px, 1fr) minmax(82px, 0.7fr);
     align-items: center;
     gap: 4px;
     min-width: 0;
 }
 
 .tuple-options input {
-    width: 80px;
+    width: 100%;
     margin: 0;
+}
+
+.tuple-options .amount-preset {
+    min-width: 0;
+    width: 100%;
+    margin: 0;
+}
+
+@media (max-width: 520px) {
+    .tuple-options {
+        flex-direction: column;
+    }
+
+    .tuple-options label {
+        width: 100%;
+    }
 }
 
 .argument-error {

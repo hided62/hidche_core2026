@@ -3,6 +3,19 @@ export type CommandOption = {
     label: string;
     color?: string;
     description?: string;
+    availableNow?: boolean;
+    gold?: number;
+    rice?: number;
+    crew?: number;
+    troopId?: number;
+};
+
+export type CommandAmountPreset = {
+    values: number[];
+    defaultValue: number;
+    min: number;
+    max: number;
+    step: number;
 };
 
 export type CommandMapData = {
@@ -94,6 +107,7 @@ export type CommandTable = {
     inputOptions: {
         cities: CommandOption[];
         nations: CommandOption[];
+        nationTargets?: Record<string, CommandOption[]>;
         generals: CommandOption[];
         generalTargets?: Record<string, CommandOption[]>;
         crewTypes: CommandOption[];
@@ -102,6 +116,7 @@ export type CommandTable = {
         colors: CommandOption[];
         items: Record<string, CommandOption[]>;
         recruitment: RecruitmentInfo | null;
+        amountPresets?: Record<string, CommandAmountPreset>;
         context?: CommandInputContext;
     };
 };

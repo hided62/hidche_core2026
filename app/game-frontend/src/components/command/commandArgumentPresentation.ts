@@ -1,10 +1,11 @@
 export type CommandArgumentPresentation = {
     lines: string[];
-    mapTarget?: 'city' | 'nation';
+    mapTarget?: 'city' | 'nation' | 'capital';
 };
 
 const cityTarget = (lines: string[]): CommandArgumentPresentation => ({ lines, mapTarget: 'city' });
 const nationTarget = (lines: string[]): CommandArgumentPresentation => ({ lines, mapTarget: 'nation' });
+const capitalTarget = (lines: string[]): CommandArgumentPresentation => ({ lines, mapTarget: 'capital' });
 
 // Ref hwe/ts/processing의 명령별 안내를 예약 명령 옵션창에 맞게 옮긴다.
 // 징병/모병은 별도 이관 범위이므로 이 표에 넣지 않는다.
@@ -33,6 +34,14 @@ const PRESENTATIONS: Record<string, CommandArgumentPresentation> = {
     ]),
     cr_인구이동: cityTarget(['현재 도시의 인구를 선택한 인접 도시로 이동합니다.']),
     che_발령: cityTarget(['선택한 도시로 아국 장수를 발령합니다.', '아국 도시만 대상이 됩니다.']),
+    che_증축: capitalTarget([
+        '현재 수도를 증축해 인구·내정·성벽의 최대치를 높입니다.',
+        '지도에는 이번 명령의 대상인 현재 수도가 강조됩니다.',
+    ]),
+    che_감축: capitalTarget([
+        '현재 수도를 감축해 인구·내정·성벽의 최대치를 낮추고 국고를 회수합니다.',
+        '지도에는 이번 명령의 대상인 현재 수도가 강조됩니다.',
+    ]),
 
     che_선전포고: nationTarget([
         '선택한 국가에 선전포고합니다.',
