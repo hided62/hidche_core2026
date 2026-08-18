@@ -327,6 +327,11 @@ integration('generic general creation through the durable turn daemon', () => {
             })
         ).toMatchObject({ value: 7351 });
         expect(await db.inheritancePoint.count({ where: { userId } })).toBe(1);
+        await expect(
+            db.gameInheritanceBaseline.findUniqueOrThrow({
+                where: { serverId_userId: { serverId: profile, userId } },
+            })
+        ).resolves.toMatchObject({ openingPoint: 10_351, source: 'FIRST_ACTIVITY' });
         expect(await db.inheritanceLog.count({ where: { userId } })).toBe(9);
         expect(
             await db.inheritanceLog.findFirst({

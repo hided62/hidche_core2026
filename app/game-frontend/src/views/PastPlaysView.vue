@@ -20,6 +20,9 @@ type ArchiveSeason = Archive['seasons'][number] & {
     source?: string;
     openedAt?: string | null;
     date?: string | null;
+    status?: 'OPEN' | 'COMPLETED' | 'ABANDONED' | 'LEGACY';
+    cancellationId?: string | null;
+    cancelledAt?: string | null;
 };
 
 type ArchiveGeneral = {
@@ -129,6 +132,12 @@ const formatOpenedAt = (season: ArchiveSeason): string => {
     if (Number.isNaN(date.getTime())) return '개장일 미상';
     return `${new Intl.DateTimeFormat('ko-KR', { dateStyle: 'medium', timeZone: 'Asia/Seoul' }).format(date)} 개장`;
 };
+const archiveLabel = (season: ArchiveSeason): string =>
+    season.status === 'ABANDONED' ? '취소 게임' : '이전 서버 기록';
+const archiveIdentifier = (season: ArchiveSeason): string =>
+    season.status === 'ABANDONED' && season.cancellationId
+        ? `취소 ID ${season.cancellationId.slice(0, 8)}`
+        : season.serverId;
 
 const selectGeneral = async (season: ArchiveSeason, generalNo: number): Promise<void> => {
     const key = detailKey(season, generalNo);
@@ -197,7 +206,7 @@ onMounted(() => {
             </nav>
         </header>
 
-        <p class="page-note">이전 서버에서 종료된 기수에 보관된 내 장수 기록입니다.</p>
+        <p class="page-note">종료된 기수와 관리자가 보존한 취소 게임의 내 장수 기록입니다.</p>
         <p v-if="error" class="error-row">{{ error }}</p>
         <p v-else-if="loading && !archive" class="empty-row">불러오는 중...</p>
         <p v-else-if="archive?.seasons.length === 0" class="empty-row">보관된 지난 플레이가 없습니다.</p>
@@ -205,15 +214,19 @@ onMounted(() => {
         <section v-for="season in archive?.seasons ?? []" :key="detailKey(season, 0)" class="season-card">
             <div class="season-heading legacy-bg2">
                 <div class="season-identity">
-                    <strong class="archive-label">이전 서버 기록</strong>
+                    <strong class="archive-label" :class="{ abandoned: season.status === 'ABANDONED' }">
+                        {{ archiveLabel(season) }}
+                    </strong>
                     <strong>{{ seasonSourceProfile(season) }}</strong>
-                    <span>{{ season.serverId }}</span>
+                    <span>{{ archiveIdentifier(season) }}</span>
                 </div>
                 <div class="season-meta">
                     <span>{{ formatOpenedAt(season) }}</span>
                     <span>
                         {{ season.scenarioName ?? '시나리오 미상' }}
-                        <template v-if="season.season !== null"> · {{ season.season }}기</template>
+                        <template v-if="season.status !== 'ABANDONED' && season.season !== null">
+                            · {{ season.season }}기
+                        </template>
                     </span>
                 </div>
             </div>
@@ -423,6 +436,11 @@ onMounted(() => {
     border: 1px solid #777;
     color: #fff !important;
     background: #00582c;
+}
+
+.archive-label.abandoned {
+    border-color: #956f38;
+    background: #66471f;
 }
 
 .season-meta {

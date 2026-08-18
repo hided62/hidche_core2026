@@ -60,6 +60,7 @@ const ROLE_ADMIN_PROFILE_RUNTIME = 'admin.profiles.runtime';
 const ROLE_ADMIN_PROFILE_SETTINGS = 'admin.profiles.settings';
 const ROLE_ADMIN_PROFILE_DEPLOY = 'admin.profiles.deploy';
 const ROLE_ADMIN_SCENARIO_RESET = 'admin.scenarios.reset';
+const ROLE_ADMIN_GAME_CANCEL = 'admin.games.cancel';
 const ROLE_ADMIN_RELEASES = 'admin.releases.manage';
 const ROLE_ADMIN_NOTICE = 'admin.notice.manage';
 const ROLE_ADMIN_AUDIT = 'admin.audit.read';
@@ -1268,6 +1269,65 @@ export const adminRouter = router({
                     });
                 }
             }),
+        requestGameCancellation: adminProcedure
+            .input(
+                z.object({
+                    profileName: z.string().min(1),
+                    historyMode: z.enum(['RETAIN_ABANDONED', 'DELETE']),
+                    generalMode: z.enum(['RETAIN', 'DELETE']),
+                    earnedPointRetentionPercent: z.number().int().min(0).max(100),
+                    reason: z.string().trim().min(5).max(500),
+                })
+            )
+            .mutation(async ({ ctx, input }) => {
+                const adminAuth = requireAdminAuth(ctx);
+                assertPermission(adminAuth, ROLE_ADMIN_GAME_CANCEL, input.profileName);
+                const profile = await ctx.profiles.getProfile(input.profileName);
+                if (!profile) {
+                    throw new TRPCError({ code: 'NOT_FOUND', message: 'Profile not found.' });
+                }
+                if (!['PREOPEN', 'RUNNING', 'PAUSED'].includes(profile.status)) {
+                    throw new TRPCError({
+                        code: 'BAD_REQUEST',
+                        message: 'Only a PREOPEN, RUNNING, or PAUSED game can be cancelled.',
+                    });
+                }
+                const releaseState = await ctx.releases.getState();
+                const sourceRef = releaseState.activeCommitSha?.trim();
+                if (!sourceRef) {
+                    throw new TRPCError({
+                        code: 'BAD_REQUEST',
+                        message: 'The Gateway has no active release commit for the cancellation migration boundary.',
+                    });
+                }
+                try {
+                    const resolvedCommitSha = await resolveGitCommitSha(sourceRef);
+                    return await ctx.profiles.createOperation({
+                        profileName: input.profileName,
+                        type: 'CANCEL_GAME',
+                        sourceMode: 'COMMIT',
+                        sourceRef: resolvedCommitSha,
+                        payload: {
+                            historyMode: input.historyMode,
+                            generalMode: input.generalMode,
+                            earnedPointRetentionPercent: input.earnedPointRetentionPercent,
+                        } as GatewayPrisma.JsonObject,
+                        reason: input.reason,
+                        requestedBy: adminAuth.user.id,
+                    });
+                } catch (error) {
+                    if (!isUniqueConstraintError(error)) {
+                        throw new TRPCError({
+                            code: 'BAD_REQUEST',
+                            message: 'The active Gateway release commit cannot be resolved for game cancellation.',
+                        });
+                    }
+                    throw new TRPCError({
+                        code: 'CONFLICT',
+                        message: 'This profile already has a queued or running operation.',
+                    });
+                }
+            }),
         requestDeploy: adminProcedure
             .input(
                 z.object({
@@ -1340,6 +1400,18 @@ export const adminRouter = router({
                 if (!profile) {
                     throw new TRPCError({ code: 'NOT_FOUND', message: 'Profile not found.' });
                 }
+                if (input.action === 'START' && !gatewayProfileCapabilities(profile.status).operatorResumable) {
+                    throw new TRPCError({
+                        code: 'BAD_REQUEST',
+                        message: 'This profile must be reset before it can be started.',
+                    });
+                }
+                if (input.action === 'STOP' && !gatewayProfileCapabilities(profile.status).runtimeExpected) {
+                    throw new TRPCError({
+                        code: 'BAD_REQUEST',
+                        message: 'Only a running profile can be stopped.',
+                    });
+                }
                 try {
                     const operation = await ctx.profiles.createOperation({
                         profileName: input.profileName,
@@ -1367,9 +1439,11 @@ export const adminRouter = router({
             const permission =
                 previous.type === 'RESET'
                     ? ROLE_ADMIN_SCENARIO_RESET
-                    : previous.type === 'DEPLOY'
-                      ? ROLE_ADMIN_PROFILE_DEPLOY
-                      : ROLE_ADMIN_PROFILE_RUNTIME;
+                    : previous.type === 'CANCEL_GAME'
+                      ? ROLE_ADMIN_GAME_CANCEL
+                      : previous.type === 'DEPLOY'
+                        ? ROLE_ADMIN_PROFILE_DEPLOY
+                        : ROLE_ADMIN_PROFILE_RUNTIME;
             assertPermission(adminAuth, permission, previous.profileName);
             const cancelled = await ctx.profiles.cancelOperation(input.id);
             if (!cancelled) {
@@ -1389,9 +1463,11 @@ export const adminRouter = router({
             const permission =
                 previous.type === 'RESET'
                     ? ROLE_ADMIN_SCENARIO_RESET
-                    : previous.type === 'DEPLOY'
-                      ? ROLE_ADMIN_PROFILE_DEPLOY
-                      : ROLE_ADMIN_PROFILE_RUNTIME;
+                    : previous.type === 'CANCEL_GAME'
+                      ? ROLE_ADMIN_GAME_CANCEL
+                      : previous.type === 'DEPLOY'
+                        ? ROLE_ADMIN_PROFILE_DEPLOY
+                        : ROLE_ADMIN_PROFILE_RUNTIME;
             assertPermission(adminAuth, permission, previous.profileName);
             if (previous.type === 'RESET') {
                 const payload = readMetaObject(previous.payload);

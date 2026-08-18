@@ -25,7 +25,11 @@ const auth: GameSessionTokenPayload = {
     sanctions: {},
 };
 
-const context = (session: GameSessionTokenPayload | null, includeLegacy = false): GameApiContext => {
+const context = (
+    session: GameSessionTokenPayload | null,
+    includeLegacy = false,
+    includeCancellation = false
+): GameApiContext => {
     const db = {
         $queryRaw: async (query: { strings?: readonly string[] }) => {
             if (!includeLegacy) return [];
@@ -236,9 +240,26 @@ const context = (session: GameSessionTokenPayload | null, includeLegacy = false)
                     season: 1,
                     scenario: 100,
                     scenarioName: '테스트',
+                    status: 'COMPLETED',
                     env: {},
                 },
             ],
+        },
+        gameCancellation: {
+            findMany: async () =>
+                includeCancellation
+                    ? [
+                          {
+                              id: 'cancel-fixture',
+                              serverId: 'che_legacy_1',
+                              originalSeason: 1,
+                              scenario: 100,
+                              scenarioName: '테스트',
+                              openedAt: new Date('2025-01-02T00:00:00.000Z'),
+                              cancelledAt: new Date('2025-01-03T00:00:00.000Z'),
+                          },
+                      ]
+                    : [],
         },
         oldNation: {
             findMany: async () => [
@@ -357,6 +378,21 @@ describe('archive.myPastPlays', () => {
         await expect(appRouter.createCaller(context(otherUser)).archive.myPastPlayDetail(input)).rejects.toMatchObject({
             code: 'NOT_FOUND',
         });
+    });
+
+    it('labels a retained cancellation as an unnumbered abandoned game without a dynasty link', async () => {
+        const result = await appRouter.createCaller(context(auth, false, true)).archive.myPastPlays();
+
+        expect(result.seasons).toEqual([
+            expect.objectContaining({
+                serverId: 'che_legacy_1',
+                season: null,
+                status: 'ABANDONED',
+                cancellationId: 'cancel-fixture',
+                cancelledAt: '2025-01-03T00:00:00.000Z',
+                dynastyId: null,
+            }),
+        ]);
     });
 
     it('returns normalized previous-server detail from the dedicated archive without exposing raw data', async () => {

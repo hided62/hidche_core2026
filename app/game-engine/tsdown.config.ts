@@ -7,6 +7,7 @@ export default defineConfig({
         'scenario/mapLoader': 'src/scenario/mapLoader.ts',
         'scenario/scenarioComposition': 'src/scenario/scenarioComposition.ts',
         'scenario/scenarioLoader': 'src/scenario/scenarioLoader.ts',
+        'scenario/gameCancellation': 'src/scenario/gameCancellation.ts',
         'scenario/scenarioSeeder': 'src/scenario/scenarioSeeder.ts',
         'scenario/unitSetLoader': 'src/scenario/unitSetLoader.ts',
         'turn/databaseHooks': 'src/turn/databaseHooks.ts',

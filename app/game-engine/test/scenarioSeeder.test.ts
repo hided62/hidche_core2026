@@ -93,6 +93,41 @@ const canRun = await canConnectToDatabase(databaseUrl);
 const describeDb = describe.runIf(canRun);
 
 describeDb('scenario database seed', () => {
+    test('snapshots the complete opening inheritance balance before game activity', async () => {
+        const serverId = 'scenario-seeder-inheritance-baseline';
+        const userId = 'scenario-seeder-inheritance-user';
+        const connector = createGamePostgresConnector({ url: databaseUrl });
+        await connector.connect();
+        try {
+            await connector.prisma.gameInheritanceBaseline.deleteMany({ where: { serverId } });
+            await connector.prisma.gameHistory.deleteMany({ where: { serverId } });
+            await connector.prisma.inheritancePoint.deleteMany({ where: { userId } });
+            await connector.prisma.inheritancePoint.createMany({
+                data: [
+                    { userId, key: 'previous', value: 10_000 },
+                    { userId, key: 'lived_month', value: 351.9 },
+                ],
+            });
+
+            await seedScenarioToDatabase({
+                scenarioId: 903,
+                databaseUrl,
+                installOptions: { serverId },
+            });
+
+            await expect(
+                connector.prisma.gameInheritanceBaseline.findUniqueOrThrow({
+                    where: { serverId_userId: { serverId, userId } },
+                })
+            ).resolves.toMatchObject({ openingPoint: 10_351, source: 'OPENING' });
+        } finally {
+            await connector.prisma.gameInheritanceBaseline.deleteMany({ where: { serverId } });
+            await connector.prisma.gameHistory.deleteMany({ where: { serverId } });
+            await connector.prisma.inheritancePoint.deleteMany({ where: { userId } });
+            await connector.disconnect();
+        }
+    });
+
     test('writes scenario data into tables', async () => {
         const { seed } = await seedScenarioToDatabase({
             scenarioId,

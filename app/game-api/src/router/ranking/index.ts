@@ -414,6 +414,7 @@ export const rankingRouter = router({
                 return Array.from(optionMap.values());
             }
             const rows = await ctx.db.gameHistory.findMany({
+                where: { status: 'COMPLETED' },
                 select: { season: true, scenario: true, scenarioName: true },
                 orderBy: [{ season: 'desc' }, { scenario: 'asc' }],
             });

@@ -31,6 +31,7 @@ const buildCaller = async (
         initialProfileStatus?: GatewayProfileRecord['status'];
         profileScenario?: string | null;
         profileMeta?: GatewayProfileRecord['meta'];
+        releaseCommitSha?: string;
         initialOperation?: GatewayOperationRecord;
         profileLogVisibilityAfterPolls?: number;
         releaseLogVisibilityAfterPolls?: number;
@@ -158,7 +159,7 @@ const buildCaller = async (
     const releases: GatewayReleaseRepository = {
         getState: async () => ({
             id: 'gateway',
-            activeCommitSha: '1111111111111111111111111111111111111111',
+            activeCommitSha: options.releaseCommitSha ?? '1111111111111111111111111111111111111111',
             activeWorkspace: '/srv/sammo/current',
             previousCommitSha: '2222222222222222222222222222222222222222',
             previousWorkspace: '/srv/sammo/previous',
@@ -476,6 +477,99 @@ describe('gateway notice API', () => {
 });
 
 describe('admin operation API', () => {
+    it('queues game cancellation only with its dedicated scoped capability', async () => {
+        const harness = await buildCaller(
+            async (input) => ({
+                id: '77777777-7777-4777-8777-777777777777',
+                profileName: input.profileName,
+                type: input.type,
+                status: 'QUEUED',
+                sourceMode: input.sourceMode,
+                sourceRef: input.sourceRef,
+                payload: input.payload ?? {},
+                reason: input.reason,
+                requestedBy: input.requestedBy,
+                createdAt: '2026-08-18T00:00:00.000Z',
+                updatedAt: '2026-08-18T00:00:00.000Z',
+            }),
+            {
+                adminRoles: ['admin.games.cancel:che:2'],
+                firstUserIsAdmin: false,
+                initialProfileStatus: 'RUNNING',
+                releaseCommitSha: 'HEAD',
+            }
+        );
+
+        await harness.caller.admin.operations.requestGameCancellation({
+            profileName: 'che:2',
+            historyMode: 'RETAIN_ABANDONED',
+            generalMode: 'DELETE',
+            earnedPointRetentionPercent: 35,
+            reason: '잘못 연 게임 취소',
+        });
+
+        expect(harness.createdInputs[0]).toMatchObject({
+            profileName: 'che:2',
+            type: 'CANCEL_GAME',
+            sourceMode: 'COMMIT',
+            sourceRef: expect.stringMatching(/^[0-9a-f]{40}$/u),
+            payload: {
+                historyMode: 'RETAIN_ABANDONED',
+                generalMode: 'DELETE',
+                earnedPointRetentionPercent: 35,
+            },
+            reason: '잘못 연 게임 취소',
+        });
+    });
+
+    it('does not treat scenario reset permission as game cancellation permission', async () => {
+        const harness = await buildCaller(
+            async () => {
+                throw new Error('not used');
+            },
+            {
+                adminRoles: ['admin.scenarios.reset:che:2'],
+                firstUserIsAdmin: false,
+                initialProfileStatus: 'RUNNING',
+                releaseCommitSha: 'HEAD',
+            }
+        );
+
+        await expect(
+            harness.caller.admin.operations.requestGameCancellation({
+                profileName: 'che:2',
+                historyMode: 'DELETE',
+                generalMode: 'DELETE',
+                earnedPointRetentionPercent: 0,
+                reason: '잘못 연 게임 취소',
+            })
+        ).rejects.toMatchObject({ code: 'FORBIDDEN' });
+    });
+
+    it('rejects cancellation after the profile is already terminal', async () => {
+        const harness = await buildCaller(
+            async () => {
+                throw new Error('not used');
+            },
+            {
+                adminRoles: ['admin.games.cancel:che:2'],
+                firstUserIsAdmin: false,
+                initialProfileStatus: 'COMPLETED',
+                releaseCommitSha: 'HEAD',
+            }
+        );
+
+        await expect(
+            harness.caller.admin.operations.requestGameCancellation({
+                profileName: 'che:2',
+                historyMode: 'RETAIN_ABANDONED',
+                generalMode: 'RETAIN',
+                earnedPointRetentionPercent: 0,
+                reason: '완료 게임 취소 시도',
+            })
+        ).rejects.toMatchObject({ code: 'BAD_REQUEST' });
+    });
+
     it('queues a start operation with the authenticated requester', async () => {
         const operation = {
             id: '11111111-1111-4111-8111-111111111111',
@@ -504,9 +598,12 @@ describe('admin operation API', () => {
     });
 
     it('reports an active-operation uniqueness conflict', async () => {
-        const harness = await buildCaller(async () => {
-            throw { code: 'P2002' };
-        });
+        const harness = await buildCaller(
+            async () => {
+                throw { code: 'P2002' };
+            },
+            { initialProfileStatus: 'RUNNING' }
+        );
 
         await expect(
             harness.caller.admin.operations.requestRuntime({

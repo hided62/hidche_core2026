@@ -1,6 +1,9 @@
-import type { TurnGeneral } from './types.js';
-
 const DEX_LIMIT = 1_275_975;
+
+interface InheritancePointGeneral {
+    meta: Record<string, unknown>;
+    inheritancePoints?: Record<string, number>;
+}
 
 const STORED_INHERITANCE_KEYS = [
     'lived_month',
@@ -31,7 +34,7 @@ const readNumber = (source: Record<string, unknown>, key: string): number => {
     return 0;
 };
 
-const computeDexPoint = (general: TurnGeneral): number => {
+const computeDexPoint = (general: InheritancePointGeneral): number => {
     let totalDexterity = 0;
     for (let index = 1; index <= 5; index += 1) {
         let dexterity = readNumber(general.meta, `dex${index}`);
@@ -44,7 +47,7 @@ const computeDexPoint = (general: TurnGeneral): number => {
     return totalDexterity * 0.001;
 };
 
-const computeBettingPoint = (general: TurnGeneral): number => {
+const computeBettingPoint = (general: InheritancePointGeneral): number => {
     const wins = readNumber(general.meta, 'betwin');
     const gold = readNumber(general.meta, 'betgold');
     const wonGold = readNumber(general.meta, 'betwingold');
@@ -53,7 +56,7 @@ const computeBettingPoint = (general: TurnGeneral): number => {
 };
 
 export const computeActiveInheritancePoint = (
-    general: TurnGeneral,
+    general: InheritancePointGeneral,
     key: MergedInheritanceKey,
     storedOverride?: number
 ): number => {

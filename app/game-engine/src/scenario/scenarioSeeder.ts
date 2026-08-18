@@ -439,6 +439,7 @@ export const seedScenarioToDatabase = async (options: ScenarioSeedOptions): Prom
                                     : 1,
                             scenario: options.scenarioId,
                             scenarioName: String(seed.scenarioMeta?.title ?? ''),
+                            status: 'OPEN',
                             env: asJson({
                                 config: scenarioConfig,
                                 meta: archivedWorldMeta,
@@ -454,12 +455,33 @@ export const seedScenarioToDatabase = async (options: ScenarioSeedOptions): Prom
                                     : 1,
                             scenario: options.scenarioId,
                             scenarioName: String(seed.scenarioMeta?.title ?? ''),
+                            status: 'OPEN',
                             env: asJson({
                                 config: scenarioConfig,
                                 meta: archivedWorldMeta,
                             }),
                         },
                     });
+
+                    const openingPointRows = await prisma.inheritancePoint.findMany({
+                        select: { userId: true, value: true },
+                        orderBy: { id: 'asc' },
+                    });
+                    const openingPoints = new Map<string, number>();
+                    for (const row of openingPointRows) {
+                        openingPoints.set(row.userId, (openingPoints.get(row.userId) ?? 0) + row.value);
+                    }
+                    if (openingPoints.size > 0) {
+                        await prisma.gameInheritanceBaseline.createMany({
+                            data: Array.from(openingPoints, ([userId, openingPoint]) => ({
+                                serverId: worldMeta.serverId as string,
+                                userId,
+                                openingPoint: Math.trunc(openingPoint),
+                                source: 'OPENING',
+                            })),
+                            skipDuplicates: true,
+                        });
+                    }
                 }
 
                 if (seed.nations.length > 0) {

@@ -21,6 +21,8 @@ export interface DatabaseClient {
     rankData: GamePrisma.RankDataDelegate;
     hallOfFame: GamePrisma.HallOfFameDelegate;
     gameHistory: GamePrisma.GameHistoryDelegate;
+    gameInheritanceBaseline: GamePrisma.GameInheritanceBaselineDelegate;
+    gameCancellation: GamePrisma.GameCancellationDelegate;
     oldNation: GamePrisma.OldNationDelegate;
     oldGeneral: GamePrisma.OldGeneralDelegate;
     emperor: GamePrisma.EmperorDelegate;

@@ -5,7 +5,7 @@ type OperationStatus = 'QUEUED' | 'RUNNING' | 'SUCCEEDED' | 'FAILED' | 'CANCELLE
 type Operation = {
     id: string;
     profileName: string;
-    type: 'RESET' | 'DEPLOY' | 'START' | 'STOP';
+    type: 'RESET' | 'DEPLOY' | 'START' | 'STOP' | 'CANCEL_GAME';
     status: OperationStatus;
     sourceMode?: 'BRANCH' | 'COMMIT';
     sourceRef?: string;
@@ -389,6 +389,22 @@ const installFixture = async (page: Page, state: FixtureState) => {
                 state.operations = [operation];
                 return response(operation);
             }
+            if (name === 'admin.operations.requestGameCancellation') {
+                const operation: Operation = {
+                    id: '88888888-8888-4888-8888-888888888888',
+                    profileName: 'che:default',
+                    type: 'CANCEL_GAME',
+                    status: 'QUEUED',
+                    sourceMode: 'COMMIT',
+                    sourceRef: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+                    payload: {},
+                    requestedBy: 'admin',
+                    createdAt: '2026-08-18T01:00:00.000Z',
+                    updatedAt: '2026-08-18T01:00:00.000Z',
+                };
+                state.operations = [operation];
+                return response(operation);
+            }
             if (name === 'admin.releases.requestGatewayDeploy' || name === 'admin.releases.requestGatewayRollback') {
                 const releaseOperation = {
                     id: '77777777-7777-4777-8777-777777777777',
@@ -698,6 +714,93 @@ test('separates DB-preserving profile deployment from DB reset', async ({ page }
     await expect(page.getByTestId('profile-operation-log-status')).toContainText('SUCCEEDED');
     expect(state.requestBodies.some((entry) => entry.operation === 'admin.operations.requestDeploy')).toBe(true);
     expect(state.requestBodies.some((entry) => entry.operation === 'admin.operations.requestReset')).toBe(false);
+});
+
+test('submits a separately authorized destructive game cancellation on desktop and mobile', async ({
+    page,
+}, testInfo) => {
+    const state: FixtureState = {
+        operations: [],
+        gatewayOperations: [],
+        runtimeRunning: true,
+        requestBodies: [],
+        profileLogProgress: true,
+        capabilities: [{ permission: 'admin.games.cancel', scope: 'PROFILE', scopes: ['che:default'] }],
+    };
+    await installFixture(page, state);
+    const confirmations: string[] = [];
+    page.on('dialog', async (dialog) => {
+        confirmations.push(dialog.message());
+        await dialog.accept();
+    });
+
+    await page.goto('admin/servers/che%3Adefault/cancel');
+    await expect(page).toHaveURL(/\/gateway\/admin\/servers\/che%3Adefault\/cancel$/);
+    await expect(page.getByRole('heading', { name: 'che:default 게임 취소' })).toBeVisible();
+    await expect(page.getByRole('link', { name: '게임 취소', exact: true })).toHaveAttribute('aria-current', 'page');
+    await expect(page.getByRole('link', { name: '시나리오 초기화', exact: true })).toHaveCount(0);
+    await expect(page.getByTestId('request-game-cancellation')).toBeDisabled();
+
+    await page.getByTestId('cancellation-history-mode').selectOption('DELETE');
+    await page.getByTestId('cancellation-general-mode').selectOption('RETAIN');
+    await page.getByTestId('cancellation-retention-percent').fill('35');
+    await page.getByTestId('cancellation-reason').fill('잘못된 시나리오로 개장함');
+    await page.getByTestId('cancellation-confirmation').fill('che:default');
+    const cancelButton = page.getByTestId('request-game-cancellation');
+    await expect(cancelButton).toBeEnabled();
+    await cancelButton.hover();
+    const desktopMetrics = await page.getByTestId('game-cancellation-form').evaluate((form) => {
+        const rect = form.getBoundingClientRect();
+        const style = getComputedStyle(form);
+        const controls = Array.from(form.querySelectorAll('select, input:not([type="range"]), textarea, button')).map(
+            (control) => {
+                const controlRect = control.getBoundingClientRect();
+                return { width: controlRect.width, height: controlRect.height };
+            }
+        );
+        return {
+            x: rect.x,
+            width: rect.width,
+            borderColor: style.borderColor,
+            backgroundColor: style.backgroundColor,
+            minimumControlHeight: Math.min(...controls.map((control) => control.height)),
+        };
+    });
+    expect(desktopMetrics.width).toBeGreaterThan(800);
+    expect(desktopMetrics.minimumControlHeight).toBeGreaterThanOrEqual(21);
+    await page.screenshot({ path: testInfo.outputPath('game-cancellation-desktop.png'), fullPage: true });
+
+    await cancelButton.click();
+    await expect(page.getByText('게임 취소 작업을 등록했습니다.').first()).toBeVisible();
+    await expect(page.getByTestId('operations-table')).toContainText('CANCEL_GAME');
+    expect(confirmations).toHaveLength(1);
+    expect(confirmations[0]).toContain('기수 행 물리 삭제');
+    expect(confirmations[0]).toContain('장수 기록 보존');
+    expect(confirmations[0]).toContain('유산 획득분 35% 보전');
+    const request = state.requestBodies.find((entry) => entry.operation === 'admin.operations.requestGameCancellation');
+    expect(JSON.stringify(request?.body)).toContain('"historyMode":"DELETE"');
+    expect(JSON.stringify(request?.body)).toContain('"generalMode":"RETAIN"');
+    expect(JSON.stringify(request?.body)).toContain('"earnedPointRetentionPercent":35');
+    expect(JSON.stringify(request?.body)).toContain('잘못된 시나리오로 개장함');
+
+    await page.setViewportSize({ width: 390, height: 844 });
+    const mobileMetrics = await page.getByTestId('game-cancellation-form').evaluate((form) => {
+        const rect = form.getBoundingClientRect();
+        return {
+            x: rect.x,
+            width: rect.width,
+            viewportWidth: document.documentElement.clientWidth,
+            documentScrollWidth: document.documentElement.scrollWidth,
+        };
+    });
+    expect(mobileMetrics.x).toBeGreaterThanOrEqual(0);
+    expect(mobileMetrics.x + mobileMetrics.width).toBeLessThanOrEqual(mobileMetrics.viewportWidth);
+    expect(mobileMetrics.documentScrollWidth).toBeLessThanOrEqual(mobileMetrics.viewportWidth);
+    await writeFile(
+        testInfo.outputPath('game-cancellation-metrics.json'),
+        JSON.stringify({ desktopMetrics, mobileMetrics }, null, 2)
+    );
+    await page.screenshot({ path: testInfo.outputPath('game-cancellation-mobile.png'), fullPage: true });
 });
 
 for (const viewportSize of [

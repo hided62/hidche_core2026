@@ -457,6 +457,7 @@ const profileLifecycleText = (profile: AdminProfile): string => {
     if (profile.status === 'RUNNING') return '서버 운영 및 턴 진행 중';
     if (profile.status === 'PREOPEN') return '서버 접근 가능 · 개장 전 턴 정지';
     if (profile.status === 'COMPLETED') return '종료 기수 조회 가능 · 턴 정지';
+    if (profile.status === 'CANCELLED') return '취소 게임 · 접근 및 재개 불가 · 새 시나리오 초기화 필요';
     if (profile.status === 'DISABLED') return '비활성 · 게임 접근 불가';
     return '준비 중 · 게임 접근 불가';
 };
@@ -2162,6 +2163,7 @@ onMounted(() => {
                                 active-tab="status"
                                 :can-deploy="hasCapability('admin.profiles.deploy', profile.profileName)"
                                 :can-reset="hasCapability('admin.scenarios.reset', profile.profileName)"
+                                :can-cancel="hasCapability('admin.games.cancel', profile.profileName)"
                             />
 
                             <div class="flex flex-col md:flex-row md:items-center md:justify-between gap-2">

@@ -12,7 +12,7 @@ import {
 } from '../utils/resetDefaults';
 import { directTrpc, trpc } from '../utils/trpc';
 
-type OperationPageMode = 'version' | 'scenario' | 'gateway';
+type OperationPageMode = 'version' | 'scenario' | 'cancel' | 'gateway';
 
 const props = defineProps<{
     mode: OperationPageMode;
@@ -33,7 +33,7 @@ type Scenario = {
 type Operation = {
     id: string;
     profileName: string;
-    type: 'RESET' | 'DEPLOY' | 'START' | 'STOP';
+    type: 'RESET' | 'DEPLOY' | 'CANCEL_GAME' | 'START' | 'STOP';
     status: 'QUEUED' | 'RUNNING' | 'SUCCEEDED' | 'FAILED' | 'CANCELLED';
     sourceMode?: 'BRANCH' | 'COMMIT';
     sourceRef?: string;
@@ -152,6 +152,13 @@ const gatewayForm = reactive({
     sourceRef: 'main',
     reason: '',
 });
+const cancellationForm = reactive({
+    historyMode: 'RETAIN_ABANDONED' as 'RETAIN_ABANDONED' | 'DELETE',
+    generalMode: 'RETAIN' as 'RETAIN' | 'DELETE',
+    earnedPointRetentionPercent: 0,
+    reason: '',
+    confirmation: '',
+});
 
 const selectedGatewayOperation = computed(
     () => gatewayReleaseOperations.value.find((operation) => operation.id === selectedGatewayOperationId.value) ?? null
@@ -190,12 +197,16 @@ const hasCapability = (permission: string): boolean =>
 
 const pageTitle = computed(() => {
     if (props.mode === 'gateway') return 'Gateway 릴리스';
+    if (props.mode === 'cancel') return `${props.profileName ?? ''} 게임 취소`;
     if (props.mode === 'scenario') return `${props.profileName ?? ''} 시나리오 초기화`;
     return `${props.profileName ?? ''} 버전 업데이트`;
 });
 
 const pageDescription = computed(() => {
     if (props.mode === 'gateway') return 'Gateway control plane 배포와 rollback을 별도 권한으로 관리합니다.';
+    if (props.mode === 'cancel') {
+        return '진행 중 게임을 닫고 정식 기수에서 제외하며 장수 기록과 유산 포인트 보전 범위를 선택합니다.';
+    }
     if (props.mode === 'scenario') {
         return '현재 배포 버전으로 시나리오만 초기화하거나, 배포 권한이 있을 때 새 버전과 함께 초기화합니다.';
     }
@@ -445,8 +456,7 @@ const selectGatewayReleaseOperation = (operationId: string) => {
 };
 
 const toggleGatewayReleaseError = (operationId: string) => {
-    expandedGatewayErrorOperationId.value =
-        expandedGatewayErrorOperationId.value === operationId ? '' : operationId;
+    expandedGatewayErrorOperationId.value = expandedGatewayErrorOperationId.value === operationId ? '' : operationId;
 };
 
 const requestDeploy = async () => {
@@ -627,6 +637,48 @@ const requestReset = async () => {
     }
 };
 
+const requestGameCancellation = async () => {
+    clearStatus();
+    const profileName = selectedProfileName.value;
+    if (!profileName || activeOperation.value) return;
+    if (cancellationForm.reason.trim().length < 5) {
+        errorMessage.value = '취소 사유를 5자 이상 입력해주세요.';
+        return;
+    }
+    if (cancellationForm.confirmation.trim() !== profileName) {
+        errorMessage.value = `확인란에 ${profileName}을 정확히 입력해주세요.`;
+        return;
+    }
+    const historyText =
+        cancellationForm.historyMode === 'RETAIN_ABANDONED' ? '취소 게임으로 보존' : '기수 행 물리 삭제';
+    const generalText = cancellationForm.generalMode === 'RETAIN' ? '장수 기록 보존' : '장수 기록 삭제';
+    if (
+        !window.confirm(
+            `${profileName}의 진행 중 게임을 취소합니다.\n${historyText}\n${generalText}\n유산 획득분 ${cancellationForm.earnedPointRetentionPercent}% 보전\n취소 후 시나리오 초기화 전에는 재개할 수 없습니다.`
+        )
+    ) {
+        return;
+    }
+    submitting.value = true;
+    try {
+        const operation = await adminClient.operations.requestGameCancellation.mutate({
+            profileName,
+            historyMode: cancellationForm.historyMode,
+            generalMode: cancellationForm.generalMode,
+            earnedPointRetentionPercent: cancellationForm.earnedPointRetentionPercent,
+            reason: cancellationForm.reason.trim(),
+        });
+        selectedProfileOperationId.value = operation.id;
+        cancellationForm.confirmation = '';
+        message.value = '게임 취소 작업을 등록했습니다.';
+        await loadState(true);
+    } catch (error) {
+        errorMessage.value = error instanceof Error ? error.message : '게임 취소 요청에 실패했습니다.';
+    } finally {
+        submitting.value = false;
+    }
+};
+
 const cancelOperation = async (operation: Operation) => {
     clearStatus();
     if (!window.confirm('대기 중인 작업을 취소하시겠습니까?')) {
@@ -725,9 +777,10 @@ onBeforeUnmount(() => {
             <ServerProfileTabs
                 v-if="mode !== 'gateway' && profileName"
                 :profile-name="profileName"
-                :active-tab="mode === 'scenario' ? 'scenario' : 'version'"
+                :active-tab="mode === 'scenario' ? 'scenario' : mode === 'cancel' ? 'cancel' : 'version'"
                 :can-deploy="hasCapability('admin.profiles.deploy')"
                 :can-reset="hasCapability('admin.scenarios.reset')"
+                :can-cancel="hasCapability('admin.games.cancel')"
             />
 
             <div v-if="errorMessage" class="rounded border border-red-800 bg-red-950/50 px-4 py-3 text-sm text-red-200">
@@ -740,7 +793,105 @@ onBeforeUnmount(() => {
                 {{ message }}
             </div>
 
-            <section v-if="mode !== 'gateway'">
+            <section v-if="mode === 'cancel'">
+                <form
+                    class="space-y-5 rounded-lg border border-red-900/80 bg-zinc-900 p-5"
+                    data-testid="game-cancellation-form"
+                    @submit.prevent="requestGameCancellation"
+                >
+                    <div class="rounded border border-red-800 bg-red-950/50 px-4 py-3 text-sm text-red-100">
+                        이 작업은 게임을 즉시 닫고 profile을 <strong>CANCELLED</strong> 상태로 만듭니다. 버전
+                        rollback이나 단순 서버 정지가 아니며, 다시 열려면 새 시나리오 초기화가 필요합니다.
+                    </div>
+                    <fieldset class="grid gap-4 md:grid-cols-2">
+                        <label class="text-sm text-zinc-300">
+                            기수 데이터
+                            <select
+                                v-model="cancellationForm.historyMode"
+                                class="mt-1 w-full rounded border border-zinc-700 bg-zinc-950 px-3 py-2"
+                                data-testid="cancellation-history-mode"
+                            >
+                                <option value="RETAIN_ABANDONED">취소 게임으로 DB에 보존</option>
+                                <option value="DELETE">기수 행 물리 삭제</option>
+                            </select>
+                        </label>
+                        <label class="text-sm text-zinc-300">
+                            플레이 장수 기록
+                            <select
+                                v-model="cancellationForm.generalMode"
+                                class="mt-1 w-full rounded border border-zinc-700 bg-zinc-950 px-3 py-2"
+                                data-testid="cancellation-general-mode"
+                            >
+                                <option value="RETAIN">내 지난 플레이에 취소 게임 기록 보존</option>
+                                <option value="DELETE">장수 과거 기록 삭제</option>
+                            </select>
+                        </label>
+                    </fieldset>
+                    <label class="block text-sm text-zinc-300">
+                        당기 획득 유산 포인트 보전율
+                        <div class="mt-1 flex items-center gap-3">
+                            <input
+                                v-model.number="cancellationForm.earnedPointRetentionPercent"
+                                type="range"
+                                min="0"
+                                max="100"
+                                step="1"
+                                class="w-full"
+                                data-testid="cancellation-retention-range"
+                            />
+                            <input
+                                v-model.number="cancellationForm.earnedPointRetentionPercent"
+                                type="number"
+                                min="0"
+                                max="100"
+                                step="1"
+                                class="w-24 rounded border border-zinc-700 bg-zinc-950 px-3 py-2 text-right"
+                                data-testid="cancellation-retention-percent"
+                            />
+                            <span>%</span>
+                        </div>
+                        <span class="mt-1 block text-xs text-zinc-500">
+                            개장 시 보유 원금은 사용 여부와 관계없이 전액 복구되고, 이 비율은 이번 게임에서 획득한
+                            몫에만 적용됩니다.
+                        </span>
+                    </label>
+                    <label class="block text-sm text-zinc-300">
+                        취소 사유
+                        <textarea
+                            v-model="cancellationForm.reason"
+                            rows="3"
+                            maxlength="500"
+                            class="mt-1 w-full rounded border border-zinc-700 bg-zinc-950 px-3 py-2"
+                            placeholder="잘못된 기수/시나리오 설정 등 감사 기록에 남길 사유"
+                            data-testid="cancellation-reason"
+                        ></textarea>
+                    </label>
+                    <label class="block text-sm text-zinc-300">
+                        확인을 위해 <strong>{{ selectedProfileName }}</strong> 입력
+                        <input
+                            v-model="cancellationForm.confirmation"
+                            class="mt-1 w-full rounded border border-red-800 bg-zinc-950 px-3 py-2 font-mono"
+                            :placeholder="selectedProfileName"
+                            data-testid="cancellation-confirmation"
+                        />
+                    </label>
+                    <button
+                        type="submit"
+                        class="w-full rounded bg-red-700 px-4 py-3 font-bold text-white hover:bg-red-600 disabled:cursor-not-allowed disabled:opacity-40"
+                        :disabled="
+                            submitting ||
+                            Boolean(activeOperation) ||
+                            cancellationForm.reason.trim().length < 5 ||
+                            cancellationForm.confirmation.trim() !== selectedProfileName
+                        "
+                        data-testid="request-game-cancellation"
+                    >
+                        진행 게임 취소
+                    </button>
+                </form>
+            </section>
+
+            <section v-if="mode !== 'gateway' && mode !== 'cancel'">
                 <form
                     class="rounded-lg border border-zinc-800 bg-zinc-900 p-5 space-y-5"
                     @submit.prevent="mode === 'scenario' ? requestReset() : requestDeploy()"
@@ -1178,7 +1329,9 @@ onBeforeUnmount(() => {
                                     </td>
                                     <td class="p-2 font-semibold">{{ operation.status }}</td>
                                     <td class="hidden p-2 font-mono sm:table-cell">
-                                        <div class="truncate" :title="operation.sourceRef">{{ operation.sourceRef }}</div>
+                                        <div class="truncate" :title="operation.sourceRef">
+                                            {{ operation.sourceRef }}
+                                        </div>
                                     </td>
                                     <td class="hidden p-2 font-mono sm:table-cell">
                                         {{ shortSha(operation.resolvedCommitSha) }}
@@ -1206,7 +1359,11 @@ onBeforeUnmount(() => {
                                                 data-testid="gateway-release-error-toggle"
                                                 @click="toggleGatewayReleaseError(operation.id)"
                                             >
-                                                {{ expandedGatewayErrorOperationId === operation.id ? '오류 닫기' : '오류 보기' }}
+                                                {{
+                                                    expandedGatewayErrorOperationId === operation.id
+                                                        ? '오류 닫기'
+                                                        : '오류 보기'
+                                                }}
                                             </button>
                                         </div>
                                     </td>
@@ -1227,7 +1384,7 @@ onBeforeUnmount(() => {
                                             <div class="mb-2 text-xs font-semibold text-red-300">오류 상세</div>
                                             <pre
                                                 class="whitespace-pre-wrap break-all font-mono text-xs leading-5 text-red-200"
-                                            >{{ operation.error }}</pre>
+                                                >{{ operation.error }}</pre>
                                         </div>
                                     </td>
                                 </tr>

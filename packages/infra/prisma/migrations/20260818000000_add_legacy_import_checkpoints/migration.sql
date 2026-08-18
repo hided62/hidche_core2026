@@ -1,18 +1,39 @@
 ALTER TABLE "legacy_archive"."import_run"
-    ADD COLUMN "source_key" TEXT,
-    ADD COLUMN "source_fingerprint" CHAR(64),
-    ADD COLUMN "mode" TEXT NOT NULL DEFAULT 'full',
-    ADD COLUMN "progress" JSONB NOT NULL DEFAULT '{}'::jsonb;
+    ADD COLUMN IF NOT EXISTS "source_key" TEXT,
+    ADD COLUMN IF NOT EXISTS "source_fingerprint" CHAR(64),
+    ADD COLUMN IF NOT EXISTS "mode" TEXT NOT NULL DEFAULT 'full',
+    ADD COLUMN IF NOT EXISTS "progress" JSONB NOT NULL DEFAULT '{}'::jsonb;
 
-ALTER TABLE "legacy_archive"."import_run"
-    ADD CONSTRAINT "legacy_archive_import_run_mode_check" CHECK ("mode" IN ('full', 'incremental')),
-    ADD CONSTRAINT "legacy_archive_import_run_fingerprint_check"
-        CHECK ("source_fingerprint" IS NULL OR "source_fingerprint" ~ '^[a-f0-9]{64}$');
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1
+        FROM pg_constraint
+        WHERE conname = 'legacy_archive_import_run_mode_check'
+          AND conrelid = 'legacy_archive.import_run'::regclass
+    ) THEN
+        ALTER TABLE "legacy_archive"."import_run"
+            ADD CONSTRAINT "legacy_archive_import_run_mode_check"
+            CHECK ("mode" IN ('full', 'incremental'));
+    END IF;
 
-CREATE INDEX "legacy_archive_import_run_source_started"
+    IF NOT EXISTS (
+        SELECT 1
+        FROM pg_constraint
+        WHERE conname = 'legacy_archive_import_run_fingerprint_check'
+          AND conrelid = 'legacy_archive.import_run'::regclass
+    ) THEN
+        ALTER TABLE "legacy_archive"."import_run"
+            ADD CONSTRAINT "legacy_archive_import_run_fingerprint_check"
+            CHECK ("source_fingerprint" IS NULL OR "source_fingerprint" ~ '^[a-f0-9]{64}$');
+    END IF;
+END
+$$;
+
+CREATE INDEX IF NOT EXISTS "legacy_archive_import_run_source_started"
     ON "legacy_archive"."import_run" ("source_profile", "source_key", "started_at" DESC);
 
-CREATE TABLE "legacy_archive"."import_checkpoint" (
+CREATE TABLE IF NOT EXISTS "legacy_archive"."import_checkpoint" (
     "source_profile" TEXT NOT NULL,
     "source_key" TEXT NOT NULL,
     "source_fingerprint" CHAR(64) NOT NULL,

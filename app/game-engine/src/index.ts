@@ -12,6 +12,7 @@ export * from './scenario/generalPoolLoader.js';
 export * from './scenario/databaseUrl.js';
 export * from './scenario/mapLoader.js';
 export * from './scenario/scenarioSeeder.js';
+export * from './scenario/gameCancellation.js';
 export * from './turn/types.js';
 export * from './turn/worldLoader.js';
 export * from './turn/inMemoryWorld.js';
