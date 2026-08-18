@@ -125,6 +125,32 @@ table 부재로 실패하지 않습니다. 현 시즌의 장수,
 초기화 작업은 되돌릴 수 있는 앱 rollback과 다릅니다. 운영 DB backup과 새
 scenario 설정을 확인한 뒤 실행해 주세요.
 
+### 잘못 연 게임 취소
+
+게임 취소는 새 시즌을 만드는 `RESET`도, 코드를 되돌리는 release rollback도
+아닙니다. `/gateway/admin/servers/:profileName/cancel`에서 별도
+`admin.games.cancel:<name>` 권한으로만 요청합니다. 대상은 `PREOPEN`, `RUNNING`,
+`PAUSED` 상태여야 하며 이력 보존/삭제, 플레이 장수 기록 보존/삭제, 게임 중 획득한
+유산 포인트의 보전율(기본 0%)과 5자 이상의 사유를 확정해야 합니다.
+
+Orchestrator는 Gateway에 게시된 현재 commit을 고정하고 해당 commit의 build와
+game migration을 준비합니다. 그 뒤 profile을 `STOPPED`로 fence하고 process를
+내린 다음 게임 schema advisory lock과 단일 transaction 안에서 다음을 수행합니다.
+
+- 오픈 원금에 관리자가 고른 획득분 보전율을 적용해 참가자별 유산 포인트 정산
+- `ng_games`를 `ABANDONED`로 남기거나 삭제하고, 원래 기수·시나리오·사유·정산표는
+  `game_cancellation` 감사 행에 보존
+- 선택에 따라 현재/사망 장수의 과거 기록을 `OldGeneral`로 보존하거나 모두 삭제
+- 명예의 전당, 과거 국가, 황제, 연감, 통일 finalization·상속 결과처럼 정식 완료를
+  뜻하는 파생 자료 삭제
+- `world_state`를 취소 표시하고 profile을 재개 불가능한 `CANCELLED`로 전환
+
+Transaction 전 실패하면 원래 profile 상태와 process 복구를 시도합니다. 정산
+transaction이 commit된 뒤에는 실패한 작업을 재개해 게임을 다시 열지 않습니다.
+동일 operation ID와 server ID는 중복 정산되지 않으며, 실패·재시도 기록은 Gateway
+operation log와 `game_cancellation`에 남습니다. 취소 후에는 새 시나리오 초기화로만
+profile을 다시 사용하세요.
+
 ### Profile 실패와 재시도
 
 Build는 현재 runtime을 멈추기 전에 수행합니다. Migration 또는 새 process
@@ -297,6 +323,8 @@ schema head·component 검사는 그대로 수행합니다.
   확인합니다.
 - 시나리오 초기화에서는 새 시즌 상태와 명예의 전당·연감 등 장기보존 자료를
   함께 확인합니다.
+- 게임 취소에서는 profile이 `CANCELLED`이고 process가 정지됐는지, 취소 이력과
+  장수 기록 옵션, 참가자별 원금·획득·보전·최종 포인트가 요청과 같은지 확인합니다.
 
 Local unit, 격리 DB integration과 fixture Chromium 통과는 운영 PM2, 외부
 Caddy/HTTPS, 방화벽과 실제 운영 DB 전환을 증명하지 않습니다. 운영 배포에서는
