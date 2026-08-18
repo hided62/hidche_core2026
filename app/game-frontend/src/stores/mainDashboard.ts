@@ -1,6 +1,10 @@
 import { computed, ref, toRaw, watch } from 'vue';
 import { defineStore } from 'pinia';
-import { MESSAGE_MAILBOX_NATIONAL_BASE, MESSAGE_MAILBOX_PUBLIC, type MessageType } from '@sammo-ts/logic';
+import {
+    MESSAGE_MAILBOX_NATIONAL_BASE,
+    MESSAGE_MAILBOX_PUBLIC,
+    type MessageType,
+} from '@sammo-ts/logic/messages/message.js';
 import {
     applyReadModelDelta,
     cloneReadModelJson,
