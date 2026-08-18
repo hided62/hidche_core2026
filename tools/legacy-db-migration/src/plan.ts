@@ -1,18 +1,31 @@
+import { listBattleResultSeasons, type BattleResultSeasonManifest } from './battleResultSource.js';
+import { migrateBattleResults, type BattleResultMigrationSummary } from './battleResults.js';
 import { createMariaPool, createPostgresPool, querySource } from './db.js';
 import { migrateGame } from './game.js';
 import { migrateGateway, type MigrationSummary } from './gateway.js';
 import type { MigrationMode } from './incremental.js';
 import type { ResolvedMigrationPlan, ResolvedMigrationStage } from './config.js';
+import { migrationInventoryForStage } from './inventory.js';
 
 export interface PlanRunSummary {
     command: 'run-plan';
     sourceSet: string;
     mode: MigrationMode;
     apply: boolean;
-    stages: Array<{ name: string; status: 'COMPLETED'; summary: MigrationSummary }>;
+    stages: Array<{
+        name: string;
+        status: 'COMPLETED';
+        summary: MigrationSummary;
+        battleResults?: BattleResultMigrationSummary;
+    }>;
 }
 
-const preflightStage = async (stage: ResolvedMigrationStage): Promise<void> => {
+interface StagePreflight {
+    battleResults?: { seasons: number; files: number; bytes: number };
+    battleResultManifests?: readonly BattleResultSeasonManifest[];
+}
+
+const preflightStage = async (stage: ResolvedMigrationStage): Promise<StagePreflight> => {
     const source = createMariaPool(stage.sourceUrl);
     const target = createPostgresPool(stage.targetUrl);
     try {
@@ -63,6 +76,27 @@ const preflightStage = async (stage: ResolvedMigrationStage): Promise<void> => {
         if (!targetReady.rows[0]?.table_name) {
             throw new Error(`Target migrations are not current for ${stage.name}; missing ${targetDataTable}`);
         }
+        if (stage.kind === 'game' && stage.battleResults) {
+            const battleResultReady = await target.query<{ table_name: string | null }>(
+                'SELECT to_regclass($1) AS table_name',
+                ['legacy_archive.general_battle_result']
+            );
+            if (!battleResultReady.rows[0]?.table_name) {
+                throw new Error(
+                    `Target migrations are not current for ${stage.name}; missing legacy_archive.general_battle_result`
+                );
+            }
+            const seasons = await listBattleResultSeasons(stage.battleResults, stage.profile!);
+            return {
+                battleResults: {
+                    seasons: seasons.length,
+                    files: seasons.reduce((sum, season) => sum + season.fileCount, 0),
+                    bytes: seasons.reduce((sum, season) => sum + season.totalBytes, 0),
+                },
+                battleResultManifests: seasons,
+            };
+        }
+        return {};
     } finally {
         await source.end();
         await target.end();
@@ -70,11 +104,21 @@ const preflightStage = async (stage: ResolvedMigrationStage): Promise<void> => {
 };
 
 export const checkMigrationPlan = async (plan: ResolvedMigrationPlan): Promise<Record<string, unknown>> => {
-    for (const stage of plan.stages) await preflightStage(stage);
+    const stages = [];
+    for (const stage of plan.stages) {
+        const preflight = await preflightStage(stage);
+        stages.push({
+            name: stage.name,
+            kind: stage.kind,
+            status: 'READY',
+            inventory: migrationInventoryForStage(stage),
+            ...(preflight.battleResults ? { battleResults: preflight.battleResults } : {}),
+        });
+    }
     return {
         command: 'check-plan',
         sourceSet: plan.sourceSet,
-        stages: plan.stages.map((stage) => ({ name: stage.name, kind: stage.kind, status: 'READY' })),
+        stages,
     };
 };
 
@@ -84,7 +128,10 @@ export const runMigrationPlan = async (
     apply: boolean,
     migratedAt = new Date()
 ): Promise<PlanRunSummary> => {
-    await checkMigrationPlan(plan);
+    const preflights = new Map<string, StagePreflight>();
+    for (const stage of plan.stages) {
+        preflights.set(stage.name, await preflightStage(stage));
+    }
     const stages: PlanRunSummary['stages'] = [];
     for (const stage of plan.stages) {
         const source = createMariaPool(stage.sourceUrl);
@@ -95,7 +142,26 @@ export const runMigrationPlan = async (
                 stage.kind === 'gateway'
                     ? await migrateGateway(source, target, apply, migratedAt, execution)
                     : await migrateGame(source, target, apply, stage.profile!, execution);
-            stages.push({ name: stage.name, status: 'COMPLETED', summary });
+            const battleResults =
+                stage.kind === 'game' && stage.battleResults
+                    ? await migrateBattleResults(
+                          target,
+                          stage.battleResults,
+                          apply,
+                          stage.profile!,
+                          {
+                              mode,
+                              source: stage.battleResults.identity,
+                          },
+                          preflights.get(stage.name)?.battleResultManifests
+                      )
+                    : undefined;
+            stages.push({
+                name: stage.name,
+                status: 'COMPLETED',
+                summary,
+                ...(battleResults ? { battleResults } : {}),
+            });
         } finally {
             await source.end();
             await target.end();

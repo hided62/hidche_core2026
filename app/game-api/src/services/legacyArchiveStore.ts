@@ -36,6 +36,12 @@ export interface LegacyGeneralRow {
     data: unknown;
 }
 
+export interface LegacyGeneralBattleResultRow {
+    content: string;
+    lineCount: number;
+    contentHash: string;
+}
+
 export interface LegacyNationRow {
     sourceProfile: LegacyArchiveProfile;
     legacyId: number;
@@ -113,6 +119,24 @@ export const findLegacyGeneral = async (
         FROM "legacy_archive"."general"
         WHERE "owner" = ${input.owner}
           AND "source_profile" = ${input.sourceProfile}
+          AND "server_id" = ${input.serverId}
+          AND "general_no" = ${input.generalNo}
+        LIMIT 1
+    `);
+    return rows[0] ?? null;
+};
+
+export const findLegacyGeneralBattleResult = async (
+    db: LegacyArchiveDatabase,
+    input: { sourceProfile: LegacyArchiveProfile; serverId: string; generalNo: number }
+): Promise<LegacyGeneralBattleResultRow | null> => {
+    const rows = await db.$queryRaw<LegacyGeneralBattleResultRow[]>(GamePrisma.sql`
+        SELECT
+            "content",
+            "line_count" AS "lineCount",
+            "content_hash" AS "contentHash"
+        FROM "legacy_archive"."general_battle_result"
+        WHERE "source_profile" = ${input.sourceProfile}
           AND "server_id" = ${input.serverId}
           AND "general_no" = ${input.generalNo}
         LIMIT 1

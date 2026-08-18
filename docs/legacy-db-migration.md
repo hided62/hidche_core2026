@@ -27,6 +27,10 @@ checks that the checkpoint migrations exist. Only after all stages pass does it
 run Gateway, then `che,kwe,pwe,twe,nya,pya,hwe` in that order, skipping disabled
 profiles. Dry-run and apply use the same transformations and return per-table
 `progress` with strategy, start cursor, end cursor and processed count.
+`check-plan` additionally returns an `inventory` array for every stage. Each
+entry names the source, target, full/incremental strategy and the user-visible or
+archival information transferred, so the reviewed plan itself is the migration
+manifest rather than an implicit table list.
 
 The initial apply uses `--mode full`. A later `--mode incremental` requires the
 same `sourceSet` and a completed checkpoint for every append-only table.
@@ -92,19 +96,20 @@ The password is never accepted as an argument or printed.
 
 ### Game profiles
 
-| Legacy table                    | Dedicated target              | Policy                                                                |
-| ------------------------------- | ----------------------------- | --------------------------------------------------------------------- |
-| `ng_games`                      | `legacy_archive.game_history` | Preserve source profile, opening date, scenario and raw environment   |
-| `hall`                          | `legacy_archive.hall`         | Preserve hall-of-fame rows without mixing current records             |
-| `ng_old_generals`               | `legacy_archive.general`      | Preserve canonical V1 plus private raw JSON and owner                 |
-| `ng_old_nations`                | `legacy_archive.nation`       | Preserve all versions with profile and legacy primary key             |
-| `emperior`                      | `legacy_archive.emperor`      | Preserve dynasty detail under a central archive ID                    |
-| `inheritance_result`            | `inheritance_result`          | Preserve result JSON/string and legacy key                            |
-| `user_record`                   | `inheritance_log`             | Preserve complete long-lived user record                              |
-| persistent `storage` namespaces | `legacy_game_storage`         | Preserve raw `inheritance_*` and `user_*` rows before projection      |
-| `storage:inheritance_point`     | `inheritance_point`           | Project the numeric first tuple item; retain the tuple in raw storage |
-| `storage:user`                  | `inheritance_user_state`      | Project known current inheritance state; retain raw storage           |
-| `ng_history`                    | `legacy_archive.yearbook`     | Preserve map, nation, global history and global action snapshots      |
+| Legacy table                       | Dedicated target                       | Policy                                                                     |
+| ---------------------------------- | -------------------------------------- | -------------------------------------------------------------------------- |
+| `ng_games`                         | `legacy_archive.game_history`          | Preserve source profile, opening date, scenario and raw environment        |
+| `hall`                             | `legacy_archive.hall`                  | Preserve hall-of-fame rows without mixing current records                  |
+| `ng_old_generals`                  | `legacy_archive.general`               | Preserve canonical V1 plus private raw JSON and owner                      |
+| preserved `batres<general_no>.txt` | `legacy_archive.general_battle_result` | Preserve exact old per-general battle-result summaries; exclude phase logs |
+| `ng_old_nations`                   | `legacy_archive.nation`                | Preserve all versions with profile and legacy primary key                  |
+| `emperior`                         | `legacy_archive.emperor`               | Preserve dynasty detail under a central archive ID                         |
+| `inheritance_result`               | `inheritance_result`                   | Preserve result JSON/string and legacy key                                 |
+| `user_record`                      | `inheritance_log`                      | Preserve complete long-lived user record                                   |
+| persistent `storage` namespaces    | `legacy_game_storage`                  | Preserve raw `inheritance_*` and `user_*` rows before projection           |
+| `storage:inheritance_point`        | `inheritance_point`                    | Project the numeric first tuple item; retain the tuple in raw storage      |
+| `storage:user`                     | `inheritance_user_state`               | Project known current inheritance state; retain raw storage                |
+| `ng_history`                       | `legacy_archive.yearbook`              | Preserve map, nation, global history and global action snapshots           |
 
 The archive schema is shared by all game-profile schemas in the PostgreSQL
 database. Every natural key contains `source_profile`; the accepted profiles
@@ -124,16 +129,31 @@ shape. Missing battle aggregates and logs are `null` plus explicit
 `availability`, never fabricated zeroes. The source JSON remains in
 `legacy_archive.general.raw_data` for recovery, but no API returns it.
 
-Ref also retains per-season filesystem trees under `logs/preserved`. They are
-not a MariaDB source: season reset moves the whole prior log directory there,
-and the tree mixes legacy `gen*`, `batlog*`, `batres*`, tournament `fight*`,
-SQLite API logs, and administrative/operational logs. The long-lived importer
-therefore never reads a local or remote filesystem path. The required condensed
-general history is already embedded by Ref in `ng_old_generals.data.history`,
-and yearbook history comes from `ng_history`. Importing the other file artifacts
-would require a separately reviewed archive format, ownership mapping, privacy
-policy, and storage budget; their absence is reported as not preserved rather
-than guessed from filenames.
+Ref also retains heterogeneous per-season filesystem trees under
+`logs/preserved`. When a profile plan supplies `battleResults.directory` and,
+optionally, `sshHost`, the importer selects only immediate regular files matching
+`<profile>_*/batres<general_no>.txt`. The filename and directory provide the
+same `(source_profile, server_id, general_no)` key as the archived general.
+Exact UTF-8 text, line count, source bytes and SHA-256 are stored; the archive
+API returns the lines newest-first like Ref and the frontend renders stripped
+plain text, never trusted archived HTML.
+
+Every season gets a content manifest and checkpoint. Full apply can add or
+atomically replace a changed season and is resumable at season boundaries.
+Incremental apply requires a prior full checkpoint, accepts only new immutable
+seasons and rejects a changed checkpointed season or changed filesystem source
+identity. Both modes reject a disappeared checkpointed season instead of
+silently retaining stale data.
+`check-plan` reports season/file/byte totals without returning log contents.
+
+The importer deliberately excludes `batlog*` phase-by-phase battle detail,
+`gen*` action logs, tournament `fight*`, SQLite API logs and administrative or
+operational files. The production preserved trees contain battle-result files
+only for the older filesystem-log era (observed seasons end around May 2020),
+while later reset-time `general_record` rows were not retained in these trees.
+Consequently this feature recovers meaningful old `batres` summaries but cannot
+claim complete battle-result coverage for every historical season. Missing data
+stays explicitly unavailable.
 
 The source contains legitimate duplicate `(server_id, nation)` old-nation rows
 and `(server_id, year, month)` history rows. `source_id` is consequently part of

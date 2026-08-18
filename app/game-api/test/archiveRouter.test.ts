@@ -30,6 +30,15 @@ const context = (session: GameSessionTokenPayload | null, includeLegacy = false)
         $queryRaw: async (query: { strings?: readonly string[] }) => {
             if (!includeLegacy) return [];
             const sql = query.strings?.join(' ') ?? '';
+            if (sql.includes('legacy_archive"."general_battle_result')) {
+                return [
+                    {
+                        content: '<S>◆</>190년 1월:첫 전투\n<S>◆</>190년 2월:둘째 전투\n',
+                        lineCount: 2,
+                        contentHash: 'a'.repeat(64),
+                    },
+                ];
+            }
             if (sql.includes('legacy_archive"."general')) {
                 return [
                     {
@@ -385,6 +394,13 @@ describe('archive.myPastPlays', () => {
             logs: expect.objectContaining({
                 generalHistory: { available: true, entries: [{ id: 1, text: '이전 서버 열전' }] },
                 battleDetail: { available: false, entries: [] },
+                battleResult: {
+                    available: true,
+                    entries: [
+                        { id: 2, text: '<S>◆</>190년 2월:둘째 전투' },
+                        { id: 1, text: '<S>◆</>190년 1월:첫 전투' },
+                    ],
+                },
             }),
         });
         expect(JSON.stringify(detail)).not.toContain('raw_data');

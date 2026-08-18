@@ -115,7 +115,16 @@ const installArchive = async (page: Page, options: { battleAvailable?: boolean }
                             ],
                         },
                         battleDetail: { available: false, entries: [] },
-                        battleResult: { available: false, entries: [] },
+                        battleResult: {
+                            available: true,
+                            entries: [
+                                {
+                                    id: 2,
+                                    text: '<S>◆</>214년 3월:<div class="small_war_log">관우 7000 ← 장비 0</div>',
+                                },
+                                { id: 1, text: '<S>◆</>214년 2월:관우 6500 → 여포 0' },
+                            ],
+                        },
                         generalAction: { available: false, entries: [] },
                     },
                 });
@@ -177,9 +186,8 @@ test('past plays is available without a current general and preserves desktop in
     await expect(page.locator('[data-log-type="battleDetail"]')).toContainText(
         '이 기수에는 전투 기록이 보존되지 않았습니다.'
     );
-    await expect(page.locator('[data-log-type="battleResult"]')).toContainText(
-        '이 기수에는 전투 결과가 보존되지 않았습니다.'
-    );
+    await expect(page.locator('[data-log-type="battleResult"]')).toContainText('214년 3월:관우 7000 ← 장비 0');
+    await expect(page.locator('[data-log-type="battleResult"]')).not.toContainText('<div');
     await expect(page.locator('[data-log-type="generalAction"]')).toContainText(
         '이 기수에는 개인 기록이 보존되지 않았습니다.'
     );

@@ -18,6 +18,7 @@ import {
 import {
     findLegacyEmperors,
     findLegacyGeneral,
+    findLegacyGeneralBattleResult,
     findLegacyGeneralsByOwner,
     findLegacyGames,
     findLegacyNations,
@@ -412,6 +413,8 @@ export const archiveRouter = router({
         let entry: GeneralArchiveEntry | null = null;
         let nationRows: ArchiveNationEntry[] = [];
         let dynastyId: number | null = null;
+        let battleResultContent: string | null = null;
+        let battleResultAvailable = false;
         if (input.source === 'legacy') {
             if (!LEGACY_ARCHIVE_PROFILES.includes(sourceProfile as LegacyArchiveProfile)) {
                 throw new TRPCError({ code: 'BAD_REQUEST', message: '지원하지 않는 이전 서버 프로필입니다.' });
@@ -435,9 +438,14 @@ export const archiveRouter = router({
                     snapshot: canonicalSnapshot(row.data, row.name),
                 };
                 const keyInput = [{ sourceProfile: profile, serverId: input.serverId }];
-                const [nations, emperors] = await Promise.all([
+                const [nations, emperors, battleResult] = await Promise.all([
                     findLegacyNations(ctx.db, keyInput),
                     findLegacyEmperors(ctx.db, keyInput),
+                    findLegacyGeneralBattleResult(ctx.db, {
+                        sourceProfile: profile,
+                        serverId: input.serverId,
+                        generalNo: input.generalNo,
+                    }),
                 ]);
                 nationRows = nations.map((nation) => ({
                     source: 'legacy',
@@ -448,6 +456,8 @@ export const archiveRouter = router({
                     data: asRecord(nation.data),
                 }));
                 dynastyId = Number(emperors[0]?.id ?? 0) || null;
+                battleResultContent = battleResult?.content ?? null;
+                battleResultAvailable = battleResult !== null;
             }
         } else {
             const row = await ctx.db.oldGeneral.findFirst({
@@ -494,13 +504,18 @@ export const archiveRouter = router({
         const nation = resolveNation(nationMap, entry);
         const snapshot = entry.snapshot;
         const general = await buildGeneralDetail(entry, nation);
+        const battleResultEntries = (battleResultContent ?? '')
+            .split(/\r?\n/u)
+            .map((text, index) => ({ id: index + 1, text }))
+            .filter((item) => item.text.length > 0)
+            .reverse();
         const logs = {
             generalHistory: {
                 available: snapshot.availability.history,
                 entries: snapshot.history.map((text, index) => ({ id: index + 1, text })),
             },
             battleDetail: { available: snapshot.availability.battleDetailLogs, entries: [] },
-            battleResult: { available: snapshot.availability.battleResultLogs, entries: [] },
+            battleResult: { available: battleResultAvailable, entries: battleResultEntries },
             generalAction: { available: false, entries: [] },
         };
         return {
