@@ -2,6 +2,6 @@
     "formatVersion": 1,
     "controllerProtocol": 2,
     "gatewaySchemaHead": "20260818000000_add_legacy_import_checkpoints",
-    "gameSchemaHead": "20260818000000_add_legacy_import_checkpoints",
+    "gameSchemaHead": "20260818010000_add_legacy_battle_result_logs",
     "components": ["gateway-api", "gateway-frontend", "release-controller", "game-api", "game-engine", "game-frontend"]
 }

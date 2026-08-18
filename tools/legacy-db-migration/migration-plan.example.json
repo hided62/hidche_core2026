@@ -23,6 +23,10 @@
                 "passwordFile": "./secrets/mysql-che-password",
                 "tls": true
             },
+            "battleResults": {
+                "sshHost": "serv",
+                "directory": "/home/letrhee/web_symlinks/sam_hided_net/sam/che/logs/preserved"
+            },
             "targetUrlEnv": "CHE_GAME_DATABASE_URL"
         },
         {

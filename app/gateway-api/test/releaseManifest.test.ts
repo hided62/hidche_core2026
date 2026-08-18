@@ -39,7 +39,7 @@ describe('readReleaseManifest', () => {
         await expect(readReleaseManifest(workspaceRoot)).resolves.toMatchObject({
             controllerProtocol: RELEASE_CONTROLLER_PROTOCOL,
             gatewaySchemaHead: '20260818000000_add_legacy_import_checkpoints',
-            gameSchemaHead: '20260818000000_add_legacy_import_checkpoints',
+            gameSchemaHead: '20260818010000_add_legacy_battle_result_logs',
         });
     });
 

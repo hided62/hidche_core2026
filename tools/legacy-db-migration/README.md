@@ -55,7 +55,22 @@ pnpm migrate:legacy -- run-plan \
   --config tools/legacy-db-migration/migration-plan.json --mode full --apply
 ```
 
-`check-plan` opens every source and target without writing. `run-plan` also
+For profiles whose old file archive is available, add a `battleResults` block.
+`directory` may be a local absolute/plan-relative path, or `sshHost` may select
+the host from which the directory is read. The SSH target must be a configured
+host alias; do not put credentials in the plan.
+
+```json
+"battleResults": {
+  "sshHost": "serv",
+  "directory": "/home/letrhee/web_symlinks/sam_hided_net/sam/che/logs/preserved"
+}
+```
+
+`check-plan` opens every source and target without writing. Its stage JSON lists
+every included item as `inventory`, including source, target, strategy and the
+information transferred. A configured battle-result source also reports its
+season/file/byte counts. `run-plan` also
 preflights every stage before the first import, is a dry-run without `--apply`,
 and stops at the first failed stage. Completed earlier stages remain committed;
 rerunning is safe because the Gateway and each profile have independent locks,
@@ -77,24 +92,30 @@ apply. It also refuses a changed host/database/user identity or a source table
 whose maximum ID moved behind its checkpoint. Password rotation does not change
 the source fingerprint.
 
-| Source data                                   | Incremental policy                                                    |
-| --------------------------------------------- | --------------------------------------------------------------------- |
-| `member_log`                                  | Read only IDs after the committed high-water mark.                    |
-| game archive/event-history tables             | Read only IDs after the profile checkpoint.                           |
-| `member`, root/game `storage`, `system`, bans | Rescan and idempotently upsert because old rows are mutable.          |
-| `ng_games`                                    | Rescan because a season row can gain its final winner after creation. |
+| Source data                                   | Incremental policy                                                      |
+| --------------------------------------------- | ----------------------------------------------------------------------- |
+| `member_log`                                  | Read only IDs after the committed high-water mark.                      |
+| game archive/event-history tables             | Read only IDs after the profile checkpoint.                             |
+| `member`, root/game `storage`, `system`, bans | Rescan and idempotently upsert because old rows are mutable.            |
+| `ng_games`                                    | Rescan because a season row can gain its final winner after creation.   |
+| preserved `batres<general_no>.txt` seasons    | Hash each season; import new immutable seasons after a full checkpoint. |
 
 The append policy assumes Ref primary keys are never reused and completed
 archive rows are immutable. Incremental mode does not mirror source deletions.
 If either assumption is false, take a new reviewed backup and run full mode;
 do not edit checkpoint rows by hand.
 
-The command reads MariaDB only. Ref `logs/preserved/<season>/` directories are
-heterogeneous filesystem archives (old general/battle text, tournament text,
-SQLite API logs, and operational logs), not an incremental database feed.
-`ng_old_generals.data.history` and `ng_history` carry the supported long-lived
-history. Do not point this CLI at, copy, or infer database rows from preserved
-log files; a file-log archive needs a separate reviewed migration contract.
+The optional file importer reads only immediate
+`logs/preserved/<profile>_*/batres<general_no>.txt` regular files. It maps the
+profile and season directory to the archived general's `(source_profile,
+server_id, general_no)` key, verifies file and season SHA-256 hashes, and stores
+the exact text plus line/byte counts. It never follows symlinks and ignores
+`batlog*` phase detail, `gen*`, `fight*`, SQLite and operational logs. Full mode
+creates the season checkpoints. Incremental mode accepts new seasons but rejects
+a changed checkpointed season or changed source identity. Every mode rejects a
+disappeared checkpointed season. A reviewed full run atomically replaces a
+changed season's archive rows. The preserved trees currently cover only the
+old filesystem-log era, so an absent file remains explicitly unavailable.
 
 ## Commands
 

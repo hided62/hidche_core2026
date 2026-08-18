@@ -3,6 +3,7 @@ import { lstat, open } from 'node:fs/promises';
 import { isIP } from 'node:net';
 import path from 'node:path';
 
+import { resolveBattleResultSourceConfig, type BattleResultSourceConfig } from './battleResultSource.js';
 import { isLegacyArchiveProfile, LEGACY_ARCHIVE_PROFILES, type LegacyArchiveProfile } from './game.js';
 import { fingerprintMariaConnection, type MigrationSourceIdentity } from './incremental.js';
 
@@ -13,6 +14,7 @@ export interface ResolvedMigrationStage {
     sourceUrl: string;
     targetUrl: string;
     sourceIdentity: MigrationSourceIdentity;
+    battleResults?: BattleResultSourceConfig;
 }
 
 export interface ResolvedMigrationPlan {
@@ -137,7 +139,7 @@ const resolveTargetUrl = (record: Record<string, unknown>, label: string): strin
 
 const parseStage = (value: unknown, label: string): Record<string, unknown> => {
     const record = asRecord(value, label);
-    rejectUnknownKeys(record, ['source', 'targetUrlEnv', 'profile', 'enabled'], label);
+    rejectUnknownKeys(record, ['source', 'targetUrlEnv', 'profile', 'enabled', 'battleResults'], label);
     if (!('source' in record)) throw new Error(`${label}.source is required`);
     return record;
 };
@@ -192,6 +194,22 @@ export const loadMigrationPlan = async (configPathInput: string): Promise<Resolv
         if (seen.has(profile)) throw new Error(`Duplicate profile in migration config: ${profile}`);
         seen.add(profile);
         const sourceUrl = await resolveSource(profileConfig.source, configDirectory, `${label}.source`);
+        let battleResults: BattleResultSourceConfig | undefined;
+        if (profileConfig.battleResults !== undefined) {
+            const battleResultConfig = asRecord(profileConfig.battleResults, `${label}.battleResults`);
+            rejectUnknownKeys(battleResultConfig, ['directory', 'sshHost'], `${label}.battleResults`);
+            const directory = requiredString(battleResultConfig, 'directory', `${label}.battleResults`);
+            const sshHostValue = battleResultConfig.sshHost;
+            if (sshHostValue !== undefined && typeof sshHostValue !== 'string') {
+                throw new Error(`${label}.battleResults.sshHost must be a string`);
+            }
+            battleResults = await resolveBattleResultSourceConfig(
+                { directory, ...(sshHostValue === undefined ? {} : { sshHost: sshHostValue }) },
+                `${sourceSet}:${profile}`,
+                profile,
+                configDirectory
+            );
+        }
         profileStages.set(profile, {
             kind: 'game',
             name: profile,
@@ -202,6 +220,7 @@ export const loadMigrationPlan = async (configPathInput: string): Promise<Resolv
                 key: `${sourceSet}:${profile}`,
                 fingerprint: fingerprintMariaConnection(sourceUrl),
             },
+            ...(battleResults ? { battleResults } : {}),
         });
     }
     for (const profile of LEGACY_ARCHIVE_PROFILES) {
