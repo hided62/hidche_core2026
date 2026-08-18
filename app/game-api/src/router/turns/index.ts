@@ -35,7 +35,11 @@ import {
 } from '../../turns/reservedTurns.js';
 import { getOwnedGeneral } from '../shared/general.js';
 import type { GameApiContext, GeneralRow, WorldStateRow } from '../../context.js';
-import { buildRefGeneralTargetOptions } from '../../turns/commandTargets.js';
+import {
+    buildRefAmountPresets,
+    buildRefGeneralTargetOptions,
+    buildRefNationTargetOptions,
+} from '../../turns/commandTargets.js';
 
 const zPushAmount = z
     .number()
@@ -159,52 +163,125 @@ export const getTurnCommandTable = async (ctx: GameApiContext, generalId: number
     const moduleBundlePromise = environmentPromise.then((environment) =>
         loadActionModuleBundle(environment.unitSet, environment.scenarioEffect)
     );
-    const [city, nation, nationGenerals, cities, nations, generals, environment, traits, moduleBundle, map] =
-        await Promise.all([
-            general.cityId > 0
-                ? ctx.db.city.findUnique({
-                      where: { id: general.cityId },
-                  })
-                : null,
-            general.nationId > 0
-                ? ctx.db.nation.findUnique({
-                      where: { id: general.nationId },
-                  })
-                : null,
-            general.nationId > 0
-                ? ctx.db.general.findMany({
-                      where: { nationId: general.nationId },
-                  })
-                : Promise.resolve(null),
-            ctx.db.city.findMany({ orderBy: { id: 'asc' } }),
-            ctx.db.nation.findMany({
-                select: { id: true, name: true, color: true },
-                orderBy: { id: 'asc' },
-            }),
-            ctx.db.general.findMany({
-                select: {
-                    id: true,
-                    name: true,
-                    nationId: true,
-                    cityId: true,
-                    npcState: true,
-                    officerLevel: true,
-                },
-                orderBy: [{ npcState: 'asc' }, { name: 'asc' }, { id: 'asc' }],
-            }),
-            environmentPromise,
-            loadBattleSimTraitOptions(),
-            moduleBundlePromise,
-            loadMapDefinitionByName(resolveMapName(worldState, ctx.profile.id)),
-        ]);
+    const [
+        city,
+        nation,
+        nationGenerals,
+        cities,
+        nations,
+        generals,
+        diplomacy,
+        troops,
+        environment,
+        traits,
+        moduleBundle,
+        map,
+    ] = await Promise.all([
+        general.cityId > 0
+            ? ctx.db.city.findUnique({
+                  where: { id: general.cityId },
+              })
+            : null,
+        general.nationId > 0
+            ? ctx.db.nation.findUnique({
+                  where: { id: general.nationId },
+              })
+            : null,
+        general.nationId > 0
+            ? ctx.db.general.findMany({
+                  where: { nationId: general.nationId },
+              })
+            : Promise.resolve(null),
+        ctx.db.city.findMany({ orderBy: { id: 'asc' } }),
+        ctx.db.nation.findMany({
+            select: {
+                id: true,
+                name: true,
+                color: true,
+                capitalCityId: true,
+                level: true,
+                meta: true,
+            },
+            orderBy: { id: 'asc' },
+        }),
+        ctx.db.general.findMany({
+            select: {
+                id: true,
+                name: true,
+                nationId: true,
+                cityId: true,
+                npcState: true,
+                officerLevel: true,
+                gold: true,
+                rice: true,
+                crew: true,
+                train: true,
+                atmos: true,
+                troopId: true,
+            },
+            orderBy: [{ npcState: 'asc' }, { name: 'asc' }, { id: 'asc' }],
+        }),
+        general.nationId > 0
+            ? ctx.db.diplomacy.findMany({ where: { srcNationId: general.nationId } })
+            : Promise.resolve([]),
+        general.nationId > 0
+            ? ctx.db.troop.findMany({ where: { nationId: general.nationId }, orderBy: { troopLeaderId: 'asc' } })
+            : Promise.resolve([]),
+        environmentPromise,
+        loadBattleSimTraitOptions(),
+        moduleBundlePromise,
+        loadMapDefinitionByName(resolveMapName(worldState, ctx.profile.id)),
+    ]);
 
     const nationById = new Map(nations.map((entry) => [entry.id, entry]));
+    const cityById = new Map(cities.map((entry) => [entry.id, entry]));
+    const generalCountByNation = new Map<number, number>();
+    for (const entry of generals) {
+        generalCountByNation.set(entry.nationId, (generalCountByNation.get(entry.nationId) ?? 0) + 1);
+    }
+    const cityCountByNation = new Map<number, number>();
+    for (const entry of cities) {
+        cityCountByNation.set(entry.nationId, (cityCountByNation.get(entry.nationId) ?? 0) + 1);
+    }
+    const diplomacyByNation = new Map(diplomacy.map((entry) => [entry.destNationId, entry]));
+    const adjacentNationIds = new Set<number>();
+    const actorCityIds = new Set(
+        cities.filter((entry) => entry.nationId === general.nationId).map((entry) => entry.id)
+    );
+    for (const mapCity of map.cities) {
+        if (!actorCityIds.has(mapCity.id)) continue;
+        for (const adjacentId of mapCity.connections) {
+            const adjacentNationId = cityById.get(adjacentId)?.nationId;
+            if (adjacentNationId && adjacentNationId !== general.nationId) adjacentNationIds.add(adjacentNationId);
+        }
+    }
+    const nationTargetOptions = buildRefNationTargetOptions({
+        actorNationId: general.nationId,
+        nations: nations.map((entry) => {
+            const relation = diplomacyByNation.get(entry.id);
+            return {
+                id: entry.id,
+                name: entry.name,
+                color: entry.color,
+                capitalName: entry.capitalCityId ? (cityById.get(entry.capitalCityId)?.name ?? '-') : '-',
+                level: entry.level,
+                power: readGeneralMetaNumber(entry.meta, 'power') ?? 0,
+                generalCount: generalCountByNation.get(entry.id) ?? 0,
+                cityCount: cityCountByNation.get(entry.id) ?? 0,
+                diplomacyState: relation?.stateCode ?? 2,
+                diplomacyTerm: relation?.term ?? 0,
+                adjacent: adjacentNationIds.has(entry.id),
+                diplomacyRestricted: (readGeneralMetaNumber(entry.meta, 'surlimit') ?? 0) !== 0,
+            };
+        }),
+    });
     const generalTargetOptions = buildRefGeneralTargetOptions({
         actorId: general.id,
         actorNationId: general.nationId,
         generals,
         nationNames: new Map(nations.map((entry) => [entry.id, entry.name])),
         cityNames: new Map(cities.map((entry) => [entry.id, entry.name])),
+        troopNames: new Map(troops.map((entry) => [entry.troopLeaderId, entry.name])),
     });
     const items: TurnCommandInputOptions['items'] = {
         horse: [{ value: 'None', label: '판매/해제' }],
@@ -234,11 +311,8 @@ export const getTurnCommandTable = async (ctx: GameApiContext, generalId: number
             value: entry.id,
             label: `${entry.name} (${nationById.get(entry.nationId)?.name ?? '무주'})`,
         })),
-        nations: nations.map((entry) => ({
-            value: entry.id,
-            label: entry.name,
-            color: entry.color,
-        })),
+        nations: nationTargetOptions.nations,
+        nationTargets: nationTargetOptions.nationTargets,
         generals: generalTargetOptions.generals,
         generalTargets: generalTargetOptions.generalTargets,
         crewTypes: (environment.unitSet.crewTypes ?? [])
@@ -273,6 +347,10 @@ export const getTurnCommandTable = async (ctx: GameApiContext, generalId: number
             unitSet: environment.unitSet,
             generalActionModules: moduleBundle.general,
         }),
+        amountPresets: buildRefAmountPresets(
+            nation?.level ?? 0,
+            readGeneralMetaNumber(asRecord(asRecord(worldState.config).const), 'maxResourceActionAmount') ?? 10_000
+        ),
         context: {
             actorGold: general.gold,
             actorRice: general.rice,

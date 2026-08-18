@@ -72,6 +72,7 @@ const props = withDefaults(
         detailMode?: boolean;
         fitContainer?: boolean;
         showCurrentCityMarker?: boolean;
+        readonly?: boolean;
     }>(),
     {
         // Vue casts an absent Boolean prop to false unless undefined is an explicit default.
@@ -404,6 +405,7 @@ const setHoveredCity = (cityId: number | null) => {
 };
 
 const selectCity = (cityId: number) => {
+    if (props.readonly) return;
     emit('select-city', cityId);
     if (props.selectedCityId === undefined) {
         mapStore.setSelectedCity(cityId);
@@ -443,6 +445,7 @@ const selectCity = (cityId: number) => {
                     :map-scale="mapScale"
                     :show-name="showCityName"
                     :select-only="props.selectedCityId !== undefined"
+                    :readonly="props.readonly"
                     v-bind="detailProps"
                     @hover="setHoveredCity"
                     @leave="setHoveredCity(null)"
