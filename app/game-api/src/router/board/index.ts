@@ -228,6 +228,7 @@ export const boardRouter = router({
         }
 
         const format = metadata.format;
+        const isAvif = metadata.mediaType === 'image/avif';
         const isAnimated = (metadata.pages ?? 1) > 1;
         const needsResize = Math.max(metadata.width, metadata.height) > MAX_LONG_EDGE;
 
@@ -237,9 +238,9 @@ export const boardRouter = router({
         }
 
         let outputBuffer = buffer;
-        let outputFormat = format === 'avif' ? 'avif' : 'webp';
+        let outputFormat = isAvif ? 'avif' : 'webp';
 
-        if (format === 'avif') {
+        if (isAvif) {
             if (needsResize) {
                 outputBuffer = await buildAvifBuffer(buffer, true);
             }

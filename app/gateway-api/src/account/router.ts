@@ -202,7 +202,8 @@ export const accountRouter = router({
             const profiles = await listIconSyncProfiles(ctx, user.id);
             const buffer = decodeImage(input.imageData);
             const metadata = await sharp(buffer, { animated: true }).metadata();
-            if (!metadata.format || !ALLOWED_ICON_FORMATS.has(metadata.format)) {
+            const detectedFormat = metadata.mediaType === 'image/avif' ? 'avif' : metadata.format;
+            if (!detectedFormat || !ALLOWED_ICON_FORMATS.has(detectedFormat)) {
                 throw new TRPCError({
                     code: 'BAD_REQUEST',
                     message: 'avif, webp, jpg, gif, png 아이콘만 사용할 수 있습니다.',
@@ -214,7 +215,7 @@ export const accountRouter = router({
                     message: '아이콘은 64x64~128x128 범위의 정사각형이어야 합니다.',
                 });
             }
-            const extension = metadata.format === 'jpeg' ? 'jpg' : metadata.format;
+            const extension = detectedFormat === 'jpeg' ? 'jpg' : detectedFormat;
             const filename = `${randomBytes(16).toString('hex')}.${extension}`;
             if (!ctx.userIconUpload) {
                 throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: '이미지 저장소가 설정되지 않았습니다.' });

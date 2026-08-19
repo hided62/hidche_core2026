@@ -82,6 +82,18 @@ const buildWorld = (stateOverride: Partial<TurnWorldState> = {}): InMemoryTurnWo
 };
 
 describe('runtime clock shift', () => {
+    it('preserves the scenario config when the raw world config is unavailable', () => {
+        const world = buildWorld();
+
+        expect(world.getWorldConfig()).toMatchObject({
+            stat: { total: 300 },
+            iconPath: '',
+            map: {},
+            const: {},
+            environment: { mapName: 'test', unitSet: 'default' },
+        });
+    });
+
     it.each([
         ['accelerates', -15, '2026-07-30T09:45:00.000Z', '2026-07-30T09:55:00.000Z'],
         ['delays', 15, '2026-07-30T10:15:00.000Z', '2026-07-30T10:25:00.000Z'],

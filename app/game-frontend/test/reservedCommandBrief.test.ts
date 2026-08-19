@@ -104,7 +104,7 @@ const table: CommandTable = {
     },
 };
 
-test('Ref getBrief를 상속하는 출병·계략·모병까지 실제 인자 요약으로 표시한다', () => {
+void test('Ref getBrief를 상속하는 출병·계략·모병까지 실제 인자 요약으로 표시한다', () => {
     assert.equal(formatReservedCommandBrief('general', 'che_출병', { destCityId: 2 }, table), '【단양】으로 출병');
     assert.equal(formatReservedCommandBrief('general', 'che_화계', { destCityId: 3 }, table), '【업】에 화계실행');
     assert.equal(formatReservedCommandBrief('general', 'che_선동', { destCityId: 2 }, table), '【단양】에 선동실행');
@@ -114,7 +114,7 @@ test('Ref getBrief를 상속하는 출병·계략·모병까지 실제 인자 �
     );
 });
 
-test('개인·인사·국가 명령의 Ref brief 변형을 보존한다', () => {
+void test('개인·인사·국가 명령의 Ref brief 변형을 보존한다', () => {
     const cases: Array<[string, Record<string, unknown>, string]> = [
         ['che_이동', { destCityId: 3 }, '【업】으로 이동'],
         ['che_강행', { destCityId: 2 }, '【단양】으로 강행'],
@@ -139,7 +139,7 @@ test('개인·인사·국가 명령의 Ref brief 변형을 보존한다', () => 
     }
 });
 
-test('국가 명령의 도시·국가·장수·자원 인자를 Ref brief로 표시한다', () => {
+void test('국가 명령의 도시·국가·장수·자원 인자를 Ref brief로 표시한다', () => {
     const cases: Array<[string, Record<string, unknown>, string]> = [
         ['che_발령', { destGeneralId: 8, destCityId: 3 }, '【손권】【업】으로 발령'],
         ['che_부대탈퇴지시', { destGeneralId: 8 }, '【손권】부대 탈퇴 지시'],
@@ -177,7 +177,7 @@ test('국가 명령의 도시·국가·장수·자원 인자를 Ref brief로 표
     );
 });
 
-test('Ref가 getBrief를 재정의하지 않은 명령은 실제 표시명을 유지한다', () => {
+void test('Ref가 getBrief를 재정의하지 않은 명령은 실제 표시명을 유지한다', () => {
     assert.equal(formatReservedCommandBrief('general', '휴식', {}, table), '휴식');
     assert.equal(formatReservedCommandBrief('general', 'che_훈련', {}, table), '훈련');
     assert.equal(formatReservedCommandBrief('nation', 'che_필사즉생', {}, table), '필사즉생');

@@ -288,6 +288,29 @@ describe('board router actor, nation, and secret permissions', () => {
         expect(result).toMatchObject({ width: 64, height: 48, format: 'webp', animated: false });
     });
 
+    it('preserves an AVIF editor image when resizing is unnecessary', async () => {
+        const upload = vi.fn(async ({ filename }: { filename: string }) => ({
+            publicUrl: `https://sam-image.hided.net/uploads/core2026/${filename}`,
+        }));
+        const fixture = buildContext({
+            me: buildGeneral({ officerLevel: 5 }),
+            contentImageUpload: { upload },
+        });
+        const avif = await sharp({
+            create: { width: 64, height: 48, channels: 4, background: '#224466' },
+        })
+            .avif()
+            .toBuffer();
+
+        const result = await appRouter.createCaller(fixture.context).board.uploadImage({
+            dataUrl: `data:image/avif;base64,${avif.toString('base64')}`,
+        });
+
+        expect(result.url).toMatch(/^https:\/\/sam-image\.hided\.net\/uploads\/core2026\/[a-f0-9]{32}\.avif$/);
+        expect(upload).toHaveBeenCalledWith(expect.objectContaining({ contentType: 'image/avif', body: avif }));
+        expect(result).toMatchObject({ width: 64, height: 48, format: 'avif', animated: false });
+    });
+
     it('rejects editor image uploads from an ordinary nation member', async () => {
         const upload = vi.fn();
         const fixture = buildContext({
