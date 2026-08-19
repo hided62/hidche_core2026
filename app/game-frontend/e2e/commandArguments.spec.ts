@@ -921,9 +921,14 @@ test('renders and accepts every Ref strategy command at mobile width', async ({ 
     await picker.screenshot({ path: test.info().outputPath('all-strategy-commands-mobile.png') });
 });
 
-test('defaults founding to a Ref-selectable nation trait without exposing the neutral storage trait', async ({
+test('defaults founding to a Ref-selectable nation trait and paints color option labels', async ({
     page,
 }) => {
+    const foundingColors = [
+        { value: 0, label: '색상 1', color: '#FF0000' },
+        { value: 15, label: '색상 16', color: '#6495ED' },
+        { value: 16, label: '색상 17', color: '#7FFFD4' },
+    ];
     const foundingCommandTable = {
         general: [
             {
@@ -957,7 +962,7 @@ test('defaults founding to a Ref-selectable nation trait without exposing the ne
             },
         ],
         nation: [],
-        inputOptions,
+        inputOptions: { ...inputOptions, colors: foundingColors },
     };
     await install(page, false, foundingCommandTable);
     await page.setViewportSize({ width: 1200, height: 900 });
@@ -973,7 +978,36 @@ test('defaults founding to a Ref-selectable nation trait without exposing the ne
     await expect(nationType.locator('option')).toHaveText(['도적']);
     await nationType.focus();
     await expect(nationType).toBeFocused();
-    await picker.screenshot({ path: test.info().outputPath('founding-selectable-nation-trait-desktop-1200.png') });
+
+    const colorType = picker.getByLabel('국기 색상');
+    const color16 = colorType.locator('option[value="15"]');
+    await expect(color16).toHaveText('색상 16');
+    await expect(color16).toHaveCSS('background-color', 'rgb(100, 149, 237)');
+    await expect(color16).toHaveCSS('color', 'rgb(255, 255, 255)');
+    await colorType.selectOption('15');
+    await expect(colorType).toHaveValue('15');
+    await expect(colorType).toHaveCSS('background-color', 'rgb(100, 149, 237)');
+    await expect(colorType).toHaveCSS('color', 'rgb(255, 255, 255)');
+    await colorType.selectOption('16');
+    await expect(colorType).toHaveCSS('background-color', 'rgb(127, 255, 212)');
+    await expect(colorType).toHaveCSS('color', 'rgb(0, 0, 0)');
+    await colorType.selectOption('15');
+    await picker.screenshot({ path: test.info().outputPath('founding-colored-option-desktop-1200.png') });
+
+    await page.setViewportSize({ width: 500, height: 900 });
+    await page.getByRole('button', { name: '1턴 명령 입력', exact: true }).click();
+    const mobilePicker = page.getByTestId('command-picker');
+    await mobilePicker.getByRole('button', { name: '국가', exact: true }).click();
+    await mobilePicker.getByRole('button', { name: '건국', exact: true }).click();
+    const mobileColorType = mobilePicker.getByLabel('국기 색상');
+    await mobileColorType.selectOption('15');
+    await expect(mobileColorType).toHaveCSS('background-color', 'rgb(100, 149, 237)');
+    await expect(mobileColorType).toHaveCSS('color', 'rgb(255, 255, 255)');
+    const colorSelectRect = await mobileColorType.evaluate((element) => element.getBoundingClientRect().toJSON());
+    expect(colorSelectRect.x).toBeGreaterThanOrEqual(0);
+    expect(colorSelectRect.right).toBeLessThanOrEqual(500);
+    await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(500);
+    await mobilePicker.screenshot({ path: test.info().outputPath('founding-colored-option-mobile-500.png') });
 });
 
 test('reserves force move, retirement, and resignation from the user command picker', async ({ page }) => {

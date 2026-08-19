@@ -1,7 +1,8 @@
 <script setup lang="ts">
-import { computed, reactive, watch } from 'vue';
+import { computed, reactive, watch, type CSSProperties } from 'vue';
 import MapViewer from './MapViewer.vue';
 import { commandArgumentPresentation } from '../command/commandArgumentPresentation';
+import { legacyNationTextColor } from '../../utils/legacyNationColor';
 import type {
     CommandInputContext,
     CommandInputField,
@@ -104,6 +105,14 @@ const setSelectValue = (field: CommandInputField, rawValue: string) => {
 
 const selectedOptionFor = (field: CommandInputField): CommandOption | undefined =>
     optionsFor(field).find((entry) => entry.value === values[field.key]);
+
+const colorOptionStyle = (field: CommandInputField, option?: CommandOption): CSSProperties | undefined => {
+    if (field.optionSource !== 'colors' || !option?.color) return undefined;
+    return {
+        backgroundColor: option.color,
+        color: legacyNationTextColor(option.color),
+    };
+};
 
 const cityTargetField = computed(() =>
     props.fields.find(
@@ -438,9 +447,15 @@ watch(
                 v-else-if="field.kind === 'select'"
                 :id="`command-arg-${field.key}`"
                 :value="String(values[field.key] ?? '')"
+                :style="colorOptionStyle(field, selectedOptionFor(field))"
                 @change="setSelectValue(field, ($event.target as HTMLSelectElement).value)"
             >
-                <option v-for="option in optionsFor(field)" :key="String(option.value)" :value="String(option.value)">
+                <option
+                    v-for="option in optionsFor(field)"
+                    :key="String(option.value)"
+                    :value="String(option.value)"
+                    :style="colorOptionStyle(field, option)"
+                >
                     {{ option.label }}
                 </option>
             </select>
