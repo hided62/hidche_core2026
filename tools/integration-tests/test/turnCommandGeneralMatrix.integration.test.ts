@@ -421,6 +421,21 @@ integration('general command success matrix', () => {
                     ignoredPathPatterns: ignoredLifecyclePaths,
                 })
             ).toEqual([]);
+            if (action === 'che_이동' || action === 'che_강행') {
+                const actionLogSuffix = action === 'che_이동' ? '이동했습니다.' : '강행했습니다.';
+                expect(
+                    semanticLogSignatures(
+                        core.after.logs.filter((entry) => String(entry.text).includes(actionLogSuffix))
+                    )
+                ).toEqual(
+                    semanticLogSignatures(
+                        addedReferenceLogs(reference.before, reference.after.logs).filter((entry) =>
+                            String(entry.text).includes(actionLogSuffix)
+                        )
+                    )
+                );
+                expect(core.after.logs.some((entry) => String(entry.text).includes('도시('))).toBe(false);
+            }
         },
         120_000
     );
@@ -564,6 +579,12 @@ integration('NPC active command boundary parity', () => {
                     ignoredPathPatterns: ignoredLifecyclePaths,
                 })
             ).toEqual([]);
+            if (completed) {
+                expect(semanticLogSignatures(core.after.logs)).toEqual(
+                    semanticLogSignatures(addedReferenceLogs(reference.before, reference.after.logs))
+                );
+                expect(core.after.logs.some((entry) => String(entry.text).includes('도시('))).toBe(false);
+            }
         },
         120_000
     );
