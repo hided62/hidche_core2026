@@ -676,7 +676,7 @@ test('메인 카드의 국가·수도·관직·계급·병종은 Ref 출력명�
     await expect(page.locator('.main-page')).not.toContainText('che_');
 });
 
-test('메인 장수 동향과 개인 전투 기록은 모두 21px 행 간격을 유지한다', async ({ page }) => {
+test('메인 장수 동향과 개인 전투 기록은 Ref 행 간격·색상·글자 크기를 유지한다', async ({ page }) => {
     const state: FixtureState = {
         permission: 'head',
         myset: 3,
@@ -704,13 +704,15 @@ test('메인 장수 동향과 개인 전투 기록은 모두 21px 행 간격을 
                     id: 18608,
                     text:
                         '<S>◆</>186년 9월:<div class="small_war_log">' +
-                        '<span class="me"><span class="crew_type">귀병</span> ' +
-                        '<span class="name_plate_cover">【<span class="name">Administrator</span>】</span> ' +
-                        '<span class="remain_crew">0</span>(<span class="killed_crew">-2209</span>)</span> ' +
+                        '<span class="me"><span class="name_plate"><span class="crew_type">귀병</span> ' +
+                        '<span class="name_plate_cover">【<span class="name">Administrator</span>】</span></span> ' +
+                        '<span class="crew_plate"><span class="remain_crew">0</span>' +
+                        '<span class="killed_plate">(<span class="killed_crew">-2209</span>)</span></span></span> ' +
                         '<span class="war_type war_type_defense">←</span> ' +
-                        '<span class="you"><span class="remain_crew">1361</span>' +
-                        '(<span class="killed_crew">-5539</span>) <span class="crew_type">기병</span> ' +
-                        '<span class="name_plate_cover">【<span class="name">ⓝ뇌동</span>】</span></span></div>',
+                        '<span class="you"><span class="crew_plate"><span class="remain_crew">1361</span>' +
+                        '<span class="killed_plate">(<span class="killed_crew">-5539</span>)</span></span> ' +
+                        '<span class="name_plate"><span class="crew_type">기병</span> ' +
+                        '<span class="name_plate_cover">【<span class="name">ⓝ뇌동</span>】</span></span></span></div>',
                     createdAt: '2026-01-01T03:54:00.000Z',
                 },
             ],
@@ -754,6 +756,16 @@ test('메인 장수 동향과 개인 전투 기록은 모두 21px 행 간격을 
             const battle = element.querySelector<HTMLElement>('.small_war_log');
             if (!battle) throw new Error('전투 요약 markup을 찾지 못했습니다.');
             const battleRect = battle.getBoundingClientRect();
+            const requireElement = (selector: string): HTMLElement => {
+                const target = element.querySelector<HTMLElement>(selector);
+                if (!target) throw new Error(`전투 요약 요소를 찾지 못했습니다: ${selector}`);
+                return target;
+            };
+            const diamond = requireElement('span[style*="skyblue"]');
+            const namePlate = requireElement('.me .name_plate');
+            const nameCover = requireElement('.me .name_plate_cover');
+            const crewPlate = requireElement('.me .crew_plate');
+            const arrow = requireElement('.war_type_defense');
             return {
                 line: { top: lineRect.top, height: lineRect.height },
                 battle: {
@@ -762,6 +774,14 @@ test('메인 장수 동향과 개인 전투 기록은 모두 21px 행 간격을 
                     display: getComputedStyle(battle).display,
                 },
                 lineHeight: getComputedStyle(element).lineHeight,
+                styles: {
+                    diamondColor: getComputedStyle(diamond).color,
+                    namePlateFontSize: getComputedStyle(namePlate).fontSize,
+                    nameCoverColor: getComputedStyle(nameCover).color,
+                    crewPlateColor: getComputedStyle(crewPlate).color,
+                    crewPlateFontSize: getComputedStyle(crewPlate).fontSize,
+                    defenseArrowColor: getComputedStyle(arrow).color,
+                },
             };
         });
     };
@@ -770,6 +790,14 @@ test('메인 장수 동향과 개인 전투 기록은 모두 21px 행 간격을 
         expect(geometry.line.height).toBe(21);
         expect(geometry.battle.height).toBe(21);
         expect(geometry.battle.top).toBeCloseTo(geometry.line.top, 0);
+        expect(geometry.styles).toEqual({
+            diamondColor: 'rgb(135, 206, 235)',
+            namePlateFontSize: '10.5px',
+            nameCoverColor: 'rgb(255, 255, 0)',
+            crewPlateColor: 'rgb(255, 69, 0)',
+            crewPlateFontSize: '12.6px',
+            defenseArrowColor: 'rgb(255, 0, 255)',
+        });
     };
 
     const desktopGeometry = await inspect(
