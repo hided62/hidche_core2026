@@ -32,6 +32,7 @@ import { installGatewayShutdownController } from './lifecycle/shutdownController
 import { RemoteUserIconStore } from './account/remoteUserIconStore.js';
 import { gatewayFastifyRouterOptions } from './fastifyOptions.js';
 import { RuntimeNavigationConfigStore } from './navigation/runtimeNavigationConfig.js';
+import { registerRuntimeNavigationRoute } from './navigation/runtimeNavigationRoute.js';
 
 export const createGatewayApiServer = async () => {
     const config = resolveGatewayApiConfigFromEnv();
@@ -109,10 +110,7 @@ export const createGatewayApiServer = async () => {
         profiles,
         secret: config.gameTokenSecret,
     });
-    app.get('/navigation', async (_request, reply) => {
-        void reply.header('Cache-Control', 'no-store');
-        return navigationConfig.get();
-    });
+    registerRuntimeNavigationRoute(app, navigationConfig);
 
     await app.register(fastifyTRPCPlugin, {
         prefix: config.trpcPath,

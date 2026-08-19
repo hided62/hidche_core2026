@@ -1,9 +1,14 @@
 import fs from 'node:fs/promises';
+import { createHash } from 'node:crypto';
 
 import type { RuntimeNavigationConfig } from '@sammo-ts/common/navigation/menuConfig';
 import { z } from 'zod';
 
-const zId = z.string().min(1).max(80).regex(/^[a-z0-9][a-z0-9-]*$/u);
+const zId = z
+    .string()
+    .min(1)
+    .max(80)
+    .regex(/^[a-z0-9][a-z0-9-]*$/u);
 const zLabel = z.string().min(1).max(80);
 const zInternalPath = z
     .string()
@@ -98,6 +103,10 @@ export class RuntimeNavigationConfigStore {
     ) {}
 
     async get(): Promise<RuntimeNavigationConfig> {
+        return (await this.getWithEtag()).config;
+    }
+
+    async getWithEtag(): Promise<{ config: RuntimeNavigationConfig; etag: string }> {
         const configPath = await this.resolveConfigPath();
         let raw: unknown;
         try {
@@ -109,7 +118,10 @@ export class RuntimeNavigationConfigStore {
         if (!parsed.success) {
             throw new Error(`메뉴 설정 파일이 올바르지 않습니다: ${configPath}: ${parsed.error.message}`);
         }
-        return parsed.data;
+        return {
+            config: parsed.data,
+            etag: `"${createHash('sha256').update(JSON.stringify(parsed.data)).digest('hex')}"`,
+        };
     }
 
     private async resolveConfigPath(): Promise<string> {
