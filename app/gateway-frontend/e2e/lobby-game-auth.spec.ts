@@ -54,6 +54,7 @@ type LobbyFixtureOptions = {
     turntime?: string;
     lobbyBundleFailures?: number;
     profileStatus?: 'RUNNING' | 'PREOPEN' | 'PAUSED' | 'COMPLETED' | 'STOPPED';
+    includeStoppedProfile?: boolean;
 };
 
 const installFixture = async (page: Page, options: LobbyFixtureOptions = {}) => {
@@ -80,6 +81,7 @@ const installFixture = async (page: Page, options: LobbyFixtureOptions = {}) => 
         turntime = '2026-07-30 00:05:00',
         lobbyBundleFailures = 0,
         profileStatus = 'RUNNING',
+        includeStoppedProfile = false,
     } = options;
     let remainingLobbyBundleFailures = lobbyBundleFailures;
     const gameOperations: Array<{ operation: string; authorization: string | undefined }> = [];
@@ -108,40 +110,76 @@ const installFixture = async (page: Page, options: LobbyFixtureOptions = {}) => 
                 return response('');
             }
             if (operation === 'lobby.profiles') {
-                return response([
-                    {
-                        profileName: 'hwe:903',
-                        profile: 'hwe',
-                        instanceKey: '903',
-                        currentScenario: '903',
-                        scenario: '903',
-                        status: profileStatus,
-                        lifecycle: {
-                            runtimeExpected: profileStatus !== 'STOPPED',
-                            userAccessible: profileStatus !== 'STOPPED',
-                            turnsRunning: profileStatus === 'RUNNING',
-                            operatorResumable: profileStatus === 'PAUSED' || profileStatus === 'STOPPED',
-                            dataInitialized: true,
+                return response(
+                    [
+                        {
+                            profileName: 'hwe:903',
+                            profile: 'hwe',
+                            instanceKey: '903',
+                            currentScenario: '903',
+                            scenario: '903',
+                            status: profileStatus,
+                            lifecycle: {
+                                runtimeExpected: profileStatus !== 'STOPPED',
+                                userAccessible: profileStatus !== 'STOPPED',
+                                turnsRunning: profileStatus === 'RUNNING',
+                                operatorResumable: profileStatus === 'PAUSED' || profileStatus === 'STOPPED',
+                                dataInitialized: true,
+                            },
+                            apiPort: 15015,
+                            runtime: {
+                                apiRunning: true,
+                                daemonRunning: true,
+                                auctionRunning: true,
+                                battleSimRunning: true,
+                                tournamentRunning: true,
+                            },
+                            korName: 'hwe',
+                            color: '#ffffff',
+                            localAccountPolicy: {
+                                accessAllowed: true,
+                                canCreateGeneral,
+                                requiresKakaoVerification,
+                                graceEndsAt: null,
+                                specialAccess,
+                            },
                         },
-                        apiPort: 15015,
-                        runtime: {
-                            apiRunning: true,
-                            daemonRunning: true,
-                            auctionRunning: true,
-                            battleSimRunning: true,
-                            tournamentRunning: true,
-                        },
-                        korName: 'hwe',
-                        color: '#ffffff',
-                        localAccountPolicy: {
-                            accessAllowed: true,
-                            canCreateGeneral,
-                            requiresKakaoVerification,
-                            graceEndsAt: null,
-                            specialAccess,
-                        },
-                    },
-                ]);
+                        includeStoppedProfile
+                            ? {
+                                  profileName: 'che:2601',
+                                  profile: 'che',
+                                  instanceKey: '2601',
+                                  currentScenario: '2601',
+                                  scenario: '2601',
+                                  status: 'STOPPED',
+                                  lifecycle: {
+                                      runtimeExpected: false,
+                                      userAccessible: false,
+                                      turnsRunning: false,
+                                      operatorResumable: true,
+                                      dataInitialized: true,
+                                  },
+                                  apiPort: 15003,
+                                  runtime: {
+                                      apiRunning: false,
+                                      daemonRunning: false,
+                                      auctionRunning: false,
+                                      battleSimRunning: false,
+                                      tournamentRunning: false,
+                                  },
+                                  korName: 'che',
+                                  color: '#f59e0b',
+                                  localAccountPolicy: {
+                                      accessAllowed: false,
+                                      canCreateGeneral: false,
+                                      requiresKakaoVerification: false,
+                                      graceEndsAt: null,
+                                      specialAccess: null,
+                                  },
+                              }
+                            : null,
+                    ].filter((profile) => profile !== null)
+                );
             }
             if (operation === 'auth.issueGameSession') {
                 return response({
@@ -282,9 +320,11 @@ test('automatically recovers profile details after a transient update outage', a
     expect(gameOperations.filter(({ operation }) => operation === 'lobby.info')).toHaveLength(2);
 });
 
-test('offers a keyboard-accessible immediate retry without mobile overflow', async ({ page }, testInfo) => {
+test('uses two-row mobile server cards without horizontal scrolling and keeps retry keyboard-accessible', async ({
+    page,
+}, testInfo) => {
     // Keep the scheduled retry in the error state so it cannot race the manual retry after the screenshot.
-    await installFixture(page, { lobbyBundleFailures: 2 });
+    await installFixture(page, { lobbyBundleFailures: 2, includeStoppedProfile: true });
     await page.setViewportSize({ width: 390, height: 844 });
 
     await page.goto('lobby');
@@ -295,14 +335,27 @@ test('offers a keyboard-accessible immediate retry without mobile overflow', asy
     await retry.focus();
     await expect(retry).toBeFocused();
     const geometry = await tableScroll.evaluate((scrollElement) => {
-        const row = scrollElement.querySelector('tbody tr');
+        const rows = [...scrollElement.querySelectorAll('tbody tr')];
+        const row = rows[0];
         const button = row?.querySelector('button');
+        const serverCell = row?.querySelector('.profile-server-cell');
+        const infoCell = row?.querySelector('.profile-info-cell');
+        const portraitCell = row?.querySelector('.profile-portrait-cell');
+        const generalCell = row?.querySelector('.profile-general-cell');
+        const actionCell = row?.querySelector('.profile-action-cell');
         if (!row) throw new Error('expected profile row');
         if (!button) throw new Error('expected profile retry button');
+        if (!serverCell || !infoCell || !portraitCell || !generalCell || !actionCell) {
+            throw new Error('expected all profile cells');
+        }
         const scrollRect = scrollElement.getBoundingClientRect();
         const rowRect = row.getBoundingClientRect();
         const buttonRect = button.getBoundingClientRect();
         const style = getComputedStyle(button);
+        const rect = (element: Element) => {
+            const value = element.getBoundingClientRect();
+            return { top: value.top, right: value.right, bottom: value.bottom, left: value.left, width: value.width };
+        };
         return {
             pageScrollWidth: document.documentElement.scrollWidth,
             scroll: {
@@ -312,7 +365,15 @@ test('offers a keyboard-accessible immediate retry without mobile overflow', asy
                 scrollWidth: scrollElement.scrollWidth,
             },
             row: { left: rowRect.left, right: rowRect.right, width: rowRect.width },
+            rows: rows.map((element) => rect(element)),
             button: { left: buttonRect.left, right: buttonRect.right, width: buttonRect.width },
+            cells: {
+                server: rect(serverCell),
+                info: rect(infoCell),
+                portrait: rect(portraitCell),
+                general: rect(generalCell),
+                action: rect(actionCell),
+            },
             viewportWidth: window.innerWidth,
             outlineStyle: style.outlineStyle,
             outlineWidth: style.outlineWidth,
@@ -320,17 +381,70 @@ test('offers a keyboard-accessible immediate retry without mobile overflow', asy
     });
     expect(geometry.pageScrollWidth).toBe(geometry.viewportWidth);
     expect(geometry.scroll.clientWidth).toBeLessThanOrEqual(geometry.viewportWidth);
-    expect(geometry.scroll.scrollWidth).toBe(760);
-    expect(geometry.row.width).toBe(760);
+    expect(geometry.scroll.scrollWidth).toBe(geometry.scroll.clientWidth);
+    expect(geometry.row.width).toBe(geometry.scroll.clientWidth);
+    expect(geometry.rows).toHaveLength(2);
+    expect(geometry.rows[0]?.bottom).toBeLessThanOrEqual(geometry.rows[1]?.top ?? 0);
+    expect(geometry.rows.every((item) => item.width === geometry.scroll.clientWidth)).toBe(true);
     expect(geometry.button.left).toBeGreaterThanOrEqual(geometry.scroll.left);
     expect(geometry.button.right).toBeLessThanOrEqual(geometry.scroll.right);
+    expect(geometry.cells.server.top).toBeCloseTo(geometry.cells.info.top, 0);
+    expect(geometry.cells.server.left).toBeCloseTo(geometry.row.left, 0);
+    expect(geometry.cells.info.right).toBeCloseTo(geometry.row.right, 0);
+    expect(geometry.cells.portrait.top).toBeCloseTo(geometry.cells.general.top, 0);
+    expect(geometry.cells.general.top).toBeCloseTo(geometry.cells.action.top, 0);
+    expect(geometry.cells.portrait.top).toBeGreaterThanOrEqual(geometry.cells.server.bottom);
+    expect(geometry.cells.portrait.left).toBeCloseTo(geometry.row.left, 0);
+    expect(geometry.cells.action.right).toBeCloseTo(geometry.row.right, 0);
     expect(geometry.outlineStyle).toBe('solid');
     expect(geometry.outlineWidth).toBe('2px');
-    await page.screenshot({ path: testInfo.outputPath('gateway-profile-retry-mobile.png'), fullPage: true });
 
     await retry.click();
     await expect(row).toContainText('선택장수');
     await expect(row.getByTestId('profile-info-retrying')).toHaveCount(0);
+    const enterButton = row.getByRole('button', { name: '입장' });
+    await expect(enterButton).toBeVisible();
+    const enterBackground = await enterButton.evaluate((element) => getComputedStyle(element).backgroundColor);
+    await enterButton.hover();
+    await expect
+        .poll(() => enterButton.evaluate((element) => getComputedStyle(element).backgroundColor))
+        .not.toBe(enterBackground);
+    await page.screenshot({ path: testInfo.outputPath('gateway-profile-two-row-mobile.png'), fullPage: true });
+
+    await page.setViewportSize({ width: 320, height: 700 });
+    await expect
+        .poll(() =>
+            tableScroll.evaluate((element) => ({
+                documentWidth: document.documentElement.scrollWidth,
+                viewportWidth: window.innerWidth,
+                clientWidth: element.clientWidth,
+                scrollWidth: element.scrollWidth,
+                rowWidth: element.querySelector('tbody tr')?.getBoundingClientRect().width,
+            }))
+        )
+        .toEqual({ documentWidth: 320, viewportWidth: 320, clientWidth: 286, scrollWidth: 286, rowWidth: 286 });
+
+    await page.setViewportSize({ width: 799, height: 900 });
+    await expect
+        .poll(() =>
+            tableScroll.evaluate((element) => ({
+                clientWidth: element.clientWidth,
+                scrollWidth: element.scrollWidth,
+                rowDisplay: getComputedStyle(element.querySelector('tbody tr')!).display,
+            }))
+        )
+        .toEqual({ clientWidth: 765, scrollWidth: 765, rowDisplay: 'grid' });
+
+    await page.setViewportSize({ width: 800, height: 900 });
+    await expect
+        .poll(() =>
+            tableScroll.evaluate((element) => ({
+                clientWidth: element.clientWidth,
+                scrollWidth: element.scrollWidth,
+                rowDisplay: getComputedStyle(element.querySelector('tbody tr')!).display,
+            }))
+        )
+        .toEqual({ clientWidth: 766, scrollWidth: 766, rowDisplay: 'table-row' });
 });
 
 test('applies the signed general-acquisition policy to both create and possession actions', async ({ page }) => {
