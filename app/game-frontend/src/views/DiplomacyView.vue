@@ -10,6 +10,7 @@ import { useRouter } from 'vue-router';
 import { trpc } from '../utils/trpc';
 import { resolveGeneralIconUrl } from '../utils/generalIcon';
 import { formatSeoulDateTime } from '../utils/legacyDateTime';
+import { legacyLuminanceTextColor } from '../utils/legacyNationColor';
 
 type DiplomacyResponse = Awaited<ReturnType<typeof trpc.diplomacy.getLetters.query>>;
 type DiplomacyLetter = DiplomacyResponse['letters'][number];
@@ -212,18 +213,9 @@ const stateOptionLabelMap: Record<string, string> = {
 const targetNation = (letter: DiplomacyLetter) =>
     letter.src.nationId === data.value?.myNationId ? letter.dest : letter.src;
 
-const isBrightColor = (color: string): boolean => {
-    const normalized = color.trim().replace(/^#/u, '');
-    if (!/^[0-9a-f]{6}$/iu.test(normalized)) return false;
-    const red = Number.parseInt(normalized.slice(0, 2), 16);
-    const green = Number.parseInt(normalized.slice(2, 4), 16);
-    const blue = Number.parseInt(normalized.slice(4, 6), 16);
-    return red * 0.299 + green * 0.587 + blue * 0.114 > 170;
-};
-
 const nationStyle = (color: string) => ({
     backgroundColor: color || '#315f86',
-    color: isBrightColor(color) ? '#000' : '#fff',
+    color: legacyLuminanceTextColor(color || '#315f86'),
 });
 
 const signerIcon = (signer: DiplomacyLetter['src'] | DiplomacyLetter['dest']): string | null => {

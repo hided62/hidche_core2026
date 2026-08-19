@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, reactive } from 'vue';
 import type { MessageType } from '@sammo-ts/logic';
+import { legacyLuminanceTextColor } from '../../utils/legacyNationColor';
 import SkeletonLines from '../ui/SkeletonLines.vue';
 import MessagePlate from './MessagePlate.vue';
 
@@ -172,14 +173,20 @@ const forwardResponse = (messageId: number, response: boolean) => {
                         v-for="group in mailboxGroups"
                         :key="group.label"
                         :label="group.label"
-                        :style="{ backgroundColor: group.color ?? '#000000', color: '#ffffff' }"
+                        :style="{
+                            backgroundColor: group.color ?? '#000000',
+                            color: legacyLuminanceTextColor(group.color ?? '#000000'),
+                        }"
                     >
                         <option
                             v-for="option in group.options"
                             :key="`${group.label}-${option.value}`"
                             :value="option.value"
                             :disabled="option.disabled"
-                            :style="{ backgroundColor: option.color ?? '#000000', color: '#ffffff' }"
+                            :style="{
+                                backgroundColor: option.color ?? '#000000',
+                                color: legacyLuminanceTextColor(option.color ?? '#000000'),
+                            }"
                         >
                             {{ option.label }}
                         </option>

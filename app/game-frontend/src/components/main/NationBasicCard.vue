@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import SkeletonLines from '../ui/SkeletonLines.vue';
-import { legacyNationTextColor } from '../../utils/legacyNationColor';
+import { legacyLuminanceTextColor } from '../../utils/legacyNationColor';
 import { formatOfficerLevelText } from '../../utils/nationFormat';
 import { getNpcColor } from '../../utils/npcColor';
 
@@ -60,7 +60,7 @@ const displayChiefName = (chief: NationChief | undefined): string => {
         <div v-else class="nation-grid">
             <div
                 class="title"
-                :style="{ backgroundColor: props.nation.color, color: legacyNationTextColor(props.nation.color) }"
+                :style="{ backgroundColor: props.nation.color, color: legacyLuminanceTextColor(props.nation.color) }"
             >
                 {{ props.nation.name }}
             </div>

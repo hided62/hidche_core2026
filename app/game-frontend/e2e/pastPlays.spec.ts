@@ -9,7 +9,10 @@ const gameProfileId = gameProfile.split(':', 1)[0] ?? 'che';
 const operationNames = (route: Route) =>
     decodeURIComponent(new URL(route.request().url()).pathname.split('/trpc/')[1] ?? '').split(',');
 
-const installArchive = async (page: Page, options: { battleAvailable?: boolean; abandoned?: boolean } = {}) => {
+const installArchive = async (
+    page: Page,
+    options: { battleAvailable?: boolean; abandoned?: boolean; nationColor?: string } = {}
+) => {
     const archiveRequestBodies: string[] = [];
     await page.addInitScript((profile) => {
         localStorage.setItem('sammo-game-token', 'ga_archive');
@@ -44,7 +47,7 @@ const installArchive = async (page: Page, options: { battleAvailable?: boolean; 
                                     lastYearMonth: 21403,
                                     nationId: 2,
                                     nationName: '촉',
-                                    nationColor: '#800000',
+                                    nationColor: options.nationColor ?? '#800000',
                                     leadership: 91,
                                     strength: 98,
                                     intel: 77,
@@ -69,7 +72,7 @@ const installArchive = async (page: Page, options: { battleAvailable?: boolean; 
                     serverId: 'che_2024_01',
                     generalNo: 17,
                     dynastyPath: '/dynasty/7?source=legacy',
-                    nation: { name: '촉', color: '#800000' },
+                    nation: { name: '촉', color: options.nationColor ?? '#800000' },
                     general: {
                         id: 17,
                         name: '관우',
@@ -173,6 +176,29 @@ test('지난 플레이 관직은 숫자 대신 저장된 Ref 표시명으로 나
     const generalRow = page.locator('tbody tr').filter({ hasText: '관우' });
     await expect(generalRow).toContainText('황제');
     await expect(generalRow).not.toContainText('che_');
+});
+
+test('지난 플레이 국가 라벨은 밝은 국가색과 어두운 국가색에 대비되는 글자색을 쓴다', async ({
+    page,
+}, testInfo) => {
+    await installArchive(page, { nationColor: '#FFFF00' });
+    await page.setViewportSize({ width: 1200, height: 900 });
+    await page.goto('past-plays');
+
+    const nationLabel = page.locator('.season-card .nation-name').first();
+    await expect(nationLabel).toHaveCSS('background-color', 'rgb(255, 255, 0)');
+    await expect(nationLabel).toHaveCSS('color', 'rgb(0, 0, 0)');
+
+    await page.locator('.detail-toggle').click();
+    const generalTitle = page.locator('[data-general-basic-card] .general-title');
+    await expect(generalTitle).toHaveCSS('background-color', 'rgb(255, 255, 0)');
+    await expect(generalTitle).toHaveCSS('color', 'rgb(0, 0, 0)');
+    await page.screenshot({ path: testInfo.outputPath('past-play-nation-contrast-desktop.png'), fullPage: true });
+
+    await page.setViewportSize({ width: 500, height: 900 });
+    await expect(nationLabel).toHaveCSS('color', 'rgb(0, 0, 0)');
+    await expect(generalTitle).toHaveCSS('color', 'rgb(0, 0, 0)');
+    await page.screenshot({ path: testInfo.outputPath('past-play-nation-contrast-mobile.png'), fullPage: true });
 });
 
 test('보존되지 않은 과거 전투 집계는 0으로 꾸미지 않고 가용성 경계를 표시한다', async ({ page }) => {

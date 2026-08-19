@@ -1455,18 +1455,29 @@ test('main general card uses local turn time and command clock tracks corrected 
     await expect(frozenClock).toHaveText('09:08:30');
 });
 
-test('pure NPC message senders are not rendered as reply targets', async ({ page }) => {
-    const target = (generalId: number, generalName: string) => ({
+test('message targets keep reply behavior and use nation-color contrast in labels and select options', async ({
+    page,
+}) => {
+    const target = (generalId: number, generalName: string, color = '#008000', nationId = 1, nationName = '위') => ({
         generalId,
         generalName,
-        nationId: 1,
-        nationName: '위',
-        color: '#008000',
+        nationId,
+        nationName,
+        color,
         icon: '',
     });
     const messages = {
         ...emptyMessages(0),
         public: [
+            {
+                id: 103,
+                text: '밝은 국가 메시지',
+                time: '2026-08-12 12:01:00',
+                msgType: 'public',
+                src: target(23, '밝은장수', '#FFFF00', 2, '밝은국'),
+                dest: null,
+                option: {},
+            },
             {
                 id: 102,
                 text: 'NPC 메시지',
@@ -1505,6 +1516,13 @@ test('pure NPC message senders are not rendered as reply targets', async ({ page
                     color: '#008000',
                     general: [[21, '유저장수', 0]],
                 },
+                {
+                    nationId: 2,
+                    mailbox: 9002,
+                    name: '밝은국',
+                    color: '#FFFF00',
+                    general: [[23, '밝은장수', 0]],
+                },
             ],
         },
     };
@@ -1514,13 +1532,39 @@ test('pure NPC message senders are not rendered as reply targets', async ({ page
 
     const npcMessage = page.locator('.desktop-message-panel .msg-plate[data-id="102"]');
     const userMessage = page.locator('.desktop-message-panel .msg-plate[data-id="101"]');
+    const brightMessage = page.locator('.desktop-message-panel .msg-plate[data-id="103"]');
     await expect(npcMessage.locator('.msg-header')).toContainText('순수NPC:위');
     await expect(npcMessage.locator('.msg-header')).not.toContainText('↩');
     await expect(npcMessage.getByRole('button', { name: /순수NPC/ })).toHaveCount(0);
     await expect(userMessage.getByRole('button', { name: /유저장수:위.*↩/ })).toBeVisible();
+    await expect(userMessage.locator('.msg-target')).toHaveCSS('color', 'rgb(255, 255, 255)');
+    const brightTarget = brightMessage.locator('.msg-target');
+    await expect(brightTarget).toHaveCSS('color', 'rgb(0, 0, 0)');
+    await brightTarget.hover();
+    await expect(brightTarget).toHaveCSS('color', 'rgb(0, 0, 0)');
+    await brightTarget.focus();
+    await expect(brightTarget).toHaveCSS('color', 'rgb(0, 0, 0)');
+    await brightTarget.hover();
+    await page.mouse.down();
+    await expect(brightTarget).toHaveCSS('color', 'rgb(0, 0, 0)');
+    await page.mouse.up();
+    const mailbox = page.locator('.desktop-message-panel #mailbox_list');
+    await expect(mailbox.locator('optgroup[label="위"]')).toHaveCSS('color', 'rgb(255, 255, 255)');
+    await expect(mailbox.locator('optgroup[label="밝은국"]')).toHaveCSS('color', 'rgb(0, 0, 0)');
+    await expect(mailbox.locator('option[value="23"]')).toHaveCSS('color', 'rgb(0, 0, 0)');
     await userMessage.getByRole('button', { name: /유저장수:위.*↩/ }).click();
-    await expect(page.locator('.desktop-message-panel #mailbox_list')).toHaveValue('21');
+    await expect(mailbox).toHaveValue('21');
     await persistArtifact(page, `${basePath.slice(1)}-npc-reply-targets-desktop-1200`);
+
+    await page.setViewportSize({ width: 500, height: 900 });
+    const mobilePanel = page.locator('.mobile-message-panel');
+    await expect(mobilePanel.locator('.msg-plate[data-id="101"] .msg-target')).toHaveCSS(
+        'color',
+        'rgb(255, 255, 255)'
+    );
+    await expect(mobilePanel.locator('.msg-plate[data-id="103"] .msg-target')).toHaveCSS('color', 'rgb(0, 0, 0)');
+    await expect(mobilePanel.locator('#mailbox_list optgroup[label="밝은국"]')).toHaveCSS('color', 'rgb(0, 0, 0)');
+    await persistArtifact(page, `${basePath.slice(1)}-message-nation-contrast-mobile-500`);
 });
 
 test('main reserved-turn picker renders the Ref category order and raised button depth', async ({ page }) => {

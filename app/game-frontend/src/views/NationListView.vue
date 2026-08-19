@@ -3,6 +3,7 @@ import { onMounted, ref } from 'vue';
 
 import { formatNationLevelText, formatOfficerLevelText } from '../utils/nationFormat';
 import { getNpcColor } from '../utils/npcColor';
+import { legacyNationTextColor } from '../utils/legacyNationColor';
 import { trpc } from '../utils/trpc';
 
 type Directory = Awaited<ReturnType<typeof trpc.world.getNationDirectory.query>>;
@@ -11,27 +12,6 @@ type Nation = Directory[number];
 const nations = ref<Directory>([]);
 const loading = ref(false);
 const error = ref('');
-
-const whiteTextColors = new Set([
-    '',
-    '#330000',
-    '#ff0000',
-    '#800000',
-    '#a0522d',
-    '#ff6347',
-    '#808000',
-    '#008000',
-    '#2e8b57',
-    '#008080',
-    '#6495ed',
-    '#0000ff',
-    '#000080',
-    '#483d8b',
-    '#7b68ee',
-    '#800080',
-    '#a9a9a9',
-    '#000000',
-]);
 
 const loadDirectory = async () => {
     loading.value = true;
@@ -44,8 +24,6 @@ const loadDirectory = async () => {
         loading.value = false;
     }
 };
-
-const headerTextColor = (color: string): string => (whiteTextColors.has(color.toLowerCase()) ? '#ffffff' : '#000000');
 
 const officerName = (nation: Nation, officerLevel: number) =>
     nation.officers.find((officer) => officer.officerLevel === officerLevel)?.general;
@@ -92,7 +70,7 @@ onMounted(() => {
                         <td
                             colspan="8"
                             class="center nation-title"
-                            :style="{ color: headerTextColor(nation.color), backgroundColor: nation.color }"
+                            :style="{ color: legacyNationTextColor(nation.color), backgroundColor: nation.color }"
                         >
                             【 {{ nation.name }} 】
                         </td>

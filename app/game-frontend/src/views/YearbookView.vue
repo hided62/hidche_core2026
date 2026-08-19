@@ -4,6 +4,7 @@ import { useRoute, useRouter } from 'vue-router';
 
 import MapViewer from '../components/main/MapViewer.vue';
 import { formatLog } from '../utils/formatLog';
+import { legacyLuminanceTextColor } from '../utils/legacyNationColor';
 import { trpc } from '../utils/trpc';
 
 type YearbookRange = Awaited<ReturnType<typeof trpc.yearbook.getRange.query>>;
@@ -201,7 +202,13 @@ onMounted(async () => {
                             :key="nation.id"
                         >
                             <td>
-                                <span :style="{ backgroundColor: nation.color }">{{ nation.name }}</span>
+                                <span
+                                    :style="{
+                                        backgroundColor: nation.color,
+                                        color: legacyLuminanceTextColor(nation.color),
+                                    }"
+                                    >{{ nation.name }}</span
+                                >
                             </td>
                             <td>{{ nation.power.toLocaleString() }}</td>
                             <td>{{ nation.generalCount.toLocaleString() }}</td>
