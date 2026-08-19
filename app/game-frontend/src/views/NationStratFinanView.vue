@@ -218,7 +218,7 @@ onMounted(() => void loadStratFinan());
             </div>
 
             <div class="notice-title">국가 방침 &amp; 임관 권유 메시지</div>
-            <section id="notice-form" class="message-form">
+            <section id="notice-form" class="message-form" :class="{ 'message-form--editing': editingNationMsg }">
                 <header class="green-header">
                     <span>국가 방침</span>
                     <span>
@@ -249,9 +249,18 @@ onMounted(() => void loadStratFinan());
                     </span>
                 </header>
                 <div v-if="!editingNationMsg" class="message-preview" v-html="nationMsg || '내용 없음'" />
-                <LegacyHtmlEditor v-else v-model="nationMsgDraft" :max-length="16384" />
+                <LegacyHtmlEditor
+                    v-else
+                    v-model="nationMsgDraft"
+                    :max-length="16384"
+                    aria-label="국가 방침"
+                />
             </section>
-            <section id="scout-message-form" class="message-form">
+            <section
+                id="scout-message-form"
+                class="message-form"
+                :class="{ 'message-form--editing': editingScoutMsg }"
+            >
                 <header class="green-header">
                     <span>임관 권유</span>
                     <span>
@@ -283,7 +292,12 @@ onMounted(() => void loadStratFinan());
                 </header>
                 <div class="scout-limit">870px x 200px를 넘어서는 내용은 표시되지 않습니다.</div>
                 <div v-if="!editingScoutMsg" class="message-preview scout-preview" v-html="scoutMsg || '내용 없음'" />
-                <LegacyHtmlEditor v-else v-model="scoutMsgDraft" :max-length="1000" />
+                <LegacyHtmlEditor
+                    v-else
+                    v-model="scoutMsgDraft"
+                    :max-length="1000"
+                    aria-label="임관 권유"
+                />
             </section>
 
             <div class="finance-title">예산&amp;정책</div>
@@ -711,6 +725,11 @@ textarea {
     #scout-message-form {
         height: 61.5px;
         overflow: hidden;
+    }
+    #notice-form.message-form--editing,
+    #scout-message-form.message-form--editing {
+        height: auto;
+        overflow: visible;
     }
     .finance-grid {
         height: 218.63px;

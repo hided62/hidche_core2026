@@ -156,7 +156,49 @@ try {
             path: resolve(artifactRoot, `ref-finance-${viewport.name}.png`),
             fullPage: true,
         });
-        result[viewport.name] = { personnel, finance };
+        const editNoticeButton = page.getByRole('button', { name: /국가방침 수정/ });
+        let financeEditor = null;
+        if ((await editNoticeButton.count()) > 0) {
+            await editNoticeButton.click();
+            await page.locator('#noticeForm .tiptap-editor .ProseMirror').waitFor();
+            const toolbar = page.locator('#noticeForm [role="toolbar"]');
+            const imageButton = toolbar.getByRole('button').filter({ has: page.locator('.bi-image') });
+            if ((await imageButton.count()) > 0) await imageButton.hover();
+            const firstToolbarButton = toolbar.getByRole('button').first();
+            await firstToolbarButton.focus();
+            financeEditor = await page.evaluate(
+                ({ rectSource, styleSource }) => {
+                    const rect = new Function(`return (${rectSource})`)();
+                    const style = new Function(`return (${styleSource})`)();
+                    const form = document.querySelector('#noticeForm');
+                    const toolbarElement = form?.querySelector('[role="toolbar"]');
+                    const content = form?.querySelector('.tiptap-editor .ProseMirror');
+                    const buttons = toolbarElement ? [...toolbarElement.querySelectorAll('button')] : [];
+                    const image = buttons.find((button) => button.querySelector('.bi-image'));
+                    return {
+                        form: form ? { rect: rect(form), style: style(form) } : null,
+                        toolbar: toolbarElement
+                            ? {
+                                  rect: rect(toolbarElement),
+                                  style: style(toolbarElement),
+                                  scrollWidth: toolbarElement.scrollWidth,
+                                  buttonCount: buttons.length,
+                                  colorInputCount: toolbarElement.querySelectorAll('input[type="color"]').length,
+                              }
+                            : null,
+                        content: content ? { rect: rect(content), style: style(content) } : null,
+                        imageButton: image ? { rect: rect(image), style: style(image) } : null,
+                        focused: document.activeElement ? style(document.activeElement) : null,
+                    };
+                },
+                { rectSource: rect.toString(), styleSource: style.toString() }
+            );
+            await page.screenshot({
+                path: resolve(artifactRoot, `ref-finance-editor-${viewport.name}.png`),
+                fullPage: true,
+            });
+        }
+        result[viewport.name] = { personnel, finance, financeEditor };
         await context.close();
     }
     await writeFile(resolve(artifactRoot, 'computed-dom.json'), `${JSON.stringify(result, null, 2)}\n`);

@@ -13,6 +13,7 @@ type FixtureState = {
     appointedGeneralId?: number;
     noticeMutationInput?: string;
     scoutMutationInput?: string;
+    uploadDataUrl?: string;
 };
 
 type TrpcRequestPayload = {
@@ -249,6 +250,17 @@ const installFixture = async (page: Page, state: FixtureState) => {
                 state.scoutMutationInput = typeof jsonInput.msg === 'string' ? jsonInput.msg : undefined;
                 return response({ ok: true, msg: purifiedScoutResponse });
             }
+            if (operation === 'board.uploadImage') {
+                state.uploadDataUrl = typeof jsonInput.dataUrl === 'string' ? jsonInput.dataUrl : undefined;
+                return response({
+                    url: 'https://sam-image.hided.net/uploads/core2026/0123456789abcdef0123456789abcdef.webp',
+                    width: 1,
+                    height: 1,
+                    format: 'webp',
+                    animated: false,
+                    size: 68,
+                });
+            }
             if (['nation.setBill', 'nation.setSecretLimit', 'nation.setBlockScout'].includes(operation))
                 return response({ ok: true });
             if (operation === 'nation.setBlockWar') return response({ availableCnt: 4 });
@@ -342,7 +354,8 @@ test('personnel hides every mutation control for an ordinary member and exposes 
     await gotoOffice(page, 'nation/personnel');
     await expect(page.getByText('도 시 관 직 임 명')).toHaveCount(0);
     await expect(page.getByText('외 교 권 자 임 명')).toHaveCount(0);
-    await expect(page.getByText('추 방', { exact: true })).toHaveCount(0);
+    await expect(page.getByRole('combobox', { name: '추방 대상 장수' })).toHaveCount(0);
+    await expect(page.getByRole('button', { name: '추방', exact: true })).toHaveCount(0);
     await expect(page.getByText(/곽가\(10년\).*허창/)).toBeVisible();
 
     const failed = await page.context().newPage();
@@ -456,6 +469,93 @@ test('finance enforces edit permissions and preserves the old value across an AP
     await expect(readOnly.getByRole('checkbox', { name: '전쟁 금지' })).toBeDisabled();
 });
 
+test('finance editor preserves Ref formatting controls and uploads images through sam-image', async ({ page }) => {
+    const state: FixtureState = { role: 'head', rate: 20 };
+    await installFixture(page, state);
+    await page.setViewportSize({ width: 1000, height: 900 });
+    await gotoOffice(page, 'nation/finance');
+    await page.getByRole('button', { name: '국가방침 수정' }).click();
+
+    const editor = page.getByRole('textbox', { name: '국가 방침' });
+    const editorFrame = page.locator('#notice-form .legacy-html-editor');
+    await expect(editor).toBeVisible();
+    expect(await editorFrame.evaluate((element) => getComputedStyle(element).backgroundColor)).toBe(
+        'rgba(0, 0, 0, 0)'
+    );
+    expect(await editor.evaluate((element) => getComputedStyle(element).backgroundColor)).toBe('rgba(0, 0, 0, 0)');
+
+    await editor.fill('서식 검증');
+    await editor.press('Control+A');
+    await page.getByRole('combobox', { name: '글꼴', exact: true }).selectOption('Gungsuh, serif');
+    await page.getByRole('combobox', { name: '글꼴 크기' }).selectOption('22px');
+    await page.getByLabel('글자색').evaluate((element) => {
+        const input = element as HTMLInputElement;
+        input.value = '#123456';
+        input.dispatchEvent(new Event('input', { bubbles: true }));
+    });
+    await page.getByLabel('배경색').evaluate((element) => {
+        const input = element as HTMLInputElement;
+        input.value = '#fedcba';
+        input.dispatchEvent(new Event('input', { bubbles: true }));
+    });
+    await page.getByRole('button', { name: '가운데 정렬' }).click();
+    await expect(page.getByRole('button', { name: '가운데 정렬' })).toHaveClass(/active/);
+
+    const formattedText = editor.locator('span', { hasText: '서식 검증' });
+    await expect(formattedText).toHaveCSS('font-family', /Gungsuh/);
+    await expect(formattedText).toHaveCSS('font-size', '22px');
+    await expect(formattedText).toHaveCSS('color', 'rgb(18, 52, 86)');
+    await expect(formattedText).toHaveCSS('background-color', 'rgb(254, 220, 186)');
+    await expect(editor.locator('p')).toHaveCSS('text-align', 'center');
+
+    await editor.press('End');
+    await page.getByRole('button', { name: '구분선' }).click();
+    await page.getByLabel('업로드할 이미지').setInputFiles({
+        name: '방침.png',
+        mimeType: 'image/png',
+        buffer: Buffer.from(
+            'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=',
+            'base64'
+        ),
+    });
+
+    await expect.poll(() => state.uploadDataUrl).toMatch(/^data:image\/png;base64,/);
+    await expect(editor.locator('hr')).toHaveCount(1);
+    await expect(editor.locator('img')).toHaveAttribute(
+        'src',
+        'https://sam-image.hided.net/uploads/core2026/0123456789abcdef0123456789abcdef.webp'
+    );
+
+    const imageButton = page.getByRole('button', { name: '이미지', exact: true });
+    await imageButton.hover();
+    await expect(imageButton).toHaveCSS('border-color', 'rgb(157, 200, 240)');
+    await page.getByRole('combobox', { name: '글꼴', exact: true }).focus();
+    await expect(page.getByRole('combobox', { name: '글꼴', exact: true })).toHaveCSS('outline-style', 'solid');
+    await screenshot(page, 'core-finance-editor-desktop.png');
+
+    await page.setViewportSize({ width: 500, height: 900 });
+    const mobileGeometry = await editorFrame.evaluate((element) => ({
+        width: element.getBoundingClientRect().width,
+        scrollWidth: element.scrollWidth,
+        toolbarHeight: element.querySelector('[role="toolbar"]')?.getBoundingClientRect().height ?? 0,
+    }));
+    expect(mobileGeometry.width).toBe(500);
+    expect(mobileGeometry.scrollWidth).toBeLessThanOrEqual(500);
+    expect(mobileGeometry.toolbarHeight).toBeGreaterThan(24);
+    await screenshot(page, 'core-finance-editor-mobile.png');
+
+    await page.locator('#notice-form').getByRole('button', { name: '저장' }).click();
+    await expect.poll(() => state.noticeMutationInput).toContain('font-family: Gungsuh, serif');
+    expect(state.noticeMutationInput).toContain('font-size: 22px');
+    expect(state.noticeMutationInput).toContain('color: rgb(18, 52, 86)');
+    expect(state.noticeMutationInput).toContain('background-color: rgb(254, 220, 186)');
+    expect(state.noticeMutationInput).toContain('text-align: center');
+    expect(state.noticeMutationInput).toContain('<hr>');
+    expect(state.noticeMutationInput).toContain(
+        'https://sam-image.hided.net/uploads/core2026/0123456789abcdef0123456789abcdef.webp'
+    );
+});
+
 test('finance adopts the server-purified notice and scout message before rendering the saved preview', async ({
     page,
 }) => {
@@ -471,7 +571,9 @@ test('finance adopts the server-purified notice and scout message before renderi
 
     const noticePreview = page.locator('#notice-form .message-preview');
     await expect(noticePreview).toContainText('서버 정화 방침');
-    expect(state.noticeMutationInput).toBe(dirtyNotice);
+    expect(state.noticeMutationInput).not.toContain('<script>');
+    expect(state.noticeMutationInput).toContain('&lt;script&gt;');
+    expect(state.noticeMutationInput).toContain('&lt;img src=x onerror=');
     await expect(noticePreview.locator('[data-flip="horizontal"]')).toHaveCSS('color', 'rgb(0, 255, 255)');
     await expect(noticePreview.locator('script, svg, [onerror], [onload], [onclick]')).toHaveCount(0);
     await expect
@@ -488,7 +590,9 @@ test('finance adopts the server-purified notice and scout message before renderi
 
     const scoutPreview = page.locator('#scout-message-form .message-preview');
     await expect(scoutPreview).toContainText('서버 정화 임관문');
-    expect(state.scoutMutationInput).toBe(dirtyScout);
+    expect(state.scoutMutationInput).not.toContain('<svg');
+    expect(state.scoutMutationInput).toContain('&lt;svg onload=');
+    expect(state.scoutMutationInput).toContain('&lt;a href="javascript:alert(1)"');
     await expect(scoutPreview.locator('a', { hasText: '위험 링크' })).not.toHaveAttribute('href');
     await expect(scoutPreview.locator('script, svg, [onerror], [onload], [onclick]')).toHaveCount(0);
     await expect
