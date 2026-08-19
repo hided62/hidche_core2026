@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 
-import { buildTournamentBracket } from '../src/utils/tournamentBracket.ts';
+import { buildTournamentBracket, resolveTournamentCoreStat } from '../src/utils/tournamentBracket.ts';
 
 const participants = Array.from({ length: 16 }, (_, index) => ({
     id: index + 1,
@@ -38,6 +38,15 @@ const matches = [
 ];
 
 void describe('tournament bracket', () => {
+    void it('maps every tournament type to the legacy core stat', () => {
+        const participant = { leadership: 81, strength: 72, intel: 93 };
+
+        assert.deepEqual(resolveTournamentCoreStat(participant, 0), { label: '종합', value: 246 });
+        assert.deepEqual(resolveTournamentCoreStat(participant, 1), { label: '통솔', value: 81 });
+        assert.deepEqual(resolveTournamentCoreStat(participant, 2), { label: '무력', value: 72 });
+        assert.deepEqual(resolveTournamentCoreStat(participant, 3), { label: '지력', value: 93 });
+    });
+
     void it('keeps every general in the worker roundIndex order and marks the actual winner path', () => {
         const bracket = buildTournamentBracket(participants, matches, 1);
 

@@ -3,6 +3,7 @@ import { computed, ref } from 'vue';
 import GeneralIdentity from '../ui/GeneralIdentity.vue';
 import {
     buildTournamentBracket,
+    resolveTournamentCoreStat,
     type TournamentBracketMatch,
     type TournamentBracketParticipant,
 } from '../../utils/tournamentBracket';
@@ -14,6 +15,7 @@ const props = defineProps<{
     betTotals?: Record<number, number>;
     myBetTotals?: Record<number, number>;
     totalBet: number;
+    tournamentType?: number;
     showLegend?: boolean;
 }>();
 
@@ -68,6 +70,8 @@ const odds = (id: number | null) => {
     return (props.totalBet / amount).toFixed(2);
 };
 const myBet = (id: number | null) => (id === null ? 0 : (props.myBetTotals?.[id] ?? 0));
+const coreStat = (slot: (typeof bracket.value.top16.slots)[number]) =>
+    resolveTournamentCoreStat(slot, props.tournamentType ?? 0);
 const mobilePairs = computed(() => {
     const column = roundColumns.value[activeMobileRound.value] ?? [];
     if (activeMobileRound.value === roundColumns.value.length - 1) return column.map((slot) => [slot]);
@@ -119,6 +123,9 @@ const mobilePairs = computed(() => {
                     >
                         <GeneralIdentity :name="slot.name" :picture="slot.picture" :image-server="slot.imageServer" />
                         <div v-if="columnIndex === 0" class="bracket-bet-summary">
+                            <small v-if="coreStat(slot)" class="bracket-core-stat">
+                                {{ coreStat(slot)?.label }} {{ coreStat(slot)?.value }}
+                            </small>
                             <small class="bracket-odds">배당 {{ odds(slot.id) }}</small>
                             <small class="bracket-my-bet">내 투자 금{{ myBet(slot.id) }}</small>
                         </div>
@@ -152,6 +159,9 @@ const mobilePairs = computed(() => {
                     >
                         <GeneralIdentity :name="slot.name" :picture="slot.picture" :image-server="slot.imageServer" />
                         <div v-if="activeMobileRound === 0" class="bracket-bet-summary">
+                            <small v-if="coreStat(slot)" class="bracket-core-stat">
+                                {{ coreStat(slot)?.label }} {{ coreStat(slot)?.value }}
+                            </small>
                             <small class="bracket-odds">배당 {{ odds(slot.id) }}</small>
                             <small class="bracket-my-bet">내 투자 금{{ myBet(slot.id) }}</small>
                         </div>
@@ -236,6 +246,7 @@ const mobilePairs = computed(() => {
     gap: 4px;
     white-space: nowrap;
 }
+.bracket-core-stat,
 .bracket-odds,
 .bracket-my-bet {
     display: block;
@@ -243,6 +254,9 @@ const mobilePairs = computed(() => {
     color: skyblue;
     font-size: 11px;
     line-height: 12px;
+}
+.bracket-core-stat {
+    color: #fff;
 }
 .bracket-my-bet {
     overflow: hidden;

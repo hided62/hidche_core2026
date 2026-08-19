@@ -3,6 +3,9 @@ export interface TournamentBracketParticipant {
     name: string;
     picture?: string | null;
     imageServer?: number | null;
+    leadership?: number;
+    strength?: number;
+    intel?: number;
 }
 
 export interface TournamentBracketMatch {
@@ -20,6 +23,14 @@ export interface TournamentBracketSlot {
     picture: string | null;
     imageServer: number;
     advanced: boolean;
+    leadership?: number;
+    strength?: number;
+    intel?: number;
+}
+
+export interface TournamentCoreStat {
+    label: '종합' | '통솔' | '무력' | '지력';
+    value: number;
 }
 
 export interface TournamentBracketRound {
@@ -43,6 +54,18 @@ const emptySlot = (): TournamentBracketSlot => ({
     advanced: false,
 });
 
+export const resolveTournamentCoreStat = (
+    participant: Pick<TournamentBracketParticipant, 'leadership' | 'strength' | 'intel'>,
+    tournamentType: number
+): TournamentCoreStat | null => {
+    const { leadership, strength, intel } = participant;
+    if (leadership === undefined || strength === undefined || intel === undefined) return null;
+    if (tournamentType === 0) return { label: '종합', value: leadership + strength + intel };
+    if (tournamentType === 1) return { label: '통솔', value: leadership };
+    if (tournamentType === 2) return { label: '무력', value: strength };
+    return { label: '지력', value: intel };
+};
+
 export const buildTournamentBracket = (
     participants: TournamentBracketParticipant[],
     matches: TournamentBracketMatch[],
@@ -65,6 +88,9 @@ export const buildTournamentBracket = (
                     picture: participant?.picture ?? null,
                     imageServer: participant?.imageServer ?? 0,
                     advanced: match.winnerId === id,
+                    leadership: participant?.leadership,
+                    strength: participant?.strength,
+                    intel: participant?.intel,
                 };
             })
         );
@@ -84,6 +110,9 @@ export const buildTournamentBracket = (
             picture: participantOf(resolvedWinnerId)?.picture ?? null,
             imageServer: participantOf(resolvedWinnerId)?.imageServer ?? 0,
             advanced: resolvedWinnerId !== null,
+            leadership: participantOf(resolvedWinnerId)?.leadership,
+            strength: participantOf(resolvedWinnerId)?.strength,
+            intel: participantOf(resolvedWinnerId)?.intel,
         },
         final,
         semi: buildRound(9, 4),
