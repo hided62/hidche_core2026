@@ -109,7 +109,7 @@ export const createGatewayApiServer = async () => {
         profiles,
         secret: config.gameTokenSecret,
     });
-    app.get(config.trpcPath.replace(/\/trpc\/?$/u, '/navigation'), async (_request, reply) => {
+    app.get('/navigation', async (_request, reply) => {
         void reply.header('Cache-Control', 'no-store');
         return navigationConfig.get();
     });
