@@ -220,6 +220,11 @@ describe('GatewayReleaseController', () => {
         expect(commandGroups[0]?.[0]).toBe('install --frozen-lockfile');
         expect(commandGroups[0]?.[1]).toContain('turbo run build');
         expect(commandGroups[0]?.[1]).toContain('--cache-dir=/srv/sammo/controller/.turbo/release-cache');
+        expect(commandGroups[0]?.[1]).toContain('--filter=@sammo-ts/gateway-api');
+        expect(commandGroups[0]?.[1]).not.toContain('--filter=@sammo-ts/gateway-frontend');
+        expect(commandGroups[0]?.[2]).toContain('turbo run build:release');
+        expect(commandGroups[0]?.[2]).toContain('--filter=@sammo-ts/gateway-frontend');
+        expect(commandGroups[0]?.[2]).toContain('--concurrency=1');
         expect(commandGroups[1]).toEqual(['--filter @sammo-ts/infra prisma:migrate:deploy:gateway']);
         expect([...running.keys()].sort()).toEqual([...gatewayNames].sort());
         expect(harness.published).toEqual([
