@@ -9,19 +9,25 @@ const operationNames = (route: Route) =>
     decodeURIComponent(new URL(route.request().url()).pathname.split('/trpc/')[1] ?? '').split(',');
 
 const installArchive = async (page: Page, options: { battleAvailable?: boolean; abandoned?: boolean } = {}) => {
+    const requestedProfiles: string[] = [];
     await page.addInitScript((profile) => {
         localStorage.setItem('sammo-game-token', 'ga_archive');
         localStorage.setItem('sammo-game-profile', profile);
     }, gameProfile);
     await page.route(gameTrpcRoute, async (route) => {
+        const requestBody = route.request().postData() ?? '';
+        const requestedProfile = ['che', 'kwe', 'pwe', 'twe', 'nya', 'pya', 'hwe'].find((profile) =>
+            requestBody.includes(`"sourceProfile":"${profile}"`)
+        );
         const results = operationNames(route).map((operation) => {
             if (operation === 'auth.status') return response({ ok: true });
             if (operation === 'lobby.info') return response({ myGeneral: null });
             if (operation === 'archive.myPastPlays') {
+                requestedProfiles.push(requestedProfile ?? 'missing');
                 return response({
                     seasons: [
                         {
-                            sourceProfile: 'che',
+                            sourceProfile: requestedProfile ?? 'che',
                             source: options.abandoned ? 'current' : 'legacy',
                             serverId: 'che_2024_01',
                             openedAt: '2024-01-31T00:00:00.000Z',
@@ -109,6 +115,19 @@ const installArchive = async (page: Page, options: { battleAvailable?: boolean; 
                         killRate: 75,
                         recentWar: '2024-01-30T03:00:00.000Z',
                     },
+                    hallBattle: {
+                        available: true,
+                        semantics: 'independent-records',
+                        strategies: 4,
+                        warnum: 18,
+                        wins: 12,
+                        winRate: 66.67,
+                        occupied: 3,
+                        killCrew: 14_000,
+                        killRate: 80,
+                        killCrewPerson: 9_000,
+                        killRatePerson: 60,
+                    },
                     logs: {
                         generalHistory: {
                             available: true,
@@ -136,7 +155,27 @@ const installArchive = async (page: Page, options: { battleAvailable?: boolean; 
         });
         await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(results) });
     });
+    return { requestedProfiles };
 };
+
+test('과거 장수 기록을 체·퀘·풰·퉤·냐·퍄·훼 서버별로 나누어 조회한다', async ({ page }) => {
+    const state = await installArchive(page);
+    await page.goto('past-plays');
+
+    const tabs = page.getByRole('navigation', { name: '과거 장수 서버 선택' });
+    await expect(tabs.getByRole('button')).toHaveCount(7);
+    await expect(tabs.getByRole('button')).toHaveText(['체', '퀘', '풰', '퉤', '냐', '퍄', '훼']);
+    await expect(tabs.getByRole('button', { name: '체 서버' })).toHaveAttribute('aria-pressed', 'true');
+    await expect(tabs.getByRole('button', { name: '체 서버' })).toHaveCSS('color', 'rgb(135, 206, 235)');
+    await expect(page.locator('.season-identity').getByText('체', { exact: true })).toBeVisible();
+
+    await tabs.getByRole('button', { name: '훼 서버' }).hover();
+    await expect(tabs.getByRole('button', { name: '훼 서버' })).toHaveCSS('color', 'rgb(135, 206, 235)');
+    await tabs.getByRole('button', { name: '훼 서버' }).click();
+    await expect(tabs.getByRole('button', { name: '훼 서버' })).toHaveAttribute('aria-pressed', 'true');
+    await expect(page.locator('.season-identity').getByText('훼', { exact: true })).toBeVisible();
+    expect(state.requestedProfiles).toEqual(['che', 'hwe']);
+});
 
 test('지난 플레이 관직은 숫자 대신 저장된 Ref 표시명으로 나타난다', async ({ page }) => {
     await installArchive(page);
@@ -208,7 +247,7 @@ test('past plays is available without a current general and preserves desktop in
     await expect(page.getByRole('heading', { name: '내 지난 플레이 보기' })).toBeVisible();
     await expect(page.getByText('천하쟁패 · 51기')).toBeVisible();
     await expect(page.getByText('이전 서버 기록')).toBeVisible();
-    await expect(page.getByText('che', { exact: true })).toBeVisible();
+    await expect(page.locator('.season-identity').getByText('체', { exact: true })).toBeVisible();
     await expect(page.getByText(/2024.*개장/)).toBeVisible();
     await expect(page.locator('.general-name')).toHaveText('관우');
     await expect(page.locator('tbody tr').filter({ hasText: '관우' })).toContainText('황제');
@@ -226,6 +265,12 @@ test('past plays is available without a current general and preserves desktop in
     await expect(page.locator('.archive-general-card [role="progressbar"]')).toHaveCount(14);
     await expect(page.locator('[data-general-battle-summary]')).toContainText('승률62.5%');
     await expect(page.locator('[data-general-battle-summary]')).toContainText('살상률75.0%');
+    const hallBattle = page.locator('[data-hall-battle-record]');
+    await expect(hallBattle).toContainText('명예의 전당 보존 기록');
+    await expect(hallBattle).toContainText('항목별 기록 시점이 서로 다를 수 있습니다.');
+    await expect(hallBattle).toContainText('18');
+    await expect(hallBattle).toContainText('66.67%');
+    await expect(hallBattle).toContainText('대인 사살');
     await expect(page.locator('[data-log-type="battleDetail"]')).toContainText(
         '이 기수에는 전투 기록이 보존되지 않았습니다.'
     );
@@ -305,10 +350,20 @@ test('past plays keeps the legacy-width table scrollable on a mobile viewport', 
     const detailMetrics = await page.locator('.detail-shell').evaluate((element) => ({
         width: element.getBoundingClientRect().width,
         scrollWidth: element.scrollWidth,
+        profileTabsWidth: document.querySelector('.profile-tabs')!.getBoundingClientRect().width,
+        profileTabsScrollWidth: document.querySelector('.profile-tabs')!.scrollWidth,
+        hallRecordWidth: element.querySelector('[data-hall-battle-record]')!.getBoundingClientRect().width,
+        hallRecordScrollWidth: element.querySelector('[data-hall-battle-record]')!.scrollWidth,
+        hallColumns: getComputedStyle(element.querySelector('[data-hall-battle-record] dl')!).gridTemplateColumns,
         recordBottom: element.querySelector('[data-general-record-panels]')!.getBoundingClientRect().bottom,
         shellBottom: element.getBoundingClientRect().bottom,
     }));
     expect(detailMetrics.width).toBe(498);
     expect(detailMetrics.scrollWidth).toBe(498);
+    expect(detailMetrics.profileTabsWidth).toBe(500);
+    expect(detailMetrics.profileTabsScrollWidth).toBeLessThanOrEqual(detailMetrics.profileTabsWidth);
+    expect(detailMetrics.hallRecordWidth).toBeGreaterThan(0);
+    expect(detailMetrics.hallRecordScrollWidth).toBeLessThanOrEqual(detailMetrics.hallRecordWidth);
+    expect(detailMetrics.hallColumns.split(' ')).toHaveLength(3);
     expect(detailMetrics.recordBottom).toBeLessThanOrEqual(detailMetrics.shellBottom);
 });
