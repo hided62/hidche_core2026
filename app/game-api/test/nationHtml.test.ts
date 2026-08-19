@@ -69,6 +69,25 @@ describe('nation HTML purification', () => {
         expect(clean).toContain('https://player.vimeo.com/video/1234');
     });
 
+    it('preserves the Tiptap font, color, background, alignment, rule, and uploaded image contract', () => {
+        const source = [
+            '<p style="text-align:center">',
+            '<span style="font-family:Pretendard, sans-serif;font-size:22px;color:#123456;background-color:#fedcba">방침</span>',
+            '</p><hr><img src="https://sam-image.hided.net/uploads/core2026/0123456789abcdef0123456789abcdef.webp" alt="방침.png">',
+        ].join('');
+
+        const clean = purifyNationHtml(source);
+
+        expect(clean).toContain('style="text-align:center"');
+        expect(clean).toContain(
+            'style="font-family:Pretendard, sans-serif;font-size:22px;color:#123456;background-color:#fedcba"'
+        );
+        expect(clean).toContain('<hr />');
+        expect(clean).toContain(
+            'src="https://sam-image.hided.net/uploads/core2026/0123456789abcdef0123456789abcdef.webp"'
+        );
+    });
+
     it('is idempotent for already-purified stored values', () => {
         const first = purifyNationHtml('<p style="color:red"><b>방침</b></p>');
         expect(purifyNationHtml(first)).toBe(first);
