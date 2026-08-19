@@ -73,7 +73,7 @@ const categories = computed(() => {
     return [...general, ...nation];
 });
 
-const selectedCategory = ref('');
+const selectedCategory = ref(props.activeCategory ?? '');
 const selectedGroup = computed(() => {
     if (!props.commandTable) {
         return null;
@@ -89,9 +89,7 @@ const selectedGroup = computed(() => {
 watch(
     () => props.activeCategory,
     (value) => {
-        if (value) {
-            selectedCategory.value = value;
-        }
+        selectedCategory.value = value ?? '';
     }
 );
 
@@ -109,11 +107,15 @@ watch(
     { immediate: true }
 );
 
-watch(selectedCategory, (value) => {
-    if (value) {
-        emit('update:activeCategory', value);
-    }
-});
+watch(
+    selectedCategory,
+    (value) => {
+        if (value) {
+            emit('update:activeCategory', value);
+        }
+    },
+    { immediate: true }
+);
 
 const commandTitle = (command: CommandAvailability) =>
     command.reason || (command.reqArg ? '대상을 선택하는 명령입니다.' : command.possible ? '실행 가능' : '실행 불가');
