@@ -136,4 +136,19 @@ onMounted(() => {
     text-align: center;
     color: #ff7373;
 }
+
+@media (max-width: 600px) {
+    .directory-page {
+        width: 100%;
+        max-width: 500px;
+        margin: 0;
+    }
+    .directory-table {
+        width: 100%;
+    }
+    .directory-error {
+        box-sizing: border-box;
+        width: 100%;
+    }
+}
 </style>

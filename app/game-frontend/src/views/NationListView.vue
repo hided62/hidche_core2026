@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue';
+import { computed, nextTick, onBeforeUnmount, onMounted, ref } from 'vue';
 
 import GeneralDirectoryTable from '../components/directory/GeneralDirectoryTable.vue';
 import type { GeneralDirectoryGeneral } from '../types/directory';
@@ -19,6 +19,8 @@ const generalDetailsLoaded = ref(false);
 const generalDetailsLoading = ref(false);
 const generalDetailsError = ref('');
 const activeGeneralId = ref<number | null>(null);
+const generalPreviewStyle = ref({ left: '8px', top: '8px', visibility: 'hidden' as 'hidden' | 'visible' });
+const generalPreviewAnchor = ref<HTMLElement | null>(null);
 let generalDetailsRequest: Promise<void> | null = null;
 
 const generalDetailsById = computed(
@@ -54,6 +56,37 @@ const roamingCityName = (nation: Nation): string => {
     return nation.cities.find((city) => city.id === chief?.cityId)?.name ?? '-';
 };
 const closeWindow = () => window.close();
+const officerLevelAt = (row: number, column: number, columns: number) => 13 - ((row - 1) * columns + column);
+
+const positionGeneralPreview = async (): Promise<void> => {
+    await nextTick();
+    const anchor = generalPreviewAnchor.value;
+    const preview = document.getElementById('nation-general-preview');
+    if (!anchor || !preview || activeGeneralId.value === null) {
+        return;
+    }
+
+    const viewportMargin = 8;
+    const anchorGap = 8;
+    const anchorRect = anchor.getBoundingClientRect();
+    const previewRect = preview.getBoundingClientRect();
+    const maxLeft = Math.max(viewportMargin, window.innerWidth - previewRect.width - viewportMargin);
+    const left = Math.min(
+        maxLeft,
+        Math.max(viewportMargin, anchorRect.left + anchorRect.width / 2 - previewRect.width / 2)
+    );
+    const below = anchorRect.bottom + anchorGap;
+    const above = anchorRect.top - previewRect.height - anchorGap;
+    const maxTop = Math.max(viewportMargin, window.innerHeight - previewRect.height - viewportMargin);
+    const top =
+        below + previewRect.height <= window.innerHeight - viewportMargin ? below : Math.max(viewportMargin, above);
+
+    generalPreviewStyle.value = {
+        left: `${left}px`,
+        top: `${Math.min(maxTop, top)}px`,
+        visibility: 'visible',
+    };
+};
 
 const loadGeneralDetails = async (): Promise<void> => {
     if (generalDetailsLoaded.value) {
@@ -67,6 +100,7 @@ const loadGeneralDetails = async (): Promise<void> => {
             .then((result) => {
                 generalDetails.value = result.generals;
                 generalDetailsLoaded.value = true;
+                void positionGeneralPreview();
             })
             .catch((cause: unknown) => {
                 generalDetailsError.value =
@@ -80,14 +114,26 @@ const loadGeneralDetails = async (): Promise<void> => {
     await generalDetailsRequest;
 };
 
-const showGeneralDetails = (generalId: number): void => {
+const showGeneralDetails = (event: Event, generalId: number): void => {
+    if (event.currentTarget instanceof HTMLElement) {
+        generalPreviewAnchor.value = event.currentTarget;
+    }
     activeGeneralId.value = generalId;
-    void loadGeneralDetails();
+    generalPreviewStyle.value = { ...generalPreviewStyle.value, visibility: 'hidden' };
+    void positionGeneralPreview();
+    void loadGeneralDetails().then(positionGeneralPreview);
+};
+
+const showGeneralDetailsFromTouch = (event: PointerEvent, generalId: number): void => {
+    if (event.pointerType === 'touch') {
+        showGeneralDetails(event, generalId);
+    }
 };
 
 const hideGeneralDetails = (generalId: number): void => {
     if (activeGeneralId.value === generalId) {
         activeGeneralId.value = null;
+        generalPreviewAnchor.value = null;
     }
 };
 
@@ -100,6 +146,13 @@ const hideGeneralDetailsFromPointer = (event: PointerEvent, generalId: number): 
 
 onMounted(() => {
     void loadDirectory();
+    window.addEventListener('resize', positionGeneralPreview);
+    window.addEventListener('scroll', positionGeneralPreview, true);
+});
+
+onBeforeUnmount(() => {
+    window.removeEventListener('resize', positionGeneralPreview);
+    window.removeEventListener('scroll', positionGeneralPreview, true);
 });
 </script>
 
@@ -132,7 +185,7 @@ onMounted(() => {
                             【 {{ nation.name }} 】
                         </td>
                     </tr>
-                    <tr>
+                    <tr class="desktop-only">
                         <td class="label-cell">성 향</td>
                         <td class="value-wide type-name">{{ Array.from(nation.type.name).join(' ') }}</td>
                         <td class="label-cell">작 위</td>
@@ -142,29 +195,69 @@ onMounted(() => {
                         <td class="label-cell">장수 / 속령</td>
                         <td class="value-wide">{{ nation.generalCount }} / {{ nation.cityCount }}</td>
                     </tr>
-                    <tr v-for="row in 2" :key="row">
+                    <tr class="mobile-only">
+                        <td class="label-cell">성 향</td>
+                        <td class="value-wide type-name">{{ Array.from(nation.type.name).join(' ') }}</td>
+                        <td class="label-cell">작 위</td>
+                        <td class="value-wide">{{ formatNationLevelText(nation.level) }}</td>
+                    </tr>
+                    <tr class="mobile-only">
+                        <td class="label-cell">국 력</td>
+                        <td class="value-wide">{{ nation.power }}</td>
+                        <td class="label-cell">장수 / 속령</td>
+                        <td class="value-wide">{{ nation.generalCount }} / {{ nation.cityCount }}</td>
+                    </tr>
+                    <tr v-for="row in 2" :key="`desktop-officers-${row}`" class="desktop-only">
                         <template v-for="column in 4" :key="column">
                             <td class="label-cell">
-                                {{ formatOfficerLevelText(13 - ((row - 1) * 4 + column), nation.level) }}
+                                {{ formatOfficerLevelText(officerLevelAt(row, column, 4), nation.level) }}
                             </td>
                             <td class="value-wide">
                                 <span
-                                    v-if="officerName(nation, 13 - ((row - 1) * 4 + column))"
+                                    v-if="officerName(nation, officerLevelAt(row, column, 4))"
                                     :style="{
                                         color: getNpcColor(
-                                            officerName(nation, 13 - ((row - 1) * 4 + column))?.npcState ?? 0
+                                            officerName(nation, officerLevelAt(row, column, 4))?.npcState ?? 0
                                         ),
                                     }"
                                 >
-                                    {{ displayGeneralName(officerName(nation, 13 - ((row - 1) * 4 + column))!) }}
+                                    {{ displayGeneralName(officerName(nation, officerLevelAt(row, column, 4))!) }}
                                 </span>
                                 <template v-else>-</template>
                             </td>
                         </template>
                     </tr>
-                    <tr>
+                    <tr v-for="row in 4" :key="`mobile-officers-${row}`" class="mobile-only">
+                        <template v-for="column in 2" :key="column">
+                            <td class="label-cell">
+                                {{ formatOfficerLevelText(officerLevelAt(row, column, 2), nation.level) }}
+                            </td>
+                            <td class="value-wide">
+                                <span
+                                    v-if="officerName(nation, officerLevelAt(row, column, 2))"
+                                    :style="{
+                                        color: getNpcColor(
+                                            officerName(nation, officerLevelAt(row, column, 2))?.npcState ?? 0
+                                        ),
+                                    }"
+                                >
+                                    {{ displayGeneralName(officerName(nation, officerLevelAt(row, column, 2))!) }}
+                                </span>
+                                <template v-else>-</template>
+                            </td>
+                        </template>
+                    </tr>
+                    <tr class="desktop-only">
                         <td class="label-cell">외교권자</td>
                         <td colspan="5">
+                            {{ nation.ambassadorNames.map((name) => displayAmbassadorName(nation, name)).join(', ') }}
+                        </td>
+                        <td class="label-cell">조언자</td>
+                        <td class="value-wide">{{ nation.auditorCount }}명</td>
+                    </tr>
+                    <tr class="mobile-only">
+                        <td class="label-cell">외교권자</td>
+                        <td class="value-wide">
                             {{ nation.ambassadorNames.map((name) => displayAmbassadorName(nation, name)).join(', ') }}
                         </td>
                         <td class="label-cell">조언자</td>
@@ -199,9 +292,10 @@ onMounted(() => {
                                     :aria-describedby="
                                         activeGeneralId === general.id ? 'nation-general-preview' : undefined
                                     "
-                                    @pointerenter="showGeneralDetails(general.id)"
+                                    @pointerdown="showGeneralDetailsFromTouch($event, general.id)"
+                                    @pointerenter="showGeneralDetails($event, general.id)"
                                     @pointerleave="hideGeneralDetailsFromPointer($event, general.id)"
-                                    @focus="showGeneralDetails(general.id)"
+                                    @focus="showGeneralDetails($event, general.id)"
                                     @blur="hideGeneralDetails(general.id)"
                                 >
                                     {{ displayGeneralName(general) }}</button
@@ -244,9 +338,10 @@ onMounted(() => {
                                     :aria-describedby="
                                         activeGeneralId === general.id ? 'nation-general-preview' : undefined
                                     "
-                                    @pointerenter="showGeneralDetails(general.id)"
+                                    @pointerdown="showGeneralDetailsFromTouch($event, general.id)"
+                                    @pointerenter="showGeneralDetails($event, general.id)"
                                     @pointerleave="hideGeneralDetailsFromPointer($event, general.id)"
-                                    @focus="showGeneralDetails(general.id)"
+                                    @focus="showGeneralDetails($event, general.id)"
                                     @blur="hideGeneralDetails(general.id)"
                                 >
                                     {{ displayGeneralName(general) }}</button
@@ -264,8 +359,9 @@ onMounted(() => {
             class="general-hover-preview"
             role="tooltip"
             aria-live="polite"
+            :style="generalPreviewStyle"
         >
-            <GeneralDirectoryTable v-if="activeGeneral" :generals="[activeGeneral]" />
+            <GeneralDirectoryTable v-if="activeGeneral" :generals="[activeGeneral]" layout="card" />
             <div v-else class="general-hover-status">
                 <template v-if="generalDetailsLoading">장수 기본 정보를 불러오는 중...</template>
                 <template v-else-if="generalDetailsError">{{ generalDetailsError }}</template>
@@ -380,6 +476,9 @@ onMounted(() => {
 .center {
     text-align: center;
 }
+.mobile-only {
+    display: none;
+}
 .general-preview-trigger {
     appearance: none;
     border: 0;
@@ -396,9 +495,7 @@ onMounted(() => {
 .general-hover-preview {
     position: fixed;
     z-index: 30;
-    bottom: 12px;
-    left: max(0px, calc(50% - 500px));
-    width: 1000px;
+    width: min(500px, calc(100vw - 16px));
     margin: 0;
     padding: 0;
     background: #000;
@@ -407,7 +504,7 @@ onMounted(() => {
 }
 .general-hover-status {
     box-sizing: border-box;
-    width: 1000px;
+    width: 100%;
     min-height: 65px;
     border: 1px solid gray;
     padding: 22px 8px;
@@ -433,5 +530,44 @@ onMounted(() => {
 }
 .directory-error {
     color: #ff7373;
+}
+
+@media (max-width: 600px) {
+    .directory-page {
+        width: 100%;
+        max-width: 500px;
+        margin: 0;
+    }
+    .directory-table {
+        width: 100%;
+    }
+    .desktop-only {
+        display: none;
+    }
+    .mobile-only {
+        display: table-row;
+    }
+    .label-cell {
+        width: 80px;
+    }
+    .value-wide {
+        width: 170px;
+    }
+    .neutral-spacer {
+        display: none;
+    }
+    .neutral-label,
+    .neutral-value {
+        width: 25%;
+    }
+    .general-preview-trigger {
+        min-height: 24px;
+        padding: 2px 4px;
+    }
+    .directory-error,
+    .directory-loading {
+        box-sizing: border-box;
+        width: 100%;
+    }
 }
 </style>

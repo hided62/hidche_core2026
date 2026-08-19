@@ -416,43 +416,45 @@ test('nation directory reuses only the public general-directory row on hover and
 
         const preview = page.locator('#nation-general-preview');
         await expect(preview).toBeVisible();
-        await expect(preview.locator('tr[data-general-id]')).toHaveCount(1);
-        await expect(preview.locator('tr[data-general-id="10"]')).toContainText('조조');
-        await expect(preview.locator('tr[data-general-id="10"]')).toContainText('대담');
-        await expect(preview.locator('tr[data-general-id="10"]')).toContainText('상재 / 귀모');
+        await expect(preview.locator('[data-general-card-id]')).toHaveCount(1);
+        await expect(preview.locator('[data-general-card-id="10"]')).toContainText('조조');
+        await expect(preview.locator('[data-general-card-id="10"]')).toContainText('대담');
+        await expect(preview.locator('[data-general-card-id="10"]')).toContainText('상재 / 귀모');
         await expect(preview).not.toContainText('user-');
         await expect(preview).not.toContainText('secret');
 
         const previewGeometry = await preview.evaluate((element) => {
             const rect = element.getBoundingClientRect();
             const style = getComputedStyle(element);
-            const row = element.querySelector('tr[data-general-id]')!.getBoundingClientRect();
+            const card = element.querySelector('[data-general-card-id]')!.getBoundingClientRect();
+            const trigger = document.querySelector('[data-general-preview-trigger="10"]')!.getBoundingClientRect();
+            const verticalGap = rect.bottom <= trigger.top ? trigger.top - rect.bottom : rect.top - trigger.bottom;
             return {
                 x: rect.x,
+                right: window.innerWidth - rect.right,
                 width: rect.width,
-                bottom: window.innerHeight - rect.bottom,
+                verticalGap,
                 position: style.position,
-                rowHeight: row.height,
+                cardHeight: card.height,
                 documentWidth: document.documentElement.scrollWidth,
                 documentHeight: document.documentElement.scrollHeight,
             };
         });
-        expect(previewGeometry).toEqual({
-            x: viewport.name === 'desktop' ? 100 : 0,
-            width: 1000,
-            bottom: 12,
-            position: 'fixed',
-            rowHeight: 65,
-            documentWidth: Math.max(viewport.width, 1000),
-            documentHeight: documentHeightBefore,
-        });
+        expect(previewGeometry.position).toBe('fixed');
+        expect(previewGeometry.width).toBe(viewport.name === 'desktop' ? 500 : 484);
+        expect(previewGeometry.x).toBeGreaterThanOrEqual(8);
+        expect(previewGeometry.right).toBeGreaterThanOrEqual(8);
+        expect(previewGeometry.verticalGap).toBe(8);
+        expect(previewGeometry.cardHeight).toBeGreaterThan(100);
+        expect(previewGeometry.documentWidth).toBe(viewport.width);
+        expect(previewGeometry.documentHeight).toBe(documentHeightBefore);
 
         await page.locator('.nation-title').first().hover();
         await expect(preview).toHaveCount(0);
 
         const foreignTrigger = page.locator('[data-general-preview-trigger="20"]');
         await foreignTrigger.focus();
-        await expect(preview.locator('tr[data-general-id="20"]')).toContainText('유비');
+        await expect(preview.locator('[data-general-card-id="20"]')).toContainText('유비');
         expect(await foreignTrigger.getAttribute('aria-expanded')).toBe('true');
         expect(await foreignTrigger.evaluate((element) => getComputedStyle(element).outlineStyle)).toBe('dashed');
 
@@ -472,6 +474,135 @@ test('nation directory reuses only the public general-directory row on hover and
     }
 
     expect(requestedOperations.filter((operation) => operation === 'world.getGeneralDirectory')).toHaveLength(2);
+    expect(requestedOperations).not.toContain('nation.getSecretGeneralList');
+    expect(requestedOperations).not.toContain('nation.getPersonnelInfo');
+    expect(requestedOperations).not.toContain('general.me');
+});
+
+test('nation and general directories rearrange for mobile and keep the tapped preview near its trigger', async ({
+    browser,
+}) => {
+    const context = await browser.newContext({
+        viewport: { width: 390, height: 844 },
+        screen: { width: 390, height: 844 },
+        deviceScaleFactor: 1,
+        isMobile: true,
+        hasTouch: true,
+    });
+    const page = await context.newPage();
+    const requestedOperations: string[] = [];
+    const mobileMeasurements: Record<string, unknown> = {};
+
+    try {
+        await install(page, 'general', [], requestedOperations);
+        await page.goto('nation-list');
+        await page.waitForLoadState('networkidle');
+
+        const nationMetrics = await page.locator('.directory-page').evaluate((element) => {
+            const rect = element.getBoundingClientRect();
+            return {
+                x: rect.x,
+                width: rect.width,
+                innerWidth: window.innerWidth,
+                scrollWidth: document.documentElement.scrollWidth,
+            };
+        });
+        expect(nationMetrics.x).toBe(0);
+        expect(nationMetrics.width).toBe(500);
+        expect(nationMetrics.scrollWidth).toBeLessThanOrEqual(nationMetrics.innerWidth);
+        mobileMeasurements.nation = nationMetrics;
+
+        const mobileNationTables = page.locator('.nation-table');
+        await expect(mobileNationTables).toHaveCount(2);
+        for (const nationTable of await mobileNationTables.all()) {
+            const mobileNationRows = nationTable.locator('.mobile-only:visible');
+            await expect(mobileNationRows).toHaveCount(7);
+            expect(await mobileNationRows.evaluateAll((rows) => rows.map((row) => row.children.length))).toEqual([
+                4, 4, 4, 4, 4, 4, 4,
+            ]);
+        }
+        await expect(page.locator('.nation-table .desktop-only:visible')).toHaveCount(0);
+        const nationCellWidths = await page
+            .locator('.nation-table .mobile-only:visible')
+            .first()
+            .locator('td')
+            .evaluateAll((cells) => cells.map((cell) => cell.getBoundingClientRect().width));
+        expect(nationCellWidths).toHaveLength(4);
+        expect(nationCellWidths[0]).toBeCloseTo(80, 0);
+        expect(nationCellWidths[1]).toBeCloseTo(170, 0);
+        mobileMeasurements.nationCellWidths = nationCellWidths;
+
+        const firstTrigger = page.locator('[data-general-preview-trigger="10"]');
+        await firstTrigger.tap();
+        const preview = page.locator('#nation-general-preview');
+        await expect(preview).toBeVisible();
+        await expect(preview.locator('[data-general-card-id="10"]')).toContainText('조조');
+        const touchGeometry = await preview.evaluate((element) => {
+            const previewRect = element.getBoundingClientRect();
+            const triggerRect = document.querySelector('[data-general-preview-trigger="10"]')!.getBoundingClientRect();
+            return {
+                left: previewRect.left,
+                right: window.innerWidth - previewRect.right,
+                width: previewRect.width,
+                verticalGap:
+                    previewRect.bottom <= triggerRect.top
+                        ? triggerRect.top - previewRect.bottom
+                        : previewRect.top - triggerRect.bottom,
+            };
+        });
+        expect(touchGeometry.left).toBe(8);
+        expect(touchGeometry.right).toBeGreaterThanOrEqual(8);
+        expect(touchGeometry.width).toBe(484);
+        expect(touchGeometry.verticalGap).toBe(8);
+        mobileMeasurements.touchPreview = touchGeometry;
+        expect(requestedOperations.filter((operation) => operation === 'world.getGeneralDirectory')).toHaveLength(1);
+
+        await page.goto('general-list');
+        await page.waitForLoadState('networkidle');
+        await expect(page.locator('.general-table')).toBeHidden();
+        await expect(page.locator('.general-card-list')).toBeVisible();
+        await expect(page.locator('.general-card-list [data-general-card-id]')).toHaveCount(2);
+        await expect(page.locator('[data-general-card-id="10"]')).toContainText('상재 / 귀모');
+        await expect(page.locator('[data-general-card-id="10"]')).toContainText('통솔81+6');
+
+        const generalMetrics = await page.locator('.directory-page').evaluate((element) => {
+            const rect = element.getBoundingClientRect();
+            const cardElement = element.querySelector('[data-general-card-id]')!;
+            const card = cardElement.getBoundingClientRect();
+            return {
+                width: rect.width,
+                cardWidth: card.width,
+                cardHeight: card.height,
+                cardGridColumns: getComputedStyle(cardElement).gridTemplateColumns,
+                scrollWidth: document.documentElement.scrollWidth,
+                innerWidth: window.innerWidth,
+            };
+        });
+        expect(generalMetrics.width).toBe(500);
+        expect(generalMetrics.cardWidth).toBe(500);
+        expect(generalMetrics.cardHeight).toBeGreaterThan(100);
+        expect(generalMetrics.cardGridColumns).toMatch(/^66px /u);
+        expect(generalMetrics.scrollWidth).toBe(generalMetrics.innerWidth);
+        mobileMeasurements.general = generalMetrics;
+
+        const artifactRoot = process.env.DIRECTORY_PARITY_ARTIFACT_DIR;
+        if (artifactRoot) {
+            const output = resolve(artifactRoot);
+            await mkdir(output, { recursive: true });
+            await writeFile(
+                resolve(output, 'mobile-computed-dom.json'),
+                `${JSON.stringify(mobileMeasurements, null, 2)}\n`
+            );
+            await page.screenshot({ path: resolve(output, 'general-directory-mobile.png'), fullPage: true });
+            await page.goto('nation-list');
+            await firstTrigger.tap();
+            await expect(preview).toBeVisible();
+            await page.screenshot({ path: resolve(output, 'nation-directory-tap-mobile.png'), fullPage: true });
+        }
+    } finally {
+        await context.close();
+    }
+
     expect(requestedOperations).not.toContain('nation.getSecretGeneralList');
     expect(requestedOperations).not.toContain('nation.getPersonnelInfo');
     expect(requestedOperations).not.toContain('general.me');
