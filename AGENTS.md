@@ -291,6 +291,16 @@ pnpm build
   예: `pnpm --filter @sammo-ts/game-engine test monthlyCoreEventHandler.test.ts`
 - frontend package의 `test` placeholder를 실제 UI 검증으로 오해하지 말아 주세요.
   해당 Playwright script 또는 legacy parity suite를 사용해 주세요.
+- 새 worktree에서 direct Playwright를 실행하기 전에 현재 호스트의 `fnm use`
+  (nvm 환경은 `nvm use`) 후
+  `pnpm test:bootstrap`을 실행해 install, Prisma client와
+  common → logic → infra → game-engine → API 산출물을 준비해 주세요. 이미
+  install된 checkout은 `pnpm test:prepare`를 사용합니다. Playwright
+  `webServer` 실패를 이 준비가 끝나기 전 제품 회귀로 분류하지 말아 주세요.
+- E2E port가 다른 worktree와 겹치면 설정 파일을 임시 수정하지 말고
+  `PLAYWRIGHT_FRONTEND_PORT`, `PLAYWRIGHT_GATEWAY_FRONTEND_PORT` 또는
+  `FRONTEND_PARITY_*_PORT`를 지정합니다. 같은 game frontend `dist`를 쓰는
+  profile production run은 직렬로 실행합니다.
 - 전체 lint/test의 기존 실패가 있으면 targeted 결과와 baseline 재현 결과를
   구분하고, 관련 없는 기대값을 완화해 숨기지 말아 주세요.
 

@@ -9,6 +9,8 @@
         "lint:fix": "turbo lint:fix",
         "format": "prettier --write .",
         "test": "turbo test",
+        "test:bootstrap": "pnpm install --offline --frozen-lockfile && pnpm test:prepare",
+        "test:prepare": "pnpm --filter @sammo-ts/infra prisma:generate && pnpm --filter @sammo-ts/common build && pnpm --filter @sammo-ts/logic build && pnpm --filter @sammo-ts/infra build && pnpm --filter @sammo-ts/game-engine build && pnpm --filter @sammo-ts/game-api build && pnpm --filter @sammo-ts/gateway-api build",
         "test:integration": "pnpm --filter @sammo-ts/integration-tests test:integration",
         "test:integration:conditional": "./tools/run-conditional-integration.sh",
         "build": "turbo build",

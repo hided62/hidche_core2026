@@ -90,11 +90,20 @@ full Git commit으로 고정하고, 실험 릴리스 같은 milestone은 annotat
 ## 개발 환경
 
 ```sh
-pnpm install --frozen-lockfile
+fnm use
+pnpm test:bootstrap
 cp .env.example .env
-pnpm --filter @sammo-ts/infra prisma:generate
 CI=1 pnpm typecheck
 ```
+
+현재 호스트의 `fnm use`는 `.nvmrc`의 Node 24를 적용합니다. nvm을 사용하는 다른
+환경에서는 같은 위치에서 `nvm use`를 사용합니다.
+
+`test:bootstrap`은 새 worktree에서 offline frozen install, game/Gateway Prisma
+client 생성과 내부 package build를 순서대로 수행합니다. 이미 install이 끝난
+worktree에서 schema 또는 내부 package가 바뀌었으면 `pnpm test:prepare`만 다시
+실행합니다. Playwright를 직접 실행하기 전의 표준 절차와 오류별 복구 방법은
+[테스트 정책](docs/testing-policy.md#새-worktree-준비)에 있습니다.
 
 `.env`는 Git에서 제외됩니다. 비밀값은 명령행, 로그, screenshot, report,
 `VITE_*` 변수에 넣지 말아 주세요. 상위 작업공간에서는
