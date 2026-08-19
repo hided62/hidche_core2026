@@ -271,12 +271,14 @@ model GeneralAccessLog {
   generalId         Int       @unique @map("general_id")
   userId            String?   @map("user_id")
   lastRefresh       DateTime? @map("last_refresh")
+  lastActionAt      DateTime? @map("last_action_at")
   refresh           Int       @default(0)
   refreshTotal      Int       @default(0) @map("refresh_total")
   refreshScore      Int       @default(0) @map("refresh_score")
   refreshScoreTotal Int       @default(0) @map("refresh_score_total")
 
   @@index([userId])
+  @@index([lastActionAt])
   @@map("general_access_log")
 }
 

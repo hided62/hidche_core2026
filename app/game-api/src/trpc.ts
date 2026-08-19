@@ -16,6 +16,7 @@ import {
     type GeneralAccessEndpoint,
 } from './services/generalAccess.js';
 import { getDeferredGeneralAccessLimit } from './services/deferredGeneralAccess.js';
+import { recordGeneralActivity } from './services/generalActivity.js';
 
 const t = initTRPC.context<GameApiContext>().create();
 
@@ -39,6 +40,21 @@ const requireAuthMiddleware = t.middleware(({ ctx, next }) => {
             auth: ctx.auth,
         },
     });
+});
+
+const generalActivityMiddleware = t.middleware(async ({ ctx, type, next }) => {
+    const result = await next();
+    if (type !== 'mutation' || !result.ok || ctx.generalAccessTracking !== true) {
+        return result;
+    }
+
+    try {
+        await recordGeneralActivity(ctx);
+    } catch {
+        // 활동 표시는 업무 transaction보다 약한 보조 기록이다. 배포 중 schema
+        // 전환이나 일시 DB 오류가 이미 완료된 사용자 mutation을 실패시키지 않는다.
+    }
+    return result;
 });
 
 const inputEventMiddleware = t.middleware(async ({ ctx, type, path, next }) => {
@@ -146,7 +162,10 @@ const deferredGeneralAccessLimitMiddleware = t.middleware(async ({ ctx, next }) 
 
 export const router = t.router;
 export const procedure = t.procedure.use(inputEventMiddleware);
-export const authedProcedure: typeof procedure = procedure.use(requireAuthMiddleware);
+export const authedProcedure: typeof procedure = t.procedure
+    .use(requireAuthMiddleware)
+    .use(generalActivityMiddleware)
+    .use(inputEventMiddleware);
 
 // Ref의 increaseRefresh()는 로그인/제재 확인 뒤, 업무 validation과 mutation
 // transaction보다 먼저 별도 저장된다. access middleware를 input-event보다
@@ -154,16 +173,20 @@ export const authedProcedure: typeof procedure = procedure.use(requireAuthMiddle
 export const accessAuthedProcedure: typeof procedure = t.procedure
     .use(requireAuthMiddleware)
     .use(generalAccessEndpointMiddleware)
+    .use(generalActivityMiddleware)
     .use(inputEventMiddleware);
 
 // 턴 데몬이 ENGINE input_event와 world/DB 변경을 자체 transaction으로
 // 커밋하는 mutation에 사용한다. API input-event transaction으로 한 번 더
 // 감싸면 daemon이 아직 commit되지 않은 command를 볼 수 없어 교착된다.
-export const engineAuthedProcedure: typeof procedure = t.procedure.use(requireAuthMiddleware);
+export const engineAuthedProcedure: typeof procedure = t.procedure
+    .use(requireAuthMiddleware)
+    .use(generalActivityMiddleware);
 export const engineProcedure: typeof procedure = t.procedure;
 export const accessEngineAuthedProcedure: typeof procedure = t.procedure
     .use(requireAuthMiddleware)
-    .use(generalAccessEndpointMiddleware);
+    .use(generalAccessEndpointMiddleware)
+    .use(generalActivityMiddleware);
 
 // 페이지 조회 계측처럼 game state/input-event 원장과 무관한 세션 보조
 // mutation에 사용한다. gameplay state 변경에는 사용하지 않는다.
@@ -171,22 +194,43 @@ export const sessionActivityProcedure = t.procedure;
 
 // 시뮬레이터처럼 게임 상태를 변경하지 않는 계산은 input-event transaction과
 // 이벤트 원장을 만들지 않는다. 인증은 유지하되 lifecycle DB 경계 밖에서 실행한다.
-export const readOnlyAuthedProcedure: typeof procedure = t.procedure.use(requireAuthMiddleware);
+export const readOnlyAuthedProcedure: typeof procedure = t.procedure
+    .use(requireAuthMiddleware)
+    .use(generalActivityMiddleware);
 export const accessLimitAuthedProcedure: typeof procedure = t.procedure
     .use(requireAuthMiddleware)
-    .use(generalAccessLimitMiddleware);
+    .use(generalAccessLimitMiddleware)
+    .use(generalActivityMiddleware);
 export const deferredAccessLimitAuthedProcedure: typeof procedure = t.procedure
     .use(requireAuthMiddleware)
-    .use(deferredGeneralAccessLimitMiddleware);
+    .use(deferredGeneralAccessLimitMiddleware)
+    .use(generalActivityMiddleware);
 // 입력이 있는 Ref handler는 request parsing을 마친 뒤 increaseRefresh()를
 // 호출한다. 이 factory들은 parser를 access/input-event middleware 앞에 둔다.
 export const accessInputProcedure: typeof procedure.input = (input) =>
     t.procedure.input(input).use(generalAccessEndpointMiddleware).use(inputEventMiddleware);
 export const accessAuthedInputProcedure: typeof procedure.input = (input) =>
-    t.procedure.use(requireAuthMiddleware).input(input).use(generalAccessEndpointMiddleware).use(inputEventMiddleware);
+    t.procedure
+        .use(requireAuthMiddleware)
+        .input(input)
+        .use(generalAccessEndpointMiddleware)
+        .use(generalActivityMiddleware)
+        .use(inputEventMiddleware);
 export const accessEngineAuthedInputProcedure: typeof procedure.input = (input) =>
-    t.procedure.use(requireAuthMiddleware).input(input).use(generalAccessEndpointMiddleware);
+    t.procedure
+        .use(requireAuthMiddleware)
+        .input(input)
+        .use(generalAccessEndpointMiddleware)
+        .use(generalActivityMiddleware);
 export const accessReadOnlyAuthedInputProcedure: typeof procedure.input = (input) =>
-    t.procedure.use(requireAuthMiddleware).input(input).use(generalAccessEndpointMiddleware);
+    t.procedure
+        .use(requireAuthMiddleware)
+        .input(input)
+        .use(generalAccessEndpointMiddleware)
+        .use(generalActivityMiddleware);
 export const accessLimitAuthedInputProcedure: typeof procedure.input = (input) =>
-    t.procedure.use(requireAuthMiddleware).input(input).use(generalAccessLimitMiddleware);
+    t.procedure
+        .use(requireAuthMiddleware)
+        .input(input)
+        .use(generalAccessLimitMiddleware)
+        .use(generalActivityMiddleware);
