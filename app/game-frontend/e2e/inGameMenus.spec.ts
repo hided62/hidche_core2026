@@ -1099,6 +1099,66 @@ test('내 정보&설정 keeps desktop density and becomes a 390px horizontal-ide
     await persistParityArtifact(page, 'core-my-page-mobile', mobile);
 });
 
+test('내 정보&설정의 지난 플레이는 기본 탐색과 분리되어 오른쪽에 정렬된다', async ({ page }) => {
+    const state: FixtureState = { permission: 'head', myset: 3, settingMutations: [], accessPages: [] };
+    await install(page, state);
+
+    for (const viewport of [
+        { name: 'desktop', width: 1000, height: 900 },
+        { name: 'mobile', width: 390, height: 844 },
+    ] as const) {
+        await page.setViewportSize({ width: viewport.width, height: viewport.height });
+        await page.goto('my-page');
+
+        const pastPlaysLink = page.getByRole('link', { name: '지난 플레이' });
+        await expect(pastPlaysLink).toHaveAttribute('href', `${gameBasePath}/past-plays`);
+        await pastPlaysLink.hover();
+        await pastPlaysLink.focus();
+        await expect(pastPlaysLink).toBeFocused();
+
+        const geometry = await page.locator('.title-row').evaluate((element) => {
+            const title = element.getBoundingClientRect();
+            const actions = element.querySelector<HTMLElement>('.title-actions')!.getBoundingClientRect();
+            const navigation = element.querySelector<HTMLElement>('.navigation-actions')!.getBoundingClientRect();
+            const back = element.querySelector<HTMLAnchorElement>('.navigation-actions a')!.getBoundingClientRect();
+            const refresh = element.querySelector<HTMLButtonElement>('.navigation-actions button')!.getBoundingClientRect();
+            const past = element.querySelector<HTMLAnchorElement>('.past-plays-link')!.getBoundingClientRect();
+            const pastStyle = getComputedStyle(element.querySelector<HTMLAnchorElement>('.past-plays-link')!);
+            return {
+                title: { left: title.left, right: title.right },
+                actions: { left: actions.left, right: actions.right },
+                navigation: { left: navigation.left, right: navigation.right },
+                back: { top: back.top, right: back.right },
+                refresh: { top: refresh.top, right: refresh.right },
+                past: { top: past.top, left: past.left, right: past.right },
+                pastStyle: {
+                    cursor: pastStyle.cursor,
+                    minHeight: pastStyle.minHeight,
+                    backgroundColor: pastStyle.backgroundColor,
+                },
+                scrollWidth: document.documentElement.scrollWidth,
+            };
+        });
+
+        expect(geometry.actions.left).toBeCloseTo(geometry.title.left + 1, 0);
+        expect(geometry.actions.right).toBeCloseTo(geometry.title.right - 1, 0);
+        expect(geometry.navigation.left).toBeCloseTo(geometry.actions.left, 0);
+        expect(geometry.past.right).toBeCloseTo(geometry.actions.right, 0);
+        expect(geometry.past.left).toBeGreaterThan(geometry.navigation.right);
+        expect(geometry.back.top).toBeCloseTo(geometry.past.top, 0);
+        expect(geometry.refresh.top).toBeCloseTo(geometry.past.top, 0);
+        expect(geometry.pastStyle).toEqual({
+            cursor: 'pointer',
+            minHeight: '34px',
+            backgroundColor: 'rgb(49, 95, 134)',
+        });
+        expect(geometry.scrollWidth).toBe(viewport.width);
+        await persistParityArtifact(page, `core-my-page-past-plays-${viewport.name}`, geometry);
+        await pastPlaysLink.click();
+        await expect(page).toHaveURL(new RegExp(`${gameBasePath}/past-plays$`, 'u'));
+    }
+});
+
 for (const [label, failure] of [
     ['daemon timeout', 'TIMEOUT'],
     ['engine transaction 오류', 'INTERNAL_SERVER_ERROR'],
