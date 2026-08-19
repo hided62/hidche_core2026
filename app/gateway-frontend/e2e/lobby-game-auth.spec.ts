@@ -51,7 +51,18 @@ type LobbyFixtureOptions = {
     isUnited?: number;
     starttime?: string;
     opentime?: string;
+    preopenAt?: string;
     turntime?: string;
+    turnTerm?: number;
+    scenarioTitle?: string;
+    npcMode?: number;
+    defaultStatTotal?: number;
+    korName?: string;
+    otherTextInfo?: string;
+    autorunUser?: {
+        limitMinutes: number;
+        options: string[];
+    } | null;
     lobbyBundleFailures?: number;
     profileStatus?: 'RUNNING' | 'PREOPEN' | 'PAUSED' | 'COMPLETED' | 'STOPPED';
     includeStoppedProfile?: boolean;
@@ -78,7 +89,15 @@ const installFixture = async (page: Page, options: LobbyFixtureOptions = {}) => 
         isUnited = 0,
         starttime = '2026-07-30 00:00:00',
         opentime = '2026-07-30 00:00:00',
+        preopenAt = '',
         turntime = '2026-07-30 00:05:00',
+        turnTerm = 5,
+        scenarioTitle = '',
+        npcMode = 0,
+        defaultStatTotal = 165,
+        korName = 'hwe',
+        otherTextInfo = '',
+        autorunUser = null,
         lobbyBundleFailures = 0,
         profileStatus = 'RUNNING',
         includeStoppedProfile = false,
@@ -134,7 +153,7 @@ const installFixture = async (page: Page, options: LobbyFixtureOptions = {}) => 
                                 battleSimRunning: true,
                                 tournamentRunning: true,
                             },
-                            korName: 'hwe',
+                            korName,
                             color: '#ffffff',
                             localAccountPolicy: {
                                 accessAllowed: true,
@@ -223,12 +242,17 @@ const installFixture = async (page: Page, options: LobbyFixtureOptions = {}) => 
                     maxUserCnt,
                     npcCnt: 0,
                     nationCnt,
-                    turnTerm: 5,
+                    turnTerm,
                     fictionMode: '가상',
                     starttime,
                     opentime,
+                    preopenAt,
                     turntime,
-                    otherTextInfo: '',
+                    otherTextInfo,
+                    scenarioTitle,
+                    npcMode,
+                    defaultStatTotal,
+                    autorunUser,
                     isUnited,
                     selectionPoolEnabled,
                     npcPossessionEnabled,
@@ -277,6 +301,118 @@ test('exchanges the gateway token before loading authenticated lobby general dat
         operation: 'lobby.info',
         authorization: 'Bearer ga_lobby-access-token',
     });
+});
+
+test('copies the complete preopen announcement and reveals autorun details without changing layout', async ({
+    page,
+}, testInfo) => {
+    await installFixture(page, {
+        roles: ['superuser'],
+        kakaoVerified: false,
+        profileStatus: 'PREOPEN',
+        korName: '훼',
+        specialAccess: {
+            kind: 'OPERATOR',
+            grantId: null,
+            expiresAt: null,
+            allowsGeneralCreation: true,
+        },
+        preopenAt: '2026-08-19 22:00:00',
+        opentime: '2026-08-19 23:00:00',
+        starttime: '2026-08-19 23:00:00',
+        turnTerm: 1,
+        scenarioTitle: '【가상모드27-b】 아시아 명장전(비급)',
+        npcMode: 0,
+        defaultStatTotal: 310,
+        autorunUser: {
+            limitMinutes: 1_440,
+            options: ['develop', 'warp', 'recruit_high', 'train', 'battle', 'chief'],
+        },
+    });
+    await page.setViewportSize({ width: 1200, height: 900 });
+
+    await page.goto('lobby');
+    const row = page.locator('tbody tr').filter({ hasText: '훼섭' });
+    const serverName = row.locator('.profile-server-cell .font-bold');
+    const settings = row.locator('.profile-announcement-settings');
+    const autorun = row.locator('.copyable-autorun');
+    const detail = row.locator('.copyable-autorun-detail');
+    await expect(row.getByTestId('profile-preopen-at')).toHaveText('- 가오픈 일시 : 2026-08-19 22:00:00 -');
+    await expect(row.getByTestId('profile-open-at')).toHaveText('- 오픈 일시 : 2026-08-19 23:00:00 -');
+    await expect(row.getByTestId('profile-scenario-announcement')).toHaveText(
+        '【가상모드27-b】 아시아 명장전(비급) 1분 턴 서버'
+    );
+    const settingsText = (await settings.textContent())?.replace(/\s+/g, ' ').trim();
+    expect(settingsText).toBe(
+        '(상성 설정:가상), (빙의 여부:불가), (최대 스탯:310), ' +
+            '(기타 설정:자율행동[내정, 순간이동, 모병, 훈련/사기진작, 출병, 사령턴, 24시간 유효])'
+    );
+    await expect(detail).toHaveCSS('font-size', '0px');
+    await expect(detail).toHaveCSS('color', 'rgba(0, 0, 0, 0)');
+    await expect(page.getByText('특수 접근 · OPERATOR')).toHaveCount(0);
+    await expect(page.getByText('카카오 인증이 필요합니다.')).toHaveCount(0);
+
+    const baseGeometry = await row.evaluate((element) => ({
+        row: element.getBoundingClientRect().toJSON(),
+        documentWidth: document.documentElement.scrollWidth,
+    }));
+    await autorun.hover();
+    await expect(detail).toBeVisible();
+    await expect(detail).toContainText('내정, 순간이동, 모병, 훈련/사기진작, 출병, 사령턴, 24시간 유효');
+    const hoverGeometry = await row.evaluate((element) => ({
+        row: element.getBoundingClientRect().toJSON(),
+        documentWidth: document.documentElement.scrollWidth,
+    }));
+    expect(hoverGeometry).toEqual(baseGeometry);
+    await page.screenshot({ path: testInfo.outputPath('gateway-autorun-announcement-hover.png'), fullPage: true });
+
+    await autorun.focus();
+    await expect(autorun).toBeFocused();
+    await expect(detail).toBeVisible();
+    await expect(autorun).toHaveCSS('outline-width', '2px');
+
+    await page.mouse.click(8, 8);
+    const start = await serverName.boundingBox();
+    const end = await settings.boundingBox();
+    if (!start || !end) throw new Error('expected announcement selection geometry');
+    await page.mouse.move(start.x + 1, start.y + start.height / 2);
+    await page.mouse.down();
+    await page.mouse.move(end.x + end.width - 1, end.y + end.height / 2, { steps: 24 });
+    await page.mouse.up();
+    const selectedText = await page.evaluate(() => window.getSelection()?.toString() ?? '');
+    const compactSelection = selectedText.replace(/\s+/g, ' ').trim();
+    expect(compactSelection).toContain(
+        '훼섭 - 가오픈 일시 : 2026-08-19 22:00:00 - - 오픈 일시 : 2026-08-19 23:00:00 - ' +
+            '【가상모드27-b】 아시아 명장전(비급) 1분 턴 서버 ' +
+            '(상성 설정:가상), (빙의 여부:불가), (최대 스탯:310), ' +
+            '(기타 설정:자율행동[내정, 순간이동, 모병, 훈련/사기진작, 출병, 사령턴, 24시간 유효])'
+    );
+    expect(compactSelection).not.toContain('OPERATOR');
+
+    await page.evaluate(() => window.getSelection()?.removeAllRanges());
+    await page.setViewportSize({ width: 390, height: 844 });
+    await autorun.scrollIntoViewIfNeeded();
+    const mobileBase = await row.evaluate((element) => ({
+        row: element.getBoundingClientRect().toJSON(),
+        documentWidth: document.documentElement.scrollWidth,
+    }));
+    await autorun.hover();
+    await expect(detail).toBeVisible();
+    const mobileHover = await row.evaluate((element) => {
+        const tooltip = element.querySelector('.copyable-autorun-detail');
+        if (!tooltip) throw new Error('expected autorun tooltip');
+        return {
+            row: element.getBoundingClientRect().toJSON(),
+            tooltip: tooltip.getBoundingClientRect().toJSON(),
+            documentWidth: document.documentElement.scrollWidth,
+            viewportWidth: window.innerWidth,
+        };
+    });
+    expect(mobileHover.row).toEqual(mobileBase.row);
+    expect(mobileHover.documentWidth).toBe(mobileHover.viewportWidth);
+    expect(mobileHover.tooltip.left).toBeGreaterThanOrEqual(8);
+    expect(mobileHover.tooltip.right).toBeLessThanOrEqual(mobileHover.viewportWidth - 8);
+    await page.screenshot({ path: testInfo.outputPath('gateway-autorun-announcement-mobile.png'), fullPage: true });
 });
 
 test('loads and labels a PAUSED profile whose runtime remains available', async ({ page }, testInfo) => {
@@ -484,7 +620,7 @@ test('hides the Kakao verification banner for operator special access', async ({
     });
 
     await page.goto('lobby');
-    await expect(page.getByText('특수 접근 · OPERATOR')).toBeVisible();
+    await expect(page.getByText('특수 접근 · OPERATOR')).toHaveCount(0);
     await expect(page.getByText('카카오 인증이 필요합니다.')).toHaveCount(0);
 });
 
@@ -502,7 +638,7 @@ test('hides the Kakao verification banner when a grant removes the remaining ver
     });
 
     await page.goto('lobby');
-    await expect(page.getByText('특수 접근 · RECOVERY')).toBeVisible();
+    await expect(page.getByText('특수 접근 · RECOVERY')).toHaveCount(0);
     await expect(page.getByText('카카오 인증이 필요합니다.')).toHaveCount(0);
 });
 
