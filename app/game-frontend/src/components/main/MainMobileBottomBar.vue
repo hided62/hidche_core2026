@@ -9,6 +9,7 @@ import {
     nationNavigation,
     quickNavigation,
     type MainNavigationLink as MainNavigationLinkItem,
+    type MainNavigationEntry,
     type NationNavigationAccess,
     type QuickNavigationItem,
 } from './mainNavigation';
@@ -21,6 +22,7 @@ const props = defineProps<{
     npcMode: number;
     realtimeEnabled: boolean;
     refreshing: boolean;
+    entries?: MainNavigationEntry[];
 }>();
 
 const emit = defineEmits<{
@@ -28,10 +30,11 @@ const emit = defineEmits<{
     toggleRealtime: [];
     lobby: [];
     quick: [item: QuickNavigationItem];
+    action: [action: NonNullable<MainNavigationLinkItem['action']>];
 }>();
 
 const { setRoot, openId, close, toggle } = useMenuPopup();
-const globalEntries = computed(() => buildGlobalNavigation(props.npcMode));
+const globalEntries = computed(() => buildGlobalNavigation(props.npcMode, props.entries));
 const nationMenuColor = computed(() => props.nationColor || '#000000');
 const nationMenuTextColor = computed(() => legacyNationTextColor(nationMenuColor.value));
 const isActive = (link: MainNavigationLinkItem) => link.highlightStage === props.tournamentStage;
@@ -39,6 +42,10 @@ const isActive = (link: MainNavigationLinkItem) => link.highlightStage === props
 const onQuick = (item: QuickNavigationItem) => {
     close();
     emit('quick', item);
+};
+const onAction = (action: NonNullable<MainNavigationLinkItem['action']>) => {
+    close();
+    emit('action', action);
 };
 </script>
 
@@ -73,6 +80,7 @@ const onQuick = (item: QuickNavigationItem) => {
                             compact
                             role="menuitem"
                             @navigate="close()"
+                            @action="onAction"
                         />
                     </li>
                     <template v-else-if="entry.kind === 'group'">
@@ -88,6 +96,7 @@ const onQuick = (item: QuickNavigationItem) => {
                                     compact
                                     role="menuitem"
                                     @navigate="close()"
+                                    @action="onAction"
                                 />
                             </li>
                         </template>
@@ -100,6 +109,7 @@ const onQuick = (item: QuickNavigationItem) => {
                                 compact
                                 role="menuitem"
                                 @navigate="close()"
+                                @action="onAction"
                             />
                         </li>
                         <template v-for="item in entry.items" :key="item.id">
@@ -111,6 +121,7 @@ const onQuick = (item: QuickNavigationItem) => {
                                     compact
                                     role="menuitem"
                                     @navigate="close()"
+                                    @action="onAction"
                                 />
                             </li>
                         </template>

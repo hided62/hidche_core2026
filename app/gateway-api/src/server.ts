@@ -31,6 +31,7 @@ import { registerProfileStatusInternalRoute } from './lobby/profileStatusInterna
 import { installGatewayShutdownController } from './lifecycle/shutdownController.js';
 import { RemoteUserIconStore } from './account/remoteUserIconStore.js';
 import { gatewayFastifyRouterOptions } from './fastifyOptions.js';
+import { RuntimeNavigationConfigStore } from './navigation/runtimeNavigationConfig.js';
 
 export const createGatewayApiServer = async () => {
     const config = resolveGatewayApiConfigFromEnv();
@@ -80,6 +81,10 @@ export const createGatewayApiServer = async () => {
     );
     const releases = createGatewayReleaseRepository(postgres.prisma as GatewayPrismaClient);
     const profileStatus = new RepositoryProfileStatusService(profiles, orchestrator);
+    const navigationConfig = new RuntimeNavigationConfigStore(
+        config.navigationConfigFile,
+        config.defaultNavigationConfigFile
+    );
 
     const app = fastify({
         logger: true,
@@ -103,6 +108,10 @@ export const createGatewayApiServer = async () => {
     registerProfileStatusInternalRoute(app, {
         profiles,
         secret: config.gameTokenSecret,
+    });
+    app.get(config.trpcPath.replace(/\/trpc\/?$/u, '/navigation'), async (_request, reply) => {
+        void reply.header('Cache-Control', 'no-store');
+        return navigationConfig.get();
     });
 
     await app.register(fastifyTRPCPlugin, {
@@ -134,6 +143,7 @@ export const createGatewayApiServer = async () => {
                     profileStatus,
                     requestHeaders: req.headers,
                     prisma: postgres.prisma as GatewayPrismaClient,
+                    navigationConfig,
                 }),
         },
     });

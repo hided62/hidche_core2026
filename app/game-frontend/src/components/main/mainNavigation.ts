@@ -1,14 +1,15 @@
+import type {
+    RuntimeNavigationConfig,
+    RuntimeNavigationEntry,
+    RuntimeNavigationLink,
+} from '@sammo-ts/common/navigation/menuConfig';
+import defaultNavigationJson from '../../../../../resources/navigation.json';
+
 export type NationAccessRule =
     'always' | 'meeting' | 'secret' | 'nation-member' | 'nation-established' | 'nation-secret';
 
-export type MainNavigationLink = {
-    kind: 'link';
-    id: string;
-    label: string;
-    to?: string;
-    href?: string;
+export type MainNavigationLink = RuntimeNavigationLink & {
     compactLabel?: string;
-    newTab?: boolean;
     access?: NationAccessRule;
     highlightStage?: 1 | 6;
     unavailableReason?: string;
@@ -49,114 +50,26 @@ export interface QuickNavigationItem {
     selector: string;
 }
 
-const configuredExternalLink = (
-    id: string,
-    label: string,
-    value: string | undefined,
-    unavailableReason: string
-): MainNavigationLink => {
-    const href = value?.trim();
-    return {
-        kind: 'link',
-        id,
-        label,
-        ...(href ? { href } : {}),
-        newTab: true,
-        unavailableReason: href ? undefined : unavailableReason,
-    };
-};
+const defaultNavigation = defaultNavigationJson as RuntimeNavigationConfig;
+export const defaultGlobalNavigation = defaultNavigation.game.items as MainNavigationEntry[];
 
-export const buildGlobalNavigation = (npcMode: number): MainNavigationEntry[] => [
-    {
-        kind: 'link',
-        id: 'nation-betting',
-        label: '천통국 베팅',
-        to: '/nation-betting',
-    },
-    {
-        kind: 'group',
-        id: 'game-info',
-        label: '게임정보',
-        items: [
-            { kind: 'link', id: 'nation-list', label: '세력일람', to: '/nation-list', newTab: true },
-            { kind: 'link', id: 'general-list', label: '장수일람', to: '/general-list', newTab: true },
-            { kind: 'link', id: 'best-general', label: '명장일람', to: '/best-general', newTab: true },
-            { kind: 'divider', id: 'game-info-divider' },
-            { kind: 'link', id: 'hall-of-fame', label: '명예의전당', to: '/hall-of-fame', newTab: true },
-            { kind: 'link', id: 'dynasty', label: '왕조일람', to: '/dynasty', newTab: true },
-        ],
-    },
-    { kind: 'link', id: 'yearbook', label: '연감', to: '/yearbook', newTab: true },
-    {
-        kind: 'split',
-        id: 'boards',
-        main: {
-            kind: 'link',
-            id: 'board-community',
-            label: '게시판',
-            href: import.meta.env.VITE_BOARD_COMMUNITY_URL?.trim() || '/xe/community',
-            newTab: true,
-        },
-        items: [
-            configuredExternalLink(
-                'board-request',
-                '건의/제안',
-                import.meta.env.VITE_BOARD_REQUEST_URL,
-                '건의/제안 게시판 URL이 설정되지 않았습니다.'
-            ),
-            configuredExternalLink(
-                'board-tip',
-                '팁/강좌',
-                import.meta.env.VITE_BOARD_TIP_URL,
-                '팁/강좌 게시판 URL이 설정되지 않았습니다.'
-            ),
-            { kind: 'divider', id: 'board-divider' },
-            configuredExternalLink(
-                'board-patch',
-                '패치 내역',
-                import.meta.env.VITE_BOARD_PATCH_URL,
-                '패치 내역 URL이 설정되지 않았습니다.'
-            ),
-        ],
-    },
-    {
-        kind: 'split',
-        id: 'open-chat',
-        main: configuredExternalLink(
-            'official-chat',
-            '공식 오픈 톡',
-            import.meta.env.VITE_OFFICIAL_CHAT_URL,
-            '공식 오픈톡 URL이 설정되지 않았습니다.'
-        ),
-        items: [
-            configuredExternalLink(
-                'casual-chat',
-                '잡담 오픈 톡',
-                import.meta.env.VITE_CASUAL_CHAT_URL,
-                '잡담 오픈톡 URL이 설정되지 않았습니다.'
-            ),
-        ],
-    },
-    {
-        kind: 'link',
-        id: 'battle-simulator',
-        label: '전투 시뮬레이터',
-        to: '/battle-simulator',
-        newTab: true,
-    },
-    {
-        kind: 'group',
-        id: 'other-info',
-        label: '기타 정보',
-        items: [
-            { kind: 'link', id: 'traffic', label: '접속량정보', to: '/traffic', newTab: true },
-            ...(npcMode > 0
-                ? [{ kind: 'link', id: 'npc-list', label: '빙의일람', to: '/npc-list', newTab: true } as const]
-                : []),
-        ],
-    },
-    { kind: 'link', id: 'survey', label: '설문조사', to: '/survey', newTab: true },
-];
+const isVisible = (link: MainNavigationLink, npcMode: number): boolean =>
+    link.showWhen !== 'npc-enabled' || npcMode > 0;
+
+export const buildGlobalNavigation = (
+    npcMode: number,
+    source: RuntimeNavigationEntry[] = defaultGlobalNavigation
+): MainNavigationEntry[] =>
+    source.flatMap((entry): MainNavigationEntry[] => {
+        if (entry.kind === 'link') return isVisible(entry, npcMode) ? [entry] : [];
+        const items = entry.items.filter(
+            (item): item is MainNavigationLink | MainNavigationDivider =>
+                item.kind === 'divider' || isVisible(item, npcMode)
+        );
+        if (entry.kind === 'group') return items.length > 0 ? [{ ...entry, items }] : [];
+        if (!isVisible(entry.main, npcMode)) return [];
+        return items.length > 0 ? [{ ...entry, items }] : [entry.main];
+    });
 
 export const nationNavigation: MainNavigationEntry[] = [
     {
@@ -336,7 +249,7 @@ export const quickNavigation: Array<QuickNavigationItem | MainNavigationDivider>
     { id: 'diplomacy-message', label: '외교', tab: 'messages', selector: '[data-message-type="diplomacy"]' },
 ];
 
-export const isNavigationConfigured = (link: MainNavigationLink): boolean => Boolean(link.to || link.href);
+export const isNavigationConfigured = (link: MainNavigationLink): boolean => Boolean(link.to || link.href || link.action);
 
 export const isNationNavigationEnabled = (link: MainNavigationLink, access: NationNavigationAccess): boolean => {
     const rule = link.access ?? 'always';

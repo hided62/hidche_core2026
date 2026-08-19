@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { formatServerDateTime } from '@sammo-ts/common';
+import type { RuntimeNavigationConfig } from '@sammo-ts/common/navigation/menuConfig';
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue';
 import { storeToRefs } from 'pinia';
 import { useMediaQuery } from '@vueuse/core';
@@ -16,7 +17,12 @@ import MainFrontStatus from '../components/main/MainFrontStatus.vue';
 import MainGlobalMenu from '../components/main/MainGlobalMenu.vue';
 import MainNationMenu from '../components/main/MainNationMenu.vue';
 import MainMobileBottomBar from '../components/main/MainMobileBottomBar.vue';
-import type { QuickNavigationItem } from '../components/main/mainNavigation';
+import {
+    defaultGlobalNavigation,
+    type MainNavigationEntry,
+    type MainNavigationLink,
+    type QuickNavigationItem,
+} from '../components/main/mainNavigation';
 import { formatLog } from '../utils/formatLog';
 import { useSessionStore } from '../stores/session';
 import { useMainDashboardStore } from '../stores/mainDashboard';
@@ -30,6 +36,9 @@ const { info: showInfoToast } = useGameFeedback();
 const isMobile = useMediaQuery('(max-width: 939.98px)');
 
 const npcMode = ref(0);
+const globalNavigation = ref<MainNavigationEntry[]>(defaultGlobalNavigation);
+const versionDialog = ref<HTMLDialogElement | null>(null);
+const navigationUrl = (import.meta.env.VITE_GATEWAY_API_URL ?? '/api/trpc').replace(/\/trpc\/?$/u, '/navigation');
 
 const {
     loading,
@@ -95,6 +104,17 @@ onUnmounted(() => {
 
 onMounted(() => {
     dashboard.startRealtime();
+    void fetch(navigationUrl, { headers: { Accept: 'application/json' } })
+        .then(async (response) => {
+            if (!response.ok) throw new Error(`메뉴 설정 조회 실패: HTTP ${response.status}`);
+            return (await response.json()) as RuntimeNavigationConfig;
+        })
+        .then((config) => {
+            globalNavigation.value = config.game.items;
+        })
+        .catch((error: unknown) => {
+            console.warn('운영 메뉴 설정을 불러오지 못해 기본 메뉴를 사용합니다.', error);
+        });
 });
 
 const shiftGeneralTurns = (amount: number) => {
@@ -133,6 +153,10 @@ const moveQuick = (item: QuickNavigationItem) => {
     document.querySelector(item.selector)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
 };
 
+const handleNavigationAction = (action: NonNullable<MainNavigationLink['action']>) => {
+    if (action === 'show-version') versionDialog.value?.showModal();
+};
+
 watch(
     () => [session.isReady, session.hasGeneral],
     ([ready, hasGeneral]) => {
@@ -146,7 +170,13 @@ watch(
 
 <template>
     <main class="game-shell main-page">
-        <MainGlobalMenu data-menu-position="top" :npc-mode="npcMode" :vote-active="voteActive" />
+        <MainGlobalMenu
+            data-menu-position="top"
+            :npc-mode="npcMode"
+            :vote-active="voteActive"
+            :entries="globalNavigation"
+            @action="handleNavigationAction"
+        />
 
         <header class="game-shell__header">
             <h1 class="game-shell__title">
@@ -308,6 +338,8 @@ watch(
                 data-menu-position="middle"
                 :npc-mode="npcMode"
                 :vote-active="voteActive"
+                :entries="globalNavigation"
+                @action="handleNavigationAction"
             />
 
             <div class="mobile-panel">
@@ -421,6 +453,8 @@ watch(
                 data-menu-position="middle"
                 :npc-mode="npcMode"
                 :vote-active="voteActive"
+                :entries="globalNavigation"
+                @action="handleNavigationAction"
             />
             <MessagePanel
                 class="desktop-message-panel"
@@ -449,6 +483,8 @@ watch(
             data-menu-position="bottom"
             :npc-mode="npcMode"
             :vote-active="voteActive"
+            :entries="globalNavigation"
+            @action="handleNavigationAction"
         />
     </main>
     <div v-if="isMobile" class="main-mobile-bottom-spacer" aria-hidden="true"></div>
@@ -460,11 +496,19 @@ watch(
         :npc-mode="npcMode"
         :realtime-enabled="realtimeEnabled"
         :refreshing="refreshing"
+        :entries="globalNavigation"
         @refresh="requestManualRefresh"
         @toggle-realtime="dashboard.setRealtimeEnabled(!realtimeEnabled)"
         @lobby="moveLobby"
         @quick="moveQuick"
+        @action="handleNavigationAction"
     />
+    <dialog ref="versionDialog" class="game-version-dialog" aria-labelledby="game-version-title">
+        <h2 id="game-version-title">게임 정보</h2>
+        <p>{{ lobbyInfo?.scenarioTitle || 'Core2026' }}</p>
+        <p>삼국지 모의전투 Core2026</p>
+        <form method="dialog"><button class="legacy-button legacy-button--navigation" type="submit">닫기</button></form>
+    </dialog>
 </template>
 
 <style scoped>
@@ -473,6 +517,30 @@ button {
     background: none;
     border: none;
     color: inherit;
+}
+
+.game-version-dialog {
+    width: min(420px, calc(100vw - 32px));
+    border: 1px solid #555;
+    border-radius: 4px;
+    padding: 18px;
+    background: #202020;
+    color: #fff;
+    text-align: center;
+}
+
+.game-version-dialog::backdrop {
+    background: rgb(0 0 0 / 65%);
+}
+
+.game-version-dialog h2,
+.game-version-dialog p {
+    margin: 0 0 12px;
+}
+
+.game-version-dialog form {
+    display: flex;
+    justify-content: center;
 }
 
 /*

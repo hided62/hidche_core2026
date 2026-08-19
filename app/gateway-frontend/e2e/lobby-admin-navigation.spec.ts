@@ -176,7 +176,7 @@ test('desktop administrator sidebar follows the navbar away and then sticks to t
         backgroundColor: string;
     }> = [];
 
-    for (const scrollY of [0, 20, 55, 56, 120]) {
+    for (const scrollY of [0, 20, 75, 76, 140]) {
         await page.evaluate((top) => window.scrollTo(0, top), scrollY);
         await expect.poll(() => page.evaluate(() => window.scrollY)).toBe(scrollY);
 
@@ -192,16 +192,16 @@ test('desktop administrator sidebar follows the navbar away and then sticks to t
                 backgroundColor: style.backgroundColor,
             };
         });
-        expect(geometry.top).toBeCloseTo(Math.max(0, 56 - scrollY), 0);
+        expect(geometry.top).toBeCloseTo(Math.max(0, 76 - scrollY), 0);
         expect(geometry.position).toBe('sticky');
         expect(geometry.backgroundColor).toBe('rgb(17, 17, 19)');
         measurements.push({ scrollY, ...geometry });
 
-        if (scrollY >= 56) {
+        if (scrollY >= 76) {
             expect(geometry.bottom).toBeCloseTo(geometry.viewportHeight, 0);
         }
 
-        if (scrollY === 20 || scrollY === 56) {
+        if (scrollY === 20 || scrollY === 76) {
             await page.screenshot({ path: testInfo.outputPath(`admin-sidebar-scroll-${scrollY}.png`) });
         }
     }

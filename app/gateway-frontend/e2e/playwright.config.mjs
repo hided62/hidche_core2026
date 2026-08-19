@@ -3,6 +3,7 @@ import { fileURLToPath } from 'node:url';
 import { defineConfig, devices } from '@playwright/test';
 
 const repositoryRoot = resolve(dirname(fileURLToPath(import.meta.url)), '../../..');
+const port = Number(process.env.PLAYWRIGHT_GATEWAY_FRONTEND_PORT ?? 15130);
 
 export default defineConfig({
     testDir: '.',
@@ -19,6 +20,7 @@ export default defineConfig({
         'kakao-otp.spec.ts',
         'kakao-account-recovery.spec.ts',
         'public-map-tabs.spec.ts',
+        'runtime-navigation.spec.ts',
     ],
     fullyParallel: false,
     workers: 1,
@@ -29,7 +31,7 @@ export default defineConfig({
     reporter: [['list']],
     outputDir: resolve(repositoryRoot, 'test-results/server-operations'),
     use: {
-        baseURL: 'http://127.0.0.1:15130/gateway/',
+        baseURL: `http://127.0.0.1:${port}/gateway/`,
         ...devices['Desktop Chrome'],
         deviceScaleFactor: 1,
         colorScheme: 'dark',
@@ -38,9 +40,9 @@ export default defineConfig({
     },
     webServer: {
         command:
-            "export VITE_APP_BASE_PATH=/gateway VITE_GATEWAY_API_URL=/gateway/api/trpc VITE_GAME_WEB_URL_TEMPLATE='/{profile}/' VITE_GAME_API_URL_TEMPLATE='/{profile}/api/trpc'; pnpm --filter @sammo-ts/gateway-frontend build && pnpm --filter @sammo-ts/gateway-frontend preview --host 127.0.0.1 --port 15130",
+            `export VITE_APP_BASE_PATH=/gateway VITE_GATEWAY_API_URL=/gateway/api/trpc VITE_GAME_WEB_URL_TEMPLATE='/{profile}/' VITE_GAME_API_URL_TEMPLATE='/{profile}/api/trpc'; pnpm --filter @sammo-ts/gateway-frontend build && pnpm --filter @sammo-ts/gateway-frontend preview --host 127.0.0.1 --port ${port}`,
         cwd: repositoryRoot,
-        url: 'http://127.0.0.1:15130/gateway/',
+        url: `http://127.0.0.1:${port}/gateway/`,
         reuseExistingServer: false,
         timeout: 120_000,
     },

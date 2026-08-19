@@ -21,6 +21,10 @@
         "./auth/gameSessionTransfer": {
             "types": "./dist/auth/gameSessionTransfer.d.ts",
             "default": "./dist/auth/gameSessionTransfer.js"
+        },
+        "./navigation/menuConfig": {
+            "types": "./dist/navigation/menuConfig.d.ts",
+            "default": "./dist/navigation/menuConfig.js"
         }
     },
     "scripts": {

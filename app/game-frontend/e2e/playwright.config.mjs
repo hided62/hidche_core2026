@@ -12,7 +12,8 @@ const gatewayWebUrl = process.env.PLAYWRIGHT_GATEWAY_WEB_URL ?? '/gateway/';
 const useProductionBundle = process.env.PLAYWRIGHT_FRONTEND_MODE === 'production';
 const frontendEnv =
     `VITE_APP_BASE_PATH=${basePath} VITE_GAME_API_URL=${gameApiUrl} ` +
-    `VITE_GAME_PROFILE=${gameProfile} VITE_GATEWAY_WEB_URL=${gatewayWebUrl}`;
+    `VITE_GAME_PROFILE=${gameProfile} VITE_GATEWAY_WEB_URL=${gatewayWebUrl} ` +
+    'VITE_GATEWAY_API_URL=/gateway/api/trpc';
 
 export default defineConfig({
     testDir: '.',
