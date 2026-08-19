@@ -1,4 +1,4 @@
-CREATE TABLE "legacy_archive"."battle_result_import_run" (
+CREATE TABLE IF NOT EXISTS "legacy_archive"."battle_result_import_run" (
     "id" BIGSERIAL PRIMARY KEY,
     "source_profile" TEXT NOT NULL,
     "source_key" TEXT NOT NULL,
@@ -19,10 +19,10 @@ CREATE TABLE "legacy_archive"."battle_result_import_run" (
         CHECK ("source_fingerprint" ~ '^[a-f0-9]{64}$')
 );
 
-CREATE INDEX "legacy_archive_battle_result_run_source_started"
+CREATE INDEX IF NOT EXISTS "legacy_archive_battle_result_run_source_started"
     ON "legacy_archive"."battle_result_import_run" ("source_profile", "source_key", "started_at" DESC);
 
-CREATE TABLE "legacy_archive"."general_battle_result" (
+CREATE TABLE IF NOT EXISTS "legacy_archive"."general_battle_result" (
     "source_profile" TEXT NOT NULL,
     "server_id" TEXT NOT NULL,
     "general_no" INTEGER NOT NULL,
@@ -41,7 +41,7 @@ CREATE TABLE "legacy_archive"."general_battle_result" (
     CONSTRAINT "legacy_archive_general_battle_result_hash_check" CHECK ("content_hash" ~ '^[a-f0-9]{64}$')
 );
 
-CREATE TABLE "legacy_archive"."battle_result_import_checkpoint" (
+CREATE TABLE IF NOT EXISTS "legacy_archive"."battle_result_import_checkpoint" (
     "source_profile" TEXT NOT NULL,
     "source_key" TEXT NOT NULL,
     "source_fingerprint" CHAR(64) NOT NULL,

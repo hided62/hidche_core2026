@@ -35,6 +35,8 @@ const nationCommands = [
     'che_물자원조',
 ];
 
+const capitalCommands = ['che_증축', 'che_감축'];
+
 const otherArgumentCommands = [
     'che_증여',
     'che_헌납',
@@ -58,7 +60,7 @@ const otherArgumentCommands = [
 ];
 
 void test('provides Ref-level guidance for every in-scope argument command', () => {
-    const expected = [...cityCommands, ...nationCommands, ...otherArgumentCommands].sort();
+    const expected = [...cityCommands, ...nationCommands, ...capitalCommands, ...otherArgumentCommands].sort();
     assert.deepEqual(presentedCommandKeys().sort(), expected);
     for (const commandKey of expected) {
         assert.ok(commandArgumentPresentation(commandKey).lines.join(' ').length >= 12, commandKey);
@@ -75,5 +77,8 @@ void test('marks the same city and nation target families that Ref renders with 
     }
     for (const commandKey of nationCommands) {
         assert.equal(commandArgumentPresentation(commandKey).mapTarget, 'nation', commandKey);
+    }
+    for (const commandKey of capitalCommands) {
+        assert.equal(commandArgumentPresentation(commandKey).mapTarget, 'capital', commandKey);
     }
 });

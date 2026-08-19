@@ -1161,6 +1161,80 @@ test('shows every Ref chief command in the exact category and command order', as
     await mobilePicker.screenshot({ path: test.info().outputPath('ref-chief-command-list-mobile-500.png') });
 });
 
+test('keeps general and chief command categories after input and across page reloads', async ({ page, context }) => {
+    await install(page);
+    await page.setViewportSize({ width: 1200, height: 900 });
+    await page.goto('/');
+
+    const generalEditor = page.locator('[data-command-scope="general"]');
+    await generalEditor.getByRole('button', { name: '1턴 명령 입력', exact: true }).click();
+    let picker = page.getByTestId('command-picker');
+    await picker.getByRole('button', { name: '군사', exact: true }).click();
+    await picker.getByRole('button', { name: '출병', exact: true }).click();
+    await picker.getByTestId('command-argument-form').locator('select').selectOption('3');
+    await picker.getByRole('button', { name: '입력', exact: true }).click();
+    await expect(generalEditor.locator('.action-column > div').first()).toHaveText('【단양】으로 출병');
+
+    await generalEditor.getByRole('button', { name: '2턴 명령 입력', exact: true }).click();
+    picker = page.getByTestId('command-picker');
+    await expect(picker.getByRole('button', { name: '군사', exact: true })).toHaveClass(/active/);
+    await expect(picker.getByRole('button', { name: '출병', exact: true })).toBeVisible();
+    await picker.screenshot({ path: test.info().outputPath('general-category-after-input-desktop-1200.png') });
+    await picker.getByRole('button', { name: '명령 입력 닫기', exact: true }).click();
+    await expect
+        .poll(() => page.evaluate(() => localStorage.getItem('core2026:general:1:category')))
+        .toBe(JSON.stringify('general:군사'));
+
+    const reloadedGeneralPage = await context.newPage();
+    await install(reloadedGeneralPage);
+    await reloadedGeneralPage.goto('/');
+    const reloadedGeneralEditor = reloadedGeneralPage.locator('[data-command-scope="general"]');
+    await reloadedGeneralEditor.getByRole('button', { name: '1턴 명령 입력', exact: true }).click();
+    const reloadedGeneralPicker = reloadedGeneralPage.getByTestId('command-picker');
+    await expect(reloadedGeneralPicker.getByRole('button', { name: '군사', exact: true })).toHaveClass(/active/);
+    await expect(reloadedGeneralPicker.getByRole('button', { name: '출병', exact: true })).toBeVisible();
+    await reloadedGeneralPicker.screenshot({
+        path: test.info().outputPath('general-category-after-reload-desktop-1200.png'),
+    });
+    await reloadedGeneralPage.close();
+
+    const chiefPage = await context.newPage();
+    await install(chiefPage, false, refChiefCommandTable);
+    await chiefPage.setViewportSize({ width: 500, height: 900 });
+    await chiefPage.goto('/che/chief-center');
+    const chiefEditor = chiefPage.locator('[data-command-scope="nation"]');
+    await chiefEditor.getByRole('button', { name: '1턴 명령 입력', exact: true }).click();
+    picker = chiefPage.getByTestId('command-picker');
+    await picker.getByRole('button', { name: '전략', exact: true }).click();
+    await picker.getByRole('button', { name: '필사즉생', exact: true }).click();
+    await expect(chiefEditor.locator('.action-column > div').first()).toHaveText('필사즉생');
+
+    await chiefEditor.getByRole('button', { name: '2턴 명령 입력', exact: true }).click();
+    picker = chiefPage.getByTestId('command-picker');
+    await expect(picker.getByRole('button', { name: '전략', exact: true })).toHaveClass(/active/);
+    await expect(picker.getByRole('button', { name: '필사즉생', exact: true })).toBeVisible();
+    await picker.screenshot({ path: test.info().outputPath('chief-category-after-input-mobile-500.png') });
+    await picker.getByRole('button', { name: '명령 입력 닫기', exact: true }).click();
+    await expect
+        .poll(() => chiefPage.evaluate(() => localStorage.getItem('core2026:nation:1:5:category')))
+        .toBe(JSON.stringify('nation:전략'));
+    await chiefPage.close();
+
+    const reloadedChiefPage = await context.newPage();
+    await install(reloadedChiefPage, false, refChiefCommandTable);
+    await reloadedChiefPage.setViewportSize({ width: 500, height: 900 });
+    await reloadedChiefPage.goto('/che/chief-center');
+    const reloadedChiefEditor = reloadedChiefPage.locator('[data-command-scope="nation"]');
+    await reloadedChiefEditor.getByRole('button', { name: '1턴 명령 입력', exact: true }).click();
+    const reloadedChiefPicker = reloadedChiefPage.getByTestId('command-picker');
+    await expect(reloadedChiefPicker.getByRole('button', { name: '전략', exact: true })).toHaveClass(/active/);
+    await expect(reloadedChiefPicker.getByRole('button', { name: '필사즉생', exact: true })).toBeVisible();
+    await expect.poll(() => reloadedChiefPicker.evaluate((element) => element.getBoundingClientRect().height)).toBeGreaterThan(200);
+    await reloadedChiefPicker.screenshot({
+        path: test.info().outputPath('chief-category-after-reload-mobile-500.png'),
+    });
+});
+
 test('shows all 12 advanced chief turns before the actions and uses the full mobile chief matrix', async ({ page }) => {
     await install(page);
     await page.setViewportSize({ width: 500, height: 900 });

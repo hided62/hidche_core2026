@@ -41,7 +41,7 @@ node_tag=$(printf '%s' "${CI_NODE_INDEX:-local}" | tr -cd 'a-zA-Z0-9_' | tr 'A-Z
 run_id=$(date -u +%m%d%H%M%S)_$$_${node_tag}
 export CONDITIONAL_INTEGRATION_RUN_ID=$run_id
 schema_ownership_token="sammo-conditional-integration:$run_id"
-supported_registry_modes="core create_general external_fixture gateway_runtime immediate_action npc_possession reference_live_sortie reference_npc_possession select_pool"
+supported_registry_modes="core create_general external_fixture gateway_runtime immediate_action npc_possession read_model_journal reference_live_sortie reference_npc_possession select_pool"
 term_grace_seconds=${CONDITIONAL_INTEGRATION_TERM_GRACE_SECONDS:-10}
 case "$term_grace_seconds" in
     ''|*[!0-9]*)
@@ -60,6 +60,7 @@ create_general_schema=${CREATE_GENERAL_INTEGRATION_SCHEMA:-ci_${run_id}_create_g
 select_pool_schema=${SELECT_POOL_INTEGRATION_SCHEMA:-ci_${run_id}_select_pool_integration}
 immediate_action_schema=${IMMEDIATE_ACTION_INTEGRATION_SCHEMA:-ci_${run_id}_immediate_action_integration}
 gateway_runtime_schema=${GATEWAY_RUNTIME_INTEGRATION_SCHEMA:-ci_${run_id}_gateway_runtime_integration}
+read_model_journal_schema=${READ_MODEL_JOURNAL_INTEGRATION_SCHEMA:-ci_${run_id}_read_model_journal_integration}
 npc_possession_differential_schema=${NPC_POSSESSION_DIFFERENTIAL_SCHEMA:-ci_${run_id}_npc_possession_differential}
 live_sortie_schema=${LIVE_SORTIE_PERSISTENCE_SCHEMA:-ci_${run_id}_live_sortie_persistence}
 
@@ -71,6 +72,7 @@ for schema in \
     "$select_pool_schema" \
     "$immediate_action_schema" \
     "$gateway_runtime_schema" \
+    "$read_model_journal_schema" \
     "$npc_possession_differential_schema" \
     "$live_sortie_schema"; do
     case "$schema" in
@@ -485,7 +487,6 @@ export PROFILE_SEED_CLI_DATABASE_URL=$database_url
 export PROFILE_SEED_DATABASE_URL=$database_url
 profile_lock_secondary_database_url=$(build_database_url "$scenario_schema")
 export PROFILE_LOCK_SECONDARY_DATABASE_URL=$profile_lock_secondary_database_url
-export READ_MODEL_JOURNAL_DATABASE_URL=$database_url
 
 # The infra PostgreSQL boundary tests assert migration-owned seed rows, CHECK
 # constraints, and indexes. `prisma db push` only materializes the Prisma data
@@ -494,10 +495,24 @@ export READ_MODEL_JOURNAL_DATABASE_URL=$database_url
 pnpm --filter @sammo-ts/infra prisma:migrate:deploy:game
 
 core_database_markers=$(markers_for_mode core)
-run_marked_tests packages/infra "$core_database_markers" "infra_postgresql"
 run_marked_tests app/game-api "$core_database_markers" "game_api_postgresql"
 run_marked_tests app/game-engine "$core_database_markers" "game_engine_postgresql"
 run_marked_tests tools/integration-tests "$core_database_markers" "snapshot_postgresql"
+
+create_owned_schema "$read_model_journal_schema"
+read_model_journal_database_url=$(build_database_url "$read_model_journal_schema")
+(
+    export POSTGRES_SCHEMA=$read_model_journal_schema
+    export DATABASE_URL=$read_model_journal_database_url
+    pnpm --filter @sammo-ts/infra prisma:migrate:deploy:game
+)
+export READ_MODEL_JOURNAL_DATABASE_URL=$read_model_journal_database_url
+run_marked_tests packages/infra \
+    "$(markers_for_mode read_model_journal)" \
+    "read_model_journal_infra_postgresql"
+run_marked_tests app/game-engine \
+    "$(markers_for_mode read_model_journal)" \
+    "read_model_journal_engine_postgresql"
 
 create_owned_schema "$create_general_schema"
 create_general_database_url=$(build_database_url "$create_general_schema")
