@@ -106,6 +106,34 @@ const handleMapTabKeydown = (event: KeyboardEvent, profileName: string): void =>
 
 const formatGraceEndsAt = (value: string | null | undefined): string => formatServerDateTime(value);
 const serverSeasonStatus = (info: LobbyInfo) => resolveServerSeasonStatus(info);
+const formatAnnouncementDate = (value: string | null | undefined): string =>
+    formatServerDateTime(value, { fallback: '-' });
+const npcModeText = (mode: number): string => ['불가', '가능', '선택 생성'][mode] ?? '불가';
+const autorunDetailText = (info: LobbyInfo): string => {
+    const autorun = info.autorunUser;
+    if (!autorun) return '';
+
+    const enabled = new Set(autorun.options);
+    const labels: string[] = [];
+    if (enabled.has('develop')) labels.push('내정');
+    if (enabled.has('warp')) labels.push('순간이동');
+    if (enabled.has('recruit_high')) labels.push('모병');
+    else if (enabled.has('recruit')) labels.push('징병');
+    if (enabled.has('train')) labels.push('훈련/사기진작');
+    if (enabled.has('battle')) labels.push('출병');
+    if (enabled.has('chief')) labels.push('사령턴');
+
+    const limit =
+        autorun.limitMinutes >= 43_200
+            ? '항상 유효'
+            : autorun.limitMinutes % 60 === 0
+              ? `${autorun.limitMinutes / 60}시간 유효`
+              : `${autorun.limitMinutes}분 유효`;
+    labels.push(limit);
+    return labels.join(', ');
+};
+const autorunTooltipId = (profileName: string): string =>
+    `profile-autorun-${profileName.replaceAll(/[^a-zA-Z0-9_-]/g, '-')}`;
 const isProfileRuntimeAvailable = (profile: LobbyProfile): boolean => profile.lifecycle.userAccessible;
 const unavailableProfileText = (profile: LobbyProfile): string => {
     if (!profile.lifecycle.dataInitialized) return '- DB 초기화 전 · 접근 불가 -';
@@ -455,13 +483,7 @@ const handleEnter = async (profile: LobbyProfile, targetPath: string) => {
                                         턴 일시정지 · 조회/예약턴 가능
                                     </div>
                                     <div
-                                        v-if="profile.localAccountPolicy?.specialAccess"
-                                        class="mt-2 text-xs text-emerald-300"
-                                    >
-                                        특수 접근 · {{ profile.localAccountPolicy.specialAccess.kind }}
-                                    </div>
-                                    <div
-                                        v-else-if="
+                                        v-if="
                                             profile.localAccountPolicy?.requiresKakaoVerification &&
                                             !profile.localAccountPolicy.canCreateGeneral
                                         "
@@ -481,27 +503,91 @@ const handleEnter = async (profile: LobbyProfile, targetPath: string) => {
                                 <td class="profile-info-cell px-4 py-4 border-r border-zinc-800">
                                     <template v-if="profileDetails[profile.profileName]">
                                         <div class="space-y-1">
-                                            <div>
-                                                서기 {{ profileDetails[profile.profileName]?.year }}년
-                                                {{ profileDetails[profile.profileName]?.month }}월 (<span
-                                                    class="text-orange-400"
-                                                    >{{ profile.scenario }}</span
-                                                >)
-                                            </div>
-                                            <div class="text-zinc-400">
-                                                유저 : {{ profileDetails[profile.profileName]?.userCnt }} /
-                                                {{ profileDetails[profile.profileName]?.maxUserCnt }}명
-                                                <span class="text-cyan-400 ml-2"
-                                                    >NPC : {{ profileDetails[profile.profileName]?.npcCnt }}명</span
+                                            <template v-if="profile.status === 'PREOPEN'">
+                                                <div
+                                                    v-if="profileDetails[profile.profileName]?.preopenAt"
+                                                    data-testid="profile-preopen-at"
                                                 >
-                                                <span class="text-green-400 ml-2"
-                                                    >({{ profileDetails[profile.profileName]?.turnTerm }}분 턴
-                                                    서버)</span
-                                                >
-                                            </div>
-                                            <div class="text-xs text-zinc-500">
+                                                    - 가오픈 일시 :
+                                                    {{
+                                                        formatAnnouncementDate(
+                                                            profileDetails[profile.profileName]?.preopenAt
+                                                        )
+                                                    }}
+                                                    -
+                                                </div>
+                                                <div data-testid="profile-open-at">
+                                                    - 오픈 일시 :
+                                                    {{
+                                                        formatAnnouncementDate(
+                                                            profileDetails[profile.profileName]?.opentime ||
+                                                                profileDetails[profile.profileName]?.starttime
+                                                        )
+                                                    }}
+                                                    -
+                                                </div>
+                                                <div data-testid="profile-scenario-announcement">
+                                                    <span class="text-orange-400">{{
+                                                        profileDetails[profile.profileName]?.scenarioTitle ||
+                                                        profile.scenario
+                                                    }}</span
+                                                    >{{ ' ' }}
+                                                    <span class="text-green-400">
+                                                        {{ profileDetails[profile.profileName]?.turnTerm }}분 턴 서버
+                                                    </span>
+                                                </div>
+                                            </template>
+                                            <template v-else>
+                                                <div>
+                                                    서기 {{ profileDetails[profile.profileName]?.year }}년
+                                                    {{ profileDetails[profile.profileName]?.month }}월 (<span
+                                                        class="text-orange-400"
+                                                        >{{ profile.scenario }}</span
+                                                    >)
+                                                </div>
+                                                <div class="text-zinc-400">
+                                                    유저 : {{ profileDetails[profile.profileName]?.userCnt }} /
+                                                    {{ profileDetails[profile.profileName]?.maxUserCnt }}명
+                                                    <span class="text-cyan-400 ml-2"
+                                                        >NPC : {{ profileDetails[profile.profileName]?.npcCnt }}명</span
+                                                    >
+                                                    <span class="text-green-400 ml-2"
+                                                        >({{ profileDetails[profile.profileName]?.turnTerm }}분 턴
+                                                        서버)</span
+                                                    >
+                                                </div>
+                                            </template>
+                                            <div class="profile-announcement-settings text-xs text-zinc-500">
                                                 (상성 설정:{{ profileDetails[profile.profileName]?.fictionMode }}),
-                                                (기타 설정:{{ profileDetails[profile.profileName]?.otherTextInfo }})
+                                                <template v-if="profile.status === 'PREOPEN'">
+                                                    (빙의 여부:{{
+                                                        npcModeText(profileDetails[profile.profileName]?.npcMode ?? 0)
+                                                    }}), (최대 스탯:{{
+                                                        profileDetails[profile.profileName]?.defaultStatTotal
+                                                    }}),
+                                                </template>
+                                                (기타 설정:<template
+                                                    v-if="profileDetails[profile.profileName]?.otherTextInfo"
+                                                    >{{ profileDetails[profile.profileName]?.otherTextInfo
+                                                    }}<template v-if="profileDetails[profile.profileName]?.autorunUser"
+                                                        >,
+                                                    </template></template
+                                                ><span
+                                                    v-if="profileDetails[profile.profileName]?.autorunUser"
+                                                    class="copyable-autorun"
+                                                    tabindex="0"
+                                                    :aria-describedby="autorunTooltipId(profile.profileName)"
+                                                    >자율행동<span
+                                                        :id="autorunTooltipId(profile.profileName)"
+                                                        class="copyable-autorun-detail"
+                                                        role="tooltip"
+                                                        ><span class="copyable-autorun-bracket">[</span
+                                                        ><span>{{
+                                                            autorunDetailText(profileDetails[profile.profileName]!)
+                                                        }}</span
+                                                        ><span class="copyable-autorun-bracket">]</span></span
+                                                    ></span
+                                                >)
                                             </div>
                                         </div>
                                     </template>
@@ -791,6 +877,68 @@ const handleEnter = async (profile: LobbyProfile, targetPath: string) => {
 
 .profile-table {
     min-width: 760px;
+}
+
+.season-status {
+    user-select: none;
+}
+
+.copyable-autorun {
+    position: relative;
+    cursor: help;
+    text-decoration: underline;
+    text-underline-offset: 2px;
+}
+
+.copyable-autorun-detail {
+    display: inline;
+    color: transparent;
+    font-size: 0;
+}
+
+.copyable-autorun-bracket {
+    color: transparent;
+    font-size: 0;
+}
+
+.copyable-autorun:hover .copyable-autorun-detail,
+.copyable-autorun:focus-visible .copyable-autorun-detail {
+    position: absolute;
+    z-index: 30;
+    right: 0;
+    bottom: calc(100% + 6px);
+    display: block;
+    box-sizing: border-box;
+    width: max-content;
+    max-width: min(520px, calc(100vw - 32px));
+    padding: 6px 8px;
+    border: 1px solid #52525b;
+    border-radius: 4px;
+    background: #18181b;
+    box-shadow: 0 4px 12px rgb(0 0 0 / 45%);
+    color: #f4f4f5;
+    font-size: 12px;
+    line-height: 1.4;
+    text-align: left;
+    white-space: normal;
+}
+
+.copyable-autorun:focus-visible {
+    border-radius: 2px;
+    outline: 2px solid #fdba74;
+    outline-offset: 2px;
+}
+
+@media (max-width: 640px) {
+    .copyable-autorun:hover .copyable-autorun-detail,
+    .copyable-autorun:focus-visible .copyable-autorun-detail {
+        position: fixed;
+        right: 16px;
+        bottom: 16px;
+        left: 16px;
+        width: auto;
+        max-width: none;
+    }
 }
 
 .map-preview-tabs {

@@ -1,6 +1,6 @@
 import { TRPCError } from '@trpc/server';
 
-import { asRecord } from '@sammo-ts/common';
+import { asNumber, asRecord } from '@sammo-ts/common';
 
 import { zWorldStateConfig, zWorldStateMeta } from '../../context.js';
 import { isSelectionPoolWorld, resolveSelectionMaxGeneral } from '@sammo-ts/game-engine/turn/selectPoolService.js';
@@ -26,7 +26,14 @@ export const lobbyRouter = router({
         const userCnt = await ctx.db.general.count({ where: { npcState: { lt: 2 } } });
         const npcCnt = await ctx.db.general.count({ where: { npcState: { gte: 2 } } });
         const nationCnt = await ctx.db.nation.count({ where: { level: { gt: 0 } } });
+        const rawConfig = asRecord(rawWorldState.config);
         const scenarioTitle = asRecord(asRecord(rawWorldState.meta).scenarioMeta).title;
+        const autorunUser = worldState.meta.autorun_user;
+        const autorunOptions = autorunUser?.options
+            ? Object.entries(autorunUser.options)
+                  .filter(([, enabled]) => enabled)
+                  .map(([option]) => option)
+            : [];
         const gameTime = await loadCurrentGameTime(ctx.db);
 
         let myGeneral = null;
@@ -55,10 +62,20 @@ export const lobbyRouter = router({
             fictionMode: worldState.config.fictionMode ?? '사실',
             starttime: worldState.meta.starttime ?? '',
             opentime: worldState.meta.opentime ?? '',
+            preopenAt: worldState.meta.preopenAt ?? '',
             turntime: worldState.meta.turntime ?? '',
             serverTime: gameTime.now.toISOString(),
             clockMode: gameTime.mode ?? 'realtime',
             otherTextInfo: worldState.meta.otherTextInfo ?? '',
+            npcMode: worldState.config.npcMode ?? 0,
+            defaultStatTotal: asNumber(asRecord(rawConfig.stat).total, 165),
+            autorunUser:
+                autorunUser?.limit_minutes && autorunUser.limit_minutes > 0 && autorunOptions.length > 0
+                    ? {
+                          limitMinutes: autorunUser.limit_minutes,
+                          options: autorunOptions,
+                      }
+                    : null,
             isUnited: worldState.meta.isunited ?? worldState.meta.isUnited ?? 0,
             selectionPoolEnabled: isSelectionPoolWorld(rawWorldState),
             npcPossessionEnabled: worldState.config.npcMode === 1,
