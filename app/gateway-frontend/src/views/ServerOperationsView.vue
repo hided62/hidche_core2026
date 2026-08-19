@@ -9,6 +9,7 @@ import {
     normalizeProfileResetDefaults,
     SYSTEM_PROFILE_RESET_DEFAULTS,
     type ProfileResetDefaults,
+    type ResetAutorunOption,
 } from '../utils/resetDefaults';
 import { directTrpc, trpc } from '../utils/trpc';
 
@@ -140,8 +141,10 @@ const form = reactive({
     autorunDevelop: true,
     autorunWarp: true,
     autorunRecruit: true,
+    autorunRecruitHigh: true,
     autorunTrain: true,
     autorunBattle: true,
+    autorunChief: true,
     openAt: '',
     preopenAt: '',
     scheduledAt: '',
@@ -259,8 +262,10 @@ const applyResetDefaults = (defaults: ProfileResetDefaults) => {
     form.autorunDevelop = autorunOptions.has('develop');
     form.autorunWarp = autorunOptions.has('warp');
     form.autorunRecruit = autorunOptions.has('recruit');
+    form.autorunRecruitHigh = autorunOptions.has('recruit_high');
     form.autorunTrain = autorunOptions.has('train');
     form.autorunBattle = autorunOptions.has('battle');
+    form.autorunChief = autorunOptions.has('chief');
 };
 
 const loadResetDefaults = async () => {
@@ -569,13 +574,15 @@ const loadScenarios = async () => {
     }
 };
 
-const selectedAutorunOptions = (): Array<'develop' | 'warp' | 'recruit' | 'train' | 'battle'> => {
-    const options: Array<'develop' | 'warp' | 'recruit' | 'train' | 'battle'> = [];
+const selectedAutorunOptions = (): ResetAutorunOption[] => {
+    const options: ResetAutorunOption[] = [];
     if (form.autorunDevelop) options.push('develop');
     if (form.autorunWarp) options.push('warp');
     if (form.autorunRecruit) options.push('recruit');
+    if (form.autorunRecruitHigh) options.push('recruit_high');
     if (form.autorunTrain) options.push('train');
     if (form.autorunBattle) options.push('battle');
+    if (form.autorunChief) options.push('chief');
     return options;
 };
 
@@ -1101,8 +1108,24 @@ onBeforeUnmount(() => {
                                 <label><input v-model="form.autorunDevelop" type="checkbox" /> 내정</label>
                                 <label><input v-model="form.autorunWarp" type="checkbox" /> 이동</label>
                                 <label><input v-model="form.autorunRecruit" type="checkbox" /> 징병</label>
+                                <label
+                                    ><input
+                                        v-model="form.autorunRecruitHigh"
+                                        type="checkbox"
+                                        data-testid="reset-autorun-recruit-high"
+                                    />
+                                    고급 징병</label
+                                >
                                 <label><input v-model="form.autorunTrain" type="checkbox" /> 훈련</label>
                                 <label><input v-model="form.autorunBattle" type="checkbox" /> 전투</label>
+                                <label
+                                    ><input
+                                        v-model="form.autorunChief"
+                                        type="checkbox"
+                                        data-testid="reset-autorun-chief"
+                                    />
+                                    중신</label
+                                >
                             </div>
                         </div>
                     </details>
