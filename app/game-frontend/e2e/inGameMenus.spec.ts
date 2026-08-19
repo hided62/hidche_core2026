@@ -63,6 +63,7 @@ type FixtureState = {
     joinConfig?: Record<string, unknown>;
     createGeneralInputs?: Array<Record<string, unknown>>;
     mainTraits?: { personal: string; specialDomestic: string; specialWar: string };
+    hiddenSeedLogText?: string;
     recentRecords?: {
         global: Array<{ id: number; text: string; createdAt?: string }>;
         general: Array<{ id: number; text: string; createdAt?: string }>;
@@ -484,7 +485,10 @@ const install = async (page: Page, state: FixtureState) => {
                 });
             if (operation === 'general.getMyLog') {
                 state.generalLogQueries = (state.generalLogQueries ?? 0) + 1;
-                return response({ type: 'generalAction', logs: [{ id: 1, text: '<Y>기록</>' }] });
+                return response({
+                    type: 'generalAction',
+                    logs: [{ id: 1, text: state.hiddenSeedLogText ?? '<Y>기록</>' }],
+                });
             }
             if (operation === 'general.instantRetreat') {
                 state.instantRetreatInputs?.push(jsonInput);
@@ -560,7 +564,11 @@ const install = async (page: Page, state: FixtureState) => {
                     ['generalHistory', 'battleDetail', 'battleResult', 'generalAction'].includes(jsonInput.type)
                         ? jsonInput.type
                         : 'generalAction';
-                return response({ type, generalId: 7, logs: [{ id: 1, text: `<Y>${type} 감찰 기록</>` }] });
+                return response({
+                    type,
+                    generalId: 7,
+                    logs: [{ id: 1, text: state.hiddenSeedLogText ?? `<Y>${type} 감찰 기록</>` }],
+                });
             }
             return response({ ok: true });
         });
@@ -817,6 +825,80 @@ test('메인 장수 동향과 개인 전투 기록은 Ref 행 간격·색상·�
     assertUniformGlobalRhythm(mobileGlobalGeometry);
     await persistParityArtifact(page, 'core-main-trend-log-rhythm-mobile', mobileGlobalGeometry);
     await persistParityArtifact(page, 'core-main-personal-battle-log-inline-mobile', mobileGeometry);
+});
+
+test('전투시드는 메인·내 정보·감찰부에서 숨긴 채 선택할 수 있다', async ({ page }) => {
+    const seedText = '(전투시드: 0123456789abcdef)';
+    const logText =
+        '<D><b>위</b></>의 <Y>검증장수</>가 <G><b>낙양</b></>으로 ' +
+        `진격합니다.<span class="hidden_but_copyable">${seedText}</span>`;
+    const state: FixtureState = {
+        permission: 'head',
+        myset: 3,
+        settingMutations: [],
+        accessPages: [],
+        hiddenSeedLogText: logText,
+        recentRecords: {
+            global: [{ id: 18611, text: logText }],
+            general: [],
+            history: [],
+        },
+    };
+    await install(page, state);
+
+    const inspectHiddenSeed = async (selector: string) => {
+        const seed = page.locator(selector);
+        await expect(seed).toHaveCount(1);
+        return seed.evaluate((element) => {
+            const range = document.createRange();
+            range.selectNodeContents(element);
+            const selection = window.getSelection();
+            selection?.removeAllRanges();
+            selection?.addRange(range);
+            const style = getComputedStyle(element);
+            const rect = element.getBoundingClientRect();
+            const result = {
+                text: element.textContent,
+                selectedText: selection?.toString(),
+                color: style.color,
+                fontSize: style.fontSize,
+                width: rect.width,
+                height: rect.height,
+            };
+            selection?.removeAllRanges();
+            return result;
+        });
+    };
+    const assertHiddenSeed = (result: Awaited<ReturnType<typeof inspectHiddenSeed>>) => {
+        expect(result.text).toBe(seedText);
+        expect(result.selectedText).toBe(seedText);
+        expect(result.color).toBe('rgba(0, 0, 0, 0)');
+        expect(result.fontSize).toBe('0px');
+        expect(result.width).toBe(0);
+        expect(result.height).toBe(0);
+    };
+
+    for (const viewport of [
+        { width: 1000, height: 900 },
+        { width: 500, height: 900 },
+    ]) {
+        await page.setViewportSize(viewport);
+
+        await page.goto('');
+        const mainSeed = await inspectHiddenSeed('[data-record-bucket="global"] .hidden_but_copyable');
+        assertHiddenSeed(mainSeed);
+        await persistParityArtifact(page, `core-hidden-battle-seed-main-${viewport.width}`, mainSeed);
+
+        await page.goto('my-page');
+        const myPageSeed = await inspectHiddenSeed('.log-panel:first-child .hidden_but_copyable');
+        assertHiddenSeed(myPageSeed);
+        await persistParityArtifact(page, `core-hidden-battle-seed-my-page-${viewport.width}`, myPageSeed);
+
+        await page.goto('battle-center');
+        const battleCenterSeed = await inspectHiddenSeed('[data-log-type="generalAction"] .hidden_but_copyable');
+        assertHiddenSeed(battleCenterSeed);
+        await persistParityArtifact(page, `core-hidden-battle-seed-battle-center-${viewport.width}`, battleCenterSeed);
+    }
 });
 
 test('메인 개인 기록의 공격·수비 시각은 Ref와 같은 90% 글자 크기로 표시한다', async ({ page }) => {

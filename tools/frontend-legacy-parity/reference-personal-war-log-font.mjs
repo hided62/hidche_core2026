@@ -12,6 +12,8 @@ const css = await readFile(resolve(refRoot, 'dist_js/hwe_dynamic/vue/v_main.css'
 const records = [
     '<C>●</>10월:천귀병으로 <Y>ⓝ염행</>의 보병을 <M>수비</>합니다. <1>12:54</>',
     '<C>●</>10월:천귀병으로 <Y>ⓝ염행</>의 보병을 <M>공격</>합니다. <1>12:55</>',
+    '<D><b>위</b></>의 <Y>검증장수</>가 <G><b>낙양</b></>으로 진격합니다.' +
+        '<span class="hidden_but_copyable">(전투시드: 0123456789abcdef)</span>',
 ];
 
 const browser = await chromium.launch({ headless: true });
@@ -43,6 +45,29 @@ try {
                 const time = spans.find((span) => /^\d{2}:\d{2}$/u.test(span.textContent ?? ''));
                 const name = spans.find((span) => span.textContent === 'ⓝ염행');
                 const action = spans.find((span) => span.textContent === '수비' || span.textContent === '공격');
+                const hiddenSeed = element.querySelector('.hidden_but_copyable');
+                if (hiddenSeed instanceof HTMLElement) {
+                    const range = document.createRange();
+                    range.selectNodeContents(hiddenSeed);
+                    const selection = window.getSelection();
+                    selection?.removeAllRanges();
+                    selection?.addRange(range);
+                    const hiddenSeedRect = hiddenSeed.getBoundingClientRect();
+                    const hiddenSeedStyle = getComputedStyle(hiddenSeed);
+                    const result = {
+                        text: hiddenSeed.textContent,
+                        selectedText: selection?.toString(),
+                        color: hiddenSeedStyle.color,
+                        fontSize: hiddenSeedStyle.fontSize,
+                        width: hiddenSeedRect.width,
+                        height: hiddenSeedRect.height,
+                    };
+                    selection?.removeAllRanges();
+                    return {
+                        text: element.textContent,
+                        hiddenSeed: result,
+                    };
+                }
                 if (
                     !(time instanceof HTMLElement) ||
                     !(name instanceof HTMLElement) ||
@@ -62,6 +87,7 @@ try {
                     timeFontSize: getComputedStyle(time).fontSize,
                     nameFontSize: getComputedStyle(name).fontSize,
                     actionFontSize: getComputedStyle(action).fontSize,
+                    hiddenSeed: null,
                 };
             })
         );

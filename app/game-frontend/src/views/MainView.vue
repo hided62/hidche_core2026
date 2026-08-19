@@ -763,11 +763,6 @@ button {
     vertical-align: top;
 }
 
-.record-line :deep(.hidden_but_copyable) {
-    color: transparent !important;
-    font-size: 0;
-}
-
 .record-empty {
     color: #aaa;
 }

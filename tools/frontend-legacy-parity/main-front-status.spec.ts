@@ -16,7 +16,8 @@ const accessToken = `ga_${randomUUID()}`;
 let postgres: ReturnType<typeof createGamePostgresConnector>;
 let redis: RedisConnector;
 let prisma: GamePrismaClient;
-let fixture: { generalId: number; nationId: number; userId: string; voteId: number } | null = null;
+let fixture: { generalId: number; freeGeneralId: number; nationId: number; userId: string; voteId: number } | null =
+    null;
 
 const accessKey = (token: string) => `sammo:game:access:che:default:${token}`;
 const response = (data: unknown) => ({ result: { data } });
@@ -49,7 +50,9 @@ test.beforeAll(async () => {
     ]);
     const nationId = (nationMax._max.id ?? 0) + 10_000;
     const generalId = (generalMax._max.id ?? 0) + 10_000;
+    const freeGeneralId = generalId + 1;
     const userId = `main-front-status-${randomUUID()}`;
+    const freeUserId = `main-front-status-free-${randomUUID()}`;
     await prisma.$executeRaw(
         GamePrisma.sql`
             INSERT INTO nation (id, name, color, meta)
@@ -64,19 +67,35 @@ test.beforeAll(async () => {
     await prisma.$executeRaw(
         GamePrisma.sql`
             INSERT INTO general (id, user_id, name, nation_id, city_id, turn_time)
-            VALUES (${generalId}, ${userId}, ${'현황검증장수'}, ${nationId}, ${0}, ${new Date()})
+            VALUES
+                (${generalId}, ${userId}, ${'현황검증장수'}, ${nationId}, ${0}, ${new Date()}),
+                (${freeGeneralId}, ${freeUserId}, ${'재야행동검증장수'}, ${0}, ${0}, ${new Date()})
         `
     );
-    await prisma.generalAccessLog.create({
-        data: {
-            generalId,
-            userId,
-            lastRefresh: new Date(),
-            refresh: 1,
-            refreshTotal: 1,
-            refreshScore: 1,
-            refreshScoreTotal: 1,
-        },
+    const actionAt = new Date();
+    await prisma.generalAccessLog.createMany({
+        data: [
+            {
+                generalId,
+                userId,
+                lastRefresh: actionAt,
+                lastActionAt: actionAt,
+                refresh: 1,
+                refreshTotal: 1,
+                refreshScore: 1,
+                refreshScoreTotal: 1,
+            },
+            {
+                generalId: freeGeneralId,
+                userId: freeUserId,
+                lastRefresh: actionAt,
+                lastActionAt: actionAt,
+                refresh: 1,
+                refreshTotal: 1,
+                refreshScore: 1,
+                refreshScoreTotal: 1,
+            },
+        ],
     });
     const poll = await prisma.votePoll.create({
         data: {
@@ -92,7 +111,7 @@ test.beforeAll(async () => {
         },
         select: { id: true },
     });
-    fixture = { generalId, nationId, userId, voteId: poll.id };
+    fixture = { generalId, freeGeneralId, nationId, userId, voteId: poll.id };
 
     const issuedAt = new Date();
     await redis.client.set(
@@ -118,14 +137,15 @@ test.beforeAll(async () => {
 test.afterAll(async () => {
     if (fixture) {
         await prisma.votePoll.deleteMany({ where: { id: fixture.voteId } });
-        await prisma.generalAccessLog.deleteMany({ where: { generalId: fixture.generalId } });
-        await prisma.$executeRaw(GamePrisma.sql`DELETE FROM general WHERE id = ${fixture.generalId}`);
+        const generalIds = [fixture.generalId, fixture.freeGeneralId];
+        await prisma.generalAccessLog.deleteMany({ where: { generalId: { in: generalIds } } });
+        await prisma.general.deleteMany({ where: { id: { in: generalIds } } });
         await prisma.$executeRaw(GamePrisma.sql`DELETE FROM nation WHERE id = ${fixture.nationId}`);
         const [generalCount, nationCount, voteCount, accessCount] = await Promise.all([
-            prisma.general.count({ where: { id: fixture.generalId } }),
+            prisma.general.count({ where: { id: { in: generalIds } } }),
             prisma.nation.count({ where: { id: fixture.nationId } }),
             prisma.votePoll.count({ where: { id: fixture.voteId } }),
-            prisma.generalAccessLog.count({ where: { generalId: fixture.generalId } }),
+            prisma.generalAccessLog.count({ where: { generalId: { in: generalIds } } }),
         ]);
         expect([generalCount, nationCount, voteCount, accessCount]).toEqual([0, 0, 0, 0]);
     }
@@ -146,6 +166,33 @@ const installMainFixture = async (
     },
     failStatus: () => boolean
 ) => {
+    const generalContext = {
+        general: {
+            id: fixture?.generalId ?? 1,
+            name: '현황검증장수',
+            npcState: 0,
+            nationId: fixture?.nationId ?? 1,
+            cityId: 1,
+            troopId: 0,
+            picture: null,
+            imageServer: 0,
+            officerLevel: 0,
+            stats: { leadership: 55, strength: 55, intelligence: 55 },
+            gold: 1000,
+            rice: 1000,
+            crew: 0,
+            train: 0,
+            atmos: 0,
+            injury: 0,
+            experience: 0,
+            dedication: 0,
+            items: { horse: null, weapon: null, book: null, item: null },
+        },
+        city: null,
+        nation: null,
+        settings: {},
+        penalties: {},
+    };
     await page.addInitScript(
         ({ token }) => {
             window.localStorage.setItem('sammo-game-token', token);
@@ -155,34 +202,27 @@ const installMainFixture = async (
     );
     await page.route('**/che/api/trpc/**', async (route) => {
         const results = operationNames(route).map((operation) => {
-            if (operation === 'general.me') {
+            if (operation === 'dashboard.getContextBundleDelta') {
                 return response({
-                    general: {
-                        id: fixture?.generalId ?? 1,
-                        name: '현황검증장수',
-                        npcState: 0,
-                        nationId: fixture?.nationId ?? 1,
-                        cityId: 1,
-                        troopId: 0,
-                        picture: null,
-                        imageServer: 0,
-                        officerLevel: 0,
-                        stats: { leadership: 55, strength: 55, intelligence: 55 },
-                        gold: 1000,
-                        rice: 1000,
-                        crew: 0,
-                        train: 0,
-                        atmos: 0,
-                        injury: 0,
-                        experience: 0,
-                        dedication: 0,
-                        items: { horse: null, weapon: null, book: null, item: null },
+                    context: {
+                        kind: 'snapshot',
+                        revision: 'AAAAAAAAAAAAAAAAAAAAAA',
+                        data: generalContext,
                     },
-                    city: null,
-                    nation: null,
-                    settings: {},
-                    penalties: {},
+                    commandTable: {
+                        kind: 'snapshot',
+                        revision: 'BBBBBBBBBBBBBBBBBBBBBB',
+                        data: { general: [], nation: [] },
+                    },
+                    boardAccess: {
+                        kind: 'snapshot',
+                        revision: 'CCCCCCCCCCCCCCCCCCCCCC',
+                        data: { canMeeting: false, canSecret: false, permission: 0 },
+                    },
                 });
+            }
+            if (operation === 'general.me') {
+                return response(generalContext);
             }
             if (operation === 'general.getFrontStatus') {
                 return failStatus()
@@ -212,6 +252,15 @@ const installMainFixture = async (
                     cityList: [{ id: 1, name: '낙양', level: 7, region: 1, x: 350, y: 245, path: [] }],
                     regionMap: { 1: '사예' },
                     levelMap: { 7: '수도' },
+                });
+            }
+            if (operation === 'world.getState') {
+                return response({
+                    currentYear: 190,
+                    currentMonth: 1,
+                    tickSeconds: 60,
+                    config: { npcMode: 0, const: {}, environment: {} },
+                    meta: {},
                 });
             }
             if (operation === 'world.getMap') {
@@ -280,6 +329,9 @@ test('renders actual online, nation policy, and survey data with ref geometry an
             };
         }
     ).result.data;
+    expect(liveStatus.onlineUserCount).toBe(2);
+    expect(liveStatus.onlineNations).toContain('【검증국】');
+    expect(liveStatus.onlineNations).not.toContain('재야');
     expect(liveStatus.onlineGenerals).toContain('현황검증장수');
     expect(liveStatus.nationNotice).toContain(marker);
     expect(liveStatus.latestVote).toMatchObject({ title: '검증 설문', hasVoted: false });
@@ -337,7 +389,7 @@ test('renders actual online, nation policy, and survey data with ref geometry an
     expect(desktop.voteRow.x).toBeCloseTo(666.67, 0);
     expect(desktop.voteRow.width).toBeCloseTo(333.33, 0);
     expect(desktop.voteRow.height).toBeCloseTo(36, 0);
-    expect(desktop.backgroundImage).toContain('/image/game/back_walnut.jpg');
+    expect(desktop.backgroundImage).toContain('/game/back_walnut.jpg');
 
     await page.setViewportSize({ width: 500, height: 900 });
     await expect(status).toHaveCSS('width', '500px');
@@ -349,7 +401,7 @@ test('renders actual online, nation policy, and survey data with ref geometry an
     for (const width of mobileActivity.widths) expect(width).toBeCloseTo(166.67, 0);
 
     failStatus = true;
-    await page.getByRole('button', { name: '새로고침', exact: true }).click();
+    await page.getByRole('button', { name: '갱 신', exact: true }).click();
     await expect(page.getByRole('alert').filter({ hasText: '상단 현황을 불러오지 못했습니다.' })).toBeVisible();
     await expect(status).toContainText(marker);
 

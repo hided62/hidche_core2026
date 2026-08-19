@@ -427,9 +427,7 @@ integration('general access tracking persistence', () => {
         if (!initialContext?.sourceRevision) {
             throw new Error('dashboard snapshot did not include its source revision');
         }
-        await expect(
-            db.generalAccessLog.findUnique({ where: { generalId: endpointGeneralId } })
-        ).resolves.toBeNull();
+        await expect(db.generalAccessLog.findUnique({ where: { generalId: endpointGeneralId } })).resolves.toBeNull();
         expect(redisEval).toHaveBeenCalledTimes(1);
 
         await flushDeferredGeneralAccessBatch(db, deferredBatchId, [
@@ -482,14 +480,21 @@ integration('general access tracking persistence', () => {
         ).resolves.toMatchObject({
             refresh: 2,
             refreshTotal: 2,
+            lastActionAt: null,
         });
 
         await expect(boundaryCaller.general.setMySetting({ accepted: true })).resolves.toEqual({ ok: true });
-        await expect(
-            db.generalAccessLog.findUniqueOrThrow({ where: { generalId: endpointGeneralId } })
-        ).resolves.toMatchObject({
+        const completedActionAccess = await db.generalAccessLog.findUniqueOrThrow({
+            where: { generalId: endpointGeneralId },
+        });
+        expect(completedActionAccess).toMatchObject({
             refresh: 2,
             refreshTotal: 2,
+        });
+        expect(completedActionAccess.lastActionAt).toBeInstanceOf(Date);
+        await expect(dashboardCaller.general.getFrontStatus()).resolves.toMatchObject({
+            onlineNations: expect.not.stringContaining('재야'),
+            onlineGenerals: expect.stringContaining('접속경계'),
         });
 
         await expect(boundaryCaller.board.writeArticle({ accepted: true })).rejects.toMatchObject({
@@ -501,6 +506,7 @@ integration('general access tracking persistence', () => {
         ).resolves.toMatchObject({
             refresh: 3,
             refreshTotal: 3,
+            lastActionAt: completedActionAccess.lastActionAt,
         });
 
         const adminCaller = endpointBoundaryRouter.createCaller({

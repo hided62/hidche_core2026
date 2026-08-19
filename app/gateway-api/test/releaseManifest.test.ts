@@ -38,8 +38,8 @@ describe('readReleaseManifest', () => {
 
         await expect(readReleaseManifest(workspaceRoot)).resolves.toMatchObject({
             controllerProtocol: RELEASE_CONTROLLER_PROTOCOL,
-            gatewaySchemaHead: '20260818001000_add_game_cancellation_operation',
-            gameSchemaHead: '20260818010000_add_legacy_battle_result_logs',
+            gatewaySchemaHead: '20260819000000_backfill_profile_release_source',
+            gameSchemaHead: '20260819000000_add_general_last_action',
         });
     });
 
