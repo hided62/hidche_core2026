@@ -185,6 +185,15 @@ describe('profile DEPLOY operation', () => {
 
         expect(commandGroups).toHaveLength(2);
         expect(commandGroups[0]?.[0]?.args).toEqual(['install', '--frozen-lockfile']);
+        expect(commandGroups[0]?.[1]?.args).toContain('--filter=@sammo-ts/game-api');
+        expect(commandGroups[0]?.[1]?.args).not.toContain('--filter=@sammo-ts/gateway-api');
+        expect(commandGroups[0]?.[2]?.args).toContain('build:release');
+        expect(commandGroups[0]?.[2]?.args).toContain('--cache-dir=/srv/sammo/controller/.turbo/release-cache');
+        expect(commandGroups[0]?.[2]?.args).toContain('--concurrency=1');
+        expect(commandGroups[0]?.[3]?.args).toEqual([
+            'tools/build-scripts/materialize-profile-frontend.mjs',
+            'che:1010',
+        ]);
         expect(commandGroups[1]?.map((command) => command.args)).toEqual([
             ['--filter', '@sammo-ts/infra', 'prisma:migrate:deploy:game'],
         ]);

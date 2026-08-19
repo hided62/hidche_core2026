@@ -49,13 +49,21 @@ export const buildTurboReleaseCommand = (
     cacheAnchorRoot: string,
     packageNames: string[],
     env?: Record<string, string>
+): BuildCommand => buildTurboReleaseTaskCommand(workspaceRoot, cacheAnchorRoot, 'build', packageNames, env);
+
+export const buildTurboReleaseTaskCommand = (
+    workspaceRoot: string,
+    cacheAnchorRoot: string,
+    taskName: string,
+    packageNames: string[],
+    env?: Record<string, string>
 ): BuildCommand => ({
     command: 'pnpm',
     args: [
         'exec',
         'turbo',
         'run',
-        'build',
+        taskName,
         ...packageNames.map((packageName) => `--filter=${packageName}`),
         `--cache-dir=${resolveReleaseTurboCacheDir(cacheAnchorRoot, env)}`,
         `--concurrency=${resolveReleaseTurboConcurrency(env)}`,

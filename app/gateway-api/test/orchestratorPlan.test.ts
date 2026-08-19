@@ -315,6 +315,20 @@ describe('buildWorkspaceCommands', () => {
         expect(commands.every(({ cwd }) => cwd === workspaceRoot)).toBe(true);
     });
 
+    it('can limit a DB-preserving deploy to the game runtime server target', () => {
+        const commands = buildWorkspaceCommands(
+            '/srv/sammo/worktrees/0123456789abcdef',
+            false,
+            undefined,
+            '/srv/sammo/controller',
+            ['@sammo-ts/game-api']
+        );
+
+        expect(commands[0]?.args).toContain('--filter=@sammo-ts/game-api');
+        expect(commands[0]?.args).not.toContain('--filter=@sammo-ts/gateway-api');
+        expect(commands[0]?.args).toContain('--concurrency=1');
+    });
+
     it('deploys the game schema migration after building the selected workspace', () => {
         const workspaceRoot = '/srv/sammo/worktrees/0123456789abcdef';
         const databaseUrl = 'postgresql://integration.invalid/sammo?schema=che';
@@ -347,6 +361,18 @@ describe('buildProfileFrontendCommands', () => {
                 (command) => command.env?.PROFILE_FRONTEND_BUILD_NODE_OPTIONS === '--max-old-space-size=2048'
             )
         ).toBe(true);
+        expect(commands[0]?.args).toEqual([
+            'exec',
+            'turbo',
+            'run',
+            'build:release',
+            '--filter=@sammo-ts/game-frontend',
+            '--cache-dir=/srv/sammo/worktrees/0123456789abcdef/.turbo/release-cache',
+            '--concurrency=1',
+            '--ui=stream',
+            '--output-logs=new-only',
+        ]);
+        expect(commands[1]?.args).toEqual(['tools/build-scripts/materialize-profile-frontend.mjs', 'che:2']);
     });
 
     it('keeps the shared Node heap when no frontend build override is configured', () => {

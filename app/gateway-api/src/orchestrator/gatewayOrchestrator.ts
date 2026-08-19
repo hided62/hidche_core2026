@@ -25,6 +25,7 @@ import { isRecord } from '@sammo-ts/common';
 
 import {
     buildTurboReleaseCommand,
+    buildTurboReleaseTaskCommand,
     type BuildCommand,
     type BuildProgressEvent,
     type BuildProgressObserver,
@@ -530,7 +531,8 @@ const buildProfileFrontendOutDir = (workspaceRoot: string, profileName: string):
 export const buildProfileFrontendCommands = (
     workspaceRoot: string,
     profile: Pick<GatewayProfileRecord, 'profileName' | 'profile' | 'apiPort'>,
-    env?: Record<string, string>
+    env?: Record<string, string>,
+    cacheAnchorRoot: string = workspaceRoot
 ): BuildCommand[] => {
     const profileFrontendBuildNodeOptions = env?.PROFILE_FRONTEND_BUILD_NODE_OPTIONS?.trim();
     const buildEnv = {
@@ -540,17 +542,17 @@ export const buildProfileFrontendCommands = (
         VITE_GAME_API_URL: `/${profile.profile}/api/trpc`,
         VITE_GAME_SSE_URL: `/${profile.profile}/api/events`,
     };
-    const outDir = buildProfileFrontendOutDir(workspaceRoot, profile.profileName);
     return [
+        buildTurboReleaseTaskCommand(
+            workspaceRoot,
+            cacheAnchorRoot,
+            'build:release',
+            ['@sammo-ts/game-frontend'],
+            buildEnv
+        ),
         {
-            command: 'pnpm',
-            args: ['--filter', '@sammo-ts/game-frontend', 'exec', 'vue-tsc', '--noEmit'],
-            cwd: workspaceRoot,
-            env: buildEnv,
-        },
-        {
-            command: 'pnpm',
-            args: ['--filter', '@sammo-ts/game-frontend', 'exec', 'vite', 'build', '--outDir', outDir],
+            command: 'node',
+            args: ['tools/build-scripts/materialize-profile-frontend.mjs', profile.profileName],
             cwd: workspaceRoot,
             env: buildEnv,
         },
@@ -561,7 +563,8 @@ export const buildWorkspaceCommands = (
     workspaceRoot: string,
     needsInstall: boolean,
     env?: Record<string, string>,
-    cacheAnchorRoot: string = workspaceRoot
+    cacheAnchorRoot: string = workspaceRoot,
+    packageNames: string[] = ['@sammo-ts/game-api', '@sammo-ts/gateway-api']
 ): BuildCommand[] => {
     const commands: BuildCommand[] = [];
     if (needsInstall) {
@@ -572,9 +575,7 @@ export const buildWorkspaceCommands = (
             env,
         });
     }
-    commands.push(
-        buildTurboReleaseCommand(workspaceRoot, cacheAnchorRoot, ['@sammo-ts/game-api', '@sammo-ts/gateway-api'], env)
-    );
+    commands.push(buildTurboReleaseCommand(workspaceRoot, cacheAnchorRoot, packageNames, env));
     return commands;
 };
 
@@ -1430,9 +1431,15 @@ export class GatewayOrchestrator implements GatewayOrchestratorHandle {
                     workspace.root,
                     workspace.needsInstall,
                     this.processConfig.baseEnv,
+                    this.processConfig.workspaceRoot,
+                    ['@sammo-ts/game-api']
+                ),
+                ...buildProfileFrontendCommands(
+                    workspace.root,
+                    profile,
+                    this.processConfig.baseEnv,
                     this.processConfig.workspaceRoot
                 ),
-                ...buildProfileFrontendCommands(workspace.root, profile, this.processConfig.baseEnv),
             ];
             await this.appendOperationLog(operationId, 'build', `${profile.profileName} 구성 요소를 빌드합니다.`);
             const result = await this.buildRunner.run(commands, this.buildProgress(operationId, 'build'));
@@ -2004,7 +2011,14 @@ export class GatewayOrchestrator implements GatewayOrchestratorHandle {
                 this.processConfig.baseEnv,
                 this.processConfig.workspaceRoot
             ),
-            ...(profile ? buildProfileFrontendCommands(workspace.root, profile, this.processConfig.baseEnv) : []),
+            ...(profile
+                ? buildProfileFrontendCommands(
+                      workspace.root,
+                      profile,
+                      this.processConfig.baseEnv,
+                      this.processConfig.workspaceRoot
+                  )
+                : []),
         ];
         if (operationId) {
             await this.appendOperationLog(

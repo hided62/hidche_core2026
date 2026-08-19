@@ -10,6 +10,8 @@
         "test:e2e:hwe-lifecycle": "playwright test --config e2e/hwe-lifecycle.playwright.config.mjs",
         "test:e2e:general-icons": "playwright test --config e2e/general-icon-lifecycle.playwright.config.mjs",
         "build": "vue-tsc && vite build",
+        "build:release": "vite build",
+        "typecheck:release": "vue-tsc --noEmit",
         "preview": "vite preview",
         "lint": "eslint .",
         "lint:fix": "eslint . --fix",
