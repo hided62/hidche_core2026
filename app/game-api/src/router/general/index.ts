@@ -885,11 +885,16 @@ export const generalRouter = router({
               })
             : null;
         const worldMeta = asRecord(worldState.meta);
+        const serverId =
+            typeof worldMeta.serverId === 'string' && worldMeta.serverId.trim()
+                ? worldMeta.serverId.trim()
+                : ctx.profile?.name || 'game';
         const rawLastExecuted = worldMeta.lastTurnTime ?? worldMeta.turntime;
         const parsedLastExecuted =
             typeof rawLastExecuted === 'string' || rawLastExecuted instanceof Date ? new Date(rawLastExecuted) : null;
 
         return {
+            serverId,
             onlineUserCount: onlineGenerals.length,
             onlineNations,
             onlineGenerals: myOnlineGenerals,

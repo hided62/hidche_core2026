@@ -241,6 +241,7 @@ describe('vote router actor and permission boundaries', () => {
         ).resolves.toEqual({ ok: true });
 
         expect(fixture.changeJournal.snapshot()).toEqual([{ domain: 'front.global', entityId: 0 }]);
+        expect(fixture.requestCommand).not.toHaveBeenCalled();
         expect(fixture.redisIncr).not.toHaveBeenCalled();
         expect(fixture.redisPublish).not.toHaveBeenCalled();
     });

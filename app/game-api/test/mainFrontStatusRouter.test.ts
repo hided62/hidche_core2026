@@ -40,6 +40,7 @@ const buildContext = (options: { auth?: GameSessionTokenPayload | null; hasVoted
                 findFirst: vi.fn(async () => ({
                     tickSeconds: 3600,
                     meta: {
+                        serverId: 'che_260819_front',
                         lastTurnTime: '2026-07-26T10:00:00.000Z',
                     },
                 })),
@@ -87,6 +88,7 @@ describe('general.getFrontStatus', () => {
         const result = await caller.general.getFrontStatus();
 
         expect(result).toEqual({
+            serverId: 'che_260819_front',
             onlineUserCount: 3,
             onlineNations: '【촉】, 【위】',
             onlineGenerals: '유비, 관우',

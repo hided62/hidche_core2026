@@ -293,7 +293,9 @@ export const useMainDashboardStore = defineStore('mainDashboard', () => {
             surveyNotice.value = null;
             return;
         }
-        const serverId = session.profile?.split(':', 1)[0] ?? 'game';
+        // Ref scopes this cursor with the reset-specific UniqueConst::$serverID.
+        // A profile name is stable across seasons, while vote IDs restart after reset.
+        const serverId = nextStatus.serverId;
         const storageKey = `state.${serverId}.lastVote`;
         const lastSeenVoteId = Number.parseInt(window.localStorage.getItem(storageKey) ?? '0', 10);
         if (latestVote.id <= (Number.isFinite(lastSeenVoteId) ? lastSeenVoteId : 0)) {
@@ -1079,7 +1081,10 @@ export const useMainDashboardStore = defineStore('mainDashboard', () => {
 
         const profile = session.profile ?? 'game';
         const account = session.user?.id ?? `general-${generalId.value}`;
-        const scope = `${encodeURIComponent(profile)}:${encodeURIComponent(account)}`;
+        // Do not let a tab that survived a reset exchange stale read-model patches
+        // with tabs belonging to the next season of the same profile.
+        const serverId = frontStatus.value?.serverId ?? profile;
+        const scope = `${encodeURIComponent(serverId)}:${encodeURIComponent(profile)}:${encodeURIComponent(account)}`;
         if (realtimeCoordinator && realtimeCoordinatorScope === scope) return;
 
         closeRealtimeCoordinator();
@@ -1243,6 +1248,7 @@ export const useMainDashboardStore = defineStore('mainDashboard', () => {
             session.user?.id,
             generalId.value,
             accessLimited.value,
+            frontStatus.value?.serverId,
         ],
         ([active, enabled, ready, hasGeneral, , , , , limited]) => {
             realtimeStatus.value = !enabled || limited ? 'paused' : realtimeStatus.value;

@@ -50,6 +50,7 @@ type NavigationFixture = {
     refCommandCategories?: boolean;
     currentYear?: number;
     currentMonth?: number;
+    serverId?: string;
     scenarioTitle?: string;
     nationColor?: string;
     lastExecuted?: string | null;
@@ -401,6 +402,7 @@ const installFixture = async (page: Page, state: NavigationFixture) => {
             if (operation === 'lobby.info') {
                 return response({
                     myGeneral: { id: 7, name: '메뉴검증장수' },
+                    serverId: state.serverId ?? 'che_fixture_season',
                     year: state.currentYear ?? 185,
                     month: state.currentMonth ?? 1,
                     turnTerm: 10,
@@ -547,6 +549,7 @@ const installFixture = async (page: Page, state: NavigationFixture) => {
             }
             if (operation === 'general.getFrontStatus') {
                 return response({
+                    serverId: state.serverId ?? 'che_fixture_season',
                     onlineUserCount: 1,
                     onlineNations: '위(1)',
                     onlineGenerals: '메뉴검증장수',
@@ -835,6 +838,32 @@ const persistArtifact = async (page: Page, name: string) => {
         writeFile(resolve(target, `${name}.json`), `${JSON.stringify(geometry, null, 2)}\n`),
     ]);
 };
+
+test('scopes the new-survey notice cursor to the reset-specific server ID', async ({ page }) => {
+    const state: NavigationFixture = {
+        officerLevel: 5,
+        permission: 2,
+        nationLevel: 3,
+        stage: 0,
+        npcMode: 1,
+        serverId: 'che_260819_new_season',
+        latestVote: { id: 1, title: '가오픈 설문', hasVoted: false },
+        generalMeCalls: 0,
+        operations: [],
+    };
+    await installFixture(page, state);
+    await page.addInitScript(() => {
+        localStorage.setItem('state.che.lastVote', '99');
+    });
+
+    await waitForMain(page);
+
+    await expect(page.locator('.survey-notice')).toContainText('새로운 설문조사가 있습니다.');
+    await expect
+        .poll(() => page.evaluate(() => localStorage.getItem('state.che_260819_new_season.lastVote')))
+        .toBe('1');
+    expect(await page.evaluate(() => localStorage.getItem('state.che.lastVote'))).toBe('99');
+});
 
 test('desktop menus preserve ref columns, prefix-safe routes, and controlled dropdown behavior', async ({ page }) => {
     const state: NavigationFixture = {

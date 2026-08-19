@@ -6,10 +6,23 @@ import type { ReadModelOutboxDatabase } from '@sammo-ts/infra';
 import { ReadModelOutboxWorker } from '../src/realtime/outboxWorker.js';
 
 const payload = (
-    domain: 'front.general' | 'access.general' | 'dashboard.global' | 'messages.mailbox' | 'tournament' | 'betting'
+    domain:
+        | 'front.global'
+        | 'front.general'
+        | 'access.general'
+        | 'dashboard.global'
+        | 'messages.mailbox'
+        | 'tournament'
+        | 'betting'
 ) => ({
     version: 1,
-    changes: [[domain, domain === 'front.general' || domain === 'access.general' ? 7 : domain === 'messages.mailbox' ? 9999 : 0, '1']],
+    changes: [
+        [
+            domain,
+            domain === 'front.general' || domain === 'access.general' ? 7 : domain === 'messages.mailbox' ? 9999 : 0,
+            '1',
+        ],
+    ],
 });
 
 const createFixture = (rows: readonly object[]) => {
@@ -26,6 +39,23 @@ const createFixture = (rows: readonly object[]) => {
 };
 
 describe('ReadModelOutboxWorker', () => {
+    it('publishes a survey-style global front-status invalidation without a turn daemon', async () => {
+        const fixture = createFixture([{ id: 10n, payload: payload('front.global'), attempts: 1 }]);
+        const worker = new ReadModelOutboxWorker(fixture.db, fixture.redis, 'che:default', {
+            owner: 'worker-test',
+            intervalMs: 60_000,
+        });
+
+        worker.start();
+        await vi.waitFor(() => expect(fixture.updateMany).toHaveBeenCalledTimes(1));
+        await worker.stop();
+
+        expect(JSON.parse(String(fixture.publish.mock.calls[0]?.[1]))).toMatchObject({
+            type: 'readModelChanged',
+            changes: { frontStatusChanged: true },
+        });
+    });
+
     it('publishes a legacy internal readModelChanged event and acknowledges the durable row', async () => {
         const fixture = createFixture([{ id: 11n, payload: payload('front.general'), attempts: 1 }]);
         const worker = new ReadModelOutboxWorker(fixture.db, fixture.redis, 'che:default', {

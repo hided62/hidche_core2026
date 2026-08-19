@@ -43,6 +43,7 @@ export const zWorldStateConfig = z.object({
 export type WorldStateConfig = z.infer<typeof zWorldStateConfig>;
 
 export const zWorldStateMeta = z.object({
+    serverId: z.string().optional(),
     starttime: z.string().optional(),
     opentime: z.string().optional(),
     preopenAt: z.string().optional(),
