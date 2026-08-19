@@ -1,6 +1,8 @@
 <script setup lang="ts">
-import { onMounted, ref } from 'vue';
+import { computed, onMounted, ref } from 'vue';
 
+import GeneralDirectoryTable from '../components/directory/GeneralDirectoryTable.vue';
+import type { GeneralDirectoryGeneral } from '../types/directory';
 import { formatNationLevelText, formatOfficerLevelText } from '../utils/nationFormat';
 import { getNpcColor } from '../utils/npcColor';
 import { trpc } from '../utils/trpc';
@@ -11,6 +13,19 @@ type Nation = Directory[number];
 const nations = ref<Directory>([]);
 const loading = ref(false);
 const error = ref('');
+const generalDetails = ref<GeneralDirectoryGeneral[]>([]);
+const generalDetailsLoaded = ref(false);
+const generalDetailsLoading = ref(false);
+const generalDetailsError = ref('');
+const activeGeneralId = ref<number | null>(null);
+let generalDetailsRequest: Promise<void> | null = null;
+
+const generalDetailsById = computed(
+    () => new Map(generalDetails.value.map((general) => [general.id, general] as const))
+);
+const activeGeneral = computed(() =>
+    activeGeneralId.value === null ? null : (generalDetailsById.value.get(activeGeneralId.value) ?? null)
+);
 
 const whiteTextColors = new Set([
     '',
@@ -62,6 +77,49 @@ const roamingCityName = (nation: Nation): string => {
 };
 const closeWindow = () => window.close();
 
+const loadGeneralDetails = async (): Promise<void> => {
+    if (generalDetailsLoaded.value) {
+        return;
+    }
+    if (!generalDetailsRequest) {
+        generalDetailsLoading.value = true;
+        generalDetailsError.value = '';
+        generalDetailsRequest = trpc.world.getGeneralDirectory
+            .query({ sort: 9 })
+            .then((result) => {
+                generalDetails.value = result.generals;
+                generalDetailsLoaded.value = true;
+            })
+            .catch((cause: unknown) => {
+                generalDetailsError.value =
+                    cause instanceof Error ? cause.message : '장수 기본 정보를 불러오지 못했습니다.';
+            })
+            .finally(() => {
+                generalDetailsLoading.value = false;
+                generalDetailsRequest = null;
+            });
+    }
+    await generalDetailsRequest;
+};
+
+const showGeneralDetails = (generalId: number): void => {
+    activeGeneralId.value = generalId;
+    void loadGeneralDetails();
+};
+
+const hideGeneralDetails = (generalId: number): void => {
+    if (activeGeneralId.value === generalId) {
+        activeGeneralId.value = null;
+    }
+};
+
+const hideGeneralDetailsFromPointer = (event: PointerEvent, generalId: number): void => {
+    if (document.activeElement === event.currentTarget) {
+        return;
+    }
+    hideGeneralDetails(generalId);
+};
+
 onMounted(() => {
     void loadDirectory();
 });
@@ -76,7 +134,6 @@ onMounted(() => {
                         세 력 일 람<br /><button class="legacy-button" type="button" @click="closeWindow">
                             창 닫기
                         </button>
-                        <input type="button" value="장수 일람 연동" />
                     </td>
                 </tr>
             </tbody>
@@ -155,9 +212,21 @@ onMounted(() => {
                         <td colspan="8">
                             장수 일람 :
                             <template v-for="general in nation.generals" :key="general.id">
-                                <span :style="{ color: getNpcColor(general.npcState) }">{{
-                                    displayGeneralName(general)
-                                }}</span
+                                <button
+                                    type="button"
+                                    class="general-preview-trigger"
+                                    :data-general-preview-trigger="general.id"
+                                    :style="{ color: getNpcColor(general.npcState) }"
+                                    :aria-expanded="activeGeneralId === general.id"
+                                    :aria-describedby="
+                                        activeGeneralId === general.id ? 'nation-general-preview' : undefined
+                                    "
+                                    @pointerenter="showGeneralDetails(general.id)"
+                                    @pointerleave="hideGeneralDetailsFromPointer($event, general.id)"
+                                    @focus="showGeneralDetails(general.id)"
+                                    @blur="hideGeneralDetails(general.id)"
+                                >
+                                    {{ displayGeneralName(general) }}</button
                                 >,
                             </template>
                         </td>
@@ -188,9 +257,21 @@ onMounted(() => {
                         <td colspan="5">
                             장수 일람 :
                             <template v-for="general in nation.generals" :key="general.id">
-                                <span :style="{ color: getNpcColor(general.npcState) }">{{
-                                    displayGeneralName(general)
-                                }}</span
+                                <button
+                                    type="button"
+                                    class="general-preview-trigger"
+                                    :data-general-preview-trigger="general.id"
+                                    :style="{ color: getNpcColor(general.npcState) }"
+                                    :aria-expanded="activeGeneralId === general.id"
+                                    :aria-describedby="
+                                        activeGeneralId === general.id ? 'nation-general-preview' : undefined
+                                    "
+                                    @pointerenter="showGeneralDetails(general.id)"
+                                    @pointerleave="hideGeneralDetailsFromPointer($event, general.id)"
+                                    @focus="showGeneralDetails(general.id)"
+                                    @blur="hideGeneralDetails(general.id)"
+                                >
+                                    {{ displayGeneralName(general) }}</button
                                 >,
                             </template>
                         </td>
@@ -198,6 +279,21 @@ onMounted(() => {
                 </tbody>
             </table>
         </template>
+
+        <div
+            v-if="activeGeneralId !== null"
+            id="nation-general-preview"
+            class="general-hover-preview"
+            role="tooltip"
+            aria-live="polite"
+        >
+            <GeneralDirectoryTable v-if="activeGeneral" :generals="[activeGeneral]" />
+            <div v-else class="general-hover-status">
+                <template v-if="generalDetailsLoading">장수 기본 정보를 불러오는 중...</template>
+                <template v-else-if="generalDetailsError">{{ generalDetailsError }}</template>
+                <template v-else>표시할 수 있는 장수 기본 정보가 없습니다.</template>
+            </div>
+        </div>
 
         <div class="legacy-analysis-helper" aria-hidden="true">
             <table>
@@ -304,6 +400,40 @@ onMounted(() => {
     background-image: var(--sammo-texture-green);
 }
 .center {
+    text-align: center;
+}
+.general-preview-trigger {
+    appearance: none;
+    border: 0;
+    padding: 0;
+    background: transparent;
+    font: inherit;
+    line-height: inherit;
+    cursor: help;
+}
+.general-preview-trigger:focus-visible {
+    outline: 1px dashed cyan;
+    outline-offset: 1px;
+}
+.general-hover-preview {
+    position: fixed;
+    z-index: 30;
+    bottom: 12px;
+    left: max(0px, calc(50% - 500px));
+    width: 1000px;
+    margin: 0;
+    padding: 0;
+    background: #000;
+    box-shadow: 0 0 7px 3px rgb(255 255 255 / 50%);
+    pointer-events: none;
+}
+.general-hover-status {
+    box-sizing: border-box;
+    width: 1000px;
+    min-height: 65px;
+    border: 1px solid gray;
+    padding: 22px 8px;
+    background: #000;
     text-align: center;
 }
 .footer-table {

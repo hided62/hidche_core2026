@@ -134,11 +134,10 @@ const parseSort = (route: Route): number => {
     try {
         const request = route.request();
         const queryInput = new URL(request.url()).searchParams.get('input');
-        const input = (request.postData()
-            ? request.postDataJSON()
-            : queryInput
-              ? JSON.parse(queryInput)
-              : {}) as { 0?: { json?: { sort?: number }; sort?: number }; json?: { sort?: number } };
+        const input = (request.postData() ? request.postDataJSON() : queryInput ? JSON.parse(queryInput) : {}) as {
+            0?: { json?: { sort?: number }; sort?: number };
+            json?: { sort?: number };
+        };
         return input[0]?.json?.sort ?? input[0]?.sort ?? input.json?.sort ?? 9;
     } catch {
         return 9;
@@ -148,7 +147,8 @@ const parseSort = (route: Route): number => {
 const install = async (
     page: Page,
     mode: 'general' | 'no-general' | 'error-after-load' = 'general',
-    accessPages: string[] = []
+    accessPages: string[] = [],
+    requestedOperations: string[] = []
 ) => {
     let generalDirectoryCalls = 0;
     await page.addInitScript((profile) => {
@@ -176,13 +176,22 @@ const install = async (
             body: '<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64"><rect width="64" height="64" fill="#777"/></svg>',
         })
     );
+    await page.route('https://sam-image.hided.net/icons/**', (route) =>
+        route.fulfill({
+            status: 200,
+            contentType: 'image/svg+xml',
+            body: '<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64"><rect width="64" height="64" fill="#777"/></svg>',
+        })
+    );
     await page.route('**/image/game/**', (route) =>
         route.fulfill({ status: 200, contentType: 'image/jpeg', body: Buffer.from('') })
     );
     await page.route(`**/${gameBasePath}/api/trpc/**`, async (route) => {
         const requestBody = route.request().postDataJSON() as
             Record<string, { json?: { page?: unknown }; page?: unknown }> | undefined;
-        const results = operationNames(route).map((operation, operationIndex) => {
+        const operations = operationNames(route);
+        requestedOperations.push(...operations);
+        const results = operations.map((operation, operationIndex) => {
             if (operation === 'auth.status') return response({ ok: true });
             if (operation === 'lobby.info') {
                 return response({ myGeneral: mode === 'no-general' ? null : { id: 1, name: '조회자' } });
@@ -335,7 +344,7 @@ test('nation and general directories preserve the fixed legacy Chromium geometry
     expect(await header.evaluate((element) => getComputedStyle(element).backgroundImage)).toContain('back_green.jpg');
     const icon = page.locator('.general-icon').first();
     await expect(icon).toBeVisible();
-    await expect(icon).toHaveAttribute('src', '/gateway/api/user-icons/%EA%B3%84%EC%A0%95%20icon.png');
+    await expect(icon).toHaveAttribute('src', 'https://sam-image.hided.net/icons/%EA%B3%84%EC%A0%95%20icon.png');
     expect(
         await icon.evaluate((element) => {
             const image = element as HTMLImageElement;
@@ -350,7 +359,10 @@ test('nation and general directories preserve the fixed legacy Chromium geometry
         })
     ).toEqual({ width: 64, height: 64, naturalWidth: 64, naturalHeight: 64, objectFit: 'fill' });
     const nestedLegacyIcon = page.locator('.general-icon').nth(1);
-    await expect(nestedLegacyIcon).toHaveAttribute('src', '/image/general/%EC%9E%A5%EC%88%98/%EC%9C%A0%EB%B9%84%201.png');
+    await expect(nestedLegacyIcon).toHaveAttribute(
+        'src',
+        'https://sam-image.hided.net/icons/%EC%9E%A5%EC%88%98/%EC%9C%A0%EB%B9%84%201.png'
+    );
     await expect
         .poll(() => nestedLegacyIcon.evaluate((element) => (element as HTMLImageElement).naturalWidth))
         .toBe(64);
@@ -380,20 +392,115 @@ test('general directory submits the legacy sort selector and keeps wounded/bonus
     expect(await page.locator('#viewType').evaluate((element) => document.activeElement === element)).toBe(true);
 });
 
+test('nation directory reuses only the public general-directory row on hover and keyboard focus', async ({ page }) => {
+    const requestedOperations: string[] = [];
+    await install(page, 'general', [], requestedOperations);
+
+    const artifactRoot = process.env.DIRECTORY_PARITY_ARTIFACT_DIR;
+    for (const viewport of [
+        { name: 'desktop', width: 1200, height: 900 },
+        { name: 'mobile', width: 500, height: 844 },
+    ] as const) {
+        await page.setViewportSize({ width: viewport.width, height: viewport.height });
+        await page.goto('nation-list');
+        await page.waitForLoadState('networkidle');
+        await expect(page.getByRole('button', { name: '장수 일람 연동' })).toHaveCount(0);
+        await expect(page.locator('[data-general-preview-trigger]')).toHaveCount(4);
+        expect(requestedOperations.filter((operation) => operation === 'world.getGeneralDirectory')).toHaveLength(
+            viewport.name === 'desktop' ? 0 : 1
+        );
+
+        const documentHeightBefore = await page.evaluate(() => document.documentElement.scrollHeight);
+        const firstTrigger = page.locator('[data-general-preview-trigger="10"]');
+        await firstTrigger.hover();
+
+        const preview = page.locator('#nation-general-preview');
+        await expect(preview).toBeVisible();
+        await expect(preview.locator('tr[data-general-id]')).toHaveCount(1);
+        await expect(preview.locator('tr[data-general-id="10"]')).toContainText('조조');
+        await expect(preview.locator('tr[data-general-id="10"]')).toContainText('대담');
+        await expect(preview.locator('tr[data-general-id="10"]')).toContainText('상재 / 귀모');
+        await expect(preview).not.toContainText('user-');
+        await expect(preview).not.toContainText('secret');
+
+        const previewGeometry = await preview.evaluate((element) => {
+            const rect = element.getBoundingClientRect();
+            const style = getComputedStyle(element);
+            const row = element.querySelector('tr[data-general-id]')!.getBoundingClientRect();
+            return {
+                x: rect.x,
+                width: rect.width,
+                bottom: window.innerHeight - rect.bottom,
+                position: style.position,
+                rowHeight: row.height,
+                documentWidth: document.documentElement.scrollWidth,
+                documentHeight: document.documentElement.scrollHeight,
+            };
+        });
+        expect(previewGeometry).toEqual({
+            x: viewport.name === 'desktop' ? 100 : 0,
+            width: 1000,
+            bottom: 12,
+            position: 'fixed',
+            rowHeight: 65,
+            documentWidth: Math.max(viewport.width, 1000),
+            documentHeight: documentHeightBefore,
+        });
+
+        await page.locator('.nation-title').first().hover();
+        await expect(preview).toHaveCount(0);
+
+        const foreignTrigger = page.locator('[data-general-preview-trigger="20"]');
+        await foreignTrigger.focus();
+        await expect(preview.locator('tr[data-general-id="20"]')).toContainText('유비');
+        expect(await foreignTrigger.getAttribute('aria-expanded')).toBe('true');
+        expect(await foreignTrigger.evaluate((element) => getComputedStyle(element).outlineStyle)).toBe('dashed');
+
+        await page.getByRole('button', { name: '창 닫기' }).first().focus();
+        await expect(preview).toHaveCount(0);
+
+        if (artifactRoot) {
+            const output = resolve(artifactRoot);
+            await mkdir(output, { recursive: true });
+            await firstTrigger.hover();
+            await expect(preview).toBeVisible();
+            await page.screenshot({
+                path: resolve(output, `nation-directory-hover-${viewport.name}.png`),
+                fullPage: true,
+            });
+        }
+    }
+
+    expect(requestedOperations.filter((operation) => operation === 'world.getGeneralDirectory')).toHaveLength(2);
+    expect(requestedOperations).not.toContain('nation.getSecretGeneralList');
+    expect(requestedOperations).not.toContain('nation.getPersonnelInfo');
+    expect(requestedOperations).not.toContain('general.me');
+});
+
 test('a reused image element falls back for each newly broken account icon', async ({ page }) => {
     await install(page);
+    await page.route('https://sam-image.hided.net/icons/**', (route) => {
+        if (route.request().url().endsWith('/default.jpg')) {
+            return route.fulfill({
+                status: 200,
+                contentType: 'image/svg+xml',
+                body: '<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64"><rect width="64" height="64" fill="#777"/></svg>',
+            });
+        }
+        return route.fulfill({ status: 404, contentType: 'text/plain', body: 'missing' });
+    });
     await page.route('**/gateway/api/user-icons/**', (route) =>
         route.fulfill({ status: 404, contentType: 'text/plain', body: 'missing' })
     );
     await page.goto('general-list');
 
     const icon = page.locator('.general-icon').first();
-    await expect(icon).toHaveAttribute('src', /\/image\/icons\/default\.jpg$/);
+    await expect(icon).toHaveAttribute('src', 'https://sam-image.hided.net/icons/default.jpg');
     await expect.poll(() => icon.evaluate((element) => (element as HTMLImageElement).naturalWidth)).toBe(64);
     await icon.evaluate((element) => {
         (element as HTMLImageElement).src = '/gateway/api/user-icons/second-missing.png';
     });
-    await expect(icon).toHaveAttribute('src', /\/image\/icons\/default\.jpg$/);
+    await expect(icon).toHaveAttribute('src', 'https://sam-image.hided.net/icons/default.jpg');
     await expect.poll(() => icon.evaluate((element) => (element as HTMLImageElement).naturalWidth)).toBe(64);
 });
 
