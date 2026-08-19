@@ -193,6 +193,7 @@ const start = async () => {
             :bet-totals="betTotals"
             :my-bet-totals="myBetTotals"
             :total-bet="totalBet"
+            :tournament-type="snapshot?.state?.type ?? 0"
         />
 
         <section v-if="currentMatch" class="fight bg0">

@@ -126,7 +126,7 @@ const persistScreenshot = async (page: Page, name: string, fallbackPath: string)
     await page.screenshot({ path: resolve(responsiveArtifactDir, `${name}.webp`), fullPage: true });
 };
 
-const installFixture = async (page: Page, options: { applicationOpen?: boolean } = {}) => {
+const installFixture = async (page: Page, options: { applicationOpen?: boolean; tournamentType?: number } = {}) => {
     let joined = false;
     await page.addInitScript((profile) => {
         window.localStorage.setItem('sammo-game-token', 'ga_tournament_bracket_playwright');
@@ -152,7 +152,7 @@ const installFixture = async (page: Page, options: { applicationOpen?: boolean }
                     state: {
                         stage: options.applicationOpen ? 1 : 0,
                         phase: 0,
-                        type: 0,
+                        type: options.tournamentType ?? 0,
                         auto: false,
                         openYear: 184,
                         openMonth: 1,
@@ -293,16 +293,21 @@ test('desktop bracket connects every real general slot to the next round', async
     const firstSlot = page.locator('.desktop-bracket-name').first();
     const oddsContainment = await firstSlot.evaluate((slot) => {
         const card = slot.getBoundingClientRect();
+        const stat = slot.querySelector<HTMLElement>('.bracket-core-stat')!.getBoundingClientRect();
         const odds = slot.querySelector<HTMLElement>('.bracket-odds')!.getBoundingClientRect();
         return {
             cardTop: card.top,
             cardBottom: card.bottom,
+            statTop: stat.top,
+            statBottom: stat.bottom,
             oddsTop: odds.top,
             oddsBottom: odds.bottom,
             cardHeight: card.height,
         };
     });
     expect(oddsContainment.cardHeight).toBeGreaterThanOrEqual(82);
+    expect(oddsContainment.statTop).toBeGreaterThanOrEqual(oddsContainment.cardTop);
+    expect(oddsContainment.statBottom).toBeLessThanOrEqual(oddsContainment.cardBottom);
     expect(oddsContainment.oddsTop).toBeGreaterThanOrEqual(oddsContainment.cardTop);
     expect(oddsContainment.oddsBottom).toBeLessThanOrEqual(oddsContainment.cardBottom);
     await expect(firstSlot.locator('.bracket-my-bet')).toHaveText('내 투자 금120');
@@ -424,10 +429,20 @@ test('mobile bracket exposes every round through tabs with standard horizontal i
     const firstMobileSlot = bracket.locator('.mobile-bracket-name').first();
     const mobileOddsContainment = await firstMobileSlot.evaluate((slot) => {
         const card = slot.getBoundingClientRect();
+        const stat = slot.querySelector<HTMLElement>('.bracket-core-stat')!.getBoundingClientRect();
         const odds = slot.querySelector<HTMLElement>('.bracket-odds')!.getBoundingClientRect();
-        return { cardBottom: card.bottom, oddsBottom: odds.bottom, cardHeight: card.height };
+        return {
+            cardTop: card.top,
+            cardBottom: card.bottom,
+            statTop: stat.top,
+            statBottom: stat.bottom,
+            oddsBottom: odds.bottom,
+            cardHeight: card.height,
+        };
     });
     expect(mobileOddsContainment.cardHeight).toBeGreaterThanOrEqual(82);
+    expect(mobileOddsContainment.statTop).toBeGreaterThanOrEqual(mobileOddsContainment.cardTop);
+    expect(mobileOddsContainment.statBottom).toBeLessThanOrEqual(mobileOddsContainment.cardBottom);
     expect(mobileOddsContainment.oddsBottom).toBeLessThanOrEqual(mobileOddsContainment.cardBottom);
     await expect(firstMobileSlot.locator('.bracket-my-bet')).toHaveText('내 투자 금120');
     await expect(page.getByRole('tablist', { name: '본선 조 선택' })).toBeVisible();
@@ -469,6 +484,7 @@ test('mobile betting rankings use tabs and keep dedicated icons beside general n
     await page.goto('betting');
 
     await expect(page.locator('.candidate-card')).toHaveCount(16);
+    await expect(page.locator('.betting-bracket .bracket-core-stat').first()).toHaveText('종합 240');
     await expect(page.locator('.betting-bracket .bracket-my-bet').first()).toHaveText('내 투자 금120');
     await expect(page.getByRole('tablist', { name: '토너먼트 랭킹 종목 선택' })).toBeVisible();
     await expect(page.locator('.ranking-table:visible')).toHaveCount(1);
@@ -489,6 +505,17 @@ test('mobile betting rankings use tabs and keep dedicated icons beside general n
     expect(identity.nameLeft).toBeGreaterThanOrEqual(identity.iconRight - 1);
     expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
     await persistScreenshot(page, 'tournament-ranking-mobile', testInfo.outputPath('tournament-ranking-mobile.webp'));
+});
+
+test('betting bracket shows intelligence for debate tournament candidates', async ({ page }) => {
+    await page.setViewportSize({ width: 390, height: 844 });
+    await installFixture(page, { tournamentType: 3 });
+    await page.goto('betting');
+
+    await expect(page.locator('.betting-bracket .bracket-core-stat').first()).toHaveText('지력 80');
+    await expect(page.locator('.betting-bracket .bracket-odds').first()).toHaveText('배당 28.00');
+    await expect(page.locator('.betting-bracket .bracket-my-bet').first()).toHaveText('내 투자 금120');
+    expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
 });
 
 test('desktop betting presents icon-and-name cards and all four rankings without document overflow', async ({

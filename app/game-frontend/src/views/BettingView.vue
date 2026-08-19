@@ -137,6 +137,7 @@ const placeBet = async (targetId: number) => {
             :bet-totals="betTotals"
             :my-bet-totals="myBetTotals"
             :total-bet="totalAmount"
+            :tournament-type="snapshot?.state?.type ?? 0"
             :show-legend="false"
         />
 
