@@ -204,9 +204,8 @@ integration('scenario 903 select pool through the durable turn daemon', () => {
         await expect(
             appRouter.createCaller(buildContext('select-pool-public-lobby')).lobby.info()
         ).resolves.toMatchObject({ selectionPoolEnabled: true });
-        await expect(
-            appRouter.createCaller(buildContext('select-pool-config')).join.getConfig()
-        ).resolves.toMatchObject({
+        const joinConfig = await appRouter.createCaller(buildContext('select-pool-config')).join.getConfig();
+        expect(joinConfig).toMatchObject({
             serverInfo: {
                 currentYear: 180,
                 currentMonth: 1,
@@ -392,6 +391,7 @@ integration('scenario 903 select pool through the durable turn daemon', () => {
 
         const fullWorld = await db.worldState.findUniqueOrThrow({ where: { id: worldStateId } });
         const fullConfig = fullWorld.config as Record<string, unknown>;
+        runtime!.world.updateWorldConfig({ maxGeneral: 1 });
         await db.worldState.update({
             where: { id: worldStateId },
             data: { config: { ...fullConfig, maxGeneral: 1 } as GamePrisma.InputJsonValue },
@@ -427,6 +427,7 @@ integration('scenario 903 select pool through the durable turn daemon', () => {
             })
         ).rejects.toMatchObject({ message: '더 이상 등록 할 수 없습니다.' });
         expect(await db.general.count({ where: { userId: otherUserId } })).toBe(0);
+        runtime!.world.updateWorldConfig({ maxGeneral: joinConfig.serverInfo.maxGeneral });
         await db.worldState.update({
             where: { id: worldStateId },
             data: { config: fullConfig as GamePrisma.InputJsonValue },

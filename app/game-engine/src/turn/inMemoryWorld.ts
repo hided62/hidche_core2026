@@ -489,7 +489,7 @@ export class InMemoryTurnWorld {
         // Runtime callbacks created before the world keep the original object
         // reference. Mutate this object in place so a live settings action is
         // observed by monthly handlers without restarting the daemon.
-        this.worldConfig = snapshot.worldConfig ?? {};
+        this.worldConfig = snapshot.worldConfig ?? { ...snapshot.scenarioConfig };
         this.unitSet = snapshot.unitSet;
         this.schedule = options.schedule;
         this.generalTurnHandler =

@@ -1359,6 +1359,37 @@ describe('account self service', () => {
         }
     });
 
+    it('stores AVIF account icons with the public AVIF extension and media type', async () => {
+        const iconDir = await fs.mkdtemp(path.join(os.tmpdir(), 'sammo-account-icon-avif-'));
+        try {
+            const { caller, users, sessions, userIconUpload } = buildCaller({ userIconDir: iconDir });
+            const user = await users.createUser({
+                username: 'icon-avif',
+                password: 'current-password',
+            });
+            const session = await sessions.createSession(user);
+            const avif = await sharp({
+                create: { width: 64, height: 64, channels: 4, background: '#334455' },
+            })
+                .avif()
+                .toBuffer();
+
+            const result = await caller.account.changeIcon({
+                sessionToken: session.sessionToken,
+                imageData: `data:image/avif;base64,${avif.toString('base64')}`,
+            });
+
+            expect(result.iconUrl).toMatch(
+                /^https:\/\/sam-image\.hided\.net\/icons\/users\/core2026\/[a-f0-9]{32}\.avif$/
+            );
+            expect(userIconUpload.upload).toHaveBeenCalledWith(
+                expect.objectContaining({ contentType: 'image/avif', body: avif })
+            );
+        } finally {
+            await fs.rm(iconDir, { recursive: true, force: true });
+        }
+    });
+
     it('atomically allows only one icon change per KST day and removes the losing file', async () => {
         const iconDir = await fs.mkdtemp(path.join(os.tmpdir(), 'sammo-account-icon-race-'));
         try {

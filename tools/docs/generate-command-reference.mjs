@@ -38,6 +38,7 @@ const parseCommand = async (scope, key) => {
     const actionName =
         readQuoted(source, /const ACTION_NAME\s*=\s*['"]([^'"]+)['"]/) ??
         readQuoted(source, /public (?:override )?readonly name(?:\s*:\s*string)?\s*=\s*['"]([^'"]+)['"]/) ??
+        readQuoted(source, /const CONFIG[\s\S]*?\bname:\s*['"]([^'"]+)['"]/) ??
         readQuoted(source, /const DEFAULT_CONFIG[\s\S]*?\bname:\s*['"]([^'"]+)['"]/) ??
         readQuoted(source, /(?:super|createEventResearchCommand)\([\s\S]*?\{[\s\S]*?\bname:\s*['"]([^'"]+)['"]/);
     const category =

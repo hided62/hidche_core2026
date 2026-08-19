@@ -81,8 +81,11 @@ input-event 결과를 transaction으로 반영합니다. Redis pub/sub과 SSE는
 - Vitest, Playwright/Chromium
 - VitePress
 
-Node.js 버전은 저장소에서 고정하지 않습니다. 의존성 설치와 검증에는
-`package.json`과 `pnpm-lock.yaml`을 함께 사용해 주세요.
+Node.js는 `.nvmrc`에서 24.x로 고정합니다. 의존성 설치와 검증에는
+`package.json`과 `pnpm-lock.yaml`을 함께 사용해 주세요. 모든 workspace package는
+내부 전용(`private`)이므로 manifest의 `0.0.0`은 배포 버전이 아닙니다. 배포 source는
+full Git commit으로 고정하고, 실험 릴리스 같은 milestone은 annotated Git tag로
+식별합니다.
 
 ## 개발 환경
 
