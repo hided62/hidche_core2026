@@ -15,7 +15,7 @@ Gateway 관리자 콘솔은 `/gateway/admin`에서 시작합니다. 공개 로�
 | 서버 관리       | `/gateway/admin/servers`                       | 접근 가능한 profile 목록                                                  |
 | 서버 상태·설정  | `/gateway/admin/servers/:profileName`          | 해당 profile의 공개 정보, 계정 정책, 실행 상태와 게임 운영 동작           |
 | 버전 업데이트   | `/gateway/admin/servers/:profileName/version`  | 현 DB를 보존하는 profile 코드·migration 배포                              |
-| 시나리오 초기화 | `/gateway/admin/servers/:profileName/scenario` | 현재 배포 버전 또는 새 버전으로 현 시즌 DB와 시나리오 교체                |
+| 시나리오 초기화 | `/gateway/admin/servers/:profileName/scenario` | 서버 지정 branch 최신 또는 고정 commit으로 현 시즌 DB와 시나리오 교체     |
 | 게임 취소       | `/gateway/admin/servers/:profileName/cancel`   | 잘못 연 게임을 닫고 기록·유산 포인트를 취소 정책에 따라 원자적으로 정산   |
 | Gateway 릴리스  | `/gateway/admin/releases`                      | Gateway control plane 배포와 rollback                                     |
 | 공지 · 접속     | `/gateway/admin/system`                        | 로비 공지와 관리자 세션 연결                                              |
@@ -63,7 +63,7 @@ Gateway 관리자 콘솔은 `/gateway/admin`에서 시작합니다. 공개 로�
 - 시나리오 초기화는 기본적으로 서버에 현재 게시된 commit을 사용하므로 Git
   업데이트가 필요하지 않습니다. 새 branch/commit과 함께 초기화하려면 초기화
   권한과 버전 배포 권한이 모두 필요합니다.
-- 현재 배포 버전의 시나리오 catalog는 capability·operation polling batch와
+- 서버 지정 버전의 시나리오 catalog는 capability·operation polling batch와
   분리된 요청으로 읽습니다. API가 profile의 `currentScenario`를 표시하며 화면은
   그 항목을 기본 선택합니다. scenario ID `0`도 유효한 값이고, 초기 요청이
   실패하면 현재 버전 모드에서 다시 확인할 수 있습니다.
@@ -95,15 +95,15 @@ Gateway 관리자 콘솔은 `/gateway/admin`에서 시작합니다. 공개 로�
 
 ## Profile 권한 분류
 
-| capability                       | 허용 작업                                                 |
-| -------------------------------- | --------------------------------------------------------- |
-| `admin.profiles.runtime:<name>`  | 시작·정지·일시정지·재개, 시간 조정과 현재 기수 게임 옵션  |
-| `admin.profiles.settings:<name>` | 표시 정보·리셋 기본 옵션·Kakao 미인증 접근/장수 생성 유예 |
-| `admin.profiles.deploy:<name>`   | DB를 유지하는 Git 버전 업데이트, 초기화와 새 버전 결합    |
-| `admin.scenarios.reset:<name>`   | 현재 배포 버전으로 시나리오 초기화                        |
-| `admin.games.cancel:<name>`      | 진행 게임 취소, 기록 옵션과 유산 포인트 보전율 확정       |
-| `admin.reset.schedule:<name>`    | 허용된 시나리오 초기화를 미래 시각에 예약                 |
-| `admin.releases.manage`          | profile과 분리된 Gateway control plane 배포·rollback      |
+| capability                       | 허용 작업                                                  |
+| -------------------------------- | ---------------------------------------------------------- |
+| `admin.profiles.runtime:<name>`  | 시작·정지·일시정지·재개, 시간 조정과 현재 기수 게임 옵션   |
+| `admin.profiles.settings:<name>` | 표시 정보·리셋 기본 옵션·Kakao 미인증 접근/장수 생성 유예  |
+| `admin.profiles.deploy:<name>`   | DB를 유지하는 Git 버전 업데이트, 초기화와 새 버전 결합     |
+| `admin.scenarios.reset:<name>`   | 서버 지정 branch 최신 또는 고정 commit으로 시나리오 초기화 |
+| `admin.games.cancel:<name>`      | 진행 게임 취소, 기록 옵션과 유산 포인트 보전율 확정        |
+| `admin.reset.schedule:<name>`    | 허용된 시나리오 초기화를 미래 시각에 예약                  |
+| `admin.releases.manage`          | profile과 분리된 Gateway control plane 배포·rollback       |
 
 기존 상태 화면의 `즉시 리셋`·`리셋 예약` 버튼은 실제 DB 초기화 operation과
 다른 metadata action이어서 제거했습니다. 초기화와 예약은 시나리오 초기화 탭의

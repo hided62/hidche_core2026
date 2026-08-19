@@ -193,6 +193,7 @@ describe('profile DEPLOY operation', () => {
             buildStatus: 'SUCCEEDED',
             buildCommitSha: SHA,
             buildWorkspace: workspace,
+            meta: { releaseSource: { mode: 'COMMIT', ref: SHA } },
         });
         expect(completions).toEqual(['SUCCEEDED']);
         expect(logs).toEqual(

@@ -18,12 +18,14 @@ describe('buildRetryOperationPayload', () => {
                 {
                     install: { scenarioId: 903 },
                     installOperationId: 'original-install-generation',
+                    releaseSource: { mode: 'BRANCH', ref: 'main' },
                 },
                 'newer-failed-operation'
             )
         ).toEqual({
             install: { scenarioId: 903 },
             installOperationId: 'original-install-generation',
+            releaseSource: { mode: 'BRANCH', ref: 'main' },
         });
     });
 });

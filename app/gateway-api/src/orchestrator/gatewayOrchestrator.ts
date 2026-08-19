@@ -38,6 +38,11 @@ import type {
     GatewayProfileRepository,
     GatewayProfileStatus,
 } from './profileRepository.js';
+import {
+    canReuseActiveProfileWorkspace,
+    writeProfileReleaseSource,
+    type ProfileReleaseSource,
+} from './profileReleaseSource.js';
 import type { GitWorkspaceManager } from './workspaceManager.js';
 import type { AdminSeedUser } from './seedProfileDatabase.js';
 import { assertReleaseComponents, readReleaseManifest } from './releaseManifest.js';
@@ -196,6 +201,16 @@ const OPERATION_HEARTBEAT_INTERVAL_MS = 60_000;
 class OperationLeaseLostError extends Error {}
 
 const normalizeMeta = (value: unknown): Record<string, unknown> => (isRecord(value) ? value : {});
+
+const readOperationReleaseSource = (operation: GatewayOperationRecord): ProfileReleaseSource => {
+    const stored = normalizeMeta(normalizeMeta(operation.payload).releaseSource);
+    const mode = stored.mode;
+    const ref = typeof stored.ref === 'string' ? stored.ref.trim() : '';
+    if ((mode === 'BRANCH' || mode === 'COMMIT') && ref) {
+        return { mode, ref };
+    }
+    return { mode: operation.sourceMode!, ref: operation.sourceRef! };
+};
 
 export const buildTournamentRuntimeKeys = (profileName: string): string[] => [
     `sammo:${profileName}:tournament:state`,
@@ -1167,7 +1182,13 @@ export class GatewayOrchestrator implements GatewayOrchestratorHandle {
                 return;
             }
             if (operation.type === 'DEPLOY') {
-                const result = await this.handleProfileDeploy(profile, commitSha, assertLease, operation.id);
+                const result = await this.handleProfileDeploy(
+                    profile,
+                    commitSha,
+                    assertLease,
+                    operation.id,
+                    readOperationReleaseSource(operation)
+                );
                 if (!result.ok) {
                     throw new Error(result.detail);
                 }
@@ -1192,7 +1213,14 @@ export class GatewayOrchestrator implements GatewayOrchestratorHandle {
                 installOperationId,
                 install,
             };
-            const result = await this.handleResetAction(profile, resetAction, commitSha, assertLease, operation.id);
+            const result = await this.handleResetAction(
+                profile,
+                resetAction,
+                commitSha,
+                assertLease,
+                operation.id,
+                readOperationReleaseSource(operation)
+            );
             if (result.status === 'REQUESTED') {
                 const retryAt = new Date(this.now().getTime() + this.adminActionIntervalMs).toISOString();
                 await this.appendOperationLog(
@@ -1360,7 +1388,8 @@ export class GatewayOrchestrator implements GatewayOrchestratorHandle {
         profile: GatewayProfileRecord,
         commitSha: string,
         assertLease: () => Promise<void>,
-        operationId: string
+        operationId: string,
+        releaseSource: ProfileReleaseSource
     ): Promise<{ ok: true } | { ok: false; detail: string }> {
         if (this.buildInFlight) {
             return { ok: false, detail: 'build already in progress' };
@@ -1498,6 +1527,7 @@ export class GatewayOrchestrator implements GatewayOrchestratorHandle {
                 buildCompletedAt: completedAt,
                 buildError: null,
                 lastError: null,
+                meta: writeProfileReleaseSource(profile.meta, releaseSource),
             });
             await this.appendOperationLog(
                 operationId,
@@ -1617,7 +1647,8 @@ export class GatewayOrchestrator implements GatewayOrchestratorHandle {
         action: GatewayAdminActionRecord,
         commitShaOverride?: string,
         assertLease?: () => Promise<void>,
-        operationId?: string
+        operationId?: string,
+        releaseSource?: ProfileReleaseSource
     ): Promise<GatewayAdminActionResult> {
         const appendLog = async (
             phase: string,
@@ -1819,6 +1850,7 @@ export class GatewayOrchestrator implements GatewayOrchestratorHandle {
                     preopenAt: preopenAt ? preopenAt.toISOString() : openAt ? openAt.toISOString() : null,
                     openAt: openAt ? openAt.toISOString() : null,
                     scheduledStartAt: action.scheduledAt ?? null,
+                    ...(releaseSource ? { meta: writeProfileReleaseSource(profile.meta, releaseSource) } : {}),
                 },
                 async () => {
                     await this.repository.updateWorkspaceUsage(profile.profileName, workspace.root, completedAt);
@@ -1950,6 +1982,20 @@ export class GatewayOrchestrator implements GatewayOrchestratorHandle {
         const workspace = await this.workspaceManager.prepare(commitSha);
         if (operationId) {
             await this.appendOperationLog(operationId, 'workspace', `worktree 준비 완료: ${workspace.root}`);
+        }
+        const activeWorkspaceReusable = canReuseActiveProfileWorkspace(profile, commitSha, workspace);
+        if (activeWorkspaceReusable) {
+            if (operationId) {
+                await this.appendOperationLog(
+                    operationId,
+                    'build',
+                    '이미 최신 커밋의 빌드 산출물이 준비되어 있어 빌드를 생략합니다.'
+                );
+            }
+            return {
+                result: { ok: true, exitCode: 0, output: '' },
+                workspace,
+            };
         }
         const commands = [
             ...buildWorkspaceCommands(
