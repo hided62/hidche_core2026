@@ -955,7 +955,7 @@ test('loads server metadata defaults into the reset form and submits them', asyn
             showImgLevel: 1,
             tournamentTrig: false,
             joinMode: 'onlyRandom',
-            autorunUser: { limitMinutes: 720, options: ['develop', 'train'] },
+            autorunUser: { limitMinutes: 720, options: ['develop', 'recruit_high', 'chief'] },
         },
     };
     await installFixture(page, state);
@@ -966,6 +966,8 @@ test('loads server metadata defaults into the reset form and submits them', asyn
     await page.getByText('고급 시나리오 옵션').click();
     await expect(page.getByTestId('reset-defaults-source')).toContainText('서버의 메타');
     await expect(page.getByTestId('reset-npc-mode')).toHaveValue('1');
+    await expect(page.getByTestId('reset-autorun-recruit-high')).toBeChecked();
+    await expect(page.getByTestId('reset-autorun-chief')).toBeChecked();
     await page.getByTestId('request-reset').click();
 
     await expect
@@ -978,7 +980,7 @@ test('loads server metadata defaults into the reset form and submits them', asyn
     expect(request).toContain('"npcMode":1');
     expect(request).toContain('"joinMode":"onlyRandom"');
     expect(request).toContain('"limitMinutes":720');
-    expect(request).toContain('"options":["develop","train"]');
+    expect(request).toContain('"options":["develop","recruit_high","chief"]');
 });
 
 test('edits server reset defaults through profile metadata settings', async ({ page }, testInfo) => {
