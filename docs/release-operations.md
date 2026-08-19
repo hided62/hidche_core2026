@@ -56,9 +56,12 @@ profile 범위 권한과 별개인 전역 `admin.releases.manage` 권한이 필�
   `NODE_OPTIONS`와 `RAYON_NUM_THREADS`는 출력에는 영향을 주지 않는 resource 제한으로
   build child에 전달됩니다.
 - `TURN_DAEMON_NODE_OPTIONS`가 설정되어 있으면 Gateway orchestrator는 그 값을
-  turn-daemon PM2 process의 `NODE_OPTIONS`로만 덮어씁니다. API·frontend·worker와
-  build는 공용 `NODE_OPTIONS`를 계속 사용합니다. 전용 heap을 늘릴 때는 runtime
-  container hard limit과 전체 process RSS를 먼저 확인합니다.
+  turn-daemon PM2 process의 `NODE_OPTIONS`로만 덮어씁니다. API·frontend·worker는
+  공용 `NODE_OPTIONS`를 계속 사용합니다. Profile의 `vue-tsc`와 Vite build만 더 큰
+  heap이 필요하면 `PROFILE_FRONTEND_BUILD_NODE_OPTIONS`를 지정합니다. 이 값은
+  profile frontend build child의 `NODE_OPTIONS`만 덮어쓰며 server package Turbo
+  build와 배포 후 PM2 process의 heap은 바꾸지 않습니다. 전용 heap을 늘릴 때는
+  runtime container hard limit과 전체 process RSS를 먼저 확인합니다.
 - migration 이후 이전 애플리케이션으로 돌아갈 때 schema 하위 호환성이
   유지됩니다.
 
