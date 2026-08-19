@@ -23,7 +23,7 @@ import {
     findLegacyGeneralsByOwner,
     findLegacyGames,
     findLegacyNations,
-    LEGACY_ARCHIVE_PROFILES,
+    isLegacyArchiveProfile,
     type LegacyArchiveProfile,
     type LegacyGeneralHallRow,
 } from '../../services/legacyArchiveStore.js';
@@ -50,13 +50,8 @@ const canonicalSnapshot = (value: unknown, fallbackName: string): ArchivedGenera
 
 const zPastPlayDetailInput = z.object({
     source: z.enum(['current', 'legacy']).default('current'),
-    sourceProfile: z.enum(LEGACY_ARCHIVE_PROFILES).optional(),
     serverId: z.string().trim().min(1).max(64),
     generalNo: z.number().int().positive(),
-});
-
-const zPastPlaysInput = z.object({
-    sourceProfile: z.enum(LEGACY_ARCHIVE_PROFILES),
 });
 
 type ArchiveSource = 'current' | 'legacy';
@@ -232,18 +227,17 @@ const buildGeneralDetail = async (entry: GeneralArchiveEntry, nation: ReturnType
 };
 
 export const archiveRouter = router({
-    myPastPlays: readOnlyAuthedProcedure.input(zPastPlaysInput).query(async ({ ctx, input }) => {
+    myPastPlays: readOnlyAuthedProcedure.query(async ({ ctx }) => {
         const owner = ctx.auth?.user.id;
         if (!owner) throw new Error('Authenticated archive query is missing its user identity');
+        const legacyProfile = isLegacyArchiveProfile(ctx.profile.id) ? ctx.profile.id : null;
 
         const [legacyRows, currentRows] = await Promise.all([
-            findLegacyGeneralsByOwner(ctx.db, { owner, sourceProfile: input.sourceProfile }),
-            input.sourceProfile === ctx.profile.id
-                ? ctx.db.oldGeneral.findMany({
-                      where: { owner },
-                      orderBy: [{ lastYearMonth: 'desc' }, { serverId: 'desc' }, { generalNo: 'asc' }],
-                  })
-                : [],
+            legacyProfile ? findLegacyGeneralsByOwner(ctx.db, { owner, sourceProfile: legacyProfile }) : [],
+            ctx.db.oldGeneral.findMany({
+                where: { owner },
+                orderBy: [{ lastYearMonth: 'desc' }, { serverId: 'desc' }, { generalNo: 'asc' }],
+            }),
         ]);
         const legacyIdentity = new Set(
             legacyRows.map((row) => `${row.sourceProfile}:${row.serverId}:${row.generalNo}`)
@@ -488,10 +482,7 @@ export const archiveRouter = router({
     myPastPlayDetail: readOnlyAuthedProcedure.input(zPastPlayDetailInput).query(async ({ ctx, input }) => {
         const owner = ctx.auth?.user.id;
         if (!owner) throw new Error('Authenticated archive query is missing its user identity');
-        const sourceProfile = input.sourceProfile ?? ctx.profile.id;
-        if (input.source === 'current' && sourceProfile !== ctx.profile.id) {
-            throw new TRPCError({ code: 'NOT_FOUND', message: '지난 장수 기록을 찾을 수 없습니다.' });
-        }
+        const sourceProfile = ctx.profile.id;
 
         let entry: GeneralArchiveEntry | null = null;
         let nationRows: ArchiveNationEntry[] = [];
@@ -500,10 +491,10 @@ export const archiveRouter = router({
         let battleResultAvailable = false;
         let hallBattle = legacyHallBattleSummary([]);
         if (input.source === 'legacy') {
-            if (!LEGACY_ARCHIVE_PROFILES.includes(sourceProfile as LegacyArchiveProfile)) {
-                throw new TRPCError({ code: 'BAD_REQUEST', message: '지원하지 않는 이전 서버 프로필입니다.' });
+            if (!isLegacyArchiveProfile(sourceProfile)) {
+                throw new TRPCError({ code: 'NOT_FOUND', message: '지난 장수 기록을 찾을 수 없습니다.' });
             }
-            const profile = sourceProfile as LegacyArchiveProfile;
+            const profile: LegacyArchiveProfile = sourceProfile;
             const row = await findLegacyGeneral(ctx.db, {
                 owner,
                 sourceProfile: profile,

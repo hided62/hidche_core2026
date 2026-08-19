@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue';
 
-import { isLegacyArchiveProfile, LEGACY_ARCHIVE_PROFILES, type LegacyArchiveProfile } from '@sammo-ts/common';
+import { isLegacyArchiveProfile, type LegacyArchiveProfile } from '@sammo-ts/common';
 
 import GeneralBasicCard from '../components/main/GeneralBasicCard.vue';
 import GeneralBattleSummary, { type GeneralBattleSummaryData } from '../components/main/GeneralBattleSummary.vue';
@@ -98,7 +98,6 @@ type PastPlayDetail = {
 };
 
 type PastPlayDetailInput = {
-    sourceProfile: string;
     source: string;
     serverId: string;
     generalNo: number;
@@ -117,11 +116,6 @@ const profileLabels: Record<LegacyArchiveProfile, string> = {
     pya: '퍄',
     hwe: '훼',
 };
-const profileOptions = LEGACY_ARCHIVE_PROFILES.map((profile) => ({ profile, label: profileLabels[profile] }));
-const configuredProfile = import.meta.env.VITE_GAME_PROFILE?.trim();
-const selectedProfile = ref<LegacyArchiveProfile>(
-    configuredProfile && isLegacyArchiveProfile(configuredProfile) ? configuredProfile : 'che'
-);
 
 const archive = ref<Archive | null>(null);
 const loading = ref(false);
@@ -130,33 +124,18 @@ const selectedKey = ref<string | null>(null);
 const detail = ref<PastPlayDetail | null>(null);
 const detailLoading = ref(false);
 const detailError = ref<string | null>(null);
-let archiveRequestId = 0;
 
 const loadArchive = async () => {
-    const requestId = ++archiveRequestId;
-    const sourceProfile = selectedProfile.value;
+    if (loading.value) return;
     loading.value = true;
     error.value = null;
     try {
-        const result = await trpc.archive.myPastPlays.query({ sourceProfile });
-        if (requestId === archiveRequestId) archive.value = result;
+        archive.value = await trpc.archive.myPastPlays.query();
     } catch (cause) {
-        if (requestId === archiveRequestId) {
-            error.value = cause instanceof Error ? cause.message : '지난 플레이를 불러오지 못했습니다.';
-        }
+        error.value = cause instanceof Error ? cause.message : '지난 플레이를 불러오지 못했습니다.';
     } finally {
-        if (requestId === archiveRequestId) loading.value = false;
+        loading.value = false;
     }
-};
-
-const selectProfile = (profile: LegacyArchiveProfile): void => {
-    if (selectedProfile.value === profile) return;
-    selectedProfile.value = profile;
-    archive.value = null;
-    selectedKey.value = null;
-    detail.value = null;
-    detailError.value = null;
-    void loadArchive();
 };
 
 const yearMonth = (value: number): string => `${Math.floor(value / 100)}년 ${value % 100}월`;
@@ -204,7 +183,6 @@ const selectGeneral = async (season: ArchiveSeason, generalNo: number): Promise<
     detailLoading.value = true;
     try {
         const result = await queryPastPlayDetail({
-            sourceProfile: seasonSourceProfile(season),
             source: seasonSource(season),
             serverId: season.serverId,
             generalNo,
@@ -257,20 +235,6 @@ onMounted(() => {
         </header>
 
         <p class="page-note">종료된 기수와 관리자가 보존한 취소 게임의 내 장수 기록입니다.</p>
-        <nav class="profile-tabs legacy-bg1" aria-label="과거 장수 서버 선택">
-            <button
-                v-for="option in profileOptions"
-                :key="option.profile"
-                class="profile-tab"
-                :class="{ selected: selectedProfile === option.profile }"
-                type="button"
-                :aria-label="`${option.label} 서버`"
-                :aria-pressed="selectedProfile === option.profile"
-                @click="selectProfile(option.profile)"
-            >
-                {{ option.label }}
-            </button>
-        </nav>
         <p v-if="error" class="error-row">{{ error }}</p>
         <p v-else-if="loading && !archive" class="empty-row">불러오는 중...</p>
         <p v-else-if="archive?.seasons.length === 0" class="empty-row">보관된 지난 플레이가 없습니다.</p>
@@ -510,38 +474,12 @@ onMounted(() => {
 }
 
 .page-note,
-.profile-tabs,
 .empty-row,
 .error-row {
     margin: 0;
     padding: 12px 10px;
     border-inline: 1px solid #666;
     border-bottom: 1px solid #666;
-}
-
-.profile-tabs {
-    display: grid;
-    grid-template-columns: repeat(7, minmax(0, 1fr));
-    gap: 4px;
-    padding: 6px 8px;
-}
-
-.profile-tab {
-    min-height: 30px;
-    border: 1px solid #777;
-    color: #ddd;
-    background: #222;
-    font: inherit;
-    font-weight: 700;
-    cursor: pointer;
-}
-
-.profile-tab:hover,
-.profile-tab:focus-visible,
-.profile-tab.selected {
-    border-color: skyblue;
-    color: skyblue;
-    background: #143a2a;
 }
 
 .page-note,
