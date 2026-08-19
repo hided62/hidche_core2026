@@ -3,7 +3,7 @@ import { computed, onMounted, ref, watch } from 'vue';
 import { useRouter } from 'vue-router';
 import MapViewer from '../components/main/MapViewer.vue';
 import { trpc } from '../utils/trpc';
-import { legacyNationTextColor } from '../utils/legacyNationColor';
+import { legacyLuminanceTextColor } from '../utils/legacyNationColor';
 
 type Result = Awaited<ReturnType<typeof trpc.world.getGlobalInfo.query>>;
 type Layout = Awaited<ReturnType<typeof trpc.world.getMapLayout.query>>;
@@ -19,7 +19,7 @@ const stateClass = (value: number) => `state-${value}`;
 const nationMap = computed(() => new Map(data.value?.nations.map((nation) => [nation.id, nation]) ?? []));
 const nationNameStyle = (color: string) => ({
     backgroundColor: color,
-    color: legacyNationTextColor(color),
+    color: legacyLuminanceTextColor(color),
 });
 watch(
     matrixElement,

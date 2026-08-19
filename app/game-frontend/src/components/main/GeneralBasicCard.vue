@@ -7,6 +7,7 @@ import { formatLocalTimeSeconds } from '../../utils/legacyDateTime';
 import { legacyExperiencePercent, ratioPercent } from '../../utils/legacyProgress';
 import { DEFAULT_GENERAL_ICON_URL, resolveGeneralIconBackgroundImage } from '../../utils/generalIcon';
 import { configuredGameAssetUrl } from '../../utils/imageAssets';
+import { legacyLuminanceTextColor } from '../../utils/legacyNationColor';
 
 interface GeneralStats {
     leadership: number;
@@ -155,19 +156,11 @@ const injuryInfo = computed(() => {
     return { text: '건강', color: '#ffffff' };
 });
 
-const isBrightColor = (color: string): boolean => {
-    const normalized = /^#[0-9a-f]{6}$/iu.test(color) ? color.slice(1) : '173d27';
-    const red = Number.parseInt(normalized.slice(0, 2), 16);
-    const green = Number.parseInt(normalized.slice(2, 4), 16);
-    const blue = Number.parseInt(normalized.slice(4, 6), 16);
-    return (red * 299 + green * 587 + blue * 114) / 1000 >= 150;
-};
-
 const titleStyle = computed(() => {
     const backgroundColor = props.nationColor || '#173d27';
     return {
         backgroundColor,
-        color: isBrightColor(backgroundColor) ? '#000000' : '#ffffff',
+        color: legacyLuminanceTextColor(backgroundColor),
     };
 });
 

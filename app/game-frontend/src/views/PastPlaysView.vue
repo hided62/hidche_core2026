@@ -14,6 +14,7 @@ import {
 import LegacyGeneralProgress from '../components/ui/LegacyGeneralProgress.vue';
 import PanelCard from '../components/ui/PanelCard.vue';
 import SkeletonLines from '../components/ui/SkeletonLines.vue';
+import { legacyLuminanceTextColor } from '../utils/legacyNationColor';
 import { trpc } from '../utils/trpc';
 
 type Archive = Awaited<ReturnType<typeof trpc.archive.myPastPlays.query>>;
@@ -282,7 +283,10 @@ onMounted(() => {
                             <td>
                                 <span
                                     class="nation-name"
-                                    :style="{ backgroundColor: general.nationColor, color: '#fff' }"
+                                    :style="{
+                                        backgroundColor: general.nationColor,
+                                        color: legacyLuminanceTextColor(general.nationColor),
+                                    }"
                                 >
                                     {{ general.nationName }}
                                 </span>

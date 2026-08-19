@@ -56,7 +56,7 @@ const installFixture = async (page: Page, state: FixtureState): Promise<void> =>
                     ],
                     warSpecials: [{ key: 'che_무쌍', name: '무쌍', info: '전투 특기' }],
                     nations: [
-                        { id: 1, name: '촉', color: '#66aa44', scoutMessage: '함께 천하를 도모합시다.' },
+                        { id: 1, name: '촉', color: '#FFFF00', scoutMessage: '함께 천하를 도모합시다.' },
                         { id: 2, name: '위', color: '#5577bb', scoutMessage: '능력 있는 장수를 기다립니다.' },
                     ],
                     serverInfo: {
@@ -163,6 +163,12 @@ test('prioritizes core general fields and keeps context and inheritance progress
     await installFixture(page, state);
     await page.setViewportSize({ width: 1200, height: 900 });
     await page.goto('join');
+
+    const nationHeadings = page.locator('.nation-card .nation-name');
+    await expect(nationHeadings.nth(0)).toHaveCSS('background-color', 'rgb(255, 255, 0)');
+    await expect(nationHeadings.nth(0)).toHaveCSS('color', 'rgb(0, 0, 0)');
+    await expect(nationHeadings.nth(1)).toHaveCSS('background-color', 'rgb(85, 119, 187)');
+    await expect(nationHeadings.nth(1)).toHaveCSS('color', 'rgb(255, 255, 255)');
 
     const flow = page.locator('.join-flow');
     const basicPanel = flow.locator('.panel-card').first();
@@ -346,6 +352,10 @@ test('keeps the primary creation flow readable without horizontal overflow on mo
     await installFixture(page, state);
     await page.setViewportSize({ width: 390, height: 844 });
     await page.goto('join');
+
+    const nationHeadings = page.locator('.nation-card .nation-name');
+    await expect(nationHeadings.nth(0)).toHaveCSS('color', 'rgb(0, 0, 0)');
+    await expect(nationHeadings.nth(1)).toHaveCSS('color', 'rgb(255, 255, 255)');
 
     await expect(page.getByRole('heading', { name: '장수 기본 정보' })).toBeVisible();
     const mobileGeometry = await page.evaluate(() => {

@@ -2,6 +2,7 @@
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue';
 import type { MessageType } from '@sammo-ts/logic';
 import { DEFAULT_GENERAL_ICON_URL, resolveMessageGeneralIconUrl, useDefaultGeneralIcon } from '../../utils/generalIcon';
+import { isLegacyNationColorBright } from '../../utils/legacyNationColor';
 
 interface MessageTarget {
     generalId: number;
@@ -95,25 +96,13 @@ const scheduleDeleteExpiry = () => {
     }, delay);
 };
 
-const isBright = (color: string): boolean => {
-    const match = /^#([0-9a-f]{6})$/i.exec(color);
-    if (!match) {
-        return false;
-    }
-    const value = Number.parseInt(match[1]!, 16);
-    const red = (value >> 16) & 0xff;
-    const green = (value >> 8) & 0xff;
-    const blue = value & 0xff;
-    return red * 0.299 + green * 0.587 + blue * 0.114 > 160;
-};
-
 const iconUrl = computed(() => resolveMessageGeneralIconUrl(props.message.src.icon));
 const canReplyToGeneral = (target: MessageTarget): boolean => props.replyableGeneralIds.includes(target.generalId);
 
 const targetClass = (target: MessageTarget) => ({
     'msg-target': true,
-    'msg-bright': isBright(target.color),
-    'msg-dark': !isBright(target.color),
+    'msg-bright': isLegacyNationColorBright(target.color),
+    'msg-dark': !isLegacyNationColorBright(target.color),
 });
 
 const setTarget = (target: MessageTarget) => {
