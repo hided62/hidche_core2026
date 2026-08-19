@@ -84,11 +84,6 @@ const unavailableText: Record<GeneralRecordType, string> = {
     border-bottom: 0;
 }
 
-.log-line :deep(.hidden_but_copyable) {
-    color: transparent !important;
-    font-size: 0;
-}
-
 .empty {
     padding: 2px 8px;
     color: #999;

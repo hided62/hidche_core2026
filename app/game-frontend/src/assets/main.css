@@ -87,3 +87,14 @@ textarea {
 .small_war_log {
     display: inline-block;
 }
+
+/*
+ * Ref's common stylesheet keeps diagnostic seeds in the DOM so they remain
+ * copyable, while removing them from every normal log rendering surface.
+ * This marker can arrive through main, personal, audit, and history log APIs,
+ * so the display contract belongs to the app-wide legacy markup boundary.
+ */
+.hidden_but_copyable {
+    color: rgba(0, 0, 0, 0) !important;
+    font-size: 0;
+}

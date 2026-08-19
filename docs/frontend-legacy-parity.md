@@ -137,6 +137,13 @@ REF_PERSONAL_WAR_LOG_ARTIFACT_DIR=/path/to/ignored/artifacts \
 `MENU_PARITY_ARTIFACT_DIR`를 지정하면 1200×900·500×900 screenshot과 computed
 style JSON을 남깁니다.
 
+같은 Ref collector는 “진격합니다.” 전투 seed marker도 함께 렌더링하여
+desktop/mobile의 투명색, 0px 글자 크기, 0×0 rect와 selection text 보존을
+수집합니다. Core의 대응 test는 `inGameMenus.spec.ts`의 “전투시드는 메인·내
+정보·감찰부에서 숨긴 채 선택할 수 있다”이며 `PLAYWRIGHT_FRONTEND_MODE=production`
+과 `MENU_PARITY_ARTIFACT_DIR`를 함께 지정하면 세 화면의 1000×900·500×900
+screenshot과 computed JSON을 남깁니다.
+
 To refresh the PHP ranking evidence after building the ignored reference
 webpack assets, run:
 
