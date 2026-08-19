@@ -122,6 +122,7 @@ export interface GatewayClaimedProfileUpdate {
     buildCompletedAt?: string | null;
     buildError?: string | null;
     lastError?: string | null;
+    meta?: GatewayPrisma.JsonObject;
 }
 
 export interface GatewayProfileRepository {
@@ -748,6 +749,7 @@ export const createGatewayProfileRepository = (prisma: GatewayPrismaClient): Gat
                     buildCompletedAt: toDate(patch.buildCompletedAt),
                     buildError: patch.buildError,
                     lastError: patch.lastError,
+                    meta: patch.meta,
                 },
             });
         });

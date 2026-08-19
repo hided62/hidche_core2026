@@ -21,6 +21,7 @@ import {
 import type { GatewayApiContext } from './context.js';
 import { resolveLocalAccountProfilePolicy } from './auth/localAccountPolicy.js';
 import { GATEWAY_BUILD_STATUSES, GATEWAY_PROFILE_STATUSES } from './orchestrator/profileRepository.js';
+import { readProfileReleaseSource } from './orchestrator/profileReleaseSource.js';
 import { orderGatewayProfiles, resolveGatewayProfileKoreanName } from './profileOrder.js';
 import { purifyGatewayNoticeHtml } from './security/gatewayNoticeHtml.js';
 
@@ -1210,9 +1211,10 @@ export const adminRouter = router({
                     });
                 }
 
-                const sourceMode: 'BRANCH' | 'COMMIT' = input.sourceMode === 'CURRENT' ? 'COMMIT' : input.sourceMode;
-                let sourceRef =
-                    input.sourceMode === 'CURRENT' ? profile.buildCommitSha?.trim() : input.sourceRef?.trim();
+                const configuredSource = input.sourceMode === 'CURRENT' ? readProfileReleaseSource(profile) : null;
+                const sourceMode: 'BRANCH' | 'COMMIT' =
+                    input.sourceMode === 'CURRENT' ? (configuredSource?.mode ?? 'COMMIT') : input.sourceMode;
+                let sourceRef = configuredSource?.ref ?? input.sourceRef?.trim();
                 if (!sourceRef) {
                     throw new TRPCError({
                         code: 'BAD_REQUEST',
@@ -1253,6 +1255,7 @@ export const adminRouter = router({
                         payload: {
                             install: input.install,
                             requestedSource: input.sourceMode,
+                            releaseSource: { mode: sourceMode, ref: sourceRef },
                         } as GatewayPrisma.JsonObject,
                         reason: input.reason,
                         requestedBy: adminAuth.user.id,
@@ -1372,6 +1375,7 @@ export const adminRouter = router({
                         type: 'DEPLOY',
                         sourceMode: input.sourceMode,
                         sourceRef,
+                        payload: { releaseSource: { mode: input.sourceMode, ref: sourceRef } },
                         reason: input.reason,
                         requestedBy: adminAuth.user.id,
                     });
@@ -1740,6 +1744,8 @@ export const adminRouter = router({
             .query(async ({ ctx, input }) => {
                 const adminAuth = requireAdminAuth(ctx);
                 const sourceMode = input?.sourceMode ?? 'CURRENT';
+                let resolvedSourceMode: 'BRANCH' | 'COMMIT' | undefined =
+                    sourceMode === 'CURRENT' ? undefined : sourceMode;
                 let gitRef = input?.gitRef?.trim();
                 let currentScenarioId: number | null = null;
                 if (sourceMode === 'CURRENT') {
@@ -1754,8 +1760,10 @@ export const adminRouter = router({
                         const parsedScenarioId =
                             profile.currentScenario === null ? Number.NaN : Number(profile.currentScenario);
                         currentScenarioId = Number.isInteger(parsedScenarioId) ? parsedScenarioId : null;
-                        gitRef = profile.buildCommitSha?.trim();
-                        if (!gitRef) {
+                        const configuredSource = readProfileReleaseSource(profile);
+                        gitRef = configuredSource?.ref;
+                        resolvedSourceMode = configuredSource?.mode;
+                        if (!configuredSource || !gitRef) {
                             throw new TRPCError({
                                 code: 'BAD_REQUEST',
                                 message: 'The profile has no active build commit.',
@@ -1771,7 +1779,7 @@ export const adminRouter = router({
                     ? await listScenarioPreviews()
                     : await listScenarioPreviews({
                           gitRef:
-                              sourceMode === 'BRANCH'
+                              resolvedSourceMode === 'BRANCH'
                                   ? await resolveGitBranchCommitSha(gitRef)
                                   : await resolveGitCommitSha(gitRef),
                       });

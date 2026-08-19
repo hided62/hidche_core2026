@@ -613,7 +613,7 @@ describe('admin operation API', () => {
         ).rejects.toMatchObject({ code: 'CONFLICT' });
     });
 
-    it('queues a DB-preserving profile deployment without reset payload', async () => {
+    it('queues a DB-preserving profile deployment with a durable release policy and no reset payload', async () => {
         const harness = await buildCaller(
             async (input) => ({
                 id: '33333333-3333-4333-8333-333333333333',
@@ -642,11 +642,17 @@ describe('admin operation API', () => {
             type: 'DEPLOY',
             sourceMode: 'COMMIT',
             reason: 'preserve live season',
+            payload: {
+                releaseSource: {
+                    mode: 'COMMIT',
+                    ref: expect.stringMatching(/^[0-9a-f]{40}$/u),
+                },
+            },
         });
-        expect(harness.createdInputs[0]).not.toHaveProperty('payload');
+        expect(harness.createdInputs[0]?.payload).not.toHaveProperty('install');
     });
 
-    it('lets a scenario-only operator reset from the active commit without selecting Git', async () => {
+    it('lets a scenario-only operator reset from the configured branch latest without selecting Git', async () => {
         const harness = await buildCaller(
             async (input) => ({
                 id: '55555555-5555-4555-8555-555555555555',
@@ -664,6 +670,7 @@ describe('admin operation API', () => {
                 adminRoles: ['admin.scenarios.reset:che:2'],
                 firstUserIsAdmin: false,
                 profileScenario: '1010',
+                profileMeta: { releaseSource: { mode: 'BRANCH', ref: 'main' } },
             }
         );
 
@@ -687,8 +694,8 @@ describe('admin operation API', () => {
 
         expect(harness.createdInputs[0]).toMatchObject({
             type: 'RESET',
-            sourceMode: 'COMMIT',
-            sourceRef: expect.stringMatching(/^[0-9a-f]{40}$/u),
+            sourceMode: 'BRANCH',
+            sourceRef: 'main',
             reason: 'new season only',
         });
     });

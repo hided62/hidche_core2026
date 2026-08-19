@@ -211,7 +211,7 @@ const pageDescription = computed(() => {
         return '진행 중 게임을 닫고 정식 기수에서 제외하며 장수 기록과 유산 포인트 보전 범위를 선택합니다.';
     }
     if (props.mode === 'scenario') {
-        return '현재 배포 버전으로 시나리오만 초기화하거나, 배포 권한이 있을 때 새 버전과 함께 초기화합니다.';
+        return '서버에 지정된 브랜치의 최신 버전 또는 고정 커밋으로 시나리오를 초기화합니다.';
     }
     return '현재 게임 DB를 유지한 채 코드와 forward migration을 배포합니다.';
 });
@@ -227,7 +227,7 @@ const activeOperation = computed(
 
 const sourceHelp = computed(() =>
     form.sourceMode === 'CURRENT'
-        ? '현재 서버에 배포된 커밋의 시나리오 리소스를 사용합니다.'
+        ? '서버가 브랜치를 추적하면 작업 시작 시 최신 커밋을 사용하고, 커밋 고정 상태면 그 버전을 유지합니다.'
         : form.sourceMode === 'BRANCH'
           ? '작업이 실제로 시작될 때 원격 브랜치를 다시 fetch하여 최신 커밋을 사용합니다.'
           : '요청 시 커밋을 전체 SHA로 고정하므로 이후 브랜치가 이동해도 결과가 바뀌지 않습니다.'
@@ -597,7 +597,7 @@ const requestReset = async () => {
     }
     const scenarioId = form.scenarioId;
     const sourceLabel =
-        form.sourceMode === 'CURRENT' ? '현재 배포 버전' : form.sourceMode === 'BRANCH' ? '브랜치' : '커밋';
+        form.sourceMode === 'CURRENT' ? '서버 지정 버전' : form.sourceMode === 'BRANCH' ? '브랜치' : '커밋';
     if (
         !window.confirm(
             `${selectedProfileName.value}의 게임 DB를 초기화합니다.\n${sourceLabel}${form.sourceMode === 'CURRENT' ? '' : `: ${form.sourceRef}`}\n시나리오: ${scenarioId}`
@@ -925,7 +925,7 @@ onBeforeUnmount(() => {
                                     value="CURRENT"
                                     data-testid="source-current"
                                 />
-                                현재 배포 버전
+                                서버 지정 버전
                             </label>
                             <label
                                 v-if="mode === 'version' || hasCapability('admin.profiles.deploy')"

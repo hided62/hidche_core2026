@@ -100,11 +100,19 @@ Profile process 전환 중에는 frontend/API port가 잠시 닫힐 수 있습�
 ### 시나리오 초기화
 
 시나리오 초기화는 새 시즌이나 새 scenario로 현 시즌 데이터를 교체할 때
-사용합니다. 기본 `현재 배포 버전`은 profile의 게시된 full commit을 서버에서
-결정하므로 Git 입력과 `admin.profiles.deploy` 권한이 필요하지 않습니다. 새 branch
+사용합니다. 기본 `서버 지정 버전`은 마지막으로 성공한 상위 권한자의 배포 소스를
+따릅니다. Branch가 지정되어 있으면 worker가 작업을 claim할 때 원격 최신 commit을
+해석하고, commit이 지정되어 있으면 그 full SHA를 계속 사용합니다. 따라서 Git 입력과
+`admin.profiles.deploy` 권한 없이도 일반 초기화 권한자가 branch 업데이트를 포함해
+초기화할 수 있습니다. 새 branch
 또는 commit을 함께 배포하는 모드는 `admin.scenarios.reset`과
 `admin.profiles.deploy`를 모두 요구합니다. Source와 scenario를 확인한 뒤 turn 간격, 가오픈·정식 오픈,
 NPC와 자동 진행 설정을 확인하고 요청해 주세요.
+
+같은 commit이 이미 active profile workspace에 설치되어 있으면 build command는 생략하고
+migration과 scenario seed부터 진행합니다. 상위 권한자가 버전 업데이트에서 commit을
+선택한 경우에만 이후 일반 초기화가 그 commit에 고정됩니다. 다시 branch를 선택해
+성공적으로 배포하면 branch 추적으로 돌아갑니다.
 
 턴 간격과 고급 옵션은 서버 상태 화면에서 저장한
 `GatewayProfile.meta.resetDefaults`를 최초값으로 사용합니다. 서버별 기본값을

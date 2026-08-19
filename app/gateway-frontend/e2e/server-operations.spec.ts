@@ -507,7 +507,7 @@ test('separates branch and commit semantics and submits a reset from the dedicat
     await expect(page.getByTestId('server-operations-page')).toBeVisible();
     await expect(page).toHaveURL(/\/gateway\/admin\/servers\/che%3Adefault\/scenario$/);
     await expect(page.getByTestId('source-current')).toBeChecked();
-    await expect(page.getByTestId('source-help')).toContainText('현재 서버에 배포된 커밋');
+    await expect(page.getByTestId('source-help')).toContainText('브랜치를 추적하면 작업 시작 시 최신 커밋');
     await expect(page.getByTestId('scenario-select')).toHaveValue('2');
     await expect(page.getByTestId('request-reset')).toBeEnabled();
     await expect(page.getByTestId('scenario-select').locator('option:checked')).toContainText('현재 시나리오');
@@ -1176,7 +1176,7 @@ test('renders the stable server identity without exposing the default suffix as 
     expect(state.profileNavigationRequests).toBe(1);
 });
 
-test('scenario-only operator resets the current version without Git or Gateway controls', async ({ page }) => {
+test('scenario-only operator resets the server-selected version without Git or Gateway controls', async ({ page }) => {
     const state: FixtureState = {
         operations: [],
         gatewayOperations: [],
