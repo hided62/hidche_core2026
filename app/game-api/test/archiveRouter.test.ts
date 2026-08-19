@@ -57,11 +57,11 @@ const context = (
                 ];
             }
             if (sql.includes('legacy_archive"."general')) {
-                if (!query.values?.includes('hwe')) return [];
+                if (!query.values?.includes('che')) return [];
                 return [
                     {
-                        sourceProfile: 'hwe',
-                        serverId: 'hwe_archive_1',
+                        sourceProfile: 'che',
+                        serverId: 'che_archive_1',
                         generalNo: 21,
                         legacyId: 21,
                         owner: 'user-1',
@@ -146,8 +146,8 @@ const context = (
             if (sql.includes('legacy_archive"."game_history')) {
                 return [
                     {
-                        sourceProfile: 'hwe',
-                        serverId: 'hwe_archive_1',
+                        sourceProfile: 'che',
+                        serverId: 'che_archive_1',
                         legacyId: 1,
                         openedAt: new Date('2019-09-21T00:00:00.000Z'),
                         completedAt: null,
@@ -164,9 +164,9 @@ const context = (
             if (sql.includes('legacy_archive"."nation')) {
                 return [
                     {
-                        sourceProfile: 'hwe',
+                        sourceProfile: 'che',
                         legacyId: 1,
-                        serverId: 'hwe_archive_1',
+                        serverId: 'che_archive_1',
                         nation: 2,
                         data: { name: '이전국', color: '#0000ff', level: 7 },
                         archivedAt: new Date('2020-01-02T00:00:00.000Z'),
@@ -174,7 +174,7 @@ const context = (
                 ];
             }
             if (sql.includes('legacy_archive"."emperor')) {
-                return [{ id: 99n, sourceProfile: 'hwe', legacyId: 1, serverId: 'hwe_archive_1', data: {} }];
+                return [{ id: 99n, sourceProfile: 'che', legacyId: 1, serverId: 'che_archive_1', data: {} }];
             }
             return [];
         },
@@ -314,12 +314,10 @@ const context = (
 
 describe('archive.myPastPlays', () => {
     it('requires authentication and returns only the authenticated owner archive', async () => {
-        await expect(
-            appRouter.createCaller(context(null)).archive.myPastPlays({ sourceProfile: 'che' })
-        ).rejects.toMatchObject({
+        await expect(appRouter.createCaller(context(null)).archive.myPastPlays()).rejects.toMatchObject({
             code: 'UNAUTHORIZED',
         });
-        const result = await appRouter.createCaller(context(auth)).archive.myPastPlays({ sourceProfile: 'che' });
+        const result = await appRouter.createCaller(context(auth)).archive.myPastPlays();
         expect(result.seasons).toEqual([
             expect.objectContaining({
                 source: 'current',
@@ -397,9 +395,7 @@ describe('archive.myPastPlays', () => {
     });
 
     it('labels a retained cancellation as an unnumbered abandoned game without a dynasty link', async () => {
-        const result = await appRouter
-            .createCaller(context(auth, false, true))
-            .archive.myPastPlays({ sourceProfile: 'che' });
+        const result = await appRouter.createCaller(context(auth, false, true)).archive.myPastPlays();
 
         expect(result.seasons).toEqual([
             expect.objectContaining({
@@ -415,12 +411,12 @@ describe('archive.myPastPlays', () => {
 
     it('returns normalized previous-server detail from the dedicated archive without exposing raw data', async () => {
         const caller = appRouter.createCaller(context(auth, true));
-        const list = await caller.archive.myPastPlays({ sourceProfile: 'hwe' });
+        const list = await caller.archive.myPastPlays();
         expect(list.seasons).toContainEqual(
             expect.objectContaining({
                 source: 'legacy',
-                sourceProfile: 'hwe',
-                serverId: 'hwe_archive_1',
+                sourceProfile: 'che',
+                serverId: 'che_archive_1',
                 openedAt: '2019-09-21T00:00:00.000Z',
                 dynastyId: 99,
                 generals: [expect.objectContaining({ name: '이전서버장수', nationName: '이전국' })],
@@ -429,13 +425,12 @@ describe('archive.myPastPlays', () => {
 
         const detail = await caller.archive.myPastPlayDetail({
             source: 'legacy',
-            sourceProfile: 'hwe',
-            serverId: 'hwe_archive_1',
+            serverId: 'che_archive_1',
             generalNo: 21,
         });
         expect(detail).toMatchObject({
             source: 'legacy',
-            sourceProfile: 'hwe',
+            sourceProfile: 'che',
             dynastyPath: '/dynasty/99?source=legacy',
             nation: { id: 2, name: '이전국', color: '#0000ff' },
             general: expect.objectContaining({
@@ -473,16 +468,18 @@ describe('archive.myPastPlays', () => {
         expect(JSON.stringify(detail)).not.toContain('raw_data');
     });
 
-    it('limits the archive list to the requested source profile', async () => {
+    it('combines only the current profile Core and PHP archives without a profile selector', async () => {
         const caller = appRouter.createCaller(context(auth, true));
 
-        const che = await caller.archive.myPastPlays({ sourceProfile: 'che' });
-        expect(che.seasons).toHaveLength(1);
-        expect(che.seasons[0]?.sourceProfile).toBe('che');
+        const result = await caller.archive.myPastPlays();
+        expect(result.seasons).toHaveLength(2);
+        expect(result.seasons.map((season) => season.sourceProfile)).toEqual(['che', 'che']);
+        expect(result.seasons.map((season) => season.source).sort()).toEqual(['current', 'legacy']);
 
-        const hwe = await caller.archive.myPastPlays({ sourceProfile: 'hwe' });
-        expect(hwe.seasons).toHaveLength(1);
-        expect(hwe.seasons[0]?.sourceProfile).toBe('hwe');
-        expect(hwe.seasons[0]?.source).toBe('legacy');
+        const queryWithInjectedProfile = caller.archive.myPastPlays as unknown as (input: {
+            sourceProfile: string;
+        }) => ReturnType<typeof caller.archive.myPastPlays>;
+        const attemptedCrossProfile = await queryWithInjectedProfile({ sourceProfile: 'hwe' });
+        expect(attemptedCrossProfile.seasons.map((season) => season.sourceProfile)).toEqual(['che', 'che']);
     });
 });

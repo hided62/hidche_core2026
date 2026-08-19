@@ -5,29 +5,27 @@ import { expect, test, type Page, type Route } from '@playwright/test';
 import { gamePath, gameProfile, gameTrpcRoute } from './gameTestPaths.js';
 
 const response = (data: unknown) => ({ result: { data } });
+const gameProfileId = gameProfile.split(':', 1)[0] ?? 'che';
 const operationNames = (route: Route) =>
     decodeURIComponent(new URL(route.request().url()).pathname.split('/trpc/')[1] ?? '').split(',');
 
 const installArchive = async (page: Page, options: { battleAvailable?: boolean; abandoned?: boolean } = {}) => {
-    const requestedProfiles: string[] = [];
+    const archiveRequestBodies: string[] = [];
     await page.addInitScript((profile) => {
         localStorage.setItem('sammo-game-token', 'ga_archive');
         localStorage.setItem('sammo-game-profile', profile);
     }, gameProfile);
     await page.route(gameTrpcRoute, async (route) => {
         const requestBody = route.request().postData() ?? '';
-        const requestedProfile = ['che', 'kwe', 'pwe', 'twe', 'nya', 'pya', 'hwe'].find((profile) =>
-            requestBody.includes(`"sourceProfile":"${profile}"`)
-        );
         const results = operationNames(route).map((operation) => {
             if (operation === 'auth.status') return response({ ok: true });
             if (operation === 'lobby.info') return response({ myGeneral: null });
             if (operation === 'archive.myPastPlays') {
-                requestedProfiles.push(requestedProfile ?? 'missing');
+                archiveRequestBodies.push(requestBody);
                 return response({
                     seasons: [
                         {
-                            sourceProfile: requestedProfile ?? 'che',
+                            sourceProfile: gameProfileId,
                             source: options.abandoned ? 'current' : 'legacy',
                             serverId: 'che_2024_01',
                             openedAt: '2024-01-31T00:00:00.000Z',
@@ -155,26 +153,17 @@ const installArchive = async (page: Page, options: { battleAvailable?: boolean; 
         });
         await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(results) });
     });
-    return { requestedProfiles };
+    return { archiveRequestBodies };
 };
 
-test('과거 장수 기록을 체·퀘·풰·퉤·냐·퍄·훼 서버별로 나누어 조회한다', async ({ page }) => {
+test('현재 게임 profile 기록만 조회하고 교차 profile 선택기를 노출하지 않는다', async ({ page }) => {
     const state = await installArchive(page);
     await page.goto('past-plays');
 
-    const tabs = page.getByRole('navigation', { name: '과거 장수 서버 선택' });
-    await expect(tabs.getByRole('button')).toHaveCount(7);
-    await expect(tabs.getByRole('button')).toHaveText(['체', '퀘', '풰', '퉤', '냐', '퍄', '훼']);
-    await expect(tabs.getByRole('button', { name: '체 서버' })).toHaveAttribute('aria-pressed', 'true');
-    await expect(tabs.getByRole('button', { name: '체 서버' })).toHaveCSS('color', 'rgb(135, 206, 235)');
+    await expect(page.getByRole('navigation', { name: '과거 장수 서버 선택' })).toHaveCount(0);
     await expect(page.locator('.season-identity').getByText('체', { exact: true })).toBeVisible();
-
-    await tabs.getByRole('button', { name: '훼 서버' }).hover();
-    await expect(tabs.getByRole('button', { name: '훼 서버' })).toHaveCSS('color', 'rgb(135, 206, 235)');
-    await tabs.getByRole('button', { name: '훼 서버' }).click();
-    await expect(tabs.getByRole('button', { name: '훼 서버' })).toHaveAttribute('aria-pressed', 'true');
-    await expect(page.locator('.season-identity').getByText('훼', { exact: true })).toBeVisible();
-    expect(state.requestedProfiles).toEqual(['che', 'hwe']);
+    expect(state.archiveRequestBodies).toHaveLength(1);
+    expect(state.archiveRequestBodies[0]).not.toContain('sourceProfile');
 });
 
 test('지난 플레이 관직은 숫자 대신 저장된 Ref 표시명으로 나타난다', async ({ page }) => {
@@ -350,8 +339,6 @@ test('past plays keeps the legacy-width table scrollable on a mobile viewport', 
     const detailMetrics = await page.locator('.detail-shell').evaluate((element) => ({
         width: element.getBoundingClientRect().width,
         scrollWidth: element.scrollWidth,
-        profileTabsWidth: document.querySelector('.profile-tabs')!.getBoundingClientRect().width,
-        profileTabsScrollWidth: document.querySelector('.profile-tabs')!.scrollWidth,
         hallRecordWidth: element.querySelector('[data-hall-battle-record]')!.getBoundingClientRect().width,
         hallRecordScrollWidth: element.querySelector('[data-hall-battle-record]')!.scrollWidth,
         hallColumns: getComputedStyle(element.querySelector('[data-hall-battle-record] dl')!).gridTemplateColumns,
@@ -360,8 +347,6 @@ test('past plays keeps the legacy-width table scrollable on a mobile viewport', 
     }));
     expect(detailMetrics.width).toBe(498);
     expect(detailMetrics.scrollWidth).toBe(498);
-    expect(detailMetrics.profileTabsWidth).toBe(500);
-    expect(detailMetrics.profileTabsScrollWidth).toBeLessThanOrEqual(detailMetrics.profileTabsWidth);
     expect(detailMetrics.hallRecordWidth).toBeGreaterThan(0);
     expect(detailMetrics.hallRecordScrollWidth).toBeLessThanOrEqual(detailMetrics.hallRecordWidth);
     expect(detailMetrics.hallColumns.split(' ')).toHaveLength(3);
