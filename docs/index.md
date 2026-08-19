@@ -35,6 +35,8 @@ features:
 [시간과 턴](./user/time-and-turns.md)과
 [커맨드 목록](./user/command-catalog.generated.md)을 확인해 주세요. Profile과
 Gateway 배포는 [릴리스 운영 매뉴얼](./release-operations.md)을 따라 주세요.
+[Gateway와 게임 공통 메뉴 설정](./runtime-navigation.md)은 코드 재빌드 없이
+상단 링크와 dropdown을 바꾸는 JSON 형식과 복구 경계를 설명합니다.
 관리자 화면의 메뉴와 권한·운영 경계는
 [관리자 콘솔](./admin-console.md)에서 확인할 수 있습니다.
 게임 진행 시각과 운영 벽시계의 경계는

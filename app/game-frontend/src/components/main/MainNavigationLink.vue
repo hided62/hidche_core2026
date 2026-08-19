@@ -20,6 +20,7 @@ const props = withDefaults(
 
 const emit = defineEmits<{
     navigate: [];
+    action: [action: NonNullable<MainNavigationLink['action']>];
 }>();
 
 const label = computed(() => (props.compact ? (props.link.compactLabel ?? props.link.label) : props.link.label));
@@ -54,6 +55,16 @@ const lumenClasses = computed(() =>
     >
         {{ label }}
     </a>
+    <button
+        v-else-if="enabled && link.action"
+        class="main-menu-link main-menu-link--button"
+        :class="[lumenClasses, { highlight: active }]"
+        type="button"
+        :data-navigation-id="link.id"
+        @click="emit('action', link.action)"
+    >
+        {{ label }}
+    </button>
     <span
         v-else
         class="main-menu-link disabled"
@@ -90,6 +101,10 @@ const lumenClasses = computed(() =>
     text-decoration: none;
     white-space: nowrap;
     cursor: pointer;
+}
+
+.main-menu-link--button {
+    width: 100%;
 }
 
 .main-menu-link:hover,

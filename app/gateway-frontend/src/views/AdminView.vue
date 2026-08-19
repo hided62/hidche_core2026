@@ -407,7 +407,7 @@ const profileEdits = ref<
             color: string;
             inGameNotice: string;
             profileImageUrl: string;
-            nextSeasonIdx: string;
+            nextSeasonIdx: string | number;
             localAccountAccessGraceDays: string;
             localAccountGeneralCreationGraceDays: string;
             resetDefaults: ProfileResetDefaults;
@@ -770,7 +770,10 @@ const updateProfileMeta = async (profileName: string) => {
     if (!edit) {
         return;
     }
-    const nextSeasonRaw = edit.nextSeasonIdx.trim();
+    // Vue casts non-empty values from type="number" inputs to numbers even when
+    // the buffer was initialized with a string. Normalize both runtime shapes so
+    // event season 0 reaches the metadata mutation instead of throwing on trim().
+    const nextSeasonRaw = String(edit.nextSeasonIdx).trim();
     const nextSeasonIdx = nextSeasonRaw === '' ? null : Number(nextSeasonRaw);
     if (nextSeasonIdx !== null && (!Number.isFinite(nextSeasonIdx) || nextSeasonIdx < 0)) {
         profileActionStatus.value = {
@@ -2229,6 +2232,7 @@ onMounted(() => {
                                         type="number"
                                         min="0"
                                         step="1"
+                                        data-testid="next-season-idx"
                                         class="w-full bg-zinc-950 border border-zinc-700 rounded px-3 py-2 text-sm text-white"
                                         placeholder="예: 12"
                                     />

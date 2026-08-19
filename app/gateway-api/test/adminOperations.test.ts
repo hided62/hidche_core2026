@@ -789,6 +789,30 @@ describe('admin operation API', () => {
         ).rejects.toBeDefined();
     });
 
+    it('stores event season zero as the next season number', async () => {
+        const harness = await buildCaller(
+            async () => {
+                throw new Error('not used');
+            },
+            { adminRoles: ['admin.profiles.settings:che:2'], firstUserIsAdmin: false }
+        );
+
+        await harness.caller.admin.profiles.updateMeta({
+            profileName: 'che:2',
+            patch: { nextSeasonIdx: 0 },
+            reason: 'prepare event season',
+        });
+        expect(harness.updatedMetas.at(-1)).toMatchObject({ nextSeasonIdx: 0 });
+
+        await expect(
+            harness.caller.admin.profiles.updateMeta({
+                profileName: 'che:2',
+                patch: { nextSeasonIdx: -1 },
+                reason: 'reject negative season',
+            })
+        ).rejects.toBeDefined();
+    });
+
     it('does not let a scenario-only operator combine a Git update with reset', async () => {
         const harness = await buildCaller(
             async () => {

@@ -34,6 +34,8 @@ export interface GatewayApiConfig {
     orchestratorAdminIntervalMs: number;
     workspaceRootHint: string;
     worktreeRoot: string;
+    navigationConfigFile: string | null;
+    defaultNavigationConfigFile: string;
 }
 
 export interface GatewayOrchestratorConfig {
@@ -70,6 +72,7 @@ export const resolveGatewayApiConfigFromEnv = (env: NodeJS.ProcessEnv = process.
     const publicBaseUrl = env.GATEWAY_PUBLIC_URL ?? kakaoRedirectUri;
     const redisKeyPrefix = env.GATEWAY_REDIS_PREFIX ?? 'sammo:gateway';
     const port = parseNumberWithFallback(env.GATEWAY_API_PORT, 13000, 'GATEWAY_API_PORT');
+    const workspaceRootHint = env.GATEWAY_WORKSPACE_ROOT ?? process.cwd();
     return {
         host: env.GATEWAY_API_HOST ?? '0.0.0.0',
         port,
@@ -129,9 +132,10 @@ export const resolveGatewayApiConfigFromEnv = (env: NodeJS.ProcessEnv = process.
             5000,
             'GATEWAY_ORCHESTRATOR_ADMIN_MS'
         ),
-        workspaceRootHint: env.GATEWAY_WORKSPACE_ROOT ?? process.cwd(),
-        worktreeRoot:
-            env.GATEWAY_WORKTREE_ROOT ?? path.resolve(env.GATEWAY_WORKSPACE_ROOT ?? process.cwd(), '.worktrees'),
+        workspaceRootHint,
+        worktreeRoot: env.GATEWAY_WORKTREE_ROOT ?? path.resolve(workspaceRootHint, '.worktrees'),
+        navigationConfigFile: env.CORE_NAVIGATION_CONFIG_FILE?.trim() || '/srv/data/navigation.json',
+        defaultNavigationConfigFile: path.resolve(workspaceRootHint, 'resources/navigation.json'),
     };
 };
 

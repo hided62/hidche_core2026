@@ -207,10 +207,10 @@ onMounted(async () => {
 .admin-shell {
     display: grid;
     width: min(1480px, 100%);
-    min-height: calc(100vh - 56px);
+    min-height: calc(100vh - 76px);
     margin: 0 auto;
     grid-template-columns: 244px minmax(0, 1fr);
-    padding-top: 56px;
+    padding-top: 76px;
     background: #09090b;
 }
 
@@ -392,13 +392,13 @@ onMounted(async () => {
 @media (max-width: 860px) {
     .admin-shell {
         display: block;
-        padding-top: 72px;
+        padding-top: 92px;
     }
 
     .admin-menu-button {
         position: absolute;
         z-index: 20;
-        top: 72px;
+        top: 92px;
         right: 16px;
         left: 16px;
         display: flex;
@@ -416,7 +416,7 @@ onMounted(async () => {
     .admin-sidebar {
         position: absolute;
         z-index: 19;
-        top: 124px;
+        top: 144px;
         right: 16px;
         left: 16px;
         display: none;

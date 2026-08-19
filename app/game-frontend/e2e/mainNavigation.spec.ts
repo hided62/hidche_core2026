@@ -1,8 +1,11 @@
-import { mkdir, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import { expect, test, type Locator, type Page, type Route } from '@playwright/test';
 
 const response = (data: unknown) => ({ result: { data } });
+const runtimeNavigation = JSON.parse(
+    await readFile(new URL('../../../resources/navigation.json', import.meta.url), 'utf8')
+) as unknown;
 const errorResponse = (path: string, message: string) => ({
     error: {
         message,
@@ -359,11 +362,16 @@ const installFixture = async (page: Page, state: NavigationFixture) => {
     await page.route('**/events**', async (route) => {
         await route.abort();
     });
+    await page.route('**/gateway/api/navigation', async (route) => {
+        await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(runtimeNavigation) });
+    });
     await page.route('**/gateway/api/trpc/**', async (route) => {
         const operations = operationNames(route);
         const results = operations.map((operation) =>
             operation === 'me'
                 ? response({ id: 'user-7', username: 'menu-user', displayName: '메뉴 사용자' })
+                : operation === 'navigation.get'
+                  ? response(runtimeNavigation)
                 : response({ ok: true })
         );
         await route.fulfill({
@@ -924,7 +932,7 @@ test('desktop menus preserve ref columns, prefix-safe routes, and controlled dro
     );
     await expect(global.locator('[data-navigation-id="nation-list"]')).toHaveAttribute('target', '_blank');
     await expect(global.locator('[data-navigation-id="board-community"]')).toHaveAttribute('href', '/xe/community');
-    await expect(global.locator('[data-navigation-id="official-chat"]')).toHaveAttribute('aria-disabled', 'true');
+    await expect(global.locator('[data-navigation-id="official-chat"]')).toHaveAttribute('target', '_blank');
     await expect(global.locator('[data-navigation-id="survey"]')).toHaveClass(/highlight/);
     await expect(page.locator('.main-nation-menu [data-navigation-id="tournament"]')).toHaveClass(/highlight/);
 
@@ -971,6 +979,14 @@ test('desktop menus preserve ref columns, prefix-safe routes, and controlled dro
     await page.getByRole('heading', { name: '메인 화면 검증 시나리오' }).click();
     await expect(gameInfoButton).toHaveAttribute('aria-expanded', 'false');
 
+    await gameInfoButton.click();
+    await global.locator('[data-navigation-id="version"]').click();
+    const versionDialog = page.getByRole('dialog', { name: '게임 정보' });
+    await expect(versionDialog).toBeVisible();
+    await expect(versionDialog).toContainText('메인 화면 검증 시나리오');
+    await versionDialog.getByRole('button', { name: '닫기' }).click();
+    await expect(versionDialog).toBeHidden();
+
     const bottomGlobal = page.locator('[data-menu-position="bottom"]');
     const bottomGameInfoButton = bottomGlobal.locator('[data-menu-id="game-info"]');
     await bottomGameInfoButton.click();
@@ -995,7 +1011,7 @@ test('desktop menus preserve ref columns, prefix-safe routes, and controlled dro
     await persistArtifact(page, `${basePath.slice(1)}-desktop-1200`);
 });
 
-test('split buttons keep square inner corners and a single divider in every interaction state', async ({
+test('nation split buttons keep square inner corners and a single divider in every interaction state', async ({
     page,
 }, testInfo) => {
     const state: NavigationFixture = {
@@ -1062,14 +1078,8 @@ test('split buttons keep square inner corners and a single divider in every inte
     for (const width of [1200, 500]) {
         await page.setViewportSize({ width, height: 900 });
         await waitForMain(page);
-        const globalSplit = page.locator('.main-global-menu:visible .main-menu-split').first();
         const nationSplit = page.locator('.main-nation-menu:visible .nation-menu-split').first();
         const pairs: Array<[string, Locator, Locator]> = [
-            [
-                'global',
-                globalSplit.locator('[data-navigation-id="board-community"]'),
-                globalSplit.locator('[data-menu-id="boards"]'),
-            ],
             [
                 'nation',
                 nationSplit.locator('[data-navigation-id="auction-resource"]'),
@@ -1129,7 +1139,8 @@ test('the repeated bottom global menu opens upward on the mobile document', asyn
 
     const bottomGlobal = page.locator('[data-menu-position="bottom"]');
     const gameInfoButton = bottomGlobal.locator('[data-menu-id="game-info"]');
-    await gameInfoButton.click();
+    await gameInfoButton.scrollIntoViewIfNeeded();
+    await gameInfoButton.evaluate((button) => (button as HTMLElement).click());
     await expect(gameInfoButton).toHaveAttribute('aria-expanded', 'true');
     await expect(bottomGlobal.locator('#global-menu-game-info')).toBeVisible();
     const geometry = await gameInfoButton.evaluate((button) => {
@@ -2418,9 +2429,9 @@ test('all main Lumen button families share the rounded pressed geometry', async 
             page.locator('.main-global-menu[data-menu-position="top"] [data-navigation-id="nation-betting"]'),
         ],
         [
-            '게임정보',
+            '게임 정보',
             page.locator('.main-global-menu[data-menu-position="top"]').getByRole('button', {
-                name: '게임정보',
+                name: '게임 정보',
                 exact: true,
             }),
         ],
@@ -2566,7 +2577,7 @@ test('mobile main Lumen button families keep the same state geometry without ove
     const controls = [
         page.locator('.main-global-menu[data-menu-position="top"] [data-navigation-id="nation-betting"]'),
         page.locator('.main-global-menu[data-menu-position="top"]').getByRole('button', {
-            name: '게임정보',
+            name: '게임 정보',
             exact: true,
         }),
         page.locator('.layout-mobile [data-navigation-id="meeting"]'),

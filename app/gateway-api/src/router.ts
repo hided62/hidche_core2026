@@ -128,6 +128,9 @@ const finishKakaoLoginOrRequestPasswordSetup = async <T extends 'login' | 'verif
 };
 
 export const appRouter = router({
+    navigation: router({
+        get: procedure.query(({ ctx }) => ctx.navigationConfig.get()),
+    }),
     health: router({
         ping: procedure.query(() => ({
             ok: true,

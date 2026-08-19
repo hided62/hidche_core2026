@@ -15,6 +15,8 @@ import type { AdminAuthContext } from './adminAuth.js';
 import type { PasswordEnvelopeService } from './auth/passwordEnvelope.js';
 import { createAdminAuditStore, type AdminAuditStore } from './adminAudit.js';
 import type { UserIconUploadStore } from './account/remoteUserIconStore.js';
+import path from 'node:path';
+import { RuntimeNavigationConfigStore } from './navigation/runtimeNavigationConfig.js';
 
 export interface GatewayApiContext {
     users: UserRepository;
@@ -41,6 +43,7 @@ export interface GatewayApiContext {
     prisma: GatewayPrismaClient;
     adminAudit: AdminAuditStore;
     adminAuth?: AdminAuthContext;
+    navigationConfig: RuntimeNavigationConfigStore;
 }
 
 export const createGatewayApiContext = (options: {
@@ -67,6 +70,7 @@ export const createGatewayApiContext = (options: {
     requestHeaders?: Record<string, string | string[] | undefined>;
     prisma: GatewayPrismaClient;
     adminAudit?: AdminAuditStore;
+    navigationConfig?: RuntimeNavigationConfigStore;
 }): GatewayApiContext => ({
     users: options.users,
     sessions: options.sessions,
@@ -91,4 +95,7 @@ export const createGatewayApiContext = (options: {
     requestHeaders: options.requestHeaders ?? {},
     prisma: options.prisma,
     adminAudit: options.adminAudit ?? createAdminAuditStore(options.prisma),
+    navigationConfig:
+        options.navigationConfig ??
+        new RuntimeNavigationConfigStore(null, path.resolve(process.cwd(), 'resources/navigation.json')),
 });
