@@ -31,9 +31,22 @@ const context = (
     includeCancellation = false
 ): GameApiContext => {
     const db = {
-        $queryRaw: async (query: { strings?: readonly string[] }) => {
+        $queryRaw: async (query: { strings?: readonly string[]; values?: readonly unknown[] }) => {
             if (!includeLegacy) return [];
             const sql = query.strings?.join(' ') ?? '';
+            if (sql.includes('legacy_archive"."hall')) {
+                return [
+                    { type: 'firenum', value: 4 },
+                    { type: 'warnum', value: 16 },
+                    { type: 'killnum', value: 10 },
+                    { type: 'winrate', value: 0.625 },
+                    { type: 'occupied', value: 3 },
+                    { type: 'killcrew', value: 12_000 },
+                    { type: 'killrate', value: 0.75 },
+                    { type: 'killcrew_person', value: 9_000 },
+                    { type: 'killrate_person', value: 0.5 },
+                ];
+            }
             if (sql.includes('legacy_archive"."general_battle_result')) {
                 return [
                     {
@@ -44,6 +57,7 @@ const context = (
                 ];
             }
             if (sql.includes('legacy_archive"."general')) {
+                if (!query.values?.includes('hwe')) return [];
                 return [
                     {
                         sourceProfile: 'hwe',
@@ -300,10 +314,12 @@ const context = (
 
 describe('archive.myPastPlays', () => {
     it('requires authentication and returns only the authenticated owner archive', async () => {
-        await expect(appRouter.createCaller(context(null)).archive.myPastPlays()).rejects.toMatchObject({
+        await expect(
+            appRouter.createCaller(context(null)).archive.myPastPlays({ sourceProfile: 'che' })
+        ).rejects.toMatchObject({
             code: 'UNAUTHORIZED',
         });
-        const result = await appRouter.createCaller(context(auth)).archive.myPastPlays();
+        const result = await appRouter.createCaller(context(auth)).archive.myPastPlays({ sourceProfile: 'che' });
         expect(result.seasons).toEqual([
             expect.objectContaining({
                 source: 'current',
@@ -381,7 +397,9 @@ describe('archive.myPastPlays', () => {
     });
 
     it('labels a retained cancellation as an unnumbered abandoned game without a dynasty link', async () => {
-        const result = await appRouter.createCaller(context(auth, false, true)).archive.myPastPlays();
+        const result = await appRouter
+            .createCaller(context(auth, false, true))
+            .archive.myPastPlays({ sourceProfile: 'che' });
 
         expect(result.seasons).toEqual([
             expect.objectContaining({
@@ -397,7 +415,7 @@ describe('archive.myPastPlays', () => {
 
     it('returns normalized previous-server detail from the dedicated archive without exposing raw data', async () => {
         const caller = appRouter.createCaller(context(auth, true));
-        const list = await caller.archive.myPastPlays();
+        const list = await caller.archive.myPastPlays({ sourceProfile: 'hwe' });
         expect(list.seasons).toContainEqual(
             expect.objectContaining({
                 source: 'legacy',
@@ -427,6 +445,19 @@ describe('archive.myPastPlays', () => {
                 progression: expect.objectContaining({ dex: [1000, 2000, 3000, 4000, 5000] }),
             }),
             battle: expect.objectContaining({ available: true, warnum: 10, wins: 6, winRate: 60 }),
+            hallBattle: {
+                available: true,
+                semantics: 'independent-records',
+                strategies: 4,
+                warnum: 16,
+                wins: 10,
+                winRate: 62.5,
+                occupied: 3,
+                killCrew: 12_000,
+                killRate: 75,
+                killCrewPerson: 9_000,
+                killRatePerson: 50,
+            },
             logs: expect.objectContaining({
                 generalHistory: { available: true, entries: [{ id: 1, text: '이전 서버 열전' }] },
                 battleDetail: { available: false, entries: [] },
@@ -440,5 +471,18 @@ describe('archive.myPastPlays', () => {
             }),
         });
         expect(JSON.stringify(detail)).not.toContain('raw_data');
+    });
+
+    it('limits the archive list to the requested source profile', async () => {
+        const caller = appRouter.createCaller(context(auth, true));
+
+        const che = await caller.archive.myPastPlays({ sourceProfile: 'che' });
+        expect(che.seasons).toHaveLength(1);
+        expect(che.seasons[0]?.sourceProfile).toBe('che');
+
+        const hwe = await caller.archive.myPastPlays({ sourceProfile: 'hwe' });
+        expect(hwe.seasons).toHaveLength(1);
+        expect(hwe.seasons[0]?.sourceProfile).toBe('hwe');
+        expect(hwe.seasons[0]?.source).toBe('legacy');
     });
 });

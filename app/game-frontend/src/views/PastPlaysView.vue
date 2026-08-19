@@ -1,6 +1,8 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue';
 
+import { isLegacyArchiveProfile, LEGACY_ARCHIVE_PROFILES, type LegacyArchiveProfile } from '@sammo-ts/common';
+
 import GeneralBasicCard from '../components/main/GeneralBasicCard.vue';
 import GeneralBattleSummary, { type GeneralBattleSummaryData } from '../components/main/GeneralBattleSummary.vue';
 import GeneralRecordPanels from '../components/main/GeneralRecordPanels.vue';
@@ -79,6 +81,19 @@ type PastPlayDetail = {
         winRate?: number | null;
         killRate?: number | null;
     };
+    hallBattle: {
+        available: boolean;
+        semantics: 'independent-records';
+        strategies: number | null;
+        warnum: number | null;
+        wins: number | null;
+        winRate: number | null;
+        occupied: number | null;
+        killCrew: number | null;
+        killRate: number | null;
+        killCrewPerson: number | null;
+        killRatePerson: number | null;
+    };
     logs: Partial<Record<GeneralRecordType, ArchiveLogChannel>>;
 };
 
@@ -93,6 +108,21 @@ const queryPastPlayDetail = trpc.archive.myPastPlayDetail.query as unknown as (
     input: PastPlayDetailInput
 ) => Promise<PastPlayDetail>;
 
+const profileLabels: Record<LegacyArchiveProfile, string> = {
+    che: '체',
+    kwe: '퀘',
+    pwe: '풰',
+    twe: '퉤',
+    nya: '냐',
+    pya: '퍄',
+    hwe: '훼',
+};
+const profileOptions = LEGACY_ARCHIVE_PROFILES.map((profile) => ({ profile, label: profileLabels[profile] }));
+const configuredProfile = import.meta.env.VITE_GAME_PROFILE?.trim();
+const selectedProfile = ref<LegacyArchiveProfile>(
+    configuredProfile && isLegacyArchiveProfile(configuredProfile) ? configuredProfile : 'che'
+);
+
 const archive = ref<Archive | null>(null);
 const loading = ref(false);
 const error = ref<string | null>(null);
@@ -100,24 +130,44 @@ const selectedKey = ref<string | null>(null);
 const detail = ref<PastPlayDetail | null>(null);
 const detailLoading = ref(false);
 const detailError = ref<string | null>(null);
+let archiveRequestId = 0;
 
 const loadArchive = async () => {
-    if (loading.value) return;
+    const requestId = ++archiveRequestId;
+    const sourceProfile = selectedProfile.value;
     loading.value = true;
     error.value = null;
     try {
-        archive.value = await trpc.archive.myPastPlays.query();
+        const result = await trpc.archive.myPastPlays.query({ sourceProfile });
+        if (requestId === archiveRequestId) archive.value = result;
     } catch (cause) {
-        error.value = cause instanceof Error ? cause.message : '지난 플레이를 불러오지 못했습니다.';
+        if (requestId === archiveRequestId) {
+            error.value = cause instanceof Error ? cause.message : '지난 플레이를 불러오지 못했습니다.';
+        }
     } finally {
-        loading.value = false;
+        if (requestId === archiveRequestId) loading.value = false;
     }
+};
+
+const selectProfile = (profile: LegacyArchiveProfile): void => {
+    if (selectedProfile.value === profile) return;
+    selectedProfile.value = profile;
+    archive.value = null;
+    selectedKey.value = null;
+    detail.value = null;
+    detailError.value = null;
+    void loadArchive();
 };
 
 const yearMonth = (value: number): string => `${Math.floor(value / 100)}년 ${value % 100}월`;
 const valueOrDash = (value: number | string | null): string => (value === null || value === '' ? '-' : String(value));
+const hallNumber = (value: number | null): string =>
+    value === null ? '-' : new Intl.NumberFormat('ko-KR', { maximumFractionDigits: 0 }).format(value);
+const hallPercent = (value: number | null): string => (value === null ? '-' : `${value.toFixed(2)}%`);
 const plainLog = (value: string): string => value.replace(/<[^>]+>/g, '');
 const seasonSourceProfile = (season: ArchiveSeason): string => season.sourceProfile ?? '현재 서버';
+const profileDisplayName = (profile: string): string =>
+    isLegacyArchiveProfile(profile) ? profileLabels[profile] : profile;
 const seasonSource = (season: ArchiveSeason): string => season.source ?? 'current';
 const detailKey = (season: ArchiveSeason, generalNo: number): string =>
     `${seasonSourceProfile(season)}:${seasonSource(season)}:${season.serverId}:${generalNo}`;
@@ -207,6 +257,20 @@ onMounted(() => {
         </header>
 
         <p class="page-note">종료된 기수와 관리자가 보존한 취소 게임의 내 장수 기록입니다.</p>
+        <nav class="profile-tabs legacy-bg1" aria-label="과거 장수 서버 선택">
+            <button
+                v-for="option in profileOptions"
+                :key="option.profile"
+                class="profile-tab"
+                :class="{ selected: selectedProfile === option.profile }"
+                type="button"
+                :aria-label="`${option.label} 서버`"
+                :aria-pressed="selectedProfile === option.profile"
+                @click="selectProfile(option.profile)"
+            >
+                {{ option.label }}
+            </button>
+        </nav>
         <p v-if="error" class="error-row">{{ error }}</p>
         <p v-else-if="loading && !archive" class="empty-row">불러오는 중...</p>
         <p v-else-if="archive?.seasons.length === 0" class="empty-row">보관된 지난 플레이가 없습니다.</p>
@@ -217,7 +281,7 @@ onMounted(() => {
                     <strong class="archive-label" :class="{ abandoned: season.status === 'ABANDONED' }">
                         {{ archiveLabel(season) }}
                     </strong>
-                    <strong>{{ seasonSourceProfile(season) }}</strong>
+                    <strong>{{ profileDisplayName(seasonSourceProfile(season)) }}</strong>
                     <span>{{ archiveIdentifier(season) }}</span>
                 </div>
                 <div class="season-meta">
@@ -286,7 +350,7 @@ onMounted(() => {
                 <p v-else-if="detailError" class="detail-error" role="alert">{{ detailError }}</p>
                 <div v-else-if="detail" class="detail-shell">
                     <div class="detail-source">
-                        <span>{{ detail.sourceProfile }} · {{ detail.source }}</span>
+                        <span>{{ profileDisplayName(detail.sourceProfile) }} · {{ detail.source }}</span>
                         <RouterLink
                             v-if="detail.dynastyPath"
                             class="legacy-button nation-archive-link"
@@ -305,6 +369,54 @@ onMounted(() => {
                             >
                                 <template #details>
                                     <GeneralBattleSummary :summary="battleSummary" show-win-rate rate-scale="percent" />
+                                    <section
+                                        v-if="detail.hallBattle.available"
+                                        class="hall-battle-record"
+                                        data-hall-battle-record
+                                    >
+                                        <div class="hall-battle-record__heading">
+                                            <strong>명예의 전당 보존 기록</strong>
+                                            <span>항목별 기록 시점이 서로 다를 수 있습니다.</span>
+                                        </div>
+                                        <dl>
+                                            <div>
+                                                <dt>전투</dt>
+                                                <dd>{{ hallNumber(detail.hallBattle.warnum) }}</dd>
+                                            </div>
+                                            <div>
+                                                <dt>승리</dt>
+                                                <dd>{{ hallNumber(detail.hallBattle.wins) }}</dd>
+                                            </div>
+                                            <div>
+                                                <dt>승률</dt>
+                                                <dd>{{ hallPercent(detail.hallBattle.winRate) }}</dd>
+                                            </div>
+                                            <div>
+                                                <dt>계략</dt>
+                                                <dd>{{ hallNumber(detail.hallBattle.strategies) }}</dd>
+                                            </div>
+                                            <div>
+                                                <dt>점령</dt>
+                                                <dd>{{ hallNumber(detail.hallBattle.occupied) }}</dd>
+                                            </div>
+                                            <div>
+                                                <dt>사살</dt>
+                                                <dd>{{ hallNumber(detail.hallBattle.killCrew) }}</dd>
+                                            </div>
+                                            <div>
+                                                <dt>살상률</dt>
+                                                <dd>{{ hallPercent(detail.hallBattle.killRate) }}</dd>
+                                            </div>
+                                            <div>
+                                                <dt>대인 사살</dt>
+                                                <dd>{{ hallNumber(detail.hallBattle.killCrewPerson) }}</dd>
+                                            </div>
+                                            <div>
+                                                <dt>대인 살상률</dt>
+                                                <dd>{{ hallPercent(detail.hallBattle.killRatePerson) }}</dd>
+                                            </div>
+                                        </dl>
+                                    </section>
                                     <LegacyGeneralProgress
                                         v-if="detail.masteryAvailable"
                                         :general="detail.general"
@@ -398,12 +510,38 @@ onMounted(() => {
 }
 
 .page-note,
+.profile-tabs,
 .empty-row,
 .error-row {
     margin: 0;
     padding: 12px 10px;
     border-inline: 1px solid #666;
     border-bottom: 1px solid #666;
+}
+
+.profile-tabs {
+    display: grid;
+    grid-template-columns: repeat(7, minmax(0, 1fr));
+    gap: 4px;
+    padding: 6px 8px;
+}
+
+.profile-tab {
+    min-height: 30px;
+    border: 1px solid #777;
+    color: #ddd;
+    background: #222;
+    font: inherit;
+    font-weight: 700;
+    cursor: pointer;
+}
+
+.profile-tab:hover,
+.profile-tab:focus-visible,
+.profile-tab.selected {
+    border-color: skyblue;
+    color: skyblue;
+    background: #143a2a;
 }
 
 .page-note,
@@ -540,6 +678,53 @@ th {
     text-align: center;
 }
 
+.hall-battle-record {
+    border-top: 1px solid #666;
+}
+
+.hall-battle-record__heading {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    padding: 5px 8px;
+    background: rgb(20 75 42 / 70%);
+}
+
+.hall-battle-record__heading span {
+    color: #bbb;
+    font-size: 12px;
+}
+
+.hall-battle-record dl {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    margin: 0;
+}
+
+.hall-battle-record dl > div {
+    display: grid;
+    grid-template-columns: minmax(70px, 1fr) 1fr;
+    min-height: 24px;
+    border-right: 1px solid #777;
+    border-bottom: 1px solid #777;
+}
+
+.hall-battle-record dt,
+.hall-battle-record dd {
+    margin: 0;
+    padding: 2px 5px;
+}
+
+.hall-battle-record dt {
+    background: rgb(20 75 42 / 45%);
+    text-align: center;
+}
+
+.hall-battle-record dd {
+    text-align: right;
+}
+
 @media (max-width: 640px) {
     .title-row,
     .season-heading,
@@ -555,6 +740,11 @@ th {
 
     .detail-grid {
         grid-template-columns: 1fr;
+    }
+
+    .hall-battle-record__heading {
+        align-items: flex-start;
+        flex-direction: column;
     }
 }
 </style>

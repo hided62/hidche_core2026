@@ -19,11 +19,13 @@ import {
     findLegacyEmperors,
     findLegacyGeneral,
     findLegacyGeneralBattleResult,
+    findLegacyGeneralHallRows,
     findLegacyGeneralsByOwner,
     findLegacyGames,
     findLegacyNations,
     LEGACY_ARCHIVE_PROFILES,
     type LegacyArchiveProfile,
+    type LegacyGeneralHallRow,
 } from '../../services/legacyArchiveStore.js';
 import { readOnlyAuthedProcedure, router } from '../../trpc.js';
 import { loadTraitNames } from '../nation/shared.js';
@@ -53,6 +55,10 @@ const zPastPlayDetailInput = z.object({
     generalNo: z.number().int().positive(),
 });
 
+const zPastPlaysInput = z.object({
+    sourceProfile: z.enum(LEGACY_ARCHIVE_PROFILES),
+});
+
 type ArchiveSource = 'current' | 'legacy';
 
 interface GeneralArchiveEntry {
@@ -74,6 +80,42 @@ interface ArchiveNationEntry {
     archivedAt: Date;
     data: Record<string, unknown>;
 }
+
+export interface LegacyHallBattleSummary {
+    available: boolean;
+    semantics: 'independent-records';
+    strategies: number | null;
+    warnum: number | null;
+    wins: number | null;
+    winRate: number | null;
+    occupied: number | null;
+    killCrew: number | null;
+    killRate: number | null;
+    killCrewPerson: number | null;
+    killRatePerson: number | null;
+}
+
+const legacyHallBattleSummary = (rows: LegacyGeneralHallRow[]): LegacyHallBattleSummary => {
+    const values = new Map(rows.map((row) => [row.type, row.value]));
+    const value = (type: LegacyGeneralHallRow['type']): number | null => values.get(type) ?? null;
+    const percent = (type: LegacyGeneralHallRow['type']): number | null => {
+        const raw = value(type);
+        return raw === null ? null : raw * 100;
+    };
+    return {
+        available: rows.length > 0,
+        semantics: 'independent-records',
+        strategies: value('firenum'),
+        warnum: value('warnum'),
+        wins: value('killnum'),
+        winRate: percent('winrate'),
+        occupied: value('occupied'),
+        killCrew: value('killcrew'),
+        killRate: percent('killrate'),
+        killCrewPerson: value('killcrew_person'),
+        killRatePerson: percent('killrate_person'),
+    };
+};
 
 const key = (source: ArchiveSource, sourceProfile: string, serverId: string): string =>
     `${source}:${sourceProfile}:${serverId}`;
@@ -190,16 +232,18 @@ const buildGeneralDetail = async (entry: GeneralArchiveEntry, nation: ReturnType
 };
 
 export const archiveRouter = router({
-    myPastPlays: readOnlyAuthedProcedure.query(async ({ ctx }) => {
+    myPastPlays: readOnlyAuthedProcedure.input(zPastPlaysInput).query(async ({ ctx, input }) => {
         const owner = ctx.auth?.user.id;
         if (!owner) throw new Error('Authenticated archive query is missing its user identity');
 
         const [legacyRows, currentRows] = await Promise.all([
-            findLegacyGeneralsByOwner(ctx.db, owner),
-            ctx.db.oldGeneral.findMany({
-                where: { owner },
-                orderBy: [{ lastYearMonth: 'desc' }, { serverId: 'desc' }, { generalNo: 'asc' }],
-            }),
+            findLegacyGeneralsByOwner(ctx.db, { owner, sourceProfile: input.sourceProfile }),
+            input.sourceProfile === ctx.profile.id
+                ? ctx.db.oldGeneral.findMany({
+                      where: { owner },
+                      orderBy: [{ lastYearMonth: 'desc' }, { serverId: 'desc' }, { generalNo: 'asc' }],
+                  })
+                : [],
         ]);
         const legacyIdentity = new Set(
             legacyRows.map((row) => `${row.sourceProfile}:${row.serverId}:${row.generalNo}`)
@@ -454,6 +498,7 @@ export const archiveRouter = router({
         let dynastyId: number | null = null;
         let battleResultContent: string | null = null;
         let battleResultAvailable = false;
+        let hallBattle = legacyHallBattleSummary([]);
         if (input.source === 'legacy') {
             if (!LEGACY_ARCHIVE_PROFILES.includes(sourceProfile as LegacyArchiveProfile)) {
                 throw new TRPCError({ code: 'BAD_REQUEST', message: '지원하지 않는 이전 서버 프로필입니다.' });
@@ -477,10 +522,15 @@ export const archiveRouter = router({
                     snapshot: canonicalSnapshot(row.data, row.name),
                 };
                 const keyInput = [{ sourceProfile: profile, serverId: input.serverId }];
-                const [nations, emperors, battleResult] = await Promise.all([
+                const [nations, emperors, battleResult, hallRows] = await Promise.all([
                     findLegacyNations(ctx.db, keyInput),
                     findLegacyEmperors(ctx.db, keyInput),
                     findLegacyGeneralBattleResult(ctx.db, {
+                        sourceProfile: profile,
+                        serverId: input.serverId,
+                        generalNo: input.generalNo,
+                    }),
+                    findLegacyGeneralHallRows(ctx.db, {
                         sourceProfile: profile,
                         serverId: input.serverId,
                         generalNo: input.generalNo,
@@ -497,6 +547,7 @@ export const archiveRouter = router({
                 dynastyId = Number(emperors[0]?.id ?? 0) || null;
                 battleResultContent = battleResult?.content ?? null;
                 battleResultAvailable = battleResult !== null;
+                hallBattle = legacyHallBattleSummary(hallRows);
             }
         } else {
             const row = await ctx.db.oldGeneral.findFirst({
@@ -580,6 +631,7 @@ export const archiveRouter = router({
                 killRate: snapshot.battle.killRate,
                 recentWar: snapshot.battle.recentWar,
             },
+            hallBattle,
             logs,
         };
     }),

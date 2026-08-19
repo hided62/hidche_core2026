@@ -42,6 +42,25 @@ export interface LegacyGeneralBattleResultRow {
     contentHash: string;
 }
 
+export const LEGACY_GENERAL_HALL_TYPES = [
+    'firenum',
+    'warnum',
+    'killnum',
+    'winrate',
+    'occupied',
+    'killcrew',
+    'killrate',
+    'killcrew_person',
+    'killrate_person',
+] as const;
+
+export type LegacyGeneralHallType = (typeof LEGACY_GENERAL_HALL_TYPES)[number];
+
+export interface LegacyGeneralHallRow {
+    type: LegacyGeneralHallType;
+    value: number;
+}
+
 export interface LegacyNationRow {
     sourceProfile: LegacyArchiveProfile;
     legacyId: number;
@@ -79,7 +98,7 @@ export interface LegacyHallRow {
 
 export const findLegacyGeneralsByOwner = async (
     db: LegacyArchiveDatabase,
-    owner: string
+    input: { owner: string; sourceProfile: LegacyArchiveProfile }
 ): Promise<LegacyGeneralRow[]> =>
     db.$queryRaw<LegacyGeneralRow[]>(GamePrisma.sql`
         SELECT
@@ -95,8 +114,9 @@ export const findLegacyGeneralsByOwner = async (
             "source_format" AS "sourceFormat",
             "data"
         FROM "legacy_archive"."general"
-        WHERE "owner" = ${owner}
-        ORDER BY "last_yearmonth" DESC, "source_profile", "server_id" DESC, "general_no"
+        WHERE "owner" = ${input.owner}
+          AND "source_profile" = ${input.sourceProfile}
+        ORDER BY "last_yearmonth" DESC, "server_id" DESC, "general_no"
     `);
 
 export const findLegacyGeneral = async (
@@ -143,6 +163,22 @@ export const findLegacyGeneralBattleResult = async (
     `);
     return rows[0] ?? null;
 };
+
+export const findLegacyGeneralHallRows = async (
+    db: LegacyArchiveDatabase,
+    input: { sourceProfile: LegacyArchiveProfile; serverId: string; generalNo: number }
+): Promise<LegacyGeneralHallRow[]> =>
+    db.$queryRaw<LegacyGeneralHallRow[]>(GamePrisma.sql`
+        SELECT
+            "type",
+            "value"
+        FROM "legacy_archive"."hall"
+        WHERE "source_profile" = ${input.sourceProfile}
+          AND "server_id" = ${input.serverId}
+          AND "general_no" = ${input.generalNo}
+          AND "type" IN (${GamePrisma.join(LEGACY_GENERAL_HALL_TYPES)})
+        ORDER BY "type"
+    `);
 
 export const findLegacyGeneralsForServer = async (
     db: LegacyArchiveDatabase,
