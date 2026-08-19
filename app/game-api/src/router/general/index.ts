@@ -810,7 +810,7 @@ export const generalRouter = router({
         const [onlineAccess, ownNation, latestVote] = await Promise.all([
             ctx.db.generalAccessLog.findMany({
                 where: {
-                    lastRefresh: {
+                    lastActionAt: {
                         gte: scoreStartedAt,
                     },
                 },
@@ -868,8 +868,9 @@ export const generalRouter = router({
             onlineByNation.set(general.nationId, bucket);
         }
         const onlineNations = [...onlineByNation.entries()]
+            .filter(([nationId]) => nationId > 0)
             .sort((left, right) => right[1].length - left[1].length || left[0] - right[0])
-            .map(([nationId]) => `【${nationId === 0 ? '재야' : (nationNames.get(nationId) ?? `세력 ${nationId}`)}】`)
+            .map(([nationId]) => `【${nationNames.get(nationId) ?? `세력 ${nationId}`}】`)
             .join(', ');
         const myOnlineGenerals = onlineGenerals
             .filter((general) => general.nationId === me.nationId)

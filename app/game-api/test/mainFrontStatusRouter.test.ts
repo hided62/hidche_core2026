@@ -34,6 +34,7 @@ const buildContext = (options: { auth?: GameSessionTokenPayload | null; hasVoted
                     { id: 7, name: '유비', nationId: 2 },
                     { id: 8, name: '관우', nationId: 2 },
                     { id: 9, name: '조조', nationId: 3 },
+                    { id: 10, name: '재야장수', nationId: 0 },
                 ]),
             },
             worldState: {
@@ -46,7 +47,7 @@ const buildContext = (options: { auth?: GameSessionTokenPayload | null; hasVoted
                 })),
             },
             generalAccessLog: {
-                findMany: vi.fn(async () => [{ generalId: 7 }, { generalId: 8 }, { generalId: 9 }]),
+                findMany: vi.fn(async () => [{ generalId: 7 }, { generalId: 8 }, { generalId: 9 }, { generalId: 10 }]),
             },
             nation: {
                 findUnique: vi.fn(async () => ({
@@ -81,7 +82,7 @@ describe('general.getFrontStatus', () => {
         vi.useRealTimers();
     });
 
-    it('returns ref-compatible current-turn online, nation notice, and new vote data', async () => {
+    it('returns action-based current-turn online data without listing the free nation', async () => {
         const context = buildContext();
         const caller = appRouter.createCaller(context);
 
@@ -89,7 +90,7 @@ describe('general.getFrontStatus', () => {
 
         expect(result).toEqual({
             serverId: 'che_260819_front',
-            onlineUserCount: 3,
+            onlineUserCount: 4,
             onlineNations: '【촉】, 【위】',
             onlineGenerals: '유비, 관우',
             nationNotice: '<p>북벌 준비</p>',
@@ -102,7 +103,7 @@ describe('general.getFrontStatus', () => {
         });
         expect(context.db.generalAccessLog.findMany).toHaveBeenCalledWith({
             where: {
-                lastRefresh: {
+                lastActionAt: {
                     gte: new Date('2026-07-26T10:00:00.000Z'),
                 },
             },
