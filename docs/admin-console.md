@@ -76,6 +76,11 @@ Gateway 관리자 콘솔은 `/gateway/admin`에서 시작합니다. 공개 로�
   메타가 없거나 유효하지 않으면 기존 시스템 기본값을 사용합니다. 시나리오와
   예약·가오픈·정식 오픈 시각은 매 실행마다 선택하므로 서버 기본값에 포함하지
   않습니다.
+- 서버 상태의 `다음 시즌 번호`는 위 리셋 옵션과 별도의
+  `GatewayProfile.meta.nextSeasonIdx`이며 0 이상의 정수를 허용합니다. 이벤트
+  기수는 0을 저장한 뒤 RESET하고, 이벤트 종료 뒤 정상 기수 번호를 다시 저장한
+  다음 RESET합니다. 빈 값은 강제 번호를 해제하여 기존 게임의 season 또는 신규
+  기본값 1을 사용한다는 뜻입니다.
 - 같은 화면의 `실행 중 게임 옵션`은 리셋 기본값과 별개로 현재 기수 DB의 턴
   간격, 장수 생성 제한, 유저 자동턴 제한·동작을 읽어 표시합니다. 세 값은
   `admin.profiles.runtime:<name>` 권한과 3자 이상의 사유가 있을 때 하나의
@@ -96,7 +101,7 @@ Gateway 관리자 콘솔은 `/gateway/admin`에서 시작합니다. 공개 로�
 | `admin.profiles.settings:<name>` | 표시 정보·리셋 기본 옵션·Kakao 미인증 접근/장수 생성 유예 |
 | `admin.profiles.deploy:<name>`   | DB를 유지하는 Git 버전 업데이트, 초기화와 새 버전 결합    |
 | `admin.scenarios.reset:<name>`   | 현재 배포 버전으로 시나리오 초기화                        |
-| `admin.games.cancel:<name>`      | 진행 게임 취소, 기록 옵션과 유산 포인트 보전율 확정        |
+| `admin.games.cancel:<name>`      | 진행 게임 취소, 기록 옵션과 유산 포인트 보전율 확정       |
 | `admin.reset.schedule:<name>`    | 허용된 시나리오 초기화를 미래 시각에 예약                 |
 | `admin.releases.manage`          | profile과 분리된 Gateway control plane 배포·rollback      |
 

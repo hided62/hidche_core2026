@@ -1040,6 +1040,33 @@ test('edits server reset defaults through profile metadata settings', async ({ p
     expect(request).toContain('"npcMode":2');
 });
 
+test('stores event season zero from server metadata settings', async ({ page }) => {
+    const state: FixtureState = { operations: [], gatewayOperations: [], runtimeRunning: true, requestBodies: [] };
+    await installFixture(page, state);
+
+    await page.goto('admin/servers/che%3Adefault');
+    const nextSeasonInput = page.getByTestId('next-season-idx');
+    await nextSeasonInput.fill('0');
+    await expect(nextSeasonInput).toHaveValue('0');
+    expect(
+        await nextSeasonInput.evaluate((element: HTMLInputElement) => ({
+            valid: element.validity.valid,
+            valueAsNumber: element.valueAsNumber,
+        }))
+    ).toEqual({ valid: true, valueAsNumber: 0 });
+    await page.getByPlaceholder('변경 사유 (필수)').fill('prepare event season');
+    await page.getByRole('button', { name: '메타 저장' }).click();
+
+    await expect
+        .poll(() => state.requestBodies.find((entry) => entry.operation === 'admin.profiles.updateMeta'))
+        .toBeTruthy();
+    const request = JSON.stringify(
+        state.requestBodies.find((entry) => entry.operation === 'admin.profiles.updateMeta')?.body
+    );
+    expect(request).toContain('"nextSeasonIdx":0');
+    await expect(page.getByTestId('action-toast').filter({ hasText: '메타 저장 완료' })).toBeVisible();
+});
+
 test('shows a dismissible error toast when profile metadata persistence fails', async ({ page }, testInfo) => {
     const state: FixtureState = {
         operations: [],
