@@ -4,6 +4,7 @@ import { useRoute, useRouter } from 'vue-router';
 import { cityLevelMap, formatOfficerLevelText, regionMap } from '../utils/nationFormat';
 import { getNpcColor } from '../utils/npcColor';
 import { resolveGeneralIconUrl, useDefaultGeneralIcon } from '../utils/generalIcon';
+import { legacyNationTextColor } from '../utils/legacyNationColor';
 import { trpc } from '../utils/trpc';
 
 type Result = Awaited<ReturnType<typeof trpc.world.getCurrentCity.query>>;
@@ -57,31 +58,11 @@ const populationRate = computed(() => {
     if (!city.value || city.value.population === null) return '?';
     return String(Math.round((city.value.population / city.value.populationMax) * 10_000) / 100);
 });
-const contrastColors = new Set([
-    '',
-    '#330000',
-    '#FF0000',
-    '#800000',
-    '#A0522D',
-    '#FF6347',
-    '#808000',
-    '#008000',
-    '#2E8B57',
-    '#008080',
-    '#6495ED',
-    '#0000FF',
-    '#000080',
-    '#483D8B',
-    '#7B68EE',
-    '#800080',
-    '#A9A9A9',
-    '#000000',
-]);
 const cityTitleStyle = computed(() => {
     const backgroundColor = city.value?.nationColor.toUpperCase() ?? '#000000';
     return {
         backgroundColor,
-        color: contrastColors.has(backgroundColor) ? '#FFFFFF' : '#000000',
+        color: legacyNationTextColor(backgroundColor),
     };
 });
 const woundedStat = (value: number, injury: number) =>

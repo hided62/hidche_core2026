@@ -303,7 +303,7 @@ const install = async (
                         {
                             id: 2,
                             name: '적국',
-                            color: '#800000',
+                            color: '#FFFF00',
                             capitalCityId: 2,
                             level: 1,
                             power: 1000,
@@ -594,6 +594,14 @@ test('global-info renders the ref nation summary columns beside the map', async 
     await expect(summary.locator('thead')).toContainText('속령');
     await expect(summary.locator('tbody tr').first()).toHaveText(/아국\s*1,234\s*2\s*1/u);
     await expect(summary.locator('tbody tr').first().locator('td').last()).toHaveAttribute('title', '업');
+    await expect(summary.locator('tbody tr').first().locator('td').first().locator('span')).toHaveCSS(
+        'color',
+        'rgb(255, 255, 255)'
+    );
+    await expect(summary.locator('tbody tr').nth(1).locator('td').first().locator('span')).toHaveCSS(
+        'color',
+        'rgb(0, 0, 0)'
+    );
 
     const geometry = await summary.evaluate((element) => {
         const rect = element.getBoundingClientRect();

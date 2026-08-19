@@ -18,7 +18,7 @@ const installArchiveViews = async (page: Page) => {
         const legacy = isLegacyRequest(route);
         const results = operationNames(route).map((operation) => {
             if (operation === 'auth.status') return response({ ok: true });
-            if (operation === 'lobby.info') return response({ myGeneral: null });
+            if (operation === 'lobby.info') return response({ myGeneral: { id: 1, name: '기록장수' } });
             if (operation === 'ranking.getHallOfFameOptions') {
                 return response([
                     {
@@ -128,6 +128,58 @@ const installArchiveViews = async (page: Page) => {
                     nations: [],
                 });
             }
+            if (operation === 'yearbook.getRange') {
+                return response({ firstYearMonth: 22001, lastYearMonth: 22001, currentYearMonth: 22001 });
+            }
+            if (operation === 'public.getMapLayout') {
+                return response({ mapName: 'che', cityList: [], regionMap: {}, levelMap: {} });
+            }
+            if (operation === 'yearbook.getHistory') {
+                return response({
+                    notModified: false,
+                    hash: 'nation-color-contrast',
+                    data: {
+                        year: 220,
+                        month: 1,
+                        map: {
+                            result: true,
+                            version: 0,
+                            startYear: 180,
+                            year: 220,
+                            month: 1,
+                            techLevelLimit: { maxLevel: 12, initialLevel: 1, increaseYears: 5 },
+                            cityList: [],
+                            nationList: [],
+                            spyList: {},
+                            shownByGeneralList: [],
+                            myCity: null,
+                            myNation: null,
+                        },
+                        nations: [
+                            {
+                                id: 1,
+                                name: '암국',
+                                color: '#008000',
+                                level: 1,
+                                power: 100,
+                                generalCount: 1,
+                                cities: ['업'],
+                            },
+                            {
+                                id: 2,
+                                name: '명국',
+                                color: '#FFFF00',
+                                level: 1,
+                                power: 90,
+                                generalCount: 1,
+                                cities: ['허창'],
+                            },
+                        ],
+                        globalHistory: [],
+                        globalAction: [],
+                    },
+                });
+            }
             return { error: { message: `unhandled ${operation}`, data: { code: 'BAD_REQUEST' } } };
         });
         await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(results) });
@@ -159,4 +211,21 @@ test('왕조 일람과 상세는 이전 서버 source와 profile을 유지한다
     await detailLink.click();
     await expect(page.getByText(/이전 1기.*HWE 이전 서버/)).toBeVisible();
     await expect(page.locator('.dynasty-page')).toHaveCSS('width', '1000px');
+});
+
+test('연감 국가 라벨은 밝은 배경에 검정, 어두운 배경에 흰 글자를 사용한다', async ({ page }, testInfo) => {
+    await installArchiveViews(page);
+    await page.setViewportSize({ width: 1200, height: 800 });
+    await page.goto('yearbook');
+
+    const labels = page.locator('.nation-position tbody td:first-child span');
+    await expect(labels).toHaveCount(2);
+    await expect(labels.filter({ hasText: '암국' })).toHaveCSS('color', 'rgb(255, 255, 255)');
+    await expect(labels.filter({ hasText: '명국' })).toHaveCSS('color', 'rgb(0, 0, 0)');
+    await page.screenshot({ path: testInfo.outputPath('yearbook-nation-contrast-desktop.png'), fullPage: true });
+
+    await page.setViewportSize({ width: 500, height: 800 });
+    await expect(labels.filter({ hasText: '암국' })).toHaveCSS('color', 'rgb(255, 255, 255)');
+    await expect(labels.filter({ hasText: '명국' })).toHaveCSS('color', 'rgb(0, 0, 0)');
+    await page.screenshot({ path: testInfo.outputPath('yearbook-nation-contrast-mobile.png'), fullPage: true });
 });

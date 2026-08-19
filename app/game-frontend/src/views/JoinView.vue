@@ -12,6 +12,7 @@ import { getNpcColor } from '../utils/npcColor';
 import { formatSeoulDateTime } from '../utils/legacyDateTime';
 import { resolveGeneralIconUrl, useDefaultGeneralIcon } from '../utils/generalIcon';
 import { abilityLeadint, abilityLeadpow, abilityPowint, abilityRand, type GeneralStats } from '../utils/generalStats';
+import { legacyLuminanceTextColor } from '../utils/legacyNationColor';
 
 type JoinConfig = Awaited<ReturnType<typeof trpc.join.getConfig.query>>;
 type JoinInput = Parameters<typeof trpc.join.createGeneral.mutate>[0];
@@ -945,7 +946,15 @@ onUnmounted(() => {
                     <div v-if="nationList.length === 0" class="muted">국가 정보가 아직 준비되지 않았습니다.</div>
                     <div v-else class="nation-list">
                         <article v-for="nation in nationList" :key="nation.id" class="nation-card">
-                            <h3 class="nation-name" :style="{ backgroundColor: nation.color }">{{ nation.name }}</h3>
+                            <h3
+                                class="nation-name"
+                                :style="{
+                                    backgroundColor: nation.color,
+                                    color: legacyLuminanceTextColor(nation.color),
+                                }"
+                            >
+                                {{ nation.name }}
+                            </h3>
                             <p class="nation-message">{{ nation.scoutMessage ?? '권유문 없음' }}</p>
                         </article>
                     </div>

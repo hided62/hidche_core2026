@@ -6,6 +6,7 @@ import { useGameFeedback } from '../composables/useGameFeedback';
 import { useSessionStore } from '../stores/session';
 import { formatSeoulDateTime } from '../utils/legacyDateTime';
 import { resolveGeneralIconUrl, useDefaultGeneralIcon } from '../utils/generalIcon';
+import { legacyLuminanceTextColor } from '../utils/legacyNationColor';
 import { trpc } from '../utils/trpc';
 
 type JoinConfig = Awaited<ReturnType<typeof trpc.join.getConfig.query>>;
@@ -143,29 +144,6 @@ const personalityName = (key: string | null): string | null => {
 };
 const personalityInfo = (key: string | null): string =>
     key ? (personalities.value.find((entry) => entry.key === key)?.info ?? '') : '';
-
-const lightTextNationColors = new Set([
-    '',
-    '#330000',
-    '#FF0000',
-    '#800000',
-    '#A0522D',
-    '#FF6347',
-    '#808000',
-    '#008000',
-    '#2E8B57',
-    '#008080',
-    '#6495ED',
-    '#0000FF',
-    '#000080',
-    '#483D8B',
-    '#7B68EE',
-    '#800080',
-    '#A9A9A9',
-    '#000000',
-]);
-const nationTextColor = (color: string): string =>
-    lightTextNationColors.has(color.toUpperCase()) ? '#FFFFFF' : '#000000';
 
 const selectCandidate = async (candidate: Candidate): Promise<void> => {
     if (!hasGeneral.value) {
@@ -310,7 +288,7 @@ onBeforeUnmount(() => {
                     v-for="nation in nations"
                     :key="nation.id"
                     :style="{
-                        color: nationTextColor(nation.color),
+                        color: legacyLuminanceTextColor(nation.color),
                         backgroundColor: nation.color,
                     }"
                 >
