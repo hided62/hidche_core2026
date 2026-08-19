@@ -12,6 +12,7 @@ import { LogCategory, LogFormat } from '@sammo-ts/logic/logging/types.js';
 import { JosaUtil } from '@sammo-ts/common';
 import { z } from 'zod';
 import type { TurnCommandEnv } from '@sammo-ts/logic/actions/turn/commandEnv.js';
+import type { ActionContextBuilder } from '@sammo-ts/logic/actions/turn/actionContext.js';
 import type { GeneralTurnCommandSpec } from './index.js';
 import type { MapDefinition } from '@sammo-ts/logic/world/types.js';
 import { normalizeLegacyIntegerArg, parseArgsWithSchema } from '../parseArgs.js';
@@ -68,11 +69,8 @@ export class ActionResolver<
 
             const destCityId = args.destCityId;
             const storedDestCityId = args.storedDestCityId ?? destCityId;
-            let destCityName = `도시(${destCityId})`;
-            if (context.map) {
-                const c = context.map.cities.find((ct) => ct.id === destCityId);
-                if (c) destCityName = c.name;
-            }
+            const destCityName =
+                context.map?.cities.find((city) => city.id === destCityId)?.name ?? '알 수 없는 도시';
 
             const josaRo = JosaUtil.pick(destCityName, '로');
 
@@ -131,6 +129,11 @@ export class ActionDefinition<
         return this.resolver.resolve(context, args);
     }
 }
+
+export const actionContextBuilder: ActionContextBuilder = (base, options) => ({
+    ...base,
+    map: options.map,
+});
 
 export const commandSpec: GeneralTurnCommandSpec = {
     key: 'che_NPC능동',

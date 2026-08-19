@@ -684,7 +684,7 @@ test('메인 카드의 국가·수도·관직·계급·병종은 Ref 출력명�
     await expect(page.locator('.main-page')).not.toContainText('che_');
 });
 
-test('메인 장수 동향과 개인 전투 기록은 모두 21px 행 간격을 유지한다', async ({ page }) => {
+test('메인 장수 동향과 개인 전투 기록은 Ref 행 간격·색상·글자 크기를 유지한다', async ({ page }) => {
     const state: FixtureState = {
         permission: 'head',
         myset: 3,
@@ -712,13 +712,15 @@ test('메인 장수 동향과 개인 전투 기록은 모두 21px 행 간격을 
                     id: 18608,
                     text:
                         '<S>◆</>186년 9월:<div class="small_war_log">' +
-                        '<span class="me"><span class="crew_type">귀병</span> ' +
-                        '<span class="name_plate_cover">【<span class="name">Administrator</span>】</span> ' +
-                        '<span class="remain_crew">0</span>(<span class="killed_crew">-2209</span>)</span> ' +
+                        '<span class="me"><span class="name_plate"><span class="crew_type">귀병</span> ' +
+                        '<span class="name_plate_cover">【<span class="name">Administrator</span>】</span></span> ' +
+                        '<span class="crew_plate"><span class="remain_crew">0</span>' +
+                        '<span class="killed_plate">(<span class="killed_crew">-2209</span>)</span></span></span> ' +
                         '<span class="war_type war_type_defense">←</span> ' +
-                        '<span class="you"><span class="remain_crew">1361</span>' +
-                        '(<span class="killed_crew">-5539</span>) <span class="crew_type">기병</span> ' +
-                        '<span class="name_plate_cover">【<span class="name">ⓝ뇌동</span>】</span></span></div>',
+                        '<span class="you"><span class="crew_plate"><span class="remain_crew">1361</span>' +
+                        '<span class="killed_plate">(<span class="killed_crew">-5539</span>)</span></span> ' +
+                        '<span class="name_plate"><span class="crew_type">기병</span> ' +
+                        '<span class="name_plate_cover">【<span class="name">ⓝ뇌동</span>】</span></span></span></div>',
                     createdAt: '2026-01-01T03:54:00.000Z',
                 },
             ],
@@ -762,6 +764,16 @@ test('메인 장수 동향과 개인 전투 기록은 모두 21px 행 간격을 
             const battle = element.querySelector<HTMLElement>('.small_war_log');
             if (!battle) throw new Error('전투 요약 markup을 찾지 못했습니다.');
             const battleRect = battle.getBoundingClientRect();
+            const requireElement = (selector: string): HTMLElement => {
+                const target = element.querySelector<HTMLElement>(selector);
+                if (!target) throw new Error(`전투 요약 요소를 찾지 못했습니다: ${selector}`);
+                return target;
+            };
+            const diamond = requireElement('span[style*="skyblue"]');
+            const namePlate = requireElement('.me .name_plate');
+            const nameCover = requireElement('.me .name_plate_cover');
+            const crewPlate = requireElement('.me .crew_plate');
+            const arrow = requireElement('.war_type_defense');
             return {
                 line: { top: lineRect.top, height: lineRect.height },
                 battle: {
@@ -770,6 +782,14 @@ test('메인 장수 동향과 개인 전투 기록은 모두 21px 행 간격을 
                     display: getComputedStyle(battle).display,
                 },
                 lineHeight: getComputedStyle(element).lineHeight,
+                styles: {
+                    diamondColor: getComputedStyle(diamond).color,
+                    namePlateFontSize: getComputedStyle(namePlate).fontSize,
+                    nameCoverColor: getComputedStyle(nameCover).color,
+                    crewPlateColor: getComputedStyle(crewPlate).color,
+                    crewPlateFontSize: getComputedStyle(crewPlate).fontSize,
+                    defenseArrowColor: getComputedStyle(arrow).color,
+                },
             };
         });
     };
@@ -778,6 +798,14 @@ test('메인 장수 동향과 개인 전투 기록은 모두 21px 행 간격을 
         expect(geometry.line.height).toBe(21);
         expect(geometry.battle.height).toBe(21);
         expect(geometry.battle.top).toBeCloseTo(geometry.line.top, 0);
+        expect(geometry.styles).toEqual({
+            diamondColor: 'rgb(135, 206, 235)',
+            namePlateFontSize: '10.5px',
+            nameCoverColor: 'rgb(255, 255, 0)',
+            crewPlateColor: 'rgb(255, 69, 0)',
+            crewPlateFontSize: '12.6px',
+            defenseArrowColor: 'rgb(255, 0, 255)',
+        });
     };
 
     const desktopGeometry = await inspect(
@@ -1179,6 +1207,66 @@ test('내 정보&설정 keeps desktop density and becomes a 390px horizontal-ide
     expect(mobile.identity.nameTop).toBeLessThan(mobile.identity.iconBottom);
     expect(mobile.identity.nameBottom).toBeGreaterThan(mobile.identity.iconTop);
     await persistParityArtifact(page, 'core-my-page-mobile', mobile);
+});
+
+test('내 정보&설정의 지난 플레이는 기본 탐색과 분리되어 오른쪽에 정렬된다', async ({ page }) => {
+    const state: FixtureState = { permission: 'head', myset: 3, settingMutations: [], accessPages: [] };
+    await install(page, state);
+
+    for (const viewport of [
+        { name: 'desktop', width: 1000, height: 900 },
+        { name: 'mobile', width: 390, height: 844 },
+    ] as const) {
+        await page.setViewportSize({ width: viewport.width, height: viewport.height });
+        await page.goto('my-page');
+
+        const pastPlaysLink = page.getByRole('link', { name: '지난 플레이' });
+        await expect(pastPlaysLink).toHaveAttribute('href', `${gameBasePath}/past-plays`);
+        await pastPlaysLink.hover();
+        await pastPlaysLink.focus();
+        await expect(pastPlaysLink).toBeFocused();
+
+        const geometry = await page.locator('.title-row').evaluate((element) => {
+            const title = element.getBoundingClientRect();
+            const actions = element.querySelector<HTMLElement>('.title-actions')!.getBoundingClientRect();
+            const navigation = element.querySelector<HTMLElement>('.navigation-actions')!.getBoundingClientRect();
+            const back = element.querySelector<HTMLAnchorElement>('.navigation-actions a')!.getBoundingClientRect();
+            const refresh = element.querySelector<HTMLButtonElement>('.navigation-actions button')!.getBoundingClientRect();
+            const past = element.querySelector<HTMLAnchorElement>('.past-plays-link')!.getBoundingClientRect();
+            const pastStyle = getComputedStyle(element.querySelector<HTMLAnchorElement>('.past-plays-link')!);
+            return {
+                title: { left: title.left, right: title.right },
+                actions: { left: actions.left, right: actions.right },
+                navigation: { left: navigation.left, right: navigation.right },
+                back: { top: back.top, right: back.right },
+                refresh: { top: refresh.top, right: refresh.right },
+                past: { top: past.top, left: past.left, right: past.right },
+                pastStyle: {
+                    cursor: pastStyle.cursor,
+                    minHeight: pastStyle.minHeight,
+                    backgroundColor: pastStyle.backgroundColor,
+                },
+                scrollWidth: document.documentElement.scrollWidth,
+            };
+        });
+
+        expect(geometry.actions.left).toBeCloseTo(geometry.title.left + 1, 0);
+        expect(geometry.actions.right).toBeCloseTo(geometry.title.right - 1, 0);
+        expect(geometry.navigation.left).toBeCloseTo(geometry.actions.left, 0);
+        expect(geometry.past.right).toBeCloseTo(geometry.actions.right, 0);
+        expect(geometry.past.left).toBeGreaterThan(geometry.navigation.right);
+        expect(geometry.back.top).toBeCloseTo(geometry.past.top, 0);
+        expect(geometry.refresh.top).toBeCloseTo(geometry.past.top, 0);
+        expect(geometry.pastStyle).toEqual({
+            cursor: 'pointer',
+            minHeight: '34px',
+            backgroundColor: 'rgb(49, 95, 134)',
+        });
+        expect(geometry.scrollWidth).toBe(viewport.width);
+        await persistParityArtifact(page, `core-my-page-past-plays-${viewport.name}`, geometry);
+        await pastPlaysLink.click();
+        await expect(page).toHaveURL(new RegExp(`${gameBasePath}/past-plays$`, 'u'));
+    }
 });
 
 for (const [label, failure] of [

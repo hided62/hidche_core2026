@@ -68,11 +68,8 @@ export class ActionResolver<
         const goldCost = develCost * 5;
 
         // Log destination
-        let destCityName = `도시(${destCityId})`;
-        if (context.map) {
-            const c = context.map.cities.find((ct) => ct.id === destCityId);
-            if (c) destCityName = c.name;
-        }
+        const destCityName =
+            context.map?.cities.find((city) => city.id === destCityId)?.name ?? '알 수 없는 도시';
 
         const josaRo = JosaUtil.pick(destCityName, '로');
 
