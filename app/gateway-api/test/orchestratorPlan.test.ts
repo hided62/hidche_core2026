@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import path from 'node:path';
 
 import {
+    buildProfileFrontendCommands,
     buildProfileMigrationCommand,
     buildProcessDefinitions,
     buildWorkspaceCommands,
@@ -328,5 +329,32 @@ describe('buildWorkspaceCommands', () => {
                 DATABASE_URL: databaseUrl,
             },
         });
+    });
+});
+
+describe('buildProfileFrontendCommands', () => {
+    it('uses a profile frontend build-only Node heap without changing the shared runtime heap', () => {
+        const workspaceRoot = '/srv/sammo/worktrees/0123456789abcdef';
+        const commands = buildProfileFrontendCommands(workspaceRoot, buildProfile(), {
+            NODE_OPTIONS: '--max-old-space-size=1536',
+            PROFILE_FRONTEND_BUILD_NODE_OPTIONS: '--max-old-space-size=2048',
+        });
+
+        expect(commands).toHaveLength(2);
+        expect(commands.every((command) => command.env?.NODE_OPTIONS === '--max-old-space-size=2048')).toBe(true);
+        expect(
+            commands.every(
+                (command) => command.env?.PROFILE_FRONTEND_BUILD_NODE_OPTIONS === '--max-old-space-size=2048'
+            )
+        ).toBe(true);
+    });
+
+    it('keeps the shared Node heap when no frontend build override is configured', () => {
+        const workspaceRoot = '/srv/sammo/worktrees/0123456789abcdef';
+        const commands = buildProfileFrontendCommands(workspaceRoot, buildProfile(), {
+            NODE_OPTIONS: '--max-old-space-size=1536',
+        });
+
+        expect(commands.every((command) => command.env?.NODE_OPTIONS === '--max-old-space-size=1536')).toBe(true);
     });
 });

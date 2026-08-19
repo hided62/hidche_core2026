@@ -512,13 +512,15 @@ const sanitizeArtifactName = (value: string): string => value.replace(/[^0-9A-Za
 const buildProfileFrontendOutDir = (workspaceRoot: string, profileName: string): string =>
     path.join(workspaceRoot, '.release-dist', sanitizeArtifactName(profileName), 'game-frontend');
 
-const buildProfileFrontendCommands = (
+export const buildProfileFrontendCommands = (
     workspaceRoot: string,
     profile: Pick<GatewayProfileRecord, 'profileName' | 'profile' | 'apiPort'>,
     env?: Record<string, string>
 ): BuildCommand[] => {
+    const profileFrontendBuildNodeOptions = env?.PROFILE_FRONTEND_BUILD_NODE_OPTIONS?.trim();
     const buildEnv = {
         ...(env ?? {}),
+        ...(profileFrontendBuildNodeOptions ? { NODE_OPTIONS: profileFrontendBuildNodeOptions } : {}),
         VITE_APP_BASE_PATH: `/${profile.profile}`,
         VITE_GAME_API_URL: `/${profile.profile}/api/trpc`,
         VITE_GAME_SSE_URL: `/${profile.profile}/api/events`,
