@@ -730,6 +730,11 @@ const install = async (page: Page, rejectGeneral = false, commandTableResponse: 
     let generalRevision = 0;
     let nationRevision = 0;
     let dashboardLoaded = false;
+    page.on('framenavigated', (frame) => {
+        if (frame === page.mainFrame()) {
+            dashboardLoaded = false;
+        }
+    });
     await page.addInitScript((profile) => {
         localStorage.setItem('sammo-game-token', 'ga_commands');
         localStorage.setItem('sammo-game-profile', profile);
@@ -1185,18 +1190,15 @@ test('keeps general and chief command categories after input and across page rel
         .poll(() => page.evaluate(() => localStorage.getItem('core2026:general:1:category')))
         .toBe(JSON.stringify('general:군사'));
 
-    const reloadedGeneralPage = await context.newPage();
-    await install(reloadedGeneralPage);
-    await reloadedGeneralPage.goto('/');
-    const reloadedGeneralEditor = reloadedGeneralPage.locator('[data-command-scope="general"]');
+    await page.reload();
+    const reloadedGeneralEditor = page.locator('[data-command-scope="general"]');
     await reloadedGeneralEditor.getByRole('button', { name: '1턴 명령 입력', exact: true }).click();
-    const reloadedGeneralPicker = reloadedGeneralPage.getByTestId('command-picker');
+    const reloadedGeneralPicker = page.getByTestId('command-picker');
     await expect(reloadedGeneralPicker.getByRole('button', { name: '군사', exact: true })).toHaveClass(/active/);
     await expect(reloadedGeneralPicker.getByRole('button', { name: '출병', exact: true })).toBeVisible();
     await reloadedGeneralPicker.screenshot({
         path: test.info().outputPath('general-category-after-reload-desktop-1200.png'),
     });
-    await reloadedGeneralPage.close();
 
     const chiefPage = await context.newPage();
     await install(chiefPage, false, refChiefCommandTable);
@@ -1218,15 +1220,10 @@ test('keeps general and chief command categories after input and across page rel
     await expect
         .poll(() => chiefPage.evaluate(() => localStorage.getItem('core2026:nation:1:5:category')))
         .toBe(JSON.stringify('nation:전략'));
-    await chiefPage.close();
-
-    const reloadedChiefPage = await context.newPage();
-    await install(reloadedChiefPage, false, refChiefCommandTable);
-    await reloadedChiefPage.setViewportSize({ width: 500, height: 900 });
-    await reloadedChiefPage.goto('/che/chief-center');
-    const reloadedChiefEditor = reloadedChiefPage.locator('[data-command-scope="nation"]');
+    await chiefPage.reload();
+    const reloadedChiefEditor = chiefPage.locator('[data-command-scope="nation"]');
     await reloadedChiefEditor.getByRole('button', { name: '1턴 명령 입력', exact: true }).click();
-    const reloadedChiefPicker = reloadedChiefPage.getByTestId('command-picker');
+    const reloadedChiefPicker = chiefPage.getByTestId('command-picker');
     await expect(reloadedChiefPicker.getByRole('button', { name: '전략', exact: true })).toHaveClass(/active/);
     await expect(reloadedChiefPicker.getByRole('button', { name: '필사즉생', exact: true })).toBeVisible();
     await expect.poll(() => reloadedChiefPicker.evaluate((element) => element.getBoundingClientRect().height)).toBeGreaterThan(200);
