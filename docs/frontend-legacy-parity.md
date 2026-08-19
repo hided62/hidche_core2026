@@ -137,6 +137,27 @@ REF_PERSONAL_WAR_LOG_ARTIFACT_DIR=/path/to/ignored/artifacts \
 `MENU_PARITY_ARTIFACT_DIR`를 지정하면 1200×900·500×900 screenshot과 computed
 style JSON을 남깁니다.
 
+같은 Ref collector는 “진격합니다.” 전투 seed marker도 함께 렌더링하여
+desktop/mobile의 투명색, 0px 글자 크기, 0×0 rect와 selection text 보존을
+수집합니다. Core의 대응 test는 `inGameMenus.spec.ts`의 “전투시드는 메인·내
+정보·감찰부에서 숨긴 채 선택할 수 있다”이며 `PLAYWRIGHT_FRONTEND_MODE=production`
+과 `MENU_PARITY_ARTIFACT_DIR`를 함께 지정하면 세 화면의 1000×900·500×900
+screenshot과 computed JSON을 남깁니다.
+
+개인 전투 결과 요약의 Ref 색상·글자 크기는 실제 `small_war_log` class 구조와
+빌드 CSS를 사용하는 별도 정적 Chromium fixture로 재현합니다. 방어 화살표,
+장수명 괄호, 병력 수치와 병종·장수/병력 글자 크기를 desktop/mobile에서
+수집하며 live session·DB writer 검증과는 구분합니다.
+
+```sh
+REF_SAM_ROOT=/path/to/ref/sam \
+REF_PERSONAL_BATTLE_LOG_ARTIFACT_DIR=/path/to/ignored/artifacts \
+  node tools/frontend-legacy-parity/reference-personal-battle-log-colors.mjs
+```
+
+대응하는 Core 검증은 `inGameMenus.spec.ts`의 “개인 전투 기록” test이며 같은
+viewport에서 한 줄 geometry와 computed 색상·글자 크기를 함께 검사합니다.
+
 To refresh the PHP ranking evidence after building the ignored reference
 webpack assets, run:
 

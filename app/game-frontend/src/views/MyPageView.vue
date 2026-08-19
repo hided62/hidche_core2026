@@ -365,9 +365,13 @@ onMounted(() => {
     <main id="container" class="legacy-page bg0 responsive-settings-page" :class="`screen-${screenMode}`">
         <div class="title-row">
             <span>내 정 보</span>
-            <RouterLink class="legacy-button" to="/past-plays">지난 플레이</RouterLink>
-            <RouterLink class="legacy-button" to="/">돌아가기</RouterLink>
-            <button class="legacy-button" type="button" @click="() => loadPage()">새로고침</button>
+            <div class="title-actions">
+                <div class="navigation-actions">
+                    <RouterLink class="legacy-button" to="/">돌아가기</RouterLink>
+                    <button class="legacy-button" type="button" @click="() => loadPage()">새로고침</button>
+                </div>
+                <RouterLink class="legacy-button past-plays-link" to="/past-plays">지난 플레이</RouterLink>
+            </div>
         </div>
 
         <div v-if="error" class="error-row">{{ error }}</div>
@@ -674,6 +678,16 @@ onMounted(() => {
     flex-basis: 100%;
     height: 18px;
     letter-spacing: 0;
+}
+.title-actions {
+    display: flex;
+    width: 100%;
+    align-items: flex-start;
+    justify-content: space-between;
+}
+.navigation-actions {
+    display: flex;
+    gap: 4px;
 }
 .legacy-button,
 button,
