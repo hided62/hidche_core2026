@@ -6,6 +6,7 @@ export default defineConfig({
         'auth/gameToken': 'src/auth/gameToken.ts',
         'auth/gameSessionTransfer': 'src/auth/gameSessionTransfer.ts',
         'auth/sanctions': 'src/auth/sanctions.ts',
+        'navigation/menuConfig': 'src/navigation/menuConfig.ts',
     },
     format: 'es',
     outDir: 'dist',

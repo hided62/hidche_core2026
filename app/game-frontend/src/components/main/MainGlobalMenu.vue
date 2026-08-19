@@ -5,17 +5,23 @@ import {
     buildGlobalNavigation,
     isNavigationConfigured,
     type MainNavigationLink as MainNavigationLinkItem,
+    type MainNavigationEntry,
 } from './mainNavigation';
 import { useMenuPopup } from './useMenuPopup';
 
 const props = defineProps<{
     npcMode: number;
     voteActive: boolean;
+    entries?: MainNavigationEntry[];
 }>();
 
-const entries = computed(() => buildGlobalNavigation(props.npcMode));
+const emit = defineEmits<{
+    action: [action: NonNullable<MainNavigationLinkItem['action']>];
+}>();
+
+const entries = computed(() => buildGlobalNavigation(props.npcMode, props.entries));
 const { setRoot, openId, close, toggle } = useMenuPopup();
-const isActive = (link: MainNavigationLinkItem) => link.id === 'survey' && props.voteActive;
+const isActive = (link: MainNavigationLinkItem) => link.highlightWhen === 'vote' && props.voteActive;
 </script>
 
 <template>
@@ -27,6 +33,7 @@ const isActive = (link: MainNavigationLinkItem) => link.id === 'survey' && props
                 :enabled="isNavigationConfigured(entry)"
                 :active="isActive(entry)"
                 lumen-variant="navigation"
+                @action="emit('action', $event)"
             />
             <div v-else-if="entry.kind === 'group'" class="main-menu-popup">
                 <button
@@ -54,6 +61,7 @@ const isActive = (link: MainNavigationLinkItem) => link.id === 'survey' && props
                                 :enabled="isNavigationConfigured(item)"
                                 role="menuitem"
                                 @navigate="close()"
+                                @action="emit('action', $event); close()"
                             />
                         </li>
                     </template>
@@ -65,6 +73,7 @@ const isActive = (link: MainNavigationLinkItem) => link.id === 'survey' && props
                     :enabled="isNavigationConfigured(entry.main)"
                     :active="isActive(entry.main)"
                     lumen-variant="navigation"
+                    @action="emit('action', $event)"
                 />
                 <button
                     class="main-menu-button main-menu-split__toggle legacy-split-button__toggle legacy-button legacy-button--navigation"
@@ -91,6 +100,7 @@ const isActive = (link: MainNavigationLinkItem) => link.id === 'survey' && props
                                 :enabled="isNavigationConfigured(item)"
                                 role="menuitem"
                                 @navigate="close()"
+                                @action="emit('action', $event); close()"
                             />
                         </li>
                     </template>

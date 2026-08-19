@@ -1,15 +1,34 @@
 <script setup lang="ts">
-import { ref } from 'vue';
+import type { RuntimeNavigationConfig } from '@sammo-ts/common/navigation/menuConfig';
+import { onMounted, ref } from 'vue';
+import defaultNavigationJson from '../../../../resources/navigation.json';
 
 const menuOpen = ref(false);
 const appBase = import.meta.env.BASE_URL;
+const defaultNavigation = defaultNavigationJson as RuntimeNavigationConfig;
+const navigation = ref(defaultNavigation.gateway);
+const navigationUrl = (import.meta.env.VITE_GATEWAY_API_URL ?? '/api/trpc').replace(/\/trpc\/?$/u, '/navigation');
+
+onMounted(() => {
+    void fetch(navigationUrl, { headers: { Accept: 'application/json' } })
+        .then(async (response) => {
+            if (!response.ok) throw new Error(`메뉴 설정 조회 실패: HTTP ${response.status}`);
+            return (await response.json()) as RuntimeNavigationConfig;
+        })
+        .then((config) => {
+            navigation.value = config.gateway;
+        })
+        .catch((error: unknown) => {
+            console.warn('운영 메뉴 설정을 불러오지 못해 기본 메뉴를 사용합니다.', error);
+        });
+});
 </script>
 
 <template>
     <div class="gateway-layout">
         <header class="gateway-navbar">
             <div class="navbar-inner">
-                <RouterLink class="navbar-brand" to="/">삼국지 모의전투 HiDCHe</RouterLink>
+                <RouterLink class="navbar-brand" :to="navigation.brand.to">{{ navigation.brand.label }}</RouterLink>
                 <button
                     class="navbar-toggler"
                     type="button"
@@ -21,12 +40,16 @@ const appBase = import.meta.env.BASE_URL;
                     <span></span><span></span><span></span>
                 </button>
                 <nav id="gateway-navigation" :class="{ open: menuOpen }">
-                    <a href="/bbs/board" target="_blank" rel="noreferrer">삼모게시판</a>
-                    <a href="/bbs/tip" target="_blank" rel="noreferrer">팁/강좌</a>
-                    <a href="/bbs/news" target="_blank" rel="noreferrer">삼국 일보</a>
-                    <a href="/bbs/history2" target="_blank" rel="noreferrer">개인 열전</a>
-                    <a href="/bbs/history3" target="_blank" rel="noreferrer">국가 열전</a>
-                    <a href="/bbs/patch" target="_blank" rel="noreferrer">패치 내역</a>
+                    <a
+                        v-for="item in navigation.items"
+                        :key="item.id"
+                        :href="item.href"
+                        :target="item.newTab ? '_blank' : undefined"
+                        :rel="item.newTab ? 'noopener noreferrer' : undefined"
+                        :data-navigation-id="item.id"
+                    >
+                        {{ item.label }}
+                    </a>
                 </nav>
             </div>
         </header>
@@ -66,14 +89,16 @@ const appBase = import.meta.env.BASE_URL;
     top: 0;
     right: 0;
     left: 0;
-    min-height: 56px;
-    border-bottom: 1px solid #222;
+    box-sizing: border-box;
+    height: 76px;
+    border: 0;
+    padding: 16px 0;
     background: #303030;
 }
 
 .navbar-inner {
     display: flex;
-    min-height: 56px;
+    width: 100%;
     align-items: center;
     padding: 0 1px;
 }
@@ -90,13 +115,16 @@ const appBase = import.meta.env.BASE_URL;
 
 nav {
     display: flex;
+    flex-grow: 1;
     align-items: center;
-    gap: 16px;
+    gap: 0;
 }
 
 nav a {
-    color: rgb(255 255 255 / 55%);
-    font-size: 14px;
+    padding: 8px;
+    color: rgb(255 255 255 / 60%);
+    font-size: 16px;
+    line-height: 24px;
     text-decoration: none;
 }
 
@@ -108,12 +136,12 @@ nav a:focus {
 .navbar-toggler {
     display: none;
     width: 56px;
-    height: 42px;
+    height: 40px;
     margin-left: auto;
-    border: 1px solid rgb(255 255 255 / 15%);
-    border-radius: 6px;
+    border: 1px solid rgb(255 255 255 / 10%);
+    border-radius: 4px;
     background: transparent;
-    padding: 8px 12px;
+    padding: 4px 12px;
 }
 
 .navbar-toggler span {
@@ -140,10 +168,9 @@ footer a {
     color: #666;
 }
 
-@media (max-width: 759px) {
+@media (max-width: 991.98px) {
     .navbar-inner {
-        flex-wrap: wrap;
-        padding: 8px 1px;
+        padding: 0 1px;
     }
 
     .navbar-toggler {
@@ -151,12 +178,17 @@ footer a {
     }
 
     nav {
+        position: absolute;
+        top: 56px;
+        right: 1px;
+        left: 1px;
         display: none;
-        width: 100%;
+        width: auto;
         flex-direction: column;
         align-items: flex-start;
         gap: 0;
-        padding: 8px 12px;
+        padding: 0;
+        background: #303030;
     }
 
     nav.open {
@@ -165,7 +197,9 @@ footer a {
 
     nav a {
         width: 100%;
-        padding: 7px 0;
+        padding: 8px 0;
+        font-size: 16px;
+        line-height: 24px;
     }
 }
 </style>
