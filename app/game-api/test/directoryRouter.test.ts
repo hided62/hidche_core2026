@@ -250,7 +250,7 @@ describe('legacy global nation/general directories', () => {
         await expect(adminWithoutGeneral.world.getNationDirectory()).rejects.toMatchObject({ code: 'NOT_FOUND' });
     });
 
-    it('keeps the same read-only result for wandering, ordinary, chief, and possessed actors', async () => {
+    it('keeps hover-safe public rows identical for wandering, ordinary, chief, and possessed actors', async () => {
         const viewers = [
             actor({ nationId: 0, officerLevel: 0 }),
             actor({ nationId: 1, officerLevel: 1 }),
@@ -270,6 +270,23 @@ describe('legacy global nation/general directories', () => {
             })
         );
         expect(results.slice(1)).toEqual([results[0], results[0], results[0]]);
+        for (const result of results) {
+            const serializedGeneralRows = JSON.stringify(result.generals);
+            for (const privateField of [
+                'userId',
+                'meta',
+                'penalty',
+                'gold',
+                'rice',
+                'crew',
+                'train',
+                'atmos',
+                'turnTime',
+                'lastTurn',
+            ]) {
+                expect(serializedGeneralRows).not.toContain(`"${privateField}"`);
+            }
+        }
     });
 
     it('preserves power/dedication order, synthesizes neutral, and applies target-general permission penalties', async () => {
