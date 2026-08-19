@@ -958,6 +958,7 @@ const createTurnDaemonRuntimeWithLease = async (
         auctionFinalizer: auctionFinalizer ?? undefined,
         auctionBidder: auctionBidder ?? undefined,
         tournamentRewardFinalizer: tournamentRewardFinalizer ?? undefined,
+        loadArchivedNationMaxId: (serverId) => loadArchivedNationMaxId(options.databaseUrl, serverId),
     });
 
     const defaultBudget: TurnRunBudget = options.defaultBudget ?? {

@@ -22,6 +22,8 @@ export interface MessageDraft {
     time: Date;
     validUntil: Date;
     option?: MessageOption | null;
+    /** Ref Message::send(true): persist only the receiver copy. */
+    sendDestOnly?: boolean;
 }
 
 export interface MessagePayload {
@@ -139,7 +141,7 @@ export const sendMessage = async (
         throw new Error('Failed to send receiver message.');
     }
 
-    if (options.sendDestOnly) {
+    if (options.sendDestOnly ?? draft.sendDestOnly) {
         return { receiverId };
     }
 

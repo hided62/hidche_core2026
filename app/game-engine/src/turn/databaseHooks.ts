@@ -30,6 +30,7 @@ import {
 import {
     asRecord,
     ChangeJournal,
+    GAME_TICKS_PER_TURN,
     type CommittedReadModelInvalidation,
     type ReadModelDomain,
     type RealtimeReadModelChanges,
@@ -1037,6 +1038,7 @@ export const createDatabaseTurnHooks = async (
     const transactionOptions = { timeout: options?.transactionTimeoutMs ?? 30_000 };
     const readModelBaseline = createRealtimeReadModelBaseline(world);
     let worldReadModelBaseline = createWorldReadModelSignature(world);
+    let persistedTickSeconds = world.getState().tickSeconds;
     const committedReceipts = new Map<bigint, CommittedReadModelChangeReceipt>();
 
     const enqueueCommittedReceipt = (
@@ -1158,6 +1160,54 @@ export const createDatabaseTurnHooks = async (
                 where: { id: state.id },
                 data: worldStateUpdate,
             });
+
+            if (
+                state.tickSeconds !== persistedTickSeconds &&
+                commandCompletion?.result.type !== 'updateRuntimeSettings'
+            ) {
+                const ticksPerSecond = BigInt(GAME_TICKS_PER_TURN / state.tickSeconds);
+                const baseTime = state.clockBaseTime ?? state.lastTurnTime;
+                await prisma.$executeRaw(GamePrisma.sql`
+                    UPDATE auction
+                    SET close_at = CAST(${baseTime} AS timestamp)
+                        + (close_tick / ${ticksPerSecond}) * INTERVAL '1 second'
+                        + (((close_tick % ${ticksPerSecond}) * 1000) / ${ticksPerSecond}) * INTERVAL '1 millisecond',
+                        updated_at = NOW()
+                    WHERE close_tick IS NOT NULL
+                `);
+                await prisma.$executeRaw(GamePrisma.sql`
+                    UPDATE message
+                    SET time = CASE
+                            WHEN time_tick IS NULL THEN time
+                            ELSE CAST(${baseTime} AS timestamp)
+                                + (time_tick / ${ticksPerSecond}) * INTERVAL '1 second'
+                                + (((time_tick % ${ticksPerSecond}) * 1000) / ${ticksPerSecond}) * INTERVAL '1 millisecond'
+                        END,
+                        valid_until = CASE
+                            WHEN valid_until_tick IS NULL THEN valid_until
+                            ELSE CAST(${baseTime} AS timestamp)
+                                + (valid_until_tick / ${ticksPerSecond}) * INTERVAL '1 second'
+                                + (((valid_until_tick % ${ticksPerSecond}) * 1000) / ${ticksPerSecond}) * INTERVAL '1 millisecond'
+                        END
+                    WHERE time_tick IS NOT NULL OR valid_until_tick IS NOT NULL
+                `);
+                await prisma.$executeRaw(GamePrisma.sql`
+                    UPDATE vote_poll
+                    SET start_at = CASE
+                            WHEN start_tick IS NULL THEN start_at
+                            ELSE CAST(${baseTime} AS timestamp)
+                                + (start_tick / ${ticksPerSecond}) * INTERVAL '1 second'
+                                + (((start_tick % ${ticksPerSecond}) * 1000) / ${ticksPerSecond}) * INTERVAL '1 millisecond'
+                        END,
+                        end_at = CASE
+                            WHEN end_tick IS NULL THEN end_at
+                            ELSE CAST(${baseTime} AS timestamp)
+                                + (end_tick / ${ticksPerSecond}) * INTERVAL '1 second'
+                                + (((end_tick % ${ticksPerSecond}) * 1000) / ${ticksPerSecond}) * INTERVAL '1 millisecond'
+                        END
+                    WHERE start_tick IS NOT NULL OR end_tick IS NOT NULL
+                `);
+            }
 
             for (const betting of pendingNationBettingOpens) {
                 await persistNationBettingOpen(prisma, betting);
@@ -1530,7 +1580,8 @@ export const createDatabaseTurnHooks = async (
                             return id;
                         },
                     },
-                    message
+                    message,
+                    { sendDestOnly: message.sendDestOnly }
                 );
             }
             if (options?.reservedTurns && persistedReservedTurnChanges) {
@@ -1598,6 +1649,7 @@ export const createDatabaseTurnHooks = async (
                 }
                 applyRealtimeReadModelBaseline(readModelBaseline, changes);
                 worldReadModelBaseline = persisted.worldReadModelSignature;
+                persistedTickSeconds = state.tickSeconds;
             },
             readModelChanges: persisted.readModelChanges,
             journalWrite: persisted.journalWrite,

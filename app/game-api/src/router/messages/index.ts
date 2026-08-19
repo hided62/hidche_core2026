@@ -72,10 +72,7 @@ const hasPenalty = (penalty: unknown, key: string): boolean => {
     return value === true || value === 1 || value === '1';
 };
 
-const markMessageMailboxes = (
-    ctx: Pick<GameApiContext, 'changeJournal'>,
-    mailboxes: Iterable<number>
-): void => {
+const markMessageMailboxes = (ctx: Pick<GameApiContext, 'changeJournal'>, mailboxes: Iterable<number>): void => {
     for (const mailbox of mailboxes) {
         ctx.changeJournal?.mark('messages.mailbox', mailbox);
     }
@@ -328,6 +325,27 @@ export const messagesRouter = router({
         )
         .mutation(async ({ ctx, input }) => {
             const general = await getOwnedGeneral(ctx, input.generalId);
+            const message = await fetchMessageById(ctx.db, input.messageId);
+            if (!message) {
+                throw new TRPCError({ code: 'NOT_FOUND', message: '메시지가 없습니다.' });
+            }
+            const action = message.payload.option?.action;
+            if (action === 'scout' || action === 'raiseInvader') {
+                if (!ctx.auth) {
+                    throw new TRPCError({ code: 'UNAUTHORIZED' });
+                }
+                const commandResult = await ctx.turnDaemon.requestCommand({
+                    type: 'messageRespond',
+                    userId: ctx.auth.user.id,
+                    generalId: general.id,
+                    messageId: input.messageId,
+                    response: input.response,
+                });
+                if (!commandResult || commandResult.type !== 'messageRespond') {
+                    throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: '메시지 응답 처리에 실패했습니다.' });
+                }
+                return { result: commandResult.ok, reason: commandResult.reason };
+            }
             const result = await respondToDiplomaticMessage({
                 db: ctx.db,
                 actor: general,

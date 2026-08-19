@@ -93,6 +93,14 @@ export type TurnDaemonCommand =
     | { type: 'dieOnPrestart'; requestId?: string; userId: string; generalId: number }
     | { type: 'buildNationCandidate'; requestId?: string; userId: string; generalId: number }
     | { type: 'instantRetreat'; requestId?: string; userId: string; generalId: number }
+    | {
+          type: 'messageRespond';
+          requestId?: string;
+          userId: string;
+          generalId: number;
+          messageId: number;
+          response: boolean;
+      }
     | { type: 'vacation'; requestId?: string; generalId: number }
     | {
           type: 'setMySetting';
@@ -441,6 +449,14 @@ export type TurnDaemonCommandResult =
     | { type: 'dieOnPrestart'; ok: boolean; generalId: number; reason?: string }
     | { type: 'buildNationCandidate'; ok: boolean; generalId: number; reason?: string }
     | { type: 'instantRetreat'; ok: boolean; generalId: number; reason?: string }
+    | {
+          type: 'messageRespond';
+          ok: boolean;
+          generalId: number;
+          messageId: number;
+          action?: 'scout' | 'raiseInvader';
+          reason: string;
+      }
     | { type: 'vacation'; ok: boolean; generalId: number; reason?: string }
     | { type: 'setMySetting'; ok: boolean; generalId: number; reason?: string }
     | { type: 'dropItem'; ok: boolean; generalId: number; reason?: string }

@@ -111,6 +111,14 @@ const zInstantRetreat = z.object({
     generalId: zFiniteNumber,
 });
 
+const zMessageRespond = z.object({
+    type: z.literal('messageRespond'),
+    userId: z.string().min(1),
+    generalId: z.number().int().positive(),
+    messageId: z.number().int().positive(),
+    response: z.boolean(),
+});
+
 const zVacation = z.object({
     type: z.literal('vacation'),
     generalId: zFiniteNumber,
@@ -488,6 +496,14 @@ const normalizeInstantRetreat: CommandNormalizer<'instantRetreat'> = (envelope) 
     return { ...command, requestId: envelope.requestId };
 };
 
+const normalizeMessageRespond: CommandNormalizer<'messageRespond'> = (envelope) => {
+    const command = parseWith(zMessageRespond, envelope.command);
+    if (!command) {
+        return null;
+    }
+    return { ...command, requestId: envelope.requestId };
+};
+
 const normalizeVacation: CommandNormalizer<'vacation'> = (envelope) => {
     const command = parseWith(zVacation, envelope.command);
     if (!command) {
@@ -705,6 +721,7 @@ const normalizers: CommandNormalizerMap = {
     ensureDieOnPrestartStatus: normalizeEnsureDieOnPrestartStatus,
     buildNationCandidate: normalizeBuildNationCandidate,
     instantRetreat: normalizeInstantRetreat,
+    messageRespond: normalizeMessageRespond,
     vacation: normalizeVacation,
     setMySetting: normalizeSetMySetting,
     dropItem: normalizeDropItem,

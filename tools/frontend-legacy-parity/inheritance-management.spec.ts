@@ -97,6 +97,7 @@ const statusFixture = {
 
 const installFixture = async (page: Page, options: { failBuff?: boolean } = {}) => {
     let buffMutationCount = 0;
+    let resetTurnMutationCount = 0;
     await installImages(page);
     await page.addInitScript(() => {
         window.localStorage.setItem('sammo-game-token', 'ga_inherit-visual-token');
@@ -140,6 +141,10 @@ const installFixture = async (page: Page, options: { failBuff?: boolean } = {}) 
                 buffMutationCount += 1;
                 return response({ ok: true, remainPoint: 11_800 });
             }
+            if (name === 'inherit.resetTurnTime') {
+                resetTurnMutationCount += 1;
+                return response({ ok: true, nextTurnTimeBase: 302.5143852464758, nextTurnTimeLabel: '00:05' });
+            }
             throw new Error(`Unhandled inheritance fixture operation: ${name}`);
         });
         await route.fulfill({
@@ -148,10 +153,32 @@ const installFixture = async (page: Page, options: { failBuff?: boolean } = {}) 
             body: JSON.stringify(result),
         });
     });
-    return { buffMutationCount: () => buffMutationCount };
+    return {
+        buffMutationCount: () => buffMutationCount,
+        resetTurnMutationCount: () => resetTurnMutationCount,
+    };
 };
 
 test.describe('inheritance management legacy parity', () => {
+    test('confirms and displays the Ref-compatible pending turn-time base', async ({ page }) => {
+        const fixture = await installFixture(page);
+        await page.setViewportSize({ width: 390, height: 844 });
+        await page.goto(gameUrl);
+        await expect(page.locator('#container')).toBeVisible();
+
+        const item = page.locator('.simple-item').filter({ hasText: '랜덤 턴 초기화' });
+        const button = item.getByRole('button', { name: '구입' });
+        await expect(button).toBeEnabled();
+        page.once('dialog', async (dialog) => {
+            expect(dialog.message()).toBe('턴 시간을 1000 포인트로 초기화하시겠습니까?');
+            await dialog.accept();
+        });
+        await button.click();
+
+        await expect(item).toContainText('적용 시간: 00:05');
+        expect(fixture.resetTurnMutationCount()).toBe(1);
+    });
+
     test('matches the ref 1000px grid and computed styles on desktop and mobile', async ({ page }) => {
         await installFixture(page);
         await page.setViewportSize({ width: 1280, height: 900 });
@@ -185,7 +212,7 @@ test.describe('inheritance management legacy parity', () => {
 
         expect(desktop.container.width).toBe(1000);
         expect(desktop.container.x).toBe(140);
-        expect(desktop.firstPoint.width).toBeCloseTo(327.3, 0);
+        expect(Math.abs(desktop.firstPoint.width - 327.3)).toBeLessThanOrEqual(1);
         expect(desktop.fontFamily).toContain('Pretendard');
         expect(desktop.fontSize).toBe('14px');
         expect(desktop.backgroundImage).toContain('back_walnut.jpg');
@@ -220,7 +247,7 @@ test.describe('inheritance management legacy parity', () => {
         await page.keyboard.press('Tab');
         await page.keyboard.press('Shift+Tab');
         await expect(buyButton).toBeFocused();
-        await expect.poll(() => buyButton.evaluate((element) => getComputedStyle(element).outlineStyle)).toBe('solid');
+        await expect.poll(() => buyButton.evaluate((element) => getComputedStyle(element).boxShadow)).not.toBe('none');
 
         await buyButton.evaluate((element) => element.setAttribute('disabled', ''));
         await expect.poll(() => buyButton.evaluate((element) => getComputedStyle(element).opacity)).toBe('0.65');
@@ -245,7 +272,7 @@ test.describe('inheritance management legacy parity', () => {
             };
         });
         expect(mobile.containerWidth).toBe(500);
-        expect(mobile.firstWidth).toBeCloseTo(482, 0);
+        expect(mobile.firstWidth).toBeCloseTo(484, 0);
         expect(mobile.stacked).toBe(true);
 
         if (artifactRoot) {

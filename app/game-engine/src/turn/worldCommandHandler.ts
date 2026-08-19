@@ -60,6 +60,7 @@ import {
 import { createGeneralFromJoin, JoinCreateGeneralError } from './joinCreateGeneralService.js';
 import { NpcPossessionError, possessNpcGeneral } from './npcPossessionService.js';
 import { buildPrestartDeleteAfter, formatPrestartDeleteAfter, readPrestartDeleteAfter } from './prestartDeletion.js';
+import { respondToActionableMessage } from './actionableMessageResponse.js';
 
 let itemRegistryPromise: Promise<Map<string, ItemModule>> | null = null;
 
@@ -136,6 +137,8 @@ interface CommandHandlerContext {
     auctionBidder?: AuctionBidder;
     tournamentRewardFinalizer?: TournamentRewardFinalizer;
     getImmediateGeneralActionExecutor?: () => Promise<ImmediateGeneralActionExecutor>;
+    reservedTurns?: InMemoryReservedTurnStore;
+    loadArchivedNationMaxId?: (serverId: string) => Promise<number>;
 }
 
 const requireCommandDatabase = (ctx: CommandHandlerContext): DatabaseClient => {
@@ -1604,6 +1607,35 @@ async function handleInstantRetreat(
     };
 }
 
+async function handleMessageRespond(
+    ctx: CommandHandlerContext,
+    command: Extract<TurnDaemonCommand, { type: 'messageRespond' }>
+): Promise<TurnDaemonCommandResult> {
+    if (!ctx.getImmediateGeneralActionExecutor) {
+        throw new Error('Immediate general action runtime is not configured.');
+    }
+    const result = await respondToActionableMessage({
+        db: requireCommandDatabase(ctx) as GamePrisma.TransactionClient,
+        world: ctx.world,
+        reservedTurns: ctx.reservedTurns,
+        executor: await ctx.getImmediateGeneralActionExecutor(),
+        requestId: command.requestId,
+        userId: command.userId,
+        generalId: command.generalId,
+        messageId: command.messageId,
+        response: command.response,
+        loadArchivedNationMaxId: ctx.loadArchivedNationMaxId,
+    });
+    return {
+        type: 'messageRespond',
+        ok: result.ok,
+        generalId: command.generalId,
+        messageId: command.messageId,
+        ...(result.action ? { action: result.action } : {}),
+        reason: result.reason,
+    };
+}
+
 async function handleVacation(
     ctx: CommandHandlerContext,
     command: Extract<TurnDaemonCommand, { type: 'vacation' }>
@@ -2532,6 +2564,7 @@ export const createTurnDaemonCommandHandler = (options: {
     auctionFinalizer?: AuctionFinalizer;
     auctionBidder?: AuctionBidder;
     tournamentRewardFinalizer?: TournamentRewardFinalizer;
+    loadArchivedNationMaxId?: (serverId: string) => Promise<number>;
 }): TurnDaemonCommandHandler => {
     let immediateGeneralActionExecutor: Promise<ImmediateGeneralActionExecutor> | null = null;
     const ctx: CommandHandlerContext = {
@@ -2539,6 +2572,8 @@ export const createTurnDaemonCommandHandler = (options: {
         auctionFinalizer: options.auctionFinalizer,
         auctionBidder: options.auctionBidder,
         tournamentRewardFinalizer: options.tournamentRewardFinalizer,
+        reservedTurns: options.reservedTurns,
+        loadArchivedNationMaxId: options.loadArchivedNationMaxId,
         getImmediateGeneralActionExecutor: () => {
             immediateGeneralActionExecutor ??= createImmediateGeneralActionExecutor({
                 world: options.world,
@@ -2588,6 +2623,8 @@ export const createTurnDaemonCommandHandler = (options: {
             handleBuildNationCandidate(ctx, command as Extract<TurnDaemonCommand, { type: 'buildNationCandidate' }>),
         instantRetreat: (command) =>
             handleInstantRetreat(ctx, command as Extract<TurnDaemonCommand, { type: 'instantRetreat' }>),
+        messageRespond: (command) =>
+            handleMessageRespond(ctx, command as Extract<TurnDaemonCommand, { type: 'messageRespond' }>),
         vacation: (command) => handleVacation(ctx, command as Extract<TurnDaemonCommand, { type: 'vacation' }>),
         setMySetting: (command) =>
             handleSetMySetting(ctx, command as Extract<TurnDaemonCommand, { type: 'setMySetting' }>),

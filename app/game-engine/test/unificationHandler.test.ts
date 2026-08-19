@@ -73,7 +73,7 @@ const nation: Nation = {
     gold: 1000,
     rice: 2000,
     power: 3000,
-    level: 1,
+    level: 4,
     typeCode: 'test',
     meta: {},
 };
@@ -82,7 +82,7 @@ const city: City = {
     id: 1,
     name: '통일도시',
     nationId: 1,
-    level: 1,
+    level: 4,
     state: 0,
     population: 1000,
     populationMax: 2000,
@@ -201,6 +201,33 @@ describe('unification handler', () => {
         expect(world.listEvents('united')).toHaveLength(1);
         expect(world.peekDirtyState().pendingUnificationFinalizations).toEqual([
             expect.objectContaining({ auctionCancellations: [auctionCancellation, legacyAuctionCancellation] }),
+        ]);
+        expect(
+            world.peekDirtyState().messages.map((message) => ({
+                text: message.text,
+                action: message.option?.action,
+                args: message.option?.args,
+                recipient: message.dest.generalId,
+            }))
+        ).toEqual([
+            {
+                text: '이벤트 게임으로 이민족[어려움]을 소환',
+                action: 'raiseInvader',
+                args: [-2, -1.2, 15_000, -1],
+                recipient: 1,
+            },
+            {
+                text: '이벤트 게임으로 이민족[보통]을 소환',
+                action: 'raiseInvader',
+                args: [-2, -1.2, -1, -0.5],
+                recipient: 1,
+            },
+            {
+                text: '이벤트 게임으로 이민족[쉬움]을 소환',
+                action: 'raiseInvader',
+                args: [-1, -1, -0.8, 0],
+                recipient: 1,
+            },
         ]);
 
         const bid = vi.fn();

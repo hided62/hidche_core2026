@@ -565,6 +565,70 @@ describe('messages router missing-flow compatibility', () => {
         });
     });
 
+    it.each(['scout', 'raiseInvader'] as const)(
+        'dispatches a private %s response through the durable engine command',
+        async (action) => {
+            const messageRow = {
+                id: 29,
+                mailbox: general.id,
+                type: 'private',
+                src: 8,
+                dest: general.id,
+                time: new Date(),
+                valid_until: new Date('9999-12-31T00:00:00Z'),
+                message: {
+                    src: {
+                        generalId: 8,
+                        generalName: '제안자',
+                        nationId: 2,
+                        nationName: '촉',
+                        color: '#000',
+                        icon: '',
+                    },
+                    dest: {
+                        generalId: general.id,
+                        generalName: general.name,
+                        nationId: general.nationId,
+                        nationName: '위',
+                        color: '#fff',
+                        icon: '',
+                    },
+                    text: '응답할 메시지',
+                    option: { action },
+                },
+            };
+            const requestCommand = vi.fn(async () => ({
+                type: 'messageRespond' as const,
+                ok: true,
+                generalId: general.id,
+                messageId: messageRow.id,
+                action,
+                reason: 'success',
+            }));
+            const { caller } = buildContext(
+                { $queryRaw: vi.fn(async () => [messageRow]) },
+                { turnDaemon: { requestCommand } }
+            );
+
+            const result = await caller.messages.respond({
+                generalId: general.id,
+                messageId: messageRow.id,
+                response: true,
+            });
+
+            expect(result).toEqual({ result: true, reason: 'success' });
+            expect(requestCommand).toHaveBeenCalledWith(
+                expect.objectContaining({
+                    type: 'messageRespond',
+                    userId: auth.user.id,
+                    generalId: general.id,
+                    messageId: messageRow.id,
+                    response: true,
+                })
+            );
+        }
+    );
+
     const buildDiplomaticContext = (options?: {
         action?: 'noAggression' | 'cancelNA' | 'stopWar';
         actorNationId?: number;
@@ -634,10 +698,10 @@ describe('messages router missing-flow compatibility', () => {
         let insertedId = 100;
         const queryRaw = vi.fn(async () => {
             rawCall += 1;
-            if (rawCall === 1) {
+            if (rawCall <= 2) {
                 return [messageRow];
             }
-            if (rawCall >= 4) {
+            if (rawCall >= 5) {
                 insertedId += 1;
                 return [{ id: insertedId }];
             }
@@ -693,84 +757,87 @@ describe('messages router missing-flow compatibility', () => {
         const messageUpdateMany = vi.fn(async () => ({ count: 1 }));
         const cityUpdate = vi.fn(async () => ({}));
         const changeJournal = new ChangeJournal();
-        const { caller } = buildContext({
-            general: {
-                findUnique: vi.fn(async ({ where }: { where: { id: number } }) =>
-                    where.id === actor.id ? actor : where.id === proposer.id ? proposer : null
-                ),
-                findMany: vi.fn(async () => []),
+        const { caller } = buildContext(
+            {
+                general: {
+                    findUnique: vi.fn(async ({ where }: { where: { id: number } }) =>
+                        where.id === actor.id ? actor : where.id === proposer.id ? proposer : null
+                    ),
+                    findMany: vi.fn(async () => []),
+                },
+                nation: {
+                    findUnique: vi.fn(async ({ where }: { where: { id: number } }) =>
+                        where.id === actorNationId
+                            ? {
+                                  id: actorNationId,
+                                  name: '위',
+                                  color: '#fff',
+                                  capitalCityId: 10,
+                                  chiefGeneralId: actor.id,
+                                  gold: 1000,
+                                  rice: 1000,
+                                  tech: 0,
+                                  level: 1,
+                                  typeCode: 'test',
+                                  meta: {},
+                              }
+                            : where.id === proposerNationId
+                              ? {
+                                    id: proposerNationId,
+                                    name: '촉',
+                                    color: '#000',
+                                    capitalCityId: 20,
+                                    chiefGeneralId: proposer.id,
+                                    gold: 1000,
+                                    rice: 1000,
+                                    tech: 0,
+                                    level: 1,
+                                    typeCode: 'test',
+                                    meta: { recv_assist: { [`n${actorNationId}`]: [actorNationId, 50] } },
+                                }
+                              : null
+                    ),
+                    findMany: vi.fn(async () => []),
+                    update: nationUpdate,
+                },
+                city: {
+                    findUnique: vi.fn(async () => ({
+                        id: 10,
+                        nationId: actorNationId,
+                        supplyState: 1,
+                    })),
+                    findMany: vi.fn(async () => options?.cities ?? []),
+                    update: cityUpdate,
+                },
+                diplomacy: {
+                    findUnique: vi.fn(
+                        async ({
+                            where,
+                        }: {
+                            where: { srcNationId_destNationId: { srcNationId: number; destNationId: number } };
+                        }) =>
+                            diplomacyRows.find(
+                                (row) =>
+                                    row.srcNationId === where.srcNationId_destNationId.srcNationId &&
+                                    row.destNationId === where.srcNationId_destNationId.destNationId
+                            ) ?? null
+                    ),
+                    findMany: vi.fn(async () => diplomacyRows),
+                    update: diplomacyUpdate,
+                },
+                worldState: {
+                    findFirst: vi.fn(async () => ({
+                        currentYear: 200,
+                        currentMonth: 3,
+                        config: { environment: { mapName: 'che' } },
+                    })),
+                },
+                logEntry: { createMany: logCreateMany },
+                message: { updateMany: messageUpdateMany },
+                $queryRaw: queryRaw,
             },
-            nation: {
-                findUnique: vi.fn(async ({ where }: { where: { id: number } }) =>
-                    where.id === actorNationId
-                        ? {
-                              id: actorNationId,
-                              name: '위',
-                              color: '#fff',
-                              capitalCityId: 10,
-                              chiefGeneralId: actor.id,
-                              gold: 1000,
-                              rice: 1000,
-                              tech: 0,
-                              level: 1,
-                              typeCode: 'test',
-                              meta: {},
-                          }
-                        : where.id === proposerNationId
-                          ? {
-                                id: proposerNationId,
-                                name: '촉',
-                                color: '#000',
-                                capitalCityId: 20,
-                                chiefGeneralId: proposer.id,
-                                gold: 1000,
-                                rice: 1000,
-                                tech: 0,
-                                level: 1,
-                                typeCode: 'test',
-                                meta: { recv_assist: { [`n${actorNationId}`]: [actorNationId, 50] } },
-                            }
-                          : null
-                ),
-                findMany: vi.fn(async () => []),
-                update: nationUpdate,
-            },
-            city: {
-                findUnique: vi.fn(async () => ({
-                    id: 10,
-                    nationId: actorNationId,
-                    supplyState: 1,
-                })),
-                findMany: vi.fn(async () => options?.cities ?? []),
-                update: cityUpdate,
-            },
-            diplomacy: {
-                findUnique: vi.fn(
-                    async ({
-                        where,
-                    }: {
-                        where: { srcNationId_destNationId: { srcNationId: number; destNationId: number } };
-                    }) =>
-                        diplomacyRows.find(
-                            (row) =>
-                                row.srcNationId === where.srcNationId_destNationId.srcNationId &&
-                                row.destNationId === where.srcNationId_destNationId.destNationId
-                        ) ?? null
-                ),
-                findMany: vi.fn(async () => diplomacyRows),
-                update: diplomacyUpdate,
-            },
-            worldState: {
-                findFirst: vi.fn(async () => ({
-                    currentYear: 200,
-                    currentMonth: 3,
-                    config: { environment: { mapName: 'che' } },
-                })),
-            },
-            logEntry: { createMany: logCreateMany },
-            message: { updateMany: messageUpdateMany },
-            $queryRaw: queryRaw,
-        }, { changeJournal });
+            { changeJournal }
+        );
         return {
             caller,
             actor,
@@ -811,7 +878,7 @@ describe('messages router missing-flow compatibility', () => {
             where: { id: { in: [31] } },
             data: { validUntil: expect.any(Date) },
         });
-        expect(setup.queryRaw).toHaveBeenCalledTimes(8);
+        expect(setup.queryRaw).toHaveBeenCalledTimes(9);
     });
 
     it('declines a diplomatic prompt without changing diplomacy', async () => {

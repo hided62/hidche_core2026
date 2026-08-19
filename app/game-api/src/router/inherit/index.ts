@@ -12,6 +12,7 @@ import {
     isWarTraitKey,
 } from '@sammo-ts/logic';
 import type { InheritBuffType } from '@sammo-ts/logic';
+import { simpleSerialize } from '@sammo-ts/logic/war/utils.js';
 import {
     appendInheritanceLog,
     buildResetCost,
@@ -153,17 +154,24 @@ const buildTurnTimeZoneList = (tickMinutes: number): string[] => {
     return zones;
 };
 
-const alignToTurnBase = (time: Date, tickMinutes: number): Date => {
-    const base = new Date(time.getFullYear(), time.getMonth(), time.getDate() - 1, 1, 0, 0, 0);
-    const elapsedMinutes = Math.floor((time.getTime() - base.getTime()) / 60000);
-    const alignedMinutes = elapsedMinutes - (elapsedMinutes % tickMinutes);
-    return new Date(base.getTime() + alignedMinutes * 60000);
+const formatTurnTimeBaseLabel = (value: number): string => {
+    const wholeSeconds = Math.trunc(value);
+    const hours = String(Math.trunc(wholeSeconds / 3600)).padStart(2, '0');
+    const minutes = String(Math.trunc((wholeSeconds % 3600) / 60)).padStart(2, '0');
+    return `${hours}:${minutes}`;
 };
 
-const formatTimeLabel = (value: Date): string => {
-    const hours = String(value.getHours()).padStart(2, '0');
-    const minutes = String(value.getMinutes()).padStart(2, '0');
-    return `${hours}:${minutes}`;
+export const resolveResetTurnTimeBase = (options: {
+    hiddenSeed: string | number;
+    userId: string;
+    previousTurnTimeBase: string | number;
+    tickSeconds: number;
+}): { nextTurnTimeBase: number; nextTurnTimeLabel: string } => {
+    const rng = new LiteHashDRBG(
+        simpleSerialize(options.hiddenSeed, 'ResetTurnTime', options.userId, options.previousTurnTimeBase)
+    );
+    const nextTurnTimeBase = rng.nextFloat1() * Math.max(60, options.tickSeconds);
+    return { nextTurnTimeBase, nextTurnTimeLabel: formatTurnTimeBaseLabel(nextTurnTimeBase) };
 };
 
 const resolveSeasonValue = (meta: Record<string, unknown>): number | null => {
@@ -491,7 +499,7 @@ export const inheritRouter = router({
 
         const worldState = await resolveWorld(ctx);
         const worldMeta = asRecord(worldState.meta);
-        if (typeof worldMeta.isUnited === 'number' && worldMeta.isUnited !== 0) {
+        if (asNumber(worldMeta.isunited ?? worldMeta.isUnited, 0) !== 0) {
             throw new TRPCError({ code: 'FORBIDDEN', message: '이미 천하가 통일되었습니다.' });
         }
 
@@ -553,7 +561,7 @@ export const inheritRouter = router({
 
         const general = await ctx.db.general.findFirst({
             where: { userId },
-            select: { id: true, meta: true, turnTime: true },
+            select: { id: true, meta: true, turnTick: true },
         });
         if (!general) {
             throw new TRPCError({ code: 'PRECONDITION_FAILED', message: '장수가 존재하지 않습니다.' });
@@ -568,21 +576,30 @@ export const inheritRouter = router({
             throw new TRPCError({ code: 'BAD_REQUEST', message: '유산 포인트가 부족합니다.' });
         }
 
-        const tickMinutes = Math.max(1, Math.round(worldState.tickSeconds / 60));
-        const baseTime = alignToTurnBase(general.turnTime ?? new Date(), tickMinutes);
-        const seedBase = `${asRecord(worldState.meta).hiddenSeed ?? 'inherit'}:ResetTurnTime:${userId}:${general.id}`;
-        const rng = new LiteHashDRBG(seedBase);
-        const offsetMinutes = rng.nextFloat1() * tickMinutes;
-        let nextTurnTime = new Date(baseTime.getTime() + offsetMinutes * 60000);
-        if (nextTurnTime.getTime() <= Date.now()) {
-            nextTurnTime = new Date(nextTurnTime.getTime() + tickMinutes * 60000);
-        }
+        const generalMeta = asRecord(general.meta);
+        const rawSeedTurnTime = generalMeta.nextTurnTimeBase ?? general.turnTick ?? 0;
+        const seedTurnTime =
+            typeof rawSeedTurnTime === 'string' || typeof rawSeedTurnTime === 'number'
+                ? rawSeedTurnTime
+                : typeof rawSeedTurnTime === 'bigint'
+                  ? Number(rawSeedTurnTime)
+                  : 0;
+        const hiddenSeed =
+            typeof worldMeta.hiddenSeed === 'string' || typeof worldMeta.hiddenSeed === 'number'
+                ? worldMeta.hiddenSeed
+                : 'inherit';
+        const { nextTurnTimeBase, nextTurnTimeLabel } = resolveResetTurnTimeBase({
+            hiddenSeed,
+            userId,
+            previousTurnTimeBase: seedTurnTime,
+            tickSeconds: worldState.tickSeconds,
+        });
 
         await patchGeneral(ctx, general.id, {
-            turnTime: nextTurnTime.toISOString(),
             meta: {
-                ...asRecord(general.meta),
+                ...generalMeta,
                 inheritResetTurnTime: nextLevel,
+                nextTurnTimeBase,
             },
         });
 
@@ -592,9 +609,9 @@ export const inheritRouter = router({
             userId,
             worldState.currentYear,
             worldState.currentMonth,
-            `${cost} 포인트로 턴 시간을 바꾸어 다다음 턴부터 ${formatTimeLabel(nextTurnTime)} 적용`
+            `${cost} 포인트로 턴 시간을 바꾸어 다다음 턴부터 ${nextTurnTimeLabel} 적용`
         );
-        return { ok: true, nextTurnTime: nextTurnTime.toISOString() };
+        return { ok: true, nextTurnTimeBase, nextTurnTimeLabel };
     }),
     resetStat: authedProcedure
         .input(

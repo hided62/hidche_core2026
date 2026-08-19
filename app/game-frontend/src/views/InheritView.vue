@@ -167,10 +167,7 @@ const resetStatErrors = computed(() => {
 });
 
 const turnTimeLabel = computed(() => {
-    if (!turnTimeResult.value) {
-        return null;
-    }
-    return formatServerDateTime(turnTimeResult.value);
+    return turnTimeResult.value;
 });
 
 const isUnited = computed(() => status.value?.isUnited ?? false);
@@ -349,7 +346,7 @@ const resetTurnTime = async () => {
     }
     await runAction(async () => {
         const result = await trpc.inherit.resetTurnTime.mutate();
-        turnTimeResult.value = result.nextTurnTime;
+        turnTimeResult.value = result.nextTurnTimeLabel;
     });
 };
 

@@ -17,10 +17,11 @@ import type {
     GeneralActionResolver,
     GeneralActionEffect,
 } from '@sammo-ts/logic/actions/engine.js';
-import { createGeneralPatchEffect, createLogEffect } from '@sammo-ts/logic/actions/engine.js';
+import { createGeneralPatchEffect, createLogEffect, createMessageEffect } from '@sammo-ts/logic/actions/engine.js';
 import { LogCategory, LogScope } from '@sammo-ts/logic/logging/types.js';
 import { z } from 'zod';
 import type { TurnCommandEnv } from '@sammo-ts/logic/actions/turn/commandEnv.js';
+import { JosaUtil } from '@sammo-ts/common';
 import type { ActionContextBase, ActionContextOptions } from '@sammo-ts/logic/actions/turn/actionContext.js';
 import { tryApplyUniqueLottery } from '@sammo-ts/logic/rewards/uniqueLottery.js';
 import type { GeneralTurnCommandSpec } from './index.js';
@@ -31,6 +32,7 @@ export interface EmployResolveContext<
 > extends GeneralActionResolveContext<TriggerState> {
     destGeneral?: General;
     env?: TurnCommandEnv;
+    messageTime: Date;
 }
 
 const ACTION_NAME = '등용';
@@ -131,6 +133,38 @@ export class ActionResolver<
             });
         }
 
+        if (ctx.nation) {
+            const destNation = ctx.worldView
+                ?.listNations?.()
+                .find((candidate) => candidate.id === destGeneral.nationId);
+            const josaRo = JosaUtil.pick(ctx.nation.name, '로');
+            effects.push(
+                createMessageEffect({
+                    msgType: 'private',
+                    src: {
+                        generalId: general.id,
+                        generalName: general.name,
+                        nationId: ctx.nation.id,
+                        nationName: ctx.nation.name,
+                        color: ctx.nation.color,
+                        icon: '',
+                    },
+                    dest: {
+                        generalId: destGeneral.id,
+                        generalName: destGeneral.name,
+                        nationId: destGeneral.nationId,
+                        nationName: destNation?.name ?? '재야',
+                        color: destNation?.color ?? '#000000',
+                        icon: '',
+                    },
+                    text: `${ctx.nation.name}${josaRo} 망명 권유 서신`,
+                    time: ctx.messageTime,
+                    validUntil: new Date('9999-12-31T12:59:59.000Z'),
+                    option: { action: 'scout' },
+                })
+            );
+        }
+
         effects.push(
             createLogEffect(
                 `<Y>${general.name}</>(${ctx.nation?.name ?? '재야'})로 부터 등용 권유 서신이 도착했습니다.`,
@@ -215,6 +249,10 @@ export const actionContextBuilder = (base: ActionContextBase, options: ActionCon
         ...base,
         destGeneral,
         env: options.scenarioConfig.const as unknown as TurnCommandEnv,
+        messageTime:
+            (base.general as General & { turnTime?: Date }).turnTime instanceof Date
+                ? (base.general as General & { turnTime: Date }).turnTime
+                : options.world.lastTurnTime,
     };
 };
 

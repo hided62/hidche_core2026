@@ -27,7 +27,9 @@ const resolveTickMinutes = (world: InMemoryTurnWorld, override?: number): number
 
 const isWorldUnited = (world: InMemoryTurnWorld): boolean => {
     const meta = asRecord(world.getState().meta);
-    return asNumber(meta.isunited ?? meta.isUnited, 0) !== 0;
+    // Ref keeps the event game running at isunited=1. Only the post-unification
+    // choice wait (2) and the completed invader game (3) stop month progress.
+    return asNumber(meta.isunited ?? meta.isUnited, 0) >= 2;
 };
 
 export class InMemoryTurnProcessor implements TurnProcessor {

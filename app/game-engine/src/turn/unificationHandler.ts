@@ -6,6 +6,11 @@ import type { PendingUnificationAuctionCancellation } from './types.js';
 import { queueYearbookSnapshot } from './yearbookHandler.js';
 
 const UNIFIER_POINT = 2000;
+const INVADER_MESSAGE_OPTIONS = [
+    { args: [-2, -1.2, 15_000, -1], difficulty: '어려움' },
+    { args: [-2, -1.2, -1, -0.5], difficulty: '보통' },
+    { args: [-1, -1, -0.8, 0], difficulty: '쉬움' },
+] as const;
 
 const buildUnificationLog = (nationName: string): LogEntryDraft => ({
     scope: LogScope.SYSTEM,
@@ -117,6 +122,47 @@ export const createUnificationHandler = (options: {
                 world.pushLog(buildGeneralActionLog(general.id, winner.id, winner.name));
             }
             world.pushLog(buildUnificationLog(winner.name));
+
+            if (cities.some((city) => city.level === 4)) {
+                const eligibleGenerals = world
+                    .listGenerals()
+                    .filter(
+                        (general) => Boolean(general.userId) && general.nationId === winner.id && general.npcState < 2
+                    )
+                    .sort((left, right) => left.id - right.id);
+                const recipients: (typeof eligibleGenerals)[number][] = [];
+                for (let officerLevel = 12; officerLevel >= 5 && recipients.length < 2; officerLevel -= 1) {
+                    const recipient = eligibleGenerals.find((general) => general.officerLevel === officerLevel);
+                    if (recipient) recipients.push(recipient);
+                }
+                for (const recipient of recipients) {
+                    for (const invader of INVADER_MESSAGE_OPTIONS) {
+                        world.queueMessage({
+                            msgType: 'private',
+                            src: {
+                                generalId: 0,
+                                generalName: '',
+                                nationId: 0,
+                                nationName: 'System',
+                                color: '#000000',
+                                icon: '',
+                            },
+                            dest: {
+                                generalId: recipient.id,
+                                generalName: recipient.name,
+                                nationId: winner.id,
+                                nationName: winner.name,
+                                color: winner.color,
+                                icon: recipient.picture ?? '',
+                            },
+                            text: `이벤트 게임으로 이민족[${invader.difficulty}]을 소환`,
+                            time: context.turnTime,
+                            validUntil: new Date('9999-12-31T00:00:00.000Z'),
+                            option: { action: 'raiseInvader', args: [...invader.args], used: false },
+                        });
+                    }
+                }
+            }
 
             queueYearbookSnapshot(world, options.profileName, context.currentYear, context.currentMonth);
             world.queueUnificationFinalization({

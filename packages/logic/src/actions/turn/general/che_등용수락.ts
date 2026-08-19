@@ -295,7 +295,17 @@ export class ActionResolver<
             format: LogFormat.YEAR_MONTH,
         });
 
-        return { effects };
+        const deletedTroopIds: number[] = [];
+        if (general.troopId === general.id) {
+            deletedTroopIds.push(general.id);
+            for (const member of context.worldView?.listGenerals() ?? []) {
+                if (member.id !== general.id && member.troopId === general.id) {
+                    effects.push(createGeneralPatchEffect({ troopId: 0 }, member.id));
+                }
+            }
+        }
+
+        return { effects, deletedTroopIds };
     }
 }
 

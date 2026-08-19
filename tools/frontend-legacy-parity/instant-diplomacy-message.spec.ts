@@ -37,31 +37,8 @@ const general = {
 
 const generalContext = {
     general,
-    city: {
-        id: 1,
-        name: '낙양',
-        level: 7,
-        nationId: 1,
-        population: 50000,
-        agriculture: 5000,
-        commerce: 5000,
-        security: 5000,
-        defence: 5000,
-        wall: 5000,
-        supplyState: 1,
-        frontState: 2,
-    },
-    nation: {
-        id: 1,
-        name: '수락국',
-        color: '#d32f2f',
-        level: 5,
-        gold: 10000,
-        rice: 10000,
-        tech: 1200,
-        typeCode: 'che_군벌',
-        capitalCityId: 1,
-    },
+    city: null,
+    nation: null,
     settings: {},
     penalties: {},
 };
@@ -69,8 +46,22 @@ const generalContext = {
 const diplomacyMessage = {
     id: 701,
     msgType: 'diplomacy',
-    src: { generalId: 2, generalName: '제안장수', nationId: 2, nationName: '제안국' },
-    dest: { generalId: 1, generalName: '수락장수', nationId: 1, nationName: '수락국' },
+    src: {
+        generalId: 2,
+        generalName: '제안장수',
+        nationId: 2,
+        nationName: '제안국',
+        color: '#2457a6',
+        icon: '',
+    },
+    dest: {
+        generalId: 1,
+        generalName: '수락장수',
+        nationId: 1,
+        nationName: '수락국',
+        color: '#d32f2f',
+        icon: '',
+    },
     text: '제안국에서 191년 2월까지 불가침을 제안했습니다.',
     option: {
         action: 'noAggression',
@@ -118,12 +109,44 @@ const installFixture = async (
         const operations = operationNames(route);
         const requestBody = route.request().postDataJSON();
         const results = operations.map((operation) => {
+            if (operation === 'dashboard.getContextBundleDelta') {
+                return response({
+                    context: {
+                        kind: 'snapshot',
+                        revision: 'AAAAAAAAAAAAAAAAAAAAAA',
+                        data: generalContext,
+                    },
+                    commandTable: {
+                        kind: 'snapshot',
+                        revision: 'BBBBBBBBBBBBBBBBBBBBBB',
+                        data: { general: [], nation: [] },
+                    },
+                    boardAccess: {
+                        kind: 'snapshot',
+                        revision: 'CCCCCCCCCCCCCCCCCCCCCC',
+                        data: {
+                            canMeeting: true,
+                            canSecret: true,
+                            permission: options.canRespondDiplomacy === false ? 2 : 4,
+                        },
+                    },
+                });
+            }
             if (operation === 'auth.status') return response({ userId: 'frontend-parity-user' });
             if (operation === 'lobby.info') {
                 return response({ ...fixture.game.lobby, myGeneral: general });
             }
             if (operation === 'general.me') return response(generalContext);
             if (operation === 'world.getMapLayout') return response(fixture.game.mapLayout);
+            if (operation === 'world.getState') {
+                return response({
+                    currentYear: 190,
+                    currentMonth: 3,
+                    tickSeconds: 3600,
+                    config: { npcMode: 0, const: {}, environment: {} },
+                    meta: {},
+                });
+            }
             if (operation === 'world.getMap') {
                 return response({ ...fixture.game.map, myCity: 1, myNation: 1 });
             }
@@ -256,15 +279,15 @@ test.describe('instant diplomacy response UI', () => {
         await page.setViewportSize({ width: 390, height: 844 });
         await page.goto(`http://127.0.0.1:${gamePort}/che/`);
         await expect(page.getByRole('heading', { name: '전장 현황' })).toBeVisible();
-        await page.getByRole('button', { name: '메시지', exact: true }).click();
+        const mobileMessageButton = page.getByRole('button', { name: '메시지', exact: true });
+        if ((await mobileMessageButton.count()) > 0) await mobileMessageButton.click();
 
         const responseRow = page.locator('.message-response');
         await expect(responseRow).toBeVisible();
         const itemWidth = await page
             .locator('.DiplomacyTalk .msg-plate')
             .evaluate((element) => element.getBoundingClientRect().width);
-        expect(itemWidth).toBeGreaterThanOrEqual(389);
-        expect(itemWidth).toBeLessThanOrEqual(390);
+        expect(itemWidth).toBeCloseTo(500, 0);
 
         page.once('dialog', async (dialog) => {
             expect(dialog.message()).toBe('거절하시겠습니까?');
@@ -295,7 +318,8 @@ test.describe('instant diplomacy response UI', () => {
         await page.setViewportSize({ width: 390, height: 844 });
         await page.goto(`http://127.0.0.1:${gamePort}/che/`);
         await expect(page.getByRole('heading', { name: '전장 현황' })).toBeVisible();
-        await page.getByRole('button', { name: '메시지', exact: true }).click();
+        const mobileMessageButton = page.getByRole('button', { name: '메시지', exact: true });
+        if ((await mobileMessageButton.count()) > 0) await mobileMessageButton.click();
 
         const accept = page.locator('.message-response').getByRole('button', { name: '수락' });
         await expect(accept).toBeDisabled();

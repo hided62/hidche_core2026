@@ -8,6 +8,7 @@ import { InMemoryFlushStore } from '../src/auth/flushStore.js';
 import type { DatabaseClient, GameApiContext, GeneralRow } from '../src/context.js';
 import type { TurnDaemonTransport } from '../src/daemon/transport.js';
 import { appRouter } from '../src/router.js';
+import { resolveResetTurnTimeBase } from '../src/router/inherit/index.js';
 
 const buildGeneral = (overrides: Partial<GeneralRow> = {}): GeneralRow => ({
     id: 7,
@@ -276,6 +277,43 @@ describe('inherit router actor and permission boundaries', () => {
                 update: { value: 800 },
             })
         );
+    });
+
+    it('queues Ref-compatible nextTurnTimeBase without moving the current scheduled turn', async () => {
+        const fixture = buildContext({
+            inheritancePoint: 2_000,
+            general: buildGeneral({ meta: { nextTurnTimeBase: 123_456 } }),
+        });
+        const expected = resolveResetTurnTimeBase({
+            hiddenSeed: 'test-seed',
+            userId: 'user-1',
+            previousTurnTimeBase: 123_456,
+            tickSeconds: worldState.tickSeconds,
+        });
+
+        await expect(appRouter.createCaller(fixture.context).inherit.resetTurnTime()).resolves.toEqual({
+            ok: true,
+            ...expected,
+        });
+        expect(fixture.requestCommand).toHaveBeenCalledWith({
+            type: 'patchGeneral',
+            generalId: 7,
+            patch: {
+                meta: {
+                    nextTurnTimeBase: expected.nextTurnTimeBase,
+                    inheritResetTurnTime: 0,
+                },
+            },
+        });
+        expect(fixture.pointUpsert).toHaveBeenCalledWith(expect.objectContaining({ update: { value: 1_000 } }));
+        expect(fixture.logCreate).toHaveBeenCalledWith({
+            data: {
+                userId: 'user-1',
+                year: 200,
+                month: 4,
+                text: `1000 포인트로 턴 시간을 바꾸어 다다음 턴부터 ${expected.nextTurnTimeLabel} 적용`,
+            },
+        });
     });
 
     it('reveals a target owner to the caller without using the caller general id from input', async () => {

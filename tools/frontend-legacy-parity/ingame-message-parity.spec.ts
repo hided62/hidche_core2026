@@ -41,31 +41,8 @@ const general = {
 
 const generalContext = {
     general,
-    city: {
-        id: 1,
-        name: '낙양',
-        level: 7,
-        nationId: 1,
-        population: 50000,
-        agriculture: 5000,
-        commerce: 5000,
-        security: 5000,
-        defence: 5000,
-        wall: 5000,
-        supplyState: 1,
-        frontState: 2,
-    },
-    nation: {
-        id: 1,
-        name: '테스트국',
-        color: '#d32f2f',
-        level: 5,
-        gold: 10000,
-        rice: 10000,
-        tech: 1200,
-        typeCode: 'che_군벌',
-        capitalCityId: 1,
-    },
+    city: null,
+    nation: null,
     settings: {},
     penalties: {},
 };
@@ -111,10 +88,28 @@ const buildMessages = (permission: number) => ({
         {
             id: 103,
             msgType: 'private',
-            src: foreignTarget,
+            src: target(9, '상대일반', 2, '상대국', '#2457a6'),
             dest: ownTarget,
             text: '개인 메시지 본문',
             option: {},
+            time: messageTime,
+        },
+        {
+            id: 105,
+            msgType: 'private',
+            src: foreignTarget,
+            dest: ownTarget,
+            text: '상대국으로 망명 권유 서신',
+            option: { action: 'scout', used: false },
+            time: messageTime,
+        },
+        {
+            id: 106,
+            msgType: 'private',
+            src: target(0, '', 0, 'System', '#000000'),
+            dest: ownTarget,
+            text: '이벤트 게임으로 이민족[보통]을 소환',
+            option: { action: 'raiseInvader', args: [-2, -1.2, -1, -0.5], used: false },
             time: messageTime,
         },
     ],
@@ -192,12 +187,40 @@ const installFixture = async (
     await page.route('**/che/api/trpc/**', async (route) => {
         const body = route.request().postDataJSON();
         const results = operationNames(route).map((operation) => {
+            if (operation === 'dashboard.getContextBundleDelta') {
+                return response({
+                    context: {
+                        kind: 'snapshot',
+                        revision: 'AAAAAAAAAAAAAAAAAAAAAA',
+                        data: generalContext,
+                    },
+                    commandTable: {
+                        kind: 'snapshot',
+                        revision: 'BBBBBBBBBBBBBBBBBBBBBB',
+                        data: { general: [], nation: [] },
+                    },
+                    boardAccess: {
+                        kind: 'snapshot',
+                        revision: 'CCCCCCCCCCCCCCCCCCCCCC',
+                        data: { canMeeting: true, canSecret: true, permission: options.permission },
+                    },
+                });
+            }
             if (operation === 'auth.status') return response({ userId: 'frontend-parity-user' });
             if (operation === 'lobby.info') {
                 return response({ ...fixture.game.lobby, myGeneral: general });
             }
             if (operation === 'general.me') return response(generalContext);
             if (operation === 'world.getMapLayout') return response(fixture.game.mapLayout);
+            if (operation === 'world.getState') {
+                return response({
+                    currentYear: 197,
+                    currentMonth: 7,
+                    tickSeconds: 3600,
+                    config: { npcMode: 0, const: {}, environment: {} },
+                    meta: {},
+                });
+            }
             if (operation === 'world.getMap') {
                 return response({ ...fixture.game.map, myCity: 1, myNation: 1 });
             }
@@ -251,7 +274,10 @@ const openMessages = async (page: Page, viewport: { width: number; height: numbe
     await page.goto(`http://127.0.0.1:${gamePort}/che/`);
     await expect(page.getByRole('heading', { name: '전장 현황' })).toBeVisible();
     if (viewport.width <= 1024) {
-        await page.getByRole('button', { name: '메시지', exact: true }).click();
+        const mobileMessageButton = page.getByRole('button', { name: '메시지', exact: true });
+        if ((await mobileMessageButton.count()) > 0) {
+            await mobileMessageButton.click();
+        }
     }
     await expect(page.locator('.MessagePanel')).toBeVisible();
 };
@@ -359,8 +385,8 @@ test('exposes ambassador targets, reply, read, delete, and successful send inter
     await expect(select.locator('option[value="8"]')).toBeDisabled();
     await expect(select.locator('option[value="9"]')).toBeEnabled();
 
-    await page.locator('.PrivateTalk .msg-target').filter({ hasText: '상대장수' }).click();
-    await expect(select).toHaveValue('8');
+    await page.locator('.PrivateTalk .msg-target').filter({ hasText: '상대일반' }).click();
+    await expect(select).toHaveValue('9');
 
     await page.locator('.PrivateTalk').getByRole('button', { name: '모두 읽음' }).click();
     await expect.poll(() => mutations.filter((entry) => entry.operation === 'messages.readLatest').length).toBe(1);
@@ -375,6 +401,37 @@ test('exposes ambassador targets, reply, read, delete, and successful send inter
     await page.getByRole('button', { name: '서신전달&갱신' }).click();
     await expect(page.getByLabel('메시지 입력')).toHaveValue('');
     await expect.poll(() => mutations.filter((entry) => entry.operation === 'messages.send').length).toBe(1);
+});
+
+test('accepts recruitment and declines invader prompts through private-message controls', async ({ page }) => {
+    const mutations = await installFixture(page, { permission: 4 });
+    await openMessages(page, { width: 500, height: 900 });
+
+    const recruitment = page.locator('.PrivateTalk .msg-plate').filter({ hasText: '망명 권유 서신' });
+    const invader = page.locator('.PrivateTalk .msg-plate').filter({ hasText: '이민족[보통]을 소환' });
+    await expect(recruitment.getByRole('button', { name: '수락' })).toBeVisible();
+    await expect(invader.getByRole('button', { name: '거절' })).toBeVisible();
+
+    page.once('dialog', async (dialog) => {
+        expect(dialog.message()).toBe('수락하시겠습니까?');
+        await dialog.accept();
+    });
+    await recruitment.getByRole('button', { name: '수락' }).click();
+    await expect.poll(() => mutations.filter((entry) => entry.operation === 'messages.respond').length).toBe(1);
+
+    page.once('dialog', async (dialog) => {
+        expect(dialog.message()).toBe('거절하시겠습니까?');
+        await dialog.accept();
+    });
+    await invader.getByRole('button', { name: '거절' }).click();
+    await expect.poll(() => mutations.filter((entry) => entry.operation === 'messages.respond').length).toBe(2);
+
+    const responses = mutations.filter((entry) => entry.operation === 'messages.respond');
+    expect(responses).toHaveLength(2);
+    expect(JSON.stringify(responses[0]!.body)).toContain('"messageId":105');
+    expect(JSON.stringify(responses[0]!.body)).toContain('"response":true');
+    expect(JSON.stringify(responses[1]!.body)).toContain('"messageId":106');
+    expect(JSON.stringify(responses[1]!.body)).toContain('"response":false');
 });
 
 test('redacts diplomacy for a low-permission general and preserves the failed-send error flow', async ({ page }) => {

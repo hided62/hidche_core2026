@@ -2149,13 +2149,14 @@ export const createReservedTurnHandler = async (options: {
     };
 };
 
-export type ImmediateGeneralActionKey = 'che_거병' | 'che_접경귀환';
+export type ImmediateGeneralActionKey = 'che_거병' | 'che_접경귀환' | 'che_등용수락';
 
 export type ImmediateGeneralActionExecutor = {
     execute(input: {
         actionKey: ImmediateGeneralActionKey;
         generalId: number;
         rng: RandUtil;
+        args?: Record<string, unknown>;
         refreshKillturn?: boolean;
     }): Promise<{ ok: boolean; reason?: string }>;
 };
@@ -2182,7 +2183,7 @@ export const createImmediateGeneralActionExecutor = async (options: {
     });
     const generalModuleLoader = new GeneralTurnCommandLoader();
     const contextBuilders = new Map<string, ActionContextBuilder>();
-    for (const actionKey of ['che_거병', 'che_접경귀환'] as const) {
+    for (const actionKey of ['che_거병', 'che_접경귀환', 'che_등용수락'] as const) {
         if (!definitions.has(actionKey)) {
             continue;
         }
@@ -2202,10 +2203,7 @@ export const createImmediateGeneralActionExecutor = async (options: {
             if (!definition) {
                 return {
                     ok: false,
-                    reason:
-                        input.actionKey === 'che_거병'
-                            ? '거병할 수 없는 모드입니다.'
-                            : '접경귀환을 사용할 수 없는 모드입니다.',
+                    reason: `${input.actionKey}을 실행할 수 없는 모드입니다.`,
                 };
             }
 
@@ -2215,7 +2213,7 @@ export const createImmediateGeneralActionExecutor = async (options: {
             }
             const city = options.world.getCityById(general.cityId) ?? undefined;
             const nation = general.nationId > 0 ? options.world.getNationById(general.nationId) : null;
-            const args = definition.parseArgs({});
+            const args = definition.parseArgs(input.args ?? {});
             if (args === null) {
                 return { ok: false, reason: '인자가 올바르지 않습니다.' };
             }
@@ -2246,7 +2244,7 @@ export const createImmediateGeneralActionExecutor = async (options: {
                 const failureText =
                     definition.formatConstraintFailure?.(reason, constraintCtx, args, view) ??
                     `${reason} ${definition.name} 실패.`;
-                if (input.actionKey === 'che_접경귀환') {
+                if (input.actionKey === 'che_접경귀환' || input.actionKey === 'che_등용수락') {
                     options.world.pushLog({
                         ...createActionLog(failureText),
                         generalId: general.id,
@@ -2334,23 +2332,34 @@ export const createImmediateGeneralActionExecutor = async (options: {
 
             const progressionLogs: LogEntryDraft[] = [];
             let nextGeneral = resolution.general as TurnGeneral;
-            if (input.actionKey === 'che_거병') {
-                const activeActionAmount =
-                    (
-                        definition as GeneralActionDefinition & {
-                            getInheritanceActiveActionAmount?: (context: ActionContextBase, args: unknown) => number;
-                        }
-                    ).getInheritanceActiveActionAmount?.(actionContext, args) ?? 0;
-                const nextMeta = {
-                    ...nextGeneral.meta,
-                    inherit_active_action:
-                        readMetaNumber(asRecord(nextGeneral.meta), 'inherit_active_action', 0) + activeActionAmount,
-                    ...(input.refreshKillturn ? { killturn: readMetaNumber(asRecord(state.meta), 'killturn', 0) } : {}),
+            const activeActionAmount =
+                (
+                    definition as GeneralActionDefinition & {
+                        getInheritanceActiveActionAmount?: (context: ActionContextBase, args: unknown) => number;
+                    }
+                ).getInheritanceActiveActionAmount?.(actionContext, args) ?? 0;
+            if (
+                Number.isFinite(activeActionAmount) &&
+                activeActionAmount !== 0 &&
+                nextGeneral.userId &&
+                nextGeneral.npcState < 2
+            ) {
+                nextGeneral = {
+                    ...nextGeneral,
+                    meta: {
+                        ...nextGeneral.meta,
+                        inherit_active_action:
+                            readMetaNumber(asRecord(nextGeneral.meta), 'inherit_active_action', 0) + activeActionAmount,
+                        ...(input.refreshKillturn
+                            ? { killturn: readMetaNumber(asRecord(state.meta), 'killturn', 0) }
+                            : {}),
+                    },
                 };
+            }
+            if (input.actionKey === 'che_거병') {
                 nextGeneral = applyLegacyGeneralProgression(
                     {
                         ...nextGeneral,
-                        meta: nextMeta,
                         lastTurn: {
                             command: definition.name,
                             arg: extractArgsRecord(args),
@@ -2395,6 +2404,9 @@ export const createImmediateGeneralActionExecutor = async (options: {
                 } else if (effect.type === 'message:add') {
                     options.world.queueMessage(effect.draft);
                 }
+            }
+            for (const troopId of resolution.deletedTroopIds ?? []) {
+                options.world.removeTroop(troopId);
             }
             for (const log of [...resolution.logs, ...progressionLogs]) {
                 options.world.pushLog(log);
