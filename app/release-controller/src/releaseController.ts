@@ -5,6 +5,7 @@ import { stripVTControlCharacters } from 'node:util';
 import {
     assertReleaseComponents,
     buildTurboReleaseCommand,
+    buildTurboReleaseTaskCommand,
     type BuildCommand,
     type BuildProgressEvent,
     type BuildRunner,
@@ -43,10 +44,12 @@ const buildGatewayReleaseCommands = (
     };
     return [
         ...(needsInstall ? [{ command: 'pnpm', args: ['install', '--frozen-lockfile'], cwd: workspaceRoot, env }] : []),
-        buildTurboReleaseCommand(
+        buildTurboReleaseCommand(workspaceRoot, config.workspaceRoot, ['@sammo-ts/gateway-api'], env),
+        buildTurboReleaseTaskCommand(
             workspaceRoot,
             config.workspaceRoot,
-            ['@sammo-ts/gateway-api', '@sammo-ts/gateway-frontend'],
+            'build:release',
+            ['@sammo-ts/gateway-frontend'],
             env
         ),
     ];

@@ -4,6 +4,7 @@ import { describe, expect, it } from 'vitest';
 
 import {
     buildTurboReleaseCommand,
+    buildTurboReleaseTaskCommand,
     MAX_BUILD_OUTPUT_CHARS,
     PnpmBuildRunner,
     resolveReleaseTurboCacheDir,
@@ -57,6 +58,28 @@ describe('Turbo release build plan', () => {
             cwd: '/srv/core/profile-worktrees/commit',
             env: { NODE_ENV: 'production' },
         });
+    });
+
+    it('uses the same bounded cache policy for a release-specific task', () => {
+        expect(
+            buildTurboReleaseTaskCommand(
+                '/srv/core/profile-worktrees/commit',
+                '/srv/core/repository',
+                'build:release',
+                ['@sammo-ts/game-frontend'],
+                { VITE_APP_BASE_PATH: '/che' }
+            ).args
+        ).toEqual([
+            'exec',
+            'turbo',
+            'run',
+            'build:release',
+            '--filter=@sammo-ts/game-frontend',
+            '--cache-dir=/srv/core/repository/.turbo/release-cache',
+            '--concurrency=1',
+            '--ui=stream',
+            '--output-logs=new-only',
+        ]);
     });
 });
 

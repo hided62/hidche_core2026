@@ -173,3 +173,4 @@ playwright-report/
 test-results/
 uploads/
 .release-dist/
+app/game-frontend/.release-build/

@@ -51,15 +51,19 @@ profile 범위 권한과 별개인 전역 `admin.releases.manage` 권한이 필�
   `.turbo/release-cache`이므로 commit별 worktree가 달라도 재사용됩니다. 별도
   persistent 경로가 필요하면 controller/orchestrator 환경에 `TURBO_CACHE_DIR`을
   설정합니다. Cache는 재생성 가능한 build artifact이며 DB/Redis backup이 아닙니다.
-- `NODE_ENV`와 Vite가 추론한 `VITE_*`는 build hash에 포함됩니다. 따라서 base path나
-  API URL이 다른 frontend artifact를 cache hit로 잘못 복원하지 않습니다.
+- Server build 뒤 frontend release는 `typecheck:release`와 Vite bundle을 별도 Turbo
+  task로 실행합니다. 타입검사 hash에는 frontend 자체와 직접 해석하는 common/infra/
+  logic/game-engine/game-api/gateway-api source, Prisma schema와 기본 navigation resource가
+  들어가며, bundle hash에는 `NODE_ENV`와 모든 `VITE_*`가 포함됩니다. 따라서 내부 type
+  source, base path나 API URL이 다른 frontend artifact를 cache hit로 잘못 복원하지
+  않습니다. 일반 개발용 `pnpm --filter <frontend> build`의 typecheck 계약은 그대로입니다.
   `NODE_OPTIONS`와 `RAYON_NUM_THREADS`는 출력에는 영향을 주지 않는 resource 제한으로
   build child에 전달됩니다.
 - `TURN_DAEMON_NODE_OPTIONS`가 설정되어 있으면 Gateway orchestrator는 그 값을
   turn-daemon PM2 process의 `NODE_OPTIONS`로만 덮어씁니다. API·frontend·worker는
   공용 `NODE_OPTIONS`를 계속 사용합니다. Profile의 `vue-tsc`와 Vite build만 더 큰
   heap이 필요하면 `PROFILE_FRONTEND_BUILD_NODE_OPTIONS`를 지정합니다. 이 값은
-  profile frontend build child의 `NODE_OPTIONS`만 덮어쓰며 server package Turbo
+  profile frontend release task의 `NODE_OPTIONS`만 덮어쓰며 server package Turbo
   build와 배포 후 PM2 process의 heap은 바꾸지 않습니다. 전용 heap을 늘릴 때는
   runtime container hard limit과 전체 process RSS를 먼저 확인합니다.
 - migration 이후 이전 애플리케이션으로 돌아갈 때 schema 하위 호환성이
@@ -80,7 +84,8 @@ Gateway process 전환이 진행 중인 profile migration·seed 실행자를 중
 
 `DB 유지 배포`는 현재 시즌을 계속 운영하면서 코드를 교체할 때 사용합니다.
 
-1. 대상 commit의 game frontend, API, engine과 worker artifact를 빌드합니다.
+1. 대상 commit의 game API target과 그 transitive engine/worker artifact를 빌드한 뒤,
+   profile frontend typecheck와 bundle을 공유 Turbo cache에서 복원하거나 생성합니다.
 2. 기존 profile PM2 process를 정지합니다.
 3. profile game schema에 `prisma migrate deploy`를 실행합니다.
 4. Scenario seed를 실행하지 않고 frontend, API, daemon과 worker를 시작합니다.
@@ -89,6 +94,15 @@ Gateway process 전환이 진행 중인 profile migration·seed 실행자를 중
 이 모드는 현재 scenario, status와 인게임 DB를 유지합니다. Migration이
 데이터를 변환할 수 있으므로 대상 migration의 운영 데이터 영향은 배포 전에
 별도로 검토해 주세요.
+
+Profile frontend bundle은 package의 `.release-build`에 고정 생성되어 profile base
+path별 Turbo cache에 저장됩니다. Orchestrator는 cache 복원 후 이를
+`.release-dist/<profileName>/game-frontend`에 staging directory를 거쳐 교체합니다.
+따라서 같은 commit·같은 공개 prefix의 재배포는 `vue-tsc`와 Vite를 다시 실행하지
+않고, 여러 instance가 같은 prefix를 쓰더라도 각 runtime target은 따로 materialize됩니다.
+`RESET`은 선택 worktree의 Gateway profile-seed CLI도 실행하므로 기존처럼
+`gateway-api`까지 server build에 포함하고, seed를 호출하지 않는 `DEPLOY`만 명시적
+server target을 `game-api`로 제한합니다.
 
 Profile process 전환 중에는 frontend/API port가 잠시 닫힐 수 있습니다. 이때 이미
 열린 Gateway 로비의 profile 상세 조회가 실패하면 로비는 10초 request timeout과
@@ -208,7 +222,8 @@ Gateway는 자기 process를 직접 교체하지 않습니다. 관리자 화면�
 
 1. Source ref를 commit SHA로 고정하고 commit worktree를 준비합니다.
 2. Release manifest의 protocol, component와 migration head를 검증합니다.
-3. Gateway API와 frontend를 공유 Turbo cache로 빌드하고 gateway migration을 적용합니다.
+3. Gateway API server build를 공유 Turbo cache에서 준비하고, frontend는 별도 cached
+   typecheck와 Vite bundle task로 한 번씩 실행한 뒤 gateway migration을 적용합니다.
 4. `sammo:gateway-api`, `sammo:gateway-frontend`,
    `sammo:gateway-orchestrator`를 새 worktree definition으로 전환합니다.
 5. Gateway API `/healthz`, `/gateway/`와 세 PM2 process의 `online` 상태를
