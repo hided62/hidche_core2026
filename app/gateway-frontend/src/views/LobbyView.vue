@@ -410,8 +410,8 @@ const handleEnter = async (profile: LobbyProfile, targetPath: string) => {
                 >
                     서 버 선 택
                 </div>
-                <div class="overflow-x-auto" data-testid="profile-table-scroll">
-                    <table class="w-full min-w-[760px] text-sm text-left">
+                <div class="profile-table-frame" data-testid="profile-table-scroll">
+                    <table class="profile-table w-full text-sm text-left">
                         <thead class="bg-zinc-800 text-zinc-400 uppercase text-xs">
                             <tr>
                                 <th class="px-4 py-3 border-b border-zinc-700 w-24 text-center">서 버</th>
@@ -429,7 +429,7 @@ const handleEnter = async (profile: LobbyProfile, targetPath: string) => {
                                 class="hover:bg-zinc-800/50 transition-colors"
                             >
                                 <!-- Server Name -->
-                                <td class="px-4 py-4 text-center border-r border-zinc-800">
+                                <td class="profile-server-cell px-4 py-4 text-center border-r border-zinc-800">
                                     <div
                                         :style="{ color: profile.color }"
                                         class="text-lg font-bold cursor-help"
@@ -478,7 +478,7 @@ const handleEnter = async (profile: LobbyProfile, targetPath: string) => {
                                 </td>
 
                                 <!-- Server Info -->
-                                <td class="px-4 py-4 border-r border-zinc-800">
+                                <td class="profile-info-cell px-4 py-4 border-r border-zinc-800">
                                     <template v-if="profileDetails[profile.profileName]">
                                         <div class="space-y-1">
                                             <div>
@@ -532,7 +532,7 @@ const handleEnter = async (profile: LobbyProfile, targetPath: string) => {
                                 </td>
 
                                 <!-- Character Info -->
-                                <td class="px-2 py-4 w-16 border-r border-zinc-800">
+                                <td class="profile-portrait-cell px-2 py-4 w-16 border-r border-zinc-800">
                                     <div
                                         v-if="profileDetails[profile.profileName]?.myGeneral"
                                         class="w-12 h-12 mx-auto bg-zinc-800 rounded overflow-hidden border border-zinc-700"
@@ -546,7 +546,7 @@ const handleEnter = async (profile: LobbyProfile, targetPath: string) => {
                                         />
                                     </div>
                                 </td>
-                                <td class="px-4 py-4 border-r border-zinc-800 text-center">
+                                <td class="profile-general-cell px-4 py-4 border-r border-zinc-800 text-center">
                                     <div v-if="profileDetails[profile.profileName]?.myGeneral" class="font-medium">
                                         {{ profileDetails[profile.profileName]?.myGeneral?.name }}
                                     </div>
@@ -554,7 +554,7 @@ const handleEnter = async (profile: LobbyProfile, targetPath: string) => {
                                 </td>
 
                                 <!-- Action -->
-                                <td class="px-4 py-4 text-center">
+                                <td class="profile-action-cell px-4 py-4 text-center">
                                     <template v-if="profileDetails[profile.profileName]">
                                         <button
                                             v-if="profileDetails[profile.profileName]?.myGeneral"
@@ -785,12 +785,87 @@ const handleEnter = async (profile: LobbyProfile, targetPath: string) => {
     padding: 10px;
 }
 
+.profile-table-frame {
+    overflow-x: auto;
+}
+
+.profile-table {
+    min-width: 760px;
+}
+
 .map-preview-tabs {
     display: flex;
     gap: 4px;
     overflow-x: auto;
     border-bottom: 1px solid #3f3f46;
     padding: 0 2px;
+}
+
+@media (max-width: 799px) {
+    .profile-table-frame {
+        overflow-x: visible;
+    }
+
+    .profile-table {
+        display: block;
+        width: 100%;
+        min-width: 0;
+    }
+
+    .profile-table thead {
+        display: none;
+    }
+
+    .profile-table tbody {
+        display: grid;
+        gap: 1px;
+        background: #27272a;
+    }
+
+    .profile-table tbody tr {
+        display: grid;
+        min-width: 0;
+        grid-template-areas:
+            'server info info'
+            'portrait general action';
+        grid-template-columns: 88px minmax(0, 1fr) 104px;
+        background: #18181b;
+    }
+
+    .profile-table tbody td {
+        box-sizing: border-box;
+        width: auto;
+        min-width: 0;
+        padding: 12px 8px;
+    }
+
+    .profile-server-cell {
+        grid-area: server;
+        border-bottom: 1px solid #27272a;
+    }
+
+    .profile-server-cell > div {
+        overflow-wrap: anywhere;
+        white-space: normal;
+    }
+
+    .profile-info-cell {
+        grid-area: info;
+        border-right: 0;
+        border-bottom: 1px solid #27272a;
+    }
+
+    .profile-portrait-cell {
+        grid-area: portrait;
+    }
+
+    .profile-general-cell {
+        grid-area: general;
+    }
+
+    .profile-action-cell {
+        grid-area: action;
+    }
 }
 
 .map-preview-tab {
