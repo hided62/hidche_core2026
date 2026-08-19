@@ -47,6 +47,7 @@ type NavigationFixture = {
     refreshDelayMs?: number;
     accessLimitAfterCalls?: number;
     largeCommandTable?: boolean;
+    draftCommandTable?: boolean;
     refCommandCategories?: boolean;
     currentYear?: number;
     currentMonth?: number;
@@ -154,8 +155,104 @@ const refCommandCategoryFixture = ['개인', '내정', '군사', '인사', '계�
     ],
 }));
 
-const commandTableFixture = (large: boolean, blockedCount = 0, refCategories = false) => ({
-    general: refCategories
+const draftCommandGroups = [
+    {
+        category: '국가',
+        values: [
+            {
+                key: 'che_건국',
+                name: '건국',
+                reqArg: true,
+                possible: true,
+                status: 'needsInput' as const,
+                inputFields: [
+                    { key: 'nationName', label: '국가명', kind: 'text' as const, required: true, min: 1, max: 18 },
+                    {
+                        key: 'nationType',
+                        label: '국가 성향',
+                        kind: 'select' as const,
+                        required: true,
+                        optionSource: 'nationTypes' as const,
+                    },
+                    {
+                        key: 'colorType',
+                        label: '국기 색상',
+                        kind: 'select' as const,
+                        required: true,
+                        optionSource: 'colors' as const,
+                    },
+                ],
+            },
+            {
+                key: 'che_물자원조',
+                name: '물자 원조',
+                reqArg: true,
+                possible: true,
+                status: 'needsInput' as const,
+                inputFields: [
+                    {
+                        key: 'destNationId',
+                        label: '대상 국가',
+                        kind: 'select' as const,
+                        required: true,
+                        optionSource: 'nations' as const,
+                    },
+                    {
+                        key: 'amountList',
+                        label: '지원 물자',
+                        kind: 'numberTuple' as const,
+                        required: true,
+                        min: 0,
+                        step: 1,
+                        tupleLabels: ['금', '쌀'],
+                    },
+                ],
+            },
+            {
+                key: 'che_군량매매',
+                name: '군량 매매',
+                reqArg: true,
+                possible: true,
+                status: 'needsInput' as const,
+                inputFields: [
+                    { key: 'buyRice', label: '거래', kind: 'boolean' as const, required: true },
+                    { key: 'amount', label: '수량', kind: 'number' as const, required: true, min: 100, step: 100 },
+                ],
+            },
+            {
+                key: 'che_장비매매',
+                name: '장비 매매',
+                reqArg: true,
+                possible: true,
+                status: 'needsInput' as const,
+                inputFields: [
+                    {
+                        key: 'itemType',
+                        label: '장비 종류',
+                        kind: 'select' as const,
+                        required: true,
+                        options: [
+                            { value: 'horse', label: '명마' },
+                            { value: 'weapon', label: '무기' },
+                        ],
+                    },
+                    {
+                        key: 'itemCode',
+                        label: '장비',
+                        kind: 'select' as const,
+                        required: true,
+                        optionSource: 'items' as const,
+                    },
+                ],
+            },
+        ],
+    },
+];
+
+const commandTableFixture = (large: boolean, blockedCount = 0, refCategories = false, draftCommands = false) => ({
+    general: draftCommands
+        ? draftCommandGroups
+        : refCategories
         ? refCommandCategoryFixture
         : large
           ? ['내정', '군사', '계략'].map((category, categoryIndex) => ({
@@ -185,13 +282,43 @@ const commandTableFixture = (large: boolean, blockedCount = 0, refCategories = f
     nation: [],
     inputOptions: {
         cities: Array.from({ length: 20 }, (_, index) => ({ value: index + 1, label: `도시 ${index + 1}` })),
-        nations: [],
+        nations: draftCommands
+            ? [
+                  { value: 1, label: '아국', color: '#008000' },
+                  { value: 2, label: '적국', color: '#800000' },
+              ]
+            : [],
         generals: [],
         crewTypes: [],
         armTypes: [],
-        nationTypes: [],
-        colors: [],
-        items: {},
+        nationTypes: draftCommands ? [{ value: 'che_도적', label: '도적' }] : [],
+        colors: draftCommands
+            ? [
+                  { value: 0, label: '색상 1', color: '#FF0000' },
+                  { value: 15, label: '색상 16', color: '#6495ED' },
+              ]
+            : [],
+        items: draftCommands
+            ? {
+                  horse: [
+                      { value: 'None', label: '없음' },
+                      { value: '적토마', label: '적토마' },
+                  ],
+                  weapon: [
+                      { value: 'None', label: '없음' },
+                      { value: '청룡언월도', label: '청룡언월도' },
+                  ],
+              }
+            : {},
+        context: draftCommands
+            ? {
+                  actorGold: 10_000,
+                  actorRice: 20_000,
+                  nationGold: 30_000,
+                  nationRice: 40_000,
+                  nationLevel: 3,
+              }
+            : undefined,
     },
 });
 
@@ -455,7 +582,8 @@ const installFixture = async (page: Page, state: NavigationFixture) => {
                               data: commandTableFixture(
                                   state.largeCommandTable === true,
                                   state.commandBlockedCount,
-                                  state.refCommandCategories === true
+                                  state.refCommandCategories === true,
+                                  state.draftCommandTable === true
                               ),
                           }
                         : input.known.commandTable === currentCommandTableRevision
@@ -2775,6 +2903,104 @@ test('mobile single document refreshes once and preserves tokens on lobby return
     });
     expect(state.operations).not.toContain('auth.logout');
 });
+
+for (const viewport of [
+    { name: 'desktop', width: 1200, height: 900 },
+    { name: 'mobile', width: 500, height: 900 },
+] as const) {
+    test(`preserves every command argument draft during realtime activity refreshes on ${viewport.name}`, async ({
+        page,
+    }) => {
+        test.setTimeout(60_000);
+        const state: NavigationFixture = {
+            officerLevel: 5,
+            permission: 2,
+            nationLevel: 3,
+            stage: 0,
+            npcMode: 1,
+            generalMeCalls: 0,
+            operations: [],
+            draftCommandTable: true,
+            reservedTurns: Array.from({ length: 30 }, (_, index) => ({ index, action: '휴식', args: {} })),
+        };
+        await installRealtimeHarness(page);
+        await installFixture(page, state);
+        await page.setViewportSize({ width: viewport.width, height: viewport.height });
+        await waitForMain(page);
+        await expect
+            .poll(() =>
+                page.evaluate(() => (window as unknown as { __hasMainRealtime: () => boolean }).__hasMainRealtime())
+            )
+            .toBe(true);
+
+        await page.getByRole('button', { name: '1턴 명령 입력', exact: true }).click();
+        const picker = page.getByTestId('command-picker');
+        await picker.getByRole('button', { name: '국가', exact: true }).click();
+
+        let refreshIndex = 0;
+        const refreshActivityAndCommands = async () => {
+            const callsBefore = state.generalMeCalls;
+            const operationsBefore = state.operations.length;
+            refreshIndex += 1;
+            state.commandTableRevision = String.fromCharCode(80 + refreshIndex).repeat(22);
+            state.commandTableOperations = [
+                {
+                    op: 'replace',
+                    path: '/inputOptions/context/actorGold',
+                    value: 10_000 + refreshIndex,
+                },
+            ];
+            await emitReadModelInvalidation(
+                page,
+                readModelInvalidation({ commands: true, records: true, frontStatus: true })
+            );
+            await expect.poll(() => state.generalMeCalls, { timeout: 4_000 }).toBe(callsBefore + 1);
+            await expect
+                .poll(() => state.operations.slice(operationsBefore).sort(), { timeout: 4_000 })
+                .toEqual(
+                    ['dashboard.getContextBundleDelta', 'general.getFrontStatus', 'general.getRecentRecords'].sort()
+                );
+        };
+
+        await picker.getByRole('button', { name: '건국', exact: true }).click();
+        await picker.getByLabel('국가명').fill('초안보존국');
+        await picker.getByLabel('국기 색상').selectOption('15');
+        await refreshActivityAndCommands();
+        await expect(picker.getByLabel('국가명')).toHaveValue('초안보존국');
+        await expect(picker.getByLabel('국기 색상')).toHaveValue('15');
+        await expect(picker.getByLabel('국기 색상')).toHaveCSS('background-color', 'rgb(100, 149, 237)');
+        await picker.screenshot({ path: test.info().outputPath(`command-draft-${viewport.name}.png`) });
+
+        await picker.getByRole('button', { name: '명령 다시 선택', exact: true }).click();
+        await picker.getByRole('button', { name: '물자 원조', exact: true }).click();
+        await picker.getByLabel('대상 국가').selectOption('2');
+        await picker.getByLabel('금').fill('111');
+        await picker.getByLabel('쌀').fill('222');
+        await refreshActivityAndCommands();
+        await expect(picker.getByLabel('대상 국가')).toHaveValue('2');
+        await expect(picker.getByLabel('금')).toHaveValue('111');
+        await expect(picker.getByLabel('쌀')).toHaveValue('222');
+
+        await picker.getByRole('button', { name: '명령 다시 선택', exact: true }).click();
+        await picker.getByRole('button', { name: '군량 매매', exact: true }).click();
+        await picker.getByRole('button', { name: '쌀 판매', exact: true }).click();
+        await picker.getByLabel('수량').fill('700');
+        await refreshActivityAndCommands();
+        await expect(picker.getByRole('button', { name: '쌀 판매', exact: true })).toHaveClass(/selected/u);
+        await expect(picker.getByLabel('수량')).toHaveValue('700');
+
+        await picker.getByRole('button', { name: '명령 다시 선택', exact: true }).click();
+        await picker.getByRole('button', { name: '장비 매매', exact: true }).click();
+        await picker.getByLabel('장비 종류', { exact: true }).selectOption('weapon');
+        await picker.getByLabel('장비', { exact: true }).selectOption('청룡언월도');
+        await refreshActivityAndCommands();
+        await expect(picker.getByLabel('장비 종류', { exact: true })).toHaveValue('weapon');
+        await expect(picker.getByLabel('장비', { exact: true })).toHaveValue('청룡언월도');
+        await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(
+            viewport.width
+        );
+    });
+}
 
 test('realtime read-model events skip clock-only work, merge bursts, patch in place, and stop off-route', async ({
     page,

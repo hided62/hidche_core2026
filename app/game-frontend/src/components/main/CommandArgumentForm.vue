@@ -2,6 +2,11 @@
 import { computed, reactive, watch, type CSSProperties } from 'vue';
 import MapViewer from './MapViewer.vue';
 import { commandArgumentPresentation } from '../command/commandArgumentPresentation';
+import {
+    commandArgumentFieldContract,
+    shouldPreserveCommandArgumentValue,
+    type CommandArgumentFieldContract,
+} from '../command/commandArgumentDraft';
 import { legacyNationTextColor } from '../../utils/legacyNationColor';
 import type {
     CommandInputContext,
@@ -28,6 +33,8 @@ const emit = defineEmits<{
 }>();
 
 const values = reactive<Record<string, unknown>>({});
+const previousFieldContracts = new Map<string, CommandArgumentFieldContract>();
+let initializedCommandKey: string | null = null;
 const presentation = computed(() => commandArgumentPresentation(props.commandKey));
 const visibleFields = computed(() => props.fields.filter((entry) => entry.kind !== 'hidden'));
 
@@ -87,11 +94,39 @@ const defaultValue = (field: CommandInputField): unknown => {
     return '';
 };
 
-const initialize = () => {
-    for (const key of Object.keys(values)) delete values[key];
-    for (const field of props.fields) values[field.key] = defaultValue(field);
+const synchronizeValues = () => {
+    const commandChanged = initializedCommandKey !== props.commandKey;
+    initializedCommandKey = props.commandKey;
+    const activeKeys = new Set(props.fields.map((field) => field.key));
+    for (const key of Object.keys(values)) {
+        if (!activeKeys.has(key)) delete values[key];
+    }
+    for (const field of props.fields) {
+        const preserve =
+            !commandChanged &&
+            shouldPreserveCommandArgumentValue(
+                field,
+                previousFieldContracts.get(field.key),
+                values,
+                optionsFor(field)
+            );
+        if (!preserve) values[field.key] = defaultValue(field);
+    }
     const itemCodeField = props.fields.find((field) => field.key === 'itemCode');
-    if (itemCodeField) values.itemCode = defaultValue(itemCodeField);
+    if (
+        itemCodeField &&
+        (commandChanged ||
+            !shouldPreserveCommandArgumentValue(
+                itemCodeField,
+                previousFieldContracts.get(itemCodeField.key),
+                values,
+                optionsFor(itemCodeField)
+            ))
+    ) {
+        values.itemCode = defaultValue(itemCodeField);
+    }
+    previousFieldContracts.clear();
+    for (const field of props.fields) previousFieldContracts.set(field.key, commandArgumentFieldContract(field));
 };
 
 const setSelectValue = (field: CommandInputField, rawValue: string) => {
@@ -352,7 +387,11 @@ const isValid = computed(() =>
     })
 );
 
-watch(() => [props.commandKey, props.fields, props.options] as const, initialize, { immediate: true, deep: true });
+watch(
+    () => [props.commandKey, props.fields, props.options, props.mapData?.myCity, props.mapData?.myNation] as const,
+    synchronizeValues,
+    { immediate: true, deep: true }
+);
 watch(
     () => ({ ...values }),
     () => {
