@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import type { TurnSchedule } from '@sammo-ts/logic';
+import { finalizeLogEntry, type TurnSchedule } from '@sammo-ts/logic';
 import type { TurnGeneral, TurnWorldSnapshot, TurnWorldState } from '../src/turn/types.js';
 import { InMemoryTurnWorld } from '../src/turn/inMemoryWorld.js';
 import { InMemoryReservedTurnStore } from '../src/turn/reservedTurnStore.js';
@@ -41,8 +41,9 @@ const mockDate = new Date('0189-01-01T00:00:00Z');
 
 // We need a mock Prisma client that satisfies the shape required by InMemoryReservedTurnStore
 // It expects { generalTurn: { findMany, deleteMany, createMany }, nationTurn: { ... } }
-const createMockPrisma = (initialGeneralRows: any[] = []) => {
+const createMockPrisma = (initialGeneralRows: any[] = [], initialNationRows: any[] = []) => {
     let generalRows = [...initialGeneralRows];
+    let nationRows = [...initialNationRows];
     return {
         generalTurn: {
             findMany: vi.fn(async ({ where } = {}) => {
@@ -67,9 +68,28 @@ const createMockPrisma = (initialGeneralRows: any[] = []) => {
             }),
         },
         nationTurn: {
-            findMany: vi.fn(async () => []),
-            deleteMany: vi.fn(async () => ({ count: 0 })),
-            createMany: vi.fn(async () => ({ count: 0 })),
+            findMany: vi.fn(async ({ where } = {}) => {
+                if (where?.nationId && where?.officerLevel) {
+                    return nationRows
+                        .filter((row) => row.nationId === where.nationId && row.officerLevel === where.officerLevel)
+                        .sort((left, right) => left.turnIdx - right.turnIdx);
+                }
+                return nationRows;
+            }),
+            deleteMany: vi.fn(async ({ where } = {}) => {
+                if (where?.nationId && where?.officerLevel) {
+                    nationRows = nationRows.filter(
+                        (row) => row.nationId !== where.nationId || row.officerLevel !== where.officerLevel
+                    );
+                }
+                return { count: 0 };
+            }),
+            createMany: vi.fn(async ({ data }) => {
+                if (Array.isArray(data)) {
+                    nationRows.push(...data);
+                }
+                return { count: data.length };
+            }),
         },
     };
 };
@@ -423,8 +443,17 @@ describe('Reserved Turn Execution Integration', () => {
         };
 
         const invalidRows = [{ generalId: 1, turnIdx: 0, actionCode: 'che_이동', arg: { destCityId: 'bad' } }];
+        const invalidNationRows = [
+            {
+                nationId: 1,
+                officerLevel: 5,
+                turnIdx: 0,
+                actionCode: 'che_천도',
+                arg: { destCityId: 'bad' },
+            },
+        ];
 
-        const mockPrisma = createMockPrisma(invalidRows);
+        const mockPrisma = createMockPrisma(invalidRows, invalidNationRows);
         const reservedTurnStore = new InMemoryReservedTurnStore(mockPrisma as any, {
             maxGeneralTurns: 10,
             maxNationTurns: 10,
@@ -456,7 +485,26 @@ describe('Reserved Turn Execution Integration', () => {
 
         const dirty = world.consumeDirtyState();
         expect(world.getGeneralById(1)!.cityId).toBe(1);
-        expect(dirty.logs.some((log) => log.text.includes('인자가 올바르지 않습니다. 이동 실패.'))).toBe(true);
+        expect(dirty.logs.find((log) => log.text.includes('인자가 올바르지 않습니다. 천도 실패.'))).toMatchObject({
+            scope: 'GENERAL',
+            category: 'ACTION',
+            generalId: 1,
+        });
+        expect(dirty.logs.find((log) => log.text.includes('인자가 올바르지 않습니다. 이동 실패.'))).toMatchObject({
+            scope: 'GENERAL',
+            category: 'ACTION',
+            generalId: 1,
+        });
+        const personalActionLogs = dirty.logs.filter(
+            (log) => log.scope === 'GENERAL' && log.category === 'ACTION'
+        );
+        expect(personalActionLogs.length).toBeGreaterThan(0);
+        expect(personalActionLogs.every((log) => log.generalId === 1)).toBe(true);
+        expect(
+            personalActionLogs.map((log) =>
+                finalizeLogEntry(log, { year: invalidState.currentYear, month: invalidState.currentMonth })
+            )
+        ).not.toContain(null);
         expect(dirty.logs.some((log) => log.text.includes('아무것도 실행하지 않았습니다.'))).toBe(true);
     });
 
@@ -620,6 +668,7 @@ describe('Reserved Turn Execution Integration', () => {
         const denyLog = dirty.logs.find((log) => log.text.includes('같은 도시입니다.'));
         expect(denyLog?.text).toContain('이동 실패.');
         expect(denyLog?.meta?.constraintName).toBe('notSameDestCity');
+        expect(denyLog?.generalId).toBe(1);
         expect(dirty.logs.some((log) => log.text.includes('아무것도 실행하지 않았습니다.'))).toBe(true);
     });
 

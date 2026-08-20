@@ -888,8 +888,10 @@ export const runCoreTurnCommandTrace = async (
             id: index + 1,
             scope: log.scope,
             category: log.category,
-            generalId: log.generalId ?? (log.scope === 'GENERAL' ? actor.id : undefined),
-            nationId: log.nationId ?? (log.scope === 'NATION' ? actor.nationId : undefined),
+            // Keep the product draft unchanged. Inferring an owner here hid
+            // GENERAL logs that finalizeLogEntry would reject in production.
+            generalId: log.generalId,
+            nationId: log.nationId,
             year: state.currentYear,
             month: state.currentMonth,
             text: log.text,
