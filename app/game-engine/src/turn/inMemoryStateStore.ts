@@ -1,4 +1,5 @@
 import type { TurnCheckpoint, TurnStateStore } from '../lifecycle/types.js';
+import { asNumber, asRecord } from '@sammo-ts/common';
 import type { InMemoryTurnWorld } from './inMemoryWorld.js';
 
 export class InMemoryTurnStateStore implements TurnStateStore {
@@ -27,6 +28,11 @@ export class InMemoryTurnStateStore implements TurnStateStore {
 
     async saveCheckpoint(checkpoint?: TurnCheckpoint): Promise<void> {
         this.world.setCheckpoint(checkpoint);
+    }
+
+    async shouldHaltScheduledRuns(): Promise<boolean> {
+        const meta = asRecord(this.world.getState().meta);
+        return asNumber(meta.isunited ?? meta.isUnited, 0) >= 2;
     }
 
     async loadGameClock(wallNow = new Date(Date.now())): Promise<{ mode: 'realtime' | 'manual'; now: Date }> {

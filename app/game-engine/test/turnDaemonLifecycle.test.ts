@@ -14,6 +14,40 @@ import {
 const addMinutes = (time: Date, minutes: number): Date => new Date(time.getTime() + minutes * 60_000);
 
 describe('TurnDaemonLifecycle', () => {
+    it('does not schedule another processor run after the world reaches a terminal united state', async () => {
+        const clock = new ManualClock(new Date('2026-01-01T00:00:00.000Z').getTime());
+        const controlQueue = new InMemoryControlQueue();
+        const processor = { run: vi.fn() };
+        const lifecycle = new TurnDaemonLifecycle(
+            {
+                clock,
+                controlQueue,
+                getNextTickTime: (value) => addMinutes(value, 60),
+                stateStore: {
+                    loadLastTurnTime: async () => new Date('2042-01-01T00:00:00.000Z'),
+                    loadNextGeneralTurnTime: async () => new Date('2042-01-01T00:30:00.000Z'),
+                    saveLastTurnTime: async () => {},
+                    loadCheckpoint: async () => undefined,
+                    saveCheckpoint: async () => {},
+                    shouldHaltScheduledRuns: async () => {
+                        controlQueue.enqueue({ type: 'shutdown', reason: 'terminal world verified' });
+                        return true;
+                    },
+                },
+                processor,
+            },
+            {
+                profile: 'terminal-united',
+                defaultBudget: { budgetMs: 100, maxGenerals: 10, catchUpCap: 1 },
+            }
+        );
+
+        await lifecycle.start();
+
+        expect(processor.run).not.toHaveBeenCalled();
+        expect(lifecycle.getStatus().nextTurnTime).toBeUndefined();
+    });
+
     it('runs manual game time to each monthly snapshot without waiting for wall time', async () => {
         const wallNow = new Date('2026-01-01T00:00:00.000Z');
         const operationalClock = new ManualClock(wallNow.getTime());

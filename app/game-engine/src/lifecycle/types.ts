@@ -52,6 +52,7 @@ export interface TurnStateStore {
     saveLastTurnTime(turnTime: Date): Promise<void>;
     loadCheckpoint(): Promise<TurnCheckpoint | undefined>;
     saveCheckpoint(checkpoint?: TurnCheckpoint): Promise<void>;
+    shouldHaltScheduledRuns?(): Promise<boolean>;
     loadGameClock?(wallNow?: Date): Promise<{ mode: GameClockMode; now: Date }>;
     advanceGameClockTo?(target: Date, wallNow: Date): Promise<void>;
 }

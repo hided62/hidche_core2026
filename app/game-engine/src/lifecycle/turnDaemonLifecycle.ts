@@ -152,6 +152,12 @@ export class TurnDaemonLifecycle {
                 this.status.state = 'idle';
             }
 
+            if ((await this.stateStore.shouldHaltScheduledRuns?.()) ?? false) {
+                this.status.nextTurnTime = undefined;
+                await this.clock.sleepMs(500);
+                continue;
+            }
+
             if (this.pendingRun) {
                 await this.runOnce(this.pendingRun);
                 this.pendingRun = null;
