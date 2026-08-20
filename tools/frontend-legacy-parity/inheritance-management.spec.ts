@@ -82,16 +82,32 @@ const statusFixture = {
     availableSpecialWar: [{ key: 'che_선봉', name: '선봉', info: '공격에 유리합니다.' }],
     availableUnique: [
         {
+            key: 'che_명마_07_백마',
+            name: '백마(+7)',
+            rawName: '백마',
+            info: '기동력을 올려주는 유니크 명마입니다.',
+            slot: 'horse',
+        },
+        {
             key: 'che_무기_12_칠성검',
             name: '칠성검(+12)',
             rawName: '칠성검',
             info: '무력을 올려주는 유니크 무기입니다.',
+            slot: 'weapon',
         },
         {
             key: 'che_서적_07_논어',
             name: '논어(+7)',
             rawName: '논어',
             info: '지력을 올려주는 유니크 서적입니다.',
+            slot: 'book',
+        },
+        {
+            key: 'che_보물_도기',
+            name: '도기',
+            rawName: '도기',
+            info: '전투를 돕는 유니크 도구입니다.',
+            slot: 'item',
         },
     ],
     availableTargetGenerals: [{ id: 8, name: '조조' }],
@@ -197,7 +213,21 @@ test.describe('inheritance management legacy parity', () => {
         await page.setViewportSize({ width: 1280, height: 900 });
         await page.goto(gameUrl);
         await expect(page.locator('#container')).toBeVisible();
-        await expect(page.locator('#specific-unique')).toHaveValue('che_무기_12_칠성검');
+        await expect(page.locator('#specific-unique')).toHaveValue('che_명마_07_백마');
+        await expect(page.locator('#specific-unique optgroup')).toHaveCount(4);
+        expect(
+            await page.locator('#specific-unique optgroup').evaluateAll((groups) =>
+                groups.map((group) => ({
+                    label: group.getAttribute('label'),
+                    values: [...group.querySelectorAll('option')].map((option) => option.value),
+                }))
+            )
+        ).toEqual([
+            { label: '명마', values: ['che_명마_07_백마'] },
+            { label: '무기', values: ['che_무기_12_칠성검'] },
+            { label: '서적', values: ['che_서적_07_논어'] },
+            { label: '도구', values: ['che_보물_도기'] },
+        ]);
 
         const desktop = await page.evaluate(() => {
             const rect = (selector: string) => {
