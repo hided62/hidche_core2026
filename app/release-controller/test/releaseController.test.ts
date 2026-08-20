@@ -2,14 +2,17 @@ import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 
-import type {
-    BuildRunner,
-    GatewayReleaseOperationRecord,
-    GatewayReleaseRepository,
-    GatewayReleaseStateRecord,
-    GitWorkspaceManager,
-    ProcessDefinition,
-    ProcessManager,
+import {
+    DEFAULT_MANAGED_WORKSPACE_KEEP_NEWEST,
+    DEFAULT_MANAGED_WORKSPACE_RETENTION_MS,
+    type BuildRunner,
+    type GatewayReleaseOperationRecord,
+    type GatewayReleaseRepository,
+    type GatewayReleaseStateRecord,
+    type GitWorkspaceManager,
+    type ManagedWorkspaceCleanupOptions,
+    type ProcessDefinition,
+    type ProcessManager,
 } from '@sammo-ts/gateway-api';
 import { afterEach, describe, expect, it } from 'vitest';
 
@@ -178,6 +181,68 @@ it('rejects Gateway definitions before switching processes when Redis connection
 });
 
 describe('GatewayReleaseController', () => {
+    it('protects active, rollback, and running-process worktrees while delegating bounded cleanup', async () => {
+        const active = '/srv/sammo/releases/active';
+        const previous = '/srv/sammo/releases/previous';
+        const controllerWorkspace = '/srv/sammo/releases/controller';
+        const stale = '/srv/sammo/releases/stale';
+        const managedPaths = [active, previous, controllerWorkspace, stale];
+        const cleanupCalls: ManagedWorkspaceCleanupOptions[] = [];
+        const harness = createRepository();
+        const workspaceManager = {
+            listManagedWorkspaces: async () =>
+                managedPaths.map((root) => ({
+                    root,
+                    commitSha: SHA,
+                    lastUsedAt: new Date('2025-01-01T00:00:00.000Z'),
+                })),
+            cleanup: async (options: ManagedWorkspaceCleanupOptions) => {
+                cleanupCalls.push(options);
+                const protectedPaths = new Set(options.protectedPaths);
+                return {
+                    removed: managedPaths.filter((workspace) => !protectedPaths.has(workspace)),
+                    skipped: managedPaths.filter((workspace) => protectedPaths.has(workspace)),
+                };
+            },
+        } as unknown as GitWorkspaceManager;
+        const controller = new GatewayReleaseController(
+            {
+                ...harness.repository,
+                getState: async () => ({
+                    ...state,
+                    activeWorkspace: active,
+                    previousCommitSha: SHA,
+                    previousWorkspace: previous,
+                }),
+            },
+            workspaceManager,
+            { run: async () => ({ ok: true, exitCode: 0, output: '' }) },
+            {
+                list: async () => [
+                    {
+                        name: 'sammo:release-controller',
+                        status: 'online',
+                        cwd: `${controllerWorkspace}/app/release-controller`,
+                    },
+                    { name: 'old-build', status: 'stopped', cwd: `${stale}/app/gateway-api` },
+                ],
+                start: async () => {},
+                stop: async () => {},
+                delete: async () => {},
+            },
+            config
+        );
+
+        await expect(controller.cleanupStaleWorkspaces()).resolves.toEqual({
+            removed: [stale],
+            skipped: [active, previous, controllerWorkspace],
+        });
+        expect(cleanupCalls[0]).toMatchObject({
+            retentionMs: DEFAULT_MANAGED_WORKSPACE_RETENTION_MS,
+            keepNewest: DEFAULT_MANAGED_WORKSPACE_KEEP_NEWEST,
+        });
+    });
+
     it('builds, migrates, switches all gateway roles, verifies readiness, and publishes atomically', async () => {
         const workspace = await createReleaseWorkspace();
         const harness = createRepository();
