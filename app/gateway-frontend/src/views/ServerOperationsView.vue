@@ -2,11 +2,14 @@
 import { formatServerDateTime, serverDateTimeInputToIso } from '@sammo-ts/common';
 import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue';
 
+import CompactHelp from '../components/CompactHelp.vue';
 import ServerProfileTabs from '../components/ServerProfileTabs.vue';
 import { useToast } from '../composables/useToast';
 import AdminConsoleLayout from '../layouts/AdminConsoleLayout.vue';
 import {
     normalizeProfileResetDefaults,
+    RESET_AUTORUN_LABELS,
+    RESET_OPTION_COPY,
     SYSTEM_PROFILE_RESET_DEFAULTS,
     type ProfileResetDefaults,
     type ResetAutorunOption,
@@ -150,6 +153,15 @@ const form = reactive({
     scheduledAt: '',
     reason: '',
 });
+const RESET_AUTORUN_FORM_KEYS = {
+    develop: 'autorunDevelop',
+    warp: 'autorunWarp',
+    recruit: 'autorunRecruit',
+    recruit_high: 'autorunRecruitHigh',
+    train: 'autorunTrain',
+    battle: 'autorunBattle',
+    chief: 'autorunChief',
+} as const satisfies Record<ResetAutorunOption, keyof typeof form>;
 const gatewayForm = reactive({
     sourceMode: 'BRANCH' as 'BRANCH' | 'COMMIT',
     sourceRef: 'main',
@@ -1037,11 +1049,19 @@ onBeforeUnmount(() => {
                                 </option>
                             </select>
                         </label>
-                        <label class="text-xs text-zinc-400">
-                            턴 간격
+                        <div class="space-y-1 text-xs text-zinc-400">
+                            <div class="flex items-center gap-1.5">
+                                <label for="reset-turn-term">{{ RESET_OPTION_COPY.turnTerm.label }}</label>
+                                <CompactHelp
+                                    :label="RESET_OPTION_COPY.turnTerm.label"
+                                    :text="RESET_OPTION_COPY.turnTerm.help"
+                                    test-id="reset-help-turn-term"
+                                />
+                            </div>
                             <select
+                                id="reset-turn-term"
                                 v-model.number="form.turnTermMinutes"
-                                class="mt-1 w-full rounded border border-zinc-700 bg-zinc-950 px-3 py-2 text-sm text-white"
+                                class="w-full rounded border border-zinc-700 bg-zinc-950 px-3 py-2 text-sm text-white"
                                 data-testid="reset-turn-term"
                             >
                                 <option
@@ -1052,7 +1072,7 @@ onBeforeUnmount(() => {
                                     {{ minutes }}분
                                 </option>
                             </select>
-                        </label>
+                        </div>
                     </div>
 
                     <details v-if="mode === 'scenario'" class="rounded border border-zinc-800 bg-zinc-950/50 p-4">
@@ -1064,104 +1084,232 @@ onBeforeUnmount(() => {
                                     : '서버별 기본값이 없어 시스템 기본값을 적용했습니다.'
                             }}
                         </p>
-                        <div class="mt-4 grid gap-4 md:grid-cols-2 text-sm">
-                            <label
-                                >동기화
-                                <select v-model="form.sync" class="ml-2 rounded bg-zinc-900 px-2 py-1">
-                                    <option :value="true">사용</option>
-                                    <option :value="false">미사용</option>
-                                </select>
-                            </label>
-                            <label
-                                >가상 장수
-                                <select v-model.number="form.fiction" class="ml-2 rounded bg-zinc-900 px-2 py-1">
-                                    <option :value="1">허용</option>
-                                    <option :value="0">금지</option>
-                                </select>
-                            </label>
-                            <label
-                                >연장
-                                <select v-model="form.extend" class="ml-2 rounded bg-zinc-900 px-2 py-1">
-                                    <option :value="true">사용</option>
-                                    <option :value="false">미사용</option>
-                                </select>
-                            </label>
-                            <label
-                                >가입 방식
-                                <select v-model="form.joinMode" class="ml-2 rounded bg-zinc-900 px-2 py-1">
-                                    <option value="full">전체</option>
-                                    <option value="onlyRandom">랜덤만</option>
-                                </select>
-                            </label>
-                            <label
-                                >장수 생성 제한
+                        <div class="mt-4 grid gap-4 text-sm md:grid-cols-2">
+                            <div class="space-y-1">
+                                <div class="flex items-center gap-1.5">
+                                    <label for="reset-sync">{{ RESET_OPTION_COPY.sync.label }}</label>
+                                    <CompactHelp
+                                        :label="RESET_OPTION_COPY.sync.label"
+                                        :text="RESET_OPTION_COPY.sync.help"
+                                        test-id="reset-help-sync"
+                                    />
+                                </div>
                                 <select
-                                    v-model.number="form.blockGeneralCreate"
-                                    class="ml-2 rounded bg-zinc-900 px-2 py-1"
+                                    id="reset-sync"
+                                    v-model="form.sync"
+                                    class="w-full rounded bg-zinc-900 px-2 py-1.5"
                                 >
-                                    <option :value="0">없음</option>
-                                    <option :value="1">제한</option>
-                                    <option :value="2">차단</option>
+                                    <option :value="true">사용</option>
+                                    <option :value="false">미사용</option>
                                 </select>
-                            </label>
-                            <label
-                                >NPC 모드
+                            </div>
+                            <div class="space-y-1">
+                                <div class="flex items-center gap-1.5">
+                                    <label for="reset-fiction">{{ RESET_OPTION_COPY.fiction.label }}</label>
+                                    <CompactHelp
+                                        :label="RESET_OPTION_COPY.fiction.label"
+                                        :text="RESET_OPTION_COPY.fiction.help"
+                                        test-id="reset-help-fiction"
+                                    />
+                                </div>
                                 <select
+                                    id="reset-fiction"
+                                    v-model.number="form.fiction"
+                                    class="w-full rounded bg-zinc-900 px-2 py-1.5"
+                                    data-testid="reset-fiction"
+                                >
+                                    <option :value="0">연의</option>
+                                    <option :value="1">가상</option>
+                                </select>
+                            </div>
+                            <div class="space-y-1">
+                                <div class="flex items-center gap-1.5">
+                                    <label for="reset-extend">{{ RESET_OPTION_COPY.extend.label }}</label>
+                                    <CompactHelp
+                                        :label="RESET_OPTION_COPY.extend.label"
+                                        :text="RESET_OPTION_COPY.extend.help"
+                                        test-id="reset-help-extend"
+                                    />
+                                </div>
+                                <select
+                                    id="reset-extend"
+                                    v-model="form.extend"
+                                    class="w-full rounded bg-zinc-900 px-2 py-1.5"
+                                    data-testid="reset-extend"
+                                >
+                                    <option :value="true">포함</option>
+                                    <option :value="false">미포함</option>
+                                </select>
+                            </div>
+                            <div class="space-y-1">
+                                <div class="flex items-center gap-1.5">
+                                    <label for="reset-block-general-create">
+                                        {{ RESET_OPTION_COPY.blockGeneralCreate.label }}
+                                    </label>
+                                    <CompactHelp
+                                        :label="RESET_OPTION_COPY.blockGeneralCreate.label"
+                                        :text="RESET_OPTION_COPY.blockGeneralCreate.help"
+                                        test-id="reset-help-block-general-create"
+                                    />
+                                </div>
+                                <select
+                                    id="reset-block-general-create"
+                                    v-model.number="form.blockGeneralCreate"
+                                    class="w-full rounded bg-zinc-900 px-2 py-1.5"
+                                    data-testid="reset-block-general-create"
+                                >
+                                    <option :value="0">가능</option>
+                                    <option :value="2">장수명 무작위</option>
+                                    <option :value="1">불가</option>
+                                </select>
+                            </div>
+                            <div class="space-y-1">
+                                <div class="flex items-center gap-1.5">
+                                    <label for="reset-npc-mode">{{ RESET_OPTION_COPY.npcMode.label }}</label>
+                                    <CompactHelp
+                                        :label="RESET_OPTION_COPY.npcMode.label"
+                                        :text="RESET_OPTION_COPY.npcMode.help"
+                                        test-id="reset-help-npc-mode"
+                                    />
+                                </div>
+                                <select
+                                    id="reset-npc-mode"
                                     v-model.number="form.npcMode"
-                                    class="ml-2 rounded bg-zinc-900 px-2 py-1"
+                                    class="w-full rounded bg-zinc-900 px-2 py-1.5"
                                     data-testid="reset-npc-mode"
                                 >
-                                    <option :value="0">기본</option>
-                                    <option :value="1">확장</option>
-                                    <option :value="2">전체</option>
+                                    <option :value="0">불가</option>
+                                    <option :value="1">가능</option>
+                                    <option :value="2">선택 생성 가능</option>
                                 </select>
-                            </label>
-                            <label
-                                >이미지 표시
-                                <select v-model.number="form.showImgLevel" class="ml-2 rounded bg-zinc-900 px-2 py-1">
-                                    <option v-for="level in [0, 1, 2, 3]" :key="level" :value="level">
-                                        {{ level }}
-                                    </option>
-                                </select>
-                            </label>
-                            <label class="flex items-center gap-2">
-                                <input v-model="form.tournamentTrig" type="checkbox" /> 토너먼트 사용
-                            </label>
-                            <label class="flex items-center gap-2">
-                                <input v-model="form.autorunEnabled" type="checkbox" /> 유저 자동턴
-                            </label>
-                            <input
-                                v-if="form.autorunEnabled"
-                                v-model.number="form.autorunUserMinutes"
-                                type="number"
-                                min="1"
-                                max="43200"
-                                class="rounded border border-zinc-700 bg-zinc-900 px-2 py-1"
-                                aria-label="자동턴 제한 분"
-                            />
-                            <div v-if="form.autorunEnabled" class="md:col-span-2 flex flex-wrap gap-3 text-xs">
-                                <label><input v-model="form.autorunDevelop" type="checkbox" /> 내정</label>
-                                <label><input v-model="form.autorunWarp" type="checkbox" /> 이동</label>
-                                <label><input v-model="form.autorunRecruit" type="checkbox" /> 징병</label>
-                                <label
-                                    ><input
-                                        v-model="form.autorunRecruitHigh"
-                                        type="checkbox"
-                                        data-testid="reset-autorun-recruit-high"
-                                    />
-                                    고급 징병</label
-                                >
-                                <label><input v-model="form.autorunTrain" type="checkbox" /> 훈련</label>
-                                <label><input v-model="form.autorunBattle" type="checkbox" /> 전투</label>
-                                <label
-                                    ><input
-                                        v-model="form.autorunChief"
-                                        type="checkbox"
-                                        data-testid="reset-autorun-chief"
-                                    />
-                                    중신</label
-                                >
                             </div>
+                            <div class="space-y-1">
+                                <div class="flex items-center gap-1.5">
+                                    <label for="reset-autorun-enabled">{{ RESET_OPTION_COPY.autorun.label }}</label>
+                                    <CompactHelp
+                                        :label="RESET_OPTION_COPY.autorun.label"
+                                        :text="RESET_OPTION_COPY.autorun.help"
+                                        test-id="reset-help-autorun"
+                                    />
+                                </div>
+                                <select
+                                    id="reset-autorun-enabled"
+                                    v-model="form.autorunEnabled"
+                                    class="w-full rounded bg-zinc-900 px-2 py-1.5"
+                                    data-testid="reset-autorun-enabled"
+                                >
+                                    <option :value="false">꺼짐</option>
+                                    <option :value="true">사용</option>
+                                </select>
+                            </div>
+                            <div class="space-y-1">
+                                <div class="flex items-center gap-1.5">
+                                    <label for="reset-join-mode">{{ RESET_OPTION_COPY.joinMode.label }}</label>
+                                    <CompactHelp
+                                        :label="RESET_OPTION_COPY.joinMode.label"
+                                        :text="RESET_OPTION_COPY.joinMode.help"
+                                        test-id="reset-help-join-mode"
+                                    />
+                                </div>
+                                <select
+                                    id="reset-join-mode"
+                                    v-model="form.joinMode"
+                                    class="w-full rounded bg-zinc-900 px-2 py-1.5"
+                                    data-testid="reset-join-mode"
+                                >
+                                    <option value="full">일반</option>
+                                    <option value="onlyRandom">랜덤 임관</option>
+                                </select>
+                            </div>
+                            <div class="space-y-1">
+                                <div class="flex items-center gap-1.5">
+                                    <label for="reset-show-img-level">{{ RESET_OPTION_COPY.showImgLevel.label }}</label>
+                                    <CompactHelp
+                                        :label="RESET_OPTION_COPY.showImgLevel.label"
+                                        :text="RESET_OPTION_COPY.showImgLevel.help"
+                                        test-id="reset-help-show-img-level"
+                                    />
+                                </div>
+                                <select
+                                    id="reset-show-img-level"
+                                    v-model.number="form.showImgLevel"
+                                    class="w-full rounded bg-zinc-900 px-2 py-1.5"
+                                    data-testid="reset-show-img-level"
+                                >
+                                    <option :value="0">안함</option>
+                                    <option :value="1">전콘</option>
+                                    <option :value="2">전콘, 병종</option>
+                                    <option :value="3">전콘, 병종, NPC</option>
+                                </select>
+                            </div>
+                            <div class="space-y-1">
+                                <div class="flex items-center gap-1.5">
+                                    <label for="reset-tournament-trig">
+                                        {{ RESET_OPTION_COPY.tournamentTrig.label }}
+                                    </label>
+                                    <CompactHelp
+                                        :label="RESET_OPTION_COPY.tournamentTrig.label"
+                                        :text="RESET_OPTION_COPY.tournamentTrig.help"
+                                        test-id="reset-help-tournament-trig"
+                                    />
+                                </div>
+                                <select
+                                    id="reset-tournament-trig"
+                                    v-model="form.tournamentTrig"
+                                    class="w-full rounded bg-zinc-900 px-2 py-1.5"
+                                    data-testid="reset-tournament-trig"
+                                >
+                                    <option :value="false">수동</option>
+                                    <option :value="true">자동</option>
+                                </select>
+                            </div>
+                            <div v-if="form.autorunEnabled" class="space-y-1">
+                                <div class="flex items-center gap-1.5">
+                                    <label for="reset-autorun-minutes">{{
+                                        RESET_OPTION_COPY.autorunLimit.label
+                                    }}</label>
+                                    <CompactHelp
+                                        :label="RESET_OPTION_COPY.autorunLimit.label"
+                                        :text="RESET_OPTION_COPY.autorunLimit.help"
+                                        test-id="reset-help-autorun-limit"
+                                    />
+                                </div>
+                                <input
+                                    id="reset-autorun-minutes"
+                                    v-model.number="form.autorunUserMinutes"
+                                    type="number"
+                                    min="1"
+                                    max="43200"
+                                    class="w-full rounded border border-zinc-700 bg-zinc-900 px-2 py-1.5"
+                                    data-testid="reset-autorun-minutes"
+                                />
+                            </div>
+                            <fieldset
+                                v-if="form.autorunEnabled"
+                                class="space-y-2 rounded border border-zinc-800 p-3 md:col-span-2"
+                            >
+                                <legend class="px-1 text-xs text-zinc-400">자율행동 종류</legend>
+                                <div class="flex flex-wrap gap-x-4 gap-y-2 text-xs">
+                                    <label
+                                        v-for="option in RESET_AUTORUN_LABELS"
+                                        :key="option.value"
+                                        class="flex items-center gap-1.5"
+                                    >
+                                        <input
+                                            v-model="form[RESET_AUTORUN_FORM_KEYS[option.value]]"
+                                            type="checkbox"
+                                            :data-testid="
+                                                option.value === 'recruit_high'
+                                                    ? 'reset-autorun-recruit-high'
+                                                    : option.value === 'chief'
+                                                      ? 'reset-autorun-chief'
+                                                      : undefined
+                                            "
+                                        />
+                                        {{ option.label }}
+                                    </label>
+                                </div>
+                            </fieldset>
                         </div>
                     </details>
 
@@ -1230,9 +1378,9 @@ onBeforeUnmount(() => {
                     class="rounded border border-amber-800/80 bg-amber-950/30 px-4 py-3 text-sm text-amber-100"
                     data-testid="gateway-build-recovery-guide"
                 >
-                    <strong>빌드가 멈춘 경우:</strong> 로그의 마지막 단계가 build일 때만
-                    <strong>빌드 중단</strong>을 누르고 CANCELLED를 확인한 뒤 <strong>재시도</strong>하세요.
-                    migration 또는 process 전환이 시작된 뒤에는 DB와 runtime 보호를 위해 중단할 수 없습니다.
+                    <strong>빌드가 멈춘 경우:</strong> 로그의 마지막 단계가 build일 때만 <strong>빌드 중단</strong>을
+                    누르고 CANCELLED를 확인한 뒤 <strong>재시도</strong>하세요. migration 또는 process 전환이 시작된
+                    뒤에는 DB와 runtime 보호를 위해 중단할 수 없습니다.
                 </div>
                 <div class="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
                     <div>
@@ -1541,9 +1689,9 @@ onBeforeUnmount(() => {
                     class="mb-4 rounded border border-amber-800/80 bg-amber-950/30 px-4 py-3 text-sm text-amber-100"
                     data-testid="profile-build-recovery-guide"
                 >
-                    <strong>DB 보존 업데이트 빌드가 멈춘 경우:</strong> <strong>빌드 중단</strong>을 누르고
-                    CANCELLED를 확인한 뒤 <strong>재시도</strong>하세요. 기존 profile runtime과 게임 DB는
-                    유지됩니다. RESET·migration·process 전환 단계는 이 화면에서 강제 중단하지 않습니다.
+                    <strong>DB 보존 업데이트 빌드가 멈춘 경우:</strong> <strong>빌드 중단</strong>을 누르고 CANCELLED를
+                    확인한 뒤 <strong>재시도</strong>하세요. 기존 profile runtime과 게임 DB는 유지됩니다.
+                    RESET·migration·process 전환 단계는 이 화면에서 강제 중단하지 않습니다.
                 </div>
                 <div class="mb-4 flex items-center justify-between">
                     <h3 class="text-lg font-semibold">작업 이력</h3>

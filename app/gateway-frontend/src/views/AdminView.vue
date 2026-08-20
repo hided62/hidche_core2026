@@ -13,6 +13,8 @@ import { useToast } from '../composables/useToast';
 import {
     normalizeProfileResetDefaults,
     PROFILE_TURN_TERM_MINUTES,
+    RESET_AUTORUN_LABELS,
+    RESET_OPTION_COPY,
     type ProfileResetDefaults,
     type ResetAutorunOption,
 } from '../utils/resetDefaults';
@@ -431,15 +433,6 @@ const profileActions = ref<
         }
     >
 >({});
-const resetAutorunLabels: Array<{ value: ResetAutorunOption; label: string }> = [
-    { value: 'develop', label: '내정' },
-    { value: 'warp', label: '이동' },
-    { value: 'recruit', label: '징병' },
-    { value: 'recruit_high', label: '고급 징병' },
-    { value: 'train', label: '훈련' },
-    { value: 'battle', label: '전투' },
-    { value: 'chief', label: '참모' },
-];
 const profileActionStatus = ref<Record<string, string>>({});
 const profileActionSubmitting = ref<Record<string, boolean>>({});
 const visibleProfiles = computed(() =>
@@ -688,7 +681,7 @@ const ensureProfileBuffers = (profile: AdminProfile) => {
             blockGeneralCreate: settings.blockGeneralCreate,
             autorunEnabled: settings.autorunUser !== null,
             autorunUserMinutes: String(settings.autorunUser?.limitMinutes ?? 1440),
-            autorunOptions: settings.autorunUser?.options.slice() ?? resetAutorunLabels.map(({ value }) => value),
+            autorunOptions: settings.autorunUser?.options.slice() ?? RESET_AUTORUN_LABELS.map(({ value }) => value),
         };
     }
 };
@@ -701,7 +694,7 @@ const syncRuntimeSettingsBuffer = (profile: AdminProfile): void => {
     buffer.blockGeneralCreate = settings.blockGeneralCreate;
     buffer.autorunEnabled = settings.autorunUser !== null;
     buffer.autorunUserMinutes = String(settings.autorunUser?.limitMinutes ?? 1440);
-    buffer.autorunOptions = settings.autorunUser?.options.slice() ?? resetAutorunLabels.map(({ value }) => value);
+    buffer.autorunOptions = settings.autorunUser?.options.slice() ?? RESET_AUTORUN_LABELS.map(({ value }) => value);
 };
 
 const toLocalInputValue = (value: string): string => toServerDateTimeInputValue(value);
@@ -809,7 +802,7 @@ const updateProfileMeta = async (profileName: string) => {
     ) {
         profileActionStatus.value = {
             ...profileActionStatus.value,
-            [profileName]: '유저 자동턴은 제한 시간과 한 개 이상의 동작을 선택해야 합니다.',
+            [profileName]: '자율행동은 유효 시간과 한 개 이상의 행동을 선택해야 합니다.',
         };
         return;
     }
@@ -855,7 +848,7 @@ const ensureResetAutorun = (profileName: string) => {
     if (!edit?.resetAutorunEnabled || edit.resetDefaults.autorunUser) return;
     edit.resetDefaults.autorunUser = {
         limitMinutes: 1440,
-        options: resetAutorunLabels.map(({ value }) => value),
+        options: RESET_AUTORUN_LABELS.map(({ value }) => value),
     };
 };
 
@@ -896,7 +889,7 @@ const requestProfileAction = async (profileName: string, action: AdminAction) =>
             [profileName]:
                 !reason || reason.length < 3
                     ? '현재 기수 설정 변경 사유를 입력하세요.'
-                    : '턴 간격과 유저 자동턴 값을 확인하세요.',
+                    : '턴 시간과 자율행동 값을 확인하세요.',
         };
         profileActionSubmitting.value = { ...profileActionSubmitting.value, [profileName]: false };
         return;
@@ -2247,7 +2240,7 @@ onMounted(() => {
                                         </p>
                                         <div class="mt-3 grid gap-3 text-xs sm:grid-cols-2">
                                             <label>
-                                                턴 간격
+                                                {{ RESET_OPTION_COPY.turnTerm.label }}
                                                 <select
                                                     v-model.number="
                                                         profileEdits[profile.profileName].resetDefaults.turnTermMinutes
@@ -2265,29 +2258,29 @@ onMounted(() => {
                                                 </select>
                                             </label>
                                             <label>
-                                                가입 방식
+                                                {{ RESET_OPTION_COPY.joinMode.label }}
                                                 <select
                                                     v-model="profileEdits[profile.profileName].resetDefaults.joinMode"
                                                     class="mt-1 w-full rounded border border-zinc-700 bg-zinc-900 px-2 py-2"
                                                 >
-                                                    <option value="full">전체</option>
-                                                    <option value="onlyRandom">랜덤만</option>
+                                                    <option value="full">일반</option>
+                                                    <option value="onlyRandom">랜덤 임관</option>
                                                 </select>
                                             </label>
                                             <label>
-                                                가상 장수
+                                                {{ RESET_OPTION_COPY.fiction.label }}
                                                 <select
                                                     v-model.number="
                                                         profileEdits[profile.profileName].resetDefaults.fiction
                                                     "
                                                     class="mt-1 w-full rounded border border-zinc-700 bg-zinc-900 px-2 py-2"
                                                 >
-                                                    <option :value="1">허용</option>
-                                                    <option :value="0">금지</option>
+                                                    <option :value="0">연의</option>
+                                                    <option :value="1">가상</option>
                                                 </select>
                                             </label>
                                             <label>
-                                                장수 생성 제한
+                                                {{ RESET_OPTION_COPY.blockGeneralCreate.label }}
                                                 <select
                                                     v-model.number="
                                                         profileEdits[profile.profileName].resetDefaults
@@ -2301,7 +2294,7 @@ onMounted(() => {
                                                 </select>
                                             </label>
                                             <label>
-                                                NPC 모드
+                                                {{ RESET_OPTION_COPY.npcMode.label }}
                                                 <select
                                                     v-model.number="
                                                         profileEdits[profile.profileName].resetDefaults.npcMode
@@ -2309,22 +2302,23 @@ onMounted(() => {
                                                     class="mt-1 w-full rounded border border-zinc-700 bg-zinc-900 px-2 py-2"
                                                     data-testid="meta-reset-npc-mode"
                                                 >
-                                                    <option :value="0">기본</option>
-                                                    <option :value="1">확장</option>
-                                                    <option :value="2">전체</option>
+                                                    <option :value="0">불가</option>
+                                                    <option :value="1">가능</option>
+                                                    <option :value="2">선택 생성 가능</option>
                                                 </select>
                                             </label>
                                             <label>
-                                                이미지 표시
+                                                {{ RESET_OPTION_COPY.showImgLevel.label }}
                                                 <select
                                                     v-model.number="
                                                         profileEdits[profile.profileName].resetDefaults.showImgLevel
                                                     "
                                                     class="mt-1 w-full rounded border border-zinc-700 bg-zinc-900 px-2 py-2"
                                                 >
-                                                    <option v-for="level in [0, 1, 2, 3]" :key="level" :value="level">
-                                                        {{ level }}
-                                                    </option>
+                                                    <option :value="0">안함</option>
+                                                    <option :value="1">전콘</option>
+                                                    <option :value="2">전콘, 병종</option>
+                                                    <option :value="3">전콘, 병종, NPC</option>
                                                 </select>
                                             </label>
                                             <label class="flex items-center gap-2">
@@ -2332,14 +2326,14 @@ onMounted(() => {
                                                     v-model="profileEdits[profile.profileName].resetDefaults.sync"
                                                     type="checkbox"
                                                 />
-                                                동기화 사용
+                                                {{ RESET_OPTION_COPY.sync.label }} 사용
                                             </label>
                                             <label class="flex items-center gap-2">
                                                 <input
                                                     v-model="profileEdits[profile.profileName].resetDefaults.extend"
                                                     type="checkbox"
                                                 />
-                                                연장 사용
+                                                {{ RESET_OPTION_COPY.extend.label }} 포함
                                             </label>
                                             <label class="flex items-center gap-2">
                                                 <input
@@ -2348,7 +2342,7 @@ onMounted(() => {
                                                     "
                                                     type="checkbox"
                                                 />
-                                                토너먼트 사용
+                                                {{ RESET_OPTION_COPY.tournamentTrig.label }}
                                             </label>
                                             <label class="flex items-center gap-2">
                                                 <input
@@ -2356,7 +2350,7 @@ onMounted(() => {
                                                     type="checkbox"
                                                     @change="ensureResetAutorun(profile.profileName)"
                                                 />
-                                                유저 자동턴
+                                                {{ RESET_OPTION_COPY.autorun.label }}
                                             </label>
                                             <template
                                                 v-if="
@@ -2365,7 +2359,7 @@ onMounted(() => {
                                                 "
                                             >
                                                 <label>
-                                                    자동턴 제한 분
+                                                    {{ RESET_OPTION_COPY.autorunLimit.label }}
                                                     <input
                                                         v-model.number="
                                                             profileEdits[profile.profileName].resetDefaults.autorunUser!
@@ -2379,7 +2373,7 @@ onMounted(() => {
                                                 </label>
                                                 <div class="flex flex-wrap items-center gap-3 sm:col-span-2">
                                                     <label
-                                                        v-for="option in resetAutorunLabels"
+                                                        v-for="option in RESET_AUTORUN_LABELS"
                                                         :key="option.value"
                                                         class="flex items-center gap-1"
                                                     >
@@ -2455,7 +2449,7 @@ onMounted(() => {
                                             새로고침해 주세요.
                                         </p>
                                         <label class="block text-xs text-zinc-400">
-                                            턴 간격
+                                            {{ RESET_OPTION_COPY.turnTerm.label }}
                                             <select
                                                 v-model.number="profileActions[profile.profileName].turnTermMinutes"
                                                 class="mt-1 w-full rounded border border-zinc-700 bg-zinc-900 px-2 py-2 text-sm text-white"
@@ -2471,7 +2465,7 @@ onMounted(() => {
                                             </select>
                                         </label>
                                         <label class="block text-xs text-zinc-400">
-                                            장수 생성 제한
+                                            {{ RESET_OPTION_COPY.blockGeneralCreate.label }}
                                             <select
                                                 v-model.number="profileActions[profile.profileName].blockGeneralCreate"
                                                 class="mt-1 w-full rounded border border-zinc-700 bg-zinc-900 px-2 py-2 text-sm text-white"
@@ -2488,11 +2482,11 @@ onMounted(() => {
                                                 type="checkbox"
                                                 data-testid="runtime-autorun-enabled"
                                             />
-                                            유저 자동턴 사용
+                                            {{ RESET_OPTION_COPY.autorun.label }} 사용
                                         </label>
                                         <template v-if="profileActions[profile.profileName].autorunEnabled">
                                             <label class="block text-xs text-zinc-400">
-                                                자동턴 제한 분
+                                                {{ RESET_OPTION_COPY.autorunLimit.label }}
                                                 <input
                                                     v-model="profileActions[profile.profileName].autorunUserMinutes"
                                                     type="number"
@@ -2505,7 +2499,7 @@ onMounted(() => {
                                             </label>
                                             <div class="flex flex-wrap items-center gap-3 text-xs text-zinc-300">
                                                 <label
-                                                    v-for="option in resetAutorunLabels"
+                                                    v-for="option in RESET_AUTORUN_LABELS"
                                                     :key="`runtime-${option.value}`"
                                                     class="flex items-center gap-1"
                                                 >
