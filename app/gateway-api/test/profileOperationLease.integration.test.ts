@@ -249,6 +249,72 @@ describeDatabase('gateway operation lease and profile serialization', () => {
         ).resolves.toMatchObject({ status: 'SUCCEEDED' });
     });
 
+    it('cancels only a running profile DEPLOY build and fences its worker lease', async () => {
+        const operation = await repository.createOperation({
+            profileName,
+            type: 'DEPLOY',
+            sourceMode: 'BRANCH',
+            sourceRef: 'main',
+            requestedBy: 'admin',
+        });
+        const now = new Date('2030-01-01T00:00:00.000Z');
+        await repository.claimNextOperation(now, { ownerId: 'worker-a', durationMs: 10_000 });
+        await repository.updateProfileForOperation?.(operation.id, 'worker-a', profileName, {
+            buildStatus: 'RUNNING',
+            buildError: 'temporary build output',
+        });
+        await repository.appendOperationLog(operation.id, {
+            level: 'INFO',
+            phase: 'build',
+            message: 'building profile',
+        });
+
+        await expect(repository.cancelOperation(operation.id)).resolves.toBe(true);
+        await expect(repository.getOperation(operation.id)).resolves.toMatchObject({
+            status: 'CANCELLED',
+            leaseOwner: undefined,
+        });
+        await expect(repository.getProfile(profileName)).resolves.toMatchObject({
+            buildStatus: 'SUCCEEDED',
+            buildError: undefined,
+        });
+        await expect(repository.renewOperationLease?.(operation.id, 'worker-a', now, 10_000)).resolves.toBe(false);
+    });
+
+    it('cancels a running Gateway build but rejects cancellation after migration starts', async () => {
+        const buildOperation = await releaseRepository.createOperation({
+            type: 'DEPLOY',
+            sourceMode: 'BRANCH',
+            sourceRef: 'main',
+            requestedBy: 'admin',
+        });
+        const now = new Date('2030-01-01T00:00:00.000Z');
+        await releaseRepository.claimNextOperation(now, { ownerId: 'release-worker', durationMs: 10_000 });
+        await releaseRepository.appendOperationLog(buildOperation.id, {
+            level: 'INFO',
+            phase: 'build',
+            message: 'building Gateway',
+        });
+        await expect(releaseRepository.cancelOperation(buildOperation.id)).resolves.toBe(true);
+        await expect(
+            releaseRepository.renewOperationLease(buildOperation.id, 'release-worker', now, 10_000)
+        ).resolves.toBe(false);
+
+        const migrationOperation = await releaseRepository.createOperation({
+            type: 'DEPLOY',
+            sourceMode: 'BRANCH',
+            sourceRef: 'main',
+            requestedBy: 'admin',
+        });
+        await releaseRepository.claimNextOperation(now, { ownerId: 'release-worker', durationMs: 10_000 });
+        await releaseRepository.appendOperationLog(migrationOperation.id, {
+            level: 'INFO',
+            phase: 'migration',
+            message: 'migrating Gateway',
+        });
+        await expect(releaseRepository.cancelOperation(migrationOperation.id)).resolves.toBe(false);
+    });
+
     it('pins retry to the first resolved commit and preserves its install generation', async () => {
         const operation = await repository.createOperation({
             profileName,

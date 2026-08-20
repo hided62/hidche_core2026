@@ -12,6 +12,7 @@ export interface BuildResult {
     ok: boolean;
     exitCode: number | null;
     output: string;
+    aborted?: boolean;
 }
 
 export type BuildProgressEvent =
@@ -21,8 +22,13 @@ export type BuildProgressEvent =
 
 export type BuildProgressObserver = (event: BuildProgressEvent) => void | Promise<void>;
 
+export interface BuildRunOptions {
+    signal?: AbortSignal;
+    terminateGraceMs?: number;
+}
+
 export interface BuildRunner {
-    run(commands: BuildCommand[], onProgress?: BuildProgressObserver): Promise<BuildResult>;
+    run(commands: BuildCommand[], onProgress?: BuildProgressObserver, options?: BuildRunOptions): Promise<BuildResult>;
 }
 
 export const MAX_BUILD_OUTPUT_CHARS = 64 * 1024;
@@ -77,7 +83,28 @@ export const buildTurboReleaseTaskCommand = (
 const appendOutputTail = (current: string, chunk: unknown): string =>
     `${current}${String(chunk)}`.slice(-MAX_BUILD_OUTPUT_CHARS);
 
-const runCommand = (command: BuildCommand, onProgress?: BuildProgressObserver): Promise<BuildResult> =>
+const terminateChildProcess = (pid: number | undefined, signal: NodeJS.Signals): void => {
+    if (!pid) return;
+    try {
+        if (process.platform !== 'win32') {
+            process.kill(-pid, signal);
+            return;
+        }
+    } catch {
+        // Fall back to the direct child below when the process group already exited.
+    }
+    try {
+        process.kill(pid, signal);
+    } catch {
+        // The child already exited.
+    }
+};
+
+const runCommand = (
+    command: BuildCommand,
+    onProgress?: BuildProgressObserver,
+    options?: BuildRunOptions
+): Promise<BuildResult> =>
     new Promise((resolve) => {
         let progressQueue = Promise.resolve();
         const emit = (event: BuildProgressEvent) => {
@@ -89,9 +116,25 @@ const runCommand = (command: BuildCommand, onProgress?: BuildProgressObserver): 
             cwd: command.cwd,
             env: command.env,
             stdio: ['ignore', 'pipe', 'pipe'],
+            detached: process.platform !== 'win32',
         });
         let output = '';
         let spawnFailed = false;
+        let aborted = false;
+        let killTimer: ReturnType<typeof setTimeout> | undefined;
+        const abort = () => {
+            if (aborted) return;
+            aborted = true;
+            output = appendOutputTail(output, '\nBuild cancelled by operator.');
+            terminateChildProcess(child.pid, 'SIGTERM');
+            killTimer = setTimeout(
+                () => terminateChildProcess(child.pid, 'SIGKILL'),
+                options?.terminateGraceMs ?? 5_000
+            );
+            killTimer.unref?.();
+        };
+        options?.signal?.addEventListener('abort', abort, { once: true });
+        if (options?.signal?.aborted) abort();
         const lineBuffers = { stdout: '', stderr: '' };
         const emitOutput = (stream: 'stdout' | 'stderr', chunk: unknown, flush = false) => {
             if (flush && !lineBuffers[stream]) return;
@@ -119,31 +162,47 @@ const runCommand = (command: BuildCommand, onProgress?: BuildProgressObserver): 
             output = appendOutputTail(output, error.message);
         });
         child.on('close', (code) => {
+            options?.signal?.removeEventListener('abort', abort);
+            if (killTimer) clearTimeout(killTimer);
             emitOutput('stdout', '', true);
             emitOutput('stderr', '', true);
             const exitCode = spawnFailed ? null : code;
             emit({ type: 'COMMAND_END', command, exitCode });
             void progressQueue.then(() => {
                 resolve({
-                    ok: !spawnFailed && code === 0,
+                    ok: !aborted && !spawnFailed && code === 0,
                     exitCode,
                     output,
+                    ...(aborted ? { aborted: true } : {}),
                 });
             });
         });
     });
 
 export class PnpmBuildRunner implements BuildRunner {
-    async run(commands: BuildCommand[], onProgress?: BuildProgressObserver): Promise<BuildResult> {
+    async run(
+        commands: BuildCommand[],
+        onProgress?: BuildProgressObserver,
+        options?: BuildRunOptions
+    ): Promise<BuildResult> {
         let mergedOutput = '';
         for (const command of commands) {
-            const result = await runCommand(command, onProgress);
+            if (options?.signal?.aborted) {
+                return {
+                    ok: false,
+                    exitCode: null,
+                    output: appendOutputTail(mergedOutput, 'Build cancelled by operator.'),
+                    aborted: true,
+                };
+            }
+            const result = await runCommand(command, onProgress, options);
             mergedOutput = appendOutputTail(mergedOutput, result.output);
             if (!result.ok) {
                 return {
                     ok: false,
                     exitCode: result.exitCode,
                     output: mergedOutput,
+                    ...(result.aborted ? { aborted: true } : {}),
                 };
             }
         }

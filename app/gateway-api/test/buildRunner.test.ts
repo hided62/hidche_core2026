@@ -145,4 +145,28 @@ describe('PnpmBuildRunner', () => {
             { type: 'COMMAND_END' },
         ]);
     });
+
+    it('terminates a running build process group when the operation is cancelled', async () => {
+        const runner = new PnpmBuildRunner();
+        const abortController = new AbortController();
+        const startedAt = Date.now();
+        const timer = setTimeout(() => abortController.abort(), 50);
+
+        const result = await runner.run(
+            [
+                {
+                    command: process.execPath,
+                    args: ['-e', "setInterval(() => process.stdout.write('still-running\\n'), 25);"],
+                    cwd: process.cwd(),
+                },
+            ],
+            undefined,
+            { signal: abortController.signal, terminateGraceMs: 100 }
+        );
+        clearTimeout(timer);
+
+        expect(result).toMatchObject({ ok: false, aborted: true });
+        expect(result.output).toContain('Build cancelled by operator.');
+        expect(Date.now() - startedAt).toBeLessThan(2_000);
+    });
 });

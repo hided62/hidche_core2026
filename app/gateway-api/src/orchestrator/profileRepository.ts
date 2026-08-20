@@ -586,13 +586,18 @@ export const createGatewayProfileRepository = (prisma: GatewayPrismaClient): Gat
         return rows.map(mapOperationLog);
     },
     async appendOperationLog(id, input) {
-        const row = await prisma.gatewayOperationLog.create({
-            data: {
-                operationId: id,
-                level: input.level,
-                phase: input.phase.slice(0, 64),
-                message: input.message.slice(0, 4_000),
-            },
+        const row = await prisma.$transaction(async (tx) => {
+            await tx.$queryRaw<Array<{ id: string }>>`
+                SELECT "id" FROM "gateway_operation" WHERE "id" = ${id} FOR UPDATE
+            `;
+            return tx.gatewayOperationLog.create({
+                data: {
+                    operationId: id,
+                    level: input.level,
+                    phase: input.phase.slice(0, 64),
+                    message: input.message.slice(0, 4_000),
+                },
+            });
         });
         return mapOperationLog(row);
     },
@@ -805,21 +810,61 @@ export const createGatewayProfileRepository = (prisma: GatewayPrismaClient): Gat
     },
     async cancelOperation(id: string): Promise<boolean> {
         const count = await prisma.$transaction(async (tx) => {
+            const rows = await tx.$queryRaw<Array<{ status: GatewayOperationStatus; type: GatewayOperationType }>>`
+                SELECT "status", "type"
+                FROM "gateway_operation"
+                WHERE "id" = ${id}
+                FOR UPDATE
+            `;
+            const operation = rows[0];
+            if (!operation || (operation.status !== 'QUEUED' && operation.status !== 'RUNNING')) return 0;
+
+            let runningBuildCancelled = false;
+            if (operation.status === 'RUNNING') {
+                if (operation.type !== 'DEPLOY') return 0;
+                const latestLog = await tx.gatewayOperationLog.findFirst({
+                    where: { operationId: id },
+                    orderBy: { id: 'desc' },
+                    select: { phase: true },
+                });
+                if (!latestLog || !['claim', 'resolve', 'workspace', 'build'].includes(latestLog.phase)) return 0;
+                runningBuildCancelled = true;
+            }
+
             const result = await tx.gatewayOperation.updateMany({
-                where: { id, status: 'QUEUED' },
-                data: { status: 'CANCELLED', completedAt: new Date() },
+                where: { id, status: operation.status },
+                data: {
+                    status: 'CANCELLED',
+                    completedAt: new Date(),
+                    leaseOwner: null,
+                    leaseUntil: null,
+                    heartbeatAt: null,
+                },
             });
-            if (result.count === 1) {
-                await tx.gatewayOperationLog.create({
+            if (result.count !== 1) return 0;
+            if (runningBuildCancelled) {
+                await tx.gatewayProfile.updateMany({
+                    where: { operations: { some: { id } } },
                     data: {
-                        operationId: id,
-                        level: 'INFO',
-                        phase: 'cancel',
-                        message: '대기 중인 작업이 취소되었습니다.',
+                        buildStatus: 'SUCCEEDED',
+                        buildRequestedAt: null,
+                        buildStartedAt: null,
+                        buildCompletedAt: null,
+                        buildError: null,
                     },
                 });
             }
-            return result.count;
+            await tx.gatewayOperationLog.create({
+                data: {
+                    operationId: id,
+                    level: 'INFO',
+                    phase: 'cancel',
+                    message: runningBuildCancelled
+                        ? '실행 중인 빌드를 중단했습니다. 기존 runtime과 DB는 유지됩니다.'
+                        : '대기 중인 작업이 취소되었습니다.',
+                },
+            });
+            return 1;
         });
         return count === 1;
     },

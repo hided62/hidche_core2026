@@ -1453,7 +1453,7 @@ export const adminRouter = router({
             if (!cancelled) {
                 throw new TRPCError({
                     code: 'CONFLICT',
-                    message: 'Only queued operations can be cancelled.',
+                    message: 'Only queued operations or a DEPLOY that is still building can be cancelled.',
                 });
             }
             return { ok: true };
@@ -1626,7 +1626,10 @@ export const adminRouter = router({
             }),
         cancel: releaseAdminProcedure.input(z.object({ id: z.string().uuid() })).mutation(async ({ ctx, input }) => {
             if (!(await ctx.releases.cancelOperation(input.id))) {
-                throw new TRPCError({ code: 'CONFLICT', message: 'Only queued releases can be cancelled.' });
+                throw new TRPCError({
+                    code: 'CONFLICT',
+                    message: 'Only queued releases or a release that is still building can be cancelled.',
+                });
             }
             return { ok: true };
         }),

@@ -24,6 +24,7 @@ import type { ReleaseControllerConfig } from './config.js';
 
 const LEASE_DURATION_MS = 10 * 60_000;
 const HEARTBEAT_INTERVAL_MS = 60_000;
+const CANCELLATION_POLL_INTERVAL_MS = 500;
 const PROCESS_NAMES = ['sammo:gateway-api', 'sammo:gateway-frontend', 'sammo:gateway-orchestrator'] as const;
 const SENSITIVE_ENV_NAME = /(SECRET|TOKEN|PASSWORD|PASSWD|PRIVATE_KEY|CLIENT_SECRET|DATABASE_URL|REDIS_URL)/iu;
 
@@ -187,9 +188,25 @@ export class GatewayReleaseController {
         });
         if (!operation) return null;
         await this.appendLog(operation.id, 'claim', `릴리스 작업을 시작합니다. 시도 ${operation.attempts}회차.`);
+        const abortController = new AbortController();
         const heartbeat = setInterval(() => {
-            void this.repository.renewOperationLease(operation.id, this.ownerId, this.now(), LEASE_DURATION_MS);
+            void this.repository
+                .renewOperationLease(operation.id, this.ownerId, this.now(), LEASE_DURATION_MS)
+                .then((renewed) => {
+                    if (!renewed) abortController.abort();
+                })
+                .catch(() => undefined);
         }, HEARTBEAT_INTERVAL_MS);
+        const cancellationWatcher = setInterval(() => {
+            void this.repository
+                .getOperation(operation.id)
+                .then((current) => {
+                    if (!current || current.status !== 'RUNNING' || current.leaseOwner !== this.ownerId) {
+                        abortController.abort();
+                    }
+                })
+                .catch(() => undefined);
+        }, CANCELLATION_POLL_INTERVAL_MS);
         let resolvedCommitSha: string | undefined;
         try {
             await this.appendLog(operation.id, 'resolve', '현재 Gateway 릴리스 상태를 확인합니다.');
@@ -208,7 +225,7 @@ export class GatewayReleaseController {
                 throw new Error('Gateway release lease was lost while pinning the commit.');
             }
             await this.appendLog(operation.id, 'resolve', `대상 커밋을 ${resolvedCommitSha}로 고정했습니다.`);
-            await this.deploy(operation, deploymentState, resolvedCommitSha);
+            await this.deploy(operation, deploymentState, resolvedCommitSha, abortController.signal);
             await this.appendLog(operation.id, 'complete', 'Gateway 릴리스가 완료되었습니다.');
             return await this.repository.completeOperation(
                 operation.id,
@@ -217,6 +234,17 @@ export class GatewayReleaseController {
                 this.ownerId
             );
         } catch (error) {
+            const current = await this.repository.getOperation(operation.id);
+            if (
+                !current ||
+                current.status !== 'RUNNING' ||
+                (abortController.signal.aborted && current.leaseOwner !== this.ownerId)
+            ) {
+                if (current?.status === 'CANCELLED') {
+                    await this.appendLog(operation.id, 'cancel', '실행 중인 Gateway 빌드가 종료되었습니다.');
+                }
+                return current;
+            }
             const detail = error instanceof Error ? error.message : String(error);
             await this.appendLog(operation.id, 'failed', detail, 'ERROR');
             await this.repository.recordStateError(detail);
@@ -228,13 +256,21 @@ export class GatewayReleaseController {
             );
         } finally {
             clearInterval(heartbeat);
+            clearInterval(cancellationWatcher);
+        }
+    }
+
+    private async assertOperationLease(operationId: string): Promise<void> {
+        if (!(await this.repository.renewOperationLease(operationId, this.ownerId, this.now(), LEASE_DURATION_MS))) {
+            throw new Error(`Gateway release lease lost: ${operationId}`);
         }
     }
 
     private async deploy(
         operation: GatewayReleaseOperationRecord,
         state: GatewayReleaseStateRecord,
-        commitSha: string
+        commitSha: string,
+        signal: AbortSignal
     ): Promise<void> {
         await this.appendLog(operation.id, 'workspace', `커밋 ${commitSha}의 worktree를 준비합니다.`);
         const workspace = await this.workspaceManager.prepare(commitSha);
@@ -244,13 +280,16 @@ export class GatewayReleaseController {
         await this.appendLog(operation.id, 'build', 'Gateway 구성 요소를 빌드합니다.');
         const build = await this.buildRunner.run(
             buildGatewayReleaseCommands(workspace.root, workspace.needsInstall, this.config),
-            this.buildProgress(operation.id, 'build')
+            this.buildProgress(operation.id, 'build'),
+            { signal }
         );
         if (!build.ok) throw new Error(`Gateway release build failed: ${build.output.slice(-4000)}`);
         await this.appendLog(operation.id, 'migration', 'Gateway database migration을 적용합니다.');
+        await this.assertOperationLease(operation.id);
         const migration = await this.buildRunner.run(
             [buildGatewayMigrationCommand(workspace.root, this.config)],
-            this.buildProgress(operation.id, 'migration')
+            this.buildProgress(operation.id, 'migration'),
+            { signal }
         );
         if (!migration.ok) throw new Error(`Gateway migration failed: ${migration.output.slice(-4000)}`);
         await this.appendLog(operation.id, 'migration', 'Gateway database migration이 완료되었습니다.');
@@ -259,6 +298,7 @@ export class GatewayReleaseController {
             ? buildGatewayProcessDefinitions(state.activeWorkspace, this.config)
             : [];
         await this.appendLog(operation.id, 'switch', '기존 Gateway process를 정지합니다.');
+        await this.assertOperationLease(operation.id);
         await this.stopManagedProcesses(operation.id);
         try {
             await this.startDefinitions(buildGatewayProcessDefinitions(workspace.root, this.config), operation.id);
