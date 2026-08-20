@@ -87,6 +87,34 @@ pnpm --filter @sammo-ts/release-controller self-upgrade COMMIT <full-sha>
 Database migration은 일반적으로 되돌리지 않습니다. 이전 애플리케이션으로
 rollback하려면 새 schema와의 하위 호환성을 릴리스 전에 확인해 주세요.
 
+## 멈춘 빌드 복구
+
+운영 container나 PM2 process를 먼저 종료하지 마세요. 관리자 화면의
+`Gateway 릴리스` 또는 profile `버전 업데이트` 작업 이력에서 로그의 마지막 단계와
+작업 상태를 확인합니다.
+
+1. `RUNNING`이고 마지막 단계가 `claim`, `resolve`, `workspace`, `build` 중 하나이면
+   `빌드 중단`을 누릅니다.
+2. 작업이 `CANCELLED`가 되고 로그에 빌드 종료가 기록될 때까지 기다립니다. Controller와
+   orchestrator는 해당 process group에 SIGTERM을 보내고 제한 시간 뒤 SIGKILL로
+   정리하며, 기존 active Gateway/profile runtime과 profile DB는 유지합니다.
+3. 같은 행의 `재시도`를 누르면 최초 작업이 고정한 commit으로 새 작업을 등록합니다.
+   branch의 최신 commit을 새로 선택하려면 새 배포 작업을 등록합니다.
+
+마지막 단계가 `migration`, `switch`, `readiness`이면 중단 요청을 거부합니다. 이 구간에서
+container restart, PM2 delete 또는 DB row 직접 변경으로 lease를 무효화하지 말고 작업 로그와
+controller/orchestrator 상태를 조사합니다. Profile 상태가 `PAUSED`이면 runtime 장애가 아니라
+turn gate가 닫힌 상태이므로 배포 완료 후 서버 관리 화면에서 `턴 재개`를 사용합니다.
+
+호스트에서는 stack wrapper로 container와 로그를 읽기 전용 확인합니다. 운영 stack의 가까운
+README에 정의된 경로에서 다음 순서로 확인하며, `down --volumes`나 `RESET`은 빌드 복구에
+사용하지 않습니다.
+
+```sh
+./scripts/stack.sh ps
+./scripts/stack.sh logs runtime
+```
+
 `release-manifest.json`의 `controllerProtocol`이 올라간 릴리스는 controller를
 먼저 self-upgrade해야 합니다. Protocol 2는 `GatewayReleaseLog` 진행 로그 저장을
 요구합니다. 구형 controller로 새 Gateway만 배포하면 관리자 화면과 controller의

@@ -457,6 +457,33 @@ const installFixture = async (page: Page, state: FixtureState) => {
                 state.operations = [operation, ...state.operations];
                 return response(operation);
             }
+            if (name === 'admin.operations.cancel') {
+                const id = JSON.stringify(body).match(/[0-9a-f]{8}-[0-9a-f-]{27,}/u)?.[0];
+                state.operations = state.operations.map((operation) =>
+                    operation.id === id ? { ...operation, status: 'CANCELLED' as const } : operation
+                );
+                return response({ ok: true });
+            }
+            if (name === 'admin.releases.cancel') {
+                const id = JSON.stringify(body).match(/[0-9a-f]{8}-[0-9a-f-]{27,}/u)?.[0];
+                state.gatewayOperations = state.gatewayOperations.map((operation) =>
+                    operation.id === id ? { ...operation, status: 'CANCELLED' as const } : operation
+                );
+                return response({ ok: true });
+            }
+            if (name === 'admin.releases.retry') {
+                const previous = state.gatewayOperations[0];
+                if (!previous) throw new Error('Release retry fixture is missing');
+                const retried = {
+                    ...previous,
+                    id: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+                    status: 'QUEUED' as const,
+                    sourceMode: 'COMMIT' as const,
+                    sourceRef: previous.resolvedCommitSha ?? previous.sourceRef,
+                };
+                state.gatewayOperations = [retried, ...state.gatewayOperations];
+                return response(retried);
+            }
             throw new Error(`Unhandled tRPC operation: ${name}`);
         });
         await route.fulfill({
@@ -1201,6 +1228,77 @@ test('scenario-only operator resets the server-selected version without Git or G
     const request = state.requestBodies.find((entry) => entry.operation === 'admin.operations.requestReset');
     expect(JSON.stringify(request?.body)).toContain('"sourceMode":"CURRENT"');
     expect(JSON.stringify(request?.body)).not.toContain('"sourceRef"');
+});
+
+test('stops a running profile build while keeping the existing runtime available', async ({ page }) => {
+    const operation: Operation = {
+        id: '12121212-1212-4212-8212-121212121212',
+        profileName: 'che:default',
+        type: 'DEPLOY',
+        status: 'RUNNING',
+        sourceMode: 'COMMIT',
+        sourceRef: '0123456789abcdef0123456789abcdef01234567',
+        payload: {},
+        requestedBy: 'admin',
+        createdAt: '2026-08-20T01:00:00.000Z',
+        updatedAt: '2026-08-20T01:00:01.000Z',
+    };
+    const state: FixtureState = {
+        operations: [operation],
+        gatewayOperations: [],
+        runtimeRunning: true,
+        requestBodies: [],
+        profileLogsEmpty: true,
+    };
+    await installFixture(page, state);
+    page.on('dialog', (dialog) => dialog.accept());
+
+    await page.goto('admin/servers/che%3Adefault/version');
+    await expect(page.getByTestId('profile-build-recovery-guide')).toContainText('기존 profile runtime과 게임 DB는');
+    await page.getByRole('button', { name: '빌드 중단' }).click();
+
+    await expect(page.getByText('프로필 빌드를 중단했습니다.').first()).toBeVisible();
+    await expect(page.getByTestId('operations-table').getByText('CANCELLED', { exact: true })).toBeVisible();
+    expect(state.requestBodies.some((entry) => entry.operation === 'admin.operations.cancel')).toBe(true);
+});
+
+test('stops and retries a running Gateway build from the release GUI', async ({ page }) => {
+    const state: FixtureState = {
+        operations: [],
+        gatewayOperations: [
+            {
+                id: '34343434-3434-4434-8434-343434343434',
+                type: 'DEPLOY',
+                status: 'RUNNING',
+                sourceMode: 'COMMIT',
+                sourceRef: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+                resolvedCommitSha: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+                payload: {},
+                requestedBy: 'admin',
+                createdAt: '2026-08-20T01:00:00.000Z',
+                updatedAt: '2026-08-20T01:00:01.000Z',
+            },
+        ],
+        runtimeRunning: true,
+        requestBodies: [],
+        gatewayLogsEmpty: true,
+    };
+    await installFixture(page, state);
+    page.on('dialog', (dialog) => dialog.accept());
+
+    await page.goto('admin/releases');
+    await expect(page.getByTestId('gateway-build-recovery-guide')).toContainText(
+        'migration 또는 process 전환이 시작된 뒤에는'
+    );
+    await page.getByRole('button', { name: '빌드 중단' }).click();
+    await expect(page.getByText('Gateway 빌드를 중단했습니다.').first()).toBeVisible();
+    await expect(page.getByTestId('gateway-release-table').getByText('CANCELLED', { exact: true })).toBeVisible();
+
+    await page.getByRole('button', { name: '재시도' }).click();
+    await expect(page.getByText('Gateway 릴리스 재시도 작업을 등록했습니다.').first()).toBeVisible();
+    await expect(page.getByTestId('gateway-release-table').getByText('QUEUED', { exact: true })).toBeVisible();
+    expect(state.requestBodies.some((entry) => entry.operation === 'admin.releases.cancel')).toBe(true);
+    expect(state.requestBodies.some((entry) => entry.operation === 'admin.releases.retry')).toBe(true);
 });
 
 test('controls gateway deployment and rollback through the external controller queue', async ({ page }, testInfo) => {

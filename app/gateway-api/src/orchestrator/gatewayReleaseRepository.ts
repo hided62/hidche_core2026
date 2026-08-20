@@ -208,13 +208,18 @@ export const createGatewayReleaseRepository = (prisma: GatewayPrismaClient): Gat
         return rows.map(mapLog);
     },
     async appendOperationLog(id, input) {
-        const row = await prisma.gatewayReleaseLog.create({
-            data: {
-                operationId: id,
-                level: input.level,
-                phase: input.phase.slice(0, 64),
-                message: input.message.slice(0, 4_000),
-            },
+        const row = await prisma.$transaction(async (tx) => {
+            await tx.$queryRaw<Array<{ id: string }>>`
+                SELECT "id" FROM "gateway_release_operation" WHERE "id" = ${id} FOR UPDATE
+            `;
+            return tx.gatewayReleaseLog.create({
+                data: {
+                    operationId: id,
+                    level: input.level,
+                    phase: input.phase.slice(0, 64),
+                    message: input.message.slice(0, 4_000),
+                },
+            });
         });
         return mapLog(row);
     },
@@ -367,11 +372,48 @@ export const createGatewayReleaseRepository = (prisma: GatewayPrismaClient): Gat
         });
     },
     async cancelOperation(id) {
-        const updated = await prisma.gatewayReleaseOperation.updateMany({
-            where: { id, status: 'QUEUED' },
-            data: { status: 'CANCELLED', completedAt: new Date() },
+        const count = await prisma.$transaction(async (tx) => {
+            const rows = await tx.$queryRaw<Array<{ status: GatewayOperationStatus }>>`
+                SELECT "status"
+                FROM "gateway_release_operation"
+                WHERE "id" = ${id}
+                FOR UPDATE
+            `;
+            const operation = rows[0];
+            if (!operation || (operation.status !== 'QUEUED' && operation.status !== 'RUNNING')) return 0;
+            if (operation.status === 'RUNNING') {
+                const latestLog = await tx.gatewayReleaseLog.findFirst({
+                    where: { operationId: id },
+                    orderBy: { id: 'desc' },
+                    select: { phase: true },
+                });
+                if (!latestLog || !['claim', 'resolve', 'workspace', 'build'].includes(latestLog.phase)) return 0;
+            }
+            const updated = await tx.gatewayReleaseOperation.updateMany({
+                where: { id, status: operation.status },
+                data: {
+                    status: 'CANCELLED',
+                    completedAt: new Date(),
+                    leaseOwner: null,
+                    leaseUntil: null,
+                    heartbeatAt: null,
+                },
+            });
+            if (updated.count !== 1) return 0;
+            await tx.gatewayReleaseLog.create({
+                data: {
+                    operationId: id,
+                    level: 'INFO',
+                    phase: 'cancel',
+                    message:
+                        operation.status === 'RUNNING'
+                            ? '실행 중인 Gateway 빌드를 중단했습니다. 현재 active release는 유지됩니다.'
+                            : '대기 중인 Gateway 릴리스를 취소했습니다.',
+                },
+            });
+            return 1;
         });
-        return updated.count === 1;
+        return count === 1;
     },
     async retryOperation(id, requestedBy) {
         const row = await prisma.$transaction(async (tx) => {

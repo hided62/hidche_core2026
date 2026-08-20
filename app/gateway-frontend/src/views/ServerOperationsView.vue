@@ -546,6 +546,37 @@ const requestGatewayRollback = async () => {
     }
 };
 
+const cancelGatewayRelease = async (operation: GatewayReleaseOperation) => {
+    clearStatus();
+    const prompt =
+        operation.status === 'RUNNING'
+            ? '실행 중인 Gateway 빌드를 중단하시겠습니까? process 전환 또는 migration이 시작된 뒤에는 중단할 수 없습니다.'
+            : '대기 중인 Gateway 릴리스를 취소하시겠습니까?';
+    if (!window.confirm(prompt)) return;
+    try {
+        await adminClient.releases.cancel.mutate({ id: operation.id });
+        selectedGatewayOperationId.value = operation.id;
+        message.value =
+            operation.status === 'RUNNING' ? 'Gateway 빌드를 중단했습니다.' : 'Gateway 릴리스를 취소했습니다.';
+        await loadState(true);
+    } catch (error) {
+        errorMessage.value = error instanceof Error ? error.message : 'Gateway 릴리스 중단에 실패했습니다.';
+    }
+};
+
+const retryGatewayRelease = async (operation: GatewayReleaseOperation) => {
+    clearStatus();
+    if (!window.confirm('같은 고정 커밋으로 Gateway 릴리스를 다시 실행하시겠습니까?')) return;
+    try {
+        const retried = await adminClient.releases.retry.mutate({ id: operation.id });
+        selectedGatewayOperationId.value = retried.id;
+        message.value = 'Gateway 릴리스 재시도 작업을 등록했습니다.';
+        await loadState(true);
+    } catch (error) {
+        errorMessage.value = error instanceof Error ? error.message : 'Gateway 릴리스 재시도에 실패했습니다.';
+    }
+};
+
 const loadScenarios = async () => {
     clearStatus();
     if (form.sourceMode !== 'CURRENT' && !form.sourceRef.trim()) {
@@ -688,13 +719,17 @@ const requestGameCancellation = async () => {
 
 const cancelOperation = async (operation: Operation) => {
     clearStatus();
-    if (!window.confirm('대기 중인 작업을 취소하시겠습니까?')) {
+    const prompt =
+        operation.status === 'RUNNING'
+            ? '실행 중인 프로필 빌드를 중단하시겠습니까? 기존 runtime과 게임 DB는 유지됩니다.'
+            : '대기 중인 작업을 취소하시겠습니까?';
+    if (!window.confirm(prompt)) {
         return;
     }
     try {
         await adminClient.operations.cancel.mutate({ id: operation.id });
         selectedProfileOperationId.value = operation.id;
-        message.value = '작업을 취소했습니다.';
+        message.value = operation.status === 'RUNNING' ? '프로필 빌드를 중단했습니다.' : '작업을 취소했습니다.';
         await loadState(true);
     } catch (error) {
         errorMessage.value = error instanceof Error ? error.message : '작업 취소에 실패했습니다.';
@@ -1191,6 +1226,14 @@ onBeforeUnmount(() => {
                 class="rounded-lg border border-violet-800/70 bg-zinc-900 p-5 space-y-4"
                 data-testid="gateway-release-panel"
             >
+                <div
+                    class="rounded border border-amber-800/80 bg-amber-950/30 px-4 py-3 text-sm text-amber-100"
+                    data-testid="gateway-build-recovery-guide"
+                >
+                    <strong>빌드가 멈춘 경우:</strong> 로그의 마지막 단계가 build일 때만
+                    <strong>빌드 중단</strong>을 누르고 CANCELLED를 확인한 뒤 <strong>재시도</strong>하세요.
+                    migration 또는 process 전환이 시작된 뒤에는 DB와 runtime 보호를 위해 중단할 수 없습니다.
+                </div>
                 <div class="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
                     <div>
                         <h3 class="text-lg font-semibold">Gateway 릴리스</h3>
@@ -1388,6 +1431,24 @@ onBeforeUnmount(() => {
                                                         : '오류 보기'
                                                 }}
                                             </button>
+                                            <button
+                                                v-if="operation.status === 'QUEUED' || operation.status === 'RUNNING'"
+                                                type="button"
+                                                class="rounded border border-red-800 px-2 py-1 text-red-300 hover:bg-red-950 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-red-400"
+                                                @click="cancelGatewayRelease(operation)"
+                                            >
+                                                {{ operation.status === 'RUNNING' ? '빌드 중단' : '취소' }}
+                                            </button>
+                                            <button
+                                                v-else-if="
+                                                    operation.status === 'FAILED' || operation.status === 'CANCELLED'
+                                                "
+                                                type="button"
+                                                class="rounded border border-amber-700 px-2 py-1 text-amber-300 hover:bg-amber-950 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-400"
+                                                @click="retryGatewayRelease(operation)"
+                                            >
+                                                재시도
+                                            </button>
                                         </div>
                                     </td>
                                 </tr>
@@ -1476,6 +1537,14 @@ onBeforeUnmount(() => {
             </section>
 
             <section v-if="mode !== 'gateway'" class="rounded-lg border border-zinc-800 bg-zinc-900 p-5">
+                <div
+                    class="mb-4 rounded border border-amber-800/80 bg-amber-950/30 px-4 py-3 text-sm text-amber-100"
+                    data-testid="profile-build-recovery-guide"
+                >
+                    <strong>DB 보존 업데이트 빌드가 멈춘 경우:</strong> <strong>빌드 중단</strong>을 누르고
+                    CANCELLED를 확인한 뒤 <strong>재시도</strong>하세요. 기존 profile runtime과 게임 DB는
+                    유지됩니다. RESET·migration·process 전환 단계는 이 화면에서 강제 중단하지 않습니다.
+                </div>
                 <div class="mb-4 flex items-center justify-between">
                     <h3 class="text-lg font-semibold">작업 이력</h3>
                     <span class="text-xs text-zinc-500">3초마다 상태 갱신</span>
@@ -1565,11 +1634,14 @@ onBeforeUnmount(() => {
                                             로그
                                         </button>
                                         <button
-                                            v-if="operation.status === 'QUEUED'"
+                                            v-if="
+                                                operation.status === 'QUEUED' ||
+                                                (operation.status === 'RUNNING' && operation.type === 'DEPLOY')
+                                            "
                                             class="rounded border border-red-800 px-2 py-1 text-xs text-red-300 hover:bg-red-950"
                                             @click="cancelOperation(operation)"
                                         >
-                                            취소
+                                            {{ operation.status === 'RUNNING' ? '빌드 중단' : '취소' }}
                                         </button>
                                         <button
                                             v-else-if="

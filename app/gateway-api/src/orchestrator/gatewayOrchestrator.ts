@@ -198,6 +198,7 @@ interface GatewayAdminActionResult {
 
 const OPERATION_LEASE_DURATION_MS = 10 * 60_000;
 const OPERATION_HEARTBEAT_INTERVAL_MS = 60_000;
+const OPERATION_CANCELLATION_POLL_INTERVAL_MS = 500;
 
 class OperationLeaseLostError extends Error {}
 
@@ -633,6 +634,7 @@ export class GatewayOrchestrator implements GatewayOrchestratorHandle {
     private buildInFlight = false;
     private adminActionInFlight = false;
     private operationInFlight = false;
+    private activeOperationAbortSignal?: AbortSignal;
     private readonly resetInFlight = new Set<string>();
     private readonly operationLeaseOwner = randomUUID();
     private readonly inFlightTasks = new Set<Promise<unknown>>();
@@ -975,6 +977,8 @@ export class GatewayOrchestrator implements GatewayOrchestratorHandle {
             if (!operation) {
                 return;
             }
+            const abortController = new AbortController();
+            this.activeOperationAbortSignal = abortController.signal;
             const heartbeatTimer = this.repository.renewOperationLease
                 ? setInterval(() => {
                       void this.repository
@@ -984,17 +988,36 @@ export class GatewayOrchestrator implements GatewayOrchestratorHandle {
                               this.now(),
                               OPERATION_LEASE_DURATION_MS
                           )
+                          .then((renewed) => {
+                              if (!renewed) abortController.abort();
+                          })
                           .catch((error) => {
                               console.error('[gateway-orchestrator] operation heartbeat failed', error);
                           });
                   }, OPERATION_HEARTBEAT_INTERVAL_MS)
                 : undefined;
+            const cancellationTimer = setInterval(() => {
+                void this.repository
+                    .getOperation(operation.id)
+                    .then((current) => {
+                        if (
+                            !current ||
+                            current.status !== 'RUNNING' ||
+                            current.leaseOwner !== this.operationLeaseOwner
+                        ) {
+                            abortController.abort();
+                        }
+                    })
+                    .catch(() => undefined);
+            }, OPERATION_CANCELLATION_POLL_INTERVAL_MS);
             try {
                 await this.handleOperation(operation);
             } finally {
+                clearInterval(cancellationTimer);
                 if (heartbeatTimer) {
                     clearInterval(heartbeatTimer);
                 }
+                this.activeOperationAbortSignal = undefined;
             }
         } finally {
             this.operationInFlight = false;
@@ -1442,9 +1465,11 @@ export class GatewayOrchestrator implements GatewayOrchestratorHandle {
                 ),
             ];
             await this.appendOperationLog(operationId, 'build', `${profile.profileName} 구성 요소를 빌드합니다.`);
-            const result = await this.buildRunner.run(commands, this.buildProgress(operationId, 'build'));
-            await assertLease();
+            const result = await this.buildRunner.run(commands, this.buildProgress(operationId, 'build'), {
+                signal: this.activeOperationAbortSignal,
+            });
             if (!result.ok) {
+                await assertLease();
                 const detail = result.output.slice(-4000) || 'selected workspace build failed';
                 await updateClaimedProfile({
                     buildStatus: 'FAILED',
@@ -1455,6 +1480,7 @@ export class GatewayOrchestrator implements GatewayOrchestratorHandle {
             }
 
             await this.appendOperationLog(operationId, 'switch', '기존 profile process를 정지합니다.');
+            await assertLease();
             await this.stopProfile(profile, assertLease);
             oldRuntimeStopped = true;
             const profileDatabaseUrl = this.resolveProfileDatabaseUrl(profile);
@@ -2030,7 +2056,8 @@ export class GatewayOrchestrator implements GatewayOrchestratorHandle {
         return {
             result: await this.buildRunner.run(
                 commands,
-                operationId ? this.buildProgress(operationId, 'build') : undefined
+                operationId ? this.buildProgress(operationId, 'build') : undefined,
+                { signal: this.activeOperationAbortSignal }
             ),
             workspace,
         };
@@ -2052,7 +2079,8 @@ export class GatewayOrchestrator implements GatewayOrchestratorHandle {
     ): Promise<Awaited<ReturnType<BuildRunner['run']>>> {
         return this.buildRunner.run(
             [buildProfileMigrationCommand(workspaceRoot, profileDatabaseUrl, this.processConfig.baseEnv)],
-            onProgress
+            onProgress,
+            { signal: this.activeOperationAbortSignal }
         );
     }
 
@@ -2106,7 +2134,8 @@ export class GatewayOrchestrator implements GatewayOrchestratorHandle {
                         },
                     },
                 ],
-                onProgress
+                onProgress,
+                { signal: this.activeOperationAbortSignal }
             );
         } finally {
             await fs.rm(tempDirectory, { recursive: true, force: true });
