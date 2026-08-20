@@ -128,6 +128,58 @@ describeDb('scenario database seed', () => {
         }
     });
 
+    test('persists the next official game index without counting cancelled or unfinished games', async () => {
+        const marker = `scenario-seeder-game-index-${Date.now()}`;
+        const connector = createGamePostgresConnector({ url: databaseUrl });
+        await connector.connect();
+        try {
+            const completedBefore = await connector.prisma.gameHistory.count({ where: { status: 'COMPLETED' } });
+            await connector.prisma.gameHistory.createMany({
+                data: [
+                    {
+                        serverId: `${marker}-completed`,
+                        date: new Date('2026-08-01T00:00:00.000Z'),
+                        season: 1,
+                        scenario: 1010,
+                        scenarioName: '정상 종료 fixture',
+                        status: 'COMPLETED',
+                    },
+                    {
+                        serverId: `${marker}-abandoned`,
+                        date: new Date('2026-08-02T00:00:00.000Z'),
+                        season: 1,
+                        scenario: 1010,
+                        scenarioName: '취소 fixture',
+                        status: 'ABANDONED',
+                    },
+                    {
+                        serverId: `${marker}-open`,
+                        date: new Date('2026-08-03T00:00:00.000Z'),
+                        season: 1,
+                        scenario: 1010,
+                        scenarioName: '미완료 fixture',
+                        status: 'OPEN',
+                    },
+                ],
+            });
+
+            await seedScenarioToDatabase({
+                scenarioId: 1010,
+                databaseUrl,
+                installOptions: { serverId: marker },
+            });
+
+            const worldState = await connector.prisma.worldState.findFirstOrThrow();
+            expect(worldState.meta).toMatchObject({ gameIdx: completedBefore + 2 });
+            await expect(
+                connector.prisma.gameHistory.findUniqueOrThrow({ where: { serverId: marker } })
+            ).resolves.toMatchObject({ status: 'OPEN' });
+        } finally {
+            await connector.prisma.gameHistory.deleteMany({ where: { serverId: { startsWith: marker } } });
+            await connector.disconnect();
+        }
+    });
+
     test('writes scenario data into tables', async () => {
         const { seed } = await seedScenarioToDatabase({
             scenarioId,

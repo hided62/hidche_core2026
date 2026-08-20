@@ -44,6 +44,7 @@ export type WorldStateConfig = z.infer<typeof zWorldStateConfig>;
 
 export const zWorldStateMeta = z.object({
     serverId: z.string().optional(),
+    gameIdx: z.number().int().positive().optional(),
     starttime: z.string().optional(),
     opentime: z.string().optional(),
     preopenAt: z.string().optional(),
