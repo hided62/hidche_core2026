@@ -1,5 +1,6 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { createGamePostgresConnector, type GamePrismaClient } from '@sammo-ts/infra';
+import { LogCategory, LogScope } from '@sammo-ts/logic';
 
 import { createDatabaseTurnHooks } from '../src/turn/databaseHooks.js';
 import { InMemoryTurnWorld } from '../src/turn/inMemoryWorld.js';
@@ -15,6 +16,7 @@ integration('general access score reset persistence', () => {
     let closeDb: (() => Promise<void>) | undefined;
 
     const cleanup = async () => {
+        await db.logEntry.deleteMany({ where: { generalId } });
         await db.generalAccessLog.deleteMany({ where: { generalId } });
         await db.general.deleteMany({ where: { id: generalId } });
         await db.worldState.deleteMany({ where: { scenarioCode } });
@@ -33,8 +35,9 @@ integration('general access score reset persistence', () => {
         await closeDb?.();
     });
 
-    it('commits the own-turn reset marker in the same world flush', async () => {
+    it('commits the own-turn reset marker and per-entry log occurrence time in the same world flush', async () => {
         const turnTime = new Date('2026-08-15T00:10:00.000Z');
+        const occurredAt = new Date('2026-08-15T00:07:43.000Z');
         await db.general.create({
             data: {
                 id: generalId,
@@ -95,6 +98,13 @@ integration('general access score reset persistence', () => {
             { schedule: { entries: [{ startMinute: 0, tickMinutes: 10 }] } }
         );
         world.markGeneralAccessScoreReset(generalId);
+        world.pushLog({
+            scope: LogScope.GENERAL,
+            category: LogCategory.ACTION,
+            text: '<C>●</>1월:아무것도 실행하지 않았습니다.',
+            generalId,
+            occurredAt,
+        });
         const hooks = await createDatabaseTurnHooks(databaseUrl!, world);
 
         try {
@@ -113,6 +123,12 @@ integration('general access score reset persistence', () => {
                 refreshScoreTotal: 999,
             });
             expect(world.peekDirtyState().accessScoreResetGeneralIds).toEqual([]);
+            expect(
+                await db.logEntry.findFirstOrThrow({
+                    where: { generalId, category: LogCategory.ACTION },
+                    select: { createdAt: true },
+                })
+            ).toEqual({ createdAt: occurredAt });
         } finally {
             await hooks.close();
         }
