@@ -827,6 +827,62 @@ test('메인 장수 동향과 개인 전투 기록은 Ref 행 간격·색상·�
     await persistParityArtifact(page, 'core-main-personal-battle-log-inline-mobile', mobileGeometry);
 });
 
+test('개인턴·수뇌턴 실패 사유를 메인 개인 기록에 표시한다', async ({ page }) => {
+    const state: FixtureState = {
+        permission: 'head',
+        myset: 3,
+        settingMutations: [],
+        accessPages: [],
+        recentRecords: {
+            global: [],
+            general: [
+                {
+                    id: 19002,
+                    text: '<C>●</>1월:대상 도시가 아국이 아닙니다. <Y>여포</> 발령 실패.',
+                    createdAt: '2026-01-01T03:55:00.000Z',
+                },
+                {
+                    id: 19001,
+                    text: '<C>●</>1월:같은 도시입니다. <G><b>업</b></>으로 이동 실패.',
+                    createdAt: '2026-01-01T03:54:00.000Z',
+                },
+            ],
+            history: [],
+        },
+    };
+    await install(page, state);
+    await page.setViewportSize({ width: 1200, height: 900 });
+    await page.goto('');
+
+    const inspectFailureLogs = async (selector: string) => {
+        const lines = page.locator(selector);
+        await expect(lines).toHaveCount(2);
+        await expect(lines.nth(0)).toContainText('대상 도시가 아국이 아닙니다. 여포 발령 실패. 12:55');
+        await expect(lines.nth(1)).toContainText('같은 도시입니다. 업으로 이동 실패. 12:54');
+        return lines.evaluateAll((elements) =>
+            elements.map((element) => {
+                const rect = element.getBoundingClientRect();
+                const style = getComputedStyle(element);
+                return {
+                    text: element.textContent?.trim(),
+                    width: rect.width,
+                    height: rect.height,
+                    lineHeight: style.lineHeight,
+                };
+            })
+        );
+    };
+
+    const desktop = await inspectFailureLogs('.record-zone [data-record-bucket="general"] .record-line');
+    expect(desktop.every((line) => line.width > 0 && line.height === 21 && line.lineHeight === '21px')).toBe(true);
+    await persistParityArtifact(page, 'core-main-turn-failure-personal-records-desktop', desktop);
+
+    await page.setViewportSize({ width: 500, height: 900 });
+    const mobile = await inspectFailureLogs('.record-zone-mobile [data-record-bucket="general"] .record-line');
+    expect(mobile.every((line) => line.width > 0 && line.height === 21 && line.lineHeight === '21px')).toBe(true);
+    await persistParityArtifact(page, 'core-main-turn-failure-personal-records-mobile', mobile);
+});
+
 test('전투시드는 메인·내 정보·감찰부에서 숨긴 채 선택할 수 있다', async ({ page }) => {
     const seedText = '(전투시드: 0123456789abcdef)';
     const logText =
@@ -1231,7 +1287,9 @@ test('내 정보&설정의 지난 플레이는 기본 탐색과 분리되어 오
             const actions = element.querySelector<HTMLElement>('.title-actions')!.getBoundingClientRect();
             const navigation = element.querySelector<HTMLElement>('.navigation-actions')!.getBoundingClientRect();
             const back = element.querySelector<HTMLAnchorElement>('.navigation-actions a')!.getBoundingClientRect();
-            const refresh = element.querySelector<HTMLButtonElement>('.navigation-actions button')!.getBoundingClientRect();
+            const refresh = element
+                .querySelector<HTMLButtonElement>('.navigation-actions button')!
+                .getBoundingClientRect();
             const past = element.querySelector<HTMLAnchorElement>('.past-plays-link')!.getBoundingClientRect();
             const pastStyle = getComputedStyle(element.querySelector<HTMLAnchorElement>('.past-plays-link')!);
             return {
@@ -1267,6 +1325,77 @@ test('내 정보&설정의 지난 플레이는 기본 탐색과 분리되어 오
         await pastPlaysLink.click();
         await expect(page).toHaveURL(new RegExp(`${gameBasePath}/past-plays$`, 'u'));
     }
+});
+
+test('내 정보&설정에서 모바일 메인 패널을 드래그하거나 버튼으로 재정렬하고 기본 순서로 복원한다', async ({ page }) => {
+    const state: FixtureState = { permission: 'head', myset: 3, settingMutations: [], accessPages: [] };
+    await install(page, state);
+    await page.setViewportSize({ width: 390, height: 844 });
+    await page.goto('my-page');
+
+    await page.getByRole('button', { name: '순서 바꾸기', exact: true }).click();
+    const dialog = page.getByRole('dialog', { name: '모바일 레이아웃 순서 바꾸기' });
+    await expect(dialog).toBeVisible();
+    const readOrder = () =>
+        dialog
+            .locator('[data-mobile-layout-id]')
+            .evaluateAll((elements) => elements.map((element) => element.getAttribute('data-mobile-layout-id')));
+    const defaultOrder = [
+        'commands',
+        'nation-menu',
+        'nation',
+        'general',
+        'city',
+        'map',
+        'records',
+        'global-menu',
+        'messages',
+    ];
+    await expect.poll(readOrder).toEqual(defaultOrder);
+
+    await dialog
+        .locator('[data-mobile-layout-id="messages"]')
+        .dragTo(dialog.locator('[data-mobile-layout-id="commands"]'));
+    await expect
+        .poll(readOrder)
+        .toEqual(['messages', 'commands', 'nation-menu', 'nation', 'general', 'city', 'map', 'records', 'global-menu']);
+    await dialog.getByRole('button', { name: '지도 위로' }).click();
+    await expect
+        .poll(readOrder)
+        .toEqual(['messages', 'commands', 'nation-menu', 'nation', 'general', 'map', 'city', 'records', 'global-menu']);
+
+    const dialogGeometry = await dialog.evaluate((element) => {
+        const rect = element.getBoundingClientRect();
+        const firstItem = element.querySelector<HTMLElement>('[data-mobile-layout-id]')?.getBoundingClientRect();
+        const moveButton = element.querySelector<HTMLButtonElement>('[aria-label$="아래로"]')?.getBoundingClientRect();
+        return {
+            rect: rect.toJSON(),
+            firstItem: firstItem?.toJSON() ?? null,
+            moveButton: moveButton?.toJSON() ?? null,
+            overflowX: getComputedStyle(element).overflowX,
+            documentWidth: document.documentElement.scrollWidth,
+        };
+    });
+    expect(dialogGeometry.rect.left).toBeGreaterThanOrEqual(0);
+    expect(dialogGeometry.rect.right).toBeLessThanOrEqual(390);
+    expect(dialogGeometry.firstItem?.height).toBeGreaterThanOrEqual(44);
+    expect(dialogGeometry.moveButton?.width).toBeGreaterThanOrEqual(36);
+    expect(dialogGeometry.documentWidth).toBe(390);
+    await persistParityArtifact(page, 'core-my-page-mobile-layout-order-dialog', dialogGeometry);
+
+    await dialog.getByRole('button', { name: '적용', exact: true }).click();
+    await expect(dialog).toBeHidden();
+    await expect
+        .poll(() => page.evaluate(() => JSON.parse(localStorage.getItem('sam.mobileMainPanelOrder.v1') ?? '[]')))
+        .toEqual(['messages', 'commands', 'nation-menu', 'nation', 'general', 'map', 'city', 'records', 'global-menu']);
+
+    await page.getByRole('button', { name: '순서 바꾸기', exact: true }).click();
+    await dialog.getByRole('button', { name: '기본값', exact: true }).click();
+    await expect.poll(readOrder).toEqual(defaultOrder);
+    await dialog.getByRole('button', { name: '적용', exact: true }).click();
+    await expect
+        .poll(() => page.evaluate(() => JSON.parse(localStorage.getItem('sam.mobileMainPanelOrder.v1') ?? '[]')))
+        .toEqual(defaultOrder);
 });
 
 for (const [label, failure] of [

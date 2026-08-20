@@ -69,6 +69,29 @@ profile 범위 권한과 별개인 전역 `admin.releases.manage` 권한이 필�
 - migration 이후 이전 애플리케이션으로 돌아갈 때 schema 하위 호환성이
   유지됩니다.
 
+## Commit worktree 자동 정리
+
+Profile orchestrator와 Gateway release-controller는 서로 다른 worktree root를
+사용하지만 같은 보존 정책을 적용합니다. 각 daemon은 시작 시 한 번, 이후 24시간마다
+자신이 소유한 commit worktree를 점검합니다.
+
+- `GatewayProfile.buildWorkspace`, `RUNNING`/`QUEUED` profile 빌드 대상,
+  `GatewayReleaseState`의 active/previous workspace는 기간과 무관하게 보호합니다.
+- 활성 PM2 process의 cwd 또는 script 아래에 있는 worktree도 보호합니다. 여기에는
+  self-upgrade된 release-controller worktree도 포함됩니다.
+- 보호 대상이 아닌 worktree는 마지막 prepare 이후 최소 24시간을 유예하고, 그중
+  최신 2개는 재시도 cache로 더 남깁니다. 나머지는 Git worktree로 제거하고
+  `git worktree prune --expire now`로 사라진 metadata를 정리합니다.
+- tracked 또는 untracked 변경이 있으면 자동 삭제하지 않습니다. Git 제거 실패를
+  raw directory 삭제로 우회하지 않으며 다음 주기까지 보존합니다.
+- 정리는 commit checkout과 재생성 가능한 build artifact만 대상으로 합니다.
+  Gateway/profile PostgreSQL, Redis, image, runtime data volume에는 접근하지 않습니다.
+
+따라서 하루 안에 매우 많은 commit을 연속 배포하면 유예 구간만큼 일시적으로 늘 수
+있지만, active/rollback/current profile 경로 외의 장기 누적은 다음 정리 주기에
+제거됩니다. Profile 관리자 API의 `admin.profiles.cleanupWorkspaces`는 같은 보호
+규칙을 사용하므로 진행 중인 build/operation이 있으면 전체 정리를 보류합니다.
+
 ## Profile 배포
 
 버전 업데이트 화면에서 profile의 branch 또는 commit을 선택합니다. Branch는 worker가

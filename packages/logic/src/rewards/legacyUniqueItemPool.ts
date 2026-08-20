@@ -1,5 +1,6 @@
+import { createItemModuleRegistry, ItemLoader, ITEM_KEYS, loadItemModules } from '@sammo-ts/logic/items/index.js';
 import type { ItemModule } from '@sammo-ts/logic/items/types.js';
-import type { UniqueItemPool } from './uniqueLottery.js';
+import { resolveUniqueConfig, type UniqueItemPool, type UniqueLotteryConfig } from './uniqueLottery.js';
 
 const LEGACY_UNIQUE_ITEM_KEYS: Readonly<Record<ItemModule['slot'], readonly string[]>> = {
     horse: [
@@ -124,4 +125,39 @@ export const buildLegacyDefaultUniqueItemPool = (itemRegistry: Map<string, ItemM
         }
     }
     return pool;
+};
+
+let legacyDefaultUniqueItemPoolPromise: Promise<UniqueItemPool> | null = null;
+
+const cloneUniqueItemPool = (pool: UniqueItemPool): UniqueItemPool =>
+    Object.fromEntries(Object.entries(pool).map(([slot, entries]) => [slot, { ...entries }]));
+
+export const loadLegacyDefaultUniqueItemPool = async (loader?: ItemLoader): Promise<UniqueItemPool> => {
+    if (loader) {
+        const modules = await loadItemModules([...ITEM_KEYS], loader);
+        return buildLegacyDefaultUniqueItemPool(createItemModuleRegistry(modules));
+    }
+
+    legacyDefaultUniqueItemPoolPromise ??= loadItemModules([...ITEM_KEYS], new ItemLoader()).then((modules) =>
+        buildLegacyDefaultUniqueItemPool(createItemModuleRegistry(modules))
+    );
+    return cloneUniqueItemPool(await legacyDefaultUniqueItemPoolPromise);
+};
+
+/**
+ * Ref의 GameConst 기본값은 시나리오가 allItems를 덮어쓰지 않아도 항상 존재합니다.
+ * 오래된 Core snapshot의 생략값/문자열 빈 객체도 같은 기본 풀로 해석합니다.
+ */
+export const resolveLegacyCompatibleUniqueConfig = async (
+    configConst: Record<string, unknown>,
+    loader?: ItemLoader
+): Promise<UniqueLotteryConfig> => {
+    const config = resolveUniqueConfig(configConst);
+    if (Object.keys(config.allItems).length > 0) {
+        return config;
+    }
+    return {
+        ...config,
+        allItems: await loadLegacyDefaultUniqueItemPool(loader),
+    };
 };

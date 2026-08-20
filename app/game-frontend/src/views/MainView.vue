@@ -29,6 +29,12 @@ import { useMainDashboardStore } from '../stores/mainDashboard';
 import { useGameFeedback } from '../composables/useGameFeedback';
 import { trpc } from '../utils/trpc';
 import type { CommandPatternEntry } from '../components/command/types';
+import {
+    loadMobileMainPanelOrder,
+    MOBILE_MAIN_PANEL_ORDER_CHANGED_EVENT,
+    MOBILE_MAIN_PANEL_ORDER_STORAGE_KEY,
+    type MobileMainPanelId,
+} from '../utils/mobileMainPanelOrder';
 
 const session = useSessionStore();
 const dashboard = useMainDashboardStore();
@@ -38,7 +44,19 @@ const isMobile = useMediaQuery('(max-width: 939.98px)');
 const npcMode = ref(0);
 const globalNavigation = ref<MainNavigationEntry[]>(defaultGlobalNavigation);
 const versionDialog = ref<HTMLDialogElement | null>(null);
+const mobilePanelOrder = ref(loadMobileMainPanelOrder());
 const navigationUrl = (import.meta.env.VITE_GATEWAY_API_URL ?? '/api/trpc').replace(/\/trpc\/?$/u, '/navigation');
+
+const reloadMobilePanelOrder = () => {
+    mobilePanelOrder.value = loadMobileMainPanelOrder();
+};
+const handleMobilePanelStorage = (event: StorageEvent) => {
+    if (event.key === MOBILE_MAIN_PANEL_ORDER_STORAGE_KEY) reloadMobilePanelOrder();
+};
+const isFlushMobilePanel = (panelId: MobileMainPanelId, index: number): boolean => {
+    const previous = mobilePanelOrder.value[index - 1];
+    return (panelId === 'general' && previous === 'nation') || (panelId === 'city' && previous === 'general');
+};
 
 const {
     loading,
@@ -77,6 +95,27 @@ const nationAccess = computed(() => ({
 }));
 const nationColor = computed(() => nation.value?.color ?? '#000000');
 const voteActive = computed(() => Boolean(frontStatus.value?.latestVote));
+const profileLabels: Record<string, string> = {
+    che: '체',
+    kwe: '퀘',
+    pwe: '풰',
+    twe: '퉤',
+    nya: '냐',
+    pya: '퍄',
+    hwe: '훼',
+};
+const gameProfileLabel = computed(() => {
+    const profile = lobbyInfo.value?.profile?.trim();
+    return profile ? (profileLabels[profile] ?? profile) : '';
+});
+const gameTitle = computed(() => {
+    const scenarioTitle = lobbyInfo.value?.scenarioTitle || '전장 현황';
+    const profileLabel = gameProfileLabel.value;
+    const gameIdx = lobbyInfo.value?.gameIdx;
+    return profileLabel && typeof gameIdx === 'number' && Number.isInteger(gameIdx) && gameIdx > 0
+        ? `${scenarioTitle} ${profileLabel}섭 ${gameIdx}기`
+        : scenarioTitle;
+});
 const recordTimeSuffixPattern = /\d{2}:\d{2}(?:<\/>)?\s*$/u;
 const formatRecord = (entry: { text: string; createdAt?: string | Date }, appendTime = false): string => {
     if (!appendTime || recordTimeSuffixPattern.test(entry.text)) return formatLog(entry.text);
@@ -100,10 +139,14 @@ onUnmounted(() => {
         clearTimeout(surveyNoticeTimer);
     }
     dashboard.stopRealtime();
+    window.removeEventListener('storage', handleMobilePanelStorage);
+    document.removeEventListener(MOBILE_MAIN_PANEL_ORDER_CHANGED_EVENT, reloadMobilePanelOrder);
 });
 
 onMounted(() => {
     dashboard.startRealtime();
+    window.addEventListener('storage', handleMobilePanelStorage);
+    document.addEventListener(MOBILE_MAIN_PANEL_ORDER_CHANGED_EVENT, reloadMobilePanelOrder);
     void fetch(navigationUrl, { headers: { Accept: 'application/json' } })
         .then(async (response) => {
             if (!response.ok) throw new Error(`메뉴 설정 조회 실패: HTTP ${response.status}`);
@@ -130,10 +173,7 @@ const repeatGeneralTurns = (amount: number) => {
 };
 
 const loadMainData = async () => {
-    const [, worldState] = await Promise.all([
-        dashboard.loadMainData(),
-        trpc.world.getState.query().catch(() => null),
-    ]);
+    const [, worldState] = await Promise.all([dashboard.loadMainData(), trpc.world.getState.query().catch(() => null)]);
     npcMode.value = worldState?.config.npcMode ?? 0;
 };
 
@@ -180,7 +220,7 @@ watch(
 
         <header class="game-shell__header">
             <h1 class="game-shell__title">
-                {{ lobbyInfo?.scenarioTitle || '전장 현황' }}
+                {{ gameTitle }}
             </h1>
             <div class="game-shell__actions desktop-action-controls">
                 <button
@@ -239,131 +279,155 @@ watch(
         </aside>
 
         <section v-if="isMobile" class="layout-mobile">
-            <div class="mobile-panel">
-                <PanelCard title="명령 목록" subtitle="예턴/명령 배치 영역" data-main-target="commands">
-                    <CommandListPanel
-                        :command-table="commandTable"
-                        :loading="loading"
-                        :reserved-general-turns="reservedGeneralTurns"
-                        :general="general"
-                        :current-year="lobbyInfo?.year"
-                        :current-month="lobbyInfo?.month"
-                        :turn-term-minutes="lobbyInfo?.turnTerm"
-                        :server-time="lobbyInfo?.serverTime"
-                        :clock-mode="lobbyInfo?.clockMode"
-                        :autorun-limit="reservedGeneralAutorunLimit"
-                        :map-data="worldMap"
-                        :map-layout="mapLayout"
-                        @set-general-turns="reserveGeneralTurns"
-                        @shift-general-turns="shiftGeneralTurns"
-                        @repeat-general-turns="repeatGeneralTurns"
+            <template v-for="(panelId, panelIndex) in mobilePanelOrder" :key="panelId">
+                <div v-if="panelId === 'commands'" class="mobile-panel" data-mobile-panel-id="commands">
+                    <PanelCard title="명령 목록" subtitle="예턴/명령 배치 영역" data-main-target="commands">
+                        <CommandListPanel
+                            :command-table="commandTable"
+                            :loading="loading"
+                            :reserved-general-turns="reservedGeneralTurns"
+                            :general="general"
+                            :current-year="lobbyInfo?.year"
+                            :current-month="lobbyInfo?.month"
+                            :turn-term-minutes="lobbyInfo?.turnTerm"
+                            :server-time="lobbyInfo?.serverTime"
+                            :clock-mode="lobbyInfo?.clockMode"
+                            :autorun-limit="reservedGeneralAutorunLimit"
+                            :map-data="worldMap"
+                            :map-layout="mapLayout"
+                            @set-general-turns="reserveGeneralTurns"
+                            @shift-general-turns="shiftGeneralTurns"
+                            @repeat-general-turns="repeatGeneralTurns"
+                        />
+                    </PanelCard>
+                </div>
+
+                <div v-else-if="panelId === 'nation-menu'" class="mobile-panel" data-mobile-panel-id="nation-menu">
+                    <MainNationMenu
+                        class="nation-menu-middle"
+                        :access="nationAccess"
+                        :tournament-stage="tournamentStage"
+                        :nation-color="nationColor"
                     />
-                </PanelCard>
-            </div>
+                </div>
 
-            <div class="mobile-panel">
-                <MainNationMenu
-                    class="nation-menu-middle"
-                    :access="nationAccess"
-                    :tournament-stage="tournamentStage"
-                    :nation-color="nationColor"
+                <div v-else-if="panelId === 'nation'" class="mobile-panel" data-mobile-panel-id="nation">
+                    <PanelCard title="국가 정보" data-main-target="nation">
+                        <NationBasicCard :nation="nation" :loading="loading" />
+                    </PanelCard>
+                </div>
+
+                <div
+                    v-else-if="panelId === 'general'"
+                    class="mobile-panel"
+                    :class="{ 'mobile-panel--flush': isFlushMobilePanel(panelId, panelIndex) }"
+                    data-mobile-panel-id="general"
+                >
+                    <PanelCard title="장수 스탯" data-main-target="general">
+                        <GeneralBasicCard :general="general" :loading="loading" :nation-color="nation?.color" />
+                    </PanelCard>
+                </div>
+
+                <div
+                    v-else-if="panelId === 'city'"
+                    class="mobile-panel"
+                    :class="{ 'mobile-panel--flush': isFlushMobilePanel(panelId, panelIndex) }"
+                    data-mobile-panel-id="city"
+                >
+                    <PanelCard title="도시 정보" data-main-target="city">
+                        <CityBasicCard :city="city" :loading="loading" />
+                    </PanelCard>
+                </div>
+
+                <div v-else-if="panelId === 'map'" class="mobile-panel" data-mobile-panel-id="map">
+                    <PanelCard title="지도" data-main-target="map">
+                        <MapViewer :map-data="worldMap" :map-layout="mapLayout" :loading="loading" />
+                    </PanelCard>
+                </div>
+
+                <div
+                    v-else-if="panelId === 'records'"
+                    class="mobile-panel record-zone-mobile"
+                    data-mobile-panel-id="records"
+                >
+                    <RecordPanel title="장수 동향" data-main-target="global-records">
+                        <SkeletonLines v-if="loading" :lines="4" />
+                        <div v-else-if="recordsError" class="record-error" role="alert">{{ recordsError }}</div>
+                        <div v-else class="record-list" data-record-bucket="global">
+                            <!-- eslint-disable-next-line vue/no-v-html -->
+                            <div
+                                v-for="entry in globalRecords"
+                                :key="entry.id"
+                                class="record-line"
+                                v-html="formatRecord(entry)"
+                            />
+                            <div v-if="globalRecords.length === 0" class="record-empty">기록이 없습니다.</div>
+                        </div>
+                    </RecordPanel>
+                    <RecordPanel title="개인 기록" data-main-target="general-records">
+                        <SkeletonLines v-if="loading" :lines="4" />
+                        <div v-else-if="recordsError" class="record-error" role="alert">{{ recordsError }}</div>
+                        <div v-else class="record-list" data-record-bucket="general">
+                            <!-- eslint-disable-next-line vue/no-v-html -->
+                            <div
+                                v-for="entry in generalRecords"
+                                :key="entry.id"
+                                class="record-line"
+                                v-html="formatRecord(entry, true)"
+                            />
+                            <div v-if="generalRecords.length === 0" class="record-empty">기록이 없습니다.</div>
+                        </div>
+                    </RecordPanel>
+                    <RecordPanel title="중원 정세" data-main-target="world-history">
+                        <SkeletonLines v-if="loading" :lines="4" />
+                        <div v-else-if="recordsError" class="record-error" role="alert">{{ recordsError }}</div>
+                        <div v-else class="record-list" data-record-bucket="history">
+                            <!-- eslint-disable-next-line vue/no-v-html -->
+                            <div
+                                v-for="entry in worldHistory"
+                                :key="entry.id"
+                                class="record-line"
+                                v-html="formatRecord(entry)"
+                            />
+                            <div v-if="worldHistory.length === 0" class="record-empty">기록이 없습니다.</div>
+                        </div>
+                    </RecordPanel>
+                </div>
+
+                <MainGlobalMenu
+                    v-else-if="panelId === 'global-menu'"
+                    class="common-menu-middle"
+                    data-menu-position="middle"
+                    data-mobile-panel-id="global-menu"
+                    :npc-mode="npcMode"
+                    :vote-active="voteActive"
+                    :entries="globalNavigation"
+                    @action="handleNavigationAction"
                 />
-            </div>
 
-            <div class="mobile-panel">
-                <PanelCard title="국가 정보" data-main-target="nation">
-                    <NationBasicCard :nation="nation" :loading="loading" />
-                </PanelCard>
-                <PanelCard title="장수 스탯" data-main-target="general">
-                    <GeneralBasicCard :general="general" :loading="loading" :nation-color="nation?.color" />
-                </PanelCard>
-                <PanelCard title="도시 정보" data-main-target="city">
-                    <CityBasicCard :city="city" :loading="loading" />
-                </PanelCard>
-            </div>
-
-            <div class="mobile-panel">
-                <PanelCard title="지도" data-main-target="map">
-                    <MapViewer :map-data="worldMap" :map-layout="mapLayout" :loading="loading" />
-                </PanelCard>
-            </div>
-
-            <div class="mobile-panel record-zone-mobile">
-                <RecordPanel title="장수 동향" data-main-target="global-records">
-                    <SkeletonLines v-if="loading" :lines="4" />
-                    <div v-else-if="recordsError" class="record-error" role="alert">{{ recordsError }}</div>
-                    <div v-else class="record-list" data-record-bucket="global">
-                        <!-- eslint-disable-next-line vue/no-v-html -->
-                        <div
-                            v-for="entry in globalRecords"
-                            :key="entry.id"
-                            class="record-line"
-                            v-html="formatRecord(entry)"
-                        />
-                        <div v-if="globalRecords.length === 0" class="record-empty">기록이 없습니다.</div>
-                    </div>
-                </RecordPanel>
-                <RecordPanel title="개인 기록" data-main-target="general-records">
-                    <SkeletonLines v-if="loading" :lines="4" />
-                    <div v-else-if="recordsError" class="record-error" role="alert">{{ recordsError }}</div>
-                    <div v-else class="record-list" data-record-bucket="general">
-                        <!-- eslint-disable-next-line vue/no-v-html -->
-                        <div
-                            v-for="entry in generalRecords"
-                            :key="entry.id"
-                            class="record-line"
-                            v-html="formatRecord(entry, true)"
-                        />
-                        <div v-if="generalRecords.length === 0" class="record-empty">기록이 없습니다.</div>
-                    </div>
-                </RecordPanel>
-                <RecordPanel title="중원 정세" data-main-target="world-history">
-                    <SkeletonLines v-if="loading" :lines="4" />
-                    <div v-else-if="recordsError" class="record-error" role="alert">{{ recordsError }}</div>
-                    <div v-else class="record-list" data-record-bucket="history">
-                        <!-- eslint-disable-next-line vue/no-v-html -->
-                        <div
-                            v-for="entry in worldHistory"
-                            :key="entry.id"
-                            class="record-line"
-                            v-html="formatRecord(entry)"
-                        />
-                        <div v-if="worldHistory.length === 0" class="record-empty">기록이 없습니다.</div>
-                    </div>
-                </RecordPanel>
-            </div>
-
-            <MainGlobalMenu
-                class="common-menu-middle"
-                data-menu-position="middle"
-                :npc-mode="npcMode"
-                :vote-active="voteActive"
-                :entries="globalNavigation"
-                @action="handleNavigationAction"
-            />
-
-            <div class="mobile-panel">
-                <MessagePanel
-                    class="mobile-message-panel"
-                    :messages="messages"
-                    :loading="loading"
-                    :target-mailbox="targetMailbox"
-                    :draft-text="messageDraftText"
-                    :mailbox-groups="mailboxGroups"
-                    :general-id="general?.id ?? 0"
-                    :general-name="general?.name ?? ''"
-                    :nation-id="general?.nationId ?? 0"
-                    :can-respond-diplomacy="messages?.canRespondDiplomacy ?? false"
-                    @update:target-mailbox="targetMailbox = $event"
-                    @update:draft-text="messageDraftText = $event"
-                    @send="dashboard.sendMessage"
-                    @load-older="dashboard.loadOlderMessages"
-                    @refresh="dashboard.refreshMessages"
-                    @respond="dashboard.respondToMessage"
-                    @read-latest="dashboard.readLatestMessage"
-                    @delete="dashboard.deleteMessage"
-                />
-            </div>
+                <div v-else class="mobile-panel" data-mobile-panel-id="messages">
+                    <MessagePanel
+                        class="mobile-message-panel"
+                        :messages="messages"
+                        :loading="loading"
+                        :target-mailbox="targetMailbox"
+                        :draft-text="messageDraftText"
+                        :mailbox-groups="mailboxGroups"
+                        :general-id="general?.id ?? 0"
+                        :general-name="general?.name ?? ''"
+                        :nation-id="general?.nationId ?? 0"
+                        :can-respond-diplomacy="messages?.canRespondDiplomacy ?? false"
+                        @update:target-mailbox="targetMailbox = $event"
+                        @update:draft-text="messageDraftText = $event"
+                        @send="dashboard.sendMessage"
+                        @load-older="dashboard.loadOlderMessages"
+                        @refresh="dashboard.refreshMessages"
+                        @respond="dashboard.respondToMessage"
+                        @read-latest="dashboard.readLatestMessage"
+                        @delete="dashboard.deleteMessage"
+                    />
+                </div>
+            </template>
         </section>
 
         <section v-else class="layout-desktop">
@@ -798,8 +862,8 @@ button {
     gap: 0;
 }
 
-.layout-mobile > .mobile-panel:nth-of-type(3) {
-    gap: 0;
+.layout-mobile > .mobile-panel--flush {
+    margin-top: -4px;
 }
 
 .layout-mobile [data-main-target='commands'] {

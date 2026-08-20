@@ -1,11 +1,12 @@
 <script setup lang="ts">
-import { formatServerDateTime } from '@sammo-ts/common';
+import { formatServerDateTime, JosaUtil } from '@sammo-ts/common';
 import { computed, onMounted, reactive, ref } from 'vue';
 import { trpc } from '../utils/trpc';
 
 type InheritStatus = Awaited<ReturnType<typeof trpc.inherit.getStatus.query>>;
 type InheritLog = Awaited<ReturnType<typeof trpc.inherit.getLogs.query>>[number];
 type JoinConfig = Awaited<ReturnType<typeof trpc.join.getConfig.query>>;
+type UniqueItemSlot = InheritStatus['availableUnique'][number]['slot'];
 
 type BuffKey =
     | 'warAvoidRatio'
@@ -66,6 +67,14 @@ const pointOrder = [
     'tournament',
     'betting',
 ] as const;
+
+const uniqueItemSlotOrder: readonly UniqueItemSlot[] = ['horse', 'weapon', 'book', 'item'];
+const uniqueItemSlotLabels: Record<UniqueItemSlot, string> = {
+    horse: '명마',
+    weapon: '무기',
+    book: '서적',
+    item: '도구',
+};
 
 const pointHelp: Record<string, string> = {
     previous: '이전에 물려받은 포인트입니다.',
@@ -195,6 +204,15 @@ const specialNameMap = computed(() => {
 });
 const selectedSpecialWarInfo = computed(
     () => status.value?.availableSpecialWar.find((entry) => entry.key === nextSpecialKey.value)?.info ?? ''
+);
+const availableUniqueGroups = computed(() =>
+    uniqueItemSlotOrder
+        .map((slot) => ({
+            slot,
+            label: uniqueItemSlotLabels[slot],
+            items: status.value?.availableUnique.filter((item) => item.slot === slot) ?? [],
+        }))
+        .filter((group) => group.items.length > 0)
 );
 
 const buffCost = (key: BuffKey, target: number): number => {
@@ -379,7 +397,8 @@ const buyRandomUnique = async () => {
 };
 
 const openUniqueAuction = async () => {
-    if (!uniqueForm.itemId.trim()) {
+    const selectedItem = status.value?.availableUnique.find((item) => item.key === uniqueForm.itemId.trim());
+    if (!selectedItem) {
         actionError.value = '유니크를 선택해주세요.';
         return;
     }
@@ -388,15 +407,20 @@ const openUniqueAuction = async () => {
         actionError.value = '입찰 포인트를 입력해주세요.';
         return;
     }
-    if (!window.confirm(`유니크 경매를 ${amount} 포인트로 신청하시겠습니까?`)) {
+    if (previousPoint.value < amount) {
+        actionError.value = '유산 포인트가 부족합니다.';
+        return;
+    }
+    const itemJosa = JosaUtil.pick(selectedItem.rawName, '을');
+    if (!window.confirm(`${amount} 포인트로 ${selectedItem.name}${itemJosa} 입찰하겠습니까?`)) {
         return;
     }
     await runAction(async () => {
         await trpc.inherit.openUniqueAuction.mutate({
-            itemId: uniqueForm.itemId.trim(),
+            itemId: selectedItem.key,
             amount,
         });
-    });
+    }, '성공했습니다. 경매장을 확인해주세요.');
 };
 
 const checkOwner = async () => {
@@ -512,9 +536,11 @@ onMounted(() => {
                             <label for="specific-unique">유니크 경매</label>
                             <select id="specific-unique" v-model="uniqueForm.itemId">
                                 <option disabled value="">유니크 선택</option>
-                                <option v-for="item in status.availableUnique" :key="item.key" :value="item.key">
-                                    {{ item.name }}
-                                </option>
+                                <optgroup v-for="group in availableUniqueGroups" :key="group.slot" :label="group.label">
+                                    <option v-for="item in group.items" :key="item.key" :value="item.key">
+                                        {{ item.name }}
+                                    </option>
+                                </optgroup>
                             </select>
                         </div>
                         <div class="control-row">

@@ -156,15 +156,15 @@ export const applyLegacyGeneralProgression = (
         meta.explevel = expLevel;
         if (expLevel !== previousExpLevel && actionResolvedExpLevel !== expLevel) {
             const josaRo = JosaUtil.pick(String(expLevel), '로');
-            logs.push({
-                scope: LogScope.GENERAL,
-                category: LogCategory.ACTION,
-                format: LogFormat.PLAIN,
-                text:
+            logs.push(
+                createGeneralActionLog(
+                    general.id,
                     expLevel > previousExpLevel
                         ? `<C>Lv ${expLevel}</>${josaRo} <C>레벨업</>!`
                         : `<C>Lv ${expLevel}</>${josaRo} <R>레벨다운</>!`,
-            });
+                    { format: LogFormat.PLAIN }
+                )
+            );
         }
     }
     if (!preserveLevel && (forceRefreshLevel || general.dedication !== previousGeneral.dedication)) {
@@ -176,15 +176,15 @@ export const applyLegacyGeneralProgression = (
             const billText = getBillByLevel(dedicationLevel).toLocaleString('en-US');
             const josaRoDedication = JosaUtil.pick(dedicationLevelText, '로');
             const josaRoBill = JosaUtil.pick(billText, '로');
-            logs.push({
-                scope: LogScope.GENERAL,
-                category: LogCategory.ACTION,
-                format: LogFormat.PLAIN,
-                text:
+            logs.push(
+                createGeneralActionLog(
+                    general.id,
                     dedicationLevel > previousDedicationLevel
                         ? `<Y>${dedicationLevelText}</>${josaRoDedication} <C>승급</>하여 봉록이 <C>${billText}</>${josaRoBill} <C>상승</>했습니다!`
                         : `<Y>${dedicationLevelText}</>${josaRoDedication} <R>강등</>되어 봉록이 <C>${billText}</>${josaRoBill} <R>하락</>했습니다!`,
-            });
+                    { format: LogFormat.PLAIN }
+                )
+            );
         }
     }
 
@@ -715,12 +715,27 @@ const buildConstraintContext = (
     mode: 'full',
 });
 
-const createActionLog = (message: string, meta?: Record<string, unknown>): LogEntryDraft => ({
+/**
+ * Ref ActionLogger is constructed with a general ID, so every personal action
+ * log carries its owner before it reaches persistence. Keep that ownership
+ * explicit here: finalizeLogEntry intentionally rejects ownerless GENERAL logs.
+ */
+interface GeneralActionLogOptions {
+    format?: LogFormat;
+    meta?: Record<string, unknown>;
+}
+
+const createGeneralActionLog = (
+    generalId: number,
+    message: string,
+    options: GeneralActionLogOptions = {}
+): LogEntryDraft => ({
     scope: LogScope.GENERAL,
     category: LogCategory.ACTION,
-    format: LogFormat.MONTH,
+    generalId,
+    format: options.format ?? LogFormat.MONTH,
     text: message,
-    meta,
+    ...(options.meta ? { meta: options.meta } : {}),
 });
 
 const resolveDefinition = (
@@ -936,7 +951,7 @@ export const createReservedTurnHandler = async (options: {
                     actionKey = definition.key;
                     usedFallback = true;
                     blockedReason = failureText;
-                    logs.push(createActionLog(failureText));
+                    logs.push(createGeneralActionLog(currentGeneral.id, failureText));
                 }
 
                 const actionConstraintEnv = {
@@ -972,7 +987,7 @@ export const createReservedTurnHandler = async (options: {
                     const failureText =
                         failedDefinition.formatConstraintFailure?.(reason, constraintCtx, failedActionArgs, view) ??
                         `${reason} ${failedDefinition.name} 실패.`;
-                    logs.push(createActionLog(failureText, meta));
+                    logs.push(createGeneralActionLog(currentGeneral.id, failureText, meta ? { meta } : {}));
                 }
                 if (!usedFallback && (kind === 'general' || currentNation)) {
                     const currentYearMonth = joinYearMonth(context.world.currentYear, context.world.currentMonth);
@@ -987,7 +1002,7 @@ export const createReservedTurnHandler = async (options: {
                         actionKey = definition.key;
                         usedFallback = true;
                         blockedReason = `${remainTurn}턴 더 기다려야 합니다`;
-                        logs.push(createActionLog(blockedReason));
+                        logs.push(createGeneralActionLog(currentGeneral.id, blockedReason));
                     }
                 }
 
@@ -1068,7 +1083,7 @@ export const createReservedTurnHandler = async (options: {
                     actionKey = definition.key;
                     usedFallback = true;
                     blockedReason = '예약된 명령을 실행하지 못했습니다.';
-                    logs.push(createActionLog('예약된 명령을 실행하지 못했습니다.'));
+                    logs.push(createGeneralActionLog(currentGeneral.id, '예약된 명령을 실행하지 못했습니다.'));
                     actionRng = sharedActionRng ?? buildRng(actionKey);
                     baseContext = {
                         general: currentGeneral,
@@ -1151,7 +1166,7 @@ export const createReservedTurnHandler = async (options: {
                         const progressText =
                             executionDefinition.getProgressText?.(actionContext, actionArgs, nextTerm, termMax) ??
                             `${definition.name} 수행중... (${nextTerm}/${termMax})`;
-                        logs.push(createActionLog(progressText));
+                        logs.push(createGeneralActionLog(currentGeneral.id, progressText));
                         return { actionKey, usedFallback, completed: false, blockedReason };
                     }
                 }
@@ -1576,7 +1591,7 @@ export const createReservedTurnHandler = async (options: {
                 },
                 rng: preprocessRng,
                 log: {
-                    push: (message) => logs.push(createActionLog(message)),
+                    push: (message) => logs.push(createGeneralActionLog(currentGeneral.id, message)),
                 },
             });
             preTurnPipeline.getPreTurnExecuteTriggerList(preTurnContext).fire(preTurnContext, baseConstraintEnv);
@@ -1602,7 +1617,12 @@ export const createReservedTurnHandler = async (options: {
                     }
                     currentGeneral.crew = 0;
                     currentGeneral.rice = 0;
-                    logs.push(createActionLog('군량이 모자라 병사들이 <R>소집해제</>되었습니다!'));
+                    logs.push(
+                        createGeneralActionLog(
+                            currentGeneral.id,
+                            '군량이 모자라 병사들이 <R>소집해제</>되었습니다!'
+                        )
+                    );
                     preTurnContext.skill.activate('pre.소집해제');
                 }
                 preTurnContext.skill.activate('pre.병력군량소모');
@@ -1625,7 +1645,8 @@ export const createReservedTurnHandler = async (options: {
             if (isBlocked) {
                 currentGeneral.meta.killturn = Math.max(0, currentGeneral.meta.killturn - 1);
                 logs.push(
-                    createActionLog(
+                    createGeneralActionLog(
+                        currentGeneral.id,
                         blockCode === 2
                             ? '현재 멀티, 또는 비매너로 인한<R>블럭</> 대상자입니다.'
                             : '현재 악성유저로 분류되어 <R>블럭</> 대상자입니다.'
@@ -1981,7 +2002,8 @@ export const createReservedTurnHandler = async (options: {
                             ? currentGeneral.meta.owner_name
                             : currentGeneral.userId;
                     logs.push(
-                        createActionLog(
+                        createGeneralActionLog(
+                            currentGeneral.id,
                             `${ownerName ?? '사용자'}이 <Y>${currentGeneral.name}</>의 육체에서 <S>유체이탈</>합니다!`
                         )
                     );
@@ -2060,7 +2082,8 @@ export const createReservedTurnHandler = async (options: {
                                 chiefGeneralId: successor.id,
                             };
                             logs.push(
-                                createActionLog(
+                                createGeneralActionLog(
+                                    currentGeneral.id,
                                     `<Y>${successor.name}</>이 <D><b>${currentNation.name}</b></>의 유지를 이어 받았습니다`
                                 )
                             );
@@ -2093,7 +2116,12 @@ export const createReservedTurnHandler = async (options: {
             if (!deleteGeneral && currentGeneral.age >= retirementYear && currentGeneral.npcState === 0) {
                 currentGeneral = resetRetiredGeneral(currentGeneral);
                 lifecycleOutcome = 'retired';
-                logs.push(createActionLog('나이가 들어 <R>은퇴</>하고 자손에게 자리를 물려줍니다.'));
+                logs.push(
+                    createGeneralActionLog(
+                        currentGeneral.id,
+                        '나이가 들어 <R>은퇴</>하고 자손에게 자리를 물려줍니다.'
+                    )
+                );
             }
 
             currentGeneral = {
@@ -2245,10 +2273,7 @@ export const createImmediateGeneralActionExecutor = async (options: {
                     definition.formatConstraintFailure?.(reason, constraintCtx, args, view) ??
                     `${reason} ${definition.name} 실패.`;
                 if (input.actionKey === 'che_접경귀환' || input.actionKey === 'che_등용수락') {
-                    options.world.pushLog({
-                        ...createActionLog(failureText),
-                        generalId: general.id,
-                    });
+                    options.world.pushLog(createGeneralActionLog(general.id, failureText), general.turnTime);
                 }
                 return { ok: false, reason: failureText };
             }
@@ -2325,7 +2350,7 @@ export const createImmediateGeneralActionExecutor = async (options: {
 
             if (input.actionKey === 'che_접경귀환' && (resolution.general as TurnGeneral).cityId === general.cityId) {
                 for (const log of resolution.logs) {
-                    options.world.pushLog(log);
+                    options.world.pushLog(log, general.turnTime);
                 }
                 return { ok: false, reason: '가까운 아국 도시가 없습니다.' };
             }
@@ -2409,7 +2434,7 @@ export const createImmediateGeneralActionExecutor = async (options: {
                 options.world.removeTroop(troopId);
             }
             for (const log of [...resolution.logs, ...progressionLogs]) {
-                options.world.pushLog(log);
+                options.world.pushLog(log, general.turnTime);
             }
             options.world.updateGeneral(input.generalId, nextGeneral);
             return { ok: true };

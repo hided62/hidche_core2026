@@ -323,9 +323,6 @@ export const seedScenarioToDatabase = async (options: ScenarioSeedOptions): Prom
             options: install.autorunUser.options,
         };
     }
-    const archivedWorldMeta = { ...worldMeta };
-    delete archivedWorldMeta.hiddenSeed;
-
     await connector.connect();
     try {
         const result: ScenarioSeedResult = { seed, warnings, applied: true };
@@ -382,6 +379,20 @@ export const seedScenarioToDatabase = async (options: ScenarioSeedOptions): Prom
                     await prisma.nation.deleteMany();
                     await prisma.worldState.deleteMany();
                 }
+
+                const serverId = typeof worldMeta.serverId === 'string' ? worldMeta.serverId : undefined;
+                const completedGameCount = await prisma.gameHistory.count({
+                    where: {
+                        status: 'COMPLETED',
+                        ...(serverId ? { serverId: { not: serverId } } : {}),
+                    },
+                });
+                // Ref fixes server_cnt once during ResetHelper initialization. Keep the
+                // frequently rendered game index in the same persisted read model and
+                // exclude abandoned or unfinished rows from the official sequence.
+                worldMeta.gameIdx = completedGameCount + 1;
+                const archivedWorldMeta = { ...worldMeta };
+                delete archivedWorldMeta.hiddenSeed;
 
                 await prisma.worldState.create({
                     data: {
