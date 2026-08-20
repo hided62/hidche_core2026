@@ -95,6 +95,27 @@ const nationAccess = computed(() => ({
 }));
 const nationColor = computed(() => nation.value?.color ?? '#000000');
 const voteActive = computed(() => Boolean(frontStatus.value?.latestVote));
+const profileLabels: Record<string, string> = {
+    che: '체',
+    kwe: '퀘',
+    pwe: '풰',
+    twe: '퉤',
+    nya: '냐',
+    pya: '퍄',
+    hwe: '훼',
+};
+const gameProfileLabel = computed(() => {
+    const profile = lobbyInfo.value?.profile?.trim();
+    return profile ? (profileLabels[profile] ?? profile) : '';
+});
+const gameTitle = computed(() => {
+    const scenarioTitle = lobbyInfo.value?.scenarioTitle || '전장 현황';
+    const profileLabel = gameProfileLabel.value;
+    const gameIdx = lobbyInfo.value?.gameIdx;
+    return profileLabel && typeof gameIdx === 'number' && Number.isInteger(gameIdx) && gameIdx > 0
+        ? `${scenarioTitle} ${profileLabel}섭 ${gameIdx}기`
+        : scenarioTitle;
+});
 const recordTimeSuffixPattern = /\d{2}:\d{2}(?:<\/>)?\s*$/u;
 const formatRecord = (entry: { text: string; createdAt?: string | Date }, appendTime = false): string => {
     if (!appendTime || recordTimeSuffixPattern.test(entry.text)) return formatLog(entry.text);
@@ -199,7 +220,7 @@ watch(
 
         <header class="game-shell__header">
             <h1 class="game-shell__title">
-                {{ lobbyInfo?.scenarioTitle || '전장 현황' }}
+                {{ gameTitle }}
             </h1>
             <div class="game-shell__actions desktop-action-controls">
                 <button

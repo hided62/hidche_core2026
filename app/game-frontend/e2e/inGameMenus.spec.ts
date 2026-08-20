@@ -898,6 +898,62 @@ test('메인 장수 동향과 개인 전투 기록은 Ref 행 간격·색상·�
     await persistParityArtifact(page, 'core-main-personal-battle-log-inline-mobile', mobileGeometry);
 });
 
+test('개인턴·수뇌턴 실패 사유를 메인 개인 기록에 표시한다', async ({ page }) => {
+    const state: FixtureState = {
+        permission: 'head',
+        myset: 3,
+        settingMutations: [],
+        accessPages: [],
+        recentRecords: {
+            global: [],
+            general: [
+                {
+                    id: 19002,
+                    text: '<C>●</>1월:대상 도시가 아국이 아닙니다. <Y>여포</> 발령 실패.',
+                    createdAt: '2026-01-01T03:55:00.000Z',
+                },
+                {
+                    id: 19001,
+                    text: '<C>●</>1월:같은 도시입니다. <G><b>업</b></>으로 이동 실패.',
+                    createdAt: '2026-01-01T03:54:00.000Z',
+                },
+            ],
+            history: [],
+        },
+    };
+    await install(page, state);
+    await page.setViewportSize({ width: 1200, height: 900 });
+    await page.goto('');
+
+    const inspectFailureLogs = async (selector: string) => {
+        const lines = page.locator(selector);
+        await expect(lines).toHaveCount(2);
+        await expect(lines.nth(0)).toContainText('대상 도시가 아국이 아닙니다. 여포 발령 실패. 12:55');
+        await expect(lines.nth(1)).toContainText('같은 도시입니다. 업으로 이동 실패. 12:54');
+        return lines.evaluateAll((elements) =>
+            elements.map((element) => {
+                const rect = element.getBoundingClientRect();
+                const style = getComputedStyle(element);
+                return {
+                    text: element.textContent?.trim(),
+                    width: rect.width,
+                    height: rect.height,
+                    lineHeight: style.lineHeight,
+                };
+            })
+        );
+    };
+
+    const desktop = await inspectFailureLogs('.record-zone [data-record-bucket="general"] .record-line');
+    expect(desktop.every((line) => line.width > 0 && line.height === 21 && line.lineHeight === '21px')).toBe(true);
+    await persistParityArtifact(page, 'core-main-turn-failure-personal-records-desktop', desktop);
+
+    await page.setViewportSize({ width: 500, height: 900 });
+    const mobile = await inspectFailureLogs('.record-zone-mobile [data-record-bucket="general"] .record-line');
+    expect(mobile.every((line) => line.width > 0 && line.height === 21 && line.lineHeight === '21px')).toBe(true);
+    await persistParityArtifact(page, 'core-main-turn-failure-personal-records-mobile', mobile);
+});
+
 test('전투시드는 메인·내 정보·감찰부에서 숨긴 채 선택할 수 있다', async ({ page }) => {
     const seedText = '(전투시드: 0123456789abcdef)';
     const logText =

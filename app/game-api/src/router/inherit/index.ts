@@ -12,6 +12,7 @@ import {
     isWarTraitKey,
 } from '@sammo-ts/logic';
 import type { InheritBuffType } from '@sammo-ts/logic';
+import type { ItemSlot } from '@sammo-ts/logic';
 import { simpleSerialize } from '@sammo-ts/logic/war/utils.js';
 import { resolveLegacyCompatibleUniqueConfig } from '@sammo-ts/logic/rewards/legacyUniqueItemPool.js';
 import {
@@ -38,6 +39,8 @@ const BUFF_KEYS: InheritBuffType[] = [
     'warCriticalRatioOppose',
     'warMagicTrialProbOppose',
 ];
+
+const UNIQUE_ITEM_SLOT_ORDER: readonly ItemSlot[] = ['horse', 'weapon', 'book', 'item'];
 
 const BUFF_LABELS: Record<InheritBuffType, string> = {
     warAvoidRatio: '회피 확률 증가',
@@ -79,7 +82,8 @@ const loadAvailableUniqueItems = async (worldState: WorldStateRow) => {
     const loader = new ItemLoader();
     const { allItems } = await resolveLegacyCompatibleUniqueConfig(configConst, loader);
     const enabledKeys: Array<Parameters<ItemLoader['load']>[0]> = [];
-    for (const entries of Object.values(allItems)) {
+    for (const slot of UNIQUE_ITEM_SLOT_ORDER) {
+        const entries = allItems[slot] ?? {};
         for (const [key, amount] of Object.entries(asRecord(entries))) {
             if (asNumber(amount, 0) !== 0 && isItemKey(key)) {
                 enabledKeys.push(key);
@@ -94,10 +98,11 @@ const loadAvailableUniqueItems = async (worldState: WorldStateRow) => {
                 name: item.name,
                 rawName: item.rawName,
                 info: item.info ?? '',
+                slot: item.slot,
             };
         })
     );
-    return items.sort((left, right) => left.name.localeCompare(right.name, 'ko'));
+    return items;
 };
 
 const resolveWorld = async (ctx: { db: { worldState: { findFirst: () => Promise<unknown> } } }) => {

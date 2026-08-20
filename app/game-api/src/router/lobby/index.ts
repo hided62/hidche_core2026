@@ -53,6 +53,8 @@ export const lobbyRouter = router({
 
         return {
             serverId: worldState.meta.serverId?.trim() || ctx.profile?.name || 'game',
+            profile: ctx.profile.id,
+            gameIdx: worldState.meta.gameIdx ?? 1,
             year: worldState.currentYear,
             month: worldState.currentMonth,
             userCnt,

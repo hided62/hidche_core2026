@@ -52,6 +52,8 @@ type NavigationFixture = {
     currentYear?: number;
     currentMonth?: number;
     serverId?: string;
+    profile?: string;
+    gameIdx?: number;
     scenarioTitle?: string;
     nationColor?: string;
     lastExecuted?: string | null;
@@ -538,6 +540,8 @@ const installFixture = async (page: Page, state: NavigationFixture) => {
                 return response({
                     myGeneral: { id: 7, name: '메뉴검증장수' },
                     serverId: state.serverId ?? 'che_fixture_season',
+                    profile: state.profile ?? 'che',
+                    gameIdx: state.gameIdx ?? 101,
                     year: state.currentYear ?? 185,
                     month: state.currentMonth ?? 1,
                     turnTerm: 10,
@@ -1121,7 +1125,9 @@ test('desktop menus preserve ref columns, prefix-safe routes, and controlled dro
     await expect(page.locator('.main-mobile-bottom')).toBeHidden();
     await expect(page.locator('.layout-desktop')).toBeVisible();
     await expect(page.locator('.layout-mobile')).toHaveCount(0);
-    await expect(page.getByRole('heading', { name: '메인 화면 검증 시나리오', exact: true })).toHaveCount(1);
+    await expect(page.getByRole('heading', { name: '메인 화면 검증 시나리오 체섭 101기', exact: true })).toHaveCount(
+        1
+    );
     await expect(page.locator('.game-shell__subtitle')).toHaveCount(0);
     await expect(page.locator('.legacy-game-info')).toContainText('현재: 185년 1월');
     await expect(page.locator('.legacy-game-info')).toContainText('턴: 10분');
@@ -1271,6 +1277,56 @@ test('desktop menus preserve ref columns, prefix-safe routes, and controlled dro
     expect(bottomMenuGeometry.caretBorderBottomWidth).toBe('4px');
     expect(bottomMenuGeometry.boxShadow).toContain('0px -8px 18px');
     await persistArtifact(page, `${basePath.slice(1)}-desktop-1200`);
+});
+
+test('shows the persisted official game index beside the scenario title without viewport overflow', async ({ page }) => {
+    const state: NavigationFixture = {
+        officerLevel: 5,
+        permission: 2,
+        nationLevel: 3,
+        stage: 0,
+        npcMode: 1,
+        profile: 'hwe',
+        gameIdx: 7,
+        scenarioTitle: '메인 화면 검증 시나리오',
+        generalMeCalls: 0,
+        operations: [],
+    };
+    await installFixture(page, state);
+    if (artifactRoot) await mkdir(resolve(artifactRoot), { recursive: true });
+
+    for (const viewport of [
+        { width: 1200, height: 900 },
+        { width: 500, height: 900 },
+    ]) {
+        await page.setViewportSize(viewport);
+        if (page.url() === 'about:blank') await waitForMain(page);
+
+        const title = page.getByRole('heading', { name: '메인 화면 검증 시나리오 훼섭 7기', exact: true });
+        await expect(title).toBeVisible();
+        const geometry = await title.evaluate((element) => {
+            const rect = element.getBoundingClientRect();
+            const mainRect = element.closest<HTMLElement>('.main-page')?.getBoundingClientRect();
+            const style = getComputedStyle(element);
+            return {
+                left: rect.left,
+                right: rect.right,
+                mainLeft: mainRect?.left,
+                mainRight: mainRect?.right,
+                fontFamily: style.fontFamily,
+                fontSize: style.fontSize,
+                lineHeight: style.lineHeight,
+                documentOverflow: document.documentElement.scrollWidth - document.documentElement.clientWidth,
+            };
+        });
+        expect(geometry.left).toBeGreaterThanOrEqual(geometry.mainLeft ?? 0);
+        expect(geometry.right).toBeLessThanOrEqual(geometry.mainRight ?? viewport.width);
+        expect(geometry.documentOverflow).toBeLessThanOrEqual(0);
+        expect(geometry.fontSize).toBe('25.6px');
+        expect(geometry.lineHeight).toBe('38.4px');
+        expect(geometry.fontFamily).toContain('Pretendard');
+        await persistArtifact(page, `official-game-index-${viewport.width}`);
+    }
 });
 
 test('nation split buttons keep square inner corners and a single divider in every interaction state', async ({
@@ -2248,7 +2304,7 @@ test('the 939/940 boundary switches to the Ref-style 500px single document', asy
     await expect(page.locator('.main-mobile-bottom')).toBeVisible();
 
     await page.setViewportSize({ width: 500, height: 900 });
-    await expect(page.getByRole('heading', { name: '모바일 검증 시나리오', exact: true })).toHaveCount(1);
+    await expect(page.getByRole('heading', { name: '모바일 검증 시나리오 체섭 101기', exact: true })).toHaveCount(1);
     await expect(page.locator('.game-shell__subtitle')).toHaveCount(0);
     await expect(page.locator('.legacy-game-info')).toContainText('현재: 185년 1월');
     await expect(page.locator('.legacy-game-info')).toContainText('턴: 10분');
