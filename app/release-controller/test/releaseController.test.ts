@@ -445,8 +445,8 @@ describe('upgradeReleaseController', () => {
         expect(starts.at(-1)).toMatchObject({
             name: 'sammo:release-controller',
             cwd: path.join(workspace, 'app', 'release-controller'),
-            args: ['daemon'],
         });
+        expect(starts.at(-1)?.args).toBeUndefined();
     });
 
     it('restores the old controller definition when the new daemon cannot start', async () => {

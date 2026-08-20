@@ -36,7 +36,8 @@ export const buildReleaseControllerDefinition = (
     name: CONTROLLER_PROCESS_NAME,
     script: path.join(workspaceRoot, 'app', 'release-controller', 'dist', 'index.js'),
     cwd: path.join(workspaceRoot, 'app', 'release-controller'),
-    args: ['daemon'],
+    // The CLI defaults to daemon. Omitting a one-element args array avoids PM2
+    // serializing it as the literal `["daemon"]` during an in-process self-upgrade.
     env: {
         ...sanitizeManagedProcessEnv(config.baseEnv),
         GATEWAY_DATABASE_URL: config.gatewayDatabaseUrl,
