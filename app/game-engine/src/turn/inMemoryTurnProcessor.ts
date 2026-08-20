@@ -51,6 +51,17 @@ export class InMemoryTurnProcessor implements TurnProcessor {
         const deadlineMs = startMs + Math.max(0, budget.budgetMs);
         const isBudgetExpired = () => Date.now() >= deadlineMs;
 
+        if (isWorldUnited(this.world)) {
+            return {
+                lastTurnTime: this.world.getState().lastTurnTime.toISOString(),
+                processedGenerals: 0,
+                processedTurns: 0,
+                durationMs: Math.max(0, Date.now() - startMs),
+                partial: false,
+                checkpoint,
+            };
+        }
+
         this.world.setCheckpoint(checkpoint);
         this.world.updateWorldMeta({
             refreshLimit: calculateAccessRefreshLimit(this.world.getState().tickSeconds),

@@ -286,5 +286,14 @@ describe('InMemoryTurnProcessor ordering', () => {
 
         expect(result.processedTurns).toBe(1);
         expect(world.getState()).toMatchObject({ currentYear: 189, currentMonth: 2, meta: { isUnited: 2 } });
+
+        world.updateWorldMeta({ refreshLimit: 12_000 });
+        const haltedResult = await processor.run(addMinutes(baseTime, 60), {
+            budgetMs: 1_000,
+            maxGenerals: 10,
+            catchUpCap: 10,
+        });
+        expect(haltedResult).toMatchObject({ processedGenerals: 0, processedTurns: 0 });
+        expect(world.getState().meta).toMatchObject({ isUnited: 2, refreshLimit: 12_000 });
     });
 });
