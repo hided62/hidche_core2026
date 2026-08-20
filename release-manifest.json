@@ -2,6 +2,6 @@
     "formatVersion": 1,
     "controllerProtocol": 2,
     "gatewaySchemaHead": "20260819000000_backfill_profile_release_source",
-    "gameSchemaHead": "20260819000000_add_general_last_action",
+    "gameSchemaHead": "20260820000000_widen_emperor_officer_pictures",
     "components": ["gateway-api", "gateway-frontend", "release-controller", "game-api", "game-engine", "game-frontend"]
 }

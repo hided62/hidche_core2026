@@ -19,6 +19,7 @@ const fixtureId = 8_901;
 const serverId = 'che_unification_atomicity_fixture';
 const profileName = 'che';
 const userId = 'unification-atomicity-user';
+const legacyOfficerPicture = 'users/core/a369f064a434262b025bd2ebc70c60d5.jpg?=20260814';
 
 integration('unification finalization transaction', () => {
     let db: GamePrismaClient;
@@ -118,7 +119,7 @@ integration('unification finalization transaction', () => {
                 dedication: 5,
                 age: 40,
                 crew: 400,
-                picture: '1.png',
+                picture: legacyOfficerPicture,
                 turnTime: new Date('0190-07-01T00:00:00.000Z'),
                 meta: {
                     ownerName: '원자 사용자',
@@ -354,7 +355,10 @@ integration('unification finalization transaction', () => {
                 aux: { maxPower: 3_500, maxCrew: 400, maxCities: ['원자도시'] },
                 generals: [fixtureId],
             });
-            expect(await db.emperor.count({ where: { serverId } })).toBe(1);
+            expect(legacyOfficerPicture.length).toBeGreaterThan(32);
+            expect(await db.emperor.findFirstOrThrow({ where: { serverId } })).toMatchObject({
+                l12pic: legacyOfficerPicture,
+            });
             expect(
                 (await db.inheritancePoint.findUniqueOrThrow({ where: { userId_key: { userId, key: 'previous' } } }))
                     .value
