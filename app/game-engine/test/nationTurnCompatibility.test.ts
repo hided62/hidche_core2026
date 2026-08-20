@@ -224,4 +224,31 @@ describe('레거시 사령부 턴 실행 호환성', () => {
             },
         ]);
     });
+
+    it('첩보 도시는 실행 월부터 세 달 보이고 각 월 시작에 감소한 뒤 만료된다', async () => {
+        const nation = {
+            id: 1,
+            meta: {
+                rate: 20,
+                spy: { 2: 3 },
+            },
+        };
+        const handler = createNationTurnMonthlyHandler({
+            getWorld: () =>
+                ({
+                    listNations: () => [nation],
+                    updateNation: (_id: number, patch: { meta?: typeof nation.meta }) => {
+                        if (patch.meta) nation.meta = patch.meta;
+                    },
+                }) as never,
+        });
+
+        expect(nation.meta.spy).toEqual({ 2: 3 });
+        await handler.beforeMonthChanged?.({} as never);
+        expect(nation.meta.spy).toEqual({ 2: 2 });
+        await handler.beforeMonthChanged?.({} as never);
+        expect(nation.meta.spy).toEqual({ 2: 1 });
+        await handler.beforeMonthChanged?.({} as never);
+        expect(nation.meta.spy).toEqual({});
+    });
 });
