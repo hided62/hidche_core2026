@@ -290,6 +290,64 @@ describe('in-game my information ownership', () => {
         );
     });
 
+    it('returns the current city nation color and its Ref city officers', async () => {
+        const me = buildGeneral();
+        const fixture = createContext({
+            me,
+            targets: [
+                me,
+                buildGeneral({ id: 8, name: '태수장', officerLevel: 4, npcState: 0, meta: { officerCity: 1 } }),
+                buildGeneral({ id: 9, name: '군사장', officerLevel: 3, npcState: 2, meta: { officer_city: 1 } }),
+                buildGeneral({ id: 10, name: '타도시종사', officerLevel: 2, npcState: 6, meta: { officerCity: 2 } }),
+            ],
+            city: {
+                id: 1,
+                name: '업',
+                level: 8,
+                nationId: 1,
+                population: 1_000,
+                populationMax: 2_000,
+                agriculture: 100,
+                agricultureMax: 200,
+                commerce: 100,
+                commerceMax: 200,
+                security: 100,
+                securityMax: 200,
+                trust: 70,
+                trade: 100,
+                defence: 100,
+                defenceMax: 200,
+                wall: 100,
+                wallMax: 200,
+                region: 2,
+                supplyState: 1,
+                frontState: 0,
+            },
+        });
+
+        await expect(appRouter.createCaller(fixture.context).general.me()).resolves.toMatchObject({
+            city: {
+                nationName: '위',
+                nationColor: '#777777',
+                officers: {
+                    4: { id: 8, name: '태수장', npcState: 0 },
+                    3: { id: 9, name: '군사장', npcState: 2 },
+                    2: null,
+                },
+            },
+        });
+        expect(fixture.db.general.findMany).toHaveBeenCalledWith(
+            expect.objectContaining({
+                where: {
+                    OR: expect.arrayContaining([
+                        expect.objectContaining({ meta: { path: ['officerCity'], equals: 1 } }),
+                        expect.objectContaining({ meta: { path: ['officer_city'], equals: 1 } }),
+                    ]),
+                },
+            })
+        );
+    });
+
     it('returns Ref display names instead of numeric levels and internal codes for the main GUI', async () => {
         const fixture = createContext({
             me: buildGeneral({

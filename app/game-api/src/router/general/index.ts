@@ -34,6 +34,7 @@ import {
     resolveNationBlockWar,
     resolveNationNotice,
     resolveNationRate,
+    resolveOfficerCity,
     type TraitNameMap,
 } from '../nation/shared.js';
 import {
@@ -348,38 +349,73 @@ export const getGeneralContext = async (ctx: GameApiContext) => {
         ]);
     const nation = queriedNation ?? NEUTRAL_NATION_CONTEXT;
 
-    const [capitalCity, cityNation, troopLeaderCity, nationPopulation, nationCrew, topChiefRows] = await Promise.all([
-        nation.capitalCityId
-            ? ctx.db.city.findUnique({ where: { id: nation.capitalCityId }, select: { name: true } })
-            : Promise.resolve(null),
-        city && city.nationId > 0
-            ? ctx.db.nation.findUnique({ where: { id: city.nationId }, select: { name: true } })
-            : Promise.resolve(null),
-        troopLeader && troopLeader.cityId > 0
-            ? ctx.db.city.findUnique({ where: { id: troopLeader.cityId }, select: { name: true } })
-            : Promise.resolve(null),
-        nation.id > 0
-            ? ctx.db.city.aggregate({
-                  where: { nationId: nation.id },
-                  _count: true,
-                  _sum: { population: true, populationMax: true },
-              })
-            : Promise.resolve({ _count: 0, _sum: { population: 0, populationMax: 0 } }),
-        nation.id > 0
-            ? ctx.db.general.aggregate({
-                  where: { nationId: nation.id, npcState: { not: 5 } },
-                  _count: true,
-                  _sum: { crew: true, leadership: true },
-              })
-            : Promise.resolve({ _count: 0, _sum: { crew: 0, leadership: 0 } }),
-        nation.id > 0
-            ? ctx.db.general.findMany({
-                  where: { nationId: nation.id, officerLevel: { gte: 11 } },
-                  select: { id: true, name: true, npcState: true, officerLevel: true },
-                  orderBy: { id: 'asc' },
-              })
-            : Promise.resolve([]),
-    ]);
+    const [capitalCity, cityNation, troopLeaderCity, nationPopulation, nationCrew, chiefAndCityOfficerRows] =
+        await Promise.all([
+            nation.capitalCityId
+                ? ctx.db.city.findUnique({ where: { id: nation.capitalCityId }, select: { name: true } })
+                : Promise.resolve(null),
+            city && city.nationId > 0
+                ? ctx.db.nation.findUnique({ where: { id: city.nationId }, select: { name: true, color: true } })
+                : Promise.resolve(null),
+            troopLeader && troopLeader.cityId > 0
+                ? ctx.db.city.findUnique({ where: { id: troopLeader.cityId }, select: { name: true } })
+                : Promise.resolve(null),
+            nation.id > 0
+                ? ctx.db.city.aggregate({
+                      where: { nationId: nation.id },
+                      _count: true,
+                      _sum: { population: true, populationMax: true },
+                  })
+                : Promise.resolve({ _count: 0, _sum: { population: 0, populationMax: 0 } }),
+            nation.id > 0
+                ? ctx.db.general.aggregate({
+                      where: { nationId: nation.id, npcState: { not: 5 } },
+                      _count: true,
+                      _sum: { crew: true, leadership: true },
+                  })
+                : Promise.resolve({ _count: 0, _sum: { crew: 0, leadership: 0 } }),
+            nation.id > 0 || city
+                ? ctx.db.general.findMany({
+                      where: {
+                          OR: [
+                              { nationId: nation.id > 0 ? nation.id : -1, officerLevel: { gte: 11 } },
+                              {
+                                  officerLevel: { in: [2, 3, 4] },
+                                  meta: { path: ['officerCity'], equals: city?.id ?? -1 },
+                              },
+                              {
+                                  officerLevel: { in: [2, 3, 4] },
+                                  meta: { path: ['officer_city'], equals: city?.id ?? -1 },
+                              },
+                          ],
+                      },
+                      select: { id: true, name: true, npcState: true, nationId: true, officerLevel: true, meta: true },
+                      orderBy: { id: 'asc' },
+                  })
+                : Promise.resolve([]),
+        ]);
+    const topChiefRows = chiefAndCityOfficerRows.filter(
+        (chief) => nation.id > 0 && chief.nationId === nation.id && chief.officerLevel >= 11
+    );
+    const cityOfficers: Record<2 | 3 | 4, { id: number; name: string; npcState: number } | null> = {
+        2: null,
+        3: null,
+        4: null,
+    };
+    if (city) {
+        for (const officer of chiefAndCityOfficerRows) {
+            if (
+                (officer.officerLevel === 2 || officer.officerLevel === 3 || officer.officerLevel === 4) &&
+                resolveOfficerCity(asRecord(officer.meta)) === city.id
+            ) {
+                cityOfficers[officer.officerLevel] = {
+                    id: officer.id,
+                    name: officer.name,
+                    npcState: officer.npcState,
+                };
+            }
+        }
+    }
     const [personalityNames, domesticNames, warNames, nationTypeNames, crewTypeNames, itemNames] = await Promise.all([
         loadTraitNames([general.personalCode], 'personality'),
         loadTraitNames([general.specialCode], 'domestic'),
@@ -528,6 +564,8 @@ export const getGeneralContext = async (ctx: GameApiContext) => {
                   levelName: resolveCityLevelName(city.level),
                   regionName: resolveRegionName(city.region),
                   nationName: city.nationId > 0 ? (cityNation?.name ?? '-') : '공백지',
+                  nationColor: city.nationId > 0 ? (cityNation?.color ?? '#000000') : '#000000',
+                  officers: cityOfficers,
               }
             : null,
         nation: {
