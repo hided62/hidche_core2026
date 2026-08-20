@@ -39,7 +39,7 @@ describe('readReleaseManifest', () => {
         await expect(readReleaseManifest(workspaceRoot)).resolves.toMatchObject({
             controllerProtocol: RELEASE_CONTROLLER_PROTOCOL,
             gatewaySchemaHead: '20260819000000_backfill_profile_release_source',
-            gameSchemaHead: '20260820001000_restore_united_turn_halt',
+            gameSchemaHead: '20260820002000_persist_official_game_index',
         });
     });
 

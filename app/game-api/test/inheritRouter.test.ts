@@ -218,6 +218,32 @@ describe('inherit router actor and permission boundaries', () => {
         }
     );
 
+    it('orders unique auction candidates by Ref slot order and preserves order within each slot', async () => {
+        const fixture = buildContext({
+            configConst: {
+                allItems: {
+                    item: { che_보물_도기: 1 },
+                    book: { che_서적_07_논어: 1 },
+                    weapon: { che_무기_12_칠성검: 1 },
+                    horse: {
+                        che_명마_07_백마: 1,
+                        che_명마_07_기주마: 1,
+                    },
+                },
+            },
+        });
+
+        const status = await appRouter.createCaller(fixture.context).inherit.getStatus();
+
+        expect(status.availableUnique.map(({ key, slot }) => ({ key, slot }))).toEqual([
+            { key: 'che_명마_07_백마', slot: 'horse' },
+            { key: 'che_명마_07_기주마', slot: 'horse' },
+            { key: 'che_무기_12_칠성검', slot: 'weapon' },
+            { key: 'che_서적_07_논어', slot: 'book' },
+            { key: 'che_보물_도기', slot: 'item' },
+        ]);
+    });
+
     it('loads the first inheritance-log page without an out-of-range integer cursor', async () => {
         const createdAt = new Date('2026-07-26T00:00:00Z');
         const fixture = buildContext({
