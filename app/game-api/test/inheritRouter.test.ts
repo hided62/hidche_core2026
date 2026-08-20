@@ -97,6 +97,7 @@ const buildContext = (options: {
     target?: GeneralRow | null;
     inheritancePoint?: number;
     inheritanceLogs?: Array<{ id: number; year: number; month: number; text: string; createdAt: Date }>;
+    configConst?: Record<string, unknown>;
 }) => {
     const auth = options.auth === undefined ? buildAuth() : options.auth;
     const general = options.general === undefined ? buildGeneral() : options.general;
@@ -113,10 +114,19 @@ const buildContext = (options: {
     const logCreate = vi.fn(async () => ({}));
     const findMany = vi.fn(async () => (target ? [{ id: target.id, name: target.name }] : []));
     const inheritanceLogFindMany = vi.fn(async () => options.inheritanceLogs ?? []);
+    const activeWorldState =
+        options.configConst === undefined
+            ? worldState
+            : {
+                  ...worldState,
+                  config: {
+                      const: options.configConst,
+                  },
+              };
     const db = {
         $queryRaw: vi.fn(async () => [{ value: options.inheritancePoint ?? 10_000 }]),
         worldState: {
-            findFirst: vi.fn(async () => worldState),
+            findFirst: vi.fn(async () => activeWorldState),
         },
         general: {
             findFirst: vi.fn(async ({ where }: { where: { userId: string } }) =>
@@ -191,6 +201,22 @@ describe('inherit router actor and permission boundaries', () => {
             orderBy: { id: 'asc' },
         });
     });
+
+    it.each([{}, { allItems: '{}' }])(
+        'restores selectable Ref default uniques for a legacy scenario config: %j',
+        async (configConst) => {
+            const fixture = buildContext({ configConst });
+            const status = await appRouter.createCaller(fixture.context).inherit.getStatus();
+
+            expect(status.availableUnique.length).toBeGreaterThan(80);
+            expect(status.availableUnique).toEqual(
+                expect.arrayContaining([
+                    expect.objectContaining({ key: 'che_무기_12_칠성검', rawName: '칠성검' }),
+                    expect.objectContaining({ key: 'che_서적_07_논어', rawName: '논어' }),
+                ])
+            );
+        }
+    );
 
     it('loads the first inheritance-log page without an out-of-range integer cursor', async () => {
         const createdAt = new Date('2026-07-26T00:00:00Z');

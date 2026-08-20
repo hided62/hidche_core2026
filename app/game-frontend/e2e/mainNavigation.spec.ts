@@ -95,11 +95,10 @@ type DashboardBundleInput = {
 const operationInput = (route: Route, index: number): DashboardBundleInput => {
     const request = route.request();
     const queryInput = new URL(request.url()).searchParams.get('input');
-    const parsed = (request.postData()
-        ? request.postDataJSON()
-        : queryInput
-          ? JSON.parse(queryInput)
-          : {}) as Record<string, unknown>;
+    const parsed = (request.postData() ? request.postDataJSON() : queryInput ? JSON.parse(queryInput) : {}) as Record<
+        string,
+        unknown
+    >;
     const entry = (parsed[String(index)] ?? parsed) as { json?: DashboardBundleInput };
     return entry.json ?? (entry as DashboardBundleInput);
 };
@@ -253,32 +252,32 @@ const commandTableFixture = (large: boolean, blockedCount = 0, refCategories = f
     general: draftCommands
         ? draftCommandGroups
         : refCategories
-        ? refCommandCategoryFixture
-        : large
-          ? ['내정', '군사', '계략'].map((category, categoryIndex) => ({
-                category,
-                values: Array.from({ length: 16 }, (_, localIndex) => {
-                    const index = categoryIndex * 16 + localIndex;
-                    return {
-                        key: `command-${index}`,
-                        name: index === 0 ? '주민 선정과 장기 도시 개발' : `명령 ${index}`,
-                        reqArg: index % 2 === 0,
-                        possible: index >= blockedCount,
-                        status: index >= blockedCount ? 'available' : 'blocked',
-                        inputFields: [
-                            {
-                                key: 'amount',
-                                label: '수량',
-                                kind: 'number',
-                                required: true,
-                                min: 1,
-                                max: 10_000,
-                            },
-                        ],
-                    };
-                }),
-            }))
-          : [],
+          ? refCommandCategoryFixture
+          : large
+            ? ['내정', '군사', '계략'].map((category, categoryIndex) => ({
+                  category,
+                  values: Array.from({ length: 16 }, (_, localIndex) => {
+                      const index = categoryIndex * 16 + localIndex;
+                      return {
+                          key: `command-${index}`,
+                          name: index === 0 ? '주민 선정과 장기 도시 개발' : `명령 ${index}`,
+                          reqArg: index % 2 === 0,
+                          possible: index >= blockedCount,
+                          status: index >= blockedCount ? 'available' : 'blocked',
+                          inputFields: [
+                              {
+                                  key: 'amount',
+                                  label: '수량',
+                                  kind: 'number',
+                                  required: true,
+                                  min: 1,
+                                  max: 10_000,
+                              },
+                          ],
+                      };
+                  }),
+              }))
+            : [],
     nation: [],
     inputOptions: {
         cities: Array.from({ length: 20 }, (_, index) => ({ value: index + 1, label: `도시 ${index + 1}` })),
@@ -500,7 +499,7 @@ const installFixture = async (page: Page, state: NavigationFixture) => {
                 ? response({ id: 'user-7', username: 'menu-user', displayName: '메뉴 사용자' })
                 : operation === 'navigation.get'
                   ? response(runtimeNavigation)
-                : response({ ok: true })
+                  : response({ ok: true })
         );
         await route.fulfill({
             status: 200,
@@ -1558,10 +1557,7 @@ test('message targets keep reply behavior and use nation-color contrast in label
 
     await page.setViewportSize({ width: 500, height: 900 });
     const mobilePanel = page.locator('.mobile-message-panel');
-    await expect(mobilePanel.locator('.msg-plate[data-id="101"] .msg-target')).toHaveCSS(
-        'color',
-        'rgb(255, 255, 255)'
-    );
+    await expect(mobilePanel.locator('.msg-plate[data-id="101"] .msg-target')).toHaveCSS('color', 'rgb(255, 255, 255)');
     await expect(mobilePanel.locator('.msg-plate[data-id="103"] .msg-target')).toHaveCSS('color', 'rgb(0, 0, 0)');
     await expect(mobilePanel.locator('#mailbox_list optgroup[label="밝은국"]')).toHaveCSS('color', 'rgb(0, 0, 0)');
     await persistArtifact(page, `${basePath.slice(1)}-message-nation-contrast-mobile-500`);
@@ -2217,6 +2213,49 @@ test('the 939/940 boundary switches to the Ref-style 500px single document', asy
     ]) {
         await expect(page.locator(selector)).toBeVisible();
     }
+    const readMobilePanelOrder = () =>
+        page
+            .locator('.layout-mobile > [data-mobile-panel-id]')
+            .evaluateAll((elements) => elements.map((element) => element.getAttribute('data-mobile-panel-id')));
+    await expect
+        .poll(readMobilePanelOrder)
+        .toEqual(['commands', 'nation-menu', 'nation', 'general', 'city', 'map', 'records', 'global-menu', 'messages']);
+    await page.evaluate(() => {
+        localStorage.setItem(
+            'sam.mobileMainPanelOrder.v1',
+            JSON.stringify([
+                'messages',
+                'map',
+                'commands',
+                'nation-menu',
+                'nation',
+                'general',
+                'city',
+                'records',
+                'global-menu',
+            ])
+        );
+        document.dispatchEvent(new CustomEvent('sam-mobile-main-panel-order-changed'));
+    });
+    await expect
+        .poll(readMobilePanelOrder)
+        .toEqual(['messages', 'map', 'commands', 'nation-menu', 'nation', 'general', 'city', 'records', 'global-menu']);
+    const customPanelGeometry = await page.locator('.layout-mobile > [data-mobile-panel-id]').evaluateAll((elements) =>
+        elements.map((element) => {
+            const rect = element.getBoundingClientRect();
+            return {
+                id: element.getAttribute('data-mobile-panel-id'),
+                top: rect.top,
+                bottom: rect.bottom,
+                left: rect.left,
+                right: rect.right,
+            };
+        })
+    );
+    expect(customPanelGeometry.every(({ left, right }) => left >= 0 && right <= 500)).toBe(true);
+    expect(
+        customPanelGeometry.every((panel, index) => index === 0 || panel.top >= customPanelGeometry[index - 1]!.bottom)
+    ).toBe(true);
     await persistArtifact(page, `${basePath.slice(1)}-mobile-500`);
 });
 
@@ -3040,9 +3079,9 @@ for (const viewport of [
         await refreshActivityAndCommands();
         await expect(picker.getByLabel('장비 종류', { exact: true })).toHaveValue('weapon');
         await expect(picker.getByLabel('장비', { exact: true })).toHaveValue('청룡언월도');
-        await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(
-            viewport.width
-        );
+        await expect
+            .poll(() => page.evaluate(() => document.documentElement.scrollWidth))
+            .toBeLessThanOrEqual(viewport.width);
     });
 }
 

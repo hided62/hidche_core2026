@@ -87,6 +87,12 @@ const statusFixture = {
             rawName: '칠성검',
             info: '무력을 올려주는 유니크 무기입니다.',
         },
+        {
+            key: 'che_서적_07_논어',
+            name: '논어(+7)',
+            rawName: '논어',
+            info: '지력을 올려주는 유니크 서적입니다.',
+        },
     ],
     availableTargetGenerals: [{ id: 8, name: '조조' }],
     turnTimeZones: ['00:00'],
@@ -98,6 +104,7 @@ const statusFixture = {
 const installFixture = async (page: Page, options: { failBuff?: boolean } = {}) => {
     let buffMutationCount = 0;
     let resetTurnMutationCount = 0;
+    const uniqueAuctionRequests: unknown[] = [];
     await installImages(page);
     await page.addInitScript(() => {
         window.localStorage.setItem('sammo-game-token', 'ga_inherit-visual-token');
@@ -105,6 +112,7 @@ const installFixture = async (page: Page, options: { failBuff?: boolean } = {}) 
     });
     await page.route('**/che/api/trpc/**', async (route) => {
         const names = operations(route);
+        const requestBody: unknown = route.request().postData() ? route.request().postDataJSON() : null;
         if (options.failBuff && names.includes('inherit.buyHiddenBuff')) {
             await route.fulfill({
                 status: 500,
@@ -145,6 +153,10 @@ const installFixture = async (page: Page, options: { failBuff?: boolean } = {}) 
                 resetTurnMutationCount += 1;
                 return response({ ok: true, nextTurnTimeBase: 302.5143852464758, nextTurnTimeLabel: '00:05' });
             }
+            if (name === 'inherit.openUniqueAuction') {
+                uniqueAuctionRequests.push(requestBody);
+                return response({ ok: true, auctionId: 31, closeAt: '2026-07-27T00:00:00.000Z' });
+            }
             throw new Error(`Unhandled inheritance fixture operation: ${name}`);
         });
         await route.fulfill({
@@ -156,6 +168,7 @@ const installFixture = async (page: Page, options: { failBuff?: boolean } = {}) 
     return {
         buffMutationCount: () => buffMutationCount,
         resetTurnMutationCount: () => resetTurnMutationCount,
+        uniqueAuctionRequests,
     };
 };
 
@@ -288,6 +301,28 @@ test.describe('inheritance management legacy parity', () => {
         await page.locator('#buff-warAvoidRatio').locator('xpath=../..').getByRole('button', { name: '구입' }).click();
         await expect.poll(fixture.buffMutationCount).toBe(1);
         await expect(page.locator('#inherit_previous_value')).toHaveValue('12,000');
+    });
+
+    test('selects a Ref default unique and starts its auction from the inheritance page', async ({ page }) => {
+        const fixture = await installFixture(page);
+        await page.goto(gameUrl);
+
+        await page.locator('#specific-unique').selectOption('che_서적_07_논어');
+        await page.locator('#specific-unique-amount').fill('6000');
+        page.once('dialog', async (dialog) => {
+            expect(dialog.message()).toBe('6000 포인트로 논어(+7)를 입찰하겠습니까?');
+            await dialog.accept();
+        });
+        await page
+            .locator('.shop-item')
+            .filter({ has: page.locator('#specific-unique') })
+            .getByRole('button', { name: '경매 시작' })
+            .click();
+
+        await expect.poll(() => fixture.uniqueAuctionRequests.length).toBe(1);
+        expect(JSON.stringify(fixture.uniqueAuctionRequests[0])).toContain('che_서적_07_논어');
+        expect(JSON.stringify(fixture.uniqueAuctionRequests[0])).toContain('6000');
+        await expect(page.locator('.notice.success')).toHaveText('성공했습니다. 경매장을 확인해주세요.');
     });
 
     test('keeps controls usable and renders an API mutation error', async ({ page }) => {

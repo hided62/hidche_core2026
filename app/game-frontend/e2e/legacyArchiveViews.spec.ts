@@ -11,6 +11,7 @@ const isLegacyRequest = (route: Route): boolean =>
 
 const installArchiveViews = async (page: Page) => {
     const hallRequests: string[] = [];
+    const dynastyRequests: string[] = [];
     await page.addInitScript((profile) => {
         localStorage.setItem('sammo-game-token', 'ga_archive_views');
         localStorage.setItem('sammo-game-profile', profile);
@@ -20,6 +21,9 @@ const installArchiveViews = async (page: Page) => {
         const operations = operationNames(route);
         if (operations.some((operation) => operation.startsWith('ranking.getHallOfFame'))) {
             hallRequests.push(decodeURIComponent(`${route.request().url()} ${route.request().postData() ?? ''}`));
+        }
+        if (operations.some((operation) => operation.startsWith('dynasty.'))) {
+            dynastyRequests.push(decodeURIComponent(`${route.request().url()} ${route.request().postData() ?? ''}`));
         }
         const results = operations.map((operation) => {
             if (operation === 'auth.status') return response({ ok: true });
@@ -67,8 +71,8 @@ const installArchiveViews = async (page: Page) => {
                         {
                             id: legacy ? 101 : 1,
                             source: legacy ? 'legacy' : 'current',
-                            sourceProfile: legacy ? 'hwe' : 'che',
-                            serverId: legacy ? 'hwe-old-1' : 'che-current-1',
+                            sourceProfile: 'che',
+                            serverId: legacy ? 'che-old-1' : 'che-current-1',
                             phase: legacy ? '이전 1기' : '현재 1기',
                             name: '촉',
                             year: 215,
@@ -93,10 +97,10 @@ const installArchiveViews = async (page: Page) => {
             if (operation === 'dynasty.getDetail') {
                 return response({
                     source: 'legacy',
-                    sourceProfile: 'hwe',
+                    sourceProfile: 'che',
                     emperor: {
                         id: 101,
-                        serverId: 'hwe-old-1',
+                        serverId: 'che-old-1',
                         winnerNationId: 1,
                         phase: '이전 1기',
                         nationCount: '1 / 2',
@@ -189,7 +193,7 @@ const installArchiveViews = async (page: Page) => {
         });
         await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(results) });
     });
-    return { hallRequests };
+    return { dynastyRequests, hallRequests };
 };
 
 test('명예의 전당은 현재 profile의 현재·이전 서버 기록만 조회한다', async ({ page }, testInfo) => {
@@ -217,19 +221,36 @@ test('명예의 전당은 현재 profile의 현재·이전 서버 기록만 조�
     await page.screenshot({ path: testInfo.outputPath('hall-profile-scope-mobile.png'), fullPage: true });
 });
 
-test('왕조 일람과 상세는 이전 서버 source와 profile을 유지한다', async ({ page }) => {
-    await installArchiveViews(page);
+test('왕조 일람과 상세는 현재 profile의 이전 서버 기록만 조회한다', async ({ page }, testInfo) => {
+    const state = await installArchiveViews(page);
     await page.setViewportSize({ width: 1200, height: 800 });
     await page.goto('dynasty');
 
     await expect(page.getByText('현재 1기')).toBeVisible();
+    await page.getByLabel('기록 구분').focus();
+    await expect(page.getByLabel('기록 구분')).toBeFocused();
     await page.getByLabel('기록 구분').selectOption('legacy');
-    await expect(page.getByText(/이전 1기.*HWE 이전 서버/)).toBeVisible();
+    await expect(page.getByText(/이전 1기.*이전 서버/)).toBeVisible();
+    await expect(page.getByText(/CHE 이전 서버|HWE 이전 서버/)).toHaveCount(0);
+    await expect(page.locator('.dynasty-page')).toHaveCSS('width', '1000px');
+    await expect(page.locator('.dynasty-table')).toHaveCSS('height', '139px');
+    await expect(page.locator('.dynasty-table .phase-heading')).toHaveCSS('background-color', 'rgb(135, 206, 235)');
+    await page.screenshot({ path: testInfo.outputPath('dynasty-list-profile-scope-desktop.png'), fullPage: true });
+
+    await page.setViewportSize({ width: 390, height: 844 });
+    await expect(page.locator('.dynasty-page')).toHaveCSS('width', '1000px');
+    await page.screenshot({ path: testInfo.outputPath('dynasty-list-profile-scope-mobile.png'), fullPage: true });
+
+    await page.setViewportSize({ width: 1200, height: 800 });
     const detailLink = page.getByRole('link', { name: '자세히' });
     await expect(detailLink).toHaveAttribute('href', /dynasty\/101\?source=legacy$/);
     await detailLink.click();
-    await expect(page.getByText(/이전 1기.*HWE 이전 서버/)).toBeVisible();
+    await expect(page.getByText(/이전 1기.*이전 서버/)).toBeVisible();
+    await expect(page.getByText(/CHE 이전 서버|HWE 이전 서버/)).toHaveCount(0);
     await expect(page.locator('.dynasty-page')).toHaveCSS('width', '1000px');
+    expect(state.dynastyRequests.some((request) => request.includes('legacy'))).toBe(true);
+    expect(state.dynastyRequests.every((request) => !request.includes('sourceProfile'))).toBe(true);
+    await page.screenshot({ path: testInfo.outputPath('dynasty-detail-profile-scope-desktop.png'), fullPage: true });
 });
 
 test('연감 국가 라벨은 밝은 배경에 검정, 어두운 배경에 흰 글자를 사용한다', async ({ page }, testInfo) => {
