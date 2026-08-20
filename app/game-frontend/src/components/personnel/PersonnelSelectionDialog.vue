@@ -245,7 +245,7 @@ onBeforeUnmount(() => {
     align-items: flex-start;
     justify-content: space-between;
     padding: 20px 22px 16px;
-    background: linear-gradient(135deg, rgb(69 57 34 / 72%), rgb(25 28 22 / 96%));
+    background: #29281f;
     border-bottom: 1px solid #53482f;
 }
 .personnel-picker-eyebrow {
@@ -370,7 +370,7 @@ onBeforeUnmount(() => {
     display: grid;
     place-items: center;
     color: #d8be79;
-    background: radial-gradient(circle at 50% 30%, #353626, #11130f 72%);
+    background: #25271f;
     font: 700 24px/1 var(--sammo-font-sans);
 }
 .personnel-picker-card-body,

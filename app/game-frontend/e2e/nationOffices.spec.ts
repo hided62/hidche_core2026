@@ -285,9 +285,7 @@ const screenshot = async (page: Page, name: string) => {
     await page.screenshot({ path: resolve(artifactRoot, name), fullPage: true });
 };
 
-test('personnel keeps the legacy frame while presenting modern appointment cards and interaction states', async ({
-    page,
-}) => {
+test('personnel keeps the desktop frame while exposing row-level appointment controls', async ({ page }) => {
     await installFixture(page, { role: 'leader', rate: 20 });
     await page.setViewportSize({ width: 1000, height: 900 });
     await gotoOffice(page, 'nation/personnel');
@@ -313,8 +311,9 @@ test('personnel keeps the legacy frame while presenting modern appointment cards
             heading: box('.heading-table'),
             status: box('.chief-status'),
             icon: box('.general-icon'),
-            appointmentCard: box('.appointment-card'),
-            selectionTrigger: box('.selection-trigger'),
+            chiefEntry: box('.chief-entry-cell'),
+            changeButton: box('.personnel-change-button'),
+            cityOfficer: box('.city-officer-cell'),
             documentWidth: document.documentElement.scrollWidth,
         };
     });
@@ -322,23 +321,27 @@ test('personnel keeps the legacy frame while presenting modern appointment cards
     expect(computed.heading.width).toBe(1000);
     expect(computed.heading.height).toBeCloseTo(56, 0);
     expect(computed.status.width).toBe(1000);
-    expect(computed.icon.width).toBeCloseTo(64.7, 0);
+    expect(computed.icon.width).toBe(64);
     expect(computed.icon.height).toBeCloseTo(64, 0);
-    expect(computed.appointmentCard.width).toBeGreaterThan(450);
-    expect(computed.appointmentCard.height).toBeGreaterThan(140);
-    expect(computed.selectionTrigger.height).toBeGreaterThanOrEqual(70);
+    expect(computed.chiefEntry.width).toBeGreaterThan(499);
+    expect(computed.chiefEntry.width).toBeLessThan(501);
+    expect(computed.chiefEntry.height).toBeGreaterThanOrEqual(76);
+    expect(computed.changeButton.height).toBeGreaterThanOrEqual(34);
+    expect(computed.cityOfficer.width).toBeCloseTo(280, 0);
     expect(computed.container.fontFamily).toContain('Pretendard');
     expect(computed.container.fontSize).toBe('14px');
     expect(computed.container.lineHeight).toBe('18.2px');
     expect(computed.status.backgroundImage).toContain('back_walnut.jpg');
     expect(computed.documentWidth).toBe(1000);
 
-    const appointButton = page.getByRole('button', { name: '주부 임명', exact: true });
-    expect(await appointButton.evaluate((button) => getComputedStyle(button).backgroundColor)).toBe('rgb(55, 104, 70)');
-    await appointButton.hover();
-    expect(await appointButton.evaluate((button) => getComputedStyle(button).cursor)).toBe('pointer');
-    await appointButton.focus();
-    expect(await appointButton.evaluate((button) => getComputedStyle(button).outlineStyle)).not.toBe('none');
+    const changeButton = page.getByRole('button', { name: '주부 변경하기', exact: true });
+    expect(await changeButton.evaluate((button) => getComputedStyle(button).backgroundColor)).toBe('rgb(49, 91, 61)');
+    await changeButton.hover();
+    expect(await changeButton.evaluate((button) => getComputedStyle(button).cursor)).toBe('pointer');
+    await changeButton.focus();
+    expect(await changeButton.evaluate((button) => getComputedStyle(button).outlineStyle)).not.toBe('none');
+    await expect(page.getByRole('button', { name: '허창 태수 변경하기', exact: true })).toBeVisible();
+    await expect(page.getByRole('button', { name: '허창 군사 변경하기', exact: true })).toHaveCount(0);
     await screenshot(page, 'core-personnel-desktop-leader.png');
 });
 
@@ -348,7 +351,7 @@ test('personnel selects an informed general and reports the JosaUtil-composed re
     await page.setViewportSize({ width: 1000, height: 900 });
     await gotoOffice(page, 'nation/personnel');
 
-    await page.getByRole('button', { name: '주부 장수 선택', exact: true }).click();
+    await page.getByRole('button', { name: '주부 변경하기', exact: true }).click();
     const picker = page.getByTestId('personnel-selection-dialog');
     await expect(picker).toBeVisible();
     await expect(picker.getByRole('heading', { name: '주부 임명 대상 선택' })).toBeVisible();
@@ -363,14 +366,11 @@ test('personnel selects an informed general and reports the JosaUtil-composed re
     await candidate.focus();
     expect(await candidate.evaluate((button) => getComputedStyle(button).outlineStyle)).not.toBe('none');
     await screenshot(page, 'core-personnel-desktop-general-picker.png');
-    await candidate.click();
-
-    await expect(page.getByRole('button', { name: '주부 장수 선택', exact: true })).toContainText('장료');
     page.once('dialog', async (dialog) => {
         expect(dialog.message()).toBe('장료를 주부직에 임명하시겠습니까?');
         await dialog.accept();
     });
-    await page.getByRole('button', { name: '주부 임명', exact: true }).click();
+    await candidate.click();
 
     await expect(page.getByTestId('game-toast')).toContainText('장료를 임명했습니다.');
     expect(state.appointedGeneralId).toBe(6);
@@ -380,21 +380,41 @@ test('personnel selects an informed general and reports the JosaUtil-composed re
     await screenshot(page, 'core-personnel-appointment-toast.png');
 });
 
-test('personnel preserves the legacy fixed 1000px document on a 500px viewport', async ({ page }) => {
-    await installFixture(page, { role: 'head', rate: 20 });
+test('personnel reflows row-level appointments at 500px and 390px without gradients or overflow', async ({ page }) => {
+    const state: FixtureState = { role: 'head', rate: 20 };
+    await installFixture(page, state);
     await page.setViewportSize({ width: 500, height: 900 });
     await gotoOffice(page, 'nation/personnel');
     await expect(page.getByText('작위검증국')).toBeVisible();
     expect(
         await page.locator('#personnel-container').evaluate((element) => element.getBoundingClientRect().width)
-    ).toBe(1000);
-    expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBe(1000);
+    ).toBe(500);
+    expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBe(500);
+    const rowGeometry = await page.locator('#personnel-container').evaluate((container) => {
+        const rect = (selector: string) => container.querySelector<HTMLElement>(selector)!.getBoundingClientRect();
+        return {
+            chiefWidth: rect('.chief-entry-cell').width,
+            cityWidth: rect('.city-identity').width,
+            officerWidth: rect('.city-officer-cell').width,
+            gradientCount: [...container.querySelectorAll<HTMLElement>('*')].filter((element) =>
+                getComputedStyle(element).backgroundImage.includes('gradient')
+            ).length,
+        };
+    });
+    expect(rowGeometry.chiefWidth).toBeGreaterThan(249);
+    expect(rowGeometry.chiefWidth).toBeLessThan(251);
+    expect(rowGeometry.cityWidth).toBeGreaterThan(79);
+    expect(rowGeometry.cityWidth).toBeLessThan(81);
+    expect(rowGeometry.officerWidth).toBeGreaterThan(139);
+    expect(rowGeometry.officerWidth).toBeLessThan(141);
+    expect(rowGeometry.gradientCount).toBe(0);
     await expect(page.getByRole('combobox', { name: '외교권자' })).toHaveCount(0);
     await expect(page.getByRole('combobox', { name: '추방 대상 장수' })).toBeVisible();
 
-    await page.getByRole('button', { name: '태수 도시 선택', exact: true }).click();
+    await page.getByRole('button', { name: '허창 태수 변경하기', exact: true }).click();
     const picker = page.getByTestId('personnel-selection-dialog');
     await expect(picker).toBeVisible();
+    await expect(picker.getByRole('heading', { name: '허창 태수 변경' })).toBeVisible();
     expect(await picker.evaluate((element) => getComputedStyle(element).transitionDuration)).toContain('0.15s');
     await expect(picker).toHaveCSS('transform', 'none');
     const pickerGeometry = await picker.evaluate((element) => {
@@ -414,26 +434,71 @@ test('personnel preserves the legacy fixed 1000px document on a 500px viewport',
     expect(pickerGeometry.bottom).toBe(900);
     expect(pickerGeometry.width).toBeGreaterThan(480);
     expect(pickerGeometry.borderTopLeftRadius).toBe('16px');
-    await expect(picker.getByRole('button', { name: /낙양/ })).toContainText('중원 · 중도시');
-    await expect(picker.getByRole('button', { name: /허창/ })).toContainText('현재 태수하후돈');
-    await picker.getByRole('button', { name: /낙양/ }).focus();
     expect(
-        await picker.getByRole('button', { name: /낙양/ }).evaluate((button) => getComputedStyle(button).outlineStyle)
+        await picker.evaluate(
+            (element) =>
+                [...element.querySelectorAll<HTMLElement>('*')].filter((child) =>
+                    getComputedStyle(child).backgroundImage.includes('gradient')
+                ).length
+        )
+    ).toBe(0);
+    await expect(picker.getByRole('button', { name: /장료/ })).toContainText('허창 · 일반 장수');
+    await expect(picker.getByRole('button', { name: /하후돈/ })).toContainText('현재 임명 중');
+    await picker.getByRole('button', { name: /장료/ }).focus();
+    expect(
+        await picker.getByRole('button', { name: /장료/ }).evaluate((button) => getComputedStyle(button).outlineStyle)
     ).not.toBe('none');
     await screenshot(page, 'core-personnel-mobile-city-picker.png');
-    await picker.getByRole('button', { name: /낙양/ }).click();
-    await expect(page.getByRole('button', { name: '태수 도시 선택', exact: true })).toContainText('낙양');
-    await screenshot(page, 'core-personnel-mobile-head.png');
+    page.once('dialog', async (dialog) => {
+        expect(dialog.message()).toBe('장료를 허창 태수직에 임명하시겠습니까?');
+        await dialog.accept();
+    });
+    await picker.getByRole('button', { name: /장료/ }).click();
+    await expect(page.getByTestId('game-toast')).toContainText('장료를 임명했습니다.');
+    expect(state.appointedGeneralId).toBe(6);
+    expect(state.appointedCityId).toBe(1);
+    expect(state.appointedOfficerLevel).toBe(4);
+
+    await page.setViewportSize({ width: 390, height: 844 });
+    await page.waitForTimeout(250);
+    expect(
+        await page.locator('#personnel-container').evaluate((element) => element.getBoundingClientRect().width)
+    ).toBe(390);
+    const overflowContributors = await page.evaluate(() =>
+        [...document.querySelectorAll<HTMLElement>('body *')]
+            .map((element) => {
+                const rect = element.getBoundingClientRect();
+                return {
+                    element: `${element.tagName.toLowerCase()}#${element.id}.${element.className}`,
+                    parent: `${element.parentElement?.tagName.toLowerCase() ?? ''}#${element.parentElement?.id ?? ''}.${element.parentElement?.className ?? ''}`,
+                    left: rect.left,
+                    right: rect.right,
+                    width: rect.width,
+                };
+            })
+            .filter((entry) => entry.right > window.innerWidth + 0.5 || entry.left < -0.5)
+            .slice(0, 12)
+    );
+    expect(overflowContributors).toEqual([]);
+    expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBe(390);
+    const narrowChiefWidth = await page
+        .locator('.chief-entry-cell')
+        .first()
+        .evaluate((element) => element.getBoundingClientRect().width);
+    expect(narrowChiefWidth).toBeGreaterThan(194);
+    expect(narrowChiefWidth).toBeLessThan(196);
+    await screenshot(page, 'core-personnel-mobile-rows.png');
 });
 
 test('personnel hides every mutation control for an ordinary member and exposes load errors', async ({ page }) => {
     await installFixture(page, { role: 'member', rate: 20 });
     await gotoOffice(page, 'nation/personnel');
-    await expect(page.getByText('도 시 관 직 임 명')).toHaveCount(0);
+    await expect(page.getByRole('button', { name: /변경하기/ })).toHaveCount(0);
     await expect(page.getByText('외 교 권 자 임 명')).toHaveCount(0);
     await expect(page.getByRole('combobox', { name: '추방 대상 장수' })).toHaveCount(0);
     await expect(page.getByRole('button', { name: '추방', exact: true })).toHaveCount(0);
-    await expect(page.getByText(/곽가\(10년\).*허창/)).toBeVisible();
+    const auditorCell = page.locator('.city-officer-cell').filter({ hasText: '곽가' });
+    await expect(auditorCell).toContainText('10년 · 허창');
 
     const failed = await page.context().newPage();
     await installFixture(failed, { role: 'member', rate: 20, failPersonnelLoad: true });
@@ -556,9 +621,7 @@ test('finance editor preserves Ref formatting controls and uploads images throug
     const editor = page.getByRole('textbox', { name: '국가 방침' });
     const editorFrame = page.locator('#notice-form .legacy-html-editor');
     await expect(editor).toBeVisible();
-    expect(await editorFrame.evaluate((element) => getComputedStyle(element).backgroundColor)).toBe(
-        'rgba(0, 0, 0, 0)'
-    );
+    expect(await editorFrame.evaluate((element) => getComputedStyle(element).backgroundColor)).toBe('rgba(0, 0, 0, 0)');
     expect(await editor.evaluate((element) => getComputedStyle(element).backgroundColor)).toBe('rgba(0, 0, 0, 0)');
 
     await editor.fill('서식 검증');
