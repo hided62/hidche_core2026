@@ -6,6 +6,8 @@ import {
     assertReleaseComponents,
     buildTurboReleaseCommand,
     buildTurboReleaseTaskCommand,
+    DEFAULT_MANAGED_WORKSPACE_KEEP_NEWEST,
+    DEFAULT_MANAGED_WORKSPACE_RETENTION_MS,
     type BuildCommand,
     type BuildProgressEvent,
     type BuildRunner,
@@ -27,6 +29,16 @@ const HEARTBEAT_INTERVAL_MS = 60_000;
 const CANCELLATION_POLL_INTERVAL_MS = 500;
 const PROCESS_NAMES = ['sammo:gateway-api', 'sammo:gateway-frontend', 'sammo:gateway-orchestrator'] as const;
 const SENSITIVE_ENV_NAME = /(SECRET|TOKEN|PASSWORD|PASSWD|PRIVATE_KEY|CLIENT_SECRET|DATABASE_URL|REDIS_URL)/iu;
+export const RELEASE_WORKSPACE_CLEANUP_INTERVAL_MS = 24 * 60 * 60 * 1_000;
+
+const isRuntimeProcessActive = (status: string): boolean =>
+    ['online', 'launching', 'stopping'].includes(status.toLowerCase());
+
+const isPathInside = (candidate: string | undefined, root: string): boolean => {
+    if (!candidate) return false;
+    const relative = path.relative(path.resolve(root), path.resolve(candidate));
+    return relative === '' || (!relative.startsWith(`..${path.sep}`) && !path.isAbsolute(relative));
+};
 
 const managedPostgresPoolMax = (env: Record<string, string>, roleVariable: string, fallback: number): string =>
     String(resolvePostgresPoolMax(env[roleVariable] ?? env.POSTGRES_POOL_MAX, fallback));
@@ -131,6 +143,33 @@ export class GatewayReleaseController {
         private readonly now: () => Date = () => new Date(),
         private readonly fetchImpl: typeof fetch = fetch
     ) {}
+
+    async cleanupStaleWorkspaces(): Promise<{ removed: string[]; skipped: string[] }> {
+        const [state, processes, workspaces] = await Promise.all([
+            this.repository.getState(),
+            this.processManager.list(),
+            this.workspaceManager.listManagedWorkspaces(),
+        ]);
+        const protectedWorkspaces = new Set<string>();
+        if (state.activeWorkspace) protectedWorkspaces.add(path.resolve(state.activeWorkspace));
+        if (state.previousWorkspace) protectedWorkspaces.add(path.resolve(state.previousWorkspace));
+        const activeProcesses = processes.filter((process) => isRuntimeProcessActive(process.status));
+        for (const workspace of workspaces) {
+            if (
+                activeProcesses.some(
+                    (process) =>
+                        isPathInside(process.cwd, workspace.root) || isPathInside(process.script, workspace.root)
+                )
+            ) {
+                protectedWorkspaces.add(workspace.root);
+            }
+        }
+        return this.workspaceManager.cleanup({
+            protectedPaths: [...protectedWorkspaces],
+            retentionMs: DEFAULT_MANAGED_WORKSPACE_RETENTION_MS,
+            keepNewest: DEFAULT_MANAGED_WORKSPACE_KEEP_NEWEST,
+        });
+    }
 
     private sanitizeLogMessage(message: string): string {
         let sanitized = stripVTControlCharacters(message);
