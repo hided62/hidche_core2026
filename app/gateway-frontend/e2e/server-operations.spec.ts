@@ -1010,6 +1010,105 @@ test('loads server metadata defaults into the reset form and submits them', asyn
     expect(request).toContain('"options":["develop","recruit_high","chief"]');
 });
 
+test('uses ref reset terms with compact hover, focus, and mobile help', async ({ page }, testInfo) => {
+    const state: FixtureState = {
+        operations: [],
+        gatewayOperations: [],
+        runtimeRunning: true,
+        requestBodies: [],
+    };
+    await installFixture(page, state);
+
+    await page.goto('admin/servers/che%3Adefault/scenario');
+    await page.getByText('고급 시나리오 옵션').click();
+
+    await expect(page.getByText('NPC 상성', { exact: true })).toBeVisible();
+    await expect(page.getByText('확장 NPC', { exact: true })).toBeVisible();
+    await expect(page.getByText('장수 임의 생성', { exact: true })).toBeVisible();
+    await expect(page.getByText('NPC 빙의', { exact: true })).toBeVisible();
+    await expect(page.getByText('자율행동', { exact: true })).toBeVisible();
+    await expect(page.getByText('임관 모드', { exact: true })).toBeVisible();
+    await expect(page.getByText('이미지 표기', { exact: true })).toBeVisible();
+    await expect(page.getByText('토너먼트 자동 시작', { exact: true })).toBeVisible();
+    await expect(page.getByTestId('reset-fiction').locator('option')).toHaveText(['연의', '가상']);
+    await expect(page.getByTestId('reset-extend').locator('option')).toHaveText(['포함', '미포함']);
+    await expect(page.getByTestId('reset-block-general-create').locator('option')).toHaveText([
+        '가능',
+        '장수명 무작위',
+        '불가',
+    ]);
+    await expect(page.getByTestId('reset-npc-mode').locator('option')).toHaveText(['불가', '가능', '선택 생성 가능']);
+    await expect(page.getByTestId('reset-show-img-level').locator('option')).toHaveText([
+        '안함',
+        '전콘',
+        '전콘, 병종',
+        '전콘, 병종, NPC',
+    ]);
+
+    const helpButtons = page.getByRole('button', { name: /도움말$/ });
+    await expect(helpButtons).toHaveCount(10);
+    const fictionHelp = page.getByTestId('reset-help-fiction');
+    const fictionTooltip = page.getByTestId('reset-help-fiction-tooltip');
+    await expect(fictionTooltip).toBeHidden();
+    await fictionHelp.hover();
+    await expect(fictionTooltip).toBeVisible();
+    await expect(fictionTooltip).toContainText('연의는 서버 정보에서 사실 모드로도 표시');
+    await expect.poll(() => fictionTooltip.evaluate((element) => getComputedStyle(element).opacity)).toBe('1');
+    const hoverMetrics = await fictionHelp.evaluate((element) => {
+        const buttonRect = element.getBoundingClientRect();
+        const tooltip = document.querySelector<HTMLElement>('[data-testid="reset-help-fiction-tooltip"]');
+        const tooltipRect = tooltip?.getBoundingClientRect();
+        const buttonStyle = getComputedStyle(element);
+        const tooltipStyle = tooltip ? getComputedStyle(tooltip) : null;
+        return {
+            button: { width: buttonRect.width, height: buttonRect.height },
+            tooltip: tooltipRect
+                ? { x: tooltipRect.x, y: tooltipRect.y, width: tooltipRect.width, height: tooltipRect.height }
+                : null,
+            buttonBorderRadius: buttonStyle.borderRadius,
+            tooltipVisibility: tooltipStyle?.visibility,
+            tooltipOpacity: tooltipStyle?.opacity,
+        };
+    });
+    expect(hoverMetrics.button).toEqual({ width: 18, height: 18 });
+    expect(hoverMetrics.tooltipVisibility).toBe('visible');
+    expect(hoverMetrics.tooltipOpacity).toBe('1');
+
+    await page.mouse.move(0, 0);
+    const npcHelp = page.getByTestId('reset-help-npc-mode');
+    await npcHelp.focus();
+    await expect(page.getByTestId('reset-help-npc-mode-tooltip')).toBeVisible();
+    await expect(npcHelp).toBeFocused();
+
+    await page.getByTestId('reset-autorun-enabled').selectOption({ label: '사용' });
+    await expect(page.getByText('자율행동 종류', { exact: true })).toBeVisible();
+    for (const action of ['내정', '순간이동', '징병', '모병', '훈사', '출병', '기본 사령턴']) {
+        await expect(page.getByText(action, { exact: true })).toBeVisible();
+    }
+
+    await page.setViewportSize({ width: 390, height: 844 });
+    const mobileHelp = page.getByTestId('reset-help-npc-mode');
+    await mobileHelp.focus();
+    const mobileMetrics = await page.getByTestId('reset-help-npc-mode-tooltip').evaluate((element) => {
+        const rect = element.getBoundingClientRect();
+        return {
+            x: rect.x,
+            right: rect.right,
+            width: rect.width,
+            viewportWidth: document.documentElement.clientWidth,
+            documentScrollWidth: document.documentElement.scrollWidth,
+        };
+    });
+    expect(mobileMetrics.x).toBeGreaterThanOrEqual(0);
+    expect(mobileMetrics.right).toBeLessThanOrEqual(mobileMetrics.viewportWidth);
+    expect(mobileMetrics.documentScrollWidth).toBeLessThanOrEqual(mobileMetrics.viewportWidth);
+    await page.screenshot({ path: testInfo.outputPath('mobile-reset-option-help.png'), fullPage: true });
+    await writeFile(
+        testInfo.outputPath('reset-option-help-metrics.json'),
+        JSON.stringify({ hoverMetrics, mobileMetrics }, null, 2)
+    );
+});
+
 test('edits server reset defaults through profile metadata settings', async ({ page }, testInfo) => {
     const state: FixtureState = { operations: [], gatewayOperations: [], runtimeRunning: true, requestBodies: [] };
     await installFixture(page, state);
