@@ -7,7 +7,7 @@ import {
 } from '@sammo-ts/gateway-api';
 
 import { resolveReleaseControllerConfig } from './config.js';
-import { GatewayReleaseController } from './releaseController.js';
+import { GatewayReleaseController, RELEASE_WORKSPACE_CLEANUP_INTERVAL_MS } from './releaseController.js';
 import { upgradeReleaseController } from './selfUpgrade.js';
 
 export * from './config.js';
@@ -67,6 +67,7 @@ const main = async (): Promise<void> => {
     }
     if (command !== 'daemon') throw new Error(`Unknown release-controller command: ${command}`);
     let stopping = false;
+    let nextWorkspaceCleanupAt = 0;
     const stop = async (): Promise<void> => {
         if (stopping) return;
         stopping = true;
@@ -75,6 +76,18 @@ const main = async (): Promise<void> => {
     process.once('SIGINT', () => void stop());
     process.once('SIGTERM', () => void stop());
     while (!stopping) {
+        const now = Date.now();
+        if (now >= nextWorkspaceCleanupAt) {
+            nextWorkspaceCleanupAt = now + RELEASE_WORKSPACE_CLEANUP_INTERVAL_MS;
+            try {
+                const result = await controller.cleanupStaleWorkspaces();
+                if (result.removed.length > 0) {
+                    console.info(`[release-controller] removed ${result.removed.length} stale Gateway worktrees`);
+                }
+            } catch (error) {
+                console.error('[release-controller] workspace cleanup failed', error);
+            }
+        }
         await controller.runOnce();
         await new Promise<void>((resolve) => setTimeout(resolve, config.pollIntervalMs));
     }

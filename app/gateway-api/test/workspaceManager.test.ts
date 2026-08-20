@@ -163,4 +163,46 @@ describe('GitWorkspaceManager source resolution', () => {
         );
         expect(fs.existsSync(unregistered)).toBe(true);
     });
+
+    it('cleans only expired unprotected worktrees beyond the newest cache and preserves dirty work', async () => {
+        const fixture = createRepositoryFixture();
+        const now = new Date('2026-08-20T12:00:00.000Z');
+        const manager = new GitWorkspaceManager({
+            repoRoot: fixture.checkout,
+            worktreeRoot: fixture.worktrees,
+            now: () => now,
+        });
+        const workspaces = [await manager.prepare(fixture.firstCommit)];
+        for (let index = 2; index <= 5; index += 1) {
+            fs.writeFileSync(path.join(fixture.source, 'version.txt'), `version ${index}\n`);
+            git(fixture.source, 'add', 'version.txt');
+            git(fixture.source, 'commit', '-m', `version ${index}`);
+            git(fixture.source, 'push', 'origin', 'main');
+            const commit = await manager.resolveCommit('BRANCH', 'main');
+            workspaces.push(await manager.prepare(commit));
+        }
+        const expired = new Date('2026-08-01T00:00:00.000Z');
+        for (const workspace of workspaces) fs.utimesSync(workspace.root, expired, expired);
+        fs.writeFileSync(path.join(workspaces[1]!.root, 'preserve-me.txt'), 'uncommitted\n');
+        fs.utimesSync(workspaces[1]!.root, expired, expired);
+        const recent = new Date('2026-08-20T11:00:00.000Z');
+        fs.utimesSync(workspaces[4]!.root, recent, recent);
+
+        const result = await manager.cleanup({
+            protectedPaths: [workspaces[0]!.root],
+            retentionMs: 24 * 60 * 60 * 1_000,
+            keepNewest: 1,
+        });
+        expect(result.removed).toHaveLength(2);
+        expect(result.removed).toEqual(expect.arrayContaining([workspaces[2]!.root, workspaces[3]!.root]));
+        expect(result.skipped).toHaveLength(3);
+        expect(result.skipped).toEqual(
+            expect.arrayContaining([workspaces[0]!.root, workspaces[1]!.root, workspaces[4]!.root])
+        );
+        expect(fs.existsSync(workspaces[0]!.root)).toBe(true);
+        expect(fs.existsSync(workspaces[1]!.root)).toBe(true);
+        expect(fs.existsSync(workspaces[2]!.root)).toBe(false);
+        expect(fs.existsSync(workspaces[3]!.root)).toBe(false);
+        expect(fs.existsSync(workspaces[4]!.root)).toBe(true);
+    });
 });

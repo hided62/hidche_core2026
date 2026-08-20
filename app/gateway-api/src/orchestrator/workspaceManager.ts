@@ -6,6 +6,7 @@ export interface WorkspaceManagerOptions {
     repoRoot: string;
     worktreeRoot: string;
     baseEnv?: Record<string, string>;
+    now?: () => Date;
 }
 
 export interface WorkspaceInfo {
@@ -13,6 +14,26 @@ export interface WorkspaceInfo {
     created: boolean;
     needsInstall: boolean;
 }
+
+export interface ManagedWorkspaceInfo {
+    root: string;
+    commitSha: string;
+    lastUsedAt: Date;
+}
+
+export interface ManagedWorkspaceCleanupOptions {
+    protectedPaths?: readonly string[];
+    retentionMs: number;
+    keepNewest: number;
+}
+
+export interface ManagedWorkspaceCleanupResult {
+    removed: string[];
+    skipped: string[];
+}
+
+export const DEFAULT_MANAGED_WORKSPACE_RETENTION_MS = 24 * 60 * 60 * 1_000;
+export const DEFAULT_MANAGED_WORKSPACE_KEEP_NEWEST = 2;
 
 const runGit = (args: string[], cwd: string, env?: Record<string, string>): Promise<{ ok: boolean; output: string }> =>
     new Promise((resolve) => {
@@ -58,11 +79,13 @@ export class GitWorkspaceManager {
     private readonly repoRoot: string;
     private readonly worktreeRoot: string;
     private readonly baseEnv?: Record<string, string>;
+    private readonly now: () => Date;
 
     constructor(options: WorkspaceManagerOptions) {
         this.repoRoot = options.repoRoot;
         this.worktreeRoot = options.worktreeRoot;
         this.baseEnv = options.baseEnv;
+        this.now = options.now ?? (() => new Date());
     }
 
     async resolveCommit(sourceMode: 'BRANCH' | 'COMMIT', sourceRef: string): Promise<string> {
@@ -124,6 +147,8 @@ export class GitWorkspaceManager {
         } else {
             await this.assertReusableWorkspace(workspacePath, commitSha);
         }
+        const usedAt = this.now();
+        fs.utimesSync(workspacePath, usedAt, usedAt);
 
         return {
             root: workspacePath,
@@ -138,11 +163,98 @@ export class GitWorkspaceManager {
             return false;
         }
         await this.assertRegisteredWorkspace(resolved);
+        const status = await runGit(['status', '--porcelain'], resolved, this.baseEnv);
+        if (!status.ok) {
+            throw new Error(status.output || 'Failed to inspect managed workspace.');
+        }
+        if (status.output.trim()) {
+            throw new Error('Managed workspace has uncommitted changes.');
+        }
         const result = await runGit(['worktree', 'remove', '--force', resolved], this.repoRoot, this.baseEnv);
         if (!result.ok) {
-            fs.rmSync(resolved, { recursive: true, force: true });
+            throw new Error(result.output || 'Failed to remove git worktree.');
         }
         return true;
+    }
+
+    workspacePathForCommit(commitSha: string): string {
+        if (!COMMIT_SHA_PATTERN.test(commitSha)) {
+            throw new Error('Invalid commit SHA.');
+        }
+        return path.join(this.worktreeRoot, commitSha);
+    }
+
+    async listManagedWorkspaces(): Promise<ManagedWorkspaceInfo[]> {
+        const listed = await runGit(['worktree', 'list', '--porcelain'], this.repoRoot, this.baseEnv);
+        if (!listed.ok) {
+            throw new Error(listed.output || 'Failed to inspect git worktrees.');
+        }
+        const workspaces: ManagedWorkspaceInfo[] = [];
+        for (const block of listed.output.split(/\n\n+/)) {
+            const lines = block.split('\n');
+            const worktreeLine = lines.find((line) => line.startsWith('worktree '));
+            const headLine = lines.find((line) => line.startsWith('HEAD '));
+            if (!worktreeLine || !headLine) continue;
+            const workspacePath = path.resolve(worktreeLine.slice('worktree '.length));
+            const commitSha = headLine.slice('HEAD '.length);
+            try {
+                this.assertManagedWorkspacePath(workspacePath);
+            } catch {
+                continue;
+            }
+            if (!COMMIT_SHA_PATTERN.test(commitSha) || !fs.existsSync(workspacePath)) continue;
+            workspaces.push({
+                root: workspacePath,
+                commitSha,
+                lastUsedAt: fs.statSync(workspacePath).mtime,
+            });
+        }
+        return workspaces;
+    }
+
+    async cleanup(options: ManagedWorkspaceCleanupOptions): Promise<ManagedWorkspaceCleanupResult> {
+        if (!Number.isFinite(options.retentionMs) || options.retentionMs < 0) {
+            throw new Error('Workspace retention must be a non-negative duration.');
+        }
+        if (!Number.isInteger(options.keepNewest) || options.keepNewest < 0) {
+            throw new Error('Workspace keepNewest must be a non-negative integer.');
+        }
+        const protectedPaths = new Set((options.protectedPaths ?? []).map((item) => path.resolve(item)));
+        const workspaces = await this.listManagedWorkspaces();
+        const unprotectedNewest = [...workspaces]
+            .filter((workspace) => !protectedPaths.has(workspace.root))
+            .sort((left, right) => right.lastUsedAt.getTime() - left.lastUsedAt.getTime())
+            .slice(0, options.keepNewest);
+        const retainedNewestPaths = new Set(unprotectedNewest.map((workspace) => workspace.root));
+        const cutoff = this.now().getTime() - options.retentionMs;
+        const removed: string[] = [];
+        const skipped: string[] = [];
+
+        for (const workspace of workspaces) {
+            if (
+                protectedPaths.has(workspace.root) ||
+                retainedNewestPaths.has(workspace.root) ||
+                workspace.lastUsedAt.getTime() > cutoff
+            ) {
+                skipped.push(workspace.root);
+                continue;
+            }
+            try {
+                if (await this.remove(workspace.root)) {
+                    removed.push(workspace.root);
+                } else {
+                    skipped.push(workspace.root);
+                }
+            } catch {
+                skipped.push(workspace.root);
+            }
+        }
+
+        const pruned = await runGit(['worktree', 'prune', '--expire', 'now'], this.repoRoot, this.baseEnv);
+        if (!pruned.ok) {
+            throw new Error(pruned.output || 'Failed to prune git worktree metadata.');
+        }
+        return { removed, skipped };
     }
 
     private assertManagedWorkspacePath(workspacePath: string): string {

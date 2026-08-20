@@ -70,6 +70,13 @@ pnpm --filter @sammo-ts/release-controller status
 pnpm --filter @sammo-ts/release-controller run-once
 ```
 
+Daemon은 시작 시와 이후 24시간마다 commit worktree를 자동 정리합니다. 현재·이전
+Gateway release와 활성 PM2 process가 사용하는 경로는 항상 보호하고, 나머지는
+마지막 사용 후 24시간과 최신 2개 cache를 보장한 뒤 제거합니다. 변경이 있거나 Git
+제거가 실패한 worktree는 raw directory 삭제로 우회하지 않고 다음 주기까지
+보존합니다. Profile worktree는 Gateway orchestrator가 같은 정책으로 별도
+관리합니다.
+
 ## Controller self-upgrade
 
 이 명령은 현재 daemon과 별개의 CLI process에서 실행됩니다. 대상 worktree를

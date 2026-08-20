@@ -1,15 +1,23 @@
+import path from 'node:path';
+
 import { describe, expect, it } from 'vitest';
 
 import { GatewayOrchestrator } from '../src/orchestrator/gatewayOrchestrator.js';
 import type { ProcessManager } from '../src/orchestrator/processManager.js';
 import type { GatewayProfileRecord, GatewayProfileRepository } from '../src/orchestrator/profileRepository.js';
-import type { GitWorkspaceManager } from '../src/orchestrator/workspaceManager.js';
+import {
+    DEFAULT_MANAGED_WORKSPACE_KEEP_NEWEST,
+    DEFAULT_MANAGED_WORKSPACE_RETENTION_MS,
+    type GitWorkspaceManager,
+    type ManagedWorkspaceCleanupOptions,
+} from '../src/orchestrator/workspaceManager.js';
 
+const COMMIT_SHA = '0123456789abcdef0123456789abcdef01234567';
 const oldUsage = '2025-01-01T00:00:00.000Z';
 
 const makeProfile = (
     profileName: string,
-    workspace: string,
+    workspace: string | undefined,
     overrides: Partial<GatewayProfileRecord> = {}
 ): GatewayProfileRecord => ({
     profileName,
@@ -20,7 +28,7 @@ const makeProfile = (
     apiPort: 15_003,
     status: 'RUNNING',
     buildStatus: 'SUCCEEDED',
-    buildCommitSha: '0123456789abcdef0123456789abcdef01234567',
+    buildCommitSha: COMMIT_SHA,
     buildWorkspace: workspace,
     buildLastUsedAt: oldUsage,
     meta: {},
@@ -32,17 +40,10 @@ const makeProfile = (
 const createHarness = (
     profiles: GatewayProfileRecord[],
     processes: Awaited<ReturnType<ProcessManager['list']>>,
-    workspaceExists = true
+    managedPaths: string[]
 ) => {
-    const removeCalls: string[] = [];
-    const clearedProfiles: string[][] = [];
-
-    const repository = {
-        listProfiles: async () => profiles,
-        clearWorkspaceUsage: async (profileNames: string[]) => {
-            clearedProfiles.push(profileNames);
-        },
-    } as unknown as GatewayProfileRepository;
+    const cleanupCalls: ManagedWorkspaceCleanupOptions[] = [];
+    const repository = { listProfiles: async () => profiles } as unknown as GatewayProfileRepository;
     const processManager: ProcessManager = {
         list: async () => processes,
         start: async () => {},
@@ -50,9 +51,16 @@ const createHarness = (
         delete: async () => {},
     };
     const workspaceManager = {
-        remove: async (workspace: string) => {
-            removeCalls.push(workspace);
-            return workspaceExists;
+        listManagedWorkspaces: async () =>
+            managedPaths.map((root) => ({ root, commitSha: path.basename(root), lastUsedAt: new Date(oldUsage) })),
+        workspacePathForCommit: (commitSha: string) => `/srv/sammo/worktrees/${commitSha}`,
+        cleanup: async (options: ManagedWorkspaceCleanupOptions) => {
+            cleanupCalls.push(options);
+            const protectedPaths = new Set(options.protectedPaths);
+            return {
+                removed: managedPaths.filter((workspace) => !protectedPaths.has(workspace)),
+                skipped: managedPaths.filter((workspace) => protectedPaths.has(workspace)),
+            };
         },
     } as unknown as GitWorkspaceManager;
     const orchestrator = new GatewayOrchestrator({
@@ -70,126 +78,67 @@ const createHarness = (
         scheduleIntervalMs: 60_000,
         buildIntervalMs: 60_000,
         adminActionIntervalMs: 60_000,
-        now: () => new Date('2026-07-30T00:00:00.000Z'),
     });
-
-    return { orchestrator, removeCalls, clearedProfiles };
+    return { orchestrator, cleanupCalls };
 };
 
 describe('GatewayOrchestrator workspace cleanup', () => {
-    it('skips a workspace referenced by any active process cwd', async () => {
-        const workspace = '/srv/sammo/worktrees/active';
+    it('always protects every workspace currently selected by a profile', async () => {
+        const current = '/srv/sammo/worktrees/current';
+        const stale = '/srv/sammo/worktrees/stale';
+        const harness = createHarness([makeProfile('che:default', current)], [], [current, stale]);
+
+        await expect(harness.orchestrator.cleanupStaleWorkspaces()).resolves.toEqual({
+            removed: [stale],
+            skipped: [current],
+        });
+        expect(harness.cleanupCalls[0]).toMatchObject({
+            retentionMs: DEFAULT_MANAGED_WORKSPACE_RETENTION_MS,
+            keepNewest: DEFAULT_MANAGED_WORKSPACE_KEEP_NEWEST,
+        });
+    });
+
+    it('protects the commit target of queued and running builds before the profile reference changes', async () => {
+        const target = `/srv/sammo/worktrees/${COMMIT_SHA}`;
+        const harness = createHarness([makeProfile('che:default', undefined, { buildStatus: 'QUEUED' })], [], [target]);
+
+        await expect(harness.orchestrator.cleanupStaleWorkspaces()).resolves.toEqual({
+            removed: [],
+            skipped: [target],
+        });
+    });
+
+    it('protects an otherwise orphaned workspace referenced by any active process cwd or script', async () => {
+        const cwdWorkspace = '/srv/sammo/worktrees/cwd-orphan';
+        const scriptWorkspace = '/srv/sammo/worktrees/script-orphan';
+        const stale = '/srv/sammo/worktrees/stale';
         const harness = createHarness(
-            [makeProfile('che:default', workspace)],
+            [],
             [
-                {
-                    name: 'sammo:che:default:frontend',
-                    status: 'online',
-                    cwd: `${workspace}/app/game-frontend`,
-                },
-            ]
+                { name: 'custom-build', status: 'online', cwd: `${cwdWorkspace}/app/game-api` },
+                { name: 'custom-worker', status: 'launching', script: `${scriptWorkspace}/dist/index.js` },
+                { name: 'stopped-worker', status: 'stopped', cwd: `${stale}/app/game-api` },
+            ],
+            [cwdWorkspace, scriptWorkspace, stale]
         );
 
         await expect(harness.orchestrator.cleanupStaleWorkspaces()).resolves.toEqual({
-            removed: [],
-            skipped: [workspace],
+            removed: [stale],
+            skipped: [cwdWorkspace, scriptWorkspace],
         });
-        expect(harness.removeCalls).toEqual([]);
-        expect(harness.clearedProfiles).toEqual([]);
     });
 
-    it('skips a workspace when only one profile process is active and cwd metadata is absent', async () => {
-        const workspace = '/srv/sammo/worktrees/partial';
-        const harness = createHarness(
-            [makeProfile('che:default', workspace)],
-            [{ name: 'sammo:che:default:tournament-worker', status: 'launching' }]
-        );
-
-        await expect(harness.orchestrator.cleanupStaleWorkspaces()).resolves.toEqual({
-            removed: [],
-            skipped: [workspace],
-        });
-        expect(harness.removeCalls).toEqual([]);
-    });
-
-    it('skips a workspace referenced only by an active process script', async () => {
-        const workspace = '/srv/sammo/worktrees/script-reference';
-        const harness = createHarness(
-            [makeProfile('che:default', workspace)],
-            [
-                {
-                    name: 'unregistered-worker-name',
-                    status: 'online',
-                    script: `${workspace}/app/game-api/dist/index.js`,
-                },
-            ]
-        );
-
-        await expect(harness.orchestrator.cleanupStaleWorkspaces()).resolves.toEqual({
-            removed: [],
-            skipped: [workspace],
-        });
-        expect(harness.removeCalls).toEqual([]);
-    });
-
-    it('protects a shared workspace when a process for either profile is active', async () => {
-        const workspace = '/srv/sammo/worktrees/shared';
-        const harness = createHarness(
-            [makeProfile('che:default', workspace), makeProfile('hwe:default', workspace)],
-            [{ name: 'sammo:hwe:default:game-api', status: 'stopping' }]
-        );
-
-        await expect(harness.orchestrator.cleanupStaleWorkspaces()).resolves.toEqual({
-            removed: [],
-            skipped: [workspace],
-        });
-        expect(harness.removeCalls).toEqual([]);
-    });
-
-    it('removes an old unreferenced workspace and clears every profile reference', async () => {
-        const workspace = '/srv/sammo/worktrees/stale';
-        const harness = createHarness(
-            [makeProfile('che:default', workspace), makeProfile('hwe:default', workspace)],
-            [{ name: 'sammo:che:default:game-api', status: 'stopped', cwd: `${workspace}/app/game-api` }]
-        );
-
-        await expect(harness.orchestrator.cleanupStaleWorkspaces()).resolves.toEqual({
-            removed: [workspace],
-            skipped: [],
-        });
-        expect(harness.removeCalls).toEqual([workspace]);
-        expect(harness.clearedProfiles).toEqual([['che:default', 'hwe:default']]);
-    });
-
-    it('does not treat a sibling path with the same prefix as a workspace reference', async () => {
+    it('does not confuse sibling path prefixes with an active workspace reference', async () => {
         const workspace = '/srv/sammo/worktrees/commit-a';
         const harness = createHarness(
-            [makeProfile('che:default', workspace)],
-            [
-                {
-                    name: 'unregistered-worker-name',
-                    status: 'online',
-                    cwd: '/srv/sammo/worktrees/commit-a-old/app/game-api',
-                },
-            ]
+            [],
+            [{ name: 'custom-worker', status: 'online', cwd: `${workspace}-old/app/game-api` }],
+            [workspace]
         );
 
         await expect(harness.orchestrator.cleanupStaleWorkspaces()).resolves.toEqual({
             removed: [workspace],
             skipped: [],
         });
-        expect(harness.removeCalls).toEqual([workspace]);
-    });
-
-    it('clears a stale database reference when the workspace is already missing', async () => {
-        const workspace = '/srv/sammo/worktrees/missing';
-        const harness = createHarness([makeProfile('che:default', workspace)], [], false);
-
-        await expect(harness.orchestrator.cleanupStaleWorkspaces()).resolves.toEqual({
-            removed: [workspace],
-            skipped: [],
-        });
-        expect(harness.removeCalls).toEqual([workspace]);
-        expect(harness.clearedProfiles).toEqual([['che:default']]);
     });
 });

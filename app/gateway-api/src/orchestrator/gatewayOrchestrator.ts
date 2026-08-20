@@ -44,7 +44,11 @@ import {
     writeProfileReleaseSource,
     type ProfileReleaseSource,
 } from './profileReleaseSource.js';
-import type { GitWorkspaceManager } from './workspaceManager.js';
+import {
+    DEFAULT_MANAGED_WORKSPACE_KEEP_NEWEST,
+    DEFAULT_MANAGED_WORKSPACE_RETENTION_MS,
+    type GitWorkspaceManager,
+} from './workspaceManager.js';
 import type { AdminSeedUser } from './seedProfileDatabase.js';
 import { assertReleaseComponents, readReleaseManifest } from './releaseManifest.js';
 
@@ -72,6 +76,8 @@ export interface GatewayOrchestratorOptions {
     clearTournamentRuntimeState?: (profileName: string) => Promise<void>;
     cancelGame?: typeof defaultCancelGame;
 }
+
+const WORKSPACE_CLEANUP_INTERVAL_MS = 24 * 60 * 60 * 1_000;
 
 export interface ProfileRuntimeState {
     frontendRunning: boolean;
@@ -629,11 +635,13 @@ export class GatewayOrchestrator implements GatewayOrchestratorHandle {
     private scheduleTimer?: NodeJS.Timeout;
     private buildTimer?: NodeJS.Timeout;
     private adminActionTimer?: NodeJS.Timeout;
+    private workspaceCleanupTimer?: NodeJS.Timeout;
     private reconcileInFlight = false;
     private scheduleInFlight = false;
     private buildInFlight = false;
     private adminActionInFlight = false;
     private operationInFlight = false;
+    private workspaceCleanupInFlight = false;
     private activeOperationAbortSignal?: AbortSignal;
     private readonly resetInFlight = new Set<string>();
     private readonly operationLeaseOwner = randomUUID();
@@ -714,7 +722,7 @@ export class GatewayOrchestrator implements GatewayOrchestratorHandle {
     start(): void {
         this.stopping = false;
         this.trackTask(this.reconcileNow());
-        this.trackTask(this.runOperationsNow());
+        this.trackTask(this.runOperationsNow().then(() => this.cleanupWorkspacesScheduled()));
         this.trackTask(this.runAdminActionsNow());
         this.reconcileTimer = setInterval(() => this.trackTask(this.reconcileNow()), this.reconcileIntervalMs);
         this.scheduleTimer = setInterval(() => this.trackTask(this.runScheduleNow()), this.scheduleIntervalMs);
@@ -723,6 +731,10 @@ export class GatewayOrchestrator implements GatewayOrchestratorHandle {
             this.trackTask(this.runOperationsNow());
             this.trackTask(this.runAdminActionsNow());
         }, this.adminActionIntervalMs);
+        this.workspaceCleanupTimer = setInterval(
+            () => this.trackTask(this.cleanupWorkspacesScheduled()),
+            WORKSPACE_CLEANUP_INTERVAL_MS
+        );
     }
 
     async stop(): Promise<void> {
@@ -746,6 +758,9 @@ export class GatewayOrchestrator implements GatewayOrchestratorHandle {
         }
         if (this.adminActionTimer) {
             clearInterval(this.adminActionTimer);
+        }
+        if (this.workspaceCleanupTimer) {
+            clearInterval(this.workspaceCleanupTimer);
         }
         await Promise.allSettled([...this.inFlightTasks]);
     }
@@ -903,7 +918,7 @@ export class GatewayOrchestrator implements GatewayOrchestratorHandle {
     }
 
     async runBuildQueueNow(): Promise<void> {
-        if (this.stopping || this.buildInFlight) {
+        if (this.stopping || this.buildInFlight || this.workspaceCleanupInFlight) {
             return;
         }
         this.buildInFlight = true;
@@ -965,7 +980,7 @@ export class GatewayOrchestrator implements GatewayOrchestratorHandle {
     }
 
     async runOperationsNow(): Promise<void> {
-        if (this.stopping || this.operationInFlight || this.buildInFlight) {
+        if (this.stopping || this.operationInFlight || this.buildInFlight || this.workspaceCleanupInFlight) {
             return;
         }
         this.operationInFlight = true;
@@ -2160,83 +2175,56 @@ export class GatewayOrchestrator implements GatewayOrchestratorHandle {
     }
 
     async cleanupStaleWorkspaces(): Promise<{ removed: string[]; skipped: string[] }> {
-        const profiles = await this.repository.listProfiles();
-        const cutoff = this.computeCutoffDate(6);
-        const workspaceMap = new Map<string, { profileNames: string[]; lastUsedAt?: Date; hasActiveBuild: boolean }>();
-        for (const profile of profiles) {
-            const workspace = profile.buildWorkspace;
-            if (!workspace) {
-                continue;
-            }
-            const entry = workspaceMap.get(workspace) ?? {
-                profileNames: [],
-                lastUsedAt: undefined,
-                hasActiveBuild: false,
-            };
-            entry.profileNames.push(profile.profileName);
-            if (profile.buildLastUsedAt) {
-                const usedAt = new Date(profile.buildLastUsedAt);
-                if (!entry.lastUsedAt || usedAt > entry.lastUsedAt) {
-                    entry.lastUsedAt = usedAt;
+        if (this.buildInFlight || this.operationInFlight || this.workspaceCleanupInFlight) {
+            const managedWorkspaces = await this.workspaceManager.listManagedWorkspaces();
+            return { removed: [], skipped: managedWorkspaces.map((workspace) => workspace.root) };
+        }
+        this.workspaceCleanupInFlight = true;
+        try {
+            const managedWorkspaces = await this.workspaceManager.listManagedWorkspaces();
+            const profiles = await this.repository.listProfiles();
+            const protectedWorkspaces = new Set<string>();
+            for (const profile of profiles) {
+                if (profile.buildWorkspace) {
+                    protectedWorkspaces.add(path.resolve(profile.buildWorkspace));
+                }
+                if (profile.buildCommitSha && (profile.buildStatus === 'RUNNING' || profile.buildStatus === 'QUEUED')) {
+                    protectedWorkspaces.add(
+                        path.resolve(this.workspaceManager.workspacePathForCommit(profile.buildCommitSha))
+                    );
                 }
             }
-            if (profile.buildStatus === 'RUNNING' || profile.buildStatus === 'QUEUED') {
-                entry.hasActiveBuild = true;
-            }
-            workspaceMap.set(workspace, entry);
-        }
 
-        const activeProcesses = (await this.processManager.list()).filter((process) =>
-            isRuntimeProcessActive(process.status)
-        );
-        const referencedWorkspaces = new Set<string>();
-        for (const [workspace, entry] of workspaceMap.entries()) {
-            const profileProcessNames = new Set(
-                entry.profileNames.flatMap((profileName) => [
-                    buildProcessName(profileName, 'frontend'),
-                    buildProcessName(profileName, 'api'),
-                    buildProcessName(profileName, 'daemon'),
-                    buildProcessName(profileName, 'auction'),
-                    buildProcessName(profileName, 'battle-sim'),
-                    buildProcessName(profileName, 'tournament'),
-                ])
+            const activeProcesses = (await this.processManager.list()).filter((process) =>
+                isRuntimeProcessActive(process.status)
             );
-            if (
-                activeProcesses.some(
-                    (process) =>
-                        profileProcessNames.has(process.name) ||
-                        isPathInside(process.cwd, workspace) ||
-                        isPathInside(process.script, workspace)
-                )
-            ) {
-                referencedWorkspaces.add(workspace);
+            for (const workspace of managedWorkspaces) {
+                if (
+                    activeProcesses.some(
+                        (process) =>
+                            isPathInside(process.cwd, workspace.root) || isPathInside(process.script, workspace.root)
+                    )
+                ) {
+                    protectedWorkspaces.add(workspace.root);
+                }
             }
-        }
 
-        const removed: string[] = [];
-        const skipped: string[] = [];
-        for (const [workspace, entry] of workspaceMap.entries()) {
-            if (!entry.lastUsedAt || entry.hasActiveBuild || referencedWorkspaces.has(workspace)) {
-                skipped.push(workspace);
-                continue;
-            }
-            if (entry.lastUsedAt > cutoff) {
-                skipped.push(workspace);
-                continue;
-            }
-            await this.workspaceManager.remove(workspace);
-            await this.repository.clearWorkspaceUsage(entry.profileNames);
-            removed.push(workspace);
+            return await this.workspaceManager.cleanup({
+                protectedPaths: [...protectedWorkspaces],
+                retentionMs: DEFAULT_MANAGED_WORKSPACE_RETENTION_MS,
+                keepNewest: DEFAULT_MANAGED_WORKSPACE_KEEP_NEWEST,
+            });
+        } finally {
+            this.workspaceCleanupInFlight = false;
         }
-
-        return { removed, skipped };
     }
 
-    private computeCutoffDate(months: number): Date {
-        const date = this.now();
-        const cutoff = new Date(date);
-        cutoff.setMonth(cutoff.getMonth() - months);
-        return cutoff;
+    private async cleanupWorkspacesScheduled(): Promise<void> {
+        if (this.stopping || this.buildInFlight || this.operationInFlight || this.workspaceCleanupInFlight) return;
+        const result = await this.cleanupStaleWorkspaces();
+        if (result.removed.length > 0) {
+            console.info(`[gateway-orchestrator] removed ${result.removed.length} stale profile worktrees`);
+        }
     }
 
     private async startProfile(profile: GatewayProfileRecord, assertLease?: () => Promise<void>): Promise<boolean> {
