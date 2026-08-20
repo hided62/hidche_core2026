@@ -416,6 +416,22 @@ const commandTable = {
                         },
                     ],
                 },
+                {
+                    key: 'che_첩보',
+                    name: '첩보',
+                    reqArg: true,
+                    possible: true,
+                    status: 'needsInput',
+                    inputFields: [
+                        {
+                            key: 'destCityId',
+                            label: '대상 도시',
+                            kind: 'select',
+                            required: true,
+                            optionSource: 'cities',
+                        },
+                    ],
+                },
             ],
         },
     ],
@@ -919,6 +935,48 @@ test('renders and accepts every Ref strategy command at mobile width', async ({ 
         await picker.getByRole('button', { name: '명령 다시 선택', exact: true }).click();
     }
     await picker.screenshot({ path: test.info().outputPath('all-strategy-commands-mobile.png') });
+});
+
+test('shows and reserves the Ref spy command for a user on desktop and mobile', async ({ page }) => {
+    const requests = await install(page);
+    await page.setViewportSize({ width: 1200, height: 900 });
+    await page.goto('/');
+    const editor = page.locator('[data-command-scope="general"]');
+    await editor.getByRole('button', { name: '1턴 명령 입력', exact: true }).click();
+
+    let picker = page.getByTestId('command-picker');
+    await picker.getByRole('button', { name: '군사', exact: true }).click();
+    const spy = picker.getByRole('button', { name: '첩보', exact: true });
+    await expect(spy).toBeVisible();
+    await spy.hover();
+    await spy.focus();
+    await expect(spy).toBeFocused();
+    await spy.click();
+    const form = picker.getByTestId('command-argument-form');
+    await expect(form.getByTestId('command-argument-guidance')).toContainText(
+        '선택한 도시에 첩보를 실행합니다.'
+    );
+    await expect(form.getByTestId('command-argument-guidance')).toContainText(
+        '인접 도시에서는 더 많은 정보를 얻습니다.'
+    );
+    await form.locator('select').selectOption('2');
+    await picker.screenshot({ path: test.info().outputPath('spy-command-desktop-1200.png') });
+    await picker.getByRole('button', { name: '입력', exact: true }).click();
+    await expect(editor.locator('.action-column > div').first()).toHaveText('【허창】에 첩보 실행');
+    expect(JSON.stringify(requests)).toContain('"action":"che_첩보","args":{"destCityId":2}');
+
+    await page.setViewportSize({ width: 500, height: 900 });
+    await editor.getByRole('button', { name: '2턴 명령 입력', exact: true }).click();
+    picker = page.getByTestId('command-picker');
+    await picker.getByRole('button', { name: '군사', exact: true }).click();
+    await expect(picker.getByRole('button', { name: '첩보', exact: true })).toBeVisible();
+    const geometry = await picker.evaluate((element) => ({
+        width: element.getBoundingClientRect().width,
+        horizontalOverflow: element.scrollWidth - element.clientWidth,
+    }));
+    expect(geometry.width).toBeLessThanOrEqual(500);
+    expect(geometry.horizontalOverflow).toBeLessThanOrEqual(0);
+    await picker.screenshot({ path: test.info().outputPath('spy-command-mobile-500.png') });
 });
 
 test('defaults founding to a Ref-selectable nation trait and paints color option labels', async ({
