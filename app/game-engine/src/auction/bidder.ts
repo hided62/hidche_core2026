@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 
 import { createGamePostgresConnector, GamePrisma, type GamePrismaClient } from '@sammo-ts/infra';
+import { isItemKey, ItemLoader } from '@sammo-ts/logic';
 
 import type { TurnDaemonCommand, TurnDaemonCommandResult } from '../lifecycle/types.js';
 import type { InMemoryTurnWorld } from '../turn/inMemoryWorld.js';
@@ -23,6 +24,7 @@ const MIN_EXTENSION_MINUTES_PER_BID = 1;
 interface AuctionRow {
     id: number;
     type: AuctionType;
+    targetCode: string | null;
     hostGeneralId: number;
     detail: unknown;
     status: AuctionStatus;
@@ -99,6 +101,7 @@ const loadAuction = async (prisma: QueryClient, auctionId: number): Promise<Auct
         GamePrisma.sql`
             SELECT id,
                 type,
+                target_code as "targetCode",
                 host_general_id as "hostGeneralId",
                 detail,
                 status,
@@ -178,6 +181,7 @@ export const createAuctionBidder = async (options: {
     await connector.connect();
     const prisma = connector.prisma;
     const world = options.world;
+    const itemLoader = new ItemLoader();
 
     return {
         bid: async (command, commandDb): Promise<TurnDaemonCommandResult> => {
@@ -289,6 +293,74 @@ export const createAuctionBidder = async (options: {
                     auctionId: command.auctionId,
                     reason: '장수 정보를 찾을 수 없습니다.',
                 };
+            }
+            if (auction.type === 'UNIQUE_ITEM') {
+                const itemKey = auction.targetCode;
+                if (!itemKey || !isItemKey(itemKey)) {
+                    return {
+                        type: 'auctionBid',
+                        ok: false,
+                        auctionId: command.auctionId,
+                        reason: '아이템이 올바르지 않습니다.',
+                    };
+                }
+                const item = await itemLoader.load(itemKey).catch(() => null);
+                if (!item || item.buyable) {
+                    return {
+                        type: 'auctionBid',
+                        ok: false,
+                        auctionId: command.auctionId,
+                        reason: item ? '구매할 수 있는 아이템입니다.' : '아이템 정보를 불러올 수 없습니다.',
+                    };
+                }
+
+                const currentSlotItem = general.role.items[item.slot];
+                if (currentSlotItem && currentSlotItem !== 'None' && isItemKey(currentSlotItem)) {
+                    const currentItem = await itemLoader.load(currentSlotItem).catch(() => null);
+                    if (currentItem && !currentItem.buyable) {
+                        return {
+                            type: 'auctionBid',
+                            ok: false,
+                            auctionId: command.auctionId,
+                            reason:
+                                currentSlotItem === itemKey
+                                    ? '이미 그 유니크를 가지고 있습니다.'
+                                    : '이미 다른 유니크를 가지고 있습니다.',
+                        };
+                    }
+                }
+
+                const otherHighestBids = await db.$queryRaw<Array<{ auctionId: number; targetCode: string | null }>>(
+                    GamePrisma.sql`
+                        SELECT candidate.id as "auctionId", candidate.target_code as "targetCode"
+                        FROM auction candidate
+                        INNER JOIN LATERAL (
+                            SELECT bid.general_id
+                            FROM auction_bid bid
+                            WHERE bid.auction_id = candidate.id
+                            ORDER BY bid.amount DESC, bid.id ASC
+                            LIMIT 1
+                        ) highest ON true
+                        WHERE candidate.type = 'UNIQUE_ITEM'
+                          AND candidate.status IN ('OPEN', 'FINALIZING')
+                          AND candidate.id <> ${auction.id}
+                          AND highest.general_id = ${command.generalId}
+                    `
+                );
+                for (const other of otherHighestBids) {
+                    if (!other.targetCode || !isItemKey(other.targetCode)) {
+                        continue;
+                    }
+                    const otherItem = await itemLoader.load(other.targetCode).catch(() => null);
+                    if (otherItem?.slot === item.slot) {
+                        return {
+                            type: 'auctionBid',
+                            ok: false,
+                            auctionId: command.auctionId,
+                            reason: '1순위 입찰자인 경매중에 같은 부위가 있습니다.',
+                        };
+                    }
+                }
             }
             if (auction.type !== 'UNIQUE_ITEM' && auction.hostGeneralId === general.id) {
                 return {

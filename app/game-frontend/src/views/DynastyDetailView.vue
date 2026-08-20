@@ -92,9 +92,7 @@ onMounted(loadDetail);
                         <td class="phase-heading centered" colspan="6">
                             <span class="large-text">
                                 {{ data.emperor.phase }}
-                                <template v-if="data.source === 'legacy'">
-                                    [{{ data.sourceProfile.toUpperCase() }} 이전 서버]
-                                </template>
+                                <template v-if="data.source === 'legacy'"> [이전 서버] </template>
                             </span>
                         </td>
                     </tr>
