@@ -15,6 +15,7 @@ const buildContext = (
 ): GameApiContext =>
     ({
         auth: null,
+        profile: { id: 'che', scenario: 'default', name: 'che:default' },
         db: {
             worldState: {
                 findFirst: vi.fn(async () => ({
@@ -75,6 +76,7 @@ describe('lobby season state', () => {
                 buildContext(
                     {
                         serverId: 'che_260819_season',
+                        gameIdx: 101,
                         preopenAt: '2026-08-19 22:00:00',
                         opentime: '2026-08-19 23:00:00',
                         scenarioMeta: { title: '【가상모드27-b】 아시아 명장전(비급)' },
@@ -103,6 +105,8 @@ describe('lobby season state', () => {
 
         expect(result).toMatchObject({
             serverId: 'che_260819_season',
+            profile: 'che',
+            gameIdx: 101,
             preopenAt: '2026-08-19 22:00:00',
             opentime: '2026-08-19 23:00:00',
             scenarioTitle: '【가상모드27-b】 아시아 명장전(비급)',
