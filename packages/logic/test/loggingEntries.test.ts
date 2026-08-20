@@ -22,4 +22,22 @@ describe('finalizeLogEntry', () => {
             text: '<C>●</>193년 12월:이전 달 사건',
         });
     });
+
+    it('keeps an explicit occurrence time instead of replacing it with the flush time', () => {
+        const occurredAt = new Date('0200-01-01T00:37:43.000Z');
+        const flushAt = new Date('0200-01-01T00:40:00.000Z');
+
+        expect(
+            finalizeLogEntry(
+                {
+                    scope: LogScope.GENERAL,
+                    category: LogCategory.ACTION,
+                    text: '상업 투자를 실행했습니다.',
+                    generalId: 1,
+                    occurredAt,
+                },
+                { year: 200, month: 1, at: flushAt }
+            )?.createdAt
+        ).toEqual(occurredAt);
+    });
 });
