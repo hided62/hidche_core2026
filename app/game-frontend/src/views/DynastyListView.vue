@@ -98,9 +98,7 @@ watch(selectedSource, loadDynasty);
                         <td class="phase-heading" colspan="8">
                             <span class="large-text"
                                 >{{ entry.phase
-                                }}<template v-if="entry.source === 'legacy'">
-                                    [{{ entry.sourceProfile.toUpperCase() }} 이전 서버]</template
-                                ></span
+                                }}<template v-if="entry.source === 'legacy'"> [이전 서버]</template></span
                             >
                             <RouterLink
                                 :to="{
