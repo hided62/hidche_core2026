@@ -720,7 +720,37 @@ test.describe('best general legacy parity', () => {
             expect(geometry.image).toMatchObject({ width: 64, height: 64, objectFit: 'fill' });
             expect(geometry.image.naturalWidth).toBeGreaterThan(0);
 
+            const userButton = page.getByRole('button', { name: '유저 보기' });
             const npcButton = page.getByRole('button', { name: 'NPC 보기' });
+            await expect(userButton).toHaveClass('legacy-button');
+            await expect(npcButton).toHaveClass('legacy-button');
+            await expect(userButton).toHaveCSS('background-color', 'rgb(55, 90, 127)');
+            await expect(npcButton).toHaveCSS('background-color', 'rgb(55, 90, 127)');
+            const selectorAppearance = await page.evaluate(() => {
+                const summarize = (element: Element) => {
+                    const style = getComputedStyle(element);
+                    return {
+                        backgroundColor: style.backgroundColor,
+                        borderRadius: style.borderRadius,
+                        fontWeight: style.fontWeight,
+                        lineHeight: style.lineHeight,
+                        padding: style.padding,
+                    };
+                };
+                const closeButton = document.querySelector('.legacy-ranking-title .legacy-button')!;
+                const selectorButtons = document.querySelectorAll('.view-selector .legacy-button');
+                const firstRect = selectorButtons[0]!.getBoundingClientRect();
+                const secondRect = selectorButtons[1]!.getBoundingClientRect();
+                return {
+                    closeButton: summarize(closeButton),
+                    userButton: summarize(selectorButtons[0]!),
+                    npcButton: summarize(selectorButtons[1]!),
+                    gap: secondRect.left - firstRect.right,
+                };
+            });
+            expect(selectorAppearance.userButton).toEqual(selectorAppearance.closeButton);
+            expect(selectorAppearance.npcButton).toEqual(selectorAppearance.closeButton);
+            expect(selectorAppearance.gap).toBe(4);
             const npcButtonBox = await npcButton.boundingBox();
             expect(npcButtonBox).not.toBeNull();
             await page.mouse.move(

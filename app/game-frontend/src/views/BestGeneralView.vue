@@ -87,8 +87,20 @@ watch(viewMode, () => {
         </div>
 
         <div class="view-selector" role="group" aria-label="장수 유형">
-            <input type="button" value="유저 보기" :aria-pressed="viewMode === 'user'" @click="viewMode = 'user'" />
-            <input type="button" value="NPC 보기" :aria-pressed="viewMode === 'npc'" @click="viewMode = 'npc'" />
+            <input
+                class="legacy-button"
+                type="button"
+                value="유저 보기"
+                :aria-pressed="viewMode === 'user'"
+                @click="viewMode = 'user'"
+            />
+            <input
+                class="legacy-button"
+                type="button"
+                value="NPC 보기"
+                :aria-pressed="viewMode === 'npc'"
+                @click="viewMode = 'npc'"
+            />
         </div>
 
         <div v-if="errorMessage" class="legacy-message error" role="alert">{{ errorMessage }}</div>

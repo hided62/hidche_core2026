@@ -11,6 +11,8 @@ type FixtureState = {
     failPersonnelLoad?: boolean;
     rate: number;
     appointedGeneralId?: number;
+    appointedCityId?: number;
+    appointedOfficerLevel?: number;
     noticeMutationInput?: string;
     scoutMutationInput?: string;
     uploadDataUrl?: string;
@@ -230,7 +232,9 @@ const installFixture = async (page: Page, state: FixtureState) => {
             }
             if (operation === 'nation.getStratFinan') return response(financeFixture(state));
             if (operation === 'nation.appoint') {
-                state.appointedGeneralId = 6;
+                state.appointedGeneralId = Number(jsonInput.destGeneralId ?? 0);
+                state.appointedCityId = Number(jsonInput.destCityId ?? 0);
+                state.appointedOfficerLevel = Number(jsonInput.officerLevel ?? 0);
                 return response({ ok: true });
             }
             if (operation === 'nation.kick' || operation === 'nation.changePermission') return response({ ok: true });
@@ -281,7 +285,7 @@ const screenshot = async (page: Page, name: string) => {
     await page.screenshot({ path: resolve(artifactRoot, name), fullPage: true });
 };
 
-test('personnel matches the 1000px legacy table geometry, textures, image, and interaction states', async ({
+test('personnel keeps the legacy frame while presenting modern appointment cards and interaction states', async ({
     page,
 }) => {
     await installFixture(page, { role: 'leader', rate: 20 });
@@ -309,6 +313,8 @@ test('personnel matches the 1000px legacy table geometry, textures, image, and i
             heading: box('.heading-table'),
             status: box('.chief-status'),
             icon: box('.general-icon'),
+            appointmentCard: box('.appointment-card'),
+            selectionTrigger: box('.selection-trigger'),
             documentWidth: document.documentElement.scrollWidth,
         };
     });
@@ -318,21 +324,60 @@ test('personnel matches the 1000px legacy table geometry, textures, image, and i
     expect(computed.status.width).toBe(1000);
     expect(computed.icon.width).toBeCloseTo(64.7, 0);
     expect(computed.icon.height).toBeCloseTo(64, 0);
+    expect(computed.appointmentCard.width).toBeGreaterThan(450);
+    expect(computed.appointmentCard.height).toBeGreaterThan(140);
+    expect(computed.selectionTrigger.height).toBeGreaterThanOrEqual(70);
     expect(computed.container.fontFamily).toContain('Pretendard');
     expect(computed.container.fontSize).toBe('14px');
     expect(computed.container.lineHeight).toBe('18.2px');
     expect(computed.status.backgroundImage).toContain('back_walnut.jpg');
     expect(computed.documentWidth).toBe(1000);
 
-    const appointButton = page.getByRole('button', { name: '임명' }).first();
-    expect(await appointButton.evaluate((button) => getComputedStyle(button).backgroundColor)).toBe(
-        'rgb(108, 117, 125)'
-    );
+    const appointButton = page.getByRole('button', { name: '주부 임명', exact: true });
+    expect(await appointButton.evaluate((button) => getComputedStyle(button).backgroundColor)).toBe('rgb(55, 104, 70)');
     await appointButton.hover();
     expect(await appointButton.evaluate((button) => getComputedStyle(button).cursor)).toBe('pointer');
     await appointButton.focus();
     expect(await appointButton.evaluate((button) => getComputedStyle(button).outlineStyle)).not.toBe('none');
     await screenshot(page, 'core-personnel-desktop-leader.png');
+});
+
+test('personnel selects an informed general and reports the JosaUtil-composed result in a toast', async ({ page }) => {
+    const state: FixtureState = { role: 'head', rate: 20 };
+    await installFixture(page, state);
+    await page.setViewportSize({ width: 1000, height: 900 });
+    await gotoOffice(page, 'nation/personnel');
+
+    await page.getByRole('button', { name: '주부 장수 선택', exact: true }).click();
+    const picker = page.getByTestId('personnel-selection-dialog');
+    await expect(picker).toBeVisible();
+    await expect(picker.getByRole('heading', { name: '주부 임명 대상 선택' })).toBeVisible();
+    await picker.getByPlaceholder('장수명·도시·관직·특성 검색').fill('장료');
+    const candidate = picker.getByRole('button', { name: /장료/ });
+    await expect(candidate).toContainText('허창 · 일반 장수');
+    await expect(candidate).toContainText('통솔70');
+    await expect(candidate).toContainText('소속10년');
+    await expect(candidate).toContainText('병력100');
+    await candidate.hover();
+    expect(await candidate.evaluate((button) => getComputedStyle(button).cursor)).toBe('pointer');
+    await candidate.focus();
+    expect(await candidate.evaluate((button) => getComputedStyle(button).outlineStyle)).not.toBe('none');
+    await screenshot(page, 'core-personnel-desktop-general-picker.png');
+    await candidate.click();
+
+    await expect(page.getByRole('button', { name: '주부 장수 선택', exact: true })).toContainText('장료');
+    page.once('dialog', async (dialog) => {
+        expect(dialog.message()).toBe('장료를 주부직에 임명하시겠습니까?');
+        await dialog.accept();
+    });
+    await page.getByRole('button', { name: '주부 임명', exact: true }).click();
+
+    await expect(page.getByTestId('game-toast')).toContainText('장료를 임명했습니다.');
+    expect(state.appointedGeneralId).toBe(6);
+    expect(state.appointedCityId).toBe(0);
+    expect(state.appointedOfficerLevel).toBe(11);
+    await expect(page.locator('.feedback.status')).toHaveCount(0);
+    await screenshot(page, 'core-personnel-appointment-toast.png');
 });
 
 test('personnel preserves the legacy fixed 1000px document on a 500px viewport', async ({ page }) => {
@@ -346,6 +391,38 @@ test('personnel preserves the legacy fixed 1000px document on a 500px viewport',
     expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBe(1000);
     await expect(page.getByRole('combobox', { name: '외교권자' })).toHaveCount(0);
     await expect(page.getByRole('combobox', { name: '추방 대상 장수' })).toBeVisible();
+
+    await page.getByRole('button', { name: '태수 도시 선택', exact: true }).click();
+    const picker = page.getByTestId('personnel-selection-dialog');
+    await expect(picker).toBeVisible();
+    expect(await picker.evaluate((element) => getComputedStyle(element).transitionDuration)).toContain('0.15s');
+    await expect(picker).toHaveCSS('transform', 'none');
+    const pickerGeometry = await picker.evaluate((element) => {
+        const rect = element.getBoundingClientRect();
+        const style = getComputedStyle(element);
+        return {
+            left: rect.left,
+            right: rect.right,
+            bottom: rect.bottom,
+            width: rect.width,
+            maxHeight: style.maxHeight,
+            borderTopLeftRadius: style.borderTopLeftRadius,
+        };
+    });
+    expect(pickerGeometry.left).toBeGreaterThanOrEqual(0);
+    expect(pickerGeometry.right).toBeLessThanOrEqual(500);
+    expect(pickerGeometry.bottom).toBe(900);
+    expect(pickerGeometry.width).toBeGreaterThan(480);
+    expect(pickerGeometry.borderTopLeftRadius).toBe('16px');
+    await expect(picker.getByRole('button', { name: /낙양/ })).toContainText('중원 · 중도시');
+    await expect(picker.getByRole('button', { name: /허창/ })).toContainText('현재 태수하후돈');
+    await picker.getByRole('button', { name: /낙양/ }).focus();
+    expect(
+        await picker.getByRole('button', { name: /낙양/ }).evaluate((button) => getComputedStyle(button).outlineStyle)
+    ).not.toBe('none');
+    await screenshot(page, 'core-personnel-mobile-city-picker.png');
+    await picker.getByRole('button', { name: /낙양/ }).click();
+    await expect(page.getByRole('button', { name: '태수 도시 선택', exact: true })).toContainText('낙양');
     await screenshot(page, 'core-personnel-mobile-head.png');
 });
 
