@@ -1,5 +1,6 @@
 import { createGamePostgresConnector, GamePrisma } from '@sammo-ts/infra';
-import { ActionLogger, ItemLoader, LogFormat, UserLogger, isItemKey, resolveUniqueConfig } from '@sammo-ts/logic';
+import { ActionLogger, ItemLoader, LogFormat, UserLogger, isItemKey } from '@sammo-ts/logic';
+import { resolveLegacyCompatibleUniqueConfig } from '@sammo-ts/logic/rewards/legacyUniqueItemPool.js';
 import { cloneItemInventory, ensureItemInventory, equipNewItem } from '@sammo-ts/logic/items/index.js';
 import { asRecord, JosaUtil } from '@sammo-ts/common';
 
@@ -18,6 +19,8 @@ type AuctionStatus = 'OPEN' | 'FINALIZING' | 'FINISHED' | 'CANCELED';
 const COEFF_EXTENSION_MINUTES_PER_BID = 1 / 6;
 const MIN_EXTENSION_MINUTES_PER_BID = 1;
 const MIN_EXTENSION_MINUTES_LIMIT_BY_BID = 5;
+const COEFF_EXTENSION_MINUTES_LIMIT_UNIQUE_COUNT = 24;
+const MIN_EXTENSION_MINUTES_BY_EXTENSION_QUERY = 5;
 
 interface AuctionRow {
     id: number;
@@ -363,7 +366,10 @@ export const createAuctionFinalizer = async (options: {
                 }
 
                 const state = world.getState();
-                const config = resolveUniqueConfig(asRecord(world.getScenarioConfig().const));
+                const config = await resolveLegacyCompatibleUniqueConfig(
+                    asRecord(world.getScenarioConfig().const),
+                    itemLoader
+                );
                 const scenarioMeta = asRecord(state.meta.scenarioMeta);
                 const startYear =
                     typeof scenarioMeta.startYear === 'number' && Number.isFinite(scenarioMeta.startYear)
@@ -392,7 +398,11 @@ export const createAuctionFinalizer = async (options: {
                     const turnMinutes = await resolveTurnMinutes(db);
                     const nextCloseAt = new Date(
                         auction.closeAt.getTime() +
-                            Math.max(MIN_EXTENSION_MINUTES_LIMIT_BY_BID, turnMinutes * 0.5) * 60_000
+                            Math.max(
+                                MIN_EXTENSION_MINUTES_BY_EXTENSION_QUERY,
+                                turnMinutes * COEFF_EXTENSION_MINUTES_LIMIT_UNIQUE_COUNT
+                            ) *
+                                60_000
                     );
                     const nextLatestBidCloseAt = new Date(
                         nextCloseAt.getTime() +

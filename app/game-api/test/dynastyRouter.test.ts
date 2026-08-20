@@ -120,20 +120,24 @@ const authFor = (userId: string, roles: string[] = []): GameSessionTokenPayload 
 
 const buildContext = (
     auth: GameSessionTokenPayload | null,
-    oldNations: Array<Record<string, unknown>> = [oldNation, deletedOldNation]
+    oldNations: Array<Record<string, unknown>> = [oldNation, deletedOldNation],
+    profileId = profile.id
 ): GameApiContext => {
+    const selectedProfile = { ...profile, id: profileId, name: `${profileId}:default` };
     const db = {
-        $queryRaw: async (query: { strings?: readonly string[] }) => {
+        $queryRaw: async (query: { strings?: readonly string[]; values?: unknown[] }) => {
             const sql = query.strings?.join(' ') ?? '';
             if (sql.includes('legacy_archive"."emperor')) {
+                if (!query.values?.includes(selectedProfile.id)) return [];
+                if (sql.includes('WHERE "id"') && !query.values.includes(101)) return [];
                 return [
                     {
                         id: 101n,
-                        sourceProfile: 'hwe',
+                        sourceProfile: selectedProfile.id,
                         legacyId: 7,
                         serverId: emperor.serverId,
                         data: {
-                            phase: '이전 훼2기',
+                            phase: `이전 ${selectedProfile.id.toUpperCase()} 2기`,
                             nation_count: emperor.nationCount,
                             nation_name: emperor.nationName,
                             nation_hist: emperor.nationHist,
@@ -170,9 +174,10 @@ const buildContext = (
                 ];
             }
             if (sql.includes('legacy_archive"."nation')) {
+                if (!query.values?.includes(selectedProfile.id)) return [];
                 return [
                     {
-                        sourceProfile: 'hwe',
+                        sourceProfile: selectedProfile.id,
                         legacyId: oldNation.id,
                         serverId: oldNation.serverId,
                         nation: oldNation.nation,
@@ -182,6 +187,7 @@ const buildContext = (
                 ];
             }
             if (sql.includes('legacy_archive"."general')) {
+                if (!query.values?.includes(selectedProfile.id)) return [];
                 return [
                     { generalNo: 11, name: '유비', lastYearMonth: 21504 },
                     { generalNo: 12, name: '제갈량', lastYearMonth: 21504 },
@@ -217,13 +223,13 @@ const buildContext = (
         db: db as unknown as DatabaseClient,
         turnDaemon: new InMemoryTurnDaemonTransport(),
         battleSim: new InMemoryBattleSimTransport(),
-        profile,
+        profile: selectedProfile,
         auth,
         uploadDir: 'uploads',
         uploadPath: '/uploads',
         uploadPublicUrl: null,
         redis,
-        accessTokenStore: new RedisAccessTokenStore(redis, profile.name),
+        accessTokenStore: new RedisAccessTokenStore(redis, selectedProfile.name),
         flushStore: new InMemoryFlushStore(),
         gameTokenSecret: 'test-secret',
     };
@@ -252,27 +258,31 @@ describe('dynasty public read model', () => {
         ]);
     });
 
-    it('reads previous-server dynasties only when the archive source is selected', async () => {
-        const caller = appRouter.createCaller(buildContext(null));
-        const list = await caller.dynasty.getList({ source: 'legacy' });
-        expect(list).toMatchObject({
+    it('scopes previous-server dynasties and detail to the request profile', async () => {
+        const cheCaller = appRouter.createCaller(buildContext(null));
+        const cheList = await cheCaller.dynasty.getList({ source: 'legacy' });
+        expect(cheList).toMatchObject({
             source: 'legacy',
             current: null,
             entries: [
                 expect.objectContaining({
                     id: 101,
                     source: 'legacy',
-                    sourceProfile: 'hwe',
-                    phase: '이전 훼2기',
+                    sourceProfile: 'che',
+                    phase: '이전 CHE 2기',
                 }),
             ],
         });
 
-        const detail = await caller.dynasty.getDetail({ emperorId: 101, source: 'legacy' });
-        expect(detail).toMatchObject({
+        const staleListInput = { source: 'legacy' as const, sourceProfile: 'hwe' as const };
+        const staleList = await cheCaller.dynasty.getList(staleListInput);
+        expect(staleList.entries.map((entry) => entry.sourceProfile)).toEqual(['che']);
+
+        const cheDetail = await cheCaller.dynasty.getDetail({ emperorId: 101, source: 'legacy' });
+        expect(cheDetail).toMatchObject({
             source: 'legacy',
-            sourceProfile: 'hwe',
-            emperor: expect.objectContaining({ id: 101, phase: '이전 훼2기', name: '촉' }),
+            sourceProfile: 'che',
+            emperor: expect.objectContaining({ id: 101, phase: '이전 CHE 2기', name: '촉' }),
             nations: [
                 expect.objectContaining({
                     name: '촉',
@@ -282,6 +292,22 @@ describe('dynasty public read model', () => {
                     ],
                 }),
             ],
+        });
+
+        const staleDetailInput = { emperorId: 101, source: 'legacy' as const, sourceProfile: 'hwe' as const };
+        const staleDetail = await cheCaller.dynasty.getDetail(staleDetailInput);
+        expect(staleDetail.sourceProfile).toBe('che');
+
+        const hweCaller = appRouter.createCaller(buildContext(null, undefined, 'hwe'));
+        const hweList = await hweCaller.dynasty.getList({ source: 'legacy' });
+        expect(hweList.entries).toEqual([expect.objectContaining({ sourceProfile: 'hwe', phase: '이전 HWE 2기' })]);
+        const hweDetail = await hweCaller.dynasty.getDetail({ emperorId: 101, source: 'legacy' });
+        expect(hweDetail.sourceProfile).toBe('hwe');
+
+        const developmentCaller = appRouter.createCaller(buildContext(null, undefined, 'development'));
+        await expect(developmentCaller.dynasty.getList({ source: 'legacy' })).resolves.toMatchObject({ entries: [] });
+        await expect(developmentCaller.dynasty.getDetail({ emperorId: 101, source: 'legacy' })).rejects.toMatchObject({
+            code: 'NOT_FOUND',
         });
     });
 

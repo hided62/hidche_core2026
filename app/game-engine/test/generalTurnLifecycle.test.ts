@@ -159,6 +159,25 @@ const makeState = (meta: Record<string, unknown> = {}): TurnWorldState => ({
 });
 
 describe('legacy general turn lifecycle', () => {
+    it('timestamps action logs with the executing general turn instead of the shared flush cursor', async () => {
+        const flushCursor = new Date('0200-01-01T00:35:00.000Z');
+        const generalTurnTime = new Date('0200-01-01T00:37:43.000Z');
+        const harness = await createTurnTestHarness({
+            snapshot: makeSnapshot([makeGeneral({ turnTime: generalTurnTime })]),
+            state: { ...makeState(), lastTurnTime: flushCursor },
+            schedule,
+            map,
+        });
+        harness.reservedTurnStore.getGeneralTurns(1)[0] = { action: '휴식', args: {} };
+
+        await harness.runOneTick();
+
+        const actionLog = harness.world
+            .peekDirtyState()
+            .logs.find((log) => log.text.includes('아무것도 실행하지 않았습니다.'));
+        expect(actionLog?.occurredAt).toEqual(generalTurnTime);
+    });
+
     it('emits legacy plain logs when command gains cross experience and dedication levels', async () => {
         const harness = await createTurnTestHarness({
             snapshot: makeSnapshot([

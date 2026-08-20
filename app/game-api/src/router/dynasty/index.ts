@@ -4,11 +4,13 @@ import { z } from 'zod';
 import { asRecord } from '@sammo-ts/common';
 
 import { procedure, router } from '../../trpc.js';
+import type { LegacyEmperorRow } from '../../services/legacyArchiveStore.js';
 import {
     findLegacyEmperor,
-    findLegacyEmperors,
+    findLegacyEmperorsByProfile,
     findLegacyGeneralsForServer,
     findLegacyNations,
+    isLegacyArchiveProfile,
 } from '../../services/legacyArchiveStore.js';
 
 const zDynastyDetailInput = z.object({
@@ -65,7 +67,7 @@ const firstText = (...values: unknown[]): string => {
     return '';
 };
 
-const legacyEmperorListEntry = (row: Awaited<ReturnType<typeof findLegacyEmperors>>[number]) => {
+const legacyEmperorListEntry = (row: LegacyEmperorRow) => {
     const data = asRecord(row.data);
     return {
         id: Number(row.id),
@@ -132,7 +134,9 @@ const formatNationLevel = (level: number | null): string => {
 export const dynastyRouter = router({
     getList: procedure.input(zDynastyListInput).query(async ({ ctx, input }) => {
         if ((input?.source ?? 'current') === 'legacy') {
-            const rows = await findLegacyEmperors(ctx.db);
+            const rows = isLegacyArchiveProfile(ctx.profile.id)
+                ? await findLegacyEmperorsByProfile(ctx.db, ctx.profile.id)
+                : [];
             return {
                 source: 'legacy' as const,
                 current: null,
@@ -186,7 +190,12 @@ export const dynastyRouter = router({
     }),
     getDetail: procedure.input(zDynastyDetailInput).query(async ({ ctx, input }) => {
         if (input.source === 'legacy') {
-            const archived = await findLegacyEmperor(ctx.db, input.emperorId);
+            const archived = isLegacyArchiveProfile(ctx.profile.id)
+                ? await findLegacyEmperor(ctx.db, {
+                      id: input.emperorId,
+                      sourceProfile: ctx.profile.id,
+                  })
+                : null;
             if (!archived) {
                 throw new TRPCError({ code: 'NOT_FOUND', message: '이전 서버 왕조 정보를 찾을 수 없습니다.' });
             }

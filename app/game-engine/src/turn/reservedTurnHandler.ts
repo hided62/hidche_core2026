@@ -2273,9 +2273,7 @@ export const createImmediateGeneralActionExecutor = async (options: {
                     definition.formatConstraintFailure?.(reason, constraintCtx, args, view) ??
                     `${reason} ${definition.name} 실패.`;
                 if (input.actionKey === 'che_접경귀환' || input.actionKey === 'che_등용수락') {
-                    options.world.pushLog({
-                        ...createGeneralActionLog(general.id, failureText),
-                    });
+                    options.world.pushLog(createGeneralActionLog(general.id, failureText), general.turnTime);
                 }
                 return { ok: false, reason: failureText };
             }
@@ -2352,7 +2350,7 @@ export const createImmediateGeneralActionExecutor = async (options: {
 
             if (input.actionKey === 'che_접경귀환' && (resolution.general as TurnGeneral).cityId === general.cityId) {
                 for (const log of resolution.logs) {
-                    options.world.pushLog(log);
+                    options.world.pushLog(log, general.turnTime);
                 }
                 return { ok: false, reason: '가까운 아국 도시가 없습니다.' };
             }
@@ -2436,7 +2434,7 @@ export const createImmediateGeneralActionExecutor = async (options: {
                 options.world.removeTroop(troopId);
             }
             for (const log of [...resolution.logs, ...progressionLogs]) {
-                options.world.pushLog(log);
+                options.world.pushLog(log, general.turnTime);
             }
             options.world.updateGeneral(input.generalId, nextGeneral);
             return { ok: true };

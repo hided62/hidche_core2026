@@ -9,11 +9,19 @@ import { resolveGeneralIconUrl, useDefaultGeneralIcon } from '../utils/generalIc
 import LegacyGeneralProgress from '../components/ui/LegacyGeneralProgress.vue';
 import GeneralBasicCard from '../components/main/GeneralBasicCard.vue';
 import { useGameFeedback } from '../composables/useGameFeedback';
+import {
+    DEFAULT_MOBILE_MAIN_PANEL_ORDER,
+    loadMobileMainPanelOrder,
+    MOBILE_MAIN_PANEL_DEFINITIONS,
+    moveMobileMainPanel,
+    saveMobileMainPanelOrder,
+    type MobileMainPanelId,
+} from '../utils/mobileMainPanelOrder';
 
 const SCREEN_MODE_KEY = 'sam.screenMode';
 const CUSTOM_CSS_KEY = 'sam_customCSS';
 const PENDING_DIE_ON_PRESTART_KEY = 'sam.pending.dieOnPrestart';
-const { error: showErrorToast, showDialog } = useGameFeedback();
+const { success: showSuccessToast, error: showErrorToast, showDialog } = useGameFeedback();
 type ScreenMode = 'auto' | '500px' | '1000px';
 type LogType = 'generalHistory' | 'battleDetail' | 'battleResult' | 'generalAction';
 type ItemSlotKey = 'horse' | 'weapon' | 'book' | 'item';
@@ -48,6 +56,9 @@ const screenMode = ref<ScreenMode>('auto');
 const customCss = ref('');
 const selectedIconId = ref('');
 const cssSaving = ref(false);
+const mobileLayoutDialog = ref<HTMLDialogElement | null>(null);
+const mobileLayoutOrder = ref<MobileMainPanelId[]>(loadMobileMainPanelOrder());
+const mobileLayoutDragIndex = ref<number | null>(null);
 const session = useSessionStore();
 let cssTimer: number | null = null;
 const readPendingDieOnPrestartId = (): string => {
@@ -169,6 +180,43 @@ const items = computed<Array<{ key: ItemSlotKey; slotName: string; displayName: 
 );
 const iconChoices = computed(() => data.value?.iconChoices ?? []);
 const selectedIcon = computed(() => iconChoices.value.find((icon) => icon.id === selectedIconId.value) ?? null);
+const mobileLayoutLabels = Object.fromEntries(
+    MOBILE_MAIN_PANEL_DEFINITIONS.map(({ id, label }) => [id, label])
+) as Record<MobileMainPanelId, string>;
+
+const openMobileLayoutDialog = () => {
+    mobileLayoutOrder.value = loadMobileMainPanelOrder();
+    mobileLayoutDialog.value?.showModal();
+    window.requestAnimationFrame(() => mobileLayoutDialog.value?.querySelector<HTMLButtonElement>('button')?.focus());
+};
+
+const moveMobileLayoutItem = (fromIndex: number, toIndex: number) => {
+    mobileLayoutOrder.value = moveMobileMainPanel(mobileLayoutOrder.value, fromIndex, toIndex);
+};
+
+const startMobileLayoutDrag = (event: DragEvent, index: number) => {
+    mobileLayoutDragIndex.value = index;
+    event.dataTransfer?.setData('text/plain', mobileLayoutOrder.value[index] ?? '');
+    if (event.dataTransfer) event.dataTransfer.effectAllowed = 'move';
+};
+
+const dropMobileLayoutItem = (event: DragEvent, targetIndex: number) => {
+    event.preventDefault();
+    const sourceIndex = mobileLayoutDragIndex.value;
+    mobileLayoutDragIndex.value = null;
+    if (sourceIndex === null) return;
+    moveMobileLayoutItem(sourceIndex, targetIndex);
+};
+
+const resetMobileLayoutOrder = () => {
+    mobileLayoutOrder.value = [...DEFAULT_MOBILE_MAIN_PANEL_ORDER];
+};
+
+const applyMobileLayoutOrder = () => {
+    mobileLayoutOrder.value = saveMobileMainPanelOrder(mobileLayoutOrder.value);
+    mobileLayoutDialog.value?.close();
+    showSuccessToast('모바일 메인 레이아웃 순서를 저장했습니다.');
+};
 
 const autorunUser = computed(() => asRecord(world.value?.meta.autorun_user));
 const showAutoNationTurn = computed(() => asRecord(autorunUser.value.options).chief !== false);
@@ -581,6 +629,16 @@ onMounted(() => {
                     </div>
                 </div>
 
+                <div class="mobile-layout-setting-row">
+                    <span>
+                        모바일 레이아웃 순서 바꾸기<br />
+                        <small>500px 메인 화면의 패널 순서를 이 기기에 저장합니다.</small>
+                    </span>
+                    <button class="mobile-layout-open" type="button" @click="openMobileLayoutDialog">
+                        순서 바꾸기
+                    </button>
+                </div>
+
                 <div class="item-title">아이템 파기</div>
                 <div class="item-group">
                     <button
@@ -635,6 +693,61 @@ onMounted(() => {
             삼국지 모의전투 HiDCHe / KOEI의 이미지를 사용, 응용하였습니다 / 제작: HideD / Credit
         </footer>
     </main>
+    <dialog
+        ref="mobileLayoutDialog"
+        class="mobile-layout-dialog"
+        aria-labelledby="mobile-layout-dialog-title"
+        @close="mobileLayoutDragIndex = null"
+    >
+        <div class="mobile-layout-dialog__header">
+            <h2 id="mobile-layout-dialog-title">모바일 레이아웃 순서 바꾸기</h2>
+            <form method="dialog">
+                <button type="submit" aria-label="모바일 레이아웃 순서 창 닫기">×</button>
+            </form>
+        </div>
+        <p>항목을 끌어 놓거나 위·아래 버튼으로 상대 순서를 바꿉니다.</p>
+        <ol class="mobile-layout-list">
+            <li
+                v-for="(panelId, index) in mobileLayoutOrder"
+                :key="panelId"
+                :data-mobile-layout-id="panelId"
+                draggable="true"
+                @dragstart="startMobileLayoutDrag($event, index)"
+                @dragend="mobileLayoutDragIndex = null"
+                @dragover.prevent
+                @drop.stop="dropMobileLayoutItem($event, index)"
+            >
+                <span class="mobile-layout-handle" aria-hidden="true">≡</span>
+                <span class="mobile-layout-label">
+                    <span class="mobile-layout-position">{{ index + 1 }}</span>
+                    {{ mobileLayoutLabels[panelId] }}
+                </span>
+                <span class="mobile-layout-move-buttons">
+                    <button
+                        type="button"
+                        :aria-label="`${mobileLayoutLabels[panelId]} 위로`"
+                        :disabled="index === 0"
+                        @click="moveMobileLayoutItem(index, index - 1)"
+                    >
+                        ↑
+                    </button>
+                    <button
+                        type="button"
+                        :aria-label="`${mobileLayoutLabels[panelId]} 아래로`"
+                        :disabled="index === mobileLayoutOrder.length - 1"
+                        @click="moveMobileLayoutItem(index, index + 1)"
+                    >
+                        ↓
+                    </button>
+                </span>
+            </li>
+        </ol>
+        <div class="mobile-layout-dialog__actions">
+            <button type="button" @click="resetMobileLayoutOrder">기본값</button>
+            <form method="dialog"><button type="submit">취소</button></form>
+            <button class="mobile-layout-apply" type="button" @click="applyMobileLayoutOrder">적용</button>
+        </div>
+    </dialog>
     <div class="my-page-mobile-scroll-spacer" aria-hidden="true"></div>
 </template>
 
@@ -822,6 +935,125 @@ button:disabled {
     align-items: center;
     margin: 14px 0;
 }
+.mobile-layout-setting-row {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 128px;
+    align-items: center;
+    gap: 8px;
+    margin: 14px 0;
+}
+.mobile-layout-setting-row small {
+    color: orange;
+}
+.mobile-layout-open {
+    min-height: 34px;
+    background: #315f86;
+    font-weight: 700;
+}
+.mobile-layout-dialog {
+    box-sizing: border-box;
+    width: min(460px, calc(100vw - 24px));
+    max-height: calc(100dvh - 24px);
+    margin: auto;
+    overflow: auto;
+    border: 1px solid #777;
+    border-radius: 4px;
+    padding: 12px;
+    background: #171717 var(--sammo-texture-walnut);
+    color: #fff;
+    font: 14px/1.3 var(--sammo-font-sans);
+}
+.mobile-layout-dialog::backdrop {
+    background: rgb(0 0 0 / 72%);
+}
+.mobile-layout-dialog__header,
+.mobile-layout-dialog__actions,
+.mobile-layout-move-buttons {
+    display: flex;
+    align-items: center;
+}
+.mobile-layout-dialog__header {
+    justify-content: space-between;
+    gap: 12px;
+}
+.mobile-layout-dialog__header h2,
+.mobile-layout-dialog p {
+    margin: 0 0 10px;
+}
+.mobile-layout-dialog__header h2 {
+    color: skyblue;
+    font-size: 18px;
+}
+.mobile-layout-dialog__header form,
+.mobile-layout-dialog__actions form {
+    margin: 0;
+}
+.mobile-layout-dialog__header button {
+    min-width: 32px;
+    min-height: 32px;
+    font-size: 20px;
+}
+.mobile-layout-list {
+    display: grid;
+    gap: 6px;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+}
+.mobile-layout-list > li {
+    display: grid;
+    grid-template-columns: 28px minmax(0, 1fr) auto;
+    min-height: 44px;
+    align-items: center;
+    border: 1px solid #777;
+    background: #172a52 var(--sammo-texture-blue);
+    cursor: grab;
+}
+.mobile-layout-list > li:active {
+    cursor: grabbing;
+}
+.mobile-layout-handle {
+    color: #aaa;
+    text-align: center;
+    font-size: 20px;
+}
+.mobile-layout-label {
+    min-width: 0;
+    font-weight: 700;
+}
+.mobile-layout-position {
+    display: inline-grid;
+    width: 22px;
+    height: 22px;
+    place-items: center;
+    margin-right: 4px;
+    border: 1px solid #7186a7;
+    border-radius: 50%;
+    font-size: 12px;
+}
+.mobile-layout-move-buttons {
+    gap: 4px;
+    padding-right: 5px;
+}
+.mobile-layout-move-buttons button {
+    width: 36px;
+    min-height: 34px;
+    background: #315f86;
+    font-weight: 700;
+}
+.mobile-layout-dialog__actions {
+    justify-content: flex-end;
+    gap: 6px;
+    margin-top: 12px;
+}
+.mobile-layout-dialog__actions button {
+    min-height: 34px;
+    padding: 4px 10px;
+}
+.mobile-layout-dialog__actions .mobile-layout-apply {
+    background: #225500;
+    font-weight: 700;
+}
 .button-group {
     display: flex;
 }
@@ -932,6 +1164,12 @@ button:disabled {
     .screen-mode-row {
         grid-template-columns: 1fr;
         gap: 6px;
+    }
+    .mobile-layout-setting-row {
+        grid-template-columns: 1fr;
+    }
+    .mobile-layout-open {
+        width: 100%;
     }
     .button-group {
         overflow-x: auto;

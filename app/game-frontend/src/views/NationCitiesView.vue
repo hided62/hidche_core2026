@@ -1,16 +1,28 @@
 <script setup lang="ts">
+import { formatServerDateTime } from '@sammo-ts/common';
 import { computed, onMounted, ref } from 'vue';
 import { useRouter } from 'vue-router';
+import { useGameFeedback } from '../composables/useGameFeedback';
 import { getNpcColor } from '../utils/npcColor';
 import { legacyNationTextColor } from '../utils/legacyNationColor';
 import { cityLevelMap, regionMap } from '../utils/nationFormat';
 import { trpc } from '../utils/trpc';
 
 type Result = Awaited<ReturnType<typeof trpc.nation.getCityOverview.query>>;
+type SecretResult = Awaited<ReturnType<typeof trpc.nation.getSecretGeneralList.query>>;
+type PersonnelResult = Awaited<ReturnType<typeof trpc.nation.getPersonnelInfo.query>>;
 type City = Result['cities'][number];
+type SecretGeneral = SecretResult['generals'][number];
+type OfficerLevel = 2 | 3 | 4;
 type Sort = 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10 | 11 | 12;
 const data = ref<Result | null>(null);
+const secretData = ref<SecretResult | null>(null);
+const personnelData = ref<PersonnelResult | null>(null);
 const error = ref('');
+const integrationError = ref('');
+const secretLoading = ref(false);
+const personnelLoading = ref(false);
+const pendingAppointment = ref('');
 const sort = ref<Sort>(10);
 const extraSort = ref<
     | 'name'
@@ -25,10 +37,16 @@ const extraSort = ref<
     | null
 >(null);
 const router = useRouter();
+const { error: showErrorToast, info: showInfoToast, success: showSuccessToast } = useGameFeedback();
 const options = ['기본', '인구', '인구율', '민심', '농업', '상업', '치안', '수비', '성벽', '시세', '지역', '규모'];
+const officerLabels: Record<OfficerLevel, string> = { 4: '태수', 3: '군사', 2: '종사' };
 const generalsForCity = (cityId: number) => data.value?.generals.filter((general) => general.cityId === cityId) ?? [];
+const secretGeneralsForCity = (cityId: number) =>
+    secretData.value?.generals.filter((general) => general.cityId === cityId) ?? [];
 const displayGeneralName = (general: Result['generals'][number]) =>
     general.npcState > 0 && !/^[ⓜⓝ]/u.test(general.name) ? `ⓝ${general.name}` : general.name;
+const displaySecretGeneralName = (general: SecretGeneral) =>
+    general.npcState > 0 && !/^[ⓜⓝ㉥]/u.test(general.name) ? `ⓝ${general.name}` : general.name;
 const generalCount = (cityId: number) =>
     data.value?.generals.filter((general) => general.cityId === cityId).length ?? 0;
 const cities = computed(() => {
@@ -91,6 +109,138 @@ const developmentClass = (
 const isRegionBreak = (city: City, index: number) =>
     sort.value === 10 && extraSort.value === null && (index === 0 || cities.value[index - 1]?.region !== city.region);
 const officer = (city: City, level: 2 | 3 | 4) => city.officers[level]?.name ?? '-';
+const officerIsStationed = (city: City, level: OfficerLevel): boolean =>
+    secretData.value !== null && city.officers[level]?.cityId === city.id;
+const personnelGeneralMap = computed(
+    () => new Map((personnelData.value?.generals ?? []).map((general) => [general.id, general]))
+);
+const personnelCityMap = computed(
+    () => new Map((personnelData.value?.cityAssignments ?? []).map((city) => [city.id, city]))
+);
+const officerLocked = (cityId: number, level: OfficerLevel): boolean => {
+    const officerSet = personnelCityMap.value.get(cityId)?.officerSet ?? 0;
+    return (officerSet & (1 << level)) !== 0;
+};
+const canAppoint = (cityId: number, generalId: number, level: OfficerLevel): boolean => {
+    if (!personnelData.value?.me.canManage || officerLocked(cityId, level)) return false;
+    const general = personnelGeneralMap.value.get(generalId);
+    if (!general || general.officerLevel === 12) return false;
+    if (level === 4) return general.stats.strength >= personnelData.value.chiefStatMin;
+    if (level === 3) return general.stats.intelligence >= personnelData.value.chiefStatMin;
+    return true;
+};
+const canShowAppointmentButtons = (generalId: number): boolean => {
+    const general = personnelGeneralMap.value.get(generalId);
+    return personnelData.value?.me.canManage === true && general !== undefined && general.officerLevel !== 12;
+};
+const isChief = (generalId: number): boolean => (personnelGeneralMap.value.get(generalId)?.officerLevel ?? 0) >= 5;
+const appointmentKey = (cityId: number, generalId: number, level: OfficerLevel): string =>
+    `${cityId}:${generalId}:${level}`;
+const commandNeedsAttention = (city: City, command: string): boolean => {
+    const normalized = command.replaceAll(/\s/gu, '');
+    if (normalized.includes('정착장려')) {
+        return city.population - city.populationMax > -20_000 || city.population > city.populationMax * 0.92;
+    }
+    if (normalized.includes('농지개간')) return city.agriculture - city.agricultureMax > -1_000;
+    if (normalized.includes('상업투자')) return city.commerce - city.commerceMax > -1_000;
+    if (normalized.includes('치안강화')) return city.security - city.securityMax > -1_000;
+    if (normalized.includes('수비강화')) return city.defence - city.defenceMax > -700;
+    if (normalized.includes('성벽보수')) return city.wall - city.wallMax > -700;
+    return false;
+};
+
+const loadSecretIntegration = async (): Promise<void> => {
+    if (secretLoading.value) {
+        showInfoToast('암행부 정보를 불러오는 중입니다.');
+        return;
+    }
+    if (secretData.value) {
+        showInfoToast('암행부 정보가 이미 연동되어 있습니다.');
+        return;
+    }
+    secretLoading.value = true;
+    integrationError.value = '';
+    try {
+        secretData.value = await trpc.nation.getSecretGeneralList.query();
+    } catch (cause) {
+        integrationError.value = cause instanceof Error ? cause.message : '암행부 연동에 실패했습니다.';
+        showErrorToast(integrationError.value);
+    } finally {
+        secretLoading.value = false;
+    }
+};
+
+const loadPersonnelIntegration = async (): Promise<void> => {
+    if (personnelLoading.value) {
+        showInfoToast('인사부 정보를 불러오는 중입니다.');
+        return;
+    }
+    if (personnelData.value?.me.canManage) {
+        showInfoToast('인사부 정보가 이미 연동되어 있습니다.');
+        return;
+    }
+    personnelLoading.value = true;
+    integrationError.value = '';
+    try {
+        const personnel = await trpc.nation.getPersonnelInfo.query();
+        if (!personnel.me.canManage) {
+            window.alert('수뇌가 아닙니다!');
+            return;
+        }
+        personnelData.value = personnel;
+    } catch (cause) {
+        integrationError.value = cause instanceof Error ? cause.message : '인사부 연동에 실패했습니다.';
+        showErrorToast(integrationError.value);
+    } finally {
+        personnelLoading.value = false;
+    }
+};
+
+const refreshIntegratedData = async (): Promise<void> => {
+    const [overview, secret, personnel] = await Promise.all([
+        trpc.nation.getCityOverview.query(),
+        trpc.nation.getSecretGeneralList.query(),
+        trpc.nation.getPersonnelInfo.query(),
+    ]);
+    data.value = overview;
+    secretData.value = secret;
+    personnelData.value = personnel;
+};
+
+const appointCityOfficer = async (city: City, general: SecretGeneral, level: OfficerLevel): Promise<void> => {
+    if (!canAppoint(city.id, general.id, level)) return;
+    const key = appointmentKey(city.id, general.id, level);
+    if (pendingAppointment.value) {
+        showInfoToast('다른 임명을 처리하는 중입니다.');
+        return;
+    }
+    if (isChief(general.id) && !window.confirm('수뇌입니다. 임명할까요?')) return;
+
+    pendingAppointment.value = key;
+    integrationError.value = '';
+    try {
+        await trpc.nation.appoint.mutate({
+            destGeneralId: general.id,
+            destCityId: city.id,
+            officerLevel: level,
+        });
+        showSuccessToast(`${general.name}을(를) ${city.name} ${officerLabels[level]}로 임명했습니다.`);
+        try {
+            await refreshIntegratedData();
+        } catch (cause) {
+            integrationError.value =
+                cause instanceof Error
+                    ? `임명은 완료됐지만 화면을 갱신하지 못했습니다: ${cause.message}`
+                    : '임명은 완료됐지만 화면을 갱신하지 못했습니다.';
+            showErrorToast(integrationError.value);
+        }
+    } catch (cause) {
+        integrationError.value = cause instanceof Error ? cause.message : '임명에 실패했습니다.';
+        showErrorToast(integrationError.value);
+    } finally {
+        pendingAppointment.value = '';
+    }
+};
 onMounted(async () => {
     try {
         data.value = await trpc.nation.getCityOverview.query();
@@ -121,7 +271,18 @@ onMounted(async () => {
                                 </option>
                             </select>
                             <input type="submit" value="정렬하기" />
-                            <button type="button">암행부 연동</button>
+                            <button type="button" :aria-busy="secretLoading" @click="loadSecretIntegration">
+                                암행부 연동
+                            </button>
+                            <button
+                                v-if="secretData"
+                                id="load-duty-button"
+                                type="button"
+                                :aria-busy="personnelLoading"
+                                @click="loadPersonnelIntegration"
+                            >
+                                인사부 연동
+                            </button>
                         </form>
                     </td>
                 </tr>
@@ -141,12 +302,14 @@ onMounted(async () => {
                 </tr>
             </tbody>
         </table>
-        <p v-if="error" class="error">{{ error }}</p>
+        <p v-if="error" class="error" role="alert">{{ error }}</p>
+        <p v-if="integrationError" class="error integration-error" role="alert">{{ integrationError }}</p>
         <table
             v-for="(city, index) in cities"
             :key="city.id"
             class="legacy-table city legacy-bg2"
             :class="{ 'region-break': isRegionBreak(city, index) }"
+            :data-city-id="city.id"
         >
             <tbody>
                 <tr>
@@ -223,24 +386,132 @@ onMounted(async () => {
                     <th>시세</th>
                     <td>{{ city.trade ?? '-' }}%</td>
                     <th>태수</th>
-                    <td>{{ officer(city, 4) }}</td>
+                    <td class="officer-4-value" :class="{ 'effective-officer': officerIsStationed(city, 4) }">
+                        {{ officer(city, 4) }}
+                    </td>
                     <th>군사</th>
-                    <td>{{ officer(city, 3) }}</td>
+                    <td class="officer-3-value" :class="{ 'effective-officer': officerIsStationed(city, 3) }">
+                        {{ officer(city, 3) }}
+                    </td>
                     <th>종사</th>
-                    <td>{{ officer(city, 2) }}</td>
+                    <td class="officer-2-value" :class="{ 'effective-officer': officerIsStationed(city, 2) }">
+                        {{ officer(city, 2) }}
+                    </td>
                 </tr>
                 <tr>
                     <th>장수</th>
                     <td colspan="9" class="general-list">
                         <template v-if="generalsForCity(city.id).length">
-                            <template v-for="(general, index) in generalsForCity(city.id)" :key="general.id">
-                                <span v-if="index">, </span
+                            <template v-for="(general, cityGeneralIndex) in generalsForCity(city.id)" :key="general.id">
+                                <span v-if="cityGeneralIndex">, </span
                                 ><span :style="{ color: getNpcColor(general.npcState) }">{{
                                     displayGeneralName(general)
                                 }}</span>
                             </template>
                         </template>
                         <template v-else>-</template>
+                    </td>
+                </tr>
+                <tr v-if="secretData" class="secret-integration-row">
+                    <td colspan="10">
+                        <table class="city-user-table legacy-bg0">
+                            <colgroup>
+                                <col class="secret-name-column" />
+                                <col class="secret-stat-column" />
+                                <col class="secret-troop-column" />
+                                <col class="secret-gold-column" />
+                                <col class="secret-rice-column" />
+                                <col class="secret-defence-column" />
+                                <col class="secret-crew-type-column" />
+                                <col class="secret-crew-column" />
+                                <col class="secret-train-column" />
+                                <col class="secret-atmos-column" />
+                                <col class="secret-command-column" />
+                                <col class="secret-kill-column" />
+                                <col class="secret-turn-column" />
+                            </colgroup>
+                            <thead>
+                                <tr>
+                                    <th>이 름</th>
+                                    <th>통무지</th>
+                                    <th>부 대</th>
+                                    <th>자 금</th>
+                                    <th>군 량</th>
+                                    <th>守</th>
+                                    <th>병 종</th>
+                                    <th>병 사</th>
+                                    <th>훈련</th>
+                                    <th>사기</th>
+                                    <th>명 령</th>
+                                    <th>삭턴</th>
+                                    <th>턴</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <tr
+                                    v-for="general in secretGeneralsForCity(city.id)"
+                                    :key="general.id"
+                                    :data-general-id="general.id"
+                                >
+                                    <td class="secret-name-cell">
+                                        <span :style="{ color: getNpcColor(general.npcState) }">{{
+                                            displaySecretGeneralName(general)
+                                        }}</span
+                                        ><br />Lv {{ general.experienceLevel }}
+                                        <template v-if="canShowAppointmentButtons(general.id)">
+                                            <br class="for-duty" />
+                                            <button
+                                                v-for="level in [4, 3, 2] as const"
+                                                :key="level"
+                                                type="button"
+                                                class="appointment-button for-duty"
+                                                :class="[`mode-${level}`, { 'chief-target': isChief(general.id) }]"
+                                                :disabled="
+                                                    !canAppoint(city.id, general.id, level) || pendingAppointment !== ''
+                                                "
+                                                :aria-label="`${general.name}을(를) ${city.name} ${officerLabels[level]}로 임명`"
+                                                @click="appointCityOfficer(city, general, level)"
+                                            >
+                                                {{ officerLabels[level].slice(0, 1) }}
+                                            </button>
+                                        </template>
+                                    </td>
+                                    <td :class="{ injured: general.injury > 0 }">
+                                        {{ general.stats.leadership
+                                        }}<span v-if="general.leadershipBonus" class="bonus"
+                                            >+{{ general.leadershipBonus }}</span
+                                        >∥{{ general.stats.strength }}∥{{ general.stats.intelligence }}
+                                    </td>
+                                    <td>{{ general.troopName ?? '-' }}</td>
+                                    <td>{{ general.gold }}</td>
+                                    <td>{{ general.rice }}</td>
+                                    <td>{{ general.defenceTrainText }}</td>
+                                    <td>{{ general.crewTypeName }}</td>
+                                    <td>{{ general.crew }}</td>
+                                    <td>{{ general.train }}</td>
+                                    <td>{{ general.atmos }}</td>
+                                    <td class="secret-commands">
+                                        <template v-if="general.npcState >= 2">NPC 장수</template>
+                                        <template v-else>
+                                            <div
+                                                v-for="(command, commandIndex) in general.reservedCommands"
+                                                :key="commandIndex"
+                                            >
+                                                {{ commandIndex + 1 }} :
+                                                <span
+                                                    :class="{
+                                                        'command-attention': commandNeedsAttention(city, command),
+                                                    }"
+                                                    >{{ command }}</span
+                                                >
+                                            </div>
+                                        </template>
+                                    </td>
+                                    <td>{{ general.killTurn }}</td>
+                                    <td>{{ formatServerDateTime(general.turnTime, { format: 'minuteSecond' }) }}</td>
+                                </tr>
+                            </tbody>
+                        </table>
                     </td>
                 </tr>
             </tbody>
@@ -303,6 +574,81 @@ onMounted(async () => {
 }
 .general-list {
     text-align: left !important;
+}
+.effective-officer {
+    color: lightgreen;
+}
+.secret-integration-row > td {
+    padding: 0;
+}
+.city-user-table {
+    width: 940px;
+    margin: 0 auto;
+    border-collapse: collapse;
+    table-layout: fixed;
+}
+.city-user-table td,
+.city-user-table th {
+    width: auto;
+    border: 1px solid #808080;
+    padding: 0;
+    text-align: center;
+    word-break: break-all;
+}
+.city-user-table th {
+    background-image: var(--sammo-texture-green);
+}
+.secret-name-column,
+.secret-stat-column,
+.secret-troop-column {
+    width: 100px;
+}
+.secret-gold-column,
+.secret-rice-column,
+.secret-crew-type-column,
+.secret-crew-column,
+.secret-kill-column,
+.secret-turn-column {
+    width: 60px;
+}
+.secret-defence-column {
+    width: 30px;
+}
+.secret-train-column,
+.secret-atmos-column {
+    width: 50px;
+}
+.secret-command-column {
+    width: 150px;
+}
+.secret-name-cell {
+    line-height: normal;
+}
+.secret-commands {
+    text-align: left !important;
+    font-size: 12px;
+}
+.bonus {
+    color: cyan;
+}
+.injured {
+    color: red;
+}
+.command-attention {
+    color: yellow;
+}
+.nation-cities-page .appointment-button {
+    margin: 0;
+    padding: 1px 4px;
+}
+.nation-cities-page .appointment-button.chief-target:not(:disabled) {
+    color: red;
+}
+.nation-cities-page .appointment-button:disabled {
+    border: 0;
+    background: transparent;
+    color: inherit;
+    cursor: default;
 }
 .capital {
     color: #0ff;
