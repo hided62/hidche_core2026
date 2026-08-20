@@ -1271,7 +1271,7 @@ test('내 정보&설정의 지난 플레이는 기본 탐색과 분리되어 오
     }
 });
 
-test('내 정보&설정에서 모바일 메인 패널을 드래그하거나 버튼으로 재정렬하고 Ref 순서로 복원한다', async ({ page }) => {
+test('내 정보&설정에서 모바일 메인 패널을 드래그하거나 버튼으로 재정렬하고 기본 순서로 복원한다', async ({ page }) => {
     const state: FixtureState = { permission: 'head', myset: 3, settingMutations: [], accessPages: [] };
     await install(page, state);
     await page.setViewportSize({ width: 390, height: 844 });
@@ -1334,7 +1334,7 @@ test('내 정보&설정에서 모바일 메인 패널을 드래그하거나 버�
         .toEqual(['messages', 'commands', 'nation-menu', 'nation', 'general', 'map', 'city', 'records', 'global-menu']);
 
     await page.getByRole('button', { name: '순서 바꾸기', exact: true }).click();
-    await dialog.getByRole('button', { name: 'Ref 초깃값' }).click();
+    await dialog.getByRole('button', { name: '기본값', exact: true }).click();
     await expect.poll(readOrder).toEqual(defaultOrder);
     await dialog.getByRole('button', { name: '적용', exact: true }).click();
     await expect

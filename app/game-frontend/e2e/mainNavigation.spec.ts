@@ -792,6 +792,103 @@ const gridColumnCount = async (page: Page, selector: string) =>
         .first()
         .evaluate((element) => getComputedStyle(element).gridTemplateColumns.split(' ').length);
 
+const setMobilePanelOrder = async (page: Page, order: readonly string[]) => {
+    await page.evaluate((nextOrder) => {
+        localStorage.setItem('sam.mobileMainPanelOrder.v1', JSON.stringify(nextOrder));
+        document.dispatchEvent(new CustomEvent('sam-mobile-main-panel-order-changed'));
+    }, order);
+};
+
+const inspectMobilePanelLayout = async (page: Page) =>
+    page.locator('.layout-mobile').evaluate((container) => {
+        const containerStyle = getComputedStyle(container);
+        const panels = [...container.querySelectorAll<HTMLElement>(':scope > [data-mobile-panel-id]')].map(
+            (element, domIndex) => {
+                const rect = element.getBoundingClientRect();
+                const style = getComputedStyle(element);
+                const content = element.firstElementChild as HTMLElement | null;
+                const contentStyle = content ? getComputedStyle(content) : null;
+                return {
+                    id: element.dataset.mobilePanelId ?? '',
+                    domIndex,
+                    top: rect.top,
+                    bottom: rect.bottom,
+                    left: rect.left,
+                    right: rect.right,
+                    width: rect.width,
+                    height: rect.height,
+                    display: style.display,
+                    position: style.position,
+                    inset: [style.top, style.right, style.bottom, style.left],
+                    order: style.order,
+                    transform: style.transform,
+                    float: style.cssFloat,
+                    gridRow: `${style.gridRowStart} / ${style.gridRowEnd}`,
+                    gridColumn: `${style.gridColumnStart} / ${style.gridColumnEnd}`,
+                    marginTop: style.marginTop,
+                    marginBottom: style.marginBottom,
+                    content: contentStyle
+                        ? {
+                              position: contentStyle.position,
+                              order: contentStyle.order,
+                              transform: contentStyle.transform,
+                              marginTop: contentStyle.marginTop,
+                              marginBottom: contentStyle.marginBottom,
+                              height: contentStyle.height,
+                          }
+                        : null,
+                };
+            }
+        );
+        return {
+            container: {
+                display: containerStyle.display,
+                flexDirection: containerStyle.flexDirection,
+                position: containerStyle.position,
+                transform: containerStyle.transform,
+            },
+            panels,
+            visualOrder: [...panels]
+                .sort((left, right) => left.top - right.top || left.left - right.left)
+                .map(({ id }) => id),
+        };
+    });
+
+const expectMobilePanelVisualOrder = async (page: Page, expectedOrder: readonly string[]) => {
+    await expect
+        .poll(() =>
+            page
+                .locator('.layout-mobile > [data-mobile-panel-id]')
+                .evaluateAll((elements) => elements.map((element) => element.getAttribute('data-mobile-panel-id')))
+        )
+        .toEqual(expectedOrder);
+    const audit = await inspectMobilePanelLayout(page);
+    expect(audit.container).toEqual({
+        display: 'flex',
+        flexDirection: 'column',
+        position: 'static',
+        transform: 'none',
+    });
+    expect(audit.panels.map(({ id }) => id)).toEqual(expectedOrder);
+    expect(audit.visualOrder).toEqual(expectedOrder);
+    expect(audit.panels.every(({ left, right, width }) => left >= 0 && right <= 500 && width === 500)).toBe(true);
+    expect(
+        audit.panels.every((panel, index) => index === 0 || panel.top >= audit.panels[index - 1]!.bottom)
+    ).toBe(true);
+    for (const panel of audit.panels) {
+        expect(panel.display, `${panel.id}: display`).not.toBe('none');
+        expect(['static', 'relative'], `${panel.id}: position`).toContain(panel.position);
+        expect(
+            panel.inset.every((value) => value === 'auto' || value === '0px'),
+            `${panel.id}: inset ${panel.inset.join(' ')}`
+        ).toBe(true);
+        expect(panel.order, `${panel.id}: order`).toBe('0');
+        expect(panel.transform, `${panel.id}: transform`).toBe('none');
+        expect(panel.float, `${panel.id}: float`).toBe('none');
+    }
+    return audit;
+};
+
 const raisedButtonState = async (target: Locator) =>
     target.evaluate((element) => {
         const rect = element.getBoundingClientRect();
@@ -2213,49 +2310,45 @@ test('the 939/940 boundary switches to the Ref-style 500px single document', asy
     ]) {
         await expect(page.locator(selector)).toBeVisible();
     }
-    const readMobilePanelOrder = () =>
-        page
-            .locator('.layout-mobile > [data-mobile-panel-id]')
-            .evaluateAll((elements) => elements.map((element) => element.getAttribute('data-mobile-panel-id')));
-    await expect
-        .poll(readMobilePanelOrder)
-        .toEqual(['commands', 'nation-menu', 'nation', 'general', 'city', 'map', 'records', 'global-menu', 'messages']);
-    await page.evaluate(() => {
-        localStorage.setItem(
-            'sam.mobileMainPanelOrder.v1',
-            JSON.stringify([
-                'messages',
-                'map',
-                'commands',
-                'nation-menu',
-                'nation',
-                'general',
-                'city',
-                'records',
-                'global-menu',
-            ])
+    const defaultOrder = [
+        'commands',
+        'nation-menu',
+        'nation',
+        'general',
+        'city',
+        'map',
+        'records',
+        'global-menu',
+        'messages',
+    ];
+    const customOrder = [
+        'messages',
+        'map',
+        'commands',
+        'nation-menu',
+        'nation',
+        'general',
+        'city',
+        'records',
+        'global-menu',
+    ];
+    const reverseOrder = [...defaultOrder].reverse();
+    const mobilePanelAudits = {
+        default: await expectMobilePanelVisualOrder(page, defaultOrder),
+        custom: null as Awaited<ReturnType<typeof inspectMobilePanelLayout>> | null,
+        reverse: null as Awaited<ReturnType<typeof inspectMobilePanelLayout>> | null,
+    };
+    await setMobilePanelOrder(page, customOrder);
+    mobilePanelAudits.custom = await expectMobilePanelVisualOrder(page, customOrder);
+    await setMobilePanelOrder(page, reverseOrder);
+    mobilePanelAudits.reverse = await expectMobilePanelVisualOrder(page, reverseOrder);
+    if (artifactRoot) {
+        await mkdir(artifactRoot, { recursive: true });
+        await writeFile(
+            resolve(artifactRoot, `${basePath.slice(1)}-mobile-panel-css-order-audit.json`),
+            `${JSON.stringify(mobilePanelAudits, null, 2)}\n`
         );
-        document.dispatchEvent(new CustomEvent('sam-mobile-main-panel-order-changed'));
-    });
-    await expect
-        .poll(readMobilePanelOrder)
-        .toEqual(['messages', 'map', 'commands', 'nation-menu', 'nation', 'general', 'city', 'records', 'global-menu']);
-    const customPanelGeometry = await page.locator('.layout-mobile > [data-mobile-panel-id]').evaluateAll((elements) =>
-        elements.map((element) => {
-            const rect = element.getBoundingClientRect();
-            return {
-                id: element.getAttribute('data-mobile-panel-id'),
-                top: rect.top,
-                bottom: rect.bottom,
-                left: rect.left,
-                right: rect.right,
-            };
-        })
-    );
-    expect(customPanelGeometry.every(({ left, right }) => left >= 0 && right <= 500)).toBe(true);
-    expect(
-        customPanelGeometry.every((panel, index) => index === 0 || panel.top >= customPanelGeometry[index - 1]!.bottom)
-    ).toBe(true);
+    }
     await persistArtifact(page, `${basePath.slice(1)}-mobile-500`);
 });
 
@@ -2556,6 +2649,27 @@ test('real mobile devices initially fit the complete 500px game canvas', async (
         expect(mainGeometry.documentScrollWidth).toBeLessThanOrEqual(mainGeometry.innerWidth);
         expect(mainGeometry.canvas).toEqual({ left: 0, right: 500, width: 500 });
         expect(mainGeometry.canvas.right).toBeLessThanOrEqual((mainGeometry.visualViewportWidth ?? 0) + 0.01);
+        let physicalPanelOrderAudit: unknown = null;
+        if (deviceWidth === 390) {
+            const defaultOrder = [
+                'commands',
+                'nation-menu',
+                'nation',
+                'general',
+                'city',
+                'map',
+                'records',
+                'global-menu',
+                'messages',
+            ];
+            const reverseOrder = [...defaultOrder].reverse();
+            const defaultAudit = await expectMobilePanelVisualOrder(mobilePage, defaultOrder);
+            await setMobilePanelOrder(mobilePage, reverseOrder);
+            const reverseAudit = await expectMobilePanelVisualOrder(mobilePage, reverseOrder);
+            physicalPanelOrderAudit = { default: defaultAudit, reverse: reverseAudit };
+            await setMobilePanelOrder(mobilePage, defaultOrder);
+            await expectMobilePanelVisualOrder(mobilePage, defaultOrder);
+        }
         if (artifactRoot) {
             await mkdir(artifactRoot, { recursive: true });
             await mobilePage.screenshot({
@@ -2599,7 +2713,11 @@ test('real mobile devices initially fit the complete 500px game canvas', async (
             }
         }
 
-        measurements[String(deviceWidth)] = { main: mainGeometry, routes: routeGeometry };
+        measurements[String(deviceWidth)] = {
+            main: mainGeometry,
+            mobilePanelOrder: physicalPanelOrderAudit,
+            routes: routeGeometry,
+        };
         await context.close();
     }
 
