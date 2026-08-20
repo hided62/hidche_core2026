@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, reactive, ref, watch } from 'vue';
+import { computed, onMounted, ref, watch } from 'vue';
 import { useRouter } from 'vue-router';
 
 import { JosaUtil } from '@sammo-ts/common';
@@ -26,9 +26,7 @@ type SelectionDialogItem = {
     details: Array<{ label: string; value: string }>;
 };
 type SelectionContext =
-    | { kind: 'chief-general'; level: number }
-    | { kind: 'city'; level: OfficerLevel }
-    | { kind: 'city-general'; level: OfficerLevel };
+    { kind: 'chief-general'; level: number } | { kind: 'city-general'; level: OfficerLevel; cityId: number };
 
 const officerLabels: Record<OfficerLevel, string> = { 4: '태수', 3: '군사', 2: '종사' };
 const cityOfficerLevels: OfficerLevel[] = [4, 3, 2];
@@ -36,12 +34,6 @@ const loading = ref(false);
 const error = ref<string | null>(null);
 const data = ref<PersonnelResponse | null>(null);
 const selectionContext = ref<SelectionContext | null>(null);
-const chiefAppointmentDraft = reactive<Record<number, number>>({});
-const cityDraft = reactive<Record<OfficerLevel, { cityId: number; generalId: number }>>({
-    4: { cityId: 0, generalId: 0 },
-    3: { cityId: 0, generalId: 0 },
-    2: { cityId: 0, generalId: 0 },
-});
 const kickTargetId = ref(0);
 const ambassadorSelection = ref<number[]>([]);
 const auditorSelection = ref<number[]>([]);
@@ -68,11 +60,6 @@ const nationLevel = computed(() => data.value?.nation.level ?? 0);
 const canManage = computed(() => data.value?.me.canManage ?? false);
 const canChangePermissions = computed(() => data.value?.me.canChangePermissions ?? false);
 const canKick = computed(() => data.value?.me.canKick ?? false);
-const chiefLevels = computed(() => {
-    const levels: number[] = [];
-    for (let level = 12; level >= getNationChiefLevel(nationLevel.value); level -= 1) levels.push(level);
-    return levels;
-});
 const chiefPairs = computed(() => {
     const pairs: Array<[number, number]> = [];
     for (let level = 12; level >= getNationChiefLevel(nationLevel.value); level -= 2) {
@@ -111,27 +98,14 @@ const cityCandidates = (level: OfficerLevel): GeneralEntry[] => {
     if (level === 3) return candidates.filter((general) => general.stats.intelligence >= minimum);
     return candidates;
 };
-const openCities = (level: OfficerLevel) =>
-    (data.value?.cityAssignments ?? []).filter((city) => !cityOfficerLocked(city, level));
-const selectedChief = (level: number): GeneralEntry | undefined =>
-    generalMap.value.get(chiefAppointmentDraft[level] ?? 0);
-const selectedCity = (level: OfficerLevel): PersonnelResponse['cityAssignments'][number] | undefined =>
-    data.value?.cityAssignments.find((city) => city.id === cityDraft[level].cityId);
-const selectedCityGeneral = (level: OfficerLevel): GeneralEntry | undefined =>
-    generalMap.value.get(cityDraft[level].generalId);
 const kickCandidates = computed(() =>
     (data.value?.generals ?? []).filter((general) => general.id !== data.value?.me.id)
 );
 const awardText = (entries: PersonnelResponse['awards']['tigers']): string =>
     entries.map((entry) => `${entry.name}【${entry.value.toLocaleString('ko-KR')}】`).join(', ');
 
-const initializeDrafts = () => {
+const initializePermissions = () => {
     if (!data.value) return;
-    for (const level of chiefLevels.value) chiefAppointmentDraft[level] = chiefAssignments.value[level]?.id ?? 0;
-    for (const level of [4, 3, 2] as const) {
-        cityDraft[level].cityId = openCities(level)[0]?.id ?? 0;
-        cityDraft[level].generalId = 0;
-    }
     ambassadorSelection.value = data.value.permissionCandidates.ambassadors
         .filter((candidate) => candidate.permission === 'ambassador')
         .map((candidate) => candidate.id);
@@ -139,7 +113,7 @@ const initializeDrafts = () => {
         .filter((candidate) => candidate.permission === 'auditor')
         .map((candidate) => candidate.id);
 };
-watch(data, initializeDrafts);
+watch(data, initializePermissions);
 
 const runMutation = async (action: () => Promise<unknown>, successMessage: string) => {
     error.value = null;
@@ -152,8 +126,7 @@ const runMutation = async (action: () => Promise<unknown>, successMessage: strin
     }
 };
 
-const appointChief = async (level: number) => {
-    const targetId = chiefAppointmentDraft[level] ?? 0;
+const appointChief = async (level: number, targetId: number) => {
     const target = generalMap.value.get(targetId);
     const office = formatOfficerLevelText(level, nationLevel.value);
     const prompt = target
@@ -166,10 +139,9 @@ const appointChief = async (level: number) => {
     );
 };
 
-const appointCityOfficer = async (level: OfficerLevel) => {
-    const draft = cityDraft[level];
-    const city = data.value?.cityAssignments.find((entry) => entry.id === draft.cityId);
-    const target = generalMap.value.get(draft.generalId);
+const appointCityOfficer = async (level: OfficerLevel, cityId: number, targetId: number) => {
+    const city = data.value?.cityAssignments.find((entry) => entry.id === cityId);
+    const target = generalMap.value.get(targetId);
     const prompt = target
         ? `${JosaUtil.put(target.name, '을')} ${city?.name ?? ''} ${officerLabels[level]}직에 임명하시겠습니까?`
         : `${city?.name ?? ''} ${officerLabels[level]}직을 비우시겠습니까?`;
@@ -177,16 +149,16 @@ const appointCityOfficer = async (level: OfficerLevel) => {
     await runMutation(
         () =>
             trpc.nation.appoint.mutate({
-                destGeneralId: draft.generalId,
-                destCityId: draft.cityId,
+                destGeneralId: targetId,
+                destCityId: cityId,
                 officerLevel: level,
             }),
         target ? `${JosaUtil.put(target.name, '을')} 임명했습니다.` : '관직을 비웠습니다.'
     );
 };
 
-const generalSelectionItem = (general: GeneralEntry, targetLevel: number): SelectionDialogItem => {
-    const isCurrent = general.officerLevel === targetLevel;
+const generalSelectionItem = (general: GeneralEntry, currentGeneralId: number): SelectionDialogItem => {
+    const isCurrent = general.id === currentGeneralId;
     const isAssigned = general.officerLevel > 1 && !isCurrent;
     const office = currentOfficeText(general);
     const city = general.cityName ?? cityNameMap.value.get(general.cityId) ?? '-';
@@ -227,44 +199,18 @@ const generalSelectionItem = (general: GeneralEntry, targetLevel: number): Selec
     };
 };
 
-const citySelectionItem = (
-    city: PersonnelResponse['cityAssignments'][number],
-    level: OfficerLevel
-): SelectionDialogItem => {
-    const current = city.officers[level];
-    const region = regionMap[city.region] ?? '-';
-    const scale = cityLevelMap[city.level] ?? '-';
-    return {
-        id: city.id,
-        name: city.name,
-        subtitle: `${region} · ${scale}도시`,
-        searchText: `${city.name} ${region} ${scale} ${current?.name ?? '공석'}`,
-        accent: current ? 'assigned' : 'available',
-        badges: [current ? `${officerLabels[level]} 재직 중` : `${officerLabels[level]} 공석`],
-        details: [
-            { label: '지역', value: region },
-            { label: '규모', value: `${scale}도시` },
-            { label: `현재 ${officerLabels[level]}`, value: current?.name ?? '공석' },
-            { label: '소재지', value: current?.cityName ?? '-' },
-        ],
-    };
-};
-
 const selectionTitle = computed(() => {
     const context = selectionContext.value;
     if (!context) return '';
     if (context.kind === 'chief-general') {
         return `${formatOfficerLevelText(context.level, nationLevel.value)} 임명 대상 선택`;
     }
-    if (context.kind === 'city') return `${officerLabels[context.level]} 임명 도시 선택`;
-    return `${officerLabels[context.level]} 임명 대상 선택`;
+    const city = data.value?.cityAssignments.find((entry) => entry.id === context.cityId);
+    return `${city?.name ?? ''} ${officerLabels[context.level]} 변경`;
 });
 const selectionDescription = computed(() => {
     const context = selectionContext.value;
     if (!context) return '';
-    if (context.kind === 'city') {
-        return '지역과 도시 규모, 현재 재직자를 확인한 뒤 임명할 도시를 선택하세요.';
-    }
     if (context.kind === 'chief-general') {
         if (context.level === 11) return '군주를 제외한 장수 중에서 임명할 수 있습니다.';
         const stat = context.level % 2 === 0 ? '무력' : '지력';
@@ -282,27 +228,25 @@ const selectionItems = computed<SelectionDialogItem[]>(() => {
     const context = selectionContext.value;
     if (!context) return [];
     if (context.kind === 'chief-general') {
-        return chiefCandidates(context.level).map((general) => generalSelectionItem(general, context.level));
+        const currentGeneralId = chiefAssignments.value[context.level]?.id ?? 0;
+        return chiefCandidates(context.level).map((general) => generalSelectionItem(general, currentGeneralId));
     }
-    if (context.kind === 'city') {
-        return openCities(context.level).map((city) => citySelectionItem(city, context.level));
-    }
-    return cityCandidates(context.level).map((general) => generalSelectionItem(general, context.level));
+    const city = data.value?.cityAssignments.find((entry) => entry.id === context.cityId);
+    const currentGeneralId = city?.officers[context.level]?.id ?? 0;
+    return cityCandidates(context.level).map((general) => generalSelectionItem(general, currentGeneralId));
 });
 const selectionId = computed(() => {
     const context = selectionContext.value;
     if (!context) return 0;
-    if (context.kind === 'chief-general') return chiefAppointmentDraft[context.level] ?? 0;
-    if (context.kind === 'city') return cityDraft[context.level].cityId;
-    return cityDraft[context.level].generalId;
+    if (context.kind === 'chief-general') return chiefAssignments.value[context.level]?.id ?? 0;
+    return data.value?.cityAssignments.find((entry) => entry.id === context.cityId)?.officers[context.level]?.id ?? 0;
 });
-const applySelection = (id: number): void => {
+const applySelection = async (id: number): Promise<void> => {
     const context = selectionContext.value;
     if (!context) return;
-    if (context.kind === 'chief-general') chiefAppointmentDraft[context.level] = id;
-    else if (context.kind === 'city') cityDraft[context.level].cityId = id;
-    else cityDraft[context.level].generalId = id;
     selectionContext.value = null;
+    if (context.kind === 'chief-general') await appointChief(context.level, id);
+    else await appointCityOfficer(context.level, context.cityId, id);
 };
 
 const enforcePermissionLimit = (selection: number[]) => {
@@ -374,121 +318,51 @@ onMounted(() => void loadPersonnel());
                     </tr>
                     <tr v-for="[leftLevel, rightLevel] in chiefPairs" :key="leftLevel">
                         <template v-for="level in [leftLevel, rightLevel]" :key="level">
-                            <td class="green-cell role-cell">{{ formatOfficerLevelText(level, nationLevel) }}</td>
-                            <td
-                                class="general-icon"
-                                :style="{ backgroundImage: imageBackground(chiefAssignments[level]) }"
-                            />
-                            <td class="chief-name">
-                                {{ chiefAssignments[level]?.name ?? '-' }}({{
-                                    chiefAssignments[level]?.belong ?? '-'
-                                }}년)
+                            <td colspan="3" class="chief-entry-cell">
+                                <div class="chief-entry" :class="{ locked: chiefLocked(level) }">
+                                    <span class="chief-entry-role">{{
+                                        formatOfficerLevelText(level, nationLevel)
+                                    }}</span>
+                                    <span
+                                        class="general-icon"
+                                        :style="{ backgroundImage: imageBackground(chiefAssignments[level]) }"
+                                        aria-hidden="true"
+                                    />
+                                    <span class="chief-entry-copy">
+                                        <strong>{{ chiefAssignments[level]?.name ?? '공석' }}</strong>
+                                        <small>
+                                            {{ chiefAssignments[level]?.belong ?? '-' }}년 ·
+                                            {{ chiefAssignments[level]?.cityName ?? '소재지 없음' }}
+                                        </small>
+                                    </span>
+                                    <button
+                                        v-if="canManage && level !== 12 && !chiefLocked(level)"
+                                        type="button"
+                                        class="personnel-change-button"
+                                        :aria-label="`${formatOfficerLevelText(level, nationLevel)} 변경하기`"
+                                        aria-haspopup="dialog"
+                                        @click="selectionContext = { kind: 'chief-general', level }"
+                                    >
+                                        변경하기
+                                    </button>
+                                    <small v-else-if="chiefLocked(level)" class="personnel-lock-label">변경 잠금</small>
+                                </div>
                             </td>
                         </template>
                     </tr>
                     <tr>
-                        <td class="green-cell">오호장군【승전】</td>
-                        <td colspan="5">{{ awardText(data.awards.tigers) }}</td>
-                    </tr>
-                    <tr>
-                        <td class="green-cell">건안칠자【계략】</td>
-                        <td colspan="5">{{ awardText(data.awards.eagles) }}</td>
-                    </tr>
-                </tbody>
-            </table>
-
-            <table class="legacy-table appointment-table">
-                <colgroup>
-                    <col class="office-label-column" />
-                    <col class="office-control-column" />
-                    <col class="office-label-column" />
-                    <col class="office-control-column" />
-                </colgroup>
-                <tbody>
-                    <tr>
-                        <td colspan="4" class="spacer" />
-                    </tr>
-                    <tr>
-                        <td colspan="4" class="section-title blue">수 뇌 부 임 명</td>
-                    </tr>
-                    <tr>
-                        <td colspan="4" class="appointment-workspace-cell">
-                            <div class="appointment-card-grid">
-                                <article v-for="level in chiefLevels" :key="level" class="appointment-card">
-                                    <header class="appointment-card-header">
-                                        <span>{{ formatOfficerLevelText(level, nationLevel) }}</span>
-                                        <small v-if="chiefLocked(level)" class="appointment-lock">변경 잠금</small>
-                                        <small v-else> 현재 {{ chiefAssignments[level]?.name ?? '공석' }} </small>
-                                    </header>
-
-                                    <template v-if="canManage && level !== 12 && !chiefLocked(level)">
-                                        <button
-                                            type="button"
-                                            class="selection-trigger"
-                                            :aria-label="`${formatOfficerLevelText(level, nationLevel)} 장수 선택`"
-                                            aria-haspopup="dialog"
-                                            @click="selectionContext = { kind: 'chief-general', level }"
-                                        >
-                                            <span
-                                                v-if="selectedChief(level)"
-                                                class="selection-trigger-portrait"
-                                                :style="{ backgroundImage: imageBackground(selectedChief(level)) }"
-                                                aria-hidden="true"
-                                            />
-                                            <span v-else class="selection-trigger-empty" aria-hidden="true">＋</span>
-                                            <span class="selection-trigger-copy">
-                                                <small>임명 대상</small>
-                                                <strong>{{ selectedChief(level)?.name ?? '공석으로 두기' }}</strong>
-                                                <span v-if="selectedChief(level)">
-                                                    {{ selectedChief(level)?.cityName ?? '-' }} ·
-                                                    {{ currentOfficeText(selectedChief(level)!) }}
-                                                </span>
-                                                <span v-else>눌러서 장수를 선택하세요</span>
-                                            </span>
-                                            <span class="selection-trigger-chevron" aria-hidden="true">›</span>
-                                        </button>
-                                        <div v-if="selectedChief(level)" class="selected-general-stats">
-                                            <span
-                                                >통솔
-                                                <strong>{{ selectedChief(level)?.stats.leadership }}</strong></span
-                                            >
-                                            <span
-                                                >무력 <strong>{{ selectedChief(level)?.stats.strength }}</strong></span
-                                            >
-                                            <span
-                                                >지력
-                                                <strong>{{ selectedChief(level)?.stats.intelligence }}</strong></span
-                                            >
-                                            <span
-                                                >소속 <strong>{{ selectedChief(level)?.belong }}년</strong></span
-                                            >
-                                        </div>
-                                        <button type="button" class="appointment-submit" @click="appointChief(level)">
-                                            {{ formatOfficerLevelText(level, nationLevel) }} 임명
-                                        </button>
-                                    </template>
-                                    <div v-else class="appointment-readonly">
-                                        <span
-                                            v-if="chiefAssignments[level]"
-                                            class="selection-trigger-portrait"
-                                            :style="{ backgroundImage: imageBackground(chiefAssignments[level]) }"
-                                            aria-hidden="true"
-                                        />
-                                        <span v-else class="selection-trigger-empty" aria-hidden="true">－</span>
-                                        <span>
-                                            <strong>{{ chiefAssignments[level]?.name ?? '공석' }}</strong>
-                                            <small>{{ chiefAssignments[level]?.cityName ?? '임명된 장수 없음' }}</small>
-                                        </span>
-                                    </div>
-                                </article>
-                            </div>
+                        <td class="green-cell award-label" colspan="2">
+                            <span class="award-label-full">오호장군【승전】</span>
+                            <span class="award-label-compact">오호장군</span>
                         </td>
+                        <td colspan="4">{{ awardText(data.awards.tigers) }}</td>
                     </tr>
                     <tr>
-                        <td colspan="4" class="legend">
-                            ※ 장수 선택 창에서 현재 임명 중인 장수, 다른 관직 재직자와 일반 장수를 구분하고 주요
-                            능력치·소재지·부대 정보를 함께 확인할 수 있습니다.
+                        <td class="green-cell award-label" colspan="2">
+                            <span class="award-label-full">건안칠자【계략】</span>
+                            <span class="award-label-compact">건안칠자</span>
                         </td>
+                        <td colspan="4">{{ awardText(data.awards.eagles) }}</td>
                     </tr>
                 </tbody>
             </table>
@@ -560,109 +434,12 @@ onMounted(() => void loadPersonnel());
                     <tr>
                         <td colspan="5" class="spacer" />
                     </tr>
-                    <template v-if="canManage">
-                        <tr>
-                            <td colspan="5" class="section-title orange-bg">도 시 관 직 임 명</td>
-                        </tr>
-                        <tr>
-                            <td colspan="5" class="appointment-workspace-cell">
-                                <div class="city-appointment-grid">
-                                    <article
-                                        v-for="level in cityOfficerLevels"
-                                        :key="level"
-                                        class="appointment-card city-appointment-card"
-                                    >
-                                        <header class="appointment-card-header">
-                                            <span>{{ officerLabels[level] }}</span>
-                                            <small>도시 관직</small>
-                                        </header>
-                                        <button
-                                            type="button"
-                                            class="selection-trigger compact"
-                                            :aria-label="`${officerLabels[level]} 도시 선택`"
-                                            aria-haspopup="dialog"
-                                            @click="selectionContext = { kind: 'city', level }"
-                                        >
-                                            <span class="selection-trigger-city" aria-hidden="true">城</span>
-                                            <span class="selection-trigger-copy">
-                                                <small>임명 도시</small>
-                                                <strong>{{ selectedCity(level)?.name ?? '도시 선택' }}</strong>
-                                                <span v-if="selectedCity(level)">
-                                                    {{ regionMap[selectedCity(level)?.region ?? 0] ?? '-' }} ·
-                                                    {{ cityLevelMap[selectedCity(level)?.level ?? 0] ?? '-' }}도시
-                                                </span>
-                                            </span>
-                                            <span class="selection-trigger-chevron" aria-hidden="true">›</span>
-                                        </button>
-                                        <button
-                                            type="button"
-                                            class="selection-trigger compact"
-                                            :aria-label="`${officerLabels[level]} 장수 선택`"
-                                            aria-haspopup="dialog"
-                                            @click="selectionContext = { kind: 'city-general', level }"
-                                        >
-                                            <span
-                                                v-if="selectedCityGeneral(level)"
-                                                class="selection-trigger-portrait"
-                                                :style="{
-                                                    backgroundImage: imageBackground(selectedCityGeneral(level)),
-                                                }"
-                                                aria-hidden="true"
-                                            />
-                                            <span v-else class="selection-trigger-empty" aria-hidden="true">＋</span>
-                                            <span class="selection-trigger-copy">
-                                                <small>임명 대상</small>
-                                                <strong>{{
-                                                    selectedCityGeneral(level)?.name ?? '공석으로 두기'
-                                                }}</strong>
-                                                <span v-if="selectedCityGeneral(level)">
-                                                    {{ selectedCityGeneral(level)?.cityName ?? '-' }} ·
-                                                    {{ currentOfficeText(selectedCityGeneral(level)!) }}
-                                                </span>
-                                            </span>
-                                            <span class="selection-trigger-chevron" aria-hidden="true">›</span>
-                                        </button>
-                                        <div v-if="selectedCityGeneral(level)" class="selected-general-stats compact">
-                                            <span
-                                                >통
-                                                <strong>{{
-                                                    selectedCityGeneral(level)?.stats.leadership
-                                                }}</strong></span
-                                            >
-                                            <span
-                                                >무
-                                                <strong>{{ selectedCityGeneral(level)?.stats.strength }}</strong></span
-                                            >
-                                            <span
-                                                >지
-                                                <strong>{{
-                                                    selectedCityGeneral(level)?.stats.intelligence
-                                                }}</strong></span
-                                            >
-                                        </div>
-                                        <button
-                                            type="button"
-                                            class="appointment-submit"
-                                            :disabled="!selectedCity(level)"
-                                            @click="appointCityOfficer(level)"
-                                        >
-                                            {{ officerLabels[level] }} 임명
-                                        </button>
-                                    </article>
-                                </div>
-                            </td>
-                        </tr>
-                        <tr>
-                            <td colspan="5" class="legend">
-                                ※ 도시의 지역·규모·현재 재직자와 장수의 능력치·현재 관직을 확인한 뒤 임명할 수 있습니다.
-                            </td>
-                        </tr>
-                    </template>
                     <tr class="city-header">
                         <td colspan="2">도 시</td>
-                        <td>태 수 (사관) 【현재도시】</td>
-                        <td>군 사 (사관) 【현재도시】</td>
-                        <td>종 사 (사관) 【현재도시】</td>
+                        <td v-for="level in cityOfficerLevels" :key="level">
+                            <span class="city-header-full">{{ officerLabels[level] }} (사관) 【현재도시】</span>
+                            <span class="city-header-compact">{{ officerLabels[level] }}</span>
+                        </td>
                     </tr>
                     <template v-for="(city, index) in data.cityAssignments" :key="city.id">
                         <tr v-if="index === 0 || data.cityAssignments[index - 1]?.region !== city.region">
@@ -673,40 +450,51 @@ onMounted(() => void loadPersonnel());
                         </tr>
                         <tr>
                             <td
-                                class="nation-city"
+                                colspan="2"
+                                class="nation-city city-identity"
                                 :style="{
                                     backgroundColor: data.nation.color,
                                     color: legacyNationTextColor(data.nation.color),
                                 }"
                             >
-                                【{{ cityLevelMap[city.level] ?? '-' }}】
-                            </td>
-                            <td
-                                class="nation-city city-name"
-                                :style="{
-                                    backgroundColor: data.nation.color,
-                                    color: legacyNationTextColor(data.nation.color),
-                                }"
-                            >
-                                {{ city.name }}
+                                <small>【{{ cityLevelMap[city.level] ?? '-' }}】</small>
+                                <strong>{{ city.name }}</strong>
                             </td>
                             <td
                                 v-for="level in cityOfficerLevels"
                                 :key="level"
+                                class="city-officer-cell"
                                 :class="{ locked: cityOfficerLocked(city, level) }"
                             >
-                                <template v-if="city.officers[level]">
-                                    {{ city.officers[level]?.name }}({{ city.officers[level]?.belong }}년) 【{{
-                                        city.officers[level]?.cityName ?? '-'
-                                    }}】
-                                </template>
-                                <template v-else>-</template>
+                                <div class="city-officer-entry">
+                                    <span class="city-officer-copy">
+                                        <strong>{{ city.officers[level]?.name ?? '공석' }}</strong>
+                                        <small v-if="city.officers[level]">
+                                            {{ city.officers[level]?.belong }}년 ·
+                                            {{ city.officers[level]?.cityName ?? '-' }}
+                                        </small>
+                                    </span>
+                                    <button
+                                        v-if="canManage && !cityOfficerLocked(city, level)"
+                                        type="button"
+                                        class="personnel-change-button city-change-button"
+                                        :aria-label="`${city.name} ${officerLabels[level]} 변경하기`"
+                                        aria-haspopup="dialog"
+                                        @click="selectionContext = { kind: 'city-general', level, cityId: city.id }"
+                                    >
+                                        변경하기
+                                    </button>
+                                    <small v-else-if="cityOfficerLocked(city, level)" class="personnel-lock-label">
+                                        변경 잠금
+                                    </small>
+                                </div>
                             </td>
                         </tr>
                     </template>
                     <tr>
                         <td colspan="5" class="legend">
-                            ※ <span class="orange">노란색</span>은 변경 불가능, 하얀색은 변경 가능 관직입니다.
+                            ※ 각 수뇌·도시 관직의 변경 버튼에서 후보 정보 확인과 임명을 한 번에 진행합니다.
+                            <span class="orange">노란색</span>은 변경 불가능 관직입니다.
                         </td>
                     </tr>
                 </tbody>
@@ -772,10 +560,8 @@ onMounted(() => void loadPersonnel());
         :description="selectionDescription"
         :items="selectionItems"
         :selected-id="selectionId"
-        :search-placeholder="
-            selectionContext?.kind === 'city' ? '도시명·지역·재직자 검색' : '장수명·도시·관직·특성 검색'
-        "
-        :vacancy-label="selectionContext?.kind === 'city' ? null : '공석으로 두기'"
+        search-placeholder="장수명·도시·관직·특성 검색"
+        vacancy-label="공석으로 두기"
         @cancel="selectionContext = null"
         @select="applySelection"
     />
@@ -902,19 +688,77 @@ select[multiple] {
 .kick-control-column {
     width: 90%;
 }
-.chief-status .role-cell {
+.chief-entry-cell {
+    padding: 6px !important;
+}
+.chief-entry {
+    display: grid;
+    grid-template-areas: 'role icon copy action';
+    grid-template-columns: 82px 64px minmax(0, 1fr) 78px;
+    gap: 8px;
+    align-items: center;
+    min-width: 0;
+}
+.chief-entry-role {
+    grid-area: role;
+    border: 1px solid #507d5b;
+    padding: 7px 4px;
+    color: #fff;
+    background: #24472e;
     text-align: center;
-    font-size: 18px;
+    font-size: 17px;
+    font-weight: 700;
 }
 .general-icon {
+    grid-area: icon;
+    width: 64px;
     height: 64px;
     background-repeat: no-repeat;
     background-position: center;
     background-size: 64px 64px;
 }
-.chief-name {
-    width: 332px;
+.chief-entry-copy {
+    display: grid;
+    grid-area: copy;
+    min-width: 0;
+}
+.chief-entry-copy strong {
+    overflow: hidden;
     font-size: 18px;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+.chief-entry-copy small {
+    overflow: hidden;
+    color: #c8c5bc;
+    font-size: 11px;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+.personnel-change-button {
+    grid-area: action;
+    min-height: 34px;
+    border-color: #557d5e;
+    padding: 4px 8px;
+    background: #315b3d;
+    font-weight: 700;
+}
+.personnel-change-button:hover {
+    filter: none;
+    background: #3c704a;
+    border-color: #7ba286;
+}
+.personnel-lock-label {
+    grid-area: action;
+    color: #e7b64c;
+    text-align: center;
+    font-size: 11px;
+}
+.award-label {
+    text-align: center;
+}
+.award-label-compact {
+    display: none;
 }
 .green-cell,
 .city-header,
@@ -943,186 +787,9 @@ select[multiple] {
 .red-bg {
     background: red;
 }
-.appointment-table .appoint-label,
 .permission-label {
     width: 98px;
     text-align: right;
-}
-.appointment-table .appoint-control {
-    width: 398px;
-}
-.appointment-workspace-cell {
-    padding: 12px !important;
-    background: linear-gradient(rgb(7 9 7 / 72%), rgb(7 9 7 / 72%)), var(--sammo-texture-walnut);
-}
-.appointment-card-grid,
-.city-appointment-grid {
-    display: grid;
-    gap: 12px;
-}
-.appointment-card-grid {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-}
-.city-appointment-grid {
-    grid-template-columns: repeat(3, minmax(0, 1fr));
-}
-.appointment-card {
-    min-width: 0;
-    padding: 12px;
-    background: linear-gradient(145deg, rgb(36 40 31 / 96%), rgb(16 18 15 / 98%));
-    border: 1px solid #555845;
-    border-radius: 10px;
-    box-shadow: 0 7px 18px rgb(0 0 0 / 28%);
-}
-.appointment-card-header {
-    display: flex;
-    gap: 8px;
-    align-items: baseline;
-    justify-content: space-between;
-    margin-bottom: 9px;
-    color: #e4cc8a;
-}
-.appointment-card-header > span {
-    font-size: 17px;
-    font-weight: 800;
-}
-.appointment-card-header small {
-    color: #aaa99f;
-}
-.appointment-card-header .appointment-lock {
-    color: #e6aa45;
-}
-.selection-trigger,
-.appointment-readonly {
-    display: grid;
-    grid-template-columns: 48px minmax(0, 1fr) 18px;
-    gap: 9px;
-    align-items: center;
-    width: 100%;
-    min-width: 0;
-    min-height: 70px;
-    border: 1px solid #5a5e4d;
-    border-radius: 8px;
-    padding: 8px;
-    color: #f7f4eb;
-    background: #10120f;
-    text-align: left;
-}
-.selection-trigger {
-    cursor: pointer;
-}
-.selection-trigger:hover {
-    filter: none;
-    background: #1d211a;
-    border-color: #9f9063;
-}
-.selection-trigger:focus-visible {
-    outline: 2px solid #f0cf75;
-    outline-offset: 2px;
-}
-.selection-trigger.compact {
-    grid-template-columns: 42px minmax(0, 1fr) 16px;
-    min-height: 62px;
-    margin-top: 7px;
-}
-.selection-trigger-portrait,
-.selection-trigger-empty,
-.selection-trigger-city {
-    width: 48px;
-    height: 48px;
-    border: 1px solid #5e6251;
-    border-radius: 8px;
-    background-color: #060706;
-}
-.selection-trigger-portrait {
-    background-position: center;
-    background-repeat: no-repeat;
-    background-size: cover;
-}
-.selection-trigger-empty,
-.selection-trigger-city {
-    display: grid;
-    place-items: center;
-    color: #d9bf78;
-    background: radial-gradient(circle at 50% 30%, #363828, #0d0f0c 75%);
-    font: 700 22px/1 var(--sammo-font-sans);
-}
-.compact .selection-trigger-portrait,
-.compact .selection-trigger-empty,
-.compact .selection-trigger-city {
-    width: 42px;
-    height: 42px;
-}
-.selection-trigger-copy,
-.appointment-readonly > span:last-child {
-    display: grid;
-    min-width: 0;
-}
-.selection-trigger-copy small,
-.appointment-readonly small {
-    color: #aaa99f;
-    font-size: 10px;
-}
-.selection-trigger-copy strong,
-.appointment-readonly strong {
-    overflow: hidden;
-    color: #fff;
-    font-size: 15px;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-}
-.selection-trigger-copy > span:last-child {
-    overflow: hidden;
-    color: #c0c0b8;
-    font-size: 11px;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-}
-.selection-trigger-chevron {
-    color: #cdb56e;
-    font-size: 26px;
-    text-align: center;
-}
-.appointment-readonly {
-    grid-template-columns: 48px minmax(0, 1fr);
-    color: #bbb;
-    background: #0d0e0c;
-}
-.selected-general-stats {
-    display: grid;
-    grid-template-columns: repeat(4, 1fr);
-    gap: 5px;
-    margin-top: 7px;
-}
-.selected-general-stats.compact {
-    grid-template-columns: repeat(3, 1fr);
-}
-.selected-general-stats > span {
-    display: flex;
-    gap: 4px;
-    justify-content: center;
-    padding: 4px 3px;
-    color: #aaa99f;
-    background: rgb(0 0 0 / 32%);
-    border-radius: 5px;
-    font-size: 10px;
-}
-.selected-general-stats strong {
-    color: #ead27f;
-}
-.appointment-submit {
-    width: 100%;
-    margin-top: 8px;
-    border-color: #4f7959;
-    color: #fff;
-    background: #376846;
-    font-weight: 800;
-}
-.appointment-submit:hover {
-    filter: brightness(1.15);
-}
-.city-appointment-card {
-    padding: 10px;
 }
 .legend {
     line-height: 18px;
@@ -1131,7 +798,7 @@ select[multiple] {
     color: red;
 }
 .orange,
-.locked {
+.city-officer-cell.locked {
     color: orange;
 }
 .permission-table select {
@@ -1145,6 +812,9 @@ select[multiple] {
     text-align: center;
     font-size: 18px;
 }
+.city-header-compact {
+    display: none;
+}
 .city-header td:first-child {
     width: 158px;
 }
@@ -1153,13 +823,45 @@ select[multiple] {
     color: skyblue;
     font-size: 18px;
 }
-.nation-city {
-    width: 78px;
+.city-identity {
+    display: table-cell;
+    width: 158px;
     text-align: center;
     font-size: 16.8px;
 }
-.city-name {
-    text-align: right;
+.city-identity small,
+.city-identity strong {
+    display: block;
+}
+.city-identity small {
+    font-size: 10px;
+}
+.city-officer-cell {
+    padding: 5px !important;
+    vertical-align: middle;
+}
+.city-officer-entry,
+.city-officer-copy {
+    display: grid;
+    min-width: 0;
+}
+.city-officer-entry {
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 7px;
+    align-items: center;
+}
+.city-officer-copy strong,
+.city-officer-copy small {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+.city-officer-copy small {
+    color: #c9c6bd;
+    font-size: 10px;
+}
+.city-change-button {
+    min-width: 70px;
 }
 .kick-label {
     width: 498px;
@@ -1182,6 +884,115 @@ select[multiple] {
 @media (max-width: 1000px) {
     .legacy-office {
         margin: 0;
+    }
+}
+@media (max-width: 620px) {
+    .legacy-office,
+    .legacy-table,
+    .feedback,
+    .loading {
+        width: min(500px, 100vw);
+    }
+    .heading-table {
+        margin-bottom: 10px;
+    }
+    .nation-heading {
+        font-size: 18px;
+    }
+    .chief-entry-cell {
+        padding: 4px !important;
+    }
+    .chief-entry {
+        grid-template-areas:
+            'icon copy'
+            'role action';
+        grid-template-columns: 48px minmax(0, 1fr);
+        gap: 5px 7px;
+    }
+    .chief-entry-role {
+        padding: 5px 2px;
+        font-size: 12px;
+    }
+    .general-icon {
+        width: 48px;
+        height: 48px;
+        background-size: 48px 48px;
+    }
+    .chief-entry-copy strong {
+        font-size: 15px;
+    }
+    .chief-entry-copy small {
+        font-size: 9px;
+    }
+    .personnel-change-button {
+        min-height: 30px;
+        padding: 3px 5px;
+        font-size: 11px;
+        line-height: 18px;
+    }
+    .personnel-lock-label {
+        font-size: 10px;
+    }
+    .award-label {
+        font-size: 11px;
+        white-space: nowrap;
+    }
+    .award-label-full {
+        display: none;
+    }
+    .award-label-compact {
+        display: inline;
+    }
+    select[multiple] {
+        width: calc(100% - 58px);
+        min-width: 0;
+    }
+    .city-header td {
+        height: 26px;
+        font-size: 13px;
+    }
+    .city-header-full {
+        display: none;
+    }
+    .city-header-compact {
+        display: inline;
+    }
+    .region-heading {
+        height: 25px;
+        font-size: 14px;
+    }
+    .city-identity {
+        width: 16%;
+        font-size: 13px;
+    }
+    .city-identity small {
+        font-size: 8px;
+    }
+    .city-officer-cell {
+        padding: 4px !important;
+    }
+    .city-officer-entry {
+        grid-template-columns: 1fr;
+        gap: 4px;
+    }
+    .city-officer-copy strong {
+        font-size: 12px;
+    }
+    .city-officer-copy small {
+        font-size: 9px;
+    }
+    .city-change-button {
+        width: 100%;
+        min-width: 0;
+    }
+    .legend {
+        font-size: 10px;
+    }
+    .kick-label {
+        width: auto;
+    }
+    .footer-table {
+        margin-top: 10px;
     }
 }
 </style>
