@@ -2,14 +2,8 @@ import { randomUUID } from 'node:crypto';
 
 import { asRecord, JosaUtil } from '@sammo-ts/common';
 import { acquireGameSchemaAdvisoryXactLock, GamePrisma } from '@sammo-ts/infra';
-import {
-    ActionLogger,
-    ItemLoader,
-    LogFormat,
-    buildAuctionAlias,
-    isItemKey,
-    resolveUniqueConfig,
-} from '@sammo-ts/logic';
+import { ActionLogger, ItemLoader, LogFormat, buildAuctionAlias, isItemKey } from '@sammo-ts/logic';
+import { resolveLegacyCompatibleUniqueConfig } from '@sammo-ts/logic/rewards/legacyUniqueItemPool.js';
 
 import type { TurnDaemonCommand, TurnDaemonCommandResult } from '../lifecycle/types.js';
 import type { InMemoryTurnWorld } from '../turn/inMemoryWorld.js';
@@ -147,7 +141,8 @@ const openUniqueAuction = async (
         return fail(`최소 경매 금액은 ${minimumPoint}입니다.`);
     }
 
-    const item = await new ItemLoader().load(itemKey).catch(() => null);
+    const itemLoader = new ItemLoader();
+    const item = await itemLoader.load(itemKey).catch(() => null);
     if (!item) {
         return fail('아이템 정보를 불러올 수 없습니다.');
     }
@@ -156,7 +151,7 @@ const openUniqueAuction = async (
     }
     const currentSlotItem = general.role.items[item.slot];
     if (currentSlotItem && currentSlotItem !== 'None' && isItemKey(currentSlotItem)) {
-        const currentItem = await new ItemLoader().load(currentSlotItem).catch(() => null);
+        const currentItem = await itemLoader.load(currentSlotItem).catch(() => null);
         if (currentItem && !currentItem.buyable) {
             return fail('이미 가진 아이템이 있습니다.');
         }
@@ -189,7 +184,7 @@ const openUniqueAuction = async (
         return fail('아직 경매가 끝나지 않았습니다.');
     }
 
-    const uniqueConfig = resolveUniqueConfig(configConst);
+    const uniqueConfig = await resolveLegacyCompatibleUniqueConfig(configConst, itemLoader);
     const configuredAmount = uniqueConfig.allItems[item.slot]?.[itemKey] ?? 0;
     const occupiedAmount = world
         .listGenerals()

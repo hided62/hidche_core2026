@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { formatServerDateTime } from '@sammo-ts/common';
+import { formatServerDateTime, JosaUtil } from '@sammo-ts/common';
 import { computed, onMounted, reactive, ref } from 'vue';
 import { trpc } from '../utils/trpc';
 
@@ -379,7 +379,8 @@ const buyRandomUnique = async () => {
 };
 
 const openUniqueAuction = async () => {
-    if (!uniqueForm.itemId.trim()) {
+    const selectedItem = status.value?.availableUnique.find((item) => item.key === uniqueForm.itemId.trim());
+    if (!selectedItem) {
         actionError.value = '유니크를 선택해주세요.';
         return;
     }
@@ -388,15 +389,20 @@ const openUniqueAuction = async () => {
         actionError.value = '입찰 포인트를 입력해주세요.';
         return;
     }
-    if (!window.confirm(`유니크 경매를 ${amount} 포인트로 신청하시겠습니까?`)) {
+    if (previousPoint.value < amount) {
+        actionError.value = '유산 포인트가 부족합니다.';
+        return;
+    }
+    const itemJosa = JosaUtil.pick(selectedItem.rawName, '을');
+    if (!window.confirm(`${amount} 포인트로 ${selectedItem.name}${itemJosa} 입찰하겠습니까?`)) {
         return;
     }
     await runAction(async () => {
         await trpc.inherit.openUniqueAuction.mutate({
-            itemId: uniqueForm.itemId.trim(),
+            itemId: selectedItem.key,
             amount,
         });
-    });
+    }, '성공했습니다. 경매장을 확인해주세요.');
 };
 
 const checkOwner = async () => {
