@@ -105,30 +105,38 @@ const buildContext = (options?: {
     authenticated?: boolean;
     isUnited?: boolean;
     includeOwnerDisplayName?: boolean;
+    profileId?: string;
     generals?: RankingGeneralRow[];
     rankRows?: Array<{ generalId: number; type: string; value: number }>;
 }): GameApiContext => {
     const selectedGeneralRows = options?.generals ?? generalRows;
+    const selectedProfile = options?.profileId
+        ? { ...profile, id: options.profileId, name: `${options.profileId}:default` }
+        : profile;
     const db = {
         $queryRaw: async (query: { strings?: readonly string[]; values?: unknown[] }) => {
             const sql = query.strings?.join(' ') ?? '';
             if (sql.includes('legacy_archive"."game_history')) {
+                if (!query.values?.includes(selectedProfile.id)) return [];
+                const sourceProfile = selectedProfile.id;
                 return [
                     {
-                        sourceProfile: 'hwe',
+                        sourceProfile,
                         season: 1,
                         scenario: 7,
-                        scenarioName: '이전 시나리오',
+                        scenarioName: `${sourceProfile.toUpperCase()} 이전 시나리오`,
                         count: 2n,
                     },
                 ];
             }
             if (sql.includes('legacy_archive"."hall')) {
+                if (!query.values?.includes(selectedProfile.id)) return [];
+                const sourceProfile = selectedProfile.id;
                 return query.values?.includes('experience')
                     ? [
                           {
-                              sourceProfile: 'hwe',
-                              serverId: 'hwe-old-1',
+                              sourceProfile,
+                              serverId: `${sourceProfile}-old-1`,
                               generalNo: 9,
                               type: 'experience',
                               value: 777,
@@ -224,13 +232,13 @@ const buildContext = (options?: {
         db: db as unknown as DatabaseClient,
         turnDaemon: new InMemoryTurnDaemonTransport(),
         battleSim: new InMemoryBattleSimTransport(),
-        profile,
+        profile: selectedProfile,
         auth: options?.authenticated === false ? null : auth,
         uploadDir: 'uploads',
         uploadPath: '/uploads',
         uploadPublicUrl: null,
         redis,
-        accessTokenStore: new RedisAccessTokenStore(redis, profile.name),
+        accessTokenStore: new RedisAccessTokenStore(redis, selectedProfile.name),
         flushStore: new InMemoryFlushStore(),
         gameTokenSecret: 'test-secret',
     };
@@ -378,29 +386,56 @@ describe('ranking hall of fame', () => {
         ]);
     });
 
-    it('keeps previous-server options and rankings in the dedicated archive source', async () => {
-        const caller = appRouter.createCaller(buildContext({ authenticated: false }));
-        await expect(caller.ranking.getHallOfFameOptions({ source: 'legacy' })).resolves.toEqual([
+    it('scopes previous-server options and rankings to the request profile', async () => {
+        const cheCaller = appRouter.createCaller(buildContext({ authenticated: false }));
+        await expect(cheCaller.ranking.getHallOfFameOptions({ source: 'legacy' })).resolves.toEqual([
             {
-                sourceProfile: 'hwe',
+                sourceProfile: 'che',
                 season: 1,
-                scenarios: [{ id: 7, name: '이전 시나리오', count: 2 }],
+                scenarios: [{ id: 7, name: 'CHE 이전 시나리오', count: 2 }],
             },
         ]);
 
-        const result = await caller.ranking.getHallOfFame({
+        const cheResult = await cheCaller.ranking.getHallOfFame({
             source: 'legacy',
-            sourceProfile: 'hwe',
             season: 1,
             scenario: 7,
         });
-        expect(result.source).toBe('legacy');
-        expect(result.sourceProfile).toBe('hwe');
-        expect(result.sections[0]).toMatchObject({
+        expect(cheResult.source).toBe('legacy');
+        expect(cheResult.sourceProfile).toBe('che');
+        expect(cheResult.sections[0]).toMatchObject({
             title: '명 성',
             entries: [expect.objectContaining({ generalId: 9, name: '과거장수', ownerName: '과거소유자' })],
         });
-        expect(JSON.stringify(result)).not.toContain('private-legacy-owner-id');
+        expect(JSON.stringify(cheResult)).not.toContain('private-legacy-owner-id');
+        const staleCrossProfileInput = {
+            source: 'legacy' as const,
+            sourceProfile: 'hwe' as const,
+            season: 1,
+            scenario: 7,
+        };
+        const staleClientResult = await cheCaller.ranking.getHallOfFame(staleCrossProfileInput);
+        expect(staleClientResult.sourceProfile).toBe('che');
+        expect(staleClientResult.sections[0]?.entries).toHaveLength(1);
+
+        const hweCaller = appRouter.createCaller(buildContext({ authenticated: false, profileId: 'hwe' }));
+        await expect(hweCaller.ranking.getHallOfFameOptions({ source: 'legacy' })).resolves.toEqual([
+            {
+                sourceProfile: 'hwe',
+                season: 1,
+                scenarios: [{ id: 7, name: 'HWE 이전 시나리오', count: 2 }],
+            },
+        ]);
+        const hweResult = await hweCaller.ranking.getHallOfFame({ source: 'legacy', season: 1, scenario: 7 });
+        expect(hweResult.sourceProfile).toBe('hwe');
+        expect(hweResult.sections[0]?.entries).toHaveLength(1);
+
+        const developmentCaller = appRouter.createCaller(
+            buildContext({ authenticated: false, profileId: 'development' })
+        );
+        await expect(developmentCaller.ranking.getHallOfFameOptions({ source: 'legacy' })).resolves.toEqual([]);
+        const developmentResult = await developmentCaller.ranking.getHallOfFame({ source: 'legacy', season: 1 });
+        expect(developmentResult.sections.every((section) => section.entries.length === 0)).toBe(true);
     });
 
     it('returns an explicit display name but never exposes the stored account identifier', async () => {

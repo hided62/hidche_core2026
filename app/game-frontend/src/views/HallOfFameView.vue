@@ -44,7 +44,6 @@ const loading = ref(false);
 const errorMessage = ref('');
 const options = ref<HallOption[]>([]);
 const selectedSource = ref<'current' | 'legacy'>('current');
-const selectedProfile = ref<string | null>(null);
 const selectedSeason = ref<number | null>(null);
 const selectedScenario = ref<number | null>(null);
 const data = ref<HallPayload | null>(null);
@@ -54,11 +53,10 @@ const selection = computed({
         selectedSeason.value === null
             ? ''
             : selectedScenario.value === null
-              ? `season:${selectedProfile.value ?? ''}:${selectedSeason.value}`
-              : `scenario:${selectedProfile.value ?? ''}:${selectedSeason.value}:${selectedScenario.value}`,
+              ? `season:${selectedSeason.value}`
+              : `scenario:${selectedSeason.value}:${selectedScenario.value}`,
     set: (value: string) => {
-        const [kind, profile, season, scenario] = value.split(':');
-        selectedProfile.value = profile || null;
+        const [kind, season, scenario] = value.split(':');
         selectedSeason.value = Number(season);
         selectedScenario.value = kind === 'scenario' ? Number(scenario) : null;
     },
@@ -79,11 +77,10 @@ const loadOptions = async (): Promise<void> => {
         options.value = await trpc.ranking.getHallOfFameOptions.query({ source: selectedSource.value });
         const first = options.value[0];
         if (first) {
-            selectedProfile.value = first.sourceProfile;
             selectedSeason.value = first.season;
             selectedScenario.value = null;
+            await loadHall();
         } else {
-            selectedProfile.value = null;
             selectedSeason.value = null;
             selectedScenario.value = null;
             data.value = null;
@@ -103,10 +100,6 @@ const loadHall = async (): Promise<void> => {
     try {
         data.value = (await trpc.ranking.getHallOfFame.query({
             source: selectedSource.value,
-            sourceProfile:
-                selectedSource.value === 'legacy'
-                    ? (selectedProfile.value as 'che' | 'kwe' | 'pwe' | 'twe' | 'nya' | 'pya' | 'hwe')
-                    : undefined,
             season: selectedSeason.value,
             scenario: selectedScenario.value ?? undefined,
         })) as HallPayload;
@@ -116,10 +109,6 @@ const loadHall = async (): Promise<void> => {
         loading.value = false;
     }
 };
-
-watch([selectedProfile, selectedSeason, selectedScenario], () => {
-    void loadHall();
-});
 
 watch(selectedSource, () => {
     void loadOptions();
@@ -145,19 +134,15 @@ onMounted(loadOptions);
 
         <label class="scenario-search">
             시나리오 검색 :
-            <select v-model="selection" aria-label="시나리오 검색">
-                <template v-for="season in options" :key="`${season.sourceProfile}:${season.season}`">
-                    <option :value="`season:${season.sourceProfile}:${season.season}`">
-                        * {{ selectedSource === 'legacy' ? `${season.sourceProfile.toUpperCase()} / ` : '' }}시즌 :
-                        {{ season.season }} 종합 *
-                    </option>
+            <select v-model="selection" aria-label="시나리오 검색" @change="loadHall">
+                <template v-for="season in options" :key="season.season">
+                    <option :value="`season:${season.season}`">* 시즌 : {{ season.season }} 종합 *</option>
                     <option
                         v-for="scenario in season.scenarios"
-                        :key="`${season.sourceProfile}:${season.season}:${scenario.id}`"
-                        :value="`scenario:${season.sourceProfile}:${season.season}:${scenario.id}`"
+                        :key="`${season.season}:${scenario.id}`"
+                        :value="`scenario:${season.season}:${scenario.id}`"
                     >
-                        {{ selectedSource === 'legacy' ? `${season.sourceProfile.toUpperCase()} / ` : ''
-                        }}{{ scenario.name }}({{ scenario.count }}회)
+                        {{ scenario.name }}({{ scenario.count }}회)
                     </option>
                 </template>
             </select>

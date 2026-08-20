@@ -10,7 +10,7 @@ import { accessAuthedInputProcedure, accessInputProcedure, procedure, router } f
 import {
     findLegacyHallOptions,
     findLegacyHallRows,
-    LEGACY_ARCHIVE_PROFILES,
+    isLegacyArchiveProfile,
 } from '../../services/legacyArchiveStore.js';
 
 const DEFAULT_BG_COLOR = '#330000';
@@ -392,11 +392,12 @@ export const rankingRouter = router({
         .input(z.object({ source: z.enum(['current', 'legacy']).default('current') }).optional())
         .query(async ({ ctx, input }) => {
             if ((input?.source ?? 'current') === 'legacy') {
-                const rows = await findLegacyHallOptions(ctx.db);
+                if (!isLegacyArchiveProfile(ctx.profile.id)) return [];
+                const rows = await findLegacyHallOptions(ctx.db, ctx.profile.id);
                 const optionMap = new Map<
                     string,
                     {
-                        sourceProfile: (typeof LEGACY_ARCHIVE_PROFILES)[number];
+                        sourceProfile: typeof ctx.profile.id;
                         season: number;
                         scenarios: Array<{ id: number; name: string; count: number }>;
                     }
@@ -441,7 +442,6 @@ export const rankingRouter = router({
     getHallOfFame: accessInputProcedure(
         z.object({
             source: z.enum(['current', 'legacy']).default('current'),
-            sourceProfile: z.enum(LEGACY_ARCHIVE_PROFILES).optional(),
             season: z.number().int(),
             scenario: z.number().int().optional(),
         })
@@ -486,9 +486,9 @@ export const rankingRouter = router({
                 }
                 const rows =
                     input.source === 'legacy'
-                        ? input.sourceProfile
+                        ? isLegacyArchiveProfile(ctx.profile.id)
                             ? await findLegacyHallRows(ctx.db, {
-                                  sourceProfile: input.sourceProfile,
+                                  sourceProfile: ctx.profile.id,
                                   season: input.season,
                                   ...(input.scenario === undefined ? {} : { scenario: input.scenario }),
                                   type: type.key,
@@ -528,6 +528,6 @@ export const rankingRouter = router({
             })
         );
 
-        return { source: input.source, sourceProfile: input.sourceProfile ?? ctx.profile.id, sections };
+        return { source: input.source, sourceProfile: ctx.profile.id, sections };
     }),
 });
