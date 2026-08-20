@@ -285,7 +285,10 @@ export const findLegacyEmperor = async (db: LegacyArchiveDatabase, id: number): 
     return rows[0] ?? null;
 };
 
-export const findLegacyHallOptions = async (db: LegacyArchiveDatabase): Promise<LegacyHallOptionRow[]> =>
+export const findLegacyHallOptions = async (
+    db: LegacyArchiveDatabase,
+    sourceProfile: LegacyArchiveProfile
+): Promise<LegacyHallOptionRow[]> =>
     db.$queryRaw<LegacyHallOptionRow[]>(GamePrisma.sql`
         SELECT
             "source_profile" AS "sourceProfile",
@@ -294,6 +297,7 @@ export const findLegacyHallOptions = async (db: LegacyArchiveDatabase): Promise<
             MAX("scenario_name") AS "scenarioName",
             COUNT(*)::bigint AS "count"
         FROM "legacy_archive"."game_history"
+        WHERE "source_profile" = ${sourceProfile}
         GROUP BY "source_profile", "season", "scenario"
         ORDER BY "season" DESC, "source_profile", "scenario"
     `);

@@ -10,20 +10,25 @@ const isLegacyRequest = (route: Route): boolean =>
     decodeURIComponent(`${route.request().url()} ${route.request().postData() ?? ''}`).includes('legacy');
 
 const installArchiveViews = async (page: Page) => {
+    const hallRequests: string[] = [];
     await page.addInitScript((profile) => {
         localStorage.setItem('sammo-game-token', 'ga_archive_views');
         localStorage.setItem('sammo-game-profile', profile);
     }, gameProfile);
     await page.route(gameTrpcRoute, async (route) => {
         const legacy = isLegacyRequest(route);
-        const results = operationNames(route).map((operation) => {
+        const operations = operationNames(route);
+        if (operations.some((operation) => operation.startsWith('ranking.getHallOfFame'))) {
+            hallRequests.push(decodeURIComponent(`${route.request().url()} ${route.request().postData() ?? ''}`));
+        }
+        const results = operations.map((operation) => {
             if (operation === 'auth.status') return response({ ok: true });
             if (operation === 'lobby.info') return response({ myGeneral: { id: 1, name: '기록장수' } });
             if (operation === 'ranking.getHallOfFameOptions') {
                 return response([
                     {
-                        sourceProfile: legacy ? 'hwe' : 'che',
-                        season: legacy ? 1 : 2,
+                        sourceProfile: 'che',
+                        season: 1,
                         scenarios: [{ id: 7, name: legacy ? '이전 시나리오' : '현재 시나리오', count: 1 }],
                     },
                 ]);
@@ -31,7 +36,7 @@ const installArchiveViews = async (page: Page) => {
             if (operation === 'ranking.getHallOfFame') {
                 return response({
                     source: legacy ? 'legacy' : 'current',
-                    sourceProfile: legacy ? 'hwe' : 'che',
+                    sourceProfile: 'che',
                     sections: [
                         {
                             title: '명 성',
@@ -184,18 +189,32 @@ const installArchiveViews = async (page: Page) => {
         });
         await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(results) });
     });
+    return { hallRequests };
 };
 
-test('명예의 전당은 현재 기록과 이전 서버 기록을 분리해 조회한다', async ({ page }) => {
-    await installArchiveViews(page);
+test('명예의 전당은 현재 profile의 현재·이전 서버 기록만 조회한다', async ({ page }, testInfo) => {
+    const state = await installArchiveViews(page);
     await page.setViewportSize({ width: 1000, height: 800 });
     await page.goto('hall-of-fame');
 
     await expect(page.getByText('현재장수')).toBeVisible();
     await page.getByLabel('기록 구분').selectOption('legacy');
     await expect(page.getByText('이전장수')).toBeVisible();
-    await expect(page.getByLabel('시나리오 검색')).toContainText('HWE / 이전 시나리오');
+    await expect(page.getByLabel('시나리오 검색')).toContainText('이전 시나리오');
+    await expect(page.getByLabel('시나리오 검색')).not.toContainText('HWE /');
+    expect(state.hallRequests.some((request) => request.includes('legacy'))).toBe(true);
+    expect(state.hallRequests.every((request) => !request.includes('sourceProfile'))).toBe(true);
     await expect(page.locator('.legacy-hall-page')).toHaveCSS('width', '1000px');
+    await page.getByLabel('시나리오 검색').focus();
+    await expect(page.getByLabel('시나리오 검색')).toBeFocused();
+    await page.screenshot({ path: testInfo.outputPath('hall-profile-scope-desktop.png'), fullPage: true });
+
+    await page.setViewportSize({ width: 390, height: 844 });
+    await expect(page.locator('.legacy-hall-page')).toHaveCSS('width', '500px');
+    expect(
+        await page.getByLabel('시나리오 검색').evaluate((element) => element.scrollWidth <= element.clientWidth)
+    ).toBe(true);
+    await page.screenshot({ path: testInfo.outputPath('hall-profile-scope-mobile.png'), fullPage: true });
 });
 
 test('왕조 일람과 상세는 이전 서버 source와 profile을 유지한다', async ({ page }) => {
