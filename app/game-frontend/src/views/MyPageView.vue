@@ -743,7 +743,7 @@ onMounted(() => {
             </li>
         </ol>
         <div class="mobile-layout-dialog__actions">
-            <button type="button" @click="resetMobileLayoutOrder">Ref 초깃값</button>
+            <button type="button" @click="resetMobileLayoutOrder">기본값</button>
             <form method="dialog"><button type="submit">취소</button></form>
             <button class="mobile-layout-apply" type="button" @click="applyMobileLayoutOrder">적용</button>
         </div>
