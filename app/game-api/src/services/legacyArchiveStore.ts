@@ -270,7 +270,26 @@ export const findLegacyEmperors = async (
     `);
 };
 
-export const findLegacyEmperor = async (db: LegacyArchiveDatabase, id: number): Promise<LegacyEmperorRow | null> => {
+export const findLegacyEmperorsByProfile = async (
+    db: LegacyArchiveDatabase,
+    sourceProfile: LegacyArchiveProfile
+): Promise<LegacyEmperorRow[]> =>
+    db.$queryRaw<LegacyEmperorRow[]>(GamePrisma.sql`
+        SELECT
+            "id",
+            "source_profile" AS "sourceProfile",
+            "legacy_id" AS "legacyId",
+            "server_id" AS "serverId",
+            "data"
+        FROM "legacy_archive"."emperor"
+        WHERE "source_profile" = ${sourceProfile}
+        ORDER BY "id" DESC
+    `);
+
+export const findLegacyEmperor = async (
+    db: LegacyArchiveDatabase,
+    input: { id: number; sourceProfile: LegacyArchiveProfile }
+): Promise<LegacyEmperorRow | null> => {
     const rows = await db.$queryRaw<LegacyEmperorRow[]>(GamePrisma.sql`
         SELECT
             "id",
@@ -279,7 +298,8 @@ export const findLegacyEmperor = async (db: LegacyArchiveDatabase, id: number): 
             "server_id" AS "serverId",
             "data"
         FROM "legacy_archive"."emperor"
-        WHERE "id" = ${id}
+        WHERE "id" = ${input.id}
+          AND "source_profile" = ${input.sourceProfile}
         LIMIT 1
     `);
     return rows[0] ?? null;
