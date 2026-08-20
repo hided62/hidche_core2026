@@ -13,6 +13,7 @@ import {
 } from '@sammo-ts/logic';
 import type { InheritBuffType } from '@sammo-ts/logic';
 import { simpleSerialize } from '@sammo-ts/logic/war/utils.js';
+import { resolveLegacyCompatibleUniqueConfig } from '@sammo-ts/logic/rewards/legacyUniqueItemPool.js';
 import {
     appendInheritanceLog,
     buildResetCost,
@@ -74,17 +75,17 @@ const readBuffLevel = (buff: Record<string, number>, key: InheritBuffType): numb
 };
 
 const loadAvailableUniqueItems = async (worldState: WorldStateRow) => {
-    const configuredItems = asRecord(asRecord(worldState.config).const).allItems;
+    const configConst = asRecord(asRecord(worldState.config).const);
+    const loader = new ItemLoader();
+    const { allItems } = await resolveLegacyCompatibleUniqueConfig(configConst, loader);
     const enabledKeys: Array<Parameters<ItemLoader['load']>[0]> = [];
-    for (const entries of Object.values(asRecord(configuredItems))) {
+    for (const entries of Object.values(allItems)) {
         for (const [key, amount] of Object.entries(asRecord(entries))) {
             if (asNumber(amount, 0) !== 0 && isItemKey(key)) {
                 enabledKeys.push(key);
             }
         }
     }
-
-    const loader = new ItemLoader();
     const items = await Promise.all(
         [...new Set(enabledKeys)].map(async (key) => {
             const item = await loader.load(key);
