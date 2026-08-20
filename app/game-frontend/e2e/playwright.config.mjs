@@ -21,6 +21,7 @@ export default defineConfig({
         'troop.spec.ts',
         'board.spec.ts',
         'inGameInfo.spec.ts',
+        'nationCityOfficeIntegration.spec.ts',
         'inGameMenus.spec.ts',
         'nationOffices.spec.ts',
         'diplomacy.spec.ts',
