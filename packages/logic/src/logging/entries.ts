@@ -47,8 +47,9 @@ export const finalizeLogEntry = (entry: LogEntryDraft, context: LogContext): Log
     if (entry.meta !== undefined) {
         record.meta = entry.meta;
     }
-    if (context.at !== undefined) {
-        record.createdAt = context.at;
+    const createdAt = entry.occurredAt ?? context.at;
+    if (createdAt !== undefined) {
+        record.createdAt = createdAt;
     }
 
     return record;

@@ -135,7 +135,16 @@ describe('buildTurnCommandTable', () => {
                 'che_정착장려',
                 'che_주민선정',
             ],
-            군사: ['che_징병', 'che_모병', 'che_훈련', 'che_사기진작', 'che_출병', 'che_집합', 'che_소집해제'],
+            군사: [
+                'che_징병',
+                'che_모병',
+                'che_훈련',
+                'che_사기진작',
+                'che_출병',
+                'che_집합',
+                'che_소집해제',
+                'che_첩보',
+            ],
             인사: ['che_이동', 'che_강행', 'che_인재탐색', 'che_귀환', 'che_임관', 'che_랜덤임관'],
             계략: ['che_선동', 'che_탈취', 'che_파괴', 'che_화계'],
             국가: ['che_증여', 'che_헌납', 'che_물자조달', 'che_하야', 'che_거병', 'che_건국', 'che_선양', 'che_해산'],
@@ -218,6 +227,37 @@ describe('buildTurnCommandTable', () => {
             possible: false,
             status: 'blocked',
             reason: '재야입니다.',
+        });
+    });
+
+    it('exposes the user-only spy command with a city target when the actor can pay the Ref cost', async () => {
+        const general = { ...buildGeneral(), gold: 300, rice: 300 } as GeneralRow;
+        const table = await buildTurnCommandTable({
+            worldState: buildWorldState(),
+            general,
+            city: buildCity(),
+            nation: buildNation(),
+            nationGenerals: null,
+        });
+
+        const spy = table.general
+            .find(({ category }) => category === '군사')
+            ?.values.find(({ key }) => key === 'che_첩보');
+
+        expect(spy).toMatchObject({
+            name: '첩보',
+            reqArg: true,
+            possible: true,
+            status: 'available',
+            inputFields: [
+                {
+                    key: 'destCityId',
+                    label: '대상 도시',
+                    kind: 'select',
+                    required: true,
+                    optionSource: 'cities',
+                },
+            ],
         });
     });
 

@@ -814,7 +814,11 @@ export class InMemoryTurnWorld {
         };
     }
 
-    pushLog(entry: LogEntryDraft): void {
+    pushLog(entry: LogEntryDraft, occurredAt?: Date): void {
+        if (occurredAt && !entry.occurredAt) {
+            this.logs.push({ ...entry, occurredAt: new Date(occurredAt.getTime()) });
+            return;
+        }
         this.logs.push(entry);
     }
 
@@ -1382,7 +1386,12 @@ export class InMemoryTurnWorld {
             this.dirtyNationIds.add(result.nation.id);
         }
         if (result.logs && result.logs.length > 0) {
-            this.logs.push(...result.logs);
+            // Ref command logs use the executing general's pre-advance turntime.
+            // Preserve that per-entry occurrence time instead of replacing every
+            // log in the transaction with the shared completion cursor at flush.
+            for (const log of result.logs) {
+                this.pushLog(log, currentGeneral.turnTime);
+            }
         }
         if (result.messages && result.messages.length > 0) {
             this.messages.push(...result.messages);

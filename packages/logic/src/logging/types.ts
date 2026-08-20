@@ -31,6 +31,8 @@ export interface LogEntryDraft {
     /** 월 경계 전 action처럼 flush 시점과 다른 달에 귀속되는 로그의 명시적 날짜. */
     year?: number;
     month?: number;
+    /** 로그를 만든 논리 게임 시각. 생략하면 flush context의 시각을 사용한다. */
+    occurredAt?: Date;
 }
 
 export interface LogEntryRecord {
