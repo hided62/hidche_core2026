@@ -63,6 +63,7 @@ try {
                 `reference main progress bars missing: ${JSON.stringify({
                     url: page.url(),
                     title: await page.title(),
+                    bodyText: (await page.locator('body').innerText()).slice(0, 500),
                     cityCards: await page.locator('.city-card-basic').count(),
                     generalCards: await page.locator('.general-card-basic').count(),
                     legacyBars: await page.locator('.bar_out').count(),
@@ -84,11 +85,33 @@ try {
                     fillBackgroundImage: fillStyle?.backgroundImage ?? '',
                 };
             };
+            const inspectPanel = (selector) => {
+                const element = document.querySelector(selector);
+                if (!(element instanceof HTMLElement)) return null;
+                const rect = element.getBoundingClientRect();
+                const style = getComputedStyle(element);
+                return {
+                    text: element.textContent?.replace(/\s+/gu, ' ').trim() ?? '',
+                    rect: { x: rect.x, y: rect.y, width: rect.width, height: rect.height },
+                    backgroundColor: style.backgroundColor,
+                    color: style.color,
+                };
+            };
+            const cityCard = document.querySelector('.city-card-basic');
+            if (!(cityCard instanceof HTMLElement)) throw new Error('reference city card missing');
             return {
                 viewport: { width: innerWidth, height: innerHeight },
                 city: [...document.querySelectorAll('.city-card-basic .sammo-bar')].map(inspect),
                 general: [...document.querySelectorAll('.general-card-basic .sammo-bar')].map(inspect),
-                cityCard: document.querySelector('.city-card-basic').getBoundingClientRect().toJSON(),
+                cityCard: cityCard.getBoundingClientRect().toJSON(),
+                cityLayout: {
+                    gridTemplateColumns: getComputedStyle(cityCard).gridTemplateColumns,
+                    title: inspectPanel('.city-card-basic .cityNamePanel'),
+                    nation: inspectPanel('.city-card-basic .nationNamePanel'),
+                    population: inspectPanel('.city-card-basic .popPanel'),
+                    trust: inspectPanel('.city-card-basic .trustPanel'),
+                    officers: [4, 3, 2].map((level) => inspectPanel(`.city-card-basic .officer${level}Panel`)),
+                },
                 generalCard: document.querySelector('.general-card-basic').getBoundingClientRect().toJSON(),
             };
         });

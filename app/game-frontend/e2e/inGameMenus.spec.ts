@@ -123,6 +123,7 @@ const myGeneral = (state: FixtureState) => ({
         regionName: '중원',
         nationId: 1,
         nationName: '위',
+        nationColor: '#ffff00',
         population: 1000,
         populationMax: 2000,
         agriculture: 100,
@@ -139,6 +140,11 @@ const myGeneral = (state: FixtureState) => ({
         wallMax: 200,
         supplyState: 1,
         frontState: 0,
+        officers: {
+            4: { id: 8, name: '태수장', npcState: 0 },
+            3: { id: 9, name: '군사장', npcState: 2 },
+            2: { id: 10, name: '종사장', npcState: 6 },
+        },
     },
     nation: state.buildNationCandidateEnabled
         ? {
@@ -679,10 +685,75 @@ test('메인 카드의 국가·수도·관직·계급·병종은 Ref 출력명�
     await expect(generalCard).toContainText('계급 29품관');
 
     const cityCard = page.locator('.city-card');
-    await expect(cityCard.locator('.title')).toContainText('【중원 | 특】 업');
-    await expect(cityCard.locator('.title')).toContainText('지배 국가 【 위 】');
+    await expect(cityCard.locator('.city-title')).toHaveText('【중원 | 특】 업');
+    await expect(cityCard.locator('.city-nation')).toHaveText('지배 국가 【 위 】');
     await expect(page.locator('.main-page')).not.toContainText('che_');
 });
+
+for (const viewport of [
+    { name: 'desktop', width: 1000, height: 900, columns: 4, cardWidth: 700, cardHeight: 125.390625 },
+    { name: 'mobile', width: 500, height: 900, columns: 3, cardWidth: 500, cardHeight: 147.390625 },
+] as const) {
+    test(`메인 도시 카드는 Ref의 국가색·주민 폭·도시 관직 배치를 유지한다 (${viewport.name})`, async ({ page }) => {
+        const state: FixtureState = {
+            permission: 'head',
+            myset: 3,
+            settingMutations: [],
+            accessPages: [],
+        };
+        await install(page, state);
+        await page.setViewportSize({ width: viewport.width, height: viewport.height });
+        await page.goto('');
+
+        const cityCard = page.locator('[data-city-basic-card]');
+        await expect(cityCard.locator('.city-title')).toHaveText('【중원 | 특】 업');
+        await expect(cityCard.locator('.city-nation')).toHaveText('지배 국가 【 위 】');
+        await expect(cityCard.locator('[data-city-officer="4"]')).toContainText('태수장');
+        await expect(cityCard.locator('[data-city-officer="3"]')).toContainText('군사장');
+        await expect(cityCard.locator('[data-city-officer="2"]')).toContainText('종사장');
+
+        const geometry = await cityCard.evaluate((element) => {
+            const rect = (selector: string) => element.querySelector<HTMLElement>(selector)!.getBoundingClientRect();
+            const style = (selector: string) => getComputedStyle(element.querySelector<HTMLElement>(selector)!);
+            const cardRect = element.getBoundingClientRect();
+            const populationRect = rect('[data-city-progress="주민"]');
+            const trustRect = rect('[data-city-progress="민심"]');
+            const populationBarRect = rect('[data-city-progress="주민"] [role="progressbar"]');
+            const trustBarRect = rect('[data-city-progress="민심"] [role="progressbar"]');
+            return {
+                card: { width: cardRect.width, height: cardRect.height },
+                columns: style('.city-grid').gridTemplateColumns.split(' ').length,
+                title: {
+                    backgroundColor: style('.city-title').backgroundColor,
+                    color: style('.city-title').color,
+                },
+                nation: {
+                    backgroundColor: style('.city-nation').backgroundColor,
+                    color: style('.city-nation').color,
+                },
+                populationWidth: populationRect.width,
+                trustWidth: trustRect.width,
+                populationBarWidth: populationBarRect.width,
+                trustBarWidth: trustBarRect.width,
+                officerColors: [4, 3, 2].map(
+                    (level) => style(`[data-city-officer="${level}"] .city-officer__name`).color
+                ),
+                overflow: document.documentElement.scrollWidth - document.documentElement.clientWidth,
+            };
+        });
+
+        expect(geometry.columns).toBe(viewport.columns);
+        expect(geometry.card.width).toBeCloseTo(viewport.cardWidth, 0);
+        expect(geometry.card.height).toBeCloseTo(viewport.cardHeight, 0);
+        expect(geometry.title).toEqual({ backgroundColor: 'rgb(255, 255, 0)', color: 'rgb(0, 0, 0)' });
+        expect(geometry.nation).toEqual({ backgroundColor: 'rgb(255, 255, 0)', color: 'rgb(0, 0, 0)' });
+        expect(geometry.populationWidth).toBeCloseTo(geometry.trustWidth * 2, 0);
+        expect(geometry.populationBarWidth).toBeGreaterThan(geometry.trustBarWidth * 2.4);
+        expect(geometry.officerColors).toEqual(['rgb(255, 255, 255)', 'rgb(0, 255, 255)', 'rgb(102, 205, 170)']);
+        expect(geometry.overflow).toBe(0);
+        await persistParityArtifact(page, `main-city-card-${viewport.name}`, geometry);
+    });
+}
 
 test('메인 장수 동향과 개인 전투 기록은 Ref 행 간격·색상·글자 크기를 유지한다', async ({ page }) => {
     const state: FixtureState = {

@@ -777,7 +777,12 @@ button {
     display: none;
 }
 
-[data-main-target='map'] :deep(.panel-body) {
+[data-main-target='city'] :deep(.panel-header) {
+    display: none;
+}
+
+[data-main-target='map'] :deep(.panel-body),
+[data-main-target='city'] :deep(.panel-body) {
     padding: 0;
 }
 
