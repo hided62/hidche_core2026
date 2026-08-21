@@ -598,11 +598,15 @@ test('finance enforces edit permissions and preserves the old value across an AP
     const input = page.getByRole('spinbutton', { name: '세율' });
     await input.fill('25');
     await page.locator('.policy-cell').filter({ hasText: '세율' }).getByRole('button', { name: '변경' }).click();
-    await expect(page.getByRole('alert')).toContainText('세율을 변경할 수 없습니다.');
+    await expect(page.locator('[data-testid="game-toast"][data-feedback-kind="error"]')).toContainText(
+        '세율을 변경할 수 없습니다.'
+    );
     await expect(input).toHaveValue('20');
     await input.fill('25');
     await page.locator('.policy-cell').filter({ hasText: '세율' }).getByRole('button', { name: '변경' }).click();
-    await expect(page.getByRole('status')).toContainText('세율을 변경했습니다.');
+    await expect(page.locator('[data-testid="game-toast"][data-feedback-kind="success"]')).toContainText(
+        '세율을 변경했습니다.'
+    );
     expect(state.rate).toBe(25);
 
     const readOnly = await page.context().newPage();

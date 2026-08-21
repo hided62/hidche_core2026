@@ -299,12 +299,16 @@ test('resource auction preserves the legacy desktop structure, geometry, and int
     const bidInput = page.getByRole('spinbutton', { name: '1번 경매 입찰가' });
     await bidInput.fill('800');
     await page.getByRole('button', { name: '입찰', exact: true }).click();
-    await expect(page.getByRole('alert')).toContainText('금이 부족합니다.');
+    await expect(page.locator('[data-testid="game-toast"][data-feedback-kind="error"]')).toContainText(
+        '금이 부족합니다.'
+    );
     await page.screenshot({ path: 'test-results/auction/resource-desktop-error.png', fullPage: true });
     expect(state.resourceBidCount).toBe(0);
 
     await page.getByRole('button', { name: '입찰', exact: true }).click();
-    await expect(page.getByRole('status')).toContainText('입찰했습니다.');
+    await expect(page.locator('[data-testid="game-toast"][data-feedback-kind="success"]')).toContainText(
+        '입찰했습니다.'
+    );
     expect(state.resourceBidCount).toBe(1);
 
     await firstRow.hover();
@@ -370,7 +374,9 @@ test('unique auction separates ongoing and finished lists and auto-loads the leg
         await dialog.accept();
     });
     await page.getByRole('button', { name: '입찰', exact: true }).click();
-    await expect(page.getByRole('status')).toContainText('입찰이 완료되었습니다.');
+    await expect(page.locator('[data-testid="game-toast"][data-feedback-kind="success"]')).toContainText(
+        '입찰이 완료되었습니다.'
+    );
     expect(state.uniqueBidCount).toBe(1);
     await page.screenshot({ path: 'test-results/auction/unique-desktop.png', fullPage: true });
 });

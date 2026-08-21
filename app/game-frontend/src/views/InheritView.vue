@@ -3,6 +3,7 @@ import { formatServerDateTime } from '@sammo-ts/common/time/ServerDateTime';
 import { JosaUtil } from '@sammo-ts/common/util/JosaUtil';
 import { computed, onMounted, reactive, ref } from 'vue';
 import { trpc } from '../utils/trpc';
+import { useGameFeedback } from '../composables/useGameFeedback';
 
 type InheritStatus = Awaited<ReturnType<typeof trpc.inherit.getStatus.query>>;
 type InheritLog = Awaited<ReturnType<typeof trpc.inherit.getLogs.query>>[number];
@@ -110,9 +111,8 @@ const logs = ref<InheritLog[]>([]);
 const logLoading = ref(false);
 const logEnd = ref(false);
 
-const actionError = ref<string | null>(null);
-const actionMessage = ref<string | null>(null);
 const actionBusy = ref(false);
+const { success: showSuccessToast, error: showErrorToast } = useGameFeedback();
 
 const joinConfig = ref<JoinConfig | null>(null);
 
@@ -262,7 +262,6 @@ const syncSelections = () => {
 const loadStatus = async () => {
     loading.value = true;
     error.value = null;
-    actionError.value = null;
     try {
         status.value = await trpc.inherit.getStatus.query();
         syncSelections();
@@ -292,7 +291,7 @@ const loadLogs = async (reset = false) => {
         logs.value = reset ? result : [...logs.value, ...result];
         logEnd.value = result.length < 30;
     } catch (err) {
-        actionError.value = resolveErrorMessage(err);
+        showErrorToast(resolveErrorMessage(err));
     } finally {
         logLoading.value = false;
     }
@@ -303,17 +302,15 @@ const runAction = async (action: () => Promise<void>, message?: string) => {
         return;
     }
     actionBusy.value = true;
-    actionError.value = null;
-    actionMessage.value = null;
     try {
         await action();
         if (message) {
-            actionMessage.value = message;
+            showSuccessToast(message);
         }
         await loadStatus();
         await loadLogs(true);
     } catch (err) {
-        actionError.value = resolveErrorMessage(err);
+        showErrorToast(resolveErrorMessage(err));
     } finally {
         actionBusy.value = false;
     }
@@ -335,7 +332,7 @@ const buyHiddenBuff = async (key: BuffKey) => {
 
 const reserveSpecialWar = async () => {
     if (!nextSpecialKey.value) {
-        actionError.value = '다음 전투 특기를 선택해주세요.';
+        showErrorToast('다음 전투 특기를 선택해주세요.');
         return;
     }
     const name = specialNameMap.value.get(nextSpecialKey.value) ?? nextSpecialKey.value;
@@ -371,7 +368,7 @@ const resetTurnTime = async () => {
 
 const resetStats = async () => {
     if (resetStatErrors.value.length > 0) {
-        actionError.value = resetStatErrors.value[0] ?? '입력값을 확인해주세요.';
+        showErrorToast(resetStatErrors.value[0] ?? '입력값을 확인해주세요.');
         return;
     }
     if (!window.confirm('능력치를 초기화하시겠습니까?')) {
@@ -400,16 +397,16 @@ const buyRandomUnique = async () => {
 const openUniqueAuction = async () => {
     const selectedItem = status.value?.availableUnique.find((item) => item.key === uniqueForm.itemId.trim());
     if (!selectedItem) {
-        actionError.value = '유니크를 선택해주세요.';
+        showErrorToast('유니크를 선택해주세요.');
         return;
     }
     const amount = Math.max(0, Math.floor(uniqueForm.amount));
     if (amount <= 0) {
-        actionError.value = '입찰 포인트를 입력해주세요.';
+        showErrorToast('입찰 포인트를 입력해주세요.');
         return;
     }
     if (previousPoint.value < amount) {
-        actionError.value = '유산 포인트가 부족합니다.';
+        showErrorToast('유산 포인트가 부족합니다.');
         return;
     }
     const itemJosa = JosaUtil.pick(selectedItem.rawName, '을');
@@ -427,7 +424,7 @@ const openUniqueAuction = async () => {
 const checkOwner = async () => {
     const targetId = Number(ownerTargetId.value);
     if (!targetId) {
-        actionError.value = '확인할 장수를 선택해주세요.';
+        showErrorToast('확인할 장수를 선택해주세요.');
         return;
     }
     const cost = status.value?.inheritConst.inheritCheckOwnerPoint ?? 0;
@@ -465,8 +462,7 @@ onMounted(() => {
 
     <main id="container" class="inherit-page legacy-bg0">
         <input type="hidden" name="inheritanceAction" value="inherit" />
-        <div v-if="error || actionError" class="notice error" role="alert">{{ error ?? actionError }}</div>
-        <div v-if="actionMessage" class="notice success">{{ actionMessage }}</div>
+        <div v-if="error" class="notice error" role="alert">{{ error }}</div>
         <div v-if="loading" class="loading-state">불러오는 중...</div>
 
         <template v-else-if="status">
@@ -819,10 +815,6 @@ onMounted(() => {
 
 .notice.error {
     color: #ffb0b0;
-}
-
-.notice.success {
-    color: #b6efb6;
 }
 
 .point-grid,

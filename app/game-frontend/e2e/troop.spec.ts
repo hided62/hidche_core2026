@@ -387,12 +387,16 @@ test('shows API failure then creates a troop successfully', async ({ page }) => 
     const input = page.getByRole('textbox', { name: '부대명' });
     await input.fill('실패대');
     await page.getByRole('button', { name: '부대 창설', exact: true }).click();
-    await expect(page.getByRole('alert')).toContainText('부대 이름이 없습니다.');
+    await expect(page.locator('[data-testid="game-toast"][data-feedback-kind="error"]')).toContainText(
+        '부대 이름이 없습니다.'
+    );
     expect(state.me.troopId).toBe(0);
 
     await input.fill('신규대');
     await page.getByRole('button', { name: '부대 창설', exact: true }).click();
-    await expect(page.getByRole('status')).toContainText('신규대 부대가 생성되었습니다.');
+    await expect(page.locator('[data-testid="game-toast"][data-feedback-kind="success"]')).toContainText(
+        '신규대 부대가 생성되었습니다.'
+    );
     await expect(page.locator('.troopInfo').filter({ hasText: '신규대' })).toBeVisible();
     await expect(input).toBeHidden();
 });
@@ -410,13 +414,17 @@ test('renames and kicks through confirm dialogs, then refreshes state', async ({
     await page.getByRole('button', { name: '부대명 변경...' }).first().click();
     await page.getByRole('textbox', { name: '새 부대명' }).fill('백마의종');
     await page.getByRole('button', { name: '변경', exact: true }).click();
-    await expect(page.getByRole('status')).toContainText('부대명을 변경했습니다.');
+    await expect(page.locator('[data-testid="game-toast"][data-feedback-kind="success"]')).toContainText(
+        '부대명을 변경했습니다.'
+    );
     await expect(page.locator('.troopInfo').filter({ hasText: '백마의종' })).toBeVisible();
 
     await page.getByRole('button', { name: '부대원 추방...' }).click();
     await page.getByRole('combobox', { name: '추방할 부대원' }).selectOption('3');
     await page.getByRole('button', { name: '추방', exact: true }).click();
-    await expect(page.getByRole('status')).toContainText('조운을 추방했습니다.');
+    await expect(
+        page.locator('[data-testid="game-toast"][data-feedback-kind="success"]').filter({ hasText: '조운' })
+    ).toContainText('조운을 추방했습니다.');
     await expect(page.locator('.troopMembers').first()).not.toContainText('조운');
 });
 

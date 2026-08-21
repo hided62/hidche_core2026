@@ -5,13 +5,13 @@ import { trpc } from '../utils/trpc';
 import { resolveDiplomacyInfo } from '../utils/diplomacy';
 import { legacyNationTextColor } from '../utils/legacyNationColor';
 import LegacyHtmlEditor from '../components/ui/LegacyHtmlEditor.vue';
+import { useGameFeedback } from '../composables/useGameFeedback';
 
 type StratFinanResponse = Awaited<ReturnType<typeof trpc.nation.getStratFinan.query>>;
 type NationEntry = StratFinanResponse['nationsList'][number];
 
 const loading = ref(false);
 const error = ref<string | null>(null);
-const status = ref<string | null>(null);
 const data = ref<StratFinanResponse | null>(null);
 const nationMsg = ref('');
 const scoutMsg = ref('');
@@ -21,6 +21,7 @@ const editingNationMsg = ref(false);
 const editingScoutMsg = ref(false);
 const policy = reactive({ rate: 0, bill: 0, secretLimit: 0, blockScout: false, blockWar: false });
 const oldPolicy = reactive({ rate: 0, bill: 0, secretLimit: 0 });
+const { success: showSuccessToast, error: showErrorToast } = useGameFeedback();
 
 const resolveErrorMessage = (value: unknown): string =>
     value instanceof Error ? value.message : typeof value === 'string' ? value : 'unknown_error';
@@ -69,17 +70,15 @@ const mutation = async <T,>(
     action: () => Promise<T>,
     message: string,
     rollback?: () => void
-): Promise<T | undefined> => {
-    error.value = null;
-    status.value = null;
+): Promise<{ ok: true; value: T } | { ok: false }> => {
     try {
-        const result = await action();
-        status.value = message;
-        return result;
+        const value = await action();
+        showSuccessToast(message);
+        return { ok: true, value };
     } catch (err) {
         rollback?.();
-        error.value = resolveErrorMessage(err);
-        return undefined;
+        showErrorToast(resolveErrorMessage(err));
+        return { ok: false };
     }
 };
 
@@ -97,9 +96,9 @@ const saveNationMsg = async () => {
         () => trpc.nation.setNotice.mutate({ msg: nationMsgDraft.value }),
         '국가 방침을 변경했습니다.'
     );
-    if (result) {
-        nationMsg.value = result.msg;
-        nationMsgDraft.value = result.msg;
+    if (result.ok) {
+        nationMsg.value = result.value.msg;
+        nationMsgDraft.value = result.value.msg;
         editingNationMsg.value = false;
     }
 };
@@ -117,36 +116,36 @@ const saveScoutMsg = async () => {
         () => trpc.nation.setScoutMsg.mutate({ msg: scoutMsgDraft.value }),
         '임관 권유문을 변경했습니다.'
     );
-    if (result) {
-        scoutMsg.value = result.msg;
-        scoutMsgDraft.value = result.msg;
+    if (result.ok) {
+        scoutMsg.value = result.value.msg;
+        scoutMsgDraft.value = result.value.msg;
         editingScoutMsg.value = false;
     }
 };
-const setRate = () =>
-    mutation(
+const setRate = async () => {
+    const result = await mutation(
         () => trpc.nation.setRate.mutate({ amount: policy.rate }),
         '세율을 변경했습니다.',
         () => (policy.rate = oldPolicy.rate)
-    ).then(() => {
-        if (!error.value) oldPolicy.rate = policy.rate;
-    });
-const setBill = () =>
-    mutation(
+    );
+    if (result.ok) oldPolicy.rate = policy.rate;
+};
+const setBill = async () => {
+    const result = await mutation(
         () => trpc.nation.setBill.mutate({ amount: policy.bill }),
         '지급률을 변경했습니다.',
         () => (policy.bill = oldPolicy.bill)
-    ).then(() => {
-        if (!error.value) oldPolicy.bill = policy.bill;
-    });
-const setSecretLimit = () =>
-    mutation(
+    );
+    if (result.ok) oldPolicy.bill = policy.bill;
+};
+const setSecretLimit = async () => {
+    const result = await mutation(
         () => trpc.nation.setSecretLimit.mutate({ amount: policy.secretLimit }),
         '기밀 권한을 변경했습니다.',
         () => (policy.secretLimit = oldPolicy.secretLimit)
-    ).then(() => {
-        if (!error.value) oldPolicy.secretLimit = policy.secretLimit;
-    });
+    );
+    if (result.ok) oldPolicy.secretLimit = policy.secretLimit;
+};
 const setBlockWar = async () => {
     const next = policy.blockWar;
     await mutation(
@@ -182,7 +181,6 @@ onMounted(() => void loadStratFinan());
         </nav>
 
         <div v-if="error" class="feedback error" role="alert">{{ error }}</div>
-        <div v-if="status" class="feedback status" role="status">{{ status }}</div>
         <div v-if="loading" class="loading">불러오는 중...</div>
 
         <template v-if="data && !loading">

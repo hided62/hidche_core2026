@@ -6,6 +6,7 @@ import { useRouter } from 'vue-router';
 import { resolveGeneralIconUrl, useDefaultGeneralIcon } from '../utils/generalIcon';
 import { trpc } from '../utils/trpc';
 import LegacyGeneralProgress from '../components/ui/LegacyGeneralProgress.vue';
+import { useGameFeedback } from '../composables/useGameFeedback';
 
 type TroopList = Awaited<ReturnType<typeof trpc.troop.getList.query>>;
 type Troop = TroopList['troops'][number];
@@ -15,8 +16,6 @@ type DialogKind = 'rename' | 'kick' | null;
 const loading = ref(false);
 const data = ref<TroopList | null>(null);
 const errorMessage = ref('');
-const noticeMessage = ref('');
-const noticeKind = ref<'success' | 'error'>('success');
 const createName = ref('');
 const editName = ref('');
 const kickTargetId = ref(0);
@@ -25,6 +24,7 @@ const dialogTroopId = ref(0);
 const popupMember = ref<Member | null>(null);
 const popupTop = ref(0);
 const router = useRouter();
+const { success: showSuccessToast, error: showErrorToast } = useGameFeedback();
 
 const me = computed(() => data.value?.me ?? null);
 
@@ -39,8 +39,11 @@ const getErrorMessage = (error: unknown): string => {
 };
 
 const showNotice = (message: string, kind: 'success' | 'error') => {
-    noticeMessage.value = message;
-    noticeKind.value = kind;
+    if (kind === 'success') {
+        showSuccessToast(message);
+    } else {
+        showErrorToast(message);
+    }
 };
 
 const refresh = async () => {
@@ -65,7 +68,6 @@ const runAction = async (action: () => Promise<void>) => {
         await refresh();
     } catch (error) {
         const message = getErrorMessage(error);
-        errorMessage.value = message;
         showNotice(message, 'error');
     }
 };
@@ -198,15 +200,7 @@ onMounted(() => {
             <div></div>
         </header>
 
-        <div
-            v-if="noticeMessage"
-            class="notice"
-            :class="noticeKind"
-            :role="noticeKind === 'error' ? 'alert' : 'status'"
-        >
-            {{ noticeMessage }}
-        </div>
-        <div v-if="errorMessage && !noticeMessage" class="notice error" role="alert">{{ errorMessage }}</div>
+        <div v-if="errorMessage" class="notice error" role="alert">{{ errorMessage }}</div>
         <div v-if="loading && !data" class="loading">불러오는 중...</div>
 
         <div v-if="data" id="troopList" class="bg0">

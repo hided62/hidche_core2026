@@ -4,6 +4,7 @@ import { computed, nextTick, onMounted, ref } from 'vue';
 import TournamentBracket from '../components/tournament/TournamentBracket.vue';
 import TournamentPageHeader from '../components/tournament/TournamentPageHeader.vue';
 import GeneralIdentity from '../components/ui/GeneralIdentity.vue';
+import { useGameFeedback } from '../composables/useGameFeedback';
 import type { TournamentBracketSlot } from '../utils/tournamentBracket';
 import { trpc } from '../utils/trpc';
 
@@ -14,7 +15,6 @@ const summary = ref<Awaited<ReturnType<typeof trpc.tournament.getBettingSummary.
 const rankings = ref<Awaited<ReturnType<typeof trpc.tournament.getRankings.query>>>([]);
 const loading = ref(false);
 const error = ref<string | null>(null);
-const message = ref<string | null>(null);
 const amounts = ref<Record<number, number>>({});
 const selectedTarget = ref<TournamentBracketSlot | null>(null);
 const betDialog = ref<HTMLDialogElement | null>(null);
@@ -22,6 +22,7 @@ const betAmountSelect = ref<HTMLSelectElement | null>(null);
 const placingBet = ref(false);
 const betError = ref<string | null>(null);
 const activeRankingPrefix = ref('tt');
+const { success: showSuccessToast } = useGameFeedback();
 const typeNames = ['전력전', '통솔전', '일기토', '설전'];
 const stageNames = [
     '경기 없음',
@@ -109,17 +110,15 @@ const placeBet = async () => {
     const targetId = selectedTarget.value?.id;
     if (targetId === null || targetId === undefined || placingBet.value) return;
     const amount = selectedAmount.value;
-    message.value = null;
     betError.value = null;
     placingBet.value = true;
     try {
         await trpc.tournament.placeBet.mutate({ targetId, amount });
-        message.value = '베팅이 등록되었습니다.';
+        showSuccessToast('베팅이 등록되었습니다.');
         await load();
         closeBetDialog();
     } catch (value) {
         betError.value = errorText(value);
-        message.value = betError.value;
     } finally {
         placingBet.value = false;
     }
@@ -138,7 +137,6 @@ const placeBet = async () => {
                 갱신
             </button>
             <span v-if="loading">불러오는 중...</span>
-            <span v-if="message" role="status">{{ message }}</span>
         </section>
         <section v-if="error" class="error bg0" role="alert">{{ error }}</section>
         <section class="state bg0">
