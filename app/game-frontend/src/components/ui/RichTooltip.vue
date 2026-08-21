@@ -113,7 +113,7 @@ watch(
     background: #101010;
     box-shadow: 0 3px 12px rgb(0 0 0 / 65%);
     color: #f5f5f5;
-    font-family: Pretendard, sans-serif;
+    font-family: var(--sammo-font-sans);
     font-size: 12.5px;
     line-height: 1.45;
     text-align: left;

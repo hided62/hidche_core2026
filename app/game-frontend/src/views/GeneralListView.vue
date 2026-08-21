@@ -1,15 +1,21 @@
 <script setup lang="ts">
-import { onMounted, ref } from 'vue';
+import { computed, onMounted, ref } from 'vue';
 import { useRouter } from 'vue-router';
 
 import GeneralDirectoryTable from '../components/directory/GeneralDirectoryTable.vue';
 import LegacySortControls from '../components/ui/LegacySortControls.vue';
+import { useGameFeedback } from '../composables/useGameFeedback';
 import type { GeneralDirectoryGeneral } from '../types/directory';
+import {
+    advanceGeneralDirectorySort,
+    sortGeneralDirectory,
+    type GeneralDirectorySortCriterion,
+    type GeneralDirectorySortKey,
+} from '../utils/generalDirectorySort';
 import { trpc } from '../utils/trpc';
 
-type SortKey = 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10 | 11 | 12 | 13 | 14 | 15;
-
-const sortOptions: Array<{ value: SortKey; label: string }> = [
+const sortOptions: Array<{ value: GeneralDirectorySortKey; label: string }> = [
+    { value: 0, label: '이름' },
     { value: 1, label: '국가' },
     { value: 2, label: '통솔' },
     { value: 3, label: '무력' },
@@ -27,18 +33,26 @@ const sortOptions: Array<{ value: SortKey; label: string }> = [
     { value: 15, label: 'NPC' },
 ];
 
-const sort = ref<SortKey>(9);
-const generals = ref<GeneralDirectoryGeneral[]>([]);
+const selectedSort = ref<GeneralDirectorySortKey>(9);
+const sourceGenerals = ref<GeneralDirectoryGeneral[]>([]);
+const sortCriteria = ref<GeneralDirectorySortCriterion[]>([]);
 const loading = ref(false);
 const error = ref('');
 const router = useRouter();
+const { info: showInfoToast } = useGameFeedback();
+
+const generals = computed(() => sortGeneralDirectory(sourceGenerals.value, sortCriteria.value));
 
 const loadDirectory = async () => {
+    if (loading.value) {
+        showInfoToast('이미 장수 일람을 갱신하고 있습니다.');
+        return;
+    }
     loading.value = true;
     error.value = '';
     try {
-        const result = await trpc.world.getGeneralDirectory.query({ sort: sort.value });
-        generals.value = result.generals;
+        const result = await trpc.world.getGeneralDirectory.query({ sort: 9 });
+        sourceGenerals.value = Array.isArray(result.generals) ? result.generals : [];
     } catch (cause) {
         error.value = cause instanceof Error ? cause.message : '장수일람을 불러오지 못했습니다.';
     } finally {
@@ -47,12 +61,12 @@ const loadDirectory = async () => {
 };
 
 const updateSort = (value: number): void => {
-    sort.value = value as SortKey;
+    selectedSort.value = value as GeneralDirectorySortKey;
 };
 
 const sortByHeader = (value: number): void => {
     updateSort(value);
-    void loadDirectory();
+    sortCriteria.value = advanceGeneralDirectorySort(sortCriteria.value, selectedSort.value);
 };
 
 onMounted(() => {
@@ -66,8 +80,15 @@ onMounted(() => {
             <tbody>
                 <tr>
                     <td>
-                        장 수 일 람<br /><button class="legacy-button" type="button" @click="router.push('/')">
-                            창 닫기
+                        장 수 일 람<br />
+                        <button class="legacy-button" type="button" @click="router.push('/')">창 닫기</button>
+                        <button
+                            class="legacy-button"
+                            type="button"
+                            :aria-busy="loading || undefined"
+                            @click="loadDirectory"
+                        >
+                            갱 신
                         </button>
                     </td>
                 </tr>
@@ -75,11 +96,11 @@ onMounted(() => {
                     <td>
                         <LegacySortControls
                             control-id="viewType"
-                            :model-value="sort"
+                            :model-value="selectedSort"
                             :options="sortOptions"
                             :busy="loading"
                             @update:model-value="updateSort"
-                            @submit="loadDirectory"
+                            @submit="sortByHeader(selectedSort)"
                         />
                     </td>
                 </tr>
@@ -87,7 +108,12 @@ onMounted(() => {
         </table>
 
         <p v-if="error" class="directory-error" role="alert">{{ error }}</p>
-        <GeneralDirectoryTable :generals="generals" :loading="loading" :active-sort="sort" @sort="sortByHeader" />
+        <GeneralDirectoryTable
+            :generals="generals"
+            :loading="loading"
+            :sort-criteria="sortCriteria"
+            @sort="sortByHeader"
+        />
 
         <table class="directory-table title-table legacy-bg0">
             <tbody>
