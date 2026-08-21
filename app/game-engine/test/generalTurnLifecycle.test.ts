@@ -316,12 +316,13 @@ describe('legacy general turn lifecycle', () => {
         expect(harness.world.peekDirtyState().deletedGenerals).toContain(1);
     });
 
-    it('keeps compatibility fixtures without legacy lifespan metadata alive', async () => {
+    it('deletes an expired NPC even when its in-memory lifespan metadata is missing', async () => {
         const harness = await createTurnTestHarness({
             snapshot: makeSnapshot([
                 makeGeneral({
                     deadYear: undefined,
-                    npcState: 2,
+                    npcState: 4,
+                    name: 'ⓖ의병',
                     meta: { killturn: 1 },
                 }),
             ]),
@@ -332,9 +333,9 @@ describe('legacy general turn lifecycle', () => {
 
         await harness.runOneTick();
 
-        expect(harness.world.getGeneralById(1)).not.toBeNull();
-        expect(harness.world.getGeneralById(1)!.meta.killturn).toBe(0);
-        expect(harness.world.peekDirtyState().lifecycleEvents[0]?.outcome).toBe('active');
+        expect(harness.world.getGeneralById(1)).toBeNull();
+        expect(harness.world.peekDirtyState().deletedGenerals).toContain(1);
+        expect(harness.world.peekDirtyState().lifecycleEvents[0]?.outcome).toBe('deleted');
     });
 
     it('retires a player general and resets inherited stats and rank state', async () => {
