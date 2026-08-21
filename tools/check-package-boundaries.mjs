@@ -67,6 +67,10 @@ const persistenceModules = new Set([
 ]);
 
 const backendPackages = new Set(['@sammo-ts/game-api', '@sammo-ts/gateway-api']);
+const frontendRuntimeRootBarrels = new Set(['@sammo-ts/common', '@sammo-ts/logic']);
+const frontendRuntimeRootAllowlist = new Map([
+    ['app/game-frontend/src/workers/battleSimulator.worker.ts', new Set(['@sammo-ts/logic'])],
+]);
 const nodeBuiltins = new Set(builtinModules.flatMap((name) => [name, `node:${name}`]));
 
 const isPersistenceModule = (specifier) =>
@@ -101,7 +105,19 @@ export const extractImports = (source) => {
     const dynamicPattern = /\bimport\(\s*['"]([^'"]+)['"]\s*\)/g;
     let match;
     while ((match = fromPattern.exec(source))) {
-        imports.push({ specifier: match[3], typeOnly: Boolean(match[1]), clause: match[2] });
+        const clause = match[2].trim();
+        const namedElements =
+            clause.startsWith('{') && clause.endsWith('}')
+                ? clause
+                      .slice(1, -1)
+                      .split(',')
+                      .map((element) => element.trim())
+                      .filter(Boolean)
+                : [];
+        const typeOnly =
+            Boolean(match[1]) ||
+            (namedElements.length > 0 && namedElements.every((element) => element.startsWith('type ')));
+        imports.push({ specifier: match[3], typeOnly, clause: match[2] });
     }
     while ((match = sideEffectPattern.exec(source))) {
         imports.push({ specifier: match[1], typeOnly: false, clause: '' });
@@ -129,6 +145,14 @@ export const checkSource = ({ source, relativePath, zone }) => {
         }
         if (zone.frontend && packageName && backendPackages.has(packageName) && !imported.typeOnly) {
             violations.push(`${relativePath}: frontend may reference ${packageName} only through import type`);
+        }
+        if (
+            zone.frontend &&
+            frontendRuntimeRootBarrels.has(imported.specifier) &&
+            !imported.typeOnly &&
+            !frontendRuntimeRootAllowlist.get(relativePath)?.has(imported.specifier)
+        ) {
+            violations.push(`${relativePath}: frontend runtime must import a leaf subpath from ${imported.specifier}`);
         }
         if (
             (zone.name === 'game-api' || zone.name === 'gateway-api') &&

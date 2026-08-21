@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { formatServerDateTime, serverDateTimeInputToIso } from '@sammo-ts/common';
+import { formatServerDateTime, serverDateTimeInputToIso } from '@sammo-ts/common/time/ServerDateTime';
 import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue';
 
 import CompactHelp from '../components/CompactHelp.vue';

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { formatServerDateTime } from '@sammo-ts/common';
+import { formatServerDateTime } from '@sammo-ts/common/time/ServerDateTime';
 import { computed, onMounted, ref } from 'vue';
 import { trpc } from '../utils/trpc';
 type Result = Awaited<ReturnType<typeof trpc.nation.getSecretGeneralList.query>>;

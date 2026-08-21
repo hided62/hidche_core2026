@@ -1,4 +1,4 @@
-import { JosaUtil } from '@sammo-ts/common';
+import { JosaUtil } from '@sammo-ts/common/util/JosaUtil';
 
 import type { CommandOption, CommandTable } from './types';
 
