@@ -48,6 +48,9 @@ const createHarness = (
     startGate?: Promise<void>,
     options: {
         profile?: GatewayProfileRecord;
+        profiles?: GatewayProfileRecord[];
+        reservedToStart?: GatewayProfileRecord[];
+        now?: () => Date;
         cancelGame?: GatewayOrchestratorOptions['cancelGame'];
     } = {}
 ) => {
@@ -59,10 +62,11 @@ const createHarness = (
     const started: ProcessDefinition[] = [];
     const stopped: string[] = [];
     const deleted: string[] = [];
+    const buildStatuses: string[] = [];
     const logs: Array<{ phase: string; message: string; level: string }> = [];
 
     const repository: GatewayProfileRepository = {
-        listProfiles: async () => [harnessProfile],
+        listProfiles: async () => options.profiles ?? [harnessProfile],
         getProfile: async () => harnessProfile,
         upsertProfile: async () => harnessProfile,
         updateCurrentScenario: async () => harnessProfile,
@@ -70,9 +74,12 @@ const createHarness = (
             statuses.push(status);
             return { ...harnessProfile, status };
         },
-        updateBuildStatus: async () => harnessProfile,
+        updateBuildStatus: async (_profileName, status) => {
+            buildStatuses.push(status);
+            return { ...harnessProfile, buildStatus: status };
+        },
         updateMeta: async () => harnessProfile,
-        listReservedToStart: async () => [],
+        listReservedToStart: async () => options.reservedToStart ?? [],
         findQueuedBuild: async () => null,
         updateLastError: async () => {},
         updateWorkspaceUsage: async () => {},
@@ -167,10 +174,11 @@ const createHarness = (
         scheduleIntervalMs: 60_000,
         buildIntervalMs: 60_000,
         adminActionIntervalMs: 60_000,
+        now: options.now,
         cancelGame: options.cancelGame,
     });
 
-    return { orchestrator, statuses, completions, completionFields, started, stopped, deleted, logs };
+    return { orchestrator, statuses, buildStatuses, completions, completionFields, started, stopped, deleted, logs };
 };
 
 describe('GatewayOrchestrator first-class operations', () => {
@@ -265,6 +273,81 @@ describe('GatewayOrchestrator first-class operations', () => {
         expect(harness.started).toEqual([]);
         expect(harness.stopped).toEqual([]);
         expect(harness.deleted).toEqual([]);
+    });
+
+    it('opens a prepared reserved profile without rebuilding it again', async () => {
+        const now = new Date('2030-01-01T01:00:00.000Z');
+        const reservedProfile: GatewayProfileRecord = {
+            ...profile,
+            status: 'RESERVED',
+            currentScenario: '1010',
+            scenario: '1010',
+            buildStatus: 'SUCCEEDED',
+            buildWorkspace: '/srv/sammo/worktrees/0123456789abcdef',
+            preopenAt: now.toISOString(),
+            openAt: '2030-01-01T02:00:00.000Z',
+        };
+        const harness = createHarness(buildOperation('START'), false, false, false, false, undefined, undefined, {
+            profile: reservedProfile,
+            profiles: [],
+            reservedToStart: [reservedProfile],
+            now: () => now,
+        });
+
+        await harness.orchestrator.runScheduleNow();
+
+        expect(harness.statuses).toEqual(['PREOPEN']);
+        expect(harness.buildStatuses).toEqual([]);
+    });
+
+    it('starts turns when a prepared reserved profile is handled after formal open', async () => {
+        const now = new Date('2030-01-01T02:00:00.000Z');
+        const reservedProfile: GatewayProfileRecord = {
+            ...profile,
+            status: 'RESERVED',
+            currentScenario: '1010',
+            scenario: '1010',
+            buildStatus: 'SUCCEEDED',
+            buildWorkspace: '/srv/sammo/worktrees/0123456789abcdef',
+            preopenAt: '2030-01-01T01:00:00.000Z',
+            openAt: now.toISOString(),
+        };
+        const harness = createHarness(buildOperation('START'), false, false, false, false, undefined, undefined, {
+            profile: reservedProfile,
+            profiles: [],
+            reservedToStart: [reservedProfile],
+            now: () => now,
+        });
+
+        await harness.orchestrator.runScheduleNow();
+
+        expect(harness.statuses).toEqual(['RUNNING']);
+        expect(harness.buildStatuses).toEqual([]);
+    });
+
+    it('retains the legacy build queue for an unprepared reserved profile', async () => {
+        const now = new Date('2030-01-01T01:00:00.000Z');
+        const reservedProfile: GatewayProfileRecord = {
+            ...profile,
+            status: 'RESERVED',
+            currentScenario: null,
+            scenario: 'default',
+            buildStatus: 'IDLE',
+            buildWorkspace: undefined,
+            preopenAt: now.toISOString(),
+            openAt: '2030-01-01T02:00:00.000Z',
+        };
+        const harness = createHarness(buildOperation('START'), false, false, false, false, undefined, undefined, {
+            profile: reservedProfile,
+            profiles: [],
+            reservedToStart: [reservedProfile],
+            now: () => now,
+        });
+
+        await harness.orchestrator.runScheduleNow();
+
+        expect(harness.statuses).toEqual([]);
+        expect(harness.buildStatuses).toEqual(['QUEUED']);
     });
 
     it('starts every profile process and records success', async () => {

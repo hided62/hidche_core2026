@@ -1,8 +1,11 @@
 import { expect, test, type Page, type Route } from '@playwright/test';
+import { mkdir } from 'node:fs/promises';
+import { resolve } from 'node:path';
 
 import { canonicalFrontendFixture as fixture } from './fixtures/canonical.js';
 
 const gamePort = process.env.FRONTEND_PARITY_GAME_PORT ?? '15102';
+const artifactRoot = process.env.FRONTEND_PARITY_ARTIFACT_DIR;
 const response = (data: unknown) => ({ result: { data } });
 const errorResponse = (path: string, message: string) => ({
     error: {
@@ -42,7 +45,35 @@ const general = {
 const generalContext = {
     general,
     city: null,
-    nation: null,
+    nation: {
+        id: 1,
+        name: '테스트국',
+        color: '#d32f2f',
+        level: 1,
+        levelName: '군벌',
+        gold: 1000,
+        rice: 1000,
+        tech: 1000,
+        typeCode: 'test',
+        typeName: '테스트',
+        typePros: '-',
+        typeCons: '-',
+        capitalCityId: 1,
+        capitalCityName: '낙양',
+        population: { cityCount: 1, current: 10000, max: 20000 },
+        crew: { generalCount: 2, current: 1000, max: 16000 },
+        power: 100,
+        bill: 10,
+        taxRate: 10,
+        strategicCommandLimit: 0,
+        diplomaticLimit: 0,
+        prohibitScout: false,
+        prohibitWar: false,
+        techLevel: 1,
+        techLimited: false,
+        topChiefs: { 12: null, 11: null },
+        impossibleStrategicCommands: [],
+    },
     settings: {},
     penalties: {},
 };
@@ -373,14 +404,25 @@ for (const viewport of [
                 boxShadow: getComputedStyle(element).boxShadow,
             }))
         ).toEqual({ outlineWidth: '0px', boxShadow: 'none' });
+
+        if (artifactRoot) {
+            await mkdir(artifactRoot, { recursive: true });
+            await page.locator('.MessagePanel').screenshot({
+                path: resolve(artifactRoot, `message-panel-${viewport.width}.png`),
+                animations: 'disabled',
+            });
+        }
     });
 }
 
-test('exposes ambassador targets, reply, read, delete, and successful send interactions', async ({ page }) => {
+test('exposes nation targets including wanderers, reply, read, delete, and successful send interactions', async ({
+    page,
+}) => {
     const mutations = await installFixture(page, { permission: 4 });
     await openMessages(page, { width: 500, height: 900 });
 
     const select = page.getByLabel('메시지 수신 대상');
+    await expect(select.locator('optgroup[label="외교메시지"] option[value="9000"]')).toHaveText('재야');
     await expect(select.locator('option[value="9002"]')).toHaveCount(1);
     await expect(select.locator('option[value="8"]')).toBeDisabled();
     await expect(select.locator('option[value="9"]')).toBeEnabled();
@@ -396,11 +438,21 @@ test('exposes ambassador targets, reply, read, delete, and successful send inter
     await deleteButton.click();
     await expect.poll(() => mutations.filter((entry) => entry.operation === 'messages.delete').length).toBe(1);
 
-    await select.selectOption('9999');
-    await page.getByLabel('메시지 입력').fill('전송 성공');
+    await select.selectOption('9000');
+    await page.getByLabel('메시지 입력').fill('우리 나라로 와주세요');
+    if (artifactRoot) {
+        await mkdir(artifactRoot, { recursive: true });
+        await page.locator('.MessageInputForm').screenshot({
+            path: resolve(artifactRoot, 'wanderer-recruitment-target-500.png'),
+            animations: 'disabled',
+        });
+    }
     await page.getByRole('button', { name: '서신전달&갱신' }).click();
     await expect(page.getByLabel('메시지 입력')).toHaveValue('');
     await expect.poll(() => mutations.filter((entry) => entry.operation === 'messages.send').length).toBe(1);
+    expect(JSON.stringify(mutations.find((entry) => entry.operation === 'messages.send')?.body)).toContain(
+        '"mailbox":9000'
+    );
 });
 
 test('accepts recruitment and declines invader prompts through private-message controls', async ({ page }) => {
@@ -442,6 +494,7 @@ test('redacts diplomacy for a low-permission general and preserves the failed-se
     await openMessages(page, { width: 500, height: 900 });
 
     const select = page.getByLabel('메시지 수신 대상');
+    await expect(select.locator('option[value="9000"]')).toHaveCount(0);
     await expect(select.locator('option[value="9002"]')).toHaveCount(0);
     await expect(page.locator('.DiplomacyTalk')).toContainText('삭제된 메시지입니다');
     await expect(page.locator('.DiplomacyTalk')).not.toContainText('외교 메시지 본문');

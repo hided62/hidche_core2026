@@ -64,6 +64,15 @@ textarea {
 }
 
 /*
+ * Firefox for Android may zoom to a focused search field. `manipulation`
+ * suppresses that focus-only zoom while retaining ordinary pan and pinch zoom.
+ */
+input[type='search'],
+input[inputmode='search'] {
+    touch-action: manipulation;
+}
+
+/*
  * Ref's `.bg0/.bg1/.bg2` set a background image and nothing else, so the
  * element stays transparent where the texture does not cover it. Adding a
  * background colour here paints over whatever the parent shows through.
