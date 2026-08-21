@@ -79,7 +79,7 @@ export const troopRouter = router({
             troopLeaderIds.length === 0
                 ? []
                 : await ctx.db.generalTurn.findMany({
-                      where: { generalId: { in: troopLeaderIds } },
+                      where: { generalId: { in: troopLeaderIds }, turnIdx: { lt: 5 } },
                       select: { generalId: true, turnIdx: true, actionCode: true },
                       orderBy: [{ generalId: 'asc' }, { turnIdx: 'asc' }],
                   });
@@ -94,7 +94,8 @@ export const troopRouter = router({
                 : 30;
         for (const turn of turns) {
             const list = reservedByLeader.get(turn.generalId) ?? [];
-            list.push(turn.actionCode);
+            // Ref 부대 편성은 앞쪽 슬롯이 집합인지 여부만 공개하고 다른 명령은 가립니다.
+            list.push(turn.actionCode === 'che_집합' ? '집합' : '-');
             reservedByLeader.set(turn.generalId, list);
         }
 

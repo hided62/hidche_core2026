@@ -1733,7 +1733,6 @@ onUnmounted(() => {
 .npc-tooltip {
     position: relative;
     cursor: help;
-    text-decoration: underline dotted;
 }
 
 .npc-tooltip [role='tooltip'] {

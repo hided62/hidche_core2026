@@ -629,6 +629,10 @@ test('nation directory reuses only the public general-directory row on hover and
         await expect(preview.locator('[data-general-card-id="10"]')).toContainText('대담');
         await expect(preview.locator('[data-directory-tooltip="card-special-domestic-10"]')).toContainText('상재');
         await expect(preview.locator('[data-directory-tooltip="card-special-war-10"]')).toContainText('귀모');
+        await expect(preview.locator('[data-directory-tooltip="card-special-domestic-10"]')).toHaveCSS(
+            'text-decoration-line',
+            'none'
+        );
         await expect(preview).not.toContainText('user-');
         await expect(preview).not.toContainText('secret');
 

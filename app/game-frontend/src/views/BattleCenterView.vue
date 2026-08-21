@@ -291,6 +291,7 @@ onMounted(() => {
                                       available: true,
                                       experience: selectedGeneral.experience,
                                       dedicationText: selectedGeneral.progression.dedicationText,
+                                      bill: selectedGeneral.bill,
                                       warnum: selectedGeneral.warnum,
                                       wins: selectedGeneral.battleStats.kills,
                                       losses: selectedGeneral.battleStats.deaths,
