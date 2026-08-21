@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue';
 
+import { useGameFeedback } from '../composables/useGameFeedback';
 import { trpc } from '../utils/trpc';
 
 type BettingListItem = {
@@ -56,7 +57,7 @@ const loadingList = ref(false);
 const loadingDetail = ref(false);
 const submitting = ref(false);
 const errorMessage = ref('');
-const noticeMessage = ref('');
+const { success: showSuccessToast, error: showErrorToast } = useGameFeedback();
 
 const currentYearMonth = computed(() => {
     if (!detail.value) {
@@ -265,13 +266,10 @@ const loadList = async () => {
     }
 };
 
-const loadDetail = async (bettingId: number, resetSelection = true, preserveNotice = false) => {
+const loadDetail = async (bettingId: number, resetSelection = true) => {
     selectedBettingId.value = bettingId;
     loadingDetail.value = true;
     errorMessage.value = '';
-    if (!preserveNotice) {
-        noticeMessage.value = '';
-    }
     try {
         detail.value = await bettingApi.getDetail.query({ bettingId });
         if (resetSelection) {
@@ -299,7 +297,7 @@ const toggleCandidate = (index: number) => {
         return;
     }
     if (current.length >= info.value.selectCnt) {
-        errorMessage.value = `이미 ${info.value.selectCnt}개를 선택했습니다.`;
+        showErrorToast(`이미 ${info.value.selectCnt}개를 선택했습니다.`);
         return;
     }
     selectedCandidates.value = [...current, index];
@@ -311,19 +309,18 @@ const submitBet = async () => {
     }
     submitting.value = true;
     errorMessage.value = '';
-    noticeMessage.value = '';
     try {
         await bettingApi.bet.mutate({
             bettingId: info.value.id,
             bettingType: [...selectedCandidates.value],
             amount: amount.value,
         });
-        noticeMessage.value = '베팅했습니다';
-        await loadDetail(info.value.id, true, true);
+        showSuccessToast('베팅했습니다');
+        await loadDetail(info.value.id, true);
         await loadList();
     } catch (error) {
         // Legacy form keeps the selected candidates and amount after a failed request.
-        errorMessage.value = getErrorMessage(error);
+        showErrorToast(getErrorMessage(error));
     } finally {
         submitting.value = false;
     }
@@ -353,7 +350,6 @@ onMounted(() => {
         </header>
 
         <div v-if="errorMessage" class="betting-notice error" role="alert">{{ errorMessage }}</div>
-        <div v-if="noticeMessage" class="betting-notice success" role="status">{{ noticeMessage }}</div>
 
         <section v-if="detail && info" class="betting-detail">
             <div class="section-title legacy-bg2">
@@ -666,11 +662,6 @@ onMounted(() => {
 .betting-notice.error {
     border: 1px solid #9b4848;
     color: #ffd0d0;
-}
-
-.betting-notice.success {
-    border: 1px solid #477a47;
-    color: #d8f5d8;
 }
 
 @media (min-width: 1000px) {

@@ -2,6 +2,7 @@
 import { computed, onMounted, ref, watch } from 'vue';
 
 import SortableStringList from '../components/ui/SortableStringList';
+import { useGameFeedback } from '../composables/useGameFeedback';
 import { npcPriorityHelp } from '../utils/npcPriorityHelp';
 import { trpc } from '../utils/trpc';
 
@@ -37,7 +38,6 @@ interface PriorityPanel {
 
 const loading = ref(false);
 const error = ref<string | null>(null);
-const notice = ref<string | null>(null);
 const data = ref<NpcPolicyResponse | null>(null);
 const policyDraft = ref<NationPolicy | null>(null);
 const lastSavedPolicy = ref<NationPolicy | null>(null);
@@ -45,6 +45,7 @@ const nationPriority = ref<PriorityListState | null>(null);
 const generalPriority = ref<PriorityListState | null>(null);
 const lastSavedNationPriority = ref<string[]>([]);
 const lastSavedGeneralPriority = ref<string[]>([]);
+const { success: showSuccessToast, error: showErrorToast, info: showInfoToast } = useGameFeedback();
 
 const resolveErrorMessage = (value: unknown): string => {
     if (value instanceof Error) return value.message;
@@ -283,25 +284,23 @@ const priorityPanels = computed<PriorityPanel[]>(() => {
 const resetPolicy = () => {
     if (!data.value || !window.confirm('초기 설정으로 되돌릴까요?')) return;
     policyDraft.value = clonePolicy(data.value.defaultNationPolicy);
-    notice.value = '서버 초깃값을 적용했습니다. 설정 버튼을 누르면 반영됩니다.';
+    showInfoToast('서버 초깃값을 적용했습니다. 설정 버튼을 누르면 반영됩니다.');
 };
 
 const rollbackPolicy = () => {
     if (!lastSavedPolicy.value || !window.confirm('이전 설정으로 되돌릴까요?')) return;
     policyDraft.value = clonePolicy(lastSavedPolicy.value);
-    notice.value = '이전 설정으로 되돌렸습니다.';
+    showInfoToast('이전 설정으로 되돌렸습니다.');
 };
 
 const submitPolicy = async () => {
     if (!policyDraft.value || !window.confirm('저장할까요?')) return;
-    error.value = null;
-    notice.value = null;
     try {
         await trpc.npc.setNationPolicy.mutate(policyDraft.value);
         lastSavedPolicy.value = clonePolicy(policyDraft.value);
-        notice.value = 'NPC 정책이 반영되었습니다.';
+        showSuccessToast('NPC 정책이 반영되었습니다.');
     } catch (caught) {
-        error.value = `설정하지 못했습니다: ${resolveErrorMessage(caught)}`;
+        showErrorToast(`설정하지 못했습니다: ${resolveErrorMessage(caught)}`);
     }
 };
 
@@ -318,7 +317,7 @@ const resetPriority = (section: PrioritySectionKey) => {
             data.value.availableGeneralActionPriorityItems
         );
     }
-    notice.value = '서버 초깃값을 적용했습니다. 설정 버튼을 누르면 반영됩니다.';
+    showInfoToast('서버 초깃값을 적용했습니다. 설정 버튼을 누르면 반영됩니다.');
 };
 
 const rollbackPriority = (section: PrioritySectionKey) => {
@@ -334,14 +333,12 @@ const rollbackPriority = (section: PrioritySectionKey) => {
             data.value.availableGeneralActionPriorityItems
         );
     }
-    notice.value = '이전 설정으로 되돌렸습니다.';
+    showInfoToast('이전 설정으로 되돌렸습니다.');
 };
 
 const submitPriority = async (section: PrioritySectionKey) => {
     const state = section === 'nation' ? nationPriority.value : generalPriority.value;
     if (!state || !window.confirm('저장할까요?')) return;
-    error.value = null;
-    notice.value = null;
     try {
         if (section === 'nation') {
             await trpc.npc.setNationPriority.mutate(state.active);
@@ -350,9 +347,9 @@ const submitPriority = async (section: PrioritySectionKey) => {
             await trpc.npc.setGeneralPriority.mutate(state.active);
             lastSavedGeneralPriority.value = [...state.active];
         }
-        notice.value = 'NPC 정책이 반영되었습니다.';
+        showSuccessToast('NPC 정책이 반영되었습니다.');
     } catch (caught) {
-        error.value = `설정하지 못했습니다: ${resolveErrorMessage(caught)}`;
+        showErrorToast(`설정하지 못했습니다: ${resolveErrorMessage(caught)}`);
     }
 };
 </script>
@@ -379,9 +376,6 @@ const submitPriority = async (section: PrioritySectionKey) => {
                     data.lastSetters.policy.date ?? '설정 기록 없음'
                 }})
             </div>
-
-            <div v-if="error" class="feedback error-feedback" role="alert">{{ error }}</div>
-            <div v-if="notice" class="feedback notice-feedback" role="status">{{ notice }}</div>
 
             <div class="form_list">
                 <div v-for="field in policyFields" :key="field.key" class="policy-field">
@@ -628,24 +622,10 @@ const submitPriority = async (section: PrioritySectionKey) => {
     box-sizing: border-box;
 }
 
-.feedback {
-    margin: 4px 12px;
-    padding: 5px 10px;
-    border: 1px solid;
-    border-radius: 4px;
-}
-
-.error-feedback,
 .error-state {
     color: #ffd4d4;
     border-color: #a94442;
     background-color: rgba(120, 20, 20, 0.75);
-}
-
-.notice-feedback {
-    color: #d9ffd9;
-    border-color: #3c763d;
-    background-color: rgba(20, 90, 20, 0.7);
 }
 
 .form_list {

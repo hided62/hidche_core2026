@@ -1244,7 +1244,9 @@ test.describe('survey legacy parity', () => {
     test('submits a vote and comment through the real screen controls', async ({ page }) => {
         await page.goto(gameUrl('/survey'));
         await page.getByRole('button', { name: '투표', exact: true }).click();
-        await expect(page.getByRole('status')).toHaveText('설문을 마쳤습니다.');
+        await expect(page.locator('[data-testid="game-toast"][data-feedback-kind="success"]')).toContainText(
+            '설문을 마쳤습니다.'
+        );
         await expect(page.getByText('결산', { exact: true })).toBeVisible();
 
         await page.getByLabel('댓글').fill('새 댓글');

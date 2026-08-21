@@ -305,12 +305,37 @@ test('nation betting matches the legacy desktop geometry and preserves a failed 
     await expect(page.locator('.betting-candidate.picked')).toHaveCount(2);
 
     await page.getByRole('button', { name: '베팅', exact: true }).click();
-    await expect(page.getByRole('status')).toContainText('베팅했습니다');
+    await expect(page.locator('[data-testid="game-toast"][data-feedback-kind="success"]')).toContainText(
+        '베팅했습니다'
+    );
     await expect(amountInput).toHaveValue('0');
 
     if (artifactRoot) {
         await page.screenshot({ path: resolve(artifactRoot, 'nation-betting-core-desktop.png'), fullPage: true });
     }
+});
+
+test('nation betting reports failed and successful submissions through shared toasts', async ({ page }) => {
+    await installBettingFixture(page);
+    await page.goto(gameUrl('/nation-betting'));
+    await page.getByRole('button', { name: /천통국 예상/ }).click();
+    await page.locator('.betting-candidate').nth(0).click();
+    await page.locator('.betting-candidate').nth(1).click();
+
+    const amountInput = page.getByLabel('베팅 금액');
+    await amountInput.fill('300');
+    await page.getByRole('button', { name: '베팅', exact: true }).click();
+    await expect(page.locator('[data-testid="game-toast"][data-feedback-kind="error"]')).toContainText(
+        '유산포인트가 충분하지 않습니다.'
+    );
+    await expect(amountInput).toHaveValue('300');
+
+    await page.getByRole('button', { name: '베팅', exact: true }).click();
+    await expect(page.locator('[data-testid="game-toast"][data-feedback-kind="success"]')).toContainText(
+        '베팅했습니다'
+    );
+    await expect(amountInput).toHaveValue('0');
+    await expect(page.locator('.betting-notice.success')).toHaveCount(0);
 });
 
 test('nation betting keeps the legacy 500px three-column mobile contract', async ({ page }) => {

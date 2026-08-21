@@ -282,7 +282,9 @@ test('desktop geometry, typography, textures, drag, focus, tooltip, and successf
     await goldInput.fill('12345');
     page.once('dialog', (dialog) => dialog.accept());
     await page.locator('#container > .control_bar').getByRole('button', { name: '설정' }).click();
-    await expect(page.getByRole('status')).toContainText('NPC 정책이 반영되었습니다.');
+    await expect(page.locator('[data-testid="game-toast"][data-feedback-kind="success"]')).toContainText(
+        'NPC 정책이 반영되었습니다.'
+    );
     expect(state.mutations).toContain('npc.setNationPolicy');
     await screenshot(page, 'core-npc-policy-desktop.png');
 });

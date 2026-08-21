@@ -3,6 +3,7 @@ import { formatServerDateTime } from '@sammo-ts/common/time/ServerDateTime';
 import { computed, onMounted, ref } from 'vue';
 import { useRouter } from 'vue-router';
 
+import { useGameFeedback } from '../composables/useGameFeedback';
 import { trpc } from '../utils/trpc';
 
 type VoteListResponse = Awaited<ReturnType<typeof trpc.vote.getVoteList.query>>;
@@ -17,8 +18,7 @@ const loading = ref(false);
 const detailLoading = ref(false);
 const isVoteAdmin = ref(false);
 const showNewVote = ref(false);
-const message = ref('');
-const messageKind = ref<'success' | 'error'>('success');
+const loadError = ref('');
 const mySinglePick = ref(0);
 const myMultiPick = ref<number[]>([]);
 const myComment = ref('');
@@ -26,17 +26,13 @@ const newVoteTitle = ref('');
 const newVoteOptionsText = ref('');
 const newVoteMultipleOptions = ref(1);
 const router = useRouter();
+const { success: showSuccessToast, error: showErrorToast } = useGameFeedback();
 
 const getErrorMessage = (error: unknown): string => {
     if (error instanceof Error) {
         return error.message;
     }
     return typeof error === 'string' ? error : '요청을 처리하지 못했습니다.';
-};
-
-const showMessage = (text: string, kind: 'success' | 'error') => {
-    message.value = text;
-    messageKind.value = kind;
 };
 
 const isEnded = (poll: { endAt: string | null; closedAt: string | null }): boolean => {
@@ -79,6 +75,7 @@ const voteColorText = (index: number): string => ([1, 2].includes(index % 7) ? '
 
 const loadVoteDetail = async (voteId: number) => {
     detailLoading.value = true;
+    loadError.value = '';
     try {
         const detail = await trpc.vote.getVoteDetail.query({ voteId });
         currentVote.value = detail;
@@ -87,7 +84,7 @@ const loadVoteDetail = async (voteId: number) => {
         myMultiPick.value = detail.myVote ? [...detail.myVote] : [];
         myComment.value = '';
     } catch (error) {
-        showMessage(getErrorMessage(error), 'error');
+        loadError.value = getErrorMessage(error);
     } finally {
         detailLoading.value = false;
     }
@@ -98,7 +95,7 @@ const reloadVote = async () => {
         return;
     }
     loading.value = true;
-    message.value = '';
+    loadError.value = '';
     try {
         const result = await trpc.vote.getVoteList.query();
         polls.value = result.polls;
@@ -114,7 +111,7 @@ const reloadVote = async () => {
             currentVote.value = null;
         }
     } catch (error) {
-        showMessage(getErrorMessage(error), 'error');
+        loadError.value = getErrorMessage(error);
     } finally {
         loading.value = false;
     }
@@ -130,7 +127,7 @@ const changeMultiPick = (index: number, checked: boolean) => {
     const limit = currentVote.value?.voteInfo.multipleOptions ?? 0;
     if (checked && limit > 0 && myMultiPick.value.length > limit) {
         myMultiPick.value = myMultiPick.value.filter((value) => value !== index);
-        showMessage(`${limit}개까지만 선택할 수 있습니다.`, 'error');
+        showErrorToast(`${limit}개까지만 선택할 수 있습니다.`);
     }
 };
 
@@ -140,7 +137,7 @@ const submitVote = async () => {
     }
     const selection = currentVote.value.voteInfo.multipleOptions === 1 ? [mySinglePick.value] : [...myMultiPick.value];
     if (selection.length === 0) {
-        showMessage('선택한 항목이 없습니다.', 'error');
+        showErrorToast('선택한 항목이 없습니다.');
         return;
     }
     try {
@@ -148,10 +145,10 @@ const submitVote = async () => {
             voteId: currentVote.value.voteInfo.id,
             selection,
         });
-        showMessage(result.wonLottery ? '특별한 설문 보상이 제공되었습니다!' : '설문을 마쳤습니다.', 'success');
+        showSuccessToast(result.wonLottery ? '특별한 설문 보상이 제공되었습니다!' : '설문을 마쳤습니다.');
         await loadVoteDetail(currentVote.value.voteInfo.id);
     } catch (error) {
-        showMessage(getErrorMessage(error), 'error');
+        showErrorToast(getErrorMessage(error));
     }
 };
 
@@ -165,10 +162,10 @@ const submitComment = async () => {
             text: myComment.value,
         });
         myComment.value = '';
-        showMessage('댓글을 달았습니다.', 'success');
+        showSuccessToast('댓글을 달았습니다.');
         await loadVoteDetail(currentVote.value.voteInfo.id);
     } catch (error) {
-        showMessage(getErrorMessage(error), 'error');
+        showErrorToast(getErrorMessage(error));
     }
 };
 
@@ -182,14 +179,14 @@ const submitNewVote = async () => {
             revealMode: 'after_vote',
             closePrevious: true,
         });
-        showMessage('설문 조사가 생성되었습니다.', 'success');
+        showSuccessToast('설문 조사가 생성되었습니다.');
         newVoteTitle.value = '';
         newVoteOptionsText.value = '';
         newVoteMultipleOptions.value = 1;
         showNewVote.value = false;
         await reloadVote();
     } catch (error) {
-        showMessage(getErrorMessage(error), 'error');
+        showErrorToast(getErrorMessage(error));
     }
 };
 
@@ -229,14 +226,7 @@ onMounted(() => {
             <div></div>
         </header>
 
-        <div
-            v-if="message"
-            class="vote-notice"
-            :class="messageKind"
-            :role="messageKind === 'error' ? 'alert' : 'status'"
-        >
-            {{ message }}
-        </div>
+        <div v-if="loadError" class="vote-notice error" role="alert">{{ loadError }}</div>
         <div id="vote-title" class="bg2">설문 조사({{ voteReward }}금과 추첨으로 유니크템 증정!)</div>
 
         <div v-if="detailLoading && !currentVote" class="loading">불러오는 중...</div>

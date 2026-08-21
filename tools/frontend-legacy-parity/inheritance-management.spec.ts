@@ -415,7 +415,9 @@ test.describe('inheritance management legacy parity', () => {
         await expect.poll(() => fixture.uniqueAuctionRequests.length).toBe(1);
         expect(JSON.stringify(fixture.uniqueAuctionRequests[0])).toContain('che_서적_07_논어');
         expect(JSON.stringify(fixture.uniqueAuctionRequests[0])).toContain('6000');
-        await expect(page.locator('.notice.success')).toHaveText('성공했습니다. 경매장을 확인해주세요.');
+        await expect(page.locator('[data-testid="game-toast"][data-feedback-kind="success"]')).toContainText(
+            '성공했습니다. 경매장을 확인해주세요.'
+        );
     });
 
     test('keeps controls usable and renders an API mutation error', async ({ page }) => {
