@@ -65,6 +65,14 @@ const measure = async (browser, name, viewport) => {
         await ensureGeneral(page);
         await page.locator('.MessagePanel').waitFor({ state: 'visible', timeout: 30_000 });
         await page.locator('.BoardHeader').first().waitFor({ state: 'visible' });
+        const mailboxOptions = await page.locator('.MessageInputForm select option').evaluateAll((options) =>
+            options.map((option) => ({
+                value: option.value,
+                label: option.textContent?.trim() ?? '',
+                group: option.parentElement?.tagName === 'OPTGROUP' ? option.parentElement.label : '',
+                disabled: option.disabled,
+            }))
+        );
         const marker = `computed-dom-${name}-${Date.now()}`;
         await page.locator('.MessageInputForm select').selectOption('9999');
         await page.locator('.MessageInputForm input').fill(marker);
@@ -160,7 +168,11 @@ const measure = async (browser, name, viewport) => {
             page.once('dialog', (dialog) => dialog.accept());
             await deleteButton.click();
         }
-        return { ...result, interaction: { hover, focus } };
+        return {
+            ...result,
+            mailboxOptions,
+            interaction: { hover, focus },
+        };
     } finally {
         await context.close();
     }

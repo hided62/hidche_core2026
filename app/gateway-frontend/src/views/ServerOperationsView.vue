@@ -162,6 +162,20 @@ const RESET_AUTORUN_FORM_KEYS = {
     battle: 'autorunBattle',
     chief: 'autorunChief',
 } as const satisfies Record<ResetAutorunOption, keyof typeof form>;
+const RESET_SCHEDULE_COPY = {
+    scheduledAt: {
+        label: '초기화 시작',
+        help: 'Gateway가 빌드, DB 초기화와 시나리오 생성을 시작합니다. 비우면 즉시 시작하며, 완료되어도 가오픈 전에는 접속을 차단합니다.',
+    },
+    preopenAt: {
+        label: '가오픈 시작',
+        help: '게임 접속과 장수 생성, 예약턴 입력을 허용하지만 턴은 진행하지 않습니다. 가오픈을 비우고 정식 오픈만 지정하면 초기화 완료 후 바로 가오픈합니다.',
+    },
+    openAt: {
+        label: '정식 오픈',
+        help: '턴 진행을 시작합니다. 비우면 초기화가 완료되는 즉시 정식 오픈합니다.',
+    },
+} as const;
 const gatewayForm = reactive({
     sourceMode: 'BRANCH' as 'BRANCH' | 'COMMIT',
     sourceRef: 'main',
@@ -1313,31 +1327,66 @@ onBeforeUnmount(() => {
                         </div>
                     </details>
 
-                    <div v-if="mode === 'scenario'" class="grid gap-4 md:grid-cols-3">
-                        <label class="text-xs text-zinc-400"
-                            >작업 예약 (서버 시간 UTC+9)
-                            <input
-                                v-model="form.scheduledAt"
-                                type="datetime-local"
-                                class="mt-1 w-full rounded border border-zinc-700 bg-zinc-950 px-3 py-2 text-white"
-                            />
-                        </label>
-                        <label class="text-xs text-zinc-400"
-                            >가오픈 (서버 시간 UTC+9)
-                            <input
-                                v-model="form.preopenAt"
-                                type="datetime-local"
-                                class="mt-1 w-full rounded border border-zinc-700 bg-zinc-950 px-3 py-2 text-white"
-                            />
-                        </label>
-                        <label class="text-xs text-zinc-400"
-                            >정식 오픈 (서버 시간 UTC+9)
-                            <input
-                                v-model="form.openAt"
-                                type="datetime-local"
-                                class="mt-1 w-full rounded border border-zinc-700 bg-zinc-950 px-3 py-2 text-white"
-                            />
-                        </label>
+                    <div v-if="mode === 'scenario'" class="space-y-2 rounded border border-zinc-800 p-3">
+                        <p class="text-xs leading-5 text-zinc-400">
+                            초기화 시작 → 가오픈 시작 → 정식 오픈 순서입니다. 초기화 시작을 비우면 바로 작업합니다.
+                        </p>
+                        <div class="grid gap-4 md:grid-cols-3">
+                            <div class="space-y-1">
+                                <div class="flex items-center gap-1.5 text-xs text-zinc-400">
+                                    <label for="reset-scheduled-at">{{ RESET_SCHEDULE_COPY.scheduledAt.label }}</label>
+                                    <CompactHelp
+                                        :label="RESET_SCHEDULE_COPY.scheduledAt.label"
+                                        :text="RESET_SCHEDULE_COPY.scheduledAt.help"
+                                        test-id="reset-help-scheduled-at"
+                                    />
+                                    <span>(선택 · UTC+9)</span>
+                                </div>
+                                <input
+                                    id="reset-scheduled-at"
+                                    v-model="form.scheduledAt"
+                                    type="datetime-local"
+                                    class="w-full rounded border border-zinc-700 bg-zinc-950 px-3 py-2 text-white"
+                                    data-testid="reset-scheduled-at"
+                                />
+                            </div>
+                            <div class="space-y-1">
+                                <div class="flex items-center gap-1.5 text-xs text-zinc-400">
+                                    <label for="reset-preopen-at">{{ RESET_SCHEDULE_COPY.preopenAt.label }}</label>
+                                    <CompactHelp
+                                        :label="RESET_SCHEDULE_COPY.preopenAt.label"
+                                        :text="RESET_SCHEDULE_COPY.preopenAt.help"
+                                        test-id="reset-help-preopen-at"
+                                    />
+                                    <span>(선택 · UTC+9)</span>
+                                </div>
+                                <input
+                                    id="reset-preopen-at"
+                                    v-model="form.preopenAt"
+                                    type="datetime-local"
+                                    class="w-full rounded border border-zinc-700 bg-zinc-950 px-3 py-2 text-white"
+                                    data-testid="reset-preopen-at"
+                                />
+                            </div>
+                            <div class="space-y-1">
+                                <div class="flex items-center gap-1.5 text-xs text-zinc-400">
+                                    <label for="reset-open-at">{{ RESET_SCHEDULE_COPY.openAt.label }}</label>
+                                    <CompactHelp
+                                        :label="RESET_SCHEDULE_COPY.openAt.label"
+                                        :text="RESET_SCHEDULE_COPY.openAt.help"
+                                        test-id="reset-help-open-at"
+                                    />
+                                    <span>(선택 · UTC+9)</span>
+                                </div>
+                                <input
+                                    id="reset-open-at"
+                                    v-model="form.openAt"
+                                    type="datetime-local"
+                                    class="w-full rounded border border-zinc-700 bg-zinc-950 px-3 py-2 text-white"
+                                    data-testid="reset-open-at"
+                                />
+                            </div>
+                        </div>
                     </div>
 
                     <input
