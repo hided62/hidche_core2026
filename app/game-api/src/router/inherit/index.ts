@@ -7,12 +7,12 @@ import {
     ItemLoader,
     isItemKey,
     loadWarTraitModules,
+    sendMessage,
     WarTraitLoader,
     WAR_TRAIT_KEYS,
     isWarTraitKey,
 } from '@sammo-ts/logic';
-import type { InheritBuffType } from '@sammo-ts/logic';
-import type { ItemSlot } from '@sammo-ts/logic';
+import type { InheritBuffType, ItemSlot, MessageDraft, MessageRecordDraft } from '@sammo-ts/logic';
 import { simpleSerialize } from '@sammo-ts/logic/war/utils.js';
 import { resolveLegacyCompatibleUniqueConfig } from '@sammo-ts/logic/rewards/legacyUniqueItemPool.js';
 import {
@@ -28,6 +28,9 @@ import {
 } from '../../services/inheritance.js';
 import type { GameApiContext, WorldStateRow } from '../../context.js';
 import { openAuctionWithDaemon } from '../../auction/open.js';
+import { buildTargetFromGeneral } from '../../messages/targets.js';
+import { insertMessage } from '../../messages/store.js';
+import { loadCurrentGameTime } from '../../services/gameClock.js';
 
 const BUFF_KEYS: InheritBuffType[] = [
     'warAvoidRatio',
@@ -881,11 +884,8 @@ export const inheritRouter = router({
             }
 
             const [general, target] = await Promise.all([
-                ctx.db.general.findFirst({ where: { userId }, select: { id: true } }),
-                ctx.db.general.findUnique({
-                    where: { id: input.targetGeneralId },
-                    select: { id: true, name: true, userId: true, meta: true },
-                }),
+                ctx.db.general.findFirst({ where: { userId } }),
+                ctx.db.general.findUnique({ where: { id: input.targetGeneralId } }),
             ]);
             if (!general) {
                 throw new TRPCError({ code: 'PRECONDITION_FAILED', message: '장수가 존재하지 않습니다.' });
@@ -909,6 +909,42 @@ export const inheritRouter = router({
                 worldState.currentMonth,
                 `${inheritConst.inheritCheckOwnerPoint} 포인트로 장수 소유자 확인`
             );
+
+            const [generalTarget, checkedTarget, gameTime] = await Promise.all([
+                buildTargetFromGeneral(ctx.db, general),
+                buildTargetFromGeneral(ctx.db, target),
+                loadCurrentGameTime(ctx.db),
+            ]);
+            const systemTarget: MessageDraft['src'] = {
+                generalId: 0,
+                generalName: '',
+                nationId: 0,
+                nationName: 'System',
+                color: '#000000',
+                icon: '',
+            };
+            const validUntil = new Date('9999-12-31T00:00:00.000Z');
+            const sendSystemPrivateMessage = async (dest: MessageDraft['dest'], text: string): Promise<void> => {
+                await sendMessage(
+                    {
+                        insertMessage: (draft: MessageRecordDraft) => insertMessage(ctx.db, draft),
+                    },
+                    {
+                        msgType: 'private',
+                        src: systemTarget,
+                        dest,
+                        text,
+                        time: gameTime.now,
+                        validUntil,
+                        option: {},
+                    },
+                    { sendDestOnly: true }
+                );
+                ctx.changeJournal?.mark('messages.mailbox', dest.generalId);
+            };
+
+            await sendSystemPrivateMessage(generalTarget, `${target.name}의 소유자는 ${ownerName} 입니다.`);
+            await sendSystemPrivateMessage(checkedTarget, '소유자명이 누군가에 의해 확인되었습니다.');
             return { ok: true, ownerName, targetName: target.name };
         }),
 });

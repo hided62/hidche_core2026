@@ -6,6 +6,7 @@ import { describe, expect, it } from 'vitest';
 const classifications = {
     durableJournal: [
         'betting.bet',
+        'inherit.checkOwner',
         'messages.delete',
         'messages.respond',
         'messages.send',
@@ -36,7 +37,6 @@ const classifications = {
         'diplomacy.respondLetter',
         'diplomacy.rollbackLetter',
         'diplomacy.sendLetter',
-        'inherit.checkOwner',
         'join.getSelectionPool',
         'join.listPossessCandidates',
         'messages.readLatest',

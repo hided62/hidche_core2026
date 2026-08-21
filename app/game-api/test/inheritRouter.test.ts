@@ -1,7 +1,9 @@
 import { describe, expect, it, vi } from 'vitest';
 
+import { ChangeJournal } from '@sammo-ts/common';
 import type { GameSessionTokenPayload } from '@sammo-ts/common/auth/gameToken';
 import type { RedisConnector } from '@sammo-ts/infra';
+import type { MessagePayload } from '@sammo-ts/logic';
 
 import { RedisAccessTokenStore } from '../src/auth/accessTokenStore.js';
 import { InMemoryFlushStore } from '../src/auth/flushStore.js';
@@ -91,6 +93,14 @@ const worldState = {
     updatedAt: new Date('2026-07-26T00:00:00Z'),
 };
 
+interface CapturedMessage {
+    mailbox: number;
+    type: string;
+    src: number;
+    dest: number;
+    payload: MessagePayload;
+}
+
 const buildContext = (options: {
     auth?: GameSessionTokenPayload | null;
     general?: GeneralRow | null;
@@ -123,8 +133,30 @@ const buildContext = (options: {
                       const: options.configConst,
                   },
               };
+    const messageRows: CapturedMessage[] = [];
+    const queryRaw = vi.fn(async (query: unknown, ...values: unknown[]) => {
+        const queryStrings = Array.isArray(query)
+            ? query.map(String)
+            : ((query as { strings?: readonly string[] } | null)?.strings ?? []);
+        const sql = queryStrings.join(' ');
+        if (sql.includes('INSERT INTO message')) {
+            const payload = JSON.parse(String(values[8])) as MessagePayload;
+            messageRows.push({
+                mailbox: Number(values[0]),
+                type: String(values[1]),
+                src: Number(values[2]),
+                dest: Number(values[3]),
+                payload,
+            });
+            return [{ id: 100 + messageRows.length }];
+        }
+        if (sql.includes('FROM inheritance_point')) {
+            return [{ value: options.inheritancePoint ?? 10_000 }];
+        }
+        throw new Error(`Unexpected raw query in inherit router fixture: ${sql}`);
+    });
     const db = {
-        $queryRaw: vi.fn(async () => [{ value: options.inheritancePoint ?? 10_000 }]),
+        $queryRaw: queryRaw,
         worldState: {
             findFirst: vi.fn(async () => activeWorldState),
         },
@@ -135,6 +167,11 @@ const buildContext = (options: {
             findMany,
             findUnique: vi.fn(async ({ where }: { where: { id: number } }) =>
                 target?.id === where.id ? target : null
+            ),
+        },
+        nation: {
+            findUnique: vi.fn(async ({ where }: { where: { id: number } }) =>
+                where.id === 1 ? { id: 1, name: '촉', color: '#ff0000' } : null
             ),
         },
         inheritancePoint: {
@@ -156,8 +193,10 @@ const buildContext = (options: {
         },
         'che:default'
     );
+    const changeJournal = new ChangeJournal();
     const context: GameApiContext = {
         db: db as unknown as DatabaseClient,
+        changeJournal,
         redis: {} as RedisConnector['client'],
         turnDaemon: { requestCommand } as unknown as TurnDaemonTransport,
         battleSim: {} as GameApiContext['battleSim'],
@@ -170,7 +209,16 @@ const buildContext = (options: {
         flushStore: new InMemoryFlushStore(),
         gameTokenSecret: 'test-secret',
     };
-    return { context, requestCommand, pointUpsert, logCreate, findMany, inheritanceLogFindMany };
+    return {
+        context,
+        requestCommand,
+        pointUpsert,
+        logCreate,
+        findMany,
+        inheritanceLogFindMany,
+        messageRows,
+        changeJournal,
+    };
 };
 
 describe('inherit router actor and permission boundaries', () => {
@@ -182,6 +230,10 @@ describe('inherit router actor and permission boundaries', () => {
         await expect(caller.inherit.buyHiddenBuff({ type: 'warAvoidRatio', level: 1 })).rejects.toMatchObject({
             code: 'UNAUTHORIZED',
         });
+        await expect(caller.inherit.checkOwner({ targetGeneralId: 8 })).rejects.toMatchObject({
+            code: 'UNAUTHORIZED',
+        });
+        expect(fixture.messageRows).toHaveLength(0);
         expect(fixture.requestCommand).not.toHaveBeenCalled();
     });
 
@@ -476,6 +528,68 @@ describe('inherit router actor and permission boundaries', () => {
                 text: '1000 포인트로 장수 소유자 확인',
             },
         });
+        expect(fixture.messageRows).toHaveLength(2);
+        expect(fixture.messageRows).toEqual([
+            expect.objectContaining({
+                mailbox: 7,
+                type: 'private',
+                src: 0,
+                dest: 7,
+                payload: expect.objectContaining({
+                    src: expect.objectContaining({ generalId: 0, nationName: 'System' }),
+                    dest: expect.objectContaining({ generalId: 7, generalName: '유비' }),
+                    text: '조조의 소유자는 위유저 입니다.',
+                }),
+            }),
+            expect.objectContaining({
+                mailbox: 8,
+                type: 'private',
+                src: 0,
+                dest: 8,
+                payload: expect.objectContaining({
+                    src: expect.objectContaining({ generalId: 0, nationName: 'System' }),
+                    dest: expect.objectContaining({ generalId: 8, generalName: '조조' }),
+                    text: '소유자명이 누군가에 의해 확인되었습니다.',
+                }),
+            }),
+        ]);
+        expect(fixture.changeJournal.snapshot()).toEqual([
+            { domain: 'messages.mailbox', entityId: 7 },
+            { domain: 'messages.mailbox', entityId: 8 },
+        ]);
         expect(fixture.requestCommand).not.toHaveBeenCalled();
+    });
+
+    it('does not charge or send messages when the owner lookup target is the actor', async () => {
+        const fixture = buildContext({
+            inheritancePoint: 1_500,
+            target: buildGeneral({ id: 7, userId: 'user-1', name: '유비' }),
+        });
+
+        await expect(
+            appRouter.createCaller(fixture.context).inherit.checkOwner({ targetGeneralId: 7 })
+        ).rejects.toMatchObject({
+            code: 'BAD_REQUEST',
+            message: '자신의 정보는 확인할 수 없습니다.',
+        });
+        expect(fixture.pointUpsert).not.toHaveBeenCalled();
+        expect(fixture.logCreate).not.toHaveBeenCalled();
+        expect(fixture.messageRows).toHaveLength(0);
+        expect(fixture.changeJournal.snapshot()).toEqual([]);
+    });
+
+    it('does not charge or send messages when inheritance points are insufficient', async () => {
+        const fixture = buildContext({ inheritancePoint: 999 });
+
+        await expect(
+            appRouter.createCaller(fixture.context).inherit.checkOwner({ targetGeneralId: 8 })
+        ).rejects.toMatchObject({
+            code: 'BAD_REQUEST',
+            message: '유산 포인트가 부족합니다.',
+        });
+        expect(fixture.pointUpsert).not.toHaveBeenCalled();
+        expect(fixture.logCreate).not.toHaveBeenCalled();
+        expect(fixture.messageRows).toHaveLength(0);
+        expect(fixture.changeJournal.snapshot()).toEqual([]);
     });
 });
