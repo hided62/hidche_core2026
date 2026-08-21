@@ -55,6 +55,18 @@ describe('Ref event domestic traits', () => {
         expect(eventMusang!.getWarPowerMultiplier?.(context, unit, unit)).toEqual([1, 1]);
     });
 
+    it('applies the persisted victory count to the ordinary 무쌍 battle multiplier', async () => {
+        const musang = await new WarTraitLoader().load('che_무쌍');
+        const unit = {
+            getGeneral: () => ({ meta: { rank_killnum: 40 } }),
+        } as unknown as WarUnit;
+        const context = { unit } as unknown as WarActionContext;
+
+        const multiplier = musang.getWarPowerMultiplier?.(context, unit, unit);
+        expect(multiplier?.[0]).toBeCloseTo(1.2, 12);
+        expect(multiplier?.[1]).toBeCloseTo(0.92, 12);
+    });
+
     it('keeps event and ordinary 견고 injury-prevention triggers distinct by raise type', async () => {
         const [eventGyeongo] = await loadEventDomesticTraitModules(['che_event_견고']);
         const canonical = await new WarTraitLoader().load('che_견고');
