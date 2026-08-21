@@ -1,7 +1,8 @@
 <script setup lang="ts">
 import { computed, reactive, watch, type CSSProperties } from 'vue';
 import MapViewer from './MapViewer.vue';
-import { commandArgumentPresentation } from '../command/commandArgumentPresentation';
+import { commandArgumentPresentation, resolveCommandArgumentMapTarget } from '../command/commandArgumentPresentation';
+import { commandCityOptions } from '../command/commandArgumentOptions';
 import {
     commandArgumentFieldContract,
     shouldPreserveCommandArgumentValue,
@@ -64,6 +65,9 @@ const optionsFor = (field: CommandInputField): CommandOption[] => {
     if (field.optionSource === 'nations') {
         return props.options.nationTargets?.[props.commandKey] ?? props.options.nations;
     }
+    if (field.optionSource === 'cities') {
+        return commandCityOptions(props.commandKey, props.options.cities, props.mapData);
+    }
     if (field.optionSource === 'items') {
         return props.options.items[String(values.itemType ?? '')] ?? [];
     }
@@ -104,12 +108,7 @@ const synchronizeValues = () => {
     for (const field of props.fields) {
         const preserve =
             !commandChanged &&
-            shouldPreserveCommandArgumentValue(
-                field,
-                previousFieldContracts.get(field.key),
-                values,
-                optionsFor(field)
-            );
+            shouldPreserveCommandArgumentValue(field, previousFieldContracts.get(field.key), values, optionsFor(field));
         if (!preserve) values[field.key] = defaultValue(field);
     }
     const itemCodeField = props.fields.find((field) => field.key === 'itemCode');
@@ -162,20 +161,15 @@ const nationTargetField = computed(() =>
         (field) => field.kind === 'select' && field.optionSource === 'nations' && field.key === 'destNationId'
     )
 );
-const showMap = computed(
-    () =>
-        Boolean(props.mapData && props.mapLayout) &&
-        ((presentation.value.mapTarget === 'city' && cityTargetField.value) ||
-            (presentation.value.mapTarget === 'nation' && nationTargetField.value) ||
-            presentation.value.mapTarget === 'capital')
-);
+const mapTarget = computed(() => resolveCommandArgumentMapTarget(props.commandKey, props.fields));
+const showMap = computed(() => Boolean(props.mapData && props.mapLayout && mapTarget.value));
 const mapSelectedCityId = computed<number | null>(() => {
     if (!props.mapData) return null;
-    if (presentation.value.mapTarget === 'city' && cityTargetField.value) {
+    if (mapTarget.value === 'city' && cityTargetField.value) {
         const value = values[cityTargetField.value.key];
         return typeof value === 'number' ? value : null;
     }
-    if (presentation.value.mapTarget === 'nation' && nationTargetField.value) {
+    if (mapTarget.value === 'nation' && nationTargetField.value) {
         const value = values[nationTargetField.value.key];
         if (typeof value !== 'number') return null;
         return (
@@ -184,7 +178,7 @@ const mapSelectedCityId = computed<number | null>(() => {
             null
         );
     }
-    if (presentation.value.mapTarget === 'capital') {
+    if (mapTarget.value === 'capital') {
         const myNation = props.mapData.myNation;
         return props.mapData.nationList.find((entry) => entry[0] === myNation)?.[3] ?? null;
     }
@@ -198,17 +192,17 @@ const currentCityName = computed(() => {
 });
 
 const selectedMapTargetName = computed(() => {
-    if (presentation.value.mapTarget === 'city') {
+    if (mapTarget.value === 'city') {
         const cityId = mapSelectedCityId.value;
         if (!cityId) return '-';
         return props.mapLayout?.cityList.find((city) => city.id === cityId)?.name ?? '-';
     }
-    if (presentation.value.mapTarget === 'nation' && nationTargetField.value) {
+    if (mapTarget.value === 'nation' && nationTargetField.value) {
         const nationId = values[nationTargetField.value.key];
         if (typeof nationId !== 'number') return '-';
         return props.mapData?.nationList.find((nation) => nation[0] === nationId)?.[1] ?? '-';
     }
-    if (presentation.value.mapTarget === 'capital') {
+    if (mapTarget.value === 'capital') {
         const cityId = mapSelectedCityId.value;
         if (!cityId) return '-';
         return props.mapLayout?.cityList.find((city) => city.id === cityId)?.name ?? '-';
@@ -240,7 +234,7 @@ const distanceFromMyCity = (destination: number): number | null => {
 
 const mapTargetSummary = computed(() => {
     if (!props.mapData || !props.mapLayout) return '';
-    if (presentation.value.mapTarget === 'city' && mapSelectedCityId.value) {
+    if (mapTarget.value === 'city' && mapSelectedCityId.value) {
         const city = props.mapLayout.cityList.find((entry) => entry.id === mapSelectedCityId.value);
         const dynamic = props.mapData.cityList.find((entry) => entry[0] === mapSelectedCityId.value);
         if (!city) return '';
@@ -256,7 +250,7 @@ const mapTargetSummary = computed(() => {
             .filter(Boolean)
             .join(' · ');
     }
-    if (presentation.value.mapTarget === 'nation' && nationTargetField.value) {
+    if (mapTarget.value === 'nation' && nationTargetField.value) {
         const value = values[nationTargetField.value.key];
         if (typeof value !== 'number') return '';
         const nation = props.mapData.nationList.find((entry) => entry[0] === value);
@@ -265,7 +259,7 @@ const mapTargetSummary = computed(() => {
         const cityCount = props.mapData.cityList.filter((entry) => entry[3] === value).length;
         return `${nation[1]} · 수도 ${capital?.name ?? '-'} · 도시 ${cityCount.toLocaleString()}개`;
     }
-    if (presentation.value.mapTarget === 'capital' && mapSelectedCityId.value) {
+    if (mapTarget.value === 'capital' && mapSelectedCityId.value) {
         const city = props.mapLayout.cityList.find((entry) => entry.id === mapSelectedCityId.value);
         const dynamic = props.mapData.cityList.find((entry) => entry[0] === mapSelectedCityId.value);
         if (!city) return '';
@@ -278,11 +272,11 @@ const mapTargetSummary = computed(() => {
 
 const selectMapCity = (cityId: number) => {
     if (!props.mapData) return;
-    if (presentation.value.mapTarget === 'city' && cityTargetField.value) {
+    if (mapTarget.value === 'city' && cityTargetField.value) {
         setSelectValue(cityTargetField.value, String(cityId));
         return;
     }
-    if (presentation.value.mapTarget === 'nation' && nationTargetField.value) {
+    if (mapTarget.value === 'nation' && nationTargetField.value) {
         const nationId = props.mapData.cityList.find((entry) => entry[0] === cityId)?.[3];
         if (nationId && nationId > 0) setSelectValue(nationTargetField.value, String(nationId));
     }
@@ -417,24 +411,20 @@ watch(
                 :detail-mode="true"
                 :fit-container="true"
                 :show-current-city-marker="true"
-                :readonly="presentation.mapTarget === 'capital'"
+                :readonly="mapTarget === 'capital'"
                 @select-city="selectMapCity"
             />
-            <small v-if="presentation.mapTarget === 'capital'">현재 명령이 적용될 수도를 지도에서 확인하세요.</small>
+            <small v-if="mapTarget === 'capital'">현재 명령이 적용될 수도를 지도에서 확인하세요.</small>
             <small v-else>지도에서 도시를 클릭하거나 아래 목록에서 대상을 선택하세요.</small>
             <div class="map-selection-status" aria-live="polite" data-testid="command-map-selection-status">
-                <span v-if="presentation.mapTarget !== 'capital'" class="current-city-status">
+                <span v-if="mapTarget !== 'capital'" class="current-city-status">
                     <span class="status-key">현재 도시</span>
                     <strong>{{ currentCityName }}</strong>
                 </span>
-                <span v-if="presentation.mapTarget !== 'capital'" aria-hidden="true">→</span>
+                <span v-if="mapTarget !== 'capital'" aria-hidden="true">→</span>
                 <span class="selected-target-status">
                     <span class="status-key">{{
-                        presentation.mapTarget === 'nation'
-                            ? '선택 국가'
-                            : presentation.mapTarget === 'capital'
-                              ? '현재 수도'
-                              : '선택 도시'
+                        mapTarget === 'nation' ? '선택 국가' : mapTarget === 'capital' ? '현재 수도' : '선택 도시'
                     }}</span>
                     <strong>{{ selectedMapTargetName }}</strong>
                 </span>
