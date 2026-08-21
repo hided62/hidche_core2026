@@ -28,6 +28,8 @@ const props = defineProps<{
 const emit = defineEmits<{
     (event: 'hover', cityId: number): void;
     (event: 'leave'): void;
+    (event: 'touch', cityId: number, touchEvent: TouchEvent): void;
+    (event: 'touchleave'): void;
     (event: 'select', cityId: number): void;
 }>();
 
@@ -36,6 +38,25 @@ const stateSize = computed(() => 8 * props.mapScale);
 const stateOffset = computed(() => -6 * props.mapScale);
 const selectCity = () => {
     if (!props.readonly) emit('select', props.city.id);
+};
+
+let touchOnTrack = false;
+
+const touchstart = () => {
+    touchOnTrack = true;
+};
+
+const touchmove = () => {
+    touchOnTrack = false;
+};
+
+const touchend = (event: TouchEvent) => {
+    if (touchOnTrack) {
+        event.stopPropagation();
+        emit('touch', props.city.id, event);
+        return;
+    }
+    emit('touchleave');
 };
 </script>
 
@@ -59,6 +80,9 @@ const selectCity = () => {
         :style="{ left: `${props.city.x}px`, top: `${props.city.y}px` }"
         @mouseenter="emit('hover', props.city.id)"
         @mouseleave="emit('leave')"
+        @touchstart="touchstart"
+        @touchmove="touchmove"
+        @touchend="touchend"
         @click.stop="selectCity"
     >
         <div class="city-dot" :style="{ backgroundColor: props.city.color, width: `${size}px`, height: `${size}px` }">
