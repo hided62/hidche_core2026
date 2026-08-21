@@ -1533,7 +1533,10 @@ test('shows full nation command briefs in every chief card', async ({ page }) =>
     const desktopSummary = page.locator('.layout-desktop .chief-card').first().locator('.row-action').first();
     await expect(desktopSummary).toHaveText('【관우】 쌀 300 포상');
     await expect(desktopSummary).toHaveAttribute('title', '【관우】 쌀 300 포상');
-    await page.screenshot({ path: test.info().outputPath('chief-card-command-brief-desktop-1200.png'), fullPage: true });
+    await page.screenshot({
+        path: test.info().outputPath('chief-card-command-brief-desktop-1200.png'),
+        fullPage: true,
+    });
 
     await page.setViewportSize({ width: 500, height: 900 });
     const mobileSummary = page.locator('.chief-overview .chief-card').first().locator('.row-action').first();
