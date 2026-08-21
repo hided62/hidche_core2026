@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from 'vue';
 
+import SortableStringList from '../components/ui/SortableStringList';
 import { npcPriorityHelp } from '../utils/npcPriorityHelp';
 import { trpc } from '../utils/trpc';
 
@@ -8,7 +9,6 @@ type NpcPolicyResponse = Awaited<ReturnType<typeof trpc.npc.getPolicy.query>>;
 type NationPolicy = NpcPolicyResponse['currentNationPolicy'];
 type NumericPolicyKey = Exclude<keyof NationPolicy, 'CombatForce' | 'SupportForce' | 'DevelopForce'>;
 type PrioritySectionKey = 'nation' | 'general';
-type PriorityBucket = 'active' | 'inactive';
 
 interface PolicyField {
     key: NumericPolicyKey;
@@ -35,12 +35,6 @@ interface PriorityPanel {
     state: PriorityListState;
 }
 
-interface DragState {
-    section: PrioritySectionKey;
-    bucket: PriorityBucket;
-    index: number;
-}
-
 const loading = ref(false);
 const error = ref<string | null>(null);
 const notice = ref<string | null>(null);
@@ -51,7 +45,6 @@ const nationPriority = ref<PriorityListState | null>(null);
 const generalPriority = ref<PriorityListState | null>(null);
 const lastSavedNationPriority = ref<string[]>([]);
 const lastSavedGeneralPriority = ref<string[]>([]);
-const dragState = ref<DragState | null>(null);
 
 const resolveErrorMessage = (value: unknown): string => {
     if (value instanceof Error) return value.message;
@@ -363,26 +356,6 @@ const submitPriority = async (section: PrioritySectionKey) => {
     }
 };
 
-const startDrag = (event: DragEvent, section: PrioritySectionKey, bucket: PriorityBucket, index: number) => {
-    dragState.value = { section, bucket, index };
-    event.dataTransfer?.setData('text/plain', `${section}:${bucket}:${index}`);
-    if (event.dataTransfer) event.dataTransfer.effectAllowed = 'move';
-};
-
-const dropPriority = (event: DragEvent, section: PrioritySectionKey, bucket: PriorityBucket, targetIndex?: number) => {
-    event.preventDefault();
-    const source = dragState.value;
-    const state = section === 'nation' ? nationPriority.value : generalPriority.value;
-    if (!source || source.section !== section || !state) return;
-    const sourceList = state[source.bucket];
-    const targetList = state[bucket];
-    const [item] = sourceList.splice(source.index, 1);
-    if (!item) return;
-    let index = targetIndex ?? targetList.length;
-    if (sourceList === targetList && source.index < index) index -= 1;
-    targetList.splice(Math.max(0, Math.min(index, targetList.length)), 0, item);
-    dragState.value = null;
-};
 </script>
 
 <template>
@@ -474,66 +447,58 @@ const dropPriority = (event: DragEvent, section: PrioritySectionKey, bucket: Pri
                     <div class="priority-columns">
                         <div class="priority-column">
                             <div class="sub_bar legacy-bg2">비활성</div>
-                            <div
+                            <SortableStringList
+                                :list="panel.state.inactive"
+                                :group="`npc-priority-${panel.key}`"
+                                tag="div"
                                 class="priority-list"
-                                @dragover.prevent
-                                @drop="dropPriority($event, panel.key, 'inactive')"
                             >
-                                <div class="inactive-header">&lt;비활성화 항목들&gt;</div>
-                                <div
-                                    v-for="(item, index) in panel.state.inactive"
-                                    :key="item"
-                                    class="priority-item"
-                                    draggable="true"
-                                    @dragstart="startDrag($event, panel.key, 'inactive', index)"
-                                    @dragover.prevent
-                                    @drop.stop="dropPriority($event, panel.key, 'inactive', index)"
-                                >
-                                    <div class="priority_info">
-                                        <span class="drag-handle">≡</span>
-                                        <span>{{ item }}</span>
-                                        <button
-                                            class="help-button"
-                                            type="button"
-                                            :aria-label="`${item} 설명`"
-                                            :data-text="npcPriorityHelp[item] ?? '설명 없음'"
-                                        >
-                                            ?
-                                        </button>
+                                <template #header>
+                                    <div class="inactive-header">&lt;비활성화 항목들&gt;</div>
+                                </template>
+                                <template #item="{ element: item }">
+                                    <div class="priority-item">
+                                        <div class="priority_info">
+                                            <span class="drag-handle">≡</span>
+                                            <span>{{ item }}</span>
+                                            <button
+                                                class="help-button"
+                                                type="button"
+                                                :aria-label="`${item} 설명`"
+                                                :data-text="npcPriorityHelp[item] ?? '설명 없음'"
+                                            >
+                                                ?
+                                            </button>
+                                        </div>
                                     </div>
-                                </div>
-                            </div>
+                                </template>
+                            </SortableStringList>
                         </div>
                         <div class="priority-column">
                             <div class="sub_bar legacy-bg2">활성</div>
-                            <div
+                            <SortableStringList
+                                :list="panel.state.active"
+                                :group="`npc-priority-${panel.key}`"
+                                tag="div"
                                 class="priority-list"
-                                @dragover.prevent
-                                @drop="dropPriority($event, panel.key, 'active')"
                             >
-                                <div
-                                    v-for="(item, index) in panel.state.active"
-                                    :key="`${item}-${index}`"
-                                    class="priority-item"
-                                    draggable="true"
-                                    @dragstart="startDrag($event, panel.key, 'active', index)"
-                                    @dragover.prevent
-                                    @drop.stop="dropPriority($event, panel.key, 'active', index)"
-                                >
-                                    <div class="priority_info">
-                                        <span class="drag-handle">≡</span>
-                                        <span>{{ item }}</span>
-                                        <button
-                                            class="help-button"
-                                            type="button"
-                                            :aria-label="`${item} 설명`"
-                                            :data-text="npcPriorityHelp[item] ?? '설명 없음'"
-                                        >
-                                            ?
-                                        </button>
+                                <template #item="{ element: item }">
+                                    <div class="priority-item">
+                                        <div class="priority_info">
+                                            <span class="drag-handle">≡</span>
+                                            <span>{{ item }}</span>
+                                            <button
+                                                class="help-button"
+                                                type="button"
+                                                :aria-label="`${item} 설명`"
+                                                :data-text="npcPriorityHelp[item] ?? '설명 없음'"
+                                            >
+                                                ?
+                                            </button>
+                                        </div>
                                     </div>
-                                </div>
-                            </div>
+                                </template>
+                            </SortableStringList>
                         </div>
                     </div>
                     <div class="control_bar priority-control">

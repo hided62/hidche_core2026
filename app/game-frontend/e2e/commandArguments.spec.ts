@@ -522,6 +522,21 @@ const commandTable = {
                 buildCityCommand('che_백성동원', '백성동원'),
                 buildCityCommand('che_수몰', '수몰'),
                 buildCityCommand('che_허보', '허보'),
+                buildNationCommand('che_이호경식', '이호경식'),
+                buildNationCommand('che_급습', '급습'),
+                {
+                    ...buildNationCommand('che_피장파장', '피장파장'),
+                    inputFields: [
+                        ...buildNationCommand('che_피장파장', '피장파장').inputFields,
+                        {
+                            key: 'commandType',
+                            label: '대응 명령',
+                            kind: 'select',
+                            required: true,
+                            options: [{ value: 'che_수몰', label: '수몰' }],
+                        },
+                    ],
+                },
             ],
         },
     ],
@@ -815,7 +830,7 @@ const install = async (page: Page, rejectGeneral = false, commandTableResponse: 
                         { id: 2, name: '허창', level: 7, region: 2, x: 240, y: 180, path: [1] },
                     ],
                     regionMap: { 1: '하북', 2: '예주' },
-                    levelMap: { 8: '특' },
+                    levelMap: { 8: '특', 7: '대' },
                 });
             if (name === 'auth.status') return response({ ok: true });
             if (name === 'lobby.info')
@@ -953,9 +968,7 @@ test('shows and reserves the Ref spy command for a user on desktop and mobile', 
     await expect(spy).toBeFocused();
     await spy.click();
     const form = picker.getByTestId('command-argument-form');
-    await expect(form.getByTestId('command-argument-guidance')).toContainText(
-        '선택한 도시에 첩보를 실행합니다.'
-    );
+    await expect(form.getByTestId('command-argument-guidance')).toContainText('선택한 도시에 첩보를 실행합니다.');
     await expect(form.getByTestId('command-argument-guidance')).toContainText(
         '인접 도시에서는 더 많은 정보를 얻습니다.'
     );
@@ -979,9 +992,7 @@ test('shows and reserves the Ref spy command for a user on desktop and mobile', 
     await picker.screenshot({ path: test.info().outputPath('spy-command-mobile-500.png') });
 });
 
-test('defaults founding to a Ref-selectable nation trait and paints color option labels', async ({
-    page,
-}) => {
+test('defaults founding to a Ref-selectable nation trait and paints color option labels', async ({ page }) => {
     const foundingColors = [
         { value: 0, label: '색상 1', color: '#FF0000' },
         { value: 15, label: '색상 16', color: '#6495ED' },
@@ -1284,7 +1295,9 @@ test('keeps general and chief command categories after input and across page rel
     const reloadedChiefPicker = chiefPage.getByTestId('command-picker');
     await expect(reloadedChiefPicker.getByRole('button', { name: '전략', exact: true })).toHaveClass(/active/);
     await expect(reloadedChiefPicker.getByRole('button', { name: '필사즉생', exact: true })).toBeVisible();
-    await expect.poll(() => reloadedChiefPicker.evaluate((element) => element.getBoundingClientRect().height)).toBeGreaterThan(200);
+    await expect
+        .poll(() => reloadedChiefPicker.evaluate((element) => element.getBoundingClientRect().height))
+        .toBeGreaterThan(200);
     await reloadedChiefPicker.screenshot({
         path: test.info().outputPath('chief-category-after-reload-mobile-500.png'),
     });
@@ -1780,18 +1793,25 @@ test('uses the map to choose a nation target in the chief command window', async
     await page.screenshot({ path: test.info().outputPath('chief-nation-map-option.png'), fullPage: true });
 });
 
-test('shows city or capital maps for every requested chief command', async ({ page }) => {
+test('shows a map and target details for every city or nation argument chief command except assignment', async ({
+    page,
+}) => {
     await install(page);
     await page.setViewportSize({ width: 1200, height: 900 });
     const cases = [
-        { category: '인사', action: '발령', mode: 'city' },
         { category: '특수', action: '초토화', mode: 'city' },
         { category: '특수', action: '천도', mode: 'city' },
-        { category: '특수', action: '증축', mode: 'capital' },
-        { category: '특수', action: '감축', mode: 'capital' },
         { category: '전략', action: '수몰', mode: 'city' },
         { category: '전략', action: '허보', mode: 'city' },
         { category: '전략', action: '백성동원', mode: 'city' },
+        { category: '외교', action: '원조', mode: 'nation' },
+        { category: '외교', action: '불가침 제의', mode: 'nation' },
+        { category: '외교', action: '선전포고', mode: 'nation' },
+        { category: '외교', action: '종전 제의', mode: 'nation' },
+        { category: '외교', action: '불가침 파기 제의', mode: 'nation' },
+        { category: '전략', action: '이호경식', mode: 'nation' },
+        { category: '전략', action: '급습', mode: 'nation' },
+        { category: '전략', action: '피장파장', mode: 'nation' },
     ];
 
     for (const entry of cases) {
@@ -1805,24 +1825,106 @@ test('shows city or capital maps for every requested chief command', async ({ pa
         await expect(map, `${entry.action} 지도`).toBeVisible();
         await expect(form.getByTestId('command-argument-guidance')).toBeVisible();
 
-        if (entry.mode === 'capital') {
-            await expect(form.getByTestId('command-map-selection-status')).toContainText('현재 수도업');
-            await expect(form.getByTestId('command-map-target-summary')).toContainText('현재 수도');
-            await expect(map.locator('.city-base').first()).toHaveJSProperty('tagName', 'DIV');
-            expect(
-                await map
-                    .locator('.city-base')
-                    .first()
-                    .evaluate((node) => getComputedStyle(node).cursor)
-            ).toBe('default');
-        } else {
-            await map.locator('.city-base').nth(1).click();
+        await map.locator('.city-base').nth(1).click();
+        if (entry.mode === 'city') {
             await expect(form.locator('#command-arg-destCityId')).toHaveValue('2');
             await expect(form.getByTestId('command-map-selection-status')).toContainText('선택 도시허창');
+            await expect(form.getByTestId('command-map-target-summary')).toContainText(
+                '허창 · 적국 · 예주 · 대 · 현재 도시에서 1칸'
+            );
+        } else {
+            await expect(form.locator('#command-arg-destNationId')).toHaveValue('2');
+            await expect(form.getByTestId('command-map-selection-status')).toContainText('선택 국가적국');
+            await expect(form.getByTestId('command-map-target-summary')).toContainText('적국 · 수도 허창 · 도시 1개');
         }
+        await expect(form.getByTestId('current-city-marker')).toHaveAttribute('aria-label', '현재 도시 업');
     }
 
-    await page.screenshot({ path: test.info().outputPath('chief-command-map-guidance.png'), fullPage: true });
+    await page.screenshot({ path: test.info().outputPath('chief-command-target-map-details.png'), fullPage: true });
+
+    await page.setViewportSize({ width: 500, height: 900 });
+    await page.goto('/che/chief-center');
+    await page.getByRole('button', { name: '1턴 명령 입력', exact: true }).click();
+    const picker = page.getByTestId('command-picker');
+    await picker.getByRole('button', { name: /^(?:국가:)?전략$/, exact: true }).click();
+    await picker.getByRole('button', { name: /피장파장/ }).click();
+    const form = picker.getByTestId('command-argument-form');
+    const map = form.getByTestId('command-argument-map');
+    const targetCity = map.locator('.city-base').nth(1);
+    await targetCity.hover();
+    expect(await targetCity.evaluate((node) => getComputedStyle(node).cursor)).toBe('pointer');
+    await targetCity.focus();
+    await expect(targetCity).toBeFocused();
+    await targetCity.click();
+    await expect(form.locator('#command-arg-destNationId')).toHaveValue('2');
+    const geometry = await picker.evaluate((element) => ({
+        pickerWidth: element.getBoundingClientRect().width,
+        pickerOverflow: element.scrollWidth - element.clientWidth,
+        documentOverflow: document.documentElement.scrollWidth - document.documentElement.clientWidth,
+        mapInsidePicker:
+            element.querySelector<HTMLElement>('[data-testid="command-argument-map"]')!.getBoundingClientRect().right <=
+            element.getBoundingClientRect().right,
+    }));
+    expect(geometry).toEqual({ pickerWidth: 500, pickerOverflow: 0, documentOverflow: 0, mapInsidePicker: true });
+    await page.screenshot({
+        path: test.info().outputPath('chief-command-target-map-details-mobile.png'),
+        fullPage: true,
+    });
+});
+
+test('prioritizes own cities for assignment while retaining other map targets', async ({ page }) => {
+    const assignmentTable = structuredClone(commandTable);
+    assignmentTable.inputOptions.cities = [
+        { value: 2, label: '허창 (적국)', description: '적국 · 예주 · 대도시' },
+        { value: 3, label: '단양 (무주)' },
+        { value: 1, label: '업 (아국)' },
+    ];
+
+    await install(page, false, assignmentTable);
+    await page.setViewportSize({ width: 1200, height: 900 });
+    await page.goto('/che/chief-center');
+    await page.getByRole('button', { name: '1턴 명령 입력', exact: true }).click();
+    const picker = page.getByTestId('command-picker');
+    await picker.getByRole('button', { name: /^(?:국가:)?인사$/, exact: true }).click();
+    await picker.getByRole('button', { name: /발령/ }).click();
+
+    const form = picker.getByTestId('command-argument-form');
+    const citySelect = form.locator('#command-arg-destCityId');
+    await expect(form.getByTestId('command-argument-map')).toBeVisible();
+    await expect(citySelect.locator('option')).toHaveText(['업 (아국)', '허창 (적국)', '단양 (무주)']);
+    await expect(citySelect).toHaveValue('1');
+
+    await form.getByTestId('command-argument-map').locator('.city-base').nth(1).click();
+    await expect(citySelect).toHaveValue('2');
+    await expect(form.getByTestId('command-map-selection-status')).toContainText('선택 도시허창');
+    await expect(page).toHaveURL(/\/che\/chief-center$/);
+    await form.screenshot({ path: test.info().outputPath('chief-assignment-own-city-priority.png') });
+
+    await page.setViewportSize({ width: 500, height: 900 });
+    await page.goto('/che/chief-center');
+    await page.getByRole('button', { name: '1턴 명령 입력', exact: true }).click();
+    const mobilePicker = page.getByTestId('command-picker');
+    await mobilePicker.getByRole('button', { name: /^(?:국가:)?인사$/, exact: true }).click();
+    await mobilePicker.getByRole('button', { name: /발령/ }).click();
+
+    const mobileForm = mobilePicker.getByTestId('command-argument-form');
+    const mobileMap = mobileForm.getByTestId('command-argument-map');
+    const mobileCitySelect = mobileForm.locator('#command-arg-destCityId');
+    await expect(mobileMap).toBeVisible();
+    await expect(mobileCitySelect.locator('option')).toHaveText(['업 (아국)', '허창 (적국)', '단양 (무주)']);
+    const mobileGeometry = await mobilePicker.evaluate((element) => ({
+        width: element.getBoundingClientRect().width,
+        overflow: element.scrollWidth - element.clientWidth,
+    }));
+    expect(mobileGeometry).toEqual({ width: 500, overflow: 0 });
+    const mapGeometry = await mobileMap.locator('.map-area').evaluate((element) => {
+        const rect = element.getBoundingClientRect();
+        return { width: rect.width, height: rect.height };
+    });
+    expect(mapGeometry.width / mapGeometry.height).toBeCloseTo(7 / 5, 2);
+    await mobileMap.screenshot({ path: test.info().outputPath('chief-assignment-map-mobile.png') });
+    await mobileCitySelect.scrollIntoViewIfNeeded();
+    await mobilePicker.screenshot({ path: test.info().outputPath('chief-assignment-own-city-priority-mobile.png') });
 });
 
 test('prioritizes current nation targets while preserving every choice', async ({ page }) => {

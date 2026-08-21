@@ -3,6 +3,7 @@ import { mkdir, readFile } from 'node:fs/promises';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { gameProfile, gameTrpcRoute } from './gameTestPaths.js';
+import { touchDrag } from './touchDrag.js';
 
 type FixtureState = {
     permissionLevel: number;
@@ -318,6 +319,58 @@ test('500px layout stacks policy fields and priority panels like the reference',
     expect(geometry.panels[1]?.y).toBeGreaterThan(geometry.panels[0]?.y ?? 0);
     expect(geometry.documentWidth).toBe(500);
     await screenshot(page, 'core-npc-policy-mobile.png');
+});
+
+test('physical mobile touch reorders NPC priority across active and inactive lists', async ({ browser }, testInfo) => {
+    const configuredBaseUrl = testInfo.project.use.baseURL;
+    if (typeof configuredBaseUrl !== 'string') {
+        throw new Error('Playwright baseURL is required for the mobile touch contract');
+    }
+    const context = await browser.newContext({
+        baseURL: configuredBaseUrl,
+        viewport: { width: 390, height: 844 },
+        screen: { width: 390, height: 844 },
+        deviceScaleFactor: 1,
+        isMobile: true,
+        hasTouch: true,
+        colorScheme: 'dark',
+    });
+    const mobilePage = await context.newPage();
+    try {
+        await installFixture(mobilePage, { permissionLevel: 4, mutations: [] });
+        await gotoPolicy(mobilePage);
+        await expect(mobilePage.locator('#container')).toBeVisible();
+
+        const nationPanel = mobilePage.locator('.priority-panel').first();
+        const activeList = nationPanel.locator('.priority-column').nth(1).locator('.priority-list');
+        const activeRows = activeList.locator('.priority-item');
+        await touchDrag(
+            mobilePage,
+            activeRows.nth(0),
+            activeRows.nth(3),
+            { targetYRatio: 0.9 }
+        );
+        await expect
+            .poll(() =>
+                activeList
+                    .locator('.priority-item .priority_info > span:nth-child(2)')
+                    .first()
+                    .textContent()
+            )
+            .toBe('선전포고');
+
+        const activeItem = activeList.getByText('불가침제의', { exact: true });
+        const inactiveList = nationPanel.locator('.priority-column').first().locator('.priority-list');
+        await touchDrag(mobilePage, activeItem, inactiveList.locator('.inactive-header'));
+
+        await expect(inactiveList.getByText('불가침제의', { exact: true })).toBeVisible();
+        await expect(
+            activeList.getByText('불가침제의', { exact: true })
+        ).toHaveCount(0);
+        await mobilePage.screenshot({ path: testInfo.outputPath('npc-priority-mobile-touch.png'), fullPage: true });
+    } finally {
+        await context.close();
+    }
 });
 
 test('a read-level user sees enabled legacy controls but a forbidden save retains the draft', async ({ page }) => {
