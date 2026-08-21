@@ -68,4 +68,31 @@ void describe('shared Lumen button family', () => {
             );
         }
     });
+
+    void it('connects the information and office page actions to semantic Lumen variants', async () => {
+        const files = {
+            nationCities: await source('views/NationCitiesView.vue'),
+            nationInfo: await source('views/NationInfoView.vue'),
+            currentCity: await source('views/CurrentCityView.vue'),
+            myPage: await source('views/MyPageView.vue'),
+            personnel: await source('views/NationPersonnelView.vue'),
+            diplomacy: await source('views/DiplomacyView.vue'),
+        };
+
+        assert.match(files.nationCities, /legacy-button legacy-button--navigation back-button/u);
+        assert.match(files.nationCities, /legacy-button legacy-button--primary integration-button/u);
+        assert.match(files.nationCities, /legacy-button legacy-button--secondary extra-sort-button/u);
+        assert.match(files.nationCities, /legacy-button legacy-button--primary appointment-button/u);
+        assert.match(files.nationInfo, /legacy-button legacy-button--navigation/u);
+        assert.match(files.currentCity, /legacy-button legacy-button--navigation back-link/u);
+        assert.match(files.myPage, /legacy-button legacy-button--navigation/u);
+        assert.match(files.myPage, /legacy-button legacy-button--lumen legacy-button--fixed-height action-button/u);
+        assert.match(files.myPage, /legacy-button legacy-button--secondary item-button/u);
+        assert.match(
+            files.personnel,
+            /legacy-button legacy-button--lumen legacy-button--fixed-height personnel-change-button/u
+        );
+        assert.match(files.personnel, /legacy-button legacy-button--danger/u);
+        assert.match(files.diplomacy, /legacy-button legacy-button--primary[^>]*[\s\S]{0,80}전송/u);
+    });
 });

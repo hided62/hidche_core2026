@@ -2,6 +2,7 @@ import { mkdir, writeFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 
 import { expect, test, type Page, type Route } from '@playwright/test';
+import { expectLumenButtonStates } from './lumenButton.js';
 
 const basePath = `/${(process.env.PLAYWRIGHT_GAME_BASE_PATH ?? 'che').replace(/^\/+|\/+$/g, '')}`;
 const artifactRoot = process.env.DIPLOMACY_ARTIFACT_DIR ? resolve(process.env.DIPLOMACY_ARTIFACT_DIR) : null;
@@ -103,7 +104,9 @@ for (const viewport of [
         await expect(card.getByRole('link', { name: '자료' })).toHaveAttribute('href', 'https://example.com');
         await expect(card.getByRole('link', { name: '자료' })).toHaveAttribute('rel', 'noopener noreferrer nofollow');
         await expect(card.locator('.letter-text script, .letter-text svg, .letter-text math')).toHaveCount(0);
-        await expect(card.locator('.letter-text [onerror], .letter-text [onclick], .letter-text [style]')).toHaveCount(0);
+        await expect(card.locator('.letter-text [onerror], .letter-text [onclick], .letter-text [style]')).toHaveCount(
+            0
+        );
         expect(await page.evaluate(() => (globalThis as Record<string, unknown>).__diplomacyXss)).toBeUndefined();
 
         const geometry = await card.evaluate((element) => {
@@ -142,9 +145,7 @@ for (const viewport of [
         }
 
         const send = page.getByRole('button', { name: '전송' });
-        await send.focus();
-        await expect(send).toBeFocused();
-        await send.hover();
+        await expectLumenButtonStates(page, send, 'rgb(55, 90, 127)');
         await screenshot(page, `diplomacy-html-${basePath.slice(1)}-${viewport.name}.png`);
     });
 }

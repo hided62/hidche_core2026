@@ -92,7 +92,11 @@ const commandBrief = (command: ReservedCommand): string =>
             <tbody>
                 <tr>
                     <td>
-                        도 시 정 보<br /><button class="back-link" type="button" @click="router.push('/')">
+                        도 시 정 보<br /><button
+                            class="legacy-button legacy-button--navigation back-link"
+                            type="button"
+                            @click="router.push('/')"
+                        >
                             돌아가기
                         </button>
                     </td>
@@ -129,7 +133,15 @@ const commandBrief = (command: ReservedCommand): string =>
             <table class="legacy-table legacy-bg0 back-row">
                 <tbody>
                     <tr>
-                        <td><button class="back-link" type="button" @click="router.push('/')">돌아가기</button></td>
+                        <td>
+                            <button
+                                class="legacy-button legacy-button--navigation back-link"
+                                type="button"
+                                @click="router.push('/')"
+                            >
+                                돌아가기
+                            </button>
+                        </td>
                     </tr>
                 </tbody>
             </table>
@@ -310,7 +322,15 @@ const commandBrief = (command: ReservedCommand): string =>
         <table class="legacy-table legacy-bg0 footer">
             <tbody>
                 <tr>
-                    <td><button class="back-link" type="button" @click="router.push('/')">돌아가기</button></td>
+                    <td>
+                        <button
+                            class="legacy-button legacy-button--navigation back-link"
+                            type="button"
+                            @click="router.push('/')"
+                        >
+                            돌아가기
+                        </button>
+                    </td>
                 </tr>
                 <tr>
                     <td class="legacy-banner">
@@ -457,23 +477,8 @@ const commandBrief = (command: ReservedCommand): string =>
     margin-top: 0;
 }
 .back-link {
-    display: inline-block;
-    border: 1px solid #6c757d;
-    border-radius: 0.2rem;
-    background: #6c757d;
-    color: #fff;
-    padding: 0.25rem 0.5rem;
     font-family: var(--sammo-font-sans);
     font-size: 14px;
-    line-height: 1;
-    text-decoration: none;
-}
-.back-link:hover,
-.back-link:focus,
-.back-link:active {
-    border-color: #565e64;
-    background: #5c636a;
-    color: #fff;
 }
 .legacy-banner a {
     color: #fff;
