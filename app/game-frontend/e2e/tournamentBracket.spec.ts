@@ -90,6 +90,20 @@ const matches = [
 ];
 
 const response = (data: unknown) => ({ result: { data } });
+const asRecord = (value: unknown): Record<string, unknown> | null =>
+    typeof value === 'object' && value !== null && !Array.isArray(value) ? (value as Record<string, unknown>) : null;
+const findBetInput = (value: unknown): { targetId: number; amount: number } | null => {
+    const record = asRecord(value);
+    if (!record) return null;
+    if (typeof record.targetId === 'number' && typeof record.amount === 'number') {
+        return { targetId: record.targetId, amount: record.amount };
+    }
+    for (const child of Object.values(record)) {
+        const result = findBetInput(child);
+        if (result) return result;
+    }
+    return null;
+};
 const operationNames = (route: Route): string[] => {
     const url = new URL(route.request().url());
     return decodeURIComponent(url.pathname.slice(url.pathname.lastIndexOf('/trpc/') + 6)).split(',');
@@ -136,6 +150,7 @@ const installFixture = async (
     } = {}
 ) => {
     let joined = false;
+    const placedBets: Array<{ targetId: number; amount: number }> = [];
     await page.addInitScript((profile) => {
         window.localStorage.setItem('sammo-game-token', 'ga_tournament_bracket_playwright');
         window.localStorage.setItem('sammo-game-profile', profile);
@@ -208,6 +223,12 @@ const installFixture = async (
                     myAmount: 160,
                 });
             }
+            if (operation === 'tournament.placeBet') {
+                const input = findBetInput(route.request().postDataJSON());
+                if (!input) throw new Error('베팅 요청에서 targetId와 amount를 찾을 수 없습니다.');
+                placedBets.push(input);
+                return response({ ok: true });
+            }
             if (operation === 'tournament.getRankings') {
                 return response(
                     [
@@ -241,6 +262,7 @@ const installFixture = async (
         });
         await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(results) });
     });
+    return { placedBets };
 };
 
 const openTournament = async (page: Page) => {
@@ -543,12 +565,49 @@ test('tournament and betting pages expose same-row navigation tabs beside close'
 
 test('mobile betting rankings use tabs and keep dedicated icons beside general names', async ({ page }, testInfo) => {
     await page.setViewportSize({ width: 390, height: 844 });
-    await installFixture(page);
+    const { placedBets } = await installFixture(page, { tournamentStage: 6 });
     await page.goto('betting');
 
-    await expect(page.locator('.candidate-card')).toHaveCount(16);
+    await expect(page.locator('.candidate-table')).toHaveCount(0);
+    const betButtons = page.locator('.mobile-bracket .bracket-bet-button:visible');
+    await expect(betButtons).toHaveCount(16);
     await expect(page.locator('.betting-bracket .bracket-core-stat').first()).toHaveText('종합 240');
     await expect(page.locator('.betting-bracket .bracket-my-bet').first()).toHaveText('내 투자 금120');
+
+    const firstCard = page.locator('.mobile-bracket-name[data-general-id="1"]');
+    const firstBetButton = page.getByRole('button', { name: '관우에게 베팅하기' });
+    const corner = await firstCard.evaluate((card) => {
+        const own = card.getBoundingClientRect();
+        const button = card.querySelector<HTMLElement>('.bracket-bet-button')!.getBoundingClientRect();
+        return {
+            topOffset: button.top - own.top,
+            rightOffset: own.right - button.right,
+            contained: button.top >= own.top && button.right <= own.right && button.bottom <= own.bottom,
+        };
+    });
+    expect(corner.topOffset).toBeGreaterThanOrEqual(2);
+    expect(corner.topOffset).toBeLessThanOrEqual(4);
+    expect(corner.rightOffset).toBeGreaterThanOrEqual(2);
+    expect(corner.rightOffset).toBeLessThanOrEqual(4);
+    expect(corner.contained).toBe(true);
+
+    await firstBetButton.hover();
+    await expect(firstBetButton).toHaveCSS('filter', 'brightness(1.25)');
+    await firstBetButton.focus();
+    await expect(firstBetButton).toBeFocused();
+    await firstBetButton.click();
+    const dialog = page.getByRole('dialog', { name: '베팅하기' });
+    await expect(dialog).toBeVisible();
+    await expect(dialog.getByText('배당 28.00')).toBeVisible();
+    await expect(dialog.getByText('예상 환수금 280')).toBeVisible();
+    await dialog.getByLabel('베팅 금액').selectOption('50');
+    await expect(dialog.getByText('예상 환수금 1,400')).toBeVisible();
+    await persistScreenshot(page, 'tournament-betting-dialog-mobile', testInfo.outputPath('betting-dialog-mobile.webp'));
+    await dialog.getByRole('button', { name: '베팅 등록' }).click();
+    await expect(dialog).not.toBeVisible();
+    await expect(page.getByRole('status')).toHaveText('베팅이 등록되었습니다.');
+    expect(placedBets).toEqual([{ targetId: 1, amount: 50 }]);
+
     await expect(page.getByRole('tablist', { name: '토너먼트 랭킹 종목 선택' })).toBeVisible();
     await expect(page.locator('.ranking-table:visible')).toHaveCount(1);
     await page.getByRole('tab', { name: '통솔전' }).click();
@@ -572,7 +631,7 @@ test('mobile betting rankings use tabs and keep dedicated icons beside general n
 
 test('betting bracket shows intelligence for debate tournament candidates', async ({ page }) => {
     await page.setViewportSize({ width: 390, height: 844 });
-    await installFixture(page, { tournamentType: 3 });
+    await installFixture(page, { tournamentType: 3, tournamentStage: 6 });
     await page.goto('betting');
 
     await expect(page.locator('.betting-bracket .bracket-core-stat').first()).toHaveText('지력 80');
@@ -585,17 +644,30 @@ test('desktop betting presents icon-and-name cards and all four rankings without
     page,
 }, testInfo) => {
     await page.setViewportSize({ width: 1365, height: 900 });
-    await installFixture(page);
+    await installFixture(page, { tournamentStage: 6 });
     await page.goto('betting');
 
-    await expect(page.locator('.candidate-card')).toHaveCount(16);
+    await expect(page.locator('.candidate-table')).toHaveCount(0);
+    await expect(page.locator('.desktop-bracket .bracket-bet-button:visible')).toHaveCount(16);
     await expect(page.locator('.ranking-table:visible')).toHaveCount(4);
     await expect(page.locator('.general-identity-icon').first()).toHaveCSS('width', '64px');
     await expect(page.locator('.general-identity-icon').first()).toHaveCSS('height', '64px');
-    const columns = await page
-        .locator('.candidate-grid')
-        .evaluate((element) => getComputedStyle(element).gridTemplateColumns.split(' ').length);
-    expect(columns).toBe(4);
+    const firstCardCorner = await page
+        .locator('.desktop-bracket-name.betting-target[data-general-id="1"]')
+        .evaluate((card) => {
+            const own = card.getBoundingClientRect();
+            const button = card.querySelector<HTMLElement>('.bracket-bet-button')!.getBoundingClientRect();
+            return {
+                topOffset: button.top - own.top,
+                rightOffset: own.right - button.right,
+                contained: button.top >= own.top && button.right <= own.right && button.bottom <= own.bottom,
+            };
+        });
+    expect(firstCardCorner.topOffset).toBeGreaterThanOrEqual(2);
+    expect(firstCardCorner.topOffset).toBeLessThanOrEqual(4);
+    expect(firstCardCorner.rightOffset).toBeGreaterThanOrEqual(2);
+    expect(firstCardCorner.rightOffset).toBeLessThanOrEqual(4);
+    expect(firstCardCorner.contained).toBe(true);
     expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(1365);
     await persistScreenshot(page, 'tournament-ranking-desktop', testInfo.outputPath('tournament-ranking-desktop.webp'));
 });
