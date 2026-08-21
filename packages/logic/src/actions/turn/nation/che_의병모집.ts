@@ -452,6 +452,8 @@ export class ActionResolver<
                 }),
                 turnTime,
                 ...(turnTick === undefined ? {} : { turnTick }),
+                bornYear: birthYear,
+                deadYear: deathYear,
             };
             effects.push(createGeneralAddEffect(newGeneral));
         }

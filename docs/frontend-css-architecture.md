@@ -27,6 +27,14 @@ two shell layers. It owns only control geometry and state rules that are proven
 identical in the Ref Bootstrap/Lumen family. A page still owns control width,
 grid placement, and any visual family that is not Bootstrap/Lumen.
 
+The Ref-style directory pages share a second, deliberately compact control
+family through `LegacySortControls.vue`. Its `.legacy-sort-*` rules own the
+explicit dark select/option palette, the raised submit button, and the
+focus/active states for sortable table headers. A page supplies only the
+available legacy sort keys, their fixed directions, and placement. Columns
+without an unambiguous legacy sort key remain plain headers rather than
+inventing a new ordering contract.
+
 ## Button composition
 
 Choose the Ref visual family before choosing a semantic color. Buttons from

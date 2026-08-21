@@ -39,6 +39,109 @@
 }
 
 /*
+ * Compact sorting controls used by the Ref-style directory pages. Native
+ * dark-mode selects vary by browser, so both the closed control and its option
+ * popup own an explicit high-contrast palette. The submit control keeps a
+ * raised face and pressed edge without increasing the legacy title row.
+ */
+.legacy-sort-form {
+    min-height: 25px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 4px;
+    margin: 0;
+}
+
+.legacy-sort-select,
+.legacy-sort-submit {
+    box-sizing: border-box;
+    height: 25px;
+    font: inherit;
+}
+
+.legacy-sort-select {
+    min-width: 78px;
+    border: 1px solid #91a39a;
+    border-radius: 3px;
+    padding: 1px 24px 1px 6px;
+    background-color: #18231d;
+    color: #f7faf8;
+    color-scheme: dark;
+    cursor: pointer;
+}
+
+.legacy-sort-select option {
+    background-color: #18231d;
+    color: #f7faf8;
+}
+
+.legacy-sort-select option:checked {
+    background-color: #375a7f;
+    color: #fff;
+}
+
+.legacy-sort-submit {
+    margin-top: 0;
+    border-color: #27405a;
+    border-style: solid;
+    border-width: 0 1px 3px;
+    border-radius: 3px;
+    padding: 1px 9px;
+    background: #375a7f;
+    color: #fff;
+    font-weight: 700;
+    line-height: 21px;
+    vertical-align: middle;
+    cursor: pointer;
+}
+
+.legacy-sort-submit:hover {
+    margin-top: 1px;
+    border-bottom-width: 2px;
+}
+
+.legacy-sort-submit:active {
+    margin-top: 2px;
+    border-bottom-width: 1px;
+}
+
+.legacy-sort-select:focus-visible,
+.legacy-sort-submit:focus-visible,
+.legacy-sort-header:focus-visible {
+    outline: 2px solid var(--sammo-color-accent);
+    outline-offset: 1px;
+}
+
+.legacy-sort-header {
+    width: 100%;
+    min-height: 18px;
+    margin: 0;
+    border: 0;
+    padding: 0 2px;
+    background: transparent;
+    color: inherit;
+    font: inherit;
+    line-height: inherit;
+    cursor: pointer;
+}
+
+.legacy-sort-header:hover {
+    background: rgb(255 255 255 / 12%);
+}
+
+.legacy-sort-indicator {
+    margin-left: 2px;
+    color: #9ee7ba;
+    font-size: 0.75em;
+    opacity: 0.65;
+}
+
+[aria-sort] .legacy-sort-indicator {
+    opacity: 1;
+}
+
+/*
  * Ref Bootstrap 5.2 + Lumen button family. This class owns the common raised
  * edge and pressed movement. Semantic modifiers below only select face, edge,
  * and text colors; width and fixed-height compensation stay with the owner.

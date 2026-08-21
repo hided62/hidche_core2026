@@ -353,6 +353,15 @@ test('암행부 행을 도시별로 나누고 수뇌의 인사부 즉시 임명�
     await expect(page.locator('.city-user-table')).toHaveCount(0);
     await expect(page.getByRole('button', { name: '인사부 연동' })).toHaveCount(0);
 
+    const citySort = page.locator('#nation-city-sort');
+    await expect(citySort).toHaveCSS('background-color', 'rgb(24, 35, 29)');
+    await citySort.selectOption('5');
+    await page.getByRole('button', { name: '정렬하기' }).click();
+    await expect(page.locator('.city th[aria-sort="descending"]').first()).toContainText('농업');
+    await page.getByRole('button', { name: '시세 기준 정렬' }).first().click();
+    await expect(citySort).toHaveValue('10');
+    await expect(page.locator('.city th[aria-sort="descending"]').first()).toContainText('시세');
+
     await page.getByRole('button', { name: '암행부 연동' }).click();
     await expect(page.locator('.city-user-table')).toHaveCount(2);
     await expect(page.locator('.city[data-city-id="1"] .city-user-table tr[data-general-id="21"]')).toContainText(

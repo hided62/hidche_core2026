@@ -1993,7 +1993,7 @@ export const createReservedTurnHandler = async (options: {
             let deleteGeneral = false;
             const deletedTroopIds = Array.from(commandDeletedTroopIds);
             const lifecycleSnapshot = cloneTurnGeneral(currentGeneral);
-            if (currentGeneral.meta.killturn <= 0 && typeof currentGeneral.deadYear === 'number') {
+            if (currentGeneral.meta.killturn <= 0) {
                 if (
                     currentGeneral.npcState === 1 &&
                     typeof currentGeneral.deadYear === 'number' &&
