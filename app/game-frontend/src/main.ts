@@ -4,8 +4,10 @@ import App from './App.vue';
 import router from './router';
 import './assets/main.css';
 import { installImageAssetCssVariables } from './utils/imageAssets';
+import { installScreenModeViewport } from './utils/screenModeViewport';
 
 installImageAssetCssVariables();
+installScreenModeViewport();
 
 const app = createApp(App);
 
