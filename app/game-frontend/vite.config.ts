@@ -1,8 +1,28 @@
 import { defineConfig, loadEnv } from 'vite';
 import vue from '@vitejs/plugin-vue';
 import tailwindcss from '@tailwindcss/vite';
+import { execFileSync } from 'node:child_process';
 import path from 'path';
 import { mergeViteEnv } from './src/config/viteEnv';
+
+const fullCommitShaPattern = /^[0-9a-f]{40,64}$/iu;
+
+export const resolveBuildCommitSha = (explicitSha: string | undefined, repositoryRoot: string): string => {
+    const normalizedExplicitSha = explicitSha?.trim();
+    if (normalizedExplicitSha && fullCommitShaPattern.test(normalizedExplicitSha)) {
+        return normalizedExplicitSha.toLowerCase();
+    }
+    try {
+        const repositorySha = execFileSync('git', ['rev-parse', 'HEAD'], {
+            cwd: repositoryRoot,
+            encoding: 'utf8',
+            stdio: ['ignore', 'pipe', 'ignore'],
+        }).trim();
+        return fullCommitShaPattern.test(repositorySha) ? repositorySha.toLowerCase() : 'unknown';
+    } catch {
+        return 'unknown';
+    }
+};
 
 const normalizeBasePath = (value: string | undefined): string => {
     const pathValue = (value ?? '/').trim();
@@ -27,9 +47,13 @@ const resolvePreviewAllowedHosts = (value: string | undefined): true | string[] 
 // https://vitejs.dev/config/
 export default defineConfig(({ mode }) => {
     const env = mergeViteEnv(loadEnv(mode, process.cwd(), ''), process.env);
+    const buildCommitSha = resolveBuildCommitSha(env.VITE_BUILD_COMMIT_SHA, path.resolve(import.meta.dirname, '../..'));
     return {
         base: normalizeBasePath(env.VITE_APP_BASE_PATH),
         plugins: [vue(), tailwindcss()],
+        define: {
+            'import.meta.env.VITE_BUILD_COMMIT_SHA': JSON.stringify(buildCommitSha),
+        },
         build: {
             sourcemap: true,
         },

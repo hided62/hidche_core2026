@@ -9,11 +9,12 @@ const gameProfile = process.env.PLAYWRIGHT_GAME_PROFILE ?? 'che:default';
 const baseURL = `http://127.0.0.1:${port}${basePath}/`;
 const gameApiUrl = process.env.PLAYWRIGHT_GAME_API_URL ?? `${basePath}/api/trpc`;
 const gatewayWebUrl = process.env.PLAYWRIGHT_GATEWAY_WEB_URL ?? '/gateway/';
+const buildCommitSha = process.env.PLAYWRIGHT_BUILD_COMMIT_SHA ?? '0123456789abcdef0123456789abcdef01234567';
 const useProductionBundle = process.env.PLAYWRIGHT_FRONTEND_MODE === 'production';
 const frontendEnv =
     `VITE_APP_BASE_PATH=${basePath} VITE_GAME_API_URL=${gameApiUrl} ` +
     `VITE_GAME_PROFILE=${gameProfile} VITE_GATEWAY_WEB_URL=${gatewayWebUrl} ` +
-    'VITE_GATEWAY_API_URL=/gateway/api/trpc';
+    `VITE_GATEWAY_API_URL=/gateway/api/trpc VITE_BUILD_COMMIT_SHA=${buildCommitSha}`;
 
 export default defineConfig({
     testDir: '.',
