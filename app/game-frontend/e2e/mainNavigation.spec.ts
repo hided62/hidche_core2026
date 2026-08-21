@@ -1260,7 +1260,27 @@ test('desktop menus preserve ref columns, prefix-safe routes, and controlled dro
     await expect(global.locator('[data-navigation-id="board-community"]')).toHaveAttribute('href', '/xe/community');
     await expect(global.locator('[data-navigation-id="official-chat"]')).toHaveAttribute('target', '_blank');
     await expect(global.locator('[data-navigation-id="survey"]')).toHaveClass(/highlight/);
-    await expect(page.locator('.main-nation-menu [data-navigation-id="tournament"]')).toHaveClass(/highlight/);
+    const nationMenu = page.locator('.main-nation-menu:visible');
+    await expect(nationMenu.locator(':scope > *')).toHaveCount(20);
+    const tournamentMain = nationMenu.locator('[data-navigation-id="tournament"]');
+    const tournamentToggle = nationMenu.locator('[data-menu-id="tournament-betting"]');
+    await expect(tournamentMain).toHaveClass(/highlight/);
+    await expect(tournamentMain).toHaveAttribute('href', `${basePath}/tournament`);
+    await expect(tournamentToggle).toHaveAttribute('aria-expanded', 'false');
+    await expect(nationMenu.locator('[data-navigation-id="my-settings"]')).toHaveAttribute(
+        'href',
+        `${basePath}/my-settings`
+    );
+    await tournamentToggle.click();
+    await expect(tournamentToggle).toHaveAttribute('aria-expanded', 'true');
+    await expect(nationMenu.locator('#nation-menu-tournament-betting [data-navigation-id="tournament-menu"]')).toHaveText(
+        '토너먼트'
+    );
+    await expect(nationMenu.locator('#nation-menu-tournament-betting [data-navigation-id="betting"]')).toHaveAttribute(
+        'href',
+        `${basePath}/betting`
+    );
+    await page.keyboard.press('Escape');
 
     const gameInfoButton = global.locator('[data-menu-id="game-info"]');
     const bettingButton = global.locator('[data-navigation-id="nation-betting"]');
@@ -1455,7 +1475,7 @@ test('nation split buttons keep square inner corners and a single divider in eve
         officerLevel: 5,
         permission: 2,
         nationLevel: 3,
-        stage: 1,
+        stage: 6,
         npcMode: 1,
         scenarioTitle: '분할 버튼 이음새 검증 시나리오',
         generalMeCalls: 0,
@@ -1515,14 +1535,21 @@ test('nation split buttons keep square inner corners and a single divider in eve
     for (const width of [1200, 500]) {
         await page.setViewportSize({ width, height: 900 });
         await waitForMain(page);
-        const nationSplit = page.locator('.main-nation-menu:visible .nation-menu-split').first();
         const pairs: Array<[string, Locator, Locator]> = [
             [
-                'nation',
-                nationSplit.locator('[data-navigation-id="auction-resource"]'),
-                nationSplit.locator('[data-menu-id="auction"]'),
+                'tournament',
+                page.locator('.main-nation-menu:visible [data-navigation-id="tournament"]'),
+                page.locator('.main-nation-menu:visible [data-menu-id="tournament-betting"]'),
+            ],
+            [
+                'auction',
+                page.locator('.main-nation-menu:visible [data-navigation-id="auction-resource"]'),
+                page.locator('.main-nation-menu:visible [data-menu-id="auction"]'),
             ],
         ];
+        await expect(page.locator('.main-nation-menu:visible [data-navigation-id="tournament"]')).toHaveClass(
+            /highlight/
+        );
 
         for (const [label, main, toggle] of pairs) {
             await expect(main).toBeVisible();

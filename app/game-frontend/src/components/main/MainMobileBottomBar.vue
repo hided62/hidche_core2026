@@ -37,7 +37,9 @@ const { setRoot, openId, close, toggle } = useMenuPopup();
 const globalEntries = computed(() => buildGlobalNavigation(props.npcMode, props.entries));
 const nationMenuColor = computed(() => props.nationColor || '#000000');
 const nationMenuTextColor = computed(() => legacyNationTextColor(nationMenuColor.value));
-const isActive = (link: MainNavigationLinkItem) => link.highlightStage === props.tournamentStage;
+const isActive = (link: MainNavigationLinkItem) =>
+    link.highlightStage === props.tournamentStage ||
+    link.highlightStages?.some((stage) => stage === props.tournamentStage) === true;
 
 const onQuick = (item: QuickNavigationItem) => {
     close();
@@ -165,6 +167,7 @@ const onAction = (action: NonNullable<MainNavigationLinkItem['action']>) => {
                                 <MainNavigationLink
                                     :link="item"
                                     :enabled="isNationNavigationEnabled(item, access)"
+                                    :active="isActive(item)"
                                     compact
                                     role="menuitem"
                                     @navigate="close()"

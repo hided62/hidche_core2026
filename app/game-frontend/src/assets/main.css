@@ -42,6 +42,7 @@ body {
 
 /* These redesigned screens own a true handheld layout. */
 #app:has(.responsive-settings-page),
+#app:has(.interface-settings-page),
 #app:has(#tournament-container),
 #app:has(#tournament-betting-container),
 #app:has(#personnel-container) {

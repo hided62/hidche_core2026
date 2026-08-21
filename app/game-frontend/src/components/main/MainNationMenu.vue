@@ -16,7 +16,9 @@ const props = defineProps<{
 }>();
 
 const { setRoot, openId, close, toggle } = useMenuPopup();
-const isActive = (link: MainNavigationLinkItem) => link.highlightStage === props.tournamentStage;
+const isActive = (link: MainNavigationLinkItem) =>
+    link.highlightStage === props.tournamentStage ||
+    link.highlightStages?.some((stage) => stage === props.tournamentStage) === true;
 </script>
 
 <template>
@@ -59,6 +61,7 @@ const isActive = (link: MainNavigationLinkItem) => link.highlightStage === props
                             <MainNavigationLink
                                 :link="item"
                                 :enabled="isNationNavigationEnabled(item, access)"
+                                :active="isActive(item)"
                                 role="menuitem"
                                 @navigate="close()"
                             />

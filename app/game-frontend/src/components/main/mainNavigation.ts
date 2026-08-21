@@ -12,6 +12,7 @@ export type MainNavigationLink = RuntimeNavigationLink & {
     compactLabel?: string;
     access?: NationAccessRule;
     highlightStage?: 1 | 6;
+    highlightStages?: readonly [1, 6];
     unavailableReason?: string;
 };
 
@@ -144,14 +145,38 @@ export const nationNavigation: MainNavigationEntry[] = [
         access: 'nation-secret',
     },
     {
-        kind: 'link',
-        id: 'tournament',
-        label: '토 너 먼 트',
-        compactLabel: '토너먼트',
-        to: '/tournament',
-        newTab: true,
-        access: 'always',
-        highlightStage: 1,
+        kind: 'split',
+        id: 'tournament-betting',
+        main: {
+            kind: 'link',
+            id: 'tournament',
+            label: '토 너 먼 트',
+            compactLabel: '토너먼트',
+            to: '/tournament',
+            newTab: true,
+            access: 'always',
+            highlightStages: [1, 6],
+        },
+        items: [
+            {
+                kind: 'link',
+                id: 'tournament-menu',
+                label: '토너먼트',
+                to: '/tournament',
+                newTab: true,
+                access: 'always',
+                highlightStage: 1,
+            },
+            {
+                kind: 'link',
+                id: 'betting',
+                label: '베팅장',
+                to: '/betting',
+                newTab: true,
+                access: 'always',
+                highlightStage: 6,
+            },
+        ],
     },
     {
         kind: 'link',
@@ -218,16 +243,7 @@ export const nationNavigation: MainNavigationEntry[] = [
             },
         ],
     },
-    {
-        kind: 'link',
-        id: 'betting',
-        label: '베 팅 장',
-        compactLabel: '베팅장',
-        to: '/betting',
-        newTab: true,
-        access: 'always',
-        highlightStage: 6,
-    },
+    { kind: 'link', id: 'my-settings', label: '화면 설정', to: '/my-settings', access: 'always' },
 ];
 
 export const quickNavigation: Array<QuickNavigationItem | MainNavigationDivider> = [
