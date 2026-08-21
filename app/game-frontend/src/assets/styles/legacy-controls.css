@@ -160,7 +160,7 @@
  * toggle's overlapping left border. These rules intentionally follow the
  * Lumen family so its border shorthand cannot restore the inner rounding.
  */
-.legacy-split-button > .main-menu-link {
+.legacy-split-button > :is(.main-menu-link, .legacy-split-button__main) {
     border-radius: 5.25px 0 0 5.25px;
 }
 

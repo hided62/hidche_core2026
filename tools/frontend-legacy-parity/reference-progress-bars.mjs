@@ -97,8 +97,28 @@ try {
                     color: style.color,
                 };
             };
+            const inspectControl = (element) => {
+                if (!(element instanceof HTMLElement)) return null;
+                const rect = element.getBoundingClientRect();
+                const style = getComputedStyle(element);
+                return {
+                    text: element.textContent?.replace(/\s+/gu, ' ').trim() ?? '',
+                    rect: { x: rect.x, y: rect.y, width: rect.width, height: rect.height },
+                    display: style.display,
+                    backgroundColor: style.backgroundColor,
+                    color: style.color,
+                    borderTopWidth: style.borderTopWidth,
+                    borderRightWidth: style.borderRightWidth,
+                    borderBottomWidth: style.borderBottomWidth,
+                    borderLeftWidth: style.borderLeftWidth,
+                    borderRadius: style.borderRadius,
+                };
+            };
             const cityCard = document.querySelector('.city-card-basic');
             if (!(cityCard instanceof HTMLElement)) throw new Error('reference city card missing');
+            const actionMiniPlate = document.querySelector('#actionMiniPlate');
+            const actionMiniPlateSub = document.querySelector('#actionMiniPlateSub');
+            const reservedCommandZone = document.querySelector('.reservedCommandZone');
             return {
                 viewport: { width: innerWidth, height: innerHeight },
                 city: [...document.querySelectorAll('.city-card-basic .sammo-bar')].map(inspect),
@@ -113,6 +133,15 @@ try {
                     officers: [4, 3, 2].map((level) => inspectPanel(`.city-card-basic .officer${level}Panel`)),
                 },
                 generalCard: document.querySelector('.general-card-basic').getBoundingClientRect().toJSON(),
+                turnControls: {
+                    reservedCommandZone: inspectControl(reservedCommandZone),
+                    actionMiniPlate: inspectControl(actionMiniPlate),
+                    buttons: actionMiniPlate ? [...actionMiniPlate.querySelectorAll('button')].map(inspectControl) : [],
+                    actionMiniPlateSub: inspectControl(actionMiniPlateSub),
+                    subButtons: actionMiniPlateSub
+                        ? [...actionMiniPlateSub.querySelectorAll('button')].map(inspectControl)
+                        : [],
+                },
             };
         });
         await Promise.all([
