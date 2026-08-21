@@ -3,7 +3,7 @@ import { computed, onMounted, reactive, ref, watch } from 'vue';
 import { trpc } from '../utils/trpc';
 import { formatLog } from '../utils/formatLog';
 import { formatSeoulDateTime } from '../utils/legacyDateTime';
-import { isDefenceTrainPenaltyWaivedByScenarioEffect } from '@sammo-ts/logic';
+import { isDefenceTrainPenaltyWaivedByScenarioEffect } from '@sammo-ts/logic/scenario/scenarioEffect.js';
 import { useSessionStore } from '../stores/session';
 import { resolveGeneralIconUrl, useDefaultGeneralIcon } from '../utils/generalIcon';
 import LegacyGeneralProgress from '../components/ui/LegacyGeneralProgress.vue';
