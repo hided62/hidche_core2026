@@ -7,6 +7,7 @@ export type GeneralBattleSummaryData = {
     available?: boolean;
     experience?: number | null;
     dedicationText?: string | null;
+    bill?: number | null;
     warnum?: number | null;
     wins?: number | null;
     losses?: number | null;
@@ -62,8 +63,13 @@ const killRate = computed(() => {
         <template v-else>
             <span>명성</span><strong>{{ numberText(summary.experience) }}</strong> <span>계급</span
             ><strong>{{ summary.dedicationText || '-' }}</strong>
-            <span class="battle-general-extra__empty" aria-hidden="true"></span>
-            <strong class="battle-general-extra__empty" aria-hidden="true"></strong>
+            <template v-if="summary.bill !== undefined">
+                <span>봉급</span><strong>{{ numberText(summary.bill) }}</strong>
+            </template>
+            <template v-else>
+                <span class="battle-general-extra__empty" aria-hidden="true"></span>
+                <strong class="battle-general-extra__empty" aria-hidden="true"></strong>
+            </template>
             <span>전투</span
             ><strong>{{ numberText(summary.warnum) }}<template v-if="summary.warnum != null">회</template></strong>
             <span>계략</span><strong>{{ numberText(summary.strategies) }}</strong>
