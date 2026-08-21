@@ -2,14 +2,18 @@
 interface Props {
     title: string;
     subtitle?: string;
+    hideHeader?: boolean;
 }
 
-defineProps<Props>();
+withDefaults(defineProps<Props>(), {
+    subtitle: undefined,
+    hideHeader: false,
+});
 </script>
 
 <template>
     <section class="panel-card">
-        <header class="panel-header">
+        <header v-if="!hideHeader" class="panel-header">
             <div>
                 <h2 class="panel-title">{{ title }}</h2>
                 <p v-if="subtitle" class="panel-subtitle">{{ subtitle }}</p>

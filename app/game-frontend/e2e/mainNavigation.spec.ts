@@ -1136,6 +1136,7 @@ test('desktop menus preserve ref columns, prefix-safe routes, and controlled dro
     await installFixture(page, state);
     await page.setViewportSize({ width: 1200, height: 900 });
     await waitForMain(page);
+
     if (artifactRoot) await mkdir(resolve(artifactRoot), { recursive: true });
 
     await expect(page.locator('.main-global-menu')).toHaveCount(3);
@@ -1994,6 +1995,17 @@ test('main cards and command input stay inside their Ref-sized grid slots', asyn
     await page.setViewportSize({ width: 1200, height: 900 });
     await waitForMain(page);
 
+    for (const [target, label] of [
+        ['nation', '국가 정보'],
+        ['general', '장수 정보'],
+    ] as const) {
+        const panel = page.locator(`.layout-desktop [data-main-target="${target}"]`);
+        await expect(panel).toHaveAttribute('aria-label', label);
+        await expect(panel.locator(':scope > .panel-header')).toHaveCount(0);
+        await expect(panel.locator(':scope > .panel-body')).toBeVisible();
+    }
+    await expect(page.locator('.layout-desktop [data-main-target="city"] > .panel-header')).toContainText('도시 정보');
+
     const cityBars = page.locator('[data-main-target="city"] [role="progressbar"]');
     const statBars = page.locator('[data-stat-progress] [role="progressbar"]');
     const experienceBar = page.locator('[data-experience-progress] [role="progressbar"]');
@@ -2321,6 +2333,16 @@ test('main cards and command input stay inside their Ref-sized grid slots', asyn
 
     await page.setViewportSize({ width: 500, height: 900 });
     await expect(page.locator('.layout-mobile')).toBeVisible();
+    for (const [target, label] of [
+        ['nation', '국가 정보'],
+        ['general', '장수 정보'],
+    ] as const) {
+        const panel = page.locator(`.layout-mobile [data-main-target="${target}"]`);
+        await expect(panel).toHaveAttribute('aria-label', label);
+        await expect(panel.locator(':scope > .panel-header')).toHaveCount(0);
+        await expect(panel.locator(':scope > .panel-body')).toBeVisible();
+    }
+    await expect(page.locator('.layout-mobile [data-main-target="city"] > .panel-header')).toContainText('도시 정보');
     await page.locator('[data-main-target="commands"] .bottom-actions').getByRole('button', { name: '펼치기' }).click();
     expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(500);
     await expect(page.locator('[data-main-target="city"] [role="progressbar"]')).toHaveCount(8);
