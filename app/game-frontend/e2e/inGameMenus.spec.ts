@@ -2,6 +2,7 @@ import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { basename, resolve } from 'node:path';
 import { expect, test, type Locator, type Page, type Route } from '@playwright/test';
 import { gameBasePath, gameProfile, gameTrpcRoute } from './gameTestPaths.js';
+import { touchDrag } from './touchDrag.js';
 
 const response = (data: unknown) => ({ result: { data } });
 const parityArtifactDir = process.env.MENU_PARITY_ARTIFACT_DIR;
@@ -1467,6 +1468,70 @@ test('내 정보&설정에서 모바일 메인 패널을 드래그하거나 버�
     await expect
         .poll(() => page.evaluate(() => JSON.parse(localStorage.getItem('sam.mobileMainPanelOrder.v1') ?? '[]')))
         .toEqual(defaultOrder);
+});
+
+test('실제 모바일 터치로 메인 패널 순서를 재정렬한다', async ({ browser }, testInfo) => {
+    const configuredBaseUrl = testInfo.project.use.baseURL;
+    if (typeof configuredBaseUrl !== 'string') {
+        throw new Error('Playwright baseURL is required for the mobile touch contract');
+    }
+    const context = await browser.newContext({
+        baseURL: configuredBaseUrl,
+        viewport: { width: 390, height: 844 },
+        screen: { width: 390, height: 844 },
+        deviceScaleFactor: 1,
+        isMobile: true,
+        hasTouch: true,
+        colorScheme: 'dark',
+    });
+    const mobilePage = await context.newPage();
+    try {
+        const state: FixtureState = { permission: 'head', myset: 3, settingMutations: [], accessPages: [] };
+        await install(mobilePage, state);
+        await mobilePage.goto('my-page');
+        await mobilePage.getByRole('button', { name: '순서 바꾸기', exact: true }).click();
+
+        const dialog = mobilePage.getByRole('dialog', { name: '모바일 레이아웃 순서 바꾸기' });
+        const commands = dialog.locator('[data-mobile-layout-id="commands"]');
+        const nationMenu = dialog.locator('[data-mobile-layout-id="nation-menu"]');
+        await touchDrag(mobilePage, nationMenu, commands);
+
+        await expect
+            .poll(() =>
+                dialog
+                    .locator('[data-mobile-layout-id]')
+                    .evaluateAll((elements) => elements.map((element) => element.getAttribute('data-mobile-layout-id')))
+            )
+            .toEqual([
+                'nation-menu',
+                'commands',
+                'nation',
+                'general',
+                'city',
+                'map',
+                'records',
+                'global-menu',
+                'messages',
+            ]);
+        await dialog.screenshot({ path: testInfo.outputPath('mobile-main-panel-touch-dialog.png') });
+        await dialog.getByRole('button', { name: '적용', exact: true }).click();
+        await expect
+            .poll(() => mobilePage.evaluate(() => JSON.parse(localStorage.getItem('sam.mobileMainPanelOrder.v1') ?? '[]')))
+            .toEqual([
+                'nation-menu',
+                'commands',
+                'nation',
+                'general',
+                'city',
+                'map',
+                'records',
+                'global-menu',
+                'messages',
+            ]);
+        await mobilePage.screenshot({ path: testInfo.outputPath('mobile-main-panel-touch.png'), fullPage: true });
+    } finally {
+        await context.close();
+    }
 });
 
 for (const [label, failure] of [
