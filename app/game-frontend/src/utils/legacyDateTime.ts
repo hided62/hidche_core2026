@@ -1,4 +1,4 @@
-import { formatServerDateTime } from '@sammo-ts/common';
+import { formatServerDateTime } from '@sammo-ts/common/time/ServerDateTime';
 
 export const formatSeoulDateTime = (value: string | Date): string => formatServerDateTime(value);
 

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { formatServerDateTime } from '@sammo-ts/common';
+import { formatServerDateTime } from '@sammo-ts/common/time/ServerDateTime';
 import type { RuntimeNavigationConfig } from '@sammo-ts/common/navigation/menuConfig';
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue';
 import { storeToRefs } from 'pinia';

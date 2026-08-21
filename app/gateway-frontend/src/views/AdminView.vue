@@ -1,11 +1,10 @@
 <script setup lang="ts">
 import {
     formatServerDateTime,
-    gatewayProfileCapabilities,
     serverDateTimeInputToIso,
     toServerDateTimeInputValue,
-    type GatewayProfileStatus,
-} from '@sammo-ts/common';
+} from '@sammo-ts/common/time/ServerDateTime';
+import { gatewayProfileCapabilities, type GatewayProfileStatus } from '@sammo-ts/common/gateway/profileStatus';
 import { computed, onMounted, ref, watch } from 'vue';
 import ServerProfileTabs from '../components/ServerProfileTabs.vue';
 import AdminConsoleLayout from '../layouts/AdminConsoleLayout.vue';

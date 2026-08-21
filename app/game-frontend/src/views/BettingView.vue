@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { formatServerDateTime } from '@sammo-ts/common';
+import { formatServerDateTime } from '@sammo-ts/common/time/ServerDateTime';
 import { computed, onMounted, ref } from 'vue';
 import TournamentBracket from '../components/tournament/TournamentBracket.vue';
 import TournamentPageHeader from '../components/tournament/TournamentPageHeader.vue';

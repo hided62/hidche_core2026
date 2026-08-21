@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed } from 'vue';
 
-import { formatServerDateTime } from '@sammo-ts/common';
+import { formatServerDateTime } from '@sammo-ts/common/time/ServerDateTime';
 
 export type GeneralBattleSummaryData = {
     available?: boolean;

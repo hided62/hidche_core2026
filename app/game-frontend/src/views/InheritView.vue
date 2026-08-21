@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import { formatServerDateTime, JosaUtil } from '@sammo-ts/common';
+import { formatServerDateTime } from '@sammo-ts/common/time/ServerDateTime';
+import { JosaUtil } from '@sammo-ts/common/util/JosaUtil';
 import { computed, onMounted, reactive, ref } from 'vue';
 import { trpc } from '../utils/trpc';
 

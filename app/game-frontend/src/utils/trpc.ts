@@ -1,4 +1,5 @@
-import { REALTIME_ACCESS_GRANT_HEADER, trpcJsonBodyHttpClientOptions } from '@sammo-ts/common';
+import { trpcJsonBodyHttpClientOptions } from '@sammo-ts/common/http/trpcTransport';
+import { REALTIME_ACCESS_GRANT_HEADER } from '@sammo-ts/common/realtime/types';
 import { createTRPCProxyClient, httpBatchLink } from '@trpc/client';
 import type { AppRouter } from '@sammo-ts/game-api';
 import { resolveBatchRealtimeAccessGrant } from './realtimeAccessGrant';

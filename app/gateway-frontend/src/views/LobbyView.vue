@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { formatServerDateTime } from '@sammo-ts/common';
+import { formatServerDateTime } from '@sammo-ts/common/time/ServerDateTime';
 import { computed, ref, onMounted, onUnmounted, watch } from 'vue';
 import { useRouter } from 'vue-router';
 import type { inferRouterOutputs } from '@trpc/server';

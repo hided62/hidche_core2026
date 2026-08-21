@@ -22,9 +22,41 @@
             "types": "./dist/auth/gameSessionTransfer.d.ts",
             "default": "./dist/auth/gameSessionTransfer.js"
         },
+        "./gateway/profileStatus": {
+            "types": "./dist/gateway/profileStatus.d.ts",
+            "default": "./dist/gateway/profileStatus.js"
+        },
+        "./http/trpcTransport": {
+            "types": "./dist/http/trpcTransport.d.ts",
+            "default": "./dist/http/trpcTransport.js"
+        },
+        "./legacyArchive/ArchivedGeneralSnapshot": {
+            "types": "./dist/legacyArchive/ArchivedGeneralSnapshot.d.ts",
+            "default": "./dist/legacyArchive/ArchivedGeneralSnapshot.js"
+        },
+        "./logging/formatLegacyLogHtml": {
+            "types": "./dist/logging/formatLegacyLogHtml.d.ts",
+            "default": "./dist/logging/formatLegacyLogHtml.js"
+        },
         "./navigation/menuConfig": {
             "types": "./dist/navigation/menuConfig.d.ts",
             "default": "./dist/navigation/menuConfig.js"
+        },
+        "./realtime/delta": {
+            "types": "./dist/realtime/delta.d.ts",
+            "default": "./dist/realtime/delta.js"
+        },
+        "./realtime/types": {
+            "types": "./dist/realtime/types.d.ts",
+            "default": "./dist/realtime/types.js"
+        },
+        "./time/ServerDateTime": {
+            "types": "./dist/time/ServerDateTime.d.ts",
+            "default": "./dist/time/ServerDateTime.js"
+        },
+        "./util/JosaUtil": {
+            "types": "./dist/util/JosaUtil.d.ts",
+            "default": "./dist/util/JosaUtil.js"
         }
     },
     "scripts": {
