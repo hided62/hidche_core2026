@@ -6,6 +6,7 @@ import { GeneralActionPipeline } from '@sammo-ts/logic/actionModules/general.js'
 import { ActionLogger } from '@sammo-ts/logic/logging/actionLogger.js';
 import { LogCategory, LogFormat, LogScope, type LogEntryDraft } from '@sammo-ts/logic/logging/types.js';
 import { buildCrewTypeIndex, getTechCost, getTechLevel } from '@sammo-ts/logic/world/unitSet.js';
+import { LEGACY_DEFAULT_MAX_LEVEL } from '@sammo-ts/logic/scenario/constants.js';
 import type { WarUnitReport } from './types.js';
 import type {
     ConquerCityOutcome,
@@ -27,7 +28,6 @@ import {
 } from './utils.js';
 
 const META_DEAD = 'dead';
-const MAX_EXP_LEVEL = 255;
 const MAX_DEDICATION_LEVEL = 30;
 
 const updateLegacyProgressionLevels = (general: General): void => {
@@ -35,7 +35,7 @@ const updateLegacyProgressionLevels = (general: General): void => {
         general.experience < 1_000
             ? Math.trunc(general.experience / 100)
             : Math.trunc(Math.sqrt(general.experience / 10));
-    general.meta.explevel = clamp(expLevel, 0, MAX_EXP_LEVEL);
+    general.meta.explevel = clamp(expLevel, 0, LEGACY_DEFAULT_MAX_LEVEL);
     general.meta.dedlevel = clamp(Math.ceil(Math.sqrt(general.dedication) / 10), 0, MAX_DEDICATION_LEVEL);
 };
 

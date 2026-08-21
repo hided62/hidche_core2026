@@ -60,7 +60,7 @@ const token = (userId: string): GameSessionTokenPayload => ({
     user: { id: userId, username: userId, displayName: userId, roles: [] },
     sanctions: {},
 });
-const fixture = (generals: GeneralRow[], userId = 'u1') => {
+const fixture = (generals: GeneralRow[], userId = 'u1', maxLevel?: number) => {
     const db = {
         general: {
             findFirst: vi.fn(async ({ where }: { where: { userId: string } }) =>
@@ -83,7 +83,9 @@ const fixture = (generals: GeneralRow[], userId = 'u1') => {
         },
         city: { findMany: vi.fn(async () => [{ id: 1, name: '업' }]) },
         troop: { findMany: vi.fn(async () => [{ troopLeaderId: 2, name: '선봉대' }]) },
-        worldState: { findFirst: vi.fn(async () => null) },
+        worldState: {
+            findFirst: vi.fn(async () => ({ config: { const: maxLevel === undefined ? {} : { maxLevel } } })),
+        },
         generalTurn: {
             findMany: vi.fn(async () => [
                 {
@@ -118,7 +120,7 @@ const fixture = (generals: GeneralRow[], userId = 'u1') => {
 
 describe('nation general and secret office permissions', () => {
     it('redacts ordinary-member details and denies the secret office', async () => {
-        const { caller } = fixture([general()]);
+        const { caller } = fixture([general({ experience: 144_000 })]);
         const result = await caller.nation.getGeneralList();
         expect(result.viewer).toEqual({ generalId: 1, permission: 0 });
         expect(result.generals[0]).toMatchObject({
@@ -129,6 +131,7 @@ describe('nation general and secret office permissions', () => {
             dedicationLevel: 1,
             dedicationText: '30품관',
             bill: 600,
+            experienceLevel: 120,
         });
         expect(result.generals[0]).not.toHaveProperty('crew');
         await expect(caller.nation.getSecretGeneralList()).rejects.toMatchObject({ code: 'FORBIDDEN' });
@@ -136,12 +139,21 @@ describe('nation general and secret office permissions', () => {
     it('uses the session-owned general and scopes secret rows to that nation', async () => {
         const first = general();
         const actor = general({ id: 2, userId: 'u2', officerLevel: 5, meta: { belong: 1 } });
-        const ally = general({ id: 3, userId: 'u3', gold: 3000, crew: 200, train: 80, atmos: 80 });
+        const ally = general({
+            id: 3,
+            userId: 'u3',
+            gold: 3000,
+            crew: 200,
+            train: 80,
+            atmos: 80,
+            experience: 400_000,
+        });
         const foreign = general({ id: 4, userId: 'u4', nationId: 2, gold: 99999 });
         const { caller, db } = fixture([first, actor, ally, foreign], 'u2');
         const result = await caller.nation.getSecretGeneralList();
         expect(result.viewer).toEqual({ generalId: 2, permission: 2 });
         expect(result.generals.map((g) => g.id)).toEqual([1, 2, 3]);
+        expect(result.generals.find((entry) => entry.id === 3)?.experienceLevel).toBe(200);
         expect(result.summary).toMatchObject({ gold: 5000, crew: 800, generalCount: 3 });
         expect(result.generals[0]?.reservedCommands).toEqual([
             { action: 'che_징병', args: { crewType: 1, amount: 300 } },
@@ -158,5 +170,16 @@ describe('nation general and secret office permissions', () => {
         const penalized = general({ officerLevel: 5, penalty: { noChief: true } });
         const { caller } = fixture([penalized]);
         await expect(caller.nation.getSecretGeneralList()).rejects.toMatchObject({ code: 'FORBIDDEN' });
+    });
+    it('honors an explicit Ref maxLevel override for projected experience levels', async () => {
+        const actor = general({ officerLevel: 5, experience: 400_000 });
+        const { caller } = fixture([actor], 'u1', 150);
+
+        const [generalList, secretList] = await Promise.all([
+            caller.nation.getGeneralList(),
+            caller.nation.getSecretGeneralList(),
+        ]);
+        expect(generalList.generals[0]?.experienceLevel).toBe(150);
+        expect(secretList.generals[0]?.experienceLevel).toBe(150);
     });
 });

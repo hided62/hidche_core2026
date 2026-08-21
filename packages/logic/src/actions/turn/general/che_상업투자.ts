@@ -27,6 +27,7 @@ import type {
     ActionResolveContext,
 } from '@sammo-ts/logic/actions/turn/actionContext.js';
 import { tryApplyUniqueLottery } from '@sammo-ts/logic/rewards/uniqueLottery.js';
+import { LEGACY_DEFAULT_MAX_LEVEL } from '@sammo-ts/logic/scenario/constants.js';
 import type { GeneralTurnCommandSpec } from './index.js';
 import { clamp } from 'es-toolkit';
 
@@ -203,7 +204,7 @@ export class CommandResolver<TriggerState extends GeneralTriggerState = GeneralT
         } else if (this.config.statKey === 'intelligence') {
             rawStats.intelligence += Math.round(rawStats.strength / 4);
         }
-        const maxStatLevel = this.env.maxStatLevel ?? 255;
+        const maxStatLevel = this.env.maxStatLevel ?? LEGACY_DEFAULT_MAX_LEVEL;
         let score = clamp(rawStats[this.config.statKey], 0, maxStatLevel);
         score = this.pipeline.onCalcStat(context, this.config.statKey, score);
 
@@ -234,7 +235,7 @@ export class CommandResolver<TriggerState extends GeneralTriggerState = GeneralT
                     strength: context.general.stats.strength + Math.round(context.general.stats.intelligence / 4),
                     intelligence: context.general.stats.intelligence + Math.round(context.general.stats.strength / 4),
                 };
-                const maxStatLevel = this.env.maxStatLevel ?? 255;
+                const maxStatLevel = this.env.maxStatLevel ?? LEGACY_DEFAULT_MAX_LEVEL;
                 const leadership = this.pipeline.onCalcStat(
                     context,
                     'leadership',

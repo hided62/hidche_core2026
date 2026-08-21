@@ -13,6 +13,7 @@ import { LogCategory, LogFormat } from '@sammo-ts/logic/logging/types.js';
 import type { TurnCommandEnv } from '@sammo-ts/logic/actions/turn/commandEnv.js';
 import type { ActionContextBuilder } from '@sammo-ts/logic/actions/turn/actionContext.js';
 import { tryApplyUniqueLottery } from '@sammo-ts/logic/rewards/uniqueLottery.js';
+import { LEGACY_DEFAULT_MAX_LEVEL } from '@sammo-ts/logic/scenario/constants.js';
 import type { GeneralTurnCommandSpec } from './index.js';
 
 export interface ProcureArgs {}
@@ -32,7 +33,10 @@ export const roundLegacyAccumulatedInteger = (current: number, delta: number): n
 export const resolveLegacyExperienceLevel = (experience: number): number =>
     Math.max(
         0,
-        Math.min(255, experience < 1_000 ? Math.trunc(experience / 100) : Math.trunc(Math.sqrt(experience / 10)))
+        Math.min(
+            LEGACY_DEFAULT_MAX_LEVEL,
+            experience < 1_000 ? Math.trunc(experience / 100) : Math.trunc(Math.sqrt(experience / 10))
+        )
     );
 export const resolveLegacyDedicationLevel = (dedication: number): number =>
     Math.max(0, Math.min(30, Math.ceil(Math.sqrt(dedication) / 10)));
@@ -65,7 +69,7 @@ export class ActionResolver<
         const rawLeadership = general.stats.leadership * injuryMultiplier;
         const rawStrength = general.stats.strength * injuryMultiplier;
         const rawIntelligence = general.stats.intelligence * injuryMultiplier;
-        const maxStat = 255;
+        const maxStat = LEGACY_DEFAULT_MAX_LEVEL;
         const legacyStat = (stat: 'leadership' | 'strength' | 'intelligence', value: number): number =>
             Math.trunc(Math.max(0, Math.min(maxStat, this.pipeline.onCalcStat(context, stat, value))));
         let score =

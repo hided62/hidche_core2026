@@ -12,6 +12,7 @@ import type { ActionLogger } from '@sammo-ts/logic/logging/actionLogger.js';
 import { LogFormat } from '@sammo-ts/logic/logging/types.js';
 import type { WarStatName } from '@sammo-ts/logic/actionModules/types.js';
 import { getTechAbility, getTechCost } from '@sammo-ts/logic/world/unitSet.js';
+import { LEGACY_DEFAULT_MAX_LEVEL } from '@sammo-ts/logic/scenario/constants.js';
 import type { WarActionPipeline, WarActionContext } from '../actions.js';
 import type { WarEngineConfig } from '../types.js';
 import type { WarCrewType } from '../crewType.js';
@@ -28,7 +29,6 @@ const META_RANK_PREFIX = 'rank_';
 const META_INTEL_EXP = 'intel_exp';
 const META_STRENGTH_EXP = 'strength_exp';
 const META_LEADERSHIP_EXP = 'leadership_exp';
-const MAX_EXP_LEVEL = 255;
 
 const RANK_WARNUM = `${META_RANK_PREFIX}warnum`;
 const RANK_KILLNUM = `${META_RANK_PREFIX}killnum`;
@@ -178,7 +178,7 @@ export class WarUnitGeneral<
                 }) / 4
             );
         }
-        const maxGeneralStat = this.config.maxGeneralStat ?? 255;
+        const maxGeneralStat = this.config.maxGeneralStat ?? LEGACY_DEFAULT_MAX_LEVEL;
         value = clamp(value, 0, maxGeneralStat);
         if (withActions) {
             value = this.actionPipeline.onCalcStat(this.getActionContext(), statName, value);
@@ -360,7 +360,7 @@ export class WarUnitGeneral<
             this.general.experience < 1000
                 ? Math.trunc(this.general.experience / 100)
                 : Math.trunc(Math.sqrt(this.general.experience / 10));
-        const resolvedExpLevel = clamp(nextExpLevel, 0, MAX_EXP_LEVEL);
+        const resolvedExpLevel = clamp(nextExpLevel, 0, LEGACY_DEFAULT_MAX_LEVEL);
         this.general.meta[META_EXP_LEVEL] = resolvedExpLevel;
         if (resolvedExpLevel === previousExpLevel) {
             return;
@@ -546,7 +546,7 @@ export class WarUnitGeneral<
         // one accumulated stat-exp threshold even though che_출병 itself does
         // not have the generic command progression tail.
         const limit = this.config.statUpgradeLimit ?? 30;
-        const maxStat = this.config.maxGeneralStat ?? 255;
+        const maxStat = this.config.maxGeneralStat ?? LEGACY_DEFAULT_MAX_LEVEL;
         const entries = [
             ['leadership', META_LEADERSHIP_EXP, '통솔'],
             ['strength', META_STRENGTH_EXP, '무력'],

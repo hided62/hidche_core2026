@@ -1,5 +1,6 @@
 import type { General } from '@sammo-ts/logic/domain/entities.js';
 import type { ScenarioConfig } from '@sammo-ts/logic/scenario/types.js';
+import { LEGACY_DEFAULT_MAX_LEVEL } from '@sammo-ts/logic/scenario/constants.js';
 import type { ScenarioMeta } from '@sammo-ts/logic/world/types.js';
 import type { WarAftermathConfig, WarEngineConfig, WarTimeContext } from '@sammo-ts/logic/war/types.js';
 import type { UnitSetDefinition } from '@sammo-ts/logic/world/types.js';
@@ -208,7 +209,7 @@ export const buildWarConfig = (scenarioConfig: ScenarioConfig, unitSet: UnitSetD
         maxAtmosByCommand: resolveNumber(constValues, ['maxAtmosByCommand'], DEFAULT_WAR_CONFIG.maxAtmosByCommand),
         maxTrainByWar: resolveNumber(constValues, ['maxTrainByWar'], DEFAULT_WAR_CONFIG.maxTrainByWar),
         maxAtmosByWar: resolveNumber(constValues, ['maxAtmosByWar'], DEFAULT_WAR_CONFIG.maxAtmosByWar),
-        maxGeneralStat: resolveNumber(constValues, ['maxLevel'], 255),
+        maxGeneralStat: resolveNumber(constValues, ['maxLevel'], LEGACY_DEFAULT_MAX_LEVEL),
         statUpgradeLimit: resolveNumber(constValues, ['upgradeLimit'], 30),
         castleCrewTypeId,
         armTypes: {

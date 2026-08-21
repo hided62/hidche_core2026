@@ -8,7 +8,7 @@ import type {
     TurnCommandEnv,
     UnitSetDefinition,
 } from '@sammo-ts/logic';
-import { evaluateConstraints } from '@sammo-ts/logic';
+import { evaluateConstraints, LEGACY_DEFAULT_MAX_LEVEL } from '@sammo-ts/logic';
 import type { ConstraintContext } from '@sammo-ts/logic';
 import { GAME_TICKS_PER_TURN, LiteHashDRBG, RandUtil } from '@sammo-ts/common';
 import { simpleSerialize } from '@sammo-ts/logic/war/utils.js';
@@ -872,17 +872,14 @@ export class GeneralAI {
                 ? resolveLegacyAiStatsWithModules(
                       candidate,
                       this.nation,
-                      this.commandEnv.maxStatLevel ?? this.scenarioConfig.stat.max,
+                      this.commandEnv.maxStatLevel ?? LEGACY_DEFAULT_MAX_LEVEL,
                       this.commandEnv.generalActionModules,
                       this.worldRef,
                       this.world,
                       this.startYear
                   ).fullLeadership
-                : resolveLegacyAiStats(
-                      candidate,
-                      this.nation,
-                      this.commandEnv.maxStatLevel ?? this.scenarioConfig.stat.max
-                  ).fullLeadership;
+                : resolveLegacyAiStats(candidate, this.nation, this.commandEnv.maxStatLevel ?? LEGACY_DEFAULT_MAX_LEVEL)
+                      .fullLeadership;
             if (fullLeadership >= this.nationPolicy.minNpcWarLeadership) {
                 npcWarGenerals[candidate.id] = candidate;
             } else {
@@ -1055,17 +1052,13 @@ export class GeneralAI {
             ? resolveLegacyAiStatsWithModules(
                   this.general,
                   this.nation,
-                  this.commandEnv.maxStatLevel ?? this.scenarioConfig.stat.max,
+                  this.commandEnv.maxStatLevel ?? LEGACY_DEFAULT_MAX_LEVEL,
                   this.commandEnv.generalActionModules,
                   this.worldRef,
                   this.world,
                   this.startYear
               )
-            : resolveLegacyAiStats(
-                  this.general,
-                  this.nation,
-                  this.commandEnv.maxStatLevel ?? this.scenarioConfig.stat.max
-              );
+            : resolveLegacyAiStats(this.general, this.nation, this.commandEnv.maxStatLevel ?? LEGACY_DEFAULT_MAX_LEVEL);
         this.general.meta = {
             ...this.general.meta,
             ...stats,

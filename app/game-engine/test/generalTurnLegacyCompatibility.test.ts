@@ -4,6 +4,7 @@ import type { TurnSchedule } from '@sammo-ts/logic/turn/calendar.js';
 import type { TurnGeneral, TurnWorldSnapshot, TurnWorldState } from '../src/turn/types.js';
 import { createTurnTestHarness } from './helpers/turnTestHarness.js';
 import { applyLegacyGeneralProgression } from '../src/turn/reservedTurnHandler.js';
+import { buildCommandEnv } from '../src/turn/reservedTurnCommands.js';
 
 const start = new Date('0200-01-01T00:00:00.000Z');
 const schedule: TurnSchedule = { entries: [{ startMinute: 0, tickMinutes: 10 }] };
@@ -154,6 +155,21 @@ const makeState = (): TurnWorldState => ({
 });
 
 describe('legacy general-turn execution contract', () => {
+    it('does not reuse the join stat allocation maximum as the runtime level cap', () => {
+        const previous = makeGeneral({
+            experience: 144_000,
+            meta: { killturn: 24, explevel: 120 },
+        });
+        const afterRecruitment = makeGeneral({
+            experience: 144_001,
+            meta: { killturn: 24, explevel: 120 },
+        });
+        const env = buildCommandEnv(makeSnapshot(previous).scenarioConfig);
+
+        expect(env.maxStatLevel).toBe(255);
+        expect(applyLegacyGeneralProgression(afterRecruitment, previous, 'che_모병', env, []).meta.explevel).toBe(120);
+    });
+
     it('preserves the battle-computed level across legacy INT rounding', () => {
         const previous = makeGeneral({
             experience: 6_700,

@@ -92,4 +92,17 @@ describe('tracked scenario resources', () => {
         expect([...secretScenarioKeys!].filter((key) => key.startsWith('event_전투특기_'))).toHaveLength(20);
         expect(secretScenarioKeys?.has('event_전투특기_격노')).toBe(true);
     });
+
+    it('keeps join allocation bounds separate from the Ref runtime stat level limit', async () => {
+        const scenario = await loadScenarioDefinitionById(1);
+
+        expect(scenario.config.stat.max).toBe(80);
+        expect(buildCommandEnv(scenario.config).maxStatLevel).toBe(255);
+        expect(
+            buildCommandEnv({
+                ...scenario.config,
+                const: { ...scenario.config.const, maxLevel: 512 },
+            }).maxStatLevel
+        ).toBe(512);
+    });
 });

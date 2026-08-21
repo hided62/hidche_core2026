@@ -1,7 +1,12 @@
 import { randomUUID } from 'node:crypto';
 
 import { loadUnitSetDefinitionByName } from '@sammo-ts/game-engine/scenario/unitSetLoader.js';
-import { normalizeScenarioEffect, type ScenarioEffectKey, type WarEngineConfig } from '@sammo-ts/logic';
+import {
+    LEGACY_DEFAULT_MAX_LEVEL,
+    normalizeScenarioEffect,
+    type ScenarioEffectKey,
+    type WarEngineConfig,
+} from '@sammo-ts/logic';
 import { asRecord } from '@sammo-ts/common';
 import type { UnitSetDefinition } from '@sammo-ts/logic';
 
@@ -104,7 +109,7 @@ export const buildBattleSimEnvironment = async (
         maxAtmosByCommand: resolveNumber(constValues, ['maxAtmosByCommand'], DEFAULT_WAR_CONFIG.maxAtmosByCommand),
         maxTrainByWar: resolveNumber(constValues, ['maxTrainByWar'], DEFAULT_WAR_CONFIG.maxTrainByWar),
         maxAtmosByWar: resolveNumber(constValues, ['maxAtmosByWar'], DEFAULT_WAR_CONFIG.maxAtmosByWar),
-        maxGeneralStat: resolveNumber(constValues, ['maxLevel'], 255),
+        maxGeneralStat: resolveNumber(constValues, ['maxLevel'], LEGACY_DEFAULT_MAX_LEVEL),
         statUpgradeLimit: resolveNumber(constValues, ['upgradeLimit'], 30),
         castleCrewTypeId,
         armTypes: {
