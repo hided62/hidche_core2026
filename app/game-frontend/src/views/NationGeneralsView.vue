@@ -536,14 +536,25 @@ onBeforeUnmount(() => {
     <main class="general-page legacy-bg0">
         <header class="top-bar">
             <span class="left-actions">
-                <button class="top-button nation-button" @click="router.push('/')">돌아가기</button>
-                <button class="top-button nation-button" :disabled="loading" @click="load">갱신</button>
+                <button
+                    class="legacy-button legacy-button--navigation legacy-button--fixed-height top-button nation-button"
+                    @click="router.push('/')"
+                >
+                    돌아가기
+                </button>
+                <button
+                    class="legacy-button legacy-button--navigation legacy-button--fixed-height top-button nation-button"
+                    :disabled="loading"
+                    @click="load"
+                >
+                    갱신
+                </button>
             </span>
             <strong>세력 장수</strong>
             <span class="right-actions">
                 <span class="dropdown">
                     <button
-                        class="top-button mode-button"
+                        class="legacy-button legacy-button--primary legacy-button--fixed-height top-button mode-button"
                         :aria-expanded="viewMenuOpen"
                         @click="
                             viewMenuOpen = !viewMenuOpen;
@@ -576,7 +587,7 @@ onBeforeUnmount(() => {
                 </span>
                 <span class="dropdown">
                     <button
-                        class="top-button columns-button"
+                        class="legacy-button legacy-button--info legacy-button--fixed-height top-button columns-button"
                         :aria-expanded="columnMenuOpen"
                         @click="
                             columnMenuOpen = !columnMenuOpen;
@@ -850,45 +861,30 @@ onBeforeUnmount(() => {
     right: 0;
 }
 .top-button {
+    --legacy-button-height: 32px;
     display: inline-flex;
     width: 89px;
-    height: 32px;
     align-items: center;
     justify-content: center;
     padding: 0;
-    border: 0;
-    border-right: 1px solid #151515;
-    border-radius: 3px;
-    color: #fff;
     font-size: 14px;
-    font-weight: 700;
     text-decoration: none;
-    cursor: pointer;
 }
 .nation-button {
-    background: #006c48;
-}
-.nation-button:hover {
-    background: #00855a;
+    --legacy-button-bg: #006c48;
+    --legacy-button-border: #005d3e;
 }
 .mode-button {
-    background: #375a7f;
-    border-bottom: 0 solid #325172;
-}
-.mode-button:hover,
-.mode-button[aria-expanded='true'],
-.mode-button:active {
-    border-bottom-width: 3px;
+    --legacy-button-bg: #375a7f;
+    --legacy-button-border: #325172;
 }
 .mode-button,
 .columns-button {
     width: 90px;
 }
 .columns-button {
-    background: #3297cf;
-}
-.columns-button:hover {
-    filter: brightness(1.12);
+    --legacy-button-bg: #3297cf;
+    --legacy-button-border: #2b80b0;
 }
 .dropdown {
     position: relative;

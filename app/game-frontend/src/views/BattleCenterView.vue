@@ -238,9 +238,20 @@ onMounted(() => {
     <main class="ref-shell battle-page">
         <header class="battle-top legacy-bg0">
             <RouterLink v-slot="{ navigate }" custom to="/">
-                <button class="battle-nav" type="button" @click="navigate">창 닫기</button>
+                <button
+                    class="legacy-button legacy-button--navigation legacy-button--fixed-height battle-nav"
+                    type="button"
+                    @click="navigate"
+                >
+                    창 닫기
+                </button>
             </RouterLink>
-            <button class="battle-nav" @click="loadBattleCenter">갱신</button>
+            <button
+                class="legacy-button legacy-button--navigation legacy-button--fixed-height battle-nav"
+                @click="loadBattleCenter"
+            >
+                갱신
+            </button>
             <h1>감찰부</h1>
             <div></div>
             <div></div>
@@ -308,7 +319,9 @@ onMounted(() => {
         </section>
         <footer class="battle-footer legacy-bg0">
             <RouterLink v-slot="{ navigate }" custom to="/">
-                <button class="battle-nav" type="button" @click="navigate">창 닫기</button>
+                <button class="legacy-button legacy-button--navigation battle-nav" type="button" @click="navigate">
+                    창 닫기
+                </button>
             </RouterLink>
         </footer>
     </main>
@@ -421,17 +434,11 @@ onMounted(() => {
     text-align: center;
 }
 .battle-nav {
+    --legacy-button-height: 32px;
     box-sizing: border-box;
-    height: 32px;
     margin-right: 2px;
-    border: 0;
-    border-radius: 3px;
     display: grid;
     place-items: center;
-    background: #00582c;
-    color: #fff;
-    font: inherit;
-    font-weight: 700;
     text-decoration: none;
 }
 .battle-footer {

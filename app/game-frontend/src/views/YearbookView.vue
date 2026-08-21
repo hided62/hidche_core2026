@@ -137,11 +137,18 @@ onMounted(async () => {
     <main id="yearbook-container" class="yearbook-page legacy-bg0">
         <header class="yearbook-title legacy-bg0">
             <strong>연 감</strong>
-            <button class="legacy-button close-button" type="button" @click="closePage">창 닫기</button>
+            <button
+                class="legacy-button legacy-button--navigation legacy-button--fixed-height close-button"
+                type="button"
+                @click="closePage"
+            >
+                창 닫기
+            </button>
             <span class="settings-menu">
                 <button
-                    class="legacy-button legacy-button--navigation"
+                    class="legacy-button legacy-button--navigation legacy-button--fixed-height"
                     type="button"
+                    :aria-expanded="settingsOpen"
                     @click="settingsOpen = !settingsOpen"
                 >
                     ⚙ 설정⌄
@@ -235,7 +242,7 @@ onMounted(async () => {
         </section>
 
         <footer class="yearbook-footer">
-            <button class="legacy-button" type="button" @click="closePage">창 닫기</button>
+            <button class="legacy-button legacy-button--navigation" type="button" @click="closePage">창 닫기</button>
         </footer>
         <div class="dropdown-compat-buttons" aria-hidden="true">
             <button type="button" tabindex="-1" /><button type="button" tabindex="-1" />
@@ -286,14 +293,14 @@ onMounted(async () => {
 }
 .yearbook-title .close-button {
     left: 0;
-    height: 32px;
+    --legacy-button-height: 32px;
 }
 .settings-menu {
     right: 0;
     height: 32px;
 }
 .settings-menu > .legacy-button {
-    height: 32px;
+    --legacy-button-height: 32px;
 }
 .settings-item {
     position: absolute;
@@ -393,16 +400,6 @@ onMounted(async () => {
 .dropdown-compat-buttons {
     display: none;
 }
-.year-selector .legacy-button {
-    border: 0;
-    background: #444;
-}
-.settings-menu > .legacy-button,
-.yearbook-title .close-button {
-    border: 0;
-    background: #00582c;
-}
-
 .log-content {
     min-height: 72px;
     padding: 1px 0;

@@ -53,7 +53,13 @@ onMounted(async () => {
 <template>
     <main class="global-page legacy-bg0">
         <header class="legacy-title">
-            <button type="button" @click="goBack">돌아가기</button><strong>중원 정보</strong>
+            <button
+                class="legacy-button legacy-button--navigation legacy-button--fixed-height"
+                type="button"
+                @click="goBack"
+            >
+                돌아가기</button
+            ><strong>중원 정보</strong>
         </header>
         <p v-if="error" class="error">{{ error }}</p>
         <section v-if="data" class="section">
@@ -147,7 +153,15 @@ onMounted(async () => {
                 </div>
             </div>
         </section>
-        <footer class="legacy-title footer"><button type="button" @click="goBack">돌아가기</button></footer>
+        <footer class="legacy-title footer">
+            <button
+                class="legacy-button legacy-button--navigation legacy-button--fixed-height"
+                type="button"
+                @click="goBack"
+            >
+                돌아가기
+            </button>
+        </footer>
         <button class="legacy-compat-button" type="button" tabindex="-1" aria-hidden="true" />
     </main>
 </template>
@@ -178,15 +192,10 @@ onMounted(async () => {
     line-height: 32px;
 }
 .legacy-title button {
+    --legacy-button-height: 32px;
     position: absolute;
     inset: 0 auto 0 0;
     width: 88px;
-    border: 1px solid #0a9960;
-    border-radius: 0 0 4px;
-    background: #087f45;
-    color: #fff;
-    font-weight: 700;
-    cursor: pointer;
 }
 .legacy-compat-button {
     display: none;

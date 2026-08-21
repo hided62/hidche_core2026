@@ -77,10 +77,11 @@ validating one representative button.
 The primitive does not set a fixed `min-height`: Ref's 35.5px default height is
 the result of line-height, padding, and the 4px edge, so it naturally becomes
 34.5px/33.5px while the 1px/2px top margin keeps the bottom coordinate fixed.
-Only a fixed-height owner such as the mobile bottom bar supplies explicit
-45px/44px/43px state compensation.
+A fixed row opts into `.legacy-button--fixed-height` and supplies only
+`--legacy-button-height`; the shared layer derives the hover/active heights so
+every owner keeps the same bottom-coordinate contract.
 
-Only layout belongs in the SFC: width, grid column, fixed-height compensation,
+Only layout belongs in the SFC: width, grid column, the fixed height variable,
 margins required by the page, and breakpoint-specific placement. Color base
 variables may be supplied by the owner for dynamic nation/scenario colors, but
 border construction, font weight, hover/focus/active, and disabled presentation

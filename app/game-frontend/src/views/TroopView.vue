@@ -179,14 +179,14 @@ onMounted(() => {
     <main id="container" class="legacy-troop-page">
         <header class="topBackBar bg0">
             <button
-                class="legacy-button legacy-button--navigation legacyNavButton backLink"
+                class="legacy-button legacy-button--navigation legacy-button--fixed-height legacyNavButton backLink"
                 type="button"
                 @click="router.push('/')"
             >
                 돌아가기
             </button>
             <button
-                class="legacy-button legacy-button--navigation legacyNavButton reloadButton"
+                class="legacy-button legacy-button--navigation legacy-button--fixed-height legacyNavButton reloadButton"
                 type="button"
                 :disabled="loading"
                 @click="refresh"
@@ -395,8 +395,7 @@ onMounted(() => {
 }
 
 .legacyNavButton {
-    height: 32px;
-    min-height: 32px;
+    --legacy-button-height: 32px;
     margin-right: 2px;
     font-weight: 600;
 }

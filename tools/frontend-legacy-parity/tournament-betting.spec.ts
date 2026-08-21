@@ -190,6 +190,84 @@ test.beforeEach(async ({ page }) => {
     await installFixture(page);
 });
 
+test('tournament controls share fixed Lumen state geometry on desktop and mobile', async ({ page }, testInfo) => {
+    const evidence: Record<string, unknown> = {};
+    for (const viewport of [
+        { width: 1024, height: 768 },
+        { width: 500, height: 900 },
+    ]) {
+        await page.setViewportSize(viewport);
+        await page.goto(`${gameUrl}/che/tournament`);
+        await expect(page.getByText('삼모전 토너먼트')).toBeVisible();
+        const controls = [
+            page.getByRole('tab', { name: '토너먼트' }),
+            page.getByRole('tab', { name: '베팅장' }),
+            page.getByRole('button', { name: '창 닫기' }).first(),
+            page.getByRole('button', { name: '갱신' }),
+        ];
+        const viewportEvidence: Record<string, unknown> = {};
+
+        for (const control of controls) {
+            const label = (await control.textContent())?.trim() ?? 'unknown';
+            await control.scrollIntoViewIfNeeded();
+            await expect(control).toHaveClass(/legacy-button--fixed-height/u);
+            const measure = () =>
+                control.evaluate((element) => {
+                    const rect = element.getBoundingClientRect();
+                    const style = getComputedStyle(element);
+                    return {
+                        top: rect.top,
+                        bottom: rect.bottom,
+                        height: rect.height,
+                        marginTop: style.marginTop,
+                        borderBottomWidth: style.borderBottomWidth,
+                        borderRadius: style.borderRadius,
+                        backgroundColor: style.backgroundColor,
+                        fontFamily: style.fontFamily,
+                        fontSize: style.fontSize,
+                    };
+                });
+            await page.mouse.move(viewport.width - 1, viewport.height - 1);
+            const base = await measure();
+            expect(base).toMatchObject({
+                height: 44,
+                marginTop: '0px',
+                borderBottomWidth: '4px',
+                borderRadius: '5.25px',
+                fontSize: '14px',
+            });
+            expect(base.fontFamily).toContain('Pretendard');
+
+            await control.hover();
+            const hover = await measure();
+            expect(hover).toMatchObject({ height: 43, marginTop: '1px', borderBottomWidth: '3px' });
+            expect(hover.bottom).toBeCloseTo(base.bottom, 2);
+
+            const box = await control.boundingBox();
+            if (!box) throw new Error(`${label} tournament control is not measurable`);
+            await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+            await page.mouse.down();
+            const active = await measure();
+            expect(active).toMatchObject({ height: 42, marginTop: '2px', borderBottomWidth: '2px' });
+            expect(active.bottom).toBeCloseTo(base.bottom, 2);
+            await page.mouse.move(viewport.width - 1, viewport.height - 1);
+            await page.mouse.up();
+            viewportEvidence[label] = { default: base, hover, active };
+        }
+        evidence[`${viewport.width}x${viewport.height}`] = viewportEvidence;
+        if (artifactDir) {
+            await page.screenshot({
+                path: `${artifactDir}/core-tournament-buttons-${viewport.width}.png`,
+                fullPage: true,
+            });
+        }
+    }
+    await testInfo.attach('tournament-button-geometry', {
+        body: JSON.stringify(evidence, null, 2),
+        contentType: 'application/json',
+    });
+});
+
 test('tournament keeps the legacy 2000px bracket and 250px group geometry', async ({ page }) => {
     await page.setViewportSize({ width: 2200, height: 1000 });
     await page.goto(`${gameUrl}/che/tournament`);
@@ -210,6 +288,9 @@ test('tournament keeps the legacy 2000px bracket and 250px group geometry', asyn
             groupWidth: groupTable.getBoundingClientRect().width,
             titleHeight: title.getBoundingClientRect().height,
             refreshHeight: refresh.getBoundingClientRect().height,
+            refreshBottom: refresh.getBoundingClientRect().bottom,
+            refreshMarginTop: getComputedStyle(refresh).marginTop,
+            refreshEdge: getComputedStyle(refresh).borderBottomWidth,
             refreshRadius: getComputedStyle(refresh).borderRadius,
             fontFamily: style.fontFamily,
             fontSize: style.fontSize,
@@ -222,7 +303,9 @@ test('tournament keeps the legacy 2000px bracket and 250px group geometry', asyn
         candidateWidth: 125,
         groupWidth: 250,
         titleHeight: 55.6875,
-        refreshHeight: 35.5,
+        refreshHeight: 44,
+        refreshMarginTop: '0px',
+        refreshEdge: '4px',
         refreshRadius: '5.25px',
         fontSize: '14px',
     });
@@ -231,12 +314,39 @@ test('tournament keeps the legacy 2000px bracket and 250px group geometry', asyn
     if (artifactDir) await page.screenshot({ path: `${artifactDir}/core-tournament.png`, fullPage: true });
 
     const refresh = page.getByRole('button', { name: '갱신' });
-    const before = await refresh.evaluate((element) => getComputedStyle(element).filter);
     await refresh.hover();
-    const hover = await refresh.evaluate((element) => getComputedStyle(element).filter);
+    const hover = await refresh.evaluate((element) => {
+        const rect = element.getBoundingClientRect();
+        const style = getComputedStyle(element);
+        return {
+            bottom: rect.bottom,
+            height: rect.height,
+            marginTop: style.marginTop,
+            borderBottomWidth: style.borderBottomWidth,
+            filter: style.filter,
+        };
+    });
+    expect(hover).toMatchObject({ height: 43, marginTop: '1px', borderBottomWidth: '3px', filter: 'none' });
+    expect(hover.bottom).toBeCloseTo(geometry.refreshBottom, 2);
+    const box = await refresh.boundingBox();
+    if (!box) throw new Error('tournament refresh is not measurable');
+    await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+    await page.mouse.down();
+    const active = await refresh.evaluate((element) => {
+        const rect = element.getBoundingClientRect();
+        const style = getComputedStyle(element);
+        return {
+            bottom: rect.bottom,
+            height: rect.height,
+            marginTop: style.marginTop,
+            borderBottomWidth: style.borderBottomWidth,
+        };
+    });
+    expect(active).toMatchObject({ height: 42, marginTop: '2px', borderBottomWidth: '2px' });
+    expect(active.bottom).toBeCloseTo(geometry.refreshBottom, 2);
+    await page.mouse.up();
     await refresh.focus();
     await expect(refresh).toBeFocused();
-    expect(hover).not.toBe(before);
 });
 
 test('tournament keeps the fixed legacy canvas at a 1024px viewport', async ({ page }) => {
