@@ -34,6 +34,7 @@ import {
     rollUniqueLottery,
     getNextTurnAt,
     getBillByLevel,
+    LEGACY_DEFAULT_MAX_LEVEL,
     type ItemModule,
     type UniqueLotteryRunner,
 } from '@sammo-ts/logic';
@@ -126,7 +127,7 @@ export const applyLegacyGeneralProgression = (
     env: TurnCommandEnv,
     logs: LogEntryDraft[]
 ): TurnGeneral => {
-    const maxStatLevel = env.maxStatLevel ?? 255;
+    const maxStatLevel = env.maxStatLevel ?? LEGACY_DEFAULT_MAX_LEVEL;
     const maxDedicationLevel = env.maxDedicationLevel ?? 30;
     const expLevel = Math.max(
         0,

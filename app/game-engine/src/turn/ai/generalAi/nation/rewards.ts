@@ -1,5 +1,6 @@
 import type { GeneralAI } from '../core.js';
 import { GeneralActionPipeline } from '@sammo-ts/logic/actionModules/general.js';
+import { LEGACY_DEFAULT_MAX_LEVEL } from '@sammo-ts/logic/scenario/constants.js';
 import { findCrewTypeById, getTechCost } from '@sammo-ts/logic/world/unitSet.js';
 import type { TurnGeneral } from '../../../types.js';
 import { asRecord, readMetaNumber, readRequiredMetaNumber } from '../../aiUtils.js';
@@ -72,12 +73,12 @@ const getFullLeadership = (ai: GeneralAI, general: TurnGeneral): number => {
             'leadership',
             general.stats.leadership
         );
-        const maxStat = ai.commandEnv.maxStatLevel ?? ai.scenarioConfig.stat.max;
+        const maxStat = ai.commandEnv.maxStatLevel ?? LEGACY_DEFAULT_MAX_LEVEL;
         return Math.trunc(Math.max(0, Math.min(Number(adjusted), maxStat)));
     }
     const nationLevel = ai.nation?.level ?? 0;
     const officerBonus = general.officerLevel === 12 ? nationLevel * 2 : general.officerLevel >= 5 ? nationLevel : 0;
-    const maxStat = ai.commandEnv.maxStatLevel ?? ai.scenarioConfig.stat.max;
+    const maxStat = ai.commandEnv.maxStatLevel ?? LEGACY_DEFAULT_MAX_LEVEL;
     return Math.max(0, Math.min(general.stats.leadership + officerBonus, maxStat));
 };
 

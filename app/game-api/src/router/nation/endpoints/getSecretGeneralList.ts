@@ -1,6 +1,7 @@
 import { TRPCError } from '@trpc/server';
 
-import { asRecord } from '@sammo-ts/common';
+import { asNumber, asRecord } from '@sammo-ts/common';
+import { LEGACY_DEFAULT_MAX_LEVEL } from '@sammo-ts/logic';
 
 import { loadUnitSetDefinitionByName } from '@sammo-ts/game-engine/scenario/unitSetLoader.js';
 import { accessAuthedProcedure } from '../../../trpc.js';
@@ -16,10 +17,10 @@ const readNumber = (record: Record<string, unknown>, keys: string[], fallback = 
 };
 const woundedStat = (value: number, injury: number): number =>
     injury > 0 ? Math.floor((value * (100 - injury)) / 100) : value;
-const experienceLevel = (experience: number): number =>
+const experienceLevel = (experience: number, maxLevel: number): number =>
     Math.max(
         0,
-        Math.min(100, experience < 1000 ? Math.floor(experience / 100) : Math.floor(Math.sqrt(experience / 10)))
+        Math.min(maxLevel, experience < 1000 ? Math.floor(experience / 100) : Math.floor(Math.sqrt(experience / 10)))
     );
 const leadershipBonus = (officerLevel: number, nationLevel: number): number =>
     officerLevel === 12 ? nationLevel * 2 : officerLevel >= 5 ? nationLevel : 0;
@@ -55,6 +56,10 @@ export const getSecretGeneralList = accessAuthedProcedure.query(async ({ ctx }) 
         ctx.db.worldState.findFirst({ select: { config: true } }),
     ]);
     const worldConfig = asRecord(worldState?.config);
+    const maxExperienceLevel = Math.max(
+        0,
+        Math.trunc(asNumber(asRecord(worldConfig.const).maxLevel, LEGACY_DEFAULT_MAX_LEVEL))
+    );
     const environment = asRecord(worldConfig.environment ?? worldConfig.map);
     const unitSetName =
         typeof environment.unitSet === 'string' && environment.unitSet.trim() ? environment.unitSet : ctx.profile.id;
@@ -90,7 +95,7 @@ export const getSecretGeneralList = accessAuthedProcedure.query(async ({ ctx }) 
                 intelligence: woundedStat(general.intel, general.injury),
             },
             leadershipBonus: leadershipBonus(general.officerLevel, nation.level),
-            experienceLevel: experienceLevel(general.experience),
+            experienceLevel: experienceLevel(general.experience, maxExperienceLevel),
             troopId: general.troopId,
             troopName: troopNames.get(general.troopId) ?? null,
             gold: general.gold,

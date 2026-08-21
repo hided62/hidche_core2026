@@ -1,6 +1,6 @@
 import { TRPCError } from '@trpc/server';
 import { asNumber, asRecord } from '@sammo-ts/common';
-import { LogCategory, LogScope } from '@sammo-ts/logic';
+import { LEGACY_DEFAULT_MAX_LEVEL, LogCategory, LogScope } from '@sammo-ts/logic';
 import { z } from 'zod';
 
 import type { GameApiContext } from '../../context.js';
@@ -573,7 +573,7 @@ export const publicRouter = router({
         const nationMap = new Map(nations.map((nation) => [nation.id, nation]));
         const worldConfig = asRecord(worldState?.config);
         const worldConstants = asRecord(worldConfig.const);
-        const maxLevel = Math.max(0, Math.floor(asNumber(worldConstants.maxLevel, 255)));
+        const maxLevel = Math.max(0, Math.floor(asNumber(worldConstants.maxLevel, LEGACY_DEFAULT_MAX_LEVEL)));
         const maxDedLevel = Math.max(0, Math.floor(asNumber(worldConstants.maxDedLevel, 30)));
 
         // Legacy a_npcList.php shows select_pool humans first and possessed npc=1 rows.

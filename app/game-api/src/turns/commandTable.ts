@@ -18,7 +18,7 @@ import type {
     TriggerValue,
     UnitSetDefinition,
 } from '@sammo-ts/logic';
-import { evaluateConstraints } from '@sammo-ts/logic';
+import { evaluateConstraints, LEGACY_DEFAULT_MAX_LEVEL } from '@sammo-ts/logic';
 import type { GeneralActionModule } from '@sammo-ts/logic/actionModules/general.js';
 import { CommandResolver as RecruitmentCommandResolver } from '@sammo-ts/logic/actions/turn/general/che_징병.js';
 import { projectItemSlots, readItemInventoryFromMeta } from '@sammo-ts/logic/items/index.js';
@@ -340,7 +340,7 @@ const buildCommandEnv = (worldState: WorldStateRow): CommandEnv => {
         defaultSpecialWar: resolveOptionalString(constValues, ['defaultSpecialWar']),
         initialNationGenLimit: resolveNumber(constValues, ['initialNationGenLimit'], 0),
         maxTechLevel: resolveNumber(constValues, ['maxTechLevel'], 12),
-        maxStatLevel: resolveNumber(constValues, ['maxLevel'], 255),
+        maxStatLevel: resolveNumber(constValues, ['maxLevel'], LEGACY_DEFAULT_MAX_LEVEL),
         techLevelIncYear: resolveNumber(constValues, ['techLevelIncYear'], 5),
         initialAllowedTechLevel: resolveNumber(constValues, ['initialAllowedTechLevel'], 1),
         baseGold: resolveNumber(constValues, ['baseGold', 'basegold'], 0),

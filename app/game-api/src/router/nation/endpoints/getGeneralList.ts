@@ -1,5 +1,6 @@
 import { TRPCError } from '@trpc/server';
 import { asNumber, asRecord } from '@sammo-ts/common';
+import { LEGACY_DEFAULT_MAX_LEVEL } from '@sammo-ts/logic';
 
 import { accessAuthedProcedure } from '../../../trpc.js';
 import { resolveDedicationLevelName, sanitizeInternalDisplayCode } from '../../../services/gameDisplayNames.js';
@@ -12,10 +13,10 @@ import {
     resolveNationPermission,
 } from '../shared.js';
 
-const experienceLevel = (experience: number): number =>
+const experienceLevel = (experience: number, maxLevel: number): number =>
     Math.max(
         0,
-        Math.min(100, experience < 1000 ? Math.floor(experience / 100) : Math.floor(Math.sqrt(experience / 10)))
+        Math.min(maxLevel, experience < 1000 ? Math.floor(experience / 100) : Math.floor(Math.sqrt(experience / 10)))
     );
 const dedicationLevel = (dedication: number, maxLevel: number): number =>
     Math.max(0, Math.min(maxLevel, Math.ceil(Math.sqrt(dedication) / 10)));
@@ -88,7 +89,9 @@ export const getGeneralList = accessAuthedProcedure.query(async ({ ctx }) => {
     const nationTrait = (await loadTraitNames([nation.typeCode], 'nation')).get(nation.typeCode);
     const permission = resolveNationPermission(general, nation.meta, true);
     const config = asRecord(worldState?.config);
-    const maxDedicationLevel = Math.max(0, Math.trunc(asNumber(asRecord(config.const).maxDedLevel, 30)));
+    const constValues = asRecord(config.const);
+    const maxExperienceLevel = Math.max(0, Math.trunc(asNumber(constValues.maxLevel, LEGACY_DEFAULT_MAX_LEVEL)));
+    const maxDedicationLevel = Math.max(0, Math.trunc(asNumber(constValues.maxDedLevel, 30)));
     const visibleList = list.map((entry) => {
         const entryDedicationLevel = dedicationLevel(entry.dedication, maxDedicationLevel);
         const dedicationDisplay = {
@@ -101,7 +104,7 @@ export const getGeneralList = accessAuthedProcedure.query(async ({ ctx }) => {
             return {
                 ...safeEntry,
                 refreshScoreTotal: accessByGeneral.get(entry.id) ?? 0,
-                experienceLevel: experienceLevel(entry.experience),
+                experienceLevel: experienceLevel(entry.experience, maxExperienceLevel),
                 ...dedicationDisplay,
             };
         }
@@ -114,7 +117,7 @@ export const getGeneralList = accessAuthedProcedure.query(async ({ ctx }) => {
             troopName: null,
             officerCity: 0,
             officerCityName: null,
-            experienceLevel: experienceLevel(entry.experience),
+            experienceLevel: experienceLevel(entry.experience, maxExperienceLevel),
             ...dedicationDisplay,
         };
     });

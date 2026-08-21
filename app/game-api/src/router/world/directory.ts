@@ -1,4 +1,5 @@
 import { asRecord } from '@sammo-ts/common';
+import { LEGACY_DEFAULT_MAX_LEVEL } from '@sammo-ts/logic';
 import { z } from 'zod';
 
 import { accessAuthedInputProcedure, authedProcedure } from '../../trpc.js';
@@ -253,7 +254,7 @@ export const getGeneralDirectory = accessAuthedInputProcedure(z.object({ sort: z
         const accessMap = new Map(accessLogs.map((row) => [row.generalId, row.refreshScoreTotal]));
         const config = asRecord(worldState?.config);
         const constValues = asRecord(config.const);
-        const maxLevel = readNumber(constValues.maxLevel, 255);
+        const maxLevel = readNumber(constValues.maxLevel, LEGACY_DEFAULT_MAX_LEVEL);
         const maxDedLevel = readNumber(constValues.maxDedLevel, 30);
         const worldMeta = asRecord(worldState?.meta);
         const isUnited = readNumber(worldMeta.isUnited ?? worldMeta.isunited) > 0;
