@@ -292,6 +292,18 @@ Gateway process definition에는 `GATEWAY_DATABASE_URL`과 `REDIS_URL`이 모두
 
 Gateway 전체에는 활성 릴리스 작업을 동시에 하나만 둘 수 있습니다. 화면의
 릴리스 이력에서 요청 source, 고정 commit, 상태와 오류를 확인할 수 있습니다.
+릴리스 이력의 생성·시작·완료·로그 시각은 모두 PostgreSQL `timestamptz` instant로
+저장합니다. 운영 PostgreSQL session이 `Asia/Seoul`이어도 `CURRENT_TIMESTAMP`는 같은
+실제 instant를 저장하며, 화면에서만 고정 UTC+9 서버 시각으로 투영합니다. 기존
+`timestamp without time zone` 값을 이관할 때는 raw 값을 UTC로 해석하여 그대로
+보존하므로 과거에 잘못 들어간 행을 소급 보정하지 않습니다.
+
+관리자 session을 통한 API 요청을 우선합니다. 명시적 운영 권한 아래 durable queue를
+직접 등록해야 하는 예외 상황에도 KST 벽시계 문자열이나 timezone 없는 문자열을
+`created_at`에 직접 만들지 말고 column default 또는 timezone-aware instant를
+사용합니다. `now()`를 timezone 없는 열에 쓰는 방식은 DB session이 KST일 때 화면에서
+다시 UTC+9가 적용되어 생성 시각만 9시간 미래가 될 수 있습니다.
+
 작업을 선택하면 관리자 화면이 `admin.releases.logs`를 최대 20초씩 long polling하여
 commit 해석, worktree 준비, build 명령 출력, migration, process 전환,
 readiness와 rollback 진행을 커서 순서대로 이어 붙입니다. 완료된 작업의 로그도

@@ -1,4 +1,5 @@
 import { createGatewayPostgresConnector } from '@sammo-ts/infra';
+import { randomUUID } from 'node:crypto';
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
 
 import { createGatewayReleaseRepository } from '../src/orchestrator/gatewayReleaseRepository.js';
@@ -114,5 +115,42 @@ describeDatabase('gateway release operation persistence', () => {
             resolvedCommitSha: 'c'.repeat(40),
         });
         await expect(repository.renewOperationLease(operation.id, 'controller-a', now, 1_000)).resolves.toBe(false);
+    });
+
+    it('stores direct SQL defaults as the same instant in a Seoul database session', async () => {
+        const operationId = randomUUID();
+        const beforeInsert = Date.now();
+        const [session] = await connector.prisma.$queryRaw<Array<{ timezone: string }>>`
+            SELECT current_setting('TimeZone') AS "timezone"
+        `;
+        expect(session?.timezone).toBe('UTC');
+        await connector.prisma.$transaction(async (tx) => {
+            await tx.$executeRaw`SET LOCAL TIME ZONE 'Asia/Seoul'`;
+            await tx.$executeRaw`
+                INSERT INTO "gateway_release_operation" (
+                    "id", "type", "status", "source_mode", "source_ref", "payload",
+                    "requested_by", "attempts", "updated_at"
+                ) VALUES (
+                    ${operationId}, 'DEPLOY', 'QUEUED', 'BRANCH', 'main', '{}'::jsonb,
+                    'direct-sql-test', 0, CURRENT_TIMESTAMP
+                )
+            `;
+            await tx.$executeRaw`
+                INSERT INTO "gateway_release_log" ("operation_id", "level", "phase", "message")
+                VALUES (${operationId}, 'INFO', 'queue', 'direct SQL timestamp test')
+            `;
+        });
+        const afterInsert = Date.now();
+
+        const operation = await repository.getOperation(operationId);
+        const [log] = await repository.listOperationLogs(operationId);
+        expect(operation).toBeDefined();
+        const createdAt = Date.parse(operation?.createdAt ?? '');
+        const updatedAt = Date.parse(operation?.updatedAt ?? '');
+        expect(createdAt).toBeGreaterThanOrEqual(beforeInsert);
+        expect(createdAt).toBeLessThanOrEqual(afterInsert);
+        expect(updatedAt).toBeGreaterThanOrEqual(beforeInsert);
+        expect(updatedAt).toBeLessThanOrEqual(afterInsert);
+        expect(log?.createdAt).toBe(operation?.createdAt);
     });
 });
