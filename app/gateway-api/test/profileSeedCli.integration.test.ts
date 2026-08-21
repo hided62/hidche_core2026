@@ -54,6 +54,8 @@ describeDatabase('selected workspace profile seed CLI', () => {
                         firstGameIdx: 0,
                         installOperationId: 'selected-cli-operation',
                         installCommitSha: 'selected-cli-commit',
+                        preopenAt: '2036-03-03T01:00:00.000Z',
+                        openAt: '2036-03-03T02:00:00.000Z',
                     },
                     adminUser: {
                         id: 'selected-cli-admin',
@@ -69,6 +71,7 @@ describeDatabase('selected workspace profile seed CLI', () => {
             const world = await connector.prisma.worldState.findFirstOrThrow();
             expect(world).toMatchObject({
                 scenarioCode: '1010',
+                clockWallAnchor: new Date('2036-03-03T02:00:00.000Z'),
                 meta: {
                     firstGameIdx: 0,
                     gameIdx: completedGameCount,

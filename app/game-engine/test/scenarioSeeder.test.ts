@@ -50,6 +50,7 @@ type ScenarioSeederPrismaClient = {
             tickSeconds: number;
             currentYear: number;
             currentMonth: number;
+            clockWallAnchor: Date | null;
         } | null>;
     };
     gameHistory: {
@@ -364,6 +365,8 @@ describeDb('scenario database seed', () => {
                         develop: true,
                     },
                 },
+                preopenAt: new Date('2030-01-01T01:00:00Z'),
+                openAt: new Date('2030-01-01T02:00:00Z'),
             },
         });
 
@@ -385,6 +388,7 @@ describeDb('scenario database seed', () => {
             }
             expect(worldState.tickSeconds).toBe(3600);
             expect(worldState.currentMonth).toBe(1);
+            expect(worldState.clockWallAnchor).toEqual(new Date('2030-01-01T02:00:00.000Z'));
 
             const config = (worldState.config ?? {}) as Record<string, unknown>;
             expect(config.extendedGeneral).toBe(false);
