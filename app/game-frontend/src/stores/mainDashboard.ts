@@ -21,6 +21,7 @@ import {
 import { createBroadcastTabCoordinator, type BroadcastTabCoordinator } from '../utils/broadcastTabCoordinator';
 import { resolveWithReadModelSnapshotFallback } from '../utils/readModelDeltaRecovery';
 import { createRealtimeRequestOptions } from '../utils/realtimeAccessGrant';
+import { markGameServerContact } from '../utils/gameServerActivity';
 
 const REALTIME_FULL_REFRESH_MIN_INTERVAL_MS = 5_000;
 
@@ -1097,10 +1098,12 @@ export const useMainDashboardStore = defineStore('mainDashboard', () => {
             onPayload: (message) => {
                 if (!isRealtimeParticipant()) return;
                 if (message.kind === 'patch') {
+                    markGameServerContact();
                     applyDashboardPatch(message.patch);
                     return;
                 }
                 realtimeStatus.value = message.status;
+                if (message.status === 'connected') markGameServerContact();
             },
         });
         realtimeCoordinator.start();
@@ -1153,6 +1156,7 @@ export const useMainDashboardStore = defineStore('mainDashboard', () => {
         realtimeSource = source;
 
         source.addEventListener('open', () => {
+            markGameServerContact();
             realtimeStatus.value = 'connected';
             realtimeCoordinator?.postFromLeader({ kind: 'status', status: 'connected' });
         });
@@ -1166,6 +1170,7 @@ export const useMainDashboardStore = defineStore('mainDashboard', () => {
             if (!payload || payload.type !== 'readModelInvalidated') {
                 return;
             }
+            markGameServerContact();
             readModelRefreshQueue.request(payload.invalidation, payload.refreshGrant);
         });
         source.addEventListener('messagesInvalidated', (event) => {
@@ -1174,6 +1179,7 @@ export const useMainDashboardStore = defineStore('mainDashboard', () => {
             if (!payload || payload.type !== 'messagesInvalidated') {
                 return;
             }
+            markGameServerContact();
             void refreshMessages(payload.refreshGrant);
         });
 
@@ -1182,14 +1188,17 @@ export const useMainDashboardStore = defineStore('mainDashboard', () => {
         for (const legacyEventType of ['turnCompleted', 'readModelChanged'] as const) {
             source.addEventListener(legacyEventType, () => {
                 if (realtimeCoordinator !== null && !realtimeCoordinator.isLeader()) return;
+                markGameServerContact();
                 realtimeRefreshQueue.request();
             });
         }
         source.addEventListener('messageCreated', () => {
             if (realtimeCoordinator !== null && !realtimeCoordinator.isLeader()) return;
+            markGameServerContact();
             void refreshMessages();
         });
         source.addEventListener('ping', () => {
+            markGameServerContact();
             if (realtimeEnabled.value) {
                 realtimeStatus.value = 'connected';
                 realtimeCoordinator?.postFromLeader({ kind: 'status', status: 'connected' });

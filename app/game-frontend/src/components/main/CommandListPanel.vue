@@ -3,6 +3,7 @@ import { computed, onUnmounted, ref, watch } from 'vue';
 import { addMinutes } from 'date-fns';
 import ReservedCommandEditor from '../command/ReservedCommandEditor.vue';
 import { formatLocalDateTime, formatLocalTimeSeconds } from '../../utils/legacyDateTime';
+import { projectServerClock, sampleServerClock, type SampledServerClock } from '../../utils/serverClockProjection';
 import type {
     CommandMapData,
     CommandMapLayout,
@@ -90,27 +91,20 @@ const autonomousUntil = computed(() => {
 
 const currentServerTime = ref('--:--:--');
 const MAX_SERVER_CLOCK_TIMER_DELAY_MS = 60_000;
-let sampledServerTimeMs: number | null = null;
-let sampledClientTimeMs = 0;
-let sampledStartDelayMs: number | null = 0;
+let serverClockSample: SampledServerClock | null = null;
 let serverClockTimer: ReturnType<typeof setTimeout> | undefined;
 
 const updateServerClock = () => {
     if (serverClockTimer !== undefined) clearTimeout(serverClockTimer);
     serverClockTimer = undefined;
-    if (sampledServerTimeMs === null) {
+    if (serverClockSample === null) {
         currentServerTime.value = '--:--:--';
         return;
     }
-    const clientElapsedMs = Math.max(0, Date.now() - sampledClientTimeMs);
-    const elapsedGameMs =
-        props.clockMode === 'manual' || sampledStartDelayMs === null
-            ? 0
-            : Math.max(0, clientElapsedMs - sampledStartDelayMs);
-    const projectedTime = new Date(sampledServerTimeMs + elapsedGameMs);
+    const { clientElapsedMs, time: projectedTime } = projectServerClock(serverClockSample);
     currentServerTime.value = formatLocalTimeSeconds(projectedTime);
-    if (props.clockMode !== 'manual' && sampledStartDelayMs !== null) {
-        const untilStartMs = sampledStartDelayMs - clientElapsedMs;
+    if (serverClockSample.clockMode !== 'manual' && serverClockSample.startDelayMs !== null) {
+        const untilStartMs = serverClockSample.startDelayMs - clientElapsedMs;
         serverClockTimer = setTimeout(
             updateServerClock,
             untilStartMs > 0
@@ -123,21 +117,7 @@ const updateServerClock = () => {
 watch(
     () => [props.serverTime, props.serverWallTime, props.clockMode, props.clockRunning, props.clockStartsAt] as const,
     ([serverTime, serverWallTime, clockMode, clockRunning, clockStartsAt]) => {
-        const parsed = serverTime ? new Date(serverTime).getTime() : Number.NaN;
-        sampledServerTimeMs = Number.isFinite(parsed) ? parsed : null;
-        sampledClientTimeMs = Date.now();
-        if (clockMode === 'manual') {
-            sampledStartDelayMs = null;
-        } else if (clockRunning !== false) {
-            sampledStartDelayMs = 0;
-        } else {
-            const wallTimeMs = serverWallTime ? new Date(serverWallTime).getTime() : Number.NaN;
-            const startsAtMs = clockStartsAt ? new Date(clockStartsAt).getTime() : Number.NaN;
-            sampledStartDelayMs =
-                Number.isFinite(wallTimeMs) && Number.isFinite(startsAtMs)
-                    ? Math.max(0, startsAtMs - wallTimeMs)
-                    : null;
-        }
+        serverClockSample = sampleServerClock({ serverTime, serverWallTime, clockMode, clockRunning, clockStartsAt });
         updateServerClock();
     },
     { immediate: true }
