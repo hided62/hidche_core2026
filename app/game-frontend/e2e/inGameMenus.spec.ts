@@ -1429,6 +1429,7 @@ test('내 정보 항목과 국가 성향은 HTML 리치 툴팁을 마우스와 �
     const showWithMouse = async (testId: string, expectedTexts: readonly string[]) => {
         const trigger = page.locator(`[data-rich-tooltip="${testId}"]`);
         await expect(trigger).toHaveAttribute('tabindex', '0');
+        await expect(trigger).toHaveCSS('text-decoration-line', 'none');
         await trigger.hover();
         await expect(visibleTooltip).toHaveCount(1);
         await expect(visibleTooltip).toHaveAttribute('role', 'tooltip');

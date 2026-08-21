@@ -29,8 +29,6 @@ defineProps<{
 }
 .directory-tooltip--enabled {
     cursor: help;
-    text-decoration: underline dotted rgb(150 210 255 / 85%);
-    text-underline-offset: 2px;
 }
 .directory-tooltip--enabled:focus-visible {
     border-radius: 2px;
