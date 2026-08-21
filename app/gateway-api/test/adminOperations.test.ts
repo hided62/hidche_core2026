@@ -700,6 +700,63 @@ describe('admin operation API', () => {
         });
     });
 
+    it('keeps reset start, preopen, and formal open as an ordered lifecycle', async () => {
+        const harness = await buildCaller(async (input) => ({
+            id: '77777777-7777-4777-8777-777777777777',
+            profileName: input.profileName,
+            type: 'RESET',
+            status: 'QUEUED',
+            sourceMode: input.sourceMode,
+            sourceRef: input.sourceRef,
+            payload: input.payload ?? {},
+            requestedBy: input.requestedBy,
+            scheduledAt: input.scheduledAt,
+            createdAt: '2026-08-08T00:00:00.000Z',
+            updatedAt: '2026-08-08T00:00:00.000Z',
+        }));
+        const install = {
+            scenarioId: 1010,
+            turnTermMinutes: 60,
+            sync: false,
+            fiction: 1 as const,
+            extend: false,
+            blockGeneralCreate: 0 as const,
+            npcMode: 0 as const,
+            showImgLevel: 0 as const,
+            tournamentTrig: false,
+            joinMode: 'full' as const,
+            preopenAt: '2099-01-01T01:00:00.000Z',
+            openAt: '2099-01-01T02:00:00.000Z',
+        };
+
+        await harness.caller.admin.operations.requestReset({
+            profileName: 'che:2',
+            sourceMode: 'COMMIT',
+            sourceRef: 'HEAD',
+            scheduledAt: '2099-01-01T00:00:00.000Z',
+            install,
+        });
+
+        expect(harness.createdInputs[0]).toMatchObject({
+            type: 'RESET',
+            scheduledAt: '2099-01-01T00:00:00.000Z',
+            payload: { install },
+        });
+
+        await expect(
+            harness.caller.admin.operations.requestReset({
+                profileName: 'che:2',
+                sourceMode: 'COMMIT',
+                sourceRef: 'HEAD',
+                scheduledAt: '2099-01-01T01:30:00.000Z',
+                install,
+            })
+        ).rejects.toMatchObject({
+            code: 'BAD_REQUEST',
+            message: 'preopenAt cannot be earlier than scheduledAt.',
+        });
+    });
+
     it('returns validated profile reset defaults to a scenario-only operator', async () => {
         const harness = await buildCaller(
             async () => {

@@ -600,7 +600,15 @@ test('separates branch and commit semantics and submits a reset from the dedicat
     await page.getByTestId('source-ref').fill('0123456789abcdef0123456789abcdef01234567');
     await page.getByTestId('load-scenarios').click();
     await page.getByTestId('scenario-select').selectOption('5');
-    await page.getByLabel('작업 예약 (서버 시간 UTC+9)').fill('2026-08-13T09:30');
+    await expect(page.getByText('초기화 시작 → 가오픈 시작 → 정식 오픈 순서입니다.')).toBeVisible();
+    await page.getByTestId('reset-scheduled-at').fill('2030-08-13T09:30');
+    await page.getByTestId('reset-preopen-at').fill('2030-08-13T10:00');
+    await page.getByTestId('reset-open-at').fill('2030-08-13T11:00');
+    const scheduledHelp = page.getByTestId('reset-help-scheduled-at');
+    await scheduledHelp.hover();
+    await expect(page.getByTestId('reset-help-scheduled-at-tooltip')).toContainText(
+        '완료되어도 가오픈 전에는 접속을 차단합니다.'
+    );
     await page.getByTestId('request-reset').hover();
     await page.getByTestId('request-reset').click();
 
@@ -655,7 +663,9 @@ test('separates branch and commit semantics and submits a reset from the dedicat
     expect(JSON.stringify(resetRequest?.body)).toContain('"sourceMode":"COMMIT"');
     expect(JSON.stringify(resetRequest?.body)).toContain('0123456789abcdef0123456789abcdef01234567');
     expect(JSON.stringify(resetRequest?.body)).toContain('"scenarioId":5');
-    expect(JSON.stringify(resetRequest?.body)).toContain('"scheduledAt":"2026-08-13T00:30:00.000Z"');
+    expect(JSON.stringify(resetRequest?.body)).toContain('"scheduledAt":"2030-08-13T00:30:00.000Z"');
+    expect(JSON.stringify(resetRequest?.body)).toContain('"preopenAt":"2030-08-13T01:00:00.000Z"');
+    expect(JSON.stringify(resetRequest?.body)).toContain('"openAt":"2030-08-13T02:00:00.000Z"');
     await page.screenshot({ path: testInfo.outputPath('reset-operation-log-desktop.png'), fullPage: true });
 
     await page.setViewportSize({ width: 390, height: 844 });
@@ -1046,7 +1056,7 @@ test('uses ref reset terms with compact hover, focus, and mobile help', async ({
     ]);
 
     const helpButtons = page.getByRole('button', { name: /도움말$/ });
-    await expect(helpButtons).toHaveCount(10);
+    await expect(helpButtons).toHaveCount(13);
     const fictionHelp = page.getByTestId('reset-help-fiction');
     const fictionTooltip = page.getByTestId('reset-help-fiction-tooltip');
     await expect(fictionTooltip).toBeHidden();
