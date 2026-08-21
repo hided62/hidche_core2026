@@ -61,6 +61,7 @@ export interface TurnCommandEnv {
     npcSeizureMessageProb?: number;
     maxResourceActionAmount: number;
     itemCatalog?: Record<string, TurnCommandItemCatalogEntry>;
+    purchasableItemKeys?: ReadonlySet<string>;
     generalActionModules?: RefOrderedActionStack<GeneralActionModule>;
     warActionModules?: RefOrderedActionStack<WarActionModule>;
     nationTraitModules?: Array<NationTraitModule>;

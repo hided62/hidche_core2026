@@ -79,7 +79,11 @@ export class ActionDefinition<
         if (!item) {
             return null;
         }
-        if (item.slot !== itemType || !item.buyable) {
+        if (
+            item.slot !== itemType ||
+            !item.buyable ||
+            (this.env.purchasableItemKeys !== undefined && !this.env.purchasableItemKeys.has(itemCode))
+        ) {
             return null;
         }
         return args;
