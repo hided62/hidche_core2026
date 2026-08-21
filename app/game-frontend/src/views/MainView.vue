@@ -295,7 +295,7 @@ watch(
                 </div>
 
                 <div v-else-if="panelId === 'nation'" class="mobile-panel" data-mobile-panel-id="nation">
-                    <PanelCard title="국가 정보" data-main-target="nation">
+                    <PanelCard title="국가 정보" hide-header aria-label="국가 정보" data-main-target="nation">
                         <NationBasicCard :nation="nation" :loading="loading" />
                     </PanelCard>
                 </div>
@@ -306,7 +306,7 @@ watch(
                     :class="{ 'mobile-panel--flush': isFlushMobilePanel(panelId, panelIndex) }"
                     data-mobile-panel-id="general"
                 >
-                    <PanelCard title="장수 스탯" data-main-target="general">
+                    <PanelCard title="장수 스탯" hide-header aria-label="장수 정보" data-main-target="general">
                         <GeneralBasicCard :general="general" :loading="loading" :nation-color="nation?.color" />
                     </PanelCard>
                 </div>
@@ -456,10 +456,10 @@ watch(
             <PanelCard title="도시 정보" data-main-target="city">
                 <CityBasicCard :city="city" :loading="loading" />
             </PanelCard>
-            <PanelCard title="국가 정보" data-main-target="nation">
+            <PanelCard title="국가 정보" hide-header aria-label="국가 정보" data-main-target="nation">
                 <NationBasicCard :nation="nation" :loading="loading" />
             </PanelCard>
-            <PanelCard title="장수 스탯" data-main-target="general">
+            <PanelCard title="장수 스탯" hide-header aria-label="장수 정보" data-main-target="general">
                 <GeneralBasicCard :general="general" :loading="loading" :nation-color="nation?.color" />
             </PanelCard>
             <MainNationMenu
