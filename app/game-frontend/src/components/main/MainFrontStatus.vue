@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { formatServerDateTime } from '@sammo-ts/common';
+import { formatServerDateTime } from '@sammo-ts/common/time/ServerDateTime';
 import { computed } from 'vue';
 import { resolveTournamentStageName } from '../../utils/tournamentStatus';
 

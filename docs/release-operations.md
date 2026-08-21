@@ -92,6 +92,15 @@ Profile orchestrator와 Gateway release-controller는 서로 다른 worktree roo
 제거됩니다. Profile 관리자 API의 `admin.profiles.cleanupWorkspaces`는 같은 보호
 규칙을 사용하므로 진행 중인 build/operation이 있으면 전체 정리를 보류합니다.
 
+PM2의 Node client는 한 process 안에서 공유 connection을 사용합니다. Profile
+orchestrator가 시작될 때 reconcile과 worktree 정리가 동시에 `connect/list/disconnect`를
+호출해 한 callback이 사라지면, PM2에는 orchestrator가 `online`으로 보이면서도 정리
+flag가 풀리지 않아 profile operation poll이 계속 대기할 수 있습니다. 제품 경계에서는
+PM2 session을 직렬화하고 `connect/list`를 5초, start/stop/delete를 30초로 제한합니다.
+Timeout은 scheduled task 오류로 끝나 정리 flag를 해제하고 다음 5초 operation poll이
+queue를 다시 claim하게 합니다. PM2 mutation이 timeout된 경우에는 같은 mutation을 즉시
+직접 반복하지 않고 실제 process 목록과 operation terminal 상태를 먼저 재조회합니다.
+
 ## Profile 배포
 
 버전 업데이트 화면에서 profile의 branch 또는 commit을 선택합니다. Branch는 worker가
@@ -102,6 +111,14 @@ Profile 작업과 Gateway 전체 릴리스 claim도 같은 PostgreSQL advisory l
 queue에서 기다리고, Gateway 릴리스가 실행 중이면 새 profile 작업이 기다립니다.
 Gateway process 전환이 진행 중인 profile migration·seed 실행자를 중단하지 않는
 운영 계약입니다.
+
+상대 Gateway 릴리스가 terminal인데도 profile 작업이 두 번의 poll 주기 이상
+`QUEUED`, `attempts=0`이면 단순 build 지연이 아닙니다. Gateway orchestrator의 PM2
+상태뿐 아니라 최근 started 로그, 활성 release row와 profile operation row를 함께
+확인합니다. DB에 활성 release가 없고 API/frontend/profile runtime이 정상인 경우에만
+현재 definition의 `sammo:gateway-orchestrator` 한 process를 재시작해 queue poll을
+복구할 수 있습니다. Container, release-controller와 game daemon은 함께 재시작하지
+않습니다.
 
 ### DB 유지 배포
 

@@ -2,7 +2,7 @@
 import { computed, onMounted, ref, watch } from 'vue';
 import { useRouter } from 'vue-router';
 
-import { JosaUtil } from '@sammo-ts/common';
+import { JosaUtil } from '@sammo-ts/common/util/JosaUtil';
 
 import PersonnelSelectionDialog from '../components/personnel/PersonnelSelectionDialog.vue';
 import { useGameFeedback } from '../composables/useGameFeedback';

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { formatServerDateTime } from '@sammo-ts/common';
+import { formatServerDateTime } from '@sammo-ts/common/time/ServerDateTime';
 import { computed, ref, onMounted, onUnmounted, watch } from 'vue';
 import { useRouter } from 'vue-router';
 import type { inferRouterOutputs } from '@trpc/server';
@@ -108,6 +108,8 @@ const formatGraceEndsAt = (value: string | null | undefined): string => formatSe
 const serverSeasonStatus = (info: LobbyInfo) => resolveServerSeasonStatus(info);
 const formatAnnouncementDate = (value: string | null | undefined): string =>
     formatServerDateTime(value, { fallback: '-' });
+const profileScenarioTitle = (profileName: string): string =>
+    profileDetails.value[profileName]?.scenarioTitle.trim() || '-';
 const npcModeText = (mode: number): string => ['불가', '가능', '선택 생성'][mode] ?? '불가';
 const autorunDetailText = (info: LobbyInfo): string => {
     const autorun = info.autorunUser;
@@ -527,10 +529,10 @@ const handleEnter = async (profile: LobbyProfile, targetPath: string) => {
                                                     -
                                                 </div>
                                                 <div data-testid="profile-scenario-announcement">
-                                                    <span class="text-orange-400">{{
-                                                        profileDetails[profile.profileName]?.scenarioTitle ||
-                                                        profile.scenario
-                                                    }}</span
+                                                    <span
+                                                        class="text-orange-400"
+                                                        data-testid="profile-scenario-title"
+                                                        >{{ profileScenarioTitle(profile.profileName) }}</span
                                                     >{{ ' ' }}
                                                     <span class="text-green-400">
                                                         {{ profileDetails[profile.profileName]?.turnTerm }}분 턴 서버
@@ -542,7 +544,8 @@ const handleEnter = async (profile: LobbyProfile, targetPath: string) => {
                                                     서기 {{ profileDetails[profile.profileName]?.year }}년
                                                     {{ profileDetails[profile.profileName]?.month }}월 (<span
                                                         class="text-orange-400"
-                                                        >{{ profile.scenario }}</span
+                                                        data-testid="profile-scenario-title"
+                                                        >{{ profileScenarioTitle(profile.profileName) }}</span
                                                     >)
                                                 </div>
                                                 <div class="text-zinc-400">
@@ -823,10 +826,10 @@ const handleEnter = async (profile: LobbyProfile, targetPath: string) => {
                 >
                     계 정 관 리
                 </div>
-                <div class="p-6 flex justify-center space-x-4">
+                <div class="account-actions p-6">
                     <RouterLink
                         to="/account"
-                        class="bg-zinc-800 hover:bg-zinc-700 text-white px-6 py-2 rounded border border-zinc-700 transition-colors"
+                        class="account-navigation-button bg-zinc-800 hover:bg-zinc-700 text-white px-6 py-2 rounded border border-zinc-700 transition-colors"
                     >
                         비밀번호 & 전콘 & 탈퇴
                     </RouterLink>
@@ -841,7 +844,7 @@ const handleEnter = async (profile: LobbyProfile, targetPath: string) => {
                     <RouterLink
                         v-if="canAccessAdmin"
                         to="/admin"
-                        class="bg-zinc-800 hover:bg-zinc-700 text-white px-6 py-2 rounded border border-zinc-700 transition-colors"
+                        class="account-navigation-button account-admin-button bg-zinc-800 hover:bg-zinc-700 text-white px-6 py-2 rounded border border-zinc-700 transition-colors"
                     >
                         관리자 페이지
                     </RouterLink>
@@ -855,6 +858,20 @@ const handleEnter = async (profile: LobbyProfile, targetPath: string) => {
 </template>
 
 <style scoped>
+.account-actions {
+    display: flex;
+    justify-content: center;
+    gap: 16px;
+}
+
+.account-navigation-button {
+    display: flex;
+    box-sizing: border-box;
+    align-items: center;
+    justify-content: center;
+    text-align: center;
+}
+
 .legacy-logout-button {
     box-sizing: border-box;
     width: 200px;
@@ -1090,5 +1107,39 @@ const handleEnter = async (profile: LobbyProfile, targetPath: string) => {
 .legacy-logout-button:disabled {
     cursor: default;
     opacity: 0.65;
+}
+
+@media (max-width: 640px) {
+    .account-actions {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    .account-actions > * {
+        width: 100%;
+        min-width: 0;
+    }
+
+    .account-navigation-button {
+        height: 48px;
+        padding: 10px 4px;
+        font-size: clamp(12px, 3.2vw, 16px);
+        line-height: 24px;
+        white-space: nowrap;
+    }
+
+    .account-admin-button {
+        grid-column: 1 / -1;
+    }
+}
+
+@media (max-width: 360px) {
+    .account-actions {
+        grid-template-columns: minmax(0, 1fr);
+    }
+
+    .account-admin-button {
+        grid-column: auto;
+    }
 }
 </style>

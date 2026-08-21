@@ -5,7 +5,7 @@ import {
     type RealtimeReadModelChanges,
     type RealtimeReadModelInvalidation,
     type RealtimeViewerIdentity,
-} from '@sammo-ts/common';
+} from '@sammo-ts/common/realtime/types';
 
 export type DashboardReadModelIdentity = RealtimeViewerIdentity;
 export type DashboardRefreshPlan = RealtimeReadModelInvalidation;

@@ -1,12 +1,13 @@
 import { createRouter, createWebHistory } from 'vue-router';
-import HomeView from '../views/HomeView.vue';
-import LobbyView from '../views/LobbyView.vue';
-import AdminOverviewView from '../views/AdminOverviewView.vue';
-import AdminView from '../views/AdminView.vue';
-import ServerOperationsView from '../views/ServerOperationsView.vue';
-import AccountView from '../views/AccountView.vue';
-import OAuthCallbackView from '../views/OAuthCallbackView.vue';
-import SignupView from '../views/SignupView.vue';
+
+const HomeView = () => import('../views/HomeView.vue');
+const LobbyView = () => import('../views/LobbyView.vue');
+const AdminOverviewView = () => import('../views/AdminOverviewView.vue');
+const AdminView = () => import('../views/AdminView.vue');
+const ServerOperationsView = () => import('../views/ServerOperationsView.vue');
+const AccountView = () => import('../views/AccountView.vue');
+const OAuthCallbackView = () => import('../views/OAuthCallbackView.vue');
+const SignupView = () => import('../views/SignupView.vue');
 
 const router = createRouter({
     history: createWebHistory(import.meta.env.BASE_URL),
