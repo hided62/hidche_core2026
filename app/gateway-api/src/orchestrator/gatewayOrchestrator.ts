@@ -271,6 +271,12 @@ const readMetaNumber = (meta: Record<string, unknown>, key: string): number | nu
     return null;
 };
 
+export const resolveProfileFirstGameIdx = (meta: Record<string, unknown>): number => {
+    const raw = meta.firstGameIdx;
+    const configured = typeof raw === 'number' ? raw : typeof raw === 'string' ? Number(raw) : Number.NaN;
+    return Number.isInteger(configured) && configured >= 0 ? configured : 1;
+};
+
 const normalizeStatus = (value: unknown): GatewayAdminActionStatus | null => {
     if (typeof value === 'string') {
         return value as GatewayAdminActionStatus;
@@ -1882,6 +1888,7 @@ export class GatewayOrchestrator implements GatewayOrchestratorHandle {
             );
             const profileMeta = normalizeMeta(profile.meta);
             const nextSeasonIdx = readMetaNumber(profileMeta, 'nextSeasonIdx');
+            const firstGameIdx = resolveProfileFirstGameIdx(profileMeta);
             const baseSeason = readMetaNumber(normalizeMeta(seedInfo.meta), 'season');
             const season = nextSeasonIdx ?? baseSeason ?? 1;
             await updateClaimedProfile({ status: 'STOPPED' }, () =>
@@ -1902,6 +1909,7 @@ export class GatewayOrchestrator implements GatewayOrchestratorHandle {
                     installOptions: {
                         ...(installOptions ?? {}),
                         season,
+                        firstGameIdx,
                         serverId,
                         installCommitSha: commitSha,
                     },

@@ -81,6 +81,13 @@ Gateway 관리자 콘솔은 `/gateway/admin`에서 시작합니다. 공개 로�
   기수는 0을 저장한 뒤 RESET하고, 이벤트 종료 뒤 정상 기수 번호를 다시 저장한
   다음 RESET합니다. 빈 값은 강제 번호를 해제하여 기존 게임의 season 또는 신규
   기본값 1을 사용한다는 뜻입니다.
+- `첫 기수 번호`는 `GatewayProfile.meta.firstGameIdx`이며 기본값은 1입니다.
+  RESET은 `GameHistory.status=COMPLETED`인 이력 수에 이 값을 더해 현재
+  `WorldState.meta.gameIdx`를 확정합니다. `season`은 이벤트 분류와 연차를 위한 별도
+  값이므로 계산에 참여하지 않고, `OPEN`·`ABANDONED` 이력도 세지 않습니다. 예를 들어
+  첫 기수 번호가 0인 profile은 완료 이력이 없을 때 0기, 0기가 완료된 다음 RESET에서
+  1기가 됩니다. 변경은 다음 RESET부터 적용되며 완료 이력이 생긴 뒤 값을 바꾸면 이후
+  번호가 이동하므로 서버 최초 번호를 정할 때만 설정하는 것을 원칙으로 합니다.
 - 같은 화면의 `실행 중 게임 옵션`은 리셋 기본값과 별개로 현재 기수 DB의 턴
   간격, 장수 생성 제한, 유저 자동턴 제한·동작을 읽어 표시합니다. 세 값은
   `admin.profiles.runtime:<name>` 권한과 3자 이상의 사유가 있을 때 하나의

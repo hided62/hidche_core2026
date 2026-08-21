@@ -41,6 +41,8 @@ describeDatabase('selected workspace profile seed CLI', () => {
         const requestFile = path.join(tempDirectory, 'request.json');
         const connector = createGamePostgresConnector({ url: databaseUrl });
         try {
+            await connector.connect();
+            const completedGameCount = await connector.prisma.gameHistory.count({ where: { status: 'COMPLETED' } });
             await fs.writeFile(
                 requestFile,
                 JSON.stringify({
@@ -49,6 +51,7 @@ describeDatabase('selected workspace profile seed CLI', () => {
                     now: '2036-03-03T00:00:00.000Z',
                     installOptions: {
                         serverId: 'selected-cli-seed',
+                        firstGameIdx: 0,
                         installOperationId: 'selected-cli-operation',
                         installCommitSha: 'selected-cli-commit',
                     },
@@ -63,11 +66,12 @@ describeDatabase('selected workspace profile seed CLI', () => {
 
             const result = await runSeedCli(requestFile);
             expect(result, result.output).toMatchObject({ code: 0 });
-            await connector.connect();
             const world = await connector.prisma.worldState.findFirstOrThrow();
             expect(world).toMatchObject({
                 scenarioCode: '1010',
                 meta: {
+                    firstGameIdx: 0,
+                    gameIdx: completedGameCount,
                     installOperationId: 'selected-cli-operation',
                     installCommitSha: 'selected-cli-commit',
                 },

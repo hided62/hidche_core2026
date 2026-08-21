@@ -171,22 +171,33 @@ describeDb('scenario database seed', () => {
         }
     });
 
-    test('persists the next official game index without counting cancelled or unfinished games', async () => {
+    test('adds the configured first game index without counting cancelled or unfinished games', async () => {
         const marker = `scenario-seeder-game-index-${Date.now()}`;
         const connector = createGamePostgresConnector({ url: databaseUrl });
         await connector.connect();
         try {
             const completedBefore = await connector.prisma.gameHistory.count({ where: { status: 'COMPLETED' } });
+            expect(completedBefore).toBe(0);
+
+            await seedScenarioToDatabase({
+                scenarioId: 1010,
+                databaseUrl,
+                installOptions: { serverId: `${marker}-zero`, firstGameIdx: 0 },
+            });
+            const zeroWorldState = await connector.prisma.worldState.findFirstOrThrow();
+            expect(zeroWorldState.meta).toMatchObject({ firstGameIdx: 0, gameIdx: 0 });
+            const zeroBasedHistory = await connector.prisma.gameHistory.findUniqueOrThrow({
+                where: { serverId: `${marker}-zero` },
+            });
+            expect(zeroBasedHistory).toMatchObject({ status: 'OPEN' });
+            expect(zeroBasedHistory.env).toMatchObject({ meta: { firstGameIdx: 0, gameIdx: 0 } });
+            await connector.prisma.gameHistory.update({
+                where: { serverId: `${marker}-zero` },
+                data: { status: 'COMPLETED' },
+            });
+
             await connector.prisma.gameHistory.createMany({
                 data: [
-                    {
-                        serverId: `${marker}-completed`,
-                        date: new Date('2026-08-01T00:00:00.000Z'),
-                        season: 1,
-                        scenario: 1010,
-                        scenarioName: '정상 종료 fixture',
-                        status: 'COMPLETED',
-                    },
                     {
                         serverId: `${marker}-abandoned`,
                         date: new Date('2026-08-02T00:00:00.000Z'),
@@ -209,14 +220,26 @@ describeDb('scenario database seed', () => {
             await seedScenarioToDatabase({
                 scenarioId: 1010,
                 databaseUrl,
-                installOptions: { serverId: marker },
+                installOptions: { serverId: `${marker}-one`, firstGameIdx: 0 },
             });
 
             const worldState = await connector.prisma.worldState.findFirstOrThrow();
-            expect(worldState.meta).toMatchObject({ gameIdx: completedBefore + 2 });
-            await expect(
-                connector.prisma.gameHistory.findUniqueOrThrow({ where: { serverId: marker } })
-            ).resolves.toMatchObject({ status: 'OPEN' });
+            expect(worldState.meta).toMatchObject({ firstGameIdx: 0, gameIdx: completedBefore + 1 });
+            const oneBasedHistory = await connector.prisma.gameHistory.findUniqueOrThrow({
+                where: { serverId: `${marker}-one` },
+            });
+            expect(oneBasedHistory).toMatchObject({ status: 'OPEN' });
+            expect(oneBasedHistory.env).toMatchObject({
+                meta: { firstGameIdx: 0, gameIdx: completedBefore + 1 },
+            });
+
+            await seedScenarioToDatabase({
+                scenarioId: 1010,
+                databaseUrl,
+                installOptions: { serverId: `${marker}-default` },
+            });
+            const defaultWorldState = await connector.prisma.worldState.findFirstOrThrow();
+            expect(defaultWorldState.meta).toMatchObject({ firstGameIdx: 1, gameIdx: completedBefore + 2 });
         } finally {
             await connector.prisma.gameHistory.deleteMany({ where: { serverId: { startsWith: marker } } });
             await connector.disconnect();
