@@ -467,6 +467,112 @@ test('국가 정보의 작위는 Ref 국가 등급 이름으로 표시된다', a
     await expect(root).not.toContainText('작 위1');
 });
 
+test('map keeps desktop hover navigation and lets touch users choose one-tap or two-tap city navigation', async ({
+    browser,
+    page,
+}, testInfo) => {
+    await install(page);
+    await page.setViewportSize({ width: 1200, height: 900 });
+    await go(page, 'global-info');
+
+    const desktopCity = page.locator('.city-base').first();
+    await expect(page.locator('.map-toggle-single-tap')).toHaveCount(0);
+    await desktopCity.hover();
+    await expect(page.locator('.map-tooltip .tooltip-title')).toHaveText('【하북|특】업');
+    await desktopCity.click();
+    await expect(page).toHaveURL(/\/current-city\?cityId=1$/u);
+
+    const configuredBaseUrl = testInfo.project.use.baseURL;
+    if (typeof configuredBaseUrl !== 'string') {
+        throw new Error('Playwright baseURL is required for the mobile map contract');
+    }
+    const context = await browser.newContext({
+        baseURL: configuredBaseUrl,
+        viewport: { width: 390, height: 844 },
+        screen: { width: 390, height: 844 },
+        deviceScaleFactor: 1,
+        isMobile: true,
+        hasTouch: true,
+        colorScheme: 'dark',
+    });
+    const mobilePage = await context.newPage();
+
+    try {
+        await install(mobilePage);
+        await go(mobilePage, 'global-info');
+
+        const twoTapButton = mobilePage.getByRole('button', { name: '두번 탭 해 도시 이동 끄기' });
+        await expect(twoTapButton).toBeVisible();
+        await expect(twoTapButton).toHaveAttribute('aria-pressed', 'false');
+        const controlGeometry = await twoTapButton.evaluate((element) => {
+            const rect = element.getBoundingClientRect();
+            const mapRect = element.closest('.map-area')?.getBoundingClientRect();
+            const style = getComputedStyle(element);
+            return {
+                right: rect.right,
+                bottom: rect.bottom,
+                mapRight: mapRect?.right,
+                mapBottom: mapRect?.bottom,
+                fontSize: style.fontSize,
+                lineHeight: style.lineHeight,
+                documentWidth: document.documentElement.scrollWidth,
+                viewportWidth: document.documentElement.clientWidth,
+                overflowing: Array.from(document.querySelectorAll<HTMLElement>('body *'))
+                    .filter(
+                        (candidate) => candidate.getBoundingClientRect().right > document.documentElement.clientWidth
+                    )
+                    .map((candidate) => ({
+                        tag: candidate.tagName,
+                        className: candidate.className,
+                        right: candidate.getBoundingClientRect().right,
+                    }))
+                    .slice(0, 8),
+            };
+        });
+        expect(controlGeometry).toMatchObject({
+            fontSize: '11px',
+            lineHeight: '18px',
+            viewportWidth: 500,
+            overflowing: [],
+        });
+        expect(controlGeometry.documentWidth).toBeLessThanOrEqual(controlGeometry.viewportWidth + 1);
+        expect(controlGeometry.mapRight! - controlGeometry.right).toBeCloseTo(4, 1);
+        expect(controlGeometry.mapBottom! - controlGeometry.bottom).toBeCloseTo(4, 1);
+
+        const mobileCities = mobilePage.locator('.city-base');
+        await mobileCities.nth(0).tap();
+        await expect(mobilePage).toHaveURL(/\/global-info$/u);
+        await expect(mobilePage.locator('.map-tooltip .tooltip-title')).toHaveText('【하북|특】업');
+
+        await mobileCities.nth(1).tap();
+        await expect(mobilePage).toHaveURL(/\/global-info$/u);
+        await expect(mobilePage.locator('.map-tooltip .tooltip-title')).toHaveText('【하북|수】성2');
+        await mobilePage.screenshot({ path: testInfo.outputPath('mobile-map-first-tap-tooltip.png'), fullPage: true });
+
+        await mobileCities.nth(1).tap();
+        await expect(mobilePage).toHaveURL(/\/current-city\?cityId=2$/u);
+
+        await go(mobilePage, 'global-info');
+        await mobilePage.getByRole('button', { name: '두번 탭 해 도시 이동 끄기' }).click();
+        const singleTapButton = mobilePage.getByRole('button', { name: '두번 탭 해 도시 이동 켜기' });
+        await expect(singleTapButton).toHaveAttribute('aria-pressed', 'true');
+        expect(await mobilePage.evaluate(() => localStorage.getItem('sam.toggleSingleTap'))).toBe('yes');
+
+        await mobilePage.reload();
+        await expect(singleTapButton).toBeVisible();
+        await mobilePage.locator('.city-base').nth(2).tap();
+        await expect(mobilePage).toHaveURL(/\/current-city\?cityId=3$/u);
+
+        await go(mobilePage, 'global-info');
+        await mobilePage.getByRole('button', { name: '두번 탭 해 도시 이동 켜기' }).click();
+        expect(await mobilePage.evaluate(() => localStorage.getItem('sam.toggleSingleTap'))).toBe('no');
+        await mobilePage.locator('.city-base').first().tap();
+        await expect(mobilePage).toHaveURL(/\/global-info$/u);
+    } finally {
+        await context.close();
+    }
+});
+
 test('global-info renders the ref nation summary columns beside the map', async ({ page }) => {
     await install(page);
     await page.setViewportSize({ width: 1200, height: 900 });
