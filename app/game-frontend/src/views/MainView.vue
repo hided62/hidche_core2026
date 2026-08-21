@@ -17,6 +17,7 @@ import MainFrontStatus from '../components/main/MainFrontStatus.vue';
 import MainGlobalMenu from '../components/main/MainGlobalMenu.vue';
 import MainNationMenu from '../components/main/MainNationMenu.vue';
 import MainMobileBottomBar from '../components/main/MainMobileBottomBar.vue';
+import MainTurnControls from '../components/main/MainTurnControls.vue';
 import {
     defaultGlobalNavigation,
     type MainNavigationEntry,
@@ -86,7 +87,6 @@ const {
     messageDraftText,
     targetMailbox,
     mailboxGroups,
-    realtimeLabel,
 } = storeToRefs(dashboard);
 
 const nationAccess = computed(() => ({
@@ -223,31 +223,6 @@ watch(
             <h1 class="game-shell__title">
                 {{ gameTitle }}
             </h1>
-            <div class="game-shell__actions desktop-action-controls">
-                <button
-                    class="game-shell__action desktop-action-controls__realtime toggle legacy-button legacy-button--navigation"
-                    :class="{ active: realtimeEnabled }"
-                    type="button"
-                    @click="dashboard.setRealtimeEnabled(!realtimeEnabled)"
-                >
-                    실시간 동기화: {{ realtimeLabel }}
-                </button>
-                <button
-                    class="game-shell__action desktop-action-controls__refresh legacy-button legacy-button--navigation"
-                    type="button"
-                    :aria-busy="refreshing"
-                    @click="requestManualRefresh"
-                >
-                    갱 신
-                </button>
-                <button
-                    class="game-shell__action desktop-action-controls__lobby legacy-button legacy-button--navigation"
-                    type="button"
-                    @click="moveLobby"
-                >
-                    로비로
-                </button>
-            </div>
         </header>
 
         <section v-if="lobbyInfo" class="legacy-game-info" aria-label="게임 진행 정보">
@@ -282,7 +257,7 @@ watch(
         <section v-if="isMobile" class="layout-mobile">
             <template v-for="(panelId, panelIndex) in mobilePanelOrder" :key="panelId">
                 <div v-if="panelId === 'commands'" class="mobile-panel" data-mobile-panel-id="commands">
-                    <PanelCard title="명령 목록" subtitle="예턴/명령 배치 영역" data-main-target="commands">
+                    <PanelCard title="명령 목록" aria-label="명령 목록" data-main-target="commands">
                         <CommandListPanel
                             :command-table="commandTable"
                             :loading="loading"
@@ -299,6 +274,13 @@ watch(
                             @set-general-turns="reserveGeneralTurns"
                             @shift-general-turns="shiftGeneralTurns"
                             @repeat-general-turns="repeatGeneralTurns"
+                        />
+                        <MainTurnControls
+                            :realtime-enabled="realtimeEnabled"
+                            :refreshing="refreshing"
+                            @refresh="requestManualRefresh"
+                            @toggle-realtime="dashboard.setRealtimeEnabled(!realtimeEnabled)"
+                            @lobby="moveLobby"
                         />
                     </PanelCard>
                 </div>
@@ -435,7 +417,7 @@ watch(
             <PanelCard title="지도" subtitle="실시간 지도 + 도시 상황" data-main-target="map">
                 <MapViewer :map-data="worldMap" :map-layout="mapLayout" :loading="loading" />
             </PanelCard>
-            <PanelCard title="명령 목록" subtitle="예턴/명령 배치 영역" data-main-target="commands">
+            <PanelCard title="명령 목록" aria-label="명령 목록" data-main-target="commands">
                 <CommandListPanel
                     :command-table="commandTable"
                     :loading="loading"
@@ -452,6 +434,13 @@ watch(
                     @set-general-turns="reserveGeneralTurns"
                     @shift-general-turns="shiftGeneralTurns"
                     @repeat-general-turns="repeatGeneralTurns"
+                />
+                <MainTurnControls
+                    :realtime-enabled="realtimeEnabled"
+                    :refreshing="refreshing"
+                    @refresh="requestManualRefresh"
+                    @toggle-realtime="dashboard.setRealtimeEnabled(!realtimeEnabled)"
+                    @lobby="moveLobby"
                 />
             </PanelCard>
             <PanelCard title="도시 정보" data-main-target="city">
@@ -746,6 +735,7 @@ button {
 .layout-desktop > [data-main-target='commands'] {
     grid-column: 8 / 11;
     grid-row: 1 / 3;
+    align-self: stretch;
     min-height: 645px;
     width: 290px;
     margin-left: 10px;
@@ -783,6 +773,10 @@ button {
 .layout-desktop > [data-main-target='commands'],
 .layout-mobile [data-main-target='commands'] {
     background-color: #222;
+}
+
+[data-main-target='commands'] :deep(.panel-header) {
+    display: none;
 }
 
 .nation-menu-middle {
@@ -912,14 +906,6 @@ button {
     margin-top: 31px;
 }
 
-.desktop-action-controls .game-shell__action {
-    font-weight: 400;
-}
-
-.desktop-action-controls__lobby {
-    margin-left: 12px;
-}
-
 .placeholder {
     font-size: 0.85rem;
     color: rgba(232, 221, 196, 0.7);
@@ -931,36 +917,6 @@ button {
 @media (max-width: 939.98px) {
     .main-mobile-bottom-spacer {
         height: 45px;
-    }
-
-    .desktop-action-controls {
-        display: grid;
-        width: 100%;
-        grid-template-areas: 'refresh realtime lobby';
-        grid-template-columns: max-content 1fr max-content;
-        align-items: start;
-        gap: 0;
-    }
-
-    .desktop-action-controls .game-shell__action {
-        padding-right: 4px;
-        padding-left: 4px;
-    }
-
-    .desktop-action-controls__refresh {
-        grid-area: refresh;
-        justify-self: start;
-    }
-
-    .desktop-action-controls__realtime {
-        grid-area: realtime;
-        justify-self: center;
-    }
-
-    .desktop-action-controls__lobby {
-        grid-area: lobby;
-        justify-self: end;
-        margin-left: 0;
     }
 
     .main-page {

@@ -1,11 +1,14 @@
 import { describe, expect, it } from 'vitest';
 import { LogCategory, LogFormat } from '@sammo-ts/logic';
+import type { TurnDaemonCommand } from '@sammo-ts/common';
 
 import { InMemoryTurnWorld } from '../src/turn/inMemoryWorld.js';
+import { normalizeTurnDaemonCommand } from '../src/turn/commandRegistry.js';
 import {
     createAddGlobalBetrayHandler,
     createAssignGeneralSpecialityHandler,
 } from '../src/turn/monthlySpecialityBetrayAction.js';
+import { createTurnDaemonCommandHandler } from '../src/turn/worldCommandHandler.js';
 import type { TurnEvent, TurnGeneral, TurnWorldSnapshot, TurnWorldState } from '../src/turn/types.js';
 
 const event: TurnEvent = {
@@ -175,6 +178,84 @@ describe('monthly speciality and betrayal actions', () => {
                 text: '특기 【<b><L>의술</></b>】을 익혔습니다!',
             }),
         ]);
+    });
+
+    it.each([
+        ['고정 후 초기화', ['reserve', 'reset']],
+        ['초기화 후 고정', ['reset', 'reserve']],
+    ] as const)('%s 순서에서도 다음 월에 지정한 전투 특기를 지급한다', async (_label, steps) => {
+        const world = buildWorld();
+        const initial = world.getGeneralById(3)!;
+        const initialMeta = { ...initial.meta };
+        delete initialMeta.inheritSpecificSpecialWar;
+        world.updateGeneral(3, {
+            role: { ...initial.role, specialWar: 'che_신산' },
+            meta: initialMeta,
+        });
+        world.acknowledgeDirtyState(world.peekDirtyState());
+
+        const commandHandler = createTurnDaemonCommandHandler({ world });
+        let requestIndex = 0;
+        const dispatchPatch = async (patch: Extract<TurnDaemonCommand, { type: 'patchGeneral' }>['patch']) => {
+            requestIndex += 1;
+            const command = normalizeTurnDaemonCommand({
+                requestId: `inherit-war-trait-${requestIndex}`,
+                sentAt: '2026-08-21T00:00:00.000Z',
+                command: { type: 'patchGeneral', generalId: 3, patch },
+            });
+            expect(command).not.toBeNull();
+            await expect(commandHandler.handle(command!)).resolves.toMatchObject({ type: 'patchGeneral', ok: true });
+        };
+
+        for (const step of steps) {
+            const current = world.getGeneralById(3)!;
+            if (step === 'reserve') {
+                await dispatchPatch({
+                    meta: { ...current.meta, inheritSpecificSpecialWar: 'che_의술' },
+                });
+            } else {
+                await dispatchPatch({
+                    specialWar: null,
+                    meta: {
+                        ...current.meta,
+                        inheritResetSpecialWar: 0,
+                        prev_types_special2: ['che_신산'],
+                    },
+                });
+            }
+        }
+
+        expect(world.getGeneralById(3)?.role.specialWar).toBeNull();
+        expect(world.getGeneralById(3)?.meta).toMatchObject({
+            inheritSpecificSpecialWar: 'che_의술',
+            prev_types_special2: ['che_신산'],
+        });
+
+        await createAssignGeneralSpecialityHandler({ getWorld: () => world })([], environment, event);
+
+        expect(world.getGeneralById(3)?.role.specialWar).toBe('che_의술');
+        expect(world.getGeneralById(3)?.meta).not.toHaveProperty('inheritSpecificSpecialWar');
+        expect(world.getGeneralById(3)?.meta.prev_types_special2).toEqual(['che_신산']);
+        expect(
+            world
+                .peekDirtyState()
+                .logs.filter((log) => log.generalId === 3)
+                .map((log) => log.text)
+        ).toEqual(['특기 【<b><C>의술</></b>】을 습득', '특기 【<b><L>의술</></b>】을 익혔습니다!']);
+    });
+
+    it('normalizes the legacy None sentinel before monthly eligibility checks', async () => {
+        const world = buildWorld();
+        const target = world.getGeneralById(3)!;
+        world.updateGeneral(3, { role: { ...target.role, specialWar: 'che_신산' } });
+        world.acknowledgeDirtyState(world.peekDirtyState());
+        const commandHandler = createTurnDaemonCommandHandler({ world });
+
+        await expect(
+            commandHandler.handle({ type: 'patchGeneral', generalId: 3, patch: { specialWar: 'None' } })
+        ).resolves.toMatchObject({ type: 'patchGeneral', ok: true });
+
+        expect(world.getGeneralById(3)?.role.specialWar).toBeNull();
     });
 
     it('does nothing before the three-year opening period ends', async () => {

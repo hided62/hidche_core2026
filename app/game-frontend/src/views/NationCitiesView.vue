@@ -4,6 +4,7 @@ import { computed, onMounted, ref } from 'vue';
 import { useRouter } from 'vue-router';
 import { formatReservedCommandBrief } from '../components/command/reservedCommandBrief';
 import type { CommandTable } from '../components/command/types';
+import LegacySortControls from '../components/ui/LegacySortControls.vue';
 import { useGameFeedback } from '../composables/useGameFeedback';
 import { getNpcColor } from '../utils/npcColor';
 import { legacyNationTextColor } from '../utils/legacyNationColor';
@@ -28,6 +29,7 @@ const secretLoading = ref(false);
 const personnelLoading = ref(false);
 const pendingAppointment = ref('');
 const sort = ref<Sort>(10);
+const selectedSort = ref<Sort>(10);
 const extraSort = ref<
     | 'name'
     | 'populationRate'
@@ -42,7 +44,20 @@ const extraSort = ref<
 >(null);
 const router = useRouter();
 const { error: showErrorToast, info: showInfoToast, success: showSuccessToast } = useGameFeedback();
-const options = ['기본', '인구', '인구율', '민심', '농업', '상업', '치안', '수비', '성벽', '시세', '지역', '규모'];
+const sortOptions = [
+    '기본',
+    '인구',
+    '인구율',
+    '민심',
+    '농업',
+    '상업',
+    '치안',
+    '수비',
+    '성벽',
+    '시세',
+    '지역',
+    '규모',
+].map((label, index) => ({ value: index + 1, label }));
 const officerLabels: Record<OfficerLevel, string> = { 4: '태수', 3: '군사', 2: '종사' };
 const generalsForCity = (cityId: number) => data.value?.generals.filter((general) => general.cityId === cityId) ?? [];
 const secretGeneralsForCity = (cityId: number) =>
@@ -89,6 +104,20 @@ const cities = computed(() => {
 const setExtraSort = (value: NonNullable<typeof extraSort.value>) => {
     extraSort.value = value;
 };
+const updateSelectedSort = (value: number): void => {
+    selectedSort.value = value as Sort;
+};
+const applySelectedSort = (): void => {
+    sort.value = selectedSort.value;
+    extraSort.value = null;
+};
+const sortByHeader = (value: Sort): void => {
+    selectedSort.value = value;
+    sort.value = value;
+    extraSort.value = null;
+};
+const sortIndicator = (value: Sort, direction: 'ascending' | 'descending'): string =>
+    sort.value === value && extraSort.value === null ? (direction === 'ascending' ? '▲' : '▼') : '↕';
 const remain = (value: number, maximum: number) => value - maximum;
 const warnRemain = (
     kind: 'agriculture' | 'commerce' | 'security' | 'defence' | 'wall',
@@ -272,14 +301,14 @@ onMounted(async () => {
                 </tr>
                 <tr>
                     <td>
-                        <form @submit.prevent="extraSort = null">
-                            정렬순서 :
-                            <select v-model.number="sort">
-                                <option v-for="(label, index) in options" :key="label" :value="index + 1">
-                                    {{ label }}
-                                </option>
-                            </select>
-                            <input type="submit" value="정렬하기" />
+                        <div class="city-sort-actions">
+                            <LegacySortControls
+                                control-id="nation-city-sort"
+                                :model-value="selectedSort"
+                                :options="sortOptions"
+                                @update:model-value="updateSelectedSort"
+                                @submit="applySelectedSort"
+                            />
                             <button type="button" :aria-busy="secretLoading" @click="loadSecretIntegration">
                                 암행부 연동
                             </button>
@@ -292,7 +321,7 @@ onMounted(async () => {
                             >
                                 인사부 연동
                             </button>
-                        </form>
+                        </div>
                     </td>
                 </tr>
                 <tr>
@@ -337,11 +366,29 @@ onMounted(async () => {
                     </td>
                 </tr>
                 <tr>
-                    <th>주민</th>
+                    <th :aria-sort="sort === 2 && extraSort === null ? 'descending' : undefined">
+                        <button
+                            class="legacy-sort-header"
+                            type="button"
+                            aria-label="주민 기준 정렬"
+                            @click="sortByHeader(2)"
+                        >
+                            주민<span class="legacy-sort-indicator">{{ sortIndicator(2, 'descending') }}</span>
+                        </button>
+                    </th>
                     <td :class="developmentClass('population', city.population, city.populationMax)">
                         {{ city.population }}/{{ city.populationMax }}
                     </td>
-                    <th>인구율</th>
+                    <th :aria-sort="sort === 3 && extraSort === null ? 'descending' : undefined">
+                        <button
+                            class="legacy-sort-header"
+                            type="button"
+                            aria-label="인구율 기준 정렬"
+                            @click="sortByHeader(3)"
+                        >
+                            인구율<span class="legacy-sort-indicator">{{ sortIndicator(3, 'descending') }}</span>
+                        </button>
+                    </th>
                     <td :class="developmentClass('population', city.population, city.populationMax)">
                         {{ Number(((city.population / city.populationMax) * 100).toFixed(2)) }}%
                     </td>
@@ -353,35 +400,80 @@ onMounted(async () => {
                     <td>{{ city.incomes.wall.toLocaleString() }}</td>
                 </tr>
                 <tr>
-                    <th>농업</th>
+                    <th :aria-sort="sort === 5 && extraSort === null ? 'descending' : undefined">
+                        <button
+                            class="legacy-sort-header"
+                            type="button"
+                            aria-label="농업 기준 정렬"
+                            @click="sortByHeader(5)"
+                        >
+                            농업<span class="legacy-sort-indicator">{{ sortIndicator(5, 'descending') }}</span>
+                        </button>
+                    </th>
                     <td :class="developmentClass('agriculture', city.agriculture, city.agricultureMax)">
                         {{ city.agriculture }}/{{ city.agricultureMax
                         }}<span v-if="warnRemain('agriculture', city.agriculture, city.agricultureMax)" class="remain"
                             >[{{ remain(city.agriculture, city.agricultureMax) }}]</span
                         >
                     </td>
-                    <th>상업</th>
+                    <th :aria-sort="sort === 6 && extraSort === null ? 'descending' : undefined">
+                        <button
+                            class="legacy-sort-header"
+                            type="button"
+                            aria-label="상업 기준 정렬"
+                            @click="sortByHeader(6)"
+                        >
+                            상업<span class="legacy-sort-indicator">{{ sortIndicator(6, 'descending') }}</span>
+                        </button>
+                    </th>
                     <td :class="developmentClass('commerce', city.commerce, city.commerceMax)">
                         {{ city.commerce }}/{{ city.commerceMax
                         }}<span v-if="warnRemain('commerce', city.commerce, city.commerceMax)" class="remain"
                             >[{{ remain(city.commerce, city.commerceMax) }}]</span
                         >
                     </td>
-                    <th>치안</th>
+                    <th :aria-sort="sort === 7 && extraSort === null ? 'descending' : undefined">
+                        <button
+                            class="legacy-sort-header"
+                            type="button"
+                            aria-label="치안 기준 정렬"
+                            @click="sortByHeader(7)"
+                        >
+                            치안<span class="legacy-sort-indicator">{{ sortIndicator(7, 'descending') }}</span>
+                        </button>
+                    </th>
                     <td :class="developmentClass('security', city.security, city.securityMax)">
                         {{ city.security }}/{{ city.securityMax
                         }}<span v-if="warnRemain('security', city.security, city.securityMax)" class="remain"
                             >[{{ remain(city.security, city.securityMax) }}]</span
                         >
                     </td>
-                    <th>수비</th>
+                    <th :aria-sort="sort === 8 && extraSort === null ? 'descending' : undefined">
+                        <button
+                            class="legacy-sort-header"
+                            type="button"
+                            aria-label="수비 기준 정렬"
+                            @click="sortByHeader(8)"
+                        >
+                            수비<span class="legacy-sort-indicator">{{ sortIndicator(8, 'descending') }}</span>
+                        </button>
+                    </th>
                     <td :class="developmentClass('defence', city.defence, city.defenceMax)">
                         {{ city.defence }}/{{ city.defenceMax
                         }}<span v-if="warnRemain('defence', city.defence, city.defenceMax)" class="remain"
                             >[{{ remain(city.defence, city.defenceMax) }}]</span
                         >
                     </td>
-                    <th>성벽</th>
+                    <th :aria-sort="sort === 9 && extraSort === null ? 'descending' : undefined">
+                        <button
+                            class="legacy-sort-header"
+                            type="button"
+                            aria-label="성벽 기준 정렬"
+                            @click="sortByHeader(9)"
+                        >
+                            성벽<span class="legacy-sort-indicator">{{ sortIndicator(9, 'descending') }}</span>
+                        </button>
+                    </th>
                     <td :class="developmentClass('wall', city.wall, city.wallMax)">
                         {{ city.wall }}/{{ city.wallMax
                         }}<span v-if="warnRemain('wall', city.wall, city.wallMax)" class="remain"
@@ -390,9 +482,27 @@ onMounted(async () => {
                     </td>
                 </tr>
                 <tr>
-                    <th>민심</th>
+                    <th :aria-sort="sort === 4 && extraSort === null ? 'descending' : undefined">
+                        <button
+                            class="legacy-sort-header"
+                            type="button"
+                            aria-label="민심 기준 정렬"
+                            @click="sortByHeader(4)"
+                        >
+                            민심<span class="legacy-sort-indicator">{{ sortIndicator(4, 'descending') }}</span>
+                        </button>
+                    </th>
                     <td>{{ city.trust.toFixed(1) }}</td>
-                    <th>시세</th>
+                    <th :aria-sort="sort === 10 && extraSort === null ? 'descending' : undefined">
+                        <button
+                            class="legacy-sort-header"
+                            type="button"
+                            aria-label="시세 기준 정렬"
+                            @click="sortByHeader(10)"
+                        >
+                            시세<span class="legacy-sort-indicator">{{ sortIndicator(10, 'descending') }}</span>
+                        </button>
+                    </th>
                     <td>{{ city.trade ?? '-' }}%</td>
                     <th>태수</th>
                     <td class="officer-4-value" :class="{ 'effective-officer': officerIsStationed(city, 4) }">
@@ -567,6 +677,13 @@ onMounted(async () => {
 .title {
     text-align: left;
 }
+.city-sort-actions {
+    min-height: 25px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 4px;
+}
 .city {
     margin-top: 0;
 }
@@ -669,7 +786,7 @@ onMounted(async () => {
 .footer {
     margin-top: 0;
 }
-.nation-cities-page button,
+.nation-cities-page button:not(.legacy-sort-submit, .legacy-sort-header),
 .nation-cities-page input[type='submit'] {
     border: 2px outset #fff;
     background-color: buttonface;

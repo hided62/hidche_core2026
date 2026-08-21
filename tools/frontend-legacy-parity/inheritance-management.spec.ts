@@ -4,7 +4,7 @@ import { dirname, extname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const repositoryRoot = resolve(dirname(fileURLToPath(import.meta.url)), '../..');
-const imageRoot = resolve(repositoryRoot, '../../image');
+const imageRoot = process.env.FRONTEND_PARITY_IMAGE_ROOT ?? resolve(repositoryRoot, '../../image');
 const artifactRoot = process.env.FRONTEND_PARITY_ARTIFACT_DIR;
 const gameUrl = `http://127.0.0.1:${process.env.FRONTEND_PARITY_GAME_PORT ?? '15102'}/che/inherit`;
 
@@ -117,9 +117,21 @@ const statusFixture = {
     currentStat: { leadership: 70, strength: 45, intel: 85 },
 };
 
-const installFixture = async (page: Page, options: { failBuff?: boolean } = {}) => {
+interface InheritanceLogFixture {
+    id: number;
+    year: number;
+    month: number;
+    text: string;
+    createdAt: string;
+}
+
+const installFixture = async (
+    page: Page,
+    options: { failBuff?: boolean; logPages?: InheritanceLogFixture[][] } = {}
+) => {
     let buffMutationCount = 0;
     let resetTurnMutationCount = 0;
+    let logRequestCount = 0;
     const uniqueAuctionRequests: unknown[] = [];
     await installImages(page);
     await page.addInitScript(() => {
@@ -148,7 +160,7 @@ const installFixture = async (page: Page, options: { failBuff?: boolean } = {}) 
                 });
             }
             if (name === 'inherit.getLogs') {
-                return response([
+                const defaultPage = [
                     {
                         id: 2,
                         year: 200,
@@ -156,7 +168,11 @@ const installFixture = async (page: Page, options: { failBuff?: boolean } = {}) 
                         text: '1000 포인트로 장수 소유자 확인',
                         createdAt: '2026-07-26T00:00:00.000Z',
                     },
-                ]);
+                ];
+                const pages = options.logPages ?? [defaultPage];
+                const pageIndex = Math.min(logRequestCount, pages.length - 1);
+                logRequestCount += 1;
+                return response(pages[pageIndex] ?? []);
             }
             if (name === 'join.getConfig') {
                 return response({ rules: { stat: { total: 200, min: 10, max: 100 } } });
@@ -184,6 +200,7 @@ const installFixture = async (page: Page, options: { failBuff?: boolean } = {}) 
     return {
         buffMutationCount: () => buffMutationCount,
         resetTurnMutationCount: () => resetTurnMutationCount,
+        logRequestCount: () => logRequestCount,
         uniqueAuctionRequests,
     };
 };
@@ -331,6 +348,52 @@ test.describe('inheritance management legacy parity', () => {
         await page.locator('#buff-warAvoidRatio').locator('xpath=../..').getByRole('button', { name: '구입' }).click();
         await expect.poll(fixture.buffMutationCount).toBe(1);
         await expect(page.locator('#inherit_previous_value')).toHaveValue('12,000');
+    });
+
+    test('keeps every paged inheritance log reachable by document scrolling', async ({ page }) => {
+        const buildPage = (firstId: number, count: number): InheritanceLogFixture[] =>
+            Array.from({ length: count }, (_, index) => {
+                const id = firstId - index;
+                return {
+                    id,
+                    year: 200,
+                    month: 4,
+                    text: `유산 포인트 변경 내역 ${id}`,
+                    createdAt: `2026-07-${String((id % 27) + 1).padStart(2, '0')}T00:00:00.000Z`,
+                };
+            });
+        const fixture = await installFixture(page, {
+            logPages: [buildPage(60, 30), buildPage(30, 30), []],
+        });
+        await page.setViewportSize({ width: 500, height: 900 });
+        await page.goto(gameUrl);
+        await expect(page.locator('.log-row')).toHaveCount(30);
+
+        const firstHeight = await page.evaluate(() => document.scrollingElement?.scrollHeight ?? 0);
+        const moreButton = page.getByRole('button', { name: '더 가져오기' });
+        await moreButton.click();
+        await expect(page.locator('.log-row')).toHaveCount(60);
+        await expect(page.locator('.log-row').last()).toContainText('유산 포인트 변경 내역 1');
+        const expandedHeight = await page.evaluate(() => document.scrollingElement?.scrollHeight ?? 0);
+        expect(expandedHeight).toBeGreaterThan(firstHeight);
+
+        await page.evaluate(() => window.scrollTo(0, document.scrollingElement?.scrollHeight ?? 0));
+        await expect(page.locator('.log-row').last()).toBeInViewport();
+        await expect(moreButton).toBeInViewport();
+        expect(
+            await page.evaluate(() =>
+                Math.abs(
+                    window.scrollY + window.innerHeight - (document.scrollingElement?.scrollHeight ?? window.innerHeight)
+                )
+            )
+        ).toBeLessThanOrEqual(1);
+        if (artifactRoot) {
+            await page.screenshot({ path: resolve(artifactRoot, 'inherit-core-mobile-60-logs.png'), fullPage: true });
+        }
+
+        await moreButton.click();
+        await expect.poll(fixture.logRequestCount).toBe(3);
+        await expect(moreButton).toBeDisabled();
     });
 
     test('selects a Ref default unique and starts its auction from the inheritance page', async ({ page }) => {

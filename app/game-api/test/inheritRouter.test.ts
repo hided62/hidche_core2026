@@ -331,6 +331,90 @@ describe('inherit router actor and permission boundaries', () => {
         );
     });
 
+    it('reserves the selected Ref war trait and charges the authenticated owner once', async () => {
+        const fixture = buildContext({
+            inheritancePoint: 5_000,
+            configConst: { availableSpecialWar: ['che_의술'] },
+        });
+
+        await expect(
+            appRouter.createCaller(fixture.context).inherit.setNextSpecialWar({ specialKey: 'che_의술' })
+        ).resolves.toEqual({ ok: true });
+
+        expect(fixture.requestCommand).toHaveBeenCalledWith({
+            type: 'patchGeneral',
+            generalId: 7,
+            patch: { meta: { inheritSpecificSpecialWar: 'che_의술' } },
+        });
+        expect(fixture.pointUpsert).toHaveBeenCalledWith(expect.objectContaining({ update: { value: 1_000 } }));
+        expect(fixture.logCreate).toHaveBeenCalledWith({
+            data: {
+                userId: 'user-1',
+                year: 200,
+                month: 4,
+                text: '4000 포인트로 다음 전투 특기로 의술 지정',
+            },
+        });
+    });
+
+    it('does not dispatch or charge when a different war trait is already reserved', async () => {
+        const fixture = buildContext({
+            inheritancePoint: 5_000,
+            general: buildGeneral({ meta: { inheritSpecificSpecialWar: 'che_신산' } }),
+            configConst: { availableSpecialWar: ['che_의술'] },
+        });
+
+        await expect(
+            appRouter.createCaller(fixture.context).inherit.setNextSpecialWar({ specialKey: 'che_의술' })
+        ).rejects.toMatchObject({ code: 'BAD_REQUEST', message: '이미 예약한 특기가 있습니다.' });
+        expect(fixture.requestCommand).not.toHaveBeenCalled();
+        expect(fixture.pointUpsert).not.toHaveBeenCalled();
+        expect(fixture.logCreate).not.toHaveBeenCalled();
+    });
+
+    it('resets the current war trait to the in-memory null sentinel and preserves Ref history as an array', async () => {
+        const fixture = buildContext({
+            inheritancePoint: 2_000,
+            general: buildGeneral({ meta: { prev_types_special2: ['che_돌격'], marker: 3 } }),
+        });
+
+        await expect(appRouter.createCaller(fixture.context).inherit.resetSpecialWar()).resolves.toEqual({ ok: true });
+
+        expect(fixture.requestCommand).toHaveBeenCalledWith({
+            type: 'patchGeneral',
+            generalId: 7,
+            patch: {
+                specialWar: null,
+                meta: {
+                    prev_types_special2: ['che_돌격', 'che_선봉'],
+                    marker: 3,
+                    inheritResetSpecialWar: 0,
+                },
+            },
+        });
+        expect(fixture.pointUpsert).toHaveBeenCalledWith(expect.objectContaining({ update: { value: 1_000 } }));
+        expect(fixture.logCreate).toHaveBeenCalledWith({
+            data: {
+                userId: 'user-1',
+                year: 200,
+                month: 4,
+                text: '1000 포인트로 전투 특기 초기화',
+            },
+        });
+    });
+
+    it('does not dispatch or charge when the current war trait is already blank', async () => {
+        const fixture = buildContext({ inheritancePoint: 2_000, general: buildGeneral({ special2Code: 'None' }) });
+
+        await expect(appRouter.createCaller(fixture.context).inherit.resetSpecialWar()).rejects.toMatchObject({
+            code: 'BAD_REQUEST',
+            message: '이미 전투 특기가 공란입니다.',
+        });
+        expect(fixture.requestCommand).not.toHaveBeenCalled();
+        expect(fixture.pointUpsert).not.toHaveBeenCalled();
+        expect(fixture.logCreate).not.toHaveBeenCalled();
+    });
+
     it('queues Ref-compatible nextTurnTimeBase without moving the current scheduled turn', async () => {
         const fixture = buildContext({
             inheritancePoint: 2_000,

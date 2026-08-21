@@ -230,7 +230,7 @@ export type TurnDaemonCommand =
                   strength?: number;
                   intelligence?: number;
               };
-              specialWar?: string;
+              specialWar?: string | null;
           };
       }
     | {

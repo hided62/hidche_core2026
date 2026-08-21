@@ -1047,10 +1047,10 @@ const persistArtifact = async (page: Page, name: string) => {
             quickPopup: describe('#mobile-quick-menu'),
             gameHeader: describe('.game-shell__header'),
             gameTitle: describe('.game-shell__title'),
-            gameHeaderActions: describe('.desktop-action-controls'),
-            headerRealtime: describe('.desktop-action-controls__realtime'),
-            headerRefresh: describe('.desktop-action-controls__refresh'),
-            headerLobby: describe('.desktop-action-controls__lobby'),
+            turnControls: describe('.main-turn-controls'),
+            turnAutoRefresh: describe('.main-turn-controls__auto'),
+            turnManualRefresh: describe('.main-turn-controls__manual'),
+            turnLobby: describe('.main-turn-controls__lobby'),
             legacyGameInfo: describe('.legacy-game-info'),
             activityStatus: describe('.activity-status'),
             executionStatus: describe('.execution-status'),
@@ -2382,21 +2382,18 @@ test('the 939/940 boundary switches to the Ref-style 500px single document', asy
     const activityGeometry = await page.locator('.activity-status').evaluate((element) => {
         const main = element.closest<HTMLElement>('.main-page');
         const header = main?.querySelector<HTMLElement>('.game-shell__header');
-        const headerActions = header?.querySelector<HTMLElement>('.desktop-action-controls');
         const execution = element.querySelector<HTMLElement>('.execution-status');
         const tournament = element.querySelector<HTMLElement>('.tournament-status');
         const survey = element.querySelector<HTMLElement>('.vote-status');
-        if (!header || !headerActions || !execution || !tournament || !survey) {
+        if (!header || !execution || !tournament || !survey) {
             throw new Error('mobile header or activity status is incomplete');
         }
         const headerRect = header.getBoundingClientRect();
-        const headerActionsRect = headerActions.getBoundingClientRect();
         return {
             headerHeight: headerRect.height,
             headerLeft: headerRect.left,
             headerRight: headerRect.right,
-            headerActionsLeft: headerActionsRect.left,
-            headerActionsRight: headerActionsRect.right,
+            headerActionCount: header.querySelectorAll('button').length,
             width: element.getBoundingClientRect().width,
             executionWidth: execution.getBoundingClientRect().width,
             tournamentWidth: tournament.getBoundingClientRect().width,
@@ -2404,10 +2401,9 @@ test('the 939/940 boundary switches to the Ref-style 500px single document', asy
             columns: getComputedStyle(element).gridTemplateColumns,
         };
     });
-    expect(activityGeometry.headerHeight).toBeGreaterThan(90);
-    expect(activityGeometry.headerHeight).toBeLessThan(110);
-    expect(activityGeometry.headerActionsLeft).toBeGreaterThanOrEqual(activityGeometry.headerLeft);
-    expect(activityGeometry.headerActionsRight).toBeLessThanOrEqual(activityGeometry.headerRight);
+    expect(activityGeometry.headerHeight).toBeGreaterThan(40);
+    expect(activityGeometry.headerHeight).toBeLessThan(70);
+    expect(activityGeometry.headerActionCount).toBe(0);
     expect(activityGeometry.width).toBe(500);
     expect(activityGeometry.executionWidth).toBeCloseTo(166.67, 0);
     expect(activityGeometry.tournamentWidth).toBeCloseTo(166.67, 0);
@@ -3050,7 +3046,7 @@ test('all main Lumen button families share the rounded pressed geometry', async 
     await page.setViewportSize({ width: 1200, height: 900 });
     await waitForMain(page);
 
-    const controls: Array<[string, Locator]> = [
+    const controls: Array<[string, Locator, { borderLeft?: string; radius?: string }?]> = [
         [
             '천통국 베팅',
             page.locator('.main-global-menu[data-menu-position="top"] [data-navigation-id="nation-betting"]'),
@@ -3076,9 +3072,17 @@ test('all main Lumen button families share the rounded pressed geometry', async 
             '펼치기',
             page.locator('[data-main-target="commands"] .bottom-actions').getByRole('button', { name: '펼치기' }),
         ],
-        ['실시간 동기화', page.locator('.desktop-action-controls').getByRole('button', { name: /실시간 동기화:/u })],
-        ['갱 신', page.locator('.desktop-action-controls').getByRole('button', { name: '갱 신' })],
-        ['로비로', page.locator('.desktop-action-controls').getByRole('button', { name: '로비로' })],
+        [
+            '자동 갱신',
+            page.locator('.main-turn-controls').getByRole('button', { name: '자동 갱신 ON' }),
+            { borderLeft: '0px', radius: '0px 5.25px 5.25px 0px' },
+        ],
+        [
+            '갱 신',
+            page.locator('.main-turn-controls').getByRole('button', { name: '갱 신' }),
+            { radius: '5.25px 0px 0px 5.25px' },
+        ],
+        ['로비로', page.locator('.main-turn-controls').getByRole('button', { name: '로비로' })],
     ];
 
     const measure = (control: Locator) =>
@@ -3101,7 +3105,7 @@ test('all main Lumen button families share the rounded pressed geometry', async 
         });
 
     const evidence: Record<string, Record<string, unknown>> = {};
-    for (const [index, [label, control]] of controls.entries()) {
+    for (const [index, [label, control, expectedGeometry]] of controls.entries()) {
         await expect(control, `${label} control`).toBeVisible();
         await expect(control).toHaveClass(/legacy-button/u);
         await control.scrollIntoViewIfNeeded();
@@ -3116,8 +3120,8 @@ test('all main Lumen button families share the rounded pressed geometry', async 
             borderTop: '0px',
             borderRight: '1px',
             borderBottom: '4px',
-            borderLeft: '1px',
-            radius: '5.25px',
+            borderLeft: expectedGeometry?.borderLeft ?? '1px',
+            radius: expectedGeometry?.radius ?? '5.25px',
             filter: 'none',
         });
 
@@ -3164,7 +3168,7 @@ test('all main Lumen button families share the rounded pressed geometry', async 
     }
 
     state.permission = 0;
-    await page.locator('.desktop-action-controls').getByRole('button', { name: '갱 신' }).click();
+    await page.locator('.main-turn-controls').getByRole('button', { name: '갱 신' }).click();
     const disabledSecret = page.locator('.layout-desktop [data-navigation-id="secret-board"]');
     await expect(disabledSecret).toHaveAttribute('aria-disabled', 'true');
     await disabledSecret.scrollIntoViewIfNeeded();
@@ -3186,7 +3190,9 @@ test('all main Lumen button families share the rounded pressed geometry', async 
     await persistArtifact(page, `${basePath.slice(1)}-main-lumen-button-families`);
 });
 
-test('lobby action is separated on desktop and anchors opposite the refresh action on mobile', async ({ page }) => {
+test('places the joined refresh controls and lobby below the turn editor without changing the desktop baseline', async ({
+    page,
+}) => {
     const state: NavigationFixture = {
         officerLevel: 5,
         permission: 2,
@@ -3195,67 +3201,114 @@ test('lobby action is separated on desktop and anchors opposite the refresh acti
         npcMode: 1,
         generalMeCalls: 0,
         operations: [],
+        refreshDelayMs: 300,
+        largeCommandTable: true,
+        reservedTurns: Array.from({ length: 30 }, (_, index) => ({
+            index,
+            action: index === 0 ? '휴식' : `command-${index}`,
+            args: {},
+        })),
     };
     await installFixture(page, state);
     await page.setViewportSize({ width: 1200, height: 900 });
     await waitForMain(page);
 
-    const actions = page.locator('.desktop-action-controls');
-    const realtime = page.locator('.desktop-action-controls__realtime');
-    const refresh = page.locator('.desktop-action-controls__refresh');
-    const lobby = page.locator('.desktop-action-controls__lobby');
+    await expect(page.locator('.game-shell__header button')).toHaveCount(0);
     const measure = () =>
-        page.evaluate(() => {
-            const rect = (selector: string) => {
-                const element = document.querySelector<HTMLElement>(selector);
-                if (!element) throw new Error(`${selector} is missing`);
-                const box = element.getBoundingClientRect();
-                return { left: box.left, right: box.right, top: box.top, bottom: box.bottom, width: box.width };
+        page.locator('[data-main-target="commands"]').evaluate((commands) => {
+            const box = (element: Element) => {
+                const rect = element.getBoundingClientRect();
+                return {
+                    left: rect.left,
+                    right: rect.right,
+                    top: rect.top,
+                    bottom: rect.bottom,
+                    width: rect.width,
+                    height: rect.height,
+                };
             };
-            const actionStyle = getComputedStyle(document.querySelector<HTMLElement>('.desktop-action-controls')!);
+            const find = (selector: string) => {
+                const element = commands.querySelector<HTMLElement>(selector);
+                if (!element) throw new Error(`${selector} is missing`);
+                return element;
+            };
+            const editor = find('.reserved-command-editor');
+            const controls = find('.main-turn-controls');
+            const pair = find('.main-turn-controls__refresh-pair');
+            const manual = find('.main-turn-controls__manual');
+            const auto = find('.main-turn-controls__auto');
+            const lobby = find('.main-turn-controls__lobby');
+            const manualStyle = getComputedStyle(manual);
+            const autoStyle = getComputedStyle(auto);
             return {
-                actions: rect('.desktop-action-controls'),
-                realtime: rect('.desktop-action-controls__realtime'),
-                refresh: rect('.desktop-action-controls__refresh'),
-                lobby: rect('.desktop-action-controls__lobby'),
-                title: rect('.game-shell__title'),
-                display: actionStyle.display,
-                columns: actionStyle.gridTemplateColumns,
+                commands: box(commands),
+                editor: box(editor),
+                controls: box(controls),
+                pair: box(pair),
+                manual: box(manual),
+                auto: box(auto),
+                lobby: box(lobby),
+                controlsAfterEditor: Boolean(
+                    editor.compareDocumentPosition(controls) & Node.DOCUMENT_POSITION_FOLLOWING
+                ),
+                manualRadius: {
+                    topRight: manualStyle.borderTopRightRadius,
+                    bottomRight: manualStyle.borderBottomRightRadius,
+                },
+                autoRadius: {
+                    topLeft: autoStyle.borderTopLeftRadius,
+                    bottomLeft: autoStyle.borderBottomLeftRadius,
+                },
+                manualRightBorder: manualStyle.borderRightWidth,
+                autoLeftBorder: autoStyle.borderLeftWidth,
+                overflow: commands.scrollWidth - commands.clientWidth,
             };
         });
 
-    await expect(actions).toHaveCSS('display', 'flex');
     let layout = await measure();
-    expect(layout.lobby.left - layout.refresh.right).toBeGreaterThanOrEqual(20);
-    expect(layout.refresh.top).toBeCloseTo(layout.lobby.top, 2);
-    expect(layout.refresh.width).toBeLessThanOrEqual(62);
-    expect(layout.lobby.width).toBeLessThanOrEqual(62);
+    const cityBottom = await page
+        .locator('[data-main-target="city"]')
+        .evaluate((element) => element.getBoundingClientRect().bottom);
+    expect(layout.commands.bottom).toBe(cityBottom);
+    expect(layout.commands.height).toBeCloseTo(645, 0);
+    expect(layout.controlsAfterEditor).toBe(true);
+    expect(layout.controls.top).toBeGreaterThanOrEqual(layout.editor.bottom);
+    expect(layout.manual.right).toBe(layout.auto.left);
+    expect(layout.pair.right + 4).toBe(layout.lobby.left);
+    expect(layout.manualRadius).toEqual({ topRight: '0px', bottomRight: '0px' });
+    expect(layout.autoRadius).toEqual({ topLeft: '0px', bottomLeft: '0px' });
+    expect(layout.manualRightBorder).toBe('1px');
+    expect(layout.autoLeftBorder).toBe('0px');
+    expect(layout.overflow).toBeLessThanOrEqual(0);
+    const autoRefresh = page.locator('.layout-desktop .main-turn-controls__auto');
+    await expect(autoRefresh).toHaveAttribute('aria-pressed', 'true');
+    await autoRefresh.click();
+    await expect(page.locator('.layout-desktop .main-turn-controls__auto')).toHaveAccessibleName('자동 갱신 OFF');
+    await expect(page.locator('.layout-desktop .main-turn-controls__auto')).toHaveAttribute('aria-pressed', 'false');
+    const manualRefresh = page.locator('.layout-desktop .main-turn-controls__manual');
+    const callsBeforeManualRefresh = state.generalMeCalls;
+    await manualRefresh.click();
+    await expect(manualRefresh).toBeEnabled();
+    await expect(manualRefresh).toHaveAttribute('aria-busy', 'true');
+    await manualRefresh.click();
+    await expect(page.getByTestId('game-toast')).toContainText('이미 정보를 갱신하고 있습니다.');
+    await expect(manualRefresh).toHaveAttribute('aria-busy', 'false');
+    expect(state.generalMeCalls).toBe(callsBeforeManualRefresh + 1);
 
     await page.setViewportSize({ width: 500, height: 900 });
-    await expect(actions).toHaveCSS('display', 'grid');
-    await expect(realtime).toBeVisible();
-    await expect(refresh).toBeVisible();
-    await expect(lobby).toBeVisible();
+    await expect(page.locator('.layout-mobile .main-turn-controls')).toBeVisible();
     layout = await measure();
-    expect(layout.columns.split(' ')).toHaveLength(3);
-    expect(layout.actions.left).toBeCloseTo(0, 2);
-    expect(layout.actions.right).toBeCloseTo(500, 2);
-    expect(layout.refresh.left).toBeCloseTo(layout.actions.left, 2);
-    expect(layout.lobby.right).toBeCloseTo(layout.actions.right, 2);
-    expect(layout.refresh.right).toBeLessThan(layout.realtime.left);
-    expect(layout.realtime.right).toBeLessThan(layout.lobby.left);
-    expect(layout.refresh.top).toBeCloseTo(layout.lobby.top, 2);
-    expect(layout.actions.top).toBeGreaterThanOrEqual(layout.title.bottom);
-    expect(layout.refresh.width).toBeLessThanOrEqual(62);
-    expect(layout.lobby.width).toBeLessThanOrEqual(62);
-    expect(
-        await page.evaluate(() => ({
-            document: document.documentElement.scrollWidth - document.documentElement.clientWidth,
-            body: document.body.scrollWidth - document.body.clientWidth,
-        }))
-    ).toEqual({ document: 0, body: 0 });
+    expect(layout.commands.width).toBe(500);
+    expect(layout.controlsAfterEditor).toBe(true);
+    expect(layout.controls.top).toBeGreaterThanOrEqual(layout.editor.bottom);
+    expect(layout.manual.right).toBe(layout.auto.left);
+    expect(layout.pair.right + 4).toBe(layout.lobby.left);
+    expect(layout.overflow).toBeLessThanOrEqual(0);
+    expect(await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)).toBe(
+        0
+    );
 
-    await persistArtifact(page, `${basePath.slice(1)}-main-lobby-action-layout`);
+    await persistArtifact(page, `${basePath.slice(1)}-main-turn-action-layout`);
 });
 
 test('mobile main Lumen button families keep the same state geometry without overflow', async ({ page }) => {
@@ -3284,14 +3337,17 @@ test('mobile main Lumen button families keep the same state geometry without ove
         page.locator('[data-main-target="commands"] .bottom-actions').getByRole('button', { name: '당기기' }),
         page.locator('[data-main-target="commands"] .bottom-actions').getByRole('button', { name: '미루기' }),
         page.locator('[data-main-target="commands"] .bottom-actions').getByRole('button', { name: '펼치기' }),
-        page.locator('.desktop-action-controls').getByRole('button', { name: /실시간 동기화:/u }),
-        page.locator('.desktop-action-controls').getByRole('button', { name: '갱 신' }),
-        page.locator('.desktop-action-controls').getByRole('button', { name: '로비로' }),
+        page.locator('.layout-mobile .main-turn-controls').getByRole('button', { name: /자동 갱신/u }),
+        page.locator('.layout-mobile .main-turn-controls').getByRole('button', { name: '갱 신' }),
+        page.locator('.layout-mobile .main-turn-controls').getByRole('button', { name: '로비로' }),
     ];
-    for (const control of controls) {
+    for (const [index, control] of controls.entries()) {
         await expect(control).toBeVisible();
         await expect(control).toHaveClass(/legacy-button/u);
-        await expect(control).toHaveCSS('border-radius', '5.25px');
+        await expect(control).toHaveCSS(
+            'border-radius',
+            index === 7 ? '0px 5.25px 5.25px 0px' : index === 8 ? '5.25px 0px 0px 5.25px' : '5.25px'
+        );
         await expect(control).toHaveCSS('border-bottom-width', '4px');
     }
 
@@ -3356,8 +3412,9 @@ test('mobile single document refreshes once and preserves tokens on lobby return
         await expect(page.locator(selector)).toBeVisible();
     }
 
-    const autoRefresh = page.getByRole('button', { name: '자동 갱신 ON' });
-    const manualRefresh = page.getByRole('button', { name: '직접 갱신' });
+    const mobileBottom = page.locator('.main-mobile-bottom');
+    const autoRefresh = mobileBottom.getByRole('button', { name: '자동 갱신 ON' });
+    const manualRefresh = mobileBottom.getByRole('button', { name: '직접 갱신' });
     await expect(autoRefresh).toHaveAttribute('aria-pressed', 'true');
     await expect(autoRefresh.locator('strong')).toHaveCSS('color', 'rgb(158, 240, 184)');
     await expect(manualRefresh).toHaveAttribute('aria-busy', 'false');
@@ -3397,7 +3454,7 @@ test('mobile single document refreshes once and preserves tokens on lobby return
     await expect(autoRefresh).toHaveCSS('border-bottom-width', '3px');
     await expect(autoRefresh).toHaveCSS('margin-top', '1px');
     await autoRefresh.click();
-    const disabledAutoRefresh = page.getByRole('button', { name: '자동 갱신 OFF' });
+    const disabledAutoRefresh = mobileBottom.getByRole('button', { name: '자동 갱신 OFF' });
     await expect(disabledAutoRefresh).toHaveAttribute('aria-pressed', 'false');
     await expect(disabledAutoRefresh.locator('strong')).toHaveCSS('color', 'rgb(187, 187, 187)');
     await expect
@@ -3414,8 +3471,8 @@ test('mobile single document refreshes once and preserves tokens on lobby return
     await expect(page.locator('.general-title')).toContainText('직접갱신된장수');
 
     const callsBeforeEnable = state.generalMeCalls;
-    await page.getByRole('button', { name: '자동 갱신 OFF' }).click();
-    await expect(page.getByRole('button', { name: '자동 갱신 ON' })).toHaveAttribute('aria-pressed', 'true');
+    await mobileBottom.getByRole('button', { name: '자동 갱신 OFF' }).click();
+    await expect(mobileBottom.getByRole('button', { name: '자동 갱신 ON' })).toHaveAttribute('aria-pressed', 'true');
     await expect.poll(() => state.generalMeCalls).toBeGreaterThan(callsBeforeEnable);
     await expect
         .poll(() =>
@@ -4155,8 +4212,10 @@ test('same-account main tabs share one realtime diff and exclude a tab while syn
         pages.map((currentPage) => expect(currentPage.locator('.general-title')).toContainText('탭공유갱신장수'))
     );
 
-    await followerPage.getByRole('button', { name: /실시간 동기화/u }).click();
-    await expect(followerPage.getByRole('button', { name: /실시간 동기화: 끔/u })).toBeVisible();
+    await followerPage.locator('.layout-desktop .main-turn-controls__auto').click();
+    await expect(followerPage.locator('.layout-desktop .main-turn-controls__auto')).toHaveAccessibleName(
+        '자동 갱신 OFF'
+    );
     const callsBeforeExcludedRefresh = state.generalMeCalls;
     state.generalName = '리더만갱신장수';
     await leaderPage.evaluate(() => {
@@ -4182,7 +4241,7 @@ test('same-account main tabs share one realtime diff and exclude a tab while syn
     await expect(leaderPage.locator('.general-title')).toContainText('리더만갱신장수');
     await expect(followerPage.locator('.general-title')).toContainText('탭공유갱신장수');
 
-    await followerPage.getByRole('button', { name: /실시간 동기화: 끔/u }).click();
+    await followerPage.locator('.layout-desktop .main-turn-controls__auto').click();
     await expect(followerPage.locator('.general-title')).toContainText('리더만갱신장수');
     await expect
         .poll(async () => {

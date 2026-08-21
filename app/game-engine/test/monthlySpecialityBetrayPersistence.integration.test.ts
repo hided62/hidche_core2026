@@ -9,6 +9,7 @@ import {
     createAddGlobalBetrayHandler,
     createAssignGeneralSpecialityHandler,
 } from '../src/turn/monthlySpecialityBetrayAction.js';
+import { createTurnDaemonCommandHandler } from '../src/turn/worldCommandHandler.js';
 import type { TurnEvent, TurnGeneral, TurnWorldSnapshot, TurnWorldState } from '../src/turn/types.js';
 
 const databaseUrl = process.env.INPUT_EVENT_DATABASE_URL;
@@ -105,7 +106,7 @@ integration('monthly speciality and betrayal persistence', () => {
             }),
             buildGeneral(generalIds[1], {
                 domestic: 'che_경작',
-                war: null,
+                war: 'che_신산',
                 meta: {
                     specage: 99,
                     specage2: 30,
@@ -198,6 +199,22 @@ integration('monthly speciality and betrayal persistence', () => {
         const hooks = await createDatabaseTurnHooks(databaseUrl!, world);
 
         try {
+            const reservedGeneral = world.getGeneralById(generalIds[1])!;
+            const commandHandler = createTurnDaemonCommandHandler({ world });
+            await expect(
+                commandHandler.handle({
+                    type: 'patchGeneral',
+                    generalId: reservedGeneral.id,
+                    patch: {
+                        specialWar: null,
+                        meta: {
+                            ...reservedGeneral.meta,
+                            inheritResetSpecialWar: 0,
+                            prev_types_special2: ['che_신산'],
+                        },
+                    },
+                })
+            ).resolves.toMatchObject({ type: 'patchGeneral', ok: true });
             await world.advanceMonth(new Date('0200-01-01T00:00:00.000Z'));
             await hooks.hooks.flushChanges?.({
                 lastTurnTime: state.lastTurnTime.toISOString(),
@@ -214,7 +231,12 @@ integration('monthly speciality and betrayal persistence', () => {
             expect(rows[0]?.specialCode).not.toBe('None');
             expect(rows[0]?.meta).toMatchObject({ betray: 2 });
             expect(rows[1]).toMatchObject({ special2Code: 'che_의술' });
-            expect(rows[1]?.meta).toMatchObject({ betray: 3, marker: 2 });
+            expect(rows[1]?.meta).toMatchObject({
+                betray: 3,
+                marker: 2,
+                inheritResetSpecialWar: 0,
+                prev_types_special2: ['che_신산'],
+            });
             expect(rows[1]?.meta).not.toHaveProperty('inheritSpecificSpecialWar');
             expect(await db.logEntry.count({ where: { generalId: { in: [...generalIds] } } })).toBe(4);
         } finally {
