@@ -3,6 +3,7 @@ import { formatServerDateTime } from '@sammo-ts/common/time/ServerDateTime';
 import { computed, onMounted, ref } from 'vue';
 import { formatReservedCommandBrief } from '../components/command/reservedCommandBrief';
 import type { CommandTable } from '../components/command/types';
+import LegacySortControls from '../components/ui/LegacySortControls.vue';
 import { trpc } from '../utils/trpc';
 type Result = Awaited<ReturnType<typeof trpc.nation.getSecretGeneralList.query>>;
 type ReservedCommand = Result['generals'][number]['reservedCommands'][number];
@@ -12,7 +13,11 @@ const commandTable = ref<CommandTable | null>(null);
 const error = ref('');
 const loading = ref(false);
 const sort = ref<Sort>(7);
-const options = ['자금', '군량', '도시', '병종', '병사', '삭제턴', '턴', '부대'];
+const selectedSort = ref<Sort>(7);
+const sortOptions = ['자금', '군량', '도시', '병종', '병사', '삭제턴', '턴', '부대'].map((label, index) => ({
+    value: index + 1,
+    label,
+}));
 const load = async () => {
     loading.value = true;
     error.value = '';
@@ -44,6 +49,18 @@ const displayName = (general: { name: string; npcState: number }) =>
     general.npcState > 0 && !/^[ⓜⓝ㉥]/u.test(general.name) ? `ⓝ${general.name}` : general.name;
 const commandBrief = (command: ReservedCommand): string =>
     formatReservedCommandBrief('general', command.action, command.args, commandTable.value);
+const updateSelectedSort = (value: number): void => {
+    selectedSort.value = value as Sort;
+};
+const applySelectedSort = (): void => {
+    sort.value = selectedSort.value;
+};
+const sortByHeader = (value: Sort): void => {
+    selectedSort.value = value;
+    sort.value = value;
+};
+const sortIndicator = (value: Sort, direction: 'ascending' | 'descending'): string =>
+    sort.value === value ? (direction === 'ascending' ? '▲' : '▼') : '↕';
 onMounted(load);
 </script>
 
@@ -58,13 +75,13 @@ onMounted(load);
                 </tr>
                 <tr>
                     <td>
-                        정렬순서 :
-                        <select v-model.number="sort" aria-label="암행부 정렬">
-                            <option v-for="(label, index) in options" :key="label" :value="index + 1">
-                                {{ label }}
-                            </option>
-                        </select>
-                        <input type="submit" value="정렬하기" />
+                        <LegacySortControls
+                            control-id="secret-list-sort"
+                            :model-value="selectedSort"
+                            :options="sortOptions"
+                            @update:model-value="updateSelectedSort"
+                            @submit="applySelectedSort"
+                        />
                     </td>
                 </tr>
             </tbody>
@@ -117,22 +134,94 @@ onMounted(load);
                     <tr>
                         <th width="98">이 름</th>
                         <th width="98">통무지</th>
-                        <th width="98">부 대</th>
-                        <th width="53">자 금</th>
-                        <th width="53">군 량</th>
-                        <th width="48">도시</th>
+                        <th width="98" :aria-sort="sort === 8 ? 'descending' : undefined">
+                            <button
+                                class="legacy-sort-header"
+                                type="button"
+                                aria-label="부대 기준 정렬"
+                                @click="sortByHeader(8)"
+                            >
+                                부 대<span class="legacy-sort-indicator">{{ sortIndicator(8, 'descending') }}</span>
+                            </button>
+                        </th>
+                        <th width="53" :aria-sort="sort === 1 ? 'descending' : undefined">
+                            <button
+                                class="legacy-sort-header"
+                                type="button"
+                                aria-label="자금 기준 정렬"
+                                @click="sortByHeader(1)"
+                            >
+                                자 금<span class="legacy-sort-indicator">{{ sortIndicator(1, 'descending') }}</span>
+                            </button>
+                        </th>
+                        <th width="53" :aria-sort="sort === 2 ? 'descending' : undefined">
+                            <button
+                                class="legacy-sort-header"
+                                type="button"
+                                aria-label="군량 기준 정렬"
+                                @click="sortByHeader(2)"
+                            >
+                                군 량<span class="legacy-sort-indicator">{{ sortIndicator(2, 'descending') }}</span>
+                            </button>
+                        </th>
+                        <th width="48" :aria-sort="sort === 3 ? 'ascending' : undefined">
+                            <button
+                                class="legacy-sort-header"
+                                type="button"
+                                aria-label="도시 기준 정렬"
+                                @click="sortByHeader(3)"
+                            >
+                                도시<span class="legacy-sort-indicator">{{ sortIndicator(3, 'ascending') }}</span>
+                            </button>
+                        </th>
                         <th width="28">守</th>
-                        <th width="58">병 종</th>
-                        <th width="63">병 사</th>
+                        <th width="58" :aria-sort="sort === 4 ? 'descending' : undefined">
+                            <button
+                                class="legacy-sort-header"
+                                type="button"
+                                aria-label="병종 기준 정렬"
+                                @click="sortByHeader(4)"
+                            >
+                                병 종<span class="legacy-sort-indicator">{{ sortIndicator(4, 'descending') }}</span>
+                            </button>
+                        </th>
+                        <th width="63" :aria-sort="sort === 5 ? 'descending' : undefined">
+                            <button
+                                class="legacy-sort-header"
+                                type="button"
+                                aria-label="병사 기준 정렬"
+                                @click="sortByHeader(5)"
+                            >
+                                병 사<span class="legacy-sort-indicator">{{ sortIndicator(5, 'descending') }}</span>
+                            </button>
+                        </th>
                         <th width="38">훈련</th>
                         <th width="38">사기</th>
                         <th width="213">명 령</th>
-                        <th width="38">삭턴</th>
-                        <th width="48">턴</th>
+                        <th width="38" :aria-sort="sort === 6 ? 'ascending' : undefined">
+                            <button
+                                class="legacy-sort-header"
+                                type="button"
+                                aria-label="삭제턴 기준 정렬"
+                                @click="sortByHeader(6)"
+                            >
+                                삭턴<span class="legacy-sort-indicator">{{ sortIndicator(6, 'ascending') }}</span>
+                            </button>
+                        </th>
+                        <th width="48" :aria-sort="sort === 7 ? 'ascending' : undefined">
+                            <button
+                                class="legacy-sort-header"
+                                type="button"
+                                aria-label="턴 기준 정렬"
+                                @click="sortByHeader(7)"
+                            >
+                                턴<span class="legacy-sort-indicator">{{ sortIndicator(7, 'ascending') }}</span>
+                            </button>
+                        </th>
                     </tr>
                 </thead>
                 <tbody>
-                    <tr v-for="general in generals" :key="general.id">
+                    <tr v-for="general in generals" :key="general.id" :data-general-id="general.id">
                         <td>{{ displayName(general) }}<br />Lv {{ general.experienceLevel }}</td>
                         <td>
                             {{ general.stats.leadership
@@ -235,19 +324,6 @@ th,
     border-bottom-width: 2px;
 }
 
-input[type='submit'] {
-    cursor: pointer;
-    padding: 1px 6px;
-    border: 2px outset #fff;
-    background: rgb(107, 107, 107);
-    color: #fff;
-}
-select {
-    padding: 0;
-    border: 1px solid rgb(133, 133, 133);
-    background: rgb(107, 107, 107);
-    color: #fff;
-}
 .legacy-bg0 {
     background-color: transparent;
 }
