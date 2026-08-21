@@ -130,6 +130,45 @@ const generals = [
     },
 ];
 
+const npcGenerals = [
+    {
+        id: 10,
+        name: '낮은장수',
+        ownerName: '',
+        npcState: 0,
+        level: 4,
+        nationId: 2,
+        nationName: '촉',
+        personality: null,
+        specialDomestic: null,
+        specialWar: null,
+        statTotal: 120,
+        leadership: 30,
+        strength: 50,
+        intelligence: 40,
+        experience: 100,
+        dedication: 50,
+    },
+    {
+        id: 20,
+        name: '높은장수',
+        ownerName: '빙의자',
+        npcState: 1,
+        level: 8,
+        nationId: 1,
+        nationName: '위',
+        personality: null,
+        specialDomestic: null,
+        specialWar: null,
+        statTotal: 240,
+        leadership: 90,
+        strength: 70,
+        intelligence: 80,
+        experience: 500,
+        dedication: 300,
+    },
+];
+
 const parseSort = (route: Route): number => {
     try {
         const request = route.request();
@@ -223,6 +262,20 @@ const install = async (
                 const rows =
                     sort === 8 ? [...generals].sort((left, right) => left.killturn - right.killturn) : generals;
                 return response({ sort, generals: rows });
+            }
+            if (operation === 'public.getNpcList') {
+                const sort = parseSort(route);
+                const rows = [...npcGenerals].sort((left, right) => {
+                    if (sort === 2) return left.nationId - right.nationId || left.id - right.id;
+                    if (sort === 3) return right.statTotal - left.statTotal || left.id - right.id;
+                    if (sort === 4) return right.leadership - left.leadership || left.id - right.id;
+                    if (sort === 5) return right.strength - left.strength || left.id - right.id;
+                    if (sort === 6) return right.intelligence - left.intelligence || left.id - right.id;
+                    if (sort === 7) return right.experience - left.experience || left.id - right.id;
+                    if (sort === 8) return right.dedication - left.dedication || left.id - right.id;
+                    return left.name.localeCompare(right.name) || left.id - right.id;
+                });
+                return response({ sort, generals: rows, tokenKeepCounts: {} });
             }
             return { error: { message: `unhandled ${operation}`, data: { code: 'BAD_REQUEST' } } };
         });
@@ -340,7 +393,7 @@ test('nation and general directories preserve the fixed legacy Chromium geometry
     await expect.poll(() => accessPages).toContain('nation-list');
     expect(accessPages).not.toContain('general-list');
 
-    const header = page.locator('.general-table thead td').first();
+    const header = page.locator('.general-table thead th').first();
     expect(await header.evaluate((element) => getComputedStyle(element).backgroundImage)).toContain('back_green.jpg');
     const icon = page.locator('.general-icon').first();
     await expect(icon).toBeVisible();
@@ -390,6 +443,78 @@ test('general directory submits the legacy sort selector and keeps wounded/bonus
 
     await page.locator('#viewType').focus();
     expect(await page.locator('#viewType').evaluate((element) => document.activeElement === element)).toBe(true);
+});
+
+test('directory sort controls stay legible in dark mode and sortable headers apply the matching option', async ({
+    page,
+}, testInfo) => {
+    await install(page);
+    await page.goto('general-list');
+
+    const select = page.locator('#viewType');
+    const submit = page.getByRole('button', { name: '정렬하기' });
+    const colors = await select.evaluate((element) => {
+        const selectStyle = getComputedStyle(element);
+        const optionStyle = getComputedStyle(element.querySelector('option')!);
+        return {
+            selectBackground: selectStyle.backgroundColor,
+            selectColor: selectStyle.color,
+            optionBackground: optionStyle.backgroundColor,
+            optionColor: optionStyle.color,
+        };
+    });
+    expect(colors).toEqual({
+        selectBackground: 'rgb(24, 35, 29)',
+        selectColor: 'rgb(247, 250, 248)',
+        optionBackground: 'rgb(24, 35, 29)',
+        optionColor: 'rgb(247, 250, 248)',
+    });
+    const defaultButton = await submit.evaluate((element) => {
+        const style = getComputedStyle(element);
+        return {
+            background: style.backgroundColor,
+            color: style.color,
+            borderBottomWidth: style.borderBottomWidth,
+            cursor: style.cursor,
+        };
+    });
+    expect(defaultButton).toEqual({
+        background: 'rgb(55, 90, 127)',
+        color: 'rgb(255, 255, 255)',
+        borderBottomWidth: '3px',
+        cursor: 'pointer',
+    });
+    await submit.hover();
+    await page.mouse.down();
+    expect(await submit.evaluate((element) => getComputedStyle(element).borderBottomWidth)).toBe('1px');
+    await page.mouse.up();
+
+    await page.getByRole('button', { name: '삭턴 기준 정렬' }).click();
+    await expect(select).toHaveValue('8');
+    await expect(page.locator('th[aria-sort="ascending"]')).toContainText('삭턴');
+    await expect(page.locator('tbody tr[data-general-id]').first()).toHaveAttribute('data-general-id', '20');
+    await page.screenshot({ path: testInfo.outputPath('directory-sort-controls-desktop.png'), fullPage: true });
+
+    await page.setViewportSize({ width: 500, height: 844 });
+    await expect(select).toHaveCSS('background-color', 'rgb(24, 35, 29)');
+    await expect(submit).toHaveCSS('border-bottom-width', '3px');
+    await page.screenshot({ path: testInfo.outputPath('directory-sort-controls-mobile.png'), fullPage: true });
+});
+
+test('npc directory reuses the dark sort controls and sorts from a table header', async ({ page }, testInfo) => {
+    await install(page);
+    await page.goto('npc-list');
+    await expect(page.locator('.npc-table tbody tr[data-general-id]')).toHaveCount(2);
+    await page.getByRole('button', { name: '통솔 기준 정렬' }).click();
+    await expect(page.locator('#npc-list-sort')).toHaveValue('4');
+    await expect(page.locator('.npc-table th[aria-sort="descending"]')).toContainText('통솔');
+    await expect(page.locator('.npc-table tbody tr[data-general-id]').first()).toHaveAttribute('data-general-id', '20');
+    await expect(page.locator('#npc-list-sort')).toHaveCSS('background-color', 'rgb(24, 35, 29)');
+    await expect(page.getByRole('button', { name: '정렬하기' })).toHaveCSS('background-color', 'rgb(55, 90, 127)');
+    await page.screenshot({ path: testInfo.outputPath('npc-sort-controls-desktop.png'), fullPage: true });
+    await page.setViewportSize({ width: 500, height: 844 });
+    await expect(page.locator('#npc-list-sort')).toHaveCSS('color', 'rgb(247, 250, 248)');
+    await page.screenshot({ path: testInfo.outputPath('npc-sort-controls-mobile.png'), fullPage: true });
 });
 
 test('nation directory reuses only the public general-directory row on hover and keyboard focus', async ({ page }) => {

@@ -4,17 +4,50 @@ import { formatOfficerLevelText } from '../../utils/nationFormat';
 import { getNpcColor } from '../../utils/npcColor';
 import type { GeneralDirectoryGeneral } from '../../types/directory';
 
-withDefaults(
+type SortDirection = 'ascending' | 'descending';
+type Header = {
+    label: string;
+    sort?: number;
+    direction?: SortDirection;
+    title?: string;
+};
+
+const props = withDefaults(
     defineProps<{
         generals: GeneralDirectoryGeneral[];
         loading?: boolean;
         layout?: 'responsive' | 'card';
+        activeSort?: number;
     }>(),
     {
         loading: false,
         layout: 'responsive',
+        activeSort: undefined,
     }
 );
+
+const emit = defineEmits<{ sort: [value: number] }>();
+
+const headers: ReadonlyArray<Header> = [
+    { label: '얼 굴' },
+    { label: '이 름' },
+    { label: '연령', sort: 14, direction: 'descending' },
+    { label: '성격', sort: 11, direction: 'descending' },
+    { label: '특기' },
+    { label: '레 벨', sort: 10, direction: 'descending' },
+    { label: '국 가', sort: 1, direction: 'ascending' },
+    { label: '명 성', sort: 5, direction: 'descending' },
+    { label: '계 급', sort: 6, direction: 'descending' },
+    { label: '관 직', sort: 7, direction: 'descending' },
+    { label: '통솔', sort: 2, direction: 'descending' },
+    { label: '무력', sort: 3, direction: 'descending' },
+    { label: '지력', sort: 4, direction: 'descending' },
+    { label: '삭턴', sort: 8, direction: 'ascending' },
+    { label: '벌점', sort: 9, direction: 'descending' },
+];
+
+const ariaSort = (header: Header): SortDirection | undefined =>
+    header.sort === props.activeSort ? header.direction : undefined;
 
 const injuredStat = (value: number, injury: number): number => Math.trunc((value * (100 - injury)) / 100);
 </script>
@@ -40,21 +73,28 @@ const injuredStat = (value: number, injury: number): number => Math.trunc((value
         </colgroup>
         <thead>
             <tr>
-                <td class="header-cell">얼 굴</td>
-                <td class="header-cell">이 름</td>
-                <td class="header-cell">연령</td>
-                <td class="header-cell">성격</td>
-                <td class="header-cell">특기</td>
-                <td class="header-cell">레 벨</td>
-                <td class="header-cell">국 가</td>
-                <td class="header-cell">명 성</td>
-                <td class="header-cell">계 급</td>
-                <td class="header-cell">관 직</td>
-                <td class="header-cell">통솔</td>
-                <td class="header-cell">무력</td>
-                <td class="header-cell">지력</td>
-                <td class="header-cell">삭턴</td>
-                <td class="header-cell">벌점</td>
+                <th
+                    v-for="header in headers"
+                    :key="header.label"
+                    class="header-cell"
+                    scope="col"
+                    :aria-sort="ariaSort(header)"
+                >
+                    <button
+                        v-if="header.sort !== undefined && activeSort !== undefined"
+                        class="legacy-sort-header"
+                        type="button"
+                        :aria-label="`${header.label.replaceAll(' ', '')} 기준 정렬`"
+                        :title="header.title ?? `${header.label.replaceAll(' ', '')} 기준 정렬`"
+                        @click="emit('sort', header.sort)"
+                    >
+                        {{ header.label
+                        }}<span class="legacy-sort-indicator">{{
+                            header.sort === activeSort ? (header.direction === 'ascending' ? '▲' : '▼') : '↕'
+                        }}</span>
+                    </button>
+                    <template v-else>{{ header.label }}</template>
+                </th>
             </tr>
         </thead>
         <tbody>
@@ -232,7 +272,8 @@ const injuredStat = (value: number, injury: number): number => Math.trunc((value
     line-height: 1.3;
     word-break: break-all;
 }
-.directory-table td {
+.directory-table td,
+.directory-table th {
     border: 1px solid gray;
     padding: 0;
     word-break: break-all;
@@ -242,6 +283,8 @@ const injuredStat = (value: number, injury: number): number => Math.trunc((value
     text-align: center;
     background-color: #14241b;
     background-image: var(--sammo-texture-green);
+    color: inherit;
+    font-weight: 400;
 }
 .general-icon {
     display: inline;

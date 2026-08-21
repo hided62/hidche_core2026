@@ -3,6 +3,7 @@ import { onMounted, ref } from 'vue';
 import { useRouter } from 'vue-router';
 
 import GeneralDirectoryTable from '../components/directory/GeneralDirectoryTable.vue';
+import LegacySortControls from '../components/ui/LegacySortControls.vue';
 import type { GeneralDirectoryGeneral } from '../types/directory';
 import { trpc } from '../utils/trpc';
 
@@ -45,6 +46,15 @@ const loadDirectory = async () => {
     }
 };
 
+const updateSort = (value: number): void => {
+    sort.value = value as SortKey;
+};
+
+const sortByHeader = (value: number): void => {
+    updateSort(value);
+    void loadDirectory();
+};
+
 onMounted(() => {
     void loadDirectory();
 });
@@ -63,22 +73,21 @@ onMounted(() => {
                 </tr>
                 <tr>
                     <td>
-                        <form class="sort-form" @submit.prevent="loadDirectory">
-                            <label for="viewType">정렬순서 : </label>
-                            <select id="viewType" v-model.number="sort" name="type" size="1">
-                                <option v-for="option in sortOptions" :key="option.value" :value="option.value">
-                                    {{ option.label }}
-                                </option>
-                            </select>
-                            <input type="submit" value="정렬하기" />
-                        </form>
+                        <LegacySortControls
+                            control-id="viewType"
+                            :model-value="sort"
+                            :options="sortOptions"
+                            :busy="loading"
+                            @update:model-value="updateSort"
+                            @submit="loadDirectory"
+                        />
                     </td>
                 </tr>
             </tbody>
         </table>
 
         <p v-if="error" class="directory-error" role="alert">{{ error }}</p>
-        <GeneralDirectoryTable :generals="generals" :loading="loading" />
+        <GeneralDirectoryTable :generals="generals" :loading="loading" :active-sort="sort" @sort="sortByHeader" />
 
         <table class="directory-table title-table legacy-bg0">
             <tbody>
@@ -119,13 +128,6 @@ onMounted(() => {
 }
 .legacy-button {
     padding: 5px 10px;
-    font-size: 14px;
-}
-.sort-form {
-    margin: 0;
-}
-.sort-form select,
-.sort-form button {
     font-size: 14px;
 }
 .directory-error {

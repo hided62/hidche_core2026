@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { onMounted, ref } from 'vue';
 
+import LegacySortControls from '../components/ui/LegacySortControls.vue';
 import { trpc } from '../utils/trpc';
 
 type NpcList = Awaited<ReturnType<typeof trpc.public.getNpcList.query>>;
@@ -10,6 +11,10 @@ const sort = ref<NpcListSort>(1);
 const data = ref<NpcList | null>(null);
 const loading = ref(false);
 const errorMessage = ref('');
+const sortOptions = ['이름', '국가', '종능', '통솔', '무력', '지력', '명성', '계급'].map((label, index) => ({
+    value: index + 1,
+    label,
+}));
 
 const getErrorMessage = (error: unknown): string => {
     if (error instanceof Error) {
@@ -35,6 +40,15 @@ const load = async () => {
 };
 
 const closeWindow = () => window.close();
+const updateSort = (value: number): void => {
+    sort.value = value as NpcListSort;
+};
+const sortByHeader = (value: NpcListSort): void => {
+    updateSort(value);
+    void load();
+};
+const sortIndicator = (value: NpcListSort, direction: 'ascending' | 'descending'): string =>
+    sort.value === value ? (direction === 'ascending' ? '▲' : '▼') : '↕';
 
 onMounted(() => {
     void load();
@@ -53,20 +67,14 @@ onMounted(() => {
                 </tr>
                 <tr>
                     <td>
-                        <form class="sort-form" @submit.prevent="load">
-                            <label for="npc-list-sort">정렬순서 :</label>
-                            <select id="npc-list-sort" v-model.number="sort" name="type" size="1">
-                                <option :value="1">이름</option>
-                                <option :value="2">국가</option>
-                                <option :value="3">종능</option>
-                                <option :value="4">통솔</option>
-                                <option :value="5">무력</option>
-                                <option :value="6">지력</option>
-                                <option :value="7">명성</option>
-                                <option :value="8">계급</option>
-                            </select>
-                            <input type="submit" value="정렬하기" :disabled="loading" />
-                        </form>
+                        <LegacySortControls
+                            control-id="npc-list-sort"
+                            :model-value="sort"
+                            :options="sortOptions"
+                            :busy="loading"
+                            @update:model-value="updateSort"
+                            @submit="load"
+                        />
                     </td>
                 </tr>
             </tbody>
@@ -92,18 +100,90 @@ onMounted(() => {
             </colgroup>
             <thead>
                 <tr class="legacy-bg1">
-                    <th>희생된 장수</th>
+                    <th :aria-sort="sort === 1 ? 'ascending' : undefined">
+                        <button
+                            class="legacy-sort-header"
+                            type="button"
+                            aria-label="이름 기준 정렬"
+                            @click="sortByHeader(1)"
+                        >
+                            희생된 장수<span class="legacy-sort-indicator">{{ sortIndicator(1, 'ascending') }}</span>
+                        </button>
+                    </th>
                     <th>악령 이름</th>
                     <th>레벨</th>
-                    <th>국가</th>
+                    <th :aria-sort="sort === 2 ? 'ascending' : undefined">
+                        <button
+                            class="legacy-sort-header"
+                            type="button"
+                            aria-label="국가 기준 정렬"
+                            @click="sortByHeader(2)"
+                        >
+                            국가<span class="legacy-sort-indicator">{{ sortIndicator(2, 'ascending') }}</span>
+                        </button>
+                    </th>
                     <th>성격</th>
                     <th>특기</th>
-                    <th>종능</th>
-                    <th>통솔</th>
-                    <th>무력</th>
-                    <th>지력</th>
-                    <th>명성</th>
-                    <th>계급</th>
+                    <th :aria-sort="sort === 3 ? 'descending' : undefined">
+                        <button
+                            class="legacy-sort-header"
+                            type="button"
+                            aria-label="종능 기준 정렬"
+                            @click="sortByHeader(3)"
+                        >
+                            종능<span class="legacy-sort-indicator">{{ sortIndicator(3, 'descending') }}</span>
+                        </button>
+                    </th>
+                    <th :aria-sort="sort === 4 ? 'descending' : undefined">
+                        <button
+                            class="legacy-sort-header"
+                            type="button"
+                            aria-label="통솔 기준 정렬"
+                            @click="sortByHeader(4)"
+                        >
+                            통솔<span class="legacy-sort-indicator">{{ sortIndicator(4, 'descending') }}</span>
+                        </button>
+                    </th>
+                    <th :aria-sort="sort === 5 ? 'descending' : undefined">
+                        <button
+                            class="legacy-sort-header"
+                            type="button"
+                            aria-label="무력 기준 정렬"
+                            @click="sortByHeader(5)"
+                        >
+                            무력<span class="legacy-sort-indicator">{{ sortIndicator(5, 'descending') }}</span>
+                        </button>
+                    </th>
+                    <th :aria-sort="sort === 6 ? 'descending' : undefined">
+                        <button
+                            class="legacy-sort-header"
+                            type="button"
+                            aria-label="지력 기준 정렬"
+                            @click="sortByHeader(6)"
+                        >
+                            지력<span class="legacy-sort-indicator">{{ sortIndicator(6, 'descending') }}</span>
+                        </button>
+                    </th>
+                    <th :aria-sort="sort === 7 ? 'descending' : undefined">
+                        <button
+                            class="legacy-sort-header"
+                            type="button"
+                            aria-label="명성 기준 정렬"
+                            @click="sortByHeader(7)"
+                        >
+                            명성<span class="legacy-sort-indicator">{{ sortIndicator(7, 'descending') }}</span>
+                        </button>
+                    </th>
+                    <th :aria-sort="sort === 8 ? 'descending' : undefined">
+                        <button
+                            class="legacy-sort-header"
+                            type="button"
+                            aria-label="계급 기준 정렬"
+                            @click="sortByHeader(8)"
+                        >
+                            계급<span class="legacy-sort-indicator">{{ sortIndicator(8, 'descending') }}</span>
+                        </button>
+                    </th>
                 </tr>
             </thead>
             <tbody>
@@ -202,32 +282,6 @@ onMounted(() => {
     min-height: 20px;
 }
 
-.sort-form {
-    min-height: 25px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    gap: 4px;
-}
-
-.sort-form select,
-.sort-form input[type='submit'] {
-    height: 23px;
-    font: inherit;
-}
-
-.sort-form select {
-    background: #ddd;
-    color: #303030;
-}
-
-.sort-form input[type='submit'] {
-    border: 2px outset #fff;
-    background: #6b6b6b;
-    color: #fff;
-    cursor: pointer;
-}
-
 .npc-table {
     margin-top: 0;
 }
@@ -321,8 +375,7 @@ onMounted(() => {
 }
 
 .legacy-close:focus-visible,
-.sort-form select:focus-visible,
-.sort-form input[type='submit']:focus-visible {
+.trait-tooltip:focus-visible {
     outline: 2px solid #f39c12;
     outline-offset: 1px;
 }
