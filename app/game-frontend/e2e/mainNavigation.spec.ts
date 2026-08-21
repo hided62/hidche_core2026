@@ -4275,15 +4275,21 @@ test('seasonal map decodes the next background and crossfades it without remount
     await emitReadModelInvalidation(page, readModelInvalidation({ lobby: true, map: true }));
     await expect(map).toContainText('185年 4月');
     await expect(outgoingLayer).toHaveClass(/is-transitioning/u);
+    await expect(outgoingLayer).toHaveCSS('transition-duration', '0.48s');
+    let midpointOpacity = 0;
+    await expect
+        .poll(
+            async () => {
+                midpointOpacity = Number.parseFloat(
+                    await outgoingLayer.evaluate((element) => getComputedStyle(element).opacity)
+                );
+                return midpointOpacity > 0 && midpointOpacity < 1;
+            },
+            { intervals: [16, 16, 16, 16, 16, 16], timeout: 350 }
+        )
+        .toBe(true);
     await expect(currentLayer.locator('img')).toHaveAttribute('src', /bg_summer\.jpg/u);
     await expect(outgoingLayer.locator('img')).toHaveAttribute('src', /bg_spring\.jpg/u);
-    await page.waitForTimeout(180);
-
-    const midpointOpacity = Number.parseFloat(
-        await outgoingLayer.evaluate((element) => getComputedStyle(element).opacity)
-    );
-    expect(midpointOpacity).toBeGreaterThan(0);
-    expect(midpointOpacity).toBeLessThan(1);
     if (mapSeasonArtifactRoot) {
         await map.screenshot({ path: resolve(mapSeasonArtifactRoot, 'season-spring-to-summer-midpoint.png') });
     }

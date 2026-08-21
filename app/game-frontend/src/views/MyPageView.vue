@@ -7,8 +7,7 @@ import { formatSeoulDateTime } from '../utils/legacyDateTime';
 import { isDefenceTrainPenaltyWaivedByScenarioEffect } from '@sammo-ts/logic/scenario/scenarioEffect.js';
 import { useSessionStore } from '../stores/session';
 import { resolveGeneralIconUrl, useDefaultGeneralIcon } from '../utils/generalIcon';
-import LegacyGeneralProgress from '../components/ui/LegacyGeneralProgress.vue';
-import GeneralBasicCard from '../components/main/GeneralBasicCard.vue';
+import GeneralInformationPanel from '../components/main/GeneralInformationPanel.vue';
 import { useGameFeedback } from '../composables/useGameFeedback';
 import { SCREEN_MODE_CHANGE_EVENT, SCREEN_MODE_KEY, type ScreenMode } from '../utils/screenModeViewport';
 import {
@@ -136,9 +135,6 @@ const statusLine = computed(() =>
 
 const canSave = computed(() => (data.value?.settings.myset ?? 1) > 0);
 const penalties = computed(() => Object.entries(data.value?.penalties ?? {}));
-const numberText = (value: number): string => value.toLocaleString('ko-KR');
-const percentText = (numerator: number, denominator: number): string =>
-    `${((numerator / Math.max(denominator, 1)) * 100).toFixed(2)}%`;
 const noDefencePenaltyWaived = computed(() => {
     const environment = asRecord(world.value?.config.environment);
     return isDefenceTrainPenaltyWaivedByScenarioEffect(
@@ -416,55 +412,31 @@ onMounted(() => {
         <section class="top-grid">
             <div class="general-column">
                 <div class="section-title sky">장수 정보</div>
-                <GeneralBasicCard
+                <GeneralInformationPanel
                     class="general-table"
                     :general="data?.general ?? null"
+                    :summary="
+                        data
+                            ? {
+                                  available: true,
+                                  experience: data.general.experience,
+                                  dedicationText: data.general.progression?.dedicationText,
+                                  warnum: data.general.records.battles,
+                                  wins: data.general.records.wins,
+                                  losses: data.general.records.losses,
+                                  strategies: data.general.records.strategies,
+                                  serviceYears: data.general.records.serviceYears,
+                                  killCrew: data.general.records.killedCrew,
+                                  deathCrew: data.general.records.lostCrew,
+                                  recentWar: data.general.recentWar,
+                              }
+                            : null
+                    "
                     :loading="loading"
                     :nation-color="data?.nation?.color"
                     :defence-text="form.defence_train === 999 ? '수비 안함' : `수비 함(훈사${form.defence_train})`"
                     :penalty-text="penalties.length || '-'"
-                >
-                    <template v-if="data" #details>
-                        <div class="legacy-general-details">
-                            <div>
-                                명망
-                                <strong
-                                    >Lv {{ data.general.progression?.experienceLevel ?? 0 }} ({{
-                                        data.general.experience
-                                    }})</strong
-                                >
-                                · 계급
-                                <strong
-                                    >{{ data.general.progression?.dedicationText ?? '무품관' }} ({{
-                                        data.general.dedication
-                                    }})</strong
-                                >
-                            </div>
-                            <div>
-                                전투 {{ numberText(data.general.records.battles) }} · 계략
-                                {{ numberText(data.general.records.strategies) }} · 사관
-                                {{ numberText(data.general.records.serviceYears) }}년
-                            </div>
-                            <div>
-                                승률 {{ percentText(data.general.records.wins, data.general.records.battles) }} · 승리
-                                {{ numberText(data.general.records.wins) }} · 패배
-                                {{ numberText(data.general.records.losses) }}
-                            </div>
-                            <div>
-                                살상률
-                                {{ percentText(data.general.records.killedCrew, data.general.records.lostCrew) }} · 사살
-                                {{ numberText(data.general.records.killedCrew) }} · 피살
-                                {{ numberText(data.general.records.lostCrew) }}
-                            </div>
-                            <div>
-                                소속 {{ data.nation?.name ?? '재야' }} · 도시 {{ data.city?.name ?? '-' }} · 병종
-                                {{ data.general.crewTypeName ?? '-' }} · 내정특기
-                                {{ data.general.traits?.specialDomestic ?? '-' }} · 부상 {{ data.general.injury }}
-                            </div>
-                            <LegacyGeneralProgress :general="data.general" :show-primary="false" />
-                        </div>
-                    </template>
-                </GeneralBasicCard>
+                />
             </div>
 
             <div class="settings-column">
@@ -874,14 +846,6 @@ button:disabled {
 }
 .legacy-general-info-compat {
     display: none;
-}
-.legacy-general-details {
-    background: #172a52 var(--sammo-texture-blue);
-    line-height: 20px;
-    text-align: center;
-}
-.legacy-general-details > div {
-    border-top: 1px solid #557;
 }
 .legacy-credit {
     max-width: 100%;

@@ -1,7 +1,7 @@
 <script setup lang="ts">
-import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue';
+import { computed, nextTick, onBeforeUnmount, ref, useId, watch } from 'vue';
 import { storeToRefs } from 'pinia';
-import { useElementSize, useMediaQuery, useMouseInElement } from '@vueuse/core';
+import { onClickOutside, useElementSize, useMediaQuery, useMouseInElement } from '@vueuse/core';
 import SkeletonLines from '../ui/SkeletonLines.vue';
 import MapCityBasic from './MapCityBasic.vue';
 import MapCityDetail from './MapCityDetail.vue';
@@ -145,6 +145,9 @@ const reduceMotion = useMediaQuery('(prefers-reduced-motion: reduce)');
 
 const mapArea = ref<HTMLElement | null>(null);
 const mapBody = ref<HTMLElement | null>(null);
+const mapControls = ref<HTMLElement | null>(null);
+const mapOptionsOpen = ref(false);
+const mapOptionsMenuId = `map-options-${useId()}`;
 const { width: mapBodyWidth } = useElementSize(mapBody);
 const { elementX, elementY } = useMouseInElement(mapArea);
 
@@ -583,6 +586,16 @@ const clearTouchPreview = () => {
     setHoveredCity(null);
 };
 
+const closeMapOptions = () => {
+    mapOptionsOpen.value = false;
+};
+
+const toggleMapOptions = () => {
+    mapOptionsOpen.value = !mapOptionsOpen.value;
+};
+
+onClickOutside(mapControls, closeMapOptions);
+
 const touchCity = (cityId: number, event: TouchEvent) => {
     if (touchPreviewCityId.value !== cityId) {
         touchPreviewCityId.value = cityId;
@@ -627,7 +640,10 @@ const selectCity = (cityId: number) => {
                 class="map-area"
                 :class="[mapThemeClass, mapSeasonClass]"
                 :style="{ width: mapWidth, height: mapHeight }"
-                @click="clearTouchPreview"
+                @click="
+                    clearTouchPreview();
+                    closeMapOptions();
+                "
             >
                 <div class="map-layer map-bglayer1" data-map-background-layer="current">
                     <img
@@ -686,18 +702,43 @@ const selectCity = (cityId: number) => {
                     <div class="tooltip-title">{{ hoveredCityTitle }}</div>
                     <div class="tooltip-body">{{ hoveredCity.nationId > 0 ? hoveredCity.nationName : '' }}</div>
                 </div>
-                <div class="map-controls">
-                    <button class="map-toggle" :class="{ active: showCityName }" @click.stop="mapStore.toggleCityName">
-                        도시명 표기 {{ showCityName ? '끄기' : '켜기' }}
-                    </button>
-                    <button
-                        v-if="hasTouchInput && !isSelectionMap && !props.readonly"
-                        class="map-toggle map-toggle-single-tap"
-                        :class="{ active: singleTapNavigation }"
-                        :aria-pressed="singleTapNavigation"
-                        @click.stop="toggleSingleTapNavigation"
+                <div ref="mapControls" class="map-controls" @keydown.esc.stop="closeMapOptions">
+                    <div
+                        v-show="mapOptionsOpen"
+                        :id="mapOptionsMenuId"
+                        class="map-options-menu"
+                        role="group"
+                        aria-label="지도 옵션 메뉴"
+                        @click.stop
                     >
-                        두번 탭 해 도시 이동 {{ singleTapNavigation ? '켜기' : '끄기' }}
+                        <button
+                            class="map-toggle"
+                            :class="{ active: showCityName }"
+                            :aria-pressed="showCityName"
+                            @click="mapStore.toggleCityName"
+                        >
+                            도시명 표기 {{ showCityName ? '끄기' : '켜기' }}
+                        </button>
+                        <button
+                            v-if="hasTouchInput && !isSelectionMap && !props.readonly"
+                            class="map-toggle map-toggle-single-tap"
+                            :class="{ active: singleTapNavigation }"
+                            :aria-pressed="singleTapNavigation"
+                            @click="toggleSingleTapNavigation"
+                        >
+                            두번 탭 해 도시 이동 {{ singleTapNavigation ? '켜기' : '끄기' }}
+                        </button>
+                    </div>
+                    <button
+                        type="button"
+                        class="map-options-trigger"
+                        aria-label="지도 옵션"
+                        title="지도 옵션"
+                        :aria-controls="mapOptionsMenuId"
+                        :aria-expanded="mapOptionsOpen"
+                        @click.stop="toggleMapOptions"
+                    >
+                        <span aria-hidden="true">⚙</span>
                     </button>
                 </div>
             </div>
@@ -782,14 +823,68 @@ const selectCity = (cityId: number) => {
 .map-controls {
     position: absolute;
     z-index: 4;
-    right: 4px;
-    bottom: 4px;
+    inset: 4px;
+    pointer-events: none;
+}
+
+.map-options-trigger {
+    position: absolute;
+    right: 0;
+    bottom: 0;
+    display: grid;
+    box-sizing: border-box;
+    width: 30px;
+    height: 28px;
+    place-items: center;
+    border: 1px solid #6c757d;
+    border-radius: 2px;
+    padding: 0;
+    background: #345c85;
+    color: #fff;
+    cursor: pointer;
+    font-size: 17px;
+    line-height: 1;
+    pointer-events: auto;
+}
+
+.map-options-trigger:hover,
+.map-options-trigger:focus-visible,
+.map-options-trigger[aria-expanded='true'] {
+    border-color: #b7cadc;
+    background: #284969;
+}
+
+.map-options-trigger:active {
+    background: #1f3a54;
+}
+
+.map-options-trigger:focus-visible {
+    outline: 2px solid #fff;
+    outline-offset: 1px;
+}
+
+.map-options-menu {
+    position: absolute;
+    right: 0;
+    bottom: 32px;
     display: flex;
+    max-width: 100%;
+    max-height: calc(100% - 32px);
     flex-direction: column;
-    align-items: flex-end;
+    align-items: stretch;
+    overflow-y: auto;
+    border: 1px solid #6c757d;
+    border-radius: 2px;
+    padding: 3px;
+    background: rgba(11, 11, 11, 0.94);
+    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.55);
+    pointer-events: auto;
 }
 
 .map-toggle {
+    box-sizing: border-box;
+    width: max-content;
+    max-width: 100%;
     border: 1px solid #6c757d;
     border-radius: 2px;
     padding: 3px 7px;
@@ -798,6 +893,12 @@ const selectCity = (cityId: number) => {
     font-size: 11px;
     line-height: 18px;
     cursor: pointer;
+    text-align: left;
+    white-space: nowrap;
+}
+
+.map-toggle + .map-toggle {
+    margin-top: 3px;
 }
 
 .map-toggle.active {

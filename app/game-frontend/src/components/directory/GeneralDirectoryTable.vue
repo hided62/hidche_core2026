@@ -3,13 +3,14 @@ import { resolveGeneralIconUrl, useDefaultGeneralIcon } from '../../utils/genera
 import { formatOfficerLevelText } from '../../utils/nationFormat';
 import { getNpcColor } from '../../utils/npcColor';
 import type { GeneralDirectoryGeneral } from '../../types/directory';
+import type { GeneralDirectorySortCriterion, GeneralDirectorySortKey } from '../../utils/generalDirectorySort';
+import DirectoryTooltip from './DirectoryTooltip.vue';
+import GeneralDirectoryStat from './GeneralDirectoryStat.vue';
 
 type SortDirection = 'ascending' | 'descending';
 type Header = {
     label: string;
-    sort?: number;
-    direction?: SortDirection;
-    title?: string;
+    sort?: GeneralDirectorySortKey;
 };
 
 const props = withDefaults(
@@ -17,12 +18,12 @@ const props = withDefaults(
         generals: GeneralDirectoryGeneral[];
         loading?: boolean;
         layout?: 'responsive' | 'card';
-        activeSort?: number;
+        sortCriteria?: readonly GeneralDirectorySortCriterion[];
     }>(),
     {
         loading: false,
         layout: 'responsive',
-        activeSort: undefined,
+        sortCriteria: () => [],
     }
 );
 
@@ -30,26 +31,43 @@ const emit = defineEmits<{ sort: [value: number] }>();
 
 const headers: ReadonlyArray<Header> = [
     { label: '얼 굴' },
-    { label: '이 름' },
-    { label: '연령', sort: 14, direction: 'descending' },
-    { label: '성격', sort: 11, direction: 'descending' },
+    { label: '이 름', sort: 0 },
+    { label: '연령', sort: 14 },
+    { label: '성격', sort: 11 },
     { label: '특기' },
-    { label: '레 벨', sort: 10, direction: 'descending' },
-    { label: '국 가', sort: 1, direction: 'ascending' },
-    { label: '명 성', sort: 5, direction: 'descending' },
-    { label: '계 급', sort: 6, direction: 'descending' },
-    { label: '관 직', sort: 7, direction: 'descending' },
-    { label: '통솔', sort: 2, direction: 'descending' },
-    { label: '무력', sort: 3, direction: 'descending' },
-    { label: '지력', sort: 4, direction: 'descending' },
-    { label: '삭턴', sort: 8, direction: 'ascending' },
-    { label: '벌점', sort: 9, direction: 'descending' },
+    { label: '레 벨', sort: 10 },
+    { label: '국 가', sort: 1 },
+    { label: '명 성', sort: 5 },
+    { label: '계 급', sort: 6 },
+    { label: '관 직', sort: 7 },
+    { label: '통솔', sort: 2 },
+    { label: '무력', sort: 3 },
+    { label: '지력', sort: 4 },
+    { label: '삭턴', sort: 8 },
+    { label: '벌점', sort: 9 },
 ];
 
+const criterionIndex = (header: Header): number =>
+    header.sort === undefined ? -1 : props.sortCriteria.findIndex(({ key }) => key === header.sort);
+const criterionFor = (header: Header): GeneralDirectorySortCriterion | undefined => {
+    const index = criterionIndex(header);
+    return index < 0 ? undefined : props.sortCriteria[index];
+};
 const ariaSort = (header: Header): SortDirection | undefined =>
-    header.sort === props.activeSort ? header.direction : undefined;
-
-const injuredStat = (value: number, injury: number): number => Math.trunc((value * (100 - injury)) / 100);
+    criterionIndex(header) === 0 ? criterionFor(header)?.direction : undefined;
+const sortIndicator = (header: Header): string => {
+    const index = criterionIndex(header);
+    if (index < 0) return '↕';
+    const arrow = criterionFor(header)?.direction === 'ascending' ? '▲' : '▼';
+    return props.sortCriteria.length > 1 ? `${arrow}${index + 1}` : arrow;
+};
+const nextSortAction = (header: Header): string => {
+    const direction = criterionFor(header)?.direction;
+    if (!direction) return '내림차순';
+    return direction === 'descending' ? '오름차순' : '정렬 해제';
+};
+const sortHelp = (header: Header): string =>
+    `${header.label.replaceAll(' ', '')} ${nextSortAction(header)}. 같은 값은 이전 정렬 순서를 유지합니다.`;
 </script>
 
 <template>
@@ -81,17 +99,14 @@ const injuredStat = (value: number, injury: number): number => Math.trunc((value
                     :aria-sort="ariaSort(header)"
                 >
                     <button
-                        v-if="header.sort !== undefined && activeSort !== undefined"
+                        v-if="header.sort !== undefined"
                         class="legacy-sort-header"
                         type="button"
-                        :aria-label="`${header.label.replaceAll(' ', '')} 기준 정렬`"
-                        :title="header.title ?? `${header.label.replaceAll(' ', '')} 기준 정렬`"
+                        :aria-label="sortHelp(header)"
+                        :title="sortHelp(header)"
                         @click="emit('sort', header.sort)"
                     >
-                        {{ header.label
-                        }}<span class="legacy-sort-indicator">{{
-                            header.sort === activeSort ? (header.direction === 'ascending' ? '▲' : '▼') : '↕'
-                        }}</span>
+                        {{ header.label }}<span class="legacy-sort-indicator">{{ sortIndicator(header) }}</span>
                     </button>
                     <template v-else>{{ header.label }}</template>
                 </th>
@@ -132,11 +147,30 @@ const injuredStat = (value: number, injury: number): number => Math.trunc((value
                 </td>
                 <td class="center">{{ general.age }}세</td>
                 <td class="center">
-                    <span :title="general.personality.info">{{ general.personality.name }}</span>
+                    <DirectoryTooltip
+                        :title="`성격 · ${general.personality.name}`"
+                        :description="general.personality.info"
+                        :test-id="`personality-${general.id}`"
+                    >
+                        {{ general.personality.name }}
+                    </DirectoryTooltip>
                 </td>
                 <td class="center">
-                    <span :title="general.specialDomestic.info">{{ general.specialDomestic.name }}</span> /
-                    <span :title="general.specialWar.info">{{ general.specialWar.name }}</span>
+                    <DirectoryTooltip
+                        :title="`내정 특기 · ${general.specialDomestic.name}`"
+                        :description="general.specialDomestic.info"
+                        :test-id="`special-domestic-${general.id}`"
+                    >
+                        {{ general.specialDomestic.name }}
+                    </DirectoryTooltip>
+                    /
+                    <DirectoryTooltip
+                        :title="`전투 특기 · ${general.specialWar.name}`"
+                        :description="general.specialWar.info"
+                        :test-id="`special-war-${general.id}`"
+                    >
+                        {{ general.specialWar.name }}
+                    </DirectoryTooltip>
                 </td>
                 <td class="center">Lv {{ general.experienceLevel }}</td>
                 <td class="center">{{ general.nationName }}</td>
@@ -144,22 +178,29 @@ const injuredStat = (value: number, injury: number): number => Math.trunc((value
                 <td class="center">{{ general.dedicationText }}</td>
                 <td class="center">{{ formatOfficerLevelText(general.officerLevel, general.nationLevel) }}</td>
                 <td class="center">
-                    <span :class="{ wounded: general.injury > 0 }">{{
-                        general.injury > 0 ? injuredStat(general.leadership, general.injury) : general.leadership
-                    }}</span
-                    ><span v-if="general.leadershipBonus > 0" class="leadership-bonus"
-                        >+{{ general.leadershipBonus }}</span
-                    >
+                    <GeneralDirectoryStat
+                        label="통솔"
+                        :value="general.leadership"
+                        :injury="general.injury"
+                        :bonus="general.leadershipBonus"
+                        :test-id="`injury-leadership-${general.id}`"
+                    />
                 </td>
                 <td class="center">
-                    <span :class="{ wounded: general.injury > 0 }">{{
-                        general.injury > 0 ? injuredStat(general.strength, general.injury) : general.strength
-                    }}</span>
+                    <GeneralDirectoryStat
+                        label="무력"
+                        :value="general.strength"
+                        :injury="general.injury"
+                        :test-id="`injury-strength-${general.id}`"
+                    />
                 </td>
                 <td class="center">
-                    <span :class="{ wounded: general.injury > 0 }">{{
-                        general.injury > 0 ? injuredStat(general.intelligence, general.injury) : general.intelligence
-                    }}</span>
+                    <GeneralDirectoryStat
+                        label="지력"
+                        :value="general.intelligence"
+                        :injury="general.injury"
+                        :test-id="`injury-intelligence-${general.id}`"
+                    />
                 </td>
                 <td class="center">{{ general.killturn }}</td>
                 <td class="center">{{ general.refreshScoreTotal }}<br />【{{ general.refreshText }}】</td>
@@ -207,13 +248,33 @@ const injuredStat = (value: number, injury: number): number => Math.trunc((value
             </div>
             <div class="general-card-field">
                 <span class="field-label">성격</span>
-                <span :title="general.personality.info">{{ general.personality.name }}</span>
+                <DirectoryTooltip
+                    :title="`성격 · ${general.personality.name}`"
+                    :description="general.personality.info"
+                    :test-id="`card-personality-${general.id}`"
+                >
+                    {{ general.personality.name }}
+                </DirectoryTooltip>
             </div>
             <div class="general-card-field">
                 <span class="field-label">특기</span>
-                <span :title="`${general.specialDomestic.info} / ${general.specialWar.info}`"
-                    >{{ general.specialDomestic.name }} / {{ general.specialWar.name }}</span
-                >
+                <span>
+                    <DirectoryTooltip
+                        :title="`내정 특기 · ${general.specialDomestic.name}`"
+                        :description="general.specialDomestic.info"
+                        :test-id="`card-special-domestic-${general.id}`"
+                    >
+                        {{ general.specialDomestic.name }}
+                    </DirectoryTooltip>
+                    /
+                    <DirectoryTooltip
+                        :title="`전투 특기 · ${general.specialWar.name}`"
+                        :description="general.specialWar.info"
+                        :test-id="`card-special-war-${general.id}`"
+                    >
+                        {{ general.specialWar.name }}
+                    </DirectoryTooltip>
+                </span>
             </div>
             <div class="general-card-field">
                 <span class="field-label">레벨</span><span>Lv {{ general.experienceLevel }}</span>
@@ -233,26 +294,31 @@ const injuredStat = (value: number, injury: number): number => Math.trunc((value
             </div>
             <div class="general-card-field">
                 <span class="field-label">통솔</span>
-                <span>
-                    <span :class="{ wounded: general.injury > 0 }">{{
-                        general.injury > 0 ? injuredStat(general.leadership, general.injury) : general.leadership
-                    }}</span
-                    ><span v-if="general.leadershipBonus > 0" class="leadership-bonus"
-                        >+{{ general.leadershipBonus }}</span
-                    >
-                </span>
+                <GeneralDirectoryStat
+                    label="통솔"
+                    :value="general.leadership"
+                    :injury="general.injury"
+                    :bonus="general.leadershipBonus"
+                    :test-id="`card-injury-leadership-${general.id}`"
+                />
             </div>
             <div class="general-card-field">
                 <span class="field-label">무력</span>
-                <span :class="{ wounded: general.injury > 0 }">{{
-                    general.injury > 0 ? injuredStat(general.strength, general.injury) : general.strength
-                }}</span>
+                <GeneralDirectoryStat
+                    label="무력"
+                    :value="general.strength"
+                    :injury="general.injury"
+                    :test-id="`card-injury-strength-${general.id}`"
+                />
             </div>
             <div class="general-card-field">
                 <span class="field-label">지력</span>
-                <span :class="{ wounded: general.injury > 0 }">{{
-                    general.injury > 0 ? injuredStat(general.intelligence, general.injury) : general.intelligence
-                }}</span>
+                <GeneralDirectoryStat
+                    label="지력"
+                    :value="general.intelligence"
+                    :injury="general.injury"
+                    :test-id="`card-injury-intelligence-${general.id}`"
+                />
             </div>
             <div class="general-card-field penalty-field">
                 <span class="field-label">벌점</span>
@@ -297,12 +363,6 @@ const injuredStat = (value: number, injury: number): number => Math.trunc((value
 }
 .center {
     text-align: center;
-}
-.wounded {
-    color: red;
-}
-.leadership-bonus {
-    color: cyan;
 }
 .loading-cell {
     height: 64px;
