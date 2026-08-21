@@ -294,8 +294,19 @@ test('nation generals filter buttons open Ref operator menus and apply compound 
 
     await page.setViewportSize({ width: 500, height: 900 });
     expect(await page.locator('.general-page').evaluate((element) => element.getBoundingClientRect().width)).toBe(1000);
+    const generalSearch = page.getByLabel('장수명 필터');
+    await expect(generalSearch).toHaveCSS('touch-action', 'manipulation');
+    const viewportContract = await page.evaluate(() => ({
+        content: document.querySelector<HTMLMetaElement>('meta[name="viewport"]')?.content ?? '',
+        scale: window.visualViewport?.scale ?? 1,
+    }));
+    expect(viewportContract.content).not.toMatch(/(?:user-scalable|minimum-scale|maximum-scale)/u);
+    await generalSearch.focus();
+    await expect(generalSearch).toBeFocused();
+    expect(await page.evaluate(() => window.visualViewport?.scale ?? 1)).toBe(viewportContract.scale);
     await nameMenuButton.click();
     await expect(namePopup).toBeVisible();
+    await expect(page.getByLabel('장수명 첫 번째 필터 값')).toHaveCSS('touch-action', 'manipulation');
     expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeGreaterThanOrEqual(1000);
     await page.screenshot({ path: testInfo.outputPath('core-mobile-filter-menu.png'), fullPage: true });
 });
