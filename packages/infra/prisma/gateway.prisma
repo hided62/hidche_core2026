@@ -315,9 +315,9 @@ model GatewayReleaseState {
   activeWorkspace   String?   @map("active_workspace")
   previousCommitSha String?   @map("previous_commit_sha")
   previousWorkspace String?   @map("previous_workspace")
-  lastSuccessfulAt  DateTime? @map("last_successful_at")
+  lastSuccessfulAt  DateTime? @map("last_successful_at") @db.Timestamptz(3)
   lastError         String?   @map("last_error")
-  updatedAt         DateTime  @updatedAt @map("updated_at")
+  updatedAt         DateTime  @updatedAt @map("updated_at") @db.Timestamptz(3)
 
   @@map("gateway_release_state")
 }
@@ -334,15 +334,15 @@ model GatewayReleaseOperation {
   payload           Json                        @default(dbgenerated("'{}'::jsonb"))
   reason            String?
   requestedBy       String                      @map("requested_by")
-  startedAt         DateTime?                   @map("started_at")
-  completedAt       DateTime?                   @map("completed_at")
+  startedAt         DateTime?                   @map("started_at") @db.Timestamptz(3)
+  completedAt       DateTime?                   @map("completed_at") @db.Timestamptz(3)
   error             String?
   leaseOwner        String?                     @map("lease_owner")
-  leaseUntil        DateTime?                   @map("lease_until")
-  heartbeatAt       DateTime?                   @map("heartbeat_at")
+  leaseUntil        DateTime?                   @map("lease_until") @db.Timestamptz(6)
+  heartbeatAt       DateTime?                   @map("heartbeat_at") @db.Timestamptz(6)
   attempts          Int                         @default(0)
-  createdAt         DateTime                    @default(now()) @map("created_at")
-  updatedAt         DateTime                    @updatedAt @map("updated_at")
+  createdAt         DateTime                    @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt         DateTime                    @updatedAt @map("updated_at") @db.Timestamptz(3)
   logs              GatewayReleaseLog[]
 
   @@index([status, leaseUntil, createdAt])
@@ -356,7 +356,7 @@ model GatewayReleaseLog {
   level       String
   phase       String
   message     String                  @db.Text
-  createdAt   DateTime                @default(now()) @map("created_at")
+  createdAt   DateTime                @default(now()) @map("created_at") @db.Timestamptz(3)
   operation   GatewayReleaseOperation @relation(fields: [operationId], references: [id], onDelete: Cascade)
 
   @@index([operationId, id])
