@@ -1781,6 +1781,28 @@ test('내 정보에서 사람 장수의 등록 전콘을 골라 변경한다', a
     );
 });
 
+test('내 정보 아이템 파기 확인은 이름의 받침에 맞는 조사를 쓴다', async ({ page }) => {
+    const state: FixtureState = {
+        permission: 'member',
+        myset: 1,
+        richMyInfo: true,
+        settingMutations: [],
+        accessPages: [],
+    };
+    const prompts: string[] = [];
+    page.on('dialog', async (dialog) => {
+        prompts.push(dialog.message());
+        await dialog.dismiss();
+    });
+    await install(page, state);
+    await page.goto('my-page');
+
+    await page.getByRole('button', { name: '명마', exact: true }).click();
+    await page.getByRole('button', { name: '효경전', exact: true }).click();
+
+    expect(prompts).toEqual(['명마를 버리시겠습니까?', '효경전을 버리시겠습니까?']);
+});
+
 test('장수 생성에서 등록 전콘을 골라 생성 요청에 전달한다', async ({ page }) => {
     const firstIconId = '3f804277-584f-4f44-b39c-9ecf40d1ed31';
     const secondIconId = 'f6af46a2-809a-481d-b66d-0f7bbb706780';
