@@ -128,3 +128,13 @@ README에 정의된 경로에서 다음 순서로 확인하며, `down --volumes`
 기능이 어긋날 수 있으므로, 일반 배포의 manifest protocol 검사를 우회하지
 마세요. Self-upgrade CLI만 다음 protocol을 허용하며 schema head와 component는
 동일하게 검증합니다.
+
+Gateway 릴리스가 terminal인데 후속 profile 작업이 `QUEUED`, `attempts=0`에서
+두 poll 주기 이상 움직이지 않으면 build process를 종료할 문제가 아니라 profile
+orchestrator poll 자체를 조사합니다. Gateway 전환 직후 reconcile과 worktree cleanup이
+겹쳐도 PM2 Node client session은 직렬화되며, `connect/list` callback이 5초 안에 오지
+않으면 해당 scheduled task를 실패시켜 다음 poll로 자동 복구합니다. 이 timeout 전후에
+PM2 mutation을 수동 반복하지 말고 active Gateway release row가 없는지, orchestrator
+started 로그와 profile operation attempts가 그대로인지 먼저 확인합니다. 제한 복구가
+필요하면 현재 PM2 definition의 `sammo:gateway-orchestrator`만 재시작하고 Gateway
+API/frontend, release-controller, profile daemon과 container는 유지합니다.
