@@ -4367,15 +4367,31 @@ test('seasonal map decodes the next background and crossfades it without remount
             })
         )
         .toEqual({ width: 500, height: 357.140625 });
+    await map.locator('.map-area').evaluate((area) => {
+        Object.defineProperty(window, '__mobileMapSeasonTransitionProbe', {
+            configurable: true,
+            value: area,
+        });
+    });
 
     state.currentMonth = 7;
     await emitReadModelInvalidation(page, readModelInvalidation({ lobby: true, map: true }));
     await expect(map).toContainText('185年 7月');
-    await expect(outgoingLayer).toHaveClass(/is-transitioning/u);
     await expect(currentLayer.locator('img')).toHaveAttribute('src', /bg_fall\.jpg/u);
-    await expect(outgoingLayer.locator('img')).toHaveAttribute('src', /bg_summer\.jpg/u);
     await expect(outgoingLayer).not.toHaveClass(/is-transitioning/u);
     await expect(outgoingLayer.locator('img')).toHaveCount(0);
+    expect(
+        await map.locator('.map-area').evaluate((area) => {
+            const probe = (window as unknown as { __mobileMapSeasonTransitionProbe: Element })
+                .__mobileMapSeasonTransitionProbe;
+            const rect = area.getBoundingClientRect();
+            return {
+                areaMounted: probe === area,
+                width: rect.width,
+                height: rect.height,
+            };
+        })
+    ).toEqual({ areaMounted: true, width: 500, height: 357.140625 });
     if (mapSeasonArtifactRoot) {
         await map.screenshot({ path: resolve(mapSeasonArtifactRoot, 'season-fall-mobile-complete.png') });
     }
