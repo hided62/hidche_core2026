@@ -105,8 +105,6 @@ export default defineComponent({
                     cloneVNode(node, {
                         key: element,
                         [SORTABLE_ITEM_ATTRIBUTE]: element,
-                        // Prevent a long-list touch gesture from being cancelled as page scrolling.
-                        style: [node.props?.style, { touchAction: 'none' }],
                     })
                 )
             );

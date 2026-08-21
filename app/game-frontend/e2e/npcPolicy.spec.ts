@@ -344,7 +344,6 @@ test('physical mobile touch reorders NPC priority across active and inactive lis
         const nationPanel = mobilePage.locator('.priority-panel').first();
         const activeList = nationPanel.locator('.priority-column').nth(1).locator('.priority-list');
         const activeRows = activeList.locator('.priority-item');
-        await expect(activeRows.first()).toHaveCSS('touch-action', 'none');
         await touchDrag(
             mobilePage,
             activeRows.nth(0),
