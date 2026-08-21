@@ -2291,6 +2291,7 @@ test('keeps Ref command briefs and autonomous-action state after a turn mutation
 
 test('uses drag selection, clipboard paste, and a stored template in advanced mode', async ({ page }) => {
     const requests = await install(page);
+    await page.setViewportSize({ width: 1200, height: 900 });
     await page.goto('/');
 
     const editor = page.locator('[data-command-scope="general"]');
@@ -2317,6 +2318,41 @@ test('uses drag selection, clipboard paste, and a stored template in advanced mo
     await picker.getByTestId('command-argument-form').locator('select').selectOption('2');
     await picker.getByRole('button', { name: '입력', exact: true }).click();
     await expect(editor.locator('.action-column > div').nth(2)).toHaveText('【허창】에 화계실행');
+
+    const recentMenu = editor.locator('details').filter({ has: page.getByText('최근 실행', { exact: true }) });
+    await recentMenu.locator('summary').click();
+    const recentBriefButton = recentMenu.getByRole('button', { name: '【허창】에 화계실행', exact: true });
+    await expect(recentBriefButton).toBeVisible();
+    await recentBriefButton.hover();
+    await page.screenshot({
+        path: test.info().outputPath('advanced-recent-command-brief-desktop-1200.png'),
+        fullPage: true,
+    });
+    await recentMenu.locator('summary').click();
+    await page.setViewportSize({ width: 500, height: 900 });
+    await recentMenu.locator('summary').click();
+    await expect(recentBriefButton).toBeVisible();
+    await recentBriefButton.focus();
+    await expect(recentBriefButton).toBeFocused();
+    const mobileRecentGeometry = await editor.evaluate((element) => {
+        const menu = element.querySelector<HTMLElement>('details[open] .menu-items');
+        const recentButton = menu?.querySelector<HTMLElement>('button');
+        if (!menu || !recentButton) throw new Error('advanced recent command menu is missing');
+        return {
+            horizontalOverflow: element.scrollWidth - element.clientWidth,
+            menuRight: menu.getBoundingClientRect().right,
+            buttonRight: recentButton.getBoundingClientRect().right,
+        };
+    });
+    expect(mobileRecentGeometry.horizontalOverflow).toBeLessThanOrEqual(0);
+    expect(mobileRecentGeometry.menuRight).toBeLessThanOrEqual(500);
+    expect(mobileRecentGeometry.buttonRight).toBeLessThanOrEqual(500);
+    await page.screenshot({
+        path: test.info().outputPath('advanced-recent-command-brief-mobile-500.png'),
+        fullPage: true,
+    });
+    await recentMenu.locator('summary').click();
+    await page.setViewportSize({ width: 1200, height: 900 });
 
     await drag(0, 2);
     await editor.locator('details.selected-menu > summary').click();
