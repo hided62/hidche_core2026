@@ -885,9 +885,9 @@ const expectMobilePanelVisualOrder = async (page: Page, expectedOrder: readonly 
     expect(audit.panels.map(({ id }) => id)).toEqual(expectedOrder);
     expect(audit.visualOrder).toEqual(expectedOrder);
     expect(audit.panels.every(({ left, right, width }) => left >= 0 && right <= 500 && width === 500)).toBe(true);
-    expect(
-        audit.panels.every((panel, index) => index === 0 || panel.top >= audit.panels[index - 1]!.bottom)
-    ).toBe(true);
+    expect(audit.panels.every((panel, index) => index === 0 || panel.top >= audit.panels[index - 1]!.bottom)).toBe(
+        true
+    );
     for (const panel of audit.panels) {
         expect(panel.display, `${panel.id}: display`).not.toBe('none');
         expect(['static', 'relative'], `${panel.id}: position`).toContain(panel.position);
@@ -1125,9 +1125,7 @@ test('desktop menus preserve ref columns, prefix-safe routes, and controlled dro
     await expect(page.locator('.main-mobile-bottom')).toBeHidden();
     await expect(page.locator('.layout-desktop')).toBeVisible();
     await expect(page.locator('.layout-mobile')).toHaveCount(0);
-    await expect(page.getByRole('heading', { name: '메인 화면 검증 시나리오 체섭 101기', exact: true })).toHaveCount(
-        1
-    );
+    await expect(page.getByRole('heading', { name: '메인 화면 검증 시나리오 체섭 101기', exact: true })).toHaveCount(1);
     await expect(page.locator('.game-shell__subtitle')).toHaveCount(0);
     await expect(page.locator('.legacy-game-info')).toContainText('현재: 185년 1월');
     await expect(page.locator('.legacy-game-info')).toContainText('턴: 10분');
@@ -1279,7 +1277,9 @@ test('desktop menus preserve ref columns, prefix-safe routes, and controlled dro
     await persistArtifact(page, `${basePath.slice(1)}-desktop-1200`);
 });
 
-test('shows the persisted official game index beside the scenario title without viewport overflow', async ({ page }) => {
+test('shows the persisted official game index beside the scenario title without viewport overflow', async ({
+    page,
+}) => {
     const state: NavigationFixture = {
         officerLevel: 5,
         permission: 2,
@@ -2789,6 +2789,139 @@ test('real mobile devices initially fit the complete 500px game canvas', async (
     if (artifactRoot) {
         await writeFile(
             resolve(artifactRoot, 'initial-mobile-fit-computed-dom.json'),
+            `${JSON.stringify(measurements, null, 2)}\n`
+        );
+    }
+});
+
+test('automatic screen mode switches wide mobile screens to the 1000px layout at the Ref boundary', async ({
+    browser,
+}, testInfo) => {
+    test.setTimeout(60_000);
+    const configuredBaseUrl = testInfo.project.use.baseURL;
+    if (typeof configuredBaseUrl !== 'string') {
+        throw new Error('Playwright baseURL is required for the automatic screen-mode contract');
+    }
+
+    const measurements: Record<string, unknown> = {};
+    for (const deviceWidth of [699, 700, 820]) {
+        const context = await browser.newContext({
+            baseURL: configuredBaseUrl,
+            viewport: { width: deviceWidth, height: 1180 },
+            screen: { width: deviceWidth, height: 1180 },
+            deviceScaleFactor: 1,
+            isMobile: true,
+            hasTouch: true,
+            colorScheme: 'dark',
+        });
+        const mobilePage = await context.newPage();
+        const state: NavigationFixture = {
+            officerLevel: 5,
+            permission: 2,
+            nationLevel: 3,
+            stage: 6,
+            npcMode: 1,
+            generalMeCalls: 0,
+            operations: [],
+        };
+        await installFixture(mobilePage, state);
+        await waitForMain(mobilePage);
+
+        const expectedWideLayout = deviceWidth >= 700;
+        await expect(mobilePage.locator(expectedWideLayout ? '.layout-desktop' : '.layout-mobile')).toBeVisible();
+        expect(
+            await mobilePage.evaluate(() => document.querySelector<HTMLMetaElement>('meta[name="viewport"]')?.content)
+        ).toBe(expectedWideLayout ? 'width=1000' : 'width=device-width, initial-scale=1');
+        const modeMeasurements: Record<string, unknown> = {
+            auto: await mobilePage.locator('.main-page').evaluate((element) => {
+                const rect = element.getBoundingClientRect();
+                const mobileLayout = document.querySelector<HTMLElement>('.layout-mobile');
+                const desktopLayout = document.querySelector<HTMLElement>('.layout-desktop');
+                return {
+                    viewportMeta: document.querySelector<HTMLMetaElement>('meta[name="viewport"]')?.content,
+                    screenWidth: screen.availWidth,
+                    innerWidth: window.innerWidth,
+                    layoutViewportWidth: document.documentElement.clientWidth,
+                    visualViewportWidth: window.visualViewport?.width ?? null,
+                    visualViewportScale: window.visualViewport?.scale ?? null,
+                    mobileDisplay: mobileLayout ? getComputedStyle(mobileLayout).display : null,
+                    desktopDisplay: desktopLayout ? getComputedStyle(desktopLayout).display : null,
+                    canvas: { left: rect.left, right: rect.right, width: rect.width },
+                };
+            }),
+        };
+
+        if (deviceWidth === 820) {
+            await mobilePage.evaluate(() => {
+                localStorage.setItem('sam.screenMode', '500px');
+                document.dispatchEvent(new CustomEvent('tryChangeScreenMode'));
+            });
+            await expect(mobilePage.locator('.layout-mobile')).toBeVisible();
+            expect(
+                await mobilePage.evaluate(
+                    () => document.querySelector<HTMLMetaElement>('meta[name="viewport"]')?.content
+                )
+            ).toBe('width=500');
+            modeMeasurements.forced500 = await mobilePage.locator('.main-page').evaluate(() => {
+                const mobileLayout = document.querySelector<HTMLElement>('.layout-mobile');
+                const desktopLayout = document.querySelector<HTMLElement>('.layout-desktop');
+                return {
+                    viewportMeta: document.querySelector<HTMLMetaElement>('meta[name="viewport"]')?.content,
+                    layoutViewportWidth: document.documentElement.clientWidth,
+                    visualViewportWidth: window.visualViewport?.width ?? null,
+                    mobileDisplay: mobileLayout ? getComputedStyle(mobileLayout).display : null,
+                    desktopDisplay: desktopLayout ? getComputedStyle(desktopLayout).display : null,
+                };
+            });
+
+            await mobilePage.evaluate(() => {
+                localStorage.setItem('sam.screenMode', '1000px');
+                document.dispatchEvent(new CustomEvent('tryChangeScreenMode'));
+            });
+            await expect(mobilePage.locator('.layout-desktop')).toBeVisible();
+            expect(
+                await mobilePage.evaluate(
+                    () => document.querySelector<HTMLMetaElement>('meta[name="viewport"]')?.content
+                )
+            ).toBe('width=1000');
+            modeMeasurements.forced1000 = await mobilePage.locator('.main-page').evaluate(() => {
+                const mobileLayout = document.querySelector<HTMLElement>('.layout-mobile');
+                const desktopLayout = document.querySelector<HTMLElement>('.layout-desktop');
+                return {
+                    viewportMeta: document.querySelector<HTMLMetaElement>('meta[name="viewport"]')?.content,
+                    layoutViewportWidth: document.documentElement.clientWidth,
+                    visualViewportWidth: window.visualViewport?.width ?? null,
+                    mobileDisplay: mobileLayout ? getComputedStyle(mobileLayout).display : null,
+                    desktopDisplay: desktopLayout ? getComputedStyle(desktopLayout).display : null,
+                };
+            });
+
+            await mobilePage.evaluate(() => {
+                localStorage.setItem('sam.screenMode', 'auto');
+                document.dispatchEvent(new CustomEvent('tryChangeScreenMode'));
+            });
+            await expect(mobilePage.locator('.layout-desktop')).toBeVisible();
+            expect(
+                await mobilePage.evaluate(
+                    () => document.querySelector<HTMLMetaElement>('meta[name="viewport"]')?.content
+                )
+            ).toBe('width=1000');
+        }
+
+        measurements[String(deviceWidth)] = modeMeasurements;
+        if (artifactRoot) {
+            await mkdir(artifactRoot, { recursive: true });
+            await mobilePage.screenshot({
+                path: resolve(artifactRoot, `auto-screen-mode-${deviceWidth}.png`),
+                fullPage: true,
+            });
+        }
+        await context.close();
+    }
+
+    if (artifactRoot) {
+        await writeFile(
+            resolve(artifactRoot, 'auto-screen-mode-computed-dom.json'),
             `${JSON.stringify(measurements, null, 2)}\n`
         );
     }
