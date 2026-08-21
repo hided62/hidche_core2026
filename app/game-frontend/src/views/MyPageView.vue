@@ -10,6 +10,7 @@ import { resolveGeneralIconUrl, useDefaultGeneralIcon } from '../utils/generalIc
 import LegacyGeneralProgress from '../components/ui/LegacyGeneralProgress.vue';
 import GeneralBasicCard from '../components/main/GeneralBasicCard.vue';
 import { useGameFeedback } from '../composables/useGameFeedback';
+import { SCREEN_MODE_CHANGE_EVENT, SCREEN_MODE_KEY, type ScreenMode } from '../utils/screenModeViewport';
 import {
     DEFAULT_MOBILE_MAIN_PANEL_ORDER,
     loadMobileMainPanelOrder,
@@ -19,11 +20,9 @@ import {
     type MobileMainPanelId,
 } from '../utils/mobileMainPanelOrder';
 
-const SCREEN_MODE_KEY = 'sam.screenMode';
 const CUSTOM_CSS_KEY = 'sam_customCSS';
 const PENDING_DIE_ON_PRESTART_KEY = 'sam.pending.dieOnPrestart';
 const { success: showSuccessToast, error: showErrorToast, showDialog } = useGameFeedback();
-type ScreenMode = 'auto' | '500px' | '1000px';
 type LogType = 'generalHistory' | 'battleDetail' | 'battleResult' | 'generalAction';
 type ItemSlotKey = 'horse' | 'weapon' | 'book' | 'item';
 type MyGeneralResponse = Awaited<ReturnType<typeof trpc.general.me.query>>;
@@ -373,7 +372,7 @@ const dropItem = (item: { key: ItemSlotKey; slotName: string; displayName: strin
 
 watch(screenMode, (mode) => {
     localStorage.setItem(SCREEN_MODE_KEY, mode);
-    document.dispatchEvent(new CustomEvent('tryChangeScreenMode'));
+    document.dispatchEvent(new CustomEvent(SCREEN_MODE_CHANGE_EVENT));
 });
 
 watch(customCss, (text) => {
