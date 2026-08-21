@@ -1,3 +1,5 @@
+import { GAME_TICKS_PER_TURN } from '@sammo-ts/common';
+
 export interface GeneralBasicStats {
     leadership: number;
     strength: number;
@@ -52,4 +54,42 @@ export const resolveRemainingMinutes = (
         nextTurnMillis += turnTermSeconds * 1_000;
     }
     return Math.floor(Math.min(999, Math.max(0, (nextTurnMillis - lastExecuted.getTime()) / 60_000)));
+};
+
+export interface NextTurnMonthOffsetInput {
+    turnTime: Date;
+    turnTick?: bigint | number | null;
+    lastExecuted: Date | null;
+    lastTurnTick?: bigint | number | null;
+    turnSeconds: number;
+}
+
+const normalizeTick = (value: bigint | number | null | undefined): bigint | null => {
+    if (typeof value === 'bigint') return value;
+    if (typeof value === 'number' && Number.isSafeInteger(value)) return BigInt(value);
+    return null;
+};
+
+const turnBucket = (tick: bigint): bigint => {
+    const ticksPerTurn = BigInt(GAME_TICKS_PER_TURN);
+    const quotient = tick / ticksPerTurn;
+    return tick % ticksPerTurn < 0 ? quotient - 1n : quotient;
+};
+
+/**
+ * Ref Command.GetReservedCommand cuts both clocks to a gameplay-turn bucket.
+ * A general in the next bucket has already acted in the displayed world month,
+ * so the first reserved command belongs to the following month.
+ */
+export const resolveNextTurnMonthOffset = (input: NextTurnMonthOffsetInput): 0 | 1 => {
+    const turnTick = normalizeTick(input.turnTick);
+    const lastTurnTick = normalizeTick(input.lastTurnTick);
+    if (turnTick !== null && lastTurnTick !== null) {
+        return turnBucket(turnTick) > turnBucket(lastTurnTick) ? 1 : 0;
+    }
+
+    const turnTimeMs = input.turnTime.getTime();
+    const lastExecutedMs = input.lastExecuted?.getTime() ?? Number.NaN;
+    if (!Number.isFinite(turnTimeMs) || !Number.isFinite(lastExecutedMs) || input.turnSeconds <= 0) return 0;
+    return turnTimeMs >= lastExecutedMs + input.turnSeconds * 1_000 ? 1 : 0;
 };

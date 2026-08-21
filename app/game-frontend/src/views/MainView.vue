@@ -243,7 +243,15 @@ watch(
         </div>
 
         <div data-main-target="policy">
-            <MainFrontStatus :status="frontStatus" :tournament-stage="tournamentStage" />
+            <MainFrontStatus
+                :status="frontStatus"
+                :tournament-stage="tournamentStage"
+                :server-time="lobbyInfo?.serverTime"
+                :server-wall-time="lobbyInfo?.serverWallTime"
+                :clock-mode="lobbyInfo?.clockMode"
+                :clock-running="lobbyInfo?.clockRunning"
+                :clock-starts-at="lobbyInfo?.clockStartsAt"
+            />
         </div>
 
         <aside v-if="surveyNotice" class="survey-notice" role="status" aria-live="polite">
