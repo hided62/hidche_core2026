@@ -70,7 +70,7 @@ const handleClick = () => {
             <div v-for="row in props.rows" :key="row.index" class="chief-row" :class="{ rest: row.isRest }">
                 <span class="row-index">#{{ row.index + 1 }}</span>
                 <span class="row-time">{{ row.time }}</span>
-                <span class="row-action">{{ row.action }}</span>
+                <span class="row-action" :title="row.action">{{ row.action }}</span>
             </div>
         </div>
     </article>
