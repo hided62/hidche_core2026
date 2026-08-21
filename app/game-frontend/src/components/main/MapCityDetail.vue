@@ -184,6 +184,7 @@ const cityStateStyle = computed(() => ({
         :to="
             props.selectOnly || props.readonly ? undefined : { name: 'current-city', query: { cityId: props.city.id } }
         "
+        :aria-label="props.city.isMyCity ? `${props.city.name}, 현재 도시` : props.city.name"
         :class="[
             {
                 mine: props.city.isMyCity,
@@ -256,11 +257,16 @@ const cityStateStyle = computed(() => ({
 .city-filler {
     position: absolute;
     inset: -2px;
+    box-sizing: border-box;
     pointer-events: none;
 }
 
-.city-base.mine .city-icon {
-    box-shadow: 0 0 0 1px rgba(201, 164, 90, 0.7);
+.city-filler.my-city {
+    inset: -4px;
+    border: 1px solid rgba(255, 255, 255, 0.95);
+    border-radius: 2px;
+    outline: 2px solid rgb(211, 47, 47);
+    box-shadow: 0 0 6px 2px rgba(211, 47, 47, 0.72);
 }
 
 .city-base.selected .city-icon {

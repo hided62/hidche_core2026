@@ -481,6 +481,13 @@ test('map keeps desktop hover navigation and lets touch users choose one-tap or 
     await expect(page.locator('.map-tooltip .tooltip-title')).toHaveText('【하북|특】업');
     await desktopCity.click();
     await expect(page).toHaveURL(/\/current-city\?cityId=1$/u);
+    await page.goBack();
+    await expect(page).toHaveURL(/\/global-info$/u);
+    const retainedSelection = page.locator('.city-base').first();
+    await expect(retainedSelection).toHaveClass(/selected/);
+    expect(
+        await retainedSelection.locator('.city-icon').evaluate((element) => getComputedStyle(element).boxShadow)
+    ).toContain('255, 235, 150');
 
     const configuredBaseUrl = testInfo.project.use.baseURL;
     if (typeof configuredBaseUrl !== 'string') {

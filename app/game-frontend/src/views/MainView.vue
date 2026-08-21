@@ -324,7 +324,12 @@ watch(
 
                 <div v-else-if="panelId === 'map'" class="mobile-panel" data-mobile-panel-id="map">
                     <PanelCard title="지도" data-main-target="map">
-                        <MapViewer :map-data="worldMap" :map-layout="mapLayout" :loading="loading" />
+                        <MapViewer
+                            :map-data="worldMap"
+                            :map-layout="mapLayout"
+                            :loading="loading"
+                            :show-selection-border="false"
+                        />
                     </PanelCard>
                 </div>
 
@@ -415,7 +420,12 @@ watch(
 
         <section v-else class="layout-desktop">
             <PanelCard title="지도" subtitle="실시간 지도 + 도시 상황" data-main-target="map">
-                <MapViewer :map-data="worldMap" :map-layout="mapLayout" :loading="loading" />
+                <MapViewer
+                    :map-data="worldMap"
+                    :map-layout="mapLayout"
+                    :loading="loading"
+                    :show-selection-border="false"
+                />
             </PanelCard>
             <PanelCard title="명령 목록" aria-label="명령 목록" data-main-target="commands">
                 <CommandListPanel
