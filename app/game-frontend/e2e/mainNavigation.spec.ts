@@ -3909,6 +3909,11 @@ for (const viewport of [
                     path: '/inputOptions/context/actorGold',
                     value: 10_000 + refreshIndex,
                 },
+                {
+                    op: 'replace',
+                    path: '/inputOptions/items/weapon/1/label',
+                    value: `청룡언월도 갱신 ${refreshIndex}`,
+                },
             ];
             await emitReadModelInvalidation(
                 page,
@@ -3952,15 +3957,231 @@ for (const viewport of [
         await picker.getByRole('button', { name: '명령 다시 선택', exact: true }).click();
         await picker.getByRole('button', { name: '장비 매매', exact: true }).click();
         await picker.getByLabel('장비 종류', { exact: true }).selectOption('weapon');
-        await picker.getByLabel('장비', { exact: true }).selectOption('청룡언월도');
+        const equipment = picker.getByLabel('장비', { exact: true });
+        await equipment.selectOption('청룡언월도');
+        const optionLabelBeforeRefresh = await equipment
+            .locator('option[value="청룡언월도"]')
+            .textContent();
+        await equipment.evaluate((element) => {
+            const select = element as HTMLSelectElement;
+            const valueDescriptor = Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, 'value');
+            if (!valueDescriptor?.get || !valueDescriptor.set) throw new Error('native select value accessors missing');
+            const probe = {
+                node: select,
+                valueWrites: 0,
+                mutations: 0,
+                observer: null as MutationObserver | null,
+            };
+            Object.defineProperty(select, 'value', {
+                configurable: true,
+                get: () => valueDescriptor.get?.call(select),
+                set: (value: string) => {
+                    probe.valueWrites += 1;
+                    valueDescriptor.set?.call(select, value);
+                },
+            });
+            probe.observer = new MutationObserver((records) => {
+                probe.mutations += records.length;
+            });
+            probe.observer.observe(select, {
+                attributes: true,
+                characterData: true,
+                childList: true,
+                subtree: true,
+            });
+            select.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, pointerType: 'touch' }));
+            select.focus();
+            Object.defineProperty(window, '__nativeCommandSelectProbe', {
+                configurable: true,
+                value: probe,
+            });
+        });
+        const focusedGeometryBefore = await equipment.evaluate((element) => {
+            const rect = element.getBoundingClientRect();
+            const style = getComputedStyle(element);
+            return {
+                rect: { x: rect.x, y: rect.y, width: rect.width, height: rect.height },
+                color: style.color,
+                backgroundColor: style.backgroundColor,
+                fontFamily: style.fontFamily,
+                fontSize: style.fontSize,
+                lineHeight: style.lineHeight,
+                outline: style.outline,
+            };
+        });
         await refreshActivityAndCommands();
         await expect(picker.getByLabel('장비 종류', { exact: true })).toHaveValue('weapon');
-        await expect(picker.getByLabel('장비', { exact: true })).toHaveValue('청룡언월도');
+        await expect(equipment).toHaveValue('청룡언월도');
+        expect(await equipment.locator('option[value="청룡언월도"]').textContent()).toBe(optionLabelBeforeRefresh);
+        expect(
+            await equipment.evaluate((element) => {
+                const probe = (
+                    window as unknown as {
+                        __nativeCommandSelectProbe: {
+                            node: HTMLSelectElement;
+                            valueWrites: number;
+                            mutations: number;
+                        };
+                    }
+                ).__nativeCommandSelectProbe;
+                return {
+                    sameNode: probe.node === element,
+                    focused: document.activeElement === element,
+                    valueWrites: probe.valueWrites,
+                    mutations: probe.mutations,
+                };
+            })
+        ).toEqual({ sameNode: true, focused: true, valueWrites: 0, mutations: 0 });
+        expect(
+            await equipment.evaluate((element) => {
+                const rect = element.getBoundingClientRect();
+                const style = getComputedStyle(element);
+                return {
+                    rect: { x: rect.x, y: rect.y, width: rect.width, height: rect.height },
+                    color: style.color,
+                    backgroundColor: style.backgroundColor,
+                    fontFamily: style.fontFamily,
+                    fontSize: style.fontSize,
+                    lineHeight: style.lineHeight,
+                    outline: style.outline,
+                };
+            })
+        ).toEqual(focusedGeometryBefore);
+        await picker.screenshot({ path: test.info().outputPath(`native-select-refresh-${viewport.name}.png`) });
+
+        await picker.getByRole('button', { name: '명령 다시 선택', exact: true }).click();
+        await picker.getByRole('button', { name: '장비 매매', exact: true }).click();
+        await picker.getByLabel('장비 종류', { exact: true }).selectOption('weapon');
+        await expect(picker.getByLabel('장비', { exact: true }).locator('option[value="청룡언월도"]')).toHaveText(
+            `청룡언월도 갱신 ${refreshIndex}`
+        );
         await expect
             .poll(() => page.evaluate(() => document.documentElement.scrollWidth))
             .toBeLessThanOrEqual(viewport.width);
     });
 }
+
+test('keeps an Android Chromium native command select untouched while a turn signal refreshes options', async ({
+    browser,
+}) => {
+    const context = await browser.newContext({
+        viewport: { width: 390, height: 844 },
+        screen: { width: 390, height: 844 },
+        deviceScaleFactor: 2,
+        hasTouch: true,
+        isMobile: true,
+        userAgent:
+            'Mozilla/5.0 (Linux; Android 15; Mobile) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140.0.0.0 Mobile Safari/537.36',
+    });
+    try {
+        const mobilePage = await context.newPage();
+        const state: NavigationFixture = {
+            officerLevel: 5,
+            permission: 2,
+            nationLevel: 3,
+            stage: 0,
+            npcMode: 1,
+            generalMeCalls: 0,
+            operations: [],
+            draftCommandTable: true,
+            reservedTurns: Array.from({ length: 30 }, (_, index) => ({ index, action: '휴식', args: {} })),
+        };
+        await installRealtimeHarness(mobilePage);
+        await installFixture(mobilePage, state);
+        await waitForMain(mobilePage);
+        await expect
+            .poll(() =>
+                mobilePage.evaluate(
+                    () => (window as unknown as { __hasMainRealtime: () => boolean }).__hasMainRealtime()
+                )
+            )
+            .toBe(true);
+
+        await mobilePage.getByRole('button', { name: '1턴 명령 입력', exact: true }).click();
+        const picker = mobilePage.getByTestId('command-picker');
+        await picker.getByRole('button', { name: '국가', exact: true }).click();
+        await picker.getByRole('button', { name: '장비 매매', exact: true }).click();
+        await picker.getByLabel('장비 종류', { exact: true }).selectOption('weapon');
+        const equipment = picker.getByLabel('장비', { exact: true });
+        await equipment.selectOption('청룡언월도');
+        await equipment.evaluate((element) => {
+            const select = element as HTMLSelectElement;
+            const valueDescriptor = Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, 'value');
+            if (!valueDescriptor?.get || !valueDescriptor.set) throw new Error('native select value accessors missing');
+            const probe = { node: select, valueWrites: 0, mutations: 0 };
+            Object.defineProperty(select, 'value', {
+                configurable: true,
+                get: () => valueDescriptor.get?.call(select),
+                set: (value: string) => {
+                    probe.valueWrites += 1;
+                    valueDescriptor.set?.call(select, value);
+                },
+            });
+            new MutationObserver((records) => {
+                probe.mutations += records.length;
+            }).observe(select, { attributes: true, characterData: true, childList: true, subtree: true });
+            select.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, pointerType: 'touch' }));
+            select.focus();
+            Object.defineProperty(window, '__nativeCommandSelectProbe', { configurable: true, value: probe });
+        });
+
+        const callsBefore = state.generalMeCalls;
+        state.commandTableRevision = 'Z'.repeat(22);
+        state.commandTableOperations = [
+            {
+                op: 'replace',
+                path: '/inputOptions/items/weapon/1/label',
+                value: '청룡언월도 최신 조건',
+            },
+        ];
+        await emitReadModelInvalidation(
+            mobilePage,
+            readModelInvalidation({ commands: true, records: true, frontStatus: true })
+        );
+        await expect.poll(() => state.generalMeCalls).toBe(callsBefore + 1);
+        expect(
+            await equipment.evaluate((element) => {
+                const probe = (
+                    window as unknown as {
+                        __nativeCommandSelectProbe: {
+                            node: HTMLSelectElement;
+                            valueWrites: number;
+                            mutations: number;
+                        };
+                    }
+                ).__nativeCommandSelectProbe;
+                return {
+                    sameNode: probe.node === element,
+                    focused: document.activeElement === element,
+                    value: (element as HTMLSelectElement).value,
+                    option: (element as HTMLSelectElement).selectedOptions[0]?.textContent,
+                    valueWrites: probe.valueWrites,
+                    mutations: probe.mutations,
+                };
+            })
+        ).toEqual({
+            sameNode: true,
+            focused: true,
+            value: '청룡언월도',
+            option: '청룡언월도',
+            valueWrites: 0,
+            mutations: 0,
+        });
+        await picker.screenshot({ path: test.info().outputPath('native-select-refresh-android-chromium.png') });
+        expect(
+            await mobilePage.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)
+        ).toBeLessThanOrEqual(1);
+
+        await picker.getByRole('button', { name: '명령 다시 선택', exact: true }).click();
+        await picker.getByRole('button', { name: '장비 매매', exact: true }).click();
+        await picker.getByLabel('장비 종류', { exact: true }).selectOption('weapon');
+        await expect(picker.getByLabel('장비', { exact: true }).locator('option[value="청룡언월도"]')).toHaveText(
+            '청룡언월도 최신 조건'
+        );
+    } finally {
+        await context.close();
+    }
+});
 
 for (const viewport of [
     { name: 'desktop', width: 1200, height: 900 },
