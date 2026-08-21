@@ -1047,6 +1047,10 @@ const persistArtifact = async (page: Page, name: string) => {
             quickPopup: describe('#mobile-quick-menu'),
             gameHeader: describe('.game-shell__header'),
             gameTitle: describe('.game-shell__title'),
+            commandPanel: describe('[data-main-target="commands"]'),
+            mapPanel: describe('[data-main-target="map"]'),
+            cityPanel: describe('[data-main-target="city"]'),
+            turnEditor: describe('[data-main-target="commands"] .reserved-command-editor'),
             turnControls: describe('.main-turn-controls'),
             turnAutoRefresh: describe('.main-turn-controls__auto'),
             turnManualRefresh: describe('.main-turn-controls__manual'),
@@ -3266,13 +3270,21 @@ test('places the joined refresh controls and lobby below the turn editor without
         });
 
     let layout = await measure();
-    const cityBottom = await page
-        .locator('[data-main-target="city"]')
-        .evaluate((element) => element.getBoundingClientRect().bottom);
-    expect(layout.commands.bottom).toBe(cityBottom);
-    expect(layout.commands.height).toBeCloseTo(645, 0);
+    const leftColumn = await page.evaluate(() => {
+        const map = document.querySelector<HTMLElement>('[data-main-target="map"]');
+        const city = document.querySelector<HTMLElement>('[data-main-target="city"]');
+        if (!map || !city) throw new Error('desktop map or city panel is missing');
+        const mapRect = map.getBoundingClientRect();
+        const cityRect = city.getBoundingClientRect();
+        return { top: mapRect.top, bottom: cityRect.bottom, height: cityRect.bottom - mapRect.top };
+    });
+    expect(layout.commands.top).toBe(leftColumn.top);
+    expect(layout.commands.bottom).toBe(leftColumn.bottom);
+    expect(layout.commands.height).toBeCloseTo(leftColumn.height, 2);
+    expect(layout.commands.height).toBeGreaterThanOrEqual(645);
+    expect(layout.commands.height).toBeLessThan(647);
     expect(layout.controlsAfterEditor).toBe(true);
-    expect(layout.controls.top).toBeGreaterThanOrEqual(layout.editor.bottom);
+    expect(layout.controls.top - layout.editor.bottom).toBeCloseTo(4, 2);
     expect(layout.manual.right).toBe(layout.auto.left);
     expect(layout.pair.right + 4).toBe(layout.lobby.left);
     expect(layout.manualRadius).toEqual({ topRight: '0px', bottomRight: '0px' });
@@ -3294,13 +3306,14 @@ test('places the joined refresh controls and lobby below the turn editor without
     await expect(page.getByTestId('game-toast')).toContainText('이미 정보를 갱신하고 있습니다.');
     await expect(manualRefresh).toHaveAttribute('aria-busy', 'false');
     expect(state.generalMeCalls).toBe(callsBeforeManualRefresh + 1);
+    await persistArtifact(page, `${basePath.slice(1)}-main-turn-action-layout-desktop`);
 
     await page.setViewportSize({ width: 500, height: 900 });
     await expect(page.locator('.layout-mobile .main-turn-controls')).toBeVisible();
     layout = await measure();
     expect(layout.commands.width).toBe(500);
     expect(layout.controlsAfterEditor).toBe(true);
-    expect(layout.controls.top).toBeGreaterThanOrEqual(layout.editor.bottom);
+    expect(layout.controls.top - layout.editor.bottom).toBeCloseTo(4, 2);
     expect(layout.manual.right).toBe(layout.auto.left);
     expect(layout.pair.right + 4).toBe(layout.lobby.left);
     expect(layout.overflow).toBeLessThanOrEqual(0);

@@ -49,6 +49,7 @@ const emit = defineEmits<{
     display: grid;
     grid-template-columns: minmax(0, 2fr) minmax(0, 1fr);
     gap: 4px;
+    margin-top: 4px;
 }
 
 .main-turn-controls__refresh-pair {
