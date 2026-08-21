@@ -218,6 +218,42 @@ export const getNationTurnSnapshot = async (
     };
 };
 
+export const getNationTurnSnapshots = async (
+    db: DatabaseClient,
+    nationId: number,
+    officerLevels: readonly number[]
+): Promise<Map<number, ReservedTurnSnapshot>> => {
+    const levels = [...new Set(officerLevels)];
+    if (levels.length === 0) return new Map();
+    const [turnRows, revisionRows] = await Promise.all([
+        db.nationTurn.findMany({
+            where: { nationId, officerLevel: { in: levels } },
+            orderBy: [{ officerLevel: 'asc' }, { turnIdx: 'asc' }],
+        }),
+        db.nationTurnRevision.findMany({
+            where: { nationId, officerLevel: { in: levels } },
+        }),
+    ]);
+    const turnsByLevel = new Map<number, NationTurnRow[]>();
+    for (const row of turnRows) {
+        const rows = turnsByLevel.get(row.officerLevel) ?? [];
+        rows.push(row);
+        turnsByLevel.set(row.officerLevel, rows);
+    }
+    const revisionByLevel = new Map(revisionRows.map((row) => [row.officerLevel, row.revision]));
+    return new Map(
+        levels.map((level) => [
+            level,
+            {
+                revision: revisionByLevel.get(level) ?? 0,
+                turns: serializeTurnList(
+                    buildTurnListFromRows(turnsByLevel.get(level) ?? [], MAX_NATION_TURNS)
+                ),
+            },
+        ])
+    );
+};
+
 const claimGeneralRevision = async (
     db: DatabaseClient,
     generalId: number,

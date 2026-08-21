@@ -3,7 +3,7 @@ import { TRPCError } from '@trpc/server';
 import { accessAuthedProcedure } from '../../../trpc.js';
 import { getMyGeneral } from '../../shared/general.js';
 import { resolveSecretPermission } from '../../shared/secretPermission.js';
-import { MAX_NATION_TURNS, getNationTurnSnapshot } from '../../../turns/reservedTurns.js';
+import { MAX_NATION_TURNS, getNationTurnSnapshots } from '../../../turns/reservedTurns.js';
 import { assertNationAccess } from '../shared.js';
 
 export const getChiefCenter = accessAuthedProcedure.query(async ({ ctx }) => {
@@ -56,17 +56,18 @@ export const getChiefCenter = accessAuthedProcedure.query(async ({ ctx }) => {
     const chiefLevels = [12, 10, 8, 6, 11, 9, 7, 5];
     const generalByLevel = new Map(nationGenerals.map((general) => [general.officerLevel, general]));
 
-    const turnsByLevel = await Promise.all(chiefLevels.map((level) => getNationTurnSnapshot(ctx.db, nation.id, level)));
+    const turnsByLevel = await getNationTurnSnapshots(ctx.db, nation.id, chiefLevels);
 
-    const chiefs = chiefLevels.map((level, idx) => {
+    const chiefs = chiefLevels.map((level) => {
         const entry = generalByLevel.get(level);
+        const snapshot = turnsByLevel.get(level);
         return {
             officerLevel: level,
             name: entry?.name ?? null,
             npcState: entry?.npcState ?? null,
             turnTime: entry?.turnTime ? entry.turnTime.toISOString() : null,
-            revision: turnsByLevel[idx]?.revision ?? 0,
-            turns: turnsByLevel[idx]?.turns ?? [],
+            revision: snapshot?.revision ?? 0,
+            turns: snapshot?.turns ?? [],
         };
     });
 
