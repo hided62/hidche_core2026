@@ -72,12 +72,14 @@ const props = withDefaults(
         detailMode?: boolean;
         fitContainer?: boolean;
         showCurrentCityMarker?: boolean;
+        showSelectionBorder?: boolean;
         readonly?: boolean;
     }>(),
     {
         // Vue casts an absent Boolean prop to false unless undefined is an explicit default.
         detailMode: undefined,
         selectedCityId: undefined,
+        showSelectionBorder: true,
     }
 );
 
@@ -176,6 +178,7 @@ const effectiveDetailMode = computed(() => props.detailMode ?? storeDetailMode.v
 const effectiveSelectedCityId = computed(() =>
     props.selectedCityId === undefined ? storeSelectedCityId.value : props.selectedCityId
 );
+const isSelectionMap = computed(() => props.selectedCityId !== undefined);
 
 const mapWidth = computed(() => `${BASE_MAP_WIDTH * mapScale.value}px`);
 
@@ -213,7 +216,7 @@ const cityViews = computed<CityView[]>(() => {
             y,
             isCapital: nation?.capitalCityId === layoutCity.id,
             isMyCity: props.mapData?.myCity === layoutCity.id,
-            selected: effectiveSelectedCityId.value === layoutCity.id,
+            selected: props.showSelectionBorder && effectiveSelectedCityId.value === layoutCity.id,
         };
     });
 });
@@ -417,7 +420,7 @@ const touchCity = (cityId: number, event: TouchEvent) => {
     if (touchPreviewCityId.value !== cityId) {
         touchPreviewCityId.value = cityId;
         setHoveredCity(cityId);
-        if (!singleTapNavigation.value) {
+        if (!isSelectionMap.value && !singleTapNavigation.value) {
             event.preventDefault();
         }
     }
@@ -469,7 +472,7 @@ const selectCity = (cityId: number) => {
                     :city="city"
                     :map-scale="mapScale"
                     :show-name="showCityName"
-                    :select-only="props.selectedCityId !== undefined"
+                    :select-only="isSelectionMap"
                     :readonly="props.readonly"
                     v-bind="detailProps"
                     @hover="setHoveredCity"
@@ -497,7 +500,7 @@ const selectCity = (cityId: number) => {
                         도시명 표기 {{ showCityName ? '끄기' : '켜기' }}
                     </button>
                     <button
-                        v-if="hasTouchInput"
+                        v-if="hasTouchInput && !isSelectionMap && !props.readonly"
                         class="map-toggle map-toggle-single-tap"
                         :class="{ active: singleTapNavigation }"
                         :aria-pressed="singleTapNavigation"

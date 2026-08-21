@@ -2,7 +2,7 @@ import { expect, test, type Page, type Route } from '@playwright/test';
 import { readFile } from 'node:fs/promises';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { gameProfile, gameTrpcRoute } from './gameTestPaths.js';
+import { gamePath, gameProfile, gameTrpcRoute } from './gameTestPaths.js';
 import { touchDrag } from './touchDrag.js';
 
 const repositoryRoot = resolve(dirname(fileURLToPath(import.meta.url)), '../../..');
@@ -1403,6 +1403,32 @@ test('enters general and nation command arguments and sends exact values', async
     await page.setViewportSize({ width: 1200, height: 900 });
     await page.goto('/');
     await expect(page.getByTestId('current-city-marker')).toHaveCount(0);
+    const mainMap = page.locator('[data-main-target="map"]');
+    const currentMainCity = mainMap.locator('.city-base.mine');
+    await expect(currentMainCity).toHaveAttribute('aria-label', '업, 현재 도시');
+    const currentCityHighlight = await currentMainCity.locator('.city-filler.my-city').evaluate((element) => {
+        const style = getComputedStyle(element);
+        return {
+            outlineColor: style.outlineColor,
+            outlineStyle: style.outlineStyle,
+            outlineWidth: style.outlineWidth,
+            animationName: style.animationName,
+            boxShadow: style.boxShadow,
+        };
+    });
+    expect(currentCityHighlight).toMatchObject({
+        outlineColor: 'rgb(211, 47, 47)',
+        outlineStyle: 'solid',
+        outlineWidth: '2px',
+        animationName: 'none',
+    });
+    expect(currentCityHighlight.boxShadow).toContain('211, 47, 47');
+    await mainMap.screenshot({ path: test.info().outputPath('main-map-current-city-static-highlight-desktop.png') });
+    await mainMap.locator('.city-base').nth(1).click();
+    await expect(page).toHaveURL(/\/current-city\?cityId=2$/u);
+    await page.goBack();
+    await expect(page).toHaveURL(/\/$/u);
+    await expect(page.locator('[data-main-target="map"] .city-base.selected')).toHaveCount(0);
 
     await page.getByRole('button', { name: '1턴 명령 입력', exact: true }).click();
     await page.getByTestId('command-picker').getByRole('button', { name: /화계/ }).click();
@@ -1464,6 +1490,12 @@ test('enters general and nation command arguments and sends exact values', async
     await expect(currentCityMarker).toHaveAttribute('aria-label', '현재 도시 업');
     await expect(mapCities.nth(0)).toHaveClass(/mine/);
     await expect(mapCities.nth(1)).toHaveClass(/selected/);
+    expect(
+        await mapCities
+            .nth(1)
+            .locator('.city-icon')
+            .evaluate((element) => getComputedStyle(element).boxShadow)
+    ).toContain('255, 235, 150');
     await mapCities.nth(1).hover();
     expect(await mapCities.nth(1).evaluate((element) => getComputedStyle(element).cursor)).toBe('pointer');
     await mapCities.nth(1).focus();
@@ -1480,7 +1512,7 @@ test('enters general and nation command arguments and sends exact values', async
         '【허창】에 화계실행'
     );
 
-    await page.goto('/che/chief-center');
+    await page.goto(gamePath('/chief-center'));
     await page.getByRole('button', { name: '1턴 명령 입력', exact: true }).click();
     const chiefPicker = page.getByTestId('command-picker');
     await chiefPicker.getByRole('button', { name: /^(?:국가:)?인사$/, exact: true }).click();
@@ -1834,6 +1866,66 @@ test('uses the map to choose a nation target in the chief command window', async
     await expect(page).toHaveURL(/\/che\/chief-center$/);
     expect(JSON.stringify(requests)).toContain('"generalId":1');
     await page.screenshot({ path: test.info().outputPath('chief-nation-map-option.png'), fullPage: true });
+});
+
+test('touch command maps select city and nation on the first tap without changing navigation mode', async ({
+    browser,
+}, testInfo) => {
+    const configuredBaseUrl = testInfo.project.use.baseURL;
+    if (typeof configuredBaseUrl !== 'string') {
+        throw new Error('Playwright baseURL is required for the mobile command map contract');
+    }
+    const context = await browser.newContext({
+        baseURL: configuredBaseUrl,
+        viewport: { width: 390, height: 844 },
+        screen: { width: 390, height: 844 },
+        deviceScaleFactor: 1,
+        isMobile: true,
+        hasTouch: true,
+        colorScheme: 'dark',
+    });
+    const mobilePage = await context.newPage();
+
+    try {
+        await install(mobilePage);
+        await mobilePage.addInitScript(() => localStorage.setItem('sam.toggleSingleTap', 'no'));
+        await mobilePage.goto('/');
+
+        const mainCurrentCity = mobilePage.locator('[data-main-target="map"] .city-base.mine');
+        await expect(mainCurrentCity).toHaveAttribute('aria-label', '업, 현재 도시');
+        await expect(mobilePage.locator('[data-main-target="map"] .city-base.selected')).toHaveCount(0);
+        await mobilePage.locator('[data-main-target="map"]').screenshot({
+            path: testInfo.outputPath('main-map-current-city-static-highlight-mobile.png'),
+        });
+
+        await mobilePage.getByRole('button', { name: '1턴 명령 입력', exact: true }).click();
+        await mobilePage.getByTestId('command-picker').getByRole('button', { name: /화계/ }).click();
+        let form = mobilePage.getByTestId('command-argument-form');
+        let commandMap = form.getByTestId('command-argument-map');
+        await expect(commandMap.locator('.map-toggle-single-tap')).toHaveCount(0);
+        await commandMap.locator('.city-base').nth(1).tap();
+        await expect(form.locator('#command-arg-destCityId')).toHaveValue('2');
+        await expect(commandMap.locator('.city-base').nth(1)).toHaveClass(/selected/);
+        await expect(mobilePage).toHaveURL(/\/$/u);
+
+        await mobilePage.goto(gamePath('/chief-center'));
+        await mobilePage.getByRole('button', { name: '1턴 명령 입력', exact: true }).click();
+        const picker = mobilePage.getByTestId('command-picker');
+        await picker.getByRole('button', { name: /^(?:국가:)?외교$/, exact: true }).click();
+        await picker.getByRole('button', { name: /선전포고/ }).click();
+        form = picker.getByTestId('command-argument-form');
+        commandMap = form.getByTestId('command-argument-map');
+        await expect(commandMap.locator('.map-toggle-single-tap')).toHaveCount(0);
+        await commandMap.locator('.city-base').nth(1).tap();
+        await expect(form.locator('#command-arg-destNationId')).toHaveValue('2');
+        await expect(commandMap.locator('.city-base').nth(1)).toHaveClass(/selected/);
+        await expect(mobilePage).toHaveURL(new RegExp(`${gamePath('/chief-center')}$`, 'u'));
+        expect(await mobilePage.evaluate(() => localStorage.getItem('sam.toggleSingleTap'))).toBe('no');
+
+        await mobilePage.screenshot({ path: testInfo.outputPath('command-map-first-tap-selection-mobile.png') });
+    } finally {
+        await context.close();
+    }
 });
 
 test('shows a map and target details for every city or nation argument chief command except assignment', async ({

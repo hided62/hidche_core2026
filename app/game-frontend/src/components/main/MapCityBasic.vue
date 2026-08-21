@@ -68,6 +68,7 @@ const touchend = (event: TouchEvent) => {
         :to="
             props.selectOnly || props.readonly ? undefined : { name: 'current-city', query: { cityId: props.city.id } }
         "
+        :aria-label="props.city.isMyCity ? `${props.city.name}, 현재 도시` : props.city.name"
         :class="[
             `state-${props.city.stateClass}`,
             {
@@ -125,6 +126,7 @@ const touchend = (event: TouchEvent) => {
 }
 
 .city-dot {
+    position: relative;
     border: 1px solid rgba(232, 221, 196, 0.6);
     display: flex;
     align-items: center;
@@ -138,8 +140,16 @@ const touchend = (event: TouchEvent) => {
     background: rgba(232, 221, 196, 0.9);
 }
 
-.map-city.mine .city-dot {
-    box-shadow: 0 0 0 2px rgba(201, 164, 90, 0.6);
+.map-city.mine .city-dot::after {
+    position: absolute;
+    inset: -4px;
+    box-sizing: border-box;
+    border: 1px solid rgba(255, 255, 255, 0.95);
+    border-radius: 2px;
+    outline: 2px solid rgb(211, 47, 47);
+    box-shadow: 0 0 6px 2px rgba(211, 47, 47, 0.72);
+    content: '';
+    pointer-events: none;
 }
 
 .map-city.selected .city-dot {
