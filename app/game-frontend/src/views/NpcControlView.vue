@@ -448,7 +448,7 @@ const submitPriority = async (section: PrioritySectionKey) => {
                         <div class="priority-column">
                             <div class="sub_bar legacy-bg2">비활성</div>
                             <SortableStringList
-                                :list="panel.state.inactive"
+                                v-model:list="panel.state.inactive"
                                 :group="`npc-priority-${panel.key}`"
                                 tag="div"
                                 class="priority-list"
@@ -477,7 +477,7 @@ const submitPriority = async (section: PrioritySectionKey) => {
                         <div class="priority-column">
                             <div class="sub_bar legacy-bg2">활성</div>
                             <SortableStringList
-                                :list="panel.state.active"
+                                v-model:list="panel.state.active"
                                 :group="`npc-priority-${panel.key}`"
                                 tag="div"
                                 class="priority-list"
