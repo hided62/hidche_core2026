@@ -112,6 +112,15 @@ const myGeneral = (state: FixtureState) => ({
             statUpgradeLimit: 20,
             dex: [350, 1_375, 3_500, 7_125, 1_275_975],
         },
+        records: {
+            battles: 8,
+            strategies: 12,
+            serviceYears: 4,
+            wins: 5,
+            losses: 3,
+            killedCrew: 12_345,
+            lostCrew: 6_789,
+        },
         items: { horse: 'che_명마', weapon: null, book: null, item: null },
         itemNames: { horse: '명마', weapon: null, book: null, item: null },
     },
@@ -1184,6 +1193,9 @@ test('내 정보&설정 keeps desktop density and becomes a 390px horizontal-ide
     expect(myPageImages[1]?.backgroundImage).toContain('/game/crewtype1.png');
     await expect(page.locator('.legacy-general-details')).toContainText('계급 29품관');
     await expect(page.locator('.legacy-general-details')).toContainText('병종 보병');
+    await expect(page.locator('.legacy-general-details')).toContainText('전투 8 · 계략 12 · 사관 4년');
+    await expect(page.locator('.legacy-general-details')).toContainText('승률 62.50% · 승리 5 · 패배 3');
+    await expect(page.locator('.legacy-general-details')).toContainText('살상률 181.84% · 사살 12,345 · 피살 6,789');
     await expect(page.locator('.item-group')).toContainText('명마');
     await expect(page.locator('#container')).not.toContainText('che_');
     await expect(page.locator('.title-row')).toContainText('내 정 보');

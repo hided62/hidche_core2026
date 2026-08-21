@@ -224,6 +224,63 @@ describe('war triggers', () => {
         expect(general.atmos).toBeCloseTo(115.5, 12);
     });
 
+    it('accumulates battle, victory, loss, and casualty records on the persisted rank meta keys', () => {
+        const attacker = buildGeneral(80);
+        attacker.meta = { ...attacker.meta, rank_warnum: 2, rank_killnum: 3, rank_killcrew: 400 };
+        const defender = {
+            ...buildGeneral(70),
+            id: 2,
+            name: 'Defender',
+            nationId: 2,
+            meta: { ...buildGeneral(70).meta, rank_warnum: 4, rank_deathnum: 1, rank_deathcrew: 500 },
+        };
+        const crewType = new WarCrewType(buildUnitSet().crewTypes![0]!);
+        const attackerUnit = new WarUnitGeneral(
+            new RandUtil(new ConstantRNG(0)),
+            buildConfig(),
+            attacker,
+            buildCity(),
+            buildNation(),
+            true,
+            crewType,
+            new ActionLogger({ generalId: attacker.id, nationId: attacker.nationId }),
+            new WarActionPipeline([])
+        );
+        const defenderUnit = new WarUnitGeneral(
+            new RandUtil(new ConstantRNG(0)),
+            buildConfig(),
+            defender,
+            { ...buildCity(), nationId: 2 },
+            { ...buildNation(), id: 2 },
+            false,
+            crewType,
+            new ActionLogger({ generalId: defender.id, nationId: defender.nationId }),
+            new WarActionPipeline([])
+        );
+
+        attackerUnit.setOppose(defenderUnit);
+        defenderUnit.setOppose(attackerUnit);
+        attackerUnit.increaseKilled(120);
+        defenderUnit.decreaseHP(120);
+        attackerUnit.addWin();
+        defenderUnit.addLose();
+        attackerUnit.finishBattle();
+        defenderUnit.finishBattle();
+
+        expect(attacker.meta).toMatchObject({
+            rank_warnum: 3,
+            rank_killnum: 4,
+            rank_killcrew: 520,
+            rank_killcrew_person: 120,
+        });
+        expect(defender.meta).toMatchObject({
+            rank_warnum: 5,
+            rank_deathnum: 2,
+            rank_deathcrew: 620,
+            rank_deathcrew_person: 120,
+        });
+    });
+
     it('updates the legacy experience level and applies item experience modifiers immediately', () => {
         const general = buildGeneral(80);
         general.experience = 90;

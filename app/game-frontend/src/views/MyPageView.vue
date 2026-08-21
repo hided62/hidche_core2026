@@ -136,6 +136,9 @@ const statusLine = computed(() =>
 
 const canSave = computed(() => (data.value?.settings.myset ?? 1) > 0);
 const penalties = computed(() => Object.entries(data.value?.penalties ?? {}));
+const numberText = (value: number): string => value.toLocaleString('ko-KR');
+const percentText = (numerator: number, denominator: number): string =>
+    `${((numerator / Math.max(denominator, 1)) * 100).toFixed(2)}%`;
 const noDefencePenaltyWaived = computed(() => {
     const environment = asRecord(world.value?.config.environment);
     return isDefenceTrainPenaltyWaivedByScenarioEffect(
@@ -437,9 +440,22 @@ onMounted(() => {
                                     }})</strong
                                 >
                             </div>
-                            <div>전투 0 · 계략 0 · 사관 7년</div>
-                            <div>승률 0% · 승리 0 · 패배 0</div>
-                            <div>살상률 0% · 사살 0 · 피살 0</div>
+                            <div>
+                                전투 {{ numberText(data.general.records.battles) }} · 계략
+                                {{ numberText(data.general.records.strategies) }} · 사관
+                                {{ numberText(data.general.records.serviceYears) }}년
+                            </div>
+                            <div>
+                                승률 {{ percentText(data.general.records.wins, data.general.records.battles) }} · 승리
+                                {{ numberText(data.general.records.wins) }} · 패배
+                                {{ numberText(data.general.records.losses) }}
+                            </div>
+                            <div>
+                                살상률
+                                {{ percentText(data.general.records.killedCrew, data.general.records.lostCrew) }} · 사살
+                                {{ numberText(data.general.records.killedCrew) }} · 피살
+                                {{ numberText(data.general.records.lostCrew) }}
+                            </div>
                             <div>
                                 소속 {{ data.nation?.name ?? '재야' }} · 도시 {{ data.city?.name ?? '-' }} · 병종
                                 {{ data.general.crewTypeName ?? '-' }} · 내정특기

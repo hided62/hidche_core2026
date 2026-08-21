@@ -2,7 +2,7 @@ import { TRPCError } from '@trpc/server';
 import { z } from 'zod';
 
 import { LogCategory, LogScope } from '@sammo-ts/logic';
-import { asRecord } from '@sammo-ts/common';
+import { asRecord, type RankDataType } from '@sammo-ts/common';
 
 import type { GameApiContext } from '../../context.js';
 import {
@@ -63,6 +63,14 @@ const zImmediateActionInput = z
     })
     .optional();
 const MAIN_RECORD_LIMIT = 15;
+const PERSONAL_RECORD_TYPES = [
+    'firenum',
+    'warnum',
+    'killnum',
+    'deathnum',
+    'killcrew',
+    'deathcrew',
+] as const satisfies readonly RankDataType[];
 const NEUTRAL_NATION_CONTEXT = {
     id: 0,
     name: '재야',
@@ -276,7 +284,7 @@ export const getGeneralContext = async (ctx: GameApiContext) => {
 
     const metaRecord = asRecord(general.meta);
     const officerCityId = readNumber(metaRecord.officerCity ?? metaRecord.officer_city ?? metaRecord.officerCityId, 0);
-    const [city, queriedNation, worldState, officerCity, troop, troopLeader, troopLeaderFirstTurn, accessLog] =
+    const [city, queriedNation, worldState, officerCity, troop, troopLeader, troopLeaderFirstTurn, accessLog, rankRows] =
         await Promise.all([
             general.cityId > 0
                 ? ctx.db.city.findUnique({
@@ -345,6 +353,10 @@ export const getGeneralContext = async (ctx: GameApiContext) => {
             ctx.db.generalAccessLog.findUnique({
                 where: { generalId: general.id },
                 select: { refreshScore: true, refreshScoreTotal: true },
+            }),
+            ctx.db.rankData.findMany({
+                where: { generalId: general.id, type: { in: [...PERSONAL_RECORD_TYPES] } },
+                select: { type: true, value: true },
             }),
         ]);
     const nation = queriedNation ?? NEUTRAL_NATION_CONTEXT;
@@ -466,6 +478,8 @@ export const getGeneralContext = async (ctx: GameApiContext) => {
     };
     const refreshScore = accessLog?.refreshScore ?? 0;
     const refreshScoreTotal = accessLog?.refreshScoreTotal ?? 0;
+    const rankValues = new Map(rankRows.map((row) => [row.type, row.value]));
+    const rankValue = (type: (typeof PERSONAL_RECORD_TYPES)[number]): number => rankValues.get(type) ?? 0;
     const troopStatus: 'inactive' | 'present' | 'away' =
         troopLeaderFirstTurn?.actionCode !== undefined && troopLeaderFirstTurn.actionCode !== 'che_집합'
             ? 'inactive'
@@ -526,6 +540,15 @@ export const getGeneralContext = async (ctx: GameApiContext) => {
                 },
                 statUpgradeLimit: readNumber(constValues.upgradeLimit, 30),
                 dex: [1, 2, 3, 4, 5].map((index) => readNumber(metaRecord[`dex${index}`], 0)),
+            },
+            records: {
+                battles: rankValue('warnum'),
+                strategies: rankValue('firenum'),
+                serviceYears: readNumber(metaRecord.belong, 0),
+                wins: rankValue('killnum'),
+                losses: rankValue('deathnum'),
+                killedCrew: rankValue('killcrew'),
+                lostCrew: rankValue('deathcrew'),
             },
             items: {
                 horse: normalizeItemCode(general.horseCode),
