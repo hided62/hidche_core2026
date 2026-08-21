@@ -209,11 +209,15 @@ onMounted(() => {
 <template>
     <main id="container" class="pageVote bg0">
         <header class="back_bar bg0">
-            <button class="legacy-button legacy-button--navigation back_btn" type="button" @click="router.push('/')">
+            <button
+                class="legacy-button legacy-button--navigation legacy-button--fixed-height back_btn"
+                type="button"
+                @click="router.push('/')"
+            >
                 창 닫기
             </button>
             <button
-                class="legacy-button legacy-button--navigation reload_btn"
+                class="legacy-button legacy-button--navigation legacy-button--fixed-height reload_btn"
                 type="button"
                 :disabled="loading"
                 @click="reloadVote"
@@ -453,8 +457,7 @@ onMounted(() => {
 
 .back_btn,
 .reload_btn {
-    height: 32px;
-    min-height: 32px;
+    --legacy-button-height: 32px;
     margin-right: 2px;
     font-weight: 600;
 }

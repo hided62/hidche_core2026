@@ -349,7 +349,7 @@ describeDb('scenario database seed', () => {
             databaseUrl,
             now: new Date('2030-01-01T00:00:00Z'),
             installOptions: {
-                turnTermMinutes: 60,
+                turnTermMinutes: 3,
                 sync: false,
                 fiction: 1,
                 extend: false,
@@ -383,7 +383,7 @@ describeDb('scenario database seed', () => {
             if (!worldState) {
                 return;
             }
-            expect(worldState.tickSeconds).toBe(3600);
+            expect(worldState.tickSeconds).toBe(180);
             expect(worldState.currentMonth).toBe(1);
 
             const config = (worldState.config ?? {}) as Record<string, unknown>;
@@ -395,7 +395,7 @@ describeDb('scenario database seed', () => {
             expect(meta.develcost).toBe(
                 (worldState.currentYear - (scenario.startYear ?? worldState.currentYear) + 10) * 2
             );
-            expect(meta.killturn).toBe(80);
+            expect(meta.killturn).toBe(1600);
             const autorun = (meta.autorun_user ?? {}) as Record<string, unknown>;
             const autorunOptions = (autorun.options ?? {}) as Record<string, unknown>;
             expect(autorunOptions.develop).toBe(true);

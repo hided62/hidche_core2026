@@ -205,6 +205,86 @@ test('nation generals keeps the 1000px legacy grid and redacted member columns',
     await expect(page.locator('#nation-general-list')).toContainText('?');
 });
 
+test('nation generals top controls share fixed Lumen state geometry on desktop and mobile', async ({
+    page,
+}, testInfo) => {
+    await install(page);
+    const evidence: Record<string, unknown> = {};
+
+    for (const viewport of [
+        { width: 1200, height: 900 },
+        { width: 500, height: 900 },
+    ]) {
+        await page.setViewportSize(viewport);
+        await page.goto('nation/generals');
+        await expect(page.locator('#nation-general-list')).toBeVisible();
+        const controls = [
+            page.getByRole('button', { name: '돌아가기' }),
+            page.getByRole('button', { name: '갱신' }),
+            page.getByRole('button', { name: '보기 모드⌄' }),
+            page.getByRole('button', { name: '열 선택⌄' }),
+        ];
+        const viewportEvidence: Record<string, unknown> = {};
+
+        for (const control of controls) {
+            const label = (await control.textContent())?.trim() ?? 'unknown';
+            await expect(control).toHaveClass(/legacy-button--fixed-height/u);
+            const measure = () =>
+                control.evaluate((element) => {
+                    const rect = element.getBoundingClientRect();
+                    const style = getComputedStyle(element);
+                    return {
+                        top: rect.top,
+                        bottom: rect.bottom,
+                        height: rect.height,
+                        marginTop: style.marginTop,
+                        borderBottomWidth: style.borderBottomWidth,
+                        borderRadius: style.borderRadius,
+                        backgroundColor: style.backgroundColor,
+                        fontFamily: style.fontFamily,
+                        fontSize: style.fontSize,
+                    };
+                });
+            await page.mouse.move(viewport.width - 1, viewport.height - 1);
+            const base = await measure();
+            expect(base).toMatchObject({
+                height: 32,
+                marginTop: '0px',
+                borderBottomWidth: '4px',
+                borderRadius: '5.25px',
+                fontSize: '14px',
+            });
+            expect(base.fontFamily).toContain('Pretendard');
+
+            await control.hover();
+            const hover = await measure();
+            expect(hover).toMatchObject({ height: 31, marginTop: '1px', borderBottomWidth: '3px' });
+            expect(hover.bottom).toBeCloseTo(base.bottom, 2);
+
+            const box = await control.boundingBox();
+            if (!box) throw new Error(`${label} control is not measurable`);
+            await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+            await page.mouse.down();
+            const active = await measure();
+            expect(active).toMatchObject({ height: 30, marginTop: '2px', borderBottomWidth: '2px' });
+            expect(active.bottom).toBeCloseTo(base.bottom, 2);
+            await page.mouse.move(viewport.width - 1, viewport.height - 1);
+            await page.mouse.up();
+            viewportEvidence[label] = { default: base, hover, active };
+        }
+        evidence[`${viewport.width}x${viewport.height}`] = viewportEvidence;
+        await page.screenshot({
+            path: testInfo.outputPath(`nation-general-buttons-${viewport.width}.png`),
+            fullPage: true,
+        });
+    }
+
+    await testInfo.attach('nation-general-button-geometry', {
+        body: JSON.stringify(evidence, null, 2),
+        contentType: 'application/json',
+    });
+});
+
 test('nation generals restores Ref group, saved view, sort, and Korean search behavior', async ({ page }, testInfo) => {
     await install(page);
     await page.setViewportSize({ width: 1200, height: 900 });
@@ -405,17 +485,20 @@ test('secret office renders five Ref-style command briefs and the forbidden erro
         '5 : 휴식',
     ]);
     await expect(commandRows.nth(2)).toHaveAttribute('title', '【다른장수】에게 쌀 200을 증여');
-    const geometry = await page.locator('#secret-general-list .turns').first().evaluate((element) => {
-        const rect = element.getBoundingClientRect();
-        const style = getComputedStyle(element);
-        return {
-            width: rect.width,
-            height: rect.height,
-            fontSize: style.fontSize,
-            textAlign: style.textAlign,
-            horizontalOverflow: element.scrollWidth - element.clientWidth,
-        };
-    });
+    const geometry = await page
+        .locator('#secret-general-list .turns')
+        .first()
+        .evaluate((element) => {
+            const rect = element.getBoundingClientRect();
+            const style = getComputedStyle(element);
+            return {
+                width: rect.width,
+                height: rect.height,
+                fontSize: style.fontSize,
+                textAlign: style.textAlign,
+                horizontalOverflow: element.scrollWidth - element.clientWidth,
+            };
+        });
     expect(geometry.width).toBeGreaterThanOrEqual(190);
     expect(geometry.width).toBeLessThanOrEqual(230);
     expect(geometry.height).toBeGreaterThanOrEqual(60);

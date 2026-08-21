@@ -14,6 +14,7 @@ defineProps<{
                     <button
                         type="button"
                         role="tab"
+                        class="legacy-button legacy-button--dark legacy-button--fixed-height"
                         :aria-selected="activePage === 'tournament'"
                         :class="{ active: activePage === 'tournament' }"
                         @click="navigate"
@@ -25,6 +26,7 @@ defineProps<{
                     <button
                         type="button"
                         role="tab"
+                        class="legacy-button legacy-button--dark legacy-button--fixed-height"
                         :aria-selected="activePage === 'betting'"
                         :class="{ active: activePage === 'betting' }"
                         @click="navigate"
@@ -34,7 +36,13 @@ defineProps<{
                 </RouterLink>
             </nav>
             <RouterLink v-slot="{ navigate }" custom to="/">
-                <button class="close-button" type="button" @click="navigate">창 닫기</button>
+                <button
+                    class="legacy-button legacy-button--navigation legacy-button--fixed-height close-button"
+                    type="button"
+                    @click="navigate"
+                >
+                    창 닫기
+                </button>
             </RouterLink>
         </div>
     </header>
@@ -64,33 +72,21 @@ defineProps<{
     gap: 4px;
 }
 button {
-    height: 44px;
+    --legacy-button-height: 44px;
     margin: 0;
-    border: 1px solid #666;
-    border-radius: 5.25px;
-    background: #444;
-    color: #fff;
     font-size: 14px;
-    line-height: 18px;
-    cursor: pointer;
 }
 .tournament-page-tabs button {
     min-width: 72px;
     padding: 10px 12px;
 }
 .tournament-page-tabs button.active {
-    border-color: #f39c12;
-    background: #8a5b13;
+    --legacy-button-bg: #8a5b13;
+    --legacy-button-border: #704a0f;
 }
 .close-button {
     width: 88px;
     padding: 10px 16px;
-    border-color: #375a7f;
-    background: #375a7f;
-}
-button:hover,
-button:focus {
-    filter: brightness(1.25);
 }
 button:focus-visible {
     outline: 2px solid #f39c12;

@@ -144,7 +144,7 @@
 /*
  * Ref Bootstrap 5.2 + Lumen button family. This class owns the common raised
  * edge and pressed movement. Semantic modifiers below only select face, edge,
- * and text colors; width and fixed-height compensation stay with the owner.
+ * and text colors; width and the optional fixed-height value stay with the owner.
  * Existing semantic modifiers also opt in for backward compatibility.
  */
 .legacy-button:is(
@@ -171,6 +171,15 @@
     line-height: 21px;
     /* Ref's framework baseline for these controls. */
     vertical-align: middle;
+}
+
+/*
+ * Top bars and other fixed rows keep their owner-provided height while using
+ * the same Lumen edge movement. Shrinking the box with the edge keeps its
+ * bottom coordinate fixed instead of moving the whole control down.
+ */
+.legacy-button.legacy-button--fixed-height {
+    height: var(--legacy-button-height);
 }
 
 .legacy-button.legacy-button--secondary {
@@ -213,6 +222,10 @@
     background: var(--legacy-button-bg);
 }
 
+.legacy-button.legacy-button--fixed-height:not(:disabled, [aria-disabled='true']):is(:hover, [aria-expanded='true']) {
+    height: calc(var(--legacy-button-height) - 1px);
+}
+
 .legacy-button:is(
         .legacy-button--lumen,
         .legacy-button--primary,
@@ -242,6 +255,10 @@
     border-bottom-width: 2px;
     background: var(--legacy-button-bg);
     box-shadow: none;
+}
+
+.legacy-button.legacy-button--fixed-height:not(:disabled, [aria-disabled='true']):active {
+    height: calc(var(--legacy-button-height) - 2px);
 }
 
 .legacy-button:is(

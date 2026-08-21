@@ -983,7 +983,7 @@ test('loads server metadata defaults into the reset form and submits them', asyn
         runtimeRunning: true,
         requestBodies: [],
         resetDefaults: {
-            turnTermMinutes: 20,
+            turnTermMinutes: 3,
             sync: false,
             fiction: 0,
             extend: false,
@@ -999,7 +999,7 @@ test('loads server metadata defaults into the reset form and submits them', asyn
     page.on('dialog', (dialog) => dialog.accept());
 
     await page.goto('admin/servers/che%3Adefault/scenario');
-    await expect(page.getByTestId('reset-turn-term')).toHaveValue('20');
+    await expect(page.getByTestId('reset-turn-term')).toHaveValue('3');
     await page.getByText('고급 시나리오 옵션').click();
     await expect(page.getByTestId('reset-defaults-source')).toContainText('서버의 메타');
     await expect(page.getByTestId('reset-npc-mode')).toHaveValue('1');
@@ -1013,7 +1013,7 @@ test('loads server metadata defaults into the reset form and submits them', asyn
     const request = JSON.stringify(
         state.requestBodies.find((entry) => entry.operation === 'admin.operations.requestReset')?.body
     );
-    expect(request).toContain('"turnTermMinutes":20');
+    expect(request).toContain('"turnTermMinutes":3');
     expect(request).toContain('"npcMode":1');
     expect(request).toContain('"joinMode":"onlyRandom"');
     expect(request).toContain('"limitMinutes":720');
@@ -1125,7 +1125,7 @@ test('edits server reset defaults through profile metadata settings', async ({ p
 
     await page.goto('admin/servers/che%3Adefault');
     await page.getByText('서버 리셋 기본 옵션').click();
-    await page.getByTestId('meta-reset-turn-term').selectOption('10');
+    await page.getByTestId('meta-reset-turn-term').selectOption('3');
     await page.getByTestId('meta-reset-npc-mode').selectOption('2');
 
     await page.getByRole('button', { name: '메타 저장' }).click();
@@ -1172,7 +1172,7 @@ test('edits server reset defaults through profile metadata settings', async ({ p
         state.requestBodies.find((entry) => entry.operation === 'admin.profiles.updateMeta')?.body
     );
     expect(request).toContain('"resetDefaults"');
-    expect(request).toContain('"turnTermMinutes":10');
+    expect(request).toContain('"turnTermMinutes":3');
     expect(request).toContain('"npcMode":2');
 });
 

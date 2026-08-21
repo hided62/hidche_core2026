@@ -2218,7 +2218,43 @@ test('main cards and command input stay inside their Ref-sized grid slots', asyn
     await selectedMenu.evaluate((element) => ((element as HTMLDetailsElement).open = false));
     await expect(selectedMenu).not.toHaveAttribute('open', '');
 
-    await page.locator('[data-main-target="commands"] .select-command').click();
+    const selectCommand = page.locator('[data-main-target="commands"] .select-command');
+    await expect(selectCommand).toHaveClass(/legacy-button--info/u);
+    await page.mouse.move(1, 1);
+    const measureSelectCommand = () =>
+        selectCommand.evaluate((element) => {
+            const rect = element.getBoundingClientRect();
+            const style = getComputedStyle(element);
+            return {
+                top: rect.top,
+                bottom: rect.bottom,
+                height: rect.height,
+                marginTop: style.marginTop,
+                borderBottomWidth: style.borderBottomWidth,
+                borderRadius: style.borderRadius,
+                backgroundColor: style.backgroundColor,
+            };
+        });
+    const selectDefault = await measureSelectCommand();
+    expect(selectDefault).toMatchObject({
+        height: 34,
+        marginTop: '0px',
+        borderBottomWidth: '4px',
+        borderRadius: '5.25px',
+        backgroundColor: 'rgb(52, 152, 219)',
+    });
+    await selectCommand.hover();
+    const selectHover = await measureSelectCommand();
+    expect(selectHover).toMatchObject({ height: 33, marginTop: '1px', borderBottomWidth: '3px' });
+    expect(selectHover.bottom).toBeCloseTo(selectDefault.bottom, 2);
+    const selectBox = await selectCommand.boundingBox();
+    if (!selectBox) throw new Error('select command control is not measurable');
+    await page.mouse.move(selectBox.x + selectBox.width / 2, selectBox.y + selectBox.height / 2);
+    await page.mouse.down();
+    const selectActive = await measureSelectCommand();
+    expect(selectActive).toMatchObject({ height: 32, marginTop: '2px', borderBottomWidth: '2px' });
+    expect(selectActive.bottom).toBeCloseTo(selectDefault.bottom, 2);
+    await page.mouse.up();
     const picker = page.getByTestId('command-picker');
     await expect(picker).toBeVisible();
     // The trigger can end up directly above a newly opened category button.

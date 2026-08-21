@@ -49,7 +49,6 @@ const zServerAction = z.enum([
     'SHUTDOWN',
 ]);
 
-const TURN_TERM_MINUTES = [1, 2, 5, 10, 20, 30, 60, 120] as const;
 const AUTORUN_USER_OPTIONS = ['develop', 'warp', 'recruit', 'recruit_high', 'train', 'battle', 'chief'] as const;
 
 const ADMIN_ROLE_PREFIX = 'admin.';
@@ -430,7 +429,9 @@ const zInstallAutorun = z.object({
     options: z.array(z.enum(AUTORUN_USER_OPTIONS)),
 });
 
-const isAllowedTurnTerm = (value: number): boolean => TURN_TERM_MINUTES.some((term) => term === value);
+// Ref aligns a 12-month game year inside a 24-hour wall-clock day. That makes
+// every positive divisor of 120 valid, including 3 and 8 minutes.
+const isAllowedTurnTerm = (value: number): boolean => Number.isInteger(value) && value > 0 && 120 % value === 0;
 
 const zRuntimeSettings = z
     .object({
@@ -438,7 +439,7 @@ const zRuntimeSettings = z
             .number()
             .int()
             .refine((value) => isAllowedTurnTerm(value), {
-                message: 'turnTermMinutes must divide 120.',
+                message: '턴 시간은 120의 약수여야 합니다.',
             })
             .optional(),
         blockGeneralCreate: z.union([z.literal(0), z.literal(1), z.literal(2)]).optional(),
@@ -464,7 +465,7 @@ const zInstallOptions = z.object({
         .number()
         .int()
         .refine((value) => isAllowedTurnTerm(value), {
-            message: 'turnTermMinutes must divide 120.',
+            message: '턴 시간은 120의 약수여야 합니다.',
         }),
     sync: z.boolean(),
     fiction: z.number().int().min(0).max(1),

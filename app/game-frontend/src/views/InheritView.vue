@@ -449,10 +449,12 @@ onMounted(() => {
 
 <template>
     <header class="top-back-bar legacy-bg0">
-        <RouterLink class="top-button legacy-button legacy-button--navigation" to="/">돌아가기</RouterLink>
+        <RouterLink class="top-button legacy-button legacy-button--navigation legacy-button--fixed-height" to="/"
+            >돌아가기</RouterLink
+        >
         <strong>유산 관리</strong>
         <button
-            class="top-button legacy-button legacy-button--navigation"
+            class="top-button legacy-button legacy-button--navigation legacy-button--fixed-height"
             type="button"
             :disabled="loading"
             @click="loadStatus"
@@ -786,8 +788,7 @@ onMounted(() => {
 }
 
 .top-button {
-    height: 32px;
-    min-height: 32px;
+    --legacy-button-height: 32px;
     padding: 2px 8px;
     text-decoration: none;
 }

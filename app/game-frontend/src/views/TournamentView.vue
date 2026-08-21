@@ -190,10 +190,16 @@ const start = async () => {
         <TournamentPageHeader class="bg0" active-page="tournament" title="삼모전 토너먼트" />
 
         <section class="toolbar bg0">
-            <button type="button" @click="load">갱신</button>
+            <button
+                class="legacy-button legacy-button--secondary legacy-button--fixed-height"
+                type="button"
+                @click="load"
+            >
+                갱신
+            </button>
             <button
                 type="button"
-                class="join-button"
+                class="legacy-button legacy-button--navigation legacy-button--fixed-height join-button"
                 :disabled="snapshot?.state?.stage !== 1 || isParticipant"
                 @click="join"
             >
@@ -382,7 +388,9 @@ const start = async () => {
         <input type="hidden" name="tournamentAction" value="join" />
         <footer class="tournament-footer bg0">
             <RouterLink v-slot="{ navigate }" custom to="/">
-                <button class="close-button" type="button" @click="navigate">창 닫기</button>
+                <button class="legacy-button legacy-button--navigation close-button" type="button" @click="navigate">
+                    창 닫기
+                </button>
             </RouterLink>
             <small>
                 삼국지 모의전투 HiDCHe / KOEI의 이미지를 사용, 응용하였습니다 / 제작 : HideD(hided62@gmail.com) / Credit
@@ -439,8 +447,8 @@ const start = async () => {
     padding: 1px;
 }
 .toolbar button {
+    --legacy-button-height: 44px;
     min-width: 72px;
-    height: 44px;
     padding: 10px 16px;
     font-size: 14px;
 }
@@ -451,7 +459,7 @@ const start = async () => {
     min-height: 32px;
     padding: 5px;
 }
-button {
+button:not(.legacy-button) {
     height: 35.5px;
     margin: 0 2px;
     border: 1px solid #666;
@@ -460,16 +468,17 @@ button {
     color: #fff;
     cursor: pointer;
 }
-button:hover,
-button:focus {
+button:not(.legacy-button):hover,
+button:not(.legacy-button):focus {
     filter: brightness(1.25);
 }
-button:focus-visible {
+button:not(.legacy-button):focus-visible {
     outline: 2px solid #f39c12;
     outline-offset: 1px;
 }
 .join-button {
-    background: #8a5b13;
+    --legacy-button-bg: #8a5b13;
+    --legacy-button-border: #704a0f;
 }
 .operator-row span {
     color: orange;
