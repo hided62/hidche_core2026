@@ -2,6 +2,8 @@
 import { formatServerDateTime } from '@sammo-ts/common/time/ServerDateTime';
 import { computed, onMounted, ref } from 'vue';
 import { useRouter } from 'vue-router';
+import { formatReservedCommandBrief } from '../components/command/reservedCommandBrief';
+import type { CommandTable } from '../components/command/types';
 import { useGameFeedback } from '../composables/useGameFeedback';
 import { getNpcColor } from '../utils/npcColor';
 import { legacyNationTextColor } from '../utils/legacyNationColor';
@@ -13,10 +15,12 @@ type SecretResult = Awaited<ReturnType<typeof trpc.nation.getSecretGeneralList.q
 type PersonnelResult = Awaited<ReturnType<typeof trpc.nation.getPersonnelInfo.query>>;
 type City = Result['cities'][number];
 type SecretGeneral = SecretResult['generals'][number];
+type ReservedCommand = SecretGeneral['reservedCommands'][number];
 type OfficerLevel = 2 | 3 | 4;
 type Sort = 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10 | 11 | 12;
 const data = ref<Result | null>(null);
 const secretData = ref<SecretResult | null>(null);
+const commandTable = ref<CommandTable | null>(null);
 const personnelData = ref<PersonnelResult | null>(null);
 const error = ref('');
 const integrationError = ref('');
@@ -148,6 +152,8 @@ const commandNeedsAttention = (city: City, command: string): boolean => {
     if (normalized.includes('성벽보수')) return city.wall - city.wallMax > -700;
     return false;
 };
+const commandBrief = (command: ReservedCommand): string =>
+    formatReservedCommandBrief('general', command.action, command.args, commandTable.value);
 
 const loadSecretIntegration = async (): Promise<void> => {
     if (secretLoading.value) {
@@ -161,7 +167,10 @@ const loadSecretIntegration = async (): Promise<void> => {
     secretLoading.value = true;
     integrationError.value = '';
     try {
-        secretData.value = await trpc.nation.getSecretGeneralList.query();
+        const secret = await trpc.nation.getSecretGeneralList.query();
+        const table = await trpc.turns.getCommandTable.query({ generalId: secret.viewer.generalId });
+        secretData.value = secret;
+        commandTable.value = table;
     } catch (cause) {
         integrationError.value = cause instanceof Error ? cause.message : '암행부 연동에 실패했습니다.';
         showErrorToast(integrationError.value);
@@ -496,13 +505,17 @@ onMounted(async () => {
                                             <div
                                                 v-for="(command, commandIndex) in general.reservedCommands"
                                                 :key="commandIndex"
+                                                :title="commandBrief(command)"
                                             >
                                                 {{ commandIndex + 1 }} :
                                                 <span
                                                     :class="{
-                                                        'command-attention': commandNeedsAttention(city, command),
+                                                        'command-attention': commandNeedsAttention(
+                                                            city,
+                                                            commandBrief(command)
+                                                        ),
                                                     }"
-                                                    >{{ command }}</span
+                                                    >{{ commandBrief(command) }}</span
                                                 >
                                             </div>
                                         </template>

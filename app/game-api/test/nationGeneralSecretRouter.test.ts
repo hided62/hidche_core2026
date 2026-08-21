@@ -84,7 +84,16 @@ const fixture = (generals: GeneralRow[], userId = 'u1') => {
         city: { findMany: vi.fn(async () => [{ id: 1, name: '업' }]) },
         troop: { findMany: vi.fn(async () => [{ troopLeaderId: 2, name: '선봉대' }]) },
         worldState: { findFirst: vi.fn(async () => null) },
-        generalTurn: { findMany: vi.fn(async () => [{ generalId: 1, turnIdx: 0, actionCode: '징병' }]) },
+        generalTurn: {
+            findMany: vi.fn(async () => [
+                {
+                    generalId: 1,
+                    turnIdx: 0,
+                    actionCode: 'che_징병',
+                    arg: { crewType: 1, amount: 300 },
+                },
+            ]),
+        },
         generalAccessLog: {
             findMany: vi.fn(async () => generals.map((g) => ({ generalId: g.id, refreshScoreTotal: g.id * 10 }))),
         },
@@ -134,6 +143,14 @@ describe('nation general and secret office permissions', () => {
         expect(result.viewer).toEqual({ generalId: 2, permission: 2 });
         expect(result.generals.map((g) => g.id)).toEqual([1, 2, 3]);
         expect(result.summary).toMatchObject({ gold: 5000, crew: 800, generalCount: 3 });
+        expect(result.generals[0]?.reservedCommands).toEqual([
+            { action: 'che_징병', args: { crewType: 1, amount: 300 } },
+        ]);
+        expect(db.generalTurn.findMany).toHaveBeenCalledWith(
+            expect.objectContaining({
+                select: { generalId: true, turnIdx: true, actionCode: true, arg: true },
+            })
+        );
         expect(db.general.findFirst).toHaveBeenCalledWith({ where: { userId: 'u2' } });
         expect(db.general.findMany).toHaveBeenCalledWith(expect.objectContaining({ where: { nationId: 1 } }));
     });
