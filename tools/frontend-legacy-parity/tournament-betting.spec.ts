@@ -366,11 +366,15 @@ test('tournament reloads its snapshot after failed and successful joins without 
     await expect.poll(() => state.snapshotQueries).toBe(1);
 
     await join.click();
-    await expect(page.getByRole('status')).toHaveText('금이 부족합니다.');
+    await expect(page.locator('[data-testid="game-toast"][data-feedback-kind="error"]')).toContainText(
+        '금이 부족합니다.'
+    );
     await expect.poll(() => state.snapshotQueries).toBe(2);
 
     await join.click();
-    await expect(page.getByRole('status')).toHaveText('참가 신청이 반영되었습니다.');
+    await expect(page.locator('[data-testid="game-toast"][data-feedback-kind="success"]')).toContainText(
+        '참가 신청이 반영되었습니다.'
+    );
     await expect.poll(() => state.snapshotQueries).toBe(3);
     expect(state.summaryQueries).toBe(3);
     expect(state.accessCalls).toBe(0);
@@ -423,12 +427,14 @@ test('betting keeps the 1120px and 16 by 70px layout and retains a failed select
     await bet.focus();
     await expect(bet).toBeFocused();
     await bet.click();
-    await expect(page.getByRole('status')).toHaveText('500금까지만 베팅 가능합니다.');
+    await expect(page.getByRole('alert')).toHaveText('500금까지만 베팅 가능합니다.');
     await expect(select).toHaveValue('500');
     await expect.poll(() => state.snapshotQueries).toBe(2);
 
     await bet.click();
-    await expect(page.getByRole('status')).toHaveText('베팅이 등록되었습니다.');
+    await expect(page.locator('[data-testid="game-toast"][data-feedback-kind="success"]')).toContainText(
+        '베팅이 등록되었습니다.'
+    );
     await expect.poll(() => state.snapshotQueries).toBe(3);
     expect(state.summaryQueries).toBe(3);
     expect(state.rankingQueries).toBe(3);

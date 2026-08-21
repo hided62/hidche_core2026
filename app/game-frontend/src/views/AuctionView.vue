@@ -5,6 +5,7 @@ import { useRoute } from 'vue-router';
 
 import { formatLog } from '../utils/formatLog';
 import { trpc } from '../utils/trpc';
+import { useGameFeedback } from '../composables/useGameFeedback';
 
 type AuctionOverview = Awaited<ReturnType<typeof trpc.auction.getOverview.query>>;
 type ResourceAuction = AuctionOverview['resourceAuctions'][number];
@@ -16,12 +17,12 @@ const activeTab = ref<'resource' | 'unique'>(route.query.type === 'unique' ? 'un
 const loading = ref(false);
 const actionBusy = ref(false);
 const error = ref<string | null>(null);
-const message = ref<string | null>(null);
 const overview = ref<AuctionOverview | null>(null);
 const selectedResource = ref<ResourceAuction | null>(null);
 const selectedUnique = ref<UniqueAuction | null>(null);
 const uniqueDetail = ref<UniqueDetail | null>(null);
 const bidAmount = ref(0);
+const { success: showSuccessToast, error: showErrorToast } = useGameFeedback();
 
 const openForm = reactive({
     type: 'BUY_RICE' as 'BUY_RICE' | 'SELL_RICE',
@@ -111,12 +112,11 @@ const runAction = async (action: () => Promise<void>): Promise<void> => {
     }
     actionBusy.value = true;
     error.value = null;
-    message.value = null;
     try {
         await action();
         await loadOverview();
     } catch (err) {
-        error.value = resolveErrorMessage(err);
+        showErrorToast(resolveErrorMessage(err));
     } finally {
         actionBusy.value = false;
     }
@@ -134,7 +134,7 @@ const openResourceAuction = (): Promise<void> =>
             openForm.type === 'BUY_RICE'
                 ? await trpc.auction.openBuyRice.mutate(input)
                 : await trpc.auction.openSellRice.mutate(input);
-        message.value = `${result.auctionId}번 경매로 등록되었습니다.`;
+        showSuccessToast(`${result.auctionId}번 경매로 등록되었습니다.`);
     });
 
 const bidResourceAuction = (): Promise<void> =>
@@ -151,7 +151,7 @@ const bidResourceAuction = (): Promise<void> =>
         } else {
             await trpc.auction.bidSellRice.mutate({ auctionId: auction.id, amount: bidAmount.value });
         }
-        message.value = '입찰했습니다.';
+        showSuccessToast('입찰했습니다.');
     });
 
 const bidUniqueAuction = (): Promise<void> =>
@@ -172,14 +172,13 @@ const bidUniqueAuction = (): Promise<void> =>
             amount: bidAmount.value,
             tryExtendCloseDate: false,
         });
-        message.value = '입찰이 완료되었습니다.';
+        showSuccessToast('입찰이 완료되었습니다.');
     });
 
 const closeWindow = (): void => window.close();
 
 watch(activeTab, (tab) => {
     error.value = null;
-    message.value = null;
     if (tab === 'unique' && !selectedUnique.value && ongoingUnique.value[0]) {
         void selectUnique(ongoingUnique.value[0]);
     }
@@ -230,7 +229,6 @@ onMounted(() => {
         </header>
 
         <p v-if="error" class="auction-notice error" role="alert">{{ error }}</p>
-        <p v-if="message" class="auction-notice success" role="status">{{ message }}</p>
         <div v-if="loading && !overview" class="loading-state">불러오는 중...</div>
 
         <section v-else-if="activeTab === 'resource'" class="resource-auction bg0">
@@ -755,9 +753,6 @@ input:focus-visible {
 }
 .auction-notice.error {
     background: #842029;
-}
-.auction-notice.success {
-    background: #0f5132;
 }
 .loading-state {
     min-height: 120px;

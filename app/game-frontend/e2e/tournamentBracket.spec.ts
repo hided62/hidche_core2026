@@ -372,7 +372,9 @@ test('join refresh shows the assigned preliminary group immediately with accessi
     await expect(page.getByLabel('토너먼트 대진표')).toHaveCount(0);
     await join.click();
 
-    await expect(page.getByRole('status')).toHaveText('참가 신청이 반영되었습니다. 六조에 배정되었습니다.');
+    await expect(page.locator('[data-testid="game-toast"][data-feedback-kind="success"]')).toContainText(
+        '참가 신청이 반영되었습니다. 六조에 배정되었습니다.'
+    );
     await expect(join).toBeDisabled();
     const preliminaryTabs = page.getByRole('tablist', { name: '예선 조 선택' });
     await expect(preliminaryTabs.getByRole('tab').nth(5)).toHaveAttribute('aria-selected', 'true');
@@ -413,7 +415,9 @@ test('desktop join scrolls the assigned preliminary group into view without futu
     await expect(page.getByLabel('토너먼트 대진표')).toHaveCount(0);
     await page.getByRole('button', { name: '참가' }).click();
 
-    await expect(page.getByRole('status')).toHaveText('참가 신청이 반영되었습니다. 八조에 배정되었습니다.');
+    await expect(page.locator('[data-testid="game-toast"][data-feedback-kind="success"]')).toContainText(
+        '참가 신청이 반영되었습니다. 八조에 배정되었습니다.'
+    );
     const assignedGroup = page.locator('[data-preliminary-group="7"]');
     await expect(assignedGroup.locator('.general-identity', { hasText: names[0] })).toBeVisible();
     const bounds = await assignedGroup.boundingBox();
@@ -612,7 +616,9 @@ test('mobile betting rankings use tabs and keep dedicated icons beside general n
     );
     await dialog.getByRole('button', { name: '베팅 등록' }).click();
     await expect(dialog).not.toBeVisible();
-    await expect(page.getByRole('status')).toHaveText('베팅이 등록되었습니다.');
+    await expect(page.locator('[data-testid="game-toast"][data-feedback-kind="success"]')).toContainText(
+        '베팅이 등록되었습니다.'
+    );
     expect(placedBets).toEqual([{ targetId: 1, amount: 50 }]);
 
     await expect(page.getByRole('tablist', { name: '토너먼트 랭킹 종목 선택' })).toBeVisible();

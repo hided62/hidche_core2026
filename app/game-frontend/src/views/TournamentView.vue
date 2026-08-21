@@ -4,6 +4,7 @@ import { computed, nextTick, onMounted, ref } from 'vue';
 import TournamentBracket from '../components/tournament/TournamentBracket.vue';
 import TournamentPageHeader from '../components/tournament/TournamentPageHeader.vue';
 import GeneralIdentity from '../components/ui/GeneralIdentity.vue';
+import { useGameFeedback } from '../composables/useGameFeedback';
 import { trpc } from '../utils/trpc';
 import { resolveTournamentSectionVisibility, resolveTournamentStageName } from '../utils/tournamentStatus';
 
@@ -14,11 +15,11 @@ const betting = ref<Awaited<ReturnType<typeof trpc.tournament.getBettingSummary.
 const myGeneralId = ref(0);
 const loading = ref(false);
 const error = ref<string | null>(null);
-const actionMessage = ref<string | null>(null);
 const adminEnabled = ref(false);
 const activeFinalGroup = ref(0);
 const activePreliminaryGroup = ref(0);
 const tournamentContainer = ref<HTMLElement | null>(null);
+const { success: showSuccessToast, error: showErrorToast } = useGameFeedback();
 
 const typeNames = ['전력전', '통솔전', '일기토', '설전'];
 const typeStatNames = ['종합', '통솔', '무력', '지력'];
@@ -133,21 +134,21 @@ const revealMyPreliminaryGroup = async (): Promise<number | undefined> => {
 };
 
 const join = async () => {
-    actionMessage.value = null;
     let joined = false;
     try {
         await trpc.tournament.join.mutate();
         joined = true;
     } catch (value) {
-        actionMessage.value = errorText(value);
+        showErrorToast(errorText(value));
     } finally {
         await load();
         if (joined) {
             const groupId = await revealMyPreliminaryGroup();
-            actionMessage.value =
+            showSuccessToast(
                 groupId === undefined
                     ? '참가 신청이 반영되었습니다.'
-                    : `참가 신청이 반영되었습니다. ${groupNames[groupId]}조에 배정되었습니다.`;
+                    : `참가 신청이 반영되었습니다. ${groupNames[groupId]}조에 배정되었습니다.`
+            );
         }
     }
 };
@@ -155,10 +156,10 @@ const join = async () => {
 const cancel = async () => {
     try {
         await trpc.tournament.cancel.mutate();
-        actionMessage.value = '토너먼트가 중단되었습니다.';
+        showSuccessToast('토너먼트가 중단되었습니다.');
         await load();
     } catch (value) {
-        actionMessage.value = errorText(value);
+        showErrorToast(errorText(value));
     }
 };
 
@@ -177,10 +178,10 @@ const start = async () => {
             bettingSettled: false,
             rewardSettled: false,
         });
-        actionMessage.value = '토너먼트를 개최했습니다.';
+        showSuccessToast('토너먼트를 개최했습니다.');
         await load();
     } catch (value) {
-        actionMessage.value = errorText(value);
+        showErrorToast(errorText(value));
     }
 };
 </script>
@@ -206,7 +207,6 @@ const start = async () => {
                 참가
             </button>
             <span v-if="loading">불러오는 중...</span>
-            <span v-if="actionMessage" role="status">{{ actionMessage }}</span>
         </section>
 
         <section v-if="error" class="error-row bg0" role="alert">{{ error }}</section>
