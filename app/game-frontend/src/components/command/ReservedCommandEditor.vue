@@ -68,6 +68,11 @@ const dragKind = ref<'replace' | 'toggle' | null>(null);
 const quickTarget = ref<number | null>(null);
 const pickerOpen = ref(false);
 const selectedCommand = ref<CommandAvailability | null>(null);
+const commandInputSnapshot = shallowRef<{
+    options: CommandTable['inputOptions'];
+    mapData: CommandMapData | null;
+    mapLayout: CommandMapLayout | null;
+} | null>(null);
 const commandArgs = ref<Record<string, unknown>>({});
 const commandArgsValid = ref(false);
 const expanded = ref(false);
@@ -188,6 +193,7 @@ const openPicker = (turnIndex?: number) => {
     quickTarget.value = turnIndex ?? null;
     pickerOpen.value = true;
     selectedCommand.value = null;
+    commandInputSnapshot.value = null;
     commandArgs.value = {};
     commandArgsValid.value = false;
 };
@@ -195,6 +201,7 @@ const closePicker = () => {
     pickerOpen.value = false;
     quickTarget.value = null;
     selectedCommand.value = null;
+    commandInputSnapshot.value = null;
 };
 
 let previousBodyOverflow: string | null = null;
@@ -245,11 +252,21 @@ const togglePicker = (turnIndex?: number) => {
     openPicker(turnIndex);
 };
 const selectCommand = (commandKey: string) => {
-    const command = props.commandTable?.[props.scope]
+    const table = props.commandTable;
+    const command = table?.[props.scope]
         .flatMap((group) => group.values)
         .find((entry) => entry.key === commandKey);
-    if (!command) return;
+    if (!table || !command) return;
     selectedCommand.value = command;
+    // Ref opens argument commands on a separate processing page. Keep the same
+    // isolation while this inline form is open: patching a focused <select>
+    // during a realtime refresh can reset an iOS/Android native picker before
+    // its tentative wheel selection has emitted `change`.
+    commandInputSnapshot.value = {
+        options: table.inputOptions,
+        mapData: props.mapData,
+        mapLayout: props.mapLayout,
+    };
     commandArgs.value = {};
     commandArgsValid.value = !command.reqArg;
     const needsInformationalConfirmation = commandArgumentPresentation(command.key).mapTarget === 'capital';
@@ -262,6 +279,10 @@ const submitCommand = () => {
     const entry = { turnList, action: command.key, args: { ...commandArgs.value }, label: command.name };
     emit('reserve-bulk', [entry]);
     pendingReservation.value = entry;
+};
+const returnToCommandList = () => {
+    selectedCommand.value = null;
+    commandInputSnapshot.value = null;
 };
 
 const applyPattern = (raw: CommandPatternEntry[] | undefined) => {
@@ -735,31 +756,31 @@ const clickOutsideMenu = (event: Event) => {
                     <RecruitmentCommandForm
                         v-if="
                             isRecruitmentCommand &&
-                            props.commandTable?.inputOptions.recruitment &&
+                            commandInputSnapshot?.options.recruitment &&
                             (selectedCommand.key === 'che_징병' || selectedCommand.key === 'che_모병')
                         "
                         :command-key="selectedCommand.key"
-                        :info="props.commandTable.inputOptions.recruitment"
+                        :info="commandInputSnapshot.options.recruitment"
                         @update:args="commandArgs = $event"
                         @update:valid="commandArgsValid = $event"
                         @submit="submitCommand"
                     />
                     <CommandArgumentForm
                         v-else-if="
-                            props.commandTable &&
+                            commandInputSnapshot &&
                             (selectedCommand.reqArg ||
                                 commandArgumentPresentation(selectedCommand.key).mapTarget === 'capital')
                         "
                         :command-key="selectedCommand.key"
                         :fields="selectedCommand.inputFields"
-                        :options="props.commandTable.inputOptions"
-                        :map-data="props.mapData"
-                        :map-layout="props.mapLayout"
+                        :options="commandInputSnapshot.options"
+                        :map-data="commandInputSnapshot.mapData"
+                        :map-layout="commandInputSnapshot.mapLayout"
                         @update:args="commandArgs = $event"
                         @update:valid="commandArgsValid = $event"
                     />
                     <div class="picker-actions">
-                        <button :disabled="Boolean(pendingReservation)" @click="selectedCommand = null">
+                        <button :disabled="Boolean(pendingReservation)" @click="returnToCommandList">
                             명령 다시 선택</button
                         ><button :disabled="!commandArgsValid || Boolean(pendingReservation)" @click="submitCommand">
                             {{ pendingReservation ? '저장 중' : '입력' }}
