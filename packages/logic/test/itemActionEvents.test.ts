@@ -252,6 +252,37 @@ describe('typed item lifecycle events', () => {
         });
     });
 
+    it('시나리오 상점 목록에 없는 전역 구매 가능 아이템을 거부한다', () => {
+        const itemKey = 'event_전투특기_격노';
+        const catalog: Record<string, TurnCommandItemCatalogEntry> = {
+            [itemKey]: {
+                slot: 'item',
+                name: '격노의 비급',
+                rawName: '격노의 비급',
+                cost: 100,
+                reqSecu: 0,
+                buyable: true,
+                unique: false,
+            },
+        };
+        const denied = new TradeItemAction({
+            ...BASE_ENV,
+            itemCatalog: catalog,
+            purchasableItemKeys: new Set(),
+        });
+        const allowed = new TradeItemAction({
+            ...BASE_ENV,
+            itemCatalog: catalog,
+            purchasableItemKeys: new Set([itemKey]),
+        });
+
+        expect(denied.parseArgs({ itemType: 'item', itemCode: itemKey })).toBeNull();
+        expect(allowed.parseArgs({ itemType: 'item', itemCode: itemKey })).toEqual({
+            itemType: 'item',
+            itemCode: itemKey,
+        });
+    });
+
     it('계략 성공 capability만 소비하며 typed 결과로 소비 item을 반환한다', () => {
         const general = makeGeneral('che_계략_이추');
         const itemModules = createItemActionModules(createItemModuleRegistry([strategyItemModule]));

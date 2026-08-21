@@ -4,6 +4,7 @@ import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 
 import { loadScenarioDefinitionById, resolveScenarioDefaultsPath } from '../src/scenario/scenarioLoader.js';
+import { buildCommandEnv } from '../src/turn/reservedTurnCommands.js';
 
 type LoadedScenario = Awaited<ReturnType<typeof loadScenarioDefinitionById>>;
 
@@ -76,5 +77,19 @@ describe('tracked scenario resources', () => {
         expect(Object.keys(composedAddonItems).filter((key) => key.startsWith('event_전투특기_'))).toHaveLength(20);
         expect(readItemSlot(moreEffectBlank, 'horse').che_명마_07_백마).toBe(4);
         expect(readItemSlot(composedAddon, 'horse').che_명마_07_백마).toBe(2);
+    });
+
+    it('projects ordinary and explicit secret-item scenario pools into command execution', async () => {
+        const [ordinaryBlank, secretScenario] = await Promise.all(
+            [1, 2701].map((scenarioId) => loadScenarioDefinitionById(scenarioId))
+        );
+        const ordinaryKeys = buildCommandEnv(ordinaryBlank.config).purchasableItemKeys;
+        const secretScenarioKeys = buildCommandEnv(secretScenario.config).purchasableItemKeys;
+
+        expect(ordinaryKeys?.size).toBe(24);
+        expect(ordinaryKeys?.has('che_치료_환약')).toBe(true);
+        expect([...ordinaryKeys!].filter((key) => key.startsWith('event_전투특기_'))).toEqual([]);
+        expect([...secretScenarioKeys!].filter((key) => key.startsWith('event_전투특기_'))).toHaveLength(20);
+        expect(secretScenarioKeys?.has('event_전투특기_격노')).toBe(true);
     });
 });

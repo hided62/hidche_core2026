@@ -6,7 +6,24 @@ import {
 } from '@sammo-ts/logic';
 import { describe, expect, it } from 'vitest';
 
-import { buildTurnCommandInputFields, parseReservedTurnArgs } from '../src/turns/commandInput.js';
+import {
+    buildEquipmentTradeItemOptions,
+    buildTurnCommandInputFields,
+    parseReservedTurnArgs,
+} from '../src/turns/commandInput.js';
+
+const buildShopItem = (key: string, name: string) => ({
+    key,
+    rawName: name,
+    name,
+    info: `${name}<br>설명`,
+    slot: 'item' as const,
+    cost: 100,
+    buyable: true,
+    consumable: false,
+    reqSecu: 3000,
+    unique: false,
+});
 
 describe('turn command argument input', () => {
     it('builds supported fields for every argument-bearing command module', async () => {
@@ -79,5 +96,36 @@ describe('turn command argument input', () => {
             destGeneralId: 7,
         });
         await expect(parseReservedTurnArgs('general', 'che_포상', {})).rejects.toThrow('Unknown general turn command');
+    });
+
+    it('limits equipment trade options to the Ref default items when a scenario omits allItems', () => {
+        const items = buildEquipmentTradeItemOptions({
+            configConst: {},
+            itemModules: [buildShopItem('che_치료_환약', '환약'), buildShopItem('event_전투특기_격노', '격노의 비급')],
+            currentSecurity: 5000,
+            generalGold: 1000,
+        });
+
+        expect(items.item.map((item) => item.value)).toEqual(['None', 'che_치료_환약']);
+        expect(items.item[1]?.description).toBe('현재 구입 가능 · 가격 100 · 환약 · 설명');
+    });
+
+    it('shows only zero-count buyable items selected by an explicit scenario pool', () => {
+        const items = buildEquipmentTradeItemOptions({
+            configConst: {
+                allItems: {
+                    item: {
+                        che_치료_환약: 1,
+                        event_전투특기_격노: 0,
+                    },
+                },
+            },
+            itemModules: [buildShopItem('che_치료_환약', '환약'), buildShopItem('event_전투특기_격노', '격노의 비급')],
+            currentSecurity: 2000,
+            generalGold: 50,
+        });
+
+        expect(items.item.map((item) => item.value)).toEqual(['None', 'event_전투특기_격노']);
+        expect(items.item[1]?.description).toContain('현재 구입 불가: 치안 3,000 필요');
     });
 });
