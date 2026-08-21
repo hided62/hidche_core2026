@@ -852,7 +852,8 @@ const install = async (page: Page, rejectGeneral = false, commandTableResponse: 
                     nationCnt: 2,
                 });
             if (name === 'join.getConfig') return response({});
-            if (name === 'world.getMap')
+            if (name === 'world.getMap') {
+                requests.push({ operation: name, body });
                 return response({
                     result: true,
                     version: 0,
@@ -872,6 +873,7 @@ const install = async (page: Page, rejectGeneral = false, commandTableResponse: 
                     myCity: 1,
                     myNation: 1,
                 });
+            }
             if (name === 'turns.getCommandTable') return response(commandTableResponse);
             if (name === 'nation.getChiefCenter') return response(chiefCenter);
             if (name === 'turns.reserved.getGeneral')
@@ -1531,7 +1533,10 @@ test('shows full nation command briefs in every chief card', async ({ page }) =>
     const desktopSummary = page.locator('.layout-desktop .chief-card').first().locator('.row-action').first();
     await expect(desktopSummary).toHaveText('【관우】 쌀 300 포상');
     await expect(desktopSummary).toHaveAttribute('title', '【관우】 쌀 300 포상');
-    await page.screenshot({ path: test.info().outputPath('chief-card-command-brief-desktop-1200.png'), fullPage: true });
+    await page.screenshot({
+        path: test.info().outputPath('chief-card-command-brief-desktop-1200.png'),
+        fullPage: true,
+    });
 
     await page.setViewportSize({ width: 500, height: 900 });
     const mobileSummary = page.locator('.chief-overview .chief-card').first().locator('.row-action').first();
@@ -1811,7 +1816,7 @@ test('keeps arbitrary direct recruitment and mercenary amounts for all four arms
 });
 
 test('uses the map to choose a nation target in the chief command window', async ({ page }) => {
-    await install(page);
+    const requests = await install(page);
     await page.setViewportSize({ width: 1200, height: 900 });
     await page.goto('/che/chief-center');
     await page.getByRole('button', { name: '1턴 명령 입력', exact: true }).click();
@@ -1827,6 +1832,7 @@ test('uses the map to choose a nation target in the chief command window', async
     await expect(form.getByTestId('current-city-marker')).toHaveAttribute('aria-label', '현재 도시 업');
     await expect(form.getByTestId('command-map-target-summary')).toContainText('수도 허창 · 도시 1개');
     await expect(page).toHaveURL(/\/che\/chief-center$/);
+    expect(JSON.stringify(requests)).toContain('"generalId":1');
     await page.screenshot({ path: test.info().outputPath('chief-nation-map-option.png'), fullPage: true });
 });
 
