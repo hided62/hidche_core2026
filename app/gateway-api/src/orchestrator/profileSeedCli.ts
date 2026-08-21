@@ -9,7 +9,10 @@ interface ProfileSeedRequest {
     scenarioId: number;
     tickSeconds?: number;
     now: string;
-    installOptions?: Omit<ScenarioInstallOptions, 'preopenAt'> & { preopenAt?: string | null };
+    installOptions?: Omit<ScenarioInstallOptions, 'preopenAt' | 'openAt'> & {
+        preopenAt?: string | null;
+        openAt?: string | null;
+    };
     adminUser?: AdminSeedUser | null;
 }
 
@@ -49,6 +52,11 @@ export const runProfileSeedCli = async (env: NodeJS.ProcessEnv = process.env): P
     if (preopenAt && Number.isNaN(preopenAt.getTime())) {
         throw new Error('Profile seed preopenAt must be an ISO date-time.');
     }
+    const rawOpenAt = request.installOptions?.openAt;
+    const openAt = typeof rawOpenAt === 'string' ? new Date(rawOpenAt) : null;
+    if (openAt && Number.isNaN(openAt.getTime())) {
+        throw new Error('Profile seed openAt must be an ISO date-time.');
+    }
     const resourceRoot = path.join(process.cwd(), 'resources');
 
     await seedProfileDatabase({
@@ -61,6 +69,7 @@ export const runProfileSeedCli = async (env: NodeJS.ProcessEnv = process.env): P
             ? {
                   ...request.installOptions,
                   preopenAt,
+                  openAt,
               }
             : undefined,
         scenarioOptions: { scenarioRoot: path.join(resourceRoot, 'scenario') },

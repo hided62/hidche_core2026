@@ -68,6 +68,32 @@ describe('lobby season state', () => {
 
         expect(result.serverTime).toBe('2026-08-15T02:00:00.000Z');
         expect(result.clockMode).toBe('manual');
+        expect(result.clockRunning).toBe(false);
+        expect(result.clockStartsAt).toBeNull();
+        expect(new Date(result.serverWallTime).getTime()).not.toBeNaN();
+    });
+
+    it('exposes the future realtime wall anchor without advancing the preopen clock', async () => {
+        const wallAnchor = new Date('2099-08-21T11:00:00.000Z');
+        const result = await appRouter
+            .createCaller(
+                buildContext(
+                    {},
+                    {
+                        baseTime: new Date('2026-08-21T09:00:00.000Z'),
+                        tick: 36_000_000n,
+                        mode: 'realtime',
+                        wallAnchor,
+                    }
+                )
+            )
+            .lobby.info();
+
+        expect(result.serverTime).toBe('2026-08-21T10:00:00.000Z');
+        expect(result.clockMode).toBe('realtime');
+        expect(result.clockRunning).toBe(false);
+        expect(result.clockStartsAt).toBe(wallAnchor.toISOString());
+        expect(new Date(result.serverWallTime).getTime()).toBeLessThan(wallAnchor.getTime());
     });
 
     it('preserves zero as the first official game index', async () => {

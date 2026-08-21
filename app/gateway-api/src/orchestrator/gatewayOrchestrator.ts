@@ -396,6 +396,7 @@ const parseInstallOptions = (
         joinMode: joinMode === 'full' || joinMode === 'onlyRandom' ? joinMode : undefined,
         autorunUser: autorunUser ?? null,
         preopenAt: preopenAt ?? null,
+        openAt: openAt ?? null,
         installOperationId: action.installOperationId,
     };
 
@@ -2173,6 +2174,7 @@ export class GatewayOrchestrator implements GatewayOrchestratorHandle {
                         ? {
                               ...options.installOptions,
                               preopenAt: options.installOptions.preopenAt?.toISOString() ?? null,
+                              openAt: options.installOptions.openAt?.toISOString() ?? null,
                           }
                         : undefined,
                     adminUser: options.adminUser,

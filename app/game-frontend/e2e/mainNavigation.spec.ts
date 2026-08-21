@@ -36,7 +36,10 @@ type NavigationFixture = {
     generalTurnTime?: string;
     nextTurnMonthOffset?: 0 | 1;
     serverTime?: string;
+    serverWallTime?: string;
     clockMode?: 'realtime' | 'manual';
+    clockRunning?: boolean;
+    clockStartsAt?: string | null;
     cityDefence?: number;
     cityState?: number;
     nationRate?: number;
@@ -589,7 +592,10 @@ const installFixture = async (page: Page, state: NavigationFixture) => {
                     month: state.currentMonth ?? 1,
                     turnTerm: 10,
                     serverTime: state.serverTime ?? '2026-08-13T00:00:00.000Z',
+                    serverWallTime: state.serverWallTime ?? '2026-08-13T00:00:00.000Z',
                     clockMode: state.clockMode ?? 'realtime',
+                    clockRunning: state.clockRunning ?? true,
+                    clockStartsAt: state.clockStartsAt ?? null,
                     scenarioTitle: state.scenarioTitle ?? '',
                 });
             }
@@ -1844,12 +1850,48 @@ test('main general card uses local turn time and command clock tracks corrected 
     }
 
     state.clockMode = 'manual';
+    state.clockRunning = false;
     state.serverTime = '2026-08-13T00:08:30.000Z';
     await page.reload();
     const frozenClock = page.locator('[data-main-target="commands"] [data-command-current-time]').first();
     await expect(frozenClock).toHaveText('09:08:30');
     await page.clock.runFor(2_000);
     await expect(frozenClock).toHaveText('09:08:30');
+
+    state.clockMode = 'realtime';
+    state.clockRunning = false;
+    state.serverTime = '2026-08-13T00:10:00.000Z';
+    state.serverWallTime = '2026-08-21T10:00:00.000Z';
+    state.clockStartsAt = '2026-08-21T10:00:02.000Z';
+    await page.reload();
+    const preopenClock = page.locator('[data-main-target="commands"] [data-command-current-time]').first();
+    await expect(preopenClock).toHaveText('09:10:00');
+    const operationsBeforePreopenBoundary = state.operations.length;
+    await page.clock.runFor(1_500);
+    await expect(preopenClock).toHaveText('09:10:00');
+    if (artifactRoot) {
+        const preopenGeometry = await preopenClock.evaluate((element) => ({
+            rect: element.getBoundingClientRect().toJSON(),
+            overflow: element.scrollWidth - element.clientWidth,
+            fontSize: getComputedStyle(element).fontSize,
+            lineHeight: getComputedStyle(element).lineHeight,
+            value: element.textContent,
+        }));
+        expect(preopenGeometry.overflow).toBeLessThanOrEqual(0);
+        await Promise.all([
+            page.screenshot({
+                path: resolve(artifactRoot, 'main-preopen-clock-frozen-mobile-500.png'),
+                fullPage: true,
+            }),
+            writeFile(
+                resolve(artifactRoot, 'main-preopen-clock-frozen-mobile-500.json'),
+                `${JSON.stringify(preopenGeometry, null, 2)}\n`
+            ),
+        ]);
+    }
+    await page.clock.runFor(1_500);
+    await expect(preopenClock).toHaveText('09:10:01');
+    expect(state.operations).toHaveLength(operationsBeforePreopenBoundary);
 });
 
 test('message targets keep reply behavior and use nation-color contrast in labels and select options', async ({

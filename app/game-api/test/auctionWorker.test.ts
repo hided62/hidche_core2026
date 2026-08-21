@@ -57,8 +57,11 @@ describe('auction worker clock-shift race', () => {
         const now = new Date('2026-07-30T12:00:00.000Z');
         const time = {
             now,
+            wallNow: now,
             tick: 36_000_000,
             mode: 'manual' as const,
+            running: false,
+            startsAt: null,
             dateToTick: () => 72_000_000,
         };
         const closeAt = new Date('2099-01-01T00:00:00.000Z');

@@ -112,6 +112,7 @@ const myGeneral = (state: FixtureState) => ({
         injury: 0,
         experience: 100,
         dedication: 200,
+        bill: 800,
         age: 30,
         turnTime: '2026-01-01 00:10:00',
         recentWar: '2026-01-01 00:00:00',
@@ -296,6 +297,7 @@ const battleCenter = (state: FixtureState) => ({
             stats: { leadership: 70, strength: 60, intelligence: 50 },
             experience: 100,
             dedication: 200,
+            bill: 800,
             injury: 0,
             gold: 1_000,
             rice: 2_000,
@@ -334,6 +336,7 @@ const battleCenter = (state: FixtureState) => ({
             stats: { leadership: 50, strength: 50, intelligence: 50 },
             experience: 0,
             dedication: 0,
+            bill: 400,
             injury: 0,
             gold: 500,
             rice: 500,
@@ -1245,6 +1248,7 @@ test('내 정보&설정 keeps desktop density and becomes a 390px horizontal-ide
     await expect(page.locator('.general-table')).toContainText('병종보병');
     await expect(page.locator('.general-table')).toContainText('삭턴6 턴');
     await expect(page.locator('.battle-general-extra')).toContainText('계급29품관');
+    await expect(page.locator('.battle-general-extra')).toContainText('봉급800');
     await expect(page.locator('.battle-general-extra')).toContainText('전투8회');
     await expect(page.locator('.battle-general-extra')).toContainText('계략12');
     await expect(page.locator('.battle-general-extra')).toContainText('사관4년');
@@ -1255,7 +1259,7 @@ test('내 정보&설정 keeps desktop density and becomes a 390px horizontal-ide
     await expect(page.locator('.battle-general-extra__recent-value')).toHaveText('01-01 00:00');
     await expect(page.locator('.legacy-general-details')).toHaveCount(0);
     expect(await readGeneralSummaryRows(page.locator('.battle-general-extra'))).toEqual([
-        ['명성', '계급', ''],
+        ['명성', '계급', '봉급'],
         ['전투', '계략', '사관'],
         ['승률', '승리', '패배'],
         ['살상률', '사살', '피살'],
@@ -2039,6 +2043,7 @@ test('감찰부 keeps the selector interaction and shows the permission error pa
     await expect(page.locator('.battle-general-name')).toContainText('간의대부');
     await expect(page.locator('.battle-general-name')).toContainText('건강');
     await expect(page.locator('.battle-general-extra')).toContainText('계급29품관');
+    await expect(page.locator('.battle-general-extra')).toContainText('봉급800');
     await expect(page.locator('.battle-general-card')).toContainText('병종보병');
     await expect(page.locator('.battle-general-card')).not.toContainText('che_');
     await expect(page.locator('.battle-general-card')).toHaveAttribute('data-general-basic-card', '');
@@ -2049,7 +2054,7 @@ test('감찰부 keeps the selector interaction and shows the permission error pa
     await expect(page.locator('.battle-general-extra')).toContainText('승률62.50%');
     await expect(page.locator('.battle-general-extra')).toContainText('살상률181.84%');
     expect(await readGeneralSummaryRows(page.locator('.battle-general-extra'))).toEqual([
-        ['명성', '계급', ''],
+        ['명성', '계급', '봉급'],
         ['전투', '계략', '사관'],
         ['승률', '승리', '패배'],
         ['살상률', '사살', '피살'],
