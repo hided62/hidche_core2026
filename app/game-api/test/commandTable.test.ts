@@ -190,6 +190,38 @@ describe('buildTurnCommandTable', () => {
         });
     });
 
+    it('keeps every default general and chief argument command inside the shared frontend field contract', async () => {
+        const table = await buildTurnCommandTable({
+            worldState: buildWorldState(),
+            general: buildGeneral(),
+            city: buildCity(),
+            nation: buildNation(),
+            nationGenerals: null,
+        });
+        const supportedKinds = new Set(['text', 'number', 'boolean', 'select', 'numberTuple', 'hidden']);
+
+        for (const [scope, groups] of [
+            ['general', table.general],
+            ['nation', table.nation],
+        ] as const) {
+            for (const command of groups.flatMap((group) => group.values)) {
+                if (!command.reqArg) continue;
+                expect(command.inputFields.length, `${scope}:${command.key}`).toBeGreaterThan(0);
+                expect(new Set(command.inputFields.map((field) => field.key)).size, `${scope}:${command.key}`).toBe(
+                    command.inputFields.length
+                );
+                for (const field of command.inputFields) {
+                    expect(supportedKinds.has(field.kind), `${scope}:${command.key}:${field.key}`).toBe(true);
+                    if (field.kind === 'select') {
+                        expect(Boolean(field.options?.length || field.optionSource), `${scope}:${command.key}:${field.key}`).toBe(
+                            true
+                        );
+                    }
+                }
+            }
+        }
+    });
+
     it('projects the Ref availability boundaries for force move, retirement, and resignation', async () => {
         const buildTable = (general: GeneralRow, nation: NationRow | null = buildNation()) =>
             buildTurnCommandTable({
