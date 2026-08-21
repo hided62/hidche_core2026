@@ -4,6 +4,35 @@ import { gameProfile, gameTrpcRoute } from './gameTestPaths.js';
 const response = (data: unknown) => ({ result: { data } });
 const operations = (route: Route) =>
     decodeURIComponent(new URL(route.request().url()).pathname.split('/trpc/')[1] ?? '').split(',');
+const commandTable = {
+    general: [
+        {
+            category: '전체',
+            values: [
+                { key: '휴식', name: '휴식', reqArg: false, status: 'available', possible: true, inputFields: [] },
+                { key: 'che_이동', name: '이동', reqArg: true, status: 'available', possible: true, inputFields: [] },
+                { key: 'che_징병', name: '징병', reqArg: true, status: 'available', possible: true, inputFields: [] },
+                { key: 'che_증여', name: '증여', reqArg: true, status: 'available', possible: true, inputFields: [] },
+                { key: 'che_화계', name: '화계', reqArg: true, status: 'available', possible: true, inputFields: [] },
+            ],
+        },
+    ],
+    nation: [],
+    inputOptions: {
+        cities: [{ value: 1, label: '업 (위)' }],
+        nations: [{ value: 1, label: '위' }],
+        generals: [
+            { value: 1, label: '테스트장수 (위 · 업)' },
+            { value: 2, label: '다른장수 (위 · 업)' },
+        ],
+        crewTypes: [{ value: 1, label: '보병' }],
+        armTypes: [],
+        nationTypes: [],
+        colors: [],
+        items: {},
+        recruitment: null,
+    },
+};
 const general = {
     id: 1,
     name: '테스트장수',
@@ -112,11 +141,18 @@ const install = async (page: Page, secretAllowed = true) => {
                             atmos: 90,
                             killTurn: 7,
                             turnTime: '2026-01-01T01:02:00.000Z',
-                            reservedCommands: ['징병', '훈련'],
+                            reservedCommands: [
+                                { action: 'che_이동', args: { destCityId: 1 } },
+                                { action: 'che_징병', args: { crewType: 1, amount: 300 } },
+                                { action: 'che_증여', args: { destGeneralId: 2, isGold: false, amount: 200 } },
+                                { action: 'che_화계', args: { destCityId: 1 } },
+                                { action: '휴식', args: {} },
+                            ],
                         },
                     ],
                 });
             }
+            if (operation === 'turns.getCommandTable') return response(commandTable);
             return { error: { message: `unhandled ${operation}`, data: { code: 'BAD_REQUEST' } } };
         });
         await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(results) });
@@ -311,7 +347,7 @@ test('nation generals filter buttons open Ref operator menus and apply compound 
     await page.screenshot({ path: testInfo.outputPath('core-mobile-filter-menu.png'), fullPage: true });
 });
 
-test('both pages preserve the legacy 1000px overflow contract at 500px', async ({ page }) => {
+test('both pages preserve the legacy 1000px overflow contract at 500px', async ({ page }, testInfo) => {
     await install(page);
     await page.setViewportSize({ width: 500, height: 900 });
     for (const path of ['nation/generals', 'nation/secret']) {
@@ -319,18 +355,60 @@ test('both pages preserve the legacy 1000px overflow contract at 500px', async (
         await expect(
             page.locator(path.endsWith('secret') ? '#secret-general-list' : '#nation-general-list')
         ).toBeVisible();
-        expect(await page.locator('main').evaluate((el) => el.getBoundingClientRect().width)).toBe(1000);
+        const fixedWidthElement = path.endsWith('secret')
+            ? page.locator('.secret-page .title').first()
+            : page.locator('.general-page');
+        expect(await fixedWidthElement.evaluate((el) => el.getBoundingClientRect().width)).toBe(1000);
         expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeGreaterThanOrEqual(1000);
+        if (path.endsWith('secret')) {
+            await page.screenshot({ path: testInfo.outputPath('secret-command-brief-mobile-500.png'), fullPage: true });
+        }
     }
 });
 
-test('secret office renders summary, turns, and the forbidden error flow', async ({ page }) => {
+test('secret office renders five Ref-style command briefs and the forbidden error flow', async ({ page }, testInfo) => {
     await install(page);
     await page.setViewportSize({ width: 1200, height: 900 });
     await page.goto('nation/secret');
     await expect(page.locator('.summary')).toContainText('전체 금');
-    await expect(page.locator('#secret-general-list')).toContainText('1 : 징병');
-    expect(await page.locator('.secret-page').evaluate((el) => el.getBoundingClientRect().width)).toBe(1000);
+    const commandRows = page.locator('#secret-general-list .turns div');
+    await expect(commandRows).toHaveCount(5);
+    await expect(commandRows).toHaveText([
+        '1 : 【업】으로 이동',
+        '2 : 【보병】 300명 징병',
+        '3 : 【다른장수】에게 쌀 200을 증여',
+        '4 : 【업】에 화계실행',
+        '5 : 휴식',
+    ]);
+    await expect(commandRows.nth(2)).toHaveAttribute('title', '【다른장수】에게 쌀 200을 증여');
+    const geometry = await page.locator('#secret-general-list .turns').evaluate((element) => {
+        const rect = element.getBoundingClientRect();
+        const style = getComputedStyle(element);
+        return {
+            width: rect.width,
+            height: rect.height,
+            fontSize: style.fontSize,
+            textAlign: style.textAlign,
+            horizontalOverflow: element.scrollWidth - element.clientWidth,
+        };
+    });
+    expect(geometry.width).toBeGreaterThanOrEqual(190);
+    expect(geometry.width).toBeLessThanOrEqual(230);
+    expect(geometry.height).toBeGreaterThanOrEqual(60);
+    expect(geometry).toMatchObject({ fontSize: '11px', textAlign: 'left', horizontalOverflow: 0 });
+    const titleBox = await page.locator('.secret-page .title').first().boundingBox();
+    const listBox = await page.locator('#secret-general-list').boundingBox();
+    expect(titleBox?.width).toBe(1000);
+    expect(listBox?.width).toBe(974);
+    await testInfo.attach('secret-command-brief-geometry', {
+        body: JSON.stringify(
+            { viewport: { width: 1200, height: 900 }, titleBox, listBox, commandCell: geometry },
+            null,
+            2
+        ),
+        contentType: 'application/json',
+    });
+    await page.screenshot({ path: testInfo.outputPath('secret-command-brief-desktop-1200.png'), fullPage: true });
 
     await page.unroute(gameTrpcRoute);
     await install(page, false);

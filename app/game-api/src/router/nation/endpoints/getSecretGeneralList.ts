@@ -64,16 +64,16 @@ export const getSecretGeneralList = accessAuthedProcedure.query(async ({ ctx }) 
     const turns = generalIds.length
         ? await ctx.db.generalTurn.findMany({
               where: { generalId: { in: generalIds }, turnIdx: { lt: 5 } },
-              select: { generalId: true, turnIdx: true, actionCode: true },
+              select: { generalId: true, turnIdx: true, actionCode: true, arg: true },
               orderBy: [{ generalId: 'asc' }, { turnIdx: 'asc' }],
           })
         : [];
     const cityNames = new Map(cities.map((city) => [city.id, city.name]));
     const troopNames = new Map(troops.map((troop) => [troop.troopLeaderId, troop.name]));
-    const turnMap = new Map<number, string[]>();
+    const turnMap = new Map<number, Array<{ action: string; args: unknown }>>();
     for (const turn of turns) {
         const list = turnMap.get(turn.generalId) ?? [];
-        list[turn.turnIdx] = turn.actionCode;
+        list[turn.turnIdx] = { action: turn.actionCode, args: turn.arg };
         turnMap.set(turn.generalId, list);
     }
     const generals = generalRows.map((general) => {
