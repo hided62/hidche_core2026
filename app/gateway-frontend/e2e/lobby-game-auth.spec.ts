@@ -303,6 +303,43 @@ test('exchanges the gateway token before loading authenticated lobby general dat
     });
 });
 
+test('shows the Ref scenario title instead of the stored scenario code for an active profile', async ({
+    page,
+}, testInfo) => {
+    await installFixture(page, {
+        scenarioTitle: '【가상모드27-b】 아시아 명장전(비급)',
+    });
+    await page.setViewportSize({ width: 1365, height: 900 });
+
+    await page.goto('lobby');
+    const row = page.locator('tbody tr').filter({ hasText: 'hwe섭' });
+    const info = row.locator('.profile-info-cell');
+    const title = row.getByTestId('profile-scenario-title');
+    await expect(title).toHaveText('【가상모드27-b】 아시아 명장전(비급)');
+    await expect(info).not.toContainText('903');
+    await expect(title).toHaveCSS('color', 'oklch(0.75 0.183 55.934)');
+    await page.screenshot({ path: testInfo.outputPath('gateway-active-scenario-title-desktop.png'), fullPage: true });
+
+    await page.setViewportSize({ width: 390, height: 844 });
+    await title.scrollIntoViewIfNeeded();
+    const mobileGeometry = await info.evaluate((element) => {
+        const titleElement = element.querySelector('[data-testid="profile-scenario-title"]');
+        if (!titleElement) throw new Error('expected scenario title');
+        const infoRect = element.getBoundingClientRect();
+        const titleRect = titleElement.getBoundingClientRect();
+        return {
+            documentWidth: document.documentElement.scrollWidth,
+            viewportWidth: window.innerWidth,
+            info: infoRect.toJSON(),
+            title: titleRect.toJSON(),
+        };
+    });
+    expect(mobileGeometry.documentWidth).toBe(mobileGeometry.viewportWidth);
+    expect(mobileGeometry.title.left).toBeGreaterThanOrEqual(mobileGeometry.info.left);
+    expect(mobileGeometry.title.right).toBeLessThanOrEqual(mobileGeometry.info.right);
+    await page.screenshot({ path: testInfo.outputPath('gateway-active-scenario-title-mobile.png'), fullPage: true });
+});
+
 test('copies the complete preopen announcement and reveals autorun details without changing layout', async ({
     page,
 }, testInfo) => {
