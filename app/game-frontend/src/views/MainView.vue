@@ -225,7 +225,7 @@ watch(
             </h1>
             <div class="game-shell__actions desktop-action-controls">
                 <button
-                    class="game-shell__action toggle legacy-button legacy-button--navigation"
+                    class="game-shell__action desktop-action-controls__realtime toggle legacy-button legacy-button--navigation"
                     :class="{ active: realtimeEnabled }"
                     type="button"
                     @click="dashboard.setRealtimeEnabled(!realtimeEnabled)"
@@ -233,7 +233,7 @@ watch(
                     실시간 동기화: {{ realtimeLabel }}
                 </button>
                 <button
-                    class="game-shell__action legacy-button legacy-button--navigation"
+                    class="game-shell__action desktop-action-controls__refresh legacy-button legacy-button--navigation"
                     type="button"
                     :aria-busy="refreshing"
                     @click="requestManualRefresh"
@@ -241,7 +241,7 @@ watch(
                     갱 신
                 </button>
                 <button
-                    class="game-shell__action legacy-button legacy-button--navigation"
+                    class="game-shell__action desktop-action-controls__lobby legacy-button legacy-button--navigation"
                     type="button"
                     @click="moveLobby"
                 >
@@ -916,6 +916,10 @@ button {
     font-weight: 400;
 }
 
+.desktop-action-controls__lobby {
+    margin-left: 12px;
+}
+
 .placeholder {
     font-size: 0.85rem;
     color: rgba(232, 221, 196, 0.7);
@@ -930,12 +934,33 @@ button {
     }
 
     .desktop-action-controls {
-        gap: 4px;
+        display: grid;
+        width: 100%;
+        grid-template-areas: 'refresh realtime lobby';
+        grid-template-columns: max-content 1fr max-content;
+        align-items: start;
+        gap: 0;
     }
 
     .desktop-action-controls .game-shell__action {
         padding-right: 4px;
         padding-left: 4px;
+    }
+
+    .desktop-action-controls__refresh {
+        grid-area: refresh;
+        justify-self: start;
+    }
+
+    .desktop-action-controls__realtime {
+        grid-area: realtime;
+        justify-self: center;
+    }
+
+    .desktop-action-controls__lobby {
+        grid-area: lobby;
+        justify-self: end;
+        margin-left: 0;
     }
 
     .main-page {
