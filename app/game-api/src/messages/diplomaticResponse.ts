@@ -253,6 +253,37 @@ export const respondToDiplomaticMessage = async (options: {
     }
 
     if (!response) {
+        let declinedAidProposalNationId: number | null = null;
+        if (action === 'noAggression') {
+            await db.$queryRaw`
+                SELECT id
+                FROM nation
+                WHERE id = ${proposerNationId}
+                FOR UPDATE
+            `;
+            const proposerNation = await db.nation.findUnique({ where: { id: proposerNationId } });
+            if (proposerNation) {
+                const proposerMeta = asRecord(proposerNation.meta);
+                const respAssistTry = asRecord(proposerMeta.resp_assist_try);
+                const assistKey = `n${actorNationId}`;
+                if (Object.prototype.hasOwnProperty.call(respAssistTry, assistKey)) {
+                    const respAssistDeclined = asRecord(proposerMeta.resp_assist_declined);
+                    await db.nation.update({
+                        where: { id: proposerNationId },
+                        data: {
+                            meta: {
+                                ...proposerMeta,
+                                resp_assist_declined: {
+                                    ...respAssistDeclined,
+                                    [assistKey]: [actorNationId, world.currentYear * 12 + world.currentMonth - 1],
+                                },
+                            } as InputJsonValue,
+                        },
+                    });
+                    declinedAidProposalNationId = proposerNationId;
+                }
+            }
+        }
         const actorLogger = new ActionLogger({ generalId: actor.id });
         const proposerLogger = new ActionLogger({ generalId: proposerGeneralId });
         const receiverNationName = message.payload.dest.nationName;
@@ -278,7 +309,7 @@ export const respondToDiplomaticMessage = async (options: {
             reason: 'success',
             affectedMailboxes: [MESSAGE_MAILBOX_NATIONAL_BASE + actorNationId],
             affectedGeneralRecordIds: [actor.id, proposerGeneralId],
-            affectedNationIds: [],
+            affectedNationIds: declinedAidProposalNationId === null ? [] : [declinedAidProposalNationId],
             affectedCityIds: [],
         };
     }

@@ -1,6 +1,14 @@
 import { describe, expect, it } from 'vitest';
+import { GAME_TICKS_PER_TURN } from '@sammo-ts/common';
 
-import { DEFAULT_WAR_TERM, DIPLOMACY_STATE, processDiplomacyMonth, type DiplomacyEntry } from '@sammo-ts/logic';
+import {
+    DEFAULT_WAR_TERM,
+    DIPLOMACY_STATE,
+    processDiplomacyMonth,
+    resolveDiplomacyMessageValidMinutes,
+    resolveDiplomacyMessageValidUntilTick,
+    type DiplomacyEntry,
+} from '@sammo-ts/logic';
 
 const buildEntry = (
     fromNationId: number,
@@ -87,5 +95,42 @@ describe('diplomacy month processing', () => {
             expect(entry.state).toBe(DIPLOMACY_STATE.TRADE);
             expect(entry.term).toBe(0);
         }
+    });
+
+    it('decrements non-aggression exactly once per month and allows declaration only after the final month', () => {
+        let entries = [
+            buildEntry(1, 2, DIPLOMACY_STATE.NON_AGGRESSION, 3),
+            buildEntry(2, 1, DIPLOMACY_STATE.NON_AGGRESSION, 3),
+        ];
+        const generalCounts = new Map([
+            [1, 1],
+            [2, 1],
+        ]);
+
+        entries = processDiplomacyMonth(entries, generalCounts);
+        expect(entries.map(({ state, term }) => ({ state, term }))).toEqual([
+            { state: DIPLOMACY_STATE.NON_AGGRESSION, term: 2 },
+            { state: DIPLOMACY_STATE.NON_AGGRESSION, term: 2 },
+        ]);
+        entries = processDiplomacyMonth(entries, generalCounts);
+        expect(entries.map(({ state, term }) => ({ state, term }))).toEqual([
+            { state: DIPLOMACY_STATE.NON_AGGRESSION, term: 1 },
+            { state: DIPLOMACY_STATE.NON_AGGRESSION, term: 1 },
+        ]);
+        entries = processDiplomacyMonth(entries, generalCounts);
+        expect(entries.map(({ state, term }) => ({ state, term }))).toEqual([
+            { state: DIPLOMACY_STATE.TRADE, term: 0 },
+            { state: DIPLOMACY_STATE.TRADE, term: 0 },
+        ]);
+    });
+});
+
+describe('diplomacy message validity', () => {
+    it('uses the same three-turn or 30-minute logical expiry for messages and NPC retry gates', () => {
+        expect(resolveDiplomacyMessageValidMinutes(600)).toBe(30);
+        expect(resolveDiplomacyMessageValidUntilTick(100, 600)).toBe(100 + GAME_TICKS_PER_TURN * 3);
+
+        expect(resolveDiplomacyMessageValidMinutes(300)).toBe(30);
+        expect(resolveDiplomacyMessageValidUntilTick(100, 300)).toBe(100 + GAME_TICKS_PER_TURN * 6);
     });
 });
