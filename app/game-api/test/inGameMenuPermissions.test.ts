@@ -85,7 +85,7 @@ const createContext = (options: {
     troopLeaderAction?: string | null;
     refreshScore?: number;
     refreshScoreTotal?: number;
-    rankRows?: Array<{ type: string; value: number }>;
+    rankRows?: Array<{ generalId?: number; type: string; value: number }>;
     requestId?: string;
     transaction?: ReturnType<typeof vi.fn>;
 }) => {
@@ -130,7 +130,9 @@ const createContext = (options: {
             })),
         },
         rankData: {
-            findMany: vi.fn(async () => options.rankRows ?? []),
+            findMany: vi.fn(async () =>
+                (options.rankRows ?? []).map((row) => ({ generalId: row.generalId ?? me?.id ?? 0, ...row }))
+            ),
         },
         city: {
             findUnique: vi.fn(async () => options.city ?? null),
@@ -812,7 +814,23 @@ describe('battle-center general and user permissions', () => {
         });
 
         const tenured = createContext({
-            me: buildGeneral({ officerLevel: 1, meta: { belong: 3, permission: 'normal' } }),
+            me: buildGeneral({
+                officerLevel: 1,
+                meta: {
+                    belong: 3,
+                    permission: 'normal',
+                    killturn: 6,
+                    defence_train: 80,
+                },
+            }),
+            rankRows: [
+                { type: 'warnum', value: 8 },
+                { type: 'killnum', value: 5 },
+                { type: 'deathnum', value: 3 },
+                { type: 'firenum', value: 12 },
+                { type: 'killcrew', value: 12_345 },
+                { type: 'deathcrew', value: 6_789 },
+            ],
             nationMeta: { secretlimit: 3 },
         });
         await expect(appRouter.createCaller(tenured.context).nation.getBattleCenter()).resolves.toMatchObject({
@@ -823,6 +841,9 @@ describe('battle-center general and user permissions', () => {
                     picture: 'default.jpg',
                     imageServer: 0,
                     officerLevelText: '일반',
+                    warnum: 8,
+                    defenceTrain: 80,
+                    killTurn: 6,
                     crewTypeName: '-',
                     equipmentNames: { weapon: '-', book: '-', horse: '-', item: '-' },
                     traits: { personal: '-', specialDomestic: '-', specialWar: '-' },
@@ -834,9 +855,24 @@ describe('battle-center general and user permissions', () => {
                         statUpgradeLimit: 20,
                         dex: [0, 0, 0, 0, 0],
                     },
-                    battleStats: { kills: 0, deaths: 0, fire: 0, killCrew: 0, deathCrew: 0, dex: [0, 0, 0, 0, 0] },
+                    serviceYears: 3,
+                    battleStats: {
+                        kills: 5,
+                        deaths: 3,
+                        fire: 12,
+                        killCrew: 12_345,
+                        deathCrew: 6_789,
+                        dex: [0, 0, 0, 0, 0],
+                    },
                 },
             ],
+        });
+        expect(tenured.db.rankData.findMany).toHaveBeenCalledWith({
+            where: {
+                generalId: { in: [7] },
+                type: { in: ['firenum', 'warnum', 'killnum', 'deathnum', 'killcrew', 'deathcrew'] },
+            },
+            select: { generalId: true, type: true, value: true },
         });
 
         const auditor = createContext({

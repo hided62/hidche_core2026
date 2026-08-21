@@ -1,6 +1,6 @@
 import { TRPCError } from '@trpc/server';
 
-import { asRecord } from '@sammo-ts/common';
+import { asRecord, type RankDataType } from '@sammo-ts/common';
 import { LogCategory } from '@sammo-ts/logic';
 
 import { accessAuthedProcedure } from '../../../trpc.js';
@@ -13,6 +13,15 @@ import {
 } from '../../../services/gameDisplayNames.js';
 import { getMyGeneral } from '../../shared/general.js';
 import { assertNationAccess, formatDateTime, loadTraitNames, resolveNationPermission } from '../shared.js';
+
+const BATTLE_CENTER_RECORD_TYPES = [
+    'firenum',
+    'warnum',
+    'killnum',
+    'deathnum',
+    'killcrew',
+    'deathcrew',
+] as const satisfies readonly RankDataType[];
 
 export const getBattleCenter = accessAuthedProcedure.query(async ({ ctx }) => {
     const me = await getMyGeneral(ctx);
@@ -81,22 +90,37 @@ export const getBattleCenter = accessAuthedProcedure.query(async ({ ctx }) => {
     }
 
     const generalIds = generalRows.map((general) => general.id);
-    const battleCounts =
+    const [battleCounts, rankRows] =
         generalIds.length > 0
-            ? await ctx.db.logEntry.groupBy({
-                  by: ['generalId'],
-                  where: {
-                      generalId: { in: generalIds },
-                      category: LogCategory.BATTLE_BRIEF,
-                  },
-                  _count: { _all: true },
-              })
-            : [];
+            ? await Promise.all([
+                  ctx.db.logEntry.groupBy({
+                      by: ['generalId'],
+                      where: {
+                          generalId: { in: generalIds },
+                          category: LogCategory.BATTLE_BRIEF,
+                      },
+                      _count: { _all: true },
+                  }),
+                  ctx.db.rankData.findMany({
+                      where: {
+                          generalId: { in: generalIds },
+                          type: { in: [...BATTLE_CENTER_RECORD_TYPES] },
+                      },
+                      select: { generalId: true, type: true, value: true },
+                  }),
+              ])
+            : [[], []];
     const battleCountMap = new Map<number, number>();
     for (const row of battleCounts) {
         if (row.generalId !== null) {
             battleCountMap.set(row.generalId, row._count._all);
         }
+    }
+    const rankValueMap = new Map<number, Map<RankDataType, number>>();
+    for (const row of rankRows) {
+        const values = rankValueMap.get(row.generalId) ?? new Map<RankDataType, number>();
+        values.set(row.type as (typeof BATTLE_CENTER_RECORD_TYPES)[number], row.value);
+        rankValueMap.set(row.generalId, values);
     }
 
     const worldConfig = asRecord(worldState.config);
@@ -141,10 +165,18 @@ export const getBattleCenter = accessAuthedProcedure.query(async ({ ctx }) => {
             general.meta && typeof general.meta === 'object' && !Array.isArray(general.meta)
                 ? (general.meta as Record<string, unknown>)
                 : {};
-        const metaNumber = (key: string): number => {
-            const value = meta[key];
-            return typeof value === 'number' && Number.isFinite(value) ? value : 0;
+        const metaNumber = (keys: string | string[], fallback = 0): number => {
+            for (const key of Array.isArray(keys) ? keys : [keys]) {
+                const value = meta[key];
+                if (typeof value === 'number' && Number.isFinite(value)) {
+                    return value;
+                }
+            }
+            return fallback;
         };
+        const rankValue = (type: (typeof BATTLE_CENTER_RECORD_TYPES)[number], fallback = 0): number =>
+            rankValueMap.get(general.id)?.get(type) ?? fallback;
+        const warnum = rankValue('warnum', metaNumber(['rank_warnum', 'warnum'], battleCountMap.get(general.id) ?? 0));
         const storedDedicationLevel = metaNumber('dedlevel');
         const dedicationLevel =
             storedDedicationLevel > 0
@@ -161,7 +193,7 @@ export const getBattleCenter = accessAuthedProcedure.query(async ({ ctx }) => {
             cityId: general.cityId,
             turnTime: formatDateTime(general.turnTime),
             recentWar: formatDateTime(general.recentWarTime),
-            warnum: battleCountMap.get(general.id) ?? 0,
+            warnum,
             stats: {
                 leadership: general.leadership,
                 strength: general.strength,
@@ -176,6 +208,8 @@ export const getBattleCenter = accessAuthedProcedure.query(async ({ ctx }) => {
             train: general.train,
             atmos: general.atmos,
             age: general.age,
+            defenceTrain: metaNumber('defence_train', 80),
+            killTurn: metaNumber(['killturn', 'killTurn']),
             crewTypeId: general.crewTypeId,
             crewTypeName: crewTypeNames.get(general.crewTypeId) ?? '-',
             equipment: {
@@ -207,12 +241,13 @@ export const getBattleCenter = accessAuthedProcedure.query(async ({ ctx }) => {
                 statUpgradeLimit,
                 dex: [1, 2, 3, 4, 5].map((index) => metaNumber(`dex${index}`)),
             },
+            serviceYears: metaNumber('belong'),
             battleStats: {
-                kills: metaNumber('rank_killnum') || metaNumber('killnum'),
-                deaths: metaNumber('deathnum'),
-                fire: metaNumber('firenum'),
-                killCrew: metaNumber('killcrew'),
-                deathCrew: metaNumber('deathcrew'),
+                kills: rankValue('killnum', metaNumber(['rank_killnum', 'killnum'])),
+                deaths: rankValue('deathnum', metaNumber(['rank_deathnum', 'deathnum'])),
+                fire: rankValue('firenum', metaNumber(['rank_firenum', 'firenum'])),
+                killCrew: rankValue('killcrew', metaNumber(['rank_killcrew', 'killcrew'])),
+                deathCrew: rankValue('deathcrew', metaNumber(['rank_deathcrew', 'deathcrew'])),
                 dex: [1, 2, 3, 4, 5].map((index) => metaNumber(`dex${index}`)),
             },
         };

@@ -22,6 +22,7 @@ interface GeneralProgression {
     dedicationText?: string;
     statExperience?: { leadership: number; strength: number; intelligence: number };
     statUpgradeLimit?: number;
+    dex?: number[];
 }
 
 interface ItemDisplayNames {
@@ -65,7 +66,7 @@ interface GeneralRefreshScore {
     text: string;
 }
 
-interface GeneralInfo {
+export interface GeneralBasicCardData {
     id: number;
     name: string;
     picture?: string | null;
@@ -107,7 +108,7 @@ interface GeneralInfo {
 
 const props = withDefaults(
     defineProps<{
-        general: GeneralInfo | null;
+        general: GeneralBasicCardData | null;
         loading: boolean;
         nationColor?: string | null;
         defenceText?: string | null;

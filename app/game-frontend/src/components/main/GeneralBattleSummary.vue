@@ -11,6 +11,7 @@ export type GeneralBattleSummaryData = {
     wins?: number | null;
     losses?: number | null;
     strategies?: number | null;
+    serviceYears?: number | null;
     killCrew?: number | null;
     deathCrew?: number | null;
     winRate?: number | null;
@@ -30,7 +31,7 @@ const props = withDefaults(
 const numberText = (value: number | null | undefined): string =>
     typeof value === 'number' && Number.isFinite(value) ? value.toLocaleString('ko-KR') : '-';
 
-const rateText = (value: number): string => `${(props.rateScale === 'percent' ? value : value * 100).toFixed(1)}%`;
+const rateText = (value: number): string => `${(props.rateScale === 'percent' ? value : value * 100).toFixed(2)}%`;
 
 const winRate = computed(() => {
     if (typeof props.summary.winRate === 'number' && Number.isFinite(props.summary.winRate)) {
@@ -39,7 +40,7 @@ const winRate = computed(() => {
     const battles = props.summary.warnum;
     const wins = props.summary.wins;
     if (typeof battles !== 'number' || battles <= 0 || typeof wins !== 'number') return '-';
-    return `${((wins / battles) * 100).toFixed(1)}%`;
+    return `${((wins / battles) * 100).toFixed(2)}%`;
 });
 
 const killRate = computed(() => {
@@ -49,7 +50,7 @@ const killRate = computed(() => {
     const killed = props.summary.killCrew;
     const lost = props.summary.deathCrew;
     if (typeof killed !== 'number' || typeof lost !== 'number' || lost <= 0) return '-';
-    return `${((killed / lost) * 100).toFixed(1)}%`;
+    return `${((killed / lost) * 100).toFixed(2)}%`;
 });
 </script>
 
@@ -64,8 +65,15 @@ const killRate = computed(() => {
             ><strong>{{ numberText(summary.warnum) }}<template v-if="summary.warnum != null">회</template></strong>
             <span>승리</span><strong>{{ numberText(summary.wins) }}</strong> <span>패배</span
             ><strong>{{ numberText(summary.losses) }}</strong> <span>계략</span
-            ><strong>{{ numberText(summary.strategies) }}</strong> <span>사살</span
-            ><strong>{{ numberText(summary.killCrew) }}</strong> <span>피살</span
+            ><strong>{{ numberText(summary.strategies) }}</strong>
+            <template v-if="summary.serviceYears !== undefined">
+                <span>사관</span
+                ><strong
+                    >{{ numberText(summary.serviceYears)
+                    }}<template v-if="summary.serviceYears != null">년</template></strong
+                >
+            </template>
+            <span>사살</span><strong>{{ numberText(summary.killCrew) }}</strong> <span>피살</span
             ><strong>{{ numberText(summary.deathCrew) }}</strong>
             <template v-if="showWinRate">
                 <span>승률</span><strong>{{ winRate }}</strong> <span>살상률</span><strong>{{ killRate }}</strong>
