@@ -194,6 +194,8 @@ describe('profile DEPLOY operation', () => {
             'tools/build-scripts/materialize-profile-frontend.mjs',
             'che:1010',
         ]);
+        expect(commandGroups[0]?.[2]?.env?.VITE_BUILD_COMMIT_SHA).toBe(SHA);
+        expect(commandGroups[0]?.[3]?.env?.VITE_BUILD_COMMIT_SHA).toBe(SHA);
         expect(commandGroups[1]?.map((command) => command.args)).toEqual([
             ['--filter', '@sammo-ts/infra', 'prisma:migrate:deploy:game'],
         ]);

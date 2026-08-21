@@ -44,6 +44,7 @@ const isMobile = useMediaQuery('(max-width: 939.98px)');
 const npcMode = ref(0);
 const globalNavigation = ref<MainNavigationEntry[]>(defaultGlobalNavigation);
 const versionDialog = ref<HTMLDialogElement | null>(null);
+const buildCommitSha = import.meta.env.VITE_BUILD_COMMIT_SHA?.trim() || 'unknown';
 const mobilePanelOrder = ref(loadMobileMainPanelOrder());
 const navigationUrl = (import.meta.env.VITE_GATEWAY_API_URL ?? '/api/trpc').replace(/\/trpc\/?$/u, '/navigation');
 
@@ -571,6 +572,10 @@ watch(
         <h2 id="game-version-title">게임 정보</h2>
         <p>{{ lobbyInfo?.scenarioTitle || 'Core2026' }}</p>
         <p>삼국지 모의전투 Core2026</p>
+        <p class="game-version-dialog__commit">
+            <span>빌드 커밋</span>
+            <code>{{ buildCommitSha }}</code>
+        </p>
         <form method="dialog"><button class="legacy-button legacy-button--navigation" type="submit">닫기</button></form>
     </dialog>
 </template>
@@ -584,6 +589,7 @@ button {
 }
 
 .game-version-dialog {
+    box-sizing: border-box;
     width: min(420px, calc(100vw - 32px));
     border: 1px solid #555;
     border-radius: 4px;
@@ -605,6 +611,18 @@ button {
 .game-version-dialog form {
     display: flex;
     justify-content: center;
+}
+
+.game-version-dialog__commit {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+.game-version-dialog__commit code {
+    overflow-wrap: anywhere;
+    color: #d7d7d7;
+    font-size: 0.85em;
 }
 
 /*

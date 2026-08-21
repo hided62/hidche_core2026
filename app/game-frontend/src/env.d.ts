@@ -22,6 +22,7 @@ interface ImportMetaEnv {
     readonly VITE_BOARD_PATCH_URL?: string;
     readonly VITE_OFFICIAL_CHAT_URL?: string;
     readonly VITE_CASUAL_CHAT_URL?: string;
+    readonly VITE_BUILD_COMMIT_SHA?: string;
 }
 
 interface ImportMeta {

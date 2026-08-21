@@ -28,4 +28,29 @@ void describe('game frontend Vite config', () => {
 
         assert.equal(loaded?.config.build?.sourcemap, true);
     });
+
+    void it('uses the deployment-pinned full commit SHA as the displayed build version', async () => {
+        const commitSha = 'ABCDEF0123456789ABCDEF0123456789ABCDEF01';
+        const previousCommitSha = process.env.VITE_BUILD_COMMIT_SHA;
+        process.env.VITE_BUILD_COMMIT_SHA = commitSha;
+        try {
+            const configPath = path.resolve(import.meta.dirname, '../vite.config.ts');
+            const loaded = await loadConfigFromFile(
+                { command: 'build', mode: 'production' },
+                configPath,
+                path.dirname(configPath),
+                undefined,
+                undefined,
+                'runner'
+            );
+
+            assert.equal(
+                loaded?.config.define?.['import.meta.env.VITE_BUILD_COMMIT_SHA'],
+                JSON.stringify(commitSha.toLowerCase())
+            );
+        } finally {
+            if (previousCommitSha === undefined) delete process.env.VITE_BUILD_COMMIT_SHA;
+            else process.env.VITE_BUILD_COMMIT_SHA = previousCommitSha;
+        }
+    });
 });
