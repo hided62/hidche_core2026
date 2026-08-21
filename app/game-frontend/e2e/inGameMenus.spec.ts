@@ -64,6 +64,7 @@ type FixtureState = {
     joinConfig?: Record<string, unknown>;
     createGeneralInputs?: Array<Record<string, unknown>>;
     mainTraits?: { personal: string; specialDomestic: string; specialWar: string };
+    richMyInfo?: boolean;
     hiddenSeedLogText?: string;
     recentRecords?: {
         global: Array<{ id: number; text: string; createdAt?: string }>;
@@ -103,7 +104,22 @@ const myGeneral = (state: FixtureState) => ({
         turnTime: '2026-01-01 00:10:00',
         crewTypeId: 1,
         crewTypeName: '보병',
+        crewTypeInfo: state.richMyInfo
+            ? {
+                  name: '보병',
+                  info: ['표준적인 보병입니다.', '보병은 방어특화이며,', '상대가 회피하기 어렵습니다.'],
+                  requirements: ['기술력 1000 이상 필요'],
+                  stats: { attack: 100, defence: 150, speed: 7, avoid: 10, magicCoef: 0, cost: 9, rice: 9 },
+              }
+            : null,
         traits: state.mainTraits ?? { personal: '-', specialDomestic: '-', specialWar: '-' },
+        traitInfo: state.richMyInfo
+            ? {
+                  personal: '부상당할 확률이 감소합니다.',
+                  specialDomestic: '상업 내정 효율이 증가합니다.',
+                  specialWar: '계략 성공률이 증가합니다.<br>발동 순서는 레거시와 같습니다.',
+              }
+            : { personal: '', specialDomestic: '', specialWar: '' },
         progression: {
             experienceLevel: 1,
             dedicationLevel: 2,
@@ -121,8 +137,20 @@ const myGeneral = (state: FixtureState) => ({
             killedCrew: 12_345,
             lostCrew: 6_789,
         },
-        items: { horse: 'che_명마', weapon: null, book: null, item: null },
-        itemNames: { horse: '명마', weapon: null, book: null, item: null },
+        items: state.richMyInfo
+            ? { horse: 'che_명마', weapon: 'che_단도', book: 'che_효경전', item: 'che_납금박산로' }
+            : { horse: 'che_명마', weapon: null, book: null, item: null },
+        itemNames: state.richMyInfo
+            ? { horse: '명마', weapon: '단도', book: '효경전', item: '납금박산로' }
+            : { horse: '명마', weapon: null, book: null, item: null },
+        itemInfo: state.richMyInfo
+            ? {
+                  horse: '통솔 +3',
+                  weapon: '무력 +1',
+                  book: '지력 +1',
+                  item: '내정 실행 시 성공률이 증가합니다.<br>소모되지 않습니다.',
+              }
+            : { horse: null, weapon: null, book: null, item: null },
     },
     city: {
         id: 1,
@@ -201,6 +229,7 @@ const myGeneral = (state: FixtureState) => ({
               capitalCityName: '업',
               typePros: '금수입↑ 치안↑',
               typeCons: '인구↓ 민심↓',
+              typeInfo: state.richMyInfo ? '법과 질서를 중시하여 국가 운영을 안정시킵니다.' : '',
               population: { cityCount: 1, current: 1_000, max: 2_000 },
               crew: { generalCount: 2, current: 500, max: 7_000 },
               power: 1_234,
@@ -1349,6 +1378,106 @@ test('내 정보&설정 keeps desktop density and becomes a 390px horizontal-ide
     await persistParityArtifact(page, 'core-my-page-mobile', mobile);
 });
 
+test('내 정보 항목과 국가 성향은 HTML 리치 툴팁을 마우스와 키보드로 표시한다', async ({ page }) => {
+    const state: FixtureState = {
+        permission: 'head',
+        myset: 3,
+        richMyInfo: true,
+        mainTraits: { personal: '안전', specialDomestic: '상재', specialWar: '신산' },
+        settingMutations: [],
+        accessPages: [],
+    };
+    await install(page, state);
+
+    const visibleTooltip = page.locator('.tippy-box[data-theme~="sammo-rich"][data-state="visible"]');
+    const showWithMouse = async (testId: string, expectedTexts: readonly string[]) => {
+        const trigger = page.locator(`[data-rich-tooltip="${testId}"]`);
+        await expect(trigger).toHaveAttribute('tabindex', '0');
+        await trigger.hover();
+        await expect(visibleTooltip).toHaveCount(1);
+        await expect(visibleTooltip).toHaveAttribute('role', 'tooltip');
+        for (const expectedText of expectedTexts) {
+            await expect(visibleTooltip).toContainText(expectedText);
+        }
+        await expect(trigger).toHaveAttribute('aria-describedby', /tippy-/u);
+        await page.mouse.move(1, 1);
+        await expect(visibleTooltip).toHaveCount(0);
+    };
+
+    await page.setViewportSize({ width: 1000, height: 900 });
+    await page.goto('my-page');
+    await expect(page.locator('[data-general-basic-card]')).toBeVisible();
+
+    const cardBefore = await page.locator('[data-general-basic-card]').boundingBox();
+    await showWithMouse('horse', ['명마', '통솔 +3']);
+    await showWithMouse('weapon', ['단도', '무력 +1']);
+    await showWithMouse('book', ['효경전', '지력 +1']);
+    await showWithMouse('item', ['납금박산로', '내정 실행 시 성공률이 증가합니다.', '소모되지 않습니다.']);
+    await showWithMouse('crew-type', [
+        '보병',
+        '표준적인 보병입니다.',
+        '전투 정보',
+        '공격 100 · 방어 150',
+        '병사 100명 기준 금 9 · 쌀 9',
+        '생성 조건',
+        '기술력 1000 이상 필요',
+    ]);
+    await showWithMouse('personality', ['안전', '부상당할 확률이 감소합니다.']);
+    await showWithMouse('special-domestic', ['내정특기 · 상재', '상업 내정 효율이 증가합니다.']);
+    await showWithMouse('special-war', [
+        '전투특기 · 신산',
+        '계략 성공률이 증가합니다.',
+        '발동 순서는 레거시와 같습니다.',
+    ]);
+    expect(await page.locator('[data-general-basic-card]').boundingBox()).toEqual(cardBefore);
+    expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBe(1000);
+
+    const warTrigger = page.locator('[data-rich-tooltip="special-war"]');
+    await warTrigger.focus();
+    await expect(warTrigger).toBeFocused();
+    await expect(visibleTooltip).toHaveCount(1);
+    await expect(visibleTooltip.locator('.rich-tooltip-content__line')).toHaveCount(2);
+    expect(await visibleTooltip.locator('.tippy-content').innerHTML()).not.toContain('&lt;br');
+    await persistParityArtifact(page, 'core-my-info-rich-tooltip-desktop', {
+        trigger: await warTrigger.boundingBox(),
+        tooltip: await visibleTooltip.boundingBox(),
+        scrollWidth: await page.evaluate(() => document.documentElement.scrollWidth),
+    });
+
+    await page.setViewportSize({ width: 390, height: 844 });
+    await page.reload();
+    const crewTrigger = page.locator('[data-rich-tooltip="crew-type"]');
+    await crewTrigger.focus();
+    await expect(visibleTooltip).toHaveCount(1);
+    const mobileTooltip = await visibleTooltip.boundingBox();
+    expect(mobileTooltip).not.toBeNull();
+    expect(mobileTooltip!.x).toBeGreaterThanOrEqual(0);
+    expect(mobileTooltip!.x + mobileTooltip!.width).toBeLessThanOrEqual(390);
+    expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBe(390);
+    await persistParityArtifact(page, 'core-my-info-rich-tooltip-mobile', {
+        trigger: await crewTrigger.boundingBox(),
+        tooltip: mobileTooltip,
+        scrollWidth: await page.evaluate(() => document.documentElement.scrollWidth),
+    });
+
+    await page.setViewportSize({ width: 1000, height: 900 });
+    await page.goto('');
+    const nationType = page.locator('[data-rich-tooltip="nation-type"]');
+    await nationType.hover();
+    await expect(visibleTooltip).toHaveCount(1);
+    await expect(visibleTooltip).toContainText('국가 성향 · 법가');
+    await expect(visibleTooltip).toContainText('법과 질서를 중시하여 국가 운영을 안정시킵니다.');
+    await expect(visibleTooltip).toContainText('장점 금수입↑ 치안↑');
+    await expect(visibleTooltip).toContainText('단점 인구↓ 민심↓');
+    await nationType.focus();
+    await expect(nationType).toBeFocused();
+    await expect(visibleTooltip).toHaveCount(1);
+    await persistParityArtifact(page, 'core-nation-type-rich-tooltip-desktop', {
+        trigger: await nationType.boundingBox(),
+        tooltip: await visibleTooltip.boundingBox(),
+    });
+});
+
 test('내 정보&설정의 지난 플레이는 기본 탐색과 분리되어 오른쪽에 정렬된다', async ({ page }) => {
     const state: FixtureState = { permission: 'head', myset: 3, settingMutations: [], accessPages: [] };
     await install(page, state);
@@ -1528,7 +1657,9 @@ test('실제 모바일 터치로 메인 패널 순서를 재정렬한다', async
         await dialog.screenshot({ path: testInfo.outputPath('mobile-main-panel-touch-dialog.png') });
         await dialog.getByRole('button', { name: '적용', exact: true }).click();
         await expect
-            .poll(() => mobilePage.evaluate(() => JSON.parse(localStorage.getItem('sam.mobileMainPanelOrder.v1') ?? '[]')))
+            .poll(() =>
+                mobilePage.evaluate(() => JSON.parse(localStorage.getItem('sam.mobileMainPanelOrder.v1') ?? '[]'))
+            )
             .toEqual([
                 'nation-menu',
                 'commands',

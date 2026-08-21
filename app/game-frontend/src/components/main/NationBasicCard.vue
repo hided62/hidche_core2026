@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import SkeletonLines from '../ui/SkeletonLines.vue';
+import RichTooltip from '../ui/RichTooltip.vue';
 import { legacyLuminanceTextColor } from '../../utils/legacyNationColor';
 import { formatOfficerLevelText } from '../../utils/nationFormat';
 import { getNpcColor } from '../../utils/npcColor';
@@ -19,6 +20,7 @@ interface NationInfo {
     rice: number;
     tech: number;
     typeName: string;
+    typeInfo?: string;
     typePros: string;
     typeCons: string;
     population: { cityCount: number; current: number; max: number };
@@ -67,9 +69,37 @@ const displayChiefName = (chief: NationChief | undefined): string => {
 
             <span class="head">성향</span>
             <strong class="body type-body">
-                {{ props.nation.typeName }} (<span class="pros">{{ props.nation.typePros }}</span>
-                <span class="cons">{{ props.nation.typeCons }}</span
-                >)
+                <RichTooltip
+                    v-if="props.nation.typeInfo"
+                    :title="`국가 성향 · ${props.nation.typeName}`"
+                    :description="props.nation.typeInfo"
+                    test-id="nation-type"
+                >
+                    {{ props.nation.typeName }} (<span class="pros">{{ props.nation.typePros }}</span>
+                    <span class="cons">{{ props.nation.typeCons }}</span
+                    >)
+                    <template #content="{ descriptionLines }">
+                        <span class="rich-tooltip-content__title">국가 성향 · {{ props.nation.typeName }}</span>
+                        <span
+                            v-for="(line, index) in descriptionLines"
+                            :key="`nation-type-info:${index}`"
+                            class="rich-tooltip-content__line"
+                        >
+                            {{ line }}
+                        </span>
+                        <span class="rich-tooltip-content__line rich-tooltip-content__pros">
+                            장점 {{ props.nation.typePros || '-' }}
+                        </span>
+                        <span class="rich-tooltip-content__line rich-tooltip-content__cons">
+                            단점 {{ props.nation.typeCons || '-' }}
+                        </span>
+                    </template>
+                </RichTooltip>
+                <template v-else>
+                    {{ props.nation.typeName }} (<span class="pros">{{ props.nation.typePros }}</span>
+                    <span class="cons">{{ props.nation.typeCons }}</span
+                    >)
+                </template>
             </strong>
 
             <span class="head">{{ formatOfficerLevelText(12, props.nation.level) }}</span>
