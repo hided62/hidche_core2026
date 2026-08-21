@@ -1,7 +1,7 @@
 import { TRPCError } from '@trpc/server';
 import { z } from 'zod';
 
-import { LogCategory, LogScope } from '@sammo-ts/logic';
+import { getBillByLevel, LogCategory, LogScope } from '@sammo-ts/logic';
 import { asRecord, type RankDataType } from '@sammo-ts/common';
 
 import type { GameApiContext } from '../../context.js';
@@ -517,6 +517,7 @@ export const getGeneralContext = async (ctx: GameApiContext) => {
             injury: general.injury,
             experience: general.experience,
             dedication: general.dedication,
+            bill: getBillByLevel(dedicationLevel),
             age: general.age,
             retirementYear,
             turnTime: general.turnTime.toISOString(),

@@ -421,6 +421,7 @@ onMounted(() => {
                                   available: true,
                                   experience: data.general.experience,
                                   dedicationText: data.general.progression?.dedicationText,
+                                  bill: data.general.bill,
                                   warnum: data.general.records.battles,
                                   wins: data.general.records.wins,
                                   losses: data.general.records.losses,
