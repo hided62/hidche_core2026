@@ -1048,6 +1048,9 @@ const persistArtifact = async (page: Page, name: string) => {
             gameHeader: describe('.game-shell__header'),
             gameTitle: describe('.game-shell__title'),
             gameHeaderActions: describe('.desktop-action-controls'),
+            headerRealtime: describe('.desktop-action-controls__realtime'),
+            headerRefresh: describe('.desktop-action-controls__refresh'),
+            headerLobby: describe('.desktop-action-controls__lobby'),
             legacyGameInfo: describe('.legacy-game-info'),
             activityStatus: describe('.activity-status'),
             executionStatus: describe('.execution-status'),
@@ -2390,7 +2393,9 @@ test('the 939/940 boundary switches to the Ref-style 500px single document', asy
         const headerActionsRect = headerActions.getBoundingClientRect();
         return {
             headerHeight: headerRect.height,
+            headerLeft: headerRect.left,
             headerRight: headerRect.right,
+            headerActionsLeft: headerActionsRect.left,
             headerActionsRight: headerActionsRect.right,
             width: element.getBoundingClientRect().width,
             executionWidth: execution.getBoundingClientRect().width,
@@ -2399,7 +2404,9 @@ test('the 939/940 boundary switches to the Ref-style 500px single document', asy
             columns: getComputedStyle(element).gridTemplateColumns,
         };
     });
-    expect(activityGeometry.headerHeight).toBeLessThan(60);
+    expect(activityGeometry.headerHeight).toBeGreaterThan(90);
+    expect(activityGeometry.headerHeight).toBeLessThan(110);
+    expect(activityGeometry.headerActionsLeft).toBeGreaterThanOrEqual(activityGeometry.headerLeft);
     expect(activityGeometry.headerActionsRight).toBeLessThanOrEqual(activityGeometry.headerRight);
     expect(activityGeometry.width).toBe(500);
     expect(activityGeometry.executionWidth).toBeCloseTo(166.67, 0);
@@ -3177,6 +3184,78 @@ test('all main Lumen button families share the rounded pressed geometry', async 
     }
 
     await persistArtifact(page, `${basePath.slice(1)}-main-lumen-button-families`);
+});
+
+test('lobby action is separated on desktop and anchors opposite the refresh action on mobile', async ({ page }) => {
+    const state: NavigationFixture = {
+        officerLevel: 5,
+        permission: 2,
+        nationLevel: 3,
+        stage: 0,
+        npcMode: 1,
+        generalMeCalls: 0,
+        operations: [],
+    };
+    await installFixture(page, state);
+    await page.setViewportSize({ width: 1200, height: 900 });
+    await waitForMain(page);
+
+    const actions = page.locator('.desktop-action-controls');
+    const realtime = page.locator('.desktop-action-controls__realtime');
+    const refresh = page.locator('.desktop-action-controls__refresh');
+    const lobby = page.locator('.desktop-action-controls__lobby');
+    const measure = () =>
+        page.evaluate(() => {
+            const rect = (selector: string) => {
+                const element = document.querySelector<HTMLElement>(selector);
+                if (!element) throw new Error(`${selector} is missing`);
+                const box = element.getBoundingClientRect();
+                return { left: box.left, right: box.right, top: box.top, bottom: box.bottom, width: box.width };
+            };
+            const actionStyle = getComputedStyle(document.querySelector<HTMLElement>('.desktop-action-controls')!);
+            return {
+                actions: rect('.desktop-action-controls'),
+                realtime: rect('.desktop-action-controls__realtime'),
+                refresh: rect('.desktop-action-controls__refresh'),
+                lobby: rect('.desktop-action-controls__lobby'),
+                title: rect('.game-shell__title'),
+                display: actionStyle.display,
+                columns: actionStyle.gridTemplateColumns,
+            };
+        });
+
+    await expect(actions).toHaveCSS('display', 'flex');
+    let layout = await measure();
+    expect(layout.lobby.left - layout.refresh.right).toBeGreaterThanOrEqual(20);
+    expect(layout.refresh.top).toBeCloseTo(layout.lobby.top, 2);
+    expect(layout.refresh.width).toBeLessThanOrEqual(62);
+    expect(layout.lobby.width).toBeLessThanOrEqual(62);
+
+    await page.setViewportSize({ width: 500, height: 900 });
+    await expect(actions).toHaveCSS('display', 'grid');
+    await expect(realtime).toBeVisible();
+    await expect(refresh).toBeVisible();
+    await expect(lobby).toBeVisible();
+    layout = await measure();
+    expect(layout.columns.split(' ')).toHaveLength(3);
+    expect(layout.actions.left).toBeCloseTo(0, 2);
+    expect(layout.actions.right).toBeCloseTo(500, 2);
+    expect(layout.refresh.left).toBeCloseTo(layout.actions.left, 2);
+    expect(layout.lobby.right).toBeCloseTo(layout.actions.right, 2);
+    expect(layout.refresh.right).toBeLessThan(layout.realtime.left);
+    expect(layout.realtime.right).toBeLessThan(layout.lobby.left);
+    expect(layout.refresh.top).toBeCloseTo(layout.lobby.top, 2);
+    expect(layout.actions.top).toBeGreaterThanOrEqual(layout.title.bottom);
+    expect(layout.refresh.width).toBeLessThanOrEqual(62);
+    expect(layout.lobby.width).toBeLessThanOrEqual(62);
+    expect(
+        await page.evaluate(() => ({
+            document: document.documentElement.scrollWidth - document.documentElement.clientWidth,
+            body: document.body.scrollWidth - document.body.clientWidth,
+        }))
+    ).toEqual({ document: 0, body: 0 });
+
+    await persistArtifact(page, `${basePath.slice(1)}-main-lobby-action-layout`);
 });
 
 test('mobile main Lumen button families keep the same state geometry without overflow', async ({ page }) => {
