@@ -2,6 +2,7 @@
 import { computed, reactive, watch, type CSSProperties } from 'vue';
 import MapViewer from './MapViewer.vue';
 import { commandArgumentPresentation, resolveCommandArgumentMapTarget } from '../command/commandArgumentPresentation';
+import { commandCityOptions } from '../command/commandArgumentOptions';
 import {
     commandArgumentFieldContract,
     shouldPreserveCommandArgumentValue,
@@ -63,6 +64,9 @@ const optionsFor = (field: CommandInputField): CommandOption[] => {
     }
     if (field.optionSource === 'nations') {
         return props.options.nationTargets?.[props.commandKey] ?? props.options.nations;
+    }
+    if (field.optionSource === 'cities') {
+        return commandCityOptions(props.commandKey, props.options.cities, props.mapData);
     }
     if (field.optionSource === 'items') {
         return props.options.items[String(values.itemType ?? '')] ?? [];

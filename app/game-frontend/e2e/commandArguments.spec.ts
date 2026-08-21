@@ -1872,6 +1872,61 @@ test('shows a map and target details for every city or nation argument chief com
     });
 });
 
+test('prioritizes own cities for assignment while retaining other map targets', async ({ page }) => {
+    const assignmentTable = structuredClone(commandTable);
+    assignmentTable.inputOptions.cities = [
+        { value: 2, label: '허창 (적국)', description: '적국 · 예주 · 대도시' },
+        { value: 3, label: '단양 (무주)' },
+        { value: 1, label: '업 (아국)' },
+    ];
+
+    await install(page, false, assignmentTable);
+    await page.setViewportSize({ width: 1200, height: 900 });
+    await page.goto('/che/chief-center');
+    await page.getByRole('button', { name: '1턴 명령 입력', exact: true }).click();
+    const picker = page.getByTestId('command-picker');
+    await picker.getByRole('button', { name: /^(?:국가:)?인사$/, exact: true }).click();
+    await picker.getByRole('button', { name: /발령/ }).click();
+
+    const form = picker.getByTestId('command-argument-form');
+    const citySelect = form.locator('#command-arg-destCityId');
+    await expect(form.getByTestId('command-argument-map')).toBeVisible();
+    await expect(citySelect.locator('option')).toHaveText(['업 (아국)', '허창 (적국)', '단양 (무주)']);
+    await expect(citySelect).toHaveValue('1');
+
+    await form.getByTestId('command-argument-map').locator('.city-base').nth(1).click();
+    await expect(citySelect).toHaveValue('2');
+    await expect(form.getByTestId('command-map-selection-status')).toContainText('선택 도시허창');
+    await expect(page).toHaveURL(/\/che\/chief-center$/);
+    await form.screenshot({ path: test.info().outputPath('chief-assignment-own-city-priority.png') });
+
+    await page.setViewportSize({ width: 500, height: 900 });
+    await page.goto('/che/chief-center');
+    await page.getByRole('button', { name: '1턴 명령 입력', exact: true }).click();
+    const mobilePicker = page.getByTestId('command-picker');
+    await mobilePicker.getByRole('button', { name: /^(?:국가:)?인사$/, exact: true }).click();
+    await mobilePicker.getByRole('button', { name: /발령/ }).click();
+
+    const mobileForm = mobilePicker.getByTestId('command-argument-form');
+    const mobileMap = mobileForm.getByTestId('command-argument-map');
+    const mobileCitySelect = mobileForm.locator('#command-arg-destCityId');
+    await expect(mobileMap).toBeVisible();
+    await expect(mobileCitySelect.locator('option')).toHaveText(['업 (아국)', '허창 (적국)', '단양 (무주)']);
+    const mobileGeometry = await mobilePicker.evaluate((element) => ({
+        width: element.getBoundingClientRect().width,
+        overflow: element.scrollWidth - element.clientWidth,
+    }));
+    expect(mobileGeometry).toEqual({ width: 500, overflow: 0 });
+    const mapGeometry = await mobileMap.locator('.map-area').evaluate((element) => {
+        const rect = element.getBoundingClientRect();
+        return { width: rect.width, height: rect.height };
+    });
+    expect(mapGeometry.width / mapGeometry.height).toBeCloseTo(7 / 5, 2);
+    await mobileMap.screenshot({ path: test.info().outputPath('chief-assignment-map-mobile.png') });
+    await mobileCitySelect.scrollIntoViewIfNeeded();
+    await mobilePicker.screenshot({ path: test.info().outputPath('chief-assignment-own-city-priority-mobile.png') });
+});
+
 test('prioritizes current nation targets while preserving every choice', async ({ page }) => {
     await install(page);
     await page.setViewportSize({ width: 1200, height: 900 });
