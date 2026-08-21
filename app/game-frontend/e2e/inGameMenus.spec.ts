@@ -102,6 +102,9 @@ const myGeneral = (state: FixtureState) => ({
         dedication: 200,
         age: 30,
         turnTime: '2026-01-01 00:10:00',
+        recentWar: '2026-01-01 00:00:00',
+        defenceTrain: 80,
+        killTurn: 6,
         crewTypeId: 1,
         crewTypeName: '보병',
         crewTypeInfo: state.richMyInfo
@@ -277,7 +280,7 @@ const battleCenter = (state: FixtureState) => ({
             cityId: 1,
             turnTime: '2026-01-01 00:10:00',
             recentWar: '2026-01-01 00:00:00',
-            warnum: 3,
+            warnum: 8,
             stats: { leadership: 70, strength: 60, intelligence: 50 },
             experience: 100,
             dedication: 200,
@@ -288,6 +291,8 @@ const battleCenter = (state: FixtureState) => ({
             train: 80,
             atmos: 90,
             age: 30,
+            defenceTrain: 80,
+            killTurn: 6,
             crewTypeId: 1,
             crewTypeName: '보병',
             equipment: { weapon: 'None', book: 'None', horse: 'None', item: 'None' },
@@ -301,7 +306,8 @@ const battleCenter = (state: FixtureState) => ({
                 statUpgradeLimit: 20,
                 dex: [350, 1_375, 3_500, 7_125, 1_275_975],
             },
-            battleStats: { kills: 1, deaths: 2, fire: 0, killCrew: 300, deathCrew: 100, dex: [] },
+            serviceYears: 4,
+            battleStats: { kills: 5, deaths: 3, fire: 12, killCrew: 12_345, deathCrew: 6_789, dex: [] },
         },
         {
             id: 8,
@@ -323,6 +329,8 @@ const battleCenter = (state: FixtureState) => ({
             train: 60,
             atmos: 60,
             age: 20,
+            defenceTrain: 80,
+            killTurn: 4,
             crewTypeId: 1,
             crewTypeName: '보병',
             equipment: { weapon: 'None', book: 'None', horse: 'None', item: 'None' },
@@ -336,6 +344,7 @@ const battleCenter = (state: FixtureState) => ({
                 statUpgradeLimit: 20,
                 dex: [0, 0, 0, 0, 0],
             },
+            serviceYears: 1,
             battleStats: { kills: 0, deaths: 0, fire: 0, killCrew: 0, deathCrew: 0, dex: [] },
         },
     ],
@@ -1213,6 +1222,7 @@ test('내 정보&설정 keeps desktop density and becomes a 390px horizontal-ide
     await page.setViewportSize({ width: 1000, height: 900 });
     await page.goto('my-page');
     await expect(page.locator('.general-table')).toHaveAttribute('data-general-basic-card', '');
+    await expect(page.locator('.general-table')).toHaveAttribute('data-general-information-panel', '');
     const myPageImages = await readGeneralPanelImages(page.locator('.general-table'));
     expect(myPageImages.map(({ width, height }) => ({ width, height }))).toEqual([
         { width: 64, height: 64 },
@@ -1220,11 +1230,32 @@ test('내 정보&설정 keeps desktop density and becomes a 390px horizontal-ide
     ]);
     expect(myPageImages[0]?.backgroundImage).toContain('/icons/default.jpg');
     expect(myPageImages[1]?.backgroundImage).toContain('/game/crewtype1.png');
-    await expect(page.locator('.legacy-general-details')).toContainText('계급 29품관');
-    await expect(page.locator('.legacy-general-details')).toContainText('병종 보병');
-    await expect(page.locator('.legacy-general-details')).toContainText('전투 8 · 계략 12 · 사관 4년');
-    await expect(page.locator('.legacy-general-details')).toContainText('승률 62.50% · 승리 5 · 패배 3');
-    await expect(page.locator('.legacy-general-details')).toContainText('살상률 181.84% · 사살 12,345 · 피살 6,789');
+    await expect(page.locator('.general-table')).toContainText('병종보병');
+    await expect(page.locator('.general-table')).toContainText('삭턴6 턴');
+    await expect(page.locator('.battle-general-extra')).toContainText('계급29품관');
+    await expect(page.locator('.battle-general-extra')).toContainText('전투8회');
+    await expect(page.locator('.battle-general-extra')).toContainText('계략12');
+    await expect(page.locator('.battle-general-extra')).toContainText('사관4년');
+    await expect(page.locator('.battle-general-extra')).toContainText('승률62.50%');
+    await expect(page.locator('.battle-general-extra')).toContainText('살상률181.84%');
+    await expect(page.locator('.battle-general-extra')).toContainText('사살12,345');
+    await expect(page.locator('.battle-general-extra')).toContainText('피살6,789');
+    await expect(page.locator('.battle-general-extra__recent-value')).toHaveText('01-01 00:00');
+    await expect(page.locator('.legacy-general-details')).toHaveCount(0);
+    await expect(page.locator('.battle-general-extra > span')).toHaveText([
+        '명성',
+        '계급',
+        '전투',
+        '승리',
+        '패배',
+        '계략',
+        '사관',
+        '사살',
+        '피살',
+        '승률',
+        '살상률',
+        '최근 전투',
+    ]);
     await expect(page.locator('.item-group')).toContainText('명마');
     await expect(page.locator('#container')).not.toContainText('che_');
     await expect(page.locator('.title-row')).toContainText('내 정 보');
@@ -2006,6 +2037,26 @@ test('감찰부 keeps the selector interaction and shows the permission error pa
     await expect(page.locator('.battle-general-card')).toContainText('병종보병');
     await expect(page.locator('.battle-general-card')).not.toContainText('che_');
     await expect(page.locator('.battle-general-card')).toHaveAttribute('data-general-basic-card', '');
+    await expect(page.locator('.battle-general-card')).toHaveAttribute('data-general-information-panel', '');
+    await expect(page.locator('.battle-general-card')).toContainText('삭턴6 턴');
+    await expect(page.locator('.battle-general-extra')).toContainText('전투8회');
+    await expect(page.locator('.battle-general-extra')).toContainText('사관4년');
+    await expect(page.locator('.battle-general-extra')).toContainText('승률62.50%');
+    await expect(page.locator('.battle-general-extra')).toContainText('살상률181.84%');
+    await expect(page.locator('.battle-general-extra > span')).toHaveText([
+        '명성',
+        '계급',
+        '전투',
+        '승리',
+        '패배',
+        '계략',
+        '사관',
+        '사살',
+        '피살',
+        '승률',
+        '살상률',
+        '최근 전투',
+    ]);
     const battleImages = await readGeneralPanelImages(page.locator('.battle-general-card'));
     expect(battleImages).toHaveLength(2);
     expect(battleImages[0]?.backgroundImage).toContain('/icons/default.jpg');

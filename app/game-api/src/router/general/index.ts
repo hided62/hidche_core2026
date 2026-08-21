@@ -265,6 +265,7 @@ export const getGeneralContext = async (ctx: GameApiContext) => {
             dedication: true,
             age: true,
             turnTime: true,
+            recentWarTime: true,
             crewTypeId: true,
             personalCode: true,
             specialCode: true,
@@ -519,6 +520,7 @@ export const getGeneralContext = async (ctx: GameApiContext) => {
             age: general.age,
             retirementYear,
             turnTime: general.turnTime.toISOString(),
+            recentWar: general.recentWarTime?.toISOString() ?? null,
             defenceTrain: settings.defence_train,
             killTurn: readNumber(metaRecord.killturn ?? metaRecord.killTurn, 0),
             remainingMinutes: resolveRemainingMinutes(
