@@ -278,8 +278,8 @@ test('past plays is available without a current general and preserves desktop in
     await expect(detailToggle).toHaveAttribute('aria-expanded', 'true');
     await expect(page.locator('.archive-general-card')).toHaveAttribute('data-general-basic-card', '');
     await expect(page.locator('.archive-general-card [role="progressbar"]')).toHaveCount(14);
-    await expect(page.locator('[data-general-battle-summary]')).toContainText('승률62.5%');
-    await expect(page.locator('[data-general-battle-summary]')).toContainText('살상률75.0%');
+    await expect(page.locator('[data-general-battle-summary]')).toContainText('승률62.50%');
+    await expect(page.locator('[data-general-battle-summary]')).toContainText('살상률75.00%');
     const hallBattle = page.locator('[data-hall-battle-record]');
     await expect(hallBattle).toContainText('명예의 전당 보존 기록');
     await expect(hallBattle).toContainText('항목별 기록 시점이 서로 다를 수 있습니다.');
