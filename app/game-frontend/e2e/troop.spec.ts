@@ -22,6 +22,17 @@ const readReferenceImage = async (filename: string): Promise<Buffer> => {
     throw new Error(`Reference image not found: ${filename}`);
 };
 
+const readReferenceIcon = async (filename: string): Promise<Buffer> => {
+    for (const gameImageRoot of imageRoots) {
+        try {
+            return await readFile(resolve(gameImageRoot, '..', 'icons', filename));
+        } catch {
+            // The main checkout and nested feature worktrees have different parents.
+        }
+    }
+    throw new Error(`Reference icon not found: ${filename}`);
+};
+
 type Member = {
     id: number;
     name: string;
@@ -35,22 +46,137 @@ type Member = {
         statUpgradeLimit: number;
         dex: number[];
     };
+    panel: {
+        general: {
+            id: number;
+            name: string;
+            picture: string | null;
+            imageServer: number;
+            npcState: number;
+            officerLevel: number;
+            officerLevelText: string;
+            officerCityName: string | null;
+            generalType: string;
+            leadershipBonus: number;
+            stats: { leadership: number; strength: number; intelligence: number };
+            gold: number;
+            rice: number;
+            crew: number;
+            train: number;
+            atmos: number;
+            injury: number;
+            experience: number;
+            dedication: number;
+            age: number;
+            retirementYear: number;
+            turnTime: string;
+            defenceTrain: number;
+            killTurn: number;
+            remainingMinutes: number;
+            troopId: number;
+            troop: { name: string; status: 'present' };
+            refreshScore: { current: number; total: number; text: string };
+            crewTypeId: number;
+            crewTypeName: string;
+            traits: { personal: string; specialDomestic: string; specialWar: string };
+            progression: {
+                experienceLevel: number;
+                dedicationLevel: number;
+                dedicationText: string;
+                statExperience: { leadership: number; strength: number; intelligence: number };
+                statUpgradeLimit: number;
+                dex: number[];
+            };
+            itemNames: { horse: string; weapon: string; book: string; item: string };
+        };
+        summary: {
+            available: true;
+            experience: number;
+            dedicationText: string;
+            bill: number;
+            warnum: number;
+            wins: number;
+            losses: number;
+            strategies: number;
+            serviceYears: number;
+            killCrew: number;
+            deathCrew: number;
+            recentWar: string;
+        };
+    };
 };
 
-const member = (id: number, name: string, cityId: number, cityName: string): Member => ({
-    id,
-    name,
-    cityId,
-    cityName,
-    stats: { leadership: 70, strength: 60, intelligence: 50 },
-    experience: 450,
-    progression: {
+const member = (id: number, name: string, cityId: number, cityName: string, troopName = '백마대'): Member => {
+    const stats = { leadership: 70, strength: 60, intelligence: 50 };
+    const progression = {
         experienceLevel: 4,
+        dedicationLevel: 3,
+        dedicationText: '28품관',
         statExperience: { leadership: 7, strength: 8, intelligence: 9 },
         statUpgradeLimit: 20,
         dex: [350, 1_375, 3_500, 7_125, 1_275_975],
-    },
-});
+    };
+    return {
+        id,
+        name,
+        cityId,
+        cityName,
+        stats,
+        experience: 450,
+        progression,
+        panel: {
+            general: {
+                id,
+                name,
+                picture: 'default.jpg',
+                imageServer: 0,
+                npcState: 0,
+                officerLevel: 1,
+                officerLevelText: '일반',
+                officerCityName: null,
+                generalType: '용장',
+                leadershipBonus: 0,
+                stats,
+                gold: 1_234,
+                rice: 4_321,
+                crew: 987,
+                train: 88,
+                atmos: 77,
+                injury: 0,
+                experience: 450,
+                dedication: 900,
+                age: 31,
+                retirementYear: 70,
+                turnTime: '2026-07-25T08:22:33.000Z',
+                defenceTrain: 90,
+                killTurn: 7,
+                remainingMinutes: 3,
+                troopId: 1,
+                troop: { name: troopName, status: 'present' },
+                refreshScore: { current: 13, total: 800, text: '열심' },
+                crewTypeId: 1100,
+                crewTypeName: '보병',
+                traits: { personal: '대담', specialDomestic: '농업', specialWar: '맹장' },
+                progression,
+                itemNames: { horse: '명마', weapon: '명검', book: '병서', item: '도구' },
+            },
+            summary: {
+                available: true,
+                experience: 450,
+                dedicationText: '28품관',
+                bill: 1_000,
+                warnum: 17,
+                wins: 11,
+                losses: 6,
+                strategies: 5,
+                serviceYears: 11,
+                killCrew: 1_234,
+                deathCrew: 432,
+                recentWar: '2026-07-25T08:12:34.000Z',
+            },
+        },
+    };
+};
 type TroopFixture = {
     id: number;
     name: string;
@@ -105,7 +231,7 @@ const baseTroops = (): TroopFixture[] => [
             picture: 'default.jpg',
             imageServer: 0,
         },
-        members: [member(2, '관우', 2, '계')],
+        members: [member(2, '관우', 2, '계', '청룡대')],
     },
 ];
 
@@ -157,14 +283,18 @@ const installApiFixture = async (page: Page, state: FixtureState) => {
             });
         });
     }
-    await page.route('**/image/icons/**', async (route) => {
+    await page.route('**/game/crewtype1100.png', async (route) => {
         await route.fulfill({
             status: 200,
             contentType: 'image/png',
-            body: Buffer.from(
-                'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=',
-                'base64'
-            ),
+            body: await readReferenceImage('crewtype1100.png'),
+        });
+    });
+    await page.route('**/icons/**', async (route) => {
+        await route.fulfill({
+            status: 200,
+            contentType: 'image/jpeg',
+            body: await readReferenceIcon('default.jpg'),
         });
     });
     await page.route(gameTrpcRoute, async (route) => {
@@ -179,7 +309,7 @@ const installApiFixture = async (page: Page, state: FixtureState) => {
             }
             if (operation === 'troop.getList') {
                 return response({
-                    nation: { id: 1, name: '테스트국' },
+                    nation: { id: 1, name: '테스트국', color: '#123456' },
                     me: state.me,
                     permission: state.permission,
                     troops: state.troops,
@@ -206,7 +336,7 @@ const installApiFixture = async (page: Page, state: FixtureState) => {
                         picture: 'default.jpg',
                         imageServer: 0,
                     },
-                    members: [member(createdId, '유비', 1, '북평')],
+                    members: [member(createdId, '유비', 1, '북평', '신규대')],
                 });
                 return response({ ok: true, troopId: createdId, troopName: '신규대' });
             }
@@ -301,7 +431,7 @@ test('renders the legacy desktop grid with matching computed geometry and states
         paddingTop: '7px',
         paddingLeft: '9.8px',
         textAlign: 'left',
-        fontFamily: 'Pretendard, "Apple SD Gothic Neo", "Noto Sans KR", "Malgun Gothic"',
+        fontFamily: 'Pretendard, "Apple SD Gothic Neo", "Noto Sans KR", "Malgun Gothic", sans-serif',
         fontSize: '14px',
         lineHeight: '21px',
     });
@@ -317,9 +447,16 @@ test('renders the legacy desktop grid with matching computed geometry and states
     expect(hoverStyle.borderBottomWidth).toBe('3px');
 
     await page.locator('.troopMember').nth(1).hover();
-    await expect(page.getByRole('tooltip')).toContainText('조운');
-    await expect(page.getByRole('tooltip').locator('[role="progressbar"]')).toHaveCount(14);
-    await expect(page.getByRole('tooltip').locator('[aria-label*="1,275,975 (EX+)"]')).toHaveCount(5);
+    const popup = page.getByRole('tooltip');
+    await expect(popup).toContainText('조운');
+    await expect(popup.locator('[data-general-information-panel]')).toHaveCount(1);
+    await expect(popup.locator('[data-general-basic-card]')).toHaveCount(1);
+    await expect(popup.locator('[data-general-battle-summary]')).toHaveCount(1);
+    await expect(popup).toContainText('봉급1,000');
+    await expect(popup).toContainText('승률64.71%');
+    await expect(popup).toContainText('살상률285.65%');
+    await expect(popup.locator('[role="progressbar"]')).toHaveCount(14);
+    await expect(popup.locator('[aria-label*="1,275,975 (EX+)"]')).toHaveCount(5);
     expect(
         await page
             .getByRole('tooltip')
@@ -327,10 +464,21 @@ test('renders the legacy desktop grid with matching computed geometry and states
             .first()
             .evaluate((bar) => getComputedStyle(bar).backgroundImage)
     ).toContain('/game/pr8.gif');
-    expect(await page.getByRole('tooltip').evaluate((tooltip) => tooltip.getBoundingClientRect().width)).toBeCloseTo(
-        500,
-        0
-    );
+    const popupGeometry = await popup.evaluate((tooltip) => {
+        const rect = tooltip.getBoundingClientRect();
+        const generalIcon = tooltip.querySelector<HTMLElement>('.general-icon')!.getBoundingClientRect();
+        const crewIcon = tooltip.querySelector<HTMLElement>('.general-crew-type-icon')!.getBoundingClientRect();
+        return {
+            width: rect.width,
+            generalIcon: { width: generalIcon.width, height: generalIcon.height },
+            crewIcon: { width: crewIcon.width, height: crewIcon.height },
+            backgroundImage: getComputedStyle(tooltip.querySelector<HTMLElement>('.general-icon')!).backgroundImage,
+        };
+    });
+    expect(popupGeometry.width).toBeCloseTo(500, 0);
+    expect(popupGeometry.generalIcon).toEqual({ width: 64, height: 64 });
+    expect(popupGeometry.crewIcon).toEqual({ width: 64, height: 64 });
+    expect(popupGeometry.backgroundImage).toContain('/icons/default.jpg');
     await page.screenshot({ path: 'test-results/troop/desktop-leader.png', fullPage: true });
 });
 
@@ -371,6 +519,12 @@ test('matches the legacy 500px responsive placement', async ({ page }) => {
     expect(geometry.reserved).toMatchObject({ x: 260, y: 0, width: 100 });
     expect(geometry.action).toMatchObject({ x: 360, y: 0, width: 140 });
     expect(geometry.members).toMatchObject({ x: 130, y: 93, width: 370 });
+    await page.locator('.troopMember').nth(1).hover();
+    const mobilePopup = page.getByRole('tooltip');
+    await expect(mobilePopup.locator('[data-general-information-panel]')).toHaveCount(1);
+    await expect(mobilePopup.locator('[role="progressbar"]')).toHaveCount(14);
+    expect(await mobilePopup.evaluate((tooltip) => tooltip.getBoundingClientRect().width)).toBeCloseTo(500, 0);
+    expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBe(500);
     await page.screenshot({ path: 'test-results/troop/mobile-leader.png', fullPage: true });
 });
 

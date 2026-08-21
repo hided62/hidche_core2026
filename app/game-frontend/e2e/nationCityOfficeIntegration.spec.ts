@@ -397,7 +397,7 @@ test('암행부 행을 도시별로 나누고 수뇌의 인사부 즉시 임명�
         return { borderTopWidth: style.borderTopWidth, backgroundColor: style.backgroundColor };
     });
     expect(disabledStyle).toEqual({ borderTopWidth: '0px', backgroundColor: 'rgba(0, 0, 0, 0)' });
-    const appointButton = page.getByRole('button', { name: '장료을(를) 허창 태수로 임명' });
+    const appointButton = page.getByRole('button', { name: '장료를 허창 태수로 임명' });
     await appointButton.hover();
     expect(await appointButton.evaluate((button) => getComputedStyle(button).cursor)).toBe('pointer');
     await appointButton.focus();
@@ -406,6 +406,7 @@ test('암행부 행을 도시별로 나누고 수뇌의 인사부 즉시 임명�
     await page.screenshot({ path: testInfo.outputPath('nation-city-integrated-desktop.png'), fullPage: true });
     await appointButton.click();
     await expect.poll(() => state.appointmentInputs).toEqual([{ destGeneralId: 21, destCityId: 1, officerLevel: 4 }]);
+    await expect(page.getByTestId('game-toast')).toContainText('장료를 허창 태수로 임명했습니다.');
     await expect(page.locator('.city[data-city-id="1"] .officer-4-value')).toHaveText('장료');
     await expect(page.locator('.city[data-city-id="1"] .officer-4-value')).toHaveClass(/effective-officer/u);
     await expect(page.locator('.city[data-city-id="1"] tr[data-general-id="21"] .mode-4')).toBeDisabled();
@@ -425,7 +426,7 @@ test('수뇌 대상은 재확인하고 일반 장수에게는 임명 버튼을 �
     await page.getByRole('button', { name: '암행부 연동' }).click();
     await page.getByRole('button', { name: '인사부 연동' }).click();
 
-    const chiefButton = page.getByRole('button', { name: '순욱을(를) 허창 태수로 임명' });
+    const chiefButton = page.getByRole('button', { name: '순욱을 허창 태수로 임명' });
     expect(await chiefButton.evaluate((button) => getComputedStyle(button).color)).toBe('rgb(255, 0, 0)');
     page.once('dialog', async (dialog) => {
         expect(dialog.message()).toBe('수뇌입니다. 임명할까요?');
