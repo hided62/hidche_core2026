@@ -50,6 +50,7 @@ export interface ScenarioInstallOptions {
     joinMode?: 'full' | 'onlyRandom';
     autorunUser?: ScenarioAutorunOptions | null;
     preopenAt?: Date | null;
+    openAt?: Date | null;
     season?: number;
     firstGameIdx?: number;
     serverId?: string;
@@ -229,11 +230,14 @@ export const seedScenarioToDatabase = async (options: ScenarioSeedOptions): Prom
     const sync = install?.sync ?? false;
     const startState = resolveStartState(scenario.startYear ?? null, now, turnTermMinutes, sync);
     const gameClockMode = options.gameClockMode ?? 'realtime';
+    // A realtime season prepared before its formal opening must not consume
+    // wall time while users are only allowed to edit reserved commands.
+    const initialClockWallAnchor = install?.openAt && install.openAt.getTime() > now.getTime() ? install.openAt : now;
     const initialClock = new GameClock({
         baseTime: startState.startTime,
         tick: 0,
         mode: gameClockMode,
-        wallAnchor: now,
+        wallAnchor: initialClockWallAnchor,
         turnSeconds: tickSeconds,
     });
     const initialClockTick = initialClock.dateToTick(now);
@@ -410,7 +414,7 @@ export const seedScenarioToDatabase = async (options: ScenarioSeedOptions): Prom
                         clockBaseTime: initialClock.baseTime,
                         clockTick: BigInt(initialClockTick),
                         clockMode: gameClockMode,
-                        clockWallAnchor: now,
+                        clockWallAnchor: initialClock.wallAnchor,
                         lastTurnTick: BigInt(initialClockTick),
                         config: asJson({ ...scenarioConfig, ...worldConfig }),
                         meta: asJson(worldMeta),

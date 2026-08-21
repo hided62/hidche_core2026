@@ -20,7 +20,10 @@ const props = defineProps<{
     currentMonth?: number;
     turnTermMinutes?: number;
     serverTime?: string;
+    serverWallTime?: string;
     clockMode?: 'realtime' | 'manual';
+    clockRunning?: boolean;
+    clockStartsAt?: string | null;
     autorunLimit?: number | null;
     storageKey?: string;
     mapData?: CommandMapData | null;
@@ -86,8 +89,10 @@ const autonomousUntil = computed(() => {
 });
 
 const currentServerTime = ref('--:--:--');
+const MAX_SERVER_CLOCK_TIMER_DELAY_MS = 60_000;
 let sampledServerTimeMs: number | null = null;
 let sampledClientTimeMs = 0;
+let sampledStartDelayMs: number | null = 0;
 let serverClockTimer: ReturnType<typeof setTimeout> | undefined;
 
 const updateServerClock = () => {
@@ -97,21 +102,42 @@ const updateServerClock = () => {
         currentServerTime.value = '--:--:--';
         return;
     }
-    const projectedTime = new Date(
-        props.clockMode === 'manual' ? sampledServerTimeMs : sampledServerTimeMs + Date.now() - sampledClientTimeMs
-    );
+    const clientElapsedMs = Math.max(0, Date.now() - sampledClientTimeMs);
+    const elapsedGameMs =
+        props.clockMode === 'manual' || sampledStartDelayMs === null
+            ? 0
+            : Math.max(0, clientElapsedMs - sampledStartDelayMs);
+    const projectedTime = new Date(sampledServerTimeMs + elapsedGameMs);
     currentServerTime.value = formatLocalTimeSeconds(projectedTime);
-    if (props.clockMode !== 'manual') {
-        serverClockTimer = setTimeout(updateServerClock, 1_000 - projectedTime.getMilliseconds());
+    if (props.clockMode !== 'manual' && sampledStartDelayMs !== null) {
+        const untilStartMs = sampledStartDelayMs - clientElapsedMs;
+        serverClockTimer = setTimeout(
+            updateServerClock,
+            untilStartMs > 0
+                ? Math.min(untilStartMs, MAX_SERVER_CLOCK_TIMER_DELAY_MS)
+                : 1_000 - projectedTime.getMilliseconds()
+        );
     }
 };
 
 watch(
-    () => [props.serverTime, props.clockMode] as const,
-    ([serverTime]) => {
+    () => [props.serverTime, props.serverWallTime, props.clockMode, props.clockRunning, props.clockStartsAt] as const,
+    ([serverTime, serverWallTime, clockMode, clockRunning, clockStartsAt]) => {
         const parsed = serverTime ? new Date(serverTime).getTime() : Number.NaN;
         sampledServerTimeMs = Number.isFinite(parsed) ? parsed : null;
         sampledClientTimeMs = Date.now();
+        if (clockMode === 'manual') {
+            sampledStartDelayMs = null;
+        } else if (clockRunning !== false) {
+            sampledStartDelayMs = 0;
+        } else {
+            const wallTimeMs = serverWallTime ? new Date(serverWallTime).getTime() : Number.NaN;
+            const startsAtMs = clockStartsAt ? new Date(clockStartsAt).getTime() : Number.NaN;
+            sampledStartDelayMs =
+                Number.isFinite(wallTimeMs) && Number.isFinite(startsAtMs)
+                    ? Math.max(0, startsAtMs - wallTimeMs)
+                    : null;
+        }
         updateServerClock();
     },
     { immediate: true }

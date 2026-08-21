@@ -4,14 +4,25 @@ import type { DatabaseClient } from '../context.js';
 
 export interface CurrentGameTime {
     now: Date;
+    wallNow: Date;
     tick: number | null;
     mode: GameClockMode | null;
+    running: boolean;
+    startsAt: Date | null;
     dateToTick(date: Date): number | null;
 }
 
 export const loadCurrentGameTime = async (db: DatabaseClient, wallNow = new Date()): Promise<CurrentGameTime> => {
     if (!db.worldState) {
-        return { now: wallNow, tick: null, mode: null, dateToTick: () => null };
+        return {
+            now: wallNow,
+            wallNow,
+            tick: null,
+            mode: null,
+            running: true,
+            startsAt: null,
+            dateToTick: () => null,
+        };
     }
     const state = await db.worldState.findFirst({
         orderBy: { id: 'asc' },
@@ -24,7 +35,15 @@ export const loadCurrentGameTime = async (db: DatabaseClient, wallNow = new Date
         },
     });
     if (!state?.clockBaseTime || state.clockTick === null || !state.clockWallAnchor) {
-        return { now: wallNow, tick: null, mode: null, dateToTick: () => null };
+        return {
+            now: wallNow,
+            wallNow,
+            tick: null,
+            mode: null,
+            running: true,
+            startsAt: null,
+            dateToTick: () => null,
+        };
     }
     const mode: GameClockMode = state.clockMode === 'manual' ? 'manual' : 'realtime';
     const storedTick = Number(state.clockTick);
@@ -39,10 +58,14 @@ export const loadCurrentGameTime = async (db: DatabaseClient, wallNow = new Date
         turnSeconds: state.tickSeconds,
     });
     const tick = clock.nowTick(wallNow);
+    const running = mode === 'realtime' && wallNow.getTime() >= state.clockWallAnchor.getTime();
     return {
         now: clock.tickToDate(tick),
+        wallNow,
         tick,
         mode,
+        running,
+        startsAt: mode === 'realtime' && !running ? state.clockWallAnchor : null,
         dateToTick: (date) => clock.dateToTick(date),
     };
 };

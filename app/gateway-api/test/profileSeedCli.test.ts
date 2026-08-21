@@ -13,13 +13,18 @@ describe('parseProfileSeedRequest', () => {
                     installOperationId: 'operation-id',
                     installCommitSha: 'abcdef',
                     preopenAt: null,
+                    openAt: '2030-01-01T02:00:00.000Z',
                 },
                 adminUser: { id: 'admin', username: 'admin' },
             })
         ).toMatchObject({
             scenarioId: 1010,
             tickSeconds: 60,
-            installOptions: { installOperationId: 'operation-id', installCommitSha: 'abcdef' },
+            installOptions: {
+                installOperationId: 'operation-id',
+                installCommitSha: 'abcdef',
+                openAt: '2030-01-01T02:00:00.000Z',
+            },
         });
     });
 
