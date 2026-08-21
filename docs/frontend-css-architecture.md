@@ -36,7 +36,10 @@ available sort keys and placement. NPC·암행부·세력도시는 Ref의 고정
 `내림차순 → 오름차순 → 해제`를 순환하고, 여러 열의 방향과 우선순위를 scoped
 SFC indicator로 표시합니다. 장수 일람의 성격·특기·부상 설명은 많은 행에서
 eager popup instance를 만들지 않는 `DirectoryTooltip.vue` scoped CSS가 소유하며,
-mobile에서는 viewport 가장자리 8px 안의 고정 설명판으로 전환합니다.
+mobile에서는 viewport 가장자리 8px 안의 고정 설명판으로 전환합니다. 게임 내
+tooltip trigger는 hover/focus 동작과 `cursor: help`를 유지하되, tooltip이 있는 모든
+텍스트에 점선 밑줄을 반복하지 않습니다. keyboard `focus-visible` outline은 별도의
+접근성 상태로 유지합니다.
 
 ## Button composition
 

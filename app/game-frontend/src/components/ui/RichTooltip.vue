@@ -97,8 +97,6 @@ watch(
 
 .rich-tooltip-trigger--enabled {
     cursor: help;
-    text-decoration: underline dotted rgb(150 210 255 / 85%);
-    text-underline-offset: 2px;
 }
 
 .rich-tooltip-trigger--enabled:focus-visible {

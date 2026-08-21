@@ -2207,6 +2207,7 @@ test('main cards and command input stay inside their Ref-sized grid slots', asyn
     expect(Math.max(...nationRowHeights) - Math.min(...nationRowHeights)).toBeLessThanOrEqual(0.01);
     const strategicCell = nationCard.locator('.strategic');
     const strategicTooltip = strategicCell.getByRole('tooltip');
+    await expect(strategicCell).toHaveCSS('text-decoration-line', 'none');
     await expect(strategicTooltip).toBeHidden();
     await strategicCell.hover();
     await expect(strategicTooltip).toBeVisible();

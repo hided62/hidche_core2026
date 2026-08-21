@@ -266,6 +266,7 @@ test('renders Ref-shaped token cards, preserves keep cooldown and retries posses
     });
     const tooltip = page.locator('.npc-tooltip').first();
     const tooltipPopup = tooltip.getByRole('tooltip');
+    await expect(tooltip).toHaveCSS('text-decoration-line', 'none');
     await expect(tooltipPopup).toBeHidden();
     await tooltip.hover();
     await expect(tooltipPopup).toBeVisible();

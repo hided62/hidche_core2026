@@ -284,7 +284,6 @@ const displayChiefName = (chief: NationChief | undefined): string => {
 
 .strategic.has-tooltip {
     overflow: visible;
-    text-decoration: underline dashed red;
 }
 
 .cooldown-tooltip {
