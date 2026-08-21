@@ -3,9 +3,7 @@ import { formatServerDateTime } from '@sammo-ts/common/time/ServerDateTime';
 import { computed, onMounted, reactive, ref, watch } from 'vue';
 import { useRoute } from 'vue-router';
 import PanelCard from '../components/ui/PanelCard.vue';
-import LegacyGeneralProgress from '../components/ui/LegacyGeneralProgress.vue';
-import GeneralBasicCard from '../components/main/GeneralBasicCard.vue';
-import GeneralBattleSummary from '../components/main/GeneralBattleSummary.vue';
+import GeneralInformationPanel from '../components/main/GeneralInformationPanel.vue';
 import GeneralRecordPanels from '../components/main/GeneralRecordPanels.vue';
 import {
     GENERAL_RECORD_TYPES,
@@ -273,30 +271,29 @@ onMounted(() => {
                 </PanelCard>
 
                 <PanelCard title="장수 정보">
-                    <GeneralBasicCard
+                    <GeneralInformationPanel
                         class="battle-general-card"
                         :general="selectedGeneral"
+                        :summary="
+                            selectedGeneral
+                                ? {
+                                      available: true,
+                                      experience: selectedGeneral.experience,
+                                      dedicationText: selectedGeneral.progression.dedicationText,
+                                      warnum: selectedGeneral.warnum,
+                                      wins: selectedGeneral.battleStats.kills,
+                                      losses: selectedGeneral.battleStats.deaths,
+                                      strategies: selectedGeneral.battleStats.fire,
+                                      serviceYears: selectedGeneral.serviceYears,
+                                      killCrew: selectedGeneral.battleStats.killCrew,
+                                      deathCrew: selectedGeneral.battleStats.deathCrew,
+                                      recentWar: selectedGeneral.recentWar,
+                                  }
+                                : null
+                        "
                         :loading="loading"
                         :nation-color="data?.nation.color"
-                    >
-                        <template v-if="selectedGeneral" #details>
-                            <GeneralBattleSummary
-                                :summary="{
-                                    available: true,
-                                    experience: selectedGeneral.experience,
-                                    dedicationText: selectedGeneral.progression.dedicationText,
-                                    warnum: selectedGeneral.warnum,
-                                    wins: selectedGeneral.battleStats.kills,
-                                    losses: selectedGeneral.battleStats.deaths,
-                                    strategies: selectedGeneral.battleStats.fire,
-                                    killCrew: selectedGeneral.battleStats.killCrew,
-                                    deathCrew: selectedGeneral.battleStats.deathCrew,
-                                    recentWar: selectedGeneral.recentWar,
-                                }"
-                            />
-                            <LegacyGeneralProgress :general="selectedGeneral" :show-primary="false" />
-                        </template>
-                    </GeneralBasicCard>
+                    />
                 </PanelCard>
             </div>
 
