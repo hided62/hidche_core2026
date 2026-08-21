@@ -31,9 +31,12 @@ The Ref-style directory pages share a second, deliberately compact control
 family through `LegacySortControls.vue`. Its `.legacy-sort-*` rules own the
 explicit dark select/option palette, the raised submit button, and the
 focus/active states for sortable table headers. A page supplies only the
-available legacy sort keys, their fixed directions, and placement. Columns
-without an unambiguous legacy sort key remain plain headers rather than
-inventing a new ordering contract.
+available sort keys and placement. NPC·암행부·세력도시는 Ref의 고정 방향을
+유지합니다. 장수 일람은 사용자 조작 계약에 따라 로드한 snapshot 위에서
+`내림차순 → 오름차순 → 해제`를 순환하고, 여러 열의 방향과 우선순위를 scoped
+SFC indicator로 표시합니다. 장수 일람의 성격·특기·부상 설명은 많은 행에서
+eager popup instance를 만들지 않는 `DirectoryTooltip.vue` scoped CSS가 소유하며,
+mobile에서는 viewport 가장자리 8px 안의 고정 설명판으로 전환합니다.
 
 ## Button composition
 
