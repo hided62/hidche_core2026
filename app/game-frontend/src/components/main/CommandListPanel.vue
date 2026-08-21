@@ -15,7 +15,7 @@ const props = defineProps<{
     commandTable: CommandTable | null;
     loading: boolean;
     reservedGeneralTurns: Array<{ index: number; action: string; args?: unknown }> | null;
-    general: { id: number; turnTime?: string } | null;
+    general: { id: number; turnTime?: string; nextTurnMonthOffset?: 0 | 1 } | null;
     currentYear?: number;
     currentMonth?: number;
     turnTermMinutes?: number;
@@ -44,13 +44,19 @@ const labelMap = computed(() => {
     return result;
 });
 
+const firstReservedMonth = computed(
+    () =>
+        (props.currentYear ?? 0) * 12 +
+        (props.currentMonth ?? 1) -
+        1 +
+        (props.general?.nextTurnMonthOffset ?? 0)
+);
+
 const rows = computed<ReservedCommandRow[]>(() => {
     const base = props.general?.turnTime ? new Date(props.general.turnTime) : null;
     const term = props.turnTermMinutes ?? 0;
-    const baseYear = props.currentYear ?? 0;
-    const baseMonth = props.currentMonth ?? 1;
     return (props.reservedGeneralTurns ?? []).map((turn, offset) => {
-        const absoluteMonth = baseYear * 12 + baseMonth - 1 + offset;
+        const absoluteMonth = firstReservedMonth.value + offset;
         const date = base && Number.isFinite(base.getTime()) ? addMinutes(base, offset * term) : null;
         return {
             ...turn,
@@ -70,9 +76,7 @@ const rows = computed<ReservedCommandRow[]>(() => {
 
 const autonomousUntil = computed(() => {
     if (props.autorunLimit == null) return null;
-    const baseYear = props.currentYear ?? 0;
-    const baseMonth = props.currentMonth ?? 1;
-    const currentAbsoluteMonth = baseYear * 12 + baseMonth - 1;
+    const currentAbsoluteMonth = firstReservedMonth.value;
     const lastAutonomousMonth = props.autorunLimit - 1;
     if (lastAutonomousMonth < currentAbsoluteMonth) return null;
 
