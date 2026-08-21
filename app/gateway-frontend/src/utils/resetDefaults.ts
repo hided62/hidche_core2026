@@ -1,4 +1,6 @@
-export const PROFILE_TURN_TERM_MINUTES = [1, 2, 5, 10, 20, 30, 60, 120] as const;
+// A 12-month game year must fit an integer number of times in one wall-clock
+// day, so every positive divisor of 120 is valid.
+export const PROFILE_TURN_TERM_MINUTES = [1, 2, 3, 4, 5, 6, 8, 10, 12, 15, 20, 24, 30, 40, 60, 120] as const;
 export const RESET_AUTORUN_OPTIONS = [
     'develop',
     'warp',
@@ -24,7 +26,7 @@ export const RESET_AUTORUN_LABELS: ReadonlyArray<{ value: ResetAutorunOption; la
 export const RESET_OPTION_COPY = {
     turnTerm: {
         label: '턴 시간(분)',
-        help: '한 턴이 진행되는 실제 시간입니다. ref 초기화 화면과 같은 분 단위 값입니다.',
+        help: '한 턴이 진행되는 실제 시간입니다. 하루 경계를 정수 게임 연도로 유지하기 위해 120의 약수만 사용할 수 있습니다.',
     },
     sync: {
         label: '시간 동기화',
