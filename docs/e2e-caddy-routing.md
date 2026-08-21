@@ -1,11 +1,20 @@
-# Caddy prefix 계약
+# Core2026 환경별 Caddy prefix 계약
 
 ## 환경과 ingress
 
-| 환경 | 공개 주소 | 연결 계약 |
-| ---- | --------- | --------- |
-| 공개 | `dev-sam2026.hided.net` | 실제 외부 Core2026 서비스입니다. 로컬 Docker `14999`의 주소가 아닙니다. |
-| E2E | `dev-sam-e2e.hided.net` | 외부 Caddy TLS → `172.30.1.54:14999` HTTP → Docker Caddy입니다. |
+| 환경          | 공개 주소·prefix                               | 접속·연결 계약                                                                                  |
+| ------------- | ---------------------------------------------- | ----------------------------------------------------------------------------------------------- |
+| Ref           | `dev-sam-ref.hided.net`                        | 개발 호스트 `172.30.1.54:3400`의 PHP 기준 구현입니다.                                           |
+| 로컬 E2E      | `dev-sam-e2e.hided.net`                        | 외부 Caddy TLS → 개발 호스트 `172.30.1.54:14999` HTTP → Docker Caddy입니다.                     |
+| 공개 개발     | `dev-sam2026.hided.net`                        | `ssh serv`의 `core2026-dev-sam2026`/`hidche_ng_my`입니다. 로컬 E2E `14999`와 다른 호스트입니다. |
+| sam Core 운영 | `sam.hided.net/gateway/`와 일곱 profile prefix | `ssh serv`의 `core2026-sam-production`/`hidche_core2026_my`입니다.                              |
+| sam PHP 운영  | `sam.hided.net/sam/`과 기존 PHP 경로           | `ssh serv`의 별도 `sam_hided_net` project입니다.                                                |
+
+`dev-sam2026.hided.net`과 `sam.hided.net` Core prefix는 같은 Git 구현을 사용할 수
+있지만 PostgreSQL, Redis, named volume, release queue와 active commit이 분리된
+배포 환경입니다. 한 환경의 release/API/Chromium 결과를 다른 환경의 반영 근거로
+사용하지 않습니다. 상위 `sam_rebuild` 작업공간에서는
+`docs/docker-environment-routing.md`의 전체 결정 절차도 함께 따릅니다.
 
 외부 Caddy는 E2E 호스트의 모든 경로를 `172.30.1.54:14999`로 전달하고 원래
 `Host` header와 path prefix를 보존합니다. `handle_path`처럼 prefix를 제거하는
@@ -26,7 +35,7 @@ HTTP_PORT=14999
 `https://dev-sam-e2e.hided.net/gateway/oauth/callback`을 파생합니다. 도메인을
 바꾼 뒤에는 Caddy뿐 아니라 runtime도 재생성하여 process 환경을 갱신합니다.
 
-## 활성 경로
+## 로컬 E2E 활성 경로
 
 | 서비스  | 공개 prefix | frontend |     API |
 | ------- | ----------- | -------: | ------: |
@@ -36,8 +45,9 @@ HTTP_PORT=14999
 
 표의 port는 Docker 내부 Caddy가 연결하는 frontend/API listener입니다. 외부
 Caddy가 이 port들에 직접 연결하지 않습니다. `kwe`, `pwe`, `twe`, `nya`,
-`pya`는 resource·profile 이름으로 사용할 수 있지만 활성 Caddy route가
-아닙니다.
+`pya`는 로컬 E2E에서 resource·profile 이름으로 사용할 수 있지만 활성 Caddy
+route가 아닙니다. `sam.hided.net`의 별도 운영 Core stack에는 이 다섯 profile도
+활성 prefix이므로 환경별 계약을 섞지 않습니다.
 
 Caddy는 prefix를 보존해 upstream에 전달합니다. 앱은 root 배포를 가정하지
 않고 frontend base, tRPC, SSE, upload와 direct navigation에 같은 prefix를
