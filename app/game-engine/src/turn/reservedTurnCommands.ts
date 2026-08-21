@@ -15,6 +15,7 @@ import {
     loadActionModuleBundle,
 } from '@sammo-ts/logic';
 import { asRecord } from '@sammo-ts/common';
+import { resolveLegacyPurchasableItemKeys } from '@sammo-ts/logic/rewards/legacyUniqueItemPool.js';
 import { createRuntimeTrace } from './runtimeTrace.js';
 
 // legacy GameConstBase 기본값
@@ -146,6 +147,7 @@ export const buildCommandEnv = (config: ScenarioConfig, unitSet?: UnitSetDefinit
             ['maxResourceActionAmount'],
             DEFAULT_MAX_RESOURCE_ACTION_AMOUNT
         ),
+        purchasableItemKeys: resolveLegacyPurchasableItemKeys(constValues),
     };
 };
 

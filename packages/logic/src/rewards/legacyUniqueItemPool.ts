@@ -113,6 +113,56 @@ const LEGACY_UNIQUE_ITEM_KEYS: Readonly<Record<ItemModule['slot'], readonly stri
     ],
 };
 
+const LEGACY_DEFAULT_BUYABLE_ITEM_KEYS: Readonly<Record<ItemModule['slot'], readonly string[]>> = {
+    horse: [
+        'che_명마_01_노기',
+        'che_명마_02_조랑',
+        'che_명마_03_노새',
+        'che_명마_04_나귀',
+        'che_명마_05_갈색마',
+        'che_명마_06_흑색마',
+    ],
+    weapon: [
+        'che_무기_01_단도',
+        'che_무기_02_단궁',
+        'che_무기_03_단극',
+        'che_무기_04_목검',
+        'che_무기_05_죽창',
+        'che_무기_06_소부',
+    ],
+    book: [
+        'che_서적_01_효경전',
+        'che_서적_02_회남자',
+        'che_서적_03_변도론',
+        'che_서적_04_건상역주',
+        'che_서적_05_여씨춘추',
+        'che_서적_06_사민월령',
+    ],
+    item: ['che_치료_환약', 'che_저격_수극', 'che_사기_탁주', 'che_훈련_청주', 'che_계략_이추', 'che_계략_향낭'],
+};
+
+/**
+ * Ref 장비 매매는 GameConst::$allItems에 있고 수량이 0 이하인 구매 가능 아이템만
+ * 노출합니다. 생략/옛 문자열 빈 객체는 GameConstBase의 기본 24종으로 복원합니다.
+ */
+export const resolveLegacyPurchasableItemKeys = (configConst: Record<string, unknown>): ReadonlySet<string> => {
+    const { allItems } = resolveUniqueConfig(configConst);
+    const hasExplicitPool = Object.values(allItems).some((entries) => Object.keys(entries ?? {}).length > 0);
+    if (!hasExplicitPool) {
+        return new Set(Object.values(LEGACY_DEFAULT_BUYABLE_ITEM_KEYS).flat());
+    }
+
+    const result = new Set<string>();
+    for (const entries of Object.values(allItems)) {
+        for (const [itemKey, count] of Object.entries(entries ?? {})) {
+            if (count <= 0) {
+                result.add(itemKey);
+            }
+        }
+    }
+    return result;
+};
+
 export const buildLegacyDefaultUniqueItemPool = (itemRegistry: Map<string, ItemModule>): UniqueItemPool => {
     const pool: UniqueItemPool = { horse: {}, weapon: {}, book: {}, item: {} };
     for (const slot of ['horse', 'weapon', 'book', 'item'] as const) {
