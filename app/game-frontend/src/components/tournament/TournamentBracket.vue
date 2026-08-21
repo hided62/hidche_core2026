@@ -6,6 +6,7 @@ import {
     resolveTournamentCoreStat,
     type TournamentBracketMatch,
     type TournamentBracketParticipant,
+    type TournamentBracketSlot,
 } from '../../utils/tournamentBracket';
 
 const props = defineProps<{
@@ -17,6 +18,11 @@ const props = defineProps<{
     totalBet: number;
     tournamentType?: number;
     showLegend?: boolean;
+    bettingOpen?: boolean;
+}>();
+
+const emit = defineEmits<{
+    requestBet: [slot: TournamentBracketSlot];
 }>();
 
 const bracket = computed(() => buildTournamentBracket(props.participants, props.matches, props.winnerId));
@@ -72,6 +78,10 @@ const odds = (id: number | null) => {
 const myBet = (id: number | null) => (id === null ? 0 : (props.myBetTotals?.[id] ?? 0));
 const coreStat = (slot: (typeof bracket.value.top16.slots)[number]) =>
     resolveTournamentCoreStat(slot, props.tournamentType ?? 0);
+const requestBet = (slot: TournamentBracketSlot) => {
+    if (!props.bettingOpen || slot.id === null) return;
+    emit('requestBet', slot);
+};
 const mobilePairs = computed(() => {
     const column = roundColumns.value[activeMobileRound.value] ?? [];
     if (activeMobileRound.value === roundColumns.value.length - 1) return column.map((slot) => [slot]);
@@ -114,7 +124,10 @@ const mobilePairs = computed(() => {
                         v-for="(slot, slotIndex) in column"
                         :key="`${columnIndex}-${slot.id ?? 'empty'}-${slotIndex}`"
                         class="desktop-bracket-name"
-                        :class="{ advanced: slot.advanced }"
+                        :class="{
+                            advanced: slot.advanced,
+                            'betting-target': columnIndex === 0 && bettingOpen && slot.id !== null,
+                        }"
                         :data-general-id="slot.id ?? undefined"
                         :style="{
                             left: `${(desktopX[columnIndex]! / 1200) * 100}%`,
@@ -122,6 +135,15 @@ const mobilePairs = computed(() => {
                         }"
                     >
                         <GeneralIdentity :name="slot.name" :picture="slot.picture" :image-server="slot.imageServer" />
+                        <button
+                            v-if="columnIndex === 0 && bettingOpen && slot.id !== null"
+                            type="button"
+                            class="bracket-bet-button"
+                            :aria-label="`${slot.name}에게 베팅하기`"
+                            @click="requestBet(slot)"
+                        >
+                            베팅하기
+                        </button>
                         <div v-if="columnIndex === 0" class="bracket-bet-summary">
                             <small v-if="coreStat(slot)" class="bracket-core-stat">
                                 {{ coreStat(slot)?.label }} {{ coreStat(slot)?.value }}
@@ -154,10 +176,22 @@ const mobilePairs = computed(() => {
                         v-for="(slot, slotIndex) in pair"
                         :key="`${slot.id ?? 'empty'}-${slotIndex}`"
                         class="mobile-bracket-name"
-                        :class="{ advanced: slot.advanced }"
+                        :class="{
+                            advanced: slot.advanced,
+                            'betting-target': activeMobileRound === 0 && bettingOpen && slot.id !== null,
+                        }"
                         :data-general-id="slot.id ?? undefined"
                     >
                         <GeneralIdentity :name="slot.name" :picture="slot.picture" :image-server="slot.imageServer" />
+                        <button
+                            v-if="activeMobileRound === 0 && bettingOpen && slot.id !== null"
+                            type="button"
+                            class="bracket-bet-button"
+                            :aria-label="`${slot.name}에게 베팅하기`"
+                            @click="requestBet(slot)"
+                        >
+                            베팅하기
+                        </button>
                         <div v-if="activeMobileRound === 0" class="bracket-bet-summary">
                             <small v-if="coreStat(slot)" class="bracket-core-stat">
                                 {{ coreStat(slot)?.label }} {{ coreStat(slot)?.value }}
@@ -227,6 +261,36 @@ const mobilePairs = computed(() => {
     background: rgb(58 33 24 / 94%);
     color: #fff;
     padding: 1px 3px;
+}
+.betting-target {
+    position: absolute;
+}
+.mobile-bracket-name.betting-target {
+    position: relative;
+}
+.bracket-bet-button {
+    position: absolute;
+    z-index: 2;
+    top: 3px;
+    right: 3px;
+    min-width: 58px;
+    height: 24px;
+    margin: 0;
+    padding: 2px 5px;
+    border: 1px solid #9a7632;
+    border-radius: 3px;
+    color: #fff3cd;
+    background: #59400e;
+    font: 700 11px/1 var(--sammo-font-sans);
+    cursor: pointer;
+}
+.bracket-bet-button:hover,
+.bracket-bet-button:focus {
+    filter: brightness(1.25);
+}
+.bracket-bet-button:focus-visible {
+    outline: 2px solid #f39c12;
+    outline-offset: 1px;
 }
 .desktop-bracket-name.advanced,
 .mobile-bracket-name.advanced {

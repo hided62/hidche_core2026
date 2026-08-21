@@ -1,9 +1,10 @@
 <script setup lang="ts">
 import { formatServerDateTime } from '@sammo-ts/common/time/ServerDateTime';
-import { computed, onMounted, ref } from 'vue';
+import { computed, nextTick, onMounted, ref } from 'vue';
 import TournamentBracket from '../components/tournament/TournamentBracket.vue';
 import TournamentPageHeader from '../components/tournament/TournamentPageHeader.vue';
 import GeneralIdentity from '../components/ui/GeneralIdentity.vue';
+import type { TournamentBracketSlot } from '../utils/tournamentBracket';
 import { trpc } from '../utils/trpc';
 
 type Snapshot = Awaited<ReturnType<typeof trpc.tournament.getSnapshot.query>>;
@@ -15,6 +16,11 @@ const loading = ref(false);
 const error = ref<string | null>(null);
 const message = ref<string | null>(null);
 const amounts = ref<Record<number, number>>({});
+const selectedTarget = ref<TournamentBracketSlot | null>(null);
+const betDialog = ref<HTMLDialogElement | null>(null);
+const betAmountSelect = ref<HTMLSelectElement | null>(null);
+const placingBet = ref(false);
+const betError = ref<string | null>(null);
 const activeRankingPrefix = ref('tt');
 const typeNames = ['전력전', '통솔전', '일기토', '설전'];
 const stageNames = [
@@ -49,27 +55,6 @@ const load = async () => {
 };
 onMounted(() => void load());
 
-const participantMap = computed(
-    () => new Map((snapshot.value?.participants ?? []).map((participant) => [participant.id, participant]))
-);
-const final16Ids = computed(() =>
-    (snapshot.value?.matches ?? [])
-        .filter((match) => match.stage === 7)
-        .sort((a, b) => a.roundIndex - b.roundIndex)
-        .flatMap((match) => [match.attackerId, match.defenderId])
-);
-const candidates = computed(() =>
-    Array.from({ length: 16 }, (_, index) => {
-        const id = final16Ids.value[index] ?? 0;
-        const participant = id ? participantMap.value.get(id) : null;
-        return {
-            id,
-            name: id ? (participant?.name ?? `#${id}`) : '-',
-            picture: participant?.picture ?? null,
-            imageServer: participant?.imageServer ?? 0,
-        };
-    })
-);
 const totalAmount = computed(() => summary.value?.totalAmount ?? 0);
 const myAmount = computed(() => summary.value?.myAmount ?? 0);
 const betTotals = computed(() => summary.value?.totals as Record<number, number> | undefined);
@@ -82,12 +67,25 @@ const ratio = (id: number) => {
 const openingTime = computed(() =>
     formatServerDateTime(snapshot.value?.state?.nextAt, { format: 'hourMinute', fallback: '--:--' })
 );
-const expected = (id: number) => {
-    const myTotals = summary.value?.myTotals as Record<number, number> | undefined;
-    const current = myTotals?.[id] ?? 0;
-    const numericRatio = Number(ratio(id));
-    return Number.isFinite(numericRatio) ? Math.floor(current * numericRatio) : 0;
-};
+const selectedAmount = computed({
+    get: () => {
+        const targetId = selectedTarget.value?.id;
+        return targetId === null || targetId === undefined ? 10 : (amounts.value[targetId] ?? 10);
+    },
+    set: (amount: number) => {
+        const targetId = selectedTarget.value?.id;
+        if (targetId === null || targetId === undefined) return;
+        amounts.value[targetId] = amount;
+    },
+});
+const selectedRatio = computed(() => {
+    const targetId = selectedTarget.value?.id;
+    return targetId === null || targetId === undefined ? '0' : ratio(targetId);
+});
+const selectedExpectedReturn = computed(() => {
+    const numericRatio = Number(selectedRatio.value);
+    return Number.isFinite(numericRatio) ? Math.round(selectedAmount.value * numericRatio) : 0;
+});
 const bettingOpen = computed(() => {
     const state = snapshot.value?.state;
     if (!state || state.stage !== 6) return false;
@@ -95,17 +93,35 @@ const bettingOpen = computed(() => {
     return new Date(state.bettingCloseAt).getTime() > Date.now();
 });
 
-const placeBet = async (targetId: number) => {
-    if (!targetId) return;
-    const amount = amounts.value[targetId] ?? 10;
+const openBetDialog = async (target: TournamentBracketSlot) => {
+    if (target.id === null || !bettingOpen.value) return;
+    selectedTarget.value = target;
+    betError.value = null;
+    if (amounts.value[target.id] === undefined) amounts.value[target.id] = 10;
+    await nextTick();
+    betDialog.value?.showModal();
+    betAmountSelect.value?.focus();
+};
+const closeBetDialog = () => {
+    betDialog.value?.close();
+};
+const placeBet = async () => {
+    const targetId = selectedTarget.value?.id;
+    if (targetId === null || targetId === undefined || placingBet.value) return;
+    const amount = selectedAmount.value;
     message.value = null;
+    betError.value = null;
+    placingBet.value = true;
     try {
         await trpc.tournament.placeBet.mutate({ targetId, amount });
         message.value = '베팅이 등록되었습니다.';
-    } catch (value) {
-        message.value = errorText(value);
-    } finally {
         await load();
+        closeBetDialog();
+    } catch (value) {
+        betError.value = errorText(value);
+        message.value = betError.value;
+    } finally {
+        placingBet.value = false;
     }
 };
 </script>
@@ -139,47 +155,57 @@ const placeBet = async (targetId: number) => {
             :total-bet="totalAmount"
             :tournament-type="snapshot?.state?.type ?? 0"
             :show-legend="false"
+            :betting-open="bettingOpen"
+            @request-bet="openBetDialog"
         />
 
-        <section class="candidate-table bg0">
-            <div class="candidate-grid">
-                <article v-for="candidate in candidates" :key="candidate.id || candidate.name" class="candidate-card">
-                    <GeneralIdentity
-                        :name="candidate.name"
-                        :picture="candidate.picture"
-                        :image-server="candidate.imageServer"
-                    />
-                    <div class="candidate-return">
-                        <span class="ratio-color">{{ ratio(candidate.id) }}</span>
-                        <span aria-hidden="true">×</span>
-                        <span class="gold-color">{{ amounts[candidate.id] ?? 10 }}</span>
-                        <span aria-hidden="true">=</span>
-                        <strong class="return-color">{{ expected(candidate.id) }}</strong>
-                    </div>
-                    <div v-if="bettingOpen" class="candidate-actions">
-                        <select
-                            v-model.number="amounts[candidate.id]"
-                            :aria-label="`${candidate.name} 베팅 금액`"
-                            :disabled="!candidate.id"
-                        >
-                            <option :value="10">금10</option>
-                            <option :value="20">금20</option>
-                            <option :value="50">금50</option>
-                            <option :value="100">금100</option>
-                            <option :value="200">금200</option>
-                            <option :value="500">금500</option>
-                            <option :value="1000">최대</option>
-                        </select>
-                        <button type="button" :disabled="!candidate.id" @click="placeBet(candidate.id)">베팅</button>
-                    </div>
-                </article>
-            </div>
-            <p class="candidate-help">
-                <span class="ratio-color">배당률</span> × <span class="gold-color">베팅금</span> =
-                <span class="return-color">적중시 환수금</span><br />
-                <span class="ratio-color">( 베팅후 500원 이하일땐 베팅이 불가능합니다. )</span>
-            </p>
-        </section>
+        <dialog
+            ref="betDialog"
+            class="bet-dialog"
+            aria-labelledby="bet-dialog-title"
+            @close="selectedTarget = null"
+        >
+            <form v-if="selectedTarget" class="bet-dialog-content" @submit.prevent="placeBet">
+                <header>
+                    <h2 id="bet-dialog-title">베팅하기</h2>
+                    <button type="button" aria-label="베팅 창 닫기" :disabled="placingBet" @click="closeBetDialog">
+                        ×
+                    </button>
+                </header>
+                <GeneralIdentity
+                    :name="selectedTarget.name"
+                    :picture="selectedTarget.picture"
+                    :image-server="selectedTarget.imageServer"
+                />
+                <label class="bet-amount-field">
+                    <span>베팅 금액</span>
+                    <select ref="betAmountSelect" v-model.number="selectedAmount" :disabled="placingBet">
+                        <option :value="10">금10</option>
+                        <option :value="20">금20</option>
+                        <option :value="50">금50</option>
+                        <option :value="100">금100</option>
+                        <option :value="200">금200</option>
+                        <option :value="500">금500</option>
+                        <option :value="1000">최대 금1000</option>
+                    </select>
+                </label>
+                <output class="bet-return-preview" aria-live="polite">
+                    <span class="ratio-color">배당 {{ selectedRatio }}</span>
+                    <span aria-hidden="true">×</span>
+                    <span class="gold-color">금{{ selectedAmount }}</span>
+                    <span aria-hidden="true">=</span>
+                    <strong class="return-color">예상 환수금 {{ selectedExpectedReturn.toLocaleString('ko-KR') }}</strong>
+                </output>
+                <p class="bet-preview-note">현재 배당 기준 예상값이며, 베팅 상황에 따라 최종 배당은 달라질 수 있습니다.</p>
+                <p v-if="betError" class="bet-dialog-error" role="alert">{{ betError }}</p>
+                <footer>
+                    <button type="button" :disabled="placingBet" @click="closeBetDialog">취소</button>
+                    <button type="submit" class="bet-submit" :disabled="placingBet">
+                        {{ placingBet ? '등록 중...' : '베팅 등록' }}
+                    </button>
+                </footer>
+            </form>
+        </dialog>
 
         <div class="legacy-table-signature" hidden>
             <table v-for="tableIndex in 6" :key="tableIndex">
@@ -336,36 +362,6 @@ const placeBet = async (targetId: number) => {
     color: orange;
     font-size: 14px;
 }
-.candidate-table {
-    border: 1px solid gray;
-    padding: 10px;
-    font-size: 12px;
-}
-.candidate-grid {
-    display: grid;
-    grid-template-columns: repeat(4, minmax(0, 1fr));
-    gap: 8px;
-}
-.candidate-card {
-    min-width: 0;
-    padding: 8px;
-    border: 1px solid #5b504b;
-    background: rgb(0 0 0 / 26%);
-    text-align: left;
-}
-.candidate-return {
-    display: grid;
-    grid-template-columns: 1fr auto 1fr auto 1fr;
-    gap: 4px;
-    margin: 8px 0;
-    text-align: center;
-    font-variant-numeric: tabular-nums;
-}
-.candidate-actions {
-    display: grid;
-    grid-template-columns: minmax(0, 1fr) 64px;
-    gap: 6px;
-}
 .ratio-color {
     color: skyblue;
 }
@@ -376,8 +372,7 @@ const placeBet = async (targetId: number) => {
 .gold-color {
     color: orange;
 }
-select,
-.candidate-actions button {
+select {
     width: 100%;
     min-height: 27px;
     padding: 2px 1px;
@@ -407,11 +402,84 @@ select:disabled {
     cursor: not-allowed;
     opacity: 0.5;
 }
-.candidate-help {
-    min-height: 20px;
-    margin: 8px 0 0;
-    font-size: 18px;
-    line-height: 14px;
+.bet-dialog {
+    width: min(420px, calc(100vw - 24px));
+    max-width: none;
+    padding: 0;
+    border: 1px solid #8d713d;
+    border-radius: 8px;
+    color: #fff;
+    background: #3a2118 var(--sammo-texture-walnut);
+    box-shadow: 0 18px 56px rgb(0 0 0 / 75%);
+}
+.bet-dialog::backdrop {
+    background: rgb(0 0 0 / 72%);
+}
+.bet-dialog-content {
+    display: grid;
+    gap: 14px;
+    padding: 16px;
+}
+.bet-dialog-content header,
+.bet-dialog-content footer {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+}
+.bet-dialog-content h2 {
+    margin: 0;
+    color: #ffd25e;
+    font-size: 20px;
+}
+.bet-dialog-content header button {
+    width: 36px;
+    height: 36px;
+    padding: 0;
+    font-size: 22px;
+}
+.bet-dialog-content :deep(.general-identity) {
+    justify-content: flex-start;
+    text-align: left;
+}
+.bet-amount-field {
+    display: grid;
+    grid-template-columns: 88px minmax(0, 1fr);
+    align-items: center;
+    gap: 10px;
+    text-align: left;
+}
+.bet-return-preview {
+    display: grid;
+    grid-template-columns: auto auto auto auto minmax(0, 1fr);
+    align-items: center;
+    gap: 7px;
+    padding: 12px;
+    border: 1px solid #66563c;
+    background: rgb(0 0 0 / 28%);
+    font-variant-numeric: tabular-nums;
+}
+.bet-preview-note,
+.bet-dialog-error {
+    margin: 0;
+    text-align: left;
+    font-size: 12px;
+}
+.bet-preview-note {
+    color: #c9c1b2;
+}
+.bet-dialog-error {
+    color: #ff8080;
+}
+.bet-dialog-content footer {
+    justify-content: flex-end;
+}
+.bet-dialog-content footer button {
+    min-width: 80px;
+}
+.bet-dialog-content .bet-submit {
+    border-color: #9a7632;
+    background: #59400e;
 }
 .ranking-title {
     min-height: 50px;
@@ -490,24 +558,11 @@ select:disabled {
     .ranking-title {
         font-size: 20px;
     }
-    .candidate-grid {
-        grid-template-columns: 1fr;
+    .bet-return-preview {
+        grid-template-columns: auto auto auto;
     }
-    .candidate-card {
-        display: grid;
-        grid-template-columns: minmax(0, 1fr) 112px;
-        align-items: center;
-        gap: 8px 12px;
-    }
-    .candidate-return {
-        margin: 0;
-    }
-    .candidate-actions {
+    .bet-return-preview .return-color {
         grid-column: 1 / -1;
-    }
-    .candidate-help {
-        font-size: 14px;
-        line-height: 18px;
     }
     .ranking-placeholder {
         display: none;
