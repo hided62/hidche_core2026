@@ -94,9 +94,11 @@ const mapStore = useMapViewerStore();
 const {
     showCityName,
     detailMode: storeDetailMode,
+    singleTapNavigation,
     hoveredCityId,
     selectedCityId: storeSelectedCityId,
 } = storeToRefs(mapStore);
+const hasTouchInput = useMediaQuery('(any-pointer: coarse)');
 
 const mapArea = ref<HTMLElement | null>(null);
 const mapBody = ref<HTMLElement | null>(null);
@@ -404,6 +406,28 @@ const setHoveredCity = (cityId: number | null) => {
     mapStore.setHoveredCity(cityId);
 };
 
+const touchPreviewCityId = ref<number | null>(null);
+
+const clearTouchPreview = () => {
+    touchPreviewCityId.value = null;
+    setHoveredCity(null);
+};
+
+const touchCity = (cityId: number, event: TouchEvent) => {
+    if (touchPreviewCityId.value !== cityId) {
+        touchPreviewCityId.value = cityId;
+        setHoveredCity(cityId);
+        if (!singleTapNavigation.value) {
+            event.preventDefault();
+        }
+    }
+};
+
+const toggleSingleTapNavigation = () => {
+    clearTouchPreview();
+    mapStore.toggleSingleTapNavigation();
+};
+
 const selectCity = (cityId: number) => {
     if (props.readonly) return;
     emit('select-city', cityId);
@@ -433,6 +457,7 @@ const selectCity = (cityId: number) => {
                 class="map-area"
                 :class="[mapThemeClass, mapSeasonClass]"
                 :style="{ width: mapWidth, height: mapHeight }"
+                @click="clearTouchPreview"
             >
                 <div class="map-layer map-bglayer1" :style="mapBackgroundStyle" />
                 <div class="map-layer map-bglayer2" />
@@ -449,6 +474,8 @@ const selectCity = (cityId: number) => {
                     v-bind="detailProps"
                     @hover="setHoveredCity"
                     @leave="setHoveredCity(null)"
+                    @touch="touchCity"
+                    @touchleave="clearTouchPreview"
                     @select="selectCity"
                 />
                 <div
@@ -466,8 +493,17 @@ const selectCity = (cityId: number) => {
                     <div class="tooltip-body">{{ hoveredCity.nationId > 0 ? hoveredCity.nationName : '' }}</div>
                 </div>
                 <div class="map-controls">
-                    <button class="map-toggle" :class="{ active: showCityName }" @click="mapStore.toggleCityName">
+                    <button class="map-toggle" :class="{ active: showCityName }" @click.stop="mapStore.toggleCityName">
                         도시명 표기 {{ showCityName ? '끄기' : '켜기' }}
+                    </button>
+                    <button
+                        v-if="hasTouchInput"
+                        class="map-toggle map-toggle-single-tap"
+                        :class="{ active: singleTapNavigation }"
+                        :aria-pressed="singleTapNavigation"
+                        @click.stop="toggleSingleTapNavigation"
+                    >
+                        두번 탭 해 도시 이동 {{ singleTapNavigation ? '켜기' : '끄기' }}
                     </button>
                 </div>
             </div>
@@ -555,6 +591,8 @@ const selectCity = (cityId: number) => {
     right: 4px;
     bottom: 4px;
     display: flex;
+    flex-direction: column;
+    align-items: flex-end;
 }
 
 .map-toggle {
