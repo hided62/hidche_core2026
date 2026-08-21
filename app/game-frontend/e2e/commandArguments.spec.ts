@@ -3,6 +3,7 @@ import { readFile } from 'node:fs/promises';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { gameProfile, gameTrpcRoute } from './gameTestPaths.js';
+import { touchDrag } from './touchDrag.js';
 
 const repositoryRoot = resolve(dirname(fileURLToPath(import.meta.url)), '../../..');
 const imageRoots = [
@@ -2300,6 +2301,62 @@ test('uses drag selection, clipboard paste, and a stored template in advanced mo
     expect(JSON.stringify(requests)).toContain('"turnList":[0,1,2]');
     expect(JSON.stringify(requests)).toContain('"turnList":[0,3,6,9,12');
     await page.screenshot({ path: test.info().outputPath('advanced-command-editor.png'), fullPage: true });
+});
+
+test('physical mobile touch drag selects general and nation turns in advanced mode', async ({ browser }, testInfo) => {
+    const configuredBaseUrl = testInfo.project.use.baseURL;
+    if (typeof configuredBaseUrl !== 'string') {
+        throw new Error('Playwright baseURL is required for the mobile touch contract');
+    }
+    const context = await browser.newContext({
+        baseURL: configuredBaseUrl,
+        viewport: { width: 390, height: 844 },
+        screen: { width: 390, height: 844 },
+        deviceScaleFactor: 1,
+        isMobile: true,
+        hasTouch: true,
+        colorScheme: 'dark',
+    });
+    const mobilePage = await context.newPage();
+    try {
+        await install(mobilePage);
+        await mobilePage.goto(configuredBaseUrl);
+
+        const editor = mobilePage.locator('[data-command-scope="general"]');
+        await expect(editor).toBeVisible();
+        await expect(editor.locator('.date-column.drag-select')).toHaveCSS('touch-action', 'auto');
+        await editor.getByRole('button', { name: '고급 모드', exact: true }).click();
+        await expect(editor.locator('.index-column.drag-select')).toHaveCSS('touch-action', 'none');
+        const cells = editor.locator('.index-column > button');
+        await touchDrag(mobilePage, cells.nth(0), cells.nth(2), { targetYRatio: 0.9 });
+
+        await expect(editor.locator('.index-column > button.selected')).toHaveCount(3);
+        const dates = editor.locator('.date-column > div');
+        await touchDrag(mobilePage, dates.nth(4), dates.nth(6), { targetYRatio: 0.9 });
+        await expect
+            .poll(() => editor.locator('.index-column > button.selected').allTextContents())
+            .toEqual(['5', '6', '7']);
+        await mobilePage.screenshot({
+            path: testInfo.outputPath('advanced-general-command-editor-mobile-touch.png'),
+            fullPage: true,
+        });
+
+        await mobilePage.goto(new URL('chief-center', configuredBaseUrl).href);
+        const chiefEditor = mobilePage.locator('[data-command-scope="nation"]:visible');
+        await expect(chiefEditor).toBeVisible();
+        await expect(chiefEditor.locator('.date-column.drag-select')).toHaveCSS('touch-action', 'auto');
+        await chiefEditor.getByRole('button', { name: '고급 모드', exact: true }).click();
+        await expect(chiefEditor.locator('.index-column.drag-select')).toHaveCSS('touch-action', 'none');
+        const chiefCells = chiefEditor.locator('.index-column > button');
+        await touchDrag(mobilePage, chiefCells.nth(0), chiefCells.nth(2), { targetYRatio: 0.9 });
+        await expect(chiefEditor.locator('.index-column > button.selected')).toHaveCount(3);
+        await mobilePage.screenshot({
+            path: testInfo.outputPath('advanced-nation-command-editor-mobile-touch.png'),
+            fullPage: true,
+        });
+    } finally {
+        await context.close();
+    }
 });
 
 test('keeps the shared main and chief shell geometry and interaction states', async ({ page }) => {

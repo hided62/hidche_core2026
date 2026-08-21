@@ -80,7 +80,9 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-    <div ref="root" class="drag-select"><slot :selected="preview" /></div>
+    <div ref="root" class="drag-select" :style="{ touchAction: props.disabled ? undefined : 'none' }">
+        <slot :selected="preview" />
+    </div>
 </template>
 
 <style scoped>
