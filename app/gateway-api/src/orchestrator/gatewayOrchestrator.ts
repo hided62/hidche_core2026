@@ -158,6 +158,20 @@ export const planProfileReconcile = (
     };
 };
 
+export const resolveResetLifecycleStatus = (
+    now: Date,
+    preopenAt: Date | null,
+    openAt: Date | null
+): Extract<GatewayProfileStatus, 'RESERVED' | 'PREOPEN' | 'RUNNING'> => {
+    if (preopenAt && preopenAt.getTime() > now.getTime()) {
+        return 'RESERVED';
+    }
+    if (openAt && openAt.getTime() > now.getTime()) {
+        return 'PREOPEN';
+    }
+    return 'RUNNING';
+};
+
 type GatewayAdminActionStatus = 'REQUESTED' | 'APPLIED' | 'FAILED' | 'IGNORED';
 
 interface GatewayAdminActionRecord {
@@ -538,9 +552,13 @@ const buildProfileFrontendOutDir = (workspaceRoot: string, profileName: string):
 export const buildProfileFrontendCommands = (
     workspaceRoot: string,
     profile: Pick<GatewayProfileRecord, 'profileName' | 'profile' | 'apiPort'>,
+    buildCommitSha: string,
     env?: Record<string, string>,
     cacheAnchorRoot: string = workspaceRoot
 ): BuildCommand[] => {
+    if (!/^[0-9a-f]{40,64}$/iu.test(buildCommitSha.trim())) {
+        throw new Error('Profile frontend build requires a full commit SHA.');
+    }
     const profileFrontendBuildNodeOptions = env?.PROFILE_FRONTEND_BUILD_NODE_OPTIONS?.trim();
     const buildEnv = {
         ...(env ?? {}),
@@ -548,6 +566,7 @@ export const buildProfileFrontendCommands = (
         VITE_APP_BASE_PATH: `/${profile.profile}`,
         VITE_GAME_API_URL: `/${profile.profile}/api/trpc`,
         VITE_GAME_SSE_URL: `/${profile.profile}/api/events`,
+        VITE_BUILD_COMMIT_SHA: buildCommitSha.trim().toLowerCase(),
     };
     return [
         buildTurboReleaseTaskCommand(
@@ -880,7 +899,9 @@ export class GatewayOrchestrator implements GatewayOrchestratorHandle {
             const now = this.now();
             const due = await this.repository.listReservedToStart(now);
             for (const profile of due) {
-                if (!profile.preopenAt || !profile.openAt) {
+                const preopenAt = parseDateTime(profile.preopenAt);
+                const openAt = parseDateTime(profile.openAt);
+                if (!preopenAt || !openAt) {
                     await this.repository.updateLastError(
                         profile.profileName,
                         'Reserved profile is missing preopen/open schedule.'
@@ -892,6 +913,18 @@ export class GatewayOrchestrator implements GatewayOrchestratorHandle {
                         profile.profileName,
                         'Reserved profile is missing build commit SHA.'
                     );
+                    continue;
+                }
+                if (profile.currentScenario !== null && profile.buildStatus === 'SUCCEEDED' && profile.buildWorkspace) {
+                    await this.repository.updateStatus(
+                        profile.profileName,
+                        resolveResetLifecycleStatus(now, preopenAt, openAt),
+                        {
+                            preopenAt: profile.preopenAt,
+                            openAt: profile.openAt,
+                        }
+                    );
+                    await this.repository.updateLastError(profile.profileName, null);
                     continue;
                 }
                 const queued = profile.buildStatus === 'QUEUED' || profile.buildStatus === 'RUNNING';
@@ -1475,6 +1508,7 @@ export class GatewayOrchestrator implements GatewayOrchestratorHandle {
                 ...buildProfileFrontendCommands(
                     workspace.root,
                     profile,
+                    commitSha,
                     this.processConfig.baseEnv,
                     this.processConfig.workspaceRoot
                 ),
@@ -1884,8 +1918,7 @@ export class GatewayOrchestrator implements GatewayOrchestratorHandle {
             await assertLease?.();
             const completedAt = this.now().toISOString();
             const now = this.now();
-            const shouldPreopen = openAt ? openAt.getTime() > now.getTime() : false;
-            const desiredStatus = shouldPreopen ? 'PREOPEN' : 'RUNNING';
+            const desiredStatus = resolveResetLifecycleStatus(now, preopenAt, openAt);
             const publishedProfile = await updateClaimedProfile(
                 {
                     currentScenario: String(scenarioId),
@@ -1917,30 +1950,37 @@ export class GatewayOrchestrator implements GatewayOrchestratorHandle {
                 }
             );
             releasePrepared = true;
-            const builtProfile = publishedProfile ?? {
-                ...profile,
-                currentScenario: String(scenarioId),
-                scenario: String(scenarioId),
-                status: desiredStatus,
-                buildWorkspace: workspace.root,
-            };
-            await appendLog('switch', '초기화된 profile process를 시작합니다.');
-            const started = await this.startProfile(builtProfile, assertLease);
-            await appendLog('readiness', 'profile process readiness를 확인합니다.');
-            const ready = started && (await this.waitForProfileReadiness(builtProfile, assertLease));
-            if (!ready) {
-                if (started) {
-                    await this.stopProfile(builtProfile, assertLease);
-                }
-                const detail = started
-                    ? 'reset completed but profile processes failed readiness'
-                    : 'reset completed but profile processes failed to start';
-                await updateClaimedProfile({ status: 'STOPPED', lastError: detail }, () =>
-                    this.repository.updateStatus(profile.profileName, 'STOPPED')
+            if (desiredStatus === 'RESERVED') {
+                await appendLog(
+                    'schedule',
+                    `${preopenAt?.toISOString() ?? '가오픈 시각'}까지 RESERVED 상태로 접속을 차단합니다.`
                 );
-                return { status: 'FAILED', detail };
+            } else {
+                const builtProfile = publishedProfile ?? {
+                    ...profile,
+                    currentScenario: String(scenarioId),
+                    scenario: String(scenarioId),
+                    status: desiredStatus,
+                    buildWorkspace: workspace.root,
+                };
+                await appendLog('switch', '초기화된 profile process를 시작합니다.');
+                const started = await this.startProfile(builtProfile, assertLease);
+                await appendLog('readiness', 'profile process readiness를 확인합니다.');
+                const ready = started && (await this.waitForProfileReadiness(builtProfile, assertLease));
+                if (!ready) {
+                    if (started) {
+                        await this.stopProfile(builtProfile, assertLease);
+                    }
+                    const detail = started
+                        ? 'reset completed but profile processes failed readiness'
+                        : 'reset completed but profile processes failed to start';
+                    await updateClaimedProfile({ status: 'STOPPED', lastError: detail }, () =>
+                        this.repository.updateStatus(profile.profileName, 'STOPPED')
+                    );
+                    return { status: 'FAILED', detail };
+                }
+                await appendLog('readiness', 'profile readiness 확인을 통과했습니다.');
             }
-            await appendLog('readiness', 'profile readiness 확인을 통과했습니다.');
             await updateClaimedProfile({ lastError: null }, async () => {
                 await this.repository.updateLastError(profile.profileName, null);
                 return this.repository.getProfile(profile.profileName);
@@ -2056,6 +2096,7 @@ export class GatewayOrchestrator implements GatewayOrchestratorHandle {
                 ? buildProfileFrontendCommands(
                       workspace.root,
                       profile,
+                      commitSha,
                       this.processConfig.baseEnv,
                       this.processConfig.workspaceRoot
                   )

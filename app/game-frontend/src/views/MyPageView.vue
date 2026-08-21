@@ -1,14 +1,16 @@
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref, watch } from 'vue';
+import SortableStringList from '../components/ui/SortableStringList';
 import { trpc } from '../utils/trpc';
 import { formatLog } from '../utils/formatLog';
 import { formatSeoulDateTime } from '../utils/legacyDateTime';
-import { isDefenceTrainPenaltyWaivedByScenarioEffect } from '@sammo-ts/logic';
+import { isDefenceTrainPenaltyWaivedByScenarioEffect } from '@sammo-ts/logic/scenario/scenarioEffect.js';
 import { useSessionStore } from '../stores/session';
 import { resolveGeneralIconUrl, useDefaultGeneralIcon } from '../utils/generalIcon';
 import LegacyGeneralProgress from '../components/ui/LegacyGeneralProgress.vue';
 import GeneralBasicCard from '../components/main/GeneralBasicCard.vue';
 import { useGameFeedback } from '../composables/useGameFeedback';
+import { SCREEN_MODE_CHANGE_EVENT, SCREEN_MODE_KEY, type ScreenMode } from '../utils/screenModeViewport';
 import {
     DEFAULT_MOBILE_MAIN_PANEL_ORDER,
     loadMobileMainPanelOrder,
@@ -18,11 +20,9 @@ import {
     type MobileMainPanelId,
 } from '../utils/mobileMainPanelOrder';
 
-const SCREEN_MODE_KEY = 'sam.screenMode';
 const CUSTOM_CSS_KEY = 'sam_customCSS';
 const PENDING_DIE_ON_PRESTART_KEY = 'sam.pending.dieOnPrestart';
 const { success: showSuccessToast, error: showErrorToast, showDialog } = useGameFeedback();
-type ScreenMode = 'auto' | '500px' | '1000px';
 type LogType = 'generalHistory' | 'battleDetail' | 'battleResult' | 'generalAction';
 type ItemSlotKey = 'horse' | 'weapon' | 'book' | 'item';
 type MyGeneralResponse = Awaited<ReturnType<typeof trpc.general.me.query>>;
@@ -58,7 +58,6 @@ const selectedIconId = ref('');
 const cssSaving = ref(false);
 const mobileLayoutDialog = ref<HTMLDialogElement | null>(null);
 const mobileLayoutOrder = ref<MobileMainPanelId[]>(loadMobileMainPanelOrder());
-const mobileLayoutDragIndex = ref<number | null>(null);
 const session = useSessionStore();
 let cssTimer: number | null = null;
 const readPendingDieOnPrestartId = (): string => {
@@ -180,9 +179,9 @@ const items = computed<Array<{ key: ItemSlotKey; slotName: string; displayName: 
 );
 const iconChoices = computed(() => data.value?.iconChoices ?? []);
 const selectedIcon = computed(() => iconChoices.value.find((icon) => icon.id === selectedIconId.value) ?? null);
-const mobileLayoutLabels = Object.fromEntries(
+const mobileLayoutLabels: Readonly<Record<string, string>> = Object.fromEntries(
     MOBILE_MAIN_PANEL_DEFINITIONS.map(({ id, label }) => [id, label])
-) as Record<MobileMainPanelId, string>;
+);
 
 const openMobileLayoutDialog = () => {
     mobileLayoutOrder.value = loadMobileMainPanelOrder();
@@ -192,20 +191,6 @@ const openMobileLayoutDialog = () => {
 
 const moveMobileLayoutItem = (fromIndex: number, toIndex: number) => {
     mobileLayoutOrder.value = moveMobileMainPanel(mobileLayoutOrder.value, fromIndex, toIndex);
-};
-
-const startMobileLayoutDrag = (event: DragEvent, index: number) => {
-    mobileLayoutDragIndex.value = index;
-    event.dataTransfer?.setData('text/plain', mobileLayoutOrder.value[index] ?? '');
-    if (event.dataTransfer) event.dataTransfer.effectAllowed = 'move';
-};
-
-const dropMobileLayoutItem = (event: DragEvent, targetIndex: number) => {
-    event.preventDefault();
-    const sourceIndex = mobileLayoutDragIndex.value;
-    mobileLayoutDragIndex.value = null;
-    if (sourceIndex === null) return;
-    moveMobileLayoutItem(sourceIndex, targetIndex);
 };
 
 const resetMobileLayoutOrder = () => {
@@ -387,7 +372,7 @@ const dropItem = (item: { key: ItemSlotKey; slotName: string; displayName: strin
 
 watch(screenMode, (mode) => {
     localStorage.setItem(SCREEN_MODE_KEY, mode);
-    document.dispatchEvent(new CustomEvent('tryChangeScreenMode'));
+    document.dispatchEvent(new CustomEvent(SCREEN_MODE_CHANGE_EVENT));
 });
 
 watch(customCss, (text) => {
@@ -697,7 +682,6 @@ onMounted(() => {
         ref="mobileLayoutDialog"
         class="mobile-layout-dialog"
         aria-labelledby="mobile-layout-dialog-title"
-        @close="mobileLayoutDragIndex = null"
     >
         <div class="mobile-layout-dialog__header">
             <h2 id="mobile-layout-dialog-title">모바일 레이아웃 순서 바꾸기</h2>
@@ -706,42 +690,39 @@ onMounted(() => {
             </form>
         </div>
         <p>항목을 끌어 놓거나 위·아래 버튼으로 상대 순서를 바꿉니다.</p>
-        <ol class="mobile-layout-list">
-            <li
-                v-for="(panelId, index) in mobileLayoutOrder"
-                :key="panelId"
-                :data-mobile-layout-id="panelId"
-                draggable="true"
-                @dragstart="startMobileLayoutDrag($event, index)"
-                @dragend="mobileLayoutDragIndex = null"
-                @dragover.prevent
-                @drop.stop="dropMobileLayoutItem($event, index)"
-            >
-                <span class="mobile-layout-handle" aria-hidden="true">≡</span>
-                <span class="mobile-layout-label">
-                    <span class="mobile-layout-position">{{ index + 1 }}</span>
-                    {{ mobileLayoutLabels[panelId] }}
-                </span>
-                <span class="mobile-layout-move-buttons">
-                    <button
-                        type="button"
-                        :aria-label="`${mobileLayoutLabels[panelId]} 위로`"
-                        :disabled="index === 0"
-                        @click="moveMobileLayoutItem(index, index - 1)"
-                    >
-                        ↑
-                    </button>
-                    <button
-                        type="button"
-                        :aria-label="`${mobileLayoutLabels[panelId]} 아래로`"
-                        :disabled="index === mobileLayoutOrder.length - 1"
-                        @click="moveMobileLayoutItem(index, index + 1)"
-                    >
-                        ↓
-                    </button>
-                </span>
-            </li>
-        </ol>
+        <SortableStringList
+            :list="mobileLayoutOrder"
+            tag="ol"
+            class="mobile-layout-list"
+        >
+            <template #item="{ element: panelId, index }">
+                <li :data-mobile-layout-id="panelId">
+                    <span class="mobile-layout-handle" aria-hidden="true">≡</span>
+                    <span class="mobile-layout-label">
+                        <span class="mobile-layout-position">{{ index + 1 }}</span>
+                        {{ mobileLayoutLabels[panelId] }}
+                    </span>
+                    <span class="mobile-layout-move-buttons">
+                        <button
+                            type="button"
+                            :aria-label="`${mobileLayoutLabels[panelId]} 위로`"
+                            :disabled="index === 0"
+                            @click="moveMobileLayoutItem(index, index - 1)"
+                        >
+                            ↑
+                        </button>
+                        <button
+                            type="button"
+                            :aria-label="`${mobileLayoutLabels[panelId]} 아래로`"
+                            :disabled="index === mobileLayoutOrder.length - 1"
+                            @click="moveMobileLayoutItem(index, index + 1)"
+                        >
+                            ↓
+                        </button>
+                    </span>
+                </li>
+            </template>
+        </SortableStringList>
         <div class="mobile-layout-dialog__actions">
             <button type="button" @click="resetMobileLayoutOrder">기본값</button>
             <form method="dialog"><button type="submit">취소</button></form>

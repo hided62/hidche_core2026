@@ -77,19 +77,7 @@ onMounted(async () => {
 </script>
 
 <template>
-    <AdminConsoleLayout
-        title="운영 개요"
-        description="관리 대상을 먼저 선택하세요. 위험도가 높은 변경과 배포 이력은 각 영역에서 분리해 확인할 수 있습니다."
-        eyebrow="Admin workspace"
-    >
-        <section class="overview-guide" aria-label="관리 원칙">
-            <div>
-                <strong>작업 영역이 분리되었습니다.</strong>
-                <p>계정 변경, 서버 설정, 버전 배포가 한 화면에 섞이지 않도록 책임별로 나누었습니다.</p>
-            </div>
-            <span>권한 검사는 기존 서버 정책을 그대로 따릅니다.</span>
-        </section>
-
+    <AdminConsoleLayout title="운영 개요" description="관리 대상을 선택하세요." eyebrow="Admin workspace">
         <section class="overview-grid" aria-label="관리 기능">
             <RouterLink
                 v-for="section in sections.filter((entry) => entry.visible)"
@@ -108,37 +96,6 @@ onMounted(async () => {
 </template>
 
 <style scoped>
-.overview-guide {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 20px;
-    margin-bottom: 22px;
-    border: 1px solid #3f3f46;
-    border-radius: 10px;
-    background: #18181b;
-    padding: 18px 20px;
-}
-
-.overview-guide strong {
-    color: #f4f4f5;
-    font-size: 14px;
-}
-
-.overview-guide p,
-.overview-guide span {
-    margin: 4px 0 0;
-    color: #a1a1aa;
-    font-size: 12px;
-    line-height: 1.5;
-}
-
-.overview-guide > span {
-    flex: 0 0 auto;
-    margin: 0;
-    color: #fbbf24;
-}
-
 .overview-grid {
     display: grid;
     grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -214,11 +171,6 @@ onMounted(async () => {
 }
 
 @media (max-width: 700px) {
-    .overview-guide {
-        align-items: flex-start;
-        flex-direction: column;
-    }
-
     .overview-grid {
         grid-template-columns: 1fr;
     }

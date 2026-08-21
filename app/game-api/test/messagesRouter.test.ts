@@ -260,6 +260,116 @@ describe('messages router missing-flow compatibility', () => {
         expect(queryRaw.mock.calls[0]?.slice(1)).toEqual(expect.arrayContaining([9002, 'diplomacy']));
     });
 
+    it('allows a ruler to send a recruitment advertisement to the wanderer mailbox', async () => {
+        const ruler = { ...general, officerLevel: 12 } as GeneralRow;
+        const queryRaw = vi.fn(async () => [{ id: 53 }]);
+        const changeJournal = new ChangeJournal();
+        const { caller } = buildContext(
+            {
+                $queryRaw: queryRaw,
+                general: {
+                    findUnique: vi.fn(async () => ruler),
+                    findMany: vi.fn(async () => []),
+                },
+                nation: {
+                    findMany: vi.fn(async () => []),
+                    findUnique: vi.fn(async () => ({ id: 1, name: '위', color: '#112233', meta: {} })),
+                },
+            },
+            { changeJournal }
+        );
+
+        const result = await caller.messages.send({
+            generalId: ruler.id,
+            mailbox: 9000,
+            text: '우리 나라로 와주세요',
+        });
+
+        expect(result.msgType).toBe('diplomacy');
+        expect(queryRaw.mock.calls[0]?.slice(1)).toEqual(expect.arrayContaining([9000, 'diplomacy']));
+        expect(queryRaw).toHaveBeenCalledTimes(2);
+        expect(changeJournal.snapshot()).toEqual([
+            { domain: 'messages.mailbox', entityId: 9000 },
+            { domain: 'messages.mailbox', entityId: 9001 },
+        ]);
+    });
+
+    it('keeps the wanderer mailbox unavailable to a non-diplomat on the server', async () => {
+        const queryRaw = vi.fn(async () => [{ id: 54 }]);
+        const { caller } = buildContext({
+            $queryRaw: queryRaw,
+            nation: {
+                findMany: vi.fn(async () => []),
+                findUnique: vi.fn(async () => ({ id: 1, name: '위', color: '#112233', meta: {} })),
+            },
+        });
+
+        const result = await caller.messages.send({
+            generalId: general.id,
+            mailbox: 9000,
+            text: '권한 없는 재야 광고',
+        });
+
+        expect(result.msgType).toBe('national');
+        expect(queryRaw).toHaveBeenCalledTimes(1);
+        expect(queryRaw.mock.calls[0]?.slice(1)).toEqual(expect.arrayContaining([9001, 'national']));
+    });
+
+    it('shows a wanderer the advertisement stored in mailbox 9000 without diplomacy redaction', async () => {
+        const wanderer = { ...general, nationId: 0, officerLevel: 0 } as GeneralRow;
+        const advertisementRow = {
+            id: 55,
+            mailbox: 9000,
+            type: 'diplomacy',
+            src: 9001,
+            dest: 9000,
+            time: new Date(),
+            valid_until: new Date('9999-12-31T00:00:00Z'),
+            message: {
+                src: {
+                    generalId: 1,
+                    generalName: '위왕',
+                    nationId: 1,
+                    nationName: '위',
+                    color: '#112233',
+                    icon: '',
+                },
+                dest: {
+                    generalId: 0,
+                    generalName: '',
+                    nationId: 0,
+                    nationName: '재야',
+                    color: '#000000',
+                    icon: '',
+                },
+                text: '우리 나라로 와주세요',
+                option: {},
+            },
+        };
+        const queryRaw = vi.fn(async (...args: unknown[]) => {
+            const values = args.slice(1);
+            return values.includes(9000) && values.includes('diplomacy') ? [advertisementRow] : [];
+        });
+        const { caller } = buildContext({
+            $queryRaw: queryRaw,
+            general: {
+                findUnique: vi.fn(async () => wanderer),
+                findMany: vi.fn(async () => []),
+            },
+        });
+
+        const result = await caller.messages.getRecent({ generalId: wanderer.id });
+
+        expect(result.permission).toBe(-1);
+        expect(result.diplomacy).toEqual([
+            expect.objectContaining({
+                text: '우리 나라로 와주세요',
+                dest: expect.objectContaining({ nationId: 0, nationName: '재야' }),
+                option: {},
+            }),
+        ]);
+    });
+
     it('blocks private messages between foreign ambassadors', async () => {
         const ambassador = {
             ...general,

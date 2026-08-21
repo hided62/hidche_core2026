@@ -126,6 +126,19 @@ test('bootstrap superuser can navigate the administrator workspace from the lobb
 
     await expect(page).toHaveURL(/\/gateway\/admin$/);
     await expect(page.getByRole('heading', { name: '운영 개요' })).toBeVisible();
+    await expect(page.getByText('관리 대상을 선택하세요.')).toBeVisible();
+    await expect(page.getByRole('region', { name: '관리 원칙' })).toHaveCount(0);
+    await expect(page.getByText('작업 영역이 분리되었습니다.')).toHaveCount(0);
+    const overviewGrid = page.getByRole('region', { name: '관리 기능' });
+    const desktopOverviewGeometry = await overviewGrid.evaluate((element) => {
+        const rect = element.getBoundingClientRect();
+        return { left: rect.left, right: rect.right, top: rect.top, width: rect.width };
+    });
+    expect(desktopOverviewGeometry.top).toBeLessThan(300);
+    await writeFile(
+        testInfo.outputPath('admin-overview-desktop-geometry.json'),
+        JSON.stringify(desktopOverviewGeometry)
+    );
     const navigation = page.getByRole('navigation', { name: '관리자 메뉴' });
     await expect(navigation).toBeVisible();
     const userLink = navigation.getByRole('link', { name: '사용자 관리' });
@@ -148,6 +161,24 @@ test('bootstrap superuser can navigate the administrator workspace from the lobb
     await writeFile(testInfo.outputPath('admin-overview-mobile-geometry.json'), JSON.stringify(geometry));
     await page.screenshot({ path: testInfo.outputPath('admin-overview-mobile-menu.png'), fullPage: true });
 
+    await page.getByRole('button', { name: '관리자 메뉴' }).click();
+    await expect(navigation).toBeHidden();
+    await page.evaluate(() => window.scrollTo(0, 0));
+    await expect.poll(() => page.evaluate(() => window.scrollY)).toBe(0);
+    const mobileOverviewGeometry = await overviewGrid.evaluate((element) => {
+        const rect = element.getBoundingClientRect();
+        return { left: rect.left, right: rect.right, top: rect.top, width: rect.width };
+    });
+    expect(mobileOverviewGeometry.left).toBeGreaterThanOrEqual(0);
+    expect(mobileOverviewGeometry.right).toBeLessThanOrEqual(390);
+    expect(mobileOverviewGeometry.top).toBeLessThan(340);
+    await writeFile(
+        testInfo.outputPath('admin-overview-mobile-content-geometry.json'),
+        JSON.stringify(mobileOverviewGeometry)
+    );
+    await page.screenshot({ path: testInfo.outputPath('admin-overview-mobile-content.png'), fullPage: true });
+
+    await page.getByRole('button', { name: '관리자 메뉴' }).click();
     await navigation.getByRole('link', { name: 'Gateway 릴리스' }).click();
     await expect(page).toHaveURL(/\/gateway\/admin\/releases$/);
     await expect(page.getByRole('heading', { name: 'Gateway 릴리스', level: 1 })).toBeVisible();

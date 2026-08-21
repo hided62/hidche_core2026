@@ -8,6 +8,7 @@ import {
     buildProcessDefinitions,
     buildWorkspaceCommands,
     planProfileReconcile,
+    resolveResetLifecycleStatus,
 } from '../src/orchestrator/gatewayOrchestrator.js';
 import { sanitizeManagedProcessEnv } from '../src/orchestrator/processManager.js';
 import type { GatewayProfileRecord } from '../src/orchestrator/profileRepository.js';
@@ -105,6 +106,29 @@ describe('planProfileReconcile', () => {
                 tournamentRunning: false,
             })
         ).toEqual({ shouldStart: false, shouldStop: false });
+    });
+});
+
+describe('resolveResetLifecycleStatus', () => {
+    const now = new Date('2030-01-01T00:00:00.000Z');
+
+    it('keeps an initialized profile reserved until the configured preopen time', () => {
+        expect(
+            resolveResetLifecycleStatus(now, new Date('2030-01-01T01:00:00.000Z'), new Date('2030-01-01T02:00:00.000Z'))
+        ).toBe('RESERVED');
+    });
+
+    it('moves through preopen before the formal open time', () => {
+        expect(
+            resolveResetLifecycleStatus(now, new Date('2029-12-31T23:00:00.000Z'), new Date('2030-01-01T02:00:00.000Z'))
+        ).toBe('PREOPEN');
+    });
+
+    it('runs immediately when no future lifecycle boundary remains', () => {
+        expect(resolveResetLifecycleStatus(now, null, null)).toBe('RUNNING');
+        expect(
+            resolveResetLifecycleStatus(now, new Date('2029-12-31T22:00:00.000Z'), new Date('2029-12-31T23:00:00.000Z'))
+        ).toBe('RUNNING');
     });
 });
 
@@ -347,9 +371,11 @@ describe('buildWorkspaceCommands', () => {
 });
 
 describe('buildProfileFrontendCommands', () => {
+    const buildCommitSha = '0123456789abcdef0123456789abcdef01234567';
+
     it('uses a profile frontend build-only Node heap without changing the shared runtime heap', () => {
         const workspaceRoot = '/srv/sammo/worktrees/0123456789abcdef';
-        const commands = buildProfileFrontendCommands(workspaceRoot, buildProfile(), {
+        const commands = buildProfileFrontendCommands(workspaceRoot, buildProfile(), buildCommitSha, {
             NODE_OPTIONS: '--max-old-space-size=1536',
             PROFILE_FRONTEND_BUILD_NODE_OPTIONS: '--max-old-space-size=2048',
         });
@@ -361,6 +387,7 @@ describe('buildProfileFrontendCommands', () => {
                 (command) => command.env?.PROFILE_FRONTEND_BUILD_NODE_OPTIONS === '--max-old-space-size=2048'
             )
         ).toBe(true);
+        expect(commands.every((command) => command.env?.VITE_BUILD_COMMIT_SHA === buildCommitSha)).toBe(true);
         expect(commands[0]?.args).toEqual([
             'exec',
             'turbo',
@@ -377,10 +404,16 @@ describe('buildProfileFrontendCommands', () => {
 
     it('keeps the shared Node heap when no frontend build override is configured', () => {
         const workspaceRoot = '/srv/sammo/worktrees/0123456789abcdef';
-        const commands = buildProfileFrontendCommands(workspaceRoot, buildProfile(), {
+        const commands = buildProfileFrontendCommands(workspaceRoot, buildProfile(), buildCommitSha, {
             NODE_OPTIONS: '--max-old-space-size=1536',
         });
 
         expect(commands.every((command) => command.env?.NODE_OPTIONS === '--max-old-space-size=1536')).toBe(true);
+    });
+
+    it('rejects a non-commit build version before creating cached frontend commands', () => {
+        expect(() => buildProfileFrontendCommands('/srv/sammo/worktrees/main', buildProfile(), 'main')).toThrow(
+            'Profile frontend build requires a full commit SHA.'
+        );
     });
 });
