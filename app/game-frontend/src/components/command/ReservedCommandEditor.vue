@@ -588,7 +588,13 @@ const clickOutsideMenu = (event: Event) => {
                         </button>
                     </div>
                 </details>
-                <button type="button" class="select-command" @click="togglePicker()">명령 선택 ▾</button>
+                <button
+                    type="button"
+                    class="legacy-button legacy-button--info legacy-button--fixed-height select-command"
+                    @click="togglePicker()"
+                >
+                    명령 선택 ▾
+                </button>
             </div>
 
             <div class="queue-area">
@@ -806,8 +812,7 @@ const clickOutsideMenu = (event: Event) => {
 }
 .control-pad > button,
 .clock,
-.legacy-menu > summary,
-.select-command {
+.legacy-menu > summary {
     box-sizing: border-box;
     min-height: 34px;
     border: 0;
@@ -821,6 +826,12 @@ const clickOutsideMenu = (event: Event) => {
     font-weight: 700;
     cursor: pointer;
     list-style: none;
+}
+.select-command {
+    --legacy-button-height: 34px;
+    display: grid;
+    place-items: center;
+    padding: 4px;
 }
 .clock {
     background: #345c85;
@@ -1023,9 +1034,6 @@ const clickOutsideMenu = (event: Event) => {
     display: grid;
     grid-template-columns: 5fr 7fr;
     order: 1;
-}
-.advanced-actions > * {
-    border-radius: 0 !important;
 }
 .bottom-actions {
     display: grid;

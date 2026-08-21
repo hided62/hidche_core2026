@@ -338,7 +338,13 @@ onMounted(() => {
     <main id="nation-betting-container" class="nation-betting-page legacy-bg0">
         <header class="legacy-top-bar">
             <RouterLink v-slot="{ navigate }" custom to="/">
-                <button class="legacy-button legacy-button--navigation" type="button" @click="navigate">돌아가기</button>
+                <button
+                    class="legacy-button legacy-button--navigation legacy-button--fixed-height"
+                    type="button"
+                    @click="navigate"
+                >
+                    돌아가기
+                </button>
             </RouterLink>
             <div></div>
             <h1>국가 베팅장</h1>
@@ -395,7 +401,7 @@ onMounted(() => {
                 <div>사용 포인트: {{ usedAmount.toLocaleString('ko-KR') }}</div>
                 <div>대상: {{ selectionLabel(selectedKey) }}</div>
                 <input v-model.number="amount" aria-label="베팅 금액" type="number" min="10" max="1000" step="10" />
-                <button type="submit" :disabled="submitting">베팅</button>
+                <button class="legacy-button legacy-button--primary" type="submit" :disabled="submitting">베팅</button>
             </form>
 
             <div class="payout-table">
@@ -475,33 +481,10 @@ onMounted(() => {
     text-align: center;
 }
 
-.legacy-nav-button,
-.betting-form button {
-    height: 32px;
-    border: 0;
-    background: #00582c;
-    color: #fff;
-    font-weight: 600;
-    text-align: center;
-    text-decoration: none;
-    cursor: pointer;
+.legacy-top-bar .legacy-button {
+    --legacy-button-height: 32px;
 }
 
-.legacy-nav-button {
-    display: grid;
-    place-items: center;
-    margin-right: 2px;
-}
-
-.legacy-nav-button:hover,
-.legacy-nav-button:focus,
-.betting-form button:hover,
-.betting-form button:focus {
-    filter: brightness(1.18);
-}
-
-.legacy-nav-button:focus-visible,
-.betting-form button:focus-visible,
 .betting-candidate:focus-visible,
 .betting-item:focus-visible {
     outline: 2px solid #f39c12;
@@ -662,9 +645,8 @@ onMounted(() => {
     padding-top: 20px;
 }
 
-.betting-footer .legacy-nav-button {
+.betting-footer .legacy-button {
     width: 90px;
-    height: 35.5px;
 }
 
 .betting-notice,

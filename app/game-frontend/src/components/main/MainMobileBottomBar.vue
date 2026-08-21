@@ -61,7 +61,7 @@ const onAction = (action: NonNullable<MainNavigationLinkItem['action']>) => {
     >
         <div class="bottom-item">
             <button
-                class="bottom-trigger legacy-button legacy-button--navigation"
+                class="bottom-trigger legacy-button legacy-button--navigation legacy-button--fixed-height"
                 type="button"
                 data-bottom-menu="global"
                 :aria-expanded="openId === 'global'"
@@ -132,7 +132,7 @@ const onAction = (action: NonNullable<MainNavigationLinkItem['action']>) => {
 
         <div class="bottom-item nation-bottom-item">
             <button
-                class="bottom-trigger nation-trigger legacy-button legacy-button--lumen"
+                class="bottom-trigger nation-trigger legacy-button legacy-button--lumen legacy-button--fixed-height"
                 :style="{
                     '--legacy-button-bg': nationMenuColor,
                     '--legacy-button-border': 'color-mix(in srgb, var(--nation-menu-color) 90%, #000)',
@@ -178,7 +178,7 @@ const onAction = (action: NonNullable<MainNavigationLinkItem['action']>) => {
 
         <div class="bottom-item">
             <button
-                class="bottom-trigger quick-trigger legacy-button legacy-button--dark"
+                class="bottom-trigger quick-trigger legacy-button legacy-button--dark legacy-button--fixed-height"
                 type="button"
                 data-bottom-menu="quick"
                 :aria-expanded="openId === 'quick'"
@@ -221,7 +221,7 @@ const onAction = (action: NonNullable<MainNavigationLinkItem['action']>) => {
 
         <div class="bottom-refresh-controls">
             <button
-                class="bottom-trigger auto-refresh-trigger legacy-button legacy-button--navigation"
+                class="bottom-trigger auto-refresh-trigger legacy-button legacy-button--navigation legacy-button--fixed-height"
                 :class="{ active: realtimeEnabled }"
                 type="button"
                 data-bottom-menu="auto-refresh"
@@ -232,7 +232,7 @@ const onAction = (action: NonNullable<MainNavigationLinkItem['action']>) => {
                 <strong>{{ realtimeEnabled ? 'ON' : 'OFF' }}</strong>
             </button>
             <button
-                class="bottom-trigger manual-refresh-trigger legacy-button legacy-button--dark"
+                class="bottom-trigger manual-refresh-trigger legacy-button legacy-button--dark legacy-button--fixed-height"
                 type="button"
                 data-bottom-menu="manual-refresh"
                 aria-label="직접 갱신"
@@ -279,9 +279,9 @@ const onAction = (action: NonNullable<MainNavigationLinkItem['action']>) => {
 }
 
 .bottom-trigger {
+    --legacy-button-height: 45px;
     box-sizing: border-box;
     width: 125px;
-    height: 45px;
     padding: 6px 4px;
     font-family: inherit;
     font-size: 16px;
@@ -314,15 +314,6 @@ const onAction = (action: NonNullable<MainNavigationLinkItem['action']>) => {
     padding: 0;
     font-size: 22px;
     line-height: 1;
-}
-
-.bottom-trigger.legacy-button:not(:disabled, [aria-disabled='true']):hover,
-.bottom-trigger.legacy-button:not(:disabled, [aria-disabled='true'])[aria-expanded='true'] {
-    height: 44px;
-}
-
-.bottom-trigger.legacy-button:not(:disabled, [aria-disabled='true']):active {
-    height: 43px;
 }
 
 .dropup-caret {

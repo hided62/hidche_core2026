@@ -355,13 +355,14 @@ const submitPriority = async (section: PrioritySectionKey) => {
         error.value = `설정하지 못했습니다: ${resolveErrorMessage(caught)}`;
     }
 };
-
 </script>
 
 <template>
     <main id="npc-policy-page" class="npc-page">
         <nav class="top-back-bar legacy-bg0">
-            <RouterLink class="back-button" to="/">돌아가기</RouterLink>
+            <RouterLink class="legacy-button legacy-button--navigation legacy-button--fixed-height back-button" to="/"
+                >돌아가기</RouterLink
+            >
             <strong>NPC 정책</strong>
         </nav>
 
@@ -579,21 +580,14 @@ const submitPriority = async (section: PrioritySectionKey) => {
 }
 
 .back-button {
+    --legacy-button-height: 32px;
     position: absolute;
     inset: 0 auto 0 0;
     width: 88px;
-    color: #fff;
-    background: #087f45;
-    border: 1px solid #0a9960;
-    border-radius: 0 0 4px;
-    font-weight: 700;
-    line-height: 30px;
     text-decoration: none;
 }
 
-.back-button:hover,
 .back-button:focus-visible {
-    background: #0a9960;
     outline: 2px solid #fff;
     outline-offset: -2px;
 }

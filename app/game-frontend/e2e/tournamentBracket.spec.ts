@@ -395,7 +395,10 @@ test('join refresh shows the assigned preliminary group immediately with accessi
     await refresh.focus();
     await expect(refresh).toBeFocused();
     await refresh.hover();
-    await expect(refresh).toHaveCSS('filter', 'brightness(1.25)');
+    await expect(refresh).toHaveCSS('filter', 'none');
+    await expect(refresh).toHaveCSS('height', '43px');
+    await expect(refresh).toHaveCSS('margin-top', '1px');
+    await expect(refresh).toHaveCSS('border-bottom-width', '3px');
     expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
 });
 
@@ -602,7 +605,11 @@ test('mobile betting rankings use tabs and keep dedicated icons beside general n
     await expect(dialog.getByText('예상 환수금 280')).toBeVisible();
     await dialog.getByLabel('베팅 금액').selectOption('50');
     await expect(dialog.getByText('예상 환수금 1,400')).toBeVisible();
-    await persistScreenshot(page, 'tournament-betting-dialog-mobile', testInfo.outputPath('betting-dialog-mobile.webp'));
+    await persistScreenshot(
+        page,
+        'tournament-betting-dialog-mobile',
+        testInfo.outputPath('betting-dialog-mobile.webp')
+    );
     await dialog.getByRole('button', { name: '베팅 등록' }).click();
     await expect(dialog).not.toBeVisible();
     await expect(page.getByRole('status')).toHaveText('베팅이 등록되었습니다.');

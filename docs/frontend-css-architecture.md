@@ -31,9 +31,12 @@ The Ref-style directory pages share a second, deliberately compact control
 family through `LegacySortControls.vue`. Its `.legacy-sort-*` rules own the
 explicit dark select/option palette, the raised submit button, and the
 focus/active states for sortable table headers. A page supplies only the
-available legacy sort keys, their fixed directions, and placement. Columns
-without an unambiguous legacy sort key remain plain headers rather than
-inventing a new ordering contract.
+available sort keys and placement. NPC·암행부·세력도시는 Ref의 고정 방향을
+유지합니다. 장수 일람은 사용자 조작 계약에 따라 로드한 snapshot 위에서
+`내림차순 → 오름차순 → 해제`를 순환하고, 여러 열의 방향과 우선순위를 scoped
+SFC indicator로 표시합니다. 장수 일람의 성격·특기·부상 설명은 많은 행에서
+eager popup instance를 만들지 않는 `DirectoryTooltip.vue` scoped CSS가 소유하며,
+mobile에서는 viewport 가장자리 8px 안의 고정 설명판으로 전환합니다.
 
 ## Button composition
 
@@ -77,10 +80,11 @@ validating one representative button.
 The primitive does not set a fixed `min-height`: Ref's 35.5px default height is
 the result of line-height, padding, and the 4px edge, so it naturally becomes
 34.5px/33.5px while the 1px/2px top margin keeps the bottom coordinate fixed.
-Only a fixed-height owner such as the mobile bottom bar supplies explicit
-45px/44px/43px state compensation.
+A fixed row opts into `.legacy-button--fixed-height` and supplies only
+`--legacy-button-height`; the shared layer derives the hover/active heights so
+every owner keeps the same bottom-coordinate contract.
 
-Only layout belongs in the SFC: width, grid column, fixed-height compensation,
+Only layout belongs in the SFC: width, grid column, the fixed height variable,
 margins required by the page, and breakpoint-specific placement. Color base
 variables may be supplied by the owner for dynamic nation/scenario colors, but
 border construction, font weight, hover/focus/active, and disabled presentation

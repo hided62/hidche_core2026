@@ -210,7 +210,44 @@ const install = async (
             }
             if (operation === 'general.me') return response(generalContext);
             if (operation === 'world.getMap') return response(mapFixture);
-            if (operation === 'turns.getCommandTable') return response({ general: [], nation: [] });
+            if (operation === 'turns.getCommandTable')
+                return response({
+                    general: [
+                        {
+                            category: '군사',
+                            values: [
+                                {
+                                    key: 'che_징병',
+                                    name: '징병',
+                                    reqArg: true,
+                                    status: 'needsInput',
+                                    possible: true,
+                                    inputFields: [],
+                                },
+                                {
+                                    key: 'che_화계',
+                                    name: '화계',
+                                    reqArg: true,
+                                    status: 'needsInput',
+                                    possible: true,
+                                    inputFields: [],
+                                },
+                            ],
+                        },
+                    ],
+                    nation: [],
+                    inputOptions: {
+                        cities: [{ value: 1, label: '업 (아국)' }],
+                        nations: [],
+                        generals: [],
+                        crewTypes: [{ value: 1, label: '보병' }],
+                        armTypes: [],
+                        nationTypes: [],
+                        colors: [],
+                        items: {},
+                        recruitment: null,
+                    },
+                });
             if (operation === 'turns.reserved.getGeneral' || operation === 'turns.reserved.getNation') {
                 return response({ turns: [], revision: 0 });
             }
@@ -373,7 +410,12 @@ const install = async (
                                       crew: 500,
                                       train: 90,
                                       atmos: 90,
-                                      turns: denseCurrentCity ? ['징병', '훈련'] : ['징병'],
+                                      turns: denseCurrentCity
+                                          ? [
+                                                { action: 'che_징병', args: { crewType: 1, amount: 300 } },
+                                                { action: 'che_화계', args: { destCityId: 1 } },
+                                            ]
+                                          : [{ action: 'che_징병', args: { crewType: 1, amount: 300 } }],
                                   },
                                   ...(denseCurrentCity
                                       ? Array.from({ length: 12 }, (_, index) => ({
@@ -475,6 +517,27 @@ test('map keeps desktop hover navigation and lets touch users choose one-tap or 
     await page.setViewportSize({ width: 1200, height: 900 });
     await go(page, 'global-info');
 
+    const desktopOptionsTrigger = page.getByRole('button', { name: '지도 옵션' });
+    await expect(desktopOptionsTrigger).toBeVisible();
+    await expect(desktopOptionsTrigger).toHaveAttribute('aria-expanded', 'false');
+    await expect(desktopOptionsTrigger).toHaveCSS('background-color', 'rgb(52, 92, 133)');
+    await desktopOptionsTrigger.hover();
+    await expect(desktopOptionsTrigger).toHaveCSS('background-color', 'rgb(40, 73, 105)');
+    await expect(page.getByRole('button', { name: '도시명 표기 끄기' })).not.toBeVisible();
+    await desktopOptionsTrigger.click();
+    const cityNameToggle = page.getByRole('button', { name: '도시명 표기 끄기' });
+    await expect(cityNameToggle).toBeVisible();
+    await expect(desktopOptionsTrigger).toHaveAttribute('aria-expanded', 'true');
+    await expect(page.locator('.map-options-menu .map-toggle')).toHaveCount(1);
+    await page.keyboard.press('Tab');
+    await desktopOptionsTrigger.focus();
+    await expect(desktopOptionsTrigger).toHaveCSS('outline-style', 'solid');
+    await page.screenshot({ path: testInfo.outputPath('desktop-map-options-open.png'), fullPage: true });
+    await cityNameToggle.click();
+    await expect(page.locator('.map-area .city-name')).toHaveCount(0);
+    await page.keyboard.press('Escape');
+    await expect(desktopOptionsTrigger).toHaveAttribute('aria-expanded', 'false');
+
     const desktopCity = page.locator('.city-base').first();
     await expect(page.locator('.map-toggle-single-tap')).toHaveCount(0);
     await desktopCity.hover();
@@ -508,20 +571,48 @@ test('map keeps desktop hover navigation and lets touch users choose one-tap or 
         await install(mobilePage);
         await go(mobilePage, 'global-info');
 
+        const mobileOptionsTrigger = mobilePage.getByRole('button', { name: '지도 옵션' });
+        await expect(mobileOptionsTrigger).toBeVisible();
+        await expect(mobileOptionsTrigger).toHaveAttribute('aria-expanded', 'false');
+        await mobileOptionsTrigger.tap();
+        await expect(mobileOptionsTrigger).toHaveAttribute('aria-expanded', 'true');
+        await expect(mobilePage.locator('.map-options-menu .map-toggle')).toHaveCount(2);
+
         const twoTapButton = mobilePage.getByRole('button', { name: '두번 탭 해 도시 이동 끄기' });
         await expect(twoTapButton).toBeVisible();
         await expect(twoTapButton).toHaveAttribute('aria-pressed', 'false');
-        const controlGeometry = await twoTapButton.evaluate((element) => {
-            const rect = element.getBoundingClientRect();
+        const controlGeometry = await mobilePage.locator('.map-controls').evaluate((element) => {
+            const triggerRect = element.querySelector('.map-options-trigger')!.getBoundingClientRect();
+            const menuRect = element.querySelector('.map-options-menu')!.getBoundingClientRect();
+            const optionRects = Array.from(element.querySelectorAll('.map-options-menu .map-toggle')).map((option) => {
+                const rect = option.getBoundingClientRect();
+                return { top: rect.top, bottom: rect.bottom };
+            });
             const mapRect = element.closest('.map-area')?.getBoundingClientRect();
-            const style = getComputedStyle(element);
+            const optionStyle = getComputedStyle(element.querySelector('.map-toggle')!);
             return {
-                right: rect.right,
-                bottom: rect.bottom,
-                mapRight: mapRect?.right,
-                mapBottom: mapRect?.bottom,
-                fontSize: style.fontSize,
-                lineHeight: style.lineHeight,
+                trigger: {
+                    right: triggerRect.right,
+                    bottom: triggerRect.bottom,
+                    top: triggerRect.top,
+                },
+                menu: {
+                    left: menuRect.left,
+                    right: menuRect.right,
+                    top: menuRect.top,
+                    bottom: menuRect.bottom,
+                },
+                optionRects,
+                map: mapRect
+                    ? {
+                          left: mapRect.left,
+                          right: mapRect.right,
+                          top: mapRect.top,
+                          bottom: mapRect.bottom,
+                      }
+                    : null,
+                fontSize: optionStyle.fontSize,
+                lineHeight: optionStyle.lineHeight,
                 documentWidth: document.documentElement.scrollWidth,
                 viewportWidth: document.documentElement.clientWidth,
                 overflowing: Array.from(document.querySelectorAll<HTMLElement>('body *'))
@@ -543,8 +634,20 @@ test('map keeps desktop hover navigation and lets touch users choose one-tap or 
             overflowing: [],
         });
         expect(controlGeometry.documentWidth).toBeLessThanOrEqual(controlGeometry.viewportWidth + 1);
-        expect(controlGeometry.mapRight! - controlGeometry.right).toBeCloseTo(4, 1);
-        expect(controlGeometry.mapBottom! - controlGeometry.bottom).toBeCloseTo(4, 1);
+        expect(controlGeometry.map).not.toBeNull();
+        expect(controlGeometry.map!.right - controlGeometry.trigger.right).toBeCloseTo(4, 1);
+        expect(controlGeometry.map!.bottom - controlGeometry.trigger.bottom).toBeCloseTo(4, 1);
+        expect(controlGeometry.menu.left).toBeGreaterThanOrEqual(controlGeometry.map!.left);
+        expect(controlGeometry.menu.right).toBeLessThanOrEqual(controlGeometry.map!.right);
+        expect(controlGeometry.menu.top).toBeGreaterThanOrEqual(controlGeometry.map!.top);
+        expect(controlGeometry.menu.bottom).toBeLessThan(controlGeometry.trigger.top);
+        expect(controlGeometry.optionRects).toHaveLength(2);
+        expect(controlGeometry.optionRects[0]!.bottom).toBeLessThanOrEqual(controlGeometry.optionRects[1]!.top);
+        expect(controlGeometry.optionRects[1]!.bottom).toBeLessThanOrEqual(controlGeometry.menu.bottom);
+        await mobilePage.screenshot({ path: testInfo.outputPath('mobile-map-options-open.png'), fullPage: true });
+
+        await mobilePage.locator('.map-area').tap({ position: { x: 10, y: 10 } });
+        await expect(mobileOptionsTrigger).toHaveAttribute('aria-expanded', 'false');
 
         const mobileCities = mobilePage.locator('.city-base');
         await mobileCities.nth(0).tap();
@@ -560,17 +663,19 @@ test('map keeps desktop hover navigation and lets touch users choose one-tap or 
         await expect(mobilePage).toHaveURL(/\/current-city\?cityId=2$/u);
 
         await go(mobilePage, 'global-info');
+        await mobilePage.getByRole('button', { name: '지도 옵션' }).tap();
         await mobilePage.getByRole('button', { name: '두번 탭 해 도시 이동 끄기' }).click();
         const singleTapButton = mobilePage.getByRole('button', { name: '두번 탭 해 도시 이동 켜기' });
         await expect(singleTapButton).toHaveAttribute('aria-pressed', 'true');
         expect(await mobilePage.evaluate(() => localStorage.getItem('sam.toggleSingleTap'))).toBe('yes');
 
         await mobilePage.reload();
-        await expect(singleTapButton).toBeVisible();
+        await expect(singleTapButton).not.toBeVisible();
         await mobilePage.locator('.city-base').nth(2).tap();
         await expect(mobilePage).toHaveURL(/\/current-city\?cityId=3$/u);
 
         await go(mobilePage, 'global-info');
+        await mobilePage.getByRole('button', { name: '지도 옵션' }).tap();
         await mobilePage.getByRole('button', { name: '두번 탭 해 도시 이동 켜기' }).click();
         expect(await mobilePage.evaluate(() => localStorage.getItem('sam.toggleSingleTap'))).toBe('no');
         await mobilePage.locator('.city-base').first().tap();
@@ -1019,8 +1124,10 @@ test('current-city wraps dense general names and only shrinks reserved turns', a
         const rows = page.locator('.generals tbody tr');
         const reservedTurns = rows.nth(0).locator('.turns');
         const npcTurns = rows.nth(1).locator('.turns');
-        await expect(reservedTurns).toContainText('1 : 징병');
-        await expect(reservedTurns).toContainText('2 : 훈련');
+        await expect(reservedTurns).toContainText('1 : 【보병】 300명 징병');
+        await expect(reservedTurns).toContainText('2 : 【업】에 화계실행');
+        await expect(reservedTurns.locator('.turn-line').nth(0)).toHaveAttribute('title', '【보병】 300명 징병');
+        await expect(reservedTurns.locator('.turn-line').nth(1)).toHaveAttribute('title', '【업】에 화계실행');
         await expect(reservedTurns).toHaveClass(/turns--reserved/);
         await expect(npcTurns).toHaveText('NPC 장수');
         await expect(npcTurns).not.toHaveClass(/turns--reserved/);

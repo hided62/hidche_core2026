@@ -173,7 +173,9 @@ onMounted(() => void loadStratFinan());
 <template>
     <main id="finance-container" class="page-finance">
         <nav class="top-back-bar">
-            <RouterLink class="legacy-button" to="/">돌아가기</RouterLink>
+            <RouterLink class="legacy-button legacy-button--navigation legacy-button--fixed-height" to="/"
+                >돌아가기</RouterLink
+            >
             <span />
             <strong>내무부</strong>
             <span />
@@ -224,7 +226,7 @@ onMounted(() => void loadStratFinan());
                     <span>
                         <button
                             v-if="canEdit && !editingNationMsg"
-                            class="message-button"
+                            class="legacy-button legacy-button--secondary message-button"
                             type="button"
                             @click="enableEditNationMsg"
                         >
@@ -232,7 +234,7 @@ onMounted(() => void loadStratFinan());
                         </button>
                         <button
                             v-if="canEdit && editingNationMsg"
-                            class="policy-submit"
+                            class="legacy-button legacy-button--primary policy-submit"
                             type="button"
                             @click="saveNationMsg"
                         >
@@ -240,7 +242,7 @@ onMounted(() => void loadStratFinan());
                         </button>
                         <button
                             v-if="canEdit && editingNationMsg"
-                            class="policy-cancel"
+                            class="legacy-button legacy-button--secondary policy-cancel"
                             type="button"
                             @click="rollbackNationMsg"
                         >
@@ -249,24 +251,15 @@ onMounted(() => void loadStratFinan());
                     </span>
                 </header>
                 <div v-if="!editingNationMsg" class="message-preview" v-html="nationMsg || '내용 없음'" />
-                <LegacyHtmlEditor
-                    v-else
-                    v-model="nationMsgDraft"
-                    :max-length="16384"
-                    aria-label="국가 방침"
-                />
+                <LegacyHtmlEditor v-else v-model="nationMsgDraft" :max-length="16384" aria-label="국가 방침" />
             </section>
-            <section
-                id="scout-message-form"
-                class="message-form"
-                :class="{ 'message-form--editing': editingScoutMsg }"
-            >
+            <section id="scout-message-form" class="message-form" :class="{ 'message-form--editing': editingScoutMsg }">
                 <header class="green-header">
                     <span>임관 권유</span>
                     <span>
                         <button
                             v-if="canEdit && !editingScoutMsg"
-                            class="message-button"
+                            class="legacy-button legacy-button--secondary message-button"
                             type="button"
                             @click="enableEditScoutMsg"
                         >
@@ -274,7 +267,7 @@ onMounted(() => void loadStratFinan());
                         </button>
                         <button
                             v-if="canEdit && editingScoutMsg"
-                            class="policy-submit"
+                            class="legacy-button legacy-button--primary policy-submit"
                             type="button"
                             @click="saveScoutMsg"
                         >
@@ -282,7 +275,7 @@ onMounted(() => void loadStratFinan());
                         </button>
                         <button
                             v-if="canEdit && editingScoutMsg"
-                            class="policy-cancel"
+                            class="legacy-button legacy-button--secondary policy-cancel"
                             type="button"
                             @click="rollbackScoutMsg"
                         >
@@ -292,12 +285,7 @@ onMounted(() => void loadStratFinan());
                 </header>
                 <div class="scout-limit">870px x 200px를 넘어서는 내용은 표시되지 않습니다.</div>
                 <div v-if="!editingScoutMsg" class="message-preview scout-preview" v-html="scoutMsg || '내용 없음'" />
-                <LegacyHtmlEditor
-                    v-else
-                    v-model="scoutMsgDraft"
-                    :max-length="1000"
-                    aria-label="임관 권유"
-                />
+                <LegacyHtmlEditor v-else v-model="scoutMsgDraft" :max-length="1000" aria-label="임관 권유" />
             </section>
 
             <div class="finance-title">예산&amp;정책</div>
@@ -362,10 +350,17 @@ onMounted(() => void loadStratFinan());
                         <input v-model.number="policy.rate" aria-label="세율" type="number" min="5" max="30" /><span
                             >%</span
                         >
-                        <button v-if="canEdit" class="policy-submit" type="button" @click="setRate">변경</button>
                         <button
                             v-if="canEdit"
-                            class="policy-cancel"
+                            class="legacy-button legacy-button--primary policy-submit"
+                            type="button"
+                            @click="setRate"
+                        >
+                            변경
+                        </button>
+                        <button
+                            v-if="canEdit"
+                            class="legacy-button legacy-button--secondary policy-cancel"
                             type="button"
                             @click="policy.rate = oldPolicy.rate"
                         >
@@ -379,10 +374,17 @@ onMounted(() => void loadStratFinan());
                         <input v-model.number="policy.bill" aria-label="지급률" type="number" min="20" max="200" /><span
                             >%</span
                         >
-                        <button v-if="canEdit" class="policy-submit" type="button" @click="setBill">변경</button>
                         <button
                             v-if="canEdit"
-                            class="policy-cancel"
+                            class="legacy-button legacy-button--primary policy-submit"
+                            type="button"
+                            @click="setBill"
+                        >
+                            변경
+                        </button>
+                        <button
+                            v-if="canEdit"
+                            class="legacy-button legacy-button--secondary policy-cancel"
                             type="button"
                             @click="policy.bill = oldPolicy.bill"
                         >
@@ -400,10 +402,17 @@ onMounted(() => void loadStratFinan());
                             min="1"
                             max="99"
                         /><span>년</span>
-                        <button v-if="canEdit" class="policy-submit" type="button" @click="setSecretLimit">변경</button>
                         <button
                             v-if="canEdit"
-                            class="policy-cancel"
+                            class="legacy-button legacy-button--primary policy-submit"
+                            type="button"
+                            @click="setSecretLimit"
+                        >
+                            변경
+                        </button>
+                        <button
+                            v-if="canEdit"
+                            class="legacy-button legacy-button--secondary policy-cancel"
                             type="button"
                             @click="policy.secretLimit = oldPolicy.secretLimit"
                         >
@@ -438,7 +447,7 @@ onMounted(() => void loadStratFinan());
                 <input v-for="index in 4" :key="`compat-input-${index}`" type="hidden" />
             </div>
             <footer class="bottom-bar">
-                <RouterLink class="legacy-button" to="/">돌아가기</RouterLink>
+                <RouterLink class="legacy-button legacy-button--navigation" to="/">돌아가기</RouterLink>
             </footer>
         </template>
     </main>
@@ -472,32 +481,8 @@ onMounted(() => void loadStratFinan());
 .top-back-bar button {
     grid-column: 5;
 }
-.legacy-button,
-button {
-    box-sizing: border-box;
-    border: 1px solid #00502a;
-    border-radius: 4px;
-    padding: 5.25px 10.5px;
-    color: #fff;
-    background: #00582c;
-    font: inherit;
-    line-height: 21px;
-    text-align: center;
-    text-decoration: none;
-    cursor: pointer;
-}
-.message-button,
-.policy-cancel {
-    border-color: #6c757d;
-    background: #6c757d;
-}
-.policy-submit {
-    border-color: #325172;
-    background: #375a7f;
-}
-button:hover,
-.legacy-button:hover {
-    filter: brightness(1.2);
+.top-back-bar .legacy-button {
+    --legacy-button-height: 32px;
 }
 button:focus-visible,
 .legacy-button:focus-visible,

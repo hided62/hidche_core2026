@@ -126,7 +126,13 @@ onMounted(() => {
     <div v-if="accessChecked && !canAccess" class="legacy-raw-access-error" role="alert">{{ errorMessage }}</div>
     <main v-else id="container" class="legacy-board-page">
         <header class="top-back-bar bg0">
-            <button class="legacy-button back-button" type="button" @click="closeBoard">돌아가기</button>
+            <button
+                class="legacy-button legacy-button--navigation legacy-button--fixed-height back-button"
+                type="button"
+                @click="closeBoard"
+            >
+                돌아가기
+            </button>
             <div></div>
             <h1>{{ title }}</h1>
             <div></div>
@@ -163,7 +169,7 @@ onMounted(() => {
                     <div></div>
                     <button
                         id="submitArticle"
-                        class="legacy-button legacy-button--secondary"
+                        class="legacy-button legacy-button--secondary legacy-button--fixed-height"
                         type="button"
                         @click="submitArticle"
                     >
@@ -222,7 +228,7 @@ onMounted(() => {
                                 @keyup.enter="submitComment(article.id)"
                             />
                             <button
-                                class="legacy-button submit-comment"
+                                class="legacy-button legacy-button--dark legacy-button--fixed-height submit-comment"
                                 type="button"
                                 @click="submitComment(article.id)"
                             >
@@ -235,7 +241,13 @@ onMounted(() => {
             </section>
 
             <footer class="bottom-bar bg0">
-                <button class="legacy-button back-button" type="button" @click="closeBoard">돌아가기</button>
+                <button
+                    class="legacy-button legacy-button--navigation legacy-button--fixed-height back-button"
+                    type="button"
+                    @click="closeBoard"
+                >
+                    돌아가기
+                </button>
             </footer>
         </template>
     </main>
@@ -296,47 +308,9 @@ onMounted(() => {
     text-align: center;
 }
 
-.legacy-button {
-    min-height: 31px;
-    box-sizing: border-box;
-    border: 1px solid #3d3d3d;
-    border-radius: 4px;
-    padding: 4px 12px;
-    color: #fff;
-    background: #444;
-    font: inherit;
-    font-weight: 600;
-    line-height: 1.5;
-    text-align: center;
-    text-decoration: none;
-    cursor: pointer;
-}
-
-.legacy-button:hover {
-    border-color: #3d3d3d;
-    background: #444;
-}
-
-.legacy-button:focus-visible {
-    outline: none;
-}
-
-.legacy-button:active {
-    border-color: #3d3d3d;
-    background: #444;
-}
-
 .back-button {
-    height: 32px;
+    --legacy-button-height: 32px;
     margin-right: 2px;
-    border-color: #004f28;
-    background: #00582c;
-}
-
-.back-button:hover,
-.back-button:focus {
-    border-color: #004523;
-    background: #004a25;
 }
 
 .board-state {
@@ -414,17 +388,10 @@ onMounted(() => {
 }
 
 .article-submit-row .legacy-button {
+    --legacy-button-height: 35.5px;
     width: auto;
-    min-height: 35.5px;
     margin-right: 10.5px;
     margin-left: 10.5px;
-    transition: none;
-}
-
-.article-submit-row .legacy-button:hover,
-.article-submit-row .legacy-button:focus,
-.article-submit-row .legacy-button:active {
-    border-color: transparent;
 }
 
 .article-frame {
@@ -513,8 +480,8 @@ onMounted(() => {
 }
 
 .submit-comment {
+    --legacy-button-height: 29.375px;
     width: 83.333px;
-    min-height: 29.375px;
     padding-top: 2px;
     padding-bottom: 2px;
     flex: 0 0 auto;
@@ -529,9 +496,9 @@ onMounted(() => {
 }
 
 .bottom-bar .back-button {
+    --legacy-button-height: 35.5px;
     display: inline-block;
     width: 71px;
-    height: 35.5px;
     margin: 0;
     padding-right: 6px;
     padding-left: 6px;
