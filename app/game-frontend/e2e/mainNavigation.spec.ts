@@ -15,6 +15,7 @@ const errorResponse = (path: string, message: string) => ({
 });
 const artifactRoot = process.env.MAIN_NAVIGATION_ARTIFACT_DIR;
 const autoRefreshArtifactRoot = process.env.AUTO_REFRESH_ARTIFACT_DIR;
+const mapSeasonArtifactRoot = process.env.MAP_SEASON_ARTIFACT_DIR;
 const productionBundle = process.env.PLAYWRIGHT_FRONTEND_MODE === 'production';
 const basePath = `/${(process.env.PLAYWRIGHT_GAME_BASE_PATH ?? 'che').replace(/^\/+|\/+$/g, '')}`;
 const gameProfile = process.env.PLAYWRIGHT_GAME_PROFILE ?? 'che:default';
@@ -55,6 +56,10 @@ type NavigationFixture = {
     refCommandCategories?: boolean;
     currentYear?: number;
     currentMonth?: number;
+    mapName?: string;
+    validMapImages?: boolean;
+    mapImageGate?: Promise<void>;
+    imageRequests?: string[];
     serverId?: string;
     profile?: string;
     gameIdx?: number;
@@ -145,6 +150,13 @@ const emitReadModelInvalidation = (page: Page, invalidation: ReturnType<typeof r
             }
         );
     }, invalidation);
+
+const waitForMainRealtime = (page: Page) =>
+    expect
+        .poll(() =>
+            page.evaluate(() => (window as unknown as { __hasMainRealtime: () => boolean }).__hasMainRealtime())
+        )
+        .toBe(true);
 
 const refCommandCategoryFixture = ['개인', '내정', '군사', '인사', '계략', '국가'].map((category, index) => ({
     category,
@@ -506,9 +518,29 @@ const installFixture = async (page: Page, state: NavigationFixture) => {
         { profile: gameProfile }
     );
 
-    await page.route('**/image/**', async (route) => {
-        await route.fulfill({ status: 200, contentType: 'image/jpeg', body: Buffer.from('') });
+    page.on('request', (request) => {
+        const url = new URL(request.url());
+        if (url.pathname.includes('/image/') || url.hostname === 'sam-image.hided.net') {
+            (state.imageRequests ??= []).push(url.pathname);
+        }
     });
+
+    const handleImageRoute = async (route: Route) => {
+        await state.mapImageGate;
+        if (state.validMapImages) {
+            const transparentPixel = Buffer.from(
+                'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M/wHwAEAQH/69aQ6wAAAABJRU5ErkJggg==',
+                'base64'
+            );
+            await route.fulfill({ status: 200, contentType: 'image/png', body: transparentPixel });
+            return;
+        }
+        await route.fulfill({ status: 200, contentType: 'image/jpeg', body: Buffer.from('') });
+    };
+    if (process.env.SAMMO_E2E_REAL_MAP_ASSETS !== '1') {
+        await page.route('**/image/**', handleImageRoute);
+        await page.route('https://sam-image.hided.net/game/**', handleImageRoute);
+    }
     await page.route('**/events**', async (route) => {
         await route.abort();
     });
@@ -663,7 +695,7 @@ const installFixture = async (page: Page, state: NavigationFixture) => {
             }
             if (operation === 'world.getMapLayout') {
                 return response({
-                    mapName: 'che',
+                    mapName: state.mapName ?? 'che',
                     cityList: [{ id: 1, name: '업', level: 8, region: 1, x: 200, y: 120, path: [] }],
                     regionMap: { 1: '하북' },
                     levelMap: { 8: '특' },
@@ -2228,7 +2260,43 @@ test('main cards and command input stay inside their Ref-sized grid slots', asyn
     await selectedMenu.evaluate((element) => ((element as HTMLDetailsElement).open = false));
     await expect(selectedMenu).not.toHaveAttribute('open', '');
 
-    await page.locator('[data-main-target="commands"] .select-command').click();
+    const selectCommand = page.locator('[data-main-target="commands"] .select-command');
+    await expect(selectCommand).toHaveClass(/legacy-button--info/u);
+    await page.mouse.move(1, 1);
+    const measureSelectCommand = () =>
+        selectCommand.evaluate((element) => {
+            const rect = element.getBoundingClientRect();
+            const style = getComputedStyle(element);
+            return {
+                top: rect.top,
+                bottom: rect.bottom,
+                height: rect.height,
+                marginTop: style.marginTop,
+                borderBottomWidth: style.borderBottomWidth,
+                borderRadius: style.borderRadius,
+                backgroundColor: style.backgroundColor,
+            };
+        });
+    const selectDefault = await measureSelectCommand();
+    expect(selectDefault).toMatchObject({
+        height: 34,
+        marginTop: '0px',
+        borderBottomWidth: '4px',
+        borderRadius: '5.25px',
+        backgroundColor: 'rgb(52, 152, 219)',
+    });
+    await selectCommand.hover();
+    const selectHover = await measureSelectCommand();
+    expect(selectHover).toMatchObject({ height: 33, marginTop: '1px', borderBottomWidth: '3px' });
+    expect(selectHover.bottom).toBeCloseTo(selectDefault.bottom, 2);
+    const selectBox = await selectCommand.boundingBox();
+    if (!selectBox) throw new Error('select command control is not measurable');
+    await page.mouse.move(selectBox.x + selectBox.width / 2, selectBox.y + selectBox.height / 2);
+    await page.mouse.down();
+    const selectActive = await measureSelectCommand();
+    expect(selectActive).toMatchObject({ height: 32, marginTop: '2px', borderBottomWidth: '2px' });
+    expect(selectActive.bottom).toBeCloseTo(selectDefault.bottom, 2);
+    await page.mouse.up();
     const picker = page.getByTestId('command-picker');
     await expect(picker).toBeVisible();
     // The trigger can end up directly above a newly opened category button.
@@ -4222,6 +4290,285 @@ test('global activity, world history, and a month boundary refresh their visible
     expect(state.operations.slice(operationsBeforeMonth).sort()).toEqual(
         ['dashboard.getContextBundleDelta', 'lobby.info', 'world.getMap'].sort()
     );
+});
+
+test('seasonal map decodes the next background and crossfades it without remounting map content', async ({ page }) => {
+    const useRealAssets = process.env.SAMMO_E2E_REAL_MAP_ASSETS === '1';
+    let releaseInitialImages: () => void = () => undefined;
+    const initialImageGate = new Promise<void>((resolveGate) => {
+        releaseInitialImages = resolveGate;
+    });
+    const state: NavigationFixture = {
+        officerLevel: 5,
+        permission: 2,
+        nationLevel: 3,
+        stage: 0,
+        npcMode: 1,
+        generalMeCalls: 0,
+        operations: [],
+        currentMonth: 3,
+        validMapImages: true,
+        mapImageGate: useRealAssets ? undefined : initialImageGate,
+    };
+    await installRealtimeHarness(page);
+    await installFixture(page, state);
+    await page.setViewportSize({ width: 1200, height: 900 });
+    await waitForMain(page);
+    await waitForMainRealtime(page);
+
+    const map = page.locator('[data-main-target="map"] .map-viewer').first();
+    if (!useRealAssets) {
+        await expect(map.locator('.skeleton-line')).toHaveCount(4);
+        await expect(map.locator('.map-area')).toHaveCount(0);
+        releaseInitialImages();
+        state.mapImageGate = undefined;
+    }
+
+    const currentLayer = map.locator('[data-map-background-layer="current"]');
+    const outgoingLayer = map.locator('[data-map-background-layer="outgoing"]');
+    await expect(currentLayer.locator('img')).toHaveAttribute('src', /bg_spring\.jpg/u);
+    await expect(map.locator('.map-area')).toBeVisible();
+    await expect
+        .poll(() => state.imageRequests?.some((url) => url.endsWith('/game/map/che/bg_summer.jpg')) ?? false)
+        .toBe(true);
+
+    const initialGeometry = await map.locator('.map-area').evaluate((area) => {
+        const rect = area.getBoundingClientRect();
+        const road = area.querySelector('.map-bgroad');
+        const city = area.querySelector('.city-base');
+        Object.defineProperty(window, '__mapSeasonTransitionProbe', {
+            configurable: true,
+            value: { area, road, city },
+        });
+        return { width: rect.width, height: rect.height };
+    });
+    expect(initialGeometry).toEqual({ width: 700, height: 500 });
+
+    if (mapSeasonArtifactRoot) {
+        await mkdir(mapSeasonArtifactRoot, { recursive: true });
+        await map.screenshot({ path: resolve(mapSeasonArtifactRoot, 'season-spring-initial.png') });
+    }
+
+    state.currentMonth = 4;
+    await emitReadModelInvalidation(page, readModelInvalidation({ lobby: true, map: true }));
+    await expect(map).toContainText('185年 4月');
+    await expect(outgoingLayer).toHaveClass(/is-transitioning/u);
+    await expect(outgoingLayer).toHaveCSS('transition-duration', '0.48s');
+    let midpointOpacity = 0;
+    await expect
+        .poll(
+            async () => {
+                midpointOpacity = Number.parseFloat(
+                    await outgoingLayer.evaluate((element) => getComputedStyle(element).opacity)
+                );
+                return midpointOpacity > 0 && midpointOpacity < 1;
+            },
+            { intervals: [16, 16, 16, 16, 16, 16], timeout: 350 }
+        )
+        .toBe(true);
+    await expect(currentLayer.locator('img')).toHaveAttribute('src', /bg_summer\.jpg/u);
+    await expect(outgoingLayer.locator('img')).toHaveAttribute('src', /bg_spring\.jpg/u);
+    if (mapSeasonArtifactRoot) {
+        await map.screenshot({ path: resolve(mapSeasonArtifactRoot, 'season-spring-to-summer-midpoint.png') });
+    }
+
+    await expect(outgoingLayer).not.toHaveClass(/is-transitioning/u);
+    await expect(outgoingLayer.locator('img')).toHaveCount(0);
+    const finalState = await map.locator('.map-area').evaluate((area) => {
+        const probe = (
+            window as unknown as {
+                __mapSeasonTransitionProbe: { area: Element; road: Element | null; city: Element | null };
+            }
+        ).__mapSeasonTransitionProbe;
+        const rect = area.getBoundingClientRect();
+        return {
+            areaMounted: probe.area === area,
+            roadMounted: probe.road === area.querySelector('.map-bgroad'),
+            cityMounted: probe.city === area.querySelector('.city-base'),
+            width: rect.width,
+            height: rect.height,
+        };
+    });
+    expect(finalState).toEqual({
+        areaMounted: true,
+        roadMounted: true,
+        cityMounted: true,
+        width: 700,
+        height: 500,
+    });
+    if (mapSeasonArtifactRoot) {
+        await map.screenshot({ path: resolve(mapSeasonArtifactRoot, 'season-summer-complete.png') });
+    }
+
+    await page.setViewportSize({ width: 500, height: 900 });
+    await expect
+        .poll(() =>
+            map.locator('.map-area').evaluate((area) => {
+                const rect = area.getBoundingClientRect();
+                return { width: rect.width, height: rect.height };
+            })
+        )
+        .toEqual({ width: 500, height: 357.140625 });
+    await map.locator('.map-area').evaluate((area) => {
+        Object.defineProperty(window, '__mobileMapSeasonTransitionProbe', {
+            configurable: true,
+            value: area,
+        });
+    });
+
+    state.currentMonth = 7;
+    await emitReadModelInvalidation(page, readModelInvalidation({ lobby: true, map: true }));
+    await expect(map).toContainText('185年 7月');
+    await expect(currentLayer.locator('img')).toHaveAttribute('src', /bg_fall\.jpg/u);
+    await expect(outgoingLayer).not.toHaveClass(/is-transitioning/u);
+    await expect(outgoingLayer.locator('img')).toHaveCount(0);
+    expect(
+        await map.locator('.map-area').evaluate((area) => {
+            const probe = (window as unknown as { __mobileMapSeasonTransitionProbe: Element })
+                .__mobileMapSeasonTransitionProbe;
+            const rect = area.getBoundingClientRect();
+            return {
+                areaMounted: probe === area,
+                width: rect.width,
+                height: rect.height,
+            };
+        })
+    ).toEqual({ areaMounted: true, width: 500, height: 357.140625 });
+    if (mapSeasonArtifactRoot) {
+        await map.screenshot({ path: resolve(mapSeasonArtifactRoot, 'season-fall-mobile-complete.png') });
+    }
+});
+
+test('reduced-motion map swaps the decoded seasonal background without a fade', async ({ page }) => {
+    const state: NavigationFixture = {
+        officerLevel: 5,
+        permission: 2,
+        nationLevel: 3,
+        stage: 0,
+        npcMode: 1,
+        generalMeCalls: 0,
+        operations: [],
+        currentMonth: 3,
+        validMapImages: true,
+    };
+    await page.emulateMedia({ reducedMotion: 'reduce' });
+    await installRealtimeHarness(page);
+    await installFixture(page, state);
+    await page.setViewportSize({ width: 1200, height: 900 });
+    await waitForMain(page);
+    await waitForMainRealtime(page);
+
+    const map = page.locator('[data-main-target="map"] .map-viewer').first();
+    const currentLayer = map.locator('[data-map-background-layer="current"]');
+    const outgoingLayer = map.locator('[data-map-background-layer="outgoing"]');
+    await expect(currentLayer.locator('img')).toHaveAttribute('src', /bg_spring\.jpg/u);
+    await outgoingLayer.evaluate((outgoing) => {
+        let transitionCount = 0;
+        const observer = new MutationObserver(() => {
+            if (outgoing.classList.contains('is-transitioning')) transitionCount += 1;
+        });
+        observer.observe(outgoing, { attributes: true, attributeFilter: ['class'] });
+        Object.defineProperty(window, '__reducedMotionMapProbe', {
+            configurable: true,
+            value: {
+                observer,
+                get transitionCount() {
+                    return transitionCount;
+                },
+            },
+        });
+    });
+
+    state.currentMonth = 4;
+    await emitReadModelInvalidation(page, readModelInvalidation({ lobby: true, map: true }));
+    await expect(map).toContainText('185年 4月');
+    await expect(currentLayer.locator('img')).toHaveAttribute('src', /bg_summer\.jpg/u);
+    await page.waitForTimeout(100);
+    await expect(outgoingLayer).not.toHaveClass(/is-transitioning/u);
+    await expect(outgoingLayer.locator('img')).toHaveCount(0);
+    expect(
+        await outgoingLayer.evaluate(() => {
+            const probe = (
+                window as unknown as {
+                    __reducedMotionMapProbe: { observer: MutationObserver; transitionCount: number };
+                }
+            ).__reducedMotionMapProbe;
+            probe.observer.disconnect();
+            return probe.transitionCount;
+        })
+    ).toBe(0);
+});
+
+test('seasonless map keeps its fixed background and does not start a month-boundary crossfade', async ({ page }) => {
+    const state: NavigationFixture = {
+        officerLevel: 5,
+        permission: 2,
+        nationLevel: 3,
+        stage: 0,
+        npcMode: 1,
+        generalMeCalls: 0,
+        operations: [],
+        currentMonth: 3,
+        mapName: 'ludo_rathowm',
+        validMapImages: true,
+    };
+    await installRealtimeHarness(page);
+    await installFixture(page, state);
+    await page.setViewportSize({ width: 1200, height: 900 });
+    await waitForMain(page);
+    await waitForMainRealtime(page);
+
+    const map = page.locator('[data-main-target="map"] .map-viewer').first();
+    const currentLayer = map.locator('[data-map-background-layer="current"]');
+    const outgoingLayer = map.locator('[data-map-background-layer="outgoing"]');
+    await expect(currentLayer.locator('img')).toHaveAttribute('src', /map\/ludo_rathowm\/back\.jpg/u);
+    await map.locator('.map-area').evaluate((area) => {
+        const outgoing = area.querySelector('[data-map-background-layer="outgoing"]');
+        let transitionCount = 0;
+        const observer = new MutationObserver(() => {
+            if (outgoing?.classList.contains('is-transitioning')) transitionCount += 1;
+        });
+        if (outgoing) observer.observe(outgoing, { attributes: true, attributeFilter: ['class'] });
+        Object.defineProperty(window, '__seasonlessMapProbe', {
+            configurable: true,
+            value: {
+                area,
+                outgoing,
+                observer,
+                get transitionCount() {
+                    return transitionCount;
+                },
+            },
+        });
+    });
+
+    state.currentMonth = 4;
+    await emitReadModelInvalidation(page, readModelInvalidation({ lobby: true, map: true }));
+    await expect(map).toContainText('185年 4月');
+    await page.waitForTimeout(650);
+
+    await expect(currentLayer.locator('img')).toHaveAttribute('src', /map\/ludo_rathowm\/back\.jpg/u);
+    await expect(outgoingLayer).not.toHaveClass(/is-transitioning/u);
+    await expect(outgoingLayer.locator('img')).toHaveCount(0);
+    expect(state.imageRequests?.some((url) => url.includes('/game/map/che/bg_summer.jpg')) ?? false).toBe(false);
+    expect(
+        await map.locator('.map-area').evaluate((area) => {
+            const probe = (
+                window as unknown as {
+                    __seasonlessMapProbe: {
+                        area: Element;
+                        observer: MutationObserver;
+                        transitionCount: number;
+                    };
+                }
+            ).__seasonlessMapProbe;
+            probe.observer.disconnect();
+            return { areaMounted: probe.area === area, transitionCount: probe.transitionCount };
+        })
+    ).toEqual({ areaMounted: true, transitionCount: 0 });
+    if (mapSeasonArtifactRoot) {
+        await map.screenshot({ path: resolve(mapSeasonArtifactRoot, 'seasonless-ludo-complete.png') });
+    }
 });
 
 test('same-account main tabs share one realtime diff and exclude a tab while sync is off', async ({

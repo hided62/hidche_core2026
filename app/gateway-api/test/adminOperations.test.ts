@@ -825,7 +825,7 @@ describe('admin operation API', () => {
             { adminRoles: ['admin.profiles.settings:che:2'], firstUserIsAdmin: false }
         );
         const resetDefaults = {
-            turnTermMinutes: 10,
+            turnTermMinutes: 3,
             sync: true,
             fiction: 1 as const,
             extend: true,
@@ -851,6 +851,44 @@ describe('admin operation API', () => {
                 reason: 'reject invalid reset defaults',
             })
         ).rejects.toBeDefined();
+    });
+
+    it('queues a three-minute reset because it is a valid divisor of 120', async () => {
+        const harness = await buildCaller(async (input) => ({
+            id: '66666666-6666-4666-8666-666666666666',
+            profileName: input.profileName,
+            type: 'RESET',
+            status: 'QUEUED',
+            sourceMode: input.sourceMode,
+            sourceRef: input.sourceRef,
+            payload: input.payload ?? {},
+            requestedBy: input.requestedBy,
+            createdAt: '2026-08-21T00:00:00.000Z',
+            updatedAt: '2026-08-21T00:00:00.000Z',
+        }));
+
+        await harness.caller.admin.operations.requestReset({
+            profileName: 'che:2',
+            sourceMode: 'COMMIT',
+            sourceRef: 'HEAD',
+            install: {
+                scenarioId: 1010,
+                turnTermMinutes: 3,
+                sync: true,
+                fiction: 1,
+                extend: true,
+                blockGeneralCreate: 0,
+                npcMode: 0,
+                showImgLevel: 3,
+                tournamentTrig: true,
+                joinMode: 'full',
+            },
+        });
+
+        expect(harness.createdInputs[0]).toMatchObject({
+            type: 'RESET',
+            payload: { install: { turnTermMinutes: 3 } },
+        });
     });
 
     it('stores event season zero as the next season number', async () => {

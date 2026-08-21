@@ -175,6 +175,8 @@ migration과 scenario seed부터 진행합니다. 상위 권한자가 버전 업
 장수·연장·토너먼트 사용, 기본 NPC, 이미지 단계 3, 전체 가입과 유저 자동턴
 미사용이라는 기존 시스템 기본값으로 돌아갑니다. 실행마다 달라지는 scenario와
 예약·가오픈·정식 오픈 시각은 자동 입력하지 않습니다.
+턴 간격은 120의 양의 약수만 허용하며 3분과 8분도 RESET·저장 기본값·실행 중
+변경에서 동일하게 사용할 수 있습니다.
 
 이 모드는 build와 migration 후 기존 season/tick metadata를 읽고 scenario seeder를 실행합니다.
 빈 profile schema도 migration을 먼저 적용하므로 최초 `world_state` 조회가

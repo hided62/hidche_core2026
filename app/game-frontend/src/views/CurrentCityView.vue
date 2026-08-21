@@ -1,6 +1,8 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
+import { formatReservedCommandBrief } from '../components/command/reservedCommandBrief';
+import type { CommandTable } from '../components/command/types';
 import { cityLevelMap, formatOfficerLevelText, regionMap } from '../utils/nationFormat';
 import { getNpcColor } from '../utils/npcColor';
 import { resolveGeneralIconUrl, useDefaultGeneralIcon } from '../utils/generalIcon';
@@ -9,10 +11,12 @@ import { trpc } from '../utils/trpc';
 
 type Result = Awaited<ReturnType<typeof trpc.world.getCurrentCity.query>>;
 type General = Result['generals'][number];
+type ReservedCommand = General['turns'][number];
 
 const route = useRoute();
 const router = useRouter();
 const data = ref<Result | null>(null);
+const commandTable = ref<CommandTable | null>(null);
 const error = ref('');
 const selected = ref<number>();
 let loadSequence = 0;
@@ -29,8 +33,10 @@ const load = async (cityId?: number) => {
     const sequence = ++loadSequence;
     try {
         const result = await trpc.world.getCurrentCity.query(cityId ? { cityId } : undefined);
+        const table = await trpc.turns.getCommandTable.query({ generalId: result.me.id });
         if (sequence !== loadSequence) return;
         data.value = result;
+        commandTable.value = table;
         selected.value = result.city.id;
         error.value = '';
     } catch (cause) {
@@ -76,6 +82,8 @@ const defenceTrainText = (value: number | null) => {
     return '△';
 };
 const generalImage = (general: General): string => resolveGeneralIconUrl(general);
+const commandBrief = (command: ReservedCommand): string =>
+    formatReservedCommandBrief('general', command.action, command.args, commandTable.value);
 </script>
 
 <template>
@@ -282,8 +290,12 @@ const generalImage = (general: General): string => resolveGeneralIconUrl(general
                         <td>{{ general.atmos ?? '?' }}</td>
                         <td class="turns" :class="{ 'turns--reserved': general.turns.length > 0 }">
                             <template v-if="general.turns.length">
-                                <span v-for="(turn, index) in general.turns" :key="index" class="turn-line"
-                                    >{{ index + 1 }} : {{ turn }}</span
+                                <span
+                                    v-for="(turn, index) in general.turns"
+                                    :key="index"
+                                    class="turn-line"
+                                    :title="commandBrief(turn)"
+                                    >{{ index + 1 }} : {{ commandBrief(turn) }}</span
                                 >
                             </template>
                             <template v-else-if="general.npcState > 1">NPC 장수</template>

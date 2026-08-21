@@ -197,20 +197,31 @@ onMounted(() => {
         :class="activeTab === 'resource' ? 'resource-page' : 'unique-page'"
     >
         <header class="top-back-bar bg0">
-            <button class="legacy-button close-button" type="button" @click="closeWindow">창 닫기</button>
-            <button class="legacy-button reload-button" type="button" :disabled="loading" @click="loadOverview">
+            <button
+                class="legacy-button legacy-button--navigation legacy-button--fixed-height close-button"
+                type="button"
+                @click="closeWindow"
+            >
+                창 닫기
+            </button>
+            <button
+                class="legacy-button legacy-button--navigation legacy-button--fixed-height reload-button"
+                type="button"
+                :disabled="loading"
+                @click="loadOverview"
+            >
                 갱신
             </button>
             <h1>{{ activeTab === 'resource' ? '경매장' : '유니크 경매장' }}</h1>
             <button
-                class="legacy-button tab-button"
+                class="legacy-button legacy-button--dark tab-button"
                 :aria-pressed="activeTab === 'resource'"
                 @click="activeTab = 'resource'"
             >
                 금/쌀
             </button>
             <button
-                class="legacy-button tab-button"
+                class="legacy-button legacy-button--dark tab-button"
                 :aria-pressed="activeTab === 'unique'"
                 @click="activeTab = 'unique'"
             >
@@ -318,7 +329,12 @@ onMounted(() => {
                     step="10"
                     required
                 />
-                <button class="legacy-button" :disabled="actionBusy || selectedResource.isCallerHost">입찰</button>
+                <button
+                    class="legacy-button legacy-button--dark"
+                    :disabled="actionBusy || selectedResource.isCallerHost"
+                >
+                    입찰
+                </button>
             </form>
 
             <h3 class="subsection-title">경매 등록</h3>
@@ -331,7 +347,7 @@ onMounted(() => {
                     <legend>매물</legend>
                     <div class="item-toggle">
                         <button
-                            class="legacy-button"
+                            class="legacy-button legacy-button--dark"
                             type="button"
                             :aria-pressed="openForm.type === 'BUY_RICE'"
                             @click="openForm.type = 'BUY_RICE'"
@@ -339,7 +355,7 @@ onMounted(() => {
                             쌀
                         </button>
                         <button
-                            class="legacy-button"
+                            class="legacy-button legacy-button--dark"
                             type="button"
                             :aria-pressed="openForm.type === 'SELL_RICE'"
                             @click="openForm.type = 'SELL_RICE'"
@@ -363,7 +379,7 @@ onMounted(() => {
                     <span>마감가 ({{ openForm.type === 'BUY_RICE' ? '금' : '쌀' }})</span>
                     <input v-model.number="openForm.finishBidAmount" type="number" min="100" max="10000" step="10" />
                 </label>
-                <button class="legacy-button register-button" :disabled="actionBusy">등록</button>
+                <button class="legacy-button legacy-button--dark register-button" :disabled="actionBusy">등록</button>
             </form>
 
             <h3 class="subsection-title">이전 경매(최근 20건)</h3>
@@ -408,7 +424,7 @@ onMounted(() => {
                             유산포인트 (잔여: {{ formatNumber(uniqueDetail.remainPoint) }}포인트)
                         </label>
                         <input id="unique-bid" v-model.number="bidAmount" type="number" min="1" required />
-                        <button class="legacy-button" :disabled="actionBusy">입찰</button>
+                        <button class="legacy-button legacy-button--dark" :disabled="actionBusy">입찰</button>
                     </form>
                 </template>
             </section>
@@ -480,7 +496,9 @@ onMounted(() => {
         </section>
 
         <footer class="bottom-bar bg0">
-            <button class="legacy-button close-button" type="button" @click="closeWindow">창 닫기</button>
+            <button class="legacy-button legacy-button--navigation close-button" type="button" @click="closeWindow">
+                창 닫기
+            </button>
         </footer>
     </main>
 </template>
@@ -530,66 +548,17 @@ onMounted(() => {
     line-height: 32px;
     text-align: center;
 }
-.legacy-button {
-    box-sizing: border-box;
-    border: solid #3d3d3d;
-    border-width: 0 1px 4px;
-    border-radius: 5.25px;
-    padding: 5.25px 10.5px;
-    color: #fff;
-    background: #444;
-    font: inherit;
-    font-weight: 700;
-    line-height: 21px;
-    cursor: pointer;
-}
-.legacy-button:hover,
-.legacy-button:focus {
-    border-color: #353535;
-    background: #393939;
-}
-.legacy-button:focus-visible {
-    outline: 2px solid #8ab4f8;
-    outline-offset: -2px;
-}
-.legacy-button:active,
-.legacy-button[aria-pressed='true'] {
-    border-color: #303030;
-    background: #333;
-}
-.legacy-button:disabled {
-    cursor: default;
-    opacity: 0.65;
-}
 .close-button,
 .reload-button {
     margin-right: 2px;
-    border-color: #004f28;
-    background: #00582c;
-}
-.close-button:hover,
-.close-button:focus,
-.reload-button:hover,
-.reload-button:focus {
-    border-color: #004523;
-    background: #004a25;
 }
 .top-back-bar .close-button,
 .top-back-bar .reload-button {
-    height: 32px;
-}
-.tab-button {
-    border-color: #3d3d3d;
-    background: #444;
+    --legacy-button-height: 32px;
 }
 .tab-button[aria-pressed='true'] {
-    border-color: #3d3d3d;
-    background: #444;
-}
-.tab-button:hover,
-.tab-button:focus {
-    border-color: #3d3d3d;
-    background: #444;
+    --legacy-button-bg: #333;
+    --legacy-button-border: #303030;
 }
 .section-title,
 .subsection-title,

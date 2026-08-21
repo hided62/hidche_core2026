@@ -130,7 +130,13 @@ const placeBet = async () => {
     <main id="tournament-betting-container" class="betting-page">
         <TournamentPageHeader class="bg0" active-page="betting" title="베 팅 장" />
         <section class="toolbar bg0">
-            <button type="button" @click="load">갱신</button>
+            <button
+                class="legacy-button legacy-button--secondary legacy-button--fixed-height"
+                type="button"
+                @click="load"
+            >
+                갱신
+            </button>
             <span v-if="loading">불러오는 중...</span>
             <span v-if="message" role="status">{{ message }}</span>
         </section>
@@ -159,12 +165,7 @@ const placeBet = async () => {
             @request-bet="openBetDialog"
         />
 
-        <dialog
-            ref="betDialog"
-            class="bet-dialog"
-            aria-labelledby="bet-dialog-title"
-            @close="selectedTarget = null"
-        >
+        <dialog ref="betDialog" class="bet-dialog" aria-labelledby="bet-dialog-title" @close="selectedTarget = null">
             <form v-if="selectedTarget" class="bet-dialog-content" @submit.prevent="placeBet">
                 <header>
                     <h2 id="bet-dialog-title">베팅하기</h2>
@@ -194,9 +195,13 @@ const placeBet = async () => {
                     <span aria-hidden="true">×</span>
                     <span class="gold-color">금{{ selectedAmount }}</span>
                     <span aria-hidden="true">=</span>
-                    <strong class="return-color">예상 환수금 {{ selectedExpectedReturn.toLocaleString('ko-KR') }}</strong>
+                    <strong class="return-color"
+                        >예상 환수금 {{ selectedExpectedReturn.toLocaleString('ko-KR') }}</strong
+                    >
                 </output>
-                <p class="bet-preview-note">현재 배당 기준 예상값이며, 베팅 상황에 따라 최종 배당은 달라질 수 있습니다.</p>
+                <p class="bet-preview-note">
+                    현재 배당 기준 예상값이며, 베팅 상황에 따라 최종 배당은 달라질 수 있습니다.
+                </p>
                 <p v-if="betError" class="bet-dialog-error" role="alert">{{ betError }}</p>
                 <footer>
                     <button type="button" :disabled="placingBet" @click="closeBetDialog">취소</button>
@@ -289,7 +294,9 @@ const placeBet = async () => {
         </section>
         <footer class="betting-footer bg0">
             <RouterLink v-slot="{ navigate }" custom to="/">
-                <button class="close-button" type="button" @click="navigate">창 닫기</button>
+                <button class="legacy-button legacy-button--navigation close-button" type="button" @click="navigate">
+                    창 닫기
+                </button>
             </RouterLink>
             <small>
                 삼국지 모의전투 HiDCHe / KOEI의 이미지를 사용, 응용하였습니다 / 제작 : HideD(hided62@gmail.com) / Credit
@@ -334,8 +341,8 @@ const placeBet = async () => {
     text-align: left;
 }
 .toolbar button {
+    --legacy-button-height: 44px;
     min-width: 72px;
-    height: 44px;
     padding: 10px 16px;
     font-size: 14px;
 }
@@ -380,7 +387,7 @@ select {
     background: #000;
     color: #fff;
 }
-button {
+button:not(.legacy-button) {
     height: 35.5px;
     color: #fff;
     background: #444;
@@ -388,16 +395,16 @@ button {
     border-radius: 5.25px;
     cursor: pointer;
 }
-button:hover,
-button:focus {
+button:not(.legacy-button):hover,
+button:not(.legacy-button):focus {
     filter: brightness(1.25);
 }
-button:focus-visible,
+button:not(.legacy-button):focus-visible,
 select:focus-visible {
     outline: 2px solid #f39c12;
     outline-offset: 1px;
 }
-button:disabled,
+button:not(.legacy-button):disabled,
 select:disabled {
     cursor: not-allowed;
     opacity: 0.5;

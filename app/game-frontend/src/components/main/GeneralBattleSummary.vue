@@ -61,11 +61,12 @@ const killRate = computed(() => {
         </div>
         <template v-else>
             <span>명성</span><strong>{{ numberText(summary.experience) }}</strong> <span>계급</span
-            ><strong>{{ summary.dedicationText || '-' }}</strong> <span>전투</span
+            ><strong>{{ summary.dedicationText || '-' }}</strong>
+            <span class="battle-general-extra__empty" aria-hidden="true"></span>
+            <strong class="battle-general-extra__empty" aria-hidden="true"></strong>
+            <span>전투</span
             ><strong>{{ numberText(summary.warnum) }}<template v-if="summary.warnum != null">회</template></strong>
-            <span>승리</span><strong>{{ numberText(summary.wins) }}</strong> <span>패배</span
-            ><strong>{{ numberText(summary.losses) }}</strong> <span>계략</span
-            ><strong>{{ numberText(summary.strategies) }}</strong>
+            <span>계략</span><strong>{{ numberText(summary.strategies) }}</strong>
             <template v-if="summary.serviceYears !== undefined">
                 <span>사관</span
                 ><strong
@@ -73,11 +74,28 @@ const killRate = computed(() => {
                     }}<template v-if="summary.serviceYears != null">년</template></strong
                 >
             </template>
+            <template v-else>
+                <span class="battle-general-extra__empty" aria-hidden="true"></span>
+                <strong class="battle-general-extra__empty" aria-hidden="true"></strong>
+            </template>
+            <template v-if="showWinRate">
+                <span>승률</span><strong>{{ winRate }}</strong>
+            </template>
+            <template v-else>
+                <span class="battle-general-extra__empty" aria-hidden="true"></span>
+                <strong class="battle-general-extra__empty" aria-hidden="true"></strong>
+            </template>
+            <span>승리</span><strong>{{ numberText(summary.wins) }}</strong> <span>패배</span
+            ><strong>{{ numberText(summary.losses) }}</strong>
+            <template v-if="showWinRate">
+                <span>살상률</span><strong>{{ killRate }}</strong>
+            </template>
+            <template v-else>
+                <span class="battle-general-extra__empty" aria-hidden="true"></span>
+                <strong class="battle-general-extra__empty" aria-hidden="true"></strong>
+            </template>
             <span>사살</span><strong>{{ numberText(summary.killCrew) }}</strong> <span>피살</span
             ><strong>{{ numberText(summary.deathCrew) }}</strong>
-            <template v-if="showWinRate">
-                <span>승률</span><strong>{{ winRate }}</strong> <span>살상률</span><strong>{{ killRate }}</strong>
-            </template>
             <span class="battle-general-extra__recent-label">최근 전투</span>
             <strong class="battle-general-extra__recent-value">
                 {{ formatServerDateTime(summary.recentWar, { format: 'monthDayTime', fallback: '-' }) }}
@@ -111,6 +129,10 @@ const killRate = computed(() => {
     text-align: right;
     text-overflow: ellipsis;
     white-space: nowrap;
+}
+
+.battle-general-extra > .battle-general-extra__empty {
+    color: transparent;
 }
 
 .battle-general-extra > .battle-general-extra__recent-label {
