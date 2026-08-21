@@ -1,7 +1,7 @@
 import { TRPCError } from '@trpc/server';
 
 import { asRecord, type RankDataType } from '@sammo-ts/common';
-import { LogCategory } from '@sammo-ts/logic';
+import { getBillByLevel, LogCategory } from '@sammo-ts/logic';
 
 import { accessAuthedProcedure } from '../../../trpc.js';
 import {
@@ -201,6 +201,7 @@ export const getBattleCenter = accessAuthedProcedure.query(async ({ ctx }) => {
             },
             experience: general.experience,
             dedication: general.dedication,
+            bill: getBillByLevel(dedicationLevel),
             injury: general.injury,
             gold: general.gold,
             rice: general.rice,

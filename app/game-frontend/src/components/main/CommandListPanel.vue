@@ -3,6 +3,7 @@ import { computed, onUnmounted, ref, watch } from 'vue';
 import { addMinutes } from 'date-fns';
 import ReservedCommandEditor from '../command/ReservedCommandEditor.vue';
 import { formatLocalDateTime, formatLocalTimeSeconds } from '../../utils/legacyDateTime';
+import { projectServerClock, sampleServerClock, type SampledServerClock } from '../../utils/serverClockProjection';
 import type {
     CommandMapData,
     CommandMapLayout,
@@ -15,12 +16,15 @@ const props = defineProps<{
     commandTable: CommandTable | null;
     loading: boolean;
     reservedGeneralTurns: Array<{ index: number; action: string; args?: unknown }> | null;
-    general: { id: number; turnTime?: string } | null;
+    general: { id: number; turnTime?: string; nextTurnMonthOffset?: 0 | 1 } | null;
     currentYear?: number;
     currentMonth?: number;
     turnTermMinutes?: number;
     serverTime?: string;
+    serverWallTime?: string;
     clockMode?: 'realtime' | 'manual';
+    clockRunning?: boolean;
+    clockStartsAt?: string | null;
     autorunLimit?: number | null;
     storageKey?: string;
     mapData?: CommandMapData | null;
@@ -41,13 +45,19 @@ const labelMap = computed(() => {
     return result;
 });
 
+const firstReservedMonth = computed(
+    () =>
+        (props.currentYear ?? 0) * 12 +
+        (props.currentMonth ?? 1) -
+        1 +
+        (props.general?.nextTurnMonthOffset ?? 0)
+);
+
 const rows = computed<ReservedCommandRow[]>(() => {
     const base = props.general?.turnTime ? new Date(props.general.turnTime) : null;
     const term = props.turnTermMinutes ?? 0;
-    const baseYear = props.currentYear ?? 0;
-    const baseMonth = props.currentMonth ?? 1;
     return (props.reservedGeneralTurns ?? []).map((turn, offset) => {
-        const absoluteMonth = baseYear * 12 + baseMonth - 1 + offset;
+        const absoluteMonth = firstReservedMonth.value + offset;
         const date = base && Number.isFinite(base.getTime()) ? addMinutes(base, offset * term) : null;
         return {
             ...turn,
@@ -67,9 +77,7 @@ const rows = computed<ReservedCommandRow[]>(() => {
 
 const autonomousUntil = computed(() => {
     if (props.autorunLimit == null) return null;
-    const baseYear = props.currentYear ?? 0;
-    const baseMonth = props.currentMonth ?? 1;
-    const currentAbsoluteMonth = baseYear * 12 + baseMonth - 1;
+    const currentAbsoluteMonth = firstReservedMonth.value;
     const lastAutonomousMonth = props.autorunLimit - 1;
     if (lastAutonomousMonth < currentAbsoluteMonth) return null;
 
@@ -86,32 +94,34 @@ const autonomousUntil = computed(() => {
 });
 
 const currentServerTime = ref('--:--:--');
-let sampledServerTimeMs: number | null = null;
-let sampledClientTimeMs = 0;
+const MAX_SERVER_CLOCK_TIMER_DELAY_MS = 60_000;
+let serverClockSample: SampledServerClock | null = null;
 let serverClockTimer: ReturnType<typeof setTimeout> | undefined;
 
 const updateServerClock = () => {
     if (serverClockTimer !== undefined) clearTimeout(serverClockTimer);
     serverClockTimer = undefined;
-    if (sampledServerTimeMs === null) {
+    if (serverClockSample === null) {
         currentServerTime.value = '--:--:--';
         return;
     }
-    const projectedTime = new Date(
-        props.clockMode === 'manual' ? sampledServerTimeMs : sampledServerTimeMs + Date.now() - sampledClientTimeMs
-    );
+    const { clientElapsedMs, time: projectedTime } = projectServerClock(serverClockSample);
     currentServerTime.value = formatLocalTimeSeconds(projectedTime);
-    if (props.clockMode !== 'manual') {
-        serverClockTimer = setTimeout(updateServerClock, 1_000 - projectedTime.getMilliseconds());
+    if (serverClockSample.clockMode !== 'manual' && serverClockSample.startDelayMs !== null) {
+        const untilStartMs = serverClockSample.startDelayMs - clientElapsedMs;
+        serverClockTimer = setTimeout(
+            updateServerClock,
+            untilStartMs > 0
+                ? Math.min(untilStartMs, MAX_SERVER_CLOCK_TIMER_DELAY_MS)
+                : 1_000 - projectedTime.getMilliseconds()
+        );
     }
 };
 
 watch(
-    () => [props.serverTime, props.clockMode] as const,
-    ([serverTime]) => {
-        const parsed = serverTime ? new Date(serverTime).getTime() : Number.NaN;
-        sampledServerTimeMs = Number.isFinite(parsed) ? parsed : null;
-        sampledClientTimeMs = Date.now();
+    () => [props.serverTime, props.serverWallTime, props.clockMode, props.clockRunning, props.clockStartsAt] as const,
+    ([serverTime, serverWallTime, clockMode, clockRunning, clockStartsAt]) => {
+        serverClockSample = sampleServerClock({ serverTime, serverWallTime, clockMode, clockRunning, clockStartsAt });
         updateServerClock();
     },
     { immediate: true }

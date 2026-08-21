@@ -80,7 +80,7 @@ const baseTroops = (): TroopFixture[] => [
         name: '백마대',
         nationId: 1,
         turnTime: '2026-07-25T08:20:30.000Z',
-        reservedCommands: ['che_집합', 'che_이동'],
+        reservedCommands: ['집합', '-'],
         leader: {
             id: 1,
             name: '공손찬',
@@ -96,7 +96,7 @@ const baseTroops = (): TroopFixture[] => [
         name: '청룡대',
         nationId: 1,
         turnTime: '2026-07-25T08:30:30.000Z',
-        reservedCommands: ['che_징병'],
+        reservedCommands: ['-'],
         leader: {
             id: 2,
             name: '관우',
@@ -224,6 +224,27 @@ const installApiFixture = async (page: Page, state: FixtureState) => {
     });
 };
 
+test('shows only the Ref-safe first-five troop command labels on desktop and mobile', async ({ page }) => {
+    await installApiFixture(page, {
+        me: { id: 1, troopId: 1 },
+        permission: 4,
+        troops: baseTroops(),
+    });
+
+    for (const viewport of [
+        { width: 1000, height: 800 },
+        { width: 500, height: 800 },
+    ]) {
+        await page.setViewportSize(viewport);
+        await gotoTroop(page);
+
+        const firstTroopCommands = page.locator('.troopReservedCommand').first();
+        await expect(firstTroopCommands).toContainText('1: 집합');
+        await expect(firstTroopCommands).toContainText('2: -');
+        await expect(page.locator('#troopList')).not.toContainText('che_');
+    }
+});
+
 test('renders the legacy desktop grid with matching computed geometry and states', async ({ page }) => {
     await installApiFixture(page, {
         me: { id: 1, troopId: 1 },
@@ -233,6 +254,9 @@ test('renders the legacy desktop grid with matching computed geometry and states
     await page.setViewportSize({ width: 1000, height: 800 });
     await gotoTroop(page);
     await expect(page.locator('.troopInfo').filter({ hasText: '백마대' })).toBeVisible();
+    await expect(page.locator('.troopReservedCommand').first()).toContainText('1: 집합');
+    await expect(page.locator('.troopReservedCommand').first()).toContainText('2: -');
+    await expect(page.locator('#troopList')).not.toContainText('che_');
 
     const geometry = await page
         .locator('.troopItem')
@@ -319,6 +343,9 @@ test('matches the legacy 500px responsive placement', async ({ page }) => {
     await page.setViewportSize({ width: 500, height: 800 });
     await gotoTroop(page);
     await expect(page.locator('.troopInfo').filter({ hasText: '백마대' })).toBeVisible();
+    await expect(page.locator('.troopReservedCommand').first()).toContainText('1: 집합');
+    await expect(page.locator('.troopReservedCommand').first()).toContainText('2: -');
+    await expect(page.locator('#troopList')).not.toContainText('che_');
 
     const geometry = await page
         .locator('.troopItem')
