@@ -48,6 +48,7 @@ type NavigationFixture = {
     accessLimitAfterCalls?: number;
     largeCommandTable?: boolean;
     draftCommandTable?: boolean;
+    equipmentItemOptions?: Array<{ value: string; label: string; description?: string }>;
     refCommandCategories?: boolean;
     currentYear?: number;
     currentMonth?: number;
@@ -235,6 +236,7 @@ const draftCommandGroups = [
                         options: [
                             { value: 'horse', label: '명마' },
                             { value: 'weapon', label: '무기' },
+                            { value: 'item', label: '도구' },
                         ],
                     },
                     {
@@ -250,7 +252,13 @@ const draftCommandGroups = [
     },
 ];
 
-const commandTableFixture = (large: boolean, blockedCount = 0, refCategories = false, draftCommands = false) => ({
+const commandTableFixture = (
+    large: boolean,
+    blockedCount = 0,
+    refCategories = false,
+    draftCommands = false,
+    equipmentItemOptions?: Array<{ value: string; label: string; description?: string }>
+) => ({
     general: draftCommands
         ? draftCommandGroups
         : refCategories
@@ -309,6 +317,7 @@ const commandTableFixture = (large: boolean, blockedCount = 0, refCategories = f
                       { value: 'None', label: '없음' },
                       { value: '청룡언월도', label: '청룡언월도' },
                   ],
+                  item: equipmentItemOptions ?? [{ value: 'None', label: '없음' }],
               }
             : {},
         context: draftCommands
@@ -595,7 +604,8 @@ const installFixture = async (page: Page, state: NavigationFixture) => {
                                   state.largeCommandTable === true,
                                   state.commandBlockedCount,
                                   state.refCommandCategories === true,
-                                  state.draftCommandTable === true
+                                  state.draftCommandTable === true,
+                                  state.equipmentItemOptions
                               ),
                           }
                         : input.known.commandTable === currentCommandTableRevision
@@ -3452,6 +3462,52 @@ for (const viewport of [
         await expect
             .poll(() => page.evaluate(() => document.documentElement.scrollWidth))
             .toBeLessThanOrEqual(viewport.width);
+    });
+}
+
+for (const viewport of [
+    { name: 'desktop', width: 1200, height: 900 },
+    { name: 'mobile', width: 500, height: 900 },
+] as const) {
+    test(`renders only scenario-scoped equipment items on ${viewport.name}`, async ({ page }) => {
+        const state: NavigationFixture = {
+            officerLevel: 5,
+            permission: 2,
+            nationLevel: 3,
+            stage: 0,
+            npcMode: 1,
+            generalMeCalls: 0,
+            operations: [],
+            draftCommandTable: true,
+            equipmentItemOptions: [
+                { value: 'None', label: '판매/해제' },
+                {
+                    value: 'che_치료_환약',
+                    label: '환약',
+                    description: '현재 구입 가능 · 가격 100 · 부상 회복',
+                },
+            ],
+            reservedTurns: Array.from({ length: 30 }, (_, index) => ({ index, action: '휴식', args: {} })),
+        };
+        await installFixture(page, state);
+        await page.setViewportSize({ width: viewport.width, height: viewport.height });
+        await waitForMain(page);
+
+        await page.getByRole('button', { name: '1턴 명령 입력', exact: true }).click();
+        const picker = page.getByTestId('command-picker');
+        await picker.getByRole('button', { name: '국가', exact: true }).click();
+        await picker.getByRole('button', { name: '장비 매매', exact: true }).click();
+        await picker.getByLabel('장비 종류', { exact: true }).selectOption('item');
+
+        const itemSelect = picker.getByLabel('장비', { exact: true });
+        await expect(itemSelect.locator('option')).toHaveText(['판매/해제', '환약']);
+        await expect(itemSelect.locator('option', { hasText: '비급' })).toHaveCount(0);
+        await itemSelect.selectOption('che_치료_환약');
+        await expect(picker).toContainText('현재 구입 가능 · 가격 100 · 부상 회복');
+        await expect
+            .poll(() => page.evaluate(() => document.documentElement.scrollWidth))
+            .toBeLessThanOrEqual(viewport.width);
+        await picker.screenshot({ path: test.info().outputPath(`scenario-item-shop-${viewport.name}.png`) });
     });
 }
 

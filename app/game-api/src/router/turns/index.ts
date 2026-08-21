@@ -13,6 +13,7 @@ import {
 } from '../../turns/commandTable.js';
 import { loadMapDefinitionByName } from '../../maps/mapDefinition.js';
 import {
+    buildEquipmentTradeItemOptions,
     parseReservedTurnArgs,
     TURN_COMMAND_NATION_COLORS,
     type TurnCommandInputOptions,
@@ -283,29 +284,12 @@ export const getTurnCommandTable = async (ctx: GameApiContext, generalId: number
         cityNames: new Map(cities.map((entry) => [entry.id, entry.name])),
         troopNames: new Map(troops.map((entry) => [entry.troopLeaderId, entry.name])),
     });
-    const items: TurnCommandInputOptions['items'] = {
-        horse: [{ value: 'None', label: '판매/해제' }],
-        weapon: [{ value: 'None', label: '판매/해제' }],
-        book: [{ value: 'None', label: '판매/해제' }],
-        item: [{ value: 'None', label: '판매/해제' }],
-    };
-    for (const item of moduleBundle.itemModules) {
-        if (item.buyable) {
-            const cost = item.cost ?? 0;
-            const currentSecurity = city?.security ?? 0;
-            const availability =
-                currentSecurity < item.reqSecu
-                    ? `현재 구입 불가: 치안 ${item.reqSecu.toLocaleString()} 필요`
-                    : general.gold < cost
-                      ? `현재 구입 불가: 자금 ${cost.toLocaleString()} 필요`
-                      : '현재 구입 가능';
-            items[item.slot].push({
-                value: item.key,
-                label: item.name,
-                description: `${availability} · 가격 ${cost.toLocaleString()} · ${plainLegacyInfo(item.info)}`,
-            });
-        }
-    }
+    const items = buildEquipmentTradeItemOptions({
+        configConst: asRecord(asRecord(worldState.config).const),
+        itemModules: moduleBundle.itemModules,
+        currentSecurity: city?.security ?? 0,
+        generalGold: general.gold,
+    });
     const inputOptions: TurnCommandInputOptions = {
         cities: cities.map((entry) => ({
             value: entry.id,

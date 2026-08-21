@@ -8,6 +8,7 @@ import ChiefTurnCard from '../components/chief/ChiefTurnCard.vue';
 import ChiefCommandEditor from '../components/chief/ChiefCommandEditor.vue';
 import { trpc } from '../utils/trpc';
 import { formatOfficerLevelText } from '../utils/nationFormat';
+import { formatReservedCommandBrief } from '../components/command/reservedCommandBrief';
 import type { CommandMapData, CommandMapLayout, CommandPatternEntry, CommandTable } from '../components/command/types';
 
 type ChiefTurn = {
@@ -219,7 +220,10 @@ const buildTurnRows = (chief: ChiefEntry): TurnRow[] => {
                 ? `${String(turnDate.getUTCHours()).padStart(2, '0')}:${String(turnDate.getUTCMinutes()).padStart(2, '0')}`
                 : `${String(turnDate.getUTCMinutes()).padStart(2, '0')}:${String(turnDate.getUTCSeconds()).padStart(2, '0')}`
             : '--:--';
-        const actionLabel = labelMap.get(turn.action) ?? turn.action;
+        const actionLabel =
+            formatReservedCommandBrief('nation', turn.action, turn.args, commandTable.value) ??
+            labelMap.get(turn.action) ??
+            turn.action;
         return {
             index: turn.index,
             time: timeLabel,

@@ -5,6 +5,8 @@ import {
     type NationTurnCommandSpec,
 } from '@sammo-ts/logic';
 import { asRecord, isRecord } from '@sammo-ts/common';
+import type { ItemModule } from '@sammo-ts/logic/items/types.js';
+import { resolveLegacyPurchasableItemKeys } from '@sammo-ts/logic/rewards/legacyUniqueItemPool.js';
 import { z } from 'zod';
 
 import { loadTurnCommandProfile } from '@sammo-ts/game-engine/turn/turnCommandProfile.js';
@@ -102,6 +104,49 @@ export interface TurnCommandInputOptions {
         nationLevel?: number;
     };
 }
+
+type EquipmentTradeItemModule = Pick<ItemModule, 'key' | 'slot' | 'name' | 'info' | 'cost' | 'reqSecu' | 'buyable'>;
+
+const plainLegacyInfo = (value: string): string =>
+    value
+        .replace(/<br\s*\/?>/giu, ' · ')
+        .replace(/<[^>]+>/gu, '')
+        .replace(/\s+/gu, ' ')
+        .trim();
+
+export const buildEquipmentTradeItemOptions = (options: {
+    configConst: Record<string, unknown>;
+    itemModules: readonly EquipmentTradeItemModule[];
+    currentSecurity: number;
+    generalGold: number;
+}): TurnCommandInputOptions['items'] => {
+    const purchasableItemKeys = resolveLegacyPurchasableItemKeys(options.configConst);
+    const items: TurnCommandInputOptions['items'] = {
+        horse: [{ value: 'None', label: '판매/해제' }],
+        weapon: [{ value: 'None', label: '판매/해제' }],
+        book: [{ value: 'None', label: '판매/해제' }],
+        item: [{ value: 'None', label: '판매/해제' }],
+    };
+
+    for (const item of options.itemModules) {
+        if (!item.buyable || !purchasableItemKeys.has(item.key)) {
+            continue;
+        }
+        const cost = item.cost ?? 0;
+        const availability =
+            options.currentSecurity < item.reqSecu
+                ? `현재 구입 불가: 치안 ${item.reqSecu.toLocaleString()} 필요`
+                : options.generalGold < cost
+                  ? `현재 구입 불가: 자금 ${cost.toLocaleString()} 필요`
+                  : '현재 구입 가능';
+        items[item.slot].push({
+            value: item.key,
+            label: item.name,
+            description: `${availability} · 가격 ${cost.toLocaleString()} · ${plainLegacyInfo(item.info)}`,
+        });
+    }
+    return items;
+};
 
 // 레거시 및 명령 실행 모듈의 인덱스 순서와 동일해야 한다.
 export const TURN_COMMAND_NATION_COLORS = [

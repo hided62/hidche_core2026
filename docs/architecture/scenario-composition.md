@@ -71,6 +71,15 @@ Core의 `extends`는 이 중복 값을 소스에서 재사용하기 위한 합�
 따라서 일반 공백지 시나리오에는
 `extensions/items/buyable-war-special-uniques.json`이 암묵적으로 적용되지 않습니다.
 
+장비 매매의 구매 목록과 실행 검증도 같은 경계를 사용합니다. 합성된
+`const.allItems`에서 수량이 `0` 이하이고 item module이 `buyable`인 항목만 구매할
+수 있습니다. `allItems`가 생략되었거나 빈 객체 또는 과거 문자열 `"{}"`이면 Ref
+`GameConstBase`의 기본 구매 가능 장비 24종(부위별 6종)을 복원합니다. 반대로
+`allItems`가 명시된 시나리오는 그 목록에 없는 전역 item module을 UI 선택지에
+노출하지 않고, 조작된 예약 명령으로도 구매하지 못합니다. 유니크 장비의 판매와
+로그 표시에는 전체 item catalog가 계속 필요하므로 구매 허용 목록과 catalog 자체를
+분리합니다.
+
 공백지 중 `scenario_902`(천지비급), `scenario_910`(거울세계),
 `scenario_912`(다병종), `scenario_913`(무한대흥)은 Ref 자체가 전투 특기 아이템
 풀을 직접 정의합니다. 이 네 시나리오는 최신 공통 확장과 항목 또는 유니크 수량이

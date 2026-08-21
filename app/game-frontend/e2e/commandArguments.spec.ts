@@ -751,7 +751,13 @@ const chiefCenter = {
         npcState: officerLevel === 8 ? 2 : 0,
         turnTime: null,
         revision: 0,
-        turns: turns(12),
+        turns:
+            officerLevel === 12
+                ? [
+                      { index: 0, action: 'che_포상', args: { destGeneralId: 2, isGold: false, amount: 300 } },
+                      ...turns(11).map((turn) => ({ ...turn, index: turn.index + 1 })),
+                  ]
+                : turns(12),
     })),
 };
 
@@ -1517,6 +1523,36 @@ test('enters general and nation command arguments and sends exact values', async
     expect(geometry.rowHeight).toBeGreaterThanOrEqual(34);
     expect(geometry.borderStyle).toBe('solid');
     expect(Number.parseFloat(geometry.fontSize)).toBeGreaterThanOrEqual(10);
+});
+
+test('shows full nation command briefs in every chief card', async ({ page }) => {
+    await install(page);
+    await page.setViewportSize({ width: 1200, height: 900 });
+    await page.goto('/che/chief-center');
+
+    const desktopSummary = page.locator('.layout-desktop .chief-card').first().locator('.row-action').first();
+    await expect(desktopSummary).toHaveText('【관우】 쌀 300 포상');
+    await expect(desktopSummary).toHaveAttribute('title', '【관우】 쌀 300 포상');
+    await page.screenshot({ path: test.info().outputPath('chief-card-command-brief-desktop-1200.png'), fullPage: true });
+
+    await page.setViewportSize({ width: 500, height: 900 });
+    const mobileSummary = page.locator('.chief-overview .chief-card').first().locator('.row-action').first();
+    await expect(mobileSummary).toHaveText('【관우】 쌀 300 포상');
+    await expect(mobileSummary).toHaveAttribute('title', '【관우】 쌀 300 포상');
+
+    const geometry = await mobileSummary.evaluate((element) => {
+        const rect = element.getBoundingClientRect();
+        const card = element.closest<HTMLElement>('.chief-card');
+        if (!card) throw new Error('chief card is missing');
+        return {
+            width: rect.width,
+            cardWidth: card.getBoundingClientRect().width,
+            horizontalOverflow: card.scrollWidth - card.clientWidth,
+        };
+    });
+    expect(geometry.width).toBeLessThanOrEqual(geometry.cardWidth);
+    expect(geometry.horizontalOverflow).toBeLessThanOrEqual(0);
+    await page.screenshot({ path: test.info().outputPath('chief-card-command-brief-mobile-500.png'), fullPage: true });
 });
 
 test('uses a Ref-style full recruitment page without horizontal overflow on desktop or mobile', async ({
