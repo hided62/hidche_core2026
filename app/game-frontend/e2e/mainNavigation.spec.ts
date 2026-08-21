@@ -34,6 +34,7 @@ type NavigationFixture = {
     operations: string[];
     generalName?: string;
     generalTurnTime?: string;
+    nextTurnMonthOffset?: 0 | 1;
     serverTime?: string;
     clockMode?: 'realtime' | 'manual';
     cityDefence?: number;
@@ -437,6 +438,7 @@ const generalContext = (state: NavigationFixture) => ({
         crewTypeName: '보병',
         traits: { personal: '대담', specialDomestic: '상재', specialWar: '무쌍' },
         turnTime: state.generalTurnTime ?? '0185-01-01T00:00:00.000Z',
+        nextTurnMonthOffset: state.nextTurnMonthOffset ?? 0,
     },
     city: {
         id: 1,
@@ -1615,6 +1617,105 @@ test('the repeated bottom global menu opens upward on the mobile document', asyn
     );
     await versionDialog.screenshot({ path: testInfo.outputPath('mobile-game-version-dialog.png') });
     await persistArtifact(page, `${basePath.slice(1)}-mobile-bottom-dropup`);
+});
+
+test('first reserved month crosses December only after the general turn has passed', async ({ page }, testInfo) => {
+    const state: NavigationFixture = {
+        officerLevel: 0,
+        permission: 0,
+        nationLevel: 0,
+        stage: 0,
+        npcMode: 1,
+        generalMeCalls: 0,
+        operations: [],
+        currentYear: 179,
+        currentMonth: 12,
+        nextTurnMonthOffset: 0,
+        validMapImages: true,
+        reservedTurns: [
+            { index: 0, action: '휴식', args: {} },
+            { index: 1, action: '휴식', args: {} },
+        ],
+    };
+    await installRealtimeHarness(page);
+    await installFixture(page, state);
+    await page.setViewportSize({ width: 1200, height: 900 });
+    await waitForMain(page);
+    await waitForMainRealtime(page);
+
+    const map = page.locator('[data-main-target="map"] .map-viewer').first();
+    const commandPanel = page.locator('[data-main-target="commands"]').first();
+    const firstDate = commandPanel.locator('.date-column [data-turn-index="0"]');
+    const secondDate = commandPanel.locator('.date-column [data-turn-index="1"]');
+
+    await expect(map).toContainText('179年 12月');
+    await expect(firstDate).toHaveText('179年 12月');
+    await expect(secondDate).toHaveText('180年 1月');
+    const before = await firstDate.evaluate((element) => {
+        const rect = element.getBoundingClientRect();
+        const style = getComputedStyle(element);
+        return {
+            rect: rect.toJSON(),
+            fontSize: style.fontSize,
+            lineHeight: style.lineHeight,
+            color: style.color,
+            documentScrollWidth: document.documentElement.scrollWidth,
+            viewportWidth: window.innerWidth,
+        };
+    });
+    await commandPanel.screenshot({ path: testInfo.outputPath('turn-month-before.png') });
+
+    state.nextTurnMonthOffset = 1;
+    state.contextRevision = 'BBBBBBBBBBBBBBBBBBBBBB';
+    state.contextOperations = [{ op: 'replace', path: '/general/nextTurnMonthOffset', value: 1 }];
+    await emitReadModelInvalidation(page, readModelInvalidation({ context: true }));
+
+    await expect(map).toContainText('179年 12月');
+    await expect(firstDate).toHaveText('180年 1月');
+    await expect(secondDate).toHaveText('180年 2月');
+    await firstDate.hover();
+    const after = await firstDate.evaluate((element) => {
+        const rect = element.getBoundingClientRect();
+        const style = getComputedStyle(element);
+        return {
+            rect: rect.toJSON(),
+            fontSize: style.fontSize,
+            lineHeight: style.lineHeight,
+            color: style.color,
+            documentScrollWidth: document.documentElement.scrollWidth,
+            viewportWidth: window.innerWidth,
+        };
+    });
+    expect(after.rect.width).toBe(before.rect.width);
+    expect(after.rect.height).toBe(before.rect.height);
+    expect(after.rect.left).toBe(before.rect.left);
+    expect(after.rect.right).toBe(before.rect.right);
+    expect(after.fontSize).toBe(before.fontSize);
+    expect(after.lineHeight).toBe(before.lineHeight);
+    expect(after.color).toBe(before.color);
+    expect(before.documentScrollWidth).toBe(before.viewportWidth);
+    expect(after.documentScrollWidth).toBe(after.viewportWidth);
+    await commandPanel.screenshot({ path: testInfo.outputPath('turn-month-after.png') });
+
+    await page.setViewportSize({ width: 390, height: 844 });
+    await firstDate.scrollIntoViewIfNeeded();
+    await expect(firstDate).toHaveText('180年 1月');
+    const mobile = await firstDate.evaluate((element) => {
+        const rect = element.getBoundingClientRect();
+        const style = getComputedStyle(element);
+        return {
+            rect: rect.toJSON(),
+            fontSize: style.fontSize,
+            lineHeight: style.lineHeight,
+            documentScrollWidth: document.documentElement.scrollWidth,
+        };
+    });
+    expect(mobile.rect.left).toBeGreaterThanOrEqual(0);
+    expect(mobile.rect.right).toBeLessThanOrEqual(500);
+    expect(mobile.fontSize).toBe(before.fontSize);
+    expect(mobile.lineHeight).toBe(before.lineHeight);
+    expect(mobile.documentScrollWidth).toBe(500);
+    await commandPanel.screenshot({ path: testInfo.outputPath('turn-month-mobile.png') });
 });
 
 test('main general card uses local turn time and command clock tracks corrected server time', async ({ page }) => {
