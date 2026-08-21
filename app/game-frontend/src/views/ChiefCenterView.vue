@@ -55,7 +55,14 @@ const chiefApi = trpc as unknown as {
         };
     };
     world: {
-        getMap: { query: () => Promise<CommandMapData> };
+        getMap: {
+            query: (input: {
+                generalId: number;
+                neutralView?: boolean;
+                showMe?: boolean;
+                useCache?: boolean;
+            }) => Promise<CommandMapData>;
+        };
         getMapLayout: { query: () => Promise<CommandMapLayout> };
     };
 };
@@ -117,7 +124,7 @@ const loadCommandTable = async (generalId: number) => {
     try {
         const [nextCommandTable, nextWorldMap, nextMapLayout] = await Promise.all([
             chiefApi.turns.getCommandTable.query({ generalId }),
-            chiefApi.world.getMap.query().catch(() => null),
+            chiefApi.world.getMap.query({ generalId, showMe: true, useCache: true }).catch(() => null),
             chiefApi.world.getMapLayout.query().catch(() => null),
         ]);
         commandTable.value = nextCommandTable;
