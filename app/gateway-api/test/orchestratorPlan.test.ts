@@ -347,9 +347,11 @@ describe('buildWorkspaceCommands', () => {
 });
 
 describe('buildProfileFrontendCommands', () => {
+    const buildCommitSha = '0123456789abcdef0123456789abcdef01234567';
+
     it('uses a profile frontend build-only Node heap without changing the shared runtime heap', () => {
         const workspaceRoot = '/srv/sammo/worktrees/0123456789abcdef';
-        const commands = buildProfileFrontendCommands(workspaceRoot, buildProfile(), {
+        const commands = buildProfileFrontendCommands(workspaceRoot, buildProfile(), buildCommitSha, {
             NODE_OPTIONS: '--max-old-space-size=1536',
             PROFILE_FRONTEND_BUILD_NODE_OPTIONS: '--max-old-space-size=2048',
         });
@@ -361,6 +363,7 @@ describe('buildProfileFrontendCommands', () => {
                 (command) => command.env?.PROFILE_FRONTEND_BUILD_NODE_OPTIONS === '--max-old-space-size=2048'
             )
         ).toBe(true);
+        expect(commands.every((command) => command.env?.VITE_BUILD_COMMIT_SHA === buildCommitSha)).toBe(true);
         expect(commands[0]?.args).toEqual([
             'exec',
             'turbo',
@@ -377,10 +380,16 @@ describe('buildProfileFrontendCommands', () => {
 
     it('keeps the shared Node heap when no frontend build override is configured', () => {
         const workspaceRoot = '/srv/sammo/worktrees/0123456789abcdef';
-        const commands = buildProfileFrontendCommands(workspaceRoot, buildProfile(), {
+        const commands = buildProfileFrontendCommands(workspaceRoot, buildProfile(), buildCommitSha, {
             NODE_OPTIONS: '--max-old-space-size=1536',
         });
 
         expect(commands.every((command) => command.env?.NODE_OPTIONS === '--max-old-space-size=1536')).toBe(true);
+    });
+
+    it('rejects a non-commit build version before creating cached frontend commands', () => {
+        expect(() => buildProfileFrontendCommands('/srv/sammo/worktrees/main', buildProfile(), 'main')).toThrow(
+            'Profile frontend build requires a full commit SHA.'
+        );
     });
 });

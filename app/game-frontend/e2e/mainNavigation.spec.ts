@@ -885,9 +885,9 @@ const expectMobilePanelVisualOrder = async (page: Page, expectedOrder: readonly 
     expect(audit.panels.map(({ id }) => id)).toEqual(expectedOrder);
     expect(audit.visualOrder).toEqual(expectedOrder);
     expect(audit.panels.every(({ left, right, width }) => left >= 0 && right <= 500 && width === 500)).toBe(true);
-    expect(
-        audit.panels.every((panel, index) => index === 0 || panel.top >= audit.panels[index - 1]!.bottom)
-    ).toBe(true);
+    expect(audit.panels.every((panel, index) => index === 0 || panel.top >= audit.panels[index - 1]!.bottom)).toBe(
+        true
+    );
     for (const panel of audit.panels) {
         expect(panel.display, `${panel.id}: display`).not.toBe('none');
         expect(['static', 'relative'], `${panel.id}: position`).toContain(panel.position);
@@ -1102,7 +1102,9 @@ test('scopes the new-survey notice cursor to the reset-specific server ID', asyn
     expect(await page.evaluate(() => localStorage.getItem('state.che.lastVote'))).toBe('99');
 });
 
-test('desktop menus preserve ref columns, prefix-safe routes, and controlled dropdown behavior', async ({ page }) => {
+test('desktop menus preserve ref columns, prefix-safe routes, and controlled dropdown behavior', async ({
+    page,
+}, testInfo) => {
     const state: NavigationFixture = {
         officerLevel: 5,
         permission: 2,
@@ -1125,9 +1127,7 @@ test('desktop menus preserve ref columns, prefix-safe routes, and controlled dro
     await expect(page.locator('.main-mobile-bottom')).toBeHidden();
     await expect(page.locator('.layout-desktop')).toBeVisible();
     await expect(page.locator('.layout-mobile')).toHaveCount(0);
-    await expect(page.getByRole('heading', { name: '메인 화면 검증 시나리오 체섭 101기', exact: true })).toHaveCount(
-        1
-    );
+    await expect(page.getByRole('heading', { name: '메인 화면 검증 시나리오 체섭 101기', exact: true })).toHaveCount(1);
     await expect(page.locator('.game-shell__subtitle')).toHaveCount(0);
     await expect(page.locator('.legacy-game-info')).toContainText('현재: 185년 1월');
     await expect(page.locator('.legacy-game-info')).toContainText('턴: 10분');
@@ -1252,6 +1252,34 @@ test('desktop menus preserve ref columns, prefix-safe routes, and controlled dro
     const versionDialog = page.getByRole('dialog', { name: '게임 정보' });
     await expect(versionDialog).toBeVisible();
     await expect(versionDialog).toContainText('메인 화면 검증 시나리오');
+    await expect(versionDialog.getByText('빌드 커밋', { exact: true })).toBeVisible();
+    await expect(versionDialog.locator('code')).toHaveText('0123456789abcdef0123456789abcdef01234567');
+    const versionGeometry = await versionDialog.evaluate((dialog) => {
+        const code = dialog.querySelector('code');
+        if (!code) throw new Error('game version commit is missing');
+        const dialogStyle = getComputedStyle(dialog);
+        const codeStyle = getComputedStyle(code);
+        return {
+            dialog: dialog.getBoundingClientRect().toJSON(),
+            code: code.getBoundingClientRect().toJSON(),
+            dialogBackground: dialogStyle.backgroundColor,
+            dialogColor: dialogStyle.color,
+            codeColor: codeStyle.color,
+            codeFontFamily: codeStyle.fontFamily,
+            viewportWidth: window.innerWidth,
+        };
+    });
+    expect(versionGeometry.dialog.width).toBeLessThanOrEqual(versionGeometry.viewportWidth - 32);
+    expect(versionGeometry.code.left).toBeGreaterThanOrEqual(versionGeometry.dialog.left);
+    expect(versionGeometry.code.right).toBeLessThanOrEqual(versionGeometry.dialog.right);
+    expect(versionGeometry.dialogBackground).toBe('rgb(32, 32, 32)');
+    expect(versionGeometry.dialogColor).toBe('rgb(255, 255, 255)');
+    expect(versionGeometry.codeColor).toBe('rgb(215, 215, 215)');
+    await writeFile(
+        testInfo.outputPath('desktop-game-version-dialog.json'),
+        `${JSON.stringify(versionGeometry, null, 2)}\n`
+    );
+    await versionDialog.screenshot({ path: testInfo.outputPath('desktop-game-version-dialog.png') });
     await versionDialog.getByRole('button', { name: '닫기' }).click();
     await expect(versionDialog).toBeHidden();
 
@@ -1279,7 +1307,9 @@ test('desktop menus preserve ref columns, prefix-safe routes, and controlled dro
     await persistArtifact(page, `${basePath.slice(1)}-desktop-1200`);
 });
 
-test('shows the persisted official game index beside the scenario title without viewport overflow', async ({ page }) => {
+test('shows the persisted official game index beside the scenario title without viewport overflow', async ({
+    page,
+}) => {
     const state: NavigationFixture = {
         officerLevel: 5,
         permission: 2,
@@ -1479,6 +1509,30 @@ test('the repeated bottom global menu opens upward on the mobile document', asyn
     expect(geometry.caretBorderTopWidth).toBe('0px');
     expect(geometry.caretBorderBottomWidth).toBe('4px');
     await bottomGlobal.screenshot({ path: testInfo.outputPath('mobile-bottom-global-dropup.png') });
+    await page.setViewportSize({ width: 390, height: 844 });
+    await bottomGlobal.locator('[data-navigation-id="version"]').click();
+    const versionDialog = page.getByRole('dialog', { name: '게임 정보' });
+    await expect(versionDialog).toBeVisible();
+    await expect(versionDialog.locator('code')).toHaveText('0123456789abcdef0123456789abcdef01234567');
+    const versionGeometry = await versionDialog.evaluate((dialog) => {
+        const code = dialog.querySelector('code');
+        if (!code) throw new Error('game version commit is missing');
+        return {
+            dialog: dialog.getBoundingClientRect().toJSON(),
+            code: code.getBoundingClientRect().toJSON(),
+            viewportWidth: window.innerWidth,
+            documentScrollWidth: document.documentElement.scrollWidth,
+        };
+    });
+    expect(versionGeometry.dialog.width).toBeLessThanOrEqual(versionGeometry.viewportWidth - 32);
+    expect(versionGeometry.code.left).toBeGreaterThanOrEqual(versionGeometry.dialog.left);
+    expect(versionGeometry.code.right).toBeLessThanOrEqual(versionGeometry.dialog.right);
+    expect(versionGeometry.documentScrollWidth).toBe(500);
+    await writeFile(
+        testInfo.outputPath('mobile-game-version-dialog.json'),
+        `${JSON.stringify(versionGeometry, null, 2)}\n`
+    );
+    await versionDialog.screenshot({ path: testInfo.outputPath('mobile-game-version-dialog.png') });
     await persistArtifact(page, `${basePath.slice(1)}-mobile-bottom-dropup`);
 });
 
