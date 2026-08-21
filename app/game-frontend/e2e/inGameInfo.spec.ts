@@ -210,7 +210,44 @@ const install = async (
             }
             if (operation === 'general.me') return response(generalContext);
             if (operation === 'world.getMap') return response(mapFixture);
-            if (operation === 'turns.getCommandTable') return response({ general: [], nation: [] });
+            if (operation === 'turns.getCommandTable')
+                return response({
+                    general: [
+                        {
+                            category: '군사',
+                            values: [
+                                {
+                                    key: 'che_징병',
+                                    name: '징병',
+                                    reqArg: true,
+                                    status: 'needsInput',
+                                    possible: true,
+                                    inputFields: [],
+                                },
+                                {
+                                    key: 'che_화계',
+                                    name: '화계',
+                                    reqArg: true,
+                                    status: 'needsInput',
+                                    possible: true,
+                                    inputFields: [],
+                                },
+                            ],
+                        },
+                    ],
+                    nation: [],
+                    inputOptions: {
+                        cities: [{ value: 1, label: '업 (아국)' }],
+                        nations: [],
+                        generals: [],
+                        crewTypes: [{ value: 1, label: '보병' }],
+                        armTypes: [],
+                        nationTypes: [],
+                        colors: [],
+                        items: {},
+                        recruitment: null,
+                    },
+                });
             if (operation === 'turns.reserved.getGeneral' || operation === 'turns.reserved.getNation') {
                 return response({ turns: [], revision: 0 });
             }
@@ -373,7 +410,12 @@ const install = async (
                                       crew: 500,
                                       train: 90,
                                       atmos: 90,
-                                      turns: denseCurrentCity ? ['징병', '훈련'] : ['징병'],
+                                      turns: denseCurrentCity
+                                          ? [
+                                                { action: 'che_징병', args: { crewType: 1, amount: 300 } },
+                                                { action: 'che_화계', args: { destCityId: 1 } },
+                                            ]
+                                          : [{ action: 'che_징병', args: { crewType: 1, amount: 300 } }],
                                   },
                                   ...(denseCurrentCity
                                       ? Array.from({ length: 12 }, (_, index) => ({
@@ -1019,8 +1061,10 @@ test('current-city wraps dense general names and only shrinks reserved turns', a
         const rows = page.locator('.generals tbody tr');
         const reservedTurns = rows.nth(0).locator('.turns');
         const npcTurns = rows.nth(1).locator('.turns');
-        await expect(reservedTurns).toContainText('1 : 징병');
-        await expect(reservedTurns).toContainText('2 : 훈련');
+        await expect(reservedTurns).toContainText('1 : 【보병】 300명 징병');
+        await expect(reservedTurns).toContainText('2 : 【업】에 화계실행');
+        await expect(reservedTurns.locator('.turn-line').nth(0)).toHaveAttribute('title', '【보병】 300명 징병');
+        await expect(reservedTurns.locator('.turn-line').nth(1)).toHaveAttribute('title', '【업】에 화계실행');
         await expect(reservedTurns).toHaveClass(/turns--reserved/);
         await expect(npcTurns).toHaveText('NPC 장수');
         await expect(npcTurns).not.toHaveClass(/turns--reserved/);
