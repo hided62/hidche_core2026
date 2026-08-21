@@ -13,3 +13,18 @@ export const tournamentStageNames = [
 ] as const;
 
 export const resolveTournamentStageName = (stage: number): string => tournamentStageNames[stage] ?? '상태 확인 중';
+
+export interface TournamentSectionVisibility {
+    preliminary: boolean;
+    final: boolean;
+    knockout: boolean;
+}
+
+export const resolveTournamentSectionVisibility = (stage: number, winnerId?: number): TournamentSectionVisibility => {
+    const completed = stage === 0 && winnerId !== undefined;
+    return {
+        preliminary: stage >= 1 || completed,
+        final: stage >= 3 || completed,
+        knockout: stage >= 5 || completed,
+    };
+};

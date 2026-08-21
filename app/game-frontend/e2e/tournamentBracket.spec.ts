@@ -126,7 +126,15 @@ const persistScreenshot = async (page: Page, name: string, fallbackPath: string)
     await page.screenshot({ path: resolve(responsiveArtifactDir, `${name}.webp`), fullPage: true });
 };
 
-const installFixture = async (page: Page, options: { applicationOpen?: boolean; tournamentType?: number } = {}) => {
+const installFixture = async (
+    page: Page,
+    options: {
+        applicationOpen?: boolean;
+        tournamentType?: number;
+        tournamentStage?: number;
+        joinedGroupId?: number;
+    } = {}
+) => {
     let joined = false;
     await page.addInitScript((profile) => {
         window.localStorage.setItem('sammo-game-token', 'ga_tournament_bracket_playwright');
@@ -148,9 +156,11 @@ const installFixture = async (page: Page, options: { applicationOpen?: boolean; 
             if (operation === 'general.me') return response({ general: { id: 1, name: names[0] } });
             if (operation === 'tournament.getAdminStatus') return response({ ok: false });
             if (operation === 'tournament.getSnapshot') {
+                const tournamentStage = options.tournamentStage ?? (options.applicationOpen ? 1 : 0);
+                const joinedGroupId = options.joinedGroupId ?? 0;
                 return response({
                     state: {
-                        stage: options.applicationOpen ? 1 : 0,
+                        stage: tournamentStage,
                         phase: 0,
                         type: options.tournamentType ?? 0,
                         auto: false,
@@ -158,7 +168,7 @@ const installFixture = async (page: Page, options: { applicationOpen?: boolean; 
                         openMonth: 1,
                         termSeconds: 60,
                         nextAt: '2026-08-02T00:00:00.000Z',
-                        winnerId: 1,
+                        winnerId: tournamentStage === 0 ? 1 : undefined,
                     },
                     participants:
                         options.applicationOpen && !joined
@@ -167,8 +177,10 @@ const installFixture = async (page: Page, options: { applicationOpen?: boolean; 
                               ? [
                                     {
                                         ...participants[0],
-                                        groupId: 0,
+                                        groupId: joinedGroupId,
                                         groupNo: 0,
+                                        preliminaryGroupId: joinedGroupId,
+                                        preliminaryGroupNo: 0,
                                         win: 0,
                                         draw: 0,
                                         lose: 0,
@@ -322,20 +334,36 @@ test('desktop bracket connects every real general slot to the next round', async
     await persistScreenshot(page, 'tournament-desktop', testInfo.outputPath('tournament-bracket-desktop.webp'));
 });
 
-test('join refresh shows the assigned preliminary group immediately with accessible controls', async ({ page }) => {
+test('join refresh shows the assigned preliminary group immediately with accessible controls', async ({
+    page,
+}, testInfo) => {
     await page.setViewportSize({ width: 390, height: 844 });
-    await installFixture(page, { applicationOpen: true });
+    await installFixture(page, { applicationOpen: true, joinedGroupId: 5 });
     await page.goto('tournament');
 
     const refresh = page.getByRole('button', { name: '갱신' });
     const join = page.getByRole('button', { name: '참가' });
     const close = page.getByRole('button', { name: '창 닫기' }).first();
     await expect(join).toBeEnabled();
+    await expect(page.getByText('조별 예선 순위')).toBeVisible();
+    await expect(page.getByText('조별 본선 순위')).toHaveCount(0);
+    await expect(page.getByLabel('토너먼트 대진표')).toHaveCount(0);
     await join.click();
 
-    await expect(page.getByRole('status')).toHaveText('참가 신청이 반영되었습니다.');
+    await expect(page.getByRole('status')).toHaveText('참가 신청이 반영되었습니다. 六조에 배정되었습니다.');
     await expect(join).toBeDisabled();
-    await expect(page.locator('.preliminary-grid .general-identity', { hasText: names[0] })).toBeVisible();
+    const preliminaryTabs = page.getByRole('tablist', { name: '예선 조 선택' });
+    await expect(preliminaryTabs.getByRole('tab').nth(5)).toHaveAttribute('aria-selected', 'true');
+    const assignedGroup = page.locator('[data-preliminary-group="5"]');
+    await expect(assignedGroup.locator('.general-identity', { hasText: names[0] })).toBeVisible();
+    const assignedGroupBounds = await assignedGroup.boundingBox();
+    expect(assignedGroupBounds?.y).toBeLessThan(844);
+    expect((assignedGroupBounds?.y ?? 0) + (assignedGroupBounds?.height ?? 0)).toBeGreaterThan(0);
+    await persistScreenshot(
+        page,
+        'tournament-joined-group-mobile',
+        testInfo.outputPath('tournament-joined-group.webp')
+    );
 
     for (const control of [refresh, join, close]) {
         const box = await control.boundingBox();
@@ -347,6 +375,41 @@ test('join refresh shows the assigned preliminary group immediately with accessi
     await refresh.hover();
     await expect(refresh).toHaveCSS('filter', 'brightness(1.25)');
     expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
+});
+
+test('desktop join scrolls the assigned preliminary group into view without future sections', async ({
+    page,
+}, testInfo) => {
+    await page.setViewportSize({ width: 1365, height: 900 });
+    await installFixture(page, { applicationOpen: true, joinedGroupId: 7 });
+    await page.goto('tournament');
+
+    await expect(page.getByText('조별 본선 순위')).toHaveCount(0);
+    await expect(page.getByLabel('토너먼트 대진표')).toHaveCount(0);
+    await page.getByRole('button', { name: '참가' }).click();
+
+    await expect(page.getByRole('status')).toHaveText('참가 신청이 반영되었습니다. 八조에 배정되었습니다.');
+    const assignedGroup = page.locator('[data-preliminary-group="7"]');
+    await expect(assignedGroup.locator('.general-identity', { hasText: names[0] })).toBeVisible();
+    const bounds = await assignedGroup.boundingBox();
+    expect(bounds?.y).toBeLessThan(900);
+    expect((bounds?.y ?? 0) + (bounds?.height ?? 0)).toBeGreaterThan(0);
+    await persistScreenshot(
+        page,
+        'tournament-joined-group-desktop',
+        testInfo.outputPath('tournament-joined-group.webp')
+    );
+});
+
+test('final group section appears before the later knockout section', async ({ page }, testInfo) => {
+    await page.setViewportSize({ width: 390, height: 844 });
+    await installFixture(page, { tournamentStage: 3 });
+    await page.goto('tournament');
+
+    await expect(page.getByText('조별 예선 순위')).toBeVisible();
+    await expect(page.getByText('조별 본선 순위')).toBeVisible();
+    await expect(page.getByLabel('토너먼트 대진표')).toHaveCount(0);
+    await persistScreenshot(page, 'tournament-final-stage-mobile', testInfo.outputPath('tournament-final-stage.webp'));
 });
 
 test('mobile bracket exposes every round through tabs with standard horizontal identities', async ({
