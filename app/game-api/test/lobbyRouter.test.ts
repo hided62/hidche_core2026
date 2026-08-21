@@ -70,6 +70,12 @@ describe('lobby season state', () => {
         expect(result.clockMode).toBe('manual');
     });
 
+    it('preserves zero as the first official game index', async () => {
+        const result = await appRouter.createCaller(buildContext({ gameIdx: 0 })).lobby.info();
+
+        expect(result.gameIdx).toBe(0);
+    });
+
     it('projects the Ref-compatible opening announcement settings without exposing disabled autorun options', async () => {
         const result = await appRouter
             .createCaller(

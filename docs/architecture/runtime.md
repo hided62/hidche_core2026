@@ -111,6 +111,11 @@ Gateway session을 발급합니다. 게임 profile 진입에서는 다시 제재
 Kakao 확인, 운영자 role, 유효한 `SpecialAccountAccessGrant`, 기존 일반 계정 유예
 순으로 접근과 장수 생성 가능 여부를 계산합니다. grant의 빈 `profiles`는 전체,
 base profile(`che`)은 모든 기수, profile name(`che:2`)은 정확한 기수를 뜻합니다.
+
+Gateway profile meta의 `firstGameIdx`는 profile별 첫 표시 기수 번호를 정합니다. game
+seed는 `firstGameIdx + COMPLETED GameHistory 수`를 `WorldState.meta.gameIdx`에 저장하며,
+`season`, 미완료 `OPEN`, 취소된 `ABANDONED` 이력은 이 계산의 기준이 아닙니다. 값이
+없거나 유효하지 않으면 1을 사용합니다.
 결과는 AES-256-GCM game token의 `identity.specialAccess`와
 `identity.canCreateGeneral`에 서명되어 game API가 장수 생성 mutation 전에 다시
 검사합니다. grant 사유나 부여자 정보는 game token에 넣지 않습니다.

@@ -877,6 +877,30 @@ describe('admin operation API', () => {
         ).rejects.toBeDefined();
     });
 
+    it('stores zero as the first game index and rejects negative values', async () => {
+        const harness = await buildCaller(
+            async () => {
+                throw new Error('not used');
+            },
+            { adminRoles: ['admin.profiles.settings:che:2'], firstUserIsAdmin: false }
+        );
+
+        await harness.caller.admin.profiles.updateMeta({
+            profileName: 'che:2',
+            patch: { firstGameIdx: 0 },
+            reason: 'start core series at zero',
+        });
+        expect(harness.updatedMetas.at(-1)).toMatchObject({ firstGameIdx: 0 });
+
+        await expect(
+            harness.caller.admin.profiles.updateMeta({
+                profileName: 'che:2',
+                patch: { firstGameIdx: -1 },
+                reason: 'reject negative game index',
+            })
+        ).rejects.toBeDefined();
+    });
+
     it('does not let a scenario-only operator combine a Git update with reset', async () => {
         const harness = await buildCaller(
             async () => {

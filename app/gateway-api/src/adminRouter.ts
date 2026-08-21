@@ -1876,6 +1876,7 @@ export const adminRouter = router({
                         inGameNotice: z.string().max(4000).nullable().optional(),
                         profileImageUrl: z.string().max(2048).nullable().optional(),
                         nextSeasonIdx: z.number().int().min(0).nullable().optional(),
+                        firstGameIdx: z.number().int().min(0).nullable().optional(),
                         localAccountAccessGraceDays: z.number().int().min(0).max(365).nullable().optional(),
                         localAccountGeneralCreationGraceDays: z.number().int().min(0).max(365).nullable().optional(),
                         resetDefaults: zProfileResetDefaults.nullable().optional(),

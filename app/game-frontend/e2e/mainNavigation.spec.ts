@@ -1376,6 +1376,37 @@ test('shows the persisted official game index beside the scenario title without 
     }
 });
 
+test('shows game index zero for a profile whose first game starts at zero', async ({ page }) => {
+    const state: NavigationFixture = {
+        officerLevel: 5,
+        permission: 2,
+        nationLevel: 3,
+        stage: 0,
+        npcMode: 1,
+        profile: 'che',
+        gameIdx: 0,
+        scenarioTitle: '코어 검증 시나리오',
+        generalMeCalls: 0,
+        operations: [],
+    };
+    await installFixture(page, state);
+
+    for (const viewport of [
+        { width: 1200, height: 900 },
+        { width: 500, height: 900 },
+    ]) {
+        await page.setViewportSize(viewport);
+        if (page.url() === 'about:blank') await waitForMain(page);
+
+        const title = page.getByRole('heading', { name: '코어 검증 시나리오 체섭 0기', exact: true });
+        await expect(title).toBeVisible();
+        const overflow = await title.evaluate(
+            () => document.documentElement.scrollWidth - document.documentElement.clientWidth
+        );
+        expect(overflow).toBeLessThanOrEqual(0);
+    }
+});
+
 test('nation split buttons keep square inner corners and a single divider in every interaction state', async ({
     page,
 }, testInfo) => {

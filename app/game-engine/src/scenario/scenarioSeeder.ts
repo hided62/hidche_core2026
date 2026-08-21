@@ -51,6 +51,7 @@ export interface ScenarioInstallOptions {
     autorunUser?: ScenarioAutorunOptions | null;
     preopenAt?: Date | null;
     season?: number;
+    firstGameIdx?: number;
     serverId?: string;
     installOperationId?: string;
     installCommitSha?: string;
@@ -298,6 +299,12 @@ export const seedScenarioToDatabase = async (options: ScenarioSeedOptions): Prom
         lastTurnTime: formatDateTime(now),
     };
 
+    const firstGameIdx =
+        typeof install?.firstGameIdx === 'number' && Number.isFinite(install.firstGameIdx) && install.firstGameIdx >= 0
+            ? Math.floor(install.firstGameIdx)
+            : 1;
+    worldMeta.firstGameIdx = firstGameIdx;
+
     if (typeof install?.season === 'number' && Number.isFinite(install.season)) {
         worldMeta.season = Math.floor(install.season);
     }
@@ -390,7 +397,7 @@ export const seedScenarioToDatabase = async (options: ScenarioSeedOptions): Prom
                 // Ref fixes server_cnt once during ResetHelper initialization. Keep the
                 // frequently rendered game index in the same persisted read model and
                 // exclude abandoned or unfinished rows from the official sequence.
-                worldMeta.gameIdx = completedGameCount + 1;
+                worldMeta.gameIdx = completedGameCount + firstGameIdx;
                 const archivedWorldMeta = { ...worldMeta };
                 delete archivedWorldMeta.hiddenSeed;
 

@@ -113,7 +113,7 @@ const gameTitle = computed(() => {
     const scenarioTitle = lobbyInfo.value?.scenarioTitle || '전장 현황';
     const profileLabel = gameProfileLabel.value;
     const gameIdx = lobbyInfo.value?.gameIdx;
-    return profileLabel && typeof gameIdx === 'number' && Number.isInteger(gameIdx) && gameIdx > 0
+    return profileLabel && typeof gameIdx === 'number' && Number.isInteger(gameIdx) && gameIdx >= 0
         ? `${scenarioTitle} ${profileLabel}섭 ${gameIdx}기`
         : scenarioTitle;
 });

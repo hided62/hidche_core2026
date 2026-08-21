@@ -353,6 +353,7 @@ type AdminClient = {
                     inGameNotice?: string | null;
                     profileImageUrl?: string | null;
                     nextSeasonIdx?: number | null;
+                    firstGameIdx?: number | null;
                     localAccountAccessGraceDays?: number | null;
                     localAccountGeneralCreationGraceDays?: number | null;
                     resetDefaults?: ProfileResetDefaults | null;
@@ -409,6 +410,7 @@ const profileEdits = ref<
             inGameNotice: string;
             profileImageUrl: string;
             nextSeasonIdx: string | number;
+            firstGameIdx: string | number;
             localAccountAccessGraceDays: string;
             localAccountGeneralCreationGraceDays: string;
             resetDefaults: ProfileResetDefaults;
@@ -657,6 +659,10 @@ const ensureProfileBuffers = (profile: AdminProfile) => {
                 typeof meta.nextSeasonIdx === 'number' && Number.isFinite(meta.nextSeasonIdx)
                     ? String(Math.floor(meta.nextSeasonIdx))
                     : '',
+            firstGameIdx:
+                typeof meta.firstGameIdx === 'number' && Number.isFinite(meta.firstGameIdx)
+                    ? String(Math.floor(meta.firstGameIdx))
+                    : '1',
             localAccountAccessGraceDays:
                 typeof meta.localAccountAccessGraceDays === 'number'
                     ? String(Math.floor(meta.localAccountAccessGraceDays))
@@ -774,6 +780,15 @@ const updateProfileMeta = async (profileName: string) => {
         };
         return;
     }
+    const firstGameIdxRaw = String(edit.firstGameIdx).trim();
+    const firstGameIdx = firstGameIdxRaw === '' ? null : Number(firstGameIdxRaw);
+    if (firstGameIdx !== null && (!Number.isInteger(firstGameIdx) || firstGameIdx < 0)) {
+        profileActionStatus.value = {
+            ...profileActionStatus.value,
+            [profileName]: '첫 기수 번호는 0 이상 정수여야 합니다.',
+        };
+        return;
+    }
     const readGraceDays = (value: string): number | null => {
         if (!value.trim()) return null;
         const parsed = Number(value);
@@ -811,6 +826,7 @@ const updateProfileMeta = async (profileName: string) => {
         inGameNotice: edit.inGameNotice.trim() || null,
         profileImageUrl: edit.profileImageUrl.trim() || null,
         nextSeasonIdx: nextSeasonIdx === null ? null : Math.floor(nextSeasonIdx),
+        firstGameIdx,
         localAccountAccessGraceDays: accessGraceDays,
         localAccountGeneralCreationGraceDays: creationGraceDays,
         resetDefaults: {
@@ -2229,6 +2245,20 @@ onMounted(() => {
                                         placeholder="예: 12"
                                     />
                                     <div class="text-xs text-zinc-500">리셋 시 적용할 시즌 번호를 지정합니다.</div>
+                                    <label class="text-xs text-zinc-400">첫 기수 번호</label>
+                                    <input
+                                        v-model="profileEdits[profile.profileName].firstGameIdx"
+                                        type="number"
+                                        min="0"
+                                        step="1"
+                                        data-testid="first-game-idx"
+                                        class="w-full bg-zinc-950 border border-zinc-700 rounded px-3 py-2 text-sm text-white"
+                                        placeholder="기본값: 1"
+                                    />
+                                    <div class="text-xs text-zinc-500">
+                                        완료된 게임 수에 더할 첫 기수 번호입니다. 다음 리셋부터 적용되며, 완료 이력이
+                                        생긴 뒤 바꾸면 이후 기수 번호가 이동합니다.
+                                    </div>
                                     <details class="rounded border border-zinc-700 bg-zinc-950/60 p-3">
                                         <summary class="cursor-pointer text-sm font-semibold text-zinc-200">
                                             서버 리셋 기본 옵션
