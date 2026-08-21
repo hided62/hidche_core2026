@@ -76,6 +76,37 @@ const cities = [
     },
 ] as const;
 
+const commandTable = {
+    general: [
+        {
+            category: '내정',
+            values: [
+                {
+                    key: 'che_농지개간',
+                    name: '농지 개간',
+                    reqArg: false,
+                    status: 'available',
+                    possible: true,
+                    inputFields: [],
+                },
+                { key: 'che_훈련', name: '훈련', reqArg: false, status: 'available', possible: true, inputFields: [] },
+            ],
+        },
+    ],
+    nation: [],
+    inputOptions: {
+        cities: cities.map((city) => ({ value: city.id, label: city.name })),
+        nations: [{ value: 1, label: '위' }],
+        generals: [],
+        crewTypes: [{ value: 1, label: '보병' }],
+        armTypes: [],
+        nationTypes: [],
+        colors: [],
+        items: {},
+        recruitment: null,
+    },
+};
+
 const overviewFixture = (state: FixtureState) => ({
     me: { id: state.role === 'head' ? 20 : 21, officerLevel: state.role === 'head' ? 5 : 1 },
     nation: {
@@ -161,7 +192,10 @@ const secretGeneral = (id: number, name: string, cityId: number, overrides: Reco
     atmos: 90,
     killTurn: 7,
     turnTime: '2026-01-01T01:02:00.000Z',
-    reservedCommands: ['농지 개간', '훈련'],
+    reservedCommands: [
+        { action: 'che_농지개간', args: {} },
+        { action: 'che_훈련', args: {} },
+    ],
     ...overrides,
 });
 
@@ -292,6 +326,7 @@ const install = async (page: Page, state: FixtureState): Promise<void> => {
                     : response(secretFixture());
             }
             if (operation === 'nation.getPersonnelInfo') return response(personnelFixture(state));
+            if (operation === 'turns.getCommandTable') return response(commandTable);
             if (operation === 'nation.appoint') {
                 const input = requestInput(route, index);
                 state.appointmentInputs.push({

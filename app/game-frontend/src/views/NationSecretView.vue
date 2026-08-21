@@ -1,10 +1,14 @@
 <script setup lang="ts">
 import { formatServerDateTime } from '@sammo-ts/common/time/ServerDateTime';
 import { computed, onMounted, ref } from 'vue';
+import { formatReservedCommandBrief } from '../components/command/reservedCommandBrief';
+import type { CommandTable } from '../components/command/types';
 import { trpc } from '../utils/trpc';
 type Result = Awaited<ReturnType<typeof trpc.nation.getSecretGeneralList.query>>;
+type ReservedCommand = Result['generals'][number]['reservedCommands'][number];
 type Sort = 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8;
 const data = ref<Result | null>(null);
+const commandTable = ref<CommandTable | null>(null);
 const error = ref('');
 const loading = ref(false);
 const sort = ref<Sort>(7);
@@ -13,7 +17,10 @@ const load = async () => {
     loading.value = true;
     error.value = '';
     try {
-        data.value = await trpc.nation.getSecretGeneralList.query();
+        const result = await trpc.nation.getSecretGeneralList.query();
+        const table = await trpc.turns.getCommandTable.query({ generalId: result.viewer.generalId });
+        data.value = result;
+        commandTable.value = table;
     } catch (cause) {
         error.value = cause instanceof Error ? cause.message : '암행부를 불러오지 못했습니다.';
     } finally {
@@ -35,6 +42,8 @@ const generals = computed(() =>
 const closeWindow = () => window.close();
 const displayName = (general: { name: string; npcState: number }) =>
     general.npcState > 0 && !/^[ⓜⓝ㉥]/u.test(general.name) ? `ⓝ${general.name}` : general.name;
+const commandBrief = (command: ReservedCommand): string =>
+    formatReservedCommandBrief('general', command.action, command.args, commandTable.value);
 onMounted(load);
 </script>
 
@@ -142,8 +151,12 @@ onMounted(load);
                         <td class="turns">
                             <template v-if="general.npcState >= 2">NPC 장수</template
                             ><template v-else
-                                ><div v-for="(command, index) in general.reservedCommands" :key="index">
-                                    {{ index + 1 }} : {{ command }}
+                                ><div
+                                    v-for="(command, index) in general.reservedCommands"
+                                    :key="index"
+                                    :title="commandBrief(command)"
+                                >
+                                    {{ index + 1 }} : {{ commandBrief(command) }}
                                 </div></template
                             >
                         </td>
