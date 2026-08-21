@@ -318,8 +318,19 @@ const repeatTurns = async (amount: number) => {
 <template>
     <main class="chief-page">
         <header class="chief-top legacy-bg0">
-            <button class="chief-nav" type="button" @click="router.push('/')">돌아가기</button>
-            <button class="chief-nav" @click="loadChiefCenter">갱신</button>
+            <button
+                class="legacy-button legacy-button--navigation legacy-button--fixed-height chief-nav"
+                type="button"
+                @click="router.push('/')"
+            >
+                돌아가기
+            </button>
+            <button
+                class="legacy-button legacy-button--navigation legacy-button--fixed-height chief-nav"
+                @click="loadChiefCenter"
+            >
+                갱신
+            </button>
             <h1>사령부</h1>
             <div></div>
             <div></div>
@@ -442,7 +453,9 @@ const repeatTurns = async (amount: number) => {
             </template>
         </div>
         <footer class="chief-footer legacy-bg0">
-            <button class="chief-nav" type="button" @click="router.push('/')">돌아가기</button>
+            <button class="legacy-button legacy-button--navigation chief-nav" type="button" @click="router.push('/')">
+                돌아가기
+            </button>
         </footer>
     </main>
 </template>
@@ -643,19 +656,12 @@ const repeatTurns = async (amount: number) => {
     text-align: center;
 }
 .chief-nav {
+    --legacy-button-height: 32px;
     box-sizing: border-box;
-    height: 32px;
     margin-right: 2px;
-    border: 0;
-    border-radius: 3px;
     display: grid;
     place-items: center;
-    background: #00582c;
-    color: #fff;
-    font: inherit;
-    font-weight: 700;
     text-decoration: none;
-    cursor: pointer;
 }
 .layout-desktop {
     display: block;
