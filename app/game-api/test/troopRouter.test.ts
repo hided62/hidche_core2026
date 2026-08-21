@@ -77,10 +77,12 @@ const buildContext = (options: {
     auth?: GameSessionTokenPayload | null;
     requestId?: string;
     transaction?: ReturnType<typeof vi.fn>;
+    turns?: Array<{ generalId: number; turnIdx: number; actionCode: string }>;
     result: Awaited<ReturnType<TurnDaemonTransport['requestCommand']>>;
 }) => {
     const me = options.me ?? buildGeneral();
     const requestCommand = vi.fn(async () => options.result);
+    const generalTurnFindMany = vi.fn(async () => options.turns ?? []);
     const db = {
         ...(options.transaction ? { $transaction: options.transaction } : {}),
         general: {
@@ -110,7 +112,7 @@ const buildContext = (options: {
         },
         city: { findMany: vi.fn(async () => [{ id: 1, name: '북평' }]) },
         worldState: { findFirst: vi.fn(async () => ({ config: { const: { upgradeLimit: 20 } } })) },
-        generalTurn: { findMany: vi.fn(async () => []) },
+        generalTurn: { findMany: generalTurnFindMany },
     };
     const accessTokenStore = new RedisAccessTokenStore(
         {
@@ -134,7 +136,7 @@ const buildContext = (options: {
         flushStore: new InMemoryFlushStore(),
         gameTokenSecret: 'test-secret',
     };
-    return { context, requestCommand };
+    return { context, requestCommand, generalTurnFindMany };
 };
 
 describe('troop router permissions and mutations', () => {
@@ -172,6 +174,30 @@ describe('troop router permissions and mutations', () => {
                     ],
                 },
             ],
+        });
+    });
+
+    it('returns only the first five Ref-redacted troop command labels without exposing action codes', async () => {
+        const fixture = buildContext({
+            me: buildGeneral({ troopId: 1 }),
+            turns: [
+                { generalId: 1, turnIdx: 0, actionCode: 'che_집합' },
+                { generalId: 1, turnIdx: 1, actionCode: 'che_이동' },
+                { generalId: 1, turnIdx: 2, actionCode: 'che_징병' },
+                { generalId: 1, turnIdx: 3, actionCode: '휴식' },
+                { generalId: 1, turnIdx: 4, actionCode: 'che_화계' },
+            ],
+            result: null,
+        });
+
+        const result = await appRouter.createCaller(fixture.context).troop.getList();
+
+        expect(result.troops[0]?.reservedCommands).toEqual(['집합', '-', '-', '-', '-']);
+        expect(JSON.stringify(result.troops)).not.toContain('che_');
+        expect(fixture.generalTurnFindMany).toHaveBeenCalledWith({
+            where: { generalId: { in: [1] }, turnIdx: { lt: 5 } },
+            select: { generalId: true, turnIdx: true, actionCode: true },
+            orderBy: [{ generalId: 'asc' }, { turnIdx: 'asc' }],
         });
     });
 
