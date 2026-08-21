@@ -1591,7 +1591,10 @@ export const createReservedTurnHandler = async (options: {
                 },
                 rng: preprocessRng,
                 log: {
-                    push: (message) => logs.push(createGeneralActionLog(currentGeneral.id, message)),
+                    push: (message, logOptions) =>
+                        logs.push(createGeneralActionLog(currentGeneral.id, message, logOptions)),
+                    pushForGeneral: (generalId, message, logOptions) =>
+                        logs.push(createGeneralActionLog(generalId, message, logOptions)),
                 },
             });
             preTurnPipeline.getPreTurnExecuteTriggerList(preTurnContext).fire(preTurnContext, baseConstraintEnv);

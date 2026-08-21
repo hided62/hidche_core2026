@@ -39,7 +39,7 @@ export interface RecruitEnvironment {
     defaultAtmos?: number;
     minAvailableRecruitPop?: number;
     defaultTrust?: number;
-    actionName?: string;
+    actionName?: '징병' | '모병';
 }
 
 export interface RecruitResolveContext<
@@ -229,6 +229,10 @@ export class CommandResolver<TriggerState extends GeneralTriggerState = GeneralT
         this.env = env;
     }
 
+    private get actionName(): '징병' | '모병' {
+        return this.env.actionName ?? ACTION_NAME;
+    }
+
     resolveLeadership(context: RecruitCalcContext<TriggerState>): number {
         const general = context.general;
         const base = applyLegacyInjury(general.stats.leadership, general.injury);
@@ -245,10 +249,10 @@ export class CommandResolver<TriggerState extends GeneralTriggerState = GeneralT
     ): { gold: number; rice: number } {
         const techCost = getTechCost(readNationTech(context.nation ?? null));
         return {
-            gold: this.pipeline.onCalcDomestic(context, ACTION_NAME, 'cost', crewType.cost * techCost, {
+            gold: this.pipeline.onCalcDomestic(context, this.actionName, 'cost', crewType.cost * techCost, {
                 armType: crewType.armType,
             }),
-            rice: this.pipeline.onCalcDomestic(context, ACTION_NAME, 'rice', crewType.rice * techCost, {
+            rice: this.pipeline.onCalcDomestic(context, this.actionName, 'rice', crewType.rice * techCost, {
                 armType: crewType.armType,
             }),
         };
@@ -281,7 +285,7 @@ export class CommandResolver<TriggerState extends GeneralTriggerState = GeneralT
         const baseGold = crewType ? (crewType.cost * getTechCost(tech) * plan.applied) / 100 : 0;
         const adjustedGold = this.pipeline.onCalcDomestic(
             context,
-            ACTION_NAME,
+            this.actionName,
             'cost',
             baseGold,
             crewType ? { armType: crewType.armType } : undefined
@@ -289,7 +293,7 @@ export class CommandResolver<TriggerState extends GeneralTriggerState = GeneralT
         const baseRice = plan.applied / 100;
         const adjustedRice = this.pipeline.onCalcDomestic(
             context,
-            ACTION_NAME,
+            this.actionName,
             'rice',
             baseRice,
             crewType ? { armType: crewType.armType } : undefined
@@ -306,7 +310,7 @@ export class CommandResolver<TriggerState extends GeneralTriggerState = GeneralT
         const base = this.env.defaultTrain ?? DEFAULT_TRAIN;
         return this.pipeline.onCalcDomestic(
             context,
-            ACTION_NAME,
+            this.actionName,
             'train',
             base,
             crewType ? { armType: crewType.armType } : undefined
@@ -317,7 +321,7 @@ export class CommandResolver<TriggerState extends GeneralTriggerState = GeneralT
         const base = this.env.defaultAtmos ?? DEFAULT_ATMOS;
         return this.pipeline.onCalcDomestic(
             context,
-            ACTION_NAME,
+            this.actionName,
             'atmos',
             base,
             crewType ? { armType: crewType.armType } : undefined

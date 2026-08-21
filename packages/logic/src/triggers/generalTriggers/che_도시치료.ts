@@ -1,6 +1,7 @@
 import { JosaUtil } from '@sammo-ts/common';
 
 import type { General, GeneralTriggerState } from '@sammo-ts/logic/domain/entities.js';
+import { LogFormat } from '@sammo-ts/logic/logging/types.js';
 import { TriggerPriority } from '@sammo-ts/logic/triggers/core.js';
 import { BaseGeneralTrigger, type GeneralTriggerContext } from '@sammo-ts/logic/triggers/general.js';
 
@@ -47,7 +48,7 @@ export class CheUisulCityHealTrigger<
         if (general.injury > 0) {
             general.injury = 0;
             context.skill.activate('pre.부상경감', 'pre.치료');
-            logger?.push('<C>의술</>을 펼쳐 스스로 치료합니다!');
+            logger?.push('<C>의술</>을 펼쳐 스스로 치료합니다!', { format: LogFormat.PLAIN });
         }
 
         const candidates = resolveCityGenerals(general, context).filter((candidate) => {
@@ -64,19 +65,32 @@ export class CheUisulCityHealTrigger<
 
         for (const patient of healed) {
             patient.injury = 0;
+            const generalName = general.name;
+            logger?.pushForGeneral?.(
+                patient.id,
+                `<Y>${generalName}</>${JosaUtil.pick(generalName, '이')} <C>의술</>로써 치료해줍니다!`,
+                { format: LogFormat.PLAIN }
+            );
         }
 
         if (healed.length === 0) {
             return env;
         }
 
-        const firstName = healed[0]?.name ?? '장수';
+        // Ref overwrites `$curedPatientName` for each successful patient and
+        // therefore names the last general in the ordered draw list.
+        const curedPatientName = healed.at(-1)?.name ?? '장수';
         if (healed.length === 1) {
-            const josa = JosaUtil.pick(firstName, '을');
-            logger?.push(`<C>의술</>을 펼쳐 도시의 장수 <Y>${firstName}</>${josa} 치료합니다!`);
+            const josa = JosaUtil.pick(curedPatientName, '을');
+            logger?.push(`<C>의술</>을 펼쳐 도시의 장수 <Y>${curedPatientName}</>${josa} 치료합니다!`, {
+                format: LogFormat.PLAIN,
+            });
         } else {
             const otherCount = healed.length - 1;
-            logger?.push(`<C>의술</>을 펼쳐 도시의 장수들 <Y>${firstName}</> 외 <C>${otherCount}</>명을 치료합니다!`);
+            logger?.push(
+                `<C>의술</>을 펼쳐 도시의 장수들 <Y>${curedPatientName}</> 외 <C>${otherCount}</>명을 치료합니다!`,
+                { format: LogFormat.PLAIN }
+            );
         }
 
         return env;

@@ -13,8 +13,10 @@ import {
     loadEventDomesticTraitModules,
     loadDomesticTraitModules,
     loadWarTraitModules,
+    WAR_TRAIT_KEYS,
 } from '../src/actionModules/traits/index.js';
 import { ActionLogger } from '../src/logging/actionLogger.js';
+import { LogFormat } from '../src/logging/types.js';
 import { WarActionPipeline } from '../src/war/actions.js';
 import { WarCrewType } from '../src/war/crewType.js';
 import { createWarTriggerEnv } from '../src/war/triggers.js';
@@ -164,6 +166,23 @@ const buildUnitSet = (): UnitSetDefinition => ({
 });
 
 describe('trait modules', () => {
+    it('keeps the Ref inventory of battle traits with non-battle hooks', async () => {
+        const war = await loadWarTraitModules([...WAR_TRAIT_KEYS]);
+
+        expect(war.filter((module) => module.onCalcDomestic).map((module) => module.key)).toEqual([
+            'che_귀병',
+            'che_신산',
+            'che_보병',
+            'che_궁병',
+            'che_기병',
+            'che_공성',
+            'che_징병',
+        ]);
+        expect(war.filter((module) => module.getPreTurnExecuteTriggerList).map((module) => module.key)).toEqual([
+            'che_의술',
+        ]);
+    });
+
     it('loads trait modules by key', async () => {
         const domestic = await loadDomesticTraitModules(['che_인덕', 'che_발명']);
         const war = await loadWarTraitModules(['che_의술', 'che_징병']);
@@ -284,6 +303,56 @@ describe('trait modules', () => {
 
         expect(lowerIdPatient.injury).toBe(0);
         expect(higherIdPatient.injury).toBe(30);
+    });
+
+    it('writes Ref-compatible patient and healer logs for 의술 city healing', async () => {
+        const war = await loadWarTraitModules(['che_의술']);
+        const registry = createTraitCatalog({ war });
+        const pipeline = new GeneralActionPipeline(createTraitModules(registry).general);
+        const healer = buildGeneral({
+            name: '의사',
+            role: {
+                personality: null,
+                specialDomestic: null,
+                specialWar: 'che_의술',
+                items: { horse: null, weapon: null, book: null, item: null },
+            },
+        });
+        const firstPatient = buildGeneral({ id: 2, name: '환자갑', injury: 20 });
+        const lastPatient = buildGeneral({ id: 3, name: '환자을', injury: 20 });
+        const worldView = {
+            listGeneralsByCity: () => [lastPatient, healer, firstPatient],
+            listGenerals: () => [lastPatient, healer, firstPatient],
+        };
+        const rng: RandomGenerator = {
+            nextFloat1: () => 0,
+            nextBool: () => true,
+            nextInt: (minInclusive: number) => minInclusive,
+        };
+        const healerLogs: string[] = [];
+        const patientLogs: Array<{ generalId: number; message: string; format: LogFormat | undefined }> = [];
+        const healerFormats: Array<LogFormat | undefined> = [];
+        const context = createGeneralTriggerContext({
+            general: healer,
+            rng,
+            worldView,
+            log: {
+                push: (message, options) => {
+                    healerLogs.push(message);
+                    healerFormats.push(options?.format);
+                },
+                pushForGeneral: (generalId, message, options) =>
+                    patientLogs.push({ generalId, message, format: options?.format }),
+            },
+        });
+
+        pipeline.getPreTurnExecuteTriggerList(context).fire(context, {});
+
+        expect(patientLogs.map((log) => log.generalId)).toEqual([2, 3]);
+        expect(patientLogs.every((log) => log.message.includes('<Y>의사</>'))).toBe(true);
+        expect(patientLogs.every((log) => log.format === LogFormat.PLAIN)).toBe(true);
+        expect(healerLogs.at(-1)).toContain('<Y>환자을</> 외 <C>1</>명');
+        expect(healerFormats.every((format) => format === LogFormat.PLAIN)).toBe(true);
     });
 
     it('activates 의술 battle trigger and reduces damage', async () => {
