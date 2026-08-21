@@ -796,12 +796,12 @@ onMounted(() => {
     width: min(100%, 1000px);
     margin: 0 auto;
     border: 1px solid #888;
-    overflow: hidden;
+    overflow-x: hidden;
     box-sizing: border-box;
     position: relative;
     padding: 0 7px;
     color: #fff;
-    height: 1597px;
+    min-height: 1597px;
     font: 14px/21px var(--sammo-font-sans);
 }
 
@@ -1017,7 +1017,7 @@ a:not(.legacy-button):focus-visible {
     }
 
     .inherit-page {
-        height: 3047.5px;
+        min-height: 3047.5px;
     }
 
     .shop-item .buy-button {
