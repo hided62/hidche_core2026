@@ -149,6 +149,30 @@ const install = async (page: Page, secretAllowed = true) => {
                                 { action: '휴식', args: {} },
                             ],
                         },
+                        {
+                            id: 2,
+                            name: '부유장수',
+                            npcState: 0,
+                            injury: 0,
+                            stats: { leadership: 60, strength: 50, intelligence: 40 },
+                            leadershipBonus: 0,
+                            experienceLevel: 8,
+                            troopId: 1,
+                            troopName: '제1부대',
+                            gold: 3000,
+                            rice: 1000,
+                            cityId: 2,
+                            cityName: '낙양',
+                            defenceTrain: 80,
+                            defenceTrainText: '◎',
+                            crewTypeId: 2,
+                            crew: 100,
+                            train: 80,
+                            atmos: 80,
+                            killTurn: 3,
+                            turnTime: '2026-01-01T02:02:00.000Z',
+                            reservedCommands: [],
+                        },
                     ],
                 });
             }
@@ -381,7 +405,7 @@ test('secret office renders five Ref-style command briefs and the forbidden erro
         '5 : 휴식',
     ]);
     await expect(commandRows.nth(2)).toHaveAttribute('title', '【다른장수】에게 쌀 200을 증여');
-    const geometry = await page.locator('#secret-general-list .turns').evaluate((element) => {
+    const geometry = await page.locator('#secret-general-list .turns').first().evaluate((element) => {
         const rect = element.getBoundingClientRect();
         const style = getComputedStyle(element);
         return {
@@ -415,4 +439,23 @@ test('secret office renders five Ref-style command briefs and the forbidden erro
     await page.goto('nation/secret');
     await expect(page.getByRole('alert')).toContainText('권한이 부족합니다.');
     await expect(page.locator('#secret-general-list')).toHaveCount(0);
+});
+
+test('secret office applies the selected sort on submit and immediately from sortable headers', async ({ page }) => {
+    await install(page);
+    await page.goto('nation/secret');
+    const rows = page.locator('#secret-general-list tbody tr[data-general-id]');
+    await expect(rows.first()).toHaveAttribute('data-general-id', '1');
+
+    await page.locator('#secret-list-sort').selectOption('1');
+    await expect(rows.first()).toHaveAttribute('data-general-id', '1');
+    await page.getByRole('button', { name: '정렬하기' }).click();
+    await expect(rows.first()).toHaveAttribute('data-general-id', '2');
+    await expect(page.locator('#secret-general-list th[aria-sort="descending"]')).toContainText('자 금');
+
+    await page.getByRole('button', { name: '도시 기준 정렬' }).click();
+    await expect(page.locator('#secret-list-sort')).toHaveValue('3');
+    await expect(rows.first()).toHaveAttribute('data-general-id', '1');
+    await expect(page.locator('#secret-list-sort')).toHaveCSS('color', 'rgb(247, 250, 248)');
+    await expect(page.getByRole('button', { name: '정렬하기' })).toHaveCSS('border-bottom-width', '3px');
 });
