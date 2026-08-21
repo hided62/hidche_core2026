@@ -1,11 +1,11 @@
 <script setup lang="ts">
 import { formatServerDateTime } from '@sammo-ts/common/time/ServerDateTime';
-import { computed, onMounted, ref } from 'vue';
+import { computed, nextTick, onMounted, ref } from 'vue';
 import TournamentBracket from '../components/tournament/TournamentBracket.vue';
 import TournamentPageHeader from '../components/tournament/TournamentPageHeader.vue';
 import GeneralIdentity from '../components/ui/GeneralIdentity.vue';
 import { trpc } from '../utils/trpc';
-import { resolveTournamentStageName } from '../utils/tournamentStatus';
+import { resolveTournamentSectionVisibility, resolveTournamentStageName } from '../utils/tournamentStatus';
 
 type Snapshot = Awaited<ReturnType<typeof trpc.tournament.getSnapshot.query>>;
 
@@ -18,6 +18,7 @@ const actionMessage = ref<string | null>(null);
 const adminEnabled = ref(false);
 const activeFinalGroup = ref(0);
 const activePreliminaryGroup = ref(0);
+const tournamentContainer = ref<HTMLElement | null>(null);
 
 const typeNames = ['전력전', '통솔전', '일기토', '설전'];
 const typeStatNames = ['종합', '통솔', '무력', '지력'];
@@ -63,6 +64,12 @@ const myBetTotals = computed(() => betting.value?.myTotals as Record<number, num
 const isParticipant = computed(() =>
     (snapshot.value?.participants ?? []).some((participant) => participant.id === myGeneralId.value)
 );
+const sectionVisibility = computed(() =>
+    resolveTournamentSectionVisibility(snapshot.value?.state?.stage ?? 0, snapshot.value?.state?.winnerId)
+);
+const preliminaryGroupIdOf = (participant: Snapshot['participants'][number]): number | undefined =>
+    participant.preliminaryGroupId ??
+    (participant.groupId !== undefined && participant.groupId < 8 ? participant.groupId : undefined);
 const groups = computed(() =>
     Array.from({ length: 8 }, (_, index) =>
         (snapshot.value?.participants ?? [])
@@ -74,10 +81,7 @@ const preliminaryGroups = computed(() =>
     Array.from({ length: 8 }, (_, index) =>
         (snapshot.value?.participants ?? [])
             .filter((participant) => {
-                const groupId =
-                    participant.preliminaryGroupId ??
-                    (participant.groupId !== undefined && participant.groupId < 8 ? participant.groupId : undefined);
-                return groupId === index;
+                return preliminaryGroupIdOf(participant) === index;
             })
             .map((participant) => ({
                 ...participant,
@@ -113,15 +117,38 @@ const currentMatch = computed(() => {
     return matchesAt(state.stage).find((match) => !match.winnerId) ?? matchesAt(state.stage)[state.phase] ?? null;
 });
 
+const revealMyPreliminaryGroup = async (): Promise<number | undefined> => {
+    const participant = (snapshot.value?.participants ?? []).find((entry) => entry.id === myGeneralId.value);
+    if (!participant) return undefined;
+
+    const groupId = preliminaryGroupIdOf(participant);
+    if (groupId === undefined || groupId < 0 || groupId >= groupNames.length) return undefined;
+
+    activePreliminaryGroup.value = groupId;
+    await nextTick();
+    tournamentContainer.value
+        ?.querySelector<HTMLElement>(`[data-preliminary-group="${groupId}"]`)
+        ?.scrollIntoView({ block: 'center' });
+    return groupId;
+};
+
 const join = async () => {
     actionMessage.value = null;
+    let joined = false;
     try {
         await trpc.tournament.join.mutate();
-        actionMessage.value = '참가 신청이 반영되었습니다.';
+        joined = true;
     } catch (value) {
         actionMessage.value = errorText(value);
     } finally {
         await load();
+        if (joined) {
+            const groupId = await revealMyPreliminaryGroup();
+            actionMessage.value =
+                groupId === undefined
+                    ? '참가 신청이 반영되었습니다.'
+                    : `참가 신청이 반영되었습니다. ${groupNames[groupId]}조에 배정되었습니다.`;
+        }
     }
 };
 
@@ -159,7 +186,7 @@ const start = async () => {
 </script>
 
 <template>
-    <main id="tournament-container" class="legacy-page">
+    <main id="tournament-container" ref="tournamentContainer" class="legacy-page">
         <TournamentPageHeader class="bg0" active-page="tournament" title="삼모전 토너먼트" />
 
         <section class="toolbar bg0">
@@ -183,145 +210,152 @@ const start = async () => {
             ({{ resolveTournamentStageName(snapshot?.state?.stage ?? 0) }}, 개막시간 {{ openingTime }}, 경기당
             {{ snapshot?.state?.termSeconds ?? '-' }}초)
         </section>
-        <section class="section-title bg2">16강 승자전</section>
+        <template v-if="sectionVisibility.knockout">
+            <section class="section-title bg2">16강 승자전</section>
 
-        <TournamentBracket
-            class="bg0"
-            :participants="snapshot?.participants ?? []"
-            :matches="snapshot?.matches ?? []"
-            :winner-id="snapshot?.state?.winnerId"
-            :bet-totals="betTotals"
-            :my-bet-totals="myBetTotals"
-            :total-bet="totalBet"
-            :tournament-type="snapshot?.state?.type ?? 0"
-        />
+            <TournamentBracket
+                class="bg0"
+                :participants="snapshot?.participants ?? []"
+                :matches="snapshot?.matches ?? []"
+                :winner-id="snapshot?.state?.winnerId"
+                :bet-totals="betTotals"
+                :my-bet-totals="myBetTotals"
+                :total-bet="totalBet"
+                :tournament-type="snapshot?.state?.type ?? 0"
+            />
 
-        <section v-if="currentMatch" class="fight bg0">
-            <h2>{{ nameOf(currentMatch.attackerId) }} vs {{ nameOf(currentMatch.defenderId) }}</h2>
-            <p v-for="(line, index) in currentMatch.log ?? []" :key="index">{{ line }}</p>
-        </section>
+            <section v-if="currentMatch" class="fight bg0">
+                <h2>{{ nameOf(currentMatch.attackerId) }} vs {{ nameOf(currentMatch.defenderId) }}</h2>
+                <p v-for="(line, index) in currentMatch.log ?? []" :key="index">{{ line }}</p>
+            </section>
+        </template>
 
-        <section class="section-title groups-title bg2">조별 본선 순위</section>
-        <div class="group-tabs bg0" role="tablist" aria-label="본선 조 선택">
-            <button
-                v-for="(groupName, groupIndex) in groupNames"
-                :key="`final-tab-${groupName}`"
-                type="button"
-                role="tab"
-                :aria-selected="activeFinalGroup === groupIndex"
-                :class="{ active: activeFinalGroup === groupIndex }"
-                @click="activeFinalGroup = groupIndex"
-            >
-                {{ groupName }}조
-            </button>
-        </div>
-        <section class="group-grid bg0">
-            <table
-                v-for="(group, groupIndex) in groups"
-                :key="groupIndex"
-                :class="{ 'mobile-active': activeFinalGroup === groupIndex }"
-            >
-                <caption>
-                    {{
-                        groupNames[groupIndex]
-                    }}조
-                </caption>
-                <thead>
-                    <tr>
-                        <th>순</th>
-                        <th>장수</th>
-                        <th>{{ typeStatNames[snapshot?.state?.type ?? 0] }}</th>
-                        <th>경</th>
-                        <th>승</th>
-                        <th>무</th>
-                        <th>패</th>
-                        <th>점</th>
-                        <th>득</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    <tr v-for="rowIndex in 4" :key="rowIndex">
-                        <td>{{ rowIndex }}</td>
-                        <td class="general-cell">
-                            <GeneralIdentity
-                                v-if="group[rowIndex - 1]"
-                                :name="group[rowIndex - 1]!.name"
-                                :picture="group[rowIndex - 1]!.picture"
-                                :image-server="group[rowIndex - 1]!.imageServer"
-                            />
-                        </td>
-                        <td>{{ statOf(group[rowIndex - 1]) }}</td>
-                        <td>{{ gamesOf(group[rowIndex - 1]) }}</td>
-                        <td>{{ group[rowIndex - 1]?.win ?? '' }}</td>
-                        <td>{{ group[rowIndex - 1]?.draw ?? '' }}</td>
-                        <td>{{ group[rowIndex - 1]?.lose ?? '' }}</td>
-                        <td>{{ pointsOf(group[rowIndex - 1]) }}</td>
-                        <td>{{ group[rowIndex - 1]?.gl ?? '' }}</td>
-                    </tr>
-                </tbody>
-            </table>
-        </section>
+        <template v-if="sectionVisibility.final">
+            <section class="section-title groups-title bg2">조별 본선 순위</section>
+            <div class="group-tabs bg0" role="tablist" aria-label="본선 조 선택">
+                <button
+                    v-for="(groupName, groupIndex) in groupNames"
+                    :key="`final-tab-${groupName}`"
+                    type="button"
+                    role="tab"
+                    :aria-selected="activeFinalGroup === groupIndex"
+                    :class="{ active: activeFinalGroup === groupIndex }"
+                    @click="activeFinalGroup = groupIndex"
+                >
+                    {{ groupName }}조
+                </button>
+            </div>
+            <section class="group-grid bg0">
+                <table
+                    v-for="(group, groupIndex) in groups"
+                    :key="groupIndex"
+                    :class="{ 'mobile-active': activeFinalGroup === groupIndex }"
+                >
+                    <caption>
+                        {{
+                            groupNames[groupIndex]
+                        }}조
+                    </caption>
+                    <thead>
+                        <tr>
+                            <th>순</th>
+                            <th>장수</th>
+                            <th>{{ typeStatNames[snapshot?.state?.type ?? 0] }}</th>
+                            <th>경</th>
+                            <th>승</th>
+                            <th>무</th>
+                            <th>패</th>
+                            <th>점</th>
+                            <th>득</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr v-for="rowIndex in 4" :key="rowIndex">
+                            <td>{{ rowIndex }}</td>
+                            <td class="general-cell">
+                                <GeneralIdentity
+                                    v-if="group[rowIndex - 1]"
+                                    :name="group[rowIndex - 1]!.name"
+                                    :picture="group[rowIndex - 1]!.picture"
+                                    :image-server="group[rowIndex - 1]!.imageServer"
+                                />
+                            </td>
+                            <td>{{ statOf(group[rowIndex - 1]) }}</td>
+                            <td>{{ gamesOf(group[rowIndex - 1]) }}</td>
+                            <td>{{ group[rowIndex - 1]?.win ?? '' }}</td>
+                            <td>{{ group[rowIndex - 1]?.draw ?? '' }}</td>
+                            <td>{{ group[rowIndex - 1]?.lose ?? '' }}</td>
+                            <td>{{ pointsOf(group[rowIndex - 1]) }}</td>
+                            <td>{{ group[rowIndex - 1]?.gl ?? '' }}</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </section>
+        </template>
 
-        <section class="section-title groups-title bg2">조별 예선 순위</section>
-        <div class="group-tabs bg0" role="tablist" aria-label="예선 조 선택">
-            <button
-                v-for="(groupName, groupIndex) in groupNames"
-                :key="`preliminary-tab-${groupName}`"
-                type="button"
-                role="tab"
-                :aria-selected="activePreliminaryGroup === groupIndex"
-                :class="{ active: activePreliminaryGroup === groupIndex }"
-                @click="activePreliminaryGroup = groupIndex"
-            >
-                {{ groupName }}조
-            </button>
-        </div>
-        <section class="group-grid preliminary-grid bg0">
-            <table
-                v-for="(group, groupIndex) in preliminaryGroups"
-                :key="`preliminary-${groupIndex}`"
-                :class="{ 'mobile-active': activePreliminaryGroup === groupIndex }"
-            >
-                <caption>
-                    {{
-                        groupNames[groupIndex]
-                    }}조
-                </caption>
-                <thead>
-                    <tr>
-                        <th>순</th>
-                        <th>장수</th>
-                        <th>{{ typeStatNames[snapshot?.state?.type ?? 0] }}</th>
-                        <th>경</th>
-                        <th>승</th>
-                        <th>무</th>
-                        <th>패</th>
-                        <th>점</th>
-                        <th>득</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    <tr v-for="rowIndex in 8" :key="rowIndex">
-                        <td>{{ rowIndex }}</td>
-                        <td class="general-cell">
-                            <GeneralIdentity
-                                v-if="group[rowIndex - 1]"
-                                :name="group[rowIndex - 1]!.name"
-                                :picture="group[rowIndex - 1]!.picture"
-                                :image-server="group[rowIndex - 1]!.imageServer"
-                            />
-                        </td>
-                        <td>{{ statOf(group[rowIndex - 1]) }}</td>
-                        <td>{{ gamesOf(group[rowIndex - 1]) }}</td>
-                        <td>{{ group[rowIndex - 1]?.win ?? '' }}</td>
-                        <td>{{ group[rowIndex - 1]?.draw ?? '' }}</td>
-                        <td>{{ group[rowIndex - 1]?.lose ?? '' }}</td>
-                        <td>{{ pointsOf(group[rowIndex - 1]) }}</td>
-                        <td>{{ group[rowIndex - 1]?.gl ?? '' }}</td>
-                    </tr>
-                </tbody>
-            </table>
-        </section>
+        <template v-if="sectionVisibility.preliminary">
+            <section class="section-title groups-title bg2">조별 예선 순위</section>
+            <div class="group-tabs bg0" role="tablist" aria-label="예선 조 선택">
+                <button
+                    v-for="(groupName, groupIndex) in groupNames"
+                    :key="`preliminary-tab-${groupName}`"
+                    type="button"
+                    role="tab"
+                    :aria-selected="activePreliminaryGroup === groupIndex"
+                    :class="{ active: activePreliminaryGroup === groupIndex }"
+                    @click="activePreliminaryGroup = groupIndex"
+                >
+                    {{ groupName }}조
+                </button>
+            </div>
+            <section class="group-grid preliminary-grid bg0">
+                <table
+                    v-for="(group, groupIndex) in preliminaryGroups"
+                    :key="`preliminary-${groupIndex}`"
+                    :data-preliminary-group="groupIndex"
+                    :class="{ 'mobile-active': activePreliminaryGroup === groupIndex }"
+                >
+                    <caption>
+                        {{
+                            groupNames[groupIndex]
+                        }}조
+                    </caption>
+                    <thead>
+                        <tr>
+                            <th>순</th>
+                            <th>장수</th>
+                            <th>{{ typeStatNames[snapshot?.state?.type ?? 0] }}</th>
+                            <th>경</th>
+                            <th>승</th>
+                            <th>무</th>
+                            <th>패</th>
+                            <th>점</th>
+                            <th>득</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr v-for="rowIndex in 8" :key="rowIndex">
+                            <td>{{ rowIndex }}</td>
+                            <td class="general-cell">
+                                <GeneralIdentity
+                                    v-if="group[rowIndex - 1]"
+                                    :name="group[rowIndex - 1]!.name"
+                                    :picture="group[rowIndex - 1]!.picture"
+                                    :image-server="group[rowIndex - 1]!.imageServer"
+                                />
+                            </td>
+                            <td>{{ statOf(group[rowIndex - 1]) }}</td>
+                            <td>{{ gamesOf(group[rowIndex - 1]) }}</td>
+                            <td>{{ group[rowIndex - 1]?.win ?? '' }}</td>
+                            <td>{{ group[rowIndex - 1]?.draw ?? '' }}</td>
+                            <td>{{ group[rowIndex - 1]?.lose ?? '' }}</td>
+                            <td>{{ pointsOf(group[rowIndex - 1]) }}</td>
+                            <td>{{ group[rowIndex - 1]?.gl ?? '' }}</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </section>
+        </template>
 
         <div class="legacy-bracket-table-signature" hidden>
             <table v-for="(rowCount, tableIndex) in [11, 11, 11, 10]" :key="tableIndex">
