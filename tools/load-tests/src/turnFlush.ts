@@ -105,6 +105,7 @@ const includeSubMillisecondGameTick = (turnTime: Date): Date =>
 export const measureTurnFlush = async (options: {
     config: LoadConfig;
     confirmation: string;
+    paced?: boolean;
     env?: NodeJS.ProcessEnv;
 }) => {
     const env = options.env ?? process.env;
@@ -153,9 +154,8 @@ export const measureTurnFlush = async (options: {
     const activityPromise = sampleActivity();
 
     const histogram = monitorEventLoopDelay({ resolution: 20 });
-    histogram.enable();
-    const cpuStart = process.cpuUsage();
-    const wallStartNs = process.hrtime.bigint();
+    let cpuStart: NodeJS.CpuUsage | null = null;
+    let wallStartNs: bigint | null = null;
     let maxRssBytes = process.memoryUsage().rss;
     const generalTransactionMs: number[] = [];
     const monthlyTransactionMs: number[] = [];
@@ -167,6 +167,10 @@ export const measureTurnFlush = async (options: {
     let endYearMonth: string | null = null;
     let initialGeneralCount: number | null = null;
     let finalGeneralCount: number | null = null;
+    let scheduledStartAtEpochMs: number | null = null;
+    let actualStartAtEpochMs: number | null = null;
+    const scheduleLagMs: number[] = [];
+    let backdatedGeneralTurns = 0;
     let runError: unknown;
 
     try {
@@ -188,6 +192,21 @@ export const measureTurnFlush = async (options: {
         const tickMinutes = Math.max(1, Math.round(initialState.tickSeconds / 60));
         const boundary = getNextTickTime(initialState.lastTurnTime, tickMinutes);
         let checkpoint: TurnCheckpoint | undefined = await runtime.stateStore.loadCheckpoint();
+
+        if (env.LOAD_TEST_START_AT_EPOCH_MS) {
+            scheduledStartAtEpochMs = Number(env.LOAD_TEST_START_AT_EPOCH_MS);
+            if (!Number.isSafeInteger(scheduledStartAtEpochMs)) {
+                throw new Error('LOAD_TEST_START_AT_EPOCH_MS must be an integer epoch in milliseconds');
+            }
+            const waitMs = scheduledStartAtEpochMs - Date.now();
+            if (waitMs > 120_000) throw new Error('LOAD_TEST_START_AT_EPOCH_MS must be within the next two minutes');
+            if (waitMs > 0) await new Promise((resolve) => setTimeout(resolve, waitMs));
+        }
+        actualStartAtEpochMs = Date.now();
+        const pacingStarted = performance.now();
+        histogram.enable();
+        cpuStart = process.cpuUsage();
+        wallStartNs = process.hrtime.bigint();
 
         const execute = async (target: Date, maxGenerals: number): Promise<TurnRunResult> => {
             const started = performance.now();
@@ -219,6 +238,16 @@ export const measureTurnFlush = async (options: {
         while (true) {
             const nextGeneral = await runtime.stateStore.loadNextGeneralTurnTime();
             if (!nextGeneral || nextGeneral.getTime() >= boundary.getTime()) break;
+            if (options.paced) {
+                const targetElapsedMs = nextGeneral.getTime() - initialState.lastTurnTime.getTime();
+                if (targetElapsedMs < 0) {
+                    backdatedGeneralTurns += 1;
+                } else {
+                    const remainingMs = targetElapsedMs - (performance.now() - pacingStarted);
+                    if (remainingMs > 0) await new Promise((resolve) => setTimeout(resolve, remainingMs));
+                    scheduleLagMs.push(Math.max(0, performance.now() - pacingStarted - targetElapsedMs));
+                }
+            }
             const result = await execute(includeSubMillisecondGameTick(nextGeneral), 1);
             if (result.processedGenerals !== 1 || result.processedTurns !== 0) {
                 throw new Error(
@@ -227,6 +256,11 @@ export const measureTurnFlush = async (options: {
             }
         }
 
+        if (options.paced) {
+            const remainingMs =
+                options.config.capacity.turnIntervalMs - (performance.now() - pacingStarted);
+            if (remainingMs > 0) await new Promise((resolve) => setTimeout(resolve, remainingMs));
+        }
         const monthly = await execute(boundary, 200);
         if (monthly.processedTurns !== 1) {
             throw new Error('turn-flush measurement did not cross exactly one monthly boundary');
@@ -275,6 +309,9 @@ export const measureTurnFlush = async (options: {
     }
     await observer.disconnect();
     histogram.disable();
+    if (cpuStart === null || wallStartNs === null || actualStartAtEpochMs === null) {
+        throw new Error('turn-flush measurement did not start its measured interval');
+    }
     const elapsedMs = Number(process.hrtime.bigint() - wallStartNs) / 1_000_000;
     const cpu = process.cpuUsage(cpuStart);
     const cpuMs = (cpu.user + cpu.system) / 1_000;
@@ -287,7 +324,9 @@ export const measureTurnFlush = async (options: {
             fixtureSha256: fixture.fixtureSha256,
             capacity: options.config.capacity,
         },
-        mode: 'chronological-one-general-per-transaction-plus-month-boundary',
+        mode: options.paced
+            ? 'wall-clock-paced-one-general-per-transaction-plus-month-boundary'
+            : 'chronological-one-general-per-transaction-plus-month-boundary',
         startYearMonth,
         endYearMonth,
         elapsedMs: round(elapsedMs),
@@ -305,6 +344,16 @@ export const measureTurnFlush = async (options: {
             generalTransaction: summarizeDistribution(generalTransactionMs),
             monthlyTransaction: summarizeDistribution(monthlyTransactionMs),
             redisPublication: summarizeDistribution(publicationMs),
+        },
+        scheduling: {
+            paced: options.paced === true,
+            configuredTurnIntervalMs: options.config.capacity.turnIntervalMs,
+            scheduledStartAtEpochMs,
+            actualStartAtEpochMs,
+            startDelayMs:
+                scheduledStartAtEpochMs === null ? null : Math.max(0, actualStartAtEpochMs - scheduledStartAtEpochMs),
+            backdatedGeneralTurns,
+            generalScheduleLagMs: summarizeDistribution(scheduleLagMs),
         },
         postgres: {
             statsScope: 'database-wide-including-observer-sampler',
