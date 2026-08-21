@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { JosaUtil } from '@sammo-ts/common/util/JosaUtil';
 import { computed, onMounted, reactive, ref, watch } from 'vue';
 import SortableStringList from '../components/ui/SortableStringList';
 import { trpc } from '../utils/trpc';
@@ -365,7 +366,7 @@ const dieOnPrestart = async () => {
 };
 
 const dropItem = (item: { key: ItemSlotKey; slotName: string; displayName: string | null; code: string | null }) =>
-    confirmMutation(`${item.displayName ?? item.slotName}을(를) 버리시겠습니까?`, () =>
+    confirmMutation(`${JosaUtil.put(item.displayName ?? item.slotName, '을')} 버리시겠습니까?`, () =>
         trpc.general.dropItem.mutate({ itemType: item.key })
     );
 

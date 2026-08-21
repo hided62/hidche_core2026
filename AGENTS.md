@@ -340,6 +340,10 @@ docs에서 확인해 주세요. 존재하지 않는 명령을 오래된 report�
 - Vue component는 PascalCase, composable은 `useX`, 변수/함수는 camelCase,
   type/class는 PascalCase를 사용해 주세요.
 - 한국어 domain identifier와 설명은 의미가 더 명확할 때 유지해 주세요.
+- toast·dialog·aria-label·로그처럼 사용자에게 노출하는 동적 한국어 문구에 조사를
+  붙일 때는 `@sammo-ts/common/util/JosaUtil`의 `put()` 또는 `pick()`을 사용해 주세요.
+  `` `${value}을(를)` ``, `` `${value}이(가)` ``, `` `${value}(으)로` `` 같은 병기 표기를
+  실제 제품 문구에 남기지 말고, 받침 있는 값과 없는 값의 최종 표시 문구를 검증해 주세요.
 - action/command/전투 코드에는 한국 독자가 side effect와 ref 근거를 이해할
   수 있는 주석을 남기되 코드의 반복 설명은 피해 주세요.
 - 기능 이관과 무관한 대규모 formatting/refactor를 같은 변경에 섞지 말아 주세요.
