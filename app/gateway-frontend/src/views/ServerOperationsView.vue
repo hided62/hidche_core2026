@@ -8,6 +8,7 @@ import { useToast } from '../composables/useToast';
 import AdminConsoleLayout from '../layouts/AdminConsoleLayout.vue';
 import {
     normalizeProfileResetDefaults,
+    PROFILE_TURN_TERM_MINUTES,
     RESET_AUTORUN_LABELS,
     RESET_OPTION_COPY,
     SYSTEM_PROFILE_RESET_DEFAULTS,
@@ -1078,11 +1079,7 @@ onBeforeUnmount(() => {
                                 class="w-full rounded border border-zinc-700 bg-zinc-950 px-3 py-2 text-sm text-white"
                                 data-testid="reset-turn-term"
                             >
-                                <option
-                                    v-for="minutes in [1, 2, 3, 4, 5, 6, 10, 12, 15, 20, 24, 30, 40, 60, 120]"
-                                    :key="minutes"
-                                    :value="minutes"
-                                >
+                                <option v-for="minutes in PROFILE_TURN_TERM_MINUTES" :key="minutes" :value="minutes">
                                     {{ minutes }}분
                                 </option>
                             </select>
