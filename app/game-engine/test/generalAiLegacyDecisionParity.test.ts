@@ -955,6 +955,57 @@ describe('legacy NPC AI final-decision parity', () => {
         });
     });
 
+    it.each([
+        [101, 100, 10_100],
+        [140, 100, 14_000],
+        [256, 255, 25_600],
+        [300, 140, 30_000],
+        [300, 255, 30_000],
+    ])(
+        'requests the command-resolved full crew above the cached AI cap (leadership=%i, cached=%i)',
+        (leadership, cachedLeadership, amount) => {
+            const ai = makeAi({
+                dipState: 2,
+                city: { population: 100_000, populationMax: 100_000 },
+                general: {
+                    stats: { leadership, strength: 70, intelligence: 70 },
+                    gold: 100_000,
+                    rice: 100_000,
+                    meta: { killturn: 100, fullLeadership: cachedLeadership, rank_killcrew: 0, rank_deathcrew: 1 },
+                },
+                rng: makeRng([], [0, 0]),
+            });
+
+            expect(do징병(ai)).toMatchObject({
+                action: 'che_징병',
+                args: { crewType: 1, amount },
+            });
+        }
+    );
+
+    it('uses recruitment stat modules when resolving uncapped NPC crew capacity', () => {
+        const ai = makeAi({
+            dipState: 2,
+            city: { population: 100_000, populationMax: 100_000 },
+            general: {
+                stats: { leadership: 240, strength: 70, intelligence: 70 },
+                gold: 100_000,
+                rice: 100_000,
+                meta: { killturn: 100, fullLeadership: 100, rank_killcrew: 0, rank_deathcrew: 1 },
+            },
+            generalActionModules: singleActionModuleStack({
+                eventHandlers: {},
+                onCalcStat: (_context, statName, value) => (statName === 'leadership' ? value * 1.25 : value),
+            }),
+            rng: makeRng([], [0, 0]),
+        });
+
+        expect(do징병(ai)).toMatchObject({
+            action: 'che_징병',
+            args: { crewType: 1, amount: 30_000 },
+        });
+    });
+
     it('uses the refillable same-type crew amount for the legacy gold-cost halving threshold', () => {
         const ai = makeAi({
             dipState: 2,

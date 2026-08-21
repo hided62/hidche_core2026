@@ -69,7 +69,31 @@ export const do징병 = (ai: GeneralAI) => {
     }
 
     const generalMeta = asRecord(ai.general.meta);
-    const fullLeadership = readMetaNumber(generalMeta, 'fullLeadership', ai.general.stats.leadership);
+    const recruitContext = {
+        general: ai.general,
+        nation,
+        ...(ai.worldRef
+            ? {
+                  worldView: {
+                      listGenerals: () => ai.worldRef!.listGenerals(),
+                      listGeneralsByCity: (cityId: number) =>
+                          ai.worldRef!.listGenerals().filter((candidate) => candidate.cityId === cityId),
+                      listNations: () => ai.worldRef!.listNations(),
+                  },
+              }
+            : {}),
+        time: {
+            year: ai.world.currentYear,
+            month: ai.world.currentMonth,
+            startYear: ai.startYear,
+        },
+    };
+    const recruitment = new RecruitmentCommandResolver(ai.commandEnv.generalActionModules ?? [], ai.commandEnv);
+    // The cached AI stat follows the scenario/global classification cap, while
+    // che_징병 resolves the actual command capacity from the general's current
+    // stat and modules. NPC recruitment must request that same uncapped amount;
+    // otherwise a 300-leadership general can be stuck at a 100/140/255 cap.
+    const fullLeadership = recruitment.resolveFullLeadership(recruitContext);
     trace('population-policy', {
         population: city.population,
         populationMax: city.populationMax,
@@ -175,26 +199,6 @@ export const do징병 = (ai: GeneralAI) => {
     // whether to halve the requested crew. In particular, that command caps
     // the charge at the actually refillable amount when the selected type is
     // already equipped, then applies traits/items and legacy rounding.
-    const recruitContext = {
-        general: ai.general,
-        nation,
-        ...(ai.worldRef
-            ? {
-                  worldView: {
-                      listGenerals: () => ai.worldRef!.listGenerals(),
-                      listGeneralsByCity: (cityId: number) =>
-                          ai.worldRef!.listGenerals().filter((candidate) => candidate.cityId === cityId),
-                      listNations: () => ai.worldRef!.listNations(),
-                  },
-              }
-            : {}),
-        time: {
-            year: ai.world.currentYear,
-            month: ai.world.currentMonth,
-            startYear: ai.startYear,
-        },
-    };
-    const recruitment = new RecruitmentCommandResolver(ai.commandEnv.generalActionModules ?? [], ai.commandEnv);
     const goldCost = recruitment.getCost(recruitContext, crewTypeId, crewAmount, picked).gold;
     const killCrew = readMetaNumber(generalMeta, 'rank_killcrew', readMetaNumber(generalMeta, 'killcrew', 0));
     const deathCrew = readMetaNumber(generalMeta, 'rank_deathcrew', readMetaNumber(generalMeta, 'deathcrew', 0));
