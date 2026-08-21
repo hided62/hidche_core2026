@@ -297,6 +297,7 @@ describe('in-game my information ownership', () => {
                     statUpgradeLimit: 20,
                     dex: [350, 1_375, 3_500, 7_125, 12_650],
                 },
+                bill: 1_000,
             },
             city: {
                 population: 322_886,
@@ -433,6 +434,7 @@ describe('in-game my information ownership', () => {
                     stats: { attack: 100, defence: 150, speed: 7, avoid: 10, magicCoef: 0, cost: 9, rice: 9 },
                 },
                 progression: { experienceLevel: 4, dedicationLevel: 2, dedicationText: '29품관' },
+                bill: 800,
                 itemNames: { horse: '노새(+3)' },
                 itemInfo: { horse: '통솔 +3' },
             },
@@ -855,6 +857,7 @@ describe('battle-center general and user permissions', () => {
                         statUpgradeLimit: 20,
                         dex: [0, 0, 0, 0, 0],
                     },
+                    bill: 600,
                     serviceYears: 3,
                     battleStats: {
                         kills: 5,
