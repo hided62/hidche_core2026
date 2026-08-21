@@ -1,16 +1,17 @@
 <script setup lang="ts">
 import { onBeforeUnmount, ref, watch } from 'vue';
 import { EditorContent, useEditor } from '@tiptap/vue-3';
+import { BubbleMenu } from '@tiptap/vue-3/menus';
 import StarterKit from '@tiptap/starter-kit';
 import Image from '@tiptap/extension-image';
 import TextAlign from '@tiptap/extension-text-align';
 import { TextStyleKit } from '@tiptap/extension-text-style';
 import { trpc } from '../../utils/trpc';
 
-const props = withDefaults(
-    defineProps<{ modelValue: string; maxLength?: number; ariaLabel?: string }>(),
-    { maxLength: 16384, ariaLabel: 'HTML 편집기' }
-);
+const props = withDefaults(defineProps<{ modelValue: string; maxLength?: number; ariaLabel?: string }>(), {
+    maxLength: 16384,
+    ariaLabel: 'HTML 편집기',
+});
 const emit = defineEmits<{ (event: 'update:modelValue', value: string): void }>();
 
 const fontFamilies = [
@@ -24,11 +25,41 @@ const fileInput = ref<HTMLInputElement | null>(null);
 const uploadBusy = ref(false);
 const uploadError = ref<string | null>(null);
 
+type Alignment = 'left' | 'center' | 'right';
+type ImageAlignment = Alignment | 'float-left' | 'float-right';
+
+const imageAlignmentControls: ReadonlyArray<{ value: ImageAlignment; label: string }> = [
+    { value: 'float-left', label: '왼쪽 붙이기' },
+    { value: 'left', label: '왼쪽 정렬' },
+    { value: 'center', label: '가운데 정렬' },
+    { value: 'right', label: '오른쪽 정렬' },
+    { value: 'float-right', label: '오른쪽 붙이기' },
+];
+
+const AlignedImage = Image.extend({
+    addAttributes() {
+        return {
+            ...this.parent?.(),
+            align: {
+                default: null,
+                parseHTML: (element) => {
+                    for (const control of imageAlignmentControls) {
+                        if (element.classList.contains(`custom-image-align-${control.value}`)) return control.value;
+                    }
+                    return null;
+                },
+                renderHTML: (attributes) =>
+                    attributes.align ? { class: `custom-image-align-${String(attributes.align)}` } : {},
+            },
+        };
+    },
+});
+
 const editor = useEditor({
     content: props.modelValue,
     extensions: [
         StarterKit.configure({ link: { openOnClick: false } }),
-        Image.configure({ inline: false, allowBase64: false }),
+        AlignedImage.configure({ inline: false, allowBase64: false }),
         TextAlign.configure({ types: ['heading', 'paragraph'], alignments: ['left', 'center', 'right'] }),
         TextStyleKit,
     ],
@@ -85,11 +116,30 @@ const setColor = (event: Event, kind: 'foreground' | 'background') => {
 
 const clearColors = () => editor.value?.chain().focus().unsetColor().unsetBackgroundColor().run();
 
+const setAlignment = (alignment: Alignment) => {
+    if (!editor.value) return;
+    if (editor.value.isActive('image')) {
+        editor.value.chain().focus().updateAttributes('image', { align: alignment }).run();
+        return;
+    }
+    editor.value.chain().focus().setTextAlign(alignment).run();
+};
+
+const isAlignmentActive = (alignment: Alignment) =>
+    editor.value?.isActive('image')
+        ? editor.value.isActive('image', { align: alignment })
+        : editor.value?.isActive({ textAlign: alignment });
+
+const setImageAlignment = (alignment: ImageAlignment) =>
+    editor.value?.chain().focus().updateAttributes('image', { align: alignment }).run();
+
 const readFileAsDataUrl = (file: File) =>
     new Promise<string>((resolve, reject) => {
         const reader = new FileReader();
         reader.onload = () =>
-            typeof reader.result === 'string' ? resolve(reader.result) : reject(new Error('이미지를 읽을 수 없습니다.'));
+            typeof reader.result === 'string'
+                ? resolve(reader.result)
+                : reject(new Error('이미지를 읽을 수 없습니다.'));
         reader.onerror = () => reject(new Error('이미지를 읽는 중 오류가 발생했습니다.'));
         reader.readAsDataURL(file);
     });
@@ -164,7 +214,12 @@ onBeforeUnmount(() => editor.value?.destroy());
                 <span class="legacy-html-editor__sr-only">글꼴</span>
                 <select aria-label="글꼴" @change="setFontFamily">
                     <option value="">글꼴</option>
-                    <option v-for="font in fontFamilies" :key="font.value" :value="font.value" :style="{ fontFamily: font.value }">
+                    <option
+                        v-for="font in fontFamilies"
+                        :key="font.value"
+                        :value="font.value"
+                        :style="{ fontFamily: font.value }"
+                    >
                         {{ font.label }}
                     </option>
                 </select>
@@ -173,7 +228,9 @@ onBeforeUnmount(() => editor.value?.destroy());
                 <span class="legacy-html-editor__sr-only">크기</span>
                 <select aria-label="글꼴 크기" @change="setFontSize">
                     <option value="">크기</option>
-                    <option v-for="size in fontSizes" :key="size" :value="size" :style="{ fontSize: size }">{{ size }}</option>
+                    <option v-for="size in fontSizes" :key="size" :value="size" :style="{ fontSize: size }">
+                        {{ size }}
+                    </option>
                 </select>
             </label>
             <label class="legacy-html-editor__color" title="글자색">
@@ -226,30 +283,36 @@ onBeforeUnmount(() => editor.value?.destroy());
             </button>
             <button
                 type="button"
-                title="왼쪽 정렬"
+                title="왼쪽 정렬 (선택한 이미지에도 적용)"
                 aria-label="왼쪽 정렬"
-                :class="{ active: editor?.isActive({ textAlign: 'left' }) }"
-                @click="editor?.chain().focus().setTextAlign('left').run()"
+                :class="{ active: isAlignmentActive('left') }"
+                @click="setAlignment('left')"
             >
-                ≡
+                <svg class="legacy-html-editor__align-icon" viewBox="0 0 16 14" aria-hidden="true">
+                    <path d="M1 1h14v2H1zM1 5h9v2H1zM1 9h14v2H1zM1 13h9v1H1z" />
+                </svg>
             </button>
             <button
                 type="button"
-                title="가운데 정렬"
+                title="가운데 정렬 (선택한 이미지에도 적용)"
                 aria-label="가운데 정렬"
-                :class="{ active: editor?.isActive({ textAlign: 'center' }) }"
-                @click="editor?.chain().focus().setTextAlign('center').run()"
+                :class="{ active: isAlignmentActive('center') }"
+                @click="setAlignment('center')"
             >
-                ≡
+                <svg class="legacy-html-editor__align-icon" viewBox="0 0 16 14" aria-hidden="true">
+                    <path d="M1 1h14v2H1zM3.5 5h9v2h-9zM1 9h14v2H1zM3.5 13h9v1h-9z" />
+                </svg>
             </button>
             <button
                 type="button"
-                title="오른쪽 정렬"
+                title="오른쪽 정렬 (선택한 이미지에도 적용)"
                 aria-label="오른쪽 정렬"
-                :class="{ active: editor?.isActive({ textAlign: 'right' }) }"
-                @click="editor?.chain().focus().setTextAlign('right').run()"
+                :class="{ active: isAlignmentActive('right') }"
+                @click="setAlignment('right')"
             >
-                ≡
+                <svg class="legacy-html-editor__align-icon" viewBox="0 0 16 14" aria-hidden="true">
+                    <path d="M1 1h14v2H1zM6 5h9v2H6zM1 9h14v2H1zM6 13h9v1H6z" />
+                </svg>
             </button>
             <button
                 type="button"
@@ -285,6 +348,21 @@ onBeforeUnmount(() => editor.value?.destroy());
                 Tx
             </button>
         </div>
+        <BubbleMenu v-if="editor" v-show="editor.isActive('image')" :editor="editor">
+            <div class="legacy-html-editor__image-toolbar" role="toolbar" aria-label="이미지 정렬">
+                <span>이미지 정렬</span>
+                <button
+                    v-for="control in imageAlignmentControls"
+                    :key="control.value"
+                    type="button"
+                    :class="{ active: editor.isActive('image', { align: control.value }) }"
+                    :aria-label="`이미지 ${control.label}`"
+                    @click="setImageAlignment(control.value)"
+                >
+                    {{ control.label }}
+                </button>
+            </div>
+        </BubbleMenu>
         <EditorContent :editor="editor" />
         <p v-if="uploadError" class="legacy-html-editor__error" role="alert">{{ uploadError }}</p>
     </div>
@@ -329,6 +407,44 @@ onBeforeUnmount(() => editor.value?.destroy());
     opacity: 0.65;
 }
 .legacy-html-editor__toolbar button.active {
+    background: #555;
+}
+.legacy-html-editor__align-icon {
+    display: block;
+    width: 16px;
+    height: 14px;
+    fill: currentcolor;
+}
+.legacy-html-editor__image-toolbar {
+    display: flex;
+    align-items: center;
+    gap: 2px;
+    border: 1px solid #9dc8f0;
+    padding: 3px;
+    background: #303030;
+    color: #fff;
+    box-shadow: 0 2px 6px rgb(0 0 0 / 45%);
+}
+.legacy-html-editor__image-toolbar span {
+    padding: 0 4px;
+    font-size: 12px;
+}
+.legacy-html-editor__image-toolbar button {
+    border: 1px solid transparent;
+    border-radius: 0;
+    padding: 3px 6px;
+    background: #303030;
+    color: inherit;
+    cursor: pointer;
+    font: inherit;
+}
+.legacy-html-editor__image-toolbar button:hover,
+.legacy-html-editor__image-toolbar button:focus-visible {
+    border-color: #9dc8f0;
+    outline: 1px solid #9dc8f0;
+    background: #444;
+}
+.legacy-html-editor__image-toolbar button.active {
     background: #555;
 }
 .legacy-html-editor__select,
@@ -401,5 +517,47 @@ button[aria-label='오른쪽 정렬'] {
 }
 :deep(.legacy-html-editor__content p) {
     margin: 0 0 0.4em;
+}
+:deep(.legacy-html-editor__content ol),
+:deep(.legacy-html-editor__content ul) {
+    margin: 0 0 0.4em;
+    padding-left: 2em;
+    list-style-position: outside;
+}
+:deep(.legacy-html-editor__content ol) {
+    list-style-type: decimal;
+}
+:deep(.legacy-html-editor__content ul) {
+    list-style-type: disc;
+}
+:deep(.legacy-html-editor__content li > p) {
+    margin: 0;
+}
+:deep(.legacy-html-editor__content img.ProseMirror-selectednode) {
+    outline: 2px solid #9dc8f0;
+}
+:deep(.legacy-html-editor__content img) {
+    max-width: 100%;
+}
+:deep(.legacy-html-editor__content img.custom-image-align-left) {
+    display: block;
+    margin-right: auto;
+    margin-left: 0;
+}
+:deep(.legacy-html-editor__content img.custom-image-align-center) {
+    display: block;
+    margin-right: auto;
+    margin-left: auto;
+}
+:deep(.legacy-html-editor__content img.custom-image-align-right) {
+    display: block;
+    margin-right: 0;
+    margin-left: auto;
+}
+:deep(.legacy-html-editor__content img.custom-image-align-float-left) {
+    float: left;
+}
+:deep(.legacy-html-editor__content img.custom-image-align-float-right) {
+    float: right;
 }
 </style>

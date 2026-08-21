@@ -45,6 +45,7 @@ import {
 import {
     resolveGeneralTypeCall,
     resolveLeadershipBonus,
+    resolveNextTurnMonthOffset,
     resolveRefreshScoreText,
     resolveRemainingMinutes,
 } from '../../services/generalBasicCardProjection.js';
@@ -265,6 +266,7 @@ export const getGeneralContext = async (ctx: GameApiContext) => {
             dedication: true,
             age: true,
             turnTime: true,
+            turnTick: true,
             recentWarTime: true,
             crewTypeId: true,
             personalCode: true,
@@ -333,7 +335,14 @@ export const getGeneralContext = async (ctx: GameApiContext) => {
                   })
                 : Promise.resolve(NEUTRAL_NATION_CONTEXT),
             ctx.db.worldState.findFirst({
-                select: { currentYear: true, currentMonth: true, tickSeconds: true, config: true, meta: true },
+                select: {
+                    currentYear: true,
+                    currentMonth: true,
+                    tickSeconds: true,
+                    lastTurnTick: true,
+                    config: true,
+                    meta: true,
+                },
             }),
             officerCityId > 0
                 ? ctx.db.city.findUnique({ where: { id: officerCityId }, select: { name: true } })
@@ -521,6 +530,13 @@ export const getGeneralContext = async (ctx: GameApiContext) => {
             age: general.age,
             retirementYear,
             turnTime: general.turnTime.toISOString(),
+            nextTurnMonthOffset: resolveNextTurnMonthOffset({
+                turnTime: general.turnTime,
+                turnTick: general.turnTick,
+                lastExecuted: parsedLastExecuted,
+                lastTurnTick: worldState?.lastTurnTick,
+                turnSeconds: worldState?.tickSeconds ?? 0,
+            }),
             recentWar: general.recentWarTime?.toISOString() ?? null,
             defenceTrain: settings.defence_train,
             killTurn: readNumber(metaRecord.killturn ?? metaRecord.killTurn, 0),

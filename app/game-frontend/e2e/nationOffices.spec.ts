@@ -626,6 +626,21 @@ test('finance editor preserves Ref formatting controls and uploads images throug
     expect(await editorFrame.evaluate((element) => getComputedStyle(element).backgroundColor)).toBe('rgba(0, 0, 0, 0)');
     expect(await editor.evaluate((element) => getComputedStyle(element).backgroundColor)).toBe('rgba(0, 0, 0, 0)');
 
+    await editor.fill('첫 번째 항목');
+    await page.getByRole('button', { name: '번호 목록' }).click();
+    await expect(editor.locator('ol')).toHaveCSS('list-style-type', 'decimal');
+    await expect(editor.locator('li')).toContainText('첫 번째 항목');
+    await screenshot(page, 'core-finance-numbered-list-desktop.png');
+    await page.getByRole('button', { name: '번호 목록' }).click();
+
+    const alignmentIcons = await page
+        .getByRole('toolbar', { name: '서식' })
+        .getByRole('button', { name: /^(왼쪽|가운데|오른쪽) 정렬$/ })
+        .locator('svg')
+        .evaluateAll((icons) => icons.map((icon) => icon.innerHTML));
+    expect(alignmentIcons).toHaveLength(3);
+    expect(new Set(alignmentIcons).size).toBe(3);
+
     await editor.fill('서식 검증');
     await editor.press('Control+A');
     await page.getByRole('combobox', { name: '글꼴', exact: true }).selectOption('Gungsuh, serif');
@@ -663,10 +678,26 @@ test('finance editor preserves Ref formatting controls and uploads images throug
 
     await expect.poll(() => state.uploadDataUrl).toMatch(/^data:image\/png;base64,/);
     await expect(editor.locator('hr')).toHaveCount(1);
-    await expect(editor.locator('img')).toHaveAttribute(
+    const uploadedImage = editor.locator('img');
+    await expect(uploadedImage).toHaveAttribute(
         'src',
         'https://sam-image.hided.net/uploads/core2026/0123456789abcdef0123456789abcdef.webp'
     );
+
+    await uploadedImage.click();
+    const imageToolbar = page.getByRole('toolbar', { name: '이미지 정렬' });
+    await expect(imageToolbar).toBeVisible();
+    await expect(imageToolbar.getByRole('button')).toHaveCount(5);
+    await screenshot(page, 'core-finance-image-toolbar-desktop.png');
+    await imageToolbar.getByRole('button', { name: '이미지 오른쪽 정렬' }).click();
+    await expect(uploadedImage).toHaveClass(/custom-image-align-right/);
+    await expect(uploadedImage).toHaveCSS('display', 'block');
+    await expect(uploadedImage).toHaveCSS('margin-right', '0px');
+
+    await page.getByRole('toolbar', { name: '서식' }).getByRole('button', { name: '가운데 정렬' }).click();
+    await expect(uploadedImage).toHaveClass(/custom-image-align-center/);
+    await uploadedImage.click();
+    await imageToolbar.getByRole('button', { name: '이미지 오른쪽 정렬' }).click();
 
     const imageButton = page.getByRole('button', { name: '이미지', exact: true });
     await imageButton.hover();
@@ -693,9 +724,52 @@ test('finance editor preserves Ref formatting controls and uploads images throug
     expect(state.noticeMutationInput).toContain('background-color: rgb(254, 220, 186)');
     expect(state.noticeMutationInput).toContain('text-align: center');
     expect(state.noticeMutationInput).toContain('<hr>');
+    expect(state.noticeMutationInput).toContain('class="custom-image-align-right"');
     expect(state.noticeMutationInput).toContain(
         'https://sam-image.hided.net/uploads/core2026/0123456789abcdef0123456789abcdef.webp'
     );
+});
+
+test('recruitment editor keeps the Ref 870px content width in desktop and scales it to 500px on mobile', async ({
+    page,
+}) => {
+    await installFixture(page, { role: 'head', rate: 20 });
+    await page.setViewportSize({ width: 1000, height: 900 });
+    await gotoOffice(page, 'nation/finance');
+    await page.getByRole('button', { name: '임관 권유문 수정' }).click();
+
+    const form = page.locator('#scout-message-form');
+    const editorFrame = form.locator('.legacy-html-editor');
+    const desktop = await form.evaluate((element) => {
+        const frame = element.querySelector<HTMLElement>('.legacy-html-editor')!;
+        const formRect = element.getBoundingClientRect();
+        const frameRect = frame.getBoundingClientRect();
+        return {
+            formWidth: formRect.width,
+            frameWidth: frameRect.width,
+            leftInset: frameRect.left - formRect.left,
+            rightInset: formRect.right - frameRect.right,
+        };
+    });
+    expect(desktop.formWidth).toBe(1000);
+    expect(desktop.frameWidth).toBe(870);
+    expect(desktop.leftInset).toBe(130);
+    expect(desktop.rightInset).toBe(0);
+
+    await page.setViewportSize({ width: 500, height: 900 });
+    const mobile = await editorFrame.evaluate((element) => {
+        const rect = element.getBoundingClientRect();
+        return {
+            visualWidth: rect.width,
+            sourceWidth: element.clientWidth,
+            toolbarWidth: element.querySelector<HTMLElement>('[role="toolbar"]')!.getBoundingClientRect().width,
+        };
+    });
+    expect(mobile.sourceWidth).toBe(870);
+    expect(mobile.visualWidth).toBeCloseTo(500, 1);
+    expect(mobile.toolbarWidth).toBeCloseTo(500, 1);
+    expect(await page.locator('.page-finance').evaluate((element) => element.scrollWidth)).toBeLessThanOrEqual(500);
+    await screenshot(page, 'core-finance-scout-editor-mobile.png');
 });
 
 test('finance adopts the server-purified notice and scout message before rendering the saved preview', async ({

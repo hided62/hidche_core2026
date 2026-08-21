@@ -14,6 +14,7 @@ export interface PostgresConfig {
     url: string;
     log?: PostgresLogOption[];
     maxConnections?: number;
+    sessionTimezone?: 'UTC';
 }
 
 export interface PostgresPoolStats {
@@ -60,21 +61,32 @@ interface SharedPoolEntry {
 
 const sharedPools = new Map<string, SharedPoolEntry>();
 
-const buildSharedPoolKey = (url: string, schema: string | undefined, maxConnections: number): string =>
-    JSON.stringify([url, schema ?? '', maxConnections]);
+const buildSharedPoolKey = (
+    url: string,
+    schema: string | undefined,
+    maxConnections: number,
+    sessionTimezone: 'UTC' | undefined
+): string => JSON.stringify([url, schema ?? '', maxConnections, sessionTimezone ?? '']);
 
 const acquireSharedPool = (
     url: string,
     schema: string | undefined,
-    maxConnections: number
+    maxConnections: number,
+    sessionTimezone: 'UTC' | undefined
 ): { entry: SharedPoolEntry; release: () => Promise<void> } => {
-    const key = buildSharedPoolKey(url, schema, maxConnections);
+    const key = buildSharedPoolKey(url, schema, maxConnections, sessionTimezone);
     let entry = sharedPools.get(key);
     if (!entry) {
+        const connectionOptions = [
+            schema ? `-c search_path=${schema}` : undefined,
+            sessionTimezone ? `-c timezone=${sessionTimezone}` : undefined,
+        ]
+            .filter((option): option is string => option !== undefined)
+            .join(' ');
         const pool = new pg.Pool({
             connectionString: url,
             max: maxConnections,
-            ...(schema ? { options: `-c search_path=${schema}` } : {}),
+            ...(connectionOptions ? { options: connectionOptions } : {}),
         });
         entry = { pool, references: 0, maxConnections };
         sharedPools.set(key, entry);
@@ -161,7 +173,7 @@ export const createPostgresConnector = <TClient>(
     const schema =
         extractSchemaFromDatabaseUrl(config.url) ?? process.env.POSTGRES_SCHEMA ?? process.env.DATABASE_SCHEMA;
     const maxConnections = resolvePostgresPoolMax(config.maxConnections ?? process.env.POSTGRES_POOL_MAX);
-    const sharedPool = acquireSharedPool(config.url, schema, maxConnections);
+    const sharedPool = acquireSharedPool(config.url, schema, maxConnections, config.sessionTimezone);
     const adapter = new PrismaPg(sharedPool.entry.pool, schema ? { schema } : undefined);
     const prisma = createClient({
         adapter,
