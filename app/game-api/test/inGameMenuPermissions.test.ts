@@ -85,6 +85,7 @@ const createContext = (options: {
     troopLeaderAction?: string | null;
     refreshScore?: number;
     refreshScoreTotal?: number;
+    rankRows?: Array<{ type: string; value: number }>;
     requestId?: string;
     transaction?: ReturnType<typeof vi.fn>;
 }) => {
@@ -127,6 +128,9 @@ const createContext = (options: {
                 refreshScore: options.refreshScore ?? 0,
                 refreshScoreTotal: options.refreshScoreTotal ?? 0,
             })),
+        },
+        rankData: {
+            findMany: vi.fn(async () => options.rankRows ?? []),
         },
         city: {
             findUnique: vi.fn(async () => options.city ?? null),
@@ -206,6 +210,41 @@ const createContext = (options: {
 };
 
 describe('in-game my information ownership', () => {
+    it('returns the owned general battle records from the same rank_data source used by rankings', async () => {
+        const fixture = createContext({
+            me: buildGeneral({ meta: { belong: 4, rank_killnum: 999 } }),
+            rankRows: [
+                { type: 'firenum', value: 12 },
+                { type: 'warnum', value: 8 },
+                { type: 'killnum', value: 5 },
+                { type: 'deathnum', value: 3 },
+                { type: 'killcrew', value: 12_345 },
+                { type: 'deathcrew', value: 6_789 },
+            ],
+        });
+
+        await expect(appRouter.createCaller(fixture.context).general.me()).resolves.toMatchObject({
+            general: {
+                records: {
+                    battles: 8,
+                    strategies: 12,
+                    serviceYears: 4,
+                    wins: 5,
+                    losses: 3,
+                    killedCrew: 12_345,
+                    lostCrew: 6_789,
+                },
+            },
+        });
+        expect(fixture.db.rankData.findMany).toHaveBeenCalledWith({
+            where: {
+                generalId: 7,
+                type: { in: ['firenum', 'warnum', 'killnum', 'deathnum', 'killcrew', 'deathcrew'] },
+            },
+            select: { type: true, value: true },
+        });
+    });
+
     it('returns every ref progress-bar input from the owned general and current city read model', async () => {
         const fixture = createContext({
             me: buildGeneral({

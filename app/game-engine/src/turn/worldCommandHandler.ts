@@ -734,10 +734,10 @@ async function handlePatchGeneral(
             ...command.patch.stats,
         };
     }
-    if (typeof command.patch.specialWar === 'string') {
+    if (command.patch.specialWar !== undefined) {
         patch.role = {
             ...general.role,
-            specialWar: command.patch.specialWar,
+            specialWar: command.patch.specialWar === 'None' ? null : command.patch.specialWar,
         };
     }
 

@@ -142,11 +142,12 @@ const isRecruitmentCommand = computed(
     () => selectedCommand.value?.key === 'che_징병' || selectedCommand.value?.key === 'che_모병'
 );
 const isRecruitmentOverlayOpen = computed(() => pickerOpen.value && isRecruitmentCommand.value);
-const rowLabel = (row: ReservedCommandRow): string =>
-    formatReservedCommandBrief(props.scope, row.action, row.args, props.commandTable) ||
-    row.label ||
-    labelMap.value.get(row.action) ||
-    row.action;
+const commandBrief = (entry: { action: string; args: unknown; label?: string }): string =>
+    formatReservedCommandBrief(props.scope, entry.action, entry.args, props.commandTable) ||
+    entry.label ||
+    labelMap.value.get(entry.action) ||
+    entry.action;
+const rowLabel = (row: ReservedCommandRow): string => commandBrief(row);
 const selectedIndices = () => normalizedSelection(selected.value, previousSelected.value, props.rows.length);
 const pattern = () => extractPattern(props.rows, selectedIndices());
 const touchMenus = () => (menuRevision.value += 1);
@@ -467,7 +468,7 @@ const clickOutsideMenu = (event: Event) => {
                                     clickOutsideMenu($event);
                                 "
                             >
-                                {{ entry.label ?? labelMap.get(entry.action) ?? entry.action }}
+                                {{ commandBrief(entry) }}
                             </button>
                             <span v-if="!storage?.recent.size" class="empty-menu">비어 있음</span>
                         </div>

@@ -72,6 +72,11 @@ const parseBuffRecord = (raw: unknown): Record<string, number> => {
 
 const serializeBuffRecord = (buff: Record<string, number>): string => JSON.stringify(buff);
 
+const readStringList = (raw: unknown): string[] => {
+    const parsed = typeof raw === 'string' ? parseJson<unknown>(raw) : raw;
+    return Array.isArray(parsed) ? parsed.filter((entry): entry is string => typeof entry === 'string') : [];
+};
+
 const readBuffLevel = (buff: Record<string, number>, key: InheritBuffType): number => {
     const compatibilityKey = key === 'domesticSuccessProb' ? 'success' : key === 'domesticFailProb' ? 'fail' : null;
     return Math.max(0, Math.min(5, Math.floor(buff[key] ?? (compatibilityKey ? buff[compatibilityKey] : 0) ?? 0)));
@@ -133,7 +138,7 @@ const patchGeneral = async (
             strength?: number;
             intelligence?: number;
         };
-        specialWar?: string;
+        specialWar?: string | null;
     }
 ): Promise<void> => {
     const result = await ctx.turnDaemon.requestCommand({
@@ -530,16 +535,15 @@ export const inheritRouter = router({
         }
 
         const meta = asRecord(general.meta);
-        const prevList =
-            parseJson<string[]>(typeof meta.prev_types_special2 === 'string' ? meta.prev_types_special2 : null) ?? [];
+        const prevList = readStringList(meta.prev_types_special2);
         prevList.push(general.special2Code);
 
         await patchGeneral(ctx, general.id, {
-            specialWar: 'None',
+            specialWar: null,
             meta: {
                 ...meta,
                 inheritResetSpecialWar: nextLevel,
-                prev_types_special2: JSON.stringify(prevList),
+                prev_types_special2: prevList,
             },
         });
 
