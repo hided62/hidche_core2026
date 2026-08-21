@@ -6,6 +6,7 @@ import { useRouter } from 'vue-router';
 import { resolveGeneralIconUrl, useDefaultGeneralIcon } from '../utils/generalIcon';
 import { trpc } from '../utils/trpc';
 import LegacyGeneralProgress from '../components/ui/LegacyGeneralProgress.vue';
+import GeneralInformationPanel from '../components/main/GeneralInformationPanel.vue';
 import { useGameFeedback } from '../composables/useGameFeedback';
 
 type TroopList = Awaited<ReturnType<typeof trpc.troop.getList.query>>;
@@ -340,11 +341,20 @@ onMounted(() => {
             <div></div>
         </footer>
         <div v-if="popupMember" id="generalPopup" :style="{ top: `${popupTop}px` }" role="tooltip">
-            <div class="popup-title">
-                <strong>{{ popupMember.name }}</strong>
-                <span>{{ popupMember.cityName }}</span>
-            </div>
-            <LegacyGeneralProgress :general="popupMember" />
+            <GeneralInformationPanel
+                v-if="popupMember.panel"
+                :general="popupMember.panel.general"
+                :summary="popupMember.panel.summary"
+                :loading="false"
+                :nation-color="data?.nation.color"
+            />
+            <template v-else>
+                <div class="popup-title">
+                    <strong>{{ popupMember.name }}</strong>
+                    <span>{{ popupMember.cityName }}</span>
+                </div>
+                <LegacyGeneralProgress :general="popupMember" />
+            </template>
         </div>
     </main>
 </template>

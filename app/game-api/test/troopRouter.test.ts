@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 
+import type { RankDataType } from '@sammo-ts/common';
 import type { GameSessionTokenPayload } from '@sammo-ts/common/auth/gameToken';
 import type { RedisConnector } from '@sammo-ts/infra';
 
@@ -78,11 +79,15 @@ const buildContext = (options: {
     requestId?: string;
     transaction?: ReturnType<typeof vi.fn>;
     turns?: Array<{ generalId: number; turnIdx: number; actionCode: string }>;
+    rankRows?: Array<{ generalId: number; type: RankDataType; value: number }>;
+    accessRows?: Array<{ generalId: number; refreshScore: number; refreshScoreTotal: number }>;
     result: Awaited<ReturnType<TurnDaemonTransport['requestCommand']>>;
 }) => {
     const me = options.me ?? buildGeneral();
     const requestCommand = vi.fn(async () => options.result);
     const generalTurnFindMany = vi.fn(async () => options.turns ?? []);
+    const rankDataFindMany = vi.fn(async () => options.rankRows ?? []);
+    const generalAccessLogFindMany = vi.fn(async () => options.accessRows ?? []);
     const db = {
         ...(options.transaction ? { $transaction: options.transaction } : {}),
         general: {
@@ -99,7 +104,9 @@ const buildContext = (options: {
         },
         nation: {
             findUnique: vi.fn(async ({ where }: { where: { id: number } }) =>
-                where.id === me.nationId ? { id: me.nationId, name: '테스트국', meta: options.nationMeta ?? {} } : null
+                where.id === me.nationId
+                    ? { id: me.nationId, name: '테스트국', color: '#123456', level: 4, meta: options.nationMeta ?? {} }
+                    : null
             ),
         },
         troop: {
@@ -111,8 +118,19 @@ const buildContext = (options: {
             ),
         },
         city: { findMany: vi.fn(async () => [{ id: 1, name: '북평' }]) },
-        worldState: { findFirst: vi.fn(async () => ({ config: { const: { upgradeLimit: 20 } } })) },
+        worldState: {
+            findFirst: vi.fn(async () => ({
+                tickSeconds: 300,
+                config: {
+                    stat: { chiefMin: 70 },
+                    const: { upgradeLimit: 20, statGradeLevel: 5, retirementYear: 70, maxDedLevel: 30 },
+                },
+                meta: { lastTurnTime: '2026-01-01T00:00:00.000Z' },
+            })),
+        },
         generalTurn: { findMany: generalTurnFindMany },
+        rankData: { findMany: rankDataFindMany },
+        generalAccessLog: { findMany: generalAccessLogFindMany },
     };
     const accessTokenStore = new RedisAccessTokenStore(
         {
@@ -136,15 +154,24 @@ const buildContext = (options: {
         flushStore: new InMemoryFlushStore(),
         gameTokenSecret: 'test-secret',
     };
-    return { context, requestCommand, generalTurnFindMany };
+    return { context, requestCommand, generalTurnFindMany, rankDataFindMany, generalAccessLogFindMany };
 };
 
 describe('troop router permissions and mutations', () => {
-    it('returns the Ref general progress inputs for same-nation troop popups', async () => {
+    it('returns the shared general information panel source for authorized same-nation troop popups', async () => {
         const me = buildGeneral({
             troopId: 1,
+            officerLevel: 2,
+            dedication: 900,
+            crewTypeId: 1100,
+            recentWarTime: new Date('2026-01-01T00:12:34.000Z'),
             meta: {
                 explevel: 4,
+                dedlevel: 3,
+                officerCity: 1,
+                defence_train: 90,
+                killturn: 7,
+                belong: 11,
                 leadership_exp: 7,
                 strength_exp: 8,
                 intel_exp: 9,
@@ -155,9 +182,23 @@ describe('troop router permissions and mutations', () => {
                 dex5: 12_650,
             },
         });
-        const fixture = buildContext({ me, result: null });
+        const fixture = buildContext({
+            me,
+            turns: [{ generalId: 1, turnIdx: 0, actionCode: 'che_집합' }],
+            rankRows: [
+                { generalId: 1, type: 'warnum', value: 17 },
+                { generalId: 1, type: 'killnum', value: 11 },
+                { generalId: 1, type: 'deathnum', value: 6 },
+                { generalId: 1, type: 'firenum', value: 5 },
+                { generalId: 1, type: 'killcrew', value: 1234 },
+                { generalId: 1, type: 'deathcrew', value: 432 },
+            ],
+            accessRows: [{ generalId: 1, refreshScore: 13, refreshScoreTotal: 800 }],
+            result: null,
+        });
 
         await expect(appRouter.createCaller(fixture.context).troop.getList()).resolves.toMatchObject({
+            nation: { id: 1, name: '테스트국', color: '#123456' },
             troops: [
                 {
                     members: [
@@ -170,11 +211,51 @@ describe('troop router permissions and mutations', () => {
                                 statUpgradeLimit: 20,
                                 dex: [350, 1_375, 3_500, 7_125, 12_650],
                             },
+                            panel: {
+                                general: {
+                                    name: '부대장',
+                                    officerLevelText: '종사',
+                                    officerCityName: '북평',
+                                    generalType: '평범',
+                                    defenceTrain: 90,
+                                    killTurn: 7,
+                                    troop: { name: '백마대', status: 'present' },
+                                    refreshScore: { current: 13, total: 800, text: '열심' },
+                                    progression: {
+                                        dedicationLevel: 3,
+                                        dedicationText: '28품관',
+                                    },
+                                },
+                                summary: {
+                                    experience: 0,
+                                    dedicationText: '28품관',
+                                    bill: 1_000,
+                                    warnum: 17,
+                                    wins: 11,
+                                    losses: 6,
+                                    strategies: 5,
+                                    serviceYears: 11,
+                                    killCrew: 1_234,
+                                    deathCrew: 432,
+                                    recentWar: '2026-01-01T00:12:34.000Z',
+                                },
+                            },
                         },
                     ],
                 },
             ],
         });
+    });
+
+    it('keeps detailed panel data out of the permission-zero troop response', async () => {
+        const fixture = buildContext({ me: buildGeneral({ troopId: 1, officerLevel: 1 }), result: null });
+
+        const response = await appRouter.createCaller(fixture.context).troop.getList();
+
+        expect(response.permission).toBe(0);
+        expect(response.troops[0]?.members[0]?.panel).toBeNull();
+        expect(fixture.rankDataFindMany).not.toHaveBeenCalled();
+        expect(fixture.generalAccessLogFindMany).not.toHaveBeenCalled();
     });
 
     it('returns only the first five Ref-redacted troop command labels without exposing action codes', async () => {
