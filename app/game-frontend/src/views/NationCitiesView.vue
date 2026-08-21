@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { formatServerDateTime } from '@sammo-ts/common/time/ServerDateTime';
+import { JosaUtil } from '@sammo-ts/common/util/JosaUtil';
 import { computed, onMounted, ref } from 'vue';
 import { useRouter } from 'vue-router';
 import { formatReservedCommandBrief } from '../components/command/reservedCommandBrief';
@@ -59,6 +60,8 @@ const sortOptions = [
     '규모',
 ].map((label, index) => ({ value: index + 1, label }));
 const officerLabels: Record<OfficerLevel, string> = { 4: '태수', 3: '군사', 2: '종사' };
+const appointmentDescription = (city: City, general: SecretGeneral, level: OfficerLevel): string =>
+    `${JosaUtil.put(general.name, '을')} ${city.name} ${JosaUtil.put(officerLabels[level], '으로')} 임명`;
 const generalsForCity = (cityId: number) => data.value?.generals.filter((general) => general.cityId === cityId) ?? [];
 const secretGeneralsForCity = (cityId: number) =>
     secretData.value?.generals.filter((general) => general.cityId === cityId) ?? [];
@@ -262,7 +265,7 @@ const appointCityOfficer = async (city: City, general: SecretGeneral, level: Off
             destCityId: city.id,
             officerLevel: level,
         });
-        showSuccessToast(`${general.name}을(를) ${city.name} ${officerLabels[level]}로 임명했습니다.`);
+        showSuccessToast(`${appointmentDescription(city, general, level)}했습니다.`);
         try {
             await refreshIntegratedData();
         } catch (cause) {
@@ -652,7 +655,7 @@ onMounted(async () => {
                                                 :disabled="
                                                     !canAppoint(city.id, general.id, level) || pendingAppointment !== ''
                                                 "
-                                                :aria-label="`${general.name}을(를) ${city.name} ${officerLabels[level]}로 임명`"
+                                                :aria-label="appointmentDescription(city, general, level)"
                                                 @click="appointCityOfficer(city, general, level)"
                                             >
                                                 {{ officerLabels[level].slice(0, 1) }}
