@@ -257,7 +257,7 @@ const zPatchGeneral = z.object({
                 intelligence: zFiniteNumber.optional(),
             })
             .optional(),
-        specialWar: z.string().optional(),
+        specialWar: z.string().nullable().optional(),
     }),
 });
 
