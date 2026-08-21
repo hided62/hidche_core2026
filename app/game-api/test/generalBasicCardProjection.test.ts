@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import {
     resolveGeneralTypeCall,
     resolveLeadershipBonus,
+    resolveNextTurnMonthOffset,
     resolveRefreshScoreText,
     resolveRemainingMinutes,
 } from '../src/services/generalBasicCardProjection.js';
@@ -40,5 +41,56 @@ describe('general basic card Ref projection', () => {
         expect(resolveRemainingMinutes(new Date('2026-08-13T00:07:06.000Z'), lastExecuted, 3_600)).toBe(7);
         expect(resolveRemainingMinutes(new Date('2026-08-12T23:59:00.000Z'), lastExecuted, 3_600)).toBe(59);
         expect(resolveRemainingMinutes(new Date('2026-08-13T00:07:06.000Z'), null, 3_600)).toBeNull();
+    });
+
+    it('moves the first reserved month only after the general turn bucket has passed', () => {
+        const lastExecuted = new Date('2026-08-13T00:00:00.000Z');
+        const lastTurnTick = 36_000_000n * 11n;
+
+        expect(
+            resolveNextTurnMonthOffset({
+                turnTime: new Date('2026-08-13T00:07:00.000Z'),
+                turnTick: lastTurnTick + 12_000_000n,
+                lastExecuted,
+                lastTurnTick,
+                turnSeconds: 600,
+            })
+        ).toBe(0);
+        expect(
+            resolveNextTurnMonthOffset({
+                turnTime: new Date('2026-08-13T00:17:00.000Z'),
+                turnTick: lastTurnTick + 48_000_000n,
+                lastExecuted,
+                lastTurnTick,
+                turnSeconds: 600,
+            })
+        ).toBe(1);
+        expect(
+            resolveNextTurnMonthOffset({
+                turnTime: new Date('2026-08-13T00:10:00.000Z'),
+                turnTick: 1n,
+                lastExecuted,
+                lastTurnTick: -1n,
+                turnSeconds: 600,
+            })
+        ).toBe(1);
+    });
+
+    it('keeps the same boundary for legacy Date-only schedules', () => {
+        const lastExecuted = new Date('2026-08-13T00:00:00.000Z');
+        expect(
+            resolveNextTurnMonthOffset({
+                turnTime: new Date('2026-08-13T00:07:00.000Z'),
+                lastExecuted,
+                turnSeconds: 600,
+            })
+        ).toBe(0);
+        expect(
+            resolveNextTurnMonthOffset({
+                turnTime: new Date('2026-08-13T00:10:00.000Z'),
+                lastExecuted,
+                turnSeconds: 600,
+            })
+        ).toBe(1);
     });
 });

@@ -1,10 +1,26 @@
 <script setup lang="ts">
 import { formatServerDateTime } from '@sammo-ts/common/time/ServerDateTime';
-import { computed } from 'vue';
+import { computed, onUnmounted, ref, watch } from 'vue';
 import { resolveTournamentStageName } from '../../utils/tournamentStatus';
+import {
+    GAME_SERVER_ACTIVITY_FRESHNESS_MS,
+    gameServerActivity,
+    isRecentGameServerActivity,
+} from '../../utils/gameServerActivity';
+import {
+    millisecondsUntilNextMinute,
+    projectServerClock,
+    sampleServerClock,
+    type SampledServerClock,
+} from '../../utils/serverClockProjection';
 
 const props = defineProps<{
     tournamentStage: number;
+    serverTime?: string;
+    serverWallTime?: string;
+    clockMode?: 'realtime' | 'manual';
+    clockRunning?: boolean;
+    clockStartsAt?: string | null;
     status: {
         onlineUserCount: number;
         onlineNations: string;
@@ -20,16 +36,75 @@ const props = defineProps<{
 }>();
 
 const tournamentStatus = computed(() => resolveTournamentStageName(props.tournamentStage));
-const lastExecutedStatus = computed(() =>
-    formatServerDateTime(props.status?.lastExecuted, { format: 'monthDayTime', fallback: '기록 없음' })
+const currentServerTime = ref('기록 없음');
+const hasServerClock = ref(false);
+const serverClockFresh = ref(false);
+const serverClockTitle = computed(() => {
+    if (!hasServerClock.value) return '서버 시각을 아직 받지 못했습니다.';
+    if (!serverClockFresh.value) return '최근 45초 동안 서버 통신이 없어 시각 갱신을 멈췄습니다.';
+    return undefined;
+});
+
+let serverClockSample: SampledServerClock | null = null;
+let serverClockTimer: ReturnType<typeof setTimeout> | undefined;
+
+const updateServerClock = () => {
+    if (serverClockTimer !== undefined) clearTimeout(serverClockTimer);
+    serverClockTimer = undefined;
+    if (serverClockSample === null) {
+        currentServerTime.value = '기록 없음';
+        hasServerClock.value = false;
+        serverClockFresh.value = false;
+        return;
+    }
+
+    const now = Date.now();
+    const projection = projectServerClock(serverClockSample, now);
+    currentServerTime.value = formatServerDateTime(projection.time, {
+        format: 'monthDayTime',
+        fallback: '기록 없음',
+    });
+    hasServerClock.value = true;
+
+    const lastContactAt = gameServerActivity.lastContactAt.value;
+    serverClockFresh.value = isRecentGameServerActivity(lastContactAt, now);
+    if (!serverClockFresh.value || lastContactAt === null) return;
+
+    const nextDelays = [lastContactAt + GAME_SERVER_ACTIVITY_FRESHNESS_MS - now + 1];
+    if (serverClockSample.clockMode !== 'manual' && serverClockSample.startDelayMs !== null) {
+        const untilStartMs = serverClockSample.startDelayMs - projection.clientElapsedMs;
+        nextDelays.push(untilStartMs > 0 ? untilStartMs : millisecondsUntilNextMinute(projection.time));
+    }
+    serverClockTimer = setTimeout(updateServerClock, Math.max(1, Math.min(...nextDelays)));
+};
+
+watch(
+    () => [props.serverTime, props.serverWallTime, props.clockMode, props.clockRunning, props.clockStartsAt] as const,
+    ([serverTime, serverWallTime, clockMode, clockRunning, clockStartsAt]) => {
+        serverClockSample = sampleServerClock({ serverTime, serverWallTime, clockMode, clockRunning, clockStartsAt });
+        updateServerClock();
+    },
+    { immediate: true }
 );
+watch(() => gameServerActivity.lastContactAt.value, updateServerClock);
+
+onUnmounted(() => {
+    if (serverClockTimer !== undefined) clearTimeout(serverClockTimer);
+});
 </script>
 
 <template>
     <section class="front-status" aria-label="접속 현황과 국가 방침">
-        <div class="activity-status" aria-label="동작 시각, 토너먼트와 설문 진행 현황">
-            <div class="status-row execution-status" :class="{ 'execution-status--empty': !status?.lastExecuted }">
-                동작 시각: {{ lastExecutedStatus }}
+        <div class="activity-status" aria-label="현재 시각, 토너먼트와 설문 진행 현황">
+            <div
+                class="status-row execution-status"
+                :class="{
+                    'execution-status--empty': !hasServerClock,
+                    'execution-status--stale': hasServerClock && !serverClockFresh,
+                }"
+                :title="serverClockTitle"
+            >
+                현재 시각: {{ currentServerTime }}
             </div>
             <div class="status-row tournament-status">
                 <RouterLink to="/tournament">
@@ -117,6 +192,10 @@ const lastExecutedStatus = computed(() =>
 }
 
 .execution-status--empty {
+    color: magenta;
+}
+
+.execution-status--stale {
     color: magenta;
 }
 
