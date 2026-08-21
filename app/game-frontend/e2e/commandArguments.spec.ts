@@ -1398,6 +1398,70 @@ test('shows all 12 advanced chief turns before the actions and uses the full mob
     await page.screenshot({ path: test.info().outputPath('chief-advanced-mobile-500.png'), fullPage: true });
 });
 
+test('keeps the advanced chief return control visible and fills the two-cell bottom row', async ({ page }) => {
+    await install(page);
+    await page.setViewportSize({ width: 1200, height: 900 });
+    await page.goto('/che/chief-center');
+
+    const editor = page.locator('[data-command-scope="nation"]:visible');
+    await editor.getByRole('button', { name: '고급 모드', exact: true }).click();
+    const modeButton = editor.getByRole('button', { name: '일반 모드', exact: true });
+    await expect(modeButton).toBeVisible();
+
+    const geometry = await editor.evaluate((element) => {
+        const queue = element.querySelector<HTMLElement>('.queue-area')!;
+        const actions = element.querySelector<HTMLElement>('.advanced-actions')!;
+        const controls = element.querySelector<HTMLElement>('.control-pad')!;
+        const mode = [...controls.querySelectorAll<HTMLButtonElement>(':scope > button')].find(
+            (item) => item.textContent?.trim() === '일반 모드'
+        )!;
+        const clock = controls.querySelector<HTMLElement>(':scope > .clock')!;
+        const summary = (label: string) =>
+            [...controls.querySelectorAll<HTMLElement>(':scope > details > summary')].find(
+                (item) => item.textContent?.trim() === label
+            )!;
+        const repeat = summary('반복');
+        const range = summary('범위');
+        const storage = summary('보관함');
+        const recent = summary('최근');
+        const pull = summary('당기기').closest<HTMLElement>('details')!;
+        const push = summary('미루기').closest<HTMLElement>('details')!;
+        const rect = (item: HTMLElement) => {
+            const box = item.getBoundingClientRect();
+            return { left: box.left, right: box.right, top: box.top, bottom: box.bottom, width: box.width };
+        };
+        const modeRect = mode.getBoundingClientRect();
+        const hit = document.elementFromPoint(modeRect.left + modeRect.width / 2, modeRect.top + modeRect.height / 2);
+        return {
+            queue: rect(queue),
+            actions: rect(actions),
+            controls: rect(controls),
+            mode: rect(mode),
+            firstRow: [rect(mode), rect(clock), rect(repeat)],
+            secondRow: [rect(range), rect(storage), rect(recent)],
+            bottomRow: [rect(pull), rect(push)],
+            modeReceivesPointer: Boolean(hit && mode.contains(hit)),
+            documentOverflow: document.documentElement.scrollWidth - document.documentElement.clientWidth,
+        };
+    });
+
+    expect(geometry.queue.bottom).toBeLessThanOrEqual(geometry.actions.top);
+    expect(geometry.actions.bottom).toBeLessThanOrEqual(geometry.controls.top);
+    expect(geometry.modeReceivesPointer).toBe(true);
+    expect(new Set(geometry.firstRow.map(({ top }) => top)).size).toBe(1);
+    expect(new Set(geometry.secondRow.map(({ top }) => top)).size).toBe(1);
+    expect(geometry.bottomRow[0]?.top).toBe(geometry.bottomRow[1]?.top);
+    expect(geometry.bottomRow[0]?.left).toBeCloseTo(geometry.controls.left, 1);
+    expect(geometry.bottomRow[1]?.right).toBeCloseTo(geometry.controls.right, 1);
+    expect(geometry.bottomRow[0]?.width).toBeCloseTo(geometry.bottomRow[1]?.width ?? 0, 1);
+    expect(geometry.documentOverflow).toBeLessThanOrEqual(0);
+
+    await page.screenshot({ path: test.info().outputPath('chief-advanced-controls-desktop-1200.png'), fullPage: true });
+    await modeButton.click();
+    await expect(editor.locator('.advanced-actions')).toHaveCount(0);
+    await expect(editor.getByRole('button', { name: '고급 모드', exact: true })).toBeVisible();
+});
+
 test('enters general and nation command arguments and sends exact values', async ({ page }) => {
     const requests = await install(page);
     await page.setViewportSize({ width: 1200, height: 900 });

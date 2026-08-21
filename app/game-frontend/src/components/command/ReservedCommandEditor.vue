@@ -475,7 +475,7 @@ const clickOutsideMenu = (event: Event) => {
                     </details>
                 </template>
 
-                <details v-if="props.compact" class="legacy-menu">
+                <details v-if="props.compact" class="legacy-menu compact-shift-menu">
                     <summary>당기기</summary>
                     <div class="menu-items">
                         <button
@@ -490,7 +490,7 @@ const clickOutsideMenu = (event: Event) => {
                         </button>
                     </div>
                 </details>
-                <details v-if="props.compact" class="legacy-menu">
+                <details v-if="props.compact" class="legacy-menu compact-shift-menu">
                     <summary>미루기</summary>
                     <div class="menu-items">
                         <button
@@ -1090,6 +1090,16 @@ const clickOutsideMenu = (event: Event) => {
     min-height: 79px;
     grid-template-columns: repeat(3, 1fr);
 }
+.compact:not(.mobile) .control-pad {
+    order: 3;
+    grid-template-columns: repeat(6, minmax(0, 1fr));
+}
+.compact:not(.mobile) .control-pad > * {
+    grid-column: span 2;
+}
+.compact:not(.mobile) .control-pad > .compact-shift-menu {
+    grid-column: span 3;
+}
 .compact .queue-grid {
     grid-template-columns: 40px minmax(0, 1fr) 38px;
 }
@@ -1102,12 +1112,9 @@ const clickOutsideMenu = (event: Event) => {
 .compact .index-column {
     grid-auto-rows: 30px;
 }
-.compact .advanced-actions {
-    position: absolute;
-    right: 0;
-    bottom: 82px;
-    left: 0;
-    z-index: 15;
+.compact:not(.mobile) .advanced-actions {
+    position: static;
+    order: 2;
 }
 .compact .command-picker {
     top: 54px;
