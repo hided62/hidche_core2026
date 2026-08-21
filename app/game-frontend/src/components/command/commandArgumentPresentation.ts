@@ -1,6 +1,10 @@
+import type { CommandInputField } from './types';
+
+export type CommandArgumentMapTarget = 'city' | 'nation' | 'capital';
+
 export type CommandArgumentPresentation = {
     lines: string[];
-    mapTarget?: 'city' | 'nation' | 'capital';
+    mapTarget?: CommandArgumentMapTarget;
 };
 
 const cityTarget = (lines: string[]): CommandArgumentPresentation => ({ lines, mapTarget: 'city' });
@@ -97,5 +101,19 @@ const PRESENTATIONS: Record<string, CommandArgumentPresentation> = {
 
 export const commandArgumentPresentation = (commandKey: string): CommandArgumentPresentation =>
     PRESENTATIONS[commandKey] ?? { lines: [] };
+
+/**
+ * 대상 지도는 명령명 목록이 아니라 API가 내린 실제 인자 계약을 우선한다.
+ * 인자가 없는 증축·감축의 수도 확인 지도만 presentation의 명시적 target을 사용한다.
+ */
+export const resolveCommandArgumentMapTarget = (
+    commandKey: string,
+    fields: readonly CommandInputField[]
+): CommandArgumentMapTarget | undefined => {
+    const selectableTargets = fields.filter((field) => field.kind === 'select');
+    if (selectableTargets.some((field) => field.optionSource === 'cities')) return 'city';
+    if (selectableTargets.some((field) => field.optionSource === 'nations')) return 'nation';
+    return commandArgumentPresentation(commandKey).mapTarget;
+};
 
 export const presentedCommandKeys = (): string[] => Object.keys(PRESENTATIONS);
