@@ -552,9 +552,13 @@ const buildProfileFrontendOutDir = (workspaceRoot: string, profileName: string):
 export const buildProfileFrontendCommands = (
     workspaceRoot: string,
     profile: Pick<GatewayProfileRecord, 'profileName' | 'profile' | 'apiPort'>,
+    buildCommitSha: string,
     env?: Record<string, string>,
     cacheAnchorRoot: string = workspaceRoot
 ): BuildCommand[] => {
+    if (!/^[0-9a-f]{40,64}$/iu.test(buildCommitSha.trim())) {
+        throw new Error('Profile frontend build requires a full commit SHA.');
+    }
     const profileFrontendBuildNodeOptions = env?.PROFILE_FRONTEND_BUILD_NODE_OPTIONS?.trim();
     const buildEnv = {
         ...(env ?? {}),
@@ -562,6 +566,7 @@ export const buildProfileFrontendCommands = (
         VITE_APP_BASE_PATH: `/${profile.profile}`,
         VITE_GAME_API_URL: `/${profile.profile}/api/trpc`,
         VITE_GAME_SSE_URL: `/${profile.profile}/api/events`,
+        VITE_BUILD_COMMIT_SHA: buildCommitSha.trim().toLowerCase(),
     };
     return [
         buildTurboReleaseTaskCommand(
@@ -1503,6 +1508,7 @@ export class GatewayOrchestrator implements GatewayOrchestratorHandle {
                 ...buildProfileFrontendCommands(
                     workspace.root,
                     profile,
+                    commitSha,
                     this.processConfig.baseEnv,
                     this.processConfig.workspaceRoot
                 ),
@@ -2090,6 +2096,7 @@ export class GatewayOrchestrator implements GatewayOrchestratorHandle {
                 ? buildProfileFrontendCommands(
                       workspace.root,
                       profile,
+                      commitSha,
                       this.processConfig.baseEnv,
                       this.processConfig.workspaceRoot
                   )

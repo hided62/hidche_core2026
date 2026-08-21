@@ -93,6 +93,49 @@ const canRun = await canConnectToDatabase(databaseUrl);
 const describeDb = describe.runIf(canRun);
 
 describeDb('scenario database seed', () => {
+    test('persists each blank-land scenario item contract without leaking the shared addon', async () => {
+        const readPersistedItemContract = async (targetScenarioId: number) => {
+            const { applied } = await seedScenarioToDatabase({
+                scenarioId: targetScenarioId,
+                databaseUrl,
+            });
+
+            const connector = createGamePostgresConnector({ url: databaseUrl });
+            await connector.connect();
+            try {
+                const worldState = await connector.prisma.worldState.findFirstOrThrow();
+                const config = worldState.config as Record<string, unknown>;
+                const scenarioConst = (config.const ?? {}) as Record<string, unknown>;
+                const allItems = (scenarioConst.allItems ?? {}) as Record<string, Record<string, number>>;
+                const items = allItems.item ?? {};
+                const availableSpecialWar = (scenarioConst.availableSpecialWar ?? []) as string[];
+
+                return {
+                    applied,
+                    battleTraitItemCount: Object.keys(items).filter((key) => key.startsWith('event_전투특기_')).length,
+                    availableSpecialWar,
+                    items,
+                };
+            } finally {
+                await connector.disconnect();
+            }
+        };
+
+        const ordinaryBlank = await readPersistedItemContract(0);
+        const legacySecretBlank = await readPersistedItemContract(902);
+
+        expect(ordinaryBlank).toMatchObject({
+            applied: true,
+            battleTraitItemCount: 0,
+            availableSpecialWar: [],
+        });
+        expect(legacySecretBlank.applied).toBe(true);
+        expect(legacySecretBlank.battleTraitItemCount).toBe(19);
+        expect(legacySecretBlank.availableSpecialWar).toHaveLength(19);
+        expect(legacySecretBlank.items).not.toHaveProperty('event_전투특기_견고');
+        expect(legacySecretBlank.availableSpecialWar).not.toContain('che_견고');
+    });
+
     test('snapshots the complete opening inheritance balance before game activity', async () => {
         const serverId = 'scenario-seeder-inheritance-baseline';
         const userId = 'scenario-seeder-inheritance-user';

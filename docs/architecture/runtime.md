@@ -125,6 +125,12 @@ commit의 game API, engine과 profile 전용 frontend artifact를 빌드합니�
 프로세스를 멈춘 뒤 `prisma migrate deploy`만 실행하고 seed는 호출하지 않습니다.
 새 API·frontend와 모든 worker가 PM2 `online`이고 HTTP readiness가 성공해야
 build commit을 게시합니다. 실패하면 이전 worktree 프로세스를 다시 시작합니다.
+Profile frontend build에는 같은 전체 commit SHA를 `VITE_BUILD_COMMIT_SHA`로
+주입합니다. 이 값은 Turbo의 `VITE_*` cache key에 포함되고 Vite가 bundle 상수로
+고정하므로, 게임의 `게임 정보` dialog가 실제 선택 build commit을 표시하며 다른
+commit의 cached artifact를 현재 버전으로 오인하지 않습니다. Orchestrator 밖의
+개발 build는 현재 Git checkout의 `HEAD`를 fallback으로 사용하고 Git metadata를
+읽을 수 없을 때만 `unknown`을 표시합니다.
 `RESET` operation은 같은 build 경계를 사용한 뒤 현재 시즌 테이블을 seed로
 교체합니다. Seeder의 reset 목록에는 `hall`, `ng_games`, `yearbook_history`,
 과거 장수·국가와 상속·진단 자료가 포함되지 않습니다.
