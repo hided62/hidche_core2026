@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue';
+import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue';
 import { storeToRefs } from 'pinia';
 import { useElementSize, useMediaQuery, useMouseInElement } from '@vueuse/core';
 import SkeletonLines from '../ui/SkeletonLines.vue';
@@ -7,6 +7,7 @@ import MapCityBasic from './MapCityBasic.vue';
 import MapCityDetail from './MapCityDetail.vue';
 import { useMapViewerStore } from '../../stores/mapViewer';
 import { buildAssetUrl } from '../../utils/mapAssets';
+import { resolveMapBackgroundPath, resolveMapSeason, resolveNextMapSeason } from '../../utils/mapBackground';
 import { configuredGameAssetUrl } from '../../utils/imageAssets';
 
 interface MapSummary {
@@ -90,6 +91,45 @@ const emit = defineEmits<{
 const BASE_MAP_WIDTH = 700;
 const BASE_MAP_HEIGHT = 500;
 const SMALL_MAP_SCALE = 5 / 7;
+const MAP_BACKGROUND_TRANSITION_MS = 480;
+
+const decodedImageCache = new Map<string, Promise<void>>();
+const decodedImageElements = new Map<string, HTMLImageElement>();
+
+const preloadDecodedImage = (url: string): Promise<void> => {
+    const cached = decodedImageCache.get(url);
+    if (cached) return cached;
+
+    const pending = new Promise<void>((resolve, reject) => {
+        if (typeof Image === 'undefined') {
+            resolve();
+            return;
+        }
+
+        const image = new Image();
+        image.decoding = 'async';
+        image.onload = () => {
+            if (typeof image.decode !== 'function') {
+                decodedImageElements.set(url, image);
+                resolve();
+                return;
+            }
+            void image.decode().then(() => {
+                decodedImageElements.set(url, image);
+                resolve();
+            }, reject);
+        };
+        image.onerror = () => reject(new Error(`map background image load failed: ${url}`));
+        image.src = url;
+    }).catch((error: unknown) => {
+        decodedImageCache.delete(url);
+        decodedImageElements.delete(url);
+        throw error;
+    });
+
+    decodedImageCache.set(url, pending);
+    return pending;
+};
 
 const isWide = useMediaQuery('(min-width: 1024px)');
 const mapStore = useMapViewerStore();
@@ -101,24 +141,12 @@ const {
     selectedCityId: storeSelectedCityId,
 } = storeToRefs(mapStore);
 const hasTouchInput = useMediaQuery('(any-pointer: coarse)');
+const reduceMotion = useMediaQuery('(prefers-reduced-motion: reduce)');
 
 const mapArea = ref<HTMLElement | null>(null);
 const mapBody = ref<HTMLElement | null>(null);
 const { width: mapBodyWidth } = useElementSize(mapBody);
 const { elementX, elementY } = useMouseInElement(mapArea);
-
-const resolveSeason = (month: number): string => {
-    if (month <= 3) {
-        return 'spring';
-    }
-    if (month <= 6) {
-        return 'summer';
-    }
-    if (month <= 9) {
-        return 'fall';
-    }
-    return 'winter';
-};
 
 const resolveStateClass = (state: number): CityStateClass => {
     if (state < 10) {
@@ -239,7 +267,7 @@ const mapSeason = computed(() => {
     if (!props.mapData) {
         return 'spring';
     }
-    return resolveSeason(props.mapData.month);
+    return resolveMapSeason(props.mapData.month);
 });
 
 const mapTheme = computed(() => props.mapLayout?.mapName ?? 'che');
@@ -327,24 +355,14 @@ const mapSeasonClass = computed(() => {
     return `map-season-${mapSeason.value}`;
 });
 
-const mapBackgroundImage = computed(() => {
-    const theme = mapTheme.value;
-    const season = mapSeason.value;
+const mapBackground = computed(() => resolveMapBackgroundPath(mapTheme.value, mapSeason.value));
 
-    if (theme === 'ludo_rathowm') {
-        return resolveAsset('map/ludo_rathowm/back.jpg');
-    }
-    if (theme === 'chess') {
-        return resolveAsset('map/chess/chessboard.png');
-    }
-    if (theme === 'pokemon_v1') {
-        return resolveAsset('map/pokemon_v1/back_pal8.png');
-    }
-    if (theme === 'cr') {
-        return resolveAsset('map/cr/bg-fs8.png');
-    }
+const mapBackgroundImage = computed(() => resolveAsset(mapBackground.value.path));
 
-    return resolveAsset(`map/che/bg_${season}.jpg`);
+const nextSeasonBackgroundImage = computed(() => {
+    if (!mapBackground.value.seasonal) return null;
+    const nextSeason = resolveNextMapSeason(mapSeason.value);
+    return resolveAsset(resolveMapBackgroundPath(mapTheme.value, nextSeason).path);
 });
 
 const mapRoadImage = computed(() => {
@@ -361,15 +379,164 @@ const mapRoadImage = computed(() => {
     return null;
 });
 
-const mapBackgroundStyle = computed(() => ({
-    backgroundImage: mapBackgroundImage.value ? `url('${mapBackgroundImage.value}')` : 'none',
-    backgroundSize: '100% 100%',
-}));
+const renderedBackgroundImage = ref<string | null>(null);
+const outgoingBackgroundImage = ref<string | null>(null);
+const renderedBackgroundElement = ref<HTMLImageElement | null>(null);
+const backgroundReady = ref(false);
+const outgoingBackgroundVisible = ref(false);
+const backgroundTransitioning = ref(false);
 
 const mapRoadStyle = computed(() => ({
     backgroundImage: mapRoadImage.value ? `url('${mapRoadImage.value}')` : 'none',
     backgroundSize: '100% 100%',
 }));
+
+type BackgroundRequest = {
+    imageUrl: string;
+    roadUrl: string | null;
+    nextSeasonUrl: string | null;
+};
+
+const backgroundRequest = computed<BackgroundRequest | null>(() => {
+    if (!props.mapData || !props.mapLayout) return null;
+    return {
+        imageUrl: mapBackgroundImage.value,
+        roadUrl: mapRoadImage.value,
+        nextSeasonUrl: nextSeasonBackgroundImage.value,
+    };
+});
+
+const backgroundRequestKey = computed(() => {
+    const request = backgroundRequest.value;
+    return request ? `${request.imageUrl}\u0000${request.roadUrl ?? ''}` : '';
+});
+
+let pendingBackgroundRequest: BackgroundRequest | null = null;
+let backgroundWorkerRunning = false;
+let backgroundWorkerDisposed = false;
+
+const waitForPaint = () =>
+    new Promise<void>((resolve) => {
+        let settled = false;
+        const done = () => {
+            if (settled) return;
+            settled = true;
+            window.clearTimeout(timeoutId);
+            resolve();
+        };
+        const timeoutId = window.setTimeout(done, 80);
+        window.requestAnimationFrame(() => window.requestAnimationFrame(done));
+    });
+
+const waitForBackgroundTransition = () =>
+    new Promise<void>((resolve) => window.setTimeout(resolve, MAP_BACKGROUND_TRANSITION_MS));
+
+const prefetchUpcomingImages = (request: BackgroundRequest) => {
+    if (request.nextSeasonUrl) {
+        void preloadDecodedImage(request.nextSeasonUrl).catch(() => undefined);
+    }
+    const nextSeasonIcon = resolveAsset(`${resolveNextMapSeason(mapSeason.value)}.gif`);
+    void preloadDecodedImage(nextSeasonIcon).catch(() => undefined);
+};
+
+const showBackground = async (request: BackgroundRequest) => {
+    const roadPromise = request.roadUrl
+        ? preloadDecodedImage(request.roadUrl).catch(() => undefined)
+        : Promise.resolve();
+
+    try {
+        await preloadDecodedImage(request.imageUrl);
+        await roadPromise;
+    } catch {
+        if (!renderedBackgroundImage.value) {
+            // Preserve the old initial-load fallback: reveal the map and let the
+            // actual img make its normal request instead of leaving a skeleton.
+            renderedBackgroundImage.value = request.imageUrl;
+            backgroundReady.value = true;
+        }
+        return;
+    }
+
+    if (backgroundWorkerDisposed) return;
+    if (pendingBackgroundRequest && pendingBackgroundRequest.imageUrl !== request.imageUrl) return;
+
+    const currentImage = renderedBackgroundImage.value;
+    if (!currentImage) {
+        renderedBackgroundImage.value = request.imageUrl;
+        backgroundReady.value = true;
+        prefetchUpcomingImages(request);
+        return;
+    }
+    if (currentImage === request.imageUrl) {
+        backgroundReady.value = true;
+        prefetchUpcomingImages(request);
+        return;
+    }
+
+    if (reduceMotion.value) {
+        renderedBackgroundImage.value = request.imageUrl;
+        outgoingBackgroundImage.value = null;
+        outgoingBackgroundVisible.value = false;
+        backgroundTransitioning.value = false;
+        prefetchUpcomingImages(request);
+        return;
+    }
+
+    // Keep the old decoded image fully covering the new background for one
+    // paint, then fade only that outgoing layer. Road/city/control DOM remains.
+    outgoingBackgroundImage.value = currentImage;
+    outgoingBackgroundVisible.value = true;
+    backgroundTransitioning.value = false;
+    renderedBackgroundImage.value = request.imageUrl;
+    await nextTick();
+    try {
+        await renderedBackgroundElement.value?.decode();
+    } catch {
+        renderedBackgroundImage.value = currentImage;
+        outgoingBackgroundImage.value = null;
+        outgoingBackgroundVisible.value = false;
+        return;
+    }
+    await waitForPaint();
+    if (backgroundWorkerDisposed) return;
+
+    backgroundTransitioning.value = true;
+    outgoingBackgroundVisible.value = false;
+    await waitForBackgroundTransition();
+    if (backgroundWorkerDisposed) return;
+
+    outgoingBackgroundImage.value = null;
+    backgroundTransitioning.value = false;
+    prefetchUpcomingImages(request);
+};
+
+const runBackgroundWorker = async () => {
+    if (backgroundWorkerRunning) return;
+    backgroundWorkerRunning = true;
+    try {
+        while (pendingBackgroundRequest && !backgroundWorkerDisposed) {
+            const request = pendingBackgroundRequest;
+            pendingBackgroundRequest = null;
+            await showBackground(request);
+        }
+    } finally {
+        backgroundWorkerRunning = false;
+    }
+};
+
+watch(
+    backgroundRequestKey,
+    () => {
+        pendingBackgroundRequest = backgroundRequest.value;
+        void runBackgroundWorker();
+    },
+    { immediate: true }
+);
+
+onBeforeUnmount(() => {
+    backgroundWorkerDisposed = true;
+    pendingBackgroundRequest = null;
+});
 
 const detailProps = computed(() =>
     effectiveDetailMode.value
@@ -450,7 +617,7 @@ const selectCity = (cityId: number) => {
                 </div>
             </div>
         </div>
-        <div v-if="props.loading">
+        <div v-if="props.loading || (props.mapData && props.mapLayout && !backgroundReady)">
             <SkeletonLines :lines="4" />
         </div>
         <div v-else-if="!props.mapData || !props.mapLayout" class="map-empty">지도 데이터를 불러오지 못했습니다.</div>
@@ -462,8 +629,32 @@ const selectCity = (cityId: number) => {
                 :style="{ width: mapWidth, height: mapHeight }"
                 @click="clearTouchPreview"
             >
-                <div class="map-layer map-bglayer1" :style="mapBackgroundStyle" />
-                <div class="map-layer map-bglayer2" />
+                <div class="map-layer map-bglayer1" data-map-background-layer="current">
+                    <img
+                        v-if="renderedBackgroundImage"
+                        ref="renderedBackgroundElement"
+                        class="map-background-image"
+                        :src="renderedBackgroundImage"
+                        alt=""
+                        draggable="false"
+                    />
+                </div>
+                <div
+                    class="map-layer map-bglayer2"
+                    data-map-background-layer="outgoing"
+                    :class="{
+                        'is-visible': outgoingBackgroundVisible,
+                        'is-transitioning': backgroundTransitioning,
+                    }"
+                >
+                    <img
+                        v-if="outgoingBackgroundImage"
+                        class="map-background-image"
+                        :src="outgoingBackgroundImage"
+                        alt=""
+                        draggable="false"
+                    />
+                </div>
                 <div v-if="mapRoadImage" class="map-layer map-bgroad" :style="mapRoadStyle" />
                 <component
                     :is="effectiveDetailMode ? MapCityDetail : MapCityBasic"
@@ -637,6 +828,27 @@ const selectCity = (cityId: number) => {
     pointer-events: none;
 }
 
+.map-bglayer2 {
+    opacity: 0;
+}
+
+.map-bglayer2.is-visible {
+    opacity: 1;
+}
+
+.map-bglayer2.is-transitioning {
+    transition: opacity 480ms ease-in-out;
+    will-change: opacity;
+}
+
+.map-background-image {
+    display: block;
+    width: 100%;
+    height: 100%;
+    object-fit: fill;
+    user-select: none;
+}
+
 .map-tooltip {
     position: absolute;
     z-index: 16;
@@ -697,5 +909,11 @@ const selectCity = (cityId: number) => {
 
 .map-empty {
     color: rgba(232, 221, 196, 0.6);
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .map-bglayer2.is-transitioning {
+        transition: none;
+    }
 }
 </style>
