@@ -83,6 +83,7 @@ const buildContext = (authenticated: boolean, generalAccessTracking = false) => 
             general: {
                 findFirst: findGeneral,
             },
+            rankData: { findMany: async () => [] },
             city: { findUnique: findCity },
             nation: { findUnique: findNation },
             generalAccessLog: { findUnique: async () => null },
