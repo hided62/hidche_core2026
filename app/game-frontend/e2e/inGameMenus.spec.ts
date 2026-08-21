@@ -38,6 +38,18 @@ const readGeneralPanelImages = async (panel: Locator) =>
         })
     );
 
+const readGeneralSummaryRows = async (summary: Locator) =>
+    summary.evaluate((element) => {
+        const rows = new Map<number, string[]>();
+        for (const label of element.querySelectorAll<HTMLElement>(':scope > span')) {
+            const top = Math.round(label.getBoundingClientRect().top * 100) / 100;
+            const row = rows.get(top) ?? [];
+            row.push(label.textContent?.trim() ?? '');
+            rows.set(top, row);
+        }
+        return [...rows.values()];
+    });
+
 type FixtureState = {
     permission: 'head' | 'member';
     myset: number;
@@ -1242,19 +1254,12 @@ test('내 정보&설정 keeps desktop density and becomes a 390px horizontal-ide
     await expect(page.locator('.battle-general-extra')).toContainText('피살6,789');
     await expect(page.locator('.battle-general-extra__recent-value')).toHaveText('01-01 00:00');
     await expect(page.locator('.legacy-general-details')).toHaveCount(0);
-    await expect(page.locator('.battle-general-extra > span')).toHaveText([
-        '명성',
-        '계급',
-        '전투',
-        '승리',
-        '패배',
-        '계략',
-        '사관',
-        '사살',
-        '피살',
-        '승률',
-        '살상률',
-        '최근 전투',
+    expect(await readGeneralSummaryRows(page.locator('.battle-general-extra'))).toEqual([
+        ['명성', '계급', ''],
+        ['전투', '계략', '사관'],
+        ['승률', '승리', '패배'],
+        ['살상률', '사살', '피살'],
+        ['최근 전투'],
     ]);
     await expect(page.locator('.item-group')).toContainText('명마');
     await expect(page.locator('#container')).not.toContainText('che_');
@@ -2043,19 +2048,12 @@ test('감찰부 keeps the selector interaction and shows the permission error pa
     await expect(page.locator('.battle-general-extra')).toContainText('사관4년');
     await expect(page.locator('.battle-general-extra')).toContainText('승률62.50%');
     await expect(page.locator('.battle-general-extra')).toContainText('살상률181.84%');
-    await expect(page.locator('.battle-general-extra > span')).toHaveText([
-        '명성',
-        '계급',
-        '전투',
-        '승리',
-        '패배',
-        '계략',
-        '사관',
-        '사살',
-        '피살',
-        '승률',
-        '살상률',
-        '최근 전투',
+    expect(await readGeneralSummaryRows(page.locator('.battle-general-extra'))).toEqual([
+        ['명성', '계급', ''],
+        ['전투', '계략', '사관'],
+        ['승률', '승리', '패배'],
+        ['살상률', '사살', '피살'],
+        ['최근 전투'],
     ]);
     const battleImages = await readGeneralPanelImages(page.locator('.battle-general-card'));
     expect(battleImages).toHaveLength(2);
