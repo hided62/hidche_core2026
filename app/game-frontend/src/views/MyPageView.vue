@@ -691,7 +691,7 @@ onMounted(() => {
         </div>
         <p>항목을 끌어 놓거나 위·아래 버튼으로 상대 순서를 바꿉니다.</p>
         <SortableStringList
-            :list="mobileLayoutOrder"
+            v-model:list="mobileLayoutOrder"
             tag="ol"
             class="mobile-layout-list"
         >
