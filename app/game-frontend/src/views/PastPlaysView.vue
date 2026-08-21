@@ -1,7 +1,10 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue';
 
-import { isLegacyArchiveProfile, type LegacyArchiveProfile } from '@sammo-ts/common';
+import {
+    isLegacyArchiveProfile,
+    type LegacyArchiveProfile,
+} from '@sammo-ts/common/legacyArchive/ArchivedGeneralSnapshot';
 
 import GeneralBasicCard from '../components/main/GeneralBasicCard.vue';
 import GeneralBattleSummary, { type GeneralBattleSummaryData } from '../components/main/GeneralBattleSummary.vue';

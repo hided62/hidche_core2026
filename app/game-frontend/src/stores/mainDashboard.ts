@@ -5,12 +5,8 @@ import {
     MESSAGE_MAILBOX_PUBLIC,
     type MessageType,
 } from '@sammo-ts/logic/messages/message.js';
-import {
-    applyReadModelDelta,
-    cloneReadModelJson,
-    type PublicRealtimeEvent,
-    type RealtimeReadModelInvalidation,
-} from '@sammo-ts/common';
+import { applyReadModelDelta, cloneReadModelJson } from '@sammo-ts/common/realtime/delta';
+import type { PublicRealtimeEvent, RealtimeReadModelInvalidation } from '@sammo-ts/common/realtime/types';
 import { trpc } from '../utils/trpc';
 import { useMapViewerStore } from './mapViewer';
 import { useSessionStore } from './session';

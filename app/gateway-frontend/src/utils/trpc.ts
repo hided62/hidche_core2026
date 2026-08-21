@@ -1,4 +1,4 @@
-import { trpcJsonBodyHttpClientOptions } from '@sammo-ts/common';
+import { trpcJsonBodyHttpClientOptions } from '@sammo-ts/common/http/trpcTransport';
 import { createTRPCProxyClient, httpBatchLink, httpLink } from '@trpc/client';
 import type { AppRouter } from '@sammo-ts/gateway-api';
 

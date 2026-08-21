@@ -3,7 +3,7 @@ import { computed, onMounted, ref } from 'vue';
 import { useRouter } from 'vue-router';
 import type { inferRouterOutputs } from '@trpc/server';
 import type { AppRouter } from '@sammo-ts/gateway-api';
-import { gatewayProfileCapabilities } from '@sammo-ts/common';
+import { gatewayProfileCapabilities } from '@sammo-ts/common/gateway/profileStatus';
 
 import MapPreview from '../components/MapPreview.vue';
 import KakaoOtpDialog from '../components/KakaoOtpDialog.vue';
