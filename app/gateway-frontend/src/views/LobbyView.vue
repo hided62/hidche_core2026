@@ -108,6 +108,8 @@ const formatGraceEndsAt = (value: string | null | undefined): string => formatSe
 const serverSeasonStatus = (info: LobbyInfo) => resolveServerSeasonStatus(info);
 const formatAnnouncementDate = (value: string | null | undefined): string =>
     formatServerDateTime(value, { fallback: '-' });
+const profileScenarioTitle = (profileName: string): string =>
+    profileDetails.value[profileName]?.scenarioTitle.trim() || '-';
 const npcModeText = (mode: number): string => ['불가', '가능', '선택 생성'][mode] ?? '불가';
 const autorunDetailText = (info: LobbyInfo): string => {
     const autorun = info.autorunUser;
@@ -527,10 +529,10 @@ const handleEnter = async (profile: LobbyProfile, targetPath: string) => {
                                                     -
                                                 </div>
                                                 <div data-testid="profile-scenario-announcement">
-                                                    <span class="text-orange-400">{{
-                                                        profileDetails[profile.profileName]?.scenarioTitle ||
-                                                        profile.scenario
-                                                    }}</span
+                                                    <span
+                                                        class="text-orange-400"
+                                                        data-testid="profile-scenario-title"
+                                                        >{{ profileScenarioTitle(profile.profileName) }}</span
                                                     >{{ ' ' }}
                                                     <span class="text-green-400">
                                                         {{ profileDetails[profile.profileName]?.turnTerm }}분 턴 서버
@@ -542,7 +544,8 @@ const handleEnter = async (profile: LobbyProfile, targetPath: string) => {
                                                     서기 {{ profileDetails[profile.profileName]?.year }}년
                                                     {{ profileDetails[profile.profileName]?.month }}월 (<span
                                                         class="text-orange-400"
-                                                        >{{ profile.scenario }}</span
+                                                        data-testid="profile-scenario-title"
+                                                        >{{ profileScenarioTitle(profile.profileName) }}</span
                                                     >)
                                                 </div>
                                                 <div class="text-zinc-400">
