@@ -5,6 +5,7 @@ import { describe, it } from 'node:test';
 
 const routerSourcePath = path.resolve(import.meta.dirname, '../src/router/index.ts');
 const mainDashboardSourcePath = path.resolve(import.meta.dirname, '../src/stores/mainDashboard.ts');
+const myPageSourcePath = path.resolve(import.meta.dirname, '../src/views/MyPageView.vue');
 
 void describe('game route loading contract', () => {
     void it('loads view components through route-level dynamic imports', async () => {
@@ -25,5 +26,12 @@ void describe('game route loading contract', () => {
 
         assert.doesNotMatch(source, /from\s+['"]@sammo-ts\/logic['"]/);
         assert.match(source, /from\s+['"]@sammo-ts\/logic\/messages\/message\.js['"]/);
+    });
+
+    void it('does not preload the server-side logic barrel from the my-page route', async () => {
+        const source = await readFile(myPageSourcePath, 'utf8');
+
+        assert.doesNotMatch(source, /from\s+['"]@sammo-ts\/logic['"]/);
+        assert.match(source, /from\s+['"]@sammo-ts\/logic\/scenario\/scenarioEffect\.js['"]/);
     });
 });

@@ -4,6 +4,7 @@ import test from 'node:test';
 import {
     commandArgumentPresentation,
     presentedCommandKeys,
+    resolveCommandArgumentMapTarget,
 } from '../src/components/command/commandArgumentPresentation.ts';
 
 const cityCommands = [
@@ -81,4 +82,26 @@ void test('marks the same city and nation target families that Ref renders with 
     for (const commandKey of capitalCommands) {
         assert.equal(commandArgumentPresentation(commandKey).mapTarget, 'capital', commandKey);
     }
+});
+
+void test('derives selection maps from the actual city and nation argument contract', () => {
+    assert.equal(
+        resolveCommandArgumentMapTarget('future_city_command', [
+            { key: 'target', label: '도시', kind: 'select', required: true, optionSource: 'cities' },
+        ]),
+        'city'
+    );
+    assert.equal(
+        resolveCommandArgumentMapTarget('future_nation_command', [
+            { key: 'target', label: '국가', kind: 'select', required: true, optionSource: 'nations' },
+        ]),
+        'nation'
+    );
+    assert.equal(resolveCommandArgumentMapTarget('che_증축', []), 'capital');
+    assert.equal(
+        resolveCommandArgumentMapTarget('future_general_command', [
+            { key: 'target', label: '장수', kind: 'select', required: true, optionSource: 'generals' },
+        ]),
+        undefined
+    );
 });
