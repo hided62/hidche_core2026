@@ -17,8 +17,8 @@ import { ConflictingTurnDaemonCommandError } from '../../daemon/databaseTranspor
 import { resolveAccessWindows } from '../../services/generalAccess.js';
 import { adjustAccountIconForUser } from '../../services/accountIconSync.js';
 import {
-    loadCrewTypeDisplayNames,
-    loadItemDisplayNames,
+    loadCrewTypeDisplayDetails,
+    loadItemDisplayDetails,
     resolveCityLevelName,
     resolveDedicationLevelName,
     resolveNationLevelName,
@@ -428,13 +428,13 @@ export const getGeneralContext = async (ctx: GameApiContext) => {
             }
         }
     }
-    const [personalityNames, domesticNames, warNames, nationTypeNames, crewTypeNames, itemNames] = await Promise.all([
+    const [personalityNames, domesticNames, warNames, nationTypeNames, crewTypeDetails, itemDetails] = await Promise.all([
         loadTraitNames([general.personalCode], 'personality'),
         loadTraitNames([general.specialCode], 'domestic'),
         loadTraitNames([general.special2Code], 'war'),
         loadTraitNames([nation.typeCode], 'nation'),
-        loadCrewTypeDisplayNames(worldState, ctx.profile.id),
-        loadItemDisplayNames([general.horseCode, general.weaponCode, general.bookCode, general.itemCode]),
+        loadCrewTypeDisplayDetails(worldState, ctx.profile.id),
+        loadItemDisplayDetails([general.horseCode, general.weaponCode, general.bookCode, general.itemCode]),
     ]);
 
     const worldConfig = asRecord(worldState?.config);
@@ -461,7 +461,11 @@ export const getGeneralContext = async (ctx: GameApiContext) => {
     );
     const itemName = (code: string | null): string | null => {
         const normalized = normalizeItemCode(code);
-        return normalized ? (itemNames.get(normalized) ?? sanitizeInternalDisplayCode(normalized)) : null;
+        return normalized ? (itemDetails.get(normalized)?.name ?? sanitizeInternalDisplayCode(normalized)) : null;
+    };
+    const itemInfo = (code: string | null): string | null => {
+        const normalized = normalizeItemCode(code);
+        return normalized ? (itemDetails.get(normalized)?.info ?? '') : null;
     };
     const worldMeta = asRecord(worldState?.meta);
     const rawLastExecuted = worldMeta.lastTurnTime ?? worldMeta.turntime;
@@ -523,11 +527,17 @@ export const getGeneralContext = async (ctx: GameApiContext) => {
                 worldState?.tickSeconds ?? 0
             ),
             crewTypeId: general.crewTypeId,
-            crewTypeName: crewTypeNames.get(general.crewTypeId) ?? '-',
+            crewTypeName: crewTypeDetails.get(general.crewTypeId)?.name ?? '-',
+            crewTypeInfo: crewTypeDetails.get(general.crewTypeId) ?? null,
             traits: {
                 personal: resolveTraitDisplayName(general.personalCode, personalityNames),
                 specialDomestic: resolveTraitDisplayName(general.specialCode, domesticNames),
                 specialWar: resolveTraitDisplayName(general.special2Code, warNames),
+            },
+            traitInfo: {
+                personal: personalityNames.get(general.personalCode)?.info ?? '',
+                specialDomestic: domesticNames.get(general.specialCode)?.info ?? '',
+                specialWar: warNames.get(general.special2Code)?.info ?? '',
             },
             progression: {
                 experienceLevel: readNumber(metaRecord.explevel, 0),
@@ -561,6 +571,12 @@ export const getGeneralContext = async (ctx: GameApiContext) => {
                 weapon: itemName(general.weaponCode),
                 book: itemName(general.bookCode),
                 item: itemName(general.itemCode),
+            },
+            itemInfo: {
+                horse: itemInfo(general.horseCode),
+                weapon: itemInfo(general.weaponCode),
+                book: itemInfo(general.bookCode),
+                item: itemInfo(general.itemCode),
             },
             troop: troop
                 ? {
@@ -603,6 +619,7 @@ export const getGeneralContext = async (ctx: GameApiContext) => {
             capitalCityId: nation.capitalCityId,
             levelName: resolveNationLevelName(nation.level),
             typeName: nation.id === 0 ? '-' : (nationType?.name ?? sanitizeInternalDisplayCode(nation.typeCode)),
+            typeInfo: nation.id === 0 ? '' : (nationType?.info ?? ''),
             typePros: nationTypeEffects.pros,
             typeCons: nationTypeEffects.cons,
             capitalCityName: nation.id === 0 ? null : (capitalCity?.name ?? null),
