@@ -1188,7 +1188,7 @@ test('desktop menus preserve ref columns, prefix-safe routes, and controlled dro
     await expect(page.locator('.legacy-game-info')).toContainText('현재: 185년 1월');
     await expect(page.locator('.legacy-game-info')).toContainText('턴: 10분');
     await expect(page.locator('.legacy-game-info')).not.toContainText('최근 턴:');
-    await expect(page.locator('.execution-status')).toHaveText('동작 시각: 08-13 09:05');
+    await expect(page.locator('.execution-status')).toHaveText('현재 시각: 08-13 09:00');
     await expect(page.locator('.tournament-status')).toHaveText('토너먼트: 참가 모집중');
     await expect(page.locator('.vote-status')).toHaveText('설문: 메뉴 설문');
     const headerStatusGeometry = await page.locator('.main-page').evaluate((element) => {
@@ -1791,6 +1791,89 @@ test('main general card uses local turn time and command clock tracks corrected 
     await page.clock.runFor(1_500);
     await expect(preopenClock).toHaveText('09:10:01');
     expect(state.operations).toHaveLength(operationsBeforePreopenBoundary);
+});
+
+test('main header clock follows minute boundaries only while game-server contact is recent', async ({
+    page,
+}, testInfo) => {
+    const state: NavigationFixture = {
+        officerLevel: 0,
+        permission: 0,
+        nationLevel: 0,
+        stage: 0,
+        npcMode: 1,
+        generalMeCalls: 0,
+        operations: [],
+        serverTime: '2026-08-13T00:00:35.000Z',
+        serverWallTime: '2026-08-13T00:00:00.000Z',
+        clockMode: 'realtime',
+        clockRunning: true,
+    };
+    await installRealtimeHarness(page);
+    await installFixture(page, state);
+    await page.clock.install({ time: new Date('2026-08-13T00:00:00.000Z') });
+    await page.setViewportSize({ width: 1200, height: 900 });
+    await waitForMain(page);
+    await waitForMainRealtime(page);
+
+    const clock = page.locator('.execution-status');
+    const initialRequestCount = state.trpcRequests?.length ?? 0;
+    await expect(clock).toHaveText('현재 시각: 08-13 09:00');
+    await expect(clock).not.toHaveClass(/execution-status--stale/u);
+
+    await page.clock.runFor(25_000);
+    await expect(clock).toHaveText('현재 시각: 08-13 09:01');
+
+    await page.clock.runFor(21_000);
+    await expect(clock).toHaveClass(/execution-status--stale/u);
+    await expect(clock).toHaveAttribute('title', '최근 45초 동안 서버 통신이 없어 시각 갱신을 멈췄습니다.');
+    await expect.poll(() => clock.evaluate((element) => getComputedStyle(element).color)).toBe('rgb(255, 0, 255)');
+    const staleDesktopGeometry = await clock.evaluate((element) => ({
+        rect: element.getBoundingClientRect().toJSON(),
+        overflow: element.scrollWidth - element.clientWidth,
+        color: getComputedStyle(element).color,
+        fontSize: getComputedStyle(element).fontSize,
+        lineHeight: getComputedStyle(element).lineHeight,
+    }));
+    expect(staleDesktopGeometry.rect.width).toBeCloseTo(333.33, 0);
+    expect(staleDesktopGeometry.rect.height).toBeGreaterThanOrEqual(36);
+    expect(staleDesktopGeometry.overflow).toBeLessThanOrEqual(0);
+    await clock.screenshot({ path: testInfo.outputPath('main-header-clock-stale-desktop-1200.png') });
+    await page.clock.runFor(60_000);
+    await expect(clock).toHaveText('현재 시각: 08-13 09:01');
+
+    await page.evaluate(() => {
+        (window as unknown as { __emitMainRealtime: (type: string, value: unknown) => void }).__emitMainRealtime(
+            'ping',
+            {}
+        );
+    });
+    await expect(clock).toHaveText('현재 시각: 08-13 09:02');
+    await expect(clock).not.toHaveClass(/execution-status--stale/u);
+    await page.clock.runFor(39_000);
+    await expect(clock).toHaveText('현재 시각: 08-13 09:03');
+    await expect.poll(() => clock.evaluate((element) => getComputedStyle(element).color)).toBe('rgb(0, 255, 255)');
+
+    await page.setViewportSize({ width: 500, height: 900 });
+    const freshMobileGeometry = await clock.evaluate((element) => ({
+        rect: element.getBoundingClientRect().toJSON(),
+        overflow: element.scrollWidth - element.clientWidth,
+        color: getComputedStyle(element).color,
+        fontSize: getComputedStyle(element).fontSize,
+        lineHeight: getComputedStyle(element).lineHeight,
+        documentScrollWidth: document.documentElement.scrollWidth,
+    }));
+    expect(freshMobileGeometry.rect.width).toBeCloseTo(166.67, 0);
+    expect(freshMobileGeometry.overflow).toBeLessThanOrEqual(0);
+    expect(freshMobileGeometry.documentScrollWidth).toBe(500);
+    await Promise.all([
+        clock.screenshot({ path: testInfo.outputPath('main-header-clock-fresh-mobile-500.png') }),
+        writeFile(
+            testInfo.outputPath('main-header-clock-geometry.json'),
+            `${JSON.stringify({ staleDesktopGeometry, freshMobileGeometry }, null, 2)}\n`
+        ),
+    ]);
+    expect(state.trpcRequests?.length ?? 0).toBe(initialRequestCount);
 });
 
 test('message targets keep reply behavior and use nation-color contrast in labels and select options', async ({
