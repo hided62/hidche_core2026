@@ -220,7 +220,7 @@ export const useMainDashboardStore = defineStore('mainDashboard', () => {
                 label: '외교메시지',
                 color: '#000000',
                 options: contacts
-                    .filter((nation) => nation.mailbox !== ownMailbox && nation.nationId > 0)
+                    .filter((nation) => nation.mailbox !== ownMailbox)
                     .map((nation) => ({
                         label: nation.name,
                         value: nation.mailbox,
