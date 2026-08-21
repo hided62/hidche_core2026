@@ -182,9 +182,24 @@ const migrateDedicatedSchema = async (workspaceRoot: string, databaseUrl: string
 
 type GeneralRow = Awaited<ReturnType<GamePrismaClient['general']['findMany']>>[number];
 
+const PRIVILEGED_VIEWER_LEVELS = [12, 10, 8, 6, 11, 9, 7, 5] as const;
+
+export const privilegedViewerPlacement = (index: number, nationId: number, cityId: number) => ({
+    nationId,
+    cityId,
+    officerLevel: PRIVILEGED_VIEWER_LEVELS[index % PRIVILEGED_VIEWER_LEVELS.length]!,
+});
+
 const cloneGeneral = (
     source: GeneralRow,
-    input: { id: number; userId: string | null; npcState: number }
+    input: {
+        id: number;
+        userId: string | null;
+        npcState: number;
+        nationId?: number;
+        cityId?: number;
+        officerLevel?: number;
+    }
 ): GamePrisma.GeneralCreateManyInput =>
     ({
         ...source,
@@ -192,6 +207,9 @@ const cloneGeneral = (
         name: `${source.name}#L${input.id}`,
         userId: input.userId,
         npcState: input.npcState,
+        nationId: input.nationId ?? source.nationId,
+        cityId: input.cityId ?? source.cityId,
+        officerLevel: input.officerLevel ?? source.officerLevel,
         turnTime: new Date(source.turnTime),
         recentWarTime: source.recentWarTime ? new Date(source.recentWarTime) : null,
         createdAt: FIXED_NOW,
@@ -237,8 +255,17 @@ const projectFixtureState = async (db: GamePrismaClient) => {
 };
 
 const resizeSeededGenerals = async (db: GamePrismaClient, config: LoadConfig): Promise<void> => {
-    const source = await db.general.findMany({ orderBy: { id: 'asc' } });
+    const [source, nations, cities] = await Promise.all([
+        db.general.findMany({ orderBy: { id: 'asc' } }),
+        db.nation.findMany({ orderBy: { id: 'asc' } }),
+        db.city.findMany({ orderBy: { id: 'asc' } }),
+    ]);
     if (source.length === 0) throw new Error('scenario seed produced no generals');
+    const existingViewerNation = nations.find((nation) => nation.id > 0);
+    const viewerCity =
+        (existingViewerNation ? cities.find((city) => city.nationId === existingViewerNation.id) : null) ?? cities[0];
+    if (!viewerCity) throw new Error('scenario seed produced no city for privileged page load');
+    const viewerNationId = existingViewerNation?.id ?? Math.max(...nations.map((nation) => nation.id), 0) + 1;
     const expectedNpc = config.capacity.npcGenerals;
     const expectedHuman = config.capacity.humanGenerals;
     if (expectedHuman !== config.capacity.authenticatedViewers) {
@@ -246,20 +273,43 @@ const resizeSeededGenerals = async (db: GamePrismaClient, config: LoadConfig): P
     }
     await db.$transaction(async (transaction) => {
         await transaction.general.deleteMany();
+        if (!existingViewerNation) {
+            await transaction.nation.create({
+                data: {
+                    id: viewerNationId,
+                    name: '부하측정국',
+                    color: '#334466',
+                    capitalCityId: viewerCity.id,
+                    gold: 100_000,
+                    rice: 100_000,
+                    tech: 1_000,
+                    level: 1,
+                    typeCode: 'che_중립',
+                    meta: { cityIds: [viewerCity.id], infoText: null, secretlimit: 3 },
+                },
+            });
+        }
+        await transaction.city.update({ where: { id: viewerCity.id }, data: { nationId: viewerNationId } });
         const rows: GamePrisma.GeneralCreateManyInput[] = [];
         for (let index = 0; index < expectedNpc; index += 1) {
             rows.push(cloneGeneral(source[index % source.length]!, { id: index + 1, userId: null, npcState: 2 }));
         }
         for (let index = 0; index < expectedHuman; index += 1) {
+            const placement = privilegedViewerPlacement(index, viewerNationId, viewerCity.id);
             rows.push(
                 cloneGeneral(source[(expectedNpc + index) % source.length]!, {
                     id: expectedNpc + index + 1,
                     userId: `load-user-${String(index + 1).padStart(4, '0')}`,
                     npcState: 0,
+                    ...placement,
                 })
             );
         }
         await transaction.general.createMany({ data: rows });
+        await transaction.nation.update({
+            where: { id: viewerNationId },
+            data: { chiefGeneralId: expectedNpc + 1 },
+        });
         const world = await transaction.worldState.findFirstOrThrow({ select: { id: true, meta: true, config: true } });
         await transaction.worldState.update({
             where: { id: world.id },
@@ -435,10 +485,17 @@ export const verifyCapacityFixture = async (config: LoadConfig, env: NodeJS.Proc
             const redisVersion = /^redis_version:(.+)$/mu.exec(redisInfo)?.[1]?.trim() ?? 'unknown';
             const npcGenerals = state.generals.filter((general) => general.npcState >= 2).length;
             const humanGenerals = state.generals.filter((general) => general.npcState === 0 && general.userId).length;
+            const privilegedHumanGenerals = state.generals.filter(
+                (general) =>
+                    general.npcState === 0 && general.userId && general.nationId > 0 && general.officerLevel >= 5
+            );
+            const viewerNationIds = [...new Set(privilegedHumanGenerals.map((general) => general.nationId))];
             const valid =
                 state.generals.length === config.capacity.npcGenerals + config.capacity.humanGenerals &&
                 npcGenerals === config.capacity.npcGenerals &&
                 humanGenerals === config.capacity.humanGenerals &&
+                privilegedHumanGenerals.length === config.capacity.humanGenerals &&
+                viewerNationIds.length === 1 &&
                 accessTokens === config.capacity.authenticatedViewers &&
                 manifestFixtureSha256 === fixtureSha256;
             return {
@@ -447,6 +504,8 @@ export const verifyCapacityFixture = async (config: LoadConfig, env: NodeJS.Proc
                 generals: state.generals.length,
                 npcGenerals,
                 humanGenerals,
+                privilegedHumanGenerals: privilegedHumanGenerals.length,
+                viewerNations: viewerNationIds.length,
                 accessTokens,
                 redisManifestPresent: rawManifest !== null,
                 redisManifestMatches: manifestFixtureSha256 === fixtureSha256,

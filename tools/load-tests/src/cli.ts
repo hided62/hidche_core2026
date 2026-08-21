@@ -10,6 +10,7 @@ import {
     seedCapacityFixture,
     verifyCapacityFixture,
 } from './fixture.js';
+import { measurePageNavigation } from './pageNavigation.js';
 import { describeDryRun, runLoadTest } from './runner.js';
 import { measureTurnFlush } from './turnFlush.js';
 
@@ -21,13 +22,15 @@ type Command =
     | 'seed'
     | 'verify-fixture'
     | 'activate-coverage'
+    | 'measure-page-navigation'
+    | 'measure-turn-cycle'
     | 'measure-turn-flush'
     | 'materialize-calibration'
     | 'cleanup';
 
 const usage = (): never => {
     process.stderr.write(
-        'usage: cli.ts <validate|dry-run|run|prepare|seed|verify-fixture|activate-coverage|measure-turn-flush|materialize-calibration|cleanup> --config <file> [--tokens <0600-gitignored-file>] [--output <new-json-file>] [--confirm <load_schema>]\n'
+        'usage: cli.ts <validate|dry-run|run|prepare|seed|verify-fixture|activate-coverage|measure-page-navigation|measure-turn-cycle|measure-turn-flush|materialize-calibration|cleanup> --config <file> [--tokens <0600-gitignored-file>] [--output <new-json-file>] [--confirm <load_schema>]\n'
     );
     process.exit(64);
 };
@@ -45,6 +48,8 @@ const parseArguments = (
             'seed',
             'verify-fixture',
             'activate-coverage',
+            'measure-page-navigation',
+            'measure-turn-cycle',
             'measure-turn-flush',
             'materialize-calibration',
             'cleanup',
@@ -73,7 +78,12 @@ const parseArguments = (
     )
         usage();
     if (
-        command === 'measure-turn-flush' &&
+        command === 'measure-page-navigation' &&
+        (!values.get('--tokens') || !values.get('--output') || values.has('--confirm'))
+    )
+        usage();
+    if (
+        (command === 'measure-turn-flush' || command === 'measure-turn-cycle') &&
         (!values.get('--confirm') || !values.get('--output') || values.has('--tokens'))
     )
         usage();
@@ -124,10 +134,14 @@ const main = async (): Promise<void> => {
         process.stdout.write(`${JSON.stringify(await activateCapacityCoverage(config, args.confirm!))}\n`);
         return;
     }
-    if (args.command === 'measure-turn-flush') {
+    if (args.command === 'measure-turn-flush' || args.command === 'measure-turn-cycle') {
         const output = path.resolve(args.output!);
         await mkdir(path.dirname(output), { recursive: true });
-        const result = await measureTurnFlush({ config, confirmation: args.confirm! });
+        const result = await measureTurnFlush({
+            config,
+            confirmation: args.confirm!,
+            paced: args.command === 'measure-turn-cycle',
+        });
         await writeFile(output, `${JSON.stringify(result, null, 2)}\n`, {
             encoding: 'utf8',
             flag: 'wx',
@@ -135,6 +149,21 @@ const main = async (): Promise<void> => {
         });
         process.stdout.write(
             `${JSON.stringify({ completed: true, processedGenerals: result.throughput.processedGenerals, outputWritten: true })}\n`
+        );
+        return;
+    }
+    if (args.command === 'measure-page-navigation') {
+        const tokens = await loadTokens(args.tokens!, workspaceRoot, config.capacity.authenticatedViewers);
+        const output = path.resolve(args.output!);
+        await mkdir(path.dirname(output), { recursive: true });
+        const result = await measurePageNavigation({ config, tokens, workspaceRoot });
+        await writeFile(output, `${JSON.stringify(result, null, 2)}\n`, {
+            encoding: 'utf8',
+            flag: 'wx',
+            mode: 0o600,
+        });
+        process.stdout.write(
+            `${JSON.stringify({ completed: true, viewers: result.fixture.viewers, outputWritten: true })}\n`
         );
         return;
     }
