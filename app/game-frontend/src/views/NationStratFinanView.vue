@@ -285,7 +285,13 @@ onMounted(() => void loadStratFinan());
                 </header>
                 <div class="scout-limit">870px x 200px를 넘어서는 내용은 표시되지 않습니다.</div>
                 <div v-if="!editingScoutMsg" class="message-preview scout-preview" v-html="scoutMsg || '내용 없음'" />
-                <LegacyHtmlEditor v-else v-model="scoutMsgDraft" :max-length="1000" aria-label="임관 권유" />
+                <LegacyHtmlEditor
+                    v-else
+                    v-model="scoutMsgDraft"
+                    class="scout-editor"
+                    :max-length="1000"
+                    aria-label="임관 권유"
+                />
             </section>
 
             <div class="finance-title">예산&amp;정책</div>
@@ -550,6 +556,45 @@ textarea {
     max-height: 200px;
     margin-left: auto;
     overflow: hidden;
+}
+.message-preview :deep(ol),
+.message-preview :deep(ul) {
+    margin: 0 0 0.4em;
+    padding-left: 2em;
+    list-style-position: outside;
+}
+.message-preview :deep(ol) {
+    list-style-type: decimal;
+}
+.message-preview :deep(ul) {
+    list-style-type: disc;
+}
+.message-preview :deep(li > p) {
+    margin: 0;
+}
+.message-preview :deep(img) {
+    max-width: 100%;
+}
+.message-preview :deep(img.custom-image-align-left) {
+    display: block;
+    margin-right: auto;
+    margin-left: 0;
+}
+.message-preview :deep(img.custom-image-align-center) {
+    display: block;
+    margin-right: auto;
+    margin-left: auto;
+}
+.message-preview :deep(img.custom-image-align-right) {
+    display: block;
+    margin-right: 0;
+    margin-left: auto;
+}
+.message-preview :deep(img.custom-image-align-float-left) {
+    float: left;
+}
+.message-preview :deep(img.custom-image-align-float-right) {
+    float: right;
 }
 .finance-grid {
     display: flex;
