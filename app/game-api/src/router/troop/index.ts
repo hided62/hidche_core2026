@@ -1,11 +1,42 @@
 import { TRPCError } from '@trpc/server';
 import { z } from 'zod';
 
-import { asRecord, type TurnDaemonCommandResult } from '@sammo-ts/common';
-import { isValidTroopNameWidth, normalizeTroopName, resolveTroopSecretPermission } from '@sammo-ts/logic';
+import { asRecord, type RankDataType, type TurnDaemonCommandResult } from '@sammo-ts/common';
+import {
+    getBillByLevel,
+    isValidTroopNameWidth,
+    normalizeTroopName,
+    resolveTroopSecretPermission,
+} from '@sammo-ts/logic';
 
 import { accessAuthedProcedure, engineAuthedProcedure, router } from '../../trpc.js';
+import {
+    loadCrewTypeDisplayNames,
+    loadItemDisplayNames,
+    resolveDedicationLevelName,
+    resolveOfficerLevelName,
+    sanitizeInternalDisplayCode,
+} from '../../services/gameDisplayNames.js';
+import {
+    resolveGeneralTypeCall,
+    resolveLeadershipBonus,
+    resolveRefreshScoreText,
+    resolveRemainingMinutes,
+} from '../../services/generalBasicCardProjection.js';
+import { loadTraitNames } from '../nation/shared.js';
 import { getMyGeneral } from '../shared/general.js';
+
+const TROOP_PANEL_RECORD_TYPES = [
+    'firenum',
+    'warnum',
+    'killnum',
+    'deathnum',
+    'killcrew',
+    'deathcrew',
+] as const satisfies readonly RankDataType[];
+
+const readNumber = (value: unknown, fallback = 0): number =>
+    typeof value === 'number' && Number.isFinite(value) ? value : fallback;
 
 const troopNameSchema = z
     .string()
@@ -42,7 +73,7 @@ export const troopRouter = router({
         const [nation, troops, generals, cities, worldState] = await Promise.all([
             ctx.db.nation.findUnique({
                 where: { id: me.nationId },
-                select: { id: true, name: true, meta: true },
+                select: { id: true, name: true, color: true, level: true, meta: true },
             }),
             ctx.db.troop.findMany({
                 where: { nationId: me.nationId },
@@ -55,49 +86,140 @@ export const troopRouter = router({
                     name: true,
                     cityId: true,
                     troopId: true,
+                    npcState: true,
                     picture: true,
                     imageServer: true,
                     turnTime: true,
+                    recentWarTime: true,
                     leadership: true,
                     strength: true,
                     intel: true,
+                    officerLevel: true,
+                    gold: true,
+                    rice: true,
+                    crew: true,
+                    train: true,
+                    atmos: true,
+                    injury: true,
                     experience: true,
+                    dedication: true,
+                    age: true,
+                    crewTypeId: true,
+                    weaponCode: true,
+                    bookCode: true,
+                    horseCode: true,
+                    itemCode: true,
+                    personalCode: true,
+                    specialCode: true,
+                    special2Code: true,
                     meta: true,
                 },
             }),
             ctx.db.city.findMany({
                 select: { id: true, name: true },
             }),
-            ctx.db.worldState.findFirst({ select: { config: true } }),
+            ctx.db.worldState.findFirst({ select: { tickSeconds: true, config: true, meta: true } }),
         ]);
         if (!nation) {
             throw new TRPCError({ code: 'NOT_FOUND', message: '국가 정보를 찾을 수 없습니다.' });
         }
 
+        const permission = resolveTroopSecretPermission(me, nation.meta, false);
         const troopLeaderIds = troops.map((troop) => troop.troopLeaderId);
-        const turns =
+        const generalIds = generals.map((general) => general.id);
+        const [turns, rankRows, accessRows] = await Promise.all([
             troopLeaderIds.length === 0
                 ? []
-                : await ctx.db.generalTurn.findMany({
+                : ctx.db.generalTurn.findMany({
                       where: { generalId: { in: troopLeaderIds }, turnIdx: { lt: 5 } },
                       select: { generalId: true, turnIdx: true, actionCode: true },
                       orderBy: [{ generalId: 'asc' }, { turnIdx: 'asc' }],
-                  });
+                  }),
+            permission < 1 || generalIds.length === 0
+                ? []
+                : ctx.db.rankData.findMany({
+                      where: {
+                          generalId: { in: generalIds },
+                          type: { in: [...TROOP_PANEL_RECORD_TYPES] },
+                      },
+                      select: { generalId: true, type: true, value: true },
+                  }),
+            permission < 1 || generalIds.length === 0
+                ? []
+                : ctx.db.generalAccessLog.findMany({
+                      where: { generalId: { in: generalIds } },
+                      select: { generalId: true, refreshScore: true, refreshScoreTotal: true },
+                  }),
+        ]);
         const cityNames = new Map(cities.map((city) => [city.id, city.name]));
         const generalMap = new Map(generals.map((general) => [general.id, general]));
         const reservedByLeader = new Map<number, string[]>();
+        const firstActionByLeader = new Map<number, string>();
+        const rankValueMap = new Map<number, Map<RankDataType, number>>();
+        const accessByGeneral = new Map(accessRows.map((row) => [row.generalId, row]));
         const worldConfig = asRecord(worldState?.config);
         const constValues = asRecord(worldConfig.const ?? worldConfig.consts);
+        const scenarioStat = asRecord(worldConfig.stat);
+        const chiefStatMin = readNumber(scenarioStat.chiefMin, 70);
+        const statGradeLevel = readNumber(constValues.statGradeLevel, 5);
+        const retirementYear = readNumber(constValues.retirementYear, 70);
+        const maxDedicationLevel = Math.max(0, Math.trunc(readNumber(constValues.maxDedLevel, 30)));
         const statUpgradeLimit =
             typeof constValues.upgradeLimit === 'number' && Number.isFinite(constValues.upgradeLimit)
                 ? constValues.upgradeLimit
                 : 30;
         for (const turn of turns) {
+            if (!firstActionByLeader.has(turn.generalId)) {
+                firstActionByLeader.set(turn.generalId, turn.actionCode);
+            }
             const list = reservedByLeader.get(turn.generalId) ?? [];
             // Ref 부대 편성은 앞쪽 슬롯이 집합인지 여부만 공개하고 다른 명령은 가립니다.
             list.push(turn.actionCode === 'che_집합' ? '집합' : '-');
             reservedByLeader.set(turn.generalId, list);
         }
+        for (const row of rankRows) {
+            const values = rankValueMap.get(row.generalId) ?? new Map<RankDataType, number>();
+            values.set(row.type as (typeof TROOP_PANEL_RECORD_TYPES)[number], row.value);
+            rankValueMap.set(row.generalId, values);
+        }
+
+        const [personalityNames, domesticNames, warNames, crewTypeNames, itemNames] =
+            permission < 1
+                ? [new Map(), new Map(), new Map(), new Map(), new Map()]
+                : await Promise.all([
+                      loadTraitNames(
+                          generals.map((general) => general.personalCode),
+                          'personality'
+                      ),
+                      loadTraitNames(
+                          generals.map((general) => general.specialCode),
+                          'domestic'
+                      ),
+                      loadTraitNames(
+                          generals.map((general) => general.special2Code),
+                          'war'
+                      ),
+                      loadCrewTypeDisplayNames(worldState, ctx.profile.id),
+                      loadItemDisplayNames(
+                          generals.flatMap((general) => [
+                              general.weaponCode,
+                              general.bookCode,
+                              general.horseCode,
+                              general.itemCode,
+                          ])
+                      ),
+                  ]);
+        const traitName = (code: string, names: Map<string, { name: string }>): string =>
+            names.get(code)?.name ?? sanitizeInternalDisplayCode(code);
+        const itemName = (code: string): string => itemNames.get(code) ?? sanitizeInternalDisplayCode(code);
+        const worldMeta = asRecord(worldState?.meta);
+        const rawLastExecuted = worldMeta.lastTurnTime ?? worldMeta.turntime;
+        const lastExecuted =
+            rawLastExecuted instanceof Date
+                ? rawLastExecuted
+                : typeof rawLastExecuted === 'string'
+                  ? new Date(rawLastExecuted)
+                  : null;
 
         const mappedTroops = troops
             .map((troop) => {
@@ -123,19 +245,52 @@ export const troopRouter = router({
                         .map((general) => {
                             const meta = asRecord(general.meta);
                             const metaNumber = (key: string): number => {
-                                const value = meta[key];
-                                return typeof value === 'number' && Number.isFinite(value) ? value : 0;
+                                return readNumber(meta[key]);
                             };
+                            const stats = {
+                                leadership: general.leadership,
+                                strength: general.strength,
+                                intelligence: general.intel,
+                            };
+                            const storedDedicationLevel = metaNumber('dedlevel');
+                            const dedicationLevel =
+                                storedDedicationLevel > 0
+                                    ? storedDedicationLevel
+                                    : Math.max(
+                                          0,
+                                          Math.min(Math.ceil(Math.sqrt(general.dedication) / 10), maxDedicationLevel)
+                                      );
+                            const rankValue = (
+                                type: (typeof TROOP_PANEL_RECORD_TYPES)[number],
+                                fallbackKeys: string[] = []
+                            ): number => {
+                                const stored = rankValueMap.get(general.id)?.get(type);
+                                if (stored !== undefined) return stored;
+                                for (const key of fallbackKeys) {
+                                    const fallback = meta[key];
+                                    if (typeof fallback === 'number' && Number.isFinite(fallback)) return fallback;
+                                }
+                                return 0;
+                            };
+                            const officerCityId = readNumber(
+                                meta.officerCity ?? meta.officer_city ?? meta.officerCityId
+                            );
+                            const access = accessByGeneral.get(general.id);
+                            const refreshScore = access?.refreshScore ?? 0;
+                            const refreshScoreTotal = access?.refreshScoreTotal ?? 0;
+                            const firstAction = firstActionByLeader.get(troop.troopLeaderId);
+                            const troopStatus: 'inactive' | 'present' | 'away' =
+                                firstAction !== undefined && firstAction !== 'che_집합'
+                                    ? 'inactive'
+                                    : leader?.cityId === general.cityId
+                                      ? 'present'
+                                      : 'away';
                             return {
                                 id: general.id,
                                 name: general.name,
                                 cityId: general.cityId,
                                 cityName: cityNames.get(general.cityId) ?? '알 수 없음',
-                                stats: {
-                                    leadership: general.leadership,
-                                    strength: general.strength,
-                                    intelligence: general.intel,
-                                },
+                                stats,
                                 experience: general.experience,
                                 progression: {
                                     experienceLevel: metaNumber('explevel'),
@@ -147,6 +302,114 @@ export const troopRouter = router({
                                     statUpgradeLimit,
                                     dex: [1, 2, 3, 4, 5].map((index) => metaNumber(`dex${index}`)),
                                 },
+                                panel:
+                                    permission < 1
+                                        ? null
+                                        : {
+                                              general: {
+                                                  id: general.id,
+                                                  name: general.name,
+                                                  picture: general.picture,
+                                                  imageServer: general.imageServer,
+                                                  npcState: general.npcState,
+                                                  officerLevel: general.officerLevel,
+                                                  officerLevelText: resolveOfficerLevelName(
+                                                      general.officerLevel,
+                                                      nation.level
+                                                  ),
+                                                  officerCityName:
+                                                      general.officerLevel >= 2 && general.officerLevel <= 4
+                                                          ? (cityNames.get(officerCityId) ?? null)
+                                                          : null,
+                                                  generalType: resolveGeneralTypeCall(
+                                                      stats,
+                                                      chiefStatMin,
+                                                      statGradeLevel
+                                                  ),
+                                                  leadershipBonus: resolveLeadershipBonus(
+                                                      general.officerLevel,
+                                                      nation.level
+                                                  ),
+                                                  stats,
+                                                  gold: general.gold,
+                                                  rice: general.rice,
+                                                  crew: general.crew,
+                                                  train: general.train,
+                                                  atmos: general.atmos,
+                                                  injury: general.injury,
+                                                  experience: general.experience,
+                                                  dedication: general.dedication,
+                                                  age: general.age,
+                                                  retirementYear,
+                                                  turnTime: general.turnTime.toISOString(),
+                                                  defenceTrain: readNumber(meta.defence_train, 80),
+                                                  killTurn: readNumber(meta.killturn ?? meta.killTurn),
+                                                  remainingMinutes: resolveRemainingMinutes(
+                                                      general.turnTime,
+                                                      lastExecuted,
+                                                      worldState?.tickSeconds ?? 0
+                                                  ),
+                                                  troopId: general.troopId,
+                                                  troop: {
+                                                      name: troop.name,
+                                                      status: troopStatus,
+                                                      leaderCityName:
+                                                          leader && leader.cityId !== general.cityId
+                                                              ? (cityNames.get(leader.cityId) ?? null)
+                                                              : null,
+                                                  },
+                                                  refreshScore: {
+                                                      current: refreshScore,
+                                                      total: refreshScoreTotal,
+                                                      text: resolveRefreshScoreText(refreshScoreTotal),
+                                                  },
+                                                  crewTypeId: general.crewTypeId,
+                                                  crewTypeName: crewTypeNames.get(general.crewTypeId) ?? '-',
+                                                  traits: {
+                                                      personal: traitName(general.personalCode, personalityNames),
+                                                      specialDomestic: traitName(general.specialCode, domesticNames),
+                                                      specialWar: traitName(general.special2Code, warNames),
+                                                  },
+                                                  progression: {
+                                                      experienceLevel: metaNumber('explevel'),
+                                                      dedicationLevel,
+                                                      dedicationText: resolveDedicationLevelName(
+                                                          dedicationLevel,
+                                                          maxDedicationLevel
+                                                      ),
+                                                      statExperience: {
+                                                          leadership: metaNumber('leadership_exp'),
+                                                          strength: metaNumber('strength_exp'),
+                                                          intelligence: metaNumber('intel_exp'),
+                                                      },
+                                                      statUpgradeLimit,
+                                                      dex: [1, 2, 3, 4, 5].map((index) => metaNumber(`dex${index}`)),
+                                                  },
+                                                  itemNames: {
+                                                      horse: itemName(general.horseCode),
+                                                      weapon: itemName(general.weaponCode),
+                                                      book: itemName(general.bookCode),
+                                                      item: itemName(general.itemCode),
+                                                  },
+                                              },
+                                              summary: {
+                                                  available: true,
+                                                  experience: general.experience,
+                                                  dedicationText: resolveDedicationLevelName(
+                                                      dedicationLevel,
+                                                      maxDedicationLevel
+                                                  ),
+                                                  bill: getBillByLevel(dedicationLevel),
+                                                  warnum: rankValue('warnum', ['rank_warnum', 'warnum']),
+                                                  wins: rankValue('killnum', ['rank_killnum', 'killnum']),
+                                                  losses: rankValue('deathnum', ['rank_deathnum', 'deathnum']),
+                                                  strategies: rankValue('firenum', ['rank_firenum', 'firenum']),
+                                                  serviceYears: metaNumber('belong'),
+                                                  killCrew: rankValue('killcrew', ['rank_killcrew', 'killcrew']),
+                                                  deathCrew: rankValue('deathcrew', ['rank_deathcrew', 'deathcrew']),
+                                                  recentWar: general.recentWarTime?.toISOString() ?? null,
+                                              },
+                                          },
                             };
                         }),
                 };
@@ -157,9 +420,9 @@ export const troopRouter = router({
             });
 
         return {
-            nation: { id: nation.id, name: nation.name },
+            nation: { id: nation.id, name: nation.name, color: nation.color },
             me: { id: me.id, troopId: me.troopId },
-            permission: resolveTroopSecretPermission(me, nation.meta, false),
+            permission,
             troops: mappedTroops,
         };
     }),
