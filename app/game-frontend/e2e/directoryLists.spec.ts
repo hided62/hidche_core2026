@@ -431,13 +431,20 @@ test('nation and general directories preserve the fixed legacy Chromium geometry
     }
 });
 
-test('general directory submits the legacy sort selector and keeps wounded/bonus rendering', async ({ page }) => {
-    await install(page);
+test('general directory sorts the loaded rows locally in a stable three-state cycle', async ({ page }) => {
+    const requestedOperations: string[] = [];
+    await install(page, 'general', [], requestedOperations);
     await page.goto('general-list');
     await expect(page.locator('tbody tr[data-general-id]')).toHaveCount(2);
     await page.selectOption('#viewType', '8');
     await page.getByRole('button', { name: '정렬하기' }).click();
+    await expect(page.locator('tbody tr[data-general-id]').first()).toHaveAttribute('data-general-id', '10');
+    await page.getByRole('button', { name: '정렬하기' }).click();
     await expect(page.locator('tbody tr[data-general-id]').first()).toHaveAttribute('data-general-id', '20');
+    await page.getByRole('button', { name: '정렬하기' }).click();
+    await expect(page.locator('tbody tr[data-general-id]').first()).toHaveAttribute('data-general-id', '10');
+    expect(requestedOperations.filter((operation) => operation === 'world.getGeneralDirectory')).toHaveLength(1);
+
     await expect(page.locator('tbody tr[data-general-id="10"] .wounded').first()).toHaveText('81');
     await expect(page.locator('tbody tr[data-general-id="10"] .leadership-bonus')).toHaveText('+6');
 
@@ -489,16 +496,92 @@ test('directory sort controls stay legible in dark mode and sortable headers app
     expect(await submit.evaluate((element) => getComputedStyle(element).borderBottomWidth)).toBe('1px');
     await page.mouse.up();
 
-    await page.getByRole('button', { name: '삭턴 기준 정렬' }).click();
+    await page.getByRole('button', { name: /^삭턴 내림차순/u }).click();
     await expect(select).toHaveValue('8');
-    await expect(page.locator('th[aria-sort="ascending"]')).toContainText('삭턴');
-    await expect(page.locator('tbody tr[data-general-id]').first()).toHaveAttribute('data-general-id', '20');
+    await expect(page.locator('th[aria-sort="descending"]')).toContainText('삭턴');
+    await expect(page.locator('tbody tr[data-general-id]').first()).toHaveAttribute('data-general-id', '10');
     await page.screenshot({ path: testInfo.outputPath('directory-sort-controls-desktop.png'), fullPage: true });
 
     await page.setViewportSize({ width: 500, height: 844 });
     await expect(select).toHaveCSS('background-color', 'rgb(24, 35, 29)');
     await expect(submit).toHaveCSS('border-bottom-width', '3px');
     await page.screenshot({ path: testInfo.outputPath('directory-sort-controls-mobile.png'), fullPage: true });
+});
+
+test('name and mixed-direction stable sorting reuse one response until explicit refresh', async ({ page }) => {
+    const requestedOperations: string[] = [];
+    await install(page, 'general', [], requestedOperations);
+    await page.goto('general-list');
+
+    const rows = page.locator('tbody tr[data-general-id]');
+    await page.getByRole('button', { name: /^이름 내림차순/u }).click();
+    await expect(rows.first()).toHaveAttribute('data-general-id', '10');
+    await page.getByRole('button', { name: /^이름 오름차순/u }).click();
+    await expect(rows.first()).toHaveAttribute('data-general-id', '20');
+    await page.getByRole('button', { name: /^이름 정렬 해제/u }).click();
+    await expect(rows.first()).toHaveAttribute('data-general-id', '10');
+
+    await page.getByRole('button', { name: /^통솔 내림차순/u }).click();
+    await page.getByRole('button', { name: /^무력 내림차순/u }).click();
+    await expect(rows.first()).toHaveAttribute('data-general-id', '20');
+    await expect(
+        page.getByRole('columnheader').filter({ hasText: '통솔' }).locator('.legacy-sort-indicator')
+    ).toHaveText('▼2');
+    await page.getByRole('button', { name: /^무력 오름차순/u }).click();
+    await expect(rows.first()).toHaveAttribute('data-general-id', '10');
+    expect(requestedOperations.filter((operation) => operation === 'world.getGeneralDirectory')).toHaveLength(1);
+
+    await page.getByRole('button', { name: '갱 신' }).click();
+    await expect
+        .poll(() => requestedOperations.filter((operation) => operation === 'world.getGeneralDirectory').length)
+        .toBe(2);
+    await expect(rows.first()).toHaveAttribute('data-general-id', '10');
+});
+
+test('trait and injury explanations appear on pointer hover and keyboard focus', async ({ page }, testInfo) => {
+    await install(page);
+    await page.goto('general-list');
+
+    const personality = page.locator('[data-directory-tooltip="personality-10"]');
+    await personality.hover();
+    await expect(personality.getByRole('tooltip')).toContainText('성격 · 대담');
+    await expect(personality.getByRole('tooltip')).toContainText('대담한 성격');
+
+    const domestic = page.locator('[data-directory-tooltip="special-domestic-10"]');
+    await domestic.hover();
+    await expect(domestic.getByRole('tooltip')).toContainText('내정 특기 · 상재');
+    await expect(domestic.getByRole('tooltip')).toContainText('상업 특기');
+
+    const war = page.locator('[data-directory-tooltip="special-war-10"]');
+    await war.focus();
+    await expect(war.getByRole('tooltip')).toContainText('전투 특기 · 귀모');
+    await expect(war.getByRole('tooltip')).toContainText('전투 특기');
+
+    const injury = page.locator('[data-directory-tooltip="injury-leadership-10"]');
+    await injury.hover();
+    await expect(injury.getByRole('tooltip')).toContainText('부상 10%');
+    await expect(injury.getByRole('tooltip')).toContainText('원래 통솔 90 → 적용 81');
+    const tooltipGeometry = await injury.getByRole('tooltip').evaluate((element) => {
+        const rect = element.getBoundingClientRect();
+        const style = getComputedStyle(element);
+        return {
+            left: rect.left,
+            right: window.innerWidth - rect.right,
+            display: style.display,
+            background: style.backgroundColor,
+            color: style.color,
+            fontSize: style.fontSize,
+        };
+    });
+    expect(tooltipGeometry.left).toBeGreaterThanOrEqual(8);
+    expect(tooltipGeometry.right).toBeGreaterThanOrEqual(8);
+    expect(tooltipGeometry).toMatchObject({
+        display: 'block',
+        background: 'rgb(16, 16, 16)',
+        color: 'rgb(245, 245, 245)',
+        fontSize: '12.5px',
+    });
+    await page.screenshot({ path: testInfo.outputPath('directory-trait-injury-tooltips.png'), fullPage: true });
 });
 
 test('npc directory reuses the dark sort controls and sorts from a table header', async ({ page }, testInfo) => {
@@ -544,7 +627,8 @@ test('nation directory reuses only the public general-directory row on hover and
         await expect(preview.locator('[data-general-card-id]')).toHaveCount(1);
         await expect(preview.locator('[data-general-card-id="10"]')).toContainText('조조');
         await expect(preview.locator('[data-general-card-id="10"]')).toContainText('대담');
-        await expect(preview.locator('[data-general-card-id="10"]')).toContainText('상재 / 귀모');
+        await expect(preview.locator('[data-directory-tooltip="card-special-domestic-10"]')).toContainText('상재');
+        await expect(preview.locator('[data-directory-tooltip="card-special-war-10"]')).toContainText('귀모');
         await expect(preview).not.toContainText('user-');
         await expect(preview).not.toContainText('secret');
 
@@ -687,8 +771,27 @@ test('nation and general directories rearrange for mobile and keep the tapped pr
         await expect(page.locator('.general-table')).toBeHidden();
         await expect(page.locator('.general-card-list')).toBeVisible();
         await expect(page.locator('.general-card-list [data-general-card-id]')).toHaveCount(2);
-        await expect(page.locator('[data-general-card-id="10"]')).toContainText('상재 / 귀모');
-        await expect(page.locator('[data-general-card-id="10"]')).toContainText('통솔81+6');
+        await expect(page.locator('[data-directory-tooltip="card-special-domestic-10"]')).toContainText('상재');
+        await expect(page.locator('[data-directory-tooltip="card-special-war-10"]')).toContainText('귀모');
+        await expect(page.locator('[data-directory-tooltip="card-injury-leadership-10"] > .wounded')).toHaveText(
+            '81'
+        );
+        await expect(page.locator('[data-general-card-id="10"] .leadership-bonus')).toHaveText('+6');
+        const mobileInjury = page.locator('[data-directory-tooltip="card-injury-leadership-10"]');
+        await mobileInjury.focus();
+        await expect(mobileInjury.getByRole('tooltip')).toBeVisible();
+        const mobileTooltipGeometry = await mobileInjury.getByRole('tooltip').evaluate((element) => {
+            const rect = element.getBoundingClientRect();
+            return {
+                left: rect.left,
+                right: window.innerWidth - rect.right,
+                width: rect.width,
+                innerWidth: window.innerWidth,
+            };
+        });
+        expect(mobileTooltipGeometry.left).toBeGreaterThanOrEqual(8);
+        expect(mobileTooltipGeometry.right).toBeGreaterThanOrEqual(8);
+        expect(mobileTooltipGeometry.width).toBeLessThanOrEqual(mobileTooltipGeometry.innerWidth - 16);
 
         const generalMetrics = await page.locator('.directory-page').evaluate((element) => {
             const rect = element.getBoundingClientRect();
@@ -760,11 +863,12 @@ test('a reused image element falls back for each newly broken account icon', asy
     await expect.poll(() => icon.evaluate((element) => (element as HTMLImageElement).naturalWidth)).toBe(64);
 });
 
-test('a failed resort retains the selected value and existing rows', async ({ page }) => {
+test('a failed explicit refresh retains the local sort selection and existing rows', async ({ page }) => {
     await install(page, 'error-after-load');
     await page.goto('general-list');
     await page.selectOption('#viewType', '8');
     await page.getByRole('button', { name: '정렬하기' }).click();
+    await page.getByRole('button', { name: '갱 신' }).click();
     await expect(page.getByRole('alert')).toContainText('권한 확인 실패');
     await expect(page.locator('#viewType')).toHaveValue('8');
     await expect(page.locator('tbody tr[data-general-id]')).toHaveCount(2);
