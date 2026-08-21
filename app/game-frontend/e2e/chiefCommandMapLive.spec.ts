@@ -264,6 +264,24 @@ test('shows and operates a city target map through live PostgreSQL, Game API, an
         );
         await page.screenshot({ path: testInfo.outputPath('chief-command-nation-map-live.png'), fullPage: true });
 
+        await page
+            .getByRole('button', { name: '명령 입력 닫기', exact: true })
+            .click({ timeout: 2_000 })
+            .catch(() => undefined);
+        await page.getByRole('button', { name: '3턴 명령 입력', exact: true }).click();
+        const assignmentPicker = page.getByTestId('command-picker');
+        await assignmentPicker.getByRole('button', { name: /^(?:국가:)?인사$/, exact: true }).click();
+        await assignmentPicker.getByRole('button', { name: '발령', exact: true }).click();
+        const assignmentForm = assignmentPicker.getByTestId('command-argument-form');
+        const assignmentMap = assignmentForm.getByTestId('command-argument-map');
+        await expect(assignmentMap).toBeVisible();
+        await assignmentForm.screenshot({ path: testInfo.outputPath('chief-command-assignment-map-live.png') });
+        await assignmentMap.locator('.city-base').nth(1).click();
+        await expect(assignmentForm.getByRole('combobox', { name: '대상 도시' })).toHaveValue(String(targetCity.id));
+        await expect(assignmentForm.getByTestId('command-map-selection-status')).toContainText(
+            `선택 도시${targetCity.name}`
+        );
+
         const mobileContext = await browser.newContext({
             viewport: { width: 500, height: 900 },
             deviceScaleFactor: 1,
