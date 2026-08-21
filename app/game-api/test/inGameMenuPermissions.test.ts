@@ -424,13 +424,21 @@ describe('in-game my information ownership', () => {
             general: {
                 officerLevelText: '간의대부',
                 crewTypeName: '보병',
+                crewTypeInfo: {
+                    name: '보병',
+                    info: ['표준적인 보병입니다.', '보병은 방어특화이며,', '상대가 회피하기 어렵습니다.'],
+                    requirements: [],
+                    stats: { attack: 100, defence: 150, speed: 7, avoid: 10, magicCoef: 0, cost: 9, rice: 9 },
+                },
                 progression: { experienceLevel: 4, dedicationLevel: 2, dedicationText: '29품관' },
                 itemNames: { horse: '노새(+3)' },
+                itemInfo: { horse: '통솔 +3' },
             },
             city: { levelName: '특', regionName: '중원', nationName: '위' },
             nation: {
                 levelName: '주자사',
                 typeName: '법가',
+                typeInfo: '금수입↑ 치안↑ 인구↓ 민심↓',
                 capitalCityName: '업',
             },
         });
@@ -508,6 +516,12 @@ describe('in-game my information ownership', () => {
                     specialDomestic: '상재',
                     specialWar: '신산',
                 },
+                traitInfo: {
+                    personal: '사기 -5, 징·모병 비용 -20%',
+                    specialDomestic: '[내정] 상업 투자 : 기본 보정 +10%, 성공률 +10%p, 비용 -20%',
+                    specialWar:
+                        '[계략] 화계·탈취·파괴·선동 : 성공률 +10%p<br>[전투] 계략 시도 확률 +20%p, 계략 성공 확률 +20%p',
+                },
             },
             nation: {
                 id: 0,
@@ -518,6 +532,7 @@ describe('in-game my information ownership', () => {
                 rice: 0,
                 tech: 0,
                 typeCode: 'None',
+                typeInfo: '',
                 capitalCityId: null,
             },
         });

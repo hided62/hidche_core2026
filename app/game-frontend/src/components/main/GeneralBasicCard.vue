@@ -3,6 +3,7 @@ import { computed } from 'vue';
 
 import SkeletonLines from '../ui/SkeletonLines.vue';
 import LegacyProgressBar from '../ui/LegacyProgressBar.vue';
+import RichTooltip from '../ui/RichTooltip.vue';
 import { formatLocalTimeSeconds } from '../../utils/legacyDateTime';
 import { legacyExperiencePercent, ratioPercent } from '../../utils/legacyProgress';
 import { DEFAULT_GENERAL_ICON_URL, resolveGeneralIconBackgroundImage } from '../../utils/generalIcon';
@@ -28,6 +29,28 @@ interface ItemDisplayNames {
     weapon?: string | null;
     book?: string | null;
     item?: string | null;
+}
+
+interface ItemDisplayInfo {
+    horse?: string | null;
+    weapon?: string | null;
+    book?: string | null;
+    item?: string | null;
+}
+
+interface CrewTypeDisplayInfo {
+    name: string;
+    info: string[];
+    requirements: string[];
+    stats: {
+        attack: number;
+        defence: number;
+        speed: number;
+        avoid: number;
+        magicCoef: number;
+        cost: number;
+        rice: number;
+    };
 }
 
 interface GeneralTroopDisplay {
@@ -73,9 +96,12 @@ interface GeneralInfo {
     refreshScore?: GeneralRefreshScore;
     crewTypeId?: number;
     crewTypeName?: string;
+    crewTypeInfo?: CrewTypeDisplayInfo | null;
     traits?: { personal: string; specialWar: string; specialDomestic: string };
+    traitInfo?: { personal: string; specialWar: string; specialDomestic: string };
     progression?: GeneralProgression;
     itemNames?: ItemDisplayNames;
+    itemInfo?: ItemDisplayInfo;
     equipmentNames?: ItemDisplayNames;
 }
 
@@ -243,9 +269,36 @@ const specialText = computed(() => {
                     </strong>
                 </template>
 
-                <span class="cell-label">명마</span><strong>{{ itemNames.horse ?? '-' }}</strong>
-                <span class="cell-label">무기</span><strong>{{ itemNames.weapon ?? '-' }}</strong>
-                <span class="cell-label">서적</span><strong>{{ itemNames.book ?? '-' }}</strong>
+                <span class="cell-label">명마</span>
+                <strong>
+                    <RichTooltip
+                        :title="itemNames.horse ?? ''"
+                        :description="props.general.itemInfo?.horse"
+                        test-id="horse"
+                    >
+                        {{ itemNames.horse ?? '-' }}
+                    </RichTooltip>
+                </strong>
+                <span class="cell-label">무기</span>
+                <strong>
+                    <RichTooltip
+                        :title="itemNames.weapon ?? ''"
+                        :description="props.general.itemInfo?.weapon"
+                        test-id="weapon"
+                    >
+                        {{ itemNames.weapon ?? '-' }}
+                    </RichTooltip>
+                </strong>
+                <span class="cell-label">서적</span>
+                <strong>
+                    <RichTooltip
+                        :title="itemNames.book ?? ''"
+                        :description="props.general.itemInfo?.book"
+                        test-id="book"
+                    >
+                        {{ itemNames.book ?? '-' }}
+                    </RichTooltip>
+                </strong>
 
                 <span
                     class="general-image general-crew-type-icon"
@@ -255,15 +308,91 @@ const specialText = computed(() => {
                 />
                 <span class="cell-label">자금</span><strong>{{ props.general.gold.toLocaleString('ko-KR') }}</strong>
                 <span class="cell-label">군량</span><strong>{{ props.general.rice.toLocaleString('ko-KR') }}</strong>
-                <span class="cell-label">도구</span><strong>{{ itemNames.item ?? '-' }}</strong>
+                <span class="cell-label">도구</span>
+                <strong>
+                    <RichTooltip
+                        :title="itemNames.item ?? ''"
+                        :description="props.general.itemInfo?.item"
+                        test-id="item"
+                    >
+                        {{ itemNames.item ?? '-' }}
+                    </RichTooltip>
+                </strong>
 
-                <span class="cell-label">병종</span><strong>{{ props.general.crewTypeName ?? '-' }}</strong>
+                <span class="cell-label">병종</span>
+                <strong>
+                    <RichTooltip
+                        :title="props.general.crewTypeName ?? ''"
+                        :description="props.general.crewTypeInfo?.info"
+                        test-id="crew-type"
+                    >
+                        {{ props.general.crewTypeName ?? '-' }}
+                        <template v-if="props.general.crewTypeInfo" #content>
+                            <span class="rich-tooltip-content__title">{{ props.general.crewTypeInfo.name }}</span>
+                            <span
+                                v-for="(line, index) in props.general.crewTypeInfo.info"
+                                :key="`crew-info:${index}`"
+                                class="rich-tooltip-content__line"
+                            >
+                                {{ line }}
+                            </span>
+                            <span class="rich-tooltip-content__section">전투 정보</span>
+                            <span class="rich-tooltip-content__meta">
+                                공격 {{ props.general.crewTypeInfo.stats.attack }} · 방어
+                                {{ props.general.crewTypeInfo.stats.defence }} · 속도
+                                {{ props.general.crewTypeInfo.stats.speed }} · 회피
+                                {{ props.general.crewTypeInfo.stats.avoid }}% · 계략
+                                {{ props.general.crewTypeInfo.stats.magicCoef }}%
+                            </span>
+                            <span class="rich-tooltip-content__meta">
+                                병사 100명 기준 금 {{ props.general.crewTypeInfo.stats.cost }} · 쌀
+                                {{ props.general.crewTypeInfo.stats.rice }}
+                            </span>
+                            <template v-if="props.general.crewTypeInfo.requirements.length">
+                                <span class="rich-tooltip-content__section">생성 조건</span>
+                                <span
+                                    v-for="(requirement, index) in props.general.crewTypeInfo.requirements"
+                                    :key="`crew-requirement:${index}`"
+                                    class="rich-tooltip-content__line"
+                                >
+                                    {{ requirement }}
+                                </span>
+                            </template>
+                        </template>
+                    </RichTooltip>
+                </strong>
                 <span class="cell-label">병사</span><strong>{{ props.general.crew.toLocaleString('ko-KR') }}</strong>
-                <span class="cell-label">성격</span><strong>{{ props.general.traits?.personal ?? '-' }}</strong>
+                <span class="cell-label">성격</span>
+                <strong>
+                    <RichTooltip
+                        :title="props.general.traits?.personal ?? ''"
+                        :description="props.general.traitInfo?.personal"
+                        test-id="personality"
+                    >
+                        {{ props.general.traits?.personal ?? '-' }}
+                    </RichTooltip>
+                </strong>
 
                 <span class="cell-label">훈련</span><strong>{{ props.general.train }}</strong>
                 <span class="cell-label">사기</span><strong>{{ props.general.atmos }}</strong>
-                <span class="cell-label">특기</span><strong :title="specialText">{{ specialText }}</strong>
+                <span class="cell-label">특기</span>
+                <strong class="special-value" :aria-label="specialText">
+                    <RichTooltip
+                        :title="`내정특기 · ${props.general.traits?.specialDomestic ?? '-'}`"
+                        :description="props.general.traitInfo?.specialDomestic"
+                        test-id="special-domestic"
+                    >
+                        {{ props.general.traits?.specialDomestic ?? '-' }}
+                    </RichTooltip>
+                    /
+                    <RichTooltip
+                        :title="`전투특기 · ${props.general.traits?.specialWar ?? '-'}`"
+                        :description="props.general.traitInfo?.specialWar"
+                        test-id="special-war"
+                    >
+                        {{ props.general.traits?.specialWar ?? '-' }}
+                    </RichTooltip>
+                </strong>
 
                 <span class="cell-label level-label">Lv</span>
                 <strong class="level-value">{{ props.general.progression?.experienceLevel ?? 0 }}</strong>
