@@ -2,6 +2,7 @@ import { expect, test, type Page, type Route } from '@playwright/test';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { expectLumenButtonStates } from './lumenButton.js';
 
 const response = (data: unknown) => ({ result: { data } });
 const artifactRoot = process.env.CITY_PARITY_ARTIFACT_DIR;
@@ -493,6 +494,13 @@ test('four legacy menu pages keep the 1000px desktop table contract', async ({ p
                 .first()
                 .evaluate((el) => getComputedStyle(el).borderCollapse)
         ).toBe(borderCollapse);
+        if (path === 'nation/info' || path === 'current-city') {
+            await expectLumenButtonStates(
+                page,
+                page.getByRole('button', { name: '돌아가기' }).first(),
+                'rgb(0, 88, 44)'
+            );
+        }
         if (path === 'nation/info') {
             await expect(page.locator(selector)).toContainText('작 위호족');
             await expect(page.locator(selector)).not.toContainText('작 위1');

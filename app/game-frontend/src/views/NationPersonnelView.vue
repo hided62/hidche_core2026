@@ -282,7 +282,11 @@ onMounted(() => void loadPersonnel());
             <tbody>
                 <tr>
                     <td>
-                        인 사 부<br /><button class="legacy-button" type="button" @click="router.push('/')">
+                        인 사 부<br /><button
+                            class="legacy-button legacy-button--navigation"
+                            type="button"
+                            @click="router.push('/')"
+                        >
                             돌아가기
                         </button>
                     </td>
@@ -338,7 +342,7 @@ onMounted(() => void loadPersonnel());
                                     <button
                                         v-if="canManage && level !== 12 && !chiefLocked(level)"
                                         type="button"
-                                        class="personnel-change-button"
+                                        class="legacy-button legacy-button--lumen legacy-button--fixed-height personnel-change-button"
                                         :aria-label="`${formatOfficerLevelText(level, nationLevel)} 변경하기`"
                                         aria-haspopup="dialog"
                                         @click="selectionContext = { kind: 'chief-general', level }"
@@ -398,7 +402,13 @@ onMounted(() => void loadPersonnel());
                                     {{ candidate.name }}
                                 </option>
                             </select>
-                            <button type="button" @click="changePermissions(true)">임명</button>
+                            <button
+                                class="legacy-button legacy-button--primary"
+                                type="button"
+                                @click="changePermissions(true)"
+                            >
+                                임명
+                            </button>
                         </td>
                         <td class="green-cell permission-label">조언자</td>
                         <td>
@@ -416,7 +426,13 @@ onMounted(() => void loadPersonnel());
                                     {{ candidate.name }}
                                 </option>
                             </select>
-                            <button type="button" @click="changePermissions(false)">임명</button>
+                            <button
+                                class="legacy-button legacy-button--primary"
+                                type="button"
+                                @click="changePermissions(false)"
+                            >
+                                임명
+                            </button>
                         </td>
                     </tr>
                 </tbody>
@@ -477,7 +493,7 @@ onMounted(() => void loadPersonnel());
                                     <button
                                         v-if="canManage && !cityOfficerLocked(city, level)"
                                         type="button"
-                                        class="personnel-change-button city-change-button"
+                                        class="legacy-button legacy-button--lumen legacy-button--fixed-height personnel-change-button city-change-button"
                                         :aria-label="`${city.name} ${officerLabels[level]} 변경하기`"
                                         aria-haspopup="dialog"
                                         @click="selectionContext = { kind: 'city-general', level, cityId: city.id }"
@@ -528,7 +544,14 @@ onMounted(() => void loadPersonnel());
                                         }}/{{ candidate.stats.intelligence }})
                                     </option>
                                 </select>
-                                <button type="button" :disabled="kickTargetId === 0" @click="kickGeneral">추방</button>
+                                <button
+                                    class="legacy-button legacy-button--danger"
+                                    type="button"
+                                    :disabled="kickTargetId === 0"
+                                    @click="kickGeneral"
+                                >
+                                    추방
+                                </button>
                             </template>
                         </td>
                     </tr>
@@ -538,7 +561,15 @@ onMounted(() => void loadPersonnel());
             <table class="legacy-table footer-table">
                 <tbody>
                     <tr>
-                        <td><button class="legacy-button" type="button" @click="router.push('/')">돌아가기</button></td>
+                        <td>
+                            <button
+                                class="legacy-button legacy-button--navigation"
+                                type="button"
+                                @click="router.push('/')"
+                            >
+                                돌아가기
+                            </button>
+                        </td>
                     </tr>
                     <tr>
                         <td class="legacy-banner">
@@ -601,7 +632,7 @@ onMounted(() => void loadPersonnel());
 .heading-table td {
     text-align: left;
 }
-button {
+button:not(.legacy-button) {
     display: inline-block;
     border: 1px solid #6c757d;
     border-radius: 4px;
@@ -613,24 +644,10 @@ button {
     text-decoration: none;
     cursor: pointer;
 }
-.legacy-button {
-    display: inline-block;
-    border: 1px solid #325172;
-    border-radius: 4px;
-    padding: 5.25px 10.5px;
-    color: #fff;
-    background: #375a7f;
-    font: inherit;
-    line-height: 21px;
-    text-decoration: none;
-    cursor: pointer;
-}
-button:hover,
-.legacy-button:hover {
+button:not(.legacy-button):hover {
     filter: brightness(1.16);
 }
-button:focus-visible,
-.legacy-button:focus-visible,
+button:not(.legacy-button):focus-visible,
 select:focus-visible {
     outline: 2px solid #fff;
     outline-offset: 1px;
@@ -736,17 +753,12 @@ select[multiple] {
     white-space: nowrap;
 }
 .personnel-change-button {
+    --legacy-button-bg: #315b3d;
+    --legacy-button-border: #557d5e;
+    --legacy-button-height: 34px;
     grid-area: action;
-    min-height: 34px;
-    border-color: #557d5e;
     padding: 4px 8px;
-    background: #315b3d;
     font-weight: 700;
-}
-.personnel-change-button:hover {
-    filter: none;
-    background: #3c704a;
-    border-color: #7ba286;
 }
 .personnel-lock-label {
     grid-area: action;

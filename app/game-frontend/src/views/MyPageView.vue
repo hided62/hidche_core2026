@@ -399,10 +399,14 @@ onMounted(() => {
             <span>내 정 보</span>
             <div class="title-actions">
                 <div class="navigation-actions">
-                    <RouterLink class="legacy-button" to="/">돌아가기</RouterLink>
-                    <button class="legacy-button" type="button" @click="() => loadPage()">새로고침</button>
+                    <RouterLink class="legacy-button legacy-button--navigation" to="/">돌아가기</RouterLink>
+                    <button class="legacy-button legacy-button--navigation" type="button" @click="() => loadPage()">
+                        새로고침
+                    </button>
                 </div>
-                <RouterLink class="legacy-button past-plays-link" to="/past-plays">지난 플레이</RouterLink>
+                <RouterLink class="legacy-button legacy-button--secondary past-plays-link" to="/past-plays">
+                    지난 플레이
+                </RouterLink>
             </div>
         </div>
 
@@ -491,7 +495,7 @@ onMounted(() => {
                 </label>
                 <button
                     id="set_my_setting"
-                    class="action-button"
+                    class="legacy-button legacy-button--lumen legacy-button--fixed-height action-button"
                     type="button"
                     :hidden="!canSave"
                     @click="saveSettings"
@@ -508,7 +512,7 @@ onMounted(() => {
                 <div v-if="showVacation" class="action-line">
                     휴 가 신 청<br />
                     <button
-                        class="action-button"
+                        class="legacy-button legacy-button--lumen legacy-button--fixed-height action-button"
                         type="button"
                         @click="confirmMutation('휴가 기능을 신청할까요?', () => trpc.general.vacation.mutate())"
                     >
@@ -542,16 +546,27 @@ onMounted(() => {
                             />
                         </label>
                     </div>
-                    <button class="action-button" type="button" @click="changeGeneralIcon">아이콘 변경</button>
+                    <button
+                        class="legacy-button legacy-button--lumen legacy-button--fixed-height action-button"
+                        type="button"
+                        @click="changeGeneralIcon"
+                    >
+                        아이콘 변경
+                    </button>
                 </div>
                 <div v-if="actionAvailability.dieOnPrestart" class="action-line">
                     가오픈 기간 내 장수 삭제 ({{ formatDieOnPrestartAvailableAt }} 부터)<br />
-                    <button class="action-button" @click="dieOnPrestart">장수 삭제</button>
+                    <button
+                        class="legacy-button legacy-button--danger legacy-button--fixed-height action-button"
+                        @click="dieOnPrestart"
+                    >
+                        장수 삭제
+                    </button>
                 </div>
                 <div v-if="actionAvailability.buildNationCandidate" class="action-line">
                     서버 개시 이전 거병(2턴부터 건국 가능)<br />
                     <button
-                        class="action-button"
+                        class="legacy-button legacy-button--lumen legacy-button--fixed-height action-button"
                         @click="
                             confirmMutation(
                                 '거병 이후 장수를 삭제할 수 없게됩니다. 거병하시겠습니까?',
@@ -569,7 +584,7 @@ onMounted(() => {
                 <div v-if="actionAvailability.instantRetreat" class="action-line">
                     거리 3칸 이내 아국 도시로 즉시 이동<br />
                     <button
-                        class="action-button"
+                        class="legacy-button legacy-button--lumen legacy-button--fixed-height action-button"
                         @click="
                             confirmMutation(
                                 '아군 접경으로 이동할까요?',
@@ -588,7 +603,10 @@ onMounted(() => {
                     다른 장수 선택
                     <template v-if="formatSelectionAvailableAt"> ({{ formatSelectionAvailableAt }} 부터) </template>
                     <br />
-                    <RouterLink class="action-button select-general-link" to="/select-general">
+                    <RouterLink
+                        class="legacy-button legacy-button--lumen legacy-button--fixed-height action-button select-general-link"
+                        to="/select-general"
+                    >
                         다른 장수 선택
                     </RouterLink>
                     <br /><br />
@@ -608,7 +626,11 @@ onMounted(() => {
                         모바일 레이아웃 순서 바꾸기<br />
                         <small>500px 메인 화면의 패널 순서를 이 기기에 저장합니다.</small>
                     </span>
-                    <button class="mobile-layout-open" type="button" @click="openMobileLayoutDialog">
+                    <button
+                        class="legacy-button legacy-button--primary mobile-layout-open"
+                        type="button"
+                        @click="openMobileLayoutDialog"
+                    >
                         순서 바꾸기
                     </button>
                 </div>
@@ -618,6 +640,7 @@ onMounted(() => {
                     <button
                         v-for="item in items"
                         :key="item.key"
+                        class="legacy-button legacy-button--secondary item-button"
                         type="button"
                         :disabled="!item.code"
                         @click="dropItem(item)"
@@ -654,7 +677,7 @@ onMounted(() => {
                     <div v-if="logs[type].length === 0" class="empty">기록이 없습니다.</div>
                     <button
                         v-if="logHasMore[type]"
-                        class="load-old"
+                        class="legacy-button legacy-button--secondary load-old"
                         type="button"
                         @click="loadLog(type, logs[type].at(-1)?.id)"
                     >
@@ -667,23 +690,21 @@ onMounted(() => {
             삼국지 모의전투 HiDCHe / KOEI의 이미지를 사용, 응용하였습니다 / 제작: HideD / Credit
         </footer>
     </main>
-    <dialog
-        ref="mobileLayoutDialog"
-        class="mobile-layout-dialog"
-        aria-labelledby="mobile-layout-dialog-title"
-    >
+    <dialog ref="mobileLayoutDialog" class="mobile-layout-dialog" aria-labelledby="mobile-layout-dialog-title">
         <div class="mobile-layout-dialog__header">
             <h2 id="mobile-layout-dialog-title">모바일 레이아웃 순서 바꾸기</h2>
             <form method="dialog">
-                <button type="submit" aria-label="모바일 레이아웃 순서 창 닫기">×</button>
+                <button
+                    class="legacy-button legacy-button--secondary"
+                    type="submit"
+                    aria-label="모바일 레이아웃 순서 창 닫기"
+                >
+                    ×
+                </button>
             </form>
         </div>
         <p>항목을 끌어 놓거나 위·아래 버튼으로 상대 순서를 바꿉니다.</p>
-        <SortableStringList
-            v-model:list="mobileLayoutOrder"
-            tag="ol"
-            class="mobile-layout-list"
-        >
+        <SortableStringList v-model:list="mobileLayoutOrder" tag="ol" class="mobile-layout-list">
             <template #item="{ element: panelId, index }">
                 <li :data-mobile-layout-id="panelId">
                     <span class="mobile-layout-handle" aria-hidden="true">≡</span>
@@ -693,6 +714,7 @@ onMounted(() => {
                     </span>
                     <span class="mobile-layout-move-buttons">
                         <button
+                            class="legacy-button legacy-button--secondary"
                             type="button"
                             :aria-label="`${mobileLayoutLabels[panelId]} 위로`"
                             :disabled="index === 0"
@@ -701,6 +723,7 @@ onMounted(() => {
                             ↑
                         </button>
                         <button
+                            class="legacy-button legacy-button--secondary"
                             type="button"
                             :aria-label="`${mobileLayoutLabels[panelId]} 아래로`"
                             :disabled="index === mobileLayoutOrder.length - 1"
@@ -713,9 +736,19 @@ onMounted(() => {
             </template>
         </SortableStringList>
         <div class="mobile-layout-dialog__actions">
-            <button type="button" @click="resetMobileLayoutOrder">기본값</button>
-            <form method="dialog"><button type="submit">취소</button></form>
-            <button class="mobile-layout-apply" type="button" @click="applyMobileLayoutOrder">적용</button>
+            <button class="legacy-button legacy-button--secondary" type="button" @click="resetMobileLayoutOrder">
+                기본값
+            </button>
+            <form method="dialog">
+                <button class="legacy-button legacy-button--secondary" type="submit">취소</button>
+            </form>
+            <button
+                class="legacy-button legacy-button--primary mobile-layout-apply"
+                type="button"
+                @click="applyMobileLayoutOrder"
+            >
+                적용
+            </button>
         </div>
     </dialog>
     <div class="my-page-mobile-scroll-spacer" aria-hidden="true"></div>
@@ -772,8 +805,7 @@ onMounted(() => {
     display: flex;
     gap: 4px;
 }
-.legacy-button,
-button,
+button:not(.legacy-button),
 select,
 textarea {
     border: 1px solid #777;
@@ -782,15 +814,8 @@ textarea {
     background: #6b6b6b;
     font: inherit;
 }
-.legacy-button {
-    min-height: 34px;
-    padding: 5px 10px;
-    border-color: #2d5d7f;
-    border-radius: 4px;
-    background: #315f86;
-    color: #fff;
-    font-weight: 700;
-    text-decoration: none;
+.legacy-page .legacy-button,
+.mobile-layout-dialog .legacy-button {
     letter-spacing: 0;
 }
 button {
@@ -871,10 +896,17 @@ button:disabled {
     color: orange;
 }
 .action-button {
+    --legacy-button-height: 30px;
+    --legacy-button-bg: #225500;
+    --legacy-button-border: #1f4d00;
+    position: relative;
+    top: 4px;
     width: 160px;
-    height: 30px;
-    margin: 4px 0;
-    background: #225500;
+    margin-bottom: 8px;
+}
+.action-button.legacy-button--danger {
+    --legacy-button-bg: var(--sammo-button-danger-bg);
+    --legacy-button-border: var(--sammo-button-danger-border);
 }
 .select-general-link {
     display: inline-flex;
@@ -909,7 +941,6 @@ button:disabled {
 }
 .mobile-layout-open {
     min-height: 34px;
-    background: #315f86;
     font-weight: 700;
 }
 .mobile-layout-dialog {
@@ -1000,7 +1031,6 @@ button:disabled {
 .mobile-layout-move-buttons button {
     width: 36px;
     min-height: 34px;
-    background: #315f86;
     font-weight: 700;
 }
 .mobile-layout-dialog__actions {
@@ -1013,7 +1043,6 @@ button:disabled {
     padding: 4px 10px;
 }
 .mobile-layout-dialog__actions .mobile-layout-apply {
-    background: #225500;
     font-weight: 700;
 }
 .button-group {

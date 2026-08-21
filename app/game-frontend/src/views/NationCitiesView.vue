@@ -294,7 +294,11 @@ onMounted(async () => {
             <tbody>
                 <tr>
                     <td>
-                        세 력 도 시<br /><button class="back-button" type="button" @click="router.push('/')">
+                        세 력 도 시<br /><button
+                            class="legacy-button legacy-button--navigation back-button"
+                            type="button"
+                            @click="router.push('/')"
+                        >
                             돌아가기
                         </button>
                     </td>
@@ -309,12 +313,18 @@ onMounted(async () => {
                                 @update:model-value="updateSelectedSort"
                                 @submit="applySelectedSort"
                             />
-                            <button type="button" :aria-busy="secretLoading" @click="loadSecretIntegration">
+                            <button
+                                class="legacy-button legacy-button--primary integration-button"
+                                type="button"
+                                :aria-busy="secretLoading"
+                                @click="loadSecretIntegration"
+                            >
                                 암행부 연동
                             </button>
                             <button
                                 v-if="secretData"
                                 id="load-duty-button"
+                                class="legacy-button legacy-button--primary integration-button"
                                 type="button"
                                 :aria-busy="personnelLoading"
                                 @click="loadPersonnelIntegration"
@@ -327,15 +337,69 @@ onMounted(async () => {
                 <tr>
                     <td class="sort-more">
                         재 정렬 순서 :
-                        <button type="button" @click="setExtraSort('name')">도시명</button>
-                        <button type="button" @click="setExtraSort('populationRate')">인구율</button>
-                        <button type="button" @click="setExtraSort('populationRemain')">남은 주민</button>
-                        <button type="button" @click="setExtraSort('agricultureRemain')">남은 농업</button>
-                        <button type="button" @click="setExtraSort('commerceRemain')">남은 상업</button>
-                        <button type="button" @click="setExtraSort('securityRemain')">남은 치안</button>
-                        <button type="button" @click="setExtraSort('defenceRemain')">남은 수비</button>
-                        <button type="button" @click="setExtraSort('wallRemain')">남은 성벽</button>
-                        <button type="button" @click="setExtraSort('generalCount')">배치 장수 수</button>
+                        <button
+                            class="legacy-button legacy-button--secondary extra-sort-button"
+                            type="button"
+                            @click="setExtraSort('name')"
+                        >
+                            도시명
+                        </button>
+                        <button
+                            class="legacy-button legacy-button--secondary extra-sort-button"
+                            type="button"
+                            @click="setExtraSort('populationRate')"
+                        >
+                            인구율
+                        </button>
+                        <button
+                            class="legacy-button legacy-button--secondary extra-sort-button"
+                            type="button"
+                            @click="setExtraSort('populationRemain')"
+                        >
+                            남은 주민
+                        </button>
+                        <button
+                            class="legacy-button legacy-button--secondary extra-sort-button"
+                            type="button"
+                            @click="setExtraSort('agricultureRemain')"
+                        >
+                            남은 농업
+                        </button>
+                        <button
+                            class="legacy-button legacy-button--secondary extra-sort-button"
+                            type="button"
+                            @click="setExtraSort('commerceRemain')"
+                        >
+                            남은 상업
+                        </button>
+                        <button
+                            class="legacy-button legacy-button--secondary extra-sort-button"
+                            type="button"
+                            @click="setExtraSort('securityRemain')"
+                        >
+                            남은 치안
+                        </button>
+                        <button
+                            class="legacy-button legacy-button--secondary extra-sort-button"
+                            type="button"
+                            @click="setExtraSort('defenceRemain')"
+                        >
+                            남은 수비
+                        </button>
+                        <button
+                            class="legacy-button legacy-button--secondary extra-sort-button"
+                            type="button"
+                            @click="setExtraSort('wallRemain')"
+                        >
+                            남은 성벽
+                        </button>
+                        <button
+                            class="legacy-button legacy-button--secondary extra-sort-button"
+                            type="button"
+                            @click="setExtraSort('generalCount')"
+                        >
+                            배치 장수 수
+                        </button>
                     </td>
                 </tr>
             </tbody>
@@ -583,7 +647,7 @@ onMounted(async () => {
                                                 v-for="level in [4, 3, 2] as const"
                                                 :key="level"
                                                 type="button"
-                                                class="appointment-button for-duty"
+                                                class="legacy-button legacy-button--primary appointment-button for-duty"
                                                 :class="[`mode-${level}`, { 'chief-target': isChief(general.id) }]"
                                                 :disabled="
                                                     !canAppoint(city.id, general.id, level) || pendingAppointment !== ''
@@ -642,7 +706,15 @@ onMounted(async () => {
         <table class="legacy-table legacy-bg0 title footer">
             <tbody>
                 <tr>
-                    <td><button class="back-button" type="button" @click="router.push('/')">돌아가기</button></td>
+                    <td>
+                        <button
+                            class="legacy-button legacy-button--navigation back-button"
+                            type="button"
+                            @click="router.push('/')"
+                        >
+                            돌아가기
+                        </button>
+                    </td>
                 </tr>
                 <tr>
                     <td class="legacy-banner">
@@ -786,7 +858,7 @@ onMounted(async () => {
 .footer {
     margin-top: 0;
 }
-.nation-cities-page button:not(.legacy-sort-submit, .legacy-sort-header),
+.nation-cities-page button:not(.legacy-button, .legacy-sort-submit, .legacy-sort-header),
 .nation-cities-page input[type='submit'] {
     border: 2px outset #fff;
     background-color: buttonface;
@@ -795,15 +867,16 @@ onMounted(async () => {
     padding: 1px 6px;
 }
 .nation-cities-page .back-button {
-    border: 0;
-    padding: 5.25px 10.5px;
-    background-color: rgb(55 90 127);
-    color: #fff;
-    font-weight: 700;
+    margin-bottom: 0;
+}
+.nation-cities-page .integration-button,
+.nation-cities-page .extra-sort-button,
+.nation-cities-page .appointment-button {
+    padding: 1px 6px;
     line-height: 21px;
 }
-.sort-more button {
-    margin: 0;
+.sort-more .extra-sort-button {
+    margin-bottom: 0;
 }
 .development-high {
     color: lightgreen;

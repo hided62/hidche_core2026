@@ -1,6 +1,7 @@
 import { expect, test, type Page, type Route } from '@playwright/test';
 
 import { gameProfile, gameTrpcRoute } from './gameTestPaths.js';
+import { expectLumenButtonStates } from './lumenButton.js';
 
 type Role = 'head' | 'member';
 type AppointmentInput = { destGeneralId: number; destCityId: number; officerLevel: number };
@@ -352,6 +353,7 @@ test('암행부 행을 도시별로 나누고 수뇌의 인사부 즉시 임명�
     await expect(page.locator('.nation-cities-page')).toBeVisible();
     await expect(page.locator('.city-user-table')).toHaveCount(0);
     await expect(page.getByRole('button', { name: '인사부 연동' })).toHaveCount(0);
+    await expectLumenButtonStates(page, page.getByRole('button', { name: '암행부 연동' }), 'rgb(55, 90, 127)');
 
     const citySort = page.locator('#nation-city-sort');
     await expect(citySort).toHaveCSS('background-color', 'rgb(24, 35, 29)');

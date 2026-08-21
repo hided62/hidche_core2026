@@ -3,6 +3,7 @@ import { mkdir, readFile } from 'node:fs/promises';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { gameProfile, gameTrpcRoute } from './gameTestPaths.js';
+import { expectLumenButtonStates } from './lumenButton.js';
 
 type Role = 'leader' | 'head' | 'member';
 type FixtureState = {
@@ -290,6 +291,7 @@ test('personnel keeps the desktop frame while exposing row-level appointment con
     await page.setViewportSize({ width: 1000, height: 900 });
     await gotoOffice(page, 'nation/personnel');
     await expect(page.getByText('작위검증국')).toBeVisible();
+    await expectLumenButtonStates(page, page.locator('.personnel-change-button').first(), 'rgb(49, 91, 61)');
 
     const computed = await page.locator('#personnel-container').evaluate((container) => {
         const box = (selector?: string) => {
@@ -339,7 +341,7 @@ test('personnel keeps the desktop frame while exposing row-level appointment con
     await changeButton.hover();
     expect(await changeButton.evaluate((button) => getComputedStyle(button).cursor)).toBe('pointer');
     await changeButton.focus();
-    expect(await changeButton.evaluate((button) => getComputedStyle(button).outlineStyle)).not.toBe('none');
+    expect(await changeButton.evaluate((button) => getComputedStyle(button).boxShadow)).not.toBe('none');
     await expect(page.getByRole('button', { name: '허창 태수 변경하기', exact: true })).toBeVisible();
     await expect(page.getByRole('button', { name: '허창 군사 변경하기', exact: true })).toHaveCount(0);
     await screenshot(page, 'core-personnel-desktop-leader.png');

@@ -2,6 +2,7 @@ import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { basename, resolve } from 'node:path';
 import { expect, test, type Locator, type Page, type Route } from '@playwright/test';
 import { gameBasePath, gameProfile, gameTrpcRoute } from './gameTestPaths.js';
+import { expectLumenButtonStates } from './lumenButton.js';
 import { touchDrag } from './touchDrag.js';
 
 const response = (data: unknown) => ({ result: { data } });
@@ -1320,6 +1321,7 @@ test('내 정보&설정 keeps desktop density and becomes a 390px horizontal-ide
     expect(desktop.customCssHeight).toBe(150);
     expect(desktop.backgroundImage).toContain('back_walnut.jpg');
     expect(desktop.sectionBackgroundImage).toContain('back_green.jpg');
+    await expectLumenButtonStates(page, page.locator('#set_my_setting'), 'rgb(34, 85, 0)');
     await persistParityArtifact(page, 'core-my-page-desktop', desktop);
 
     const defenceSelect = page.locator('select').filter({ has: page.locator('option[value="999"]') });

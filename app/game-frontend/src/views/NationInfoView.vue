@@ -27,7 +27,15 @@ onMounted(async () => {
         <table class="legacy-table title-table legacy-bg0">
             <tbody>
                 <tr>
-                    <td>세 력 정 보<br /><button type="button" @click="router.push('/')">돌아가기</button></td>
+                    <td>
+                        세 력 정 보<br /><button
+                            class="legacy-button legacy-button--navigation"
+                            type="button"
+                            @click="router.push('/')"
+                        >
+                            돌아가기
+                        </button>
+                    </td>
                 </tr>
             </tbody>
         </table>
@@ -110,7 +118,11 @@ onMounted(async () => {
         <table class="legacy-table footer-table legacy-bg0">
             <tbody>
                 <tr>
-                    <td><button type="button" @click="router.push('/')">돌아가기</button></td>
+                    <td>
+                        <button class="legacy-button legacy-button--navigation" type="button" @click="router.push('/')">
+                            돌아가기
+                        </button>
+                    </td>
                 </tr>
                 <tr>
                     <td class="credit">삼국지 모의전투 HiDCHe / KOEI의 이미지를 사용했습니다 / 제작: Hide.D</td>
@@ -166,15 +178,6 @@ onMounted(async () => {
 }
 .history {
     text-align: left !important;
-}
-.title-table button,
-.footer-table button {
-    border: 0;
-    border-radius: 3px;
-    padding: 8px 12px;
-    background: #345c85;
-    color: #fff;
-    cursor: pointer;
 }
 .credit {
     padding: 0 !important;
