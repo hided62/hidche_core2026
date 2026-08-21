@@ -6,4 +6,4 @@ import type { PostgresConfig, PostgresConnector } from './postgres.js';
 import { createPostgresConnector } from './postgres.js';
 
 export const createGatewayPostgresConnector = (config: PostgresConfig): PostgresConnector<GatewayPrismaClient> =>
-    createPostgresConnector(config, (options) => new GatewayPrismaClient(options));
+    createPostgresConnector({ ...config, sessionTimezone: 'UTC' }, (options) => new GatewayPrismaClient(options));
