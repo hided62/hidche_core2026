@@ -18,6 +18,7 @@ import type { TurnCommandEnv } from '@sammo-ts/logic/actions/turn/commandEnv.js'
 import type { NationTurnCommandSpec } from './index.js';
 import { z } from 'zod';
 import { parseArgsWithSchema } from '../parseArgs.js';
+import { resolveDiplomacyMessageValidMinutes } from '../../../diplomacy/messageValidity.js';
 
 const ARGS_SCHEMA = z.object({
     destNationId: z.number().int().positive(),
@@ -195,7 +196,7 @@ export const actionContextBuilder: ActionContextBuilder<NonAggressionProposalArg
         ...base,
         destNation,
         messageTime: base.general.turnTime,
-        messageValidMinutes: Math.max(30, Math.floor((options.world.tickSeconds / 60) * 3)),
+        messageValidMinutes: resolveDiplomacyMessageValidMinutes(options.world.tickSeconds),
     };
 };
 

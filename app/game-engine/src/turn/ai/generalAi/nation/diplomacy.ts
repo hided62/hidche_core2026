@@ -1,7 +1,15 @@
 import type { GeneralAI } from '../core.js';
 import { asRecord, joinYearMonth, parseYearMonth, readMetaNumber } from '../../aiUtils.js';
+import { resolveDiplomacyMessageValidUntilTick } from '@sammo-ts/logic';
 import { isNeighbor } from '@sammo-ts/logic/world/distance.js';
 import { resolveNationIncome } from './helpers.js';
+
+const LEGACY_RETRY_COOLDOWN_MONTHS = 8;
+
+const readIndexedNumber = (value: unknown, index: number, fallback = 0): number => {
+    const raw = Array.isArray(value) ? value[index] : asRecord(value)[String(index)];
+    return typeof raw === 'number' && Number.isFinite(raw) ? raw : fallback;
+};
 
 const isTechLimited = (ai: GeneralAI, tech: number): boolean => {
     const relativeYear = Math.max(0, ai.world.currentYear - ai.startYear);
@@ -26,7 +34,9 @@ export const do불가침제의 = (ai: GeneralAI) => {
     const recvAssist = Array.isArray(meta.recv_assist) ? meta.recv_assist : Object.values(asRecord(meta.recv_assist));
     const respAssist = asRecord(meta.resp_assist);
     const respAssistTry = asRecord(meta.resp_assist_try);
+    const respAssistDeclined = asRecord(meta.resp_assist_declined);
     const yearMonth = joinYearMonth(ai.world.currentYear, ai.world.currentMonth);
+    const currentTurnTick = ai.general.turnTick;
 
     const candidateList: Record<number, number> = {};
     for (const entry of recvAssist) {
@@ -36,8 +46,8 @@ export const do불가침제의 = (ai: GeneralAI) => {
         if (!Number.isFinite(destNationId) || !Number.isFinite(amount)) {
             continue;
         }
-        const respEntry = asRecord(respAssist[`n${destNationId}`]);
-        const respAmount = readMetaNumber(respEntry, '1', 0);
+        const respEntry = respAssist[`n${destNationId}`];
+        const respAmount = readIndexedNumber(respEntry, 1);
         const remain = amount - respAmount;
         if (remain <= 0) {
             continue;
@@ -45,9 +55,21 @@ export const do불가침제의 = (ai: GeneralAI) => {
         if (ai.warTargetNation[destNationId]) {
             continue;
         }
-        const lastTry = readMetaNumber(asRecord(respAssistTry[`n${destNationId}`]), '1', 0);
-        if (lastTry >= yearMonth - 8) {
+        const assistKey = `n${destNationId}`;
+        if (Object.prototype.hasOwnProperty.call(respAssistDeclined, assistKey)) {
             continue;
+        }
+        const lastTryEntry = respAssistTry[assistKey];
+        const proposalValidUntilTick = readIndexedNumber(lastTryEntry, 2);
+        if (typeof currentTurnTick === 'number' && Number.isFinite(currentTurnTick) && proposalValidUntilTick > 0) {
+            if (currentTurnTick < proposalValidUntilTick) {
+                continue;
+            }
+        } else {
+            const lastTry = readIndexedNumber(lastTryEntry, 1);
+            if (lastTry >= yearMonth - LEGACY_RETRY_COOLDOWN_MONTHS) {
+                continue;
+            }
         }
         candidateList[destNationId] = remain;
     }
@@ -84,8 +106,15 @@ export const do불가침제의 = (ai: GeneralAI) => {
         '불가침제의'
     );
     if (result) {
-        const nextTry = { ...respAssistTry, [`n${destNationId}`]: [destNationId, yearMonth] };
-        asRecord(ai.nation.meta).resp_assist_try = nextTry;
+        const validUntilTick =
+            typeof currentTurnTick === 'number'
+                ? resolveDiplomacyMessageValidUntilTick(currentTurnTick, ai.world.tickSeconds)
+                : null;
+        const nextTry = {
+            ...respAssistTry,
+            [`n${destNationId}`]: [destNationId, yearMonth, ...(validUntilTick === null ? [] : [validUntilTick])],
+        };
+        ai.patchPersistentNationMeta({ resp_assist_try: nextTry });
     }
     return result;
 };

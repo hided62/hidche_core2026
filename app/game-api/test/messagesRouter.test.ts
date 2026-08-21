@@ -745,6 +745,7 @@ describe('messages router missing-flow compatibility', () => {
         mailboxNationId?: number;
         proposerNationId?: number;
         proposerCurrentNationId?: number;
+        proposerNationMeta?: Record<string, unknown>;
         diplomacyState?: number;
         response?: boolean;
         cities?: Array<{ id: number; nationId: number; frontState: number }>;
@@ -903,7 +904,9 @@ describe('messages router missing-flow compatibility', () => {
                                     tech: 0,
                                     level: 1,
                                     typeCode: 'test',
-                                    meta: { recv_assist: { [`n${actorNationId}`]: [actorNationId, 50] } },
+                                    meta: options?.proposerNationMeta ?? {
+                                        recv_assist: { [`n${actorNationId}`]: [actorNationId, 50] },
+                                    },
                                 }
                               : null
                     ),
@@ -1004,6 +1007,49 @@ describe('messages router missing-flow compatibility', () => {
         expect(setup.diplomacyUpdate).not.toHaveBeenCalled();
         expect(setup.messageUpdateMany).toHaveBeenCalledOnce();
         expect(setup.logCreateMany).toHaveBeenCalledOnce();
+    });
+
+    it('permanently records rejection of an NPC aid-based non-aggression proposal', async () => {
+        const setup = buildDiplomaticContext({
+            proposerNationMeta: {
+                recv_assist: { n1: [1, 50] },
+                resp_assist_try: { n1: [1, 2402, 108_000_000] },
+            },
+        });
+
+        const result = await setup.caller.messages.respond({
+            generalId: setup.actor.id,
+            messageId: 31,
+            response: false,
+        });
+
+        expect(result).toEqual({ result: true, reason: 'success' });
+        expect(setup.diplomacyUpdate).not.toHaveBeenCalled();
+        expect(setup.nationUpdate).toHaveBeenCalledWith({
+            where: { id: 2 },
+            data: {
+                meta: {
+                    recv_assist: { n1: [1, 50] },
+                    resp_assist_try: { n1: [1, 2402, 108_000_000] },
+                    resp_assist_declined: { n1: [1, 2402] },
+                },
+            },
+        });
+        expect(setup.messageUpdateMany).toHaveBeenCalledOnce();
+    });
+
+    it('does not record a permanent aid rejection for a manual non-aggression proposal', async () => {
+        const setup = buildDiplomaticContext({ proposerNationMeta: {} });
+
+        const result = await setup.caller.messages.respond({
+            generalId: setup.actor.id,
+            messageId: 31,
+            response: false,
+        });
+
+        expect(result).toEqual({ result: true, reason: 'success' });
+        expect(setup.nationUpdate).not.toHaveBeenCalled();
+        expect(setup.messageUpdateMany).toHaveBeenCalledOnce();
     });
 
     it.each([

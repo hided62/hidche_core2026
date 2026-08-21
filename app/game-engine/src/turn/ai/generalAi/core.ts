@@ -658,9 +658,16 @@ export class GeneralAI {
 
     markCapitalMoveTrial(): void {
         if (!this.nation || this.general.turnTick === undefined) return;
+        this.patchPersistentNationMeta({
+            lastCapitalMoveTrial: [this.general.officerLevel, this.general.turnTick],
+        });
+    }
+
+    patchPersistentNationMeta(patch: Record<string, unknown>): void {
+        if (!this.nation) return;
         const nextMeta = {
             ...(this.promotionNationMeta ?? this.nation.meta),
-            lastCapitalMoveTrial: [this.general.officerLevel, this.general.turnTick],
+            ...patch,
         };
         this.nation = { ...this.nation, meta: nextMeta as Nation['meta'] };
         this.promotionNationMeta = nextMeta;

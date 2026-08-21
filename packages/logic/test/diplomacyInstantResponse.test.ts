@@ -1,7 +1,13 @@
 import { describe, expect, it } from 'vitest';
 
 import type { Nation } from '../src/domain/entities.js';
-import { buildNationFrontStatePatches, resolveInstantDiplomacyResponse } from '../src/diplomacy/index.js';
+import {
+    buildNationFrontStatePatches,
+    DIPLOMACY_STATE,
+    processDiplomacyMonth,
+    resolveInstantDiplomacyResponse,
+    type DiplomacyEntry,
+} from '../src/diplomacy/index.js';
 import { LogCategory, LogScope } from '../src/logging/types.js';
 
 const nation = (id: number, name: string, meta: Nation['meta'] = {}): Nation => ({
@@ -67,6 +73,47 @@ describe('instant diplomatic response parity', () => {
         const logs = result.effects.filter((effect) => effect.type === 'log');
         expect(logs).toHaveLength(4);
         expect(logs.map((effect) => effect.entry.generalId)).toEqual([11, 11, 22, 22]);
+    });
+
+    it('counts an accepted pact down through every month and returns both directions to trade', () => {
+        const result = resolveInstantDiplomacyResponse(context, {
+            action: 'noAggression',
+            treatyYear: 200,
+            treatyMonth: 5,
+        });
+        let diplomacy = result.effects.flatMap((effect) =>
+            effect.type === 'diplomacy:patch'
+                ? [
+                      {
+                          fromNationId: effect.srcNationId,
+                          toNationId: effect.destNationId,
+                          state: effect.patch.state!,
+                          term: effect.patch.term!,
+                          dead: 0,
+                          meta: {},
+                      } satisfies DiplomacyEntry,
+                  ]
+                : []
+        );
+        expect(diplomacy.map(({ state, term }) => ({ state, term }))).toEqual([
+            { state: DIPLOMACY_STATE.NON_AGGRESSION, term: 3 },
+            { state: DIPLOMACY_STATE.NON_AGGRESSION, term: 3 },
+        ]);
+
+        const generalCounts = new Map([
+            [1, 1],
+            [2, 1],
+        ]);
+        for (const expectedTerm of [2, 1]) {
+            diplomacy = processDiplomacyMonth(diplomacy, generalCounts);
+            expect(diplomacy.every((entry) => entry.state === DIPLOMACY_STATE.NON_AGGRESSION)).toBe(true);
+            expect(diplomacy.map((entry) => entry.term)).toEqual([expectedTerm, expectedTerm]);
+        }
+        diplomacy = processDiplomacyMonth(diplomacy, generalCounts);
+        expect(diplomacy.map(({ state, term }) => ({ state, term }))).toEqual([
+            { state: DIPLOMACY_STATE.TRADE, term: 0 },
+            { state: DIPLOMACY_STATE.TRADE, term: 0 },
+        ]);
     });
 
     it('creates the full legacy cancellation logs without refreshing fronts', () => {
