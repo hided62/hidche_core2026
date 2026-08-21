@@ -6,6 +6,8 @@ const root = process.cwd();
 const refRoot = resolveRefRoot(root);
 const phpDir = path.join(refRoot, 'hwe/sammo/Command/General');
 const tsDir = path.join(root, 'packages/logic/src/actions/turn/general');
+const refGameConstPath = path.join(refRoot, 'hwe/sammo/GameConstBase.php');
+const defaultProfilePath = path.join(root, 'resources/turn-commands/default.json');
 const check = process.argv.includes('--check');
 
 const activeAction = new Map([
@@ -39,6 +41,31 @@ const readSources = async (dir, extension) => {
 const php = await readSources(phpDir, '.php');
 const ts = await readSources(tsDir, '.ts');
 const handlerSource = await fs.readFile(path.join(root, 'app/game-engine/src/turn/reservedTurnHandler.ts'), 'utf8');
+const refGameConstSource = await fs.readFile(refGameConstPath, 'utf8');
+const defaultProfile = JSON.parse(await fs.readFile(defaultProfilePath, 'utf8'));
+
+const generalProfileStart = refGameConstSource.indexOf('public static $availableGeneralCommand');
+const generalProfileEnd = refGameConstSource.indexOf('public static $availableChiefCommand', generalProfileStart);
+if (generalProfileStart < 0 || generalProfileEnd < 0) {
+    throw new Error(`Unable to locate Ref availableGeneralCommand in ${refGameConstPath}`);
+}
+const refDefaultGeneralCommands = [
+    ...refGameConstSource.slice(generalProfileStart, generalProfileEnd).matchAll(/^\s*'([^']+)',?\s*$/gm),
+].map((match) => match[1]);
+const coreDefaultGeneralCommands = Array.isArray(defaultProfile.general)
+    ? defaultProfile.general.filter((value) => typeof value === 'string')
+    : [];
+const refDefaultGeneralCommandSet = new Set(refDefaultGeneralCommands);
+const coreDefaultGeneralCommandSet = new Set(coreDefaultGeneralCommands);
+const missingDefaultGeneralCommands = refDefaultGeneralCommands.filter(
+    (command) => !coreDefaultGeneralCommandSet.has(command)
+);
+const extraDefaultGeneralCommands = coreDefaultGeneralCommands.filter(
+    (command) => !refDefaultGeneralCommandSet.has(command)
+);
+const duplicateDefaultGeneralCommands = coreDefaultGeneralCommands.filter(
+    (command, index) => coreDefaultGeneralCommands.indexOf(command) !== index
+);
 
 const phpParent = new Map();
 for (const [key, source] of php) {
@@ -127,6 +154,15 @@ const dynamicChecks = [
 
 console.log(`General command inventory: PHP ${php.size}, TS ${ts.size}`);
 console.log(`Missing TS: ${missingTs.length}; Extra TS: ${extraTs.length}`);
+console.log(
+    `Default general command inventory: Ref ${refDefaultGeneralCommands.length}, Core ${coreDefaultGeneralCommands.length}`
+);
+console.log(
+    `Default profile missing: ${missingDefaultGeneralCommands.length}; extra: ${extraDefaultGeneralCommands.length}; duplicate: ${duplicateDefaultGeneralCommands.length}`
+);
+for (const command of missingDefaultGeneralCommands) console.log(`default missing ${command}`);
+for (const command of extraDefaultGeneralCommands) console.log(`default extra ${command}`);
+for (const command of duplicateDefaultGeneralCommands) console.log(`default duplicate ${command}`);
 console.log(`Timing mismatches: ${timingMismatches.length}`);
 console.log(`Active-action mismatches: ${activeMismatches.length}`);
 for (const mismatch of timingMismatches) console.log('timing', JSON.stringify(mismatch));
@@ -137,6 +173,9 @@ if (
     check &&
     (missingTs.length > 0 ||
         extraTs.length > 0 ||
+        missingDefaultGeneralCommands.length > 0 ||
+        extraDefaultGeneralCommands.length > 0 ||
+        duplicateDefaultGeneralCommands.length > 0 ||
         timingMismatches.length > 0 ||
         activeMismatches.length > 0 ||
         dynamicChecks.some((item) => !item.ok))

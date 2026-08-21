@@ -2204,9 +2204,18 @@ export const createImmediateGeneralActionExecutor = async (options: {
 }): Promise<ImmediateGeneralActionExecutor> => {
     const env = buildCommandEnv(options.world.getScenarioConfig(), options.world.getUnitSet());
     const commandProfile = options.commandProfile ?? DEFAULT_TURN_COMMAND_PROFILE;
+    // 등용수락은 예약 화면에 노출되는 명령이 아니라 등용 서신의 응답이
+    // 직접 실행하는 내부 명령이다. 선택 가능 명령 프로필에 없더라도 등용
+    // 서신을 수락할 수 있도록 즉시 행동 정의에는 항상 포함한다.
+    const immediateCommandProfile: TurnCommandProfile = commandProfile.general.includes('che_등용수락')
+        ? commandProfile
+        : {
+              ...commandProfile,
+              general: [...commandProfile.general, 'che_등용수락'],
+          };
     const { general: definitions } = await buildReservedTurnDefinitions({
         env,
-        commandProfile,
+        commandProfile: immediateCommandProfile,
         defaultActionKey: DEFAULT_ACTION,
     });
     const generalModuleLoader = new GeneralTurnCommandLoader();
