@@ -8,6 +8,7 @@ import {
     buildProcessDefinitions,
     buildWorkspaceCommands,
     planProfileReconcile,
+    resolveResetLifecycleStatus,
 } from '../src/orchestrator/gatewayOrchestrator.js';
 import { sanitizeManagedProcessEnv } from '../src/orchestrator/processManager.js';
 import type { GatewayProfileRecord } from '../src/orchestrator/profileRepository.js';
@@ -105,6 +106,29 @@ describe('planProfileReconcile', () => {
                 tournamentRunning: false,
             })
         ).toEqual({ shouldStart: false, shouldStop: false });
+    });
+});
+
+describe('resolveResetLifecycleStatus', () => {
+    const now = new Date('2030-01-01T00:00:00.000Z');
+
+    it('keeps an initialized profile reserved until the configured preopen time', () => {
+        expect(
+            resolveResetLifecycleStatus(now, new Date('2030-01-01T01:00:00.000Z'), new Date('2030-01-01T02:00:00.000Z'))
+        ).toBe('RESERVED');
+    });
+
+    it('moves through preopen before the formal open time', () => {
+        expect(
+            resolveResetLifecycleStatus(now, new Date('2029-12-31T23:00:00.000Z'), new Date('2030-01-01T02:00:00.000Z'))
+        ).toBe('PREOPEN');
+    });
+
+    it('runs immediately when no future lifecycle boundary remains', () => {
+        expect(resolveResetLifecycleStatus(now, null, null)).toBe('RUNNING');
+        expect(
+            resolveResetLifecycleStatus(now, new Date('2029-12-31T22:00:00.000Z'), new Date('2029-12-31T23:00:00.000Z'))
+        ).toBe('RUNNING');
     });
 });
 
