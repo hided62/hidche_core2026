@@ -144,9 +144,11 @@ describe('profile DEPLOY operation', () => {
         ];
         const backendProcessNames = processNames.filter((name) => !name.endsWith(':game-frontend'));
         const running = new Set(processNames);
+        const startedDefinitions: Array<Parameters<ProcessManager['start']>[0]> = [];
         const processManager: ProcessManager = {
             list: async () => [...running].map((name) => ({ name, status: 'online' })),
             start: async (definition) => {
+                startedDefinitions.push(definition);
                 running.add(definition.name);
             },
             stop: async () => {},
@@ -225,6 +227,12 @@ describe('profile DEPLOY operation', () => {
         expect(commandGroups[1]?.[0]?.env?.DATABASE_URL).toBe(
             'postgresql://user:encoded%23password@integration.invalid/sammo?schema=che'
         );
+        expect(startedDefinitions).toHaveLength(backendProcessNames.length);
+        for (const definition of startedDefinitions) {
+            expect(definition.env?.DATABASE_URL).toBe(
+                'postgresql://user:encoded%23password@integration.invalid/sammo?schema=che'
+            );
+        }
         expect(commandGroups.flat().some((command) => command.env?.GATEWAY_ROLE === 'profile-seed')).toBe(false);
         expect(patches.at(-1)).toMatchObject({
             buildStatus: 'SUCCEEDED',
