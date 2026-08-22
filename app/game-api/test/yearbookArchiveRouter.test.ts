@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import type { GameSessionTokenPayload } from '@sammo-ts/common/auth/gameToken';
 import type { RedisConnector } from '@sammo-ts/infra';
+import { LogCategory } from '@sammo-ts/logic';
 
 import { RedisAccessTokenStore } from '../src/auth/accessTokenStore.js';
 import { InMemoryFlushStore } from '../src/auth/flushStore.js';
@@ -92,17 +93,49 @@ const authFor = (userId: string): GameSessionTokenPayload => ({
 
 const buildContext = (
     auth: GameSessionTokenPayload | null,
-    options: { hasGeneral?: boolean; worldMeta?: unknown } = {}
+    options: {
+        hasGeneral?: boolean;
+        worldMeta?: unknown;
+        liveLogs?: { history: string[]; action: string[] };
+    } = {}
 ): GameApiContext => {
     const db = {
+        $queryRaw: async () => [],
         general: {
             findFirst: async ({ where }: { where: { userId: string } }) =>
                 options.hasGeneral === false ? null : { id: where.userId === 'owner-a' ? 1 : 2, userId: where.userId },
+            findMany: async () => [],
+        },
+        city: {
+            findMany: async () => [],
+        },
+        nation: {
+            findMany: async () => [],
+        },
+        logEntry: {
+            findMany: async ({ where }: { where: { category: unknown } }) => {
+                if (where.category === LogCategory.HISTORY) {
+                    return (options.liveLogs?.history ?? []).map((text) => ({ text }));
+                }
+                const categories =
+                    typeof where.category === 'object' && where.category !== null && 'in' in where.category
+                        ? (where.category as { in: unknown }).in
+                        : null;
+                if (
+                    Array.isArray(categories) &&
+                    categories.includes(LogCategory.SUMMARY) &&
+                    categories.includes(LogCategory.ACTION)
+                ) {
+                    return (options.liveLogs?.action ?? []).map((text) => ({ text }));
+                }
+                return [];
+            },
         },
         worldState: {
             findFirst: async () => ({
                 currentYear: 220,
                 currentMonth: 1,
+                config: {},
                 meta: options.worldMeta ?? { serverId: currentServerId },
             }),
         },
@@ -244,6 +277,52 @@ describe('historical yearbook access from dynasty', () => {
             data: {
                 globalHistory: ['저장된 현재 기수 과거 기록'],
                 globalAction: ['저장된 현재 기수 과거 행동'],
+            },
+        });
+    });
+
+    it('recovers an already archived current-generation month from retained summary logs', async () => {
+        const caller = appRouter.createCaller(
+            buildContext(authFor('owner-a'), {
+                liveLogs: {
+                    history: ['복구한 현재 기수 과거 정세'],
+                    action: ['복구한 현재 기수 장수 동향'],
+                },
+            })
+        );
+
+        const result = await caller.yearbook.getHistory({
+            serverID: currentServerId,
+            year: 219,
+            month: 12,
+        });
+
+        expect(result).toMatchObject({
+            notModified: false,
+            data: {
+                globalHistory: ['저장된 현재 기수 과거 기록'],
+                globalAction: ['복구한 현재 기수 장수 동향'],
+            },
+        });
+    });
+
+    it('returns summary and compatible action logs as the live month general trend', async () => {
+        const caller = appRouter.createCaller(
+            buildContext(authFor('owner-a'), {
+                liveLogs: {
+                    history: ['현재 천하 동향'],
+                    action: ['최신 호환 행동', '최신 장수 동향'],
+                },
+            })
+        );
+
+        const result = await caller.yearbook.getHistory({ year: 220, month: 1 });
+
+        expect(result).toMatchObject({
+            notModified: false,
+            data: {
+                globalHistory: ['현재 천하 동향'],
+                globalAction: ['최신 호환 행동', '최신 장수 동향'],
             },
         });
     });
