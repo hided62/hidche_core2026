@@ -186,7 +186,15 @@ describe('profile DEPLOY operation', () => {
                 frontendServeMode: 'static',
                 frontendArtifactRoot: path.join(workspace, 'artifact-volume'),
                 frontendReadinessOrigin: 'http://caddy',
-                baseEnv: { DATABASE_URL: 'postgresql://user:pass@integration.invalid/sammo' },
+                baseEnv: {
+                    GATEWAY_DATABASE_URL:
+                        'postgresql://user:encoded%23password@integration.invalid/sammo?schema=public',
+                    POSTGRES_USER: 'user',
+                    POSTGRES_PASSWORD: 'raw#password',
+                    POSTGRES_HOST: 'integration.invalid',
+                    POSTGRES_PORT: '5432',
+                    POSTGRES_DB: 'sammo',
+                },
             },
             reconcileIntervalMs: 60_000,
             scheduleIntervalMs: 60_000,
@@ -214,6 +222,9 @@ describe('profile DEPLOY operation', () => {
         expect(commandGroups[1]?.map((command) => command.args)).toEqual([
             ['--filter', '@sammo-ts/infra', 'prisma:migrate:deploy:game'],
         ]);
+        expect(commandGroups[1]?.[0]?.env?.DATABASE_URL).toBe(
+            'postgresql://user:encoded%23password@integration.invalid/sammo?schema=che'
+        );
         expect(commandGroups.flat().some((command) => command.env?.GATEWAY_ROLE === 'profile-seed')).toBe(false);
         expect(patches.at(-1)).toMatchObject({
             buildStatus: 'SUCCEEDED',
