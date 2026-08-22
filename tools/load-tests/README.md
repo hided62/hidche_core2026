@@ -62,7 +62,9 @@ pnpm --filter @sammo-ts/load-tests activate-coverage \
 ```
 
 `seed`는 해당 `load_` schema에 migration을 적용하고 scenario 2601을 고정 seed/time으로 설치한 뒤 정확히
-900 NPC + 300 synthetic 사용자 장수로 재구성한다. 각 사용자의 24시간 access token은 Redis 전용 DB와
+900 NPC + 300 synthetic 사용자 장수로 재구성한다. synthetic 사용자는 같은 fixture 국가와 도시에 배치하고
+관직 5 이상을 순환 배정하여 암행부·사령부·감찰부·내무부를 실제 권한으로 읽을 수 있게 한다. 시나리오에
+비중립 국가가 없으면 전용 fixture 안에만 측정 국가 하나를 만든다. 각 사용자의 24시간 access token은 Redis 전용 DB와
 새 `0600` JSON에만 저장한다. stdout에는 token, user/general ID, DB/Redis URL을 내보내지 않고 count와
 비밀값을 제외한 fixture SHA-256만 기록한다. token 파일이 이미 있으면 DB 작업 전에 실패한다.
 
@@ -83,6 +85,7 @@ pnpm --filter @sammo-ts/game-api build
 
 systemd-run --user --unit=sammo-capacity-api --collect \
   --property=MemoryMax=8G \
+  --setenv=POSTGRES_POOL_MAX=4 \
   --working-directory="$(pwd)" \
   "$(pwd)/tools/load-tests/scripts/run-capacity-api.sh"
 ```
@@ -181,7 +184,40 @@ schema 간 row-lock 격리와 공유 CPU/I/O/connection 경합을 확인한다. 
 - `tools/load-tests/config/nya-10-users-800-npcs-1m.json`
 - `tools/load-tests/config/pya-10-users-800-npcs-1m.json`
 
-### 5. 명시적 cleanup
+### 5. 1분 턴과 10-user 실제 화면 동시 측정
+
+`measure-turn-cycle`은 fixture의 권위 `turn_time` 분포대로 장수 턴을 wall clock 1분에 pacing하고 월 경계를
+한 번 처리한다. `measure-page-navigation`은 실제 Chromium context 10개가 암행부, 사령부, 현재 도시,
+감찰부, 내무부를 순환하며 페이지와 tRPC 지연을 기록한다. 화면 이동 중에도 사용자마다 별도 SSE 한 개를
+계속 유지한다. 이는 제품 UI가 메인 화면 밖에서 dashboard SSE를 닫는 동작과 “각 사용자가 실시간 알림을
+계속 받는다”는 부하 조건을 분리해 재현하기 위한 구성이다.
+
+두 명령에 같은 미래 `LOAD_TEST_START_AT_EPOCH_MS`를 주면 턴과 브라우저 측정 구간을 맞출 수 있다.
+`LOAD_TEST_FRONTEND_URL`은 private/loopback URL과 정확한 profile suffix여야 하며,
+`LOAD_TEST_API_PID`는 같은 workspace에서 실행 중인 game-api PID여야 한다. 결과에는 token, 응답 본문과
+사용자 식별자를 넣지 않는다.
+
+```sh
+export LOAD_TEST_START_AT_EPOCH_MS=REPLACE_WITH_NEAR_FUTURE_EPOCH_MS
+export LOAD_TEST_FRONTEND_URL=http://127.0.0.1:15000/pya/
+export LOAD_TEST_API_PID=REPLACE_WITH_LOCAL_GAME_API_PID
+
+pnpm --filter @sammo-ts/load-tests measure-page-navigation \
+  --config tools/load-tests/config/pya-10-users-800-npcs-1m.json \
+  --tokens tools/load-tests/secrets/game-tokens.json \
+  --output tools/load-tests/results/page-navigation.json
+
+pnpm --filter @sammo-ts/load-tests measure-turn-cycle \
+  --config tools/load-tests/config/pya-10-users-800-npcs-1m.json \
+  --confirm load_capacity_pya_10_800_1m \
+  --output tools/load-tests/results/turn-cycle.json
+```
+
+페이지 latency는 production frontend의 lazy chunk, 인증 초기화와 Playwright `networkidle` 500ms를 모두
+포함하므로 API procedure latency와 함께 해석한다. API CPU/RSS는 지정 PID만, PostgreSQL 지표는 같은 DB의
+observer를 포함한 database-wide delta만 나타낸다. 호스트의 다른 profile, Gateway와 worker 부하는 포함하지 않는다.
+
+### 6. 명시적 cleanup
 
 token 파일은 별도로 안전하게 삭제하고, fixture schema/Redis token은 schema명을 그대로 확인 인자로 주어
 정리한다. named volume은 보존한다. 데이터 폐기가 필요하지 않으면 이 명령을 실행하지 않는다.
@@ -195,8 +231,8 @@ docker compose -f tools/load-tests/compose.capacity.yml down
 
 ## 아직 남은 측정 경계
 
-- `measure-turn-flush`는 한 달을 wall-clock보다 빠르게 replay하는 처리량 시험이다. 실제 schedule lag,
-  장시간 pool wait와 autovacuum/checkpoint 영향을 보려면 profile별 속도로 pacing한 soak가 별도로 필요하다.
+- `measure-turn-flush`는 한 달을 wall-clock보다 빠르게 replay하는 처리량 시험이다. 실제 1분 schedule lag는
+  `measure-turn-cycle`로 확인할 수 있지만 장시간 pool wait와 autovacuum/checkpoint는 더 긴 soak가 필요하다.
 - 월 경계 latency는 실행당 표본이 하나다. scenario 진행 시점과 월별 event 차이를 포괄하지 않는다.
 - 두 1분 profile 동시 실행은 최악 turn-rate 조합의 국소 증거이며, 여섯 profile의 전체 PM2 RSS,
   Gateway·worker connection과 운영 container cgroup을 재현하지 않는다.

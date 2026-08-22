@@ -5,6 +5,7 @@ import {
     MAX_GENERAL_TURNS,
     MAX_NATION_TURNS,
     expandGeneralTurnIndices,
+    getNationTurnSnapshots,
     repeatGeneralTurns,
     repeatNationTurns,
     setGeneralTurn,
@@ -201,6 +202,52 @@ const buildDb = (autorunLimit: number | null = null) => {
 };
 
 describe('reservedTurns', () => {
+    it('loads multiple nation officer queues with two batched queries and preserves defaults', async () => {
+        const findTurns = vi.fn(async () => [
+            {
+                id: 1,
+                nationId: 4,
+                officerLevel: 12,
+                turnIdx: 1,
+                actionCode: 'che_징병',
+                arg: { amount: 100 },
+                createdAt: new Date(),
+            },
+            {
+                id: 2,
+                nationId: 4,
+                officerLevel: 10,
+                turnIdx: 0,
+                actionCode: 'che_훈련',
+                arg: {},
+                createdAt: new Date(),
+            },
+        ] satisfies NationTurnRow[]);
+        const findRevisions = vi.fn(async () => [
+            { nationId: 4, officerLevel: 12, revision: 7, updatedAt: new Date() },
+        ]);
+        const db = {
+            nationTurn: { findMany: findTurns },
+            nationTurnRevision: { findMany: findRevisions },
+        } as unknown as DatabaseClient;
+
+        const snapshots = await getNationTurnSnapshots(db, 4, [12, 10, 8, 12]);
+
+        expect(findTurns).toHaveBeenCalledOnce();
+        expect(findRevisions).toHaveBeenCalledOnce();
+        expect(snapshots.size).toBe(3);
+        expect(snapshots.get(12)?.revision).toBe(7);
+        expect(snapshots.get(12)?.turns.slice(0, 2)).toEqual([
+            { index: 0, action: '휴식', args: {} },
+            { index: 1, action: 'che_징병', args: { amount: 100 } },
+        ]);
+        expect(snapshots.get(10)?.revision).toBe(0);
+        expect(snapshots.get(10)?.turns[0]).toEqual({ index: 0, action: 'che_훈련', args: {} });
+        expect(snapshots.get(8)?.revision).toBe(0);
+        expect(snapshots.get(8)?.turns[0]).toEqual({ index: 0, action: '휴식', args: {} });
+        expect(snapshots.get(8)?.turns).toHaveLength(MAX_NATION_TURNS);
+    });
+
     it('sets and shifts general turns', async () => {
         const { db } = buildDb(2408);
 

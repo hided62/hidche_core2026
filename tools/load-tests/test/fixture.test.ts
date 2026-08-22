@@ -5,9 +5,21 @@ import path from 'node:path';
 import test from 'node:test';
 
 import { validateLoadConfig } from '../src/config.js';
-import { activateCapacityCoverage, assertFixtureIsolation, prepareCapacitySecrets } from '../src/fixture.js';
+import {
+    activateCapacityCoverage,
+    assertFixtureIsolation,
+    prepareCapacitySecrets,
+    privilegedViewerPlacement,
+} from '../src/fixture.js';
 
 const samplePath = new URL('../config/300-users-900-npcs-5m.json', import.meta.url);
+
+void test('viewer placement stays in one nation and covers every privileged chief level deterministically', () => {
+    assert.deepEqual(
+        Array.from({ length: 10 }, (_, index) => privilegedViewerPlacement(index, 3, 7)),
+        [12, 10, 8, 6, 11, 9, 7, 5, 12, 10].map((officerLevel) => ({ nationId: 3, cityId: 7, officerLevel }))
+    );
+});
 
 void test('fixture accepts only the configured private schema and dedicated Redis database', async () => {
     const config = validateLoadConfig(JSON.parse(await readFile(samplePath, 'utf8')));
