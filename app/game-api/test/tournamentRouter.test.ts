@@ -179,6 +179,53 @@ const setTournamentFixture = async (redis: MemoryRedis, state: Record<string, un
 };
 
 describe('tournament router permissions and mutations', () => {
+    it('returns persisted group fight logs to an authenticated tournament viewer', async () => {
+        const redis = new MemoryRedis();
+        const transport = new TournamentTransport();
+        const general = buildGeneral(1, 'user-1');
+        await setTournamentFixture(redis, {
+            stage: 2,
+            phase: 1,
+            type: 0,
+            auto: true,
+            openYear: 193,
+            openMonth: 1,
+            termSeconds: 60,
+            nextAt: '2026-07-26T01:00:00.000Z',
+        });
+        await redis.set(
+            'sammo:che:default:tournament:matches',
+            JSON.stringify([
+                {
+                    id: 201,
+                    stage: 2,
+                    roundIndex: 0,
+                    groupId: 0,
+                    attackerId: 11,
+                    defenderId: 12,
+                    winnerId: 11,
+                    log: ['<S>●</> <Y>후보11</> <S>승리</>!'],
+                },
+            ])
+        );
+        const caller = appRouter.createCaller(
+            buildContext({ redis, transport, generals: [general, buildGeneral(11, 'user-11')], userId: 'user-1' })
+        );
+
+        const snapshot = await caller.tournament.getSnapshot();
+
+        expect(snapshot.matches).toEqual([
+            expect.objectContaining({
+                stage: 2,
+                groupId: 0,
+                attackerId: 11,
+                defenderId: 12,
+                winnerId: 11,
+                log: ['<S>●</> <Y>후보11</> <S>승리</>!'],
+            }),
+        ]);
+    });
+
     it('charges the authenticated general once when joining', async () => {
         const redis = new MemoryRedis();
         const transport = new TournamentTransport();
