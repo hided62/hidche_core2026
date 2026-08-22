@@ -28,10 +28,16 @@ const main = async (): Promise<void> => {
         worktreeRoot: config.worktreeRoot,
         baseEnv: config.baseEnv,
     });
-    const buildRunner = new PnpmBuildRunner();
-    const releaseBuildRunner = createReleaseBuildRunner(config.releaseBuilderUrl, buildRunner);
+    const migrationRunner = new PnpmBuildRunner();
+    const releaseBuildRunner = createReleaseBuildRunner(config.releaseBuilderUrl, migrationRunner);
     const processManager = new Pm2ProcessManager();
-    const controller = new GatewayReleaseController(repository, workspaceManager, buildRunner, processManager, config);
+    const controller = new GatewayReleaseController(
+        repository,
+        workspaceManager,
+        releaseBuildRunner,
+        processManager,
+        config
+    );
     const command = process.argv[2] ?? 'daemon';
     if (command === 'status') {
         console.log(
@@ -60,7 +66,7 @@ const main = async (): Promise<void> => {
             sourceRef,
             workspaceManager,
             buildRunner: releaseBuildRunner,
-            migrationRunner: buildRunner,
+            migrationRunner,
             processManager,
             config,
         });
