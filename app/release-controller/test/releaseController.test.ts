@@ -388,6 +388,70 @@ describe('GatewayReleaseController', () => {
         );
     });
 
+    it('runs release builds remotely while keeping Gateway migration on the runtime runner', async () => {
+        const workspace = await createReleaseWorkspace();
+        const harness = createRepository();
+        const localCommandGroups: string[][] = [];
+        const remoteRequests: Array<{ commands: Array<{ args: string[] }> }> = [];
+        const running = new Map(gatewayNames.map((name) => [name, '/srv/sammo/old']));
+        const localRunner: BuildRunner = {
+            run: async (commands) => {
+                localCommandGroups.push(commands.map((command) => command.args.join(' ')));
+                return { ok: true, exitCode: 0, output: '' };
+            },
+        };
+        const controller = new GatewayReleaseController(
+            harness.repository,
+            {
+                resolveCommit: async () => SHA,
+                prepare: async () => ({ root: workspace, created: true, needsInstall: true }),
+            } as unknown as GitWorkspaceManager,
+            localRunner,
+            {
+                list: async () =>
+                    [...running].map(([name, cwd]) => ({
+                        name,
+                        cwd,
+                        status: 'online',
+                        restartCount: 0,
+                        script: path.join(cwd, 'dist.js'),
+                    })),
+                start: async (definition) => {
+                    running.set(definition.name, definition.cwd);
+                },
+                stop: async () => {},
+                delete: async (name) => {
+                    running.delete(name);
+                },
+            },
+            { ...config, releaseBuilderUrl: 'http://builder:15100' },
+            () => new Date('2026-08-01T00:00:00.000Z'),
+            async (input, init) => {
+                if (String(input) === 'http://builder:15100/v1/builds') {
+                    remoteRequests.push(JSON.parse(String(init?.body)) as { commands: Array<{ args: string[] }> });
+                    return new Response(`${JSON.stringify({ result: { ok: true, exitCode: 0, output: '' } })}\n`, {
+                        status: 200,
+                        headers: { 'content-type': 'application/x-ndjson' },
+                    });
+                }
+                return new Response('', { status: 200 });
+            }
+        );
+
+        await controller.runOnce();
+
+        expect(remoteRequests).toHaveLength(1);
+        expect(remoteRequests[0]?.commands.map((command) => command.args.join(' '))).toEqual(
+            expect.arrayContaining([
+                expect.stringContaining('install --frozen-lockfile'),
+                expect.stringContaining('turbo run build'),
+                expect.stringContaining('turbo run build:release'),
+            ])
+        );
+        expect(localCommandGroups).toEqual([['--filter @sammo-ts/infra prisma:migrate:deploy:gateway']]);
+        expect(harness.completions).toEqual(['SUCCEEDED']);
+    });
+
     it('restores the previous gateway processes when the new process set cannot start', async () => {
         const workspace = await createReleaseWorkspace();
         const harness = createRepository();

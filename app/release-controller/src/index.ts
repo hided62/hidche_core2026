@@ -34,7 +34,7 @@ const main = async (): Promise<void> => {
     const controller = new GatewayReleaseController(
         repository,
         workspaceManager,
-        releaseBuildRunner,
+        migrationRunner,
         processManager,
         config
     );
