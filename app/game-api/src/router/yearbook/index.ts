@@ -226,8 +226,22 @@ const buildNationSnapshot = async (ctx: GameApiContext) => {
     });
 };
 
-const buildLogs = async (ctx: GameApiContext, year: number, month: number) => {
-    const [historyLogs, actionLogs] = await Promise.all([
+const readGlobalActionLogs = async (ctx: GameApiContext, year: number, month: number) => {
+    const actionLogs = await ctx.db.logEntry.findMany({
+        where: {
+            scope: LogScope.SYSTEM,
+            category: { in: [LogCategory.SUMMARY, LogCategory.ACTION] },
+            year,
+            month,
+        },
+        orderBy: { id: 'desc' },
+    });
+
+    return actionLogs.map((entry) => entry.text);
+};
+
+const readLogs = async (ctx: GameApiContext, year: number, month: number) => {
+    const [historyLogs, globalAction] = await Promise.all([
         ctx.db.logEntry.findMany({
             where: {
                 scope: LogScope.SYSTEM,
@@ -237,20 +251,16 @@ const buildLogs = async (ctx: GameApiContext, year: number, month: number) => {
             },
             orderBy: { id: 'desc' },
         }),
-        ctx.db.logEntry.findMany({
-            where: {
-                scope: LogScope.SYSTEM,
-                category: LogCategory.ACTION,
-                year,
-                month,
-            },
-            orderBy: { id: 'desc' },
-        }),
+        readGlobalActionLogs(ctx, year, month),
     ]);
 
     const globalHistory = historyLogs.map((entry) => entry.text);
-    const globalAction = actionLogs.map((entry) => entry.text);
 
+    return { globalHistory, globalAction };
+};
+
+const buildLogs = async (ctx: GameApiContext, year: number, month: number) => {
+    const { globalHistory, globalAction } = await readLogs(ctx, year, month);
     return {
         globalHistory: globalHistory.length ? globalHistory : [`<C>●</>${month}월: 기록 없음`],
         globalAction: globalAction.length ? globalAction : [`<C>●</>${month}월: 기록 없음`],
@@ -387,7 +397,13 @@ export const yearbookRouter = router({
             const map = asRecord(row.map) as BaseMapResult;
             const nations = parseYearbookNations(row.nations);
             const globalHistory = normalizeArchivedLogs(row.globalHistory, input.month);
-            const globalAction = normalizeArchivedLogs(row.globalAction, input.month);
+            let globalAction = normalizeArchivedLogs(row.globalAction, input.month);
+            if (target.isCurrentProfile) {
+                const liveGlobalAction = await readGlobalActionLogs(ctx, input.year, input.month);
+                if (liveGlobalAction.length) {
+                    globalAction = liveGlobalAction;
+                }
+            }
             const data = {
                 year: input.year,
                 month: input.month,
