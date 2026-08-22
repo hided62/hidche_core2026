@@ -21,6 +21,7 @@ export default defineConfig({
         'kakao-account-recovery.spec.ts',
         'public-map-tabs.spec.ts',
         'runtime-navigation.spec.ts',
+        'open-suggestion.spec.ts',
     ],
     fullyParallel: false,
     workers: 1,

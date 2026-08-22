@@ -41,6 +41,12 @@ orchestrator가 commit별 worktree와 PM2 process를 조정합니다.
 Gateway 자체 릴리스는 Gateway 프로세스 밖의 `release-controller`가 별도
 `GatewayReleaseOperation` queue를 처리합니다.
 
+로그인한 일반 사용자는 Gateway 로비의 `오픈 건의 양식 작성`에서 대상 profile의
+현재 활성 빌드에 포함된 시나리오와 초기화 옵션의 의미를 조회할 수 있습니다.
+이 화면은 `/open-suggestion`에서 복사 가능한 제안 문구만 만들며 RESET, 예약,
+오픈 또는 다른 서버 mutation을 호출하지 않습니다. 시나리오 catalog API도
+클라이언트 Git ref를 받지 않고 profile에 저장된 `buildCommitSha`만 읽습니다.
+
 Kakao 계정은 OAuth callback과 일반 비밀번호 로그인 모두에서 Kakao 고유 ID와
 현재 인증 이메일을 다시 확인합니다. 로컬 고유 ID 연결이 없지만 영구 보존된
 이메일 계정이 있으면 자동 로그인하지 않고 그 계정에 연결할지 묻습니다. 기존
