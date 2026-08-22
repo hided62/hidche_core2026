@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { LogCategory, LogFormat, LogScope, type Nation } from '@sammo-ts/logic';
+import { DIPLOMACY_STATE, LogCategory, LogFormat, LogScope, type Nation } from '@sammo-ts/logic';
 
 import { InMemoryTurnWorld } from '../src/turn/inMemoryWorld.js';
 import { createMonthlyDiplomacyHandler } from '../src/turn/monthlyNationStatsHandler.js';
@@ -27,10 +27,12 @@ const diplomacy: TurnDiplomacy[] = [
     { fromNationId: 3, toNationId: 4, state: 0, term: 1, dead: 0, meta: {} },
     { fromNationId: 4, toNationId: 3, state: 0, term: 1, dead: 0, meta: {} },
     { fromNationId: 2, toNationId: 4, state: 7, term: 1, dead: 999, meta: {} },
+    { fromNationId: 5, toNationId: 6, state: 0, term: 1, dead: 0, meta: {} },
+    { fromNationId: 6, toNationId: 5, state: 0, term: 3, dead: 0, meta: {} },
 ];
 
 describe('monthly diplomacy post-update', () => {
-    it('matches legacy casualty terms, state transitions, and global log order', async () => {
+    it('shares war terms across both directions and emits each transition log once', async () => {
         const state: TurnWorldState = {
             id: 1,
             currentYear: 193,
@@ -58,6 +60,8 @@ describe('monthly diplomacy post-update', () => {
                 buildNation(2, '을국', 1),
                 buildNation(3, '병국', 1),
                 buildNation(4, '정국', 1),
+                buildNation(5, '무국', 1),
+                buildNation(6, '기국', 1),
             ],
             troops: [],
         };
@@ -77,10 +81,12 @@ describe('monthly diplomacy post-update', () => {
             { fromNationId: 1, toNationId: 2, state: 0, term: 6, dead: 0, meta: {} },
             { fromNationId: 2, toNationId: 1, state: 0, term: 6, dead: 0, meta: {} },
             { fromNationId: 1, toNationId: 3, state: 0, term: 5, dead: 50, meta: {} },
-            { fromNationId: 3, toNationId: 1, state: 0, term: 4, dead: 50, meta: {} },
+            { fromNationId: 3, toNationId: 1, state: 0, term: 5, dead: 50, meta: {} },
             { fromNationId: 3, toNationId: 4, state: 2, term: 0, dead: 0, meta: {} },
             { fromNationId: 4, toNationId: 3, state: 2, term: 0, dead: 0, meta: {} },
             { fromNationId: 2, toNationId: 4, state: 2, term: 0, dead: 0, meta: {} },
+            { fromNationId: 5, toNationId: 6, state: 0, term: 2, dead: 0, meta: {} },
+            { fromNationId: 6, toNationId: 5, state: 0, term: 2, dead: 0, meta: {} },
         ]);
         expect(world.consumeDirtyState().logs).toEqual([
             {
@@ -93,6 +99,45 @@ describe('monthly diplomacy post-update', () => {
                 scope: LogScope.SYSTEM,
                 category: LogCategory.HISTORY,
                 text: '<R><b>【종전】</b></><D><b>병국</b></>과 <D><b>정국</b></>이 <S>종전</>합니다.',
+                format: LogFormat.YEAR_MONTH,
+            },
+        ]);
+
+        await world.advanceMonth(new Date('0193-03-01T00:00:00.000Z'));
+        expect(
+            world
+                .listDiplomacy()
+                .filter(
+                    (entry) =>
+                        (entry.fromNationId === 5 && entry.toNationId === 6) ||
+                        (entry.fromNationId === 6 && entry.toNationId === 5)
+                )
+                .map(({ state, term }) => ({ state, term }))
+        ).toEqual([
+            { state: DIPLOMACY_STATE.WAR, term: 1 },
+            { state: DIPLOMACY_STATE.WAR, term: 1 },
+        ]);
+        expect(world.consumeDirtyState().logs).toEqual([]);
+
+        await world.advanceMonth(new Date('0193-04-01T00:00:00.000Z'));
+        expect(
+            world
+                .listDiplomacy()
+                .filter(
+                    (entry) =>
+                        (entry.fromNationId === 5 && entry.toNationId === 6) ||
+                        (entry.fromNationId === 6 && entry.toNationId === 5)
+                )
+                .map(({ state, term }) => ({ state, term }))
+        ).toEqual([
+            { state: DIPLOMACY_STATE.TRADE, term: 0 },
+            { state: DIPLOMACY_STATE.TRADE, term: 0 },
+        ]);
+        expect(world.consumeDirtyState().logs).toEqual([
+            {
+                scope: LogScope.SYSTEM,
+                category: LogCategory.HISTORY,
+                text: '<R><b>【종전】</b></><D><b>무국</b></>과 <D><b>기국</b></>이 <S>종전</>합니다.',
                 format: LogFormat.YEAR_MONTH,
             },
         ]);
