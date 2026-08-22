@@ -31,6 +31,14 @@ const eventChanges = (event: RealtimeEvent): RealtimeReadModelChanges | null => 
     return null;
 };
 
+export type RealtimeSubscriptionScope = 'dashboard' | 'tournament';
+
+/** Keeps page-family projection traffic off the dashboard subscription and vice versa. */
+export const shouldForwardRealtimeEvent = (event: RealtimeEvent, scope: RealtimeSubscriptionScope): boolean =>
+    scope === 'tournament'
+        ? event.type === 'tournamentProjectionChanged'
+        : event.type !== 'tournamentProjectionChanged';
+
 export const shouldReloadRealtimeViewerIdentity = (event: RealtimeEvent, identity: RealtimeViewerIdentity): boolean => {
     if (identity.generalId === null) return false;
     const changes = eventChanges(event);
@@ -82,6 +90,18 @@ export const toPublicRealtimeEvent = (
                 records: false,
                 frontStatus: false,
                 tournament: true,
+            },
+        };
+    }
+
+    if (event.type === 'tournamentProjectionChanged') {
+        return {
+            type: 'tournamentViewInvalidated',
+            refreshGrant: createRefreshGrant(),
+            invalidation: {
+                snapshot: event.invalidation.snapshot === true,
+                betting: event.invalidation.betting === true,
+                rankings: event.invalidation.rankings === true,
             },
         };
     }

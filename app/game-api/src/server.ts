@@ -33,7 +33,11 @@ import { buildBattleSimQueueKeys } from './battleSim/keys.js';
 import { RedisBattleSimTransport } from './battleSim/redisTransport.js';
 import { RedisRealtimeEventHub } from './realtime/eventHub.js';
 import { formatSseFrame } from './realtime/sse.js';
-import { shouldReloadRealtimeViewerIdentity, toPublicRealtimeEvent } from './realtime/publicEvent.js';
+import {
+    shouldForwardRealtimeEvent,
+    shouldReloadRealtimeViewerIdentity,
+    toPublicRealtimeEvent,
+} from './realtime/publicEvent.js';
 import { GatewayHttpAccountIconSource } from './auth/accountIconSource.js';
 import { GatewayHttpProfileStatusSource } from './auth/profileStatusSource.js';
 import { createAdminProfileIconResetFlushHandler } from './services/accountIconSync.js';
@@ -267,7 +271,8 @@ export const createGameApiServer = async () => {
     });
 
     app.get(config.eventsPath, async (request, reply) => {
-        const query = request.query as { token?: string };
+        const query = request.query as { token?: string; scope?: string };
+        const subscriptionScope = query.scope === 'tournament' ? 'tournament' : 'dashboard';
         const tokenFromHeader = extractBearerToken(request.headers.authorization);
         const tokenFromQuery = typeof query.token === 'string' ? query.token : null;
         const auth = await resolveAuthFromToken(tokenFromHeader ?? tokenFromQuery, accessTokenStore, flushStore);
@@ -322,6 +327,7 @@ export const createGameApiServer = async () => {
         let closed = false;
         let eventQueue = Promise.resolve();
         const unsubscribe = realtimeHub.subscribe((event) => {
+            if (!shouldForwardRealtimeEvent(event, subscriptionScope)) return;
             eventQueue = eventQueue
                 .then(async () => {
                     if (closed) return;

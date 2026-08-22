@@ -1,20 +1,17 @@
 <script setup lang="ts">
 import { formatServerDateTime } from '@sammo-ts/common/time/ServerDateTime';
-import { computed, nextTick, onMounted, ref } from 'vue';
+import { storeToRefs } from 'pinia';
+import { computed, nextTick, onMounted, onUnmounted, ref } from 'vue';
 import TournamentBracket from '../components/tournament/TournamentBracket.vue';
 import TournamentPageHeader from '../components/tournament/TournamentPageHeader.vue';
 import GeneralIdentity from '../components/ui/GeneralIdentity.vue';
 import { useGameFeedback } from '../composables/useGameFeedback';
+import { useTournamentPagesStore } from '../stores/tournamentPages';
 import type { TournamentBracketSlot } from '../utils/tournamentBracket';
 import { trpc } from '../utils/trpc';
 
-type Snapshot = Awaited<ReturnType<typeof trpc.tournament.getSnapshot.query>>;
-
-const snapshot = ref<Snapshot | null>(null);
-const summary = ref<Awaited<ReturnType<typeof trpc.tournament.getBettingSummary.query>> | null>(null);
-const rankings = ref<Awaited<ReturnType<typeof trpc.tournament.getRankings.query>>>([]);
-const loading = ref(false);
-const error = ref<string | null>(null);
+const tournamentPages = useTournamentPagesStore();
+const { snapshot, betting: summary, rankings, loading, error } = storeToRefs(tournamentPages);
 const amounts = ref<Record<number, number>>({});
 const selectedTarget = ref<TournamentBracketSlot | null>(null);
 const betDialog = ref<HTMLDialogElement | null>(null);
@@ -39,22 +36,12 @@ const stageNames = [
 ];
 
 const errorText = (value: unknown) => (value instanceof Error ? value.message : String(value));
-const load = async () => {
-    loading.value = true;
-    error.value = null;
-    try {
-        [snapshot.value, summary.value, rankings.value] = await Promise.all([
-            trpc.tournament.getSnapshot.query(),
-            trpc.tournament.getBettingSummary.query(),
-            trpc.tournament.getRankings.query(),
-        ]);
-    } catch (value) {
-        error.value = errorText(value);
-    } finally {
-        loading.value = false;
-    }
-};
-onMounted(() => void load());
+const load = () => tournamentPages.loadBettingPage();
+onMounted(() => {
+    tournamentPages.startRealtime();
+    void load();
+});
+onUnmounted(() => tournamentPages.stopRealtime());
 
 const totalAmount = computed(() => summary.value?.totalAmount ?? 0);
 const myAmount = computed(() => summary.value?.myAmount ?? 0);

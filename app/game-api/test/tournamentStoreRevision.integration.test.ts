@@ -54,9 +54,7 @@ integration('TournamentStore Redis source revision', () => {
         const store = new TournamentStore(connector.client, keys);
         const revisions = await Promise.all(
             Array.from({ length: 20 }, (_, index) =>
-                store.setMatches([
-                    { id: index + 1, stage: 7, roundIndex: index, attackerId: 1, defenderId: 2 },
-                ])
+                store.setMatches([{ id: index + 1, stage: 7, roundIndex: index, attackerId: 1, defenderId: 2 }])
             )
         );
 
@@ -82,19 +80,48 @@ integration('TournamentStore Redis source revision', () => {
 
         await store.setState(baseState);
         await waitForLength(sourceMessages, sourceBefore + 1);
-        await waitForLength(realtimeMessages, realtimeBefore + 1);
+        await waitForLength(realtimeMessages, realtimeBefore + 2);
 
         await store.setState({ ...baseState, phase: 1 });
         await waitForLength(sourceMessages, sourceBefore + 2);
-        await new Promise<void>((resolve) => setImmediate(resolve));
-        expect(realtimeMessages).toHaveLength(realtimeBefore + 1);
+        await waitForLength(realtimeMessages, realtimeBefore + 3);
 
         await store.setState({ ...baseState, stage: 2, phase: 0 });
         await waitForLength(sourceMessages, sourceBefore + 3);
+        await waitForLength(realtimeMessages, realtimeBefore + 5);
+        expect(
+            realtimeMessages
+                .slice(realtimeBefore)
+                .filter((message) => (JSON.parse(message) as { type?: string }).type === 'tournamentChanged')
+        ).toEqual([JSON.stringify({ type: 'tournamentChanged' }), JSON.stringify({ type: 'tournamentChanged' })]);
+    });
+
+    it('selects rankings only on the first committed reward settlement', async () => {
+        const store = new TournamentStore(connector.client, keys);
+        const realtimeBefore = realtimeMessages.length;
+        const state = await store.getState();
+        expect(state).not.toBeNull();
+
+        await store.setState({ ...state!, rewardSettled: true, bettingSettled: false });
+        await store.setState({ ...state!, rewardSettled: true, bettingSettled: true });
         await waitForLength(realtimeMessages, realtimeBefore + 2);
-        expect(realtimeMessages.slice(realtimeBefore)).toEqual([
-            JSON.stringify({ type: 'tournamentChanged' }),
-            JSON.stringify({ type: 'tournamentChanged' }),
+
+        const pageEvents = realtimeMessages.slice(realtimeBefore).map(
+            (message) =>
+                JSON.parse(message) as {
+                    type: string;
+                    invalidation?: { rankings?: boolean };
+                }
+        );
+        expect(pageEvents).toEqual([
+            expect.objectContaining({
+                type: 'tournamentProjectionChanged',
+                invalidation: expect.objectContaining({ rankings: true }),
+            }),
+            expect.objectContaining({
+                type: 'tournamentProjectionChanged',
+                invalidation: expect.objectContaining({ rankings: false }),
+            }),
         ]);
     });
 });

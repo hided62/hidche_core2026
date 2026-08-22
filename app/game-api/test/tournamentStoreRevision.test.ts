@@ -48,14 +48,22 @@ describe('TournamentStore source revision', () => {
         const keys = buildTournamentKeys('che:default');
         const store = new TournamentStore(redis, keys);
 
-        await expect(store.setParticipants([{ id: 7, name: '관우', leadership: 90, strength: 97, intel: 75, level: 5 }]))
-            .resolves.toBe('1');
+        await expect(
+            store.setParticipants([{ id: 7, name: '관우', leadership: 90, strength: 97, intel: 75, level: 5 }])
+        ).resolves.toBe('1');
 
         await expect(store.getSourceRevision()).resolves.toBe('1');
         await expect(store.getParticipants()).resolves.toHaveLength(1);
-        expect(redis.events).toEqual(['commit:1', 'publish:1']);
+        expect(redis.events).toEqual(['commit:1', 'publish:1', 'publish:tournamentProjectionChanged']);
         expect(redis.published).toEqual([
             { channel: keys.sourceRevisionChannel, message: JSON.stringify({ sourceRevision: '1' }) },
+            {
+                channel: keys.realtimeEventChannel,
+                message: JSON.stringify({
+                    type: 'tournamentProjectionChanged',
+                    invalidation: { snapshot: true, betting: false, rankings: false },
+                }),
+            },
         ]);
     });
 
@@ -64,8 +72,9 @@ describe('TournamentStore source revision', () => {
         const store = new TournamentStore(redis, buildTournamentKeys('hwe:default'));
         redis.failNextEval = true;
 
-        await expect(store.setParticipants([{ id: 1, name: '실패', leadership: 1, strength: 1, intel: 1, level: 1 }]))
-            .rejects.toThrow('injected Redis write failure');
+        await expect(
+            store.setParticipants([{ id: 1, name: '실패', leadership: 1, strength: 1, intel: 1, level: 1 }])
+        ).rejects.toThrow('injected Redis write failure');
 
         await expect(store.getParticipants()).resolves.toEqual([]);
         await expect(store.getSourceRevision()).resolves.toBeNull();
@@ -88,9 +97,21 @@ describe('TournamentStore source revision', () => {
             nextAt: '2026-08-17T00:00:00.000Z',
         });
 
-        expect(redis.events).toEqual(['commit:1', 'publish:1', 'publish:tournamentChanged']);
+        expect(redis.events).toEqual([
+            'commit:1',
+            'publish:1',
+            'publish:tournamentProjectionChanged',
+            'publish:tournamentChanged',
+        ]);
         expect(redis.published).toEqual([
             { channel: keys.sourceRevisionChannel, message: JSON.stringify({ sourceRevision: '1' }) },
+            {
+                channel: keys.realtimeEventChannel,
+                message: JSON.stringify({
+                    type: 'tournamentProjectionChanged',
+                    invalidation: { snapshot: true, betting: true, rankings: false },
+                }),
+            },
             { channel: keys.realtimeEventChannel, message: JSON.stringify({ type: 'tournamentChanged' }) },
         ]);
     });
@@ -101,14 +122,12 @@ describe('TournamentStore source revision', () => {
 
         const revisions = await Promise.all(
             Array.from({ length: 50 }, (_, index) =>
-                store.setMatches([
-                    { id: index + 1, stage: 7, roundIndex: index, attackerId: 1, defenderId: 2 },
-                ])
+                store.setMatches([{ id: index + 1, stage: 7, roundIndex: index, attackerId: 1, defenderId: 2 }])
             )
         );
 
         expect(new Set(revisions).size).toBe(50);
         await expect(store.getSourceRevision()).resolves.toBe('50');
-        expect(redis.published).toHaveLength(50);
+        expect(redis.published).toHaveLength(100);
     });
 });
