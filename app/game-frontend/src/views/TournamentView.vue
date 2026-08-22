@@ -2,8 +2,8 @@
 import { formatServerDateTime } from '@sammo-ts/common/time/ServerDateTime';
 import { computed, nextTick, onMounted, ref } from 'vue';
 import TournamentBracket from '../components/tournament/TournamentBracket.vue';
+import TournamentGroupCard from '../components/tournament/TournamentGroupCard.vue';
 import TournamentPageHeader from '../components/tournament/TournamentPageHeader.vue';
-import GeneralIdentity from '../components/ui/GeneralIdentity.vue';
 import { useGameFeedback } from '../composables/useGameFeedback';
 import { formatLog } from '../utils/formatLog';
 import { trpc } from '../utils/trpc';
@@ -101,18 +101,6 @@ const preliminaryGroups = computed(() =>
     )
 );
 const groupNames = ['一', '二', '三', '四', '五', '六', '七', '八'];
-const statOf = (participant: Snapshot['participants'][number] | undefined): number | '' => {
-    if (!participant) return '';
-    const type = snapshot.value?.state?.type ?? 0;
-    if (type === 0) return participant.leadership + participant.strength + participant.intel;
-    if (type === 1) return participant.leadership;
-    if (type === 2) return participant.strength;
-    return participant.intel;
-};
-const gamesOf = (participant: Snapshot['participants'][number] | undefined): number | '' =>
-    participant ? (participant.win ?? 0) + (participant.draw ?? 0) + (participant.lose ?? 0) : '';
-const pointsOf = (participant: Snapshot['participants'][number] | undefined): number | '' =>
-    participant ? (participant.win ?? 0) * 3 + (participant.draw ?? 0) : '';
 const groupFightLogsAt = (stage: 2 | 4, groupStart: 0 | 10) =>
     Array.from({ length: 8 }, (_, index) =>
         (snapshot.value?.matches ?? []).find(
@@ -274,51 +262,17 @@ const start = async () => {
                     {{ groupName }}조
                 </button>
             </div>
-            <section class="group-grid bg0">
-                <table
+            <section class="group-grid final-grid bg0">
+                <TournamentGroupCard
                     v-for="(group, groupIndex) in groups"
                     :key="groupIndex"
+                    :group-name="groupNames[groupIndex]!"
+                    :rows="group"
+                    :row-count="4"
+                    :stat-label="typeStatNames[snapshot?.state?.type ?? 0]!"
+                    :tournament-type="snapshot?.state?.type ?? 0"
                     :class="{ 'mobile-active': activeFinalGroup === groupIndex }"
-                >
-                    <caption>
-                        {{
-                            groupNames[groupIndex]
-                        }}조
-                    </caption>
-                    <thead>
-                        <tr>
-                            <th>순</th>
-                            <th>장수</th>
-                            <th>{{ typeStatNames[snapshot?.state?.type ?? 0] }}</th>
-                            <th>경</th>
-                            <th>승</th>
-                            <th>무</th>
-                            <th>패</th>
-                            <th>점</th>
-                            <th>득</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        <tr v-for="rowIndex in 4" :key="rowIndex">
-                            <td>{{ rowIndex }}</td>
-                            <td class="general-cell">
-                                <GeneralIdentity
-                                    v-if="group[rowIndex - 1]"
-                                    :name="group[rowIndex - 1]!.name"
-                                    :picture="group[rowIndex - 1]!.picture"
-                                    :image-server="group[rowIndex - 1]!.imageServer"
-                                />
-                            </td>
-                            <td>{{ statOf(group[rowIndex - 1]) }}</td>
-                            <td>{{ gamesOf(group[rowIndex - 1]) }}</td>
-                            <td>{{ group[rowIndex - 1]?.win ?? '' }}</td>
-                            <td>{{ group[rowIndex - 1]?.draw ?? '' }}</td>
-                            <td>{{ group[rowIndex - 1]?.lose ?? '' }}</td>
-                            <td>{{ pointsOf(group[rowIndex - 1]) }}</td>
-                            <td>{{ group[rowIndex - 1]?.gl ?? '' }}</td>
-                        </tr>
-                    </tbody>
-                </table>
+                />
             </section>
             <section v-if="showFinalFightLogs" class="fight-log-grid bg0" aria-label="본선 조별 전투 로그">
                 <article
@@ -353,51 +307,17 @@ const start = async () => {
                 </button>
             </div>
             <section class="group-grid preliminary-grid bg0">
-                <table
+                <TournamentGroupCard
                     v-for="(group, groupIndex) in preliminaryGroups"
                     :key="`preliminary-${groupIndex}`"
+                    :group-name="groupNames[groupIndex]!"
+                    :rows="group"
+                    :row-count="8"
+                    :stat-label="typeStatNames[snapshot?.state?.type ?? 0]!"
+                    :tournament-type="snapshot?.state?.type ?? 0"
                     :data-preliminary-group="groupIndex"
                     :class="{ 'mobile-active': activePreliminaryGroup === groupIndex }"
-                >
-                    <caption>
-                        {{
-                            groupNames[groupIndex]
-                        }}조
-                    </caption>
-                    <thead>
-                        <tr>
-                            <th>순</th>
-                            <th>장수</th>
-                            <th>{{ typeStatNames[snapshot?.state?.type ?? 0] }}</th>
-                            <th>경</th>
-                            <th>승</th>
-                            <th>무</th>
-                            <th>패</th>
-                            <th>점</th>
-                            <th>득</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        <tr v-for="rowIndex in 8" :key="rowIndex">
-                            <td>{{ rowIndex }}</td>
-                            <td class="general-cell">
-                                <GeneralIdentity
-                                    v-if="group[rowIndex - 1]"
-                                    :name="group[rowIndex - 1]!.name"
-                                    :picture="group[rowIndex - 1]!.picture"
-                                    :image-server="group[rowIndex - 1]!.imageServer"
-                                />
-                            </td>
-                            <td>{{ statOf(group[rowIndex - 1]) }}</td>
-                            <td>{{ gamesOf(group[rowIndex - 1]) }}</td>
-                            <td>{{ group[rowIndex - 1]?.win ?? '' }}</td>
-                            <td>{{ group[rowIndex - 1]?.draw ?? '' }}</td>
-                            <td>{{ group[rowIndex - 1]?.lose ?? '' }}</td>
-                            <td>{{ pointsOf(group[rowIndex - 1]) }}</td>
-                            <td>{{ group[rowIndex - 1]?.gl ?? '' }}</td>
-                        </tr>
-                    </tbody>
-                </table>
+                />
             </section>
             <section v-if="showPreliminaryFightLogs" class="fight-log-grid bg0" aria-label="예선 조별 전투 로그">
                 <article
@@ -597,41 +517,6 @@ button:not(.legacy-button):focus-visible {
     gap: 8px;
     padding: 8px;
 }
-table {
-    width: 100%;
-    border-collapse: collapse;
-    table-layout: fixed;
-}
-caption {
-    padding: 3px;
-    background: #000;
-    color: #fff;
-}
-th {
-    background: #154b2a var(--sammo-texture-green);
-    font-weight: 400;
-}
-th,
-td {
-    height: 30px;
-    border: 1px solid #555;
-    padding: 1px 3px;
-}
-.group-grid th:first-child,
-.group-grid td:first-child {
-    width: 24px;
-}
-.group-grid th:nth-child(2),
-.group-grid td:nth-child(2) {
-    width: 130px;
-}
-.general-cell {
-    overflow: hidden;
-    text-align: left;
-}
-.group-grid tbody tr:has(.general-identity) td {
-    height: 66px;
-}
 .group-tabs {
     display: none;
 }
@@ -675,30 +560,15 @@ td {
         overflow-x: auto;
         padding: 6px 0;
     }
-    .group-grid table {
+    .group-grid > .tournament-group-card {
         display: none;
-        min-width: 370px;
     }
-    .group-grid table.mobile-active {
-        display: table;
+    .group-grid > .tournament-group-card.mobile-active {
+        display: block;
     }
     .fight-log-grid {
         grid-template-columns: minmax(0, 1fr);
         padding: 6px 0;
-    }
-    .group-grid th,
-    .group-grid td {
-        height: 31px;
-        padding: 1px;
-        font-size: 11px;
-    }
-    .group-grid th:first-child,
-    .group-grid td:first-child {
-        width: 22px;
-    }
-    .group-grid th:nth-child(2),
-    .group-grid td:nth-child(2) {
-        width: 138px;
     }
     .tournament-guide {
         padding: 10px;
