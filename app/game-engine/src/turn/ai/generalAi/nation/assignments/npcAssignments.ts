@@ -1,5 +1,4 @@
 import type { GeneralAI } from '../../core.js';
-import { GeneralActionPipeline } from '@sammo-ts/logic/actionModules/general.js';
 import { buildAssignmentCandidate, pickFrontCityWeight, pickRandomCityId, resolveCityPopRatio } from '../helpers.js';
 
 export const doNPC후방발령 = (ai: GeneralAI) => {
@@ -13,26 +12,6 @@ export const doNPC후방발령 = (ai: GeneralAI) => {
         return null;
     }
 
-    const actionPipeline = new GeneralActionPipeline(ai.commandEnv.generalActionModules ?? []);
-    const actionContext = (general: GeneralAI['general']) => ({
-        general,
-        nation: ai.nation,
-        ...(ai.worldRef
-            ? {
-                  worldView: {
-                      listGenerals: () => ai.worldRef!.listGenerals(),
-                      listGeneralsByCity: (cityId: number) =>
-                          ai.worldRef!.listGenerals().filter((candidate) => candidate.cityId === cityId),
-                      listNations: () => ai.worldRef!.listNations(),
-                  },
-              }
-            : {}),
-        time: {
-            year: ai.world.currentYear,
-            month: ai.world.currentMonth,
-            startYear: ai.startYear,
-        },
-    });
     const candidates = Object.values(ai.npcWarGenerals).filter((general) => {
         if (general.id === ai.general.id) {
             return false;
@@ -50,7 +29,7 @@ export const doNPC후방발령 = (ai: GeneralAI) => {
         if (general.crew >= ai.nationPolicy.minWarCrew) {
             return false;
         }
-        if (actionPipeline.onCalcDomestic(actionContext(general), '징집인구', 'score', 100) <= 1) {
+        if (ai.calculateRecruitPopulationScore(general) <= 1) {
             return false;
         }
         return true;
@@ -64,11 +43,7 @@ export const doNPC후방발령 = (ai: GeneralAI) => {
     }
 
     const picked = ai.rng.choice(candidates);
-    const fullLeadership = actionPipeline.onCalcStat(
-        actionContext(picked),
-        'leadership',
-        picked.stats.leadership
-    ) as number;
+    const fullLeadership = ai.resolveGeneralAiStats(picked).fullLeadership;
     const minPop = Math.max(
         fullLeadership * 100 + ai.aiConst.minAvailableRecruitPop,
         fullLeadership * 100 + ai.nationPolicy.minNpcRecruitCityPopulation
