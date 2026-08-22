@@ -146,13 +146,13 @@ export class GatewayReleaseController {
     constructor(
         private readonly repository: GatewayReleaseRepository,
         private readonly workspaceManager: GitWorkspaceManager,
-        private readonly buildRunner: BuildRunner,
+        private readonly migrationRunner: BuildRunner,
         private readonly processManager: ProcessManager,
         private readonly config: ReleaseControllerConfig,
         private readonly now: () => Date = () => new Date(),
         private readonly fetchImpl: typeof fetch = fetch
     ) {
-        this.releaseBuildRunner = createReleaseBuildRunner(config.releaseBuilderUrl, buildRunner, fetchImpl);
+        this.releaseBuildRunner = createReleaseBuildRunner(config.releaseBuilderUrl, migrationRunner, fetchImpl);
         this.artifactManager = new FrontendArtifactManager(config.frontendArtifactRoot ?? '/srv/frontend-artifacts');
     }
 
@@ -345,7 +345,7 @@ export class GatewayReleaseController {
                 : null;
         await this.appendLog(operation.id, 'migration', 'Gateway database migration을 적용합니다.');
         await this.assertOperationLease(operation.id);
-        const migration = await this.buildRunner.run(
+        const migration = await this.migrationRunner.run(
             [buildGatewayMigrationCommand(workspace.root, this.config)],
             this.buildProgress(operation.id, 'migration'),
             { signal }
