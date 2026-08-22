@@ -64,7 +64,7 @@ onMounted(() => {
                 &amp;
                 <a :href="`${appBase}terms.1.html`">이용약관</a>
             </p>
-            <p>© 2023 • HideD</p>
+            <p>© 2026 • HideD</p>
             <p>크롬, 엣지, 파이어폭스에 최적화되어있습니다.</p>
         </footer>
     </div>
