@@ -10,6 +10,7 @@ import {
     planProfileReconcile,
     resolveResetLifecycleStatus,
 } from '../src/orchestrator/gatewayOrchestrator.js';
+import { GATEWAY_PROFILE_ORDER } from '../src/profileOrder.js';
 import { sanitizeManagedProcessEnv } from '../src/orchestrator/processManager.js';
 import type { GatewayProfileRecord } from '../src/orchestrator/profileRepository.js';
 
@@ -270,32 +271,42 @@ describe('buildProcessDefinitions', () => {
         expect(definitions.frontend.env.VITE_APP_BASE_PATH).toBe('/che');
     });
 
-    it('passes the encoded profile database URL to every backend process', () => {
-        const definitions = buildProcessDefinitions(buildProfile(), {
-            ...processConfig,
-            baseEnv: {
-                GATEWAY_DATABASE_URL:
-                    'postgresql://sammo:encoded%23password@postgres:5432/sammo?schema=public',
-                POSTGRES_USER: 'sammo',
-                POSTGRES_PASSWORD: 'raw#password',
-                POSTGRES_HOST: 'postgres',
-                POSTGRES_PORT: '5432',
-                POSTGRES_DB: 'sammo',
-            },
-        });
-        const expectedUrl = 'postgresql://sammo:encoded%23password@postgres:5432/sammo?schema=che';
+    it.each(GATEWAY_PROFILE_ORDER)(
+        'passes the encoded %s profile database URL to every backend process',
+        (profileName) => {
+            const definitions = buildProcessDefinitions(
+                {
+                    ...buildProfile(),
+                    profileName: `${profileName}:default`,
+                    profile: profileName,
+                    instanceKey: 'default',
+                },
+                {
+                    ...processConfig,
+                    baseEnv: {
+                        GATEWAY_DATABASE_URL: 'postgresql://sammo:encoded%23password@postgres:5432/sammo?schema=public',
+                        POSTGRES_USER: 'sammo',
+                        POSTGRES_PASSWORD: 'raw#password',
+                        POSTGRES_HOST: 'postgres',
+                        POSTGRES_PORT: '5432',
+                        POSTGRES_DB: 'sammo',
+                    },
+                }
+            );
+            const expectedUrl = `postgresql://sammo:encoded%23password@postgres:5432/sammo?schema=${profileName}`;
 
-        for (const definition of [
-            definitions.api,
-            definitions.daemon,
-            definitions.auction,
-            definitions.battleSim,
-            definitions.tournament,
-        ]) {
-            expect(definition.env.DATABASE_URL).toBe(expectedUrl);
+            for (const definition of [
+                definitions.api,
+                definitions.daemon,
+                definitions.auction,
+                definitions.battleSim,
+                definitions.tournament,
+            ]) {
+                expect(definition.env.DATABASE_URL).toBe(expectedUrl);
+            }
+            expect(definitions.frontend.env).not.toHaveProperty('DATABASE_URL');
         }
-        expect(definitions.frontend.env).not.toHaveProperty('DATABASE_URL');
-    });
+    );
 
     it('applies a dedicated Node heap option only to the turn daemon', () => {
         const definitions = buildProcessDefinitions(buildProfile(), {
