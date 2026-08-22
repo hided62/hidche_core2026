@@ -136,6 +136,16 @@ Profile frontend build에는 같은 전체 commit SHA를 `VITE_BUILD_COMMIT_SHA`
 commit의 cached artifact를 현재 버전으로 오인하지 않습니다. Orchestrator 밖의
 개발 build는 현재 Git checkout의 `HEAD`를 fallback으로 사용하고 Git metadata를
 읽을 수 없을 때만 `unknown`을 표시합니다.
+같은 build 단계는 profile root에 `deployment-version.json`을 생성합니다. 이미 열린
+game frontend는 bundle에 고정된 commit과 이 정적 문서의 commit을 최초 mount,
+60초 주기, tab visibility 복귀와 network online 복귀 때 비교합니다. 다른 full SHA를
+처음 관찰하면 공용 info toast로 새로고침 안내만 하고 reload를 강제하지 않습니다.
+조회에는 cache-busting query와 `cache: no-store`를 사용하며, 실패·잘못된 문서는
+현재 화면을 방해하지 않고 무시합니다. 알림 여부는 tab session storage에만 남으므로
+Gateway/game DB, Redis, 인증, 턴 처리에는 mutation이 없습니다. Profile `DEPLOY`가
+API·engine·frontend를 같은 commit worktree에서 함께 전환하므로 이 frontend 문서는
+해당 profile의 새 backend/frontend release가 readiness를 통과해 실제 서빙되기 시작한
+뒤에만 달라집니다.
 `RESET` operation은 같은 build 경계를 사용한 뒤 현재 시즌 테이블을 seed로
 교체합니다. Seeder의 reset 목록에는 `hall`, `ng_games`, `yearbook_history`,
 과거 장수·국가와 상속·진단 자료가 포함되지 않습니다.

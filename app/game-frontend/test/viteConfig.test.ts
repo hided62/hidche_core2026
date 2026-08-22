@@ -48,6 +48,17 @@ void describe('game frontend Vite config', () => {
                 loaded?.config.define?.['import.meta.env.VITE_BUILD_COMMIT_SHA'],
                 JSON.stringify(commitSha.toLowerCase())
             );
+            assert.equal(
+                loaded?.config.plugins?.some(
+                    (plugin) =>
+                        plugin !== null &&
+                        typeof plugin === 'object' &&
+                        !Array.isArray(plugin) &&
+                        'name' in plugin &&
+                        plugin.name === 'sammo-deployment-version'
+                ),
+                true
+            );
         } finally {
             if (previousCommitSha === undefined) delete process.env.VITE_BUILD_COMMIT_SHA;
             else process.env.VITE_BUILD_COMMIT_SHA = previousCommitSha;

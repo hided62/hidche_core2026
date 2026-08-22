@@ -140,6 +140,11 @@ path별 Turbo cache에 저장됩니다. Orchestrator는 cache 복원 후 이를
 `.release-dist/<profileName>/game-frontend`에 staging directory를 거쳐 교체합니다.
 따라서 같은 commit·같은 공개 prefix의 재배포는 `vue-tsc`와 Vite를 다시 실행하지
 않고, 여러 instance가 같은 prefix를 쓰더라도 각 runtime target은 따로 materialize됩니다.
+각 artifact의 `deployment-version.json`은 bundle과 같은 full commit SHA만 담습니다.
+열린 profile 탭은 이 파일을 cache 우회로 확인해 bundle SHA와 달라졌을 때 한 번만
+`새 버전이 준비되었습니다. 새로고침하면 변경사항이 반영됩니다.` toast를 표시합니다.
+서버는 reload를 강제하지 않으며 이 확인은 정적 GET과 tab session storage만 사용해
+game/Gateway DB와 Redis에 영향을 주지 않습니다.
 `RESET`은 선택 worktree의 Gateway profile-seed CLI도 실행하므로 기존처럼
 `gateway-api`까지 server build에 포함하고, seed를 호출하지 않는 `DEPLOY`만 명시적
 server target을 `game-api`로 제한합니다.

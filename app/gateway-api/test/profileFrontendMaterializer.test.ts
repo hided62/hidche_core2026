@@ -23,11 +23,15 @@ describe('profile frontend materializer', () => {
         await mkdir(source, { recursive: true });
         await mkdir(target, { recursive: true });
         await writeFile(path.join(source, 'index.html'), 'new release');
+        await writeFile(path.join(source, 'deployment-version.json'), '{"commitSha":"new"}\n');
         await writeFile(path.join(target, 'index.html'), 'old release');
 
         await execFileAsync(process.execPath, [materializer, 'che:2'], { cwd: workspaceRoot });
 
         await expect(readFile(path.join(target, 'index.html'), 'utf8')).resolves.toBe('new release');
+        await expect(readFile(path.join(target, 'deployment-version.json'), 'utf8')).resolves.toBe(
+            '{"commitSha":"new"}\n'
+        );
     });
 
     it('keeps an existing artifact untouched when the cached build is missing', async () => {
