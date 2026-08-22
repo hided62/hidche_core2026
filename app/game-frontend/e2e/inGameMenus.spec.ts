@@ -275,6 +275,10 @@ const myGeneral = (state: FixtureState) => ({
         defence_train: 80,
         use_treatment: 21,
         use_auto_nation_turn: 1,
+        use_auto_nation_diplomacy: 0,
+        use_auto_nation_promotion: 0,
+        use_auto_nation_finance: 0,
+        use_auto_nation_capital: 0,
         myset: state.myset,
     },
     penalties: {},
@@ -1336,6 +1340,16 @@ test('내 정보&설정 keeps desktop density and becomes a 390px horizontal-ide
         '△(훈사40)',
         '× [훈련 -3,사기 -6]',
     ]);
+    const rulerAutomation = page.locator('.ruler-automation-settings');
+    await expect(rulerAutomation).toBeVisible();
+    const diplomacyAutomation = page.getByRole('checkbox', { name: '자동 외교 (불가침 제의·선전포고)' });
+    const promotionAutomation = page.getByRole('checkbox', { name: '자동 수뇌 임명' });
+    const financeAutomation = page.getByRole('checkbox', { name: '자동 세율·지급률 조정' });
+    const capitalAutomation = page.getByRole('checkbox', { name: '자동 천도' });
+    for (const checkbox of [diplomacyAutomation, promotionAutomation, financeAutomation, capitalAutomation]) {
+        await expect(checkbox).not.toBeChecked();
+        await checkbox.check();
+    }
 
     const desktop = await page.locator('#container').evaluate((element) => {
         const rect = element.getBoundingClientRect();
@@ -1394,6 +1408,12 @@ test('내 정보&설정 keeps desktop density and becomes a 390px horizontal-ide
     await page.locator('#set_my_setting').click();
     await expect.poll(() => state.settingMutations.length).toBe(1);
     expect(state.settingMutations[0]).not.toHaveProperty('generalId');
+    expect(state.settingMutations[0]).toMatchObject({
+        use_auto_nation_diplomacy: 1,
+        use_auto_nation_promotion: 1,
+        use_auto_nation_finance: 1,
+        use_auto_nation_capital: 1,
+    });
 
     for (const [effectIndex, scenarioEffect] of [
         'event_UnlimitedDefenceThresholdChange',

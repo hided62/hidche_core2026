@@ -584,6 +584,10 @@ describe('in-game my information ownership', () => {
             defence_train: 80,
             use_treatment: 21,
             use_auto_nation_turn: 1,
+            use_auto_nation_diplomacy: 0,
+            use_auto_nation_promotion: 0,
+            use_auto_nation_finance: 0,
+            use_auto_nation_capital: 0,
             myset: 3,
         });
 

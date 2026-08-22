@@ -31,6 +31,10 @@ type SettingForm = {
     defence_train: number;
     use_treatment: number;
     use_auto_nation_turn: number;
+    use_auto_nation_diplomacy: number;
+    use_auto_nation_promotion: number;
+    use_auto_nation_finance: number;
+    use_auto_nation_capital: number;
 };
 
 const data = ref<MyGeneralResponse | null>(null);
@@ -63,6 +67,10 @@ const form = reactive<SettingForm>({
     defence_train: 80,
     use_treatment: 10,
     use_auto_nation_turn: 1,
+    use_auto_nation_diplomacy: 0,
+    use_auto_nation_promotion: 0,
+    use_auto_nation_finance: 0,
+    use_auto_nation_capital: 0,
 });
 
 const logTypes: LogType[] = ['generalAction', 'battleDetail', 'generalHistory', 'battleResult'];
@@ -164,6 +172,7 @@ const iconChoices = computed(() => data.value?.iconChoices ?? []);
 const selectedIcon = computed(() => iconChoices.value.find((icon) => icon.id === selectedIconId.value) ?? null);
 const autorunUser = computed(() => asRecord(world.value?.meta.autorun_user));
 const showAutoNationTurn = computed(() => asRecord(autorunUser.value.options).chief !== false);
+const showUserRulerAutomation = computed(() => showAutoNationTurn.value && (data.value?.general.npcState ?? 2) < 2);
 const showVacation = computed(() => autorunUser.value.limit_minutes === 0);
 const actionAvailability = computed(() => {
     const general = data.value?.general;
@@ -408,6 +417,51 @@ onMounted(() => {
                 <div v-if="showAutoNationTurn" class="hint">
                     ∞ 수뇌가 되었을 때 휴식 턴이어도 적당한 턴을 알아서 넣는 것을 허용합니다.
                 </div>
+
+                <fieldset
+                    v-if="showUserRulerAutomation"
+                    class="ruler-automation-settings"
+                    :disabled="form.use_auto_nation_turn === 0"
+                >
+                    <legend>사용자 군주 자동 업무</legend>
+                    <label>
+                        <input
+                            v-model="form.use_auto_nation_diplomacy"
+                            type="checkbox"
+                            :true-value="1"
+                            :false-value="0"
+                        />
+                        자동 외교 (불가침 제의·선전포고)
+                    </label>
+                    <label>
+                        <input
+                            v-model="form.use_auto_nation_promotion"
+                            type="checkbox"
+                            :true-value="1"
+                            :false-value="0"
+                        />
+                        자동 수뇌 임명
+                    </label>
+                    <label>
+                        <input
+                            v-model="form.use_auto_nation_finance"
+                            type="checkbox"
+                            :true-value="1"
+                            :false-value="0"
+                        />
+                        자동 세율·지급률 조정
+                    </label>
+                    <label>
+                        <input
+                            v-model="form.use_auto_nation_capital"
+                            type="checkbox"
+                            :true-value="1"
+                            :false-value="0"
+                        />
+                        자동 천도
+                    </label>
+                    <div class="hint">∞ 모두 기본값은 꺼짐이며 자율행동 기간에 군주일 때만 적용됩니다.</div>
+                </fieldset>
 
                 <label class="setting-line">
                     수비 【
@@ -729,6 +783,21 @@ button:disabled {
 .hint {
     margin: 0 0 13px;
     color: orange;
+}
+.ruler-automation-settings {
+    margin: 8px 0 13px;
+    padding: 6px 8px;
+    border: 1px solid #666;
+}
+.ruler-automation-settings legend {
+    padding: 0 4px;
+    color: skyblue;
+}
+.ruler-automation-settings label {
+    display: block;
+}
+.ruler-automation-settings .hint {
+    margin: 5px 0 0;
 }
 .action-button {
     --legacy-button-height: 30px;

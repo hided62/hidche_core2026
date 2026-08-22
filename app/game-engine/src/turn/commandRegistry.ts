@@ -132,6 +132,10 @@ const zSetMySetting = z.object({
         defence_train: z.number().int().optional(),
         use_treatment: z.number().int().optional(),
         use_auto_nation_turn: z.number().int().optional(),
+        use_auto_nation_diplomacy: z.number().int().optional(),
+        use_auto_nation_promotion: z.number().int().optional(),
+        use_auto_nation_finance: z.number().int().optional(),
+        use_auto_nation_capital: z.number().int().optional(),
     }),
 });
 

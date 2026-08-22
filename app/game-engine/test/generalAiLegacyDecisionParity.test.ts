@@ -2,8 +2,9 @@ import { describe, expect, it } from 'vitest';
 import type { City, General, Nation } from '@sammo-ts/logic';
 import { createRefOrderedActionStack } from '@sammo-ts/logic/actionModules/bundle.js';
 
-import { GeneralAI } from '../src/turn/ai/generalAi.js';
-import type { TurnGeneral } from '../src/turn/types.js';
+import { GeneralAI, shouldUseNationAi } from '../src/turn/ai/generalAi.js';
+import { canUseAutomatedNationAction, canUseRulerAutomation } from '../src/turn/ai/policies.js';
+import type { TurnGeneral, TurnWorldState } from '../src/turn/types.js';
 import {
     calculateRecentWarTurn,
     resolveLegacyAiStats,
@@ -672,13 +673,13 @@ describe('legacy NPC user-chief promotion parity', () => {
         expect(ai.consumePromotionPatches().generals).toEqual([{ generalId: 2, officerLevel: 11, officerCity: 0 }]);
     });
 
-    it('runs automatic appointments only on the quarterly NPC nation turn', () => {
-        const run = (currentMonth: number) => {
+    it('runs automatic appointments for NPC rulers and only opted-in user rulers in quarter months', () => {
+        const run = (currentMonth: number, npcState = 2, enabled = 0) => {
             const ruler = makePromotionGeneral({
                 id: 1,
                 officerLevel: 12,
-                npcState: 2,
-                meta: { killturn: 100, belong: 2 },
+                npcState,
+                meta: { killturn: 100, belong: 2, use_auto_nation_promotion: enabled },
             });
             const user = makePromotionGeneral({
                 id: 2,
@@ -710,6 +711,45 @@ describe('legacy NPC user-chief promotion parity', () => {
 
         expect(run(2)).toEqual([]);
         expect(run(3)).toEqual([{ generalId: 2, officerLevel: 11, officerCity: 0, permission: 'ambassador' }]);
+        expect(run(3, 0)).toEqual([]);
+        expect(run(3, 0, 1)).toEqual([
+            { generalId: 2, officerLevel: 11, officerCity: 0, permission: 'ambassador' },
+        ]);
+    });
+
+    it('keeps user-ruler duties individually disabled until each setting is enabled', () => {
+        const ruler = makePromotionGeneral({ id: 1, officerLevel: 12, npcState: 0, meta: { killturn: 0 } });
+        expect(canUseAutomatedNationAction(ruler, '선전포고')).toBe(false);
+        expect(canUseAutomatedNationAction(ruler, '천도')).toBe(false);
+        expect(canUseRulerAutomation(ruler, 'finance')).toBe(false);
+
+        ruler.meta = {
+            ...ruler.meta,
+            use_auto_nation_diplomacy: 1,
+            use_auto_nation_capital: 1,
+            use_auto_nation_finance: 1,
+        };
+        expect(canUseAutomatedNationAction(ruler, '불가침제의')).toBe(true);
+        expect(canUseAutomatedNationAction(ruler, '선전포고')).toBe(true);
+        expect(canUseAutomatedNationAction(ruler, '천도')).toBe(true);
+        expect(canUseRulerAutomation(ruler, 'finance')).toBe(true);
+    });
+
+    it('honors the existing automatic nation-turn master switch for user chiefs only', () => {
+        const world = {
+            currentYear: 190,
+            currentMonth: 3,
+            meta: {},
+        } as TurnWorldState;
+        const build = (npcState: number, useAutoNationTurn: number) =>
+            makePromotionGeneral({
+                npcState,
+                meta: { killturn: 0, autorun_limit: 19004, use_auto_nation_turn: useAutoNationTurn },
+            });
+
+        expect(shouldUseNationAi(build(0, 0), world)).toBe(false);
+        expect(shouldUseNationAi(build(0, 1), world)).toBe(true);
+        expect(shouldUseNationAi(build(2, 0), world)).toBe(true);
     });
 });
 
