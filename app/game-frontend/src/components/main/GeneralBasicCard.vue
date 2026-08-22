@@ -99,6 +99,7 @@ export interface GeneralBasicCardData {
     crewTypeName?: string;
     crewTypeInfo?: CrewTypeDisplayInfo | null;
     traits?: { personal: string; specialWar: string; specialDomestic: string };
+    traitAges?: { specialWar: number; specialDomestic: number };
     traitInfo?: { personal: string; specialWar: string; specialDomestic: string };
     progression?: GeneralProgression;
     itemNames?: ItemDisplayNames;
@@ -226,9 +227,19 @@ const displayDefence = computed(() => {
 });
 const displayKillTurn = computed(() => props.general?.killTurn ?? props.killTurn);
 const displayRemainingMinutes = computed(() => props.general?.remainingMinutes ?? props.remainingMinutes);
+const resolveSpecialDisplayName = (kind: 'specialDomestic' | 'specialWar') => {
+    const general = props.general;
+    if (!general) return '-';
+    const traitName = general.traits?.[kind];
+    if (traitName && traitName !== '-') return traitName;
+    const scheduledAge = general.traitAges?.[kind];
+    if (general.age === undefined || scheduledAge === undefined) return '-';
+    return `${Math.max(general.age + 1, scheduledAge)}세`;
+};
+const specialDomesticText = computed(() => resolveSpecialDisplayName('specialDomestic'));
+const specialWarText = computed(() => resolveSpecialDisplayName('specialWar'));
 const specialText = computed(() => {
-    const traits = props.general?.traits;
-    return traits ? `${traits.specialDomestic || '-'} / ${traits.specialWar || '-'}` : '-';
+    return `${specialDomesticText.value} / ${specialWarText.value}`;
 });
 </script>
 
@@ -379,19 +390,19 @@ const specialText = computed(() => {
                 <span class="cell-label">특기</span>
                 <strong class="special-value" :aria-label="specialText">
                     <RichTooltip
-                        :title="`내정특기 · ${props.general.traits?.specialDomestic ?? '-'}`"
+                        :title="`내정특기 · ${specialDomesticText}`"
                         :description="props.general.traitInfo?.specialDomestic"
                         test-id="special-domestic"
                     >
-                        {{ props.general.traits?.specialDomestic ?? '-' }}
+                        {{ specialDomesticText }}
                     </RichTooltip>
                     /
                     <RichTooltip
-                        :title="`전투특기 · ${props.general.traits?.specialWar ?? '-'}`"
+                        :title="`전투특기 · ${specialWarText}`"
                         :description="props.general.traitInfo?.specialWar"
                         test-id="special-war"
                     >
-                        {{ props.general.traits?.specialWar ?? '-' }}
+                        {{ specialWarText }}
                     </RichTooltip>
                 </strong>
 

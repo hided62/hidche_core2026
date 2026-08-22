@@ -1,7 +1,6 @@
 <script setup lang="ts">
 import { JosaUtil } from '@sammo-ts/common/util/JosaUtil';
-import { computed, onMounted, reactive, ref, watch } from 'vue';
-import SortableStringList from '../components/ui/SortableStringList';
+import { computed, onMounted, reactive, ref } from 'vue';
 import { trpc } from '../utils/trpc';
 import { formatLog } from '../utils/formatLog';
 import { formatSeoulDateTime } from '../utils/legacyDateTime';
@@ -10,19 +9,9 @@ import { useSessionStore } from '../stores/session';
 import { resolveGeneralIconUrl, useDefaultGeneralIcon } from '../utils/generalIcon';
 import GeneralInformationPanel from '../components/main/GeneralInformationPanel.vue';
 import { useGameFeedback } from '../composables/useGameFeedback';
-import { SCREEN_MODE_CHANGE_EVENT, SCREEN_MODE_KEY, type ScreenMode } from '../utils/screenModeViewport';
-import {
-    DEFAULT_MOBILE_MAIN_PANEL_ORDER,
-    loadMobileMainPanelOrder,
-    MOBILE_MAIN_PANEL_DEFINITIONS,
-    moveMobileMainPanel,
-    saveMobileMainPanelOrder,
-    type MobileMainPanelId,
-} from '../utils/mobileMainPanelOrder';
 
-const CUSTOM_CSS_KEY = 'sam_customCSS';
 const PENDING_DIE_ON_PRESTART_KEY = 'sam.pending.dieOnPrestart';
-const { success: showSuccessToast, error: showErrorToast, showDialog } = useGameFeedback();
+const { error: showErrorToast, showDialog } = useGameFeedback();
 type LogType = 'generalHistory' | 'battleDetail' | 'battleResult' | 'generalAction';
 type ItemSlotKey = 'horse' | 'weapon' | 'book' | 'item';
 type MyGeneralResponse = Awaited<ReturnType<typeof trpc.general.me.query>>;
@@ -52,14 +41,8 @@ const dieOnPrestartStatusLoading = ref(false);
 const dieOnPrestartStatusError = ref<string | null>(null);
 const loading = ref(false);
 const error = ref<string | null>(null);
-const screenMode = ref<ScreenMode>('auto');
-const customCss = ref('');
 const selectedIconId = ref('');
-const cssSaving = ref(false);
-const mobileLayoutDialog = ref<HTMLDialogElement | null>(null);
-const mobileLayoutOrder = ref<MobileMainPanelId[]>(loadMobileMainPanelOrder());
 const session = useSessionStore();
-let cssTimer: number | null = null;
 const readPendingDieOnPrestartId = (): string => {
     const stored = window.sessionStorage.getItem(PENDING_DIE_ON_PRESTART_KEY);
     return stored && /^[0-9a-f-]{36}$/iu.test(stored) ? stored : crypto.randomUUID();
@@ -179,30 +162,6 @@ const items = computed<Array<{ key: ItemSlotKey; slotName: string; displayName: 
 );
 const iconChoices = computed(() => data.value?.iconChoices ?? []);
 const selectedIcon = computed(() => iconChoices.value.find((icon) => icon.id === selectedIconId.value) ?? null);
-const mobileLayoutLabels: Readonly<Record<string, string>> = Object.fromEntries(
-    MOBILE_MAIN_PANEL_DEFINITIONS.map(({ id, label }) => [id, label])
-);
-
-const openMobileLayoutDialog = () => {
-    mobileLayoutOrder.value = loadMobileMainPanelOrder();
-    mobileLayoutDialog.value?.showModal();
-    window.requestAnimationFrame(() => mobileLayoutDialog.value?.querySelector<HTMLButtonElement>('button')?.focus());
-};
-
-const moveMobileLayoutItem = (fromIndex: number, toIndex: number) => {
-    mobileLayoutOrder.value = moveMobileMainPanel(mobileLayoutOrder.value, fromIndex, toIndex);
-};
-
-const resetMobileLayoutOrder = () => {
-    mobileLayoutOrder.value = [...DEFAULT_MOBILE_MAIN_PANEL_ORDER];
-};
-
-const applyMobileLayoutOrder = () => {
-    mobileLayoutOrder.value = saveMobileMainPanelOrder(mobileLayoutOrder.value);
-    mobileLayoutDialog.value?.close();
-    showSuccessToast('모바일 메인 레이아웃 순서를 저장했습니다.');
-};
-
 const autorunUser = computed(() => asRecord(world.value?.meta.autorun_user));
 const showAutoNationTurn = computed(() => asRecord(autorunUser.value.options).chief !== false);
 const showVacation = computed(() => autorunUser.value.limit_minutes === 0);
@@ -232,16 +191,6 @@ const formatSelectionAvailableAt = computed(() => {
     if (!value) return '';
     return formatSeoulDateTime(value);
 });
-
-const applyCustomCss = (text: string) => {
-    let style = document.getElementById('sammo-custom-css') as HTMLStyleElement | null;
-    if (!style) {
-        style = document.createElement('style');
-        style.id = 'sammo-custom-css';
-        document.head.appendChild(style);
-    }
-    style.textContent = text;
-};
 
 const loadLog = async (type: LogType, beforeId?: number) => {
     if (logLoading[type]) return;
@@ -370,32 +319,13 @@ const dropItem = (item: { key: ItemSlotKey; slotName: string; displayName: strin
         trpc.general.dropItem.mutate({ itemType: item.key })
     );
 
-watch(screenMode, (mode) => {
-    localStorage.setItem(SCREEN_MODE_KEY, mode);
-    document.dispatchEvent(new CustomEvent(SCREEN_MODE_CHANGE_EVENT));
-});
-
-watch(customCss, (text) => {
-    if (cssTimer !== null) window.clearTimeout(cssTimer);
-    cssSaving.value = true;
-    cssTimer = window.setTimeout(() => {
-        localStorage.setItem(CUSTOM_CSS_KEY, text);
-        applyCustomCss(text);
-        cssSaving.value = false;
-    }, 500);
-});
-
 onMounted(() => {
-    const storedMode = localStorage.getItem(SCREEN_MODE_KEY);
-    screenMode.value = storedMode === '500px' || storedMode === '1000px' ? storedMode : 'auto';
-    customCss.value = localStorage.getItem(CUSTOM_CSS_KEY) ?? '';
-    applyCustomCss(customCss.value);
     void loadPage();
 });
 </script>
 
 <template>
-    <main id="container" class="legacy-page bg0 responsive-settings-page" :class="`screen-${screenMode}`">
+    <main id="container" class="legacy-page bg0 responsive-settings-page">
         <div class="title-row">
             <span>내 정 보</span>
             <div class="title-actions">
@@ -613,29 +543,6 @@ onMounted(() => {
                     <br /><br />
                 </div>
 
-                <div class="screen-mode-row">
-                    <span>500px/1000px 모드<br />(모바일 전용, 즉시 설정)</span>
-                    <div class="button-group">
-                        <label><input v-model="screenMode" type="radio" value="auto" />자동</label>
-                        <label><input v-model="screenMode" type="radio" value="500px" />500px</label>
-                        <label><input v-model="screenMode" type="radio" value="1000px" />1000px</label>
-                    </div>
-                </div>
-
-                <div class="mobile-layout-setting-row">
-                    <span>
-                        모바일 레이아웃 순서 바꾸기<br />
-                        <small>500px 메인 화면의 패널 순서를 이 기기에 저장합니다.</small>
-                    </span>
-                    <button
-                        class="legacy-button legacy-button--primary mobile-layout-open"
-                        type="button"
-                        @click="openMobileLayoutDialog"
-                    >
-                        순서 바꾸기
-                    </button>
-                </div>
-
                 <div class="item-title">아이템 파기</div>
                 <div class="item-group">
                     <button
@@ -649,11 +556,6 @@ onMounted(() => {
                         {{ item.displayName ?? '-' }}
                     </button>
                 </div>
-
-                <label class="custom-css">
-                    개인용 CSS <span>{{ cssSaving ? '(저장 중)' : '' }}</span>
-                    <textarea id="custom_css" v-model="customCss" />
-                </label>
             </div>
         </section>
 
@@ -691,67 +593,6 @@ onMounted(() => {
             삼국지 모의전투 HiDCHe / KOEI의 이미지를 사용, 응용하였습니다 / 제작: HideD / Credit
         </footer>
     </main>
-    <dialog ref="mobileLayoutDialog" class="mobile-layout-dialog" aria-labelledby="mobile-layout-dialog-title">
-        <div class="mobile-layout-dialog__header">
-            <h2 id="mobile-layout-dialog-title">모바일 레이아웃 순서 바꾸기</h2>
-            <form method="dialog">
-                <button
-                    class="legacy-button legacy-button--secondary"
-                    type="submit"
-                    aria-label="모바일 레이아웃 순서 창 닫기"
-                >
-                    ×
-                </button>
-            </form>
-        </div>
-        <p>항목을 끌어 놓거나 위·아래 버튼으로 상대 순서를 바꿉니다.</p>
-        <SortableStringList v-model:list="mobileLayoutOrder" tag="ol" class="mobile-layout-list">
-            <template #item="{ element: panelId, index }">
-                <li :data-mobile-layout-id="panelId">
-                    <span class="mobile-layout-handle" aria-hidden="true">≡</span>
-                    <span class="mobile-layout-label">
-                        <span class="mobile-layout-position">{{ index + 1 }}</span>
-                        {{ mobileLayoutLabels[panelId] }}
-                    </span>
-                    <span class="mobile-layout-move-buttons">
-                        <button
-                            class="legacy-button legacy-button--secondary"
-                            type="button"
-                            :aria-label="`${mobileLayoutLabels[panelId]} 위로`"
-                            :disabled="index === 0"
-                            @click="moveMobileLayoutItem(index, index - 1)"
-                        >
-                            ↑
-                        </button>
-                        <button
-                            class="legacy-button legacy-button--secondary"
-                            type="button"
-                            :aria-label="`${mobileLayoutLabels[panelId]} 아래로`"
-                            :disabled="index === mobileLayoutOrder.length - 1"
-                            @click="moveMobileLayoutItem(index, index + 1)"
-                        >
-                            ↓
-                        </button>
-                    </span>
-                </li>
-            </template>
-        </SortableStringList>
-        <div class="mobile-layout-dialog__actions">
-            <button class="legacy-button legacy-button--secondary" type="button" @click="resetMobileLayoutOrder">
-                기본값
-            </button>
-            <form method="dialog">
-                <button class="legacy-button legacy-button--secondary" type="submit">취소</button>
-            </form>
-            <button
-                class="legacy-button legacy-button--primary mobile-layout-apply"
-                type="button"
-                @click="applyMobileLayoutOrder"
-            >
-                적용
-            </button>
-        </div>
-    </dialog>
     <div class="my-page-mobile-scroll-spacer" aria-hidden="true"></div>
 </template>
 
@@ -772,12 +613,6 @@ onMounted(() => {
 }
 .my-page-mobile-scroll-spacer {
     display: none;
-}
-.legacy-page.screen-500px {
-    max-width: 500px;
-}
-.legacy-page.screen-1000px {
-    max-width: 1000px;
 }
 .title-row {
     height: 54px;
@@ -815,8 +650,7 @@ textarea {
     background: #6b6b6b;
     font: inherit;
 }
-.legacy-page .legacy-button,
-.mobile-layout-dialog .legacy-button {
+.legacy-page .legacy-button {
     letter-spacing: 0;
 }
 button {
@@ -924,139 +758,6 @@ button:disabled {
     margin: 12px 0;
     color: #f66;
 }
-.screen-mode-row {
-    display: grid;
-    grid-template-columns: 160px 1fr;
-    align-items: center;
-    margin: 14px 0;
-}
-.mobile-layout-setting-row {
-    display: grid;
-    grid-template-columns: minmax(0, 1fr) 128px;
-    align-items: center;
-    gap: 8px;
-    margin: 14px 0;
-}
-.mobile-layout-setting-row small {
-    color: orange;
-}
-.mobile-layout-open {
-    min-height: 34px;
-    font-weight: 700;
-}
-.mobile-layout-dialog {
-    box-sizing: border-box;
-    width: min(460px, calc(100vw - 24px));
-    max-height: calc(100dvh - 24px);
-    margin: auto;
-    overflow: auto;
-    border: 1px solid #777;
-    border-radius: 4px;
-    padding: 12px;
-    background: #171717 var(--sammo-texture-walnut);
-    color: #fff;
-    font: 14px/1.3 var(--sammo-font-sans);
-}
-.mobile-layout-dialog::backdrop {
-    background: rgb(0 0 0 / 72%);
-}
-.mobile-layout-dialog__header,
-.mobile-layout-dialog__actions,
-.mobile-layout-move-buttons {
-    display: flex;
-    align-items: center;
-}
-.mobile-layout-dialog__header {
-    justify-content: space-between;
-    gap: 12px;
-}
-.mobile-layout-dialog__header h2,
-.mobile-layout-dialog p {
-    margin: 0 0 10px;
-}
-.mobile-layout-dialog__header h2 {
-    color: skyblue;
-    font-size: 18px;
-}
-.mobile-layout-dialog__header form,
-.mobile-layout-dialog__actions form {
-    margin: 0;
-}
-.mobile-layout-dialog__header button {
-    min-width: 32px;
-    min-height: 32px;
-    font-size: 20px;
-}
-.mobile-layout-list {
-    display: grid;
-    gap: 6px;
-    margin: 0;
-    padding: 0;
-    list-style: none;
-}
-.mobile-layout-list > li {
-    display: grid;
-    grid-template-columns: 28px minmax(0, 1fr) auto;
-    min-height: 44px;
-    align-items: center;
-    border: 1px solid #777;
-    background: #172a52 var(--sammo-texture-blue);
-    cursor: grab;
-}
-.mobile-layout-list > li:active {
-    cursor: grabbing;
-}
-.mobile-layout-handle {
-    color: #aaa;
-    text-align: center;
-    font-size: 20px;
-}
-.mobile-layout-label {
-    min-width: 0;
-    font-weight: 700;
-}
-.mobile-layout-position {
-    display: inline-grid;
-    width: 22px;
-    height: 22px;
-    place-items: center;
-    margin-right: 4px;
-    border: 1px solid #7186a7;
-    border-radius: 50%;
-    font-size: 12px;
-}
-.mobile-layout-move-buttons {
-    gap: 4px;
-    padding-right: 5px;
-}
-.mobile-layout-move-buttons button {
-    width: 36px;
-    min-height: 34px;
-    font-weight: 700;
-}
-.mobile-layout-dialog__actions {
-    justify-content: flex-end;
-    gap: 6px;
-    margin-top: 12px;
-}
-.mobile-layout-dialog__actions button {
-    min-height: 34px;
-    padding: 4px 10px;
-}
-.mobile-layout-dialog__actions .mobile-layout-apply {
-    font-weight: 700;
-}
-.button-group {
-    display: flex;
-}
-.button-group label {
-    padding: 5px 8px;
-    border: 1px solid #666;
-    background: #26384d;
-}
-.button-group input {
-    margin-right: 4px;
-}
 .item-title {
     margin-top: 12px;
 }
@@ -1067,17 +768,6 @@ button:disabled {
 }
 .item-group button {
     min-height: 30px;
-}
-.custom-css {
-    display: block;
-}
-.custom-css textarea {
-    display: block;
-    width: 420px;
-    max-width: 100%;
-    height: 150px;
-    color: #fff;
-    background: #000;
 }
 .log-panel {
     min-height: 180px;
@@ -1153,24 +843,8 @@ button:disabled {
     .settings-column {
         padding: 10px 12px;
     }
-    .screen-mode-row {
-        grid-template-columns: 1fr;
-        gap: 6px;
-    }
-    .mobile-layout-setting-row {
-        grid-template-columns: 1fr;
-    }
-    .mobile-layout-open {
-        width: 100%;
-    }
-    .button-group {
-        overflow-x: auto;
-    }
     .item-group {
         grid-template-columns: repeat(2, 1fr);
-    }
-    .custom-css textarea {
-        width: 100%;
     }
 }
 </style>
