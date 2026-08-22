@@ -1,6 +1,4 @@
 import type { GeneralAI } from '../core.js';
-import { GeneralActionPipeline } from '@sammo-ts/logic/actionModules/general.js';
-import { LEGACY_DEFAULT_MAX_LEVEL } from '@sammo-ts/logic/scenario/constants.js';
 import { findCrewTypeById, getTechCost } from '@sammo-ts/logic/world/unitSet.js';
 import type { TurnGeneral } from '../../../types.js';
 import { asRecord, readMetaNumber, readRequiredMetaNumber } from '../../aiUtils.js';
@@ -47,39 +45,7 @@ const clampLegacy = (value: number, min: number | null, max: number | null): num
 };
 
 const getFullLeadership = (ai: GeneralAI, general: TurnGeneral): number => {
-    const modules = ai.commandEnv.generalActionModules;
-    if (modules && modules.length > 0) {
-        const pipeline = new GeneralActionPipeline(modules);
-        const adjusted = pipeline.onCalcStat(
-            {
-                general,
-                nation: ai.nation,
-                ...(ai.worldRef
-                    ? {
-                          worldView: {
-                              listGenerals: () => ai.worldRef!.listGenerals(),
-                              listGeneralsByCity: (cityId: number) =>
-                                  ai.worldRef!.listGenerals().filter((candidate) => candidate.cityId === cityId),
-                              listNations: () => ai.worldRef!.listNations(),
-                          },
-                      }
-                    : {}),
-                time: {
-                    year: ai.world.currentYear,
-                    month: ai.world.currentMonth,
-                    startYear: ai.startYear,
-                },
-            },
-            'leadership',
-            general.stats.leadership
-        );
-        const maxStat = ai.commandEnv.maxStatLevel ?? LEGACY_DEFAULT_MAX_LEVEL;
-        return Math.trunc(Math.max(0, Math.min(Number(adjusted), maxStat)));
-    }
-    const nationLevel = ai.nation?.level ?? 0;
-    const officerBonus = general.officerLevel === 12 ? nationLevel * 2 : general.officerLevel >= 5 ? nationLevel : 0;
-    const maxStat = ai.commandEnv.maxStatLevel ?? LEGACY_DEFAULT_MAX_LEVEL;
-    return Math.max(0, Math.min(general.stats.leadership + officerBonus, maxStat));
+    return ai.resolveGeneralAiStats(general).fullLeadership;
 };
 
 const getCrewGoldCost = (ai: GeneralAI, general: TurnGeneral, baseMultiplier: number, finalMultiplier = 1): number => {
