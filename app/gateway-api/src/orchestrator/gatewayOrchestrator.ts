@@ -17,11 +17,12 @@ import { gatewayProfileCapabilities } from '@sammo-ts/common';
 import {
     createGamePostgresConnector,
     createRedisConnector,
-    resolvePostgresConfigFromEnv,
     resolvePostgresPoolMax,
     resolveRedisConfigFromEnv,
 } from '@sammo-ts/infra';
 import { isRecord } from '@sammo-ts/common';
+
+import { resolveGatewayPostgresConfigFromEnv } from '../gatewayPostgresConfig.js';
 
 import {
     buildTurboReleaseCommand,
@@ -2249,10 +2250,10 @@ export class GatewayOrchestrator implements GatewayOrchestratorHandle {
     }
 
     private resolveProfileDatabaseUrl(profile: GatewayProfileRecord): string {
-        return resolvePostgresConfigFromEnv({
-            env: this.processConfig.baseEnv ?? process.env,
-            schema: profile.profile,
-        }).url;
+        return resolveGatewayPostgresConfigFromEnv(
+            this.processConfig.baseEnv ?? process.env,
+            profile.profile
+        ).url;
     }
 
     private async clearTournamentRuntimeStateFromRedis(profileName: string): Promise<void> {
