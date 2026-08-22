@@ -4,6 +4,7 @@ import { createEmptyRealtimeReadModelChanges, type RealtimeEvent } from '@sammo-
 import { MESSAGE_MAILBOX_NATIONAL_BASE } from '@sammo-ts/logic';
 
 import {
+    shouldForwardRealtimeEvent,
     shouldReloadRealtimeViewerIdentity,
     toPublicRealtimeEvent as convertPublicRealtimeEvent,
 } from '../src/realtime/publicEvent.js';
@@ -143,6 +144,44 @@ describe('public realtime event privacy boundary', () => {
         });
         expect(JSON.stringify(publicEvent)).not.toMatch(/revision|source|channel|time|generalId/u);
         expect(shouldReloadRealtimeViewerIdentity({ type: 'tournamentChanged' }, viewer)).toBe(false);
+    });
+
+    it('exposes tournament page refresh selection without projection identity or revision', () => {
+        const invalidation = { snapshot: true, betting: false, rankings: false, generalId: 7 };
+        const publicEvent = toPublicRealtimeEvent(
+            {
+                type: 'tournamentProjectionChanged',
+                invalidation,
+            },
+            [viewer]
+        );
+
+        expect(publicEvent).toEqual({
+            type: 'tournamentViewInvalidated',
+            refreshGrant,
+            invalidation: { snapshot: true, betting: false, rankings: false },
+        });
+        expect(JSON.stringify(publicEvent)).not.toMatch(/revision|source|channel|time|generalId|matchId/u);
+        expect(
+            shouldReloadRealtimeViewerIdentity(
+                {
+                    type: 'tournamentProjectionChanged',
+                    invalidation: { snapshot: false, betting: true, rankings: false },
+                },
+                viewer
+            )
+        ).toBe(false);
+    });
+
+    it('routes tournament projection traffic only to the dedicated page-family subscription', () => {
+        const projectionEvent: RealtimeEvent = {
+            type: 'tournamentProjectionChanged',
+            invalidation: { snapshot: true, betting: false, rankings: false },
+        };
+        expect(shouldForwardRealtimeEvent(projectionEvent, 'dashboard')).toBe(false);
+        expect(shouldForwardRealtimeEvent(projectionEvent, 'tournament')).toBe(true);
+        expect(shouldForwardRealtimeEvent({ type: 'tournamentChanged' }, 'dashboard')).toBe(true);
+        expect(shouldForwardRealtimeEvent({ type: 'tournamentChanged' }, 'tournament')).toBe(false);
     });
 
     it('filters message events per viewer and removes mailbox, sender, message, and time fields', () => {

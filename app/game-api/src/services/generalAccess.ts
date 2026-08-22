@@ -69,6 +69,12 @@ export const generalAccessEndpointWeights = {
 
 export type GeneralAccessEndpoint = keyof typeof generalAccessEndpointWeights;
 
+/** Server-proven realtime refreshes retain the limit gate but do not add refresh score. */
+export const shouldRecordGeneralAccessEndpoint = (
+    endpoint: GeneralAccessEndpoint,
+    realtimeAccessGranted: boolean | undefined
+): boolean => !(realtimeAccessGranted === true && endpoint === 'tournament.getSnapshot');
+
 export const generalAccessLimitPages = new Set<AccessPage>(['nation-list', 'npc-control']);
 
 export const generalAccessLimitEndpoints = new Set<GeneralAccessEndpoint>([

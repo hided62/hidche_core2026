@@ -1,21 +1,20 @@
 <script setup lang="ts">
 import { formatServerDateTime } from '@sammo-ts/common/time/ServerDateTime';
-import { computed, nextTick, onMounted, ref } from 'vue';
+import { storeToRefs } from 'pinia';
+import { computed, nextTick, onMounted, onUnmounted, ref } from 'vue';
 import TournamentBracket from '../components/tournament/TournamentBracket.vue';
 import TournamentGroupCard from '../components/tournament/TournamentGroupCard.vue';
 import TournamentPageHeader from '../components/tournament/TournamentPageHeader.vue';
 import { useGameFeedback } from '../composables/useGameFeedback';
+import { useTournamentPagesStore } from '../stores/tournamentPages';
 import { formatLog } from '../utils/formatLog';
 import { trpc } from '../utils/trpc';
 import { resolveTournamentSectionVisibility, resolveTournamentStageName } from '../utils/tournamentStatus';
 
-type Snapshot = Awaited<ReturnType<typeof trpc.tournament.getSnapshot.query>>;
-
-const snapshot = ref<Snapshot | null>(null);
-const betting = ref<Awaited<ReturnType<typeof trpc.tournament.getBettingSummary.query>> | null>(null);
+const tournamentPages = useTournamentPagesStore();
+const { snapshot, betting, loading, error } = storeToRefs(tournamentPages);
+type Snapshot = NonNullable<typeof snapshot.value>;
 const myGeneralId = ref(0);
-const loading = ref(false);
-const error = ref<string | null>(null);
 const adminEnabled = ref(false);
 const activeFinalGroup = ref(0);
 const activePreliminaryGroup = ref(0);
@@ -27,27 +26,25 @@ const typeStatNames = ['종합', '통솔', '무력', '지력'];
 const errorText = (value: unknown) => (value instanceof Error ? value.message : String(value));
 
 const load = async () => {
-    loading.value = true;
     error.value = null;
     try {
-        const [nextSnapshot, nextBetting, me, admin] = await Promise.all([
-            trpc.tournament.getSnapshot.query(),
-            trpc.tournament.getBettingSummary.query(),
+        const [, me, admin] = await Promise.all([
+            tournamentPages.loadTournamentPage(),
             trpc.general.me.query(),
             trpc.tournament.getAdminStatus.query().catch(() => null),
         ]);
-        snapshot.value = nextSnapshot;
-        betting.value = nextBetting;
         myGeneralId.value = me?.general?.id ?? 0;
         adminEnabled.value = !!admin?.ok;
     } catch (value) {
         error.value = errorText(value);
-    } finally {
-        loading.value = false;
     }
 };
 
-onMounted(() => void load());
+onMounted(() => {
+    tournamentPages.startRealtime();
+    void load();
+});
+onUnmounted(() => tournamentPages.stopRealtime());
 
 const participantsById = computed(
     () => new Map((snapshot.value?.participants ?? []).map((participant) => [participant.id, participant]))

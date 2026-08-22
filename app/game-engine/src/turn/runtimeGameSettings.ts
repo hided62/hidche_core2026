@@ -142,6 +142,9 @@ const reprojectTournamentClock = async (
     const stateKey = `sammo:${profileName}:tournament:state`;
     const sourceKeys = {
         stateKey,
+        participantsKey: `sammo:${profileName}:tournament:participants`,
+        matchesKey: `sammo:${profileName}:tournament:matches`,
+        bettingKey: `sammo:${profileName}:tournament:betting`,
         sourceRevisionKey: `sammo:${profileName}:tournament:source-revision`,
         sourceRevisionChannel: `sammo:${profileName}:tournament:source-changed`,
         realtimeEventChannel: buildGameEventChannel(profileName),

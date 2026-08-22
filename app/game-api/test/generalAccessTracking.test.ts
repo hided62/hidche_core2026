@@ -6,6 +6,7 @@ import type { GameApiContext } from '../src/context.js';
 import type { DatabaseClient } from '../src/context.js';
 
 import {
+    accessAuthedProcedure,
     accessAuthedInputProcedure,
     accessLimitAuthedProcedure,
     deferredAccessLimitAuthedProcedure,
@@ -20,6 +21,7 @@ import {
     resolveGeneralAccessEndpointWeight,
     resolveAccessWindows,
     resolveGeneralScoreStartedAt,
+    shouldRecordGeneralAccessEndpoint,
 } from '../src/services/generalAccess.js';
 
 const profile = { id: 'che', name: 'che:default', scenario: 'default' };
@@ -144,6 +146,27 @@ describe('general access tracking', () => {
         expect(generalAccessEndpointWeights['world.getGeneralDirectory']).toBe(2);
     });
 
+    it('waives score only for a server-proven tournament snapshot refresh', () => {
+        expect(shouldRecordGeneralAccessEndpoint('tournament.getSnapshot', true)).toBe(false);
+        expect(shouldRecordGeneralAccessEndpoint('tournament.getSnapshot', false)).toBe(true);
+        expect(shouldRecordGeneralAccessEndpoint('world.getGeneralDirectory', true)).toBe(true);
+    });
+
+    it('keeps the existing hard limit gate on a granted tournament refresh', async () => {
+        const now = new Date();
+        const fixture = buildDb({ lastTurnTime: now.toISOString() }, { lastRefresh: now, refreshScore: 999 });
+        const tournamentBoundary = router({
+            tournament: router({ getSnapshot: accessAuthedProcedure.query(() => ({ ok: true })) }),
+        });
+        const caller = tournamentBoundary.createCaller({
+            ...accessContext(fixture.db),
+            realtimeAccessGranted: true,
+        } as unknown as GameApiContext);
+
+        await expect(caller.tournament.getSnapshot()).rejects.toMatchObject({ code: 'TOO_MANY_REQUESTS' });
+        expect(fixture.executeRaw).not.toHaveBeenCalled();
+    });
+
     it('uses the latest processed game turn as the traffic period and score window', () => {
         expect(
             resolveAccessWindows(new Date('2026-07-26T03:14:15.000Z'), 600, {
@@ -197,7 +220,6 @@ describe('general access tracking', () => {
         expect(accessStatement.values).toContain(2);
         expect(accessStatement.values).toContain(now);
         expect(accessStatement.values).toContainEqual(new Date('2026-07-26T03:00:00.000Z'));
-
     });
 
     it('accepts legacy weight zero to refresh timestamps without incrementing counters', async () => {
@@ -248,9 +270,7 @@ describe('general access tracking', () => {
         const fixture = buildDb();
         const resolver = vi.fn(() => ({ ok: true }));
         const limitedRouter = router({ read: deferredAccessLimitAuthedProcedure.query(resolver) });
-        const get = vi.fn(async () =>
-            JSON.stringify({ nextAccessAt: '2099-07-26T03:10:00.000Z' })
-        );
+        const get = vi.fn(async () => JSON.stringify({ nextAccessAt: '2099-07-26T03:10:00.000Z' }));
 
         await expect(
             limitedRouter

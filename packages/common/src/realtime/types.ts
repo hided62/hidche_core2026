@@ -223,6 +223,26 @@ export interface TournamentChangedEvent {
     type: 'tournamentChanged';
 }
 
+/** Redis-owned slices changed after the atomic tournament projection commit. */
+export interface TournamentProjectionChangedEvent {
+    type: 'tournamentProjectionChanged';
+    invalidation: TournamentViewInvalidation;
+}
+
+/** Browser-safe tournament page-family refresh selection. */
+export interface TournamentViewInvalidation {
+    snapshot: boolean;
+    betting: boolean;
+    rankings: boolean;
+}
+
+export interface TournamentViewInvalidatedEvent {
+    type: 'tournamentViewInvalidated';
+    invalidation: TournamentViewInvalidation;
+    /** Opaque, short-lived proof that the server initiated this refresh. */
+    refreshGrant: string;
+}
+
 export interface ReadModelInvalidatedEvent {
     type: 'readModelInvalidated';
     invalidation: RealtimeReadModelInvalidation;
@@ -239,7 +259,12 @@ export interface MessagesInvalidatedEvent {
 export const REALTIME_ACCESS_GRANT_HEADER = 'x-sammo-realtime-access-grant';
 
 /** Events safe to expose to an authenticated browser over SSE. */
-export type PublicRealtimeEvent = ReadModelInvalidatedEvent | MessagesInvalidatedEvent;
+export type PublicRealtimeEvent = ReadModelInvalidatedEvent | MessagesInvalidatedEvent | TournamentViewInvalidatedEvent;
 
 export type RealtimeEvent =
-    TurnCompletedEvent | ReadModelChangedEvent | MessageCreatedEvent | MessagesChangedEvent | TournamentChangedEvent;
+    | TurnCompletedEvent
+    | ReadModelChangedEvent
+    | MessageCreatedEvent
+    | MessagesChangedEvent
+    | TournamentChangedEvent
+    | TournamentProjectionChangedEvent;
