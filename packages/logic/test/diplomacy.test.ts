@@ -61,6 +61,32 @@ describe('diplomacy month processing', () => {
         }
     });
 
+    it('keeps an asymmetric war on one shared countdown and ends it once', () => {
+        let entries = [buildEntry(1, 2, DIPLOMACY_STATE.WAR, 1), buildEntry(2, 1, DIPLOMACY_STATE.WAR, 3)];
+        const generalCounts = new Map([
+            [1, 1],
+            [2, 1],
+        ]);
+
+        entries = processDiplomacyMonth(entries, generalCounts);
+        expect(entries.map(({ state, term }) => ({ state, term }))).toEqual([
+            { state: DIPLOMACY_STATE.WAR, term: 2 },
+            { state: DIPLOMACY_STATE.WAR, term: 2 },
+        ]);
+
+        entries = processDiplomacyMonth(entries, generalCounts);
+        expect(entries.map(({ state, term }) => ({ state, term }))).toEqual([
+            { state: DIPLOMACY_STATE.WAR, term: 1 },
+            { state: DIPLOMACY_STATE.WAR, term: 1 },
+        ]);
+
+        entries = processDiplomacyMonth(entries, generalCounts);
+        expect(entries.map(({ state, term }) => ({ state, term }))).toEqual([
+            { state: DIPLOMACY_STATE.TRADE, term: 0 },
+            { state: DIPLOMACY_STATE.TRADE, term: 0 },
+        ]);
+    });
+
     it('extends war term based on accumulated casualties', () => {
         const entries = [buildEntry(1, 2, DIPLOMACY_STATE.WAR, 3, 400), buildEntry(2, 1, DIPLOMACY_STATE.WAR, 3, 0)];
         const result = processDiplomacyMonth(
@@ -75,7 +101,7 @@ describe('diplomacy month processing', () => {
         const reverse = result.find((entry) => entry.fromNationId === 2 && entry.toNationId === 1);
         expect(forward?.term).toBe(4);
         expect(forward?.dead).toBe(0);
-        expect(reverse?.term).toBe(2);
+        expect(reverse?.term).toBe(4);
     });
 
     it('expires non-aggression pact into trade', () => {

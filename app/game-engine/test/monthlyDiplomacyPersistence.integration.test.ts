@@ -13,7 +13,7 @@ const nationIds = [992_101, 992_102, 992_103, 992_104];
 const scenarioCode = 'monthly-diplomacy-persistence';
 const startLog =
     '<C>●</>193년 2월:<R><b>【개전】</b></><D><b>갑국</b></>과 <D><b>을국</b></>이 <R>전쟁</>을 시작합니다.';
-const stopLog = '<C>●</>193년 2월:<R><b>【종전】</b></><D><b>병국</b></>과 <D><b>정국</b></>이 <S>종전</>합니다.';
+const stopLog = '<C>●</>193년 4월:<R><b>【종전】</b></><D><b>병국</b></>과 <D><b>정국</b></>이 <S>종전</>합니다.';
 
 const buildNation = (id: number, name: string, generalCount: number): Nation => ({
     id,
@@ -35,7 +35,7 @@ const diplomacy: TurnDiplomacy[] = [
     { fromNationId: nationIds[0]!, toNationId: nationIds[2]!, state: 0, term: 5, dead: 250, meta: {} },
     { fromNationId: nationIds[2]!, toNationId: nationIds[0]!, state: 0, term: 5, dead: 50, meta: {} },
     { fromNationId: nationIds[2]!, toNationId: nationIds[3]!, state: 0, term: 1, dead: 0, meta: {} },
-    { fromNationId: nationIds[3]!, toNationId: nationIds[2]!, state: 0, term: 1, dead: 0, meta: {} },
+    { fromNationId: nationIds[3]!, toNationId: nationIds[2]!, state: 0, term: 3, dead: 0, meta: {} },
     { fromNationId: nationIds[1]!, toNationId: nationIds[3]!, state: 7, term: 1, dead: 999, meta: {} },
 ];
 
@@ -70,7 +70,7 @@ integration('monthly diplomacy persistence', () => {
         await closeDb?.();
     });
 
-    it('commits diplomacy transitions and exact global history text together', async () => {
+    it('commits a shared war countdown and the exact transition history together', async () => {
         const nations = [
             buildNation(nationIds[0]!, '갑국', 2),
             buildNation(nationIds[1]!, '을국', 1),
@@ -156,6 +156,22 @@ integration('monthly diplomacy persistence', () => {
                 durationMs: 0,
                 partial: false,
             });
+            await world.advanceMonth(new Date('0193-03-01T00:00:00.000Z'));
+            await hooks.hooks.flushChanges?.({
+                lastTurnTime: '0193-03-01T00:00:00.000Z',
+                processedGenerals: 0,
+                processedTurns: 0,
+                durationMs: 0,
+                partial: false,
+            });
+            await world.advanceMonth(new Date('0193-04-01T00:00:00.000Z'));
+            await hooks.hooks.flushChanges?.({
+                lastTurnTime: '0193-04-01T00:00:00.000Z',
+                processedGenerals: 0,
+                processedTurns: 0,
+                durationMs: 0,
+                partial: false,
+            });
 
             const rows = await db.diplomacy.findMany({
                 where: {
@@ -178,11 +194,11 @@ integration('monthly diplomacy persistence', () => {
                         dead: (row.meta as { dead?: number }).dead ?? 0,
                     }))
             ).toEqual([
-                { fromNationId: nationIds[0], toNationId: nationIds[1], state: 0, term: 6, dead: 0 },
-                { fromNationId: nationIds[0], toNationId: nationIds[2], state: 0, term: 5, dead: 50 },
-                { fromNationId: nationIds[1], toNationId: nationIds[0], state: 0, term: 6, dead: 0 },
+                { fromNationId: nationIds[0], toNationId: nationIds[1], state: 0, term: 4, dead: 0 },
+                { fromNationId: nationIds[0], toNationId: nationIds[2], state: 0, term: 3, dead: 50 },
+                { fromNationId: nationIds[1], toNationId: nationIds[0], state: 0, term: 4, dead: 0 },
                 { fromNationId: nationIds[1], toNationId: nationIds[3], state: 2, term: 0, dead: 0 },
-                { fromNationId: nationIds[2], toNationId: nationIds[0], state: 0, term: 4, dead: 50 },
+                { fromNationId: nationIds[2], toNationId: nationIds[0], state: 0, term: 3, dead: 50 },
                 { fromNationId: nationIds[2], toNationId: nationIds[3], state: 2, term: 0, dead: 0 },
                 { fromNationId: nationIds[3], toNationId: nationIds[2], state: 2, term: 0, dead: 0 },
             ]);
@@ -194,8 +210,12 @@ integration('monthly diplomacy persistence', () => {
                 })
             ).toEqual([
                 { scope: 'SYSTEM', category: 'HISTORY', year: 193, month: 2, text: startLog },
-                { scope: 'SYSTEM', category: 'HISTORY', year: 193, month: 2, text: stopLog },
+                { scope: 'SYSTEM', category: 'HISTORY', year: 193, month: 4, text: stopLog },
             ]);
+            expect(await db.worldState.findUniqueOrThrow({ where: { id: worldRow.id } })).toMatchObject({
+                currentYear: 193,
+                currentMonth: 4,
+            });
         } finally {
             await hooks.close();
         }

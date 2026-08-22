@@ -92,10 +92,12 @@ export const processDiplomacyMonth = (
         entry.term = clamp(entry.term + termIncrease, 0, MAX_WAR_TERM);
     }
 
-    // 전쟁 종료 판정: 양방 term이 1 이하이면 통상으로 전환.
+    // 전쟁은 양방향 diplomacy row로 저장되지만 기간은 하나의 관계가 소유한다.
+    // Ref처럼 방향별 사상자 연장을 먼저 계산하되, 더 긴 기간을 양쪽에 적용하여
+    // 한쪽만 0개월 전쟁으로 남는 비대칭 상태를 다음 월까지 노출하지 않는다.
     const processedPairs = new Set<string>();
     for (const entry of next) {
-        if (entry.state !== DIPLOMACY_STATE.WAR || entry.term > 1) {
+        if (entry.state !== DIPLOMACY_STATE.WAR) {
             continue;
         }
         const pairKey = buildDiplomacyKey(
@@ -106,12 +108,20 @@ export const processDiplomacyMonth = (
             continue;
         }
         const opposite = byKey.get(buildDiplomacyKey(entry.toNationId, entry.fromNationId));
-        if (opposite && opposite.state === DIPLOMACY_STATE.WAR && opposite.term <= 1) {
+        if (!opposite || opposite.state !== DIPLOMACY_STATE.WAR) {
+            continue;
+        }
+
+        const sharedTerm = Math.max(entry.term, opposite.term);
+        entry.term = sharedTerm;
+        opposite.term = sharedTerm;
+        processedPairs.add(pairKey);
+
+        if (sharedTerm <= 1) {
             entry.state = DIPLOMACY_STATE.TRADE;
             entry.term = 0;
             opposite.state = DIPLOMACY_STATE.TRADE;
             opposite.term = 0;
-            processedPairs.add(pairKey);
         }
     }
 
