@@ -1,9 +1,10 @@
-import { defineConfig, loadEnv } from 'vite';
+import { defineConfig, loadEnv, type Plugin } from 'vite';
 import vue from '@vitejs/plugin-vue';
 import tailwindcss from '@tailwindcss/vite';
 import { execFileSync } from 'node:child_process';
 import path from 'path';
-import { mergeViteEnv } from './src/config/viteEnv';
+import { deploymentVersionAssetSource } from './src/config/deploymentVersion.ts';
+import { mergeViteEnv } from './src/config/viteEnv.ts';
 
 const fullCommitShaPattern = /^[0-9a-f]{40,64}$/iu;
 
@@ -23,6 +24,17 @@ export const resolveBuildCommitSha = (explicitSha: string | undefined, repositor
         return 'unknown';
     }
 };
+
+export const createDeploymentVersionPlugin = (buildCommitSha: string): Plugin => ({
+    name: 'sammo-deployment-version',
+    generateBundle() {
+        this.emitFile({
+            type: 'asset',
+            fileName: 'deployment-version.json',
+            source: deploymentVersionAssetSource(buildCommitSha),
+        });
+    },
+});
 
 const normalizeBasePath = (value: string | undefined): string => {
     const pathValue = (value ?? '/').trim();
@@ -50,7 +62,7 @@ export default defineConfig(({ mode }) => {
     const buildCommitSha = resolveBuildCommitSha(env.VITE_BUILD_COMMIT_SHA, path.resolve(import.meta.dirname, '../..'));
     return {
         base: normalizeBasePath(env.VITE_APP_BASE_PATH),
-        plugins: [vue(), tailwindcss()],
+        plugins: [vue(), tailwindcss(), createDeploymentVersionPlugin(buildCommitSha)],
         define: {
             'import.meta.env.VITE_BUILD_COMMIT_SHA': JSON.stringify(buildCommitSha),
         },

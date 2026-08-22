@@ -42,6 +42,7 @@ export default defineConfig({
         'session-auth.spec.ts',
         'npcPossession.spec.ts',
         'joinLayout.spec.ts',
+        'deploymentVersionNotice.spec.ts',
     ],
     fullyParallel: false,
     workers: 1,
