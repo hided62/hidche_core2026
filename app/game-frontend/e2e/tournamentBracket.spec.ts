@@ -693,6 +693,30 @@ test('tournament and betting pages expose same-row navigation tabs beside close'
     expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
 });
 
+test('tournament and betting close only their script-opened popup window', async ({ page }, testInfo) => {
+    const baseURL = testInfo.project.use.baseURL;
+    expect(typeof baseURL).toBe('string');
+    await page.goto('about:blank');
+
+    for (const route of ['tournament', 'betting'] as const) {
+        const popupPromise = page.waitForEvent('popup');
+        await page.evaluate(() => window.open('about:blank', '_blank', 'noopener'));
+        const popup = await popupPromise;
+        await installFixture(popup, { tournamentStage: route === 'betting' ? 6 : 1 });
+        await popup.goto(new URL(route, baseURL as string).href);
+
+        await expect(popup.getByRole('button', { name: '창 닫기' }).first()).toBeVisible();
+        expect(await popup.evaluate(() => window.opener)).toBeNull();
+
+        const closed = popup.waitForEvent('close');
+        await popup.getByRole('button', { name: '창 닫기' }).first().click();
+        await closed;
+
+        expect(page.isClosed()).toBe(false);
+        expect(page.url()).toBe('about:blank');
+    }
+});
+
 test('mobile betting rankings use tabs and keep dedicated icons beside general names', async ({ page }, testInfo) => {
     await page.setViewportSize({ width: 390, height: 844 });
     const { placedBets } = await installFixture(page, { tournamentStage: 6 });

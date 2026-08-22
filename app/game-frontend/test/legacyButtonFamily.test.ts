@@ -39,6 +39,8 @@ void describe('shared Lumen button family', () => {
         for (const label of ['토너먼트', '베팅장', '창 닫기']) {
             assert.match(tournamentHeader, new RegExp(`legacy-button[\\s\\S]{0,260}${label}`, 'u'));
         }
+        assert.match(tournamentHeader, /const closeWindow = \(\): void => window\.close\(\)/u);
+        assert.doesNotMatch(tournamentHeader, /custom to="\/"/u);
         assert.match(reservedEditor, /legacy-button legacy-button--info legacy-button--fixed-height select-command/u);
         assert.match(reservedEditor, /명령 선택 ▾/u);
     });

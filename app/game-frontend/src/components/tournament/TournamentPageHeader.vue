@@ -3,6 +3,8 @@ defineProps<{
     activePage: 'tournament' | 'betting';
     title: string;
 }>();
+
+const closeWindow = (): void => window.close();
 </script>
 
 <template>
@@ -35,15 +37,13 @@ defineProps<{
                     </button>
                 </RouterLink>
             </nav>
-            <RouterLink v-slot="{ navigate }" custom to="/">
-                <button
-                    class="legacy-button legacy-button--navigation legacy-button--fixed-height close-button"
-                    type="button"
-                    @click="navigate"
-                >
-                    창 닫기
-                </button>
-            </RouterLink>
+            <button
+                class="legacy-button legacy-button--navigation legacy-button--fixed-height close-button"
+                type="button"
+                @click="closeWindow"
+            >
+                창 닫기
+            </button>
         </div>
     </header>
 </template>
