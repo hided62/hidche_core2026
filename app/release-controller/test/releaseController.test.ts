@@ -43,6 +43,15 @@ const createReleaseWorkspace = async (): Promise<string> => {
             components: ['gateway-api', 'gateway-frontend', 'release-controller'],
         })
     );
+    await fs.mkdir(path.join(workspace, 'app', 'gateway-frontend', 'dist', 'assets'), { recursive: true });
+    await fs.writeFile(
+        path.join(workspace, 'app', 'gateway-frontend', 'dist', 'index.html'),
+        '<!doctype html><title>static gateway</title>'
+    );
+    await fs.writeFile(
+        path.join(workspace, 'app', 'gateway-frontend', 'dist', 'assets', 'app-deadbeef.js'),
+        'console.log("gateway")'
+    );
     return workspace;
 };
 
@@ -148,6 +157,17 @@ it('runs Gateway preview from the frontend workspace dependency', () => {
     );
 });
 
+it('omits the Vite preview process when static artifact serving is selected', () => {
+    const definitions = buildGatewayProcessDefinitions('/srv/sammo/release', {
+        ...config,
+        frontendServeMode: 'static',
+    });
+    expect(definitions.map((definition) => definition.name)).toEqual([
+        'sammo:gateway-api',
+        'sammo:gateway-orchestrator',
+    ]);
+});
+
 it('does not forward release-controller PM2 identity to Gateway processes', () => {
     const definitions = buildGatewayProcessDefinitions('/srv/sammo/release', {
         ...config,
@@ -181,6 +201,64 @@ it('rejects Gateway definitions before switching processes when Redis connection
 });
 
 describe('GatewayReleaseController', () => {
+    it('publishes the built Gateway frontend through the artifact pointer in static mode', async () => {
+        const workspace = await createReleaseWorkspace();
+        const harness = createRepository();
+        const running = new Map<string, string>();
+        const artifactRoot = path.join(workspace, 'artifact-volume');
+        const requests: string[] = [];
+        const releaseRefUpdates: Array<{ expected: string | null; next: string | null }> = [];
+        const controller = new GatewayReleaseController(
+            harness.repository,
+            {
+                resolveCommit: async () => SHA,
+                prepare: async () => ({ root: workspace, created: true, needsInstall: false }),
+                readPersistentReleaseRef: async () => OLD_SHA,
+                compareAndSwapPersistentReleaseRef: async (
+                    _ref: string,
+                    expected: string | null,
+                    next: string | null
+                ) => {
+                    releaseRefUpdates.push({ expected, next });
+                },
+            } as unknown as GitWorkspaceManager,
+            { run: async () => ({ ok: true, exitCode: 0, output: '' }) },
+            {
+                list: async () =>
+                    [...running].map(([name, cwd]) => ({ name, cwd, status: 'online', restartCount: 0 })),
+                start: async (definition) => {
+                    running.set(definition.name, definition.cwd);
+                },
+                stop: async () => {},
+                delete: async (name) => {
+                    running.delete(name);
+                },
+            },
+            {
+                ...config,
+                frontendServeMode: 'static',
+                frontendArtifactRoot: artifactRoot,
+                frontendReadinessOrigin: 'http://caddy',
+                activeReleaseGitRef: 'refs/sammo/active-gateway',
+            },
+            () => new Date('2026-08-01T00:00:00.000Z'),
+            async (input) => {
+                requests.push(String(input));
+                return new Response('', { status: 200 });
+            }
+        );
+
+        await controller.runOnce();
+
+        expect([...running.keys()].sort()).toEqual(['sammo:gateway-api', 'sammo:gateway-orchestrator']);
+        expect(await fs.readFile(path.join(artifactRoot, 'gateway', 'current', 'index.html'), 'utf8')).toContain(
+            'static gateway'
+        );
+        expect(requests).toContain('http://caddy/gateway/');
+        expect(releaseRefUpdates).toEqual([{ expected: OLD_SHA, next: SHA }]);
+        expect(harness.completions).toEqual(['SUCCEEDED']);
+    });
+
     it('protects active, rollback, and running-process worktrees while delegating bounded cleanup', async () => {
         const active = '/srv/sammo/releases/active';
         const previous = '/srv/sammo/releases/previous';

@@ -66,6 +66,8 @@ const ensureDir = (dir: string): void => {
 const hasInstallMarker = (dir: string): boolean => fs.existsSync(path.join(dir, 'node_modules', '.pnpm'));
 const GIT_REF_PATTERN = /^[0-9A-Za-z._/-]+$/;
 const COMMIT_SHA_PATTERN = /^[0-9a-f]{40}$/i;
+const PERSISTENT_RELEASE_REF_PATTERN = /^refs\/sammo\/[a-z0-9][a-z0-9._/-]{0,127}$/u;
+const NULL_COMMIT_SHA = '0'.repeat(40);
 
 const assertGitRef = (value: string): string => {
     const ref = value.trim();
@@ -121,6 +123,47 @@ export class GitWorkspaceManager {
             if (fetchedCommit) return fetchedCommit;
         }
         throw new Error(`${sourceMode === 'BRANCH' ? 'Branch' : 'Commit'} not found.`);
+    }
+
+    async readPersistentReleaseRef(ref: string): Promise<string | null> {
+        if (!PERSISTENT_RELEASE_REF_PATTERN.test(ref)) {
+            throw new Error('Persistent release ref must be below refs/sammo/.');
+        }
+        const result = await runGit(['rev-parse', '--verify', `${ref}^{commit}`], this.repoRoot, this.baseEnv);
+        if (!result.ok) return null;
+        const commitSha = result.output.trim().split('\n')[0];
+        if (!COMMIT_SHA_PATTERN.test(commitSha)) {
+            throw new Error(`Persistent release ref does not resolve to a commit: ${ref}`);
+        }
+        return commitSha.toLowerCase();
+    }
+
+    async compareAndSwapPersistentReleaseRef(
+        ref: string,
+        expectedCommitSha: string | null,
+        nextCommitSha: string | null
+    ): Promise<void> {
+        if (!PERSISTENT_RELEASE_REF_PATTERN.test(ref)) {
+            throw new Error('Persistent release ref must be below refs/sammo/.');
+        }
+        for (const commitSha of [expectedCommitSha, nextCommitSha]) {
+            if (commitSha !== null && !COMMIT_SHA_PATTERN.test(commitSha)) {
+                throw new Error('Persistent release ref commit must be a full SHA.');
+            }
+        }
+        if (nextCommitSha) {
+            const exists = await runGit(['cat-file', '-e', `${nextCommitSha}^{commit}`], this.repoRoot, this.baseEnv);
+            if (!exists.ok) throw new Error(`Persistent release commit is unavailable: ${nextCommitSha}`);
+        }
+        const args = nextCommitSha
+            ? ['update-ref', ref, nextCommitSha, expectedCommitSha ?? NULL_COMMIT_SHA]
+            : ['update-ref', '-d', ref, expectedCommitSha ?? NULL_COMMIT_SHA];
+        const updated = await runGit(args, this.repoRoot, this.baseEnv);
+        if (!updated.ok) {
+            throw new Error(
+                `Failed to update persistent release ref ${ref}${updated.output ? `: ${updated.output.trim()}` : ''}`
+            );
+        }
     }
 
     async prepare(commitSha: string): Promise<WorkspaceInfo> {

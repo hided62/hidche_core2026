@@ -33,6 +33,22 @@ export interface BuildRunner {
 
 export const MAX_BUILD_OUTPUT_CHARS = 64 * 1024;
 const DEFAULT_RELEASE_TURBO_CONCURRENCY = 1;
+const RELEASE_BUILD_ENV_NAME = /^(?:CI|PATH|NODE_OPTIONS|RELEASE_BUILD_NODE_OPTIONS|PROFILE_FRONTEND_BUILD_NODE_OPTIONS|RAYON_NUM_THREADS|RELEASE_TURBO_CONCURRENCY|TURBO_CACHE_DIR|TZ|VITE_[A-Z0-9_]+)$/u;
+
+export const sanitizeReleaseBuildEnv = (
+    env: NodeJS.ProcessEnv | Record<string, string> | undefined
+): Record<string, string> => {
+    const sanitized = Object.fromEntries(
+        Object.entries(env ?? {}).filter(
+            (entry): entry is [string, string] => typeof entry[1] === 'string' && RELEASE_BUILD_ENV_NAME.test(entry[0])
+        )
+    );
+    if (sanitized.RELEASE_BUILD_NODE_OPTIONS) {
+        sanitized.NODE_OPTIONS = sanitized.RELEASE_BUILD_NODE_OPTIONS;
+        delete sanitized.RELEASE_BUILD_NODE_OPTIONS;
+    }
+    return sanitized;
+};
 
 export const resolveReleaseTurboConcurrency = (env?: Record<string, string>): number => {
     const configured = env?.RELEASE_TURBO_CONCURRENCY?.trim();
@@ -213,3 +229,100 @@ export class PnpmBuildRunner implements BuildRunner {
         };
     }
 }
+
+interface RemoteBuildMessage {
+    event?: BuildProgressEvent;
+    result?: BuildResult;
+    error?: string;
+}
+
+export class RemoteBuildRunner implements BuildRunner {
+    private readonly endpoint: string;
+
+    constructor(baseUrl: string, private readonly fetchImpl: typeof fetch = fetch) {
+        this.endpoint = new URL('/v1/builds', baseUrl.endsWith('/') ? baseUrl : `${baseUrl}/`).toString();
+    }
+
+    async run(
+        commands: BuildCommand[],
+        onProgress?: BuildProgressObserver,
+        options?: BuildRunOptions
+    ): Promise<BuildResult> {
+        let output = '';
+        try {
+            const response = await this.fetchImpl(this.endpoint, {
+                method: 'POST',
+                headers: { 'content-type': 'application/json' },
+                body: JSON.stringify({
+                    commands: commands.map((command) => ({
+                        ...command,
+                        env: sanitizeReleaseBuildEnv(command.env),
+                    })),
+                }),
+                signal: options?.signal,
+            });
+            if (!response.ok || !response.body) {
+                const detail = await response.text().catch(() => '');
+                return {
+                    ok: false,
+                    exitCode: null,
+                    output: appendOutputTail(output, detail || `Release builder returned HTTP ${response.status}.`),
+                };
+            }
+            const decoder = new TextDecoder();
+            let buffer = '';
+            for await (const chunk of response.body) {
+                buffer += decoder.decode(chunk, { stream: true });
+                const lines = buffer.split('\n');
+                buffer = lines.pop() ?? '';
+                for (const line of lines) {
+                    const result = await this.handleRemoteMessage(line, onProgress);
+                    if (result.event?.type === 'OUTPUT') {
+                        output = appendOutputTail(output, `${result.event.message}\n`);
+                    }
+                    if (result.result) return result.result;
+                    if (result.error) {
+                        return { ok: false, exitCode: null, output: appendOutputTail(output, result.error) };
+                    }
+                }
+            }
+            if (buffer.trim()) {
+                const result = await this.handleRemoteMessage(buffer, onProgress);
+                if (result.result) return result.result;
+                if (result.error) return { ok: false, exitCode: null, output: appendOutputTail(output, result.error) };
+            }
+            return { ok: false, exitCode: null, output: appendOutputTail(output, 'Release builder closed without a result.') };
+        } catch (error) {
+            const aborted = options?.signal?.aborted ?? false;
+            return {
+                ok: false,
+                exitCode: null,
+                output: appendOutputTail(
+                    output,
+                    aborted ? 'Build cancelled by operator.' : error instanceof Error ? error.message : String(error)
+                ),
+                ...(aborted ? { aborted: true } : {}),
+            };
+        }
+    }
+
+    private async handleRemoteMessage(
+        line: string,
+        onProgress?: BuildProgressObserver
+    ): Promise<RemoteBuildMessage> {
+        let message: RemoteBuildMessage;
+        try {
+            message = JSON.parse(line) as RemoteBuildMessage;
+        } catch {
+            return { error: 'Release builder returned malformed progress data.' };
+        }
+        if (message.event && onProgress) await onProgress(message.event);
+        return message;
+    }
+}
+
+export const createReleaseBuildRunner = (
+    baseUrl: string | undefined,
+    localRunner: BuildRunner,
+    fetchImpl: typeof fetch = fetch
+): BuildRunner => (baseUrl?.trim() ? new RemoteBuildRunner(baseUrl.trim(), fetchImpl) : localRunner);

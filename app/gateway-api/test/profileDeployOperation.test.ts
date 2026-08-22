@@ -37,6 +37,17 @@ const createReleaseWorkspace = async (): Promise<string> => {
             components: ['game-api', 'game-engine', 'game-frontend'],
         })
     );
+    await fs.mkdir(path.join(workspace, '.release-dist', 'che_1010', 'game-frontend', 'assets'), {
+        recursive: true,
+    });
+    await fs.writeFile(
+        path.join(workspace, '.release-dist', 'che_1010', 'game-frontend', 'index.html'),
+        '<!doctype html><title>static profile</title>'
+    );
+    await fs.writeFile(
+        path.join(workspace, '.release-dist', 'che_1010', 'game-frontend', 'assets', 'app-deadbeef.js'),
+        'console.log("static")'
+    );
     return workspace;
 };
 
@@ -45,7 +56,7 @@ afterEach(async () => {
 });
 
 describe('profile DEPLOY operation', () => {
-    it('migrates and switches the selected release without executing the reset seed path', async () => {
+    it('migrates and atomically switches a static frontend without executing the reset seed path', async () => {
         const workspace = await createReleaseWorkspace();
         const profile: GatewayProfileRecord = {
             profileName: 'che:1010',
@@ -131,6 +142,7 @@ describe('profile DEPLOY operation', () => {
             'sammo:che:1010:battle-sim-worker',
             'sammo:che:1010:tournament-worker',
         ];
+        const backendProcessNames = processNames.filter((name) => !name.endsWith(':game-frontend'));
         const running = new Set(processNames);
         const processManager: ProcessManager = {
             list: async () => [...running].map((name) => ({ name, status: 'online' })),
@@ -171,6 +183,9 @@ describe('profile DEPLOY operation', () => {
                 redisKeyPrefix: 'sammo:test',
                 gameTokenSecret: 'test-secret',
                 gatewayInternalApiUrl: 'http://127.0.0.1:15001',
+                frontendServeMode: 'static',
+                frontendArtifactRoot: path.join(workspace, 'artifact-volume'),
+                frontendReadinessOrigin: 'http://caddy',
                 baseEnv: { DATABASE_URL: 'postgresql://user:pass@integration.invalid/sammo' },
             },
             reconcileIntervalMs: 60_000,
@@ -218,6 +233,9 @@ describe('profile DEPLOY operation', () => {
         );
         expect(logs.map((entry) => entry.message).join('\n')).not.toContain('pass@integration.invalid');
         expect(logs.map((entry) => entry.message).join('\n')).toContain('[REDACTED]');
-        expect([...running].sort()).toEqual([...processNames].sort());
+        expect([...running].sort()).toEqual([...backendProcessNames].sort());
+        expect(
+            await fs.readFile(path.join(workspace, 'artifact-volume', 'che', 'current', 'index.html'), 'utf8')
+        ).toContain('static profile');
     });
 });

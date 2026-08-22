@@ -10,6 +10,7 @@ import {
     type ProcessManager,
     readReleaseManifest,
     sanitizeManagedProcessEnv,
+    sanitizeReleaseBuildEnv,
 } from '@sammo-ts/gateway-api';
 
 import type { ReleaseControllerConfig } from './config.js';
@@ -22,7 +23,7 @@ const buildReleaseControllerCommands = (
     needsInstall: boolean,
     config: ReleaseControllerConfig
 ): BuildCommand[] => {
-    const env = sanitizeManagedProcessEnv(config.baseEnv);
+    const env = sanitizeReleaseBuildEnv(config.baseEnv);
     return [
         ...(needsInstall ? [{ command: 'pnpm', args: ['install', '--frozen-lockfile'], cwd: workspaceRoot, env }] : []),
         buildTurboReleaseCommand(workspaceRoot, config.workspaceRoot, ['@sammo-ts/release-controller'], env),
@@ -56,6 +57,7 @@ export const upgradeReleaseController = async (options: {
     sourceRef: string;
     workspaceManager: GitWorkspaceManager;
     buildRunner: BuildRunner;
+    migrationRunner?: BuildRunner;
     processManager: ProcessManager;
     config: ReleaseControllerConfig;
     readinessTimeoutMs?: number;
@@ -71,7 +73,9 @@ export const upgradeReleaseController = async (options: {
         buildReleaseControllerCommands(workspace.root, workspace.needsInstall, options.config)
     );
     if (!build.ok) throw new Error(`Release controller build failed: ${build.output.slice(-4000)}`);
-    const migration = await options.buildRunner.run([buildGatewayMigrationCommand(workspace.root, options.config)]);
+    const migration = await (options.migrationRunner ?? options.buildRunner).run([
+        buildGatewayMigrationCommand(workspace.root, options.config),
+    ]);
     if (!migration.ok) throw new Error(`Gateway migration failed: ${migration.output.slice(-4000)}`);
 
     const existing = (await options.processManager.list()).find((process) => process.name === CONTROLLER_PROCESS_NAME);

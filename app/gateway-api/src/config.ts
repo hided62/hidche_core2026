@@ -1,5 +1,6 @@
 import path from 'node:path';
 import { parseBooleanWithFallback, parseNumberWithFallback } from '@sammo-ts/common';
+import { resolveFrontendServeMode, type FrontendServeMode } from './orchestrator/frontendArtifactManager.js';
 
 export interface GatewayApiConfig {
     host: string;
@@ -36,6 +37,10 @@ export interface GatewayApiConfig {
     worktreeRoot: string;
     navigationConfigFile: string | null;
     defaultNavigationConfigFile: string;
+    frontendServeMode: FrontendServeMode;
+    frontendArtifactRoot: string;
+    frontendReadinessOrigin: string;
+    releaseBuilderUrl?: string;
 }
 
 export interface GatewayOrchestratorConfig {
@@ -49,6 +54,10 @@ export interface GatewayOrchestratorConfig {
     orchestratorAdminIntervalMs: number;
     workspaceRootHint: string;
     worktreeRoot: string;
+    frontendServeMode?: FrontendServeMode;
+    frontendArtifactRoot?: string;
+    frontendReadinessOrigin?: string;
+    releaseBuilderUrl?: string;
 }
 
 const resolveSchemaName = (value: string | undefined): string => {
@@ -136,6 +145,10 @@ export const resolveGatewayApiConfigFromEnv = (env: NodeJS.ProcessEnv = process.
         worktreeRoot: env.GATEWAY_WORKTREE_ROOT ?? path.resolve(workspaceRootHint, '.worktrees'),
         navigationConfigFile: env.CORE_NAVIGATION_CONFIG_FILE?.trim() || '/srv/data/navigation.json',
         defaultNavigationConfigFile: path.resolve(workspaceRootHint, 'resources/navigation.json'),
+        frontendServeMode: resolveFrontendServeMode(env.FRONTEND_SERVE_MODE),
+        frontendArtifactRoot: path.resolve(env.FRONTEND_ARTIFACT_ROOT ?? '/srv/frontend-artifacts'),
+        frontendReadinessOrigin: env.FRONTEND_READINESS_ORIGIN?.trim() || 'http://caddy',
+        releaseBuilderUrl: env.RELEASE_BUILDER_URL?.trim() || undefined,
     };
 };
 
@@ -176,5 +189,9 @@ export const resolveGatewayOrchestratorConfigFromEnv = (
         workspaceRootHint: env.GATEWAY_WORKSPACE_ROOT ?? process.cwd(),
         worktreeRoot:
             env.GATEWAY_WORKTREE_ROOT ?? path.resolve(env.GATEWAY_WORKSPACE_ROOT ?? process.cwd(), '.worktrees'),
+        frontendServeMode: resolveFrontendServeMode(env.FRONTEND_SERVE_MODE),
+        frontendArtifactRoot: path.resolve(env.FRONTEND_ARTIFACT_ROOT ?? '/srv/frontend-artifacts'),
+        frontendReadinessOrigin: env.FRONTEND_READINESS_ORIGIN?.trim() || 'http://caddy',
+        releaseBuilderUrl: env.RELEASE_BUILDER_URL?.trim() || undefined,
     };
 };
