@@ -677,6 +677,14 @@ export class GeneralAI {
         return this.reservedTurnProvider.getGeneralTurn(generalId, 0);
     }
 
+    hasFirstReservedGeneralRecruitmentTurn(generalId: number): boolean {
+        const action = this.getFirstReservedGeneralTurn(generalId).action;
+        // Ref checks `instanceof che_징병`; che_모병 inherits che_징병 there.
+        // Core persists the concrete command key, so preserve that subtype
+        // relationship explicitly at the serialized reserved-turn boundary.
+        return action === 'che_징병' || action === 'che_모병';
+    }
+
     resolveGeneralAiStats(general: TurnGeneral): ReturnType<typeof resolveLegacyAiStats> {
         if (this.commandEnv.generalActionModules) {
             return resolveLegacyAiStatsWithModules(

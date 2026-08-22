@@ -55,8 +55,7 @@ export const do부대유저장후방발령 = (ai: GeneralAI) => {
         if (!isGeneralTurnBefore(general, troopLeader)) {
             return false;
         }
-        const reserved = ai.getFirstReservedGeneralTurn(general.id);
-        if (reserved.action !== 'che_징병') {
+        if (!ai.hasFirstReservedGeneralRecruitmentTurn(general.id)) {
             return false;
         }
         return true;

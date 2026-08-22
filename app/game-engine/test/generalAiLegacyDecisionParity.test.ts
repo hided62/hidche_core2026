@@ -1435,11 +1435,13 @@ describe('legacy NPC AI final-decision parity', () => {
             return { result: do부대유저장후방발령(ai), rng };
         };
 
-        expect(run({ reservedAction: 'che_징병', userTurnTick: 100, leaderTurnTick: 200 }).result).toMatchObject({
-            action: 'che_발령',
-            args: { destGeneralId: 2, destCityId: 3 },
-        });
-        expect(run({ reservedAction: 'che_모병', userTurnTick: 100, leaderTurnTick: 200 }).result).toBeNull();
+        for (const reservedAction of ['che_징병', 'che_모병']) {
+            expect(run({ reservedAction, userTurnTick: 100, leaderTurnTick: 200 }).result).toMatchObject({
+                action: 'che_발령',
+                args: { destGeneralId: 2, destCityId: 3 },
+            });
+        }
+        expect(run({ reservedAction: 'che_훈련', userTurnTick: 100, leaderTurnTick: 200 }).result).toBeNull();
         expect(run({ reservedAction: 'che_징병', userTurnTick: 200, leaderTurnTick: 100 }).result).toBeNull();
         expect(
             run({ reservedAction: 'che_징병', userTurnTick: 100, leaderTurnTick: 200, recruitmentScore: 0 }).result
