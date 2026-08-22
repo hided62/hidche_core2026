@@ -1,6 +1,8 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
+import { normalizeArchivedGeneral, type ArchivedJsonValue } from '@sammo-ts/common';
 import { createGamePostgresConnector, type GamePrismaClient } from '@sammo-ts/infra';
+import { LogCategory, LogScope } from '@sammo-ts/logic';
 
 import { createAuctionBidder } from '../src/auction/bidder.js';
 import { createDatabaseTurnHooks } from '../src/turn/databaseHooks.js';
@@ -39,7 +41,9 @@ integration('unification finalization transaction', () => {
         await db.inheritanceLog.deleteMany({ where: { userId } });
         await db.inheritancePoint.deleteMany({ where: { userId } });
         await db.gameHistory.deleteMany({ where: { serverId } });
-        await db.logEntry.deleteMany({ where: { year: 190, month: 7 } });
+        await db.logEntry.deleteMany({
+            where: { OR: [{ generalId: fixtureId }, { year: 190, month: 7 }] },
+        });
         await db.rankData.deleteMany({ where: { generalId: fixtureId } });
         await db.general.deleteMany({ where: { id: fixtureId } });
         await db.city.deleteMany({ where: { id: fixtureId } });
@@ -138,6 +142,52 @@ integration('unification finalization transaction', () => {
                     inherit_spent_dyn: 30,
                 },
             },
+        });
+        await db.rankData.createMany({
+            data: [
+                { generalId: fixtureId, nationId: fixtureId, type: 'warnum', value: 4 },
+                { generalId: fixtureId, nationId: fixtureId, type: 'killnum', value: 3 },
+                { generalId: fixtureId, nationId: fixtureId, type: 'deathnum', value: 1 },
+                { generalId: fixtureId, nationId: fixtureId, type: 'firenum', value: 2 },
+                { generalId: fixtureId, nationId: fixtureId, type: 'killcrew', value: 1_200 },
+                { generalId: fixtureId, nationId: fixtureId, type: 'deathcrew', value: 800 },
+            ],
+        });
+        await db.logEntry.createMany({
+            data: [
+                {
+                    scope: LogScope.GENERAL,
+                    category: LogCategory.ACTION,
+                    generalId: fixtureId,
+                    year: 190,
+                    month: 6,
+                    text: '보존하지 않을 개인 기록',
+                },
+                {
+                    scope: LogScope.GENERAL,
+                    category: LogCategory.BATTLE_DETAIL,
+                    generalId: fixtureId,
+                    year: 190,
+                    month: 6,
+                    text: '보존하지 않을 전투 기록',
+                },
+                {
+                    scope: LogScope.GENERAL,
+                    category: LogCategory.BATTLE_BRIEF,
+                    generalId: fixtureId,
+                    year: 190,
+                    month: 5,
+                    text: '먼저 보존할 전투 결과',
+                },
+                {
+                    scope: LogScope.GENERAL,
+                    category: LogCategory.BATTLE_BRIEF,
+                    generalId: fixtureId,
+                    year: 190,
+                    month: 6,
+                    text: '보존할 전투 결과',
+                },
+            ],
         });
         await db.inheritancePoint.createMany({
             data: [
@@ -413,6 +463,28 @@ integration('unification finalization transaction', () => {
                     where: { generalId_type: { generalId: fixtureId, type: 'inherit_earned' } },
                 })
             ).resolves.toMatchObject({ value: 2_160 });
+            const archivedGeneral = await db.oldGeneral.findUniqueOrThrow({
+                where: { by_no: { serverId, generalNo: fixtureId } },
+            });
+            const archivedSnapshot = normalizeArchivedGeneral(
+                archivedGeneral.data as ArchivedJsonValue,
+                archivedGeneral.name
+            ).snapshot;
+            expect(archivedSnapshot).toMatchObject({
+                mastery: { infantry: 100 },
+                battle: {
+                    battles: 4,
+                    wins: 3,
+                    losses: 1,
+                    fireSuccesses: 2,
+                    killedCrew: 1_200,
+                    lostCrew: 800,
+                },
+                records: { battleResult: ['보존할 전투 결과', '먼저 보존할 전투 결과'] },
+                availability: { battleResultLogs: true, battleDetailLogs: false },
+            });
+            expect(JSON.stringify(archivedGeneral.data)).not.toContain('보존하지 않을 개인 기록');
+            expect(JSON.stringify(archivedGeneral.data)).not.toContain('보존하지 않을 전투 기록');
             expect((await db.gameHistory.findUniqueOrThrow({ where: { serverId } })).winnerNation).toBe(fixtureId);
             const yearbook = await db.yearbookHistory.findUniqueOrThrow({
                 where: {
