@@ -553,6 +553,10 @@ export const getGeneralContext = async (ctx: GameApiContext) => {
                 specialDomestic: resolveTraitDisplayName(general.specialCode, domesticNames),
                 specialWar: resolveTraitDisplayName(general.special2Code, warNames),
             },
+            traitAges: {
+                specialDomestic: readNumber(metaRecord.specage, 0),
+                specialWar: readNumber(metaRecord.specage2, 0),
+            },
             traitInfo: {
                 personal: personalityNames.get(general.personalCode)?.info ?? '',
                 specialDomestic: domesticNames.get(general.specialCode)?.info ?? '',
