@@ -49,6 +49,7 @@ export const useMainDashboardStore = defineStore('mainDashboard', () => {
     type RecentRecord = Awaited<ReturnType<typeof trpc.general.getRecentRecords.query>>['global'][number];
     type FrontStatus = Awaited<ReturnType<typeof trpc.general.getFrontStatus.query>>;
     type TournamentState = Awaited<ReturnType<typeof trpc.tournament.getState.query>>;
+    type TournamentType = NonNullable<TournamentState>['type'];
     type ContextBundleDelta = Awaited<ReturnType<typeof trpc.dashboard.getContextBundleDelta.query>>;
     type DashboardReadModelPatch = {
         contextSnapshot?: GeneralContext;
@@ -76,6 +77,7 @@ export const useMainDashboardStore = defineStore('mainDashboard', () => {
         worldHistory?: RecentRecord[];
         frontStatus?: FrontStatus | null;
         tournamentStage?: number;
+        tournamentType?: TournamentType | null;
     };
     type DashboardTabMessage =
         { kind: 'patch'; patch: DashboardReadModelPatch } | { kind: 'status'; status: 'idle' | 'connected' };
@@ -117,6 +119,7 @@ export const useMainDashboardStore = defineStore('mainDashboard', () => {
     const worldHistory = ref<RecentRecord[]>([]);
     const frontStatus = ref<FrontStatus | null>(null);
     const tournamentStage = ref(0);
+    const tournamentType = ref<TournamentType | null>(null);
     const surveyNotice = ref<NonNullable<FrontStatus['latestVote']> | null>(null);
     let lastGeneralRecordId = 0;
     let lastWorldHistoryId = 0;
@@ -440,6 +443,9 @@ export const useMainDashboardStore = defineStore('mainDashboard', () => {
         if (patch.tournamentStage !== undefined) {
             tournamentStage.value = patch.tournamentStage;
         }
+        if (patch.tournamentType !== undefined) {
+            tournamentType.value = patch.tournamentType;
+        }
         if (patch.contextRevision !== undefined) {
             contextRevision = patch.contextRevision;
             contextSourceRevision = patch.contextSourceRevision ?? null;
@@ -487,6 +493,7 @@ export const useMainDashboardStore = defineStore('mainDashboard', () => {
         patch.worldHistory = toRaw(worldHistory.value);
         patch.frontStatus = toRaw(frontStatus.value);
         patch.tournamentStage = tournamentStage.value;
+        patch.tournamentType = tournamentType.value;
         return patch;
     };
 
@@ -637,6 +644,7 @@ export const useMainDashboardStore = defineStore('mainDashboard', () => {
             }
             if (tournamentState !== undefined) {
                 tournamentStage.value = tournamentState?.stage ?? 0;
+                tournamentType.value = tournamentState?.type ?? null;
             }
             if (initializedMailboxGeneralId !== id) {
                 targetMailbox.value = MESSAGE_MAILBOX_NATIONAL_BASE + context.general.nationId;
@@ -765,7 +773,10 @@ export const useMainDashboardStore = defineStore('mainDashboard', () => {
                 patch.worldHistory = nextWorldHistory;
             }
             if (nextFrontStatus) patch.frontStatus = nextFrontStatus;
-            if (tournamentState !== undefined) patch.tournamentStage = tournamentState?.stage ?? 0;
+            if (tournamentState !== undefined) {
+                patch.tournamentStage = tournamentState?.stage ?? 0;
+                patch.tournamentType = tournamentState?.type ?? null;
+            }
             applyDashboardPatch(patch);
             publishDashboardPatch(patch);
         } catch (err) {
@@ -1290,6 +1301,7 @@ export const useMainDashboardStore = defineStore('mainDashboard', () => {
         worldHistory,
         frontStatus,
         tournamentStage,
+        tournamentType,
         surveyNotice,
         messageDraftText,
         targetMailbox,

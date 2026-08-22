@@ -4,9 +4,9 @@ import { legacyNationTextColor } from '../../utils/legacyNationColor';
 import MainNavigationLink from './MainNavigationLink.vue';
 import {
     buildGlobalNavigation,
+    buildNationNavigation,
     isNationNavigationEnabled,
     isNavigationConfigured,
-    nationNavigation,
     quickNavigation,
     type MainNavigationLink as MainNavigationLinkItem,
     type MainNavigationEntry,
@@ -18,6 +18,7 @@ import { useMenuPopup } from './useMenuPopup';
 const props = defineProps<{
     access: NationNavigationAccess;
     tournamentStage: number;
+    tournamentType: number | null;
     nationColor: string;
     npcMode: number;
     realtimeEnabled: boolean;
@@ -35,6 +36,7 @@ const emit = defineEmits<{
 
 const { setRoot, openId, close, toggle } = useMenuPopup();
 const globalEntries = computed(() => buildGlobalNavigation(props.npcMode, props.entries));
+const nationEntries = computed(() => buildNationNavigation(props.tournamentStage, props.tournamentType));
 const nationMenuColor = computed(() => props.nationColor || '#000000');
 const nationMenuTextColor = computed(() => legacyNationTextColor(nationMenuColor.value));
 const isActive = (link: MainNavigationLinkItem) =>
@@ -150,7 +152,7 @@ const onAction = (action: NonNullable<MainNavigationLinkItem['action']>) => {
                 <span class="dropup-caret" aria-hidden="true"></span>
             </button>
             <ul v-if="openId === 'nation'" id="mobile-nation-menu" class="bottom-popup" role="menu">
-                <template v-for="entry in nationNavigation" :key="entry.id">
+                <template v-for="entry in nationEntries" :key="entry.id">
                     <li v-if="entry.kind === 'link'" role="none">
                         <MainNavigationLink
                             :link="entry"

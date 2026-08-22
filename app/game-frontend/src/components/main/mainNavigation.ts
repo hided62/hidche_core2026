@@ -4,6 +4,7 @@ import type {
     RuntimeNavigationLink,
 } from '@sammo-ts/common/navigation/menuConfig';
 import defaultNavigationJson from '../../../../../resources/navigation.json';
+import { resolveTournamentMainPresentation } from '../../utils/tournamentNavigation';
 
 export type NationAccessRule =
     'always' | 'meeting' | 'secret' | 'nation-member' | 'nation-established' | 'nation-secret';
@@ -11,8 +12,8 @@ export type NationAccessRule =
 export type MainNavigationLink = RuntimeNavigationLink & {
     compactLabel?: string;
     access?: NationAccessRule;
-    highlightStage?: 1 | 6;
-    highlightStages?: readonly [1, 6];
+    highlightStage?: number;
+    highlightStages?: readonly number[];
     unavailableReason?: string;
 };
 
@@ -155,7 +156,6 @@ export const nationNavigation: MainNavigationEntry[] = [
             to: '/tournament',
             newTab: true,
             access: 'always',
-            highlightStages: [1, 6],
         },
         items: [
             {
@@ -246,6 +246,39 @@ export const nationNavigation: MainNavigationEntry[] = [
     { kind: 'link', id: 'my-settings', label: '화면 설정', to: '/my-settings', access: 'always' },
 ];
 
+export const buildNationNavigation = (
+    tournamentStage: number,
+    tournamentType: number | null,
+    source: MainNavigationEntry[] = nationNavigation
+): MainNavigationEntry[] =>
+    source.map((entry) => {
+        if (entry.kind !== 'split' || entry.id !== 'tournament-betting') return entry;
+
+        const presentation = resolveTournamentMainPresentation(tournamentStage, tournamentType);
+        const main: MainNavigationLink = {
+            ...entry.main,
+            label: presentation.label,
+            compactLabel: presentation.compactLabel,
+            to: presentation.to,
+            highlightStage: presentation.active ? tournamentStage : undefined,
+            highlightStages: undefined,
+        };
+        const items = entry.items.map((item) => {
+            if (item.kind !== 'link') return item;
+            if (item.id === 'tournament-menu') {
+                return {
+                    ...item,
+                    highlightStage: presentation.active && !presentation.bettingActive ? tournamentStage : undefined,
+                };
+            }
+            if (item.id === 'betting') {
+                return { ...item, highlightStage: presentation.bettingActive ? tournamentStage : undefined };
+            }
+            return item;
+        });
+        return { ...entry, main, items };
+    });
+
 export const quickNavigation: Array<QuickNavigationItem | MainNavigationDivider> = [
     { kind: 'divider', id: 'quick-nation-heading', label: '국가 정보' },
     { id: 'policy', label: '방침', tab: 'map', selector: '[data-main-target="policy"]' },
@@ -265,7 +298,8 @@ export const quickNavigation: Array<QuickNavigationItem | MainNavigationDivider>
     { id: 'diplomacy-message', label: '외교', tab: 'messages', selector: '[data-message-type="diplomacy"]' },
 ];
 
-export const isNavigationConfigured = (link: MainNavigationLink): boolean => Boolean(link.to || link.href || link.action);
+export const isNavigationConfigured = (link: MainNavigationLink): boolean =>
+    Boolean(link.to || link.href || link.action);
 
 export const isNationNavigationEnabled = (link: MainNavigationLink, access: NationNavigationAccess): boolean => {
     const rule = link.access ?? 'always';
