@@ -29,6 +29,8 @@ type NavigationFixture = {
     permission: number;
     nationLevel: number;
     stage: number;
+    tournamentType?: 0 | 1 | 2 | 3;
+    tournamentWinnerId?: number;
     npcMode: number;
     generalMeCalls: number;
     operations: string[];
@@ -758,7 +760,16 @@ const installFixture = async (page: Page, state: NavigationFixture) => {
                     canSecret: state.permission >= 2,
                 });
             }
-            if (operation === 'tournament.getState') return response({ stage: state.stage });
+            if (operation === 'tournament.getState') {
+                if (state.stage === 0 && state.tournamentType === undefined && state.tournamentWinnerId === undefined) {
+                    return response(null);
+                }
+                return response({
+                    stage: state.stage,
+                    type: state.tournamentType ?? 0,
+                    winnerId: state.tournamentWinnerId,
+                });
+            }
             return response({ ok: true });
         });
         operations.forEach((operation, index) => {
@@ -1260,7 +1271,27 @@ test('desktop menus preserve ref columns, prefix-safe routes, and controlled dro
     await expect(global.locator('[data-navigation-id="board-community"]')).toHaveAttribute('href', '/xe/community');
     await expect(global.locator('[data-navigation-id="official-chat"]')).toHaveAttribute('target', '_blank');
     await expect(global.locator('[data-navigation-id="survey"]')).toHaveClass(/highlight/);
-    await expect(page.locator('.main-nation-menu [data-navigation-id="tournament"]')).toHaveClass(/highlight/);
+    const nationMenu = page.locator('.main-nation-menu:visible');
+    await expect(nationMenu.locator(':scope > *')).toHaveCount(20);
+    const tournamentMain = nationMenu.locator('[data-navigation-id="tournament"]');
+    const tournamentToggle = nationMenu.locator('[data-menu-id="tournament-betting"]');
+    await expect(tournamentMain).toHaveClass(/highlight/);
+    await expect(tournamentMain).toHaveAttribute('href', `${basePath}/tournament`);
+    await expect(tournamentToggle).toHaveAttribute('aria-expanded', 'false');
+    await expect(nationMenu.locator('[data-navigation-id="my-settings"]')).toHaveAttribute(
+        'href',
+        `${basePath}/my-settings`
+    );
+    await tournamentToggle.click();
+    await expect(tournamentToggle).toHaveAttribute('aria-expanded', 'true');
+    await expect(
+        nationMenu.locator('#nation-menu-tournament-betting [data-navigation-id="tournament-menu"]')
+    ).toHaveText('토너먼트');
+    await expect(nationMenu.locator('#nation-menu-tournament-betting [data-navigation-id="betting"]')).toHaveAttribute(
+        'href',
+        `${basePath}/betting`
+    );
+    await page.keyboard.press('Escape');
 
     const gameInfoButton = global.locator('[data-menu-id="game-info"]');
     const bettingButton = global.locator('[data-navigation-id="nation-betting"]');
@@ -1417,6 +1448,95 @@ test('shows the persisted official game index beside the scenario title without 
     }
 });
 
+test('tournament split main action follows recruitment, betting, finals, and tournament type on desktop and mobile', async ({
+    page,
+}, testInfo) => {
+    const state: NavigationFixture = {
+        officerLevel: 5,
+        permission: 2,
+        nationLevel: 3,
+        stage: 1,
+        tournamentType: 3,
+        npcMode: 1,
+        scenarioTitle: '토너먼트 동적 메뉴 검증 시나리오',
+        generalMeCalls: 0,
+        operations: [],
+    };
+    await installFixture(page, state);
+
+    const cases = [
+        { stage: 1, type: 3 as const, label: '설 전', route: '/tournament' },
+        { stage: 5, type: 2 as const, label: '일 기 토', route: '/tournament' },
+        { stage: 6, type: 2 as const, label: '베 팅 장', route: '/betting' },
+        { stage: 7, type: 2 as const, label: '일 기 토', route: '/tournament' },
+        { stage: 10, type: 3 as const, label: '설 전', route: '/tournament' },
+        { stage: 0, type: 3 as const, label: '설 전', route: '/tournament', winnerId: 17 },
+    ];
+
+    for (const viewport of [
+        { width: 1200, height: 900 },
+        { width: 500, height: 900 },
+    ]) {
+        await page.setViewportSize(viewport);
+        for (const lifecycle of cases) {
+            state.stage = lifecycle.stage;
+            state.tournamentType = lifecycle.type;
+            state.tournamentWinnerId = lifecycle.winnerId;
+            if (page.url() === 'about:blank') {
+                await waitForMain(page);
+            } else {
+                await page.reload();
+                await waitForMain(page);
+            }
+
+            const nationMenu = page.locator('.main-nation-menu:visible');
+            const main = nationMenu.locator('[data-navigation-id="tournament"]');
+            await expect(main).toHaveText(lifecycle.label);
+            await expect(main).toHaveAttribute('href', `${basePath}${lifecycle.route}`);
+            await expect(main).toHaveClass(/highlight/);
+
+            const toggle = nationMenu.locator('[data-menu-id="tournament-betting"]');
+            await toggle.click();
+            const tournamentItem = nationMenu.locator(
+                '#nation-menu-tournament-betting [data-navigation-id="tournament-menu"]'
+            );
+            const bettingItem = nationMenu.locator('#nation-menu-tournament-betting [data-navigation-id="betting"]');
+            if (lifecycle.stage === 6) {
+                await expect(tournamentItem).not.toHaveClass(/highlight/);
+                await expect(bettingItem).toHaveClass(/highlight/);
+            } else {
+                await expect(tournamentItem).toHaveClass(/highlight/);
+                await expect(bettingItem).not.toHaveClass(/highlight/);
+            }
+            await page.keyboard.press('Escape');
+
+            if (viewport.width === 500) {
+                const nationTrigger = page.locator('[data-bottom-menu="nation"]');
+                await nationTrigger.click();
+                const mobileTournament = page.locator('#mobile-nation-menu [data-navigation-id="tournament-menu"]');
+                const mobileBetting = page.locator('#mobile-nation-menu [data-navigation-id="betting"]');
+                if (lifecycle.stage === 6) {
+                    await expect(mobileTournament).not.toHaveClass(/highlight/);
+                    await expect(mobileBetting).toHaveClass(/highlight/);
+                } else {
+                    await expect(mobileTournament).toHaveClass(/highlight/);
+                    await expect(mobileBetting).not.toHaveClass(/highlight/);
+                }
+                await page.keyboard.press('Escape');
+            }
+        }
+
+        await page
+            .locator('.main-nation-menu:visible [data-menu-id="tournament-betting"]')
+            .locator('..')
+            .screenshot({
+                path: artifactRoot
+                    ? resolve(artifactRoot, `tournament-dynamic-main-${viewport.width}.png`)
+                    : testInfo.outputPath(`tournament-dynamic-main-${viewport.width}.png`),
+            });
+    }
+});
+
 test('shows game index zero for a profile whose first game starts at zero', async ({ page }) => {
     const state: NavigationFixture = {
         officerLevel: 5,
@@ -1455,7 +1575,7 @@ test('nation split buttons keep square inner corners and a single divider in eve
         officerLevel: 5,
         permission: 2,
         nationLevel: 3,
-        stage: 1,
+        stage: 6,
         npcMode: 1,
         scenarioTitle: '분할 버튼 이음새 검증 시나리오',
         generalMeCalls: 0,
@@ -1515,14 +1635,21 @@ test('nation split buttons keep square inner corners and a single divider in eve
     for (const width of [1200, 500]) {
         await page.setViewportSize({ width, height: 900 });
         await waitForMain(page);
-        const nationSplit = page.locator('.main-nation-menu:visible .nation-menu-split').first();
         const pairs: Array<[string, Locator, Locator]> = [
             [
-                'nation',
-                nationSplit.locator('[data-navigation-id="auction-resource"]'),
-                nationSplit.locator('[data-menu-id="auction"]'),
+                'tournament',
+                page.locator('.main-nation-menu:visible [data-navigation-id="tournament"]'),
+                page.locator('.main-nation-menu:visible [data-menu-id="tournament-betting"]'),
+            ],
+            [
+                'auction',
+                page.locator('.main-nation-menu:visible [data-navigation-id="auction-resource"]'),
+                page.locator('.main-nation-menu:visible [data-menu-id="auction"]'),
             ],
         ];
+        await expect(page.locator('.main-nation-menu:visible [data-navigation-id="tournament"]')).toHaveClass(
+            /highlight/
+        );
 
         for (const [label, main, toggle] of pairs) {
             await expect(main).toBeVisible();
@@ -3959,9 +4086,7 @@ for (const viewport of [
         await picker.getByLabel('장비 종류', { exact: true }).selectOption('weapon');
         const equipment = picker.getByLabel('장비', { exact: true });
         await equipment.selectOption('청룡언월도');
-        const optionLabelBeforeRefresh = await equipment
-            .locator('option[value="청룡언월도"]')
-            .textContent();
+        const optionLabelBeforeRefresh = await equipment.locator('option[value="청룡언월도"]').textContent();
         await equipment.evaluate((element) => {
             const select = element as HTMLSelectElement;
             const valueDescriptor = Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, 'value');
@@ -4091,8 +4216,8 @@ test('keeps an Android Chromium native command select untouched while a turn sig
         await waitForMain(mobilePage);
         await expect
             .poll(() =>
-                mobilePage.evaluate(
-                    () => (window as unknown as { __hasMainRealtime: () => boolean }).__hasMainRealtime()
+                mobilePage.evaluate(() =>
+                    (window as unknown as { __hasMainRealtime: () => boolean }).__hasMainRealtime()
                 )
             )
             .toBe(true);

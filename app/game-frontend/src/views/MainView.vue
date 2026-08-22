@@ -83,6 +83,7 @@ const {
     worldHistory,
     frontStatus,
     tournamentStage,
+    tournamentType,
     surveyNotice,
     messageDraftText,
     targetMailbox,
@@ -301,6 +302,7 @@ watch(
                         class="nation-menu-middle"
                         :access="nationAccess"
                         :tournament-stage="tournamentStage"
+                        :tournament-type="tournamentType"
                         :nation-color="nationColor"
                     />
                 </div>
@@ -480,6 +482,7 @@ watch(
                 class="nation-menu-middle"
                 :access="nationAccess"
                 :tournament-stage="tournamentStage"
+                :tournament-type="tournamentType"
                 :nation-color="nationColor"
             />
             <section class="record-zone">
@@ -570,6 +573,7 @@ watch(
         v-if="isMobile"
         :access="nationAccess"
         :tournament-stage="tournamentStage"
+        :tournament-type="tournamentType"
         :nation-color="nationColor"
         :npc-mode="npcMode"
         :realtime-enabled="realtimeEnabled"
