@@ -510,6 +510,7 @@ describe('in-game my information ownership', () => {
                 personalCode: 'che_안전',
                 specialCode: 'che_상재',
                 special2Code: 'che_신산',
+                meta: { specage: 31, specage2: 35 },
             }),
         });
 
@@ -519,6 +520,10 @@ describe('in-game my information ownership', () => {
                     personal: '안전',
                     specialDomestic: '상재',
                     specialWar: '신산',
+                },
+                traitAges: {
+                    specialDomestic: 31,
+                    specialWar: 35,
                 },
                 traitInfo: {
                     personal: '사기 -5, 징·모병 비용 -20%',
@@ -541,6 +546,31 @@ describe('in-game my information ownership', () => {
             },
         });
         expect(fixture.db.nation.findUnique).not.toHaveBeenCalled();
+    });
+
+    it('returns the scheduled acquisition ages when the owned general has no domestic or war trait', async () => {
+        const fixture = createContext({
+            me: buildGeneral({
+                age: 30,
+                specialCode: 'None',
+                special2Code: 'None',
+                meta: { specage: 35, specage2: 29 },
+            }),
+        });
+
+        await expect(appRouter.createCaller(fixture.context).general.me()).resolves.toMatchObject({
+            general: {
+                age: 30,
+                traits: {
+                    specialDomestic: '-',
+                    specialWar: '-',
+                },
+                traitAges: {
+                    specialDomestic: 35,
+                    specialWar: 29,
+                },
+            },
+        });
     });
 
     it('reads legacy top-level settings and dispatches only the session-owned general', async () => {
