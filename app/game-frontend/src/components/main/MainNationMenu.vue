@@ -1,8 +1,9 @@
 <script setup lang="ts">
+import { computed } from 'vue';
 import MainNavigationLink from './MainNavigationLink.vue';
 import {
+    buildNationNavigation,
     isNationNavigationEnabled,
-    nationNavigation,
     type MainNavigationLink as MainNavigationLinkItem,
     type NationNavigationAccess,
 } from './mainNavigation';
@@ -12,11 +13,15 @@ import { legacyNationTextColor } from '../../utils/legacyNationColor';
 const props = defineProps<{
     access: NationNavigationAccess;
     tournamentStage: number;
+    tournamentType: number | null;
     nationColor: string;
 }>();
 
 const { setRoot, openId, close, toggle } = useMenuPopup();
-const isActive = (link: MainNavigationLinkItem) => link.highlightStage === props.tournamentStage;
+const entries = computed(() => buildNationNavigation(props.tournamentStage, props.tournamentType));
+const isActive = (link: MainNavigationLinkItem) =>
+    link.highlightStage === props.tournamentStage ||
+    link.highlightStages?.some((stage) => stage === props.tournamentStage) === true;
 </script>
 
 <template>
@@ -27,7 +32,7 @@ const isActive = (link: MainNavigationLinkItem) => link.highlightStage === props
         :class="{ 'dark-label': legacyNationTextColor(nationColor) === '#000000' }"
         aria-label="국가 메뉴"
     >
-        <template v-for="entry in nationNavigation" :key="entry.id">
+        <template v-for="entry in entries" :key="entry.id">
             <MainNavigationLink
                 v-if="entry.kind === 'link'"
                 :link="entry"
@@ -59,6 +64,7 @@ const isActive = (link: MainNavigationLinkItem) => link.highlightStage === props
                             <MainNavigationLink
                                 :link="item"
                                 :enabled="isNationNavigationEnabled(item, access)"
+                                :active="isActive(item)"
                                 role="menuitem"
                                 @navigate="close()"
                             />

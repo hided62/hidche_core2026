@@ -25,6 +25,7 @@ const NotFoundView = () => import('../views/NotFoundView.vue');
 const TournamentView = () => import('../views/TournamentView.vue');
 const BettingView = () => import('../views/BettingView.vue');
 const MyPageView = () => import('../views/MyPageView.vue');
+const MySettingsView = () => import('../views/MySettingsView.vue');
 const BoardView = () => import('../views/BoardView.vue');
 const DiplomacyView = () => import('../views/DiplomacyView.vue');
 const BestGeneralView = () => import('../views/BestGeneralView.vue');
@@ -333,7 +334,8 @@ const routes = [
     },
     {
         path: '/my-settings',
-        redirect: '/my-page',
+        name: 'my-settings',
+        component: MySettingsView,
         meta: {
             requiresAuth: true,
             requiresGeneral: true,

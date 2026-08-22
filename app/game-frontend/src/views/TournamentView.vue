@@ -5,6 +5,7 @@ import TournamentBracket from '../components/tournament/TournamentBracket.vue';
 import TournamentPageHeader from '../components/tournament/TournamentPageHeader.vue';
 import GeneralIdentity from '../components/ui/GeneralIdentity.vue';
 import { useGameFeedback } from '../composables/useGameFeedback';
+import { formatLog } from '../utils/formatLog';
 import { trpc } from '../utils/trpc';
 import { resolveTournamentSectionVisibility, resolveTournamentStageName } from '../utils/tournamentStatus';
 
@@ -112,10 +113,30 @@ const gamesOf = (participant: Snapshot['participants'][number] | undefined): num
     participant ? (participant.win ?? 0) + (participant.draw ?? 0) + (participant.lose ?? 0) : '';
 const pointsOf = (participant: Snapshot['participants'][number] | undefined): number | '' =>
     participant ? (participant.win ?? 0) * 3 + (participant.draw ?? 0) : '';
+const groupFightLogsAt = (stage: 2 | 4, groupStart: 0 | 10) =>
+    Array.from({ length: 8 }, (_, index) =>
+        (snapshot.value?.matches ?? []).find(
+            (match) => match.stage === stage && match.groupId === groupStart + index && (match.log?.length ?? 0) > 0
+        )
+    );
+const preliminaryFightLogs = computed(() => groupFightLogsAt(2, 0));
+const finalFightLogs = computed(() => groupFightLogsAt(4, 10));
+const showPreliminaryFightLogs = computed(
+    () => [2, 3].includes(snapshot.value?.state?.stage ?? -1) && preliminaryFightLogs.value.some(Boolean)
+);
+const showFinalFightLogs = computed(
+    () => [4, 5].includes(snapshot.value?.state?.stage ?? -1) && finalFightLogs.value.some(Boolean)
+);
 const currentMatch = computed(() => {
     const state = snapshot.value?.state;
-    if (!state || state.stage < 7 || state.stage > 10) return null;
-    return matchesAt(state.stage).find((match) => !match.winnerId) ?? matchesAt(state.stage)[state.phase] ?? null;
+    if (!state) return null;
+    const logStage = state.stage === 0 && state.winnerId ? 10 : state.stage;
+    if (logStage < 7 || logStage > 10) return null;
+    return (
+        matchesAt(logStage)
+            .filter((match) => (match.log?.length ?? 0) > 0)
+            .at(-1) ?? null
+    );
 });
 
 const revealMyPreliminaryGroup = async (): Promise<number | undefined> => {
@@ -230,9 +251,11 @@ const start = async () => {
                 :tournament-type="snapshot?.state?.type ?? 0"
             />
 
-            <section v-if="currentMatch" class="fight bg0">
+            <section v-if="currentMatch" class="fight bg0" aria-label="현재 토너먼트 전투 로그">
                 <h2>{{ nameOf(currentMatch.attackerId) }} vs {{ nameOf(currentMatch.defenderId) }}</h2>
-                <p v-for="(line, index) in currentMatch.log ?? []" :key="index">{{ line }}</p>
+                <!-- formatLog rebuilds only the shared Ref log allowlist. -->
+                <!-- eslint-disable-next-line vue/no-v-html -->
+                <p v-for="(line, index) in currentMatch.log ?? []" :key="index" v-html="formatLog(line)" />
             </section>
         </template>
 
@@ -297,6 +320,21 @@ const start = async () => {
                     </tbody>
                 </table>
             </section>
+            <section v-if="showFinalFightLogs" class="fight-log-grid bg0" aria-label="본선 조별 전투 로그">
+                <article
+                    v-for="(match, groupIndex) in finalFightLogs"
+                    :key="`final-fight-${groupIndex}`"
+                    class="fight-log"
+                    :data-fight-log-group="groupIndex"
+                >
+                    <h3>{{ groupNames[groupIndex] }}조 전투 로그</h3>
+                    <template v-if="match">
+                        <!-- formatLog rebuilds only the shared Ref log allowlist. -->
+                        <!-- eslint-disable-next-line vue/no-v-html -->
+                        <p v-for="(line, index) in match.log ?? []" :key="index" v-html="formatLog(line)" />
+                    </template>
+                </article>
+            </section>
         </template>
 
         <template v-if="sectionVisibility.preliminary">
@@ -360,6 +398,21 @@ const start = async () => {
                         </tr>
                     </tbody>
                 </table>
+            </section>
+            <section v-if="showPreliminaryFightLogs" class="fight-log-grid bg0" aria-label="예선 조별 전투 로그">
+                <article
+                    v-for="(match, groupIndex) in preliminaryFightLogs"
+                    :key="`preliminary-fight-${groupIndex}`"
+                    class="fight-log"
+                    :data-fight-log-group="groupIndex"
+                >
+                    <h3>{{ groupNames[groupIndex] }}조 전투 로그</h3>
+                    <template v-if="match">
+                        <!-- formatLog rebuilds only the shared Ref log allowlist. -->
+                        <!-- eslint-disable-next-line vue/no-v-html -->
+                        <p v-for="(line, index) in match.log ?? []" :key="index" v-html="formatLog(line)" />
+                    </template>
+                </article>
             </section>
         </template>
 
@@ -509,6 +562,31 @@ button:not(.legacy-button):focus-visible {
 .fight p {
     margin: 2px 10px;
 }
+.fight-log-grid {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    align-items: start;
+    gap: 8px;
+    padding: 8px;
+    text-align: left;
+}
+.fight-log {
+    min-width: 0;
+    border: 1px solid #555;
+    overflow-wrap: anywhere;
+}
+.fight-log h3 {
+    margin: 0;
+    padding: 4px;
+    background: #000;
+    color: orange;
+    font-size: 14px;
+    font-weight: 400;
+    text-align: center;
+}
+.fight-log p {
+    margin: 2px 6px;
+}
 .groups-title {
     color: orange;
 }
@@ -603,6 +681,10 @@ td {
     }
     .group-grid table.mobile-active {
         display: table;
+    }
+    .fight-log-grid {
+        grid-template-columns: minmax(0, 1fr);
+        padding: 6px 0;
     }
     .group-grid th,
     .group-grid td {

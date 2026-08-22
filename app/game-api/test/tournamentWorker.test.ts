@@ -359,10 +359,23 @@ describe('tournament worker (in-memory)', () => {
         const prisma = createPrismaMock({ baseSeed: 'seed' });
         const finalState = await runTournamentToCompletion({ store, prisma, baseSeed: 'seed' });
         const matches = await store.getMatches();
+        const preliminaryLogs = matches.filter((match) => match.stage === 2);
+        const finalGroupLogs = matches.filter((match) => match.stage === 4);
+        const knockoutMatches = matches.filter((match) => match.stage >= 7);
         const finalMatches = matches.filter((match) => match.stage === 10);
 
         expect(finalState.stage).toBe(0);
         expect(finalState.winnerId).toBe(15);
+        expect(preliminaryLogs).toHaveLength(8);
+        expect(finalGroupLogs).toHaveLength(8);
+        expect(knockoutMatches).toHaveLength(15);
+        expect(preliminaryLogs.map((match) => match.groupId).sort((a, b) => Number(a) - Number(b))).toEqual([
+            0, 1, 2, 3, 4, 5, 6, 7,
+        ]);
+        expect(finalGroupLogs.map((match) => match.groupId).sort((a, b) => Number(a) - Number(b))).toEqual([
+            10, 11, 12, 13, 14, 15, 16, 17,
+        ]);
+        expect([...preliminaryLogs, ...finalGroupLogs].every((match) => (match.log?.length ?? 0) >= 3)).toBe(true);
         expect(finalMatches).toHaveLength(1);
         expect(finalMatches[0]).toMatchObject({
             attackerId: 15,

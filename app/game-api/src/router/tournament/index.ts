@@ -84,6 +84,7 @@ const zMatch = z.object({
     id: z.number().int().positive(),
     stage: z.number().int().min(0),
     roundIndex: z.number().int().min(0),
+    groupId: z.number().int().min(0).max(17).optional(),
     attackerId: z.number().int().positive(),
     defenderId: z.number().int().positive(),
     winnerId: z.number().int().positive().optional(),
