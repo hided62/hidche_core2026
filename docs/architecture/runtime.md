@@ -140,9 +140,11 @@ commit의 cached artifact를 현재 버전으로 오인하지 않습니다. Orch
 game frontend는 bundle에 고정된 commit과 이 정적 문서의 commit을 최초 mount,
 60초 주기, tab visibility 복귀와 network online 복귀 때 비교합니다. 다른 full SHA를
 처음 관찰하면 공용 info toast로 새로고침 안내만 하고 reload를 강제하지 않습니다.
-조회에는 cache-busting query와 `cache: no-store`를 사용하며, 실패·잘못된 문서는
-현재 화면을 방해하지 않고 무시합니다. 알림 여부는 tab session storage에만 남으므로
-Gateway/game DB, Redis, 인증, 턴 처리에는 mutation이 없습니다. Profile `DEPLOY`가
+조회 URL은 고정하고 fetch `cache: no-cache`로 browser HTTP cache의 ETag를 매번
+재검증합니다. 같은 artifact면 본문 없는 `304`, 새 artifact면 최신 JSON `200`을
+사용하며, 실패·잘못된 문서는 현재 화면을 방해하지 않고 무시합니다. 알림 여부는 tab
+session storage에만 남으므로 Gateway/game DB, Redis, 인증, 턴 처리에는 mutation이
+없습니다. Profile `DEPLOY`가
 API·engine·frontend를 같은 commit worktree에서 함께 전환하므로 이 frontend 문서는
 해당 profile의 새 backend/frontend release가 readiness를 통과해 실제 서빙되기 시작한
 뒤에만 달라집니다.
