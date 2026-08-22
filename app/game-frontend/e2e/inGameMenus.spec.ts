@@ -1596,7 +1596,9 @@ test('화면 설정에서 화면 폭과 개인 CSS를 저장하고 게임 설정
     await waitForVisualAssets(page);
 
     await expect(page.locator('.title-row')).toContainText('화 면 설 정');
-    await expect(page.locator('.scope-note')).toContainText('게임 상태에는 영향을 주지 않습니다.');
+    await expect(
+        page.getByText('이 설정은 이 기기의 화면 표시만 바꾸며 게임 상태에는 영향을 주지 않습니다.')
+    ).toHaveCount(0);
     await expect(page.locator('#set_my_setting')).toHaveCount(0);
     await expect(page.locator('#custom_css')).toBeVisible();
     expect(state.settingMutations).toHaveLength(0);

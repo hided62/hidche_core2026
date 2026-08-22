@@ -86,8 +86,6 @@ onBeforeUnmount(() => {
             <RouterLink class="legacy-button legacy-button--navigation" to="/">돌아가기</RouterLink>
         </div>
 
-        <p class="scope-note">이 설정은 이 기기의 화면 표시만 바꾸며 게임 상태에는 영향을 주지 않습니다.</p>
-
         <section class="settings-grid">
             <article class="settings-column">
                 <h2 class="section-title">화면 크기와 배치</h2>
@@ -229,16 +227,9 @@ onBeforeUnmount(() => {
 .title-row .legacy-button {
     min-width: 90px;
 }
-.scope-note,
 .css-hint {
     margin: 0;
     color: orange;
-}
-.scope-note {
-    border: 1px solid #666;
-    border-top: 0;
-    padding: 7px 10px;
-    text-align: center;
 }
 .settings-grid {
     display: grid;
