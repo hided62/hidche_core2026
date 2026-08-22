@@ -87,13 +87,17 @@ export interface ArchivedGeneralSnapshotV1 {
         };
     };
     history: string[];
+    records: {
+        /** Newest first, matching the live battle-result panel. */
+        battleResult: string[];
+    };
     availability: {
         mastery: boolean;
         battleAggregates: boolean;
         tactics: boolean;
         history: boolean;
         battleDetailLogs: false;
-        battleResultLogs: false;
+        battleResultLogs: boolean;
     };
 }
 
@@ -144,6 +148,11 @@ const historyLines = (value: ArchivedJsonValue | undefined): string[] => {
         .filter(Boolean);
 };
 
+const recordLines = (value: ArchivedJsonValue | undefined): string[] => {
+    if (!Array.isArray(value)) return [];
+    return value.filter((entry): entry is string => typeof entry === 'string' && entry.length > 0);
+};
+
 const rate = (numerator: number | null, denominator: number | null): number | null =>
     numerator === null || denominator === null || denominator <= 0
         ? null
@@ -169,8 +178,11 @@ export const normalizeArchivedGeneral = (
     const progression = asRecord(data.progression);
     const traits = asRecord(data.traits);
     const resources = asRecord(data.resources);
+    const meta = asRecord(data.meta);
     const nestedMastery = asRecord(data.mastery);
     const nestedBattle = asRecord(data.battle);
+    const nestedRecords = asRecord(data.records);
+    const storedAvailability = asRecord(data.availability);
     const nestedTactics = asRecord(nestedBattle.tactics);
     const totalTactics = asRecord(nestedTactics.total);
     const leadershipTactics = asRecord(nestedTactics.leadership);
@@ -179,29 +191,32 @@ export const normalizeArchivedGeneral = (
     const masteryValues = oldMastery
         ? [data.dex0, data.dex10, data.dex20, data.dex30, data.dex40]
         : [
-              data.dex1 ?? nestedMastery.infantry,
-              data.dex2 ?? nestedMastery.archery,
-              data.dex3 ?? nestedMastery.cavalry,
-              data.dex4 ?? nestedMastery.special,
-              data.dex5 ?? nestedMastery.siege,
+              data.dex1 ?? nestedMastery.infantry ?? meta.dex1,
+              data.dex2 ?? nestedMastery.archery ?? meta.dex2,
+              data.dex3 ?? nestedMastery.cavalry ?? meta.dex3,
+              data.dex4 ?? nestedMastery.special ?? meta.dex4,
+              data.dex5 ?? nestedMastery.siege ?? meta.dex5,
           ];
     const mastery = masteryValues.map(finiteNumber);
-    const battles = firstNumber(data.warnum, nestedBattle.battles);
-    const wins = firstNumber(data.killnum, nestedBattle.wins);
-    const losses = firstNumber(data.deathnum, nestedBattle.losses);
-    const killedCrew = firstNumber(data.killcrew, nestedBattle.killedCrew);
-    const lostCrew = firstNumber(data.deathcrew, nestedBattle.lostCrew);
+    const rankValue = (key: string, ...values: Array<ArchivedJsonValue | undefined>): number | null =>
+        firstNumber(...values, data[`rank_${key}`], meta[`rank_${key}`], meta[key]);
+    const battles = rankValue('warnum', data.warnum, nestedBattle.battles);
+    const wins = rankValue('killnum', data.killnum, nestedBattle.wins);
+    const losses = rankValue('deathnum', data.deathnum, nestedBattle.losses);
+    const killedCrew = rankValue('killcrew', data.killcrew, nestedBattle.killedCrew);
+    const lostCrew = rankValue('deathcrew', data.deathcrew, nestedBattle.lostCrew);
     const history = historyLines(data.history);
+    const battleResultRecords = recordLines(nestedRecords.battleResult ?? data.battleResultRecords);
     const tacticValues = [
-        data.ttw ?? totalTactics.wins,
-        data.ttd ?? totalTactics.draws,
-        data.ttl ?? totalTactics.losses,
-        data.tlw ?? leadershipTactics.wins,
-        data.tld ?? leadershipTactics.draws,
-        data.tll ?? leadershipTactics.losses,
-        data.tiw ?? intelligenceTactics.wins,
-        data.tid ?? intelligenceTactics.draws,
-        data.til ?? intelligenceTactics.losses,
+        rankValue('ttw', data.ttw, totalTactics.wins),
+        rankValue('ttd', data.ttd, totalTactics.draws),
+        rankValue('ttl', data.ttl, totalTactics.losses),
+        rankValue('tlw', data.tlw, leadershipTactics.wins),
+        rankValue('tld', data.tld, leadershipTactics.draws),
+        rankValue('tll', data.tll, leadershipTactics.losses),
+        rankValue('tiw', data.tiw, intelligenceTactics.wins),
+        rankValue('tid', data.tid, intelligenceTactics.draws),
+        rankValue('til', data.til, intelligenceTactics.losses),
     ];
     const tacticsAvailable = tacticValues.some((value) => finiteNumber(value) !== null);
 
@@ -226,13 +241,20 @@ export const normalizeArchivedGeneral = (
                 leadershipExperience: firstNumber(
                     data.leadershipExperience,
                     data.leadership_exp,
-                    stats.leadershipExperience
+                    stats.leadershipExperience,
+                    meta.leadership_exp
                 ),
-                strengthExperience: firstNumber(data.strengthExperience, data.strength_exp, stats.strengthExperience),
+                strengthExperience: firstNumber(
+                    data.strengthExperience,
+                    data.strength_exp,
+                    stats.strengthExperience,
+                    meta.strength_exp
+                ),
                 intelligenceExperience: firstNumber(
                     data.intelligenceExperience,
                     data.intel_exp,
-                    stats.intelligenceExperience
+                    stats.intelligenceExperience,
+                    meta.intel_exp
                 ),
             },
             progression: {
@@ -281,40 +303,44 @@ export const normalizeArchivedGeneral = (
                 battles,
                 wins,
                 losses,
-                fireSuccesses: firstNumber(data.firenum, nestedBattle.fireSuccesses),
+                fireSuccesses: rankValue('firenum', data.firenum, nestedBattle.fireSuccesses),
                 kills: firstNumber(nestedBattle.kills, wins),
                 deaths: firstNumber(nestedBattle.deaths, losses),
                 killedCrew,
                 lostCrew,
                 winRate: firstNumber(nestedBattle.winRate) ?? rate(wins, battles),
                 killRate: firstNumber(nestedBattle.killRate) ?? rate(killedCrew, lostCrew),
-                recentWar: firstText(data.recentWar, data.recent_war, nestedBattle.recentWar),
+                recentWar: firstText(data.recentWar, data.recent_war, data.recentWarTime, nestedBattle.recentWar),
                 tactics: {
                     total: {
-                        wins: firstNumber(data.ttw, totalTactics.wins),
-                        draws: firstNumber(data.ttd, totalTactics.draws),
-                        losses: firstNumber(data.ttl, totalTactics.losses),
+                        wins: rankValue('ttw', data.ttw, totalTactics.wins),
+                        draws: rankValue('ttd', data.ttd, totalTactics.draws),
+                        losses: rankValue('ttl', data.ttl, totalTactics.losses),
                     },
                     leadership: {
-                        wins: firstNumber(data.tlw, leadershipTactics.wins),
-                        draws: firstNumber(data.tld, leadershipTactics.draws),
-                        losses: firstNumber(data.tll, leadershipTactics.losses),
+                        wins: rankValue('tlw', data.tlw, leadershipTactics.wins),
+                        draws: rankValue('tld', data.tld, leadershipTactics.draws),
+                        losses: rankValue('tll', data.tll, leadershipTactics.losses),
                     },
                     intelligence: {
-                        wins: firstNumber(data.tiw, intelligenceTactics.wins),
-                        draws: firstNumber(data.tid, intelligenceTactics.draws),
-                        losses: firstNumber(data.til, intelligenceTactics.losses),
+                        wins: rankValue('tiw', data.tiw, intelligenceTactics.wins),
+                        draws: rankValue('tid', data.tid, intelligenceTactics.draws),
+                        losses: rankValue('til', data.til, intelligenceTactics.losses),
                     },
                 },
             },
             history,
+            records: { battleResult: battleResultRecords },
             availability: {
                 mastery: mastery.some((value) => value !== null),
                 battleAggregates: [battles, wins, losses, killedCrew, lostCrew].some((value) => value !== null),
                 tactics: tacticsAvailable,
                 history: history.length > 0,
                 battleDetailLogs: false,
-                battleResultLogs: false,
+                battleResultLogs:
+                    storedAvailability.battleResultLogs === true ||
+                    (storedAvailability.battleResultLogs !== false &&
+                        Object.prototype.hasOwnProperty.call(nestedRecords, 'battleResult')),
             },
         },
     };

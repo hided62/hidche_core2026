@@ -143,7 +143,9 @@ type ActiveGeneral = {
 
 const buildActiveGeneralArchive = (
     general: ActiveGeneral,
+    ranks: Record<string, number>,
     history: string[],
+    battleResults: string[],
     cancellation: { id: string; at: Date; reason: string }
 ): InputJsonValue =>
     asJson({
@@ -190,9 +192,14 @@ const buildActiveGeneralArchive = (
             },
         },
         lastTurn: general.lastTurn,
-        meta: general.meta,
+        meta: {
+            ...asRecord(general.meta),
+            ...Object.fromEntries(Object.entries(ranks).map(([key, value]) => [`rank_${key}`, value])),
+        },
         penalty: general.penalty,
         history,
+        records: { battleResult: battleResults },
+        availability: { battleResultLogs: true },
         abandonedGame: {
             cancellationId: cancellation.id,
             cancelledAt: cancellation.at.toISOString(),
@@ -266,14 +273,14 @@ const cancelGameInTransaction = async (
     ]);
 
     const activeIds = activeGenerals.map((general) => general.id);
-    const [resolvedRankRows, resolvedHistoryLogs] = await Promise.all([
+    const [resolvedRankRows, resolvedRecordLogs] = await Promise.all([
         activeIds.length ? prisma.rankData.findMany({ where: { generalId: { in: activeIds } } }) : [],
         activeIds.length
             ? prisma.logEntry.findMany({
                   where: {
                       generalId: { in: activeIds },
                       scope: LogScope.GENERAL,
-                      category: LogCategory.HISTORY,
+                      category: { in: [LogCategory.HISTORY, LogCategory.BATTLE_BRIEF] },
                   },
                   orderBy: { id: 'desc' },
               })
@@ -293,11 +300,19 @@ const cancelGameInTransaction = async (
         ranksByGeneral.set(row.generalId, ranks);
     }
     const logsByGeneral = new Map<number, string[]>();
-    for (const row of resolvedHistoryLogs) {
+    const battleResultsByGeneral = new Map<number, string[]>();
+    for (const row of resolvedRecordLogs) {
         if (row.generalId === null) continue;
-        const logs = logsByGeneral.get(row.generalId) ?? [];
+        const target =
+            row.category === LogCategory.HISTORY
+                ? logsByGeneral
+                : row.category === LogCategory.BATTLE_BRIEF
+                  ? battleResultsByGeneral
+                  : null;
+        if (!target) continue;
+        const logs = target.get(row.generalId) ?? [];
         logs.push(row.text);
-        logsByGeneral.set(row.generalId, logs);
+        target.set(row.generalId, logs);
     }
 
     const participantUsers = new Set<string>();
@@ -464,7 +479,9 @@ const cancelGameInTransaction = async (
                     turnTime: general.turnTime,
                     data: buildActiveGeneralArchive(
                         general as ActiveGeneral,
+                        ranksByGeneral.get(general.id) ?? {},
                         logsByGeneral.get(general.id) ?? [],
+                        battleResultsByGeneral.get(general.id) ?? [],
                         abandonment
                     ),
                 },
@@ -477,7 +494,9 @@ const cancelGameInTransaction = async (
                     turnTime: general.turnTime,
                     data: buildActiveGeneralArchive(
                         general as ActiveGeneral,
+                        ranksByGeneral.get(general.id) ?? {},
                         logsByGeneral.get(general.id) ?? [],
+                        battleResultsByGeneral.get(general.id) ?? [],
                         abandonment
                     ),
                 },

@@ -39,6 +39,7 @@ const archivedGeneral = (): TurnGeneral => ({
     triggerState: { flags: {}, counters: {}, modifiers: {}, meta: {} },
     meta: {
         killturn: 0,
+        dex1: 1_000,
         inheritRandomUnique: true,
         inheritSpecificSpecialWar: true,
     },
@@ -55,7 +56,18 @@ describe('general lifecycle archive history', () => {
                 deleteMany: vi.fn(async () => ({ count: 1 })),
             },
             logEntry: {
-                findMany: vi.fn(async () => [{ text: '<Y>●</>둘째 기록' }, { text: '<C>●</>첫 기록' }]),
+                findMany: vi.fn(async () => [
+                    { category: LogCategory.BATTLE_BRIEF, text: '둘째 전투 결과' },
+                    { category: LogCategory.HISTORY, text: '<Y>●</>둘째 기록' },
+                    { category: LogCategory.BATTLE_BRIEF, text: '첫째 전투 결과' },
+                    { category: LogCategory.HISTORY, text: '<C>●</>첫 기록' },
+                ]),
+            },
+            rankData: {
+                findMany: vi.fn(async () => [
+                    { type: 'warnum', value: 2 },
+                    { type: 'killnum', value: 1 },
+                ]),
             },
             oldGeneral: { upsert },
         } as unknown as GamePrisma.TransactionClient;
@@ -73,17 +85,19 @@ describe('general lifecycle archive history', () => {
             where: {
                 generalId: general.id,
                 scope: LogScope.GENERAL,
-                category: LogCategory.HISTORY,
+                category: { in: [LogCategory.HISTORY, LogCategory.BATTLE_BRIEF] },
             },
             orderBy: { id: 'desc' },
-            select: { text: true },
+            select: { category: true, text: true },
         });
         expect(upsert).toHaveBeenCalledWith(
             expect.objectContaining({
                 create: expect.objectContaining({
                     data: expect.objectContaining({
                         history: ['<Y>●</>둘째 기록', '<C>●</>첫 기록'],
-                        meta: { killturn: 0 },
+                        records: { battleResult: ['둘째 전투 결과', '첫째 전투 결과'] },
+                        availability: { battleResultLogs: true },
+                        meta: { killturn: 0, dex1: 1_000, rank_warnum: 2, rank_killnum: 1 },
                     }),
                 }),
             })

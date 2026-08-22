@@ -1,7 +1,8 @@
 import { describe, expect, it, vi } from 'vitest';
 
+import { normalizeArchivedGeneral, type ArchivedJsonValue } from '@sammo-ts/common';
 import type { GamePrisma } from '@sammo-ts/infra';
-import type { City, Nation } from '@sammo-ts/logic';
+import { LogCategory, LogScope, type City, type Nation } from '@sammo-ts/logic';
 
 import { InMemoryTurnWorld } from '../src/turn/inMemoryWorld.js';
 import { persistUnificationFinalization, resolveStoredInheritancePoint } from '../src/turn/unificationPersistence.js';
@@ -187,6 +188,7 @@ describe('persistUnificationFinalization', () => {
         const hallCreate = vi.fn().mockResolvedValue({});
         const gameHistoryUpdate = vi.fn().mockResolvedValue({});
         const emperorCreate = vi.fn().mockResolvedValue({});
+        const oldGeneralUpsert = vi.fn().mockResolvedValue({});
         const transaction = Object.assign({} as GamePrisma.TransactionClient, {
             $executeRaw: vi.fn().mockResolvedValue(1),
             $queryRaw: vi.fn().mockResolvedValue([]),
@@ -204,19 +206,41 @@ describe('persistUnificationFinalization', () => {
             },
             inheritanceResult: { create: inheritanceResultCreate },
             inheritanceLog: { create: inheritanceLogCreate },
-            rankData: { findMany: vi.fn().mockResolvedValue([]) },
+            rankData: {
+                findMany: vi.fn().mockResolvedValue([
+                    { generalId: 1, type: 'warnum', value: 15 },
+                    { generalId: 1, type: 'killnum', value: 9 },
+                    { generalId: 1, type: 'deathnum', value: 6 },
+                    { generalId: 1, type: 'firenum', value: 4 },
+                    { generalId: 1, type: 'killcrew', value: 1_200 },
+                    { generalId: 1, type: 'deathcrew', value: 800 },
+                    { generalId: 1, type: 'ttw', value: 3 },
+                    { generalId: 1, type: 'ttd', value: 2 },
+                    { generalId: 1, type: 'ttl', value: 1 },
+                ]),
+            },
             gameHistory: { count: vi.fn().mockResolvedValue(1), update: gameHistoryUpdate },
             hallOfFame: {
                 findFirst: vi.fn().mockResolvedValue(null),
                 create: hallCreate,
                 update: vi.fn().mockResolvedValue({}),
             },
-            logEntry: { findMany: vi.fn().mockResolvedValue([]) },
+            logEntry: {
+                findMany: vi.fn().mockImplementation(({ where }: { where: { scope: string } }) =>
+                    where.scope === LogScope.GENERAL
+                        ? [
+                              { generalId: 1, category: LogCategory.BATTLE_BRIEF, text: '이전 전투 결과' },
+                              { generalId: 1, category: LogCategory.HISTORY, text: '통일 장수 열전' },
+                              { generalId: 1, category: LogCategory.BATTLE_BRIEF, text: '최신 전투 결과' },
+                          ]
+                        : []
+                ),
+            },
             oldNation: {
                 upsert: vi.fn().mockResolvedValue({}),
                 findMany: vi.fn().mockResolvedValue([]),
             },
-            oldGeneral: { upsert: vi.fn().mockResolvedValue({}) },
+            oldGeneral: { upsert: oldGeneralUpsert },
             emperor: { create: emperorCreate },
         });
         await expect(persistUnificationFinalization(transaction, input, buildWorld())).resolves.toEqual({
@@ -252,5 +276,28 @@ describe('persistUnificationFinalization', () => {
                 data: expect.objectContaining({ aux: { winnerNationId: 1, generationKey: input.generationKey } }),
             })
         );
+        const archiveWrite = oldGeneralUpsert.mock.calls[0]?.[0] as {
+            create: { data: ArchivedJsonValue };
+        };
+        const snapshot = normalizeArchivedGeneral(archiveWrite.create.data, '통일장수').snapshot;
+        expect(snapshot).toMatchObject({
+            mastery: { infantry: 100 },
+            battle: {
+                battles: 15,
+                wins: 9,
+                losses: 6,
+                fireSuccesses: 4,
+                killedCrew: 1_200,
+                lostCrew: 800,
+                tactics: { total: { wins: 3, draws: 2, losses: 1 } },
+            },
+            records: { battleResult: ['최신 전투 결과', '이전 전투 결과'] },
+            availability: {
+                mastery: true,
+                battleAggregates: true,
+                battleResultLogs: true,
+                battleDetailLogs: false,
+            },
+        });
     });
 });

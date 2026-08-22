@@ -286,24 +286,37 @@ const archiveDeletedGeneral = async (
 ): Promise<void> => {
     const serverId =
         typeof worldMeta.serverId === 'string' && worldMeta.serverId.trim() ? worldMeta.serverId.trim() : 'default';
-    const history = await prisma.logEntry.findMany({
-        where: {
-            generalId: event.generalId,
-            scope: LogScope.GENERAL,
-            category: LogCategory.HISTORY,
-        },
-        orderBy: { id: 'desc' },
-        select: { text: true },
-    });
-    const archivedMeta = { ...asRecord(event.before.meta) };
+    const [recordRows, rankRows] = await Promise.all([
+        prisma.logEntry.findMany({
+            where: {
+                generalId: event.generalId,
+                scope: LogScope.GENERAL,
+                category: { in: [LogCategory.HISTORY, LogCategory.BATTLE_BRIEF] },
+            },
+            orderBy: { id: 'desc' },
+            select: { category: true, text: true },
+        }),
+        prisma.rankData.findMany({
+            where: { generalId: event.generalId },
+            select: { type: true, value: true },
+        }),
+    ]);
+    const archivedMeta = {
+        ...asRecord(event.before.meta),
+        ...Object.fromEntries(rankRows.map((row) => [`rank_${row.type}`, row.value])),
+    };
     delete archivedMeta.inheritRandomUnique;
     delete archivedMeta.inheritSpecificSpecialWar;
+    const history = recordRows.filter((row) => row.category === LogCategory.HISTORY).map((row) => row.text);
+    const battleResults = recordRows.filter((row) => row.category === LogCategory.BATTLE_BRIEF).map((row) => row.text);
     const data = {
         ...event.before,
         meta: archivedMeta,
         turnTime: event.before.turnTime.toISOString(),
         recentWarTime: event.before.recentWarTime?.toISOString() ?? null,
-        history: history.map((entry) => entry.text),
+        history,
+        records: { battleResult: battleResults },
+        availability: { battleResultLogs: true },
     };
     await prisma.oldGeneral.upsert({
         where: { by_no: { serverId, generalNo: event.generalId } },
