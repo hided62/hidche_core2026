@@ -432,7 +432,8 @@ export const allowJoinDestNation = (relYear: number): Constraint => ({
 
 export const reqGeneralCrewMargin = (
     getCrewTypeId: (ctx: ConstraintContext, view: StateView) => number | null,
-    requirements: RequirementKey[] = []
+    requirements: RequirementKey[] = [],
+    getMaxCrew?: (ctx: ConstraintContext, view: StateView) => number | null
 ): Constraint => ({
     name: 'reqGeneralCrewMargin',
     requires: (ctx) => [{ kind: 'general', id: ctx.actorId }, ...requirements],
@@ -453,7 +454,10 @@ export const reqGeneralCrewMargin = (
         if (crewTypeId !== general.crewTypeId) {
             return allow();
         }
-        const maxCrew = general.stats.leadership * 100;
+        const maxCrew = getMaxCrew ? getMaxCrew(ctx, view) : general.stats.leadership * 100;
+        if (maxCrew === null) {
+            return unknownOrDeny(ctx, requirements, '장수 정보가 없습니다.');
+        }
         if (maxCrew > general.crew) {
             return allow();
         }
