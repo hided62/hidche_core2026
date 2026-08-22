@@ -85,8 +85,9 @@ Node.js는 `.nvmrc`에서 24.x로 고정합니다. 의존성 설치와 검증에
 `package.json`과 `pnpm-lock.yaml`을 함께 사용해 주세요. 모든 workspace package는
 내부 전용(`private`)이므로 manifest의 `0.0.0`은 배포 버전이 아닙니다. 배포 source는
 full Git commit으로 고정하고, 실험 릴리스 같은 milestone은 annotated Git tag로
-식별합니다. Profile frontend는 같은 commit의 정적 버전 문서를 주기적으로 확인하고,
-현재 열린 bundle과 달라졌을 때만 강제 reload 없이 공용 toast로 한 번 안내합니다.
+식별합니다. Profile frontend는 같은 commit의 정적 버전 문서를 고정 URL과 ETag로
+주기적으로 재검증하고, 현재 열린 bundle과 달라졌을 때만 강제 reload 없이 공용
+toast로 한 번 안내합니다.
 
 ## 개발 환경
 

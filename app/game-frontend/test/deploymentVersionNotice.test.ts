@@ -28,7 +28,7 @@ void test('exposes only the read-only build commit in the deployment version ass
     assert.deepEqual(JSON.parse(deploymentVersionAssetSource(currentCommitSha)), { commitSha: currentCommitSha });
 });
 
-void test('notifies once per available version and bypasses browser caches', async () => {
+void test('notifies once per available version while revalidating one stable URL', async () => {
     const requests: Array<{ url: string; init?: RequestInit }> = [];
     const stored = new Map<string, string>();
     const notifications: string[] = [];
@@ -36,7 +36,6 @@ void test('notifies once per available version and bypasses browser caches', asy
     const checker = createDeploymentVersionChecker({
         currentCommitSha,
         versionUrl: '/che/deployment-version.json',
-        now: () => 1234,
         storage: {
             getItem: (key) => stored.get(key) ?? null,
             setItem: (key, value) => void stored.set(key, value),
@@ -56,9 +55,18 @@ void test('notifies once per available version and bypasses browser caches', asy
     await checker.check();
 
     assert.deepEqual(notifications, [nextCommitSha, laterCommitSha]);
-    assert.equal(requests.every(({ url }) => url === '/che/deployment-version.json?t=1234'), true);
-    assert.equal(requests.every(({ init }) => init?.cache === 'no-store'), true);
-    assert.equal(requests.every(({ init }) => new Headers(init?.headers).get('Cache-Control') === 'no-cache'), true);
+    assert.equal(
+        requests.every(({ url }) => url === '/che/deployment-version.json'),
+        true
+    );
+    assert.equal(
+        requests.every(({ init }) => init?.cache === 'no-cache'),
+        true
+    );
+    assert.equal(
+        requests.every(({ init }) => init?.headers === undefined),
+        true
+    );
 });
 
 void test('shares the once-only notice within the current tab session', async () => {

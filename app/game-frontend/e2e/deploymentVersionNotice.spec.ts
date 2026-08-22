@@ -8,8 +8,10 @@ const noticeMessage = '새 버전이 준비되었습니다. 새로고침하면 �
 const installVersionFixture = async (page: Page) => {
     let availableCommitSha = currentCommitSha;
     let requests = 0;
-    await page.route('**/deployment-version.json*', async (route) => {
+    const requestUrls: string[] = [];
+    await page.route('**/deployment-version.json', async (route) => {
         requests += 1;
+        requestUrls.push(route.request().url());
         await route.fulfill({
             status: 200,
             contentType: 'application/json',
@@ -21,8 +23,45 @@ const installVersionFixture = async (page: Page) => {
             availableCommitSha = nextCommitSha;
         },
         requestCount: () => requests,
+        requestUrls: () => requestUrls,
     };
 };
+
+test('revalidates the stable production version URL with the browser-managed ETag', async ({ page }) => {
+    test.skip(process.env.PLAYWRIGHT_FRONTEND_MODE !== 'production', 'Vite production ETag is required.');
+    const requests: Array<Promise<{ url: string; ifNoneMatch: string | null }>> = [];
+    const responseStatuses: number[] = [];
+    page.on('request', (request) => {
+        if (!new URL(request.url()).pathname.endsWith('/deployment-version.json')) return;
+        requests.push(
+            request.headerValue('if-none-match').then((ifNoneMatch) => ({
+                url: request.url(),
+                ifNoneMatch,
+            }))
+        );
+    });
+    page.on('response', (response) => {
+        if (!new URL(response.url()).pathname.endsWith('/deployment-version.json')) return;
+        responseStatuses.push(response.status());
+    });
+
+    await page.goto(gamePath('/version-notice-etag-fixture'));
+    await expect.poll(() => requests.length).toBeGreaterThan(0);
+    await expect.poll(() => responseStatuses.length).toBeGreaterThan(0);
+    const completedResponses = responseStatuses.length;
+    await page.evaluate(() => window.dispatchEvent(new Event('online')));
+    await expect.poll(() => requests.length).toBeGreaterThan(1);
+    await expect.poll(() => responseStatuses.length).toBeGreaterThan(completedResponses);
+    const requestDetails = await Promise.all(requests);
+
+    expect(new Set(requestDetails.map(({ url }) => url))).toEqual(
+        new Set([new URL('deployment-version.json', page.url()).toString()])
+    );
+    expect(requestDetails[0]?.ifNoneMatch).toBeNull();
+    expect(requestDetails.slice(1).some(({ ifNoneMatch }) => Boolean(ifNoneMatch))).toBe(true);
+    // Chromium exposes a successfully revalidated cached response to Fetch as the usable 200 response.
+    expect(responseStatuses.every((status) => status === 200)).toBe(true);
+});
 
 for (const viewport of [
     { name: 'desktop', width: 1280, height: 800 },
@@ -34,6 +73,7 @@ for (const viewport of [
         await page.goto(gamePath('/version-notice-fixture'));
         await expect(page.getByRole('heading', { name: 'Not Found' })).toBeVisible();
         await expect.poll(fixture.requestCount).toBeGreaterThan(0);
+        expect(fixture.requestUrls().every((url) => new URL(url).search === '')).toBe(true);
         await page.evaluate(() => {
             Object.assign(window, { __versionNoticePageMarker: 'kept' });
         });

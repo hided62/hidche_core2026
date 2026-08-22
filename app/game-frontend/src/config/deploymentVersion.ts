@@ -7,7 +7,6 @@ export type DeploymentVersionCheckerOptions = {
     versionUrl: string;
     fetchVersion?: typeof fetch;
     storage?: VersionStorage;
-    now?: () => number;
     onVersionChanged: (availableCommitSha: string) => void;
 };
 
@@ -26,7 +25,6 @@ const notificationStorageKey = (versionUrl: string, availableCommitSha: string):
 export const createDeploymentVersionChecker = (options: DeploymentVersionCheckerOptions) => {
     const currentCommitSha = options.currentCommitSha.trim().toLowerCase();
     const fetchVersion = options.fetchVersion ?? fetch;
-    const now = options.now ?? Date.now;
     let inFlight: Promise<void> | null = null;
     let lastNotifiedCommitSha: string | null = null;
 
@@ -48,10 +46,8 @@ export const createDeploymentVersionChecker = (options: DeploymentVersionChecker
 
     const run = async (): Promise<void> => {
         if (!fullCommitShaPattern.test(currentCommitSha)) return;
-        const separator = options.versionUrl.includes('?') ? '&' : '?';
-        const response = await fetchVersion(`${options.versionUrl}${separator}t=${now()}`, {
-            cache: 'no-store',
-            headers: { 'Cache-Control': 'no-cache' },
+        const response = await fetchVersion(options.versionUrl, {
+            cache: 'no-cache',
         });
         if (!response.ok) return;
         const availableCommitSha = parseDeploymentCommitSha(await response.json());
