@@ -84,6 +84,7 @@ type FixtureState = {
     joinConfig?: Record<string, unknown>;
     createGeneralInputs?: Array<Record<string, unknown>>;
     mainTraits?: { personal: string; specialDomestic: string; specialWar: string };
+    mainTraitAges?: { specialDomestic: number; specialWar: number };
     richMyInfo?: boolean;
     hiddenSeedLogText?: string;
     recentRecords?: {
@@ -137,6 +138,7 @@ const myGeneral = (state: FixtureState) => ({
               }
             : null,
         traits: state.mainTraits ?? { personal: '-', specialDomestic: '-', specialWar: '-' },
+        traitAges: state.mainTraitAges ?? { specialDomestic: 31, specialWar: 31 },
         traitInfo: state.richMyInfo
             ? {
                   personal: '부상당할 확률이 감소합니다.',
@@ -730,6 +732,47 @@ test('재야 메인은 국가 틀과 성격·특기 표기명을 Chromium에 표
     expect(geometry.titleBackground).toBe('rgb(0, 0, 0)');
     expect(geometry.placeholderCount).toBe(6);
     await persistParityArtifact(page, 'main-neutral-trait-display', geometry);
+});
+
+test('메인 장수 정보는 없는 내정·전투 특기의 Ref 획득 나이를 Chromium에 표시한다', async ({ page }) => {
+    const state: FixtureState = {
+        permission: 'member',
+        myset: 0,
+        mainTraits: { personal: '안전', specialDomestic: '-', specialWar: '-' },
+        mainTraitAges: { specialDomestic: 35, specialWar: 29 },
+        settingMutations: [],
+        accessPages: [],
+    };
+    await install(page, state);
+
+    for (const viewport of [
+        { width: 1000, height: 900 },
+        { width: 390, height: 844 },
+    ]) {
+        await page.setViewportSize(viewport);
+        await page.goto('');
+
+        const specialValue = page.locator('.general-card .special-value');
+        await expect(specialValue).toHaveText(/35세\s*\/\s*31세/u);
+        await expect(specialValue).toHaveAttribute('aria-label', '35세 / 31세');
+        const geometry = await specialValue.evaluate((element) => {
+            const rect = element.getBoundingClientRect();
+            const documentWidth = document.documentElement.scrollWidth;
+            return {
+                text: element.textContent?.replace(/\s+/gu, ' ').trim(),
+                left: rect.left,
+                right: rect.right,
+                width: rect.width,
+                documentWidth,
+                viewportWidth: window.innerWidth,
+            };
+        });
+        expect(geometry.width).toBeGreaterThan(0);
+        expect(geometry.left).toBeGreaterThanOrEqual(0);
+        expect(geometry.right).toBeLessThanOrEqual(geometry.documentWidth);
+        expect(geometry.documentWidth).toBe(Math.max(viewport.width, 500));
+        await persistParityArtifact(page, `main-speciality-age-${viewport.width}`, geometry);
+    }
 });
 
 test('메인 카드의 국가·수도·관직·계급·병종은 Ref 출력명으로 표시된다', async ({ page }) => {
