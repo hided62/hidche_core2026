@@ -250,7 +250,6 @@ describe('buildProcessDefinitions', () => {
         });
 
         for (const definition of Object.values(definitions)) {
-            expect(definition.env).toMatchObject({ DATABASE_URL: 'postgresql://integration.invalid/sammo' });
             expect(definition.env).not.toHaveProperty('pm_id');
             expect(definition.env).not.toHaveProperty('args');
             expect(definition.env).not.toHaveProperty('pm_exec_path');
@@ -258,7 +257,44 @@ describe('buildProcessDefinitions', () => {
             expect(definition.env).not.toHaveProperty('NODE_APP_INSTANCE');
             expect(definition.env).not.toHaveProperty('GATEWAY_ROLE');
         }
+        expect(definitions.frontend.env.DATABASE_URL).toBe('postgresql://integration.invalid/sammo');
+        for (const definition of [
+            definitions.api,
+            definitions.daemon,
+            definitions.auction,
+            definitions.battleSim,
+            definitions.tournament,
+        ]) {
+            expect(definition.env.DATABASE_URL).toBe('postgresql://integration.invalid/sammo?schema=che');
+        }
         expect(definitions.frontend.env.VITE_APP_BASE_PATH).toBe('/che');
+    });
+
+    it('passes the encoded profile database URL to every backend process', () => {
+        const definitions = buildProcessDefinitions(buildProfile(), {
+            ...processConfig,
+            baseEnv: {
+                GATEWAY_DATABASE_URL:
+                    'postgresql://sammo:encoded%23password@postgres:5432/sammo?schema=public',
+                POSTGRES_USER: 'sammo',
+                POSTGRES_PASSWORD: 'raw#password',
+                POSTGRES_HOST: 'postgres',
+                POSTGRES_PORT: '5432',
+                POSTGRES_DB: 'sammo',
+            },
+        });
+        const expectedUrl = 'postgresql://sammo:encoded%23password@postgres:5432/sammo?schema=che';
+
+        for (const definition of [
+            definitions.api,
+            definitions.daemon,
+            definitions.auction,
+            definitions.battleSim,
+            definitions.tournament,
+        ]) {
+            expect(definition.env.DATABASE_URL).toBe(expectedUrl);
+        }
+        expect(definitions.frontend.env).not.toHaveProperty('DATABASE_URL');
     });
 
     it('applies a dedicated Node heap option only to the turn daemon', () => {

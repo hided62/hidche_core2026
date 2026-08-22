@@ -467,6 +467,11 @@ export const buildProcessDefinitions = (
     tournament: { name: string; script: string; cwd: string; env: Record<string, string> };
 } => {
     const baseEnv = sanitizeManagedProcessEnv(config.baseEnv ?? {});
+    const profileDatabaseUrl = resolveGatewayPostgresConfigFromEnv(baseEnv, profile.profile).url;
+    const backendEnv = {
+        ...baseEnv,
+        DATABASE_URL: profileDatabaseUrl,
+    };
     const frontendName = buildProcessName(profile.profileName, 'frontend');
     const apiName = buildProcessName(profile.profileName, 'api');
     const daemonName = buildProcessName(profile.profileName, 'daemon');
@@ -483,7 +488,7 @@ export const buildProcessDefinitions = (
     const daemonScript = path.join(daemonCwd, 'dist', 'index.js');
     const turnDaemonNodeOptions = baseEnv.TURN_DAEMON_NODE_OPTIONS?.trim();
     const apiEnv = {
-        ...baseEnv,
+        ...backendEnv,
         POSTGRES_POOL_MAX: managedPostgresPoolMax(baseEnv, 'GAME_API_POSTGRES_POOL_MAX', 4),
         GAME_API_ROLE: 'server',
         PROFILE: profile.profile,
@@ -498,7 +503,7 @@ export const buildProcessDefinitions = (
         GATEWAY_INTERNAL_API_URL: config.gatewayInternalApiUrl,
     };
     const daemonEnv = {
-        ...baseEnv,
+        ...backendEnv,
         ...(turnDaemonNodeOptions ? { NODE_OPTIONS: turnDaemonNodeOptions } : {}),
         POSTGRES_POOL_MAX: managedPostgresPoolMax(baseEnv, 'TURN_DAEMON_POSTGRES_POOL_MAX', 2),
         GAME_ENGINE_ROLE: 'turn-daemon',
