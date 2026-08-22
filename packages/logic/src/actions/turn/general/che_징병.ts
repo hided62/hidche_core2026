@@ -597,7 +597,20 @@ export class ActionDefinition<
             reqCityTrust(20),
             reqGeneralGold(getCost, requirements),
             reqGeneralRice(getRice, requirements),
-            reqGeneralCrewMargin((context) => resolveCrewTypeId(context.args), requirements),
+            reqGeneralCrewMargin(
+                (context) => resolveCrewTypeId(context.args),
+                requirements,
+                (context, view) => {
+                    const calcContext = buildCalcContext<TriggerState>(context, view);
+                    if (!calcContext) {
+                        return null;
+                    }
+                    // Ref ReqGeneralCrewMargin reconstructs General and calls
+                    // getLeadership(), so the precondition must use the same
+                    // injured, trait, and item-adjusted capacity as getCost().
+                    return this.command.resolveLeadership(calcContext) * 100;
+                }
+            ),
         ];
 
         if (ctx.mode === 'full') {
