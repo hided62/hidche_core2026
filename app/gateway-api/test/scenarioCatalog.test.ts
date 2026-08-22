@@ -14,6 +14,10 @@ describe('scenarioCatalog git ref support', () => {
         const ids = previews.map((scenario) => scenario.id);
         const sorted = [...ids].sort((a, b) => a - b);
         expect(ids).toEqual(sorted);
+        expect(previews.every((scenario) => scenario.defaultStatTotal > 0)).toBe(true);
+        expect(previews.every((scenario) => scenario.fiction === null || Number.isInteger(scenario.fiction))).toBe(
+            true
+        );
     });
 
     it('rejects without crashing when git cannot be spawned', async () => {

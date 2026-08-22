@@ -22,6 +22,8 @@ export interface ScenarioPreview {
     id: number;
     title: string;
     year: number | null;
+    defaultStatTotal: number;
+    fiction: number | null;
     npcCount: number;
     npcExCount: number;
     npcNeutralCount: number;
@@ -227,6 +229,8 @@ const buildScenarioPreview = async (scenarioId: number): Promise<ScenarioPreview
         id: scenarioId,
         title: scenario.title,
         year: scenario.startYear ?? null,
+        defaultStatTotal: scenario.config.stat.total,
+        fiction: scenario.fiction,
         npcCount: scenario.generals.length,
         npcExCount: scenario.generalsEx.length,
         npcNeutralCount: scenario.generalsNeutral.length,
@@ -272,6 +276,8 @@ const buildScenarioPreviewFromGit = async (commitSha: string, scenarioId: number
         id: scenarioId,
         title: scenario.title,
         year: scenario.startYear ?? null,
+        defaultStatTotal: scenario.config.stat.total,
+        fiction: scenario.fiction,
         npcCount: scenario.generals.length,
         npcExCount: scenario.generalsEx.length,
         npcNeutralCount: scenario.generalsNeutral.length,
