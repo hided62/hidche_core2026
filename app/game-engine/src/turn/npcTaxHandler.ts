@@ -18,7 +18,8 @@ import {
 
 import type { TurnCalendarContext, TurnCalendarHandler, InMemoryTurnWorld } from './inMemoryWorld.js';
 import { readNumber } from './ai/aiUtils.js';
-import { AutorunNationPolicy } from './ai/policies.js';
+import { shouldUseNationAi } from './ai/generalAi.js';
+import { AutorunNationPolicy, canUseRulerAutomation } from './ai/policies.js';
 
 const calcNationDevelopedRate = (cities: City[]): { pop: number; all: number } => {
     if (cities.length === 0) {
@@ -108,7 +109,9 @@ const resolveNpcMonarch = (nation: Nation, world: InMemoryTurnWorld) => {
         : world
               .listGenerals()
               .find((general) => general.nationId === nation.id && general.officerLevel === 12) ?? null;
-    return chief && chief.npcState >= 2 ? chief : null;
+    return chief && canUseRulerAutomation(chief, 'finance') && shouldUseNationAi(chief, world.getState())
+        ? chief
+        : null;
 };
 
 type NpcFinanceOptions = {

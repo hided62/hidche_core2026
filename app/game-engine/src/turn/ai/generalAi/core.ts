@@ -22,7 +22,12 @@ import { GeneralActionPipeline } from '@sammo-ts/logic/actionModules/general.js'
 import type { ReservedTurnEntry } from '../../reservedTurnStore.js';
 import type { TurnGeneral, TurnWorldState } from '../../types.js';
 import type { AiCommandCandidate, AiReservedTurnProvider, AiWorldView } from '../types.js';
-import { AutorunGeneralPolicy, AutorunNationPolicy, AVAILABLE_INSTANT_TURN } from '../policies.js';
+import {
+    AutorunGeneralPolicy,
+    AutorunNationPolicy,
+    canUseAutomatedNationAction,
+    canUseRulerAutomation,
+} from '../policies.js';
 import {
     asRecord,
     joinYearMonth,
@@ -401,10 +406,10 @@ export class GeneralAI {
         this.categorizeNationCities();
         this.categorizeNationGeneral();
 
-        if (this.general.npcState >= 2 && [3, 6, 9, 12].includes(this.world.currentMonth)) {
-            if (this.general.officerLevel === 12) {
+        if ([3, 6, 9, 12].includes(this.world.currentMonth)) {
+            if (this.general.officerLevel === 12 && canUseRulerAutomation(this.general, 'promotion')) {
                 this.chooseNpcPromotion();
-            } else {
+            } else if (this.general.npcState >= 2) {
                 this.chooseNonLordPromotion();
             }
         }
@@ -420,7 +425,7 @@ export class GeneralAI {
             if (!this.nationPolicy.can(actionName)) {
                 continue;
             }
-            if (this.general.npcState < 2 && !AVAILABLE_INSTANT_TURN[actionName]) {
+            if (!canUseAutomatedNationAction(this.general, actionName)) {
                 continue;
             }
             const handler = nationActionHandlers[actionName];
@@ -1129,7 +1134,7 @@ export class GeneralAI {
 
         for (let chiefLevel = minChiefLevel; chiefLevel <= 12; chiefLevel += 1) {
             const chief = this.chiefGenerals[chiefLevel];
-            if (!chief) {
+            if (!chief || chief.id === this.general.id) {
                 continue;
             }
             const penalty = asRecord(chief.penalty);
@@ -1148,6 +1153,9 @@ export class GeneralAI {
 
         const minBelong = Math.min(readMetaNumber(asRecord(this.general.meta), 'belong', 0) - 1, 3);
         const availableUserChiefCount = Object.values(this.userGenerals).filter((candidate) => {
+            if (candidate.id === this.general.id) {
+                return false;
+            }
             const penalty = asRecord(candidate.penalty);
             const killturn = readRequiredMetaNumber(asRecord(candidate.meta), 'killturn', `generalId=${candidate.id}`);
             return (
@@ -1158,17 +1166,19 @@ export class GeneralAI {
         }).length;
 
         if (userChiefCount === 0 && availableUserChiefCount > 0 && (chiefSet & (1 << 11)) === 0) {
-            const userCandidates = Object.values(this.userGenerals).sort((left, right) => {
-                const leftPenalty = asRecord(left.penalty);
-                const rightPenalty = asRecord(right.penalty);
-                if ((leftPenalty.noChief === true) !== (rightPenalty.noChief === true)) {
-                    return leftPenalty.noChief === true ? 1 : -1;
-                }
-                if ((leftPenalty.noAmbassador === true) !== (rightPenalty.noAmbassador === true)) {
-                    return leftPenalty.noAmbassador === true ? 1 : -1;
-                }
-                return right.stats.leadership - left.stats.leadership;
-            });
+            const userCandidates = Object.values(this.userGenerals)
+                .filter((candidate) => candidate.id !== this.general.id)
+                .sort((left, right) => {
+                    const leftPenalty = asRecord(left.penalty);
+                    const rightPenalty = asRecord(right.penalty);
+                    if ((leftPenalty.noChief === true) !== (rightPenalty.noChief === true)) {
+                        return leftPenalty.noChief === true ? 1 : -1;
+                    }
+                    if ((leftPenalty.noAmbassador === true) !== (rightPenalty.noAmbassador === true)) {
+                        return leftPenalty.noAmbassador === true ? 1 : -1;
+                    }
+                    return right.stats.leadership - left.stats.leadership;
+                });
             for (const candidate of userCandidates) {
                 const penalty = asRecord(candidate.penalty);
                 const killturn = readRequiredMetaNumber(
@@ -1227,6 +1237,9 @@ export class GeneralAI {
                 }
             }
             const nextChief = generals.find((candidate) => {
+                if (candidate.id === this.general.id) {
+                    return false;
+                }
                 if ((effectiveOfficerLevel.get(candidate.id) ?? candidate.officerLevel) > 4) {
                     return false;
                 }
@@ -1468,6 +1481,17 @@ export const shouldUseAi = (general: TurnGeneral, world: TurnWorldState): boolea
     }
     const current = joinYearMonth(world.currentYear, world.currentMonth);
     return current < limit;
+};
+
+export const shouldUseNationAi = (general: TurnGeneral, world: TurnWorldState): boolean => {
+    if (!shouldUseAi(general, world)) {
+        return false;
+    }
+    if (general.npcState >= 2) {
+        return true;
+    }
+    // Ref TurnExecutionHelper는 사용자 수뇌의 국가 AI에만 이 개인 설정을 적용한다.
+    return readMetaNumber(asRecord(general.meta), 'use_auto_nation_turn', 1) !== 0;
 };
 
 export type { GeneralAIOptions, GeneralAiDebugState };

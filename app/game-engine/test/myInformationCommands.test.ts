@@ -215,6 +215,10 @@ describe('my information world commands', () => {
                     defence_train: 94,
                     use_treatment: 200,
                     use_auto_nation_turn: 0,
+                    use_auto_nation_diplomacy: 1,
+                    use_auto_nation_promotion: 1,
+                    use_auto_nation_finance: 1,
+                    use_auto_nation_capital: 1,
                 },
             })
         ).resolves.toMatchObject({ ok: true });
@@ -227,6 +231,10 @@ describe('my information world commands', () => {
                 defence_train: 999,
                 use_treatment: 100,
                 use_auto_nation_turn: 0,
+                use_auto_nation_diplomacy: 1,
+                use_auto_nation_promotion: 1,
+                use_auto_nation_finance: 1,
+                use_auto_nation_capital: 1,
                 myset: 2,
             },
         });

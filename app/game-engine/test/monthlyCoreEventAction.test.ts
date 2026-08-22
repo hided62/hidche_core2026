@@ -468,4 +468,52 @@ describe('core monthly event actions at the real month boundary', () => {
         expect(lowChiefBill).toBeTypeOf('number');
         expect(highChiefBill).toBe(lowChiefBill);
     });
+
+    it('keeps user-ruler finance unchanged by default and applies it only after opt-in', () => {
+        const config: TurnWorldSnapshot['scenarioConfig'] = {
+            stat: { total: 300, min: 10, max: 100, npcTotal: 150, npcMax: 50, npcMin: 10, chiefMin: 70 },
+            iconPath: '',
+            map: {},
+            const: { baseGold: 0, baseRice: 0 },
+            environment: { mapName: map.id, unitSet: 'default' },
+        };
+        const buildFinanceWorld = (settings: {
+            finance: number;
+            autorunLimit?: number;
+            nationTurn?: number;
+        }) => {
+            const chief = buildGeneral(1, 1, 3);
+            chief.npcState = 0;
+            chief.officerLevel = 12;
+            chief.meta = {
+                ...chief.meta,
+                use_auto_nation_finance: settings.finance,
+                ...(settings.autorunLimit === undefined ? {} : { autorun_limit: settings.autorunLimit }),
+                ...(settings.nationTurn === undefined ? {} : { use_auto_nation_turn: settings.nationTurn }),
+            };
+            const subordinate = buildGeneral(2, 1, 3);
+            return buildWorld([], () => new Map(), {
+                currentMonth: 12,
+                generals: [chief, subordinate],
+                nations: [buildNation()],
+                cities: [buildCity()],
+            });
+        };
+        const options = { scenarioConfig: config, commandEnv: buildCommandEnv(config) };
+        const disabled = buildFinanceWorld({ finance: 0, autorunLimit: 19101 });
+        const outsideAutorun = buildFinanceWorld({ finance: 1 });
+        const masterDisabled = buildFinanceWorld({ finance: 1, autorunLimit: 19101, nationTurn: 0 });
+        const enabled = buildFinanceWorld({ finance: 1, autorunLimit: 19101, nationTurn: 1 });
+
+        expect(calculateNpcNationFinance(disabled, disabled.getNationById(1)!, 12, options)).toBeNull();
+        expect(
+            calculateNpcNationFinance(outsideAutorun, outsideAutorun.getNationById(1)!, 12, options)
+        ).toBeNull();
+        expect(
+            calculateNpcNationFinance(masterDisabled, masterDisabled.getNationById(1)!, 12, options)
+        ).toBeNull();
+        expect(calculateNpcNationFinance(enabled, enabled.getNationById(1)!, 12, options)).toEqual(
+            expect.objectContaining({ rate: expect.any(Number), bill: expect.any(Number) })
+        );
+    });
 });

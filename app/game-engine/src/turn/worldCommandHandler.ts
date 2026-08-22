@@ -1702,7 +1702,17 @@ async function handleSetMySetting(
         nextMeta.use_treatment = Math.max(10, Math.min(100, settings.use_treatment));
     }
     if (settings.use_auto_nation_turn !== undefined) {
-        nextMeta.use_auto_nation_turn = settings.use_auto_nation_turn;
+        nextMeta.use_auto_nation_turn = settings.use_auto_nation_turn === 0 ? 0 : 1;
+    }
+    for (const key of [
+        'use_auto_nation_diplomacy',
+        'use_auto_nation_promotion',
+        'use_auto_nation_finance',
+        'use_auto_nation_capital',
+    ] as const) {
+        if (settings[key] !== undefined) {
+            nextMeta[key] = settings[key] === 1 ? 1 : 0;
+        }
     }
 
     let nextTrain = general.train;

@@ -58,7 +58,7 @@ import {
 import { buildCommandEnv, buildReservedTurnDefinitions } from './reservedTurnCommands.js';
 import { buildFrontStatePatches } from './frontStateHandler.js';
 import { buildActionContext } from './reservedTurnActionContext.js';
-import { GeneralAI, shouldUseAi } from './ai/generalAi.js';
+import { GeneralAI, shouldUseAi, shouldUseNationAi } from './ai/generalAi.js';
 import type { AiReservedTurnProvider } from './ai/types.js';
 import { withCanonicalArgumentAliases } from './ai/aiUtils.js';
 import { rankMetaKey } from './rankData.js';
@@ -1672,7 +1672,7 @@ export const createReservedTurnHandler = async (options: {
                 let nationAiState: ReturnType<GeneralAI['getDebugState']> | undefined;
                 let nationAiDecisionDurationNs = 0n;
                 let nationUsedAi = false;
-                if (worldView && shouldUseAi(currentGeneral, context.world)) {
+                if (worldView && shouldUseNationAi(currentGeneral, context.world)) {
                     nationUsedAi = true;
                     const aiStartedAt = options.onActionProfiled ? process.hrtime.bigint() : 0n;
                     sharedAi = new GeneralAI({

@@ -61,6 +61,43 @@ export const AVAILABLE_INSTANT_TURN: Record<string, boolean> = {
     NPC전방발령: true,
 };
 
+export type UserRulerAutomationFeature = 'diplomacy' | 'promotion' | 'finance' | 'capital';
+
+const USER_RULER_AUTOMATION_META_KEY = {
+    diplomacy: 'use_auto_nation_diplomacy',
+    promotion: 'use_auto_nation_promotion',
+    finance: 'use_auto_nation_finance',
+    capital: 'use_auto_nation_capital',
+} as const satisfies Record<UserRulerAutomationFeature, string>;
+
+const USER_RULER_ACTION_FEATURE: Readonly<Record<string, UserRulerAutomationFeature>> = {
+    불가침제의: 'diplomacy',
+    선전포고: 'diplomacy',
+    천도: 'capital',
+};
+
+/** NPC는 기존 계약을 유지하고, 사용자 군주는 명시적으로 고른 업무만 위임한다. */
+export const canUseRulerAutomation = (
+    general: TurnGeneral,
+    feature: UserRulerAutomationFeature
+): boolean => {
+    if (general.npcState >= 2) {
+        return true;
+    }
+    if (general.officerLevel !== 12) {
+        return false;
+    }
+    return readMetaNumber(asRecord(general.meta), USER_RULER_AUTOMATION_META_KEY[feature], 0) === 1;
+};
+
+export const canUseAutomatedNationAction = (general: TurnGeneral, actionName: string): boolean => {
+    if (general.npcState >= 2 || AVAILABLE_INSTANT_TURN[actionName]) {
+        return true;
+    }
+    const feature = USER_RULER_ACTION_FEATURE[actionName];
+    return feature ? canUseRulerAutomation(general, feature) : false;
+};
+
 const buildFlags = (entries: Array<[string, boolean]>): PolicyFlags => Object.fromEntries(entries);
 
 const applyPriorityOverride = (priority: string[], override: unknown, flags: PolicyFlags): string[] => {
