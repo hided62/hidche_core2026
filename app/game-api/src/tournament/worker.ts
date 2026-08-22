@@ -39,6 +39,35 @@ import {
     type TournamentPrismaClient,
 } from './workerHelpers.js';
 
+const persistLatestGroupFightLogs = async (
+    store: TournamentStore,
+    stage: 2 | 4,
+    outcomes: TournamentMatchOutcome[]
+): Promise<void> => {
+    if (outcomes.length === 0) {
+        return;
+    }
+
+    const matches = await store.getMatches();
+    const replacedGroupIds = new Set(outcomes.map((outcome) => outcome.groupId));
+    const retained = matches.filter(
+        (match) => match.stage !== stage || match.groupId === undefined || !replacedGroupIds.has(match.groupId)
+    );
+    const latest = outcomes.map((outcome): TournamentMatchEntry => ({
+        id: stage * 100 + outcome.groupId + 1,
+        stage,
+        roundIndex: outcome.groupId,
+        groupId: outcome.groupId,
+        attackerId: outcome.attackerId,
+        defenderId: outcome.defenderId,
+        winnerId: outcome.winnerId,
+        log: outcome.log,
+        logEntries: outcome.logEntries,
+        lastEnergy: outcome.lastEnergy,
+    }));
+    await store.setMatches(retained.concat(latest));
+};
+
 export const applyBattle = async (
     store: TournamentStore,
     state: TournamentState,
@@ -222,6 +251,7 @@ export const applyPreBattleStage = async (
             outcomes.push(result.outcome);
         }
         await store.setParticipants(updated);
+        await persistLatestGroupFightLogs(store, 2, outcomes);
 
         if (outcomes.length > 0) {
             await Promise.all(
@@ -366,6 +396,7 @@ export const applyPreBattleStage = async (
             outcomes.push(result.outcome);
         }
         await store.setParticipants(updated);
+        await persistLatestGroupFightLogs(store, 4, outcomes);
 
         if (outcomes.length > 0) {
             await Promise.all(
@@ -417,13 +448,13 @@ export const applyPreBattleStage = async (
 
     if (state.stage === 5) {
         const matches = await store.getMatches();
-        if (matches.length === 0) {
+        if (!matches.some((match) => match.stage >= 7)) {
             const fixedMatches = buildFinal16MatchesFromGroups(participants);
             const participantIds = fixedMatches
                 ? fixedMatches.flatMap((entry) => [entry.attackerId, entry.defenderId])
                 : pickFinalists(state, participants);
             const initialMatches = fixedMatches ?? buildInitialMatches(state, baseSeed, participantIds);
-            await store.setMatches(initialMatches);
+            await store.setMatches(matches.concat(initialMatches));
         }
         const nextState: TournamentState = {
             ...state,
