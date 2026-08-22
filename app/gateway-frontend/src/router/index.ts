@@ -2,6 +2,7 @@ import { createRouter, createWebHistory } from 'vue-router';
 
 const HomeView = () => import('../views/HomeView.vue');
 const LobbyView = () => import('../views/LobbyView.vue');
+const OpenSuggestionView = () => import('../views/OpenSuggestionView.vue');
 const AdminOverviewView = () => import('../views/AdminOverviewView.vue');
 const AdminView = () => import('../views/AdminView.vue');
 const ServerOperationsView = () => import('../views/ServerOperationsView.vue');
@@ -26,6 +27,11 @@ const router = createRouter({
             path: '/lobby',
             name: 'lobby',
             component: LobbyView,
+        },
+        {
+            path: '/open-suggestion',
+            name: 'open-suggestion',
+            component: OpenSuggestionView,
         },
         {
             path: '/admin',

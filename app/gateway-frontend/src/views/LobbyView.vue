@@ -819,6 +819,25 @@ const handleEnter = async (profile: LobbyProfile, targetPath: string) => {
                 </div>
             </div>
 
+            <div class="bg-zinc-900 border border-zinc-800 rounded shadow-xl overflow-hidden">
+                <div
+                    class="bg-zinc-800 px-6 py-2 text-center font-bold text-white border-b border-zinc-700 tracking-widest"
+                >
+                    커 뮤 니 티 도 구
+                </div>
+                <div class="p-6 text-center">
+                    <p class="m-0 text-sm text-zinc-400">
+                        시나리오와 빌드 옵션을 확인하고 운영자에게 전달할 오픈 건의 문구를 만들 수 있습니다.
+                    </p>
+                    <RouterLink
+                        to="/open-suggestion"
+                        class="open-suggestion-link mt-4 inline-flex items-center justify-center bg-zinc-800 hover:bg-zinc-700 text-white px-6 py-2 rounded border border-zinc-700 transition-colors"
+                    >
+                        오픈 건의 양식 작성
+                    </RouterLink>
+                </div>
+            </div>
+
             <!-- Account Management -->
             <div class="bg-zinc-900 border border-zinc-800 rounded shadow-xl overflow-hidden">
                 <div
@@ -870,6 +889,16 @@ const handleEnter = async (profile: LobbyProfile, targetPath: string) => {
     align-items: center;
     justify-content: center;
     text-align: center;
+}
+
+.open-suggestion-link {
+    min-height: 44px;
+    text-decoration: none;
+}
+
+.open-suggestion-link:focus-visible {
+    outline: 2px solid #fdba74;
+    outline-offset: 2px;
 }
 
 .legacy-logout-button {

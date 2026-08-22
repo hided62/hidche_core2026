@@ -21,6 +21,7 @@ import { openPassword, zDisplayName, zPasswordEnvelope, zRegistrationUsername } 
 import { resolveEffectiveAccountIcon } from './auth/accountIconProjection.js';
 import { purifyGatewayNoticeHtml } from './security/gatewayNoticeHtml.js';
 import type { GatewayApiContext } from './context.js';
+import { listScenarioPreviews } from './scenario/scenarioCatalog.js';
 import {
     KakaoVerificationError,
     mergeRequiredKakaoScopes,
@@ -192,6 +193,42 @@ export const appRouter = router({
                         };
                     })
                 );
+            }),
+        scenarios: procedure
+            .input(z.object({ profileName: z.string().min(1).max(64) }))
+            .query(async ({ ctx, input }) => {
+                const provided = ctx.requestHeaders['x-session-token'];
+                const sessionToken = Array.isArray(provided) ? provided[0] : provided;
+                if (!sessionToken) {
+                    throw new TRPCError({ code: 'UNAUTHORIZED', message: 'Session token is required.' });
+                }
+                const session = await ctx.sessions.getSession(sessionToken);
+                const user = session ? await ctx.users.findById(session.userId) : null;
+                if (!session || !user) {
+                    throw new TRPCError({ code: 'UNAUTHORIZED', message: 'Session is not valid.' });
+                }
+
+                const visibleProfiles = await ctx.profileStatus.listLobbyProfiles({ userId: user.id });
+                if (!visibleProfiles.some((profile) => profile.profileName === input.profileName)) {
+                    throw new TRPCError({ code: 'NOT_FOUND', message: 'Profile not found.' });
+                }
+                const profile = await ctx.profiles.getProfile(input.profileName);
+                const activeBuildCommit = profile?.buildCommitSha?.trim();
+                if (!profile || !activeBuildCommit) {
+                    throw new TRPCError({
+                        code: 'PRECONDITION_FAILED',
+                        message: 'The profile has no active build commit.',
+                    });
+                }
+
+                try {
+                    return await listScenarioPreviews({ gitRef: activeBuildCommit });
+                } catch {
+                    throw new TRPCError({
+                        code: 'INTERNAL_SERVER_ERROR',
+                        message: 'The active build scenario catalog could not be read.',
+                    });
+                }
             }),
     }),
     admin: adminRouter,
