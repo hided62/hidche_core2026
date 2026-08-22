@@ -22,6 +22,13 @@ const persistParityArtifact = async (page: Page, name: string, geometry: unknown
     ]);
 };
 
+const waitForVisualAssets = async (page: Page): Promise<void> => {
+    await page.waitForLoadState('networkidle');
+    await page.evaluate(async () => {
+        await document.fonts.ready;
+    });
+};
+
 const readGeneralPanelImages = async (panel: Locator) =>
     panel.evaluate((element) =>
         [...element.querySelectorAll<HTMLElement>('.general-image')].map((image) => {
@@ -1270,6 +1277,9 @@ test('내 정보&설정 keeps desktop density and becomes a 390px horizontal-ide
     await expect(page.locator('#container')).not.toContainText('che_');
     await expect(page.locator('.title-row')).toContainText('내 정 보');
     await expect(page.locator('#set_my_setting')).toBeVisible();
+    await expect(page.getByRole('radiogroup', { name: '화면 폭 모드' })).toHaveCount(0);
+    await expect(page.getByRole('button', { name: '순서 바꾸기', exact: true })).toHaveCount(0);
+    await expect(page.locator('#custom_css')).toHaveCount(0);
     await expect(page.locator('.general-column [role="progressbar"]')).toHaveCount(14);
     await expect(page.locator('.general-column [aria-label*="1,275,975 (EX+)"]')).toHaveCount(5);
     await expect.poll(() => state.generalMeQueries).toBeGreaterThan(0);
@@ -1290,7 +1300,6 @@ test('내 정보&설정 keeps desktop density and becomes a 390px horizontal-ide
         const settings = element.querySelector<HTMLElement>('.settings-column')!.getBoundingClientRect();
         const saveButton = element.querySelector<HTMLElement>('#set_my_setting')!;
         const save = saveButton.getBoundingClientRect();
-        const customCss = element.querySelector<HTMLElement>('#custom_css')!.getBoundingClientRect();
         const columns = getComputedStyle(element.querySelector('.top-grid')!).gridTemplateColumns;
         return {
             width: rect.width,
@@ -1302,8 +1311,6 @@ test('내 정보&설정 keeps desktop density and becomes a 390px horizontal-ide
             saveWidth: save.width,
             saveHeight: save.height,
             saveBackground: getComputedStyle(saveButton).backgroundColor,
-            customCssWidth: customCss.width,
-            customCssHeight: customCss.height,
             backgroundImage: getComputedStyle(element).backgroundImage,
             sectionBackgroundImage: getComputedStyle(element.querySelector('.section-title')!).backgroundImage,
         };
@@ -1317,8 +1324,6 @@ test('내 정보&설정 keeps desktop density and becomes a 390px horizontal-ide
     expect(desktop.saveWidth).toBe(160);
     expect(desktop.saveHeight).toBe(30);
     expect(desktop.saveBackground).toBe('rgb(34, 85, 0)');
-    expect(desktop.customCssWidth).toBe(420);
-    expect(desktop.customCssHeight).toBe(150);
     expect(desktop.backgroundImage).toContain('back_walnut.jpg');
     expect(desktop.sectionBackgroundImage).toContain('back_green.jpg');
     await expectLumenButtonStates(page, page.locator('#set_my_setting'), 'rgb(34, 85, 0)');
@@ -1583,11 +1588,68 @@ test('내 정보&설정의 지난 플레이는 기본 탐색과 분리되어 오
     }
 });
 
-test('내 정보&설정에서 모바일 메인 패널을 드래그하거나 버튼으로 재정렬하고 기본 순서로 복원한다', async ({ page }) => {
+test('화면 설정에서 화면 폭과 개인 CSS를 저장하고 게임 설정 API는 호출하지 않는다', async ({ page }, testInfo) => {
+    const state: FixtureState = { permission: 'head', myset: 3, settingMutations: [], accessPages: [] };
+    await install(page, state);
+    await page.setViewportSize({ width: 1000, height: 900 });
+    await page.goto('my-settings');
+    await waitForVisualAssets(page);
+
+    await expect(page.locator('.title-row')).toContainText('화 면 설 정');
+    await expect(
+        page.getByText('이 설정은 이 기기의 화면 표시만 바꾸며 게임 상태에는 영향을 주지 않습니다.')
+    ).toHaveCount(0);
+    await expect(page.locator('#set_my_setting')).toHaveCount(0);
+    await expect(page.locator('#custom_css')).toBeVisible();
+    expect(state.settingMutations).toHaveLength(0);
+
+    const desktop = await page.locator('#interface-settings').evaluate((element) => {
+        const rect = element.getBoundingClientRect();
+        const css = element.querySelector<HTMLTextAreaElement>('#custom_css')!.getBoundingClientRect();
+        return {
+            width: rect.width,
+            columns: getComputedStyle(element.querySelector('.settings-grid')!).gridTemplateColumns,
+            cssWidth: css.width,
+            cssHeight: css.height,
+            backgroundImage: getComputedStyle(element).backgroundImage,
+            sectionBackgroundImage: getComputedStyle(element.querySelector('.section-title')!).backgroundImage,
+        };
+    });
+    expect(desktop.width).toBe(1000);
+    expect(desktop.columns.split(' ')).toHaveLength(2);
+    expect(desktop.cssWidth).toBe(420);
+    expect(desktop.cssHeight).toBe(150);
+    expect(desktop.backgroundImage).toContain('back_walnut.jpg');
+    expect(desktop.sectionBackgroundImage).toContain('back_green.jpg');
+    await page.screenshot({ path: testInfo.outputPath('interface-settings-desktop.png'), fullPage: true });
+
+    await page.getByRole('radio', { name: '500px' }).check();
+    await expect.poll(() => page.evaluate(() => localStorage.getItem('sam.screenMode'))).toBe('500px');
+    await expect(page.locator('meta[name="viewport"]')).toHaveAttribute('content', 'width=500');
+
+    const cssText = '#interface-settings { --ui-settings-e2e: 23px; }';
+    await page.getByLabel('개인용 CSS').fill(cssText);
+    await expect(page.locator('.custom-css span')).toHaveText('(저장 중)');
+    await expect.poll(() => page.evaluate(() => localStorage.getItem('sam_customCSS'))).toBe(cssText);
+    await expect.poll(() => page.locator('#sammo-custom-css').textContent()).toBe(cssText);
+    await page.reload();
+    await expect.poll(() => page.locator('#sammo-custom-css').textContent()).toBe(cssText);
+    expect(state.settingMutations).toHaveLength(0);
+
+    await page.getByLabel('개인용 CSS').fill('');
+    await expect.poll(() => page.evaluate(() => localStorage.getItem('sam_customCSS'))).toBe('');
+    await page.getByRole('radio', { name: '자동' }).check();
+    await persistParityArtifact(page, 'core-interface-settings-desktop', desktop);
+});
+
+test('화면 설정에서 모바일 메인 패널을 드래그하거나 버튼으로 재정렬하고 기본 순서로 복원한다', async ({
+    page,
+}, testInfo) => {
     const state: FixtureState = { permission: 'head', myset: 3, settingMutations: [], accessPages: [] };
     await install(page, state);
     await page.setViewportSize({ width: 390, height: 844 });
-    await page.goto('my-page');
+    await page.goto('my-settings');
+    await waitForVisualAssets(page);
 
     await page.getByRole('button', { name: '순서 바꾸기', exact: true }).click();
     const dialog = page.getByRole('dialog', { name: '모바일 레이아웃 순서 바꾸기' });
@@ -1637,7 +1699,8 @@ test('내 정보&설정에서 모바일 메인 패널을 드래그하거나 버�
     expect(dialogGeometry.firstItem?.height).toBeGreaterThanOrEqual(44);
     expect(dialogGeometry.moveButton?.width).toBeGreaterThanOrEqual(36);
     expect(dialogGeometry.documentWidth).toBe(390);
-    await persistParityArtifact(page, 'core-my-page-mobile-layout-order-dialog', dialogGeometry);
+    await dialog.screenshot({ path: testInfo.outputPath('interface-settings-mobile-layout-dialog.png') });
+    await persistParityArtifact(page, 'core-interface-settings-mobile-layout-order-dialog', dialogGeometry);
 
     await dialog.getByRole('button', { name: '적용', exact: true }).click();
     await expect(dialog).toBeHidden();
@@ -1654,7 +1717,7 @@ test('내 정보&설정에서 모바일 메인 패널을 드래그하거나 버�
         .toEqual(defaultOrder);
 });
 
-test('실제 모바일 터치로 메인 패널 순서를 재정렬한다', async ({ browser }, testInfo) => {
+test('화면 설정에서 실제 모바일 터치로 메인 패널 순서를 재정렬한다', async ({ browser }, testInfo) => {
     const configuredBaseUrl = testInfo.project.use.baseURL;
     if (typeof configuredBaseUrl !== 'string') {
         throw new Error('Playwright baseURL is required for the mobile touch contract');
@@ -1672,7 +1735,8 @@ test('실제 모바일 터치로 메인 패널 순서를 재정렬한다', async
     try {
         const state: FixtureState = { permission: 'head', myset: 3, settingMutations: [], accessPages: [] };
         await install(mobilePage, state);
-        await mobilePage.goto('my-page');
+        await mobilePage.goto('my-settings');
+        await waitForVisualAssets(mobilePage);
         await mobilePage.getByRole('button', { name: '순서 바꾸기', exact: true }).click();
 
         const dialog = mobilePage.getByRole('dialog', { name: '모바일 레이아웃 순서 바꾸기' });

@@ -3,11 +3,13 @@ import { createPinia } from 'pinia';
 import App from './App.vue';
 import router from './router';
 import './assets/main.css';
+import { applyStoredCustomCss } from './utils/customCss';
 import { installImageAssetCssVariables } from './utils/imageAssets';
 import { installScreenModeViewport } from './utils/screenModeViewport';
 
 installImageAssetCssVariables();
 installScreenModeViewport();
+applyStoredCustomCss();
 
 const app = createApp(App);
 
