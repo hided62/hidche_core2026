@@ -8,11 +8,13 @@ const props = withDefaults(
         picture?: GeneralIconSource['picture'];
         imageServer?: GeneralIconSource['imageServer'];
         hideIcon?: boolean;
+        placeholder?: boolean;
     }>(),
     {
         picture: null,
         imageServer: 0,
         hideIcon: false,
+        placeholder: false,
     }
 );
 
@@ -25,16 +27,25 @@ const iconUrl = computed(() =>
 </script>
 
 <template>
-    <span class="general-identity">
+    <span class="general-identity" :class="{ 'general-identity--placeholder': placeholder }">
         <img
-            v-if="!hideIcon && name !== '-'"
+            v-if="!hideIcon && name !== '-' && !placeholder"
             class="general-identity-icon"
             :src="iconUrl"
             alt=""
             aria-hidden="true"
             @error="useDefaultGeneralIcon"
         />
-        <span class="general-identity-name" :title="name">{{ name }}</span>
+        <span
+            v-else-if="!hideIcon && placeholder"
+            class="general-identity-icon general-identity-icon--placeholder"
+            aria-hidden="true"
+        />
+        <span v-if="$slots.details" class="general-identity-copy">
+            <span class="general-identity-name" :title="name">{{ name }}</span>
+            <span class="general-identity-details"><slot name="details" /></span>
+        </span>
+        <span v-else class="general-identity-name" :title="name">{{ name }}</span>
     </span>
 </template>
 
@@ -56,10 +67,28 @@ const iconUrl = computed(() =>
     background: #111;
     object-fit: cover;
 }
+.general-identity-icon--placeholder {
+    background:
+        linear-gradient(135deg, transparent 47%, rgb(255 255 255 / 8%) 48%, rgb(255 255 255 / 8%) 52%, transparent 53%),
+        #17110f;
+}
+.general-identity-copy {
+    display: flex;
+    min-width: 0;
+    flex: 1 1 auto;
+    flex-direction: column;
+    justify-content: center;
+}
 .general-identity-name {
     min-width: 0;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
+}
+.general-identity-details {
+    min-width: 0;
+}
+.general-identity--placeholder {
+    color: #91847e;
 }
 </style>

@@ -194,6 +194,7 @@ const installFixture = async (
         tournamentType?: number;
         tournamentStage?: number;
         joinedGroupId?: number;
+        emptyFinalGroups?: boolean;
     } = {}
 ) => {
     let joined = false;
@@ -251,7 +252,12 @@ const installFixture = async (
                                         finalRank: 0,
                                     },
                                 ]
-                              : participants,
+                              : options.emptyFinalGroups
+                                ? participants.map((participant) => ({
+                                      ...participant,
+                                      groupId: participant.preliminaryGroupId,
+                                  }))
+                                : participants,
                     matches: matchesForStage(tournamentStage),
                     betCount: 16,
                 });
@@ -393,12 +399,28 @@ test('desktop bracket connects every real general slot to the next round', async
     expect(oddsContainment.oddsBottom).toBeLessThanOrEqual(oddsContainment.cardBottom);
     await expect(firstSlot.locator('.bracket-my-bet')).toHaveText('내 투자 금120');
 
-    const preliminaryTables = page.locator('.preliminary-grid table');
-    await expect(preliminaryTables).toHaveCount(8);
+    const preliminaryGroups = page.locator('.preliminary-grid .tournament-group-card');
+    await expect(preliminaryGroups).toHaveCount(8);
     for (let groupIndex = 0; groupIndex < 8; groupIndex += 1) {
-        await expect(preliminaryTables.nth(groupIndex).locator('tbody tr')).toHaveCount(8);
-        await expect(preliminaryTables.nth(groupIndex).locator('.general-identity')).toHaveCount(8);
+        await expect(preliminaryGroups.nth(groupIndex).locator('.standing-row')).toHaveCount(8);
+        await expect(preliminaryGroups.nth(groupIndex).locator('.general-identity')).toHaveCount(8);
     }
+    await expect(page.locator('.group-grid th, .group-grid td')).toHaveCount(0);
+
+    const longName = page
+        .locator('.tournament-group-card .general-identity-name', { hasText: longGeneralName })
+        .first();
+    await expect(longName).toHaveAttribute('title', longGeneralName);
+    const longNameGeometry = await longName.evaluate((element) => ({
+        clientWidth: element.clientWidth,
+        scrollWidth: element.scrollWidth,
+        overflow: getComputedStyle(element).overflow,
+        textOverflow: getComputedStyle(element).textOverflow,
+        whiteSpace: getComputedStyle(element).whiteSpace,
+    }));
+    expect(longNameGeometry.clientWidth).toBeGreaterThan(100);
+    expect(longNameGeometry.scrollWidth).toBeGreaterThan(longNameGeometry.clientWidth);
+    expect(longNameGeometry).toMatchObject({ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' });
 
     await persistScreenshot(page, 'tournament-desktop', testInfo.outputPath('tournament-bracket-desktop.webp'));
 });
@@ -427,6 +449,16 @@ test('join refresh shows the assigned preliminary group immediately with accessi
     await expect(preliminaryTabs.getByRole('tab').nth(5)).toHaveAttribute('aria-selected', 'true');
     const assignedGroup = page.locator('[data-preliminary-group="5"]');
     await expect(assignedGroup.locator('.general-identity', { hasText: names[0] })).toBeVisible();
+    await expect(assignedGroup.locator('.standing-row')).toHaveCount(8);
+    await expect(assignedGroup.locator('.standing-row[data-empty="true"]')).toHaveCount(7);
+    const emptySlotGeometry = await assignedGroup.locator('.standing-row').evaluateAll((rows) =>
+        rows.map((row) => {
+            const icon = row.querySelector<HTMLElement>('.general-identity-icon')!.getBoundingClientRect();
+            return { height: row.getBoundingClientRect().height, iconWidth: icon.width, iconHeight: icon.height };
+        })
+    );
+    expect(new Set(emptySlotGeometry.map((row) => row.height)).size).toBe(1);
+    expect(emptySlotGeometry.every((row) => row.iconWidth === 64 && row.iconHeight === 64)).toBe(true);
     const assignedGroupBounds = await assignedGroup.boundingBox();
     expect(assignedGroupBounds?.y).toBeLessThan(844);
     expect((assignedGroupBounds?.y ?? 0) + (assignedGroupBounds?.height ?? 0)).toBeGreaterThan(0);
@@ -479,12 +511,19 @@ test('desktop join scrolls the assigned preliminary group into view without futu
 
 test('final group section appears before the later knockout section', async ({ page }, testInfo) => {
     await page.setViewportSize({ width: 390, height: 844 });
-    await installFixture(page, { tournamentStage: 3 });
+    await installFixture(page, { tournamentStage: 3, emptyFinalGroups: true });
     await page.goto('tournament');
 
     await expect(page.getByText('조별 예선 순위')).toBeVisible();
     await expect(page.getByText('조별 본선 순위')).toBeVisible();
     await expect(page.getByLabel('토너먼트 대진표')).toHaveCount(0);
+    const activeFinalGroup = page.locator('.final-grid .tournament-group-card.mobile-active');
+    await expect(activeFinalGroup.locator('.standing-row')).toHaveCount(4);
+    await expect(activeFinalGroup.locator('.standing-row[data-empty="true"]')).toHaveCount(4);
+    const emptyFinalHeights = await activeFinalGroup
+        .locator('.standing-row')
+        .evaluateAll((rows) => rows.map((row) => row.getBoundingClientRect().height));
+    expect(new Set(emptyFinalHeights).size).toBe(1);
     await persistScreenshot(page, 'tournament-final-stage-mobile', testInfo.outputPath('tournament-final-stage.webp'));
 });
 
