@@ -86,8 +86,55 @@ const matches = [
         defenderId: index * 8 + 5,
         winnerId: index * 8 + 1,
     })),
-    { id: 15, stage: 10, roundIndex: 0, attackerId: 1, defenderId: 9, winnerId: 1 },
+    {
+        id: 15,
+        stage: 10,
+        roundIndex: 0,
+        attackerId: 1,
+        defenderId: 9,
+        winnerId: 1,
+        log: ['<S>●</> <Y>관우</> <C>(800)</> vs <C>(790)</> <Y>여포</>', '<S>●</> <Y>관우</> <S>우승</>!'],
+    },
 ];
+const buildGroupFightMatches = (stage: 2 | 4) => {
+    const groupStart = stage === 2 ? 0 : 10;
+    return Array.from({ length: 8 }, (_, index) => ({
+        id: stage * 100 + groupStart + index + 1,
+        stage,
+        roundIndex: groupStart + index,
+        groupId: groupStart + index,
+        attackerId: index * 2 + 1,
+        defenderId: index * 2 + 2,
+        winnerId: index * 2 + 1,
+        log: [
+            `<S>●</> <Y>${names[index * 2]}</> <C>(800)</> vs <C>(790)</> <Y>${names[index * 2 + 1]}</>`,
+            '<S>●</> 01合 : <C>720</><span class="ev_highlight">(-080)</span> vs <span class="ev_highlight">(-090)</span><C>700</>',
+            `<S>●</> <Y>${names[index * 2]}</> <S>승리</>!`,
+        ],
+    }));
+};
+const matchesForStage = (stage: number) => {
+    if (stage === 2 || stage === 3) {
+        return [...buildGroupFightMatches(2), ...matches];
+    }
+    if (stage === 4 || stage === 5) {
+        return [...buildGroupFightMatches(2), ...buildGroupFightMatches(4), ...matches];
+    }
+    if (stage === 7) {
+        return matches.map((match, index) =>
+            match.stage === 7 && index === 0
+                ? {
+                      ...match,
+                      log: [
+                          '<S>●</> <Y>관우</> <C>(800)</> vs <C>(790)</> <Y>장료</>',
+                          '<S>●</> <Y>관우</> <S>승리</>!',
+                      ],
+                  }
+                : match
+        );
+    }
+    return matches;
+};
 
 const response = (data: unknown) => ({ result: { data } });
 const asRecord = (value: unknown): Record<string, unknown> | null =>
@@ -205,7 +252,7 @@ const installFixture = async (
                                     },
                                 ]
                               : participants,
-                    matches,
+                    matches: matchesForStage(tournamentStage),
                     betCount: 16,
                 });
             }
@@ -439,6 +486,82 @@ test('final group section appears before the later knockout section', async ({ p
     await expect(page.getByText('조별 본선 순위')).toBeVisible();
     await expect(page.getByLabel('토너먼트 대진표')).toHaveCount(0);
     await persistScreenshot(page, 'tournament-final-stage-mobile', testInfo.outputPath('tournament-final-stage.webp'));
+});
+
+test('preliminary stage renders the latest fight log for all eight groups', async ({ page }, testInfo) => {
+    await page.setViewportSize({ width: 1365, height: 900 });
+    await installFixture(page, { tournamentStage: 2 });
+    await page.goto('tournament');
+
+    const region = page.getByRole('region', { name: '예선 조별 전투 로그' });
+    const logs = region.locator('.fight-log');
+    await expect(logs).toHaveCount(8);
+    await expect(logs).toHaveText([
+        /一조 전투 로그.*관우.*장료.*승리/s,
+        /二조 전투 로그.*조운.*하후돈.*승리/s,
+        /三조 전투 로그/s,
+        /四조 전투 로그/s,
+        /五조 전투 로그/s,
+        /六조 전투 로그/s,
+        /七조 전투 로그/s,
+        /八조 전투 로그/s,
+    ]);
+    const geometry = await logs.evaluateAll((elements) =>
+        elements.map((element) => {
+            const bounds = element.getBoundingClientRect();
+            return { top: bounds.top, left: bounds.left, right: bounds.right, width: bounds.width };
+        })
+    );
+    expect(new Set(geometry.slice(0, 4).map((item) => item.top)).size).toBe(1);
+    expect(geometry[4]!.top).toBeGreaterThan(geometry[0]!.top);
+    expect(geometry.every((item) => item.left >= 0 && item.right <= 1365 && item.width > 0)).toBe(true);
+    await expect(logs.first().locator('p').first().locator('span').first()).toHaveCSS('color', 'rgb(135, 206, 235)');
+    await persistScreenshot(page, 'tournament-preliminary-fight-logs', testInfo.outputPath('preliminary-logs.webp'));
+});
+
+test('final group stage keeps all eight fight logs visible on mobile without overflow', async ({ page }, testInfo) => {
+    await page.setViewportSize({ width: 390, height: 844 });
+    await installFixture(page, { tournamentStage: 4 });
+    await page.goto('tournament');
+
+    const region = page.getByRole('region', { name: '본선 조별 전투 로그' });
+    const logs = region.locator('.fight-log');
+    await expect(logs).toHaveCount(8);
+    for (let index = 0; index < 8; index += 1) {
+        await expect(logs.nth(index)).toBeVisible();
+    }
+    const geometry = await logs.evaluateAll((elements) =>
+        elements.map((element) => {
+            const bounds = element.getBoundingClientRect();
+            return { top: bounds.top, left: bounds.left, right: bounds.right };
+        })
+    );
+    expect(geometry.every((item, index) => index === 0 || item.top > geometry[index - 1]!.top)).toBe(true);
+    expect(geometry.every((item) => item.left >= 0 && item.right <= 390)).toBe(true);
+    expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
+    await persistScreenshot(page, 'tournament-final-fight-logs-mobile', testInfo.outputPath('final-logs-mobile.webp'));
+});
+
+test('knockout stage shows the latest completed match instead of the next empty match', async ({ page }) => {
+    await page.setViewportSize({ width: 390, height: 844 });
+    await installFixture(page, { tournamentStage: 7 });
+    await page.goto('tournament');
+
+    const region = page.getByRole('region', { name: '현재 토너먼트 전투 로그' });
+    await expect(region).toContainText('관우 vs 장료');
+    await expect(region).toContainText('관우 승리!');
+    await expect(region).not.toContainText('<S>');
+    await expect(region.locator('p').first().locator('span').first()).toHaveCSS('color', 'rgb(135, 206, 235)');
+});
+
+test('completed tournament retains the final fight log like Ref', async ({ page }) => {
+    await page.setViewportSize({ width: 390, height: 844 });
+    await installFixture(page);
+    await page.goto('tournament');
+
+    const region = page.getByRole('region', { name: '현재 토너먼트 전투 로그' });
+    await expect(region).toContainText('관우 vs 여포');
+    await expect(region).toContainText('관우 우승!');
 });
 
 test('mobile bracket exposes every round through tabs with standard horizontal identities', async ({

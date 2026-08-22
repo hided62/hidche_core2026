@@ -371,9 +371,14 @@ export const fillParticipants = async (options: {
 };
 
 export type TournamentMatchOutcome = {
+    groupId: number;
     attackerId: number;
     defenderId: number;
     result: 'attacker' | 'defender' | 'draw';
+    winnerId?: number;
+    log: string[];
+    logEntries: NonNullable<TournamentMatchEntry['logEntries']>;
+    lastEnergy?: NonNullable<TournamentMatchEntry['lastEnergy']>;
 };
 
 export const applyGroupMatch = (
@@ -419,10 +424,18 @@ export const applyGroupMatch = (
 
     const glDelta = Math.round((result.totalDamage.defender - result.totalDamage.attacker) / 50);
 
+    const lastLogEntry = result.logEntries.at(-1);
     const outcome: TournamentMatchOutcome = {
+        groupId: matchIndex,
         attackerId: attacker.id,
         defenderId: defender.id,
         result: result.draw ? 'draw' : result.winnerId === attacker.id ? 'attacker' : 'defender',
+        winnerId: result.winnerId ?? undefined,
+        log: result.log,
+        logEntries: result.logEntries,
+        lastEnergy: lastLogEntry
+            ? { attacker: lastLogEntry.attackerEnergy, defender: lastLogEntry.defenderEnergy }
+            : undefined,
     };
 
     return {
@@ -572,7 +585,10 @@ export const buildNextMatches = (stage: number, matches: TournamentMatchEntry[])
         throw new Error('다음 라운드를 만들 수 없습니다.');
     }
 
-    const nextIdBase = matches.reduce((max, entry) => Math.max(max, entry.id), 0) + 1;
+    // 조별 최신 로그도 matches projection에 함께 보존하지만 결선 match ID는
+    // 전투 RNG seed의 일부이므로 기존 결선 경기만으로 연속 번호를 계산합니다.
+    const nextIdBase =
+        matches.filter((entry) => entry.stage >= 7).reduce((max, entry) => Math.max(max, entry.id), 0) + 1;
     const nextStageValue = nextStage(stage);
     const result: TournamentMatchEntry[] = [];
 

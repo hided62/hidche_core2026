@@ -47,6 +47,8 @@ export interface TournamentMatchEntry {
     id: number;
     stage: number;
     roundIndex: number;
+    /** Ref fight{group}.txt와 같이 조별전의 최신 로그를 식별합니다. */
+    groupId?: number;
     attackerId: number;
     defenderId: number;
     winnerId?: number;
