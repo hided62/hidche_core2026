@@ -150,7 +150,12 @@ const placeBet = async () => {
             @request-bet="openBetDialog"
         />
 
-        <dialog ref="betDialog" class="bet-dialog" aria-labelledby="bet-dialog-title" @close="selectedTarget = null">
+        <dialog
+            ref="betDialog"
+            class="bet-dialog viewport-centered-dialog"
+            aria-labelledby="bet-dialog-title"
+            @close="selectedTarget = null"
+        >
             <form v-if="selectedTarget" class="bet-dialog-content" @submit.prevent="placeBet">
                 <header>
                     <h2 id="bet-dialog-title">베팅하기</h2>

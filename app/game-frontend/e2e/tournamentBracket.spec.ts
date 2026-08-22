@@ -1,5 +1,5 @@
 import { expect, test, type Page, type Route } from '@playwright/test';
-import { mkdir, readFile } from 'node:fs/promises';
+import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { gameProfile, gameTrpcRoute } from './gameTestPaths.js';
@@ -967,6 +967,28 @@ test('mobile betting rankings use tabs and keep dedicated icons beside general n
     await firstBetButton.click();
     const dialog = page.getByRole('dialog', { name: '베팅하기' });
     await expect(dialog).toBeVisible();
+    const dialogGeometry = await dialog.evaluate((element) => ({
+        dialog: element.getBoundingClientRect().toJSON(),
+        viewportWidth: window.innerWidth,
+        viewportHeight: window.innerHeight,
+        documentScrollWidth: document.documentElement.scrollWidth,
+        position: getComputedStyle(element).position,
+    }));
+    expect(
+        Math.abs(dialogGeometry.dialog.left + dialogGeometry.dialog.width / 2 - dialogGeometry.viewportWidth / 2)
+    ).toBeLessThanOrEqual(1);
+    expect(
+        Math.abs(dialogGeometry.dialog.top + dialogGeometry.dialog.height / 2 - dialogGeometry.viewportHeight / 2)
+    ).toBeLessThanOrEqual(1);
+    expect(dialogGeometry.dialog.left).toBeGreaterThanOrEqual(0);
+    expect(dialogGeometry.dialog.right).toBeLessThanOrEqual(dialogGeometry.viewportWidth);
+    expect(dialogGeometry.dialog.top).toBeGreaterThanOrEqual(0);
+    expect(dialogGeometry.dialog.bottom).toBeLessThanOrEqual(dialogGeometry.viewportHeight);
+    expect(dialogGeometry.documentScrollWidth).toBeLessThanOrEqual(dialogGeometry.viewportWidth);
+    expect(dialogGeometry.position).toBe('fixed');
+    await writeFile(testInfo.outputPath('mobile-betting-dialog.json'), `${JSON.stringify(dialogGeometry, null, 2)}\n`);
+    await dialog.screenshot({ path: testInfo.outputPath('mobile-betting-dialog.png') });
+    await page.screenshot({ path: testInfo.outputPath('mobile-betting-dialog-viewport.png') });
     await expect(dialog.getByText('배당 28.00')).toBeVisible();
     await expect(dialog.getByText('예상 환수금 280')).toBeVisible();
     await dialog.getByLabel('베팅 금액').selectOption('50');
@@ -1043,6 +1065,28 @@ test('desktop betting presents icon-and-name cards and all four rankings without
     expect(firstCardCorner.rightOffset).toBeGreaterThanOrEqual(2);
     expect(firstCardCorner.rightOffset).toBeLessThanOrEqual(4);
     expect(firstCardCorner.contained).toBe(true);
+    const firstBetButton = page.getByRole('button', { name: '관우에게 베팅하기' });
+    await firstBetButton.click();
+    const dialog = page.getByRole('dialog', { name: '베팅하기' });
+    await expect(dialog).toBeVisible();
+    const dialogGeometry = await dialog.evaluate((element) => ({
+        dialog: element.getBoundingClientRect().toJSON(),
+        viewportWidth: window.innerWidth,
+        viewportHeight: window.innerHeight,
+        position: getComputedStyle(element).position,
+    }));
+    expect(
+        Math.abs(dialogGeometry.dialog.left + dialogGeometry.dialog.width / 2 - dialogGeometry.viewportWidth / 2)
+    ).toBeLessThanOrEqual(1);
+    expect(
+        Math.abs(dialogGeometry.dialog.top + dialogGeometry.dialog.height / 2 - dialogGeometry.viewportHeight / 2)
+    ).toBeLessThanOrEqual(1);
+    expect(dialogGeometry.position).toBe('fixed');
+    await writeFile(testInfo.outputPath('desktop-betting-dialog.json'), `${JSON.stringify(dialogGeometry, null, 2)}\n`);
+    await dialog.screenshot({ path: testInfo.outputPath('desktop-betting-dialog.png') });
+    await page.screenshot({ path: testInfo.outputPath('desktop-betting-dialog-viewport.png') });
+    await dialog.getByRole('button', { name: '취소' }).click();
+    await expect(dialog).toBeHidden();
     expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(1365);
     await persistScreenshot(page, 'tournament-ranking-desktop', testInfo.outputPath('tournament-ranking-desktop.webp'));
 });
