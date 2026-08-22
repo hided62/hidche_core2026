@@ -37,24 +37,56 @@ export const resolveLastAssignment = (general: GeneralAI['general'], yearMonth: 
     return last >= yearMonth;
 };
 
-export const selectRecruitableCity = (ai: GeneralAI, minPop: number): Record<number, number> => {
+export const isGeneralTurnBefore = (lhs: GeneralAI['general'], rhs: GeneralAI['general']): boolean => {
+    if (lhs.turnTick !== undefined && rhs.turnTick !== undefined) {
+        return lhs.turnTick < rhs.turnTick;
+    }
+    return lhs.turnTime.getTime() < rhs.turnTime.getTime();
+};
+
+export const selectSafeRearCity = (ai: GeneralAI): Record<number, number> => {
     const candidates: Record<number, number> = {};
     for (const city of Object.values(ai.backupCities)) {
-        if (city.population < minPop) {
+        const ratio = resolveCityPopRatio(city);
+        if (ratio < ai.nationPolicy.safeRecruitCityPopulationRatio) {
             continue;
         }
-        const ratio = resolveCityPopRatio(city);
         candidates[city.id] = ratio;
     }
     if (Object.keys(candidates).length > 0) {
         return candidates;
     }
     for (const city of Object.values(ai.supplyCities)) {
-        if (city.population < minPop) {
+        const ratio = resolveCityPopRatio(city);
+        if (ratio < ai.nationPolicy.safeRecruitCityPopulationRatio) {
+            continue;
+        }
+        candidates[city.id] = ratio;
+    }
+    return candidates;
+};
+
+export const selectUserRecruitmentRearCity = (ai: GeneralAI, minPopulation: number): Record<number, number> => {
+    const candidates: Record<number, number> = {};
+    for (const city of Object.values(ai.backupCities)) {
+        if (city.id === ai.city?.id || city.population < minPopulation) {
+            continue;
+        }
+        let ratio = resolveCityPopRatio(city);
+        if (ratio < ai.nationPolicy.safeRecruitCityPopulationRatio) {
+            ratio /= 4;
+        }
+        candidates[city.id] = ratio;
+    }
+    if (Object.keys(candidates).length > 0) {
+        return candidates;
+    }
+    for (const city of Object.values(ai.supplyCities)) {
+        if (city.id === ai.city?.id || city.population <= minPopulation) {
             continue;
         }
         const ratio = resolveCityPopRatio(city);
-        candidates[city.id] = ratio;
+        candidates[city.id] = ratio < ai.nationPolicy.safeRecruitCityPopulationRatio ? ratio / 2 : ratio;
     }
     return candidates;
 };

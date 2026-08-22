@@ -25,6 +25,12 @@ import {
     doNPC후방발령,
 } from '../src/turn/ai/generalAi/nation/assignments/npcAssignments.js';
 import { do부대구출발령, do부대후방발령 } from '../src/turn/ai/generalAi/nation/assignments/troopAssignments.js';
+import {
+    do부대유저장후방발령,
+    do유저장구출발령,
+    do유저장전방발령,
+    do유저장후방발령,
+} from '../src/turn/ai/generalAi/nation/assignments/userAssignments.js';
 
 type Candidate = {
     action: string;
@@ -203,6 +209,7 @@ const makeAi = (
         generals?: General[];
         disabledPolicyActions?: string[];
         generalActionModules?: NonNullable<GeneralAI['commandEnv']['generalActionModules']>;
+        reservedTurns?: Record<number, { action: string; args?: Record<string, unknown> }>;
     } = {}
 ): GeneralAI => {
     const general = {
@@ -223,7 +230,7 @@ const makeAi = (
     const generals = overrides.generals ?? [general];
     const candidates: Candidate[] = [];
 
-    return {
+    return Object.assign(Object.create(GeneralAI.prototype), {
         general,
         city,
         nation,
@@ -346,6 +353,12 @@ const makeAi = (
         genType: overrides.genType ?? 7,
         rng,
         maxResourceActionAmount: 10_000,
+        reservedTurnProvider: {
+            getGeneralTurn: (generalId: number) => {
+                const reserved = overrides.reservedTurns?.[generalId];
+                return reserved ? { action: reserved.action, args: reserved.args ?? {} } : { action: '휴식', args: {} };
+            },
+        },
         generalPolicy: {
             can: (action: string) =>
                 !disabledPolicyActions.has(action) && !['모병', '고급병종', '한계징병'].includes(action),
@@ -392,7 +405,7 @@ const makeAi = (
             candidates.push(candidate);
             return candidate;
         },
-    } as unknown as GeneralAI;
+    }) as GeneralAI;
 };
 
 const makePromotionGeneral = (overrides: Partial<TurnGeneral>): TurnGeneral => ({
@@ -1363,6 +1376,202 @@ describe('legacy NPC AI final-decision parity', () => {
         expect(do내정워프(ai)?.action).toBe('che_NPC능동');
     });
 
+    it('moves a mounted user rear only for an earlier first recruitment turn', () => {
+        const run = (options: {
+            reservedAction: string;
+            userTurnTick: number;
+            leaderTurnTick: number;
+            recruitmentScore?: number;
+        }) => {
+            const rng = makeRng([], [0, 0]);
+            const user = {
+                ...baseGeneral(),
+                id: 2,
+                cityId: 2,
+                troopId: 10,
+                npcState: 0,
+                turnTick: options.userTurnTick,
+            };
+            const leader = {
+                ...baseGeneral(),
+                id: 10,
+                cityId: 2,
+                troopId: 10,
+                npcState: 5,
+                turnTick: options.leaderTurnTick,
+            };
+            const ai = makeAi({
+                dipState: 4,
+                rng,
+                generals: [baseGeneral(), user, leader],
+                reservedTurns: { 2: { action: options.reservedAction } },
+                generalActionModules:
+                    options.recruitmentScore === undefined
+                        ? undefined
+                        : singleActionModuleStack({
+                              eventHandlers: {},
+                              onCalcDomestic: (_context, turnType, varType, value) =>
+                                  turnType === '징집인구' && varType === 'score' ? options.recruitmentScore! : value,
+                          }),
+            });
+            ai.userWarGenerals = { 2: user };
+            ai.troopLeaders = { 10: leader };
+            ai.nationCities = {
+                2: {
+                    ...baseCity(),
+                    id: 2,
+                    population: 10_000,
+                    frontState: 3,
+                    dev: 1,
+                    important: 1,
+                },
+            };
+            ai.frontCities = { 2: ai.nationCities[2]! };
+            ai.supplyCities = {
+                2: ai.nationCities[2]!,
+                3: { ...baseCity(), id: 3, dev: 1, important: 1 },
+            };
+            ai.backupCities = { 3: ai.supplyCities[3]! };
+            return { result: do부대유저장후방발령(ai), rng };
+        };
+
+        for (const reservedAction of ['che_징병', 'che_모병']) {
+            expect(run({ reservedAction, userTurnTick: 100, leaderTurnTick: 200 }).result).toMatchObject({
+                action: 'che_발령',
+                args: { destGeneralId: 2, destCityId: 3 },
+            });
+        }
+        expect(run({ reservedAction: 'che_훈련', userTurnTick: 100, leaderTurnTick: 200 }).result).toBeNull();
+        expect(run({ reservedAction: 'che_징병', userTurnTick: 200, leaderTurnTick: 100 }).result).toBeNull();
+        expect(
+            run({ reservedAction: 'che_징병', userTurnTick: 100, leaderTurnTick: 200, recruitmentScore: 0 }).result
+        ).toBeNull();
+    });
+
+    it('uses full leadership and the chief city exclusion for a user rear assignment', () => {
+        const user = { ...baseGeneral(), id: 2, cityId: 2, npcState: 0 };
+        const build = (withLeadershipBonus: boolean) => {
+            const ai = makeAi({
+                dipState: 4,
+                generals: [baseGeneral(), user],
+                generalActionModules: withLeadershipBonus
+                    ? singleActionModuleStack({
+                          eventHandlers: {},
+                          onCalcStat: (_context, statName, value) =>
+                              statName === 'leadership' ? Number(value) + 30 : value,
+                      })
+                    : undefined,
+            });
+            ai.userWarGenerals = { 2: user };
+            ai.supplyCities = {
+                1: { ...baseCity(), id: 1, dev: 1, important: 1 },
+                2: { ...baseCity(), id: 2, population: 10_000, dev: 1, important: 1 },
+                3: { ...baseCity(), id: 3, population: 37_000, dev: 1, important: 1 },
+            };
+            ai.backupCities = {
+                1: ai.supplyCities[1]!,
+                3: ai.supplyCities[3]!,
+            };
+            return do유저장후방발령(ai);
+        };
+
+        expect(build(false)).toMatchObject({
+            action: 'che_발령',
+            args: { destGeneralId: 2, destCityId: 3 },
+        });
+        expect(build(true)).toBeNull();
+    });
+
+    it('waits through recruitment and preparation before sending a user to the front', () => {
+        const run = (crew: number, train: number, atmos: number) => {
+            const user = { ...baseGeneral(), id: 2, cityId: 2, npcState: 0, crew, train, atmos };
+            const ai = makeAi({ dipState: 4, generals: [baseGeneral(), user] });
+            ai.userWarGenerals = { 2: user };
+            ai.nationCities = {
+                2: { ...baseCity(), id: 2, population: 10_000, dev: 1, important: 1 },
+            };
+            ai.supplyCities = {
+                2: ai.nationCities[2]!,
+                3: { ...baseCity(), id: 3, dev: 1, important: 1 },
+            };
+            ai.backupCities = { 3: ai.supplyCities[3]! };
+            ai.frontCities = {
+                20: { ...baseCity(), id: 20, frontState: 3, dev: 1, important: 1 },
+            };
+            return {
+                rear: do유저장후방발령(ai),
+                front: do유저장전방발령(ai),
+            };
+        };
+
+        expect(run(0, 0, 0).rear).toMatchObject({ args: { destGeneralId: 2, destCityId: 3 } });
+        expect(run(1_500, 0, 0)).toEqual({ rear: null, front: null });
+        expect(run(1_500, 90, 0).front).toMatchObject({
+            action: 'che_발령',
+            args: { destGeneralId: 2, destCityId: 20 },
+        });
+    });
+
+    it('keeps mounted users out of front assignment and draws the prepared user first', () => {
+        const mounted = {
+            ...baseGeneral(),
+            id: 2,
+            cityId: 2,
+            npcState: 0,
+            troopId: 10,
+            crew: 2_000,
+            train: 100,
+            atmos: 100,
+        };
+        const first = { ...mounted, troopId: 0 };
+        const second = { ...mounted, id: 3, troopId: 0 };
+        const rng = makeRng([], [1, 20]);
+        const ai = makeAi({ dipState: 4, rng, generals: [baseGeneral(), first, second] });
+        ai.userWarGenerals = { 2: first, 3: second };
+        ai.nationCities = { 2: { ...baseCity(), id: 2, dev: 1, important: 1 } };
+        ai.frontCities = { 20: { ...baseCity(), id: 20, frontState: 3, dev: 1, important: 1 } };
+
+        expect(do유저장전방발령(ai)).toMatchObject({
+            action: 'che_발령',
+            args: { destGeneralId: 3, destCityId: 20 },
+        });
+
+        ai.userWarGenerals = { 2: mounted };
+        expect(do유저장전방발령(ai)).toBeNull();
+    });
+
+    it('preserves intentional defenders and earlier troop escapes during user rescue assignment', () => {
+        const ready = {
+            ...baseGeneral(),
+            id: 2,
+            npcState: 0,
+            crew: 2_000,
+            train: 80,
+            atmos: 80,
+            meta: { ...baseGeneral().meta, defence_train: 80 },
+        };
+        const rider = { ...baseGeneral(), id: 3, npcState: 0, troopId: 10, turnTick: 200 };
+        const leader = { ...baseGeneral(), id: 10, npcState: 5, cityId: 5, troopId: 10, turnTick: 100 };
+        const first = { ...baseGeneral(), id: 4, npcState: 0 };
+        const second = { ...baseGeneral(), id: 5, npcState: 0 };
+        const rng = makeRng([], [1, 2, 1]);
+        const ai = makeAi({ dipState: 4, rng, generals: [baseGeneral(), ready, rider, leader, first, second] });
+        ai.lostGenerals = { 2: ready, 3: rider, 4: first, 5: second };
+        ai.troopLeaders = { 10: leader };
+        ai.supplyCities = { 5: { ...baseCity(), id: 5, dev: 1, important: 1 } };
+        ai.frontCities = {
+            20: { ...baseCity(), id: 20, frontState: 3, dev: 1, important: 1 },
+            21: { ...baseCity(), id: 21, frontState: 3, dev: 1, important: 1 },
+            22: { ...baseCity(), id: 22, frontState: 3, dev: 1, important: 1 },
+        };
+
+        expect(do유저장구출발령(ai)).toMatchObject({
+            action: 'che_발령',
+            args: { destGeneralId: 5, destCityId: 22 },
+        });
+        expect(rng.choices).toEqual([]);
+    });
+
     it('awards a resource-poor civil user general like the legacy nation AI', () => {
         const ai = makeAi();
         const civilGeneral = {
@@ -1377,6 +1586,23 @@ describe('legacy NPC AI final-decision parity', () => {
         ai.userGenerals = { 2: civilGeneral };
         ai.userWarGenerals = {};
         expect(do유저장포상(ai)?.action).toBe('che_포상');
+    });
+
+    it('never includes user generals in the legacy NPC seizure pool', () => {
+        const ai = makeAi({ nation: { gold: 1_000, rice: 1_000 } });
+        const richUser = {
+            ...baseGeneral(),
+            id: 2,
+            npcState: 0,
+            gold: 100_000,
+            rice: 100_000,
+        };
+        ai.userGenerals = { 2: richUser };
+        ai.userWarGenerals = { 2: richUser };
+        ai.npcWarGenerals = {};
+        ai.npcCivilGenerals = {};
+
+        expect(doNPC몰수(ai)).toBeNull();
     });
 
     it('consumes the legacy reward draw before a selected command fails constraints', () => {

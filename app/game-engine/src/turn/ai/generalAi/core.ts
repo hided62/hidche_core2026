@@ -673,8 +673,59 @@ export class GeneralAI {
         this.promotionNationMeta = nextMeta;
     }
 
-    getReservedTurn(generalId: number): ReservedTurnEntry {
+    getFirstReservedGeneralTurn(generalId: number): ReservedTurnEntry {
         return this.reservedTurnProvider.getGeneralTurn(generalId, 0);
+    }
+
+    hasFirstReservedGeneralRecruitmentTurn(generalId: number): boolean {
+        const action = this.getFirstReservedGeneralTurn(generalId).action;
+        // Ref checks `instanceof che_징병`; che_모병 inherits che_징병 there.
+        // Core persists the concrete command key, so preserve that subtype
+        // relationship explicitly at the serialized reserved-turn boundary.
+        return action === 'che_징병' || action === 'che_모병';
+    }
+
+    resolveGeneralAiStats(general: TurnGeneral): ReturnType<typeof resolveLegacyAiStats> {
+        if (this.commandEnv.generalActionModules) {
+            return resolveLegacyAiStatsWithModules(
+                general,
+                this.nation,
+                this.commandEnv.maxStatLevel ?? LEGACY_DEFAULT_MAX_LEVEL,
+                this.commandEnv.generalActionModules,
+                this.worldRef,
+                this.world,
+                this.startYear
+            );
+        }
+        return resolveLegacyAiStats(general, this.nation, this.commandEnv.maxStatLevel ?? LEGACY_DEFAULT_MAX_LEVEL);
+    }
+
+    calculateRecruitPopulationScore(general: TurnGeneral): number {
+        const pipeline = new GeneralActionPipeline(this.commandEnv.generalActionModules ?? []);
+        return pipeline.onCalcDomestic(
+            {
+                general,
+                nation: this.nation,
+                ...(this.worldRef
+                    ? {
+                          worldView: {
+                              listGenerals: () => this.worldRef!.listGenerals(),
+                              listGeneralsByCity: (cityId: number) =>
+                                  this.worldRef!.listGenerals().filter((candidate) => candidate.cityId === cityId),
+                              listNations: () => this.worldRef!.listNations(),
+                          },
+                      }
+                    : {}),
+                time: {
+                    year: this.world.currentYear,
+                    month: this.world.currentMonth,
+                    startYear: this.startYear,
+                },
+            },
+            '징집인구',
+            'score',
+            100
+        );
     }
 
     calcNationDevelopedRate(): Record<string, number> {
@@ -850,7 +901,8 @@ export class GeneralAI {
 
             const isTroopLeader =
                 npcType === 5 ||
-                (candidate.troopId === candidate.id && this.getReservedTurn(candidate.id).action === 'che_집합');
+                (candidate.troopId === candidate.id &&
+                    this.getFirstReservedGeneralTurn(candidate.id).action === 'che_집합');
             if (isTroopLeader) {
                 troopLeaders[candidate.id] = candidate;
                 continue;
@@ -875,18 +927,7 @@ export class GeneralAI {
                 continue;
             }
 
-            const fullLeadership = this.commandEnv.generalActionModules
-                ? resolveLegacyAiStatsWithModules(
-                      candidate,
-                      this.nation,
-                      this.commandEnv.maxStatLevel ?? LEGACY_DEFAULT_MAX_LEVEL,
-                      this.commandEnv.generalActionModules,
-                      this.worldRef,
-                      this.world,
-                      this.startYear
-                  ).fullLeadership
-                : resolveLegacyAiStats(candidate, this.nation, this.commandEnv.maxStatLevel ?? LEGACY_DEFAULT_MAX_LEVEL)
-                      .fullLeadership;
+            const fullLeadership = this.resolveGeneralAiStats(candidate).fullLeadership;
             if (fullLeadership >= this.nationPolicy.minNpcWarLeadership) {
                 npcWarGenerals[candidate.id] = candidate;
             } else {
@@ -1055,17 +1096,7 @@ export class GeneralAI {
     }
 
     private refreshLegacyFullStats(): void {
-        const stats = this.commandEnv.generalActionModules
-            ? resolveLegacyAiStatsWithModules(
-                  this.general,
-                  this.nation,
-                  this.commandEnv.maxStatLevel ?? LEGACY_DEFAULT_MAX_LEVEL,
-                  this.commandEnv.generalActionModules,
-                  this.worldRef,
-                  this.world,
-                  this.startYear
-              )
-            : resolveLegacyAiStats(this.general, this.nation, this.commandEnv.maxStatLevel ?? LEGACY_DEFAULT_MAX_LEVEL);
+        const stats = this.resolveGeneralAiStats(this.general);
         this.general.meta = {
             ...this.general.meta,
             ...stats,
