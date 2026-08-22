@@ -3,6 +3,7 @@ import { runGatewayOrchestrator } from './orchestrator/orchestratorServer.js';
 import { runProfileSeedCli } from './orchestrator/profileSeedCli.js';
 
 export * from './config.js';
+export * from './gatewayPostgresConfig.js';
 export * from './context.js';
 export * from './router.js';
 export * from './server.js';

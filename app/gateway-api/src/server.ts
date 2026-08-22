@@ -9,11 +9,11 @@ import {
     createGatewayPostgresConnector,
     createRedisConnector,
     type GatewayPrismaClient,
-    resolvePostgresConfigFromEnv,
     resolveRedisConfigFromEnv,
 } from '@sammo-ts/infra';
 
 import { resolveGatewayApiConfigFromEnv } from './config.js';
+import { resolveGatewayPostgresConfigFromEnv } from './gatewayPostgresConfig.js';
 import { createGatewayApiContext } from './context.js';
 import { RedisGatewayFlushPublisher } from './auth/flushPublisher.js';
 import { KakaoOAuthClient } from './auth/kakaoClient.js';
@@ -36,7 +36,7 @@ import { registerRuntimeNavigationRoute } from './navigation/runtimeNavigationRo
 
 export const createGatewayApiServer = async () => {
     const config = resolveGatewayApiConfigFromEnv();
-    const postgres = createGatewayPostgresConnector(resolvePostgresConfigFromEnv({ schema: config.dbSchema }));
+    const postgres = createGatewayPostgresConnector(resolveGatewayPostgresConfigFromEnv(process.env, config.dbSchema));
     const redis = createRedisConnector(resolveRedisConfigFromEnv());
     await postgres.connect();
     await redis.connect();
