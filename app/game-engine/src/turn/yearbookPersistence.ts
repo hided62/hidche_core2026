@@ -27,7 +27,7 @@ export const persistYearbookSnapshot = async (
         transaction.logEntry.findMany({
             where: {
                 scope: LogScope.SYSTEM,
-                category: LogCategory.ACTION,
+                category: { in: [LogCategory.SUMMARY, LogCategory.ACTION] },
                 year: snapshot.year,
                 month: snapshot.month,
             },

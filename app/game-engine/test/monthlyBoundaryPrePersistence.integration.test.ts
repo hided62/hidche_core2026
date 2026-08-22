@@ -17,7 +17,7 @@ const cityIds = [991_201, 991_202, 991_203, 991_204, 991_205, 991_206, 991_207];
 const nationId = 991_201;
 const yearbookProfile = 'monthly-boundary-pre-persistence';
 const yearbookServerId = 'monthly-boundary-generation-20260731';
-const archivedLogTexts = ['월경계 과거 정세', '월경계 과거 행동'];
+const archivedLogTexts = ['월경계 과거 정세', '월경계 과거 장수 동향', '월경계 과거 호환 행동'];
 
 integration('monthly pre-update persistence', () => {
     let db: GamePrismaClient;
@@ -78,10 +78,17 @@ integration('monthly pre-update persistence', () => {
                 },
                 {
                     scope: LogScope.SYSTEM,
-                    category: LogCategory.ACTION,
+                    category: LogCategory.SUMMARY,
                     year: 200,
                     month: 12,
                     text: archivedLogTexts[1]!,
+                },
+                {
+                    scope: LogScope.SYSTEM,
+                    category: LogCategory.ACTION,
+                    year: 200,
+                    month: 12,
+                    text: archivedLogTexts[2]!,
                 },
             ],
         });
@@ -256,7 +263,7 @@ integration('monthly pre-update persistence', () => {
             );
             expect(cityIds.map((id) => yearbookStates.get(id))).toEqual([31, 32, 33, 34, 41, 42, 43]);
             expect(yearbookRow.globalHistory).toEqual([archivedLogTexts[0]]);
-            expect(yearbookRow.globalAction).toEqual([archivedLogTexts[1]]);
+            expect(yearbookRow.globalAction).toEqual([archivedLogTexts[2], archivedLogTexts[1]]);
             expect(await db.yearbookHistory.count({ where: { profileName: yearbookProfile } })).toBe(0);
         } finally {
             await hooks.close();
