@@ -22,6 +22,7 @@ import { createBroadcastTabCoordinator, type BroadcastTabCoordinator } from '../
 import { resolveWithReadModelSnapshotFallback } from '../utils/readModelDeltaRecovery';
 import { createRealtimeRequestOptions } from '../utils/realtimeAccessGrant';
 import { markGameServerContact } from '../utils/gameServerActivity';
+import { gameFrontendRuntimeConfig } from '../config/runtimeConfig';
 
 const REALTIME_FULL_REFRESH_MIN_INTERVAL_MS = 5_000;
 
@@ -1026,7 +1027,7 @@ export const useMainDashboardStore = defineStore('mainDashboard', () => {
     const isAccessToken = (token: string | null): boolean => Boolean(token?.startsWith('ga_'));
 
     const buildRealtimeUrl = (token: string): string => {
-        const base = import.meta.env.VITE_GAME_SSE_URL ?? '/events';
+        const base = gameFrontendRuntimeConfig.gameSseUrl;
         const url = new URL(base, window.location.origin);
         url.searchParams.set('token', token);
         return url.toString();

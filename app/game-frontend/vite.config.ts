@@ -38,6 +38,9 @@ export const createDeploymentVersionPlugin = (buildCommitSha: string): Plugin =>
 
 const normalizeBasePath = (value: string | undefined): string => {
     const pathValue = (value ?? '/').trim();
+    if (pathValue === './') {
+        return './';
+    }
     if (!pathValue || pathValue === '/') {
         return '/';
     }
@@ -61,7 +64,7 @@ export default defineConfig(({ mode }) => {
     const env = mergeViteEnv(loadEnv(mode, process.cwd(), ''), process.env);
     const buildCommitSha = resolveBuildCommitSha(env.VITE_BUILD_COMMIT_SHA, path.resolve(import.meta.dirname, '../..'));
     return {
-        base: normalizeBasePath(env.VITE_APP_BASE_PATH),
+        base: normalizeBasePath(env.VITE_ASSET_BASE_PATH ?? env.VITE_APP_BASE_PATH),
         plugins: [vue(), tailwindcss(), createDeploymentVersionPlugin(buildCommitSha)],
         define: {
             'import.meta.env.VITE_BUILD_COMMIT_SHA': JSON.stringify(buildCommitSha),

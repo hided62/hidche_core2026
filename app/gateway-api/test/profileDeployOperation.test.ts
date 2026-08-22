@@ -37,16 +37,20 @@ const createReleaseWorkspace = async (): Promise<string> => {
             components: ['game-api', 'game-engine', 'game-frontend'],
         })
     );
-    await fs.mkdir(path.join(workspace, '.release-dist', 'che_1010', 'game-frontend', 'assets'), {
+    await fs.mkdir(path.join(workspace, 'app', 'game-frontend', '.release-build', 'assets'), {
         recursive: true,
     });
     await fs.writeFile(
-        path.join(workspace, '.release-dist', 'che_1010', 'game-frontend', 'index.html'),
-        '<!doctype html><title>static profile</title>'
+        path.join(workspace, 'app', 'game-frontend', '.release-build', 'index.html'),
+        '<!doctype html><title>static profile</title><script type="module" src="./assets/app-deadbeef.js"></script>'
     );
     await fs.writeFile(
-        path.join(workspace, '.release-dist', 'che_1010', 'game-frontend', 'assets', 'app-deadbeef.js'),
+        path.join(workspace, 'app', 'game-frontend', '.release-build', 'assets', 'app-deadbeef.js'),
         'console.log("static")'
+    );
+    await fs.writeFile(
+        path.join(workspace, 'app', 'game-frontend', '.release-build', 'deployment-version.json'),
+        `${JSON.stringify({ buildCommitSha: SHA })}\n`
     );
     return workspace;
 };
@@ -215,12 +219,12 @@ describe('profile DEPLOY operation', () => {
         expect(commandGroups[0]?.[2]?.args).toContain('build:release');
         expect(commandGroups[0]?.[2]?.args).toContain('--cache-dir=/srv/sammo/controller/.turbo/release-cache');
         expect(commandGroups[0]?.[2]?.args).toContain('--concurrency=1');
-        expect(commandGroups[0]?.[3]?.args).toEqual([
-            'tools/build-scripts/materialize-profile-frontend.mjs',
-            'che:1010',
-        ]);
         expect(commandGroups[0]?.[2]?.env?.VITE_BUILD_COMMIT_SHA).toBe(SHA);
-        expect(commandGroups[0]?.[3]?.env?.VITE_BUILD_COMMIT_SHA).toBe(SHA);
+        expect(commandGroups[0]?.[2]?.env?.VITE_ASSET_BASE_PATH).toBe('./');
+        expect(commandGroups[0]?.[2]?.env).not.toHaveProperty('VITE_APP_BASE_PATH');
+        expect(commandGroups[0]?.[2]?.env).not.toHaveProperty('VITE_GAME_API_URL');
+        expect(commandGroups[0]?.[2]?.env).not.toHaveProperty('VITE_GAME_SSE_URL');
+        expect(commandGroups[0]?.[2]?.env).not.toHaveProperty('VITE_GAME_PROFILE');
         expect(commandGroups[1]?.map((command) => command.args)).toEqual([
             ['--filter', '@sammo-ts/infra', 'prisma:migrate:deploy:game'],
         ]);
@@ -255,6 +259,6 @@ describe('profile DEPLOY operation', () => {
         expect([...running].sort()).toEqual([...backendProcessNames].sort());
         expect(
             await fs.readFile(path.join(workspace, 'artifact-volume', 'che', 'current', 'index.html'), 'utf8')
-        ).toContain('static profile');
+        ).toContain('/gateway/profile-assets/');
     });
 });

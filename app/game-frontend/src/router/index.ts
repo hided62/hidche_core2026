@@ -1,4 +1,5 @@
 import { createRouter, createWebHistory, type RouteRecordRaw } from 'vue-router';
+import { gameFrontendRuntimeConfig } from '../config/runtimeConfig';
 import { useSessionStore } from '../stores/session';
 import { trpc } from '../utils/trpc';
 
@@ -384,7 +385,7 @@ const routes = [
 ] satisfies RouteRecordRaw[];
 
 const router = createRouter({
-    history: createWebHistory(import.meta.env.BASE_URL),
+    history: createWebHistory(gameFrontendRuntimeConfig.appBasePath),
     routes,
 });
 

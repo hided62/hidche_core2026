@@ -8,6 +8,7 @@ import { createRealtimeRequestOptions } from '../utils/realtimeAccessGrant';
 import { structurallyShare } from '../utils/structuralShare';
 import { trpc } from '../utils/trpc';
 import { useSessionStore } from './session';
+import { gameFrontendRuntimeConfig } from '../config/runtimeConfig';
 
 type Snapshot = Awaited<ReturnType<typeof trpc.tournament.getSnapshot.query>>;
 type BettingSummary = Awaited<ReturnType<typeof trpc.tournament.getBettingSummary.query>>;
@@ -136,7 +137,7 @@ export const useTournamentPagesStore = defineStore('tournamentPages', () => {
         return session.gameToken && isAccessToken(session.gameToken) ? session.gameToken : null;
     };
     const buildRealtimeUrl = (token: string): string => {
-        const base = import.meta.env.VITE_GAME_SSE_URL ?? '/events';
+        const base = gameFrontendRuntimeConfig.gameSseUrl;
         const url = new URL(base, window.location.origin);
         url.searchParams.set('token', token);
         url.searchParams.set('scope', 'tournament');

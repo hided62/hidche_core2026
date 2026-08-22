@@ -1,6 +1,7 @@
 import { trpcJsonBodyHttpClientOptions } from '@sammo-ts/common/http/trpcTransport';
 import { createTRPCProxyClient, httpBatchLink } from '@trpc/client';
 import type { AppRouter } from '@sammo-ts/gateway-api';
+import { gameFrontendRuntimeConfig } from '../config/runtimeConfig';
 
 const getSessionToken = (): string | null => {
     if (typeof window === 'undefined') {
@@ -13,7 +14,7 @@ const getSessionToken = (): string | null => {
 export const gatewayTrpc = createTRPCProxyClient<AppRouter>({
     links: [
         httpBatchLink({
-            url: import.meta.env.VITE_GATEWAY_API_URL ?? '/api/trpc',
+            url: gameFrontendRuntimeConfig.gatewayApiUrl,
             ...trpcJsonBodyHttpClientOptions,
             headers() {
                 const token = getSessionToken();

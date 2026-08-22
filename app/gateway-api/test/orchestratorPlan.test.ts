@@ -6,6 +6,7 @@ import {
     buildProfileFrontendCommands,
     buildProfileMigrationCommand,
     buildProcessDefinitions,
+    buildSharedProfileFrontendCommands,
     buildWorkspaceCommands,
     planProfileReconcile,
     resolveResetLifecycleStatus,
@@ -461,6 +462,46 @@ describe('buildProfileFrontendCommands', () => {
     it('rejects a non-commit build version before creating cached frontend commands', () => {
         expect(() => buildProfileFrontendCommands('/srv/sammo/worktrees/main', buildProfile(), 'main')).toThrow(
             'Profile frontend build requires a full commit SHA.'
+        );
+    });
+});
+
+describe('buildSharedProfileFrontendCommands', () => {
+    const buildCommitSha = '0123456789abcdef0123456789abcdef01234567';
+
+    it('uses one profile-neutral relative-asset build cache key for every profile', () => {
+        const commands = buildSharedProfileFrontendCommands(
+            '/srv/sammo/worktrees/0123456789abcdef',
+            buildCommitSha,
+            {
+                NODE_OPTIONS: '--max-old-space-size=1536',
+                PROFILE_FRONTEND_BUILD_NODE_OPTIONS: '--max-old-space-size=2048',
+                VITE_APP_BASE_PATH: '/che',
+                VITE_GAME_API_URL: '/che/api/trpc',
+                VITE_GAME_SSE_URL: '/che/api/events',
+                VITE_GAME_PROFILE: 'che',
+                VITE_GATEWAY_API_URL: '/gateway/api/trpc',
+            },
+            '/srv/sammo/controller'
+        );
+
+        expect(commands).toHaveLength(1);
+        expect(commands[0]?.env).toMatchObject({
+            NODE_OPTIONS: '--max-old-space-size=2048',
+            VITE_ASSET_BASE_PATH: './',
+            VITE_BUILD_COMMIT_SHA: buildCommitSha,
+            VITE_GATEWAY_API_URL: '/gateway/api/trpc',
+        });
+        expect(commands[0]?.env).not.toHaveProperty('VITE_APP_BASE_PATH');
+        expect(commands[0]?.env).not.toHaveProperty('VITE_GAME_API_URL');
+        expect(commands[0]?.env).not.toHaveProperty('VITE_GAME_SSE_URL');
+        expect(commands[0]?.env).not.toHaveProperty('VITE_GAME_PROFILE');
+        expect(commands[0]?.args).toContain('--cache-dir=/srv/sammo/controller/.turbo/release-cache');
+    });
+
+    it('rejects a non-commit shared build version', () => {
+        expect(() => buildSharedProfileFrontendCommands('/srv/sammo/worktrees/main', 'main')).toThrow(
+            'Shared profile frontend build requires a full commit SHA.'
         );
     });
 });

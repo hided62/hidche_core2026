@@ -391,7 +391,52 @@ describe('GatewayOrchestrator first-class operations', () => {
         expect(harness.completions).toEqual(['SUCCEEDED']);
     });
 
-    it('removes a legacy Vite process while publishing the first static artifact', async () => {
+    it('removes a legacy Vite process while publishing a shared static asset and profile wrapper', async () => {
+        const workspace = await fs.mkdtemp(path.join(os.tmpdir(), 'sammo-shared-static-cutover-'));
+        temporaryDirectories.push(workspace);
+        const releaseBuild = path.join(workspace, 'app', 'game-frontend', '.release-build');
+        await fs.mkdir(path.join(releaseBuild, 'assets'), { recursive: true });
+        await fs.writeFile(
+            path.join(releaseBuild, 'index.html'),
+            '<!doctype html><head><script type="module" src="./assets/index-deadbeef.js"></script></head>'
+        );
+        await fs.writeFile(path.join(releaseBuild, 'assets', 'index-deadbeef.js'), 'console.log("shared")');
+        await fs.writeFile(
+            path.join(releaseBuild, 'deployment-version.json'),
+            `${JSON.stringify({ commitSha: profile.buildCommitSha })}\n`
+        );
+        const artifactRoot = path.join(workspace, 'artifacts');
+        const staticProfile = { ...profile, status: 'RUNNING' as const, buildWorkspace: workspace };
+        const harness = createHarness(buildOperation('START'), false, false, true, false, undefined, undefined, {
+            profile: staticProfile,
+            frontendServeMode: 'static',
+            frontendArtifactRoot: artifactRoot,
+            activeOperationProfileNames: [],
+        });
+
+        await harness.orchestrator.reconcileNow();
+
+        expect(harness.deleted).toContain('sammo:che:2:game-frontend');
+        expect(harness.started.map((definition) => definition.name)).toEqual([
+            'sammo:che:2:game-api',
+            'sammo:che:2:turn-daemon',
+            'sammo:che:2:auction-worker',
+            'sammo:che:2:battle-sim-worker',
+            'sammo:che:2:tournament-worker',
+        ]);
+        const indexHtml = await fs.readFile(path.join(artifactRoot, 'che', 'current', 'index.html'), 'utf8');
+        expect(indexHtml).toContain('id="sammo-runtime-config" type="application/json"');
+        expect(indexHtml).toContain('"profile":"che"');
+        expect(indexHtml).toContain('/gateway/profile-assets/');
+        const sharedReleaseRoot = path.join(artifactRoot, 'game-assets', 'releases');
+        const [sharedReleaseId] = await fs.readdir(sharedReleaseRoot);
+        expect(
+            await fs.readFile(path.join(sharedReleaseRoot, sharedReleaseId, 'assets', 'index-deadbeef.js'), 'utf8')
+        ).toBe('console.log("shared")');
+        expect(harness.completions).toEqual([]);
+    });
+
+    it('keeps the legacy full profile artifact compatible during the static cutover', async () => {
         const workspace = await fs.mkdtemp(path.join(os.tmpdir(), 'sammo-static-cutover-'));
         temporaryDirectories.push(workspace);
         await fs.mkdir(path.join(workspace, '.release-dist', 'che_2', 'game-frontend'), { recursive: true });

@@ -19,9 +19,26 @@ export interface StagedFrontendArtifact {
     manifest: FrontendArtifactManifest;
 }
 
+export interface ProfileFrontendRuntimeConfig {
+    version: 1;
+    profile: string;
+    profileName: string;
+    appBasePath: string;
+    gameApiUrl: string;
+    gameSseUrl: string;
+    gatewayApiUrl: string;
+    gatewayWebUrl: string;
+    buildCommitSha: string;
+    assetReleaseId: string;
+}
+
+export const SHARED_GAME_FRONTEND_KEY = 'game-assets';
+export const GAME_FRONTEND_RUNTIME_CONFIG_ID = 'sammo-runtime-config';
+
 const MANIFEST_FILE = '.sammo-artifact.json';
 const FRONTEND_KEY = /^[a-z0-9][a-z0-9_-]{0,63}$/u;
 const COMMIT_SHA = /^[0-9a-f]{40,64}$/iu;
+const PUBLIC_ASSET_BASE = /^\/[0-9A-Za-z/_-]*$/u;
 
 export const resolveFrontendServeMode = (value: string | undefined): FrontendServeMode => {
     const normalized = value?.trim().toLowerCase();
@@ -84,7 +101,9 @@ const buildDigest = async (sourceRoot: string, files: string[]): Promise<string>
 };
 
 const readManifest = async (releasePath: string): Promise<FrontendArtifactManifest> => {
-    const raw = JSON.parse(await fs.readFile(path.join(releasePath, MANIFEST_FILE), 'utf8')) as Partial<FrontendArtifactManifest>;
+    const raw = JSON.parse(
+        await fs.readFile(path.join(releasePath, MANIFEST_FILE), 'utf8')
+    ) as Partial<FrontendArtifactManifest>;
     if (
         raw.version !== 1 ||
         typeof raw.frontendKey !== 'string' ||
@@ -101,6 +120,43 @@ const readManifest = async (releasePath: string): Promise<FrontendArtifactManife
 
 const isMissing = (error: unknown): boolean =>
     error instanceof Error && 'code' in error && (error as NodeJS.ErrnoException).code === 'ENOENT';
+
+const escapeEmbeddedJson = (value: unknown): string =>
+    JSON.stringify(value)
+        .replaceAll('&', '\\u0026')
+        .replaceAll('<', '\\u003c')
+        .replaceAll('>', '\\u003e')
+        .replaceAll('\u2028', '\\u2028')
+        .replaceAll('\u2029', '\\u2029');
+
+export const renderProfileFrontendIndex = (options: {
+    sharedIndexHtml: string;
+    sharedReleaseId: string;
+    sharedAssetPublicBase: string;
+    runtimeConfig: ProfileFrontendRuntimeConfig;
+}): string => {
+    const publicBase = options.sharedAssetPublicBase.trim().replace(/\/+$/u, '');
+    if (!PUBLIC_ASSET_BASE.test(publicBase) || !publicBase) {
+        throw new Error(`Invalid shared frontend asset public base: ${options.sharedAssetPublicBase}`);
+    }
+    if (options.runtimeConfig.assetReleaseId !== options.sharedReleaseId) {
+        throw new Error('Profile frontend runtime config does not match the shared asset release.');
+    }
+    const releaseBase = `${publicBase}/${options.sharedReleaseId}`;
+    const rewritten = options.sharedIndexHtml.replace(
+        /\b(src|href)="\.\/(assets\/[^"?#]+(?:[?#][^"]*)?)"/gu,
+        (_match, attribute: string, assetPath: string) => `${attribute}="${releaseBase}/${assetPath}"`
+    );
+    if (rewritten === options.sharedIndexHtml || /(?:src|href)="\.\/assets\//u.test(rewritten)) {
+        throw new Error('Shared frontend index does not contain only rewritable relative asset URLs.');
+    }
+    const moduleScript = rewritten.search(/<script\b[^>]*\btype="module"/iu);
+    if (moduleScript < 0) {
+        throw new Error('Shared frontend index is missing its module script.');
+    }
+    const runtimeScript = `    <script id="${GAME_FRONTEND_RUNTIME_CONFIG_ID}" type="application/json">${escapeEmbeddedJson(options.runtimeConfig)}</script>\n`;
+    return `${rewritten.slice(0, moduleScript)}${runtimeScript}${rewritten.slice(moduleScript)}`;
+};
 
 export class FrontendArtifactManager {
     readonly root: string;
@@ -170,7 +226,12 @@ export class FrontendArtifactManager {
             try {
                 await fs.rename(stagingPath, releasePath);
             } catch (error) {
-                if (!isMissing(error) && error instanceof Error && 'code' in error && (error as NodeJS.ErrnoException).code === 'EEXIST') {
+                if (
+                    !isMissing(error) &&
+                    error instanceof Error &&
+                    'code' in error &&
+                    (error as NodeJS.ErrnoException).code === 'EEXIST'
+                ) {
                     const existing = await readManifest(releasePath);
                     if (existing.digest !== digest || existing.commitSha !== commitSha) throw error;
                 } else {
@@ -181,6 +242,51 @@ export class FrontendArtifactManager {
             await fs.rm(stagingPath, { recursive: true, force: true });
         }
         return { releaseId, releasePath, manifest };
+    }
+
+    async stageProfileWrapper(options: {
+        frontendKey: string;
+        sharedArtifact: StagedFrontendArtifact;
+        sharedAssetPublicBase: string;
+        runtimeConfig: Omit<ProfileFrontendRuntimeConfig, 'buildCommitSha' | 'assetReleaseId'>;
+    }): Promise<StagedFrontendArtifact> {
+        if (options.runtimeConfig.profile !== options.frontendKey) {
+            throw new Error('Profile frontend wrapper key does not match its runtime profile.');
+        }
+        await fs.mkdir(this.root, { recursive: true, mode: 0o755 });
+        const sourceRoot = await fs.mkdtemp(path.join(this.root, '.profile-wrapper-'));
+        try {
+            const runtimeConfig: ProfileFrontendRuntimeConfig = {
+                ...options.runtimeConfig,
+                buildCommitSha: options.sharedArtifact.manifest.commitSha,
+                assetReleaseId: options.sharedArtifact.releaseId,
+            };
+            const sharedIndexHtml = await fs.readFile(
+                path.join(options.sharedArtifact.releasePath, 'index.html'),
+                'utf8'
+            );
+            const wrapperIndexHtml = renderProfileFrontendIndex({
+                sharedIndexHtml,
+                sharedReleaseId: options.sharedArtifact.releaseId,
+                sharedAssetPublicBase: options.sharedAssetPublicBase,
+                runtimeConfig,
+            });
+            await fs.writeFile(path.join(sourceRoot, 'index.html'), wrapperIndexHtml, {
+                encoding: 'utf8',
+                mode: 0o644,
+            });
+            await fs.copyFile(
+                path.join(options.sharedArtifact.releasePath, 'deployment-version.json'),
+                path.join(sourceRoot, 'deployment-version.json')
+            );
+            return await this.stage({
+                frontendKey: options.frontendKey,
+                sourceRoot,
+                commitSha: options.sharedArtifact.manifest.commitSha,
+            });
+        } finally {
+            await fs.rm(sourceRoot, { recursive: true, force: true });
+        }
     }
 
     async readCurrentReleaseId(frontendKey: string): Promise<string | null> {

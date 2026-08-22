@@ -30,6 +30,7 @@ import { useMainDashboardStore } from '../stores/mainDashboard';
 import { useGameFeedback } from '../composables/useGameFeedback';
 import { trpc } from '../utils/trpc';
 import type { CommandPatternEntry } from '../components/command/types';
+import { gameFrontendRuntimeConfig } from '../config/runtimeConfig';
 import {
     loadMobileMainPanelOrder,
     MOBILE_MAIN_PANEL_ORDER_CHANGED_EVENT,
@@ -45,9 +46,9 @@ const isMobile = useMediaQuery('(max-width: 939.98px)');
 const npcMode = ref(0);
 const globalNavigation = ref<MainNavigationEntry[]>(defaultGlobalNavigation);
 const versionDialog = ref<HTMLDialogElement | null>(null);
-const buildCommitSha = import.meta.env.VITE_BUILD_COMMIT_SHA?.trim() || 'unknown';
+const buildCommitSha = gameFrontendRuntimeConfig.buildCommitSha;
 const mobilePanelOrder = ref(loadMobileMainPanelOrder());
-const navigationUrl = (import.meta.env.VITE_GATEWAY_API_URL ?? '/api/trpc').replace(/\/trpc\/?$/u, '/navigation');
+const navigationUrl = gameFrontendRuntimeConfig.gatewayApiUrl.replace(/\/trpc\/?$/u, '/navigation');
 
 const reloadMobilePanelOrder = () => {
     mobilePanelOrder.value = loadMobileMainPanelOrder();
@@ -188,7 +189,7 @@ const requestManualRefresh = () => {
 };
 
 const moveLobby = () => {
-    window.location.replace(import.meta.env.VITE_GATEWAY_WEB_URL?.trim() || '/gateway/');
+    window.location.replace(gameFrontendRuntimeConfig.gatewayWebUrl);
 };
 
 const moveQuick = (item: QuickNavigationItem) => {

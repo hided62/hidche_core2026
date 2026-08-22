@@ -57,7 +57,9 @@ import { assertReleaseComponents, readReleaseManifest } from './releaseManifest.
 import {
     FrontendArtifactManager,
     resolveFrontendServeMode,
+    SHARED_GAME_FRONTEND_KEY,
     type FrontendServeMode,
+    type StagedFrontendArtifact,
 } from './frontendArtifactManager.js';
 
 export interface GatewayProcessConfig {
@@ -573,6 +575,9 @@ const sanitizeArtifactName = (value: string): string => value.replace(/[^0-9A-Za
 const buildProfileFrontendOutDir = (workspaceRoot: string, profileName: string): string =>
     path.join(workspaceRoot, '.release-dist', sanitizeArtifactName(profileName), 'game-frontend');
 
+const buildSharedProfileFrontendOutDir = (workspaceRoot: string): string =>
+    path.join(workspaceRoot, 'app', 'game-frontend', '.release-build');
+
 export const buildProfileFrontendCommands = (
     workspaceRoot: string,
     profile: Pick<GatewayProfileRecord, 'profileName' | 'profile' | 'apiPort'>,
@@ -606,6 +611,37 @@ export const buildProfileFrontendCommands = (
             cwd: workspaceRoot,
             env: buildEnv,
         },
+    ];
+};
+
+export const buildSharedProfileFrontendCommands = (
+    workspaceRoot: string,
+    buildCommitSha: string,
+    env?: Record<string, string>,
+    cacheAnchorRoot: string = workspaceRoot
+): BuildCommand[] => {
+    if (!/^[0-9a-f]{40,64}$/iu.test(buildCommitSha.trim())) {
+        throw new Error('Shared profile frontend build requires a full commit SHA.');
+    }
+    const sharedEnv = { ...(env ?? {}) };
+    for (const key of ['VITE_APP_BASE_PATH', 'VITE_GAME_API_URL', 'VITE_GAME_SSE_URL', 'VITE_GAME_PROFILE']) {
+        delete sharedEnv[key];
+    }
+    const profileFrontendBuildNodeOptions = env?.PROFILE_FRONTEND_BUILD_NODE_OPTIONS?.trim();
+    const buildEnv = sanitizeReleaseBuildEnv({
+        ...sharedEnv,
+        ...(profileFrontendBuildNodeOptions ? { NODE_OPTIONS: profileFrontendBuildNodeOptions } : {}),
+        VITE_ASSET_BASE_PATH: './',
+        VITE_BUILD_COMMIT_SHA: buildCommitSha.trim().toLowerCase(),
+    });
+    return [
+        buildTurboReleaseTaskCommand(
+            workspaceRoot,
+            cacheAnchorRoot,
+            'build:release',
+            ['@sammo-ts/game-frontend'],
+            buildEnv
+        ),
     ];
 };
 
@@ -1556,13 +1592,20 @@ export class GatewayOrchestrator implements GatewayOrchestratorHandle {
                     this.processConfig.workspaceRoot,
                     ['@sammo-ts/game-api']
                 ),
-                ...buildProfileFrontendCommands(
-                    workspace.root,
-                    profile,
-                    commitSha,
-                    this.processConfig.baseEnv,
-                    this.processConfig.workspaceRoot
-                ),
+                ...(this.frontendServeMode === 'static'
+                    ? buildSharedProfileFrontendCommands(
+                          workspace.root,
+                          commitSha,
+                          this.processConfig.baseEnv,
+                          this.processConfig.workspaceRoot
+                      )
+                    : buildProfileFrontendCommands(
+                          workspace.root,
+                          profile,
+                          commitSha,
+                          this.processConfig.baseEnv,
+                          this.processConfig.workspaceRoot
+                      )),
             ];
             await this.appendOperationLog(operationId, 'build', `${profile.profileName} 구성 요소를 빌드합니다.`);
             const result = await this.releaseBuildRunner.run(commands, this.buildProgress(operationId, 'build'), {
@@ -2148,13 +2191,20 @@ export class GatewayOrchestrator implements GatewayOrchestratorHandle {
                 this.processConfig.workspaceRoot
             ),
             ...(profile
-                ? buildProfileFrontendCommands(
-                      workspace.root,
-                      profile,
-                      commitSha,
-                      this.processConfig.baseEnv,
-                      this.processConfig.workspaceRoot
-                  )
+                ? this.frontendServeMode === 'static'
+                    ? buildSharedProfileFrontendCommands(
+                          workspace.root,
+                          commitSha,
+                          this.processConfig.baseEnv,
+                          this.processConfig.workspaceRoot
+                      )
+                    : buildProfileFrontendCommands(
+                          workspace.root,
+                          profile,
+                          commitSha,
+                          this.processConfig.baseEnv,
+                          this.processConfig.workspaceRoot
+                      )
                 : []),
         ];
         if (operationId) {
@@ -2255,10 +2305,7 @@ export class GatewayOrchestrator implements GatewayOrchestratorHandle {
     }
 
     private resolveProfileDatabaseUrl(profile: GatewayProfileRecord): string {
-        return resolveGatewayPostgresConfigFromEnv(
-            this.processConfig.baseEnv ?? process.env,
-            profile.profile
-        ).url;
+        return resolveGatewayPostgresConfigFromEnv(this.processConfig.baseEnv ?? process.env, profile.profile).url;
     }
 
     private async clearTournamentRuntimeStateFromRedis(profileName: string): Promise<void> {
@@ -2324,6 +2371,49 @@ export class GatewayOrchestrator implements GatewayOrchestratorHandle {
         }
     }
 
+    private async stageStaticProfileFrontend(profile: GatewayProfileRecord): Promise<StagedFrontendArtifact> {
+        if (!profile.buildCommitSha) {
+            throw new Error(`Profile ${profile.profileName} is missing the build commit SHA.`);
+        }
+        const runtimeWorkspace = profile.buildWorkspace ?? this.processConfig.workspaceRoot;
+        const sharedSourceRoot = buildSharedProfileFrontendOutDir(runtimeWorkspace);
+        const sharedIndexPath = path.join(sharedSourceRoot, 'index.html');
+        const sharedIndexHtml = await fs.readFile(sharedIndexPath, 'utf8').catch((error: unknown) => {
+            if (error instanceof Error && 'code' in error && (error as NodeJS.ErrnoException).code === 'ENOENT') {
+                return null;
+            }
+            throw error;
+        });
+        if (sharedIndexHtml?.includes('./assets/')) {
+            const sharedArtifact = await this.artifactManager.stage({
+                frontendKey: SHARED_GAME_FRONTEND_KEY,
+                sourceRoot: sharedSourceRoot,
+                commitSha: profile.buildCommitSha,
+            });
+            const baseEnv = this.processConfig.baseEnv ?? {};
+            return this.artifactManager.stageProfileWrapper({
+                frontendKey: profile.profile,
+                sharedArtifact,
+                sharedAssetPublicBase: baseEnv.FRONTEND_SHARED_ASSET_PUBLIC_PATH?.trim() || '/gateway/profile-assets',
+                runtimeConfig: {
+                    version: 1,
+                    profile: profile.profile,
+                    profileName: profile.profileName,
+                    appBasePath: `/${profile.profile}/`,
+                    gameApiUrl: `/${profile.profile}/api/trpc`,
+                    gameSseUrl: `/${profile.profile}/api/events`,
+                    gatewayApiUrl: baseEnv.VITE_GATEWAY_API_URL?.trim() || '/gateway/api/trpc',
+                    gatewayWebUrl: baseEnv.VITE_GATEWAY_WEB_URL?.trim() || '/gateway/',
+                },
+            });
+        }
+        return this.artifactManager.stage({
+            frontendKey: profile.profile,
+            sourceRoot: buildProfileFrontendOutDir(runtimeWorkspace, profile.profileName),
+            commitSha: profile.buildCommitSha,
+        });
+    }
+
     private async startProfile(profile: GatewayProfileRecord, assertLease?: () => Promise<void>): Promise<boolean> {
         const definitions = buildProcessDefinitions(profile, this.processConfig);
         const orderedDefinitions = [
@@ -2337,19 +2427,7 @@ export class GatewayOrchestrator implements GatewayOrchestratorHandle {
         const attemptedNames: string[] = [];
         try {
             const stagedArtifact =
-                this.frontendServeMode === 'static'
-                    ? await (async () => {
-                          if (!profile.buildCommitSha) {
-                              throw new Error(`Profile ${profile.profileName} is missing the build commit SHA.`);
-                          }
-                          const runtimeWorkspace = profile.buildWorkspace ?? this.processConfig.workspaceRoot;
-                          return this.artifactManager.stage({
-                              frontendKey: profile.profile,
-                              sourceRoot: buildProfileFrontendOutDir(runtimeWorkspace, profile.profileName),
-                              commitSha: profile.buildCommitSha,
-                          });
-                      })()
-                    : null;
+                this.frontendServeMode === 'static' ? await this.stageStaticProfileFrontend(profile) : null;
             const expectedNames = new Set(orderedDefinitions.map((definition) => definition.name));
             const obsoleteNames =
                 this.frontendServeMode === 'static' ? new Set([definitions.frontend.name]) : new Set<string>();

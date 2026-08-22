@@ -9,6 +9,7 @@ import { useSessionStore } from '../stores/session';
 import { resolveGeneralIconUrl, useDefaultGeneralIcon } from '../utils/generalIcon';
 import GeneralInformationPanel from '../components/main/GeneralInformationPanel.vue';
 import { useGameFeedback } from '../composables/useGameFeedback';
+import { gameFrontendRuntimeConfig } from '../config/runtimeConfig';
 
 const PENDING_DIE_ON_PRESTART_KEY = 'sam.pending.dieOnPrestart';
 const { error: showErrorToast, showDialog } = useGameFeedback();
@@ -308,7 +309,7 @@ const dieOnPrestart = async () => {
         await trpc.general.dieOnPrestart.mutate({ clientRequestId });
         window.sessionStorage.removeItem(PENDING_DIE_ON_PRESTART_KEY);
         session.leaveGame();
-        window.location.replace(import.meta.env.VITE_GATEWAY_WEB_URL?.trim() || '/gateway/');
+        window.location.replace(gameFrontendRuntimeConfig.gatewayWebUrl);
     } catch (cause) {
         const code = asRecord(asRecord(cause).data).code;
         if (code !== 'TIMEOUT') {

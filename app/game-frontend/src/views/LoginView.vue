@@ -1,7 +1,8 @@
 <script setup lang="ts">
 import { onMounted } from 'vue';
+import { gameFrontendRuntimeConfig } from '../config/runtimeConfig';
 
-const gatewayUrl = import.meta.env.VITE_GATEWAY_WEB_URL || '/gateway/';
+const gatewayUrl = gameFrontendRuntimeConfig.gatewayWebUrl;
 
 onMounted(() => {
     window.location.replace(gatewayUrl);

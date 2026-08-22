@@ -52,11 +52,15 @@ profile 범위 권한과 별개인 전역 `admin.releases.manage` 권한이 필�
   persistent 경로가 필요하면 controller/orchestrator 환경에 `TURBO_CACHE_DIR`을
   설정합니다. Cache는 재생성 가능한 build artifact이며 DB/Redis backup이 아닙니다.
 - Server build 뒤 frontend release는 `typecheck:release`와 Vite bundle을 별도 Turbo
-  task로 실행합니다. 타입검사 hash에는 frontend 자체와 직접 해석하는 common/infra/
+  task로 실행합니다. 정적 운영 모드의 profile은 profile별 base/API 값을 build env에서
+  제거하고 `VITE_ASSET_BASE_PATH=./`인 공용 bundle을 commit당 한 번 생성합니다.
+  타입검사 hash에는 frontend 자체와 직접 해석하는 common/infra/
   logic/game-engine/game-api/gateway-api source, Prisma schema와 기본 navigation resource가
   들어가며, bundle hash에는 `NODE_ENV`와 모든 `VITE_*`가 포함됩니다. 따라서 내부 type
-  source, base path나 API URL이 다른 frontend artifact를 cache hit로 잘못 복원하지
-  않습니다. 일반 개발용 `pnpm --filter <frontend> build`의 typecheck 계약은 그대로입니다.
+  source와 공개 build-time 값이 다른 frontend artifact를 cache hit로 잘못 복원하지
+  않습니다. Profile base path와 API/SSE URL은 공용 bundle 입력이 아니라 게시 시점의
+  runtime JSON config이므로 profile 사이에서 의도적으로 같은 cache key를 사용합니다.
+  일반 개발용 `pnpm --filter <frontend> build`의 typecheck 계약은 그대로입니다.
   `NODE_OPTIONS`와 `RAYON_NUM_THREADS`는 출력에는 영향을 주지 않는 resource 제한으로
   build child에 전달됩니다.
 - `TURN_DAEMON_NODE_OPTIONS`가 설정되어 있으면 Gateway orchestrator는 그 값을
@@ -135,11 +139,15 @@ Gateway process 전환이 진행 중인 profile migration·seed 실행자를 중
 데이터를 변환할 수 있으므로 대상 migration의 운영 데이터 영향은 배포 전에
 별도로 검토해 주세요.
 
-Profile frontend bundle은 package의 `.release-build`에 고정 생성되어 profile base
-path별 Turbo cache에 저장됩니다. Orchestrator는 cache 복원 후 이를
-`.release-dist/<profileName>/game-frontend`에 staging directory를 거쳐 교체합니다.
-따라서 같은 commit·같은 공개 prefix의 재배포는 `vue-tsc`와 Vite를 다시 실행하지
-않고, 여러 instance가 같은 prefix를 쓰더라도 각 runtime target은 따로 materialize됩니다.
+Profile frontend bundle은 package의 `.release-build`에 상대 asset URL로 한 번 생성되어
+profile과 무관한 Turbo cache에 저장됩니다. Orchestrator는 이를
+`game-assets/releases/<commit-digest>` 불변 release로 한 번 stage하고, 각 profile에는
+base path, API/SSE URL과 Gateway URL을 `<script type="application/json">`로 주입한 작은
+`index.html`, `deployment-version.json`과 manifest만 게시합니다. 브라우저가 다른
+profile을 열어도 `/gateway/profile-assets/<commit-digest>/assets/*` URL이 같아 JS, CSS와
+source map 전송 cache를 공유합니다. Source map 생성과 공개 진단 계약은 유지합니다.
+Preview 개발 모드는 기존 profile별 Vite env와 materialize 경계를 그대로 사용하며,
+전환 전 profile 전용 정적 artifact도 rollback 호환 경로로 읽습니다.
 각 artifact의 `deployment-version.json`은 bundle과 같은 full commit SHA만 담습니다.
 열린 profile 탭은 이 파일의 고정 URL을 ETag로 조건부 재검증해 bundle SHA와 달라졌을
 때 한 번만 `새 버전이 준비되었습니다. 새로고침하면 변경사항이 반영됩니다.` toast를

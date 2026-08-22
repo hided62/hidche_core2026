@@ -2,6 +2,7 @@ import { defineStore } from 'pinia';
 import { takeGameSessionTransfer, type GameSessionTransfer } from '@sammo-ts/common/auth/gameSessionTransfer';
 import { gatewayTrpc } from '../utils/gatewayTrpc';
 import { trpc as gameTrpc } from '../utils/trpc';
+import { gameFrontendRuntimeConfig } from '../config/runtimeConfig';
 
 export type SessionStatus = 'unknown' | 'public' | 'authed' | 'general';
 
@@ -222,7 +223,7 @@ export const useSessionStore = defineStore('session', {
                 this.setGameToken(storedGameToken);
             }
 
-            const storedProfile = this.profile ?? readStorage(PROFILE_KEY) ?? import.meta.env.VITE_GAME_PROFILE;
+            const storedProfile = this.profile ?? readStorage(PROFILE_KEY) ?? gameFrontendRuntimeConfig.profile;
             if (storedProfile && storedProfile !== this.profile) {
                 this.setProfile(storedProfile);
             }

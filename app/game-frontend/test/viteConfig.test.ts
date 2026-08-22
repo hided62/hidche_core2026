@@ -29,6 +29,31 @@ void describe('game frontend Vite config', () => {
         assert.equal(loaded?.config.build?.sourcemap, true);
     });
 
+    void it('allows a profile-neutral relative asset base without changing the application base fallback', async () => {
+        const previousAssetBasePath = process.env.VITE_ASSET_BASE_PATH;
+        const previousAppBasePath = process.env.VITE_APP_BASE_PATH;
+        process.env.VITE_ASSET_BASE_PATH = './';
+        process.env.VITE_APP_BASE_PATH = '/che';
+        try {
+            const configPath = path.resolve(import.meta.dirname, '../vite.config.ts');
+            const loaded = await loadConfigFromFile(
+                { command: 'build', mode: 'production' },
+                configPath,
+                path.dirname(configPath),
+                undefined,
+                undefined,
+                'runner'
+            );
+
+            assert.equal(loaded?.config.base, './');
+        } finally {
+            if (previousAssetBasePath === undefined) delete process.env.VITE_ASSET_BASE_PATH;
+            else process.env.VITE_ASSET_BASE_PATH = previousAssetBasePath;
+            if (previousAppBasePath === undefined) delete process.env.VITE_APP_BASE_PATH;
+            else process.env.VITE_APP_BASE_PATH = previousAppBasePath;
+        }
+    });
+
     void it('uses the deployment-pinned full commit SHA as the displayed build version', async () => {
         const commitSha = 'ABCDEF0123456789ABCDEF0123456789ABCDEF01';
         const previousCommitSha = process.env.VITE_BUILD_COMMIT_SHA;

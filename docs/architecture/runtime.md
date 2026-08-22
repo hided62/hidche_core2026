@@ -7,7 +7,7 @@
 | gateway API          | `app/gateway-api/src/server.ts`                          | 계정, session, profile, admin operation     |
 | gateway orchestrator | `app/gateway-api/src/orchestrator/orchestratorServer.ts` | DB queue, build, PM2 reconciliation         |
 | release controller   | `app/release-controller/src/index.ts`                    | Gateway 전체 릴리스와 controller CLI 전환   |
-| game frontend        | Vite preview                                             | profile별 commit frontend artifact          |
+| game frontend        | Caddy static                                             | commit 공용 asset + profile runtime wrapper |
 | game API             | `app/game-api/src/server.ts`                             | profile tRPC, SSE, worker transport         |
 | turn daemon          | `app/game-engine/src/turn/cli.ts`                        | schedule, command, 월간 lifecycle, DB flush |
 | battle worker        | `app/game-api/src/battleSim/worker.ts`                   | 격리된 전투 시뮬레이션                      |
@@ -17,12 +17,13 @@
 Gateway API와 game API는 기본적으로 `0.0.0.0`에 bind합니다. 실제 port와
 prefix는 환경 변수와 배포 profile이 결정합니다.
 
-현재 PM2 조립에서 game profile 하나는 frontend, API, turn daemon, auction,
-battle-sim, tournament worker의 여섯 process를 만듭니다. 각 정의에는
-`instances`나 cluster `exec_mode`가 없으므로 모두 단일 fork입니다. frontend도
-Caddy 정적 파일이 아니라 profile별 Vite preview Node process이고, API도 하나의
-Fastify process입니다. worker 역할 분리는 API event loop의 작업을 줄이지만
-frontend/API replica나 장애 대체 backend를 제공하지는 않습니다.
+현재 정적 운영 모드의 PM2 조립에서 game profile 하나는 API, turn daemon, auction,
+battle-sim, tournament worker의 다섯 process를 만듭니다. 각 정의에는 `instances`나
+cluster `exec_mode`가 없으므로 모두 단일 fork입니다. Frontend는 Caddy가
+`frontend-artifacts` volume에서 직접 제공하며 profile별 Vite preview Node process를
+두지 않습니다. Preview 개발 모드에서만 여섯 번째 frontend process를 유지합니다.
+API는 하나의 Fastify process입니다. worker 역할 분리는 API event loop의 작업을
+줄이지만 API replica나 장애 대체 backend를 제공하지는 않습니다.
 
 Profile은 PostgreSQL schema와 Redis namespace를 분리하지만 같은 database,
 PostgreSQL instance, runtime cgroup을 공유합니다. 관리되는 PM2 정의는 game API 4,
@@ -126,14 +127,17 @@ artifact를 만들며 `Pm2ProcessManager`가 profile process를 조정합니다.
 재시작 시 DB 상태와 process 상태를 reconciliation합니다.
 
 Profile `DEPLOY` operation은 현재 game schema와 시즌 데이터를 유지한 채 선택
-commit의 game API, engine과 profile 전용 frontend artifact를 빌드합니다. 기존
+commit의 game API, engine과 commit 공용 frontend asset을 빌드합니다. 기존
 프로세스를 멈춘 뒤 `prisma migrate deploy`만 실행하고 seed는 호출하지 않습니다.
 새 API·frontend와 모든 worker가 PM2 `online`이고 HTTP readiness가 성공해야
 build commit을 게시합니다. 실패하면 이전 worktree 프로세스를 다시 시작합니다.
 Profile frontend build에는 같은 전체 commit SHA를 `VITE_BUILD_COMMIT_SHA`로
-주입합니다. 이 값은 Turbo의 `VITE_*` cache key에 포함되고 Vite가 bundle 상수로
-고정하므로, 게임의 `게임 정보` dialog가 실제 선택 build commit을 표시하며 다른
-commit의 cached artifact를 현재 버전으로 오인하지 않습니다. Orchestrator 밖의
+주입합니다. 정적 운영 모드는 profile base/API 값을 build에서 제거하고 상대 asset
+base를 사용하므로 같은 commit의 모든 profile이 하나의 Turbo/Vite 결과를 공유합니다.
+Profile별 base path, API/SSE URL과 Gateway URL은 각 `current/index.html`에 JSON script로
+주입되어 router와 client가 시작할 때 읽습니다. 게임의 `게임 정보` dialog가 실제 선택
+build commit을 표시하며 다른 commit의 cached artifact를 현재 버전으로 오인하지
+않습니다. Orchestrator 밖의
 개발 build는 현재 Git checkout의 `HEAD`를 fallback으로 사용하고 Git metadata를
 읽을 수 없을 때만 `unknown`을 표시합니다.
 같은 build 단계는 profile root에 `deployment-version.json`을 생성합니다. 이미 열린
