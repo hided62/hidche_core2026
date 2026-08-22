@@ -1356,6 +1356,7 @@ test('desktop menus preserve ref columns, prefix-safe routes, and controlled dro
             codeColor: codeStyle.color,
             codeFontFamily: codeStyle.fontFamily,
             viewportWidth: window.innerWidth,
+            viewportHeight: window.innerHeight,
         };
     });
     expect(versionGeometry.dialog.width).toBeLessThanOrEqual(versionGeometry.viewportWidth - 32);
@@ -1364,11 +1365,18 @@ test('desktop menus preserve ref columns, prefix-safe routes, and controlled dro
     expect(versionGeometry.dialogBackground).toBe('rgb(32, 32, 32)');
     expect(versionGeometry.dialogColor).toBe('rgb(255, 255, 255)');
     expect(versionGeometry.codeColor).toBe('rgb(215, 215, 215)');
+    expect(
+        Math.abs(versionGeometry.dialog.left + versionGeometry.dialog.width / 2 - versionGeometry.viewportWidth / 2)
+    ).toBeLessThanOrEqual(1);
+    expect(
+        Math.abs(versionGeometry.dialog.top + versionGeometry.dialog.height / 2 - versionGeometry.viewportHeight / 2)
+    ).toBeLessThanOrEqual(1);
     await writeFile(
         testInfo.outputPath('desktop-game-version-dialog.json'),
         `${JSON.stringify(versionGeometry, null, 2)}\n`
     );
     await versionDialog.screenshot({ path: testInfo.outputPath('desktop-game-version-dialog.png') });
+    await page.screenshot({ path: testInfo.outputPath('desktop-game-version-dialog-viewport.png') });
     await versionDialog.getByRole('button', { name: '닫기' }).click();
     await expect(versionDialog).toBeHidden();
 
@@ -1737,6 +1745,7 @@ test('the repeated bottom global menu opens upward on the mobile document', asyn
             dialog: dialog.getBoundingClientRect().toJSON(),
             code: code.getBoundingClientRect().toJSON(),
             viewportWidth: window.innerWidth,
+            viewportHeight: window.innerHeight,
             documentScrollWidth: document.documentElement.scrollWidth,
         };
     });
@@ -1744,11 +1753,18 @@ test('the repeated bottom global menu opens upward on the mobile document', asyn
     expect(versionGeometry.code.left).toBeGreaterThanOrEqual(versionGeometry.dialog.left);
     expect(versionGeometry.code.right).toBeLessThanOrEqual(versionGeometry.dialog.right);
     expect(versionGeometry.documentScrollWidth).toBe(500);
+    expect(
+        Math.abs(versionGeometry.dialog.left + versionGeometry.dialog.width / 2 - versionGeometry.viewportWidth / 2)
+    ).toBeLessThanOrEqual(1);
+    expect(
+        Math.abs(versionGeometry.dialog.top + versionGeometry.dialog.height / 2 - versionGeometry.viewportHeight / 2)
+    ).toBeLessThanOrEqual(1);
     await writeFile(
         testInfo.outputPath('mobile-game-version-dialog.json'),
         `${JSON.stringify(versionGeometry, null, 2)}\n`
     );
     await versionDialog.screenshot({ path: testInfo.outputPath('mobile-game-version-dialog.png') });
+    await page.screenshot({ path: testInfo.outputPath('mobile-game-version-dialog-viewport.png') });
     await persistArtifact(page, `${basePath.slice(1)}-mobile-bottom-dropup`);
 });
 

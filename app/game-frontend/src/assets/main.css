@@ -65,6 +65,17 @@ textarea {
 }
 
 /*
+ * Tailwind's reset removes the native dialog's auto margins. Dialogs that are
+ * meant to float over the current screen opt back into explicit viewport
+ * centring instead of inheriting the document's 500px legacy canvas.
+ */
+.viewport-centered-dialog {
+    position: fixed;
+    inset: 0;
+    margin: auto;
+}
+
+/*
  * Firefox for Android may zoom to a focused search field. `manipulation`
  * suppresses that focus-only zoom while retaining ordinary pan and pinch zoom.
  */

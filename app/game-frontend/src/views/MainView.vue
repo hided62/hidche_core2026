@@ -585,7 +585,11 @@ watch(
         @quick="moveQuick"
         @action="handleNavigationAction"
     />
-    <dialog ref="versionDialog" class="game-version-dialog" aria-labelledby="game-version-title">
+    <dialog
+        ref="versionDialog"
+        class="game-version-dialog viewport-centered-dialog"
+        aria-labelledby="game-version-title"
+    >
         <h2 id="game-version-title">게임 정보</h2>
         <p>{{ lobbyInfo?.scenarioTitle || 'Core2026' }}</p>
         <p>삼국지 모의전투 Core2026</p>
