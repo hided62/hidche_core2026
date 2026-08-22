@@ -1,4 +1,8 @@
-import { describe, expect, it } from 'vitest';
+import fs from 'node:fs/promises';
+import os from 'node:os';
+import path from 'node:path';
+
+import { afterEach, describe, expect, it } from 'vitest';
 
 import { GatewayOrchestrator, type GatewayOrchestratorOptions } from '../src/orchestrator/gatewayOrchestrator.js';
 import type { ProcessDefinition, ProcessManager } from '../src/orchestrator/processManager.js';
@@ -9,6 +13,12 @@ import type {
     GatewayProfileRepository,
 } from '../src/orchestrator/profileRepository.js';
 import { GitWorkspaceManager } from '../src/orchestrator/workspaceManager.js';
+
+const temporaryDirectories: string[] = [];
+
+afterEach(async () => {
+    await Promise.all(temporaryDirectories.splice(0).map((directory) => fs.rm(directory, { recursive: true })));
+});
 
 const profile: GatewayProfileRecord = {
     profileName: 'che:2',
@@ -52,6 +62,9 @@ const createHarness = (
         reservedToStart?: GatewayProfileRecord[];
         now?: () => Date;
         cancelGame?: GatewayOrchestratorOptions['cancelGame'];
+        frontendServeMode?: 'static';
+        frontendArtifactRoot?: string;
+        activeOperationProfileNames?: string[];
     } = {}
 ) => {
     const harnessProfile = options.profile ?? profile;
@@ -85,7 +98,8 @@ const createHarness = (
         updateWorkspaceUsage: async () => {},
         clearWorkspaceUsage: async () => {},
         listOperations: async () => [],
-        listActiveOperationProfileNames: async () => [harnessProfile.profileName],
+        listActiveOperationProfileNames: async () =>
+            options.activeOperationProfileNames ?? [harnessProfile.profileName],
         getOperation: async () => operation,
         listOperationLogs: async () => [],
         appendOperationLog: async (operationId, input) => {
@@ -168,6 +182,8 @@ const createHarness = (
             redisKeyPrefix: 'sammo:test',
             gameTokenSecret: 'test-secret',
             gatewayInternalApiUrl: 'http://127.0.0.1:13000',
+            frontendServeMode: options.frontendServeMode,
+            frontendArtifactRoot: options.frontendArtifactRoot,
             baseEnv: { DATABASE_URL: 'postgresql://test:test@127.0.0.1:15432/test' },
         },
         reconcileIntervalMs: 60_000,
@@ -373,6 +389,56 @@ describe('GatewayOrchestrator first-class operations', () => {
             'sammo:che:2:tournament-worker',
         ]);
         expect(harness.completions).toEqual(['SUCCEEDED']);
+    });
+
+    it('removes a legacy Vite process while publishing the first static artifact', async () => {
+        const workspace = await fs.mkdtemp(path.join(os.tmpdir(), 'sammo-static-cutover-'));
+        temporaryDirectories.push(workspace);
+        await fs.mkdir(path.join(workspace, '.release-dist', 'che_2', 'game-frontend'), { recursive: true });
+        await fs.writeFile(
+            path.join(workspace, '.release-dist', 'che_2', 'game-frontend', 'index.html'),
+            '<!doctype html><title>static cutover</title>'
+        );
+        const artifactRoot = path.join(workspace, 'artifacts');
+        const staticProfile = { ...profile, status: 'RUNNING' as const, buildWorkspace: workspace };
+        const harness = createHarness(buildOperation('START'), false, false, true, false, undefined, undefined, {
+            profile: staticProfile,
+            frontendServeMode: 'static',
+            frontendArtifactRoot: artifactRoot,
+            activeOperationProfileNames: [],
+        });
+
+        await harness.orchestrator.reconcileNow();
+
+        expect(harness.deleted).toContain('sammo:che:2:game-frontend');
+        expect(harness.started.map((definition) => definition.name)).toEqual([
+            'sammo:che:2:game-api',
+            'sammo:che:2:turn-daemon',
+            'sammo:che:2:auction-worker',
+            'sammo:che:2:battle-sim-worker',
+            'sammo:che:2:tournament-worker',
+        ]);
+        expect(await fs.readFile(path.join(artifactRoot, 'che', 'current', 'index.html'), 'utf8')).toContain(
+            'static cutover'
+        );
+        expect(harness.completions).toEqual([]);
+    });
+
+    it('keeps legacy processes untouched when the first static artifact cannot be staged', async () => {
+        const workspace = await fs.mkdtemp(path.join(os.tmpdir(), 'sammo-static-cutover-missing-'));
+        temporaryDirectories.push(workspace);
+        const harness = createHarness(buildOperation('START'), false, false, true, false, undefined, undefined, {
+            profile: { ...profile, status: 'RUNNING', buildWorkspace: workspace },
+            frontendServeMode: 'static',
+            frontendArtifactRoot: path.join(workspace, 'artifacts'),
+            activeOperationProfileNames: [],
+        });
+
+        await harness.orchestrator.reconcileNow();
+
+        expect(harness.started).toEqual([]);
+        expect(harness.deleted).toEqual([]);
+        expect(harness.completions).toEqual([]);
     });
 
     it('stops every profile process and records success', async () => {

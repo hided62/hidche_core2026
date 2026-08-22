@@ -4,6 +4,7 @@ import {
     GitWorkspaceManager,
     Pm2ProcessManager,
     PnpmBuildRunner,
+    createReleaseBuildRunner,
 } from '@sammo-ts/gateway-api';
 
 import { resolveReleaseControllerConfig } from './config.js';
@@ -28,6 +29,7 @@ const main = async (): Promise<void> => {
         baseEnv: config.baseEnv,
     });
     const buildRunner = new PnpmBuildRunner();
+    const releaseBuildRunner = createReleaseBuildRunner(config.releaseBuilderUrl, buildRunner);
     const processManager = new Pm2ProcessManager();
     const controller = new GatewayReleaseController(repository, workspaceManager, buildRunner, processManager, config);
     const command = process.argv[2] ?? 'daemon';
@@ -57,7 +59,8 @@ const main = async (): Promise<void> => {
             sourceMode,
             sourceRef,
             workspaceManager,
-            buildRunner,
+            buildRunner: releaseBuildRunner,
+            migrationRunner: buildRunner,
             processManager,
             config,
         });

@@ -103,6 +103,25 @@ describe('GitWorkspaceManager source resolution', () => {
         await expect(manager.resolveCommit('COMMIT', 'HEAD..main')).rejects.toThrow('Invalid git ref');
     });
 
+    it('atomically publishes only refs below the managed release namespace', async () => {
+        const fixture = createRepositoryFixture();
+        const manager = new GitWorkspaceManager({
+            repoRoot: fixture.checkout,
+            worktreeRoot: fixture.worktrees,
+        });
+        const releaseRef = 'refs/sammo/active-gateway';
+
+        await expect(manager.readPersistentReleaseRef(releaseRef)).resolves.toBeNull();
+        await manager.compareAndSwapPersistentReleaseRef(releaseRef, null, fixture.firstCommit);
+        await expect(manager.readPersistentReleaseRef(releaseRef)).resolves.toBe(fixture.firstCommit);
+        await expect(
+            manager.compareAndSwapPersistentReleaseRef(releaseRef, 'f'.repeat(40), fixture.firstCommit)
+        ).rejects.toThrow(/Failed to update persistent release ref/u);
+        await manager.compareAndSwapPersistentReleaseRef(releaseRef, fixture.firstCommit, null);
+        await expect(manager.readPersistentReleaseRef(releaseRef)).resolves.toBeNull();
+        await expect(manager.readPersistentReleaseRef('refs/heads/main')).rejects.toThrow(/refs\/sammo/u);
+    });
+
     it('reuses only a clean registered worktree at the requested commit', async () => {
         const fixture = createRepositoryFixture();
         const manager = new GitWorkspaceManager({

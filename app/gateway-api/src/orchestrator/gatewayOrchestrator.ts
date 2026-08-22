@@ -30,6 +30,8 @@ import {
     type BuildProgressEvent,
     type BuildProgressObserver,
     type BuildRunner,
+    createReleaseBuildRunner,
+    sanitizeReleaseBuildEnv,
 } from './buildRunner.js';
 import { sanitizeManagedProcessEnv, type ProcessManager } from './processManager.js';
 import type {
@@ -51,12 +53,21 @@ import {
 } from './workspaceManager.js';
 import type { AdminSeedUser } from './seedProfileDatabase.js';
 import { assertReleaseComponents, readReleaseManifest } from './releaseManifest.js';
+import {
+    FrontendArtifactManager,
+    resolveFrontendServeMode,
+    type FrontendServeMode,
+} from './frontendArtifactManager.js';
 
 export interface GatewayProcessConfig {
     workspaceRoot: string;
     redisKeyPrefix: string;
     gameTokenSecret: string;
     gatewayInternalApiUrl: string;
+    frontendServeMode?: FrontendServeMode;
+    frontendArtifactRoot?: string;
+    frontendReadinessOrigin?: string;
+    releaseBuilderUrl?: string;
     baseEnv?: Record<string, string>;
 }
 
@@ -567,14 +578,14 @@ export const buildProfileFrontendCommands = (
         throw new Error('Profile frontend build requires a full commit SHA.');
     }
     const profileFrontendBuildNodeOptions = env?.PROFILE_FRONTEND_BUILD_NODE_OPTIONS?.trim();
-    const buildEnv = {
+    const buildEnv = sanitizeReleaseBuildEnv({
         ...(env ?? {}),
         ...(profileFrontendBuildNodeOptions ? { NODE_OPTIONS: profileFrontendBuildNodeOptions } : {}),
         VITE_APP_BASE_PATH: `/${profile.profile}`,
         VITE_GAME_API_URL: `/${profile.profile}/api/trpc`,
         VITE_GAME_SSE_URL: `/${profile.profile}/api/events`,
         VITE_BUILD_COMMIT_SHA: buildCommitSha.trim().toLowerCase(),
-    };
+    });
     return [
         buildTurboReleaseTaskCommand(
             workspaceRoot,
@@ -599,16 +610,17 @@ export const buildWorkspaceCommands = (
     cacheAnchorRoot: string = workspaceRoot,
     packageNames: string[] = ['@sammo-ts/game-api', '@sammo-ts/gateway-api']
 ): BuildCommand[] => {
+    const buildEnv = sanitizeReleaseBuildEnv(env);
     const commands: BuildCommand[] = [];
     if (needsInstall) {
         commands.push({
             command: 'pnpm',
             args: ['install', '--frozen-lockfile'],
             cwd: workspaceRoot,
-            env,
+            env: buildEnv,
         });
     }
-    commands.push(buildTurboReleaseCommand(workspaceRoot, cacheAnchorRoot, packageNames, env));
+    commands.push(buildTurboReleaseCommand(workspaceRoot, cacheAnchorRoot, packageNames, buildEnv));
     return commands;
 };
 
@@ -646,8 +658,11 @@ export class GatewayOrchestrator implements GatewayOrchestratorHandle {
     private readonly repository: GatewayProfileRepository;
     private readonly processManager: ProcessManager;
     private readonly buildRunner: BuildRunner;
+    private readonly releaseBuildRunner: BuildRunner;
     private readonly workspaceManager: GitWorkspaceManager;
     private readonly processConfig: GatewayProcessConfig;
+    private readonly frontendServeMode: FrontendServeMode;
+    private readonly artifactManager: FrontendArtifactManager;
     private readonly reconcileIntervalMs: number;
     private readonly scheduleIntervalMs: number;
     private readonly buildIntervalMs: number;
@@ -679,8 +694,17 @@ export class GatewayOrchestrator implements GatewayOrchestratorHandle {
         this.repository = options.repository;
         this.processManager = options.processManager;
         this.buildRunner = options.buildRunner;
+        this.releaseBuildRunner = createReleaseBuildRunner(
+            options.processConfig.releaseBuilderUrl,
+            options.buildRunner,
+            options.fetchImpl ?? fetch
+        );
         this.workspaceManager = options.workspaceManager;
         this.processConfig = options.processConfig;
+        this.frontendServeMode = resolveFrontendServeMode(options.processConfig.frontendServeMode);
+        this.artifactManager = new FrontendArtifactManager(
+            options.processConfig.frontendArtifactRoot ?? '/srv/frontend-artifacts'
+        );
         this.reconcileIntervalMs = options.reconcileIntervalMs;
         this.scheduleIntervalMs = options.scheduleIntervalMs;
         this.buildIntervalMs = options.buildIntervalMs;
@@ -802,7 +826,17 @@ export class GatewayOrchestrator implements GatewayOrchestratorHandle {
 
     async listRuntimeStates(profileNames: string[]): Promise<ProfileRuntimeSnapshot[]> {
         const processStates = await this.loadProcessStatusMap();
-        return mapRuntimeStates(profileNames, processStates);
+        const snapshots = mapRuntimeStates(profileNames, processStates);
+        if (this.frontendServeMode === 'preview') return snapshots;
+        await Promise.all(
+            snapshots.map(async (snapshot) => {
+                const profile = await this.repository.getProfile(snapshot.profileName);
+                snapshot.frontendRunning = profile
+                    ? (await this.artifactManager.readCurrentReleaseId(profile.profile)) !== null
+                    : false;
+            })
+        );
+        return snapshots;
     }
 
     async listRuntimeSettings(profileNames: string[]): Promise<ProfileRuntimeSettingsSnapshot[]> {
@@ -885,6 +919,10 @@ export class GatewayOrchestrator implements GatewayOrchestratorHandle {
                     continue;
                 }
                 const runtime = mapRuntimeStates([profile.profileName], processStates)[0];
+                if (this.frontendServeMode === 'static') {
+                    runtime.frontendRunning =
+                        (await this.artifactManager.readCurrentReleaseId(profile.profile)) !== null;
+                }
                 const plan = planProfileReconcile(profile.status, runtime);
                 if (plan.shouldStart) {
                     await this.startProfile(profile);
@@ -1521,7 +1559,7 @@ export class GatewayOrchestrator implements GatewayOrchestratorHandle {
                 ),
             ];
             await this.appendOperationLog(operationId, 'build', `${profile.profileName} 구성 요소를 빌드합니다.`);
-            const result = await this.buildRunner.run(commands, this.buildProgress(operationId, 'build'), {
+            const result = await this.releaseBuildRunner.run(commands, this.buildProgress(operationId, 'build'), {
                 signal: this.activeOperationAbortSignal,
             });
             if (!result.ok) {
@@ -1933,6 +1971,7 @@ export class GatewayOrchestrator implements GatewayOrchestratorHandle {
                     currentScenario: String(scenarioId),
                     status: desiredStatus,
                     buildStatus: 'SUCCEEDED',
+                    buildCommitSha: commitSha,
                     buildWorkspace: workspace.root,
                     buildLastUsedAt: completedAt,
                     buildCompletedAt: completedAt,
@@ -1970,6 +2009,7 @@ export class GatewayOrchestrator implements GatewayOrchestratorHandle {
                     currentScenario: String(scenarioId),
                     scenario: String(scenarioId),
                     status: desiredStatus,
+                    buildCommitSha: commitSha,
                     buildWorkspace: workspace.root,
                 };
                 await appendLog('switch', '초기화된 profile process를 시작합니다.');
@@ -2119,7 +2159,7 @@ export class GatewayOrchestrator implements GatewayOrchestratorHandle {
             );
         }
         return {
-            result: await this.buildRunner.run(
+            result: await this.releaseBuildRunner.run(
                 commands,
                 operationId ? this.buildProgress(operationId, 'build') : undefined,
                 { signal: this.activeOperationAbortSignal }
@@ -2281,7 +2321,7 @@ export class GatewayOrchestrator implements GatewayOrchestratorHandle {
     private async startProfile(profile: GatewayProfileRecord, assertLease?: () => Promise<void>): Promise<boolean> {
         const definitions = buildProcessDefinitions(profile, this.processConfig);
         const orderedDefinitions = [
-            definitions.frontend,
+            ...(this.frontendServeMode === 'preview' ? [definitions.frontend] : []),
             definitions.api,
             definitions.daemon,
             definitions.auction,
@@ -2290,10 +2330,26 @@ export class GatewayOrchestrator implements GatewayOrchestratorHandle {
         ];
         const attemptedNames: string[] = [];
         try {
+            const stagedArtifact =
+                this.frontendServeMode === 'static'
+                    ? await (async () => {
+                          if (!profile.buildCommitSha) {
+                              throw new Error(`Profile ${profile.profileName} is missing the build commit SHA.`);
+                          }
+                          const runtimeWorkspace = profile.buildWorkspace ?? this.processConfig.workspaceRoot;
+                          return this.artifactManager.stage({
+                              frontendKey: profile.profile,
+                              sourceRoot: buildProfileFrontendOutDir(runtimeWorkspace, profile.profileName),
+                              commitSha: profile.buildCommitSha,
+                          });
+                      })()
+                    : null;
             const expectedNames = new Set(orderedDefinitions.map((definition) => definition.name));
+            const obsoleteNames =
+                this.frontendServeMode === 'static' ? new Set([definitions.frontend.name]) : new Set<string>();
             const existingNames = new Set(
                 (await this.processManager.list())
-                    .filter((process) => expectedNames.has(process.name))
+                    .filter((process) => expectedNames.has(process.name) || obsoleteNames.has(process.name))
                     .map((process) => process.name)
             );
             for (const name of existingNames) {
@@ -2306,6 +2362,9 @@ export class GatewayOrchestrator implements GatewayOrchestratorHandle {
                 attemptedNames.push(definition.name);
                 await this.processManager.start(definition);
                 await assertLease?.();
+            }
+            if (stagedArtifact) {
+                await this.artifactManager.activate(profile.profile, stagedArtifact.releaseId);
             }
             if (!assertLease) {
                 await this.repository.updateLastError(profile.profileName, null);
@@ -2341,9 +2400,17 @@ export class GatewayOrchestrator implements GatewayOrchestratorHandle {
     ): Promise<boolean> {
         const deadline = Date.now() + this.profileReadinessTimeoutMs;
         const definitions = buildProcessDefinitions(profile, this.processConfig);
-        const expectedNames = Object.values(definitions).map((definition) => definition.name);
+        const expectedNames = Object.entries(definitions)
+            .filter(([role]) => this.frontendServeMode === 'preview' || role !== 'frontend')
+            .map(([, definition]) => definition.name);
         const apiUrl = `http://127.0.0.1:${profile.apiPort}/healthz`;
-        const frontendUrl = `http://127.0.0.1:${profile.apiPort - 1}/${profile.profile}/`;
+        const frontendUrl =
+            this.frontendServeMode === 'static'
+                ? new URL(
+                      `/${profile.profile}/`,
+                      this.processConfig.frontendReadinessOrigin ?? 'http://caddy'
+                  ).toString()
+                : `http://127.0.0.1:${profile.apiPort - 1}/${profile.profile}/`;
         while (Date.now() < deadline) {
             await assertLease?.();
             try {
@@ -2380,6 +2447,10 @@ export class GatewayOrchestrator implements GatewayOrchestratorHandle {
         const auctionName = buildProcessName(profile.profileName, 'auction');
         const battleSimName = buildProcessName(profile.profileName, 'battle-sim');
         const tournamentName = buildProcessName(profile.profileName, 'tournament');
+        await assertLease?.();
+        if (this.frontendServeMode === 'static') {
+            await this.artifactManager.deactivate(profile.profile);
+        }
         await assertLease?.();
         const existingNames = new Set((await this.processManager.list()).map((process) => process.name));
         await assertLease?.();

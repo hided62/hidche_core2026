@@ -1,6 +1,7 @@
 import path from 'node:path';
 
 import { sanitizeManagedProcessEnv } from '@sammo-ts/gateway-api';
+import { resolveFrontendServeMode, type FrontendServeMode } from '@sammo-ts/gateway-api';
 import { resolvePostgresPoolMax } from '@sammo-ts/infra';
 
 const parsePositiveInt = (value: string | undefined, fallback: number, name: string): number => {
@@ -24,6 +25,11 @@ export interface ReleaseControllerConfig {
     gatewayApiPort: number;
     gatewayFrontendPort: number;
     gatewayBasePath: string;
+    frontendServeMode?: FrontendServeMode;
+    frontendArtifactRoot?: string;
+    frontendReadinessOrigin?: string;
+    releaseBuilderUrl?: string;
+    activeReleaseGitRef?: string;
     pollIntervalMs: number;
     readinessTimeoutMs: number;
     postgresPoolMax: number;
@@ -50,6 +56,11 @@ export const resolveReleaseControllerConfig = (env: NodeJS.ProcessEnv = process.
         gatewayApiPort: parsePositiveInt(env.GATEWAY_API_PORT, 15001, 'GATEWAY_API_PORT'),
         gatewayFrontendPort: parsePositiveInt(env.GATEWAY_FRONTEND_PORT, 15000, 'GATEWAY_FRONTEND_PORT'),
         gatewayBasePath: env.GATEWAY_BASE_PATH?.trim() || '/gateway',
+        frontendServeMode: resolveFrontendServeMode(env.FRONTEND_SERVE_MODE),
+        frontendArtifactRoot: path.resolve(env.FRONTEND_ARTIFACT_ROOT ?? '/srv/frontend-artifacts'),
+        frontendReadinessOrigin: env.FRONTEND_READINESS_ORIGIN?.trim() || 'http://caddy',
+        releaseBuilderUrl: env.RELEASE_BUILDER_URL?.trim() || undefined,
+        activeReleaseGitRef: env.GATEWAY_ACTIVE_RELEASE_GIT_REF?.trim() || undefined,
         pollIntervalMs: parsePositiveInt(env.RELEASE_CONTROLLER_POLL_MS, 5000, 'RELEASE_CONTROLLER_POLL_MS'),
         readinessTimeoutMs: parsePositiveInt(
             env.RELEASE_CONTROLLER_READINESS_TIMEOUT_MS,

@@ -18,6 +18,7 @@ export * from './orchestrator/buildRunner.js';
 export * from './orchestrator/processManager.js';
 export * from './orchestrator/pm2ProcessManager.js';
 export * from './orchestrator/releaseManifest.js';
+export * from './orchestrator/frontendArtifactManager.js';
 export * from './auth/userRepository.js';
 export * from './auth/passwordHasher.js';
 export * from './auth/inMemoryUserRepository.js';
