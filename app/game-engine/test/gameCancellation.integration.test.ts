@@ -1,6 +1,8 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 
+import { normalizeArchivedGeneral, type ArchivedJsonValue } from '@sammo-ts/common';
 import { createGamePostgresConnector, type GamePrismaClient } from '@sammo-ts/infra';
+import { LogCategory, LogScope } from '@sammo-ts/logic';
 
 import { cancelGame } from '../src/scenario/gameCancellation.js';
 
@@ -62,13 +64,46 @@ integration('game cancellation transaction', () => {
                 userId,
                 name: '취소장수',
                 turnTime: openedAt,
-                meta: { inherit_spent_dyn: 4_500 },
+                meta: { inherit_spent_dyn: 4_500, dex1: 1, dex2: 1, dex3: 1, dex4: 1, dex5: 1 },
             },
         });
         await db.rankData.createMany({
             data: [
                 { generalId, nationId: 0, type: 'inherit_spent_dyn', value: 4_500 },
                 { generalId, nationId: 0, type: 'warnum', value: 10 },
+                { generalId, nationId: 0, type: 'killnum', value: 6 },
+                { generalId, nationId: 0, type: 'deathnum', value: 4 },
+                { generalId, nationId: 0, type: 'firenum', value: 2 },
+                { generalId, nationId: 0, type: 'killcrew', value: 1_000 },
+                { generalId, nationId: 0, type: 'deathcrew', value: 500 },
+            ],
+        });
+        await db.logEntry.createMany({
+            data: [
+                {
+                    scope: LogScope.GENERAL,
+                    category: LogCategory.ACTION,
+                    generalId,
+                    year: 190,
+                    month: 7,
+                    text: '보존하지 않을 개인 기록',
+                },
+                {
+                    scope: LogScope.GENERAL,
+                    category: LogCategory.BATTLE_DETAIL,
+                    generalId,
+                    year: 190,
+                    month: 7,
+                    text: '보존하지 않을 전투 기록',
+                },
+                {
+                    scope: LogScope.GENERAL,
+                    category: LogCategory.BATTLE_BRIEF,
+                    generalId,
+                    year: 190,
+                    month: 7,
+                    text: '보존할 전투 결과',
+                },
             ],
         });
         await db.inheritancePoint.createMany({
@@ -180,7 +215,7 @@ integration('game cancellation transaction', () => {
                 [userId]: {
                     openingPoint: 10_000,
                     currentPoint: 7_000,
-                    earnedPoint: 1_750,
+                    earnedPoint: 1_750.005,
                     retainedEarnedPoint: 700,
                     finalPoint: 10_700,
                     baselineSource: 'OPENING',
@@ -197,6 +232,23 @@ integration('game cancellation transaction', () => {
         const archived = await db.oldGeneral.findMany({ where: { serverId }, orderBy: { generalNo: 'asc' } });
         expect(archived).toHaveLength(2);
         expect(archived.every((row) => JSON.stringify(row.data).includes(request.cancellationId))).toBe(true);
+        const activeArchive = archived.find((row) => row.generalNo === generalId)!;
+        const snapshot = normalizeArchivedGeneral(activeArchive.data as ArchivedJsonValue, activeArchive.name).snapshot;
+        expect(snapshot).toMatchObject({
+            mastery: { infantry: 1, archery: 1, cavalry: 1, special: 1, siege: 1 },
+            battle: {
+                battles: 10,
+                wins: 6,
+                losses: 4,
+                fireSuccesses: 2,
+                killedCrew: 1_000,
+                lostCrew: 500,
+            },
+            records: { battleResult: ['보존할 전투 결과'] },
+            availability: { battleResultLogs: true, battleDetailLogs: false },
+        });
+        expect(JSON.stringify(activeArchive.data)).not.toContain('보존하지 않을 개인 기록');
+        expect(JSON.stringify(activeArchive.data)).not.toContain('보존하지 않을 전투 기록');
         await expect(db.hallOfFame.count({ where: { serverId } })).resolves.toBe(0);
         await expect(db.oldNation.count({ where: { serverId } })).resolves.toBe(0);
         await expect(db.emperor.count({ where: { serverId } })).resolves.toBe(0);

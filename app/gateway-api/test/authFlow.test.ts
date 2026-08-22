@@ -98,6 +98,7 @@ const buildCaller = (
             apiPort: 15003,
             status: 'RUNNING' as const,
             buildStatus: 'SUCCEEDED' as const,
+            buildCommitSha: 'HEAD',
             meta: {},
             createdAt: new Date().toISOString(),
             updatedAt: new Date().toISOString(),
@@ -111,6 +112,7 @@ const buildCaller = (
             apiPort: 15015,
             status: 'RUNNING' as const,
             buildStatus: 'SUCCEEDED' as const,
+            buildCommitSha: 'HEAD',
             meta: {},
             createdAt: new Date().toISOString(),
             updatedAt: new Date().toISOString(),
@@ -268,6 +270,35 @@ const buildCaller = (
 };
 
 describe('gateway auth flow', () => {
+    it('allows a signed-in regular user to read only the active profile scenario catalog', async () => {
+        const { caller, sealPassword, setSessionHeader } = buildCaller();
+
+        await expect(caller.lobby.scenarios({ profileName: 'che:default' })).rejects.toMatchObject({
+            code: 'UNAUTHORIZED',
+        });
+
+        const register = await caller.auth.registerLocal({
+            username: 'scenario-reader',
+            credential: sealPassword('scenario-reader-password'),
+            displayName: '시나리오조회자',
+            termsAgreed: true,
+            privacyAgreed: true,
+            thirdPartyUse: false,
+        });
+        setSessionHeader(register.sessionToken);
+
+        const scenarios = await caller.lobby.scenarios({ profileName: 'che:default' });
+        expect(scenarios.length).toBeGreaterThan(0);
+        expect(scenarios[0]).toMatchObject({
+            id: expect.any(Number),
+            title: expect.any(String),
+            defaultStatTotal: expect.any(Number),
+        });
+        await expect(caller.lobby.scenarios({ profileName: 'hidden:default' })).rejects.toMatchObject({
+            code: 'NOT_FOUND',
+        });
+    });
+
     it('registers a local account first and accepts an encrypted password login', async () => {
         const { caller, users, sealPassword } = buildCaller();
         const register = await caller.auth.registerLocal({

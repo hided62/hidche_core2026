@@ -585,11 +585,15 @@ export const archiveRouter = router({
         const nation = resolveNation(nationMap, entry);
         const snapshot = entry.snapshot;
         const general = await buildGeneralDetail(entry, nation);
-        const battleResultEntries = (battleResultContent ?? '')
-            .split(/\r?\n/u)
-            .map((text, index) => ({ id: index + 1, text }))
-            .filter((item) => item.text.length > 0)
-            .reverse();
+        battleResultAvailable ||= snapshot.availability.battleResultLogs;
+        const battleResultEntries =
+            battleResultContent === null
+                ? snapshot.records.battleResult.map((text, index, rows) => ({ id: rows.length - index, text }))
+                : battleResultContent
+                      .split(/\r?\n/u)
+                      .map((text, index) => ({ id: index + 1, text }))
+                      .filter((item) => item.text.length > 0)
+                      .reverse();
         const logs = {
             generalHistory: {
                 available: snapshot.availability.history,

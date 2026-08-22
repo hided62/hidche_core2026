@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { asRecord } from '@sammo-ts/common';
+import { asRecord, normalizeArchivedGeneral, type ArchivedJsonValue } from '@sammo-ts/common';
 import { createGamePostgresConnector, type GamePrismaClient } from '@sammo-ts/infra';
 import { LogCategory, LogScope } from '@sammo-ts/logic';
 
@@ -98,6 +98,10 @@ integration('general turn lifecycle persistence', () => {
                 inherit_active_action: 2,
                 inheritRandomUnique: true,
                 dex1: 1_000,
+                dex2: 1,
+                dex3: 1,
+                dex4: 1,
+                dex5: 1,
             },
         });
         await db.generalAccessLog.create({
@@ -110,6 +114,10 @@ integration('general turn lifecycle persistence', () => {
             data: [
                 { generalId: general.id, nationId: 0, type: 'warnum', value: 2 },
                 { generalId: general.id, nationId: 0, type: 'firenum', value: 1 },
+                { generalId: general.id, nationId: 0, type: 'killnum', value: 1 },
+                { generalId: general.id, nationId: 0, type: 'deathnum', value: 1 },
+                { generalId: general.id, nationId: 0, type: 'killcrew', value: 400 },
+                { generalId: general.id, nationId: 0, type: 'deathcrew', value: 300 },
             ],
         });
         await db.logEntry.createMany({
@@ -129,6 +137,30 @@ integration('general turn lifecycle persistence', () => {
                     month: 1,
                     generalId: general.id,
                     text: '<Y>●</>둘째 기록',
+                },
+                {
+                    scope: LogScope.GENERAL,
+                    category: LogCategory.ACTION,
+                    year: 200,
+                    month: 1,
+                    generalId: general.id,
+                    text: '보존하지 않을 개인 기록',
+                },
+                {
+                    scope: LogScope.GENERAL,
+                    category: LogCategory.BATTLE_DETAIL,
+                    year: 200,
+                    month: 1,
+                    generalId: general.id,
+                    text: '보존하지 않을 전투 기록',
+                },
+                {
+                    scope: LogScope.GENERAL,
+                    category: LogCategory.BATTLE_BRIEF,
+                    year: 200,
+                    month: 1,
+                    generalId: general.id,
+                    text: '보존할 전투 결과',
                 },
             ],
         });
@@ -150,6 +182,22 @@ integration('general turn lifecycle persistence', () => {
         expect(archivedData.history).toEqual(['<Y>●</>둘째 기록', '<C>●</>첫 기록']);
         expect(asRecord(archivedData.meta)).not.toHaveProperty('inheritRandomUnique');
         expect(asRecord(archivedData.meta)).not.toHaveProperty('inheritSpecificSpecialWar');
+        const snapshot = normalizeArchivedGeneral(archived.data as ArchivedJsonValue, archived.name).snapshot;
+        expect(snapshot).toMatchObject({
+            mastery: { infantry: 1_000, archery: 1, cavalry: 1, special: 1, siege: 1 },
+            battle: {
+                battles: 2,
+                wins: 1,
+                losses: 1,
+                fireSuccesses: 1,
+                killedCrew: 400,
+                lostCrew: 300,
+            },
+            records: { battleResult: ['보존할 전투 결과'] },
+            availability: { battleResultLogs: true, battleDetailLogs: false },
+        });
+        expect(JSON.stringify(archived.data)).not.toContain('보존하지 않을 개인 기록');
+        expect(JSON.stringify(archived.data)).not.toContain('보존하지 않을 전투 기록');
         expect(
             await db.inheritancePoint.findUnique({
                 where: { userId_key: { userId: general.userId!, key: 'previous' } },

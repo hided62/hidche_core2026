@@ -68,4 +68,55 @@ describe('normalizeArchivedGeneral', () => {
         expect(second.sourceFormat).toBe('core-snapshot-v1');
         expect(second.snapshot).toEqual(first.snapshot);
     });
+
+    it('recovers Core rank/mastery projections and preserved battle results from a raw past-play snapshot', () => {
+        const { sourceFormat, snapshot } = normalizeArchivedGeneral(
+            {
+                name: '현재기수장수',
+                stats: { leadership: 88, strength: 77, intelligence: 66 },
+                meta: {
+                    dex1: 1_100,
+                    dex2: 2_200,
+                    dex3: 3_300,
+                    dex4: 4_400,
+                    dex5: 5_500,
+                    rank_warnum: 15,
+                    rank_killnum: 9,
+                    rank_deathnum: 6,
+                    rank_firenum: 4,
+                    rank_killcrew: 12_345,
+                    rank_deathcrew: 6_789,
+                    rank_ttw: 3,
+                    rank_ttd: 2,
+                    rank_ttl: 1,
+                },
+                records: { battleResult: ['둘째 전투', '첫째 전투'] },
+                availability: { battleResultLogs: true },
+            },
+            'fallback'
+        );
+
+        expect(sourceFormat).toBe('core-snapshot-v1');
+        expect(snapshot).toMatchObject({
+            mastery: { infantry: 1_100, archery: 2_200, cavalry: 3_300, special: 4_400, siege: 5_500 },
+            battle: {
+                battles: 15,
+                wins: 9,
+                losses: 6,
+                fireSuccesses: 4,
+                killedCrew: 12_345,
+                lostCrew: 6_789,
+                winRate: 60,
+                tactics: { total: { wins: 3, draws: 2, losses: 1 } },
+            },
+            records: { battleResult: ['둘째 전투', '첫째 전투'] },
+            availability: {
+                mastery: true,
+                battleAggregates: true,
+                tactics: true,
+                battleDetailLogs: false,
+                battleResultLogs: true,
+            },
+        });
+    });
 });

@@ -531,29 +531,44 @@ export const persistUnificationFinalization = async (
     });
 
     const archiveGenerals = [...neutralGenerals, ...winnerGenerals];
-    const generalHistoryRows = archiveGenerals.length
+    const generalRecordRows = archiveGenerals.length
         ? await transaction.logEntry.findMany({
               where: {
                   generalId: { in: archiveGenerals.map((general) => general.id) },
                   scope: LogScope.GENERAL,
-                  category: LogCategory.HISTORY,
+                  category: { in: [LogCategory.HISTORY, LogCategory.BATTLE_BRIEF] },
               },
               orderBy: { id: 'asc' },
-              select: { generalId: true, text: true },
+              select: { generalId: true, category: true, text: true },
           })
         : [];
     const historyByGeneral = new Map<number, string[]>();
-    for (const row of generalHistoryRows) {
+    const battleResultsByGeneral = new Map<number, string[]>();
+    for (const row of generalRecordRows) {
         if (row.generalId === null) continue;
-        const history = historyByGeneral.get(row.generalId) ?? [];
-        history.push(row.text);
-        historyByGeneral.set(row.generalId, history);
+        const target =
+            row.category === LogCategory.HISTORY
+                ? historyByGeneral
+                : row.category === LogCategory.BATTLE_BRIEF
+                  ? battleResultsByGeneral
+                  : null;
+        if (!target) continue;
+        const records = target.get(row.generalId) ?? [];
+        records.push(row.text);
+        target.set(row.generalId, records);
     }
     for (const general of archiveGenerals) {
+        const ranks = ranksByGeneral.get(general.id) ?? {};
         const data = {
             ...general,
+            meta: {
+                ...asRecord(general.meta),
+                ...Object.fromEntries(Object.entries(ranks).map(([key, value]) => [`rank_${key}`, value])),
+            },
             turnTime: general.turnTime.toISOString(),
             history: historyByGeneral.get(general.id) ?? [],
+            records: { battleResult: [...(battleResultsByGeneral.get(general.id) ?? [])].reverse() },
+            availability: { battleResultLogs: true },
             generationKey: input.generationKey,
         };
         await transaction.oldGeneral.upsert({
