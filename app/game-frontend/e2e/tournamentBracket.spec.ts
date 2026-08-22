@@ -195,6 +195,8 @@ const installFixture = async (
         tournamentStage?: number;
         joinedGroupId?: number;
         emptyFinalGroups?: boolean;
+        realtimeState?: { tournamentStage: number; totalAmount: number };
+        onOperation?: (operation: string, headers: Record<string, string>) => void;
     } = {}
 ) => {
     let joined = false;
@@ -213,13 +215,17 @@ const installFixture = async (
     });
     await page.route(gameTrpcRoute, async (route) => {
         const results = operationNames(route).map((operation) => {
+            options.onOperation?.(operation, route.request().headers());
             if (operation === 'auth.status') return response({ ok: true });
             if (operation === 'lobby.info') return response({ myGeneral: { id: 1, name: names[0] } });
             if (operation === 'join.getConfig') return response({});
             if (operation === 'general.me') return response({ general: { id: 1, name: names[0] } });
             if (operation === 'tournament.getAdminStatus') return response({ ok: false });
             if (operation === 'tournament.getSnapshot') {
-                const tournamentStage = options.tournamentStage ?? (options.applicationOpen ? 1 : 0);
+                const tournamentStage =
+                    options.realtimeState?.tournamentStage ??
+                    options.tournamentStage ??
+                    (options.applicationOpen ? 1 : 0);
                 const joinedGroupId = options.joinedGroupId ?? 0;
                 return response({
                     state: {
@@ -272,7 +278,7 @@ const installFixture = async (
                         participants.slice(0, 16).map((participant, index) => [participant.id, 100 + index * 10])
                     ),
                     myTotals: { 1: 120, 2: 40 },
-                    totalAmount: 2800,
+                    totalAmount: options.realtimeState?.totalAmount ?? 2800,
                     myAmount: 160,
                 });
             }
@@ -316,6 +322,44 @@ const installFixture = async (
         await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(results) });
     });
     return { placedBets };
+};
+
+const installFakeEventSource = async (page: Page) => {
+    await page.addInitScript(() => {
+        class FakeEventSource extends EventTarget {
+            static instances: FakeEventSource[] = [];
+            readonly url: string;
+            closed = false;
+
+            constructor(url: string | URL) {
+                super();
+                this.url = String(url);
+                FakeEventSource.instances.push(this);
+                queueMicrotask(() => {
+                    if (!this.closed) this.dispatchEvent(new Event('open'));
+                });
+            }
+
+            close() {
+                this.closed = true;
+            }
+
+            emit(type: string, payload: unknown) {
+                if (this.closed) return;
+                this.dispatchEvent(new MessageEvent(type, { data: JSON.stringify(payload) }));
+            }
+        }
+
+        Object.defineProperty(window, 'EventSource', { configurable: true, value: FakeEventSource });
+        Object.assign(window, {
+            __tournamentEventSourceCount: () => FakeEventSource.instances.filter((source) => !source.closed).length,
+            __tournamentEventSourceUrls: () =>
+                FakeEventSource.instances.filter((source) => !source.closed).map((source) => source.url),
+            __emitTournamentEvent: (type: string, payload: unknown) => {
+                for (const source of FakeEventSource.instances) source.emit(type, payload);
+            },
+        });
+    });
 };
 
 const openTournament = async (page: Page) => {
@@ -730,6 +774,138 @@ test('tournament and betting pages expose same-row navigation tabs beside close'
     await page.getByRole('tab', { name: '토너먼트' }).click();
     await expect(page).toHaveURL(/\/tournament$/);
     expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
+});
+
+test('betting realtime refresh is shared across tabs and preserves local interaction state', async ({
+    page,
+    context,
+}) => {
+    test.setTimeout(40_000);
+    const follower = await context.newPage();
+    await Promise.all([
+        page.setViewportSize({ width: 390, height: 844 }),
+        follower.setViewportSize({ width: 390, height: 844 }),
+    ]);
+    const state = { tournamentStage: 6, totalAmount: 2800 };
+    const operations: Array<{ operation: string; grant: string | undefined }> = [];
+    const fixtureOptions = {
+        realtimeState: state,
+        onOperation: (operation: string, headers: Record<string, string>) => {
+            operations.push({ operation, grant: headers['x-sammo-realtime-access-grant'] });
+        },
+    };
+
+    await Promise.all([installFakeEventSource(page), installFakeEventSource(follower)]);
+    await Promise.all([installFixture(page, fixtureOptions), installFixture(follower, fixtureOptions)]);
+    await Promise.all([page.goto('betting'), follower.goto('betting')]);
+    await Promise.all([
+        expect(page.getByRole('tab', { name: '전력전' })).toBeVisible(),
+        expect(follower.getByRole('tab', { name: '전력전' })).toBeVisible(),
+    ]);
+    await follower.getByRole('tab', { name: '통솔전' }).click();
+    await follower.getByRole('button', { name: '관우에게 베팅하기' }).click();
+    await follower.getByRole('dialog', { name: '베팅하기' }).getByLabel('베팅 금액').selectOption('50');
+
+    await expect
+        .poll(async () => {
+            const counts = await Promise.all(
+                [page, follower].map((candidate) =>
+                    candidate.evaluate(() =>
+                        (
+                            window as unknown as {
+                                __tournamentEventSourceCount: () => number;
+                            }
+                        ).__tournamentEventSourceCount()
+                    )
+                )
+            );
+            return counts.reduce((sum, count) => sum + count, 0);
+        })
+        .toBe(1);
+    const activeSourceUrls = (
+        await Promise.all(
+            [page, follower].map((candidate) =>
+                candidate.evaluate(() =>
+                    (
+                        window as unknown as {
+                            __tournamentEventSourceUrls: () => string[];
+                        }
+                    ).__tournamentEventSourceUrls()
+                )
+            )
+        )
+    ).flat();
+    expect(activeSourceUrls).toHaveLength(1);
+    expect(new URL(activeSourceUrls[0]!).searchParams.get('scope')).toBe('tournament');
+
+    const before = {
+        snapshot: operations.filter(({ operation }) => operation === 'tournament.getSnapshot').length,
+        betting: operations.filter(({ operation }) => operation === 'tournament.getBettingSummary').length,
+        rankings: operations.filter(({ operation }) => operation === 'tournament.getRankings').length,
+    };
+    state.totalAmount = 3333;
+    const payload = {
+        type: 'tournamentViewInvalidated',
+        refreshGrant: 'opaque-e2e-grant',
+        invalidation: { snapshot: false, betting: true, rankings: false },
+    };
+    await Promise.all(
+        [page, follower].map((candidate) =>
+            candidate.evaluate((event) => {
+                (
+                    window as unknown as {
+                        __emitTournamentEvent: (type: string, payload: unknown) => void;
+                    }
+                ).__emitTournamentEvent('tournamentViewInvalidated', event);
+            }, payload)
+        )
+    );
+
+    await expect
+        .poll(() => operations.filter(({ operation }) => operation === 'tournament.getBettingSummary').length)
+        .toBe(before.betting + 1);
+    await expect(page.locator('.section-title small')).toContainText('전체 금액 : 3333');
+    await expect(follower.locator('.section-title small')).toContainText('전체 금액 : 3333');
+    await expect(follower.getByRole('tab', { name: '통솔전' })).toHaveAttribute('aria-selected', 'true');
+    await expect(follower.getByRole('dialog', { name: '베팅하기' })).toBeVisible();
+    await expect(follower.getByRole('dialog', { name: '베팅하기' }).getByLabel('베팅 금액')).toHaveValue('50');
+    expect(operations.filter(({ operation }) => operation === 'tournament.getSnapshot')).toHaveLength(before.snapshot);
+    expect(operations.filter(({ operation }) => operation === 'tournament.getRankings')).toHaveLength(before.rankings);
+    expect(
+        operations.filter(
+            ({ operation, grant }) => operation === 'tournament.getBettingSummary' && grant === 'opaque-e2e-grant'
+        )
+    ).toHaveLength(1);
+
+    const recoveryBefore = {
+        snapshot: operations.filter(({ operation }) => operation === 'tournament.getSnapshot').length,
+        betting: operations.filter(({ operation }) => operation === 'tournament.getBettingSummary').length,
+        rankings: operations.filter(({ operation }) => operation === 'tournament.getRankings').length,
+    };
+    for (const visibilityState of ['hidden', 'visible'] as const) {
+        await Promise.all(
+            [page, follower].map((candidate) =>
+                candidate.evaluate((nextVisibilityState) => {
+                    Object.defineProperty(document, 'visibilityState', {
+                        configurable: true,
+                        value: nextVisibilityState,
+                    });
+                    document.dispatchEvent(new Event('visibilitychange'));
+                }, visibilityState)
+            )
+        );
+    }
+    await expect
+        .poll(() => operations.filter(({ operation }) => operation === 'tournament.getSnapshot').length)
+        .toBe(recoveryBefore.snapshot + 1);
+    expect(operations.filter(({ operation }) => operation === 'tournament.getBettingSummary')).toHaveLength(
+        recoveryBefore.betting + 1
+    );
+    expect(operations.filter(({ operation }) => operation === 'tournament.getRankings')).toHaveLength(
+        recoveryBefore.rankings + 1
+    );
+    await expect(follower.getByRole('dialog', { name: '베팅하기' })).toBeVisible();
+    await expect(follower.getByRole('dialog', { name: '베팅하기' }).getByLabel('베팅 금액')).toHaveValue('50');
 });
 
 test('tournament and betting close only their script-opened popup window', async ({ page }, testInfo) => {

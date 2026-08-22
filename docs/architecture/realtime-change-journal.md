@@ -277,7 +277,14 @@ revision 증가를 같은 Lua script로 수행한다. source revision은 참가�
 `state.stage`를 비교해 실제 단계가 바뀔 때만 결정한다. commit 뒤
 `tournamentChanged`를 공용 game event channel에 best-effort publish하며, API는 이를
 식별자·revision 없는 public `tournament: true` invalidation으로 바꾼다. 참가 등록,
-대진 결과, 같은 stage 안의 phase/timer/정산 flag write는 300 viewer를 깨우지 않는다.
+대진 결과, 같은 stage 안의 phase/timer/정산 flag write는 메인 viewer를 깨우지 않는다.
+
+토너먼트/베팅 페이지군은 같은 commit에서 별도 `tournamentProjectionChanged`를 받는다.
+public payload는 `snapshot/betting/rankings` boolean만 남기고 `/events?scope=tournament`로
+연결한 전용 구독에만 전달한다. 따라서 메인 구독자 수만큼 grant를 만들거나 페이지 조회를
+실행하지 않는다. `snapshot`은 state/participant/match write, `betting`은 bet write와 stage
+transition, PostgreSQL-backed `rankings`는 선행 match-result input event와 reward DB
+persistence가 모두 완료된 `rewardSettled` write에만 선택한다.
 장기 durability 요구가 생기면 tournament state 자체를 PostgreSQL 소유로 옮기는 별도
 migration으로 다룬다.
 
@@ -357,9 +364,8 @@ test가 완료되어 post-deploy one-off로 안전하게 활성화할 수 있다
   meta/head 누락, DB/Redis 오류에는 shared cache를 완전히 우회해 full compute한다.
 - 개인 `spyList`, `shownByGeneralList`, `myCity`, `myNation`은 request에서 계속 조합한다.
 - tournament는 API store, 월 자동 개막과 runtime clock shift 모두 payload와 profile source
-  revision을 같은 Lua invocation으로 갱신한다. stage transition만 main realtime channel에
-  best-effort publish하고, 같은 stage의 phase/participant/match/bet write는 source revision만
-  진행한다.
+  revision을 같은 Lua invocation으로 갱신한다. stage transition만 main realtime event를
+  발행하고, 모든 write는 토너먼트 페이지군용 slice invalidation을 별도로 발행한다.
 - records는 기존 `lastGeneralRecordId`/`lastWorldHistoryId` 증분 조회를 유지하되 해당
   domain이 선택되지 않으면 query하지 않는다.
 
@@ -387,6 +393,14 @@ patch를 만들고, 같은 profile/account의 follower 탭은 BroadcastChannel p
 따라서 상단 `토너먼트:` 문구, 국가 메뉴와 모바일 메뉴의 stage 강조가 한 값으로 함께
 갱신된다. Redis/API 오류에는 현재 stage를 거짓 0으로 덮지 않고 다음 event, 사용자
 `갱 신`, visible 복귀 snapshot으로 복구한다.
+
+토너먼트/베팅 화면은 별도 `tournamentPages` store가 snapshot, betting summary, rankings를
+공유한다. 같은 profile/account의 visible 탭 중 leader 하나만 tournament-scope SSE와 선택된
+tRPC query를 소유하고, 5초 burst를 union한 뒤 structural-sharing patch를 follower에 보낸다.
+자동 갱신 중 기존 데이터, 모바일 랭킹 탭, 베팅 dialog/input은 유지한다. SSE reconnect와
+visible 복귀는 leader가 fresh 3-slice snapshot 한 번을 읽어 pub/sub gap을 복구한다. 서버가
+증명한 `tournament.getSnapshot`만 접속 점수를 더하지 않지만 기존 hard-limit gate는 그대로
+검사한다.
 
 ## 구현 단계와 commit 경계
 

@@ -2,6 +2,16 @@ import { describe, expect, it } from 'vitest';
 
 import { writeTournamentProjection } from '../src/tournament/sourceRevision.js';
 
+const keys = {
+    stateKey: 'state',
+    participantsKey: 'participants',
+    matchesKey: 'matches',
+    bettingKey: 'betting',
+    sourceRevisionKey: 'revision',
+    sourceRevisionChannel: 'changed',
+    realtimeEventChannel: 'realtime',
+};
+
 describe('tournament source revision', () => {
     it('passes every payload and one profile revision key to a single atomic script', async () => {
         const calls: Array<{ keys: string[]; arguments: string[] }> = [];
@@ -18,19 +28,10 @@ describe('tournament source revision', () => {
         };
 
         await expect(
-            writeTournamentProjection(
-                redis,
-                {
-                    stateKey: 'state',
-                    sourceRevisionKey: 'revision',
-                    sourceRevisionChannel: 'changed',
-                    realtimeEventChannel: 'realtime',
-                },
-                [
-                    { key: 'state', value: { stage: 1 } },
-                    { key: 'matches', value: [] },
-                ]
-            )
+            writeTournamentProjection(redis, keys, [
+                { key: 'state', value: { stage: 1 } },
+                { key: 'matches', value: [] },
+            ])
         ).resolves.toBe('7');
 
         expect(calls).toEqual([
@@ -41,38 +42,25 @@ describe('tournament source revision', () => {
         ]);
         expect(published).toEqual([
             { channel: 'changed', message: JSON.stringify({ sourceRevision: '7' }) },
+            {
+                channel: 'realtime',
+                message: JSON.stringify({
+                    type: 'tournamentProjectionChanged',
+                    invalidation: { snapshot: true, betting: true, rankings: false },
+                }),
+            },
             { channel: 'realtime', message: JSON.stringify({ type: 'tournamentChanged' }) },
         ]);
     });
 
     it('rejects empty or duplicate writes before evaluating Redis', async () => {
         const redis = { eval: async () => '1' };
+        await expect(writeTournamentProjection(redis, keys, [])).rejects.toThrow('at least one');
         await expect(
-            writeTournamentProjection(
-                redis,
-                {
-                    stateKey: 'state',
-                    sourceRevisionKey: 'revision',
-                    sourceRevisionChannel: 'changed',
-                    realtimeEventChannel: 'realtime',
-                },
-                []
-            )
-        ).rejects.toThrow('at least one');
-        await expect(
-            writeTournamentProjection(
-                redis,
-                {
-                    stateKey: 'state',
-                    sourceRevisionKey: 'revision',
-                    sourceRevisionChannel: 'changed',
-                    realtimeEventChannel: 'realtime',
-                },
-                [
-                    { key: 'state', value: 1 },
-                    { key: 'state', value: 2 },
-                ]
-            )
+            writeTournamentProjection(redis, keys, [
+                { key: 'state', value: 1 },
+                { key: 'state', value: 2 },
+            ])
         ).rejects.toThrow('unique');
     });
 
@@ -86,18 +74,9 @@ describe('tournament source revision', () => {
             },
         };
 
-        await writeTournamentProjection(
-            redis,
-            {
-                stateKey: 'state',
-                sourceRevisionKey: 'revision',
-                sourceRevisionChannel: 'changed',
-                realtimeEventChannel: 'realtime',
-            },
-            [{ key: 'participants', value: [{ id: 7 }] }]
-        );
+        await writeTournamentProjection(redis, keys, [{ key: 'participants', value: [{ id: 7 }] }]);
 
-        expect(published).toEqual(['changed']);
+        expect(published).toEqual(['changed', 'realtime']);
     });
 
     it('does not wake the main dashboard when tournament state keeps the same stage', async () => {
@@ -111,18 +90,9 @@ describe('tournament source revision', () => {
         };
 
         await expect(
-            writeTournamentProjection(
-                redis,
-                {
-                    stateKey: 'state',
-                    sourceRevisionKey: 'revision',
-                    sourceRevisionChannel: 'changed',
-                    realtimeEventChannel: 'realtime',
-                },
-                [{ key: 'state', value: { stage: 1, phase: 2 } }]
-            )
+            writeTournamentProjection(redis, keys, [{ key: 'state', value: { stage: 1, phase: 2 } }])
         ).resolves.toBe('10');
-        expect(published).toEqual(['changed']);
+        expect(published).toEqual(['changed', 'realtime']);
     });
 
     it('keeps both post-commit wake-up channels independently best effort', async () => {
@@ -136,18 +106,55 @@ describe('tournament source revision', () => {
             },
         };
 
-        await expect(
-            writeTournamentProjection(
-                redis,
-                {
-                    stateKey: 'state',
-                    sourceRevisionKey: 'revision',
-                    sourceRevisionChannel: 'changed',
-                    realtimeEventChannel: 'realtime',
-                },
-                [{ key: 'state', value: { stage: 1 } }]
-            )
-        ).resolves.toBe('9');
-        expect(published).toEqual(['changed', 'realtime']);
+        await expect(writeTournamentProjection(redis, keys, [{ key: 'state', value: { stage: 1 } }])).resolves.toBe(
+            '9'
+        );
+        expect(published).toEqual(['changed', 'realtime', 'realtime']);
+    });
+
+    it('selects only the betting slice for a same-stage bet write', async () => {
+        const published: Array<{ channel: string; message: string }> = [];
+        const redis = {
+            eval: async () => '11:0',
+            publish: async (channel: string, message: string) => {
+                published.push({ channel, message });
+                return 1;
+            },
+        };
+
+        await writeTournamentProjection(redis, keys, [{ key: 'betting', value: [{ targetId: 3, amount: 10 }] }]);
+
+        expect(published.at(-1)).toEqual({
+            channel: 'realtime',
+            message: JSON.stringify({
+                type: 'tournamentProjectionChanged',
+                invalidation: { snapshot: false, betting: true, rankings: false },
+            }),
+        });
+        expect(published.some(({ message }) => message.includes('tournamentChanged'))).toBe(false);
+    });
+
+    it('refreshes rankings after reward persistence without waking the main dashboard', async () => {
+        const published: Array<{ channel: string; message: string }> = [];
+        const redis = {
+            eval: async () => '12:0',
+            publish: async (channel: string, message: string) => {
+                published.push({ channel, message });
+                return 1;
+            },
+        };
+
+        await writeTournamentProjection(redis, keys, [
+            { key: 'state', value: { stage: 0, rewardSettled: true, bettingSettled: false } },
+        ]);
+
+        expect(published.at(-1)).toEqual({
+            channel: 'realtime',
+            message: JSON.stringify({
+                type: 'tournamentProjectionChanged',
+                invalidation: { snapshot: true, betting: false, rankings: true },
+            }),
+        });
+        expect(published.some(({ message }) => message.includes('tournamentChanged'))).toBe(false);
     });
 });

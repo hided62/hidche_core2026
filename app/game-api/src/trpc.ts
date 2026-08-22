@@ -13,6 +13,7 @@ import {
     getGeneralAccessState,
     recordGeneralAccessWeight,
     resolveGeneralAccessEndpointWeight,
+    shouldRecordGeneralAccessEndpoint,
     type GeneralAccessEndpoint,
 } from './services/generalAccess.js';
 import { getDeferredGeneralAccessLimit } from './services/deferredGeneralAccess.js';
@@ -119,7 +120,9 @@ const generalAccessEndpointMiddleware = t.middleware(async ({ ctx, path, input, 
         return next();
     }
     const endpoint = path as GeneralAccessEndpoint;
-    await recordGeneralAccessWeight(ctx, weight);
+    if (shouldRecordGeneralAccessEndpoint(endpoint, ctx.realtimeAccessGranted)) {
+        await recordGeneralAccessWeight(ctx, weight);
+    }
     if (generalAccessLimitEndpoints.has(endpoint)) {
         const state = await getGeneralAccessState(ctx);
         if (state?.level === 2) {
