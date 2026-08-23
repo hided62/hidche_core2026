@@ -349,6 +349,7 @@ export const getTurnCommandTable = async (ctx: GameApiContext, generalId: number
         city,
         nation,
         nationGenerals,
+        realNationCount: nations.filter((entry) => entry.id > 0).length,
         inputOptions,
     });
 };
