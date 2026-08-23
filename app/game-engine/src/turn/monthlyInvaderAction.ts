@@ -500,14 +500,16 @@ export const createInvaderEndingHandler = (options: {
             return;
         }
         const nations = world.listNations();
-        if (nations.length >= 2) {
-            return;
-        }
-        const neutralCityCount = world.listCities().filter((city) => city.nationId === 0).length;
-        let userWin = false;
-        if (neutralCityCount === 0) {
-            userWin = nations.length === 1 && !nations[0]!.name.startsWith(INVADER_PREFIX);
-        } else if (neutralCityCount !== world.listCities().length) {
+        // Ref는 국가명 `ⓞ` prefix로 이벤트 승자를 구분한다. 전체 국가 수로
+        // 막으면 서로 불가침 중인 이민족이 여럿 남았을 때 일반국 전멸 뒤에도
+        // 종료할 수 없으므로, 일반국의 부재를 직접 판정한다.
+        const ordinaryNations = nations.filter((nation) => !nation.name.startsWith(INVADER_PREFIX));
+        const invaderNations = nations.filter((nation) => nation.name.startsWith(INVADER_PREFIX));
+        const cities = world.listCities();
+        const neutralCityCount = cities.filter((city) => city.nationId === 0).length;
+        const userWin = ordinaryNations.length === 1 && invaderNations.length === 0 && neutralCityCount === 0;
+        const invaderWin = ordinaryNations.length === 0;
+        if (!userWin && !invaderWin) {
             return;
         }
         const texts = userWin

@@ -372,6 +372,85 @@ describe('invader monthly actions', () => {
         ]);
     });
 
+    it('finishes as an invader victory when no ordinary nation remains without queuing unification archives', async () => {
+        const endingEvent: TurnEvent = {
+            id: 9,
+            targetCode: 'month',
+            priority: 1_000,
+            condition: true,
+            action: [['InvaderEnding']],
+            meta: {},
+        };
+        const invaderNations = [
+            buildNation(2, 1, 'ⓞ남만족'),
+            buildNation(3, 2, 'ⓞ산월족'),
+        ];
+        const harness = buildHarness({
+            cities: [buildCity(1, 2, 4), buildCity(2, 3, 4)],
+            nations: invaderNations,
+            generals: [],
+            events: [endingEvent],
+            meta: { isunited: 1, refreshLimit: 3 },
+        });
+        const state = { ...harness.state, currentYear: 199, currentMonth: 12 };
+        let world: InMemoryTurnWorld | null = null;
+        const handler = createInvaderEndingHandler({ getWorld: () => world });
+        world = new InMemoryTurnWorld(state, harness.snapshot, {
+            schedule: { entries: [{ startMinute: 0, tickMinutes: 10 }] },
+            calendarHandler: createMonthlyEventHandler({
+                getWorld: () => world,
+                startYear: 190,
+                actions: new Map([['InvaderEnding', handler]]),
+            }),
+        });
+
+        await world.advanceMonth(new Date('0200-01-01T00:00:00.000Z'));
+
+        expect(world.getState().meta).toMatchObject({ isunited: 3, isUnited: 3, refreshLimit: 300 });
+        expect(world.listEvents()).toHaveLength(0);
+        expect(world.peekDirtyState().logs.map((log) => log.text)).toEqual([
+            '<L><b>【이벤트】</b></>중원은 이민족에 의해 혼란에 빠졌습니다.',
+            '<L><b>【이벤트】</b></>백성은 언젠가 영웅이 나타나길 기다립니다.',
+        ]);
+        expect(world.peekDirtyState().pendingUnificationFinalizations).toEqual([]);
+        expect(world.peekDirtyState().pendingYearbookSnapshots).toEqual([]);
+    });
+
+    it('keeps the invader event running while an ordinary nation remains', async () => {
+        const endingEvent: TurnEvent = {
+            id: 9,
+            targetCode: 'month',
+            priority: 1_000,
+            condition: true,
+            action: [['InvaderEnding']],
+            meta: {},
+        };
+        const harness = buildHarness({
+            cities: [buildCity(1, 1, 3), buildCity(2, 2, 4), buildCity(3, 3, 4)],
+            nations: [buildNation(1), buildNation(2, 2, 'ⓞ남만족'), buildNation(3, 3, 'ⓞ산월족')],
+            events: [endingEvent],
+            meta: { isunited: 1, refreshLimit: 3 },
+        });
+        const state = { ...harness.state, currentYear: 199, currentMonth: 12 };
+        let world: InMemoryTurnWorld | null = null;
+        const handler = createInvaderEndingHandler({ getWorld: () => world });
+        world = new InMemoryTurnWorld(state, harness.snapshot, {
+            schedule: { entries: [{ startMinute: 0, tickMinutes: 10 }] },
+            calendarHandler: createMonthlyEventHandler({
+                getWorld: () => world,
+                startYear: 190,
+                actions: new Map([['InvaderEnding', handler]]),
+            }),
+        });
+
+        await world.advanceMonth(new Date('0200-01-01T00:00:00.000Z'));
+
+        expect(world.getState().meta).toMatchObject({ isunited: 1, refreshLimit: 3 });
+        expect(world.listEvents().map((entry) => entry.id)).toEqual([9]);
+        expect(world.peekDirtyState().logs).toEqual([]);
+        expect(world.peekDirtyState().pendingUnificationFinalizations).toEqual([]);
+    });
+
     it('does not execute dynamically-added events in the same monthly dispatch', async () => {
         const harness = buildHarness();
         const actions = new Map([
