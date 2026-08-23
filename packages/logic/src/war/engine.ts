@@ -278,7 +278,8 @@ export const resolveWarBattle = <TriggerState extends GeneralTriggerState = Gene
         true,
         resolveCrewType(crewTypeIndex, input.attacker.general.crewTypeId),
         attackerLogger,
-        attackerPipeline
+        attackerPipeline,
+        input.time
     );
 
     const cityLogger = loggerFactory({
@@ -313,7 +314,8 @@ export const resolveWarBattle = <TriggerState extends GeneralTriggerState = Gene
             false,
             resolveCrewType(crewTypeIndex, defender.general.crewTypeId),
             defenderLogger,
-            createPipeline(defender, crewTypeCatalog.warActionModule)
+            createPipeline(defender, crewTypeCatalog.warActionModule),
+            input.time
         );
         if (computeBattleOrder(unit, attackerUnit) <= 0) {
             continue;
@@ -750,7 +752,8 @@ export const resolveDefenderOrder = <TriggerState extends GeneralTriggerState = 
         true,
         resolveCrewType(crewTypeIndex, input.attacker.general.crewTypeId),
         attackerLogger,
-        attackerPipeline
+        attackerPipeline,
+        input.time
     );
 
     const defenderUnits: WarUnitGeneral<TriggerState>[] = [];
@@ -770,7 +773,8 @@ export const resolveDefenderOrder = <TriggerState extends GeneralTriggerState = 
             false,
             resolveCrewType(crewTypeIndex, defender.general.crewTypeId),
             defenderLogger,
-            createPipeline(defender, crewTypeCatalog.warActionModule)
+            createPipeline(defender, crewTypeCatalog.warActionModule),
+            input.time
         );
         if (computeBattleOrder(unit, attackerUnit) <= 0) {
             continue;

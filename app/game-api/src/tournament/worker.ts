@@ -565,6 +565,7 @@ export const settleTournamentOutcome = async (options: {
                         type: 'tournamentBettingPayout',
                         requestId: `tournament:${settledState.bettingId}:betting-payout`,
                         bettingId: settledState.bettingId,
+                        tournamentType: settledState.type,
                         payouts: payoutInfo.payouts,
                         reason: 'winner_payout',
                     });

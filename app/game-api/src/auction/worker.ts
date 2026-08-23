@@ -1,7 +1,6 @@
 import {
     createGamePostgresConnector,
     createRedisConnector,
-    GamePrisma,
     type GamePrismaClient,
     resolvePostgresConfigFromEnv,
     resolveRedisConfigFromEnv,
@@ -9,7 +8,7 @@ import {
 
 import { resolveGameApiConfigFromEnv } from '../config.js';
 import { createBestEffortResourceCloser } from '../services/bestEffortResourceCloser.js';
-import { loadCurrentGameTime } from '../services/gameClock.js';
+import { loadCurrentGameTime, type CurrentGameTime } from '../services/gameClock.js';
 import { createPollingWorkerControl, waitForWorkerPoll } from '../services/pollingWorkerLifecycle.js';
 import { buildAuctionTimerKeys } from './keys.js';
 import { resolveAuctionTimerScore, seedAuctionTimers } from './scheduler.js';
@@ -29,27 +28,84 @@ interface RedisTimerClient {
 
 const AUCTION_FINALIZE_RECOVERY_LIMIT = 1;
 
-const buildAuctionFinalizeRequestId = (auctionId: number, closeAt: Date, retry = 0): string => {
-    const generation = closeAt.getTime();
+interface AuctionFinalizeDeadline {
+    closeAt: Date;
+    closeTick: bigint | null;
+}
+
+interface AuctionFinalizeCommand {
+    type: 'auctionFinalize';
+    requestId: string;
+    auctionId: number;
+    expectedCloseAt: string;
+    expectedCloseTick?: number;
+}
+
+interface AuctionFinalizeEventRecord {
+    target: string;
+    eventType: string;
+    payload: unknown;
+    status: string;
+    result: unknown;
+}
+
+const readSafeCloseTick = (closeTick: bigint | null): number | undefined => {
+    if (closeTick === null) return undefined;
+    const value = Number(closeTick);
+    if (!Number.isSafeInteger(value)) {
+        throw new Error(`Auction close tick is unsafe: ${closeTick}`);
+    }
+    return value;
+};
+
+export const buildAuctionFinalizeRequestId = (
+    auctionId: number,
+    deadline: AuctionFinalizeDeadline,
+    retry = 0
+): string => {
+    const generation =
+        deadline.closeTick === null ? deadline.closeAt.getTime().toString() : `tick:${deadline.closeTick.toString()}`;
     const base = `auction:finalize:${auctionId}:${generation}`;
     return retry > 0 ? `${base}:retry:${retry}` : base;
 };
 
+const buildLegacyAuctionFinalizeRequestId = (auctionId: number, closeAt: Date, retry = 0): string => {
+    const base = `auction:finalize:${auctionId}:${closeAt.getTime()}`;
+    return retry > 0 ? `${base}:retry:${retry}` : base;
+};
+
+const buildAuctionFinalizeCommand = (
+    auctionId: number,
+    deadline: AuctionFinalizeDeadline,
+    requestId: string
+): AuctionFinalizeCommand => ({
+    type: 'auctionFinalize',
+    requestId,
+    auctionId,
+    expectedCloseAt: deadline.closeAt.toISOString(),
+    ...(deadline.closeTick === null ? {} : { expectedCloseTick: readSafeCloseTick(deadline.closeTick) }),
+});
+
 const isMatchingAuctionFinalizeEvent = (
     event: { target: string; eventType: string; payload: unknown },
-    command: { type: 'auctionFinalize'; requestId: string; auctionId: number }
+    command: AuctionFinalizeCommand
 ): boolean => {
     const payload = event.payload;
     const payloadRecord =
         payload !== null && typeof payload === 'object' && !Array.isArray(payload)
             ? (payload as Record<string, unknown>)
             : null;
+    const expectedGenerationMatches =
+        payloadRecord?.expectedCloseTick !== undefined
+            ? payloadRecord.expectedCloseTick === command.expectedCloseTick
+            : payloadRecord?.expectedCloseAt === undefined || payloadRecord.expectedCloseAt === command.expectedCloseAt;
     return (
         event.target === 'ENGINE' &&
         event.eventType === command.type &&
         payloadRecord?.type === command.type &&
         payloadRecord.requestId === command.requestId &&
-        payloadRecord.auctionId === command.auctionId
+        payloadRecord.auctionId === command.auctionId &&
+        expectedGenerationMatches
     );
 };
 
@@ -80,6 +136,66 @@ const getNextDueMs = async (redis: RedisTimerClient, timerKey: string): Promise<
     return next[0]?.score ?? null;
 };
 
+export const reconcilePendingAuctionTimers = async (options: {
+    db: Pick<GamePrismaClient, 'auction' | 'inputEvent'>;
+    redis: Pick<RedisTimerClient, 'zAdd' | 'zRem'>;
+    timerKey: string;
+    auctionIds: readonly number[];
+    gameTime: CurrentGameTime;
+}): Promise<{ pendingIds: number[]; rescheduled: number }> => {
+    const auctionIds = [...new Set(options.auctionIds)];
+    if (auctionIds.length === 0) {
+        return { pendingIds: [], rescheduled: 0 };
+    }
+    const rows = await options.db.auction.findMany({
+        where: { id: { in: auctionIds } },
+        select: { id: true, status: true, closeAt: true, closeTick: true },
+    });
+    const pendingIds: number[] = [];
+    const timers: Array<{ score: number; value: string }> = [];
+    for (const row of rows) {
+        if (row.status !== 'OPEN' && row.status !== 'FINALIZING') {
+            continue;
+        }
+        const deadline = { closeAt: row.closeAt, closeTick: row.closeTick };
+        const canonicalBase = buildAuctionFinalizeRequestId(row.id, deadline);
+        const legacyBase = buildLegacyAuctionFinalizeRequestId(row.id, row.closeAt);
+        const bases = [...new Set([canonicalBase, legacyBase])];
+        const events = await options.db.inputEvent.findMany({
+            where: {
+                OR: bases.flatMap((base) => [{ requestId: base }, { requestId: { startsWith: `${base}:retry:` } }]),
+            },
+            select: { requestId: true, target: true, eventType: true, payload: true, status: true },
+            orderBy: { sequence: 'desc' },
+        });
+        const hasPendingCurrentGeneration = events.some((event) => {
+            if (event.status !== 'PENDING' && event.status !== 'PROCESSING') return false;
+            return isMatchingAuctionFinalizeEvent(
+                event,
+                buildAuctionFinalizeCommand(row.id, deadline, event.requestId)
+            );
+        });
+        if (hasPendingCurrentGeneration) {
+            pendingIds.push(row.id);
+            continue;
+        }
+        timers.push({
+            score:
+                row.status === 'FINALIZING'
+                    ? (options.gameTime.tick ?? options.gameTime.now.getTime())
+                    : resolveAuctionTimerScore(options.gameTime, row.closeAt, row.closeTick),
+            value: String(row.id),
+        });
+    }
+    if (pendingIds.length > 0) {
+        await options.redis.zRem(options.timerKey, pendingIds.map(String));
+    }
+    if (timers.length > 0) {
+        await options.redis.zAdd(options.timerKey, timers);
+    }
+    return { pendingIds, rescheduled: timers.length };
+};
+
 export const processDueAuctionId = async (options: {
     db: GamePrismaClient;
     redis: RedisTimerClient;
@@ -89,7 +205,7 @@ export const processDueAuctionId = async (options: {
     nowMs: number;
     nowTick?: number | null;
     historyNowMs?: number;
-}): Promise<'FINALIZING' | 'RESCHEDULED' | 'IGNORED'> => {
+}): Promise<'PENDING' | 'RESCHEDULED' | 'IGNORED'> => {
     const { db, redis, timerKey, historyKey, id, nowMs, nowTick = null, historyNowMs = nowMs } = options;
     const auctionId = Number(id);
     if (!Number.isSafeInteger(auctionId) || auctionId < 1) {
@@ -97,73 +213,75 @@ export const processDueAuctionId = async (options: {
     }
     const now = new Date(nowMs);
     const outcome = await db.$transaction(async (transaction) => {
-        const updated = await transaction.$executeRaw(
-            GamePrisma.sql`
-                UPDATE auction
-                SET status = 'FINALIZING',
-                    finalizing_at = ${now},
-                    updated_at = ${now}
-                WHERE id = ${auctionId}
-                  AND status = 'OPEN'
-                  AND (
-                      (close_tick IS NOT NULL AND close_tick <= ${nowTick === null ? null : BigInt(nowTick)})
-                      OR (close_tick IS NULL AND close_at <= ${now})
-                  )
-            `
-        );
-
         const current = await transaction.auction.findUnique({
             where: { id: auctionId },
             select: { status: true, closeAt: true, closeTick: true },
         });
         if (!current) {
-            if (updated > 0) {
-                throw new Error(`Auction disappeared after FINALIZING transition: ${auctionId}`);
-            }
             return { status: 'IGNORED' as const };
         }
         if (current.status === 'OPEN') {
-            return { status: 'RESCHEDULED' as const, closeAt: current.closeAt, closeTick: current.closeTick };
+            const isDue =
+                current.closeTick !== null && nowTick !== null
+                    ? current.closeTick <= BigInt(nowTick)
+                    : current.closeTick === null && current.closeAt.getTime() <= now.getTime();
+            if (!isDue) {
+                return { status: 'RESCHEDULED' as const, closeAt: current.closeAt, closeTick: current.closeTick };
+            }
         }
-        if (current.status !== 'FINALIZING') {
+        if (current.status !== 'OPEN' && current.status !== 'FINALIZING') {
             return { status: 'IGNORED' as const };
         }
 
+        const deadline = { closeAt: current.closeAt, closeTick: current.closeTick };
         for (let retry = 0; retry <= AUCTION_FINALIZE_RECOVERY_LIMIT; retry += 1) {
-            const requestId = buildAuctionFinalizeRequestId(auctionId, current.closeAt, retry);
-            const command = { type: 'auctionFinalize' as const, requestId, auctionId };
-            const existing = await transaction.inputEvent.findUnique({
-                where: { requestId },
-                select: { target: true, eventType: true, payload: true, status: true, result: true },
-            });
+            const requestId = buildAuctionFinalizeRequestId(auctionId, deadline, retry);
+            const legacyRequestId = buildLegacyAuctionFinalizeRequestId(auctionId, current.closeAt, retry);
+            const candidateRequestIds = [...new Set([requestId, legacyRequestId])];
+            let existing: AuctionFinalizeEventRecord | null = null;
+            let existingRequestId = requestId;
+            for (const candidateRequestId of candidateRequestIds) {
+                existing = await transaction.inputEvent.findUnique({
+                    where: { requestId: candidateRequestId },
+                    select: { target: true, eventType: true, payload: true, status: true, result: true },
+                });
+                if (existing) {
+                    existingRequestId = candidateRequestId;
+                    break;
+                }
+            }
+            const command = buildAuctionFinalizeCommand(auctionId, deadline, existingRequestId);
             if (!existing) {
+                const nextCommand = buildAuctionFinalizeCommand(auctionId, deadline, requestId);
                 await transaction.inputEvent.create({
                     data: {
                         requestId,
                         target: 'ENGINE',
-                        eventType: command.type,
-                        payload: command,
+                        eventType: nextCommand.type,
+                        payload: { ...nextCommand },
                     },
                 });
-                return { status: 'FINALIZING' as const };
+                return { status: 'PENDING' as const };
             }
             if (!isMatchingAuctionFinalizeEvent(existing, command)) {
-                throw new Error(`Conflicting durable auction finalization event: ${requestId}`);
+                throw new Error(`Conflicting durable auction finalization event: ${existingRequestId}`);
             }
             if (existing.status === 'PENDING' || existing.status === 'PROCESSING') {
-                return { status: 'FINALIZING' as const };
+                return { status: 'PENDING' as const };
             }
             if (existing.status === 'SUCCEEDED' && isSuccessfulAuctionFinalizeResult(existing.result, auctionId)) {
-                throw new Error(`Auction remained FINALIZING after successful durable event: ${requestId}`);
+                throw new Error(
+                    `Auction remained ${current.status} after successful durable event: ${existingRequestId}`
+                );
             }
         }
         throw new Error(`Auction finalization recovery exhausted: ${auctionId}`);
     });
 
-    if (outcome.status === 'FINALIZING') {
+    if (outcome.status === 'PENDING') {
         // history retention은 운영 경과시간 기준이며 게임의 논리 시각과 분리한다.
         await redis.zAdd(historyKey, [{ score: historyNowMs, value: id }]);
-        return 'FINALIZING';
+        return 'PENDING';
     }
     if (outcome.status === 'RESCHEDULED') {
         const gameTime = await loadCurrentGameTime(db, now);
@@ -198,6 +316,7 @@ export const runAuctionWorker = async (options: AuctionWorkerOptions = {}): Prom
     ]);
 
     let nextResyncAt = Date.now();
+    const pendingFinalizationIds = new Set<number>();
 
     try {
         while (!control.signal.aborted) {
@@ -205,20 +324,32 @@ export const runAuctionWorker = async (options: AuctionWorkerOptions = {}): Prom
             const gameTime = await loadCurrentGameTime(postgres.prisma, new Date(operationalNowMs));
             const gameNowMs = gameTime.now.getTime();
             const dueScore = gameTime.tick ?? gameNowMs;
-            const historyTrimBefore = operationalNowMs - config.auctionTimerRetentionSeconds * 1000;
-            if (historyTrimBefore > 0) {
-                await redis.client.zRemRangeByScore(keys.historyKey, 0, historyTrimBefore);
-            }
             if (operationalNowMs >= nextResyncAt) {
                 await seedAuctionTimers(postgres.prisma, redis.client, keys);
                 nextResyncAt = operationalNowMs + config.auctionTimerResyncMs;
             }
-
+            if (pendingFinalizationIds.size > 0) {
+                const reconciliation = await reconcilePendingAuctionTimers({
+                    db: postgres.prisma,
+                    redis: redis.client,
+                    timerKey: keys.timerKey,
+                    auctionIds: [...pendingFinalizationIds],
+                    gameTime,
+                });
+                pendingFinalizationIds.clear();
+                for (const auctionId of reconciliation.pendingIds) {
+                    pendingFinalizationIds.add(auctionId);
+                }
+            }
+            const historyTrimBefore = operationalNowMs - config.auctionTimerRetentionSeconds * 1000;
+            if (historyTrimBefore > 0) {
+                await redis.client.zRemRangeByScore(keys.historyKey, 0, historyTrimBefore);
+            }
             const dueIds = await popDueAuctionIds(redis.client, keys.timerKey, dueScore, 100);
             if (dueIds.length > 0) {
                 for (const id of dueIds) {
                     try {
-                        await processDueAuctionId({
+                        const outcome = await processDueAuctionId({
                             db: postgres.prisma,
                             redis: redis.client,
                             timerKey: keys.timerKey,
@@ -228,6 +359,9 @@ export const runAuctionWorker = async (options: AuctionWorkerOptions = {}): Prom
                             nowTick: gameTime.tick,
                             historyNowMs: operationalNowMs,
                         });
+                        if (outcome === 'PENDING') {
+                            pendingFinalizationIds.add(Number(id));
+                        }
                     } catch (error) {
                         const message = error instanceof Error ? error.message : 'Unknown auction worker error';
                         const trace = error instanceof Error ? error.stack : undefined;

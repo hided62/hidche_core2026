@@ -12,6 +12,9 @@ import { createItemActionModules, createItemModuleRegistry } from '../src/items/
 import { getEquippedItemInstance } from '../src/items/inventory.js';
 import { itemModule as dogiModule } from '../src/items/che_보물_도기.js';
 import { itemModule as strategyItemModule } from '../src/items/che_계략_이추.js';
+import { itemModule as leadershipWineModule } from '../src/items/che_능력치_통솔_보령압주.js';
+import { itemModule as strengthWineModule } from '../src/items/che_능력치_무력_두강주.js';
+import { itemModule as intelligenceWineModule } from '../src/items/che_능력치_지력_이강주.js';
 import { LogFormat } from '../src/logging/types.js';
 
 const BASE_ENV: TurnCommandEnv = {
@@ -108,6 +111,31 @@ const dogiCatalog: Record<string, TurnCommandItemCatalogEntry> = {
         unique: true,
     },
 };
+
+const scalingStatItems = [
+    { module: leadershipWineModule, statName: 'leadership' as const },
+    { module: strengthWineModule, statName: 'strength' as const },
+    { module: intelligenceWineModule, statName: 'intelligence' as const },
+];
+
+describe('year-scaling stat items', () => {
+    it.each([
+        { year: 180, startYear: 180, maxTechLevel: 12, expected: 75 },
+        { year: 200, startYear: 180, maxTechLevel: 12, expected: 80 },
+        { year: 260, startYear: 180, maxTechLevel: 12, expected: 87 },
+        { year: 260, startYear: 180, maxTechLevel: 15, expected: 90 },
+    ])('applies +5, four-year growth, and the $maxTechLevel cap', ({ year, startYear, maxTechLevel, expected }) => {
+        const context = {
+            general: makeGeneral(null),
+            time: { year, month: 1, startYear },
+            maxTechLevel,
+        };
+
+        for (const { module, statName } of scalingStatItems) {
+            expect(module.onCalcStat?.(context, statName, 70)).toBe(expected);
+        }
+    });
+});
 
 const createItemOnlyStack = (items: ReturnType<typeof createItemActionModules>['general']) => {
     const noOp = {};

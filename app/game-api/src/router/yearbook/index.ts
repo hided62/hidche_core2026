@@ -45,6 +45,9 @@ const recordHistoryAccess = async (ctx: GameApiContext): Promise<void> => {
 const parseTextArray = (value: unknown): string[] =>
     Array.isArray(value) ? value.filter((item): item is string => typeof item === 'string') : [];
 
+const readStoredSnapshotNumber = (value: unknown): number | null =>
+    typeof value === 'number' && Number.isFinite(value) ? value : null;
+
 const parseYearbookNations = (value: unknown): YearbookNation[] => {
     if (!Array.isArray(value)) {
         return [];
@@ -114,6 +117,7 @@ const buildNationSnapshot = async (ctx: GameApiContext) => {
                 gold: true,
                 rice: true,
                 tech: true,
+                meta: true,
             },
             orderBy: { id: 'asc' },
         }),
@@ -197,33 +201,45 @@ const buildNationSnapshot = async (ctx: GameApiContext) => {
         generalStatsByNation.set(general.nationId, entry);
     }
 
-    return nationRows.map<YearbookNation>((nation) => {
+    const projected = nationRows.map<YearbookNation>((nation) => {
         const generalStats = generalStatsByNation.get(nation.id) ?? {
             goldRice: 0,
             statPower: 0,
             expDed: 0,
             generalCount: 0,
         };
-        const cityStats = cityStatsByNation.get(nation.id) ?? { popSum: 0, valueSum: 0, maxSum: 0 };
-        const resource = Math.round(((nation.gold ?? 0) + (nation.rice ?? 0) + generalStats.goldRice) / 100);
-        const tech = nation.tech ?? 0;
-        const cityPower =
-            nation.level > 0 && cityStats.maxSum > 0
-                ? Math.round((cityStats.popSum * cityStats.valueSum) / cityStats.maxSum / 100)
-                : 0;
-        const expDed = Math.round(generalStats.expDed / 100);
-        const power = Math.round((resource + tech + cityPower + generalStats.statPower + expDed) / 10);
+        const nationMeta = asRecord(nation.meta);
+        const storedPower = readStoredSnapshotNumber(nationMeta.power);
+        let power = 1;
+        if (nation.id !== 0) {
+            if (storedPower !== null) {
+                power = storedPower;
+            } else {
+                const cityStats = cityStatsByNation.get(nation.id) ?? { popSum: 0, valueSum: 0, maxSum: 0 };
+                const resource = Math.round(((nation.gold ?? 0) + (nation.rice ?? 0) + generalStats.goldRice) / 100);
+                const tech = nation.tech ?? 0;
+                const cityPower =
+                    nation.level > 0 && cityStats.maxSum > 0
+                        ? Math.round((cityStats.popSum * cityStats.valueSum) / cityStats.maxSum / 100)
+                        : 0;
+                const expDed = Math.round(generalStats.expDed / 100);
+                power = Math.round((resource + tech + cityPower + generalStats.statPower + expDed) / 10);
+            }
+        }
+        const storedGeneralCount = readStoredSnapshotNumber(nationMeta.gennum);
+        const generalCount = nation.id === 0 ? 1 : (storedGeneralCount ?? generalStats.generalCount);
 
         return {
             id: nation.id,
-            name: nation.name,
-            color: nation.color,
-            level: nation.level,
+            name: nation.id === 0 ? '재야' : nation.name,
+            color: nation.id === 0 ? '#000000' : nation.color,
+            level: nation.id === 0 ? 0 : nation.level,
             power,
-            generalCount: generalStats.generalCount,
+            generalCount,
             cities: cityNamesByNation.get(nation.id) ?? [],
         };
     });
+    return projected.sort((left, right) => right.power - left.power);
 };
 
 const readGlobalActionLogs = async (ctx: GameApiContext, year: number, month: number) => {

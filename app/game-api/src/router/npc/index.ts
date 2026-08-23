@@ -221,11 +221,14 @@ const resolveScenarioStat = (config: Record<string, unknown>): { max: number; np
     };
 };
 
-const resolveCommandEnv = (config: Record<string, unknown>): { develCost: number; defaultCrewTypeId: number } => {
+const resolveCommandEnv = (
+    config: Record<string, unknown>
+): { develCost: number; defaultCrewTypeId: number; maxTechLevel: number } => {
     const constValues = asRecord(config.const ?? config.consts);
     return {
         develCost: resolveNumberFromKeys(constValues, ['develCost', 'develcost', 'develrate'], 0),
         defaultCrewTypeId: resolveNumberFromKeys(constValues, ['defaultCrewTypeId'], 0),
+        maxTechLevel: resolveNumberFromKeys(constValues, ['maxTechLevel'], 12),
     };
 };
 
@@ -345,13 +348,14 @@ const buildZeroPolicy = async (
         nationTech: number;
         develCost: number;
         defaultCrewTypeId: number;
+        maxTechLevel: number;
         unitSetName: string;
     }
 ): Promise<NationPolicy> => {
-    const { statMax, statNpcMax, nationTech, develCost, defaultCrewTypeId, unitSetName } = options;
+    const { statMax, statNpcMax, nationTech, develCost, defaultCrewTypeId, maxTechLevel, unitSetName } = options;
     const unitSet = await loadUnitSetDefinitionByName(unitSetName);
     const crewType = findCrewTypeById(unitSet, defaultCrewTypeId || unitSet.defaultCrewTypeId || 0);
-    const techCost = getTechCost(nationTech);
+    const techCost = getTechCost(nationTech, maxTechLevel);
     const next = clonePolicy(policy);
 
     if (next.reqNPCDevelGold === 0) {
@@ -511,6 +515,7 @@ export const npcRouter = router({
             nationTech,
             develCost: env.develCost,
             defaultCrewTypeId: env.defaultCrewTypeId,
+            maxTechLevel: env.maxTechLevel,
             unitSetName,
         });
 

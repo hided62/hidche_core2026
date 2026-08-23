@@ -32,6 +32,7 @@ export const MONTHLY_EVENT_ACTION_CATALOG = [
     'ProcessSemiAnnual',
     'ProcessWarIncome',
     'CreateAdminNPC',
+    'AdvanceCentennialAllStar',
     'CreateManyNPC',
     'RegNPC',
     'RegNeutralNPC',
@@ -233,8 +234,7 @@ export const createMonthlyEventHandler = (options: {
         // the previous monthly boundary even after turnDate() has advanced
         // year/month. Generated general turn times depend on this distinction.
         const legacyTurnTime =
-            context.legacyTurnTime ??
-            new Date(context.turnTime.getTime() - world.getState().tickSeconds * 1_000);
+            context.legacyTurnTime ?? new Date(context.turnTime.getTime() - world.getState().tickSeconds * 1_000);
 
         for (const event of world.listEvents(targetCode)) {
             const environment: MonthlyEventEnvironment = {

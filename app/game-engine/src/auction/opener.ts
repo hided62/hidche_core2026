@@ -37,6 +37,12 @@ const fail = (reason: string): TurnDaemonCommandResult => ({
     reason,
 });
 
+export const buildInitialUniqueAuctionBidMeta = (obfuscatedName: string, amount: number) => ({
+    obfuscatedName,
+    tryExtendCloseDate: false,
+    inheritSpentTrackedAmount: amount,
+});
+
 const openResourceAuction = async (
     command: AuctionOpenCommand,
     world: InMemoryTurnWorld,
@@ -257,7 +263,7 @@ const openUniqueAuction = async (
                     amount: command.amount,
                     eventId,
                     eventAt: now,
-                    meta: { obfuscatedName: alias, tryExtendCloseDate: false },
+                    meta: buildInitialUniqueAuctionBidMeta(alias, command.amount),
                 },
             },
         },
@@ -265,6 +271,26 @@ const openUniqueAuction = async (
     await db.inheritancePoint.update({
         where: { userId_key: { userId, key: 'previous' } },
         data: { value: currentPoint - command.amount },
+    });
+    await db.$executeRaw(
+        GamePrisma.sql`
+            INSERT INTO rank_data (nation_id, general_id, type, value)
+            VALUES (${general.nationId}, ${general.id}, 'inherit_spent_dyn', ${command.amount})
+            ON CONFLICT (general_id, type)
+            DO UPDATE SET
+                nation_id = EXCLUDED.nation_id,
+                value = rank_data.value + EXCLUDED.value
+        `
+    );
+    world.updateGeneral(general.id, {
+        inheritancePoints: {
+            ...general.inheritancePoints,
+            previous: currentPoint - command.amount,
+        },
+        meta: {
+            ...general.meta,
+            inherit_spent_dyn: readNumber(asRecord(general.meta), 'inherit_spent_dyn', 0) + command.amount,
+        },
     });
 
     const logger = new ActionLogger();

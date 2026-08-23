@@ -40,7 +40,11 @@ export const createOpenNationBettingHandler = (options: {
             .filter((nation) => nation.id > 0)
             .sort((left, right) => right.power - left.power)
             .map((nation) => {
-                const generalCount = generals.filter((general) => general.nationId === nation.id).length;
+                const storedGeneralCount = nation.meta.gennum;
+                const generalCount =
+                    typeof storedGeneralCount === 'number' && Number.isFinite(storedGeneralCount)
+                        ? storedGeneralCount
+                        : generals.filter((general) => general.nationId === nation.id && general.npcState !== 5).length;
                 const cityCount = cities.filter((city) => city.nationId === nation.id).length;
                 return {
                     title: nation.name,
@@ -150,7 +154,7 @@ export const createFinishNationBettingHandler = (options: {
             id: bettingId,
             winnerNationIds: world
                 .listNations()
-                .filter((nation) => nation.level > 0)
+                .filter((nation) => nation.id > 0 && nation.level > 0)
                 .map((nation) => nation.id),
             year: environment.year,
             month: environment.month,

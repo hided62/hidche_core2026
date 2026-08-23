@@ -43,6 +43,7 @@ interface AuctionRow {
     detail: unknown;
     status: string;
     closeAt: Date;
+    closeTick: bigint | null;
 }
 
 export interface AuctionDetail {
@@ -54,6 +55,14 @@ export interface AuctionDetail {
     availableLatestBidCloseDate?: string | null;
     remainCloseDateExtensionCnt?: number | null;
 }
+
+export const hasAuctionClosePassed = (
+    auction: { closeAt: Date; closeTick: bigint | null },
+    time: { now: Date; tick: number | null }
+): boolean =>
+    auction.closeTick !== null && time.tick !== null
+        ? auction.closeTick < BigInt(time.tick)
+        : auction.closeAt.getTime() < time.now.getTime();
 
 interface AuctionBidRow {
     id: number;
@@ -109,7 +118,8 @@ const loadAuction = async (db: DatabaseClient, auctionId: number): Promise<Aucti
                 host_general_id as "hostGeneralId",
                 detail,
                 status,
-                close_at as "closeAt"
+                close_at as "closeAt",
+                close_tick as "closeTick"
             FROM auction
             WHERE id = ${auctionId}
         `
@@ -180,6 +190,8 @@ const shouldUsePrevBid = (highestBid: AuctionBidRow | null, myPrevBid: AuctionBi
     }
     return myPrevBid;
 };
+
+const MIN_AUCTION_REMAINING_RESOURCE = 1_000;
 
 export const auctionRouter = router({
     getOverview: authedProcedure.query(async ({ ctx }) => {
@@ -372,8 +384,7 @@ export const auctionRouter = router({
         }
 
         const gameTime = await loadCurrentGameTime(ctx.db);
-        const { now } = gameTime;
-        if (auction.closeAt <= now) {
+        if (hasAuctionClosePassed(auction, gameTime)) {
             throw new TRPCError({ code: 'BAD_REQUEST', message: '경매가 종료되었습니다.' });
         }
         if (auction.hostGeneralId === general.id) {
@@ -407,7 +418,7 @@ export const auctionRouter = router({
         if (morePoint <= 0) {
             throw new TRPCError({ code: 'BAD_REQUEST', message: '입찰가가 유효하지 않습니다.' });
         }
-        if (general.gold < morePoint) {
+        if (general.gold < morePoint + MIN_AUCTION_REMAINING_RESOURCE) {
             throw new TRPCError({ code: 'BAD_REQUEST', message: '금이 부족합니다.' });
         }
 
@@ -417,6 +428,7 @@ export const auctionRouter = router({
             auctionId: auction.id,
             generalId: general.id,
             amount: input.amount,
+            ...(gameTime.tick === null ? {} : { acceptedGameTick: gameTime.tick }),
             tryExtendCloseDate: true,
         });
         if (!result || result.type !== 'auctionBid') {
@@ -448,8 +460,7 @@ export const auctionRouter = router({
         }
 
         const gameTime = await loadCurrentGameTime(ctx.db);
-        const { now } = gameTime;
-        if (auction.closeAt <= now) {
+        if (hasAuctionClosePassed(auction, gameTime)) {
             throw new TRPCError({ code: 'BAD_REQUEST', message: '경매가 종료되었습니다.' });
         }
         if (auction.hostGeneralId === general.id) {
@@ -483,7 +494,7 @@ export const auctionRouter = router({
         if (morePoint <= 0) {
             throw new TRPCError({ code: 'BAD_REQUEST', message: '입찰가가 유효하지 않습니다.' });
         }
-        if (general.rice < morePoint) {
+        if (general.rice < morePoint + MIN_AUCTION_REMAINING_RESOURCE) {
             throw new TRPCError({ code: 'BAD_REQUEST', message: '쌀이 부족합니다.' });
         }
 
@@ -493,6 +504,7 @@ export const auctionRouter = router({
             auctionId: auction.id,
             generalId: general.id,
             amount: input.amount,
+            ...(gameTime.tick === null ? {} : { acceptedGameTick: gameTime.tick }),
             tryExtendCloseDate: true,
         });
         if (!result || result.type !== 'auctionBid') {
@@ -524,8 +536,7 @@ export const auctionRouter = router({
         }
 
         const gameTime = await loadCurrentGameTime(ctx.db);
-        const { now } = gameTime;
-        if (auction.closeAt <= now) {
+        if (hasAuctionClosePassed(auction, gameTime)) {
             throw new TRPCError({ code: 'BAD_REQUEST', message: '경매가 종료되었습니다.' });
         }
 
@@ -630,6 +641,7 @@ export const auctionRouter = router({
             auctionId: auction.id,
             generalId: general.id,
             amount: input.amount,
+            ...(gameTime.tick === null ? {} : { acceptedGameTick: gameTime.tick }),
             tryExtendCloseDate: input.tryExtendCloseDate ?? false,
         });
         if (!result || result.type !== 'auctionBid') {

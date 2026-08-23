@@ -193,7 +193,16 @@ describe('unification handler', () => {
         await world.advanceMonth(new Date('0190-07-01T00:00:00.000Z'));
 
         expect(observed).toEqual([{ isUnited: undefined, unifier: 2007, previous: 150, spent: 20 }]);
-        expect(world.getState().meta).toMatchObject({ isUnited: 2, isunited: 2, refreshLimit: 200 });
+        expect(world.getState().meta).toMatchObject({
+            isUnited: 2,
+            isunited: 2,
+            refreshLimit: 200,
+            dynastyStatistics: {
+                maxNationCount: 1,
+                maxGeneralCount: 1,
+                currentGeneralCount: 1,
+            },
+        });
         expect(world.getGeneralById(1)).toMatchObject({
             inheritancePoints: { previous: 150, unifier: 2007, tournament: 11 },
             meta: { inherit_earned_dyn: 2162.1, inherit_earned: 2167.1, inherit_spent: 20 },

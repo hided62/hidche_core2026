@@ -617,11 +617,22 @@ export const buildBettingPayouts = (
     winnerId: number,
     entries: TournamentBetEntry[]
 ): { payouts: Array<{ generalId: number; amount: number }>; total: number; refundAll: boolean } => {
-    const total = entries.reduce((sum, entry) => sum + entry.amount, 0);
+    const aggregated = new Map<string, TournamentBetEntry>();
+    for (const entry of entries) {
+        const key = `${entry.generalId}:${entry.targetId}`;
+        const previous = aggregated.get(key);
+        if (previous) {
+            previous.amount += entry.amount;
+        } else {
+            aggregated.set(key, { ...entry });
+        }
+    }
+    const normalizedEntries = [...aggregated.values()];
+    const total = normalizedEntries.reduce((sum, entry) => sum + entry.amount, 0);
     if (total <= 0) {
         return { payouts: [], total: 0, refundAll: false };
     }
-    const winners = entries.filter((entry) => entry.targetId === winnerId);
+    const winners = normalizedEntries.filter((entry) => entry.targetId === winnerId);
     const winnersTotal = winners.reduce((sum, entry) => sum + entry.amount, 0);
     if (winnersTotal <= 0) {
         // Legacy Betting::_calcRewardExclusive() builds a refund candidate list

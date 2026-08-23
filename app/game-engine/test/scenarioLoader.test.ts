@@ -5,8 +5,30 @@ import { describe, expect, it } from 'vitest';
 
 import { loadScenarioDefinitionById, resolveScenarioDefaultsPath } from '../src/scenario/scenarioLoader.js';
 import { buildCommandEnv } from '../src/turn/reservedTurnCommands.js';
+import { hasRefSourceRoot, resolveRefSourceRoot } from './refSourceRoot.js';
 
 type LoadedScenario = Awaited<ReturnType<typeof loadScenarioDefinitionById>>;
+
+interface ReferenceScenario914 {
+    title: string;
+    startYear: number;
+    map: Record<string, unknown>;
+    history: string[];
+    const: {
+        allItems: Record<string, Record<string, number>>;
+        [key: string]: unknown;
+    };
+    events: unknown[];
+}
+
+interface ReferenceScenario915 {
+    title: string;
+    startYear: number;
+    map: Record<string, unknown>;
+    history: string[];
+    const: Record<string, unknown>;
+    events: unknown[];
+}
 
 const readItemSlot = (scenario: LoadedScenario, slot: string): Record<string, number> => {
     const allItems = scenario.config.const.allItems as Record<string, Record<string, number>> | undefined;
@@ -15,6 +37,8 @@ const readItemSlot = (scenario: LoadedScenario, slot: string): Record<string, nu
 
 const readAvailableSpecialWar = (scenario: LoadedScenario): string[] =>
     (scenario.config.const.availableSpecialWar as string[] | undefined) ?? [];
+
+const refSourceIt = hasRefSourceRoot() ? it : it.skip;
 
 describe('tracked scenario resources', () => {
     it('loads every scenario through its composed resource graph', async () => {
@@ -26,9 +50,86 @@ describe('tracked scenario resources', () => {
             .map((match) => Number(match[1]))
             .sort((left, right) => left - right);
 
-        expect(scenarioIds).toHaveLength(80);
+        expect(scenarioIds).toContain(914);
+        expect(scenarioIds).toContain(915);
         const scenarios = await Promise.all(scenarioIds.map((scenarioId) => loadScenarioDefinitionById(scenarioId)));
         expect(scenarios.every((scenario) => scenario.title.length > 0)).toBe(true);
+    });
+
+    refSourceIt('preserves the Ref scenario 915 S100 pool and event order exactly', async () => {
+        const referencePath = path.join(resolveRefSourceRoot(), 'hwe', 'scenario', 'scenario_915.json');
+        const [scenario, referenceSource] = await Promise.all([
+            loadScenarioDefinitionById(915),
+            fs.readFile(referencePath, 'utf8').then((raw) => JSON.parse(raw) as ReferenceScenario915),
+        ]);
+
+        expect(scenario.title).toBe(referenceSource.title);
+        expect(scenario.startYear).toBe(referenceSource.startYear);
+        expect(scenario.config.map).toEqual(referenceSource.map);
+        expect(scenario.history).toEqual(referenceSource.history);
+        expect(scenario.config.const).toEqual(referenceSource.const);
+        expect(scenario.events).toEqual(referenceSource.events);
+        expect(
+            scenario.events
+                .filter((entry): entry is unknown[] => Array.isArray(entry) && entry[0] === 'month')
+                .map((entry) => ({ priority: entry[1], condition: entry[2], actions: entry.slice(3) }))
+        ).toEqual([
+            { priority: 8_000, condition: true, actions: [['AdvanceCentennialAllStar']] },
+            {
+                priority: 1_000,
+                condition: ['Date', '==', null, 12],
+                actions: [['CreateManyNPC', 100, 0], ['DeleteEvent']],
+            },
+            {
+                priority: 1_000,
+                condition: ['Date', '==', 181, 1],
+                actions: [['RaiseNPCNation'], ['DeleteEvent']],
+            },
+            {
+                priority: 999,
+                condition: ['Date', '==', 181, 1],
+                actions: [['OpenNationBetting', 4, 5_000], ['OpenNationBetting', 1, 2_000], ['DeleteEvent']],
+            },
+            {
+                priority: 999,
+                condition: ['and', ['Date', '>=', 183, 1], ['RemainNation', '<=', 8]],
+                actions: [['OpenNationBetting', 1, 1_000], ['DeleteEvent']],
+            },
+        ]);
+    });
+
+    refSourceIt('preserves the Ref scenario 914 item pool, monthly action order, and deletion markers', async () => {
+        const referencePath = path.join(resolveRefSourceRoot(), 'hwe', 'scenario', 'scenario_914.json');
+        const [scenario, referenceSource] = await Promise.all([
+            loadScenarioDefinitionById(914),
+            fs.readFile(referencePath, 'utf8').then((raw) => JSON.parse(raw) as ReferenceScenario914),
+        ]);
+
+        expect(scenario.title).toBe(referenceSource.title);
+        expect(scenario.startYear).toBe(referenceSource.startYear);
+        expect(scenario.config.map).toEqual(referenceSource.map);
+        expect(scenario.history).toEqual(referenceSource.history);
+        expect(scenario.config.const).toEqual(referenceSource.const);
+        expect(scenario.config.const.allItems).toEqual(referenceSource.const.allItems);
+        for (const [slot, items] of Object.entries(referenceSource.const.allItems)) {
+            expect(Object.keys(readItemSlot(scenario, slot))).toEqual(Object.keys(items));
+        }
+        expect(scenario.events).toEqual(referenceSource.events);
+
+        const monthlyActionNames = scenario.events
+            .filter((event): event is unknown[] => Array.isArray(event) && event[0] === 'month')
+            .map((event) =>
+                event
+                    .slice(3)
+                    .map((action) => (Array.isArray(action) && typeof action[0] === 'string' ? action[0] : null))
+            );
+        expect(monthlyActionNames).toEqual([
+            ['CreateManyNPC', 'DeleteEvent'],
+            ['RaiseNPCNation', 'DeleteEvent'],
+            ['OpenNationBetting', 'OpenNationBetting', 'DeleteEvent'],
+            ['ChangeCity'],
+            ['ChangeCity'],
+        ]);
     });
 
     it('opens nation betting in the first playable year of every scenario 29 variant', async () => {

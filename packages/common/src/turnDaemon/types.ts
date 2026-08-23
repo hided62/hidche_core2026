@@ -54,6 +54,31 @@ export interface RuntimeGameSettingsPatch {
     autorunUser?: RuntimeAutorunUserSettings | null;
 }
 
+export interface TurnDaemonSelectPoolCandidate {
+    uniqueName: string;
+    generalName: string;
+    leadership: number;
+    strength: number;
+    intel: number;
+    specialDomestic: string | null;
+    specialDomesticName: string | null;
+    specialDomesticInfo: string;
+    specialWar: string | null;
+    specialWarName: string | null;
+    specialWarInfo: string;
+    ego: string | null;
+    dex: [number, number, number, number, number];
+    imageServer: 0 | 1;
+    picture: string;
+}
+
+export interface TurnDaemonSelectPoolReservation {
+    poolName: string;
+    hasGeneral: boolean;
+    validUntil: string;
+    candidates: TurnDaemonSelectPoolCandidate[];
+}
+
 export type TurnDaemonCommand =
     | {
           type: 'run';
@@ -118,7 +143,13 @@ export type TurnDaemonCommand =
           };
       }
     | { type: 'dropItem'; requestId?: string; generalId: number; itemType: string }
-    | { type: 'auctionFinalize'; requestId?: string; auctionId: number }
+    | {
+          type: 'auctionFinalize';
+          requestId?: string;
+          auctionId: number;
+          expectedCloseAt?: string;
+          expectedCloseTick?: number;
+      }
     | {
           type: 'auctionOpen';
           requestId?: string;
@@ -160,6 +191,7 @@ export type TurnDaemonCommand =
           type: 'tournamentBettingPayout';
           requestId?: string;
           bettingId?: number;
+          tournamentType?: number;
           reason?: string;
           payouts: Array<{
               generalId: number;
@@ -181,11 +213,8 @@ export type TurnDaemonCommand =
           requestId?: string;
           voteId: number;
           generalId: number;
-          goldReward: number;
-          unique?: {
-              expected: boolean;
-              itemKey?: string | null;
-          };
+          selection: number[];
+          acceptedGameTick?: number;
       }
     | {
           type: 'setNationMeta';
@@ -281,6 +310,14 @@ export type TurnDaemonCommand =
           acceptedGameAt?: string;
       }
     | {
+          type: 'selectPoolReserve';
+          requestId?: string;
+          userId: string;
+          seedOwnerIdentity: string | number;
+          acceptedGameAt: string;
+          acceptedGameTick?: number;
+      }
+    | {
           type: 'selectPoolCreate';
           requestId?: string;
           userId: string;
@@ -291,6 +328,8 @@ export type TurnDaemonCommand =
           ownerPicture?: string;
           ownerImageServer?: number;
           ownerIconRevision?: string;
+          acceptedGameAt?: string;
+          acceptedGameTick?: number;
       }
     | {
           type: 'selectPoolReselect';
@@ -298,6 +337,8 @@ export type TurnDaemonCommand =
           userId: string;
           ownerDisplayName: string;
           uniqueName: string;
+          acceptedGameAt?: string;
+          acceptedGameTick?: number;
       }
     | {
           type: 'auctionBid';
@@ -305,6 +346,7 @@ export type TurnDaemonCommand =
           auctionId: number;
           generalId: number;
           amount: number;
+          acceptedGameTick?: number;
           tryExtendCloseDate?: boolean;
       };
 
@@ -626,6 +668,17 @@ export type TurnDaemonCommandResult =
           type: 'npcPossessGeneral';
           ok: false;
           code: 'BAD_REQUEST' | 'NOT_FOUND' | 'PRECONDITION_FAILED' | 'CONFLICT' | 'INTERNAL_SERVER_ERROR';
+          reason: string;
+      }
+    | {
+          type: 'selectPoolReserve';
+          ok: true;
+          reservation: TurnDaemonSelectPoolReservation;
+      }
+    | {
+          type: 'selectPoolReserve';
+          ok: false;
+          code: 'BAD_REQUEST' | 'PRECONDITION_FAILED' | 'CONFLICT' | 'INTERNAL_SERVER_ERROR';
           reason: string;
       }
     | {

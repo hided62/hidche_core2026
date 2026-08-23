@@ -4,11 +4,12 @@ import type {
     MessageDraft,
     Nation,
     ScenarioConfig,
+    ScenarioGeneralPoolCandidate,
     Troop,
     TurnSchedule,
     UnitSetDefinition,
 } from '@sammo-ts/logic';
-import { getNextTurnAt } from '@sammo-ts/logic';
+import { getNextTurnAt, readScenarioGeneralPoolClaim } from '@sammo-ts/logic';
 import { GAME_TICKS_PER_TURN, GameClock, type GameClockMode } from '@sammo-ts/common';
 
 import type { TurnCheckpoint } from '../lifecycle/types.js';
@@ -21,6 +22,7 @@ import type {
     TurnDiplomacy,
     TurnEvent,
     TurnGeneral,
+    TurnGeneralPoolEntry,
     TurnWorldSnapshot,
     TurnWorldState,
 } from './types.js';
@@ -154,6 +156,7 @@ export interface InMemoryTurnWorldStateSnapshot {
     schedule: TurnSchedule;
     state: TurnWorldState;
     worldConfig: Record<string, unknown>;
+    generalPoolEntries: TurnWorldSnapshot['generalPoolEntries'];
     checkpoint?: TurnCheckpoint;
     generals: Array<[number, TurnGeneral]>;
     cities: Array<[number, City]>;
@@ -491,6 +494,7 @@ export class InMemoryTurnWorld {
     private readonly pendingUnificationFinalizations: PendingUnificationFinalization[] = [];
     private pendingRealtimeBacklogShiftTicks = 0;
     private readonly scenarioConfig: ScenarioConfig;
+    private generalPoolEntries: TurnWorldSnapshot['generalPoolEntries'];
     private readonly worldConfig: Record<string, unknown>;
     private readonly unitSet?: UnitSetDefinition;
     private checkpoint?: TurnCheckpoint;
@@ -528,6 +532,13 @@ export class InMemoryTurnWorld {
             meta: { ...state.meta, lastTurnTime: lastTurnTime.toISOString() },
         };
         this.scenarioConfig = snapshot.scenarioConfig;
+        this.generalPoolEntries = snapshot.generalPoolEntries
+            ? snapshot.generalPoolEntries.map((entry) => ({
+                  ...entry,
+                  reservedUntil: entry.reservedUntil ? new Date(entry.reservedUntil.getTime()) : null,
+                  candidate: structuredClone(entry.candidate),
+              }))
+            : undefined;
         // Runtime callbacks created before the world keep the original object
         // reference. Mutate this object in place so a live settings action is
         // observed by monthly handlers without restarting the daemon.
@@ -712,6 +723,14 @@ export class InMemoryTurnWorld {
                 turnTime: clock.tickToDate(turnTick),
             });
         }
+        for (const entry of this.generalPoolEntries ?? []) {
+            if (entry.reservedUntilTick !== null) {
+                entry.reservedUntilTick = clock.addTicks(entry.reservedUntilTick, shiftedTicks);
+                entry.reservedUntil = clock.tickToDate(entry.reservedUntilTick);
+            } else if (entry.reservedUntil) {
+                entry.reservedUntil = new Date(entry.reservedUntil.getTime() + shiftedMilliseconds);
+            }
+        }
         if (this.checkpoint) {
             const checkpointTick = clock.addTicks(
                 this.checkpoint.turnTick ?? clock.dateToTick(new Date(this.checkpoint.turnTime)),
@@ -738,6 +757,7 @@ export class InMemoryTurnWorld {
             schedule: this.schedule,
             state: this.state,
             worldConfig: this.worldConfig,
+            generalPoolEntries: this.generalPoolEntries,
             checkpoint: this.checkpoint,
             generals: Array.from(this.generals.entries()),
             cities: Array.from(this.cities.entries()),
@@ -782,6 +802,7 @@ export class InMemoryTurnWorld {
             delete this.worldConfig[key];
         }
         Object.assign(this.worldConfig, restored.worldConfig);
+        this.generalPoolEntries = restored.generalPoolEntries;
         this.checkpoint = restored.checkpoint;
         this.replaceMap(this.generals, restored.generals);
         this.replaceMap(this.cities, restored.cities);
@@ -1034,6 +1055,80 @@ export class InMemoryTurnWorld {
         return Array.from(this.generals.values()).map((general) => ({
             ...general,
         }));
+    }
+
+    listGeneralPoolEntries(): TurnGeneralPoolEntry[] | undefined {
+        return this.generalPoolEntries?.map((entry) => ({
+            ...entry,
+            reservedUntil: entry.reservedUntil ? new Date(entry.reservedUntil.getTime()) : null,
+            candidate: structuredClone(entry.candidate),
+        }));
+    }
+
+    replaceGeneralPoolEntries(entries: readonly TurnGeneralPoolEntry[]): void {
+        this.generalPoolEntries = entries.map((entry) => ({
+            ...entry,
+            reservedUntil: entry.reservedUntil ? new Date(entry.reservedUntil.getTime()) : null,
+            candidate: structuredClone(entry.candidate),
+        }));
+    }
+
+    listGeneralPoolCandidates(
+        claimedAt: Date,
+        claimedAtTick = this.dateToGameTick(claimedAt)
+    ): ScenarioGeneralPoolCandidate[] | undefined {
+        if (!this.generalPoolEntries) {
+            return undefined;
+        }
+        if (!Number.isSafeInteger(claimedAtTick)) {
+            throw new Error(`General-pool claim tick must be a safe integer: ${claimedAtTick}`);
+        }
+        const claimsByEntryId = new Map<number, number>();
+        const currentNames = new Set<string>();
+        const prefixes: Partial<Record<number, string>> = {
+            1: 'ⓝ',
+            2: 'ⓝ',
+            3: 'ⓜ',
+            4: 'ⓖ',
+            5: '㉥',
+            6: 'ⓤ',
+            9: 'ⓞ',
+        };
+        for (const general of this.generals.values()) {
+            const claim = readScenarioGeneralPoolClaim(general.meta);
+            if (claim) {
+                claimsByEntryId.set(claim.poolEntryId, general.id);
+            }
+            const prefix = prefixes[general.npcState];
+            currentNames.add(
+                prefix && general.name.startsWith(prefix) ? general.name.slice(prefix.length) : general.name
+            );
+        }
+
+        return this.generalPoolEntries
+            .filter((entry) => {
+                const linkedGeneralCanBeReused =
+                    entry.generalId === null || this.deletedGeneralIds.has(entry.generalId);
+                if (
+                    !linkedGeneralCanBeReused ||
+                    claimsByEntryId.has(entry.id) ||
+                    currentNames.has(entry.uniqueName) ||
+                    currentNames.has(entry.candidate.name)
+                ) {
+                    return false;
+                }
+                const isUnreserved =
+                    entry.ownerUserId === null && entry.reservedUntil === null && entry.reservedUntilTick === null;
+                // Ref compares integer GameClock ticks and keeps a reservation
+                // valid at exact equality. Legacy rows without a tick fall
+                // back to the projected Date column.
+                const isExpired =
+                    entry.reservedUntilTick !== null
+                        ? entry.reservedUntilTick < claimedAtTick
+                        : entry.reservedUntil !== null && entry.reservedUntil.getTime() < claimedAt.getTime();
+                return isUnreserved || isExpired;
+            })
+            .map((entry) => structuredClone(entry.candidate));
     }
 
     listCities(): City[] {
@@ -1346,6 +1441,11 @@ export class InMemoryTurnWorld {
         for (const auction of this.pendingNeutralAuctions) {
             auction.closeAt = shiftDate(auction.closeAt);
         }
+        for (const entry of this.generalPoolEntries ?? []) {
+            if (entry.reservedUntil) {
+                entry.reservedUntil = shiftDate(entry.reservedUntil);
+            }
+        }
         if (this.checkpoint) {
             const checkpointTime = shiftDate(new Date(this.checkpoint.turnTime));
             this.checkpoint = {
@@ -1441,6 +1541,8 @@ export class InMemoryTurnWorld {
 
     executeGeneralTurn(general: TurnGeneral): GeneralTurnExecution {
         const currentGeneral = this.generals.get(general.id) ?? general;
+        const executionYear = this.state.currentYear;
+        const executionMonth = this.state.currentMonth;
         const city = this.cities.get(currentGeneral.cityId);
         const nation = currentGeneral.nationId > 0 ? (this.nations.get(currentGeneral.nationId) ?? null) : null;
 
@@ -1490,10 +1592,17 @@ export class InMemoryTurnWorld {
         }
         if (result.logs && result.logs.length > 0) {
             // Ref command logs use the executing general's pre-advance turntime.
-            // Preserve that per-entry occurrence time instead of replacing every
-            // log in the transaction with the shared completion cursor at flush.
+            // Preserve that per-entry occurrence time and calendar date instead
+            // of replacing them with the shared post-boundary flush context.
             for (const log of result.logs) {
-                this.pushLog(log, currentGeneral.turnTime);
+                this.pushLog(
+                    {
+                        ...log,
+                        year: log.year ?? executionYear,
+                        month: log.month ?? executionMonth,
+                    },
+                    currentGeneral.turnTime
+                );
             }
         }
         if (result.messages && result.messages.length > 0) {

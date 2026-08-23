@@ -115,7 +115,8 @@ export const resolveLegacyAiStatsWithModules = (
     modules: TurnCommandEnv['generalActionModules'],
     worldRef: AiWorldView | null,
     world: TurnWorldState,
-    startYear: number
+    startYear: number,
+    maxTechLevel = 12
 ) => {
     const maxLevel = Math.max(1, maxStatLevel);
     const clampStat = (value: number): number => Math.max(0, Math.min(value, maxLevel));
@@ -138,6 +139,7 @@ export const resolveLegacyAiStatsWithModules = (
             month: world.currentMonth,
             startYear,
         },
+        maxTechLevel,
     };
     const rawStat = (statName: 'leadership' | 'strength' | 'intelligence'): number => general.stats[statName];
     const calculate = (
@@ -699,7 +701,8 @@ export class GeneralAI {
                 this.commandEnv.generalActionModules,
                 this.worldRef,
                 this.world,
-                this.startYear
+                this.startYear,
+                this.commandEnv.maxTechLevel
             );
         }
         return resolveLegacyAiStats(general, this.nation, this.commandEnv.maxStatLevel ?? LEGACY_DEFAULT_MAX_LEVEL);
@@ -726,6 +729,7 @@ export class GeneralAI {
                     month: this.world.currentMonth,
                     startYear: this.startYear,
                 },
+                maxTechLevel: this.commandEnv.maxTechLevel,
             },
             '징집인구',
             'score',

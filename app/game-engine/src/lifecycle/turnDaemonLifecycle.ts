@@ -388,7 +388,14 @@ export class TurnDaemonLifecycle {
         this.status.running = true;
         this.status.pendingReason = pending.reason;
 
-        const targetTime = pending.targetTime ?? new Date(startMs);
+        const requestedTargetTime = pending.targetTime ?? new Date(startMs);
+        const lastTurnTime = this.status.lastTurnTime ? new Date(this.status.lastTurnTime) : requestedTargetTime;
+        // A single Ref turn run never observes generals beyond the next monthly
+        // boundary before that boundary's monthly actions have completed. Keep
+        // explicit manual/poke targets on the same chronological boundary as the
+        // scheduled paths above.
+        const nextMonthTime = this.getNextTickTime(lastTurnTime);
+        const targetTime = new Date(Math.min(requestedTargetTime.getTime(), nextMonthTime.getTime()));
         const budget = pending.budget ?? this.options.defaultBudget;
         const checkpoint = this.status.checkpoint;
         let result: TurnRunResult;

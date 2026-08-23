@@ -43,6 +43,7 @@ export interface GeneralActionContext<TriggerState extends GeneralTriggerState =
         month: number;
         startYear: number;
     };
+    maxTechLevel?: number;
 }
 
 export interface GeneralTriggerContext<

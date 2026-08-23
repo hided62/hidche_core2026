@@ -62,3 +62,34 @@ describe('SPoolUnderU30 resource', () => {
         await expect(loadGeneralPoolEntries('SPoolUnknown')).rejects.toThrow('Unsupported general pool');
     });
 });
+
+describe('SPoolUnderU100 resource', () => {
+    it('preserves all 4,682 historical candidates and Ref A100 identifiers', async () => {
+        const entries = await loadGeneralPoolEntries('SPoolUnderU100');
+
+        expect(entries).toHaveLength(4_682);
+        expect(new Set(entries.map((entry) => entry.uniqueName)).size).toBe(4_682);
+        expect(entries[0]).toMatchObject({
+            uniqueName: 'A1000001',
+            info: {
+                uniqueName: 'A1000001',
+                generalName: '1·조민',
+                leadership: 85,
+                strength: 69,
+                intel: 12,
+                specialDomestic: 'che_event_무쌍',
+                dex: [54_691, 398_024, 31_027, 89_301, 24_687],
+                sourcePhase: 1,
+                sourceServerId: 'che_180628_z9X4',
+                sourceGeneralNo: 3,
+                event100Growth: true,
+            },
+        });
+        expect(entries.at(-1)).toMatchObject({
+            uniqueName: 'A1004682',
+            info: { generalName: '99·푸른양귀비', sourcePhase: 99 },
+        });
+        expect(entries.filter((entry) => (entry.info.dex as number[]).every((value) => value === 0))).toHaveLength(512);
+        expect(entries.filter((entry) => entry.info.specialDomestic === null)).toHaveLength(4);
+    });
+});

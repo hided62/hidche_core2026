@@ -31,6 +31,7 @@ import {
     createItemModuleRegistry,
     loadItemModules,
     resolveUniqueConfig,
+    readScenarioGeneralPoolClaim,
     rollUniqueLottery,
     getNextTurnAt,
     getBillByLevel,
@@ -509,6 +510,7 @@ type WorldView = {
     listNations(): Nation[];
     listTroops(): Troop[];
     listDiplomacy(): TurnDiplomacy[];
+    listGeneralPoolCandidates(claimedAt: Date): ReturnType<InMemoryTurnWorld['listGeneralPoolCandidates']>;
 };
 
 const mergeStats = (base: TurnGeneral['stats'], patch: Partial<TurnGeneral['stats']>): TurnGeneral['stats'] => ({
@@ -614,6 +616,20 @@ const createWorldOverlay = (world: InMemoryTurnWorld) => {
                 ...entry,
                 meta: { ...entry.meta },
             })),
+        listGeneralPoolCandidates: (claimedAt) => {
+            const candidates = world.listGeneralPoolCandidates(claimedAt);
+            if (!candidates) {
+                return candidates;
+            }
+            const overlayClaimedIds = new Set<number>();
+            for (const general of generalOverrides.values()) {
+                const claim = readScenarioGeneralPoolClaim(general.meta);
+                if (claim) {
+                    overlayClaimedIds.add(claim.poolEntryId);
+                }
+            }
+            return candidates.filter((candidate) => !overlayClaimedIds.has(candidate.poolEntryId));
+        },
     };
 
     return {
@@ -1080,6 +1096,7 @@ export const createReservedTurnHandler = async (options: {
                         : {}),
                     rng: actionRng,
                     time: actionTime,
+                    maxTechLevel: env.maxTechLevel,
                     uniqueLottery,
                 };
                 let specificContext = buildActionContext(
@@ -1113,6 +1130,7 @@ export const createReservedTurnHandler = async (options: {
                         nation: currentNation,
                         rng: actionRng,
                         time: actionTime,
+                        maxTechLevel: env.maxTechLevel,
                     };
                     specificContext = baseContext;
                 }
@@ -2418,6 +2436,7 @@ export const createImmediateGeneralActionExecutor = async (options: {
                     month: state.currentMonth,
                     startYear,
                 },
+                maxTechLevel: env.maxTechLevel,
                 uniqueLottery,
             };
             const actionContext =

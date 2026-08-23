@@ -87,6 +87,7 @@ export const do징병 = (ai: GeneralAI) => {
             month: ai.world.currentMonth,
             startYear: ai.startYear,
         },
+        maxTechLevel: ai.commandEnv.maxTechLevel,
     };
     const recruitment = new RecruitmentCommandResolver(ai.commandEnv.generalActionModules ?? [], ai.commandEnv);
     // The cached AI stat follows the scenario/global classification cap, while
@@ -163,11 +164,17 @@ export const do징병 = (ai: GeneralAI) => {
         return null;
     }
     let picked = ai.rng.choiceUsingWeightPair(
-        candidates.map((crew) => [crew, getCrewTypePickScore(crew, tech, warConfig.armPerPhase)])
+        candidates.map((crew) => [
+            crew,
+            getCrewTypePickScore(crew, tech, warConfig.armPerPhase, ai.commandEnv.maxTechLevel),
+        ])
     );
     trace('crew-type', {
         armType,
-        candidates: candidates.map((crew) => [crew.id, getCrewTypePickScore(crew, tech, warConfig.armPerPhase)]),
+        candidates: candidates.map((crew) => [
+            crew.id,
+            getCrewTypePickScore(crew, tech, warConfig.armPerPhase, ai.commandEnv.maxTechLevel),
+        ]),
         picked: picked.id,
     });
     if (ai.generalPolicy.can('고급병종')) {
@@ -203,7 +210,7 @@ export const do징병 = (ai: GeneralAI) => {
     const killCrew = readMetaNumber(generalMeta, 'rank_killcrew', readMetaNumber(generalMeta, 'killcrew', 0));
     const deathCrew = readMetaNumber(generalMeta, 'rank_deathcrew', readMetaNumber(generalMeta, 'deathcrew', 0));
     const expectedCrewLoss = Math.floor((crewAmount * killCrew * 1.2) / Math.max(deathCrew, 1));
-    let riceCost = (picked.rice * getTechCost(tech) * expectedCrewLoss) / 100;
+    let riceCost = (picked.rice * getTechCost(tech, ai.commandEnv.maxTechLevel) * expectedCrewLoss) / 100;
 
     const remainingGold = ai.general.gold - fullLeadership * 3;
     const remainingRice = ai.general.rice - fullLeadership * 4;

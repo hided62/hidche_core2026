@@ -12,6 +12,7 @@ import { JosaUtil } from '@sammo-ts/common';
 import { getMetaNumber, setMetaNumber, increaseMetaNumber } from '@sammo-ts/logic/war/utils.js';
 import { z } from 'zod';
 import { parseArgsWithSchema } from '../parseArgs.js';
+import { reconcileCentennialDexConversion } from '@sammo-ts/logic/scenario/centennialAllStar.js';
 
 export interface DexTransferContext<
     TriggerState extends GeneralTriggerState = GeneralTriggerState,
@@ -82,11 +83,24 @@ export class ActionDefinition<
         const srcKey = `dex${args.srcArmType}`;
         const destKey = `dex${args.destArmType}`;
         const srcDex = getMetaNumber(general.meta, srcKey, 0);
+        const destDex = getMetaNumber(general.meta, destKey, 0);
         const cutDex = Math.trunc(srcDex * DECREASE_COEFF);
         const addDex = Math.trunc(cutDex * CONVERT_COEFF);
 
         setMetaNumber(general.meta, srcKey, srcDex - cutDex);
-        setMetaNumber(general.meta, destKey, getMetaNumber(general.meta, destKey, 0) + addDex);
+        setMetaNumber(general.meta, destKey, destDex + addDex);
+        if (args.srcArmType <= 5 && args.destArmType <= 5) {
+            general.meta = reconcileCentennialDexConversion(
+                general.meta,
+                srcKey as `dex${1 | 2 | 3 | 4 | 5}`,
+                destKey as `dex${1 | 2 | 3 | 4 | 5}`,
+                srcDex,
+                srcDex - cutDex,
+                destDex,
+                destDex + addDex,
+                CONVERT_COEFF
+            );
+        }
 
         const srcName = resolveArmTypeName(context.unitSet, args.srcArmType);
         const destName = resolveArmTypeName(context.unitSet, args.destArmType);

@@ -396,6 +396,7 @@ const buildConstraintEnv = (worldState: WorldStateRow): Record<string, unknown> 
         relYear,
         join_mode: joinMode,
         openingPartYear: resolveNumber(constValues, ['openingPartYear'], 0),
+        maxTechLevel: resolveNumber(constValues, ['maxTechLevel'], 12),
     };
 };
 
@@ -515,19 +516,31 @@ export const buildRecruitmentCommandInfo = (options: {
     const city = options.city ? mapCityRow(options.city) : undefined;
     const nation = options.nation ? mapNationRow(options.nation) : null;
     const cities = options.cities.map(mapCityRow);
-    const context = city ? { general, city, nation } : { general, nation };
-    const command = new RecruitmentCommandResolver(options.generalActionModules ?? [], {});
-    const tech = options.nation?.tech ?? 0;
-    const techAbility = getTechAbility(tech);
+    const commandEnv = buildCommandEnv(options.worldState);
     const constraintEnv = buildConstraintEnv(options.worldState);
-    const startYear = typeof constraintEnv.startYear === 'number' ? constraintEnv.startYear : undefined;
+    const configuredStartYear = typeof constraintEnv.startYear === 'number' ? constraintEnv.startYear : undefined;
+    const startYear = configuredStartYear ?? options.worldState.currentYear;
+    const context = {
+        general,
+        ...(city ? { city } : {}),
+        nation,
+        time: {
+            year: options.worldState.currentYear,
+            month: options.worldState.currentMonth,
+            startYear,
+        },
+        maxTechLevel: commandEnv.maxTechLevel,
+    };
+    const command = new RecruitmentCommandResolver(options.generalActionModules ?? [], commandEnv);
+    const tech = options.nation?.tech ?? 0;
+    const techAbility = getTechAbility(tech, commandEnv.maxTechLevel);
     const availabilityContext = {
         general,
         nation,
         map: options.map,
         cities,
         currentYear: options.worldState.currentYear,
-        ...(startYear === undefined ? {} : { startYear }),
+        ...(configuredStartYear === undefined ? {} : { startYear: configuredStartYear }),
     };
     const crewTypes = options.unitSet.crewTypes ?? [];
     const armTypes = Object.entries(options.unitSet.armTypes ?? {})
@@ -565,7 +578,7 @@ export const buildRecruitmentCommandInfo = (options: {
     const currentCrewTypeName = crewTypes.find((crewType) => crewType.id === general.crewTypeId)?.name ?? '-';
 
     return {
-        techLevel: getTechLevel(tech),
+        techLevel: getTechLevel(tech, commandEnv.maxTechLevel),
         leadership: command.resolveLeadership(context),
         fullLeadership: command.resolveFullLeadership(context),
         currentCrewTypeId: general.crewTypeId,

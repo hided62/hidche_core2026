@@ -23,6 +23,7 @@ const parseWith = <T>(schema: z.ZodType<T>, value: unknown): T | null => {
 };
 
 const zFiniteNumber = z.number().finite();
+const zSafeInteger = zFiniteNumber.int().min(Number.MIN_SAFE_INTEGER).max(Number.MAX_SAFE_INTEGER);
 const zRecord = z.record(z.string(), z.unknown());
 
 const zRunReason = z.enum(['schedule', 'manual', 'poke']);
@@ -35,6 +36,8 @@ const zTurnRunBudget = z.object({
 const zAuctionFinalize = z.object({
     type: z.literal('auctionFinalize'),
     auctionId: zFiniteNumber,
+    expectedCloseAt: z.string().refine(isCanonicalIsoTimestamp).optional(),
+    expectedCloseTick: zSafeInteger.optional(),
 });
 
 const zAuctionOpen = z.object({
@@ -53,6 +56,7 @@ const zAuctionBid = z.object({
     auctionId: zFiniteNumber,
     generalId: zFiniteNumber,
     amount: zFiniteNumber,
+    acceptedGameTick: zSafeInteger.optional(),
     tryExtendCloseDate: z.boolean().optional(),
 });
 
@@ -176,6 +180,7 @@ const zTournamentRefund = z.object({
 const zTournamentBettingPayout = z.object({
     type: z.literal('tournamentBettingPayout'),
     bettingId: zFiniteNumber.optional(),
+    tournamentType: zFiniteNumber.optional(),
     reason: z.string().optional(),
     payouts: z.array(z.object({ generalId: zFiniteNumber, amount: zFiniteNumber })).min(1),
 });
@@ -194,13 +199,8 @@ const zVoteReward = z.object({
     type: z.literal('voteReward'),
     voteId: zFiniteNumber,
     generalId: zFiniteNumber,
-    goldReward: zFiniteNumber,
-    unique: z
-        .object({
-            expected: z.boolean(),
-            itemKey: z.string().nullable().optional(),
-        })
-        .optional(),
+    selection: z.array(zFiniteNumber.int()).min(1),
+    acceptedGameTick: zSafeInteger.optional(),
 });
 
 const zSetNationMeta = z.object({
@@ -329,6 +329,19 @@ const zSelectPoolCreate = z
         ownerPicture: z.string().optional(),
         ownerImageServer: z.number().int().nonnegative().optional(),
         ownerIconRevision: z.string().refine(isCanonicalIsoTimestamp).optional(),
+        acceptedGameAt: z.string().refine(isCanonicalIsoTimestamp).optional(),
+        acceptedGameTick: zFiniteNumber.int().min(Number.MIN_SAFE_INTEGER).max(Number.MAX_SAFE_INTEGER).optional(),
+    })
+    .strict();
+
+const zSelectPoolReserve = z
+    .object({
+        type: z.literal('selectPoolReserve'),
+        requestId: z.string().optional(),
+        userId: z.string().min(1),
+        seedOwnerIdentity: z.union([z.string().min(1), zFiniteNumber]),
+        acceptedGameAt: z.string().refine(isCanonicalIsoTimestamp),
+        acceptedGameTick: zFiniteNumber.int().min(Number.MIN_SAFE_INTEGER).max(Number.MAX_SAFE_INTEGER).optional(),
     })
     .strict();
 
@@ -339,6 +352,8 @@ const zSelectPoolReselect = z
         userId: z.string().min(1),
         ownerDisplayName: z.string().min(1),
         uniqueName: z.string().min(1).max(20),
+        acceptedGameAt: z.string().refine(isCanonicalIsoTimestamp).optional(),
+        acceptedGameTick: zFiniteNumber.int().min(Number.MIN_SAFE_INTEGER).max(Number.MAX_SAFE_INTEGER).optional(),
     })
     .strict();
 
@@ -660,6 +675,14 @@ const normalizeSelectPoolCreate: CommandNormalizer<'selectPoolCreate'> = (envelo
     return { ...command, requestId: envelope.requestId };
 };
 
+const normalizeSelectPoolReserve: CommandNormalizer<'selectPoolReserve'> = (envelope) => {
+    const command = parseWith(zSelectPoolReserve, envelope.command);
+    if (!command) {
+        return null;
+    }
+    return { ...command, requestId: envelope.requestId };
+};
+
 const normalizeSelectPoolReselect: CommandNormalizer<'selectPoolReselect'> = (envelope) => {
     const command = parseWith(zSelectPoolReselect, envelope.command);
     if (!command) {
@@ -744,6 +767,7 @@ const normalizers: CommandNormalizerMap = {
     adjustGeneralIcon: normalizeAdjustGeneralIcon,
     joinCreateGeneral: normalizeJoinCreateGeneral,
     npcPossessGeneral: normalizeNpcPossessGeneral,
+    selectPoolReserve: normalizeSelectPoolReserve,
     selectPoolCreate: normalizeSelectPoolCreate,
     selectPoolReselect: normalizeSelectPoolReselect,
     getStatus: normalizeGetStatus,

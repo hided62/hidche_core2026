@@ -112,6 +112,7 @@ export const buildBattleSimEnvironment = async (
         maxAtmosByCommand: resolveNumber(constValues, ['maxAtmosByCommand'], DEFAULT_WAR_CONFIG.maxAtmosByCommand),
         maxTrainByWar: resolveNumber(constValues, ['maxTrainByWar'], DEFAULT_WAR_CONFIG.maxTrainByWar),
         maxAtmosByWar: resolveNumber(constValues, ['maxAtmosByWar'], DEFAULT_WAR_CONFIG.maxAtmosByWar),
+        maxTechLevel: resolveNumber(constValues, ['maxTechLevel'], 12),
         maxGeneralStat: resolveNumber(constValues, ['maxLevel'], LEGACY_DEFAULT_MAX_LEVEL),
         statUpgradeLimit: resolveNumber(constValues, ['upgradeLimit'], 30),
         castleCrewTypeId,

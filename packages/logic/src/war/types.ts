@@ -27,6 +27,7 @@ export interface WarEngineConfig {
     maxAtmosByWar: number;
     maxGeneralStat?: number;
     statUpgradeLimit?: number;
+    maxTechLevel?: number;
     castleCrewTypeId: number;
     armTypes: WarArmTypes;
 }

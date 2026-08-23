@@ -8,6 +8,7 @@ import { InMemoryFlushStore } from '../src/auth/flushStore.js';
 import type { DatabaseClient, GameApiContext, GeneralRow } from '../src/context.js';
 import type { TurnDaemonTransport } from '../src/daemon/transport.js';
 import { appRouter } from '../src/router.js';
+import { hasAuctionClosePassed } from '../src/router/auction/index.js';
 
 const buildGeneral = (overrides: Partial<GeneralRow> = {}): GeneralRow => ({
     id: 7,
@@ -80,6 +81,7 @@ const buildContext = (options: {
     isunited?: number;
     requestId?: string;
     transaction?: ReturnType<typeof vi.fn>;
+    clockTick?: number;
 }) => {
     const auth = options.auth === undefined ? buildAuth() : options.auth;
     const general = options.general === undefined ? buildGeneral() : options.general;
@@ -106,6 +108,14 @@ const buildContext = (options: {
         currentYear: 200,
         currentMonth: 1,
         tickSeconds: 3600,
+        ...(options.clockTick === undefined
+            ? {}
+            : {
+                  clockBaseTime: new Date('2026-07-26T00:00:00.000Z'),
+                  clockTick: BigInt(options.clockTick),
+                  clockMode: 'manual',
+                  clockWallAnchor: new Date('2026-07-26T00:00:00.000Z'),
+              }),
         config: {
             const: {
                 auctionName: ['청룡', '백호', '주작', '현무'],
@@ -169,6 +179,20 @@ const buildContext = (options: {
 };
 
 describe('auction router actor and permission boundaries', () => {
+    it('keeps the auction open through its authoritative close tick', () => {
+        const closeAt = new Date('2026-07-27T00:00:00.000Z');
+        const auction = { closeAt, closeTick: 72_000_000n };
+
+        expect(hasAuctionClosePassed(auction, { now: closeAt, tick: 72_000_000 })).toBe(false);
+        expect(
+            hasAuctionClosePassed(auction, {
+                now: new Date(closeAt.getTime() + 1),
+                tick: 72_000_001,
+            })
+        ).toBe(true);
+        expect(hasAuctionClosePassed({ closeAt, closeTick: null }, { now: closeAt, tick: null })).toBe(false);
+    });
+
     it('rejects unauthenticated auction reads', async () => {
         const fixture = buildContext({ auth: null });
 
@@ -329,6 +353,7 @@ describe('auction router actor and permission boundaries', () => {
                             detail: { startBidAmount: 100, isReverse: false },
                             status: 'OPEN',
                             closeAt: new Date(Date.now() + 60 * 60_000),
+                            closeTick: 100n,
                         },
                     ];
                 }
@@ -346,6 +371,7 @@ describe('auction router actor and permission boundaries', () => {
                 }
                 return [];
             },
+            clockTick: 100,
         });
 
         await appRouter.createCaller(fixture.context).auction.bidUnique({
@@ -358,7 +384,43 @@ describe('auction router actor and permission boundaries', () => {
             auctionId: 31,
             generalId: 7,
             amount: 110,
+            acceptedGameTick: 100,
             tryExtendCloseDate: false,
         });
+    });
+
+    it('keeps the Ref 1000 gold reserve after a resource-auction bid', async () => {
+        const queryRaw = async (query: GamePrisma.Sql) => {
+            const text = sqlText(query);
+            if (text.includes('FROM auction') && text.includes('WHERE id =')) {
+                return [
+                    {
+                        id: 31,
+                        type: 'BUY_RICE',
+                        targetCode: '100',
+                        hostGeneralId: 88,
+                        detail: { title: '쌀 100 경매', amount: 100, startBidAmount: 500, isReverse: false },
+                        status: 'OPEN',
+                        closeAt: new Date(Date.now() + 60 * 60_000),
+                    },
+                ];
+            }
+            if (text.includes('FROM auction_bid')) {
+                return [];
+            }
+            return [];
+        };
+        const accepted = buildContext({ general: buildGeneral({ gold: 1_500 }), queryRaw });
+
+        await expect(
+            appRouter.createCaller(accepted.context).auction.bidBuyRice({ auctionId: 31, amount: 500 })
+        ).resolves.toEqual({ ok: true });
+        expect(accepted.requestCommand).toHaveBeenCalledOnce();
+
+        const rejected = buildContext({ general: buildGeneral({ gold: 1_499 }), queryRaw });
+        await expect(
+            appRouter.createCaller(rejected.context).auction.bidBuyRice({ auctionId: 31, amount: 500 })
+        ).rejects.toMatchObject({ code: 'BAD_REQUEST', message: '금이 부족합니다.' });
+        expect(rejected.requestCommand).not.toHaveBeenCalled();
     });
 });

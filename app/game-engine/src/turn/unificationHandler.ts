@@ -3,7 +3,7 @@ import { LogCategory, LogFormat, LogScope, type LogEntryDraft } from '@sammo-ts/
 
 import type { InMemoryTurnWorld, TurnCalendarContext, TurnCalendarHandler } from './inMemoryWorld.js';
 import type { PendingUnificationAuctionCancellation } from './types.js';
-import { queueYearbookSnapshot } from './yearbookHandler.js';
+import { queueYearbookSnapshot, updateDynastyStatistics } from './yearbookHandler.js';
 
 const UNIFIER_POINT = 2000;
 const INVADER_MESSAGE_OPTIONS = [
@@ -67,6 +67,7 @@ export const createUnificationHandler = (options: {
             if (cities.length === 0 || cities.some((city) => city.nationId !== winner.id)) return;
 
             const serverId = resolveServerId(world, options.profileName);
+            updateDynastyStatistics(world);
             world.pushLog(buildNationHistoryLog(winner.id, winner.name));
 
             const auctionCancellations = (await options.loadPendingUniqueAuctions?.()) ?? [];

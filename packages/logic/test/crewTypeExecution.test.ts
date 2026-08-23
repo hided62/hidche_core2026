@@ -13,7 +13,13 @@ import { computeBattleOrder, resolveWarBattle } from '../src/war/engine.js';
 import { createWarTriggerEnv, WarTriggerCaller } from '../src/war/triggers.js';
 import type { WarEngineConfig } from '../src/war/types.js';
 import { WarUnitCity, WarUnitGeneral, type WarUnit } from '../src/war/units.js';
-import { getCrewTypePickScore, parseUnitSetDefinition } from '../src/world/unitSet.js';
+import {
+    getCrewTypePickScore,
+    getTechAbility,
+    getTechCost,
+    getTechLevel,
+    parseUnitSetDefinition,
+} from '../src/world/unitSet.js';
 import type { CrewTypeDefinition, UnitSetDefinition } from '../src/world/types.js';
 
 const config: WarEngineConfig = {
@@ -393,6 +399,20 @@ describe('crew type war triggers', () => {
 });
 
 describe('crew type numeric policy', () => {
+    it('uses the scenario 913 maximum tech level for ability and cost', () => {
+        expect(getTechLevel(13_000, 15)).toBe(13);
+        expect(getTechAbility(13_000, 15)).toBe(325);
+        expect(getTechCost(13_000, 15)).toBe(2.95);
+
+        expect(getTechLevel(15_000, 15)).toBe(15);
+        expect(getTechAbility(15_000, 15)).toBe(375);
+        expect(getTechCost(15_000, 15)).toBe(3.25);
+
+        expect(getTechLevel(15_000)).toBe(12);
+        expect(getTechAbility(15_000)).toBe(300);
+        expect(getTechCost(15_000)).toBe(2.8);
+    });
+
     it('matches the legacy pickScore formula including magicCoef', () => {
         const wizard = crewType(1400, 4, '귀병', {
             attack: 80,
@@ -403,5 +423,18 @@ describe('crew type numeric policy', () => {
         });
         const expected = ((500 + 80 + 80 + 75 * 2) * (1 + 7 / 2) * (1 + 0.5 / 2)) / (1 - 0.05);
         expect(getCrewTypePickScore(wizard, 3000, 500)).toBeCloseTo(expected);
+    });
+
+    it('uses the scenario maximum tech level in the crew pick score', () => {
+        const wizard = crewType(1400, 4, '귀병', {
+            attack: 80,
+            defence: 80,
+            speed: 7,
+            avoid: 5,
+            magicCoef: 0.5,
+        });
+        const expected = ((500 + 80 + 80 + 375 * 2) * (1 + 7 / 2) * (1 + 0.5 / 2)) / (1 - 0.05);
+
+        expect(getCrewTypePickScore(wizard, 15_000, 500, 15)).toBeCloseTo(expected);
     });
 });

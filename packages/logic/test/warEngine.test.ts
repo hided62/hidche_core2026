@@ -166,6 +166,45 @@ const buildGeneral = (strength: number): General => ({
 });
 
 describe('war triggers', () => {
+    it('passes battle time and maximum tech level to year-scaling stat items', async () => {
+        const general = buildGeneral(80);
+        const [leadershipWine] = await loadItemModules(['che_능력치_통솔_보령압주']);
+        expect(leadershipWine).toBeDefined();
+        const unit = new WarUnitGeneral(
+            new RandUtil(new ConstantRNG(0)),
+            { ...buildConfig(), maxTechLevel: 15 },
+            general,
+            buildCity(),
+            buildNation(),
+            true,
+            new WarCrewType(buildUnitSet().crewTypes![0]!),
+            new ActionLogger({ generalId: 1, nationId: 1 }),
+            new WarActionPipeline([leadershipWine!]),
+            { year: 260, month: 1, startYear: 180 }
+        );
+
+        expect(unit.getComputedStat('leadership', general.stats.leadership, { withInjury: false })).toBe(90);
+    });
+
+    it('uses the battle config maximum tech level for combat ability', () => {
+        const nation = buildNation();
+        nation.meta.tech = 15_000;
+        const unit = new WarUnitGeneral(
+            new RandUtil(new ConstantRNG(0)),
+            { ...buildConfig(), maxTechLevel: 15 },
+            buildGeneral(80),
+            buildCity(),
+            nation,
+            true,
+            new WarCrewType(buildUnitSet().crewTypes![0]!),
+            new ActionLogger({ generalId: 1, nationId: 1 }),
+            new WarActionPipeline([]),
+            { year: 200, month: 1, startYear: 180 }
+        );
+
+        expect(unit.getComputedAttack()).toBeCloseTo(608, 12);
+    });
+
     it('normalizes accumulated dexterity to the PHP SQL float precision', () => {
         const general = buildGeneral(80);
         general.meta.dex4 = 14_677.199999999997;

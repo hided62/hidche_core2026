@@ -56,7 +56,8 @@ const getCrewGoldCost = (ai: GeneralAI, general: TurnGeneral, baseMultiplier: nu
     // Keeping that operation order is observable at exact resource boundaries
     // (for example 3036 versus 3036.0000000000005).
     return (
-        (((crewType?.cost ?? 0) * getTechCost(tech) * getFullLeadership(ai, general)) / 100) *
+        (((crewType?.cost ?? 0) * getTechCost(tech, ai.commandEnv.maxTechLevel) * getFullLeadership(ai, general)) /
+            100) *
         100 *
         baseMultiplier *
         finalMultiplier

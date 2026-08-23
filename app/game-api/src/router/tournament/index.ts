@@ -29,6 +29,13 @@ const resolveNumber = (source: Record<string, unknown>, keys: string[], fallback
     return fallback;
 };
 
+const resolveCurrentDevelCost = (worldState: { config?: unknown; meta?: unknown } | null): number => {
+    const config = asRecord(worldState?.config ?? {});
+    const constValues = asRecord(config.const ?? config);
+    const configured = resolveNumber(constValues, ['develCost', 'develcost', 'develrate'], 0);
+    return resolveNumber(asRecord(worldState?.meta), ['develcost', 'develCost', 'develrate'], configured);
+};
+
 const adminProcedure = authedProcedure.use(({ ctx, next }) => {
     const roles = ctx.auth?.user.roles ?? [];
     if (!hasAdminRole(roles, ctx.profile.name)) {
@@ -403,9 +410,7 @@ export const tournamentRouter = router({
                 throw new TRPCError({ code: 'BAD_REQUEST', message: '참가 인원이 가득 찼습니다.' });
             }
 
-            const config = asRecord(worldState?.config ?? {});
-            const constValues = asRecord(config.const ?? config);
-            const develCost = resolveNumber(constValues, ['develCost', 'develcost', 'develrate'], 0);
+            const develCost = resolveCurrentDevelCost(worldState);
             const feeResult = await ctx.turnDaemon.requestCommand({
                 type: 'adjustGeneralResources',
                 reason: 'tournamentJoin',
@@ -462,9 +467,7 @@ export const tournamentRouter = router({
             const [participants, bets] = await Promise.all([store.getParticipants(), store.getBettingEntries()]);
 
             const worldState = await ctx.db.worldState.findFirst();
-            const config = asRecord(worldState?.config ?? {});
-            const constValues = asRecord(config.const ?? config);
-            const develCost = resolveNumber(constValues, ['develCost', 'develcost', 'develrate'], 0);
+            const develCost = resolveCurrentDevelCost(worldState);
 
             const refundMap = new Map<number, number>();
             for (const participant of participants) {

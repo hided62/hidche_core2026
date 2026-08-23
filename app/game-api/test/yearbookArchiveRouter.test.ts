@@ -97,6 +97,9 @@ const buildContext = (
         hasGeneral?: boolean;
         worldMeta?: unknown;
         liveLogs?: { history: string[]; action: string[] };
+        liveNations?: Array<Record<string, unknown>>;
+        liveCities?: Array<Record<string, unknown>>;
+        liveGenerals?: Array<Record<string, unknown>>;
     } = {}
 ): GameApiContext => {
     const db = {
@@ -104,13 +107,13 @@ const buildContext = (
         general: {
             findFirst: async ({ where }: { where: { userId: string } }) =>
                 options.hasGeneral === false ? null : { id: where.userId === 'owner-a' ? 1 : 2, userId: where.userId },
-            findMany: async () => [],
+            findMany: async () => options.liveGenerals ?? [],
         },
         city: {
-            findMany: async () => [],
+            findMany: async () => options.liveCities ?? [],
         },
         nation: {
-            findMany: async () => [],
+            findMany: async () => options.liveNations ?? [],
         },
         logEntry: {
             findMany: async ({ where }: { where: { category: unknown } }) => {
@@ -323,6 +326,84 @@ describe('historical yearbook access from dynasty', () => {
             data: {
                 globalHistory: ['현재 천하 동향'],
                 globalAction: ['최신 호환 행동', '최신 장수 동향'],
+            },
+        });
+    });
+
+    it('uses stored Ref nation projections, canonical neutral values, and descending power in the live month', async () => {
+        const zeroCityStats = {
+            population: 0,
+            agriculture: 0,
+            commerce: 0,
+            security: 0,
+            defence: 0,
+            wall: 0,
+            populationMax: 1,
+            agricultureMax: 1,
+            commerceMax: 1,
+            securityMax: 1,
+            defenceMax: 1,
+            wallMax: 1,
+        };
+        const caller = appRouter.createCaller(
+            buildContext(authFor('owner-a'), {
+                liveNations: [
+                    {
+                        id: 0,
+                        name: '오염된 재야',
+                        color: '#ffffff',
+                        level: 9,
+                        gold: 0,
+                        rice: 0,
+                        tech: 0,
+                        meta: { power: 90, gennum: 90 },
+                    },
+                    {
+                        id: 1,
+                        name: '촉',
+                        color: '#ff0000',
+                        level: 7,
+                        gold: 0,
+                        rice: 0,
+                        tech: 0,
+                        meta: { power: 777, gennum: 9 },
+                    },
+                    {
+                        id: 2,
+                        name: '위',
+                        color: '#0000ff',
+                        level: 7,
+                        gold: 0,
+                        rice: 0,
+                        tech: 0,
+                        meta: { power: 0, gennum: 2 },
+                    },
+                ],
+                liveCities: [
+                    { id: 0, name: '낙양', nationId: 0, ...zeroCityStats },
+                    { id: 1, name: '성도', nationId: 1, ...zeroCityStats },
+                    { id: 2, name: '허창', nationId: 2, ...zeroCityStats },
+                ],
+            })
+        );
+
+        const result = await caller.yearbook.getHistory({ year: 220, month: 1 });
+
+        expect(result).toMatchObject({
+            notModified: false,
+            data: {
+                nations: [
+                    expect.objectContaining({ id: 1, power: 777, generalCount: 9 }),
+                    expect.objectContaining({
+                        id: 0,
+                        name: '재야',
+                        color: '#000000',
+                        level: 0,
+                        power: 1,
+                        generalCount: 1,
+                    }),
+                    expect.objectContaining({ id: 2, power: 0, generalCount: 2 }),
+                ],
             },
         });
     });

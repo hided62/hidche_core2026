@@ -53,7 +53,7 @@ import { createAuctionBidder } from '../auction/bidder.js';
 import { createNeutralAuctionRegistrar } from '../auction/neutralRegistrar.js';
 import { createTournamentRewardFinalizer } from '../tournament/finalizer.js';
 import { createTournamentAutoStartHandler } from './tournamentAutoStart.js';
-import { createYearbookHandler } from './yearbookHandler.js';
+import { createDynastyStatisticsHandler, createYearbookHandler } from './yearbookHandler.js';
 import {
     createMonthlyEventHandler,
     createRandomizeCityTradeRateHandler,
@@ -79,6 +79,7 @@ import { createFinishNationBettingHandler, createOpenNationBettingHandler } from
 import { createScoutBlockHandler } from './monthlyScoutBlockAction.js';
 import { createAddGlobalBetrayHandler, createAssignGeneralSpecialityHandler } from './monthlySpecialityBetrayAction.js';
 import { createLostUniqueItemHandler, createMergeInheritPointRankHandler } from './monthlyUniqueInheritAction.js';
+import { createAdvanceCentennialAllStarHandler } from './monthlyCentennialAllStarAction.js';
 import {
     createNewYearHandler,
     createNoticeToHistoryLogHandler,
@@ -386,6 +387,7 @@ const createMonthlyEventActions = (options: {
         })
     );
     eventActions.set('MergeInheritPointRank', createMergeInheritPointRankHandler({ getWorld: options.getWorld }));
+    eventActions.set('AdvanceCentennialAllStar', createAdvanceCentennialAllStarHandler({ getWorld: options.getWorld }));
     eventActions.set('ProcessIncome', createProcessIncomeActionHandler(options.incomeHandler));
     eventActions.set('NoticeToHistoryLog', createNoticeToHistoryLogHandler({ getWorld: options.getWorld }));
     eventActions.set('NewYear', createNewYearHandler({ getWorld: options.getWorld }));
@@ -464,6 +466,7 @@ const createMonthlyCalendarRuntime = async (options: {
         now: () => options.getWorld()?.getGameNow(new Date(options.clock.nowMs())) ?? new Date(options.clock.nowMs()),
     });
     const calendarHandler = composeCalendarHandlers(
+        createDynastyStatisticsHandler({ getWorld: options.getWorld }).handler,
         options.monthlyEventHandler,
         options.hasEventAction('ProcessIncome') ? null : options.incomeHandler,
         createYearbookHandler({ profileName: options.profileName, getWorld: options.getWorld }).handler,

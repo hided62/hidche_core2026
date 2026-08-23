@@ -1,6 +1,6 @@
 import { z } from 'zod';
 
-import { asNumber, asRecord, JosaUtil, LiteHashDRBG, RandUtil } from '@sammo-ts/common';
+import { asNumber, asRecord, GAME_TICKS_PER_TURN, JosaUtil, LiteHashDRBG, RandUtil } from '@sammo-ts/common';
 import { acquireGameSchemaAdvisoryXactLock, GamePrisma } from '@sammo-ts/infra';
 import {
     EventDomesticTraitLoader,
@@ -10,14 +10,25 @@ import {
     LogCategory,
     LogScope,
     PERSONALITY_TRAIT_KEYS,
+    CENTENNIAL_ALL_STAR_AUX_KEY,
+    CENTENNIAL_ALL_STAR_DEFAULT_DEX_LIMIT,
+    CENTENNIAL_ALL_STAR_POOL,
+    applyCentennialAllStarTarget,
+    calculateCentennialUserCurrentTargetStats,
+    calculateCentennialUserInitialStats,
+    buildScenarioGeneralPoolClaimMeta,
+    initialCentennialAllStarAux,
+    parseScenarioGeneralPoolCandidate,
+    prepareCentennialLegacyUserReselection,
     simpleSerialize,
     WarTraitLoader,
 } from '@sammo-ts/logic';
+import type { CentennialAllStarEnvironment, CentennialAllStarRules, CentennialAllStarTarget } from '@sammo-ts/logic';
 
 import type { DatabaseClient, GamePrisma as GamePrismaTypes } from '@sammo-ts/infra';
 import type { InMemoryTurnWorld } from './inMemoryWorld.js';
 import { buildPrestartDeleteAfter } from './prestartDeletion.js';
-import type { TurnGeneral } from './types.js';
+import type { TurnGeneral, TurnGeneralPoolEntry } from './types.js';
 
 type WorldStateRow = GamePrismaTypes.WorldStateGetPayload<Record<string, never>>;
 
@@ -33,7 +44,8 @@ export class SelectPoolError extends Error {
     }
 }
 
-const SUPPORTED_POOL = 'SPoolUnderU30';
+const LEGACY_SELECTION_POOL = 'SPoolUnderU30';
+const SUPPORTED_POOLS = new Set([LEGACY_SELECTION_POOL, CENTENNIAL_ALL_STAR_POOL]);
 const RESERVATION_COUNT = 14;
 const RESERVATION_TURN_MULTIPLIER = 2;
 const RESELECTION_TURN_MULTIPLIER = 12;
@@ -41,7 +53,6 @@ const DEFAULT_MAX_GENERAL = 500;
 const DEFAULT_CREW_TYPE_ID = 1100;
 const MAX_GENERAL_TURNS = 30;
 const DEFAULT_TURN_ACTION = '휴식';
-const LEGACY_TIMEZONE_OFFSET_MS = 9 * 60 * 60 * 1000;
 
 const zCandidateInfo = z.object({
     uniqueName: z.string().min(1),
@@ -49,7 +60,7 @@ const zCandidateInfo = z.object({
     leadership: z.number().int(),
     strength: z.number().int(),
     intel: z.number().int(),
-    specialDomestic: z.string().min(1),
+    specialDomestic: z.string().min(1).nullable(),
     specialWar: z.string().min(1).optional(),
     ego: z.string().min(1).optional(),
     experience: z.number().int().optional(),
@@ -67,6 +78,7 @@ interface SelectPoolRow {
     ownerUserId: string | null;
     generalId: number | null;
     reservedUntil: Date | null;
+    reservedUntilTick: bigint | null;
     info: unknown;
 }
 
@@ -76,8 +88,8 @@ export interface SelectPoolCandidateDto {
     leadership: number;
     strength: number;
     intel: number;
-    specialDomestic: string;
-    specialDomesticName: string;
+    specialDomestic: string | null;
+    specialDomesticName: string | null;
     specialDomesticInfo: string;
     specialWar: string | null;
     specialWarName: string | null;
@@ -89,7 +101,7 @@ export interface SelectPoolCandidateDto {
 }
 
 export interface SelectPoolReservationDto {
-    poolName: typeof SUPPORTED_POOL;
+    poolName: string;
     hasGeneral: boolean;
     validUntil: string;
     candidates: SelectPoolCandidateDto[];
@@ -120,7 +132,8 @@ const resolveTurnTermMinutes = (worldState: WorldStateRow): number => {
 
 export const isSelectionPoolWorld = (worldState: WorldStateRow): boolean => {
     const config = asRecord(worldState.config);
-    return asNumber(config.npcMode, 0) === 2 && resolvePoolName(worldState) === SUPPORTED_POOL;
+    const poolName = resolvePoolName(worldState);
+    return asNumber(config.npcMode, 0) === 2 && poolName !== null && SUPPORTED_POOLS.has(poolName);
 };
 
 export const resolveSelectionMaxGeneral = (worldState: WorldStateRow): number => {
@@ -158,16 +171,61 @@ const parseCandidate = (row: Pick<SelectPoolRow, 'uniqueName' | 'info'>): Select
     return candidate;
 };
 
-const candidateWeight = (candidate: SelectPoolCandidateInfo): number =>
-    candidate.dex.reduce((sum, value) => sum + value, 0);
+export const calculateSelectionCandidateWeight = (
+    poolName: string,
+    candidate: SelectPoolCandidateInfo,
+    ownerIsUser: boolean
+): number => {
+    const dexWeight = candidate.dex.reduce((sum, value) => sum + value, 0);
+    if (poolName !== CENTENNIAL_ALL_STAR_POOL) {
+        return dexWeight;
+    }
+    const eligibleDexWeight = Math.max(100_000, dexWeight);
+    if (!ownerIsUser) {
+        return eligibleDexWeight;
+    }
+    const statTotal = candidate.leadership + candidate.strength + candidate.intel;
+    const normalizedStat = Math.min(1, Math.max(0, (statTotal - 160) / 30));
+    return eligibleDexWeight * (1 + 0.5 * normalizedStat);
+};
+
+const resolveCentennialEnvironment = (worldState: WorldStateRow): CentennialAllStarEnvironment => {
+    const scenarioMeta = asRecord(asRecord(worldState.meta).scenarioMeta);
+    return {
+        startYear: Math.trunc(asNumber(scenarioMeta.startYear, worldState.currentYear)),
+        year: worldState.currentYear,
+        month: worldState.currentMonth,
+    };
+};
+
+const resolveCentennialRules = (worldState: WorldStateRow): CentennialAllStarRules => {
+    const config = asRecord(worldState.config);
+    const stat = asRecord(config.stat);
+    const configConst = asRecord(config.const);
+    const defaultSpecialDomestic = configConst.defaultSpecialDomestic;
+    return {
+        defaultStatMin: asNumber(stat.min, 15),
+        defaultStatMax: asNumber(stat.max, 80),
+        defaultStatTotal: asNumber(stat.total, 165),
+        maxStatLevel: asNumber(configConst.maxLevel, 255),
+        defaultSpecialDomestic: typeof defaultSpecialDomestic === 'string' ? defaultSpecialDomestic : 'None',
+        dexLimit: asNumber(configConst.dexLimit, CENTENNIAL_ALL_STAR_DEFAULT_DEX_LIMIT),
+    };
+};
+
+const asCentennialTarget = (candidate: SelectPoolCandidateInfo): CentennialAllStarTarget => ({
+    ...candidate,
+    specialDomestic: candidate.specialDomestic,
+});
 
 const eventDomesticTraitLoader = new EventDomesticTraitLoader();
 const warTraitLoader = new WarTraitLoader();
 
 const toCandidateDto = async (candidate: SelectPoolCandidateInfo): Promise<SelectPoolCandidateDto> => {
-    const trait = isEventDomesticTraitKey(candidate.specialDomestic)
-        ? await eventDomesticTraitLoader.load(candidate.specialDomestic)
-        : null;
+    const trait =
+        candidate.specialDomestic && isEventDomesticTraitKey(candidate.specialDomestic)
+            ? await eventDomesticTraitLoader.load(candidate.specialDomestic)
+            : null;
     const warTrait =
         candidate.specialWar && isWarTraitKey(candidate.specialWar)
             ? await warTraitLoader.load(candidate.specialWar)
@@ -179,7 +237,7 @@ const toCandidateDto = async (candidate: SelectPoolCandidateInfo): Promise<Selec
         strength: candidate.strength,
         intel: candidate.intel,
         specialDomestic: candidate.specialDomestic,
-        specialDomesticName: trait?.name ?? candidate.specialDomestic.replace(/^che_event_/, ''),
+        specialDomesticName: trait?.name ?? candidate.specialDomestic?.replace(/^che_event_/, '') ?? null,
         specialDomesticInfo: trait?.info ?? '',
         specialWar: candidate.specialWar ?? null,
         specialWarName: warTrait?.name ?? candidate.specialWar?.replace(/^che_(?:event_)?/u, '') ?? null,
@@ -192,35 +250,63 @@ const toCandidateDto = async (candidate: SelectPoolCandidateInfo): Promise<Selec
 };
 
 const toReservationDto = (
-    rows: Array<Pick<SelectPoolRow, 'id' | 'uniqueName' | 'reservedUntil' | 'info'>>,
-    hasGeneral: boolean
+    rows: Array<Pick<SelectPoolRow, 'id' | 'uniqueName' | 'reservedUntil' | 'reservedUntilTick' | 'info'>>,
+    hasGeneral: boolean,
+    worldState: WorldStateRow,
+    world: InMemoryTurnWorld
 ): Promise<SelectPoolReservationDto> => {
-    const validUntil = rows[0]?.reservedUntil;
-    if (!validUntil) {
+    const first = rows[0];
+    if (!first || (first.reservedUntilTick === null && first.reservedUntil === null)) {
         throw new SelectPoolError('INTERNAL_SERVER_ERROR', '장수 선택 후보의 유효기간이 없습니다.');
     }
-    const expiresAt = validUntil;
+    const expiresAt =
+        first.reservedUntilTick === null
+            ? first.reservedUntil!
+            : world.gameTickToDate(toSafeReservationTick(first.reservedUntilTick, first.uniqueName));
+    const poolName = resolvePoolName(worldState);
+    if (!poolName || !SUPPORTED_POOLS.has(poolName)) {
+        throw new SelectPoolError('PRECONDITION_FAILED', '선택 가능한 서버가 아닙니다');
+    }
+    const centennialEnvironment = resolveCentennialEnvironment(worldState);
+    const centennialRules = resolveCentennialRules(worldState);
     const sorted = rows
-        .map((row) => ({ id: row.id, info: parseCandidate(row) }))
-        .sort((left, right) => candidateWeight(left.info) - candidateWeight(right.info) || left.id - right.id);
+        .map((row) => {
+            const raw = parseCandidate(row);
+            if (poolName !== CENTENNIAL_ALL_STAR_POOL) {
+                return { id: row.id, info: raw };
+            }
+            const target = asCentennialTarget(raw);
+            const display = hasGeneral
+                ? calculateCentennialUserCurrentTargetStats(target, centennialEnvironment, centennialRules)
+                : calculateCentennialUserInitialStats(target, centennialRules);
+            return {
+                id: row.id,
+                info: {
+                    ...raw,
+                    leadership: display.leadership,
+                    strength: display.strength,
+                    intel: display.intel,
+                },
+            };
+        })
+        .sort(
+            (left, right) =>
+                left.info.dex.reduce((sum, value) => sum + value, 0) -
+                    right.info.dex.reduce((sum, value) => sum + value, 0) || left.id - right.id
+        );
     return Promise.all(sorted.map((entry) => toCandidateDto(entry.info))).then((candidates) => ({
-        poolName: SUPPORTED_POOL,
+        poolName,
         hasGeneral,
         validUntil: expiresAt.toISOString(),
         candidates,
     }));
 };
 
-const formatLegacySeedTime = (value: Date): string => {
-    const pad = (part: number): string => String(part).padStart(2, '0');
-    const koreaTime = new Date(value.getTime() + LEGACY_TIMEZONE_OFFSET_MS);
-    return `${koreaTime.getUTCFullYear()}-${pad(koreaTime.getUTCMonth() + 1)}-${pad(
-        koreaTime.getUTCDate()
-    )} ${pad(koreaTime.getUTCHours())}:${pad(koreaTime.getUTCMinutes())}:${pad(koreaTime.getUTCSeconds())}`;
-};
-
-export const buildSelectPoolSeed = (hiddenSeed: string | number, ownerIdentity: string | number, now: Date): string =>
-    simpleSerialize(hiddenSeed, 'selectPool', ownerIdentity, formatLegacySeedTime(now));
+export const buildSelectPoolSeed = (
+    hiddenSeed: string | number,
+    ownerIdentity: string | number,
+    nowTick: number
+): string => simpleSerialize(hiddenSeed, 'selectPool', ownerIdentity, nowTick);
 
 export const claimWeightedSelectionCandidates = async <T extends { id: number }>(options: {
     weighted: [T, number][];
@@ -265,6 +351,27 @@ const getWorldHiddenSeed = (worldState: WorldStateRow): string | number => {
         : fail('INTERNAL_SERVER_ERROR', '장수 선택 비밀 seed가 설정되지 않았습니다.');
 };
 
+const toSafeReservationTick = (value: bigint | number, uniqueName: string): number => {
+    const tick = Number(value);
+    if (!Number.isSafeInteger(tick)) {
+        fail('INTERNAL_SERVER_ERROR', `장수 선택 후보 ${uniqueName}의 예약 tick이 안전한 정수 범위를 벗어났습니다.`);
+    }
+    return tick;
+};
+
+const resolveAcceptedGameTick = (world: InMemoryTurnWorld, now: Date): number => {
+    const tick = world.dateToGameTick(now);
+    if (!Number.isSafeInteger(tick)) {
+        fail('INTERNAL_SERVER_ERROR', '장수 선택 예약 tick이 안전한 정수 범위를 벗어났습니다.');
+    }
+    return tick;
+};
+
+const isReservationActive = (row: SelectPoolRow, now: Date, nowTick: number): boolean =>
+    row.reservedUntilTick !== null
+        ? toSafeReservationTick(row.reservedUntilTick, row.uniqueName) >= nowTick
+        : row.reservedUntil !== null && row.reservedUntil.getTime() >= now.getTime();
+
 const lockSelectionUser = async (db: DatabaseClient, userId: string): Promise<void> => {
     await acquireGameSchemaAdvisoryXactLock(db, `select-pool:user:${userId}`);
 };
@@ -273,14 +380,18 @@ const requireSelectionToken = async (
     db: DatabaseClient,
     userId: string,
     uniqueName: string,
-    now: Date
+    now: Date,
+    nowTick: number
 ): Promise<SelectPoolRow> => {
     const token = await db.selectPoolEntry.findFirst({
         where: {
             ownerUserId: userId,
             uniqueName,
-            reservedUntil: { gte: now },
             generalId: null,
+            OR: [
+                { reservedUntilTick: { gte: BigInt(nowTick) } },
+                { reservedUntilTick: null, reservedUntil: { gte: now } },
+            ],
         },
     });
     if (!token) {
@@ -289,17 +400,44 @@ const requireSelectionToken = async (
     return token as SelectPoolRow;
 };
 
+const mapSelectionPoolRow = (row: SelectPoolRow): TurnGeneralPoolEntry => ({
+    id: row.id,
+    uniqueName: row.uniqueName,
+    ownerUserId: row.ownerUserId,
+    generalId: row.generalId,
+    reservedUntil: row.reservedUntil ? new Date(row.reservedUntil.getTime()) : null,
+    reservedUntilTick:
+        row.reservedUntilTick === null ? null : toSafeReservationTick(row.reservedUntilTick, row.uniqueName),
+    candidate: parseScenarioGeneralPoolCandidate({ id: row.id, uniqueName: row.uniqueName, info: row.info }),
+});
+
+const synchronizeSelectionPoolWorld = async (
+    db: DatabaseClient,
+    world: InMemoryTurnWorld
+): Promise<SelectPoolRow[]> => {
+    const rows = (await db.selectPoolEntry.findMany({ orderBy: { id: 'asc' } })) as SelectPoolRow[];
+    world.replaceGeneralPoolEntries(rows.map(mapSelectionPoolRow));
+    return rows;
+};
+
 export const reserveSelectionPool = async (options: {
     db: DatabaseClient;
+    world: InMemoryTurnWorld;
     worldState: WorldStateRow;
     userId: string;
     now?: Date;
+    acceptedGameTick?: number;
     seedOwnerIdentity?: string | number;
 }): Promise<SelectPoolReservationDto> => {
-    const { db, worldState, userId } = options;
+    const { db, world, worldState, userId } = options;
     requirePoolWorld(worldState);
     const now = options.now ?? new Date();
+    const acceptedGameTick = options.acceptedGameTick ?? resolveAcceptedGameTick(world, now);
+    if (!Number.isSafeInteger(acceptedGameTick)) {
+        fail('INTERNAL_SERVER_ERROR', '장수 선택 예약 tick이 안전한 정수 범위를 벗어났습니다.');
+    }
     await lockSelectionUser(db, userId);
+    await lockSelectionMutationTables(db);
     const general = await db.general.findFirst({
         where: { userId },
         select: { id: true, meta: true },
@@ -309,77 +447,94 @@ export const reserveSelectionPool = async (options: {
         fail('PRECONDITION_FAILED', '아직 다시 고를 수 없습니다');
     }
 
-    const existing = await db.selectPoolEntry.findMany({
-        where: {
-            ownerUserId: userId,
-            reservedUntil: { gte: now },
-            generalId: null,
-        },
-        orderBy: { id: 'asc' },
-    });
+    let currentRows = await synchronizeSelectionPoolWorld(db, world);
+    const existing = currentRows.filter(
+        (row) => row.ownerUserId === userId && row.generalId === null && isReservationActive(row, now, acceptedGameTick)
+    );
     if (existing.length > 0) {
-        return toReservationDto(existing as SelectPoolRow[], Boolean(general));
+        return toReservationDto(existing, Boolean(general), worldState, world);
     }
 
     await db.selectPoolEntry.updateMany({
         where: {
-            reservedUntil: { lt: now },
             generalId: null,
+            OR: [
+                { reservedUntilTick: { lt: BigInt(acceptedGameTick) } },
+                { reservedUntilTick: null, reservedUntil: { lt: now } },
+            ],
         },
         data: {
             ownerUserId: null,
             reservedUntil: null,
+            reservedUntilTick: null,
         },
     });
-
-    const available = (await db.selectPoolEntry.findMany({
-        where: {
-            ownerUserId: null,
-            reservedUntil: null,
-            generalId: null,
-        },
-        orderBy: { id: 'asc' },
-    })) as SelectPoolRow[];
+    currentRows = await synchronizeSelectionPoolWorld(db, world);
+    const availableIds = new Set(
+        world.listGeneralPoolCandidates(now, acceptedGameTick)?.map((candidate) => candidate.poolEntryId) ?? []
+    );
+    const available = currentRows.filter(
+        (row) =>
+            availableIds.has(row.id) &&
+            row.ownerUserId === null &&
+            row.reservedUntil === null &&
+            row.reservedUntilTick === null &&
+            row.generalId === null
+    );
     if (available.length < RESERVATION_COUNT) {
         fail('PRECONDITION_FAILED', 'pool 부족');
     }
 
     const rng = new RandUtil(
-        new LiteHashDRBG(buildSelectPoolSeed(getWorldHiddenSeed(worldState), options.seedOwnerIdentity ?? userId, now))
+        new LiteHashDRBG(
+            buildSelectPoolSeed(getWorldHiddenSeed(worldState), options.seedOwnerIdentity ?? userId, acceptedGameTick)
+        )
     );
-    const weighted = available.map((row) => [row, candidateWeight(parseCandidate(row))] as [SelectPoolRow, number]);
-    const reservedUntil = new Date(
-        now.getTime() + resolveTurnTermMinutes(worldState) * RESERVATION_TURN_MULTIPLIER * 60_000
+    const poolName = resolvePoolName(worldState)!;
+    const weighted = available.map(
+        (row) =>
+            [row, calculateSelectionCandidateWeight(poolName, parseCandidate(row), true)] as [SelectPoolRow, number]
     );
+    const reservedUntilTick = acceptedGameTick + RESERVATION_TURN_MULTIPLIER * GAME_TICKS_PER_TURN;
+    if (!Number.isSafeInteger(reservedUntilTick)) {
+        fail('INTERNAL_SERVER_ERROR', '장수 선택 예약 tick이 안전한 정수 범위를 벗어났습니다.');
+    }
+    const reservedUntil = world.gameTickToDate(reservedUntilTick);
     const selected = await claimWeightedSelectionCandidates({
         weighted,
         rng,
         count: RESERVATION_COUNT,
-        claim: async (candidate) => {
-            const claimed = await db.selectPoolEntry.updateMany({
-                where: {
-                    id: candidate.id,
-                    ownerUserId: null,
-                    reservedUntil: null,
-                    generalId: null,
-                },
-                data: {
-                    ownerUserId: userId,
-                    reservedUntil,
-                },
-            });
-            return claimed.count > 0;
-        },
+        claim: async () => true,
     });
     const reserved = selected.map((candidate) => ({
         ...candidate,
         ownerUserId: userId,
         reservedUntil,
+        reservedUntilTick: BigInt(reservedUntilTick),
     }));
     if (reserved.length !== RESERVATION_COUNT) {
         fail('CONFLICT', '장수 선택 후보를 예약하지 못했습니다. 다시 시도해 주세요.');
     }
-    return toReservationDto(reserved, Boolean(general));
+    const reservation = await toReservationDto(reserved, Boolean(general), worldState, world);
+    const claimed = await db.selectPoolEntry.updateMany({
+        where: {
+            id: { in: selected.map((candidate) => candidate.id) },
+            ownerUserId: null,
+            reservedUntil: null,
+            reservedUntilTick: null,
+            generalId: null,
+        },
+        data: {
+            ownerUserId: userId,
+            reservedUntil,
+            reservedUntilTick: BigInt(reservedUntilTick),
+        },
+    });
+    if (claimed.count !== RESERVATION_COUNT) {
+        throw new Error('장수 선택 후보의 DB 점유 수가 턴 데몬 선택 결과와 일치하지 않습니다.');
+    }
+    await synchronizeSelectionPoolWorld(db, world);
+    return reservation;
 };
 
 const lockSelectionMutationTables = async (db: DatabaseClient): Promise<void> => {
@@ -403,15 +558,25 @@ const assertGeneralIdSnapshotMatches = async (db: DatabaseClient, world: InMemor
     }
 };
 
-const clearUnusedReservations = async (db: DatabaseClient, userId: string, now: Date): Promise<void> => {
+const clearUnusedReservations = async (
+    db: DatabaseClient,
+    userId: string,
+    now: Date,
+    nowTick: number
+): Promise<void> => {
     await db.selectPoolEntry.updateMany({
         where: {
             generalId: null,
-            OR: [{ ownerUserId: userId }, { reservedUntil: { lt: now } }],
+            OR: [
+                { ownerUserId: userId },
+                { reservedUntilTick: { lt: BigInt(nowTick) } },
+                { reservedUntilTick: null, reservedUntil: { lt: now } },
+            ],
         },
         data: {
             ownerUserId: null,
             reservedUntil: null,
+            reservedUntilTick: null,
         },
     });
 };
@@ -533,8 +698,10 @@ export const createGeneralFromSelectionPool = async (options: {
     const { db, world, worldState, userId, ownerDisplayName, uniqueName } = options;
     requirePoolWorld(worldState);
     const now = options.now ?? new Date();
+    const nowTick = resolveAcceptedGameTick(world, now);
     await lockSelectionUser(db, userId);
     await lockSelectionMutationTables(db);
+    await synchronizeSelectionPoolWorld(db, world);
     await assertGeneralIdSnapshotMatches(db, world);
     if (
         world.listGenerals().some((general) => general.userId === userId) ||
@@ -542,8 +709,15 @@ export const createGeneralFromSelectionPool = async (options: {
     ) {
         fail('PRECONDITION_FAILED', '이미 장수를 생성했습니다.');
     }
-    const token = await requireSelectionToken(db, userId, uniqueName, now);
+    const token = await requireSelectionToken(db, userId, uniqueName, now, nowTick);
     const info = parseCandidate(token);
+    const poolName = resolvePoolName(worldState)!;
+    const isCentennial = poolName === CENTENNIAL_ALL_STAR_POOL;
+    const centennialTarget = isCentennial ? asCentennialTarget(info) : null;
+    const centennialRules = resolveCentennialRules(worldState);
+    const centennialInitialStats = centennialTarget
+        ? calculateCentennialUserInitialStats(centennialTarget, centennialRules)
+        : null;
 
     const config = asRecord(worldState.config);
     const configConst = asRecord(config.const);
@@ -556,9 +730,22 @@ export const createGeneralFromSelectionPool = async (options: {
     const seedOwnerIdentity = options.seedOwnerIdentity ?? userId;
     const rng = resolvePoolRng(worldState, seedOwnerIdentity, uniqueName);
     const affinity = rng.nextRangeInt(1, 150);
-    const cities = await db.city.findMany({ select: { id: true, name: true }, orderBy: { id: 'asc' } });
+    const allCities = await db.city.findMany({
+        select: { id: true, name: true, level: true, nationId: true },
+        orderBy: { id: 'asc' },
+    });
+    const centennialCities = allCities.filter((city) => city.level >= 5 && city.level <= 6);
+    const neutralCentennialCities = centennialCities.filter((city) => city.nationId === 0);
+    const cities = isCentennial
+        ? neutralCentennialCities.length > 0
+            ? neutralCentennialCities
+            : centennialCities
+        : allCities;
     if (cities.length === 0) {
-        fail('PRECONDITION_FAILED', '생성 가능한 도시가 없습니다.');
+        fail(
+            'PRECONDITION_FAILED',
+            isCentennial ? '장수를 생성할 소·중성이 없습니다.' : '생성 가능한 도시가 없습니다.'
+        );
     }
     const city = rng.choice(cities);
     const turnTime = buildInitialTurnTime(rng, worldState, now);
@@ -575,11 +762,44 @@ export const createGeneralFromSelectionPool = async (options: {
     const imageServer = useOwnerPicture ? (options.ownerImageServer ?? 1) : info.imgsvr;
     const defaultSpecialWar =
         typeof configConst.defaultSpecialWar === 'string' ? configConst.defaultSpecialWar : 'None';
+    const defaultSpecialDomestic =
+        typeof configConst.defaultSpecialDomestic === 'string' ? configConst.defaultSpecialDomestic : 'None';
     const personality = resolveSelectedPersonality(worldState, seedOwnerIdentity, uniqueName, options.personality);
     // 모든 사용자 입력과 DB 선조건을 검증한 뒤에만 allocator를 변경한다.
     // SelectPoolError는 정상 command 결과로 commit되므로 이보다 먼저
     // getNextGeneralId()를 호출하면 실패한 요청도 lastGeneralId를 소비한다.
     const generalId = world.getNextGeneralId();
+
+    const generalMeta: TurnGeneral['meta'] = {
+        createdBy: 'select_pool',
+        ownerName: ownerDisplayName,
+        owner_name: ownerDisplayName,
+        killturn: 5,
+        specage: specialityAges.domestic,
+        specage2: specialityAges.war,
+        dex1: isCentennial ? 0 : info.dex[0],
+        dex2: isCentennial ? 0 : info.dex[1],
+        dex3: isCentennial ? 0 : info.dex[2],
+        dex4: isCentennial ? 0 : info.dex[3],
+        dex5: isCentennial ? 0 : info.dex[4],
+        next_change: nextChangeAt.toISOString(),
+        nextChangeAt: nextChangeAt.toISOString(),
+        prestart_delete_after: prestartDeleteAfter.toISOString(),
+        ...(useOwnerPicture && options.ownerIconRevision ? { accountIconUpdatedAt: options.ownerIconRevision } : {}),
+        npc_org: 0,
+        ...buildScenarioGeneralPoolClaimMeta(
+            parseScenarioGeneralPoolCandidate({ id: token.id, uniqueName: token.uniqueName, info: token.info }),
+            now
+        ),
+    };
+    if (centennialTarget && centennialInitialStats) {
+        const mutableMeta: Record<string, unknown> = generalMeta;
+        mutableMeta[CENTENNIAL_ALL_STAR_AUX_KEY] = initialCentennialAllStarAux(
+            centennialTarget,
+            centennialRules,
+            centennialInitialStats
+        );
+    }
 
     const general: TurnGeneral = {
         id: generalId,
@@ -595,9 +815,9 @@ export const createGeneralFromSelectionPool = async (options: {
         picture,
         imageServer,
         stats: {
-            leadership: info.leadership,
-            strength: info.strength,
-            intelligence: info.intel,
+            leadership: centennialInitialStats?.leadership ?? info.leadership,
+            strength: centennialInitialStats?.strength ?? info.strength,
+            intelligence: centennialInitialStats?.intel ?? info.intel,
         },
         experience: info.experience ?? age * 100,
         dedication: info.dedication ?? age * 100,
@@ -614,8 +834,8 @@ export const createGeneralFromSelectionPool = async (options: {
         startAge: age,
         role: {
             personality,
-            specialDomestic: info.specialDomestic,
-            specialWar: info.specialWar ?? defaultSpecialWar,
+            specialDomestic: isCentennial ? defaultSpecialDomestic : info.specialDomestic,
+            specialWar: isCentennial ? defaultSpecialWar : (info.specialWar ?? defaultSpecialWar),
             items: {
                 horse: null,
                 weapon: null,
@@ -632,26 +852,7 @@ export const createGeneralFromSelectionPool = async (options: {
         lastTurn: { command: DEFAULT_TURN_ACTION },
         penalty: {},
         refreshScoreTotal: 0,
-        meta: {
-            createdBy: 'select_pool',
-            ownerName: ownerDisplayName,
-            owner_name: ownerDisplayName,
-            killturn: 5,
-            specage: specialityAges.domestic,
-            specage2: specialityAges.war,
-            dex1: info.dex[0],
-            dex2: info.dex[1],
-            dex3: info.dex[2],
-            dex4: info.dex[3],
-            dex5: info.dex[4],
-            next_change: nextChangeAt.toISOString(),
-            nextChangeAt: nextChangeAt.toISOString(),
-            prestart_delete_after: prestartDeleteAfter.toISOString(),
-            ...(useOwnerPicture && options.ownerIconRevision
-                ? { accountIconUpdatedAt: options.ownerIconRevision }
-                : {}),
-            npc_org: 0,
-        },
+        meta: generalMeta,
     };
     if (!world.addGeneral(general)) {
         throw new Error(`장수 번호 ${generalId}를 할당할 수 없습니다.`);
@@ -674,13 +875,17 @@ export const createGeneralFromSelectionPool = async (options: {
         where: {
             id: token.id,
             ownerUserId: userId,
-            reservedUntil: { gte: now },
             generalId: null,
+            OR: [
+                { reservedUntilTick: { gte: BigInt(nowTick) } },
+                { reservedUntilTick: null, reservedUntil: { gte: now } },
+            ],
         },
         data: {
             generalId,
             ownerUserId: null,
             reservedUntil: null,
+            reservedUntilTick: null,
         },
     });
     if (occupied.count === 0) {
@@ -691,7 +896,8 @@ export const createGeneralFromSelectionPool = async (options: {
         update: { userId, lastRefresh: now },
         create: { generalId, userId, lastRefresh: now },
     });
-    await clearUnusedReservations(db, userId, now);
+    await clearUnusedReservations(db, userId, now, nowTick);
+    await synchronizeSelectionPoolWorld(db, world);
 
     const ownerJosaYi = JosaUtil.pick(ownerDisplayName, '이');
     const generalJosaRo = JosaUtil.pick(info.generalName, '로');
@@ -718,8 +924,10 @@ export const reselectGeneralFromSelectionPool = async (options: {
     const { db, world, worldState, userId, ownerDisplayName, uniqueName } = options;
     requirePoolWorld(worldState);
     const now = options.now ?? new Date();
+    const nowTick = resolveAcceptedGameTick(world, now);
     await lockSelectionUser(db, userId);
     await lockSelectionMutationTables(db);
+    await synchronizeSelectionPoolWorld(db, world);
     const persistedGeneral = await db.general.findFirst({ where: { userId } });
     const general = world.listGenerals().find((candidate) => candidate.userId === userId);
     if (!persistedGeneral || !general) {
@@ -735,21 +943,26 @@ export const reselectGeneralFromSelectionPool = async (options: {
     if (nextChangeAt && nextChangeAt.getTime() > now.getTime()) {
         fail('PRECONDITION_FAILED', '아직 다시 고를 수 없습니다');
     }
-    const token = await requireSelectionToken(db, userId, uniqueName, now);
+    const token = await requireSelectionToken(db, userId, uniqueName, now, nowTick);
     const info = parseCandidate(token);
+    const isCentennial = resolvePoolName(worldState) === CENTENNIAL_ALL_STAR_POOL;
 
     const provisionalGeneralId = -general.id;
     const claimed = await db.selectPoolEntry.updateMany({
         where: {
             id: token.id,
             ownerUserId: userId,
-            reservedUntil: { gte: now },
             generalId: null,
+            OR: [
+                { reservedUntilTick: { gte: BigInt(nowTick) } },
+                { reservedUntilTick: null, reservedUntil: { gte: now } },
+            ],
         },
         data: {
             generalId: provisionalGeneralId,
             ownerUserId: null,
             reservedUntil: null,
+            reservedUntilTick: null,
         },
     });
     if (claimed.count === 0) {
@@ -757,7 +970,7 @@ export const reselectGeneralFromSelectionPool = async (options: {
     }
     await db.selectPoolEntry.updateMany({
         where: { generalId: general.id },
-        data: { generalId: null, ownerUserId: null, reservedUntil: null },
+        data: { generalId: null, ownerUserId: null, reservedUntil: null, reservedUntilTick: null },
     });
     const finalized = await db.selectPoolEntry.updateMany({
         where: {
@@ -772,30 +985,51 @@ export const reselectGeneralFromSelectionPool = async (options: {
         throw new Error('장수 재선택 중 선택 후보 확정에 실패했습니다.');
     }
 
-    const currentMeta = asRecord(general.meta);
     const cooldown = new Date(
         now.getTime() + resolveTurnTermMinutes(worldState) * RESELECTION_TURN_MULTIPLIER * 60_000
     );
-    const updatedMeta = {
-        ...currentMeta,
+    const centennialBaseGeneral = isCentennial
+        ? {
+              ...general,
+              meta: prepareCentennialLegacyUserReselection(general, resolveCentennialRules(worldState)),
+          }
+        : general;
+    const centennialGrowth = isCentennial
+        ? applyCentennialAllStarTarget(
+              centennialBaseGeneral,
+              asCentennialTarget(info),
+              resolveCentennialEnvironment(worldState),
+              resolveCentennialRules(worldState)
+          )
+        : null;
+    const updatedMeta: TurnGeneral['meta'] = {
+        ...(centennialGrowth?.meta ?? general.meta),
         ownerName: ownerDisplayName,
         owner_name: ownerDisplayName,
-        dex1: info.dex[0],
-        dex2: info.dex[1],
-        dex3: info.dex[2],
-        dex4: info.dex[3],
-        dex5: info.dex[4],
+        ...(!isCentennial
+            ? {
+                  dex1: info.dex[0],
+                  dex2: info.dex[1],
+                  dex3: info.dex[2],
+                  dex4: info.dex[3],
+                  dex5: info.dex[4],
+              }
+            : {}),
         next_change: cooldown.toISOString(),
         nextChangeAt: cooldown.toISOString(),
+        ...buildScenarioGeneralPoolClaimMeta(
+            parseScenarioGeneralPoolCandidate({ id: token.id, uniqueName: token.uniqueName, info: token.info }),
+            now
+        ),
     };
     const updated = world.updateGeneral(general.id, {
         name: info.generalName,
-        stats: {
+        stats: centennialGrowth?.stats ?? {
             leadership: info.leadership,
             strength: info.strength,
             intelligence: info.intel,
         },
-        role: {
+        role: centennialGrowth?.role ?? {
             ...general.role,
             personality: info.ego ?? general.role.personality,
             specialDomestic: info.specialDomestic,
@@ -803,12 +1037,13 @@ export const reselectGeneralFromSelectionPool = async (options: {
         },
         picture: info.picture,
         imageServer: info.imgsvr,
-        meta: updatedMeta as unknown as TurnGeneral['meta'],
+        meta: updatedMeta,
     });
     if (!updated) {
         throw new Error('턴 데몬에서 장수 정보를 갱신하지 못했습니다.');
     }
-    await clearUnusedReservations(db, userId, now);
+    await clearUnusedReservations(db, userId, now, nowTick);
+    await synchronizeSelectionPoolWorld(db, world);
 
     const ownerJosaYi = JosaUtil.pick(ownerDisplayName, '이');
     const generalJosaRo = JosaUtil.pick(info.generalName, '로');

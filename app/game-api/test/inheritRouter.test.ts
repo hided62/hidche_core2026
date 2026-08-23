@@ -110,6 +110,7 @@ const buildContext = (options: {
     rankRows?: Array<{ type: string; value: number }>;
     inheritanceLogs?: Array<{ id: number; year: number; month: number; text: string; createdAt: Date }>;
     configConst?: Record<string, unknown>;
+    configMap?: Record<string, unknown>;
 }) => {
     const auth = options.auth === undefined ? buildAuth() : options.auth;
     const general = options.general === undefined ? buildGeneral() : options.general;
@@ -128,12 +129,14 @@ const buildContext = (options: {
     const inheritanceLogFindMany = vi.fn(async () => options.inheritanceLogs ?? []);
     const webPushOutboxCreateMany = vi.fn(async () => ({ count: 1 }));
     const activeWorldState =
-        options.configConst === undefined
+        options.configConst === undefined && options.configMap === undefined
             ? worldState
             : {
                   ...worldState,
                   config: {
-                      const: options.configConst,
+                      ...worldState.config,
+                      ...(options.configConst === undefined ? {} : { const: options.configConst }),
+                      ...(options.configMap === undefined ? {} : { map: options.configMap }),
                   },
               };
     const messageRows: CapturedMessage[] = [];
@@ -267,6 +270,30 @@ describe('inherit router actor and permission boundaries', () => {
             select: { id: true, name: true },
             orderBy: { id: 'asc' },
         });
+    });
+
+    it('reports and enforces the Ref S100 stat-reset ban without dispatching or charging', async () => {
+        const fixture = buildContext({
+            configMap: { targetGeneralPool: 'SPoolUnderU100' },
+            inheritancePoint: 0,
+        });
+        const caller = appRouter.createCaller(fixture.context);
+
+        await expect(caller.inherit.getStatus()).resolves.toMatchObject({ canResetStat: false });
+        await expect(
+            caller.inherit.resetStat({
+                leadership: 70,
+                strength: 45,
+                intel: 85,
+                inheritBonusStat: [2, 1, 1],
+            })
+        ).rejects.toMatchObject({
+            code: 'BAD_REQUEST',
+            message: '100기 올스타 장수는 능력치 초기화를 사용할 수 없습니다.',
+        });
+        expect(fixture.requestCommand).not.toHaveBeenCalled();
+        expect(fixture.pointUpsert).not.toHaveBeenCalled();
+        expect(fixture.logCreate).not.toHaveBeenCalled();
     });
 
     it('projects every Ref inheritance source with its own coefficient and stored/calculated boundary', async () => {

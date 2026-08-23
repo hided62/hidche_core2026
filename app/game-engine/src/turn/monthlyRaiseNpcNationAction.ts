@@ -4,10 +4,17 @@ import {
     LogFormat,
     LogScope,
     AVAILABLE_NATION_TRAIT_KEYS,
+    CENTENNIAL_ALL_STAR_AUX_KEY,
     getCityDistance,
+    buildScenarioGeneralPoolClaimMeta,
+    initialCentennialAllStarAux,
+    pickUniqueScenarioGeneralPoolCandidates,
+    readCentennialAllStarPoolTarget,
+    resolveCentennialAllStarRules,
     type City,
     type MapDefinition,
     type Nation,
+    type ScenarioGeneralPoolCandidate,
     type TurnCommandEnv,
 } from '@sammo-ts/logic';
 import { simpleSerialize } from '@sammo-ts/logic/war/utils.js';
@@ -126,8 +133,10 @@ const createNpcGeneral = (options: {
     bornYear: number;
     deadYear: number;
     killturn?: number;
+    candidate?: ScenarioGeneralPoolCandidate;
 }): TurnGeneral => {
     const { world, reservedTurns, rng, env, environment } = options;
+    const centennialTarget = readCentennialAllStarPoolTarget(options.candidate);
     const stats = buildNpcStats(rng, env, STAT_TYPE_WEIGHTS);
     const affinity = rng.nextRangeInt(1, 150);
     const personality = rng.choice(env.availablePersonalities ?? ['che_안전']);
@@ -152,12 +161,9 @@ const createNpcGeneral = (options: {
     const turnTime = world.gameTickToDate(turnTick);
     const killturn =
         options.killturn ??
-        (options.deadYear - environment.year) * 12 +
-            rng.nextRangeInt(0, 11) +
-            environment.month -
-            1;
+        (options.deadYear - environment.year) * 12 + rng.nextRangeInt(0, 11) + environment.month - 1;
     const id = world.getNextGeneralId();
-    const general: TurnGeneral = {
+    let general: TurnGeneral = {
         id,
         userId: null,
         name: `${NPC_PREFIX}${options.baseName}`,
@@ -170,8 +176,12 @@ const createNpcGeneral = (options: {
         officerLevel: options.officerLevel,
         role: {
             personality,
-            specialDomestic: env.defaultSpecialDomestic,
-            specialWar: env.defaultSpecialWar,
+            specialDomestic: centennialTarget
+                ? env.defaultSpecialDomestic
+                : (options.candidate?.specialDomestic ?? env.defaultSpecialDomestic),
+            specialWar: centennialTarget
+                ? env.defaultSpecialWar
+                : (options.candidate?.specialWar ?? env.defaultSpecialWar),
             items: { horse: null, weapon: null, book: null, item: null },
         },
         injury: 0,
@@ -186,7 +196,8 @@ const createNpcGeneral = (options: {
         bornYear: options.bornYear,
         deadYear: options.deadYear,
         affinity,
-        picture: 'default.jpg',
+        picture: typeof options.candidate?.picture === 'string' ? options.candidate.picture : 'default.jpg',
+        imageServer: options.candidate?.imageServer ?? 0,
         triggerState: { flags: {}, counters: {}, modifiers: {}, meta: {} },
         lastTurn: { command: '휴식' },
         turnTime,
@@ -200,13 +211,23 @@ const createNpcGeneral = (options: {
             dedlevel: 1,
             specage: buildSpecialityAge(retirementYear, age, relativeYear, 12),
             specage2: buildSpecialityAge(retirementYear, age, relativeYear, 6),
-            dex1: 0,
-            dex2: 0,
-            dex3: 0,
-            dex4: 0,
-            dex5: 0,
+            dex1: centennialTarget ? 0 : (options.candidate?.dex?.[0] ?? 0),
+            dex2: centennialTarget ? 0 : (options.candidate?.dex?.[1] ?? 0),
+            dex3: centennialTarget ? 0 : (options.candidate?.dex?.[2] ?? 0),
+            dex4: centennialTarget ? 0 : (options.candidate?.dex?.[3] ?? 0),
+            dex5: centennialTarget ? 0 : (options.candidate?.dex?.[4] ?? 0),
+            ...(options.candidate ? buildScenarioGeneralPoolClaimMeta(options.candidate, environment.turnTime) : {}),
         },
     };
+    if (centennialTarget) {
+        const meta: TurnGeneral['meta'] = { ...general.meta };
+        const mutableMeta: Record<string, unknown> = meta;
+        mutableMeta[CENTENNIAL_ALL_STAR_AUX_KEY] = initialCentennialAllStarAux(
+            centennialTarget,
+            resolveCentennialAllStarRules(world.getScenarioConfig(), env.defaultSpecialDomestic)
+        );
+        general = { ...general, meta };
+    }
     if (!world.addGeneral(general)) {
         throw new Error(`RaiseNPCNation generated duplicate general id ${id}.`);
     }
@@ -268,8 +289,7 @@ export const createRaiseNpcNationHandler = (options: {
                   );
 
         const currentLast = world.getState().meta.lastNationId;
-        const currentLastNumber =
-            typeof currentLast === 'number' && Number.isFinite(currentLast) ? currentLast : 0;
+        const currentLastNumber = typeof currentLast === 'number' && Number.isFinite(currentLast) ? currentLast : 0;
         const liveNationMax = world.listNations().reduce((maxId, nation) => Math.max(maxId, nation.id), 0);
         let resolvedLastNationId = Math.max(currentLastNumber, liveNationMax);
         const serverId = resolveServerId(world);
@@ -342,17 +362,22 @@ export const createRaiseNpcNationHandler = (options: {
                 deadYear: environment.year + 60,
                 killturn: 240,
             });
-            const subordinateNames = pickNpcNames(
-                rng,
-                Math.max(averageGeneralCount - 1, 0),
-                world.listGenerals(),
-                options.env
-            );
-            for (const baseName of subordinateNames) {
-                const deadYear =
-                    environment.year +
-                    10 +
-                    Math.trunc(60 * (1 - Math.log2(rng.nextRange(1, 1024)) / 10));
+            const subordinateCount = Math.max(averageGeneralCount - 1, 0);
+            const generalPool = world.listGeneralPoolCandidates(environment.turnTime);
+            const subordinateCandidates: Array<{
+                baseName: string;
+                candidate?: ScenarioGeneralPoolCandidate;
+            }> =
+                generalPool === undefined
+                    ? pickNpcNames(rng, subordinateCount, world.listGenerals(), options.env).map((baseName) => ({
+                          baseName,
+                      }))
+                    : pickUniqueScenarioGeneralPoolCandidates(rng, generalPool, subordinateCount).map((candidate) => ({
+                          baseName: candidate.name,
+                          candidate,
+                      }));
+            for (const { baseName, candidate } of subordinateCandidates) {
+                const deadYear = environment.year + 10 + Math.trunc(60 * (1 - Math.log2(rng.nextRange(1, 1024)) / 10));
                 createNpcGeneral({
                     world,
                     reservedTurns: options.reservedTurns,
@@ -365,11 +390,12 @@ export const createRaiseNpcNationHandler = (options: {
                     officerLevel: 1,
                     bornYear: environment.year - 20,
                     deadYear,
+                    ...(candidate ? { candidate } : {}),
                 });
             }
             world.updateNation(nationId, {
                 chiefGeneralId: ruler.id,
-                meta: { ...nation.meta, gennum: 1 + subordinateNames.length },
+                meta: { ...nation.meta, gennum: 1 + subordinateCandidates.length },
             });
             options.reservedTurns.ensureNationTurns(nationId, 12);
             options.reservedTurns.ensureNationTurns(nationId, 11);

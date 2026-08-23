@@ -4,6 +4,7 @@ import type { ScenarioConfig } from '@sammo-ts/logic/scenario/types.js';
 import type { ScenarioMeta } from '@sammo-ts/logic/world/types.js';
 import type { MapDefinition, UnitSetDefinition } from '@sammo-ts/logic/world/types.js';
 import type { GeneralWorldView } from '@sammo-ts/logic/triggers/general.js';
+import type { ScenarioGeneralPoolCandidate } from '@sammo-ts/logic/actions/turn/generalPool.js';
 
 export interface ActionRandomSource {
     nextFloat1(): number;
@@ -27,6 +28,7 @@ export type ActionContextBase = {
         month: number;
         startYear: number;
     };
+    maxTechLevel?: number;
 };
 
 export type ActionResolveContext = ActionContextBase & Record<string, unknown>;
@@ -50,6 +52,7 @@ export interface ActionContextWorldRef {
         toNationId: number;
         state: number;
     }>;
+    listGeneralPoolCandidates?(claimedAt: Date): ScenarioGeneralPoolCandidate[] | undefined;
     getDiplomacyEntry(
         fromNationId: number,
         toNationId: number

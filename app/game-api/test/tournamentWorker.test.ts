@@ -320,6 +320,24 @@ describe('tournament worker (in-memory)', () => {
         ).toEqual({ payouts: [], total: 300, refundAll: false });
     });
 
+    it('coalesces duplicate legacy rows before one winner payout and rounding', () => {
+        expect(
+            buildBettingPayouts(10, [
+                { generalId: 1, targetId: 10, amount: 101 },
+                { generalId: 1, targetId: 10, amount: 99 },
+                { generalId: 2, targetId: 10, amount: 100 },
+                { generalId: 3, targetId: 11, amount: 100 },
+            ])
+        ).toEqual({
+            payouts: [
+                { generalId: 1, amount: 267 },
+                { generalId: 2, amount: 133 },
+            ],
+            total: 400,
+            refundAll: false,
+        });
+    });
+
     it('locks 64 applicants into eight groups of eight', async () => {
         const redis = new MemoryRedis();
         const store = new TournamentStore(redis, buildTournamentKeys('test-groups'));

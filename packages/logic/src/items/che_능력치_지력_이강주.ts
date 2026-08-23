@@ -21,16 +21,16 @@ export const itemModule: ItemModule = {
     reqSecu: 0,
     unique: false,
     onCalcStat: function (
-        _context: GeneralActionContext | WarActionContext,
+        context: GeneralActionContext | WarActionContext,
         statName: GeneralStatName | WarStatName,
         value: unknown,
         aux?: unknown
     ): unknown {
         if (statName === 'intelligence') {
             const auxObj = aux as Record<string, unknown> | undefined;
-            const year = resolveNumber(auxObj?.['year']);
-            const startYear = resolveNumber(auxObj?.['startYear']);
-            const maxTechLevel = resolveNumber(auxObj?.['maxTechLevel'], 12);
+            const year = resolveNumber(context.time?.year, resolveNumber(auxObj?.['year']));
+            const startYear = resolveNumber(context.time?.startYear, resolveNumber(auxObj?.['startYear']));
+            const maxTechLevel = resolveNumber(context.maxTechLevel, resolveNumber(auxObj?.['maxTechLevel'], 12));
             const relYear = Math.max(0, year - startYear);
             const bonus = 5 + clamp(Math.floor(relYear / 4), 0, maxTechLevel);
 

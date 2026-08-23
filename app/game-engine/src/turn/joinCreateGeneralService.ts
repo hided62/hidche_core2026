@@ -135,7 +135,10 @@ const resolveInheritConstants = (worldState: WorldStateRow): InheritConstants =>
 const isSelectionPoolWorld = (worldState: WorldStateRow): boolean => {
     const config = asRecord(worldState.config);
     const map = asRecord(config.map);
-    return asNumber(config.npcMode, 0) === 2 && map.targetGeneralPool === 'SPoolUnderU30';
+    return (
+        asNumber(config.npcMode, 0) === 2 &&
+        (map.targetGeneralPool === 'SPoolUnderU30' || map.targetGeneralPool === 'SPoolUnderU100')
+    );
 };
 
 const resolveMaxGeneral = (worldState: WorldStateRow): number => {

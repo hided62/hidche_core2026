@@ -17,11 +17,13 @@ import type {
     GeneralLastTurn,
     Nation,
     ScenarioConfig,
+    ScenarioGeneralPoolCandidate,
     ScenarioMeta,
     Troop,
     TriggerValue,
 } from '@sammo-ts/logic';
 import { normalizeScenarioEffect } from '@sammo-ts/logic';
+import { parseScenarioGeneralPoolCandidate } from '@sammo-ts/logic';
 import { projectItemSlots, readItemInventoryFromMeta } from '@sammo-ts/logic/items/index.js';
 import { z } from 'zod';
 import { GameClock, asRecord, isRecord, type GameClockMode } from '@sammo-ts/common';
@@ -30,7 +32,7 @@ import type { MapLoaderOptions } from '../scenario/mapLoader.js';
 import { loadMapDefinitionByName } from '../scenario/mapLoader.js';
 import type { UnitSetLoaderOptions } from '../scenario/unitSetLoader.js';
 import { loadUnitSetDefinitionByName } from '../scenario/unitSetLoader.js';
-import type { TurnDiplomacy, TurnEvent, TurnGeneral, TurnWorldLoadResult } from './types.js';
+import type { TurnDiplomacy, TurnEvent, TurnGeneral, TurnGeneralPoolEntry, TurnWorldLoadResult } from './types.js';
 import { readDiplomacyMeta } from '@sammo-ts/logic';
 import { applyPersistedRankRowsToMeta } from './rankData.js';
 
@@ -360,6 +362,27 @@ const mapEventRow = (row: {
     meta: asRecord(row.meta),
 });
 
+const mapGeneralPoolRow = (row: {
+    id: number;
+    uniqueName: string;
+    ownerUserId: string | null;
+    generalId: number | null;
+    reservedUntil: Date | null;
+    reservedUntilTick: bigint | null;
+    info: JsonValue;
+}): TurnGeneralPoolEntry => ({
+    id: row.id,
+    uniqueName: row.uniqueName,
+    ownerUserId: row.ownerUserId,
+    generalId: row.generalId,
+    reservedUntil: row.reservedUntil,
+    reservedUntilTick:
+        row.reservedUntilTick === null
+            ? null
+            : toSafeTick(row.reservedUntilTick, `select_pool.reserved_until_tick(${row.id})`),
+    candidate: parseScenarioGeneralPoolCandidate(row) satisfies ScenarioGeneralPoolCandidate,
+});
+
 const mapTroopRow = (row: TurnEngineTroopRow): Troop => ({
     id: row.troopLeaderId,
     nationId: row.nationId,
@@ -386,6 +409,7 @@ export const loadTurnWorldFromDatabase = async (options: TurnWorldLoaderOptions)
             diplomacyRows,
             troopRows,
             eventRows,
+            generalPoolRows,
         ] = await Promise.all([
             prisma.general.findMany(),
             prisma.rankData.findMany(),
@@ -398,6 +422,7 @@ export const loadTurnWorldFromDatabase = async (options: TurnWorldLoaderOptions)
             prisma.event.findMany({
                 orderBy: [{ priority: 'desc' }, { id: 'asc' }],
             }),
+            prisma.selectPoolEntry.findMany({ orderBy: { id: 'asc' } }),
         ]);
 
         const meta = asRecord(worldState.meta);
@@ -465,6 +490,7 @@ export const loadTurnWorldFromDatabase = async (options: TurnWorldLoaderOptions)
 
         const worldConfig = asRecord(worldState.config);
         const scenarioConfig = mapScenarioConfig(worldState.config);
+        const targetGeneralPool = scenarioConfig.map.targetGeneralPool;
         const mapName = scenarioConfig.environment?.mapName ?? 'che';
         const map = await loadMapDefinitionByName(mapName, options.mapOptions);
         const unitSetName = scenarioConfig.environment?.unitSet ?? 'che';
@@ -508,6 +534,9 @@ export const loadTurnWorldFromDatabase = async (options: TurnWorldLoaderOptions)
                 diplomacy,
                 events,
                 initialEvents,
+                ...(typeof targetGeneralPool === 'string'
+                    ? { generalPoolEntries: generalPoolRows.map(mapGeneralPoolRow) }
+                    : {}),
             },
         };
     } finally {

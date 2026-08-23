@@ -39,6 +39,7 @@ export interface RecruitEnvironment {
     defaultAtmos?: number;
     minAvailableRecruitPop?: number;
     defaultTrust?: number;
+    maxTechLevel?: number;
     actionName?: '징병' | '모병';
 }
 
@@ -191,6 +192,12 @@ type RecruitCalcContext<TriggerState extends GeneralTriggerState = GeneralTrigge
     general: General<TriggerState>;
     city?: City;
     nation?: Nation | null;
+    time?: {
+        year: number;
+        month: number;
+        startYear: number;
+    };
+    maxTechLevel?: number;
 };
 
 const buildCalcContext = <TriggerState extends GeneralTriggerState>(
@@ -215,6 +222,25 @@ const buildCalcContext = <TriggerState extends GeneralTriggerState>(
     }
     if (nation !== undefined) {
         result.nation = nation;
+    }
+    const year =
+        typeof ctx.env.currentYear === 'number'
+            ? ctx.env.currentYear
+            : typeof ctx.env.year === 'number'
+              ? ctx.env.year
+              : undefined;
+    const month =
+        typeof ctx.env.currentMonth === 'number'
+            ? ctx.env.currentMonth
+            : typeof ctx.env.month === 'number'
+              ? ctx.env.month
+              : undefined;
+    const startYear = typeof ctx.env.startYear === 'number' ? ctx.env.startYear : undefined;
+    if (year !== undefined && month !== undefined && startYear !== undefined) {
+        result.time = { year, month, startYear };
+    }
+    if (typeof ctx.env.maxTechLevel === 'number') {
+        result.maxTechLevel = ctx.env.maxTechLevel;
     }
     return result;
 };
@@ -247,7 +273,10 @@ export class CommandResolver<TriggerState extends GeneralTriggerState = GeneralT
         context: RecruitCalcContext<TriggerState>,
         crewType: { armType: number; cost: number; rice: number }
     ): { gold: number; rice: number } {
-        const techCost = getTechCost(readNationTech(context.nation ?? null));
+        const techCost = getTechCost(
+            readNationTech(context.nation ?? null),
+            context.maxTechLevel ?? this.env.maxTechLevel
+        );
         return {
             gold: this.pipeline.onCalcDomestic(context, this.actionName, 'cost', crewType.cost * techCost, {
                 armType: crewType.armType,
@@ -282,7 +311,9 @@ export class CommandResolver<TriggerState extends GeneralTriggerState = GeneralT
         const plan = this.resolveCrewPlan(context, crewTypeId, amount);
         const tech = readNationTech(context.nation ?? null);
         const costOffset = this.env.costOffset ?? DEFAULT_COST_OFFSET;
-        const baseGold = crewType ? (crewType.cost * getTechCost(tech) * plan.applied) / 100 : 0;
+        const baseGold = crewType
+            ? (crewType.cost * getTechCost(tech, context.maxTechLevel ?? this.env.maxTechLevel) * plan.applied) / 100
+            : 0;
         const adjustedGold = this.pipeline.onCalcDomestic(
             context,
             this.actionName,

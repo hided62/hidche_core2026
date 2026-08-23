@@ -1,11 +1,16 @@
 import { describe, expect, it, vi } from 'vitest';
-import { LEGACY_RANDOM_GENERAL_FIRST_NAMES, LEGACY_RANDOM_GENERAL_LAST_NAMES, type City } from '@sammo-ts/logic';
+import {
+    LEGACY_RANDOM_GENERAL_FIRST_NAMES,
+    LEGACY_RANDOM_GENERAL_LAST_NAMES,
+    parseScenarioGeneralPoolCandidate,
+    type City,
+} from '@sammo-ts/logic';
 
 import { InMemoryTurnWorld } from '../src/turn/inMemoryWorld.js';
 import { createCreateManyNpcHandler } from '../src/turn/monthlyCreateManyNpcAction.js';
 import { InMemoryReservedTurnStore } from '../src/turn/reservedTurnStore.js';
 import { buildCommandEnv } from '../src/turn/reservedTurnCommands.js';
-import type { TurnGeneral, TurnWorldSnapshot, TurnWorldState } from '../src/turn/types.js';
+import type { TurnGeneral, TurnGeneralPoolEntry, TurnWorldSnapshot, TurnWorldState } from '../src/turn/types.js';
 
 const buildCity = (id: number): City => ({
     id,
@@ -64,7 +69,12 @@ const buildGeneral = (id: number, patch: Partial<TurnGeneral> = {}): TurnGeneral
     ...patch,
 });
 
-const buildHarness = (generals: TurnGeneral[] = [], cityCount = 2) => {
+const buildHarness = (
+    generals: TurnGeneral[] = [],
+    cityCount = 2,
+    generalPoolEntries?: TurnGeneralPoolEntry[],
+    poolName = 'SPoolUnderU30'
+) => {
     const state: TurnWorldState = {
         id: 1,
         currentYear: 200,
@@ -75,9 +85,17 @@ const buildHarness = (generals: TurnGeneral[] = [], cityCount = 2) => {
     };
     const snapshot: TurnWorldSnapshot = {
         scenarioConfig: {
-            stat: { total: 300, min: 10, max: 100, npcTotal: 150, npcMax: 50, npcMin: 10, chiefMin: 70 },
+            stat:
+                poolName === 'SPoolUnderU100'
+                    ? { total: 165, min: 15, max: 80, npcTotal: 150, npcMax: 50, npcMin: 10, chiefMin: 70 }
+                    : { total: 300, min: 10, max: 100, npcTotal: 150, npcMax: 50, npcMin: 10, chiefMin: 70 },
             iconPath: '',
-            map: {},
+            map: generalPoolEntries
+                ? {
+                      targetGeneralPool: poolName,
+                      ...(poolName === 'SPoolUnderU100' ? { centennialNpcDexTargetRatio: 0.4 } : {}),
+                  }
+                : {},
             const: {
                 defaultStatNPCTotal: 150,
                 defaultStatNPCMin: 10,
@@ -103,6 +121,7 @@ const buildHarness = (generals: TurnGeneral[] = [], cityCount = 2) => {
         diplomacy: [],
         events: [],
         initialEvents: [],
+        ...(generalPoolEntries ? { generalPoolEntries } : {}),
     };
     const world = new InMemoryTurnWorld(state, snapshot, {
         schedule: { entries: [{ startMinute: 0, tickMinutes: 10 }] },
@@ -132,6 +151,119 @@ const buildHarness = (generals: TurnGeneral[] = [], cityCount = 2) => {
 };
 
 describe('CreateManyNPC monthly action', () => {
+    it('uses and consumes an available U30 candidate without random-name or random-stat fallback', async () => {
+        const info = {
+            generalName: '풀장수',
+            leadership: 69,
+            strength: 12,
+            intel: 80,
+            specialDomestic: 'che_event_징병',
+            dex: [10, 20, 30, 40, 50],
+            imgsvr: 1,
+            picture: 'pool.gif',
+        };
+        const entry: TurnGeneralPoolEntry = {
+            id: 31,
+            uniqueName: info.generalName,
+            ownerUserId: null,
+            generalId: null,
+            reservedUntil: null,
+            reservedUntilTick: null,
+            candidate: parseScenarioGeneralPoolCandidate({ id: 31, uniqueName: info.generalName, info }),
+        };
+        const { world, handler, environment } = buildHarness([buildGeneral(1)], 2, [entry]);
+
+        await handler([1, 0], environment, {
+            id: 1,
+            targetCode: 'month',
+            priority: 1,
+            condition: true,
+            action: [],
+            meta: {},
+        });
+
+        const created = world.peekDirtyState().createdGenerals[0]!;
+        expect(created).toMatchObject({
+            name: 'ⓜ풀장수',
+            stats: { leadership: 69, strength: 12, intelligence: 80 },
+            picture: 'pool.gif',
+            imageServer: 1,
+            role: {
+                specialDomestic: 'che_event_징병',
+            },
+            meta: {
+                dex1: 10,
+                dex2: 20,
+                dex3: 30,
+                dex4: 40,
+                dex5: 50,
+                scenarioGeneralPoolClaim: {
+                    poolEntryId: 31,
+                    uniqueName: '풀장수',
+                    claimedAt: environment.turnTime.toISOString(),
+                },
+            },
+        });
+        expect(world.listGeneralPoolCandidates(environment.turnTime)).toEqual([]);
+    });
+
+    it('keeps the ordinary NPC RNG path before applying the S100 .9/.4 target', async () => {
+        const info = {
+            generalName: '100기후보',
+            leadership: 100,
+            strength: 80,
+            intel: 10,
+            specialDomestic: 'che_event_징병',
+            dex: [900_000, 800_000, 700_000, 600_000, 500_000],
+            imgsvr: 1,
+            picture: 'centennial.gif',
+            event100Growth: true,
+        };
+        const entry: TurnGeneralPoolEntry = {
+            id: 100,
+            uniqueName: 'A1000100',
+            ownerUserId: null,
+            generalId: null,
+            reservedUntil: null,
+            reservedUntilTick: null,
+            candidate: parseScenarioGeneralPoolCandidate({ id: 100, uniqueName: 'A1000100', info }),
+        };
+        const { world, handler, environment } = buildHarness([buildGeneral(1)], 2, [entry], 'SPoolUnderU100');
+        const currentEnvironment = { ...environment, year: 195, month: 1, startyear: 180 };
+
+        await handler([1, 0], currentEnvironment, {
+            id: 1,
+            targetCode: 'month',
+            priority: 1,
+            condition: true,
+            action: [],
+            meta: {},
+        });
+
+        const created = world.peekDirtyState().createdGenerals[0]!;
+        expect(created).toMatchObject({
+            name: 'ⓜ100기후보',
+            stats: { leadership: 93, strength: 73 },
+            picture: 'centennial.gif',
+            role: { specialDomestic: 'che_event_징병' },
+            meta: {
+                dex1: 360_000,
+                dex2: 320_000,
+                dex3: 280_000,
+                dex4: 240_000,
+                dex5: 200_000,
+                scenarioGeneralPoolClaim: { poolEntryId: 100, uniqueName: 'A1000100' },
+                event100_allstar: {
+                    targetId: 'A1000100',
+                    milestone: 4,
+                    dexTargetRatio: 0.4,
+                },
+            },
+        });
+        expect(created.stats.intelligence).toBeGreaterThanOrEqual(10);
+        expect(created.stats).not.toEqual({ leadership: 100, strength: 80, intelligence: 10 });
+    });
+
     it('creates the legacy random-name NPC state and initializes all 30 reserved turns', async () => {
         const { world, reservedTurns, handler, environment } = buildHarness([buildGeneral(1)]);
 

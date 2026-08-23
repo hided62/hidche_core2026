@@ -16,11 +16,7 @@ import {
 import { readInheritancePoint, resolveInheritConstants } from '../../services/inheritance.js';
 import { loadAuthoritativeAccountIcon } from '../../services/accountIconSync.js';
 import { loadCurrentGameTime } from '../../services/gameClock.js';
-import {
-    getSelectionPoolStatus,
-    reserveSelectionPool,
-    resolveSelectionMaxGeneral,
-} from '@sammo-ts/game-engine/turn/selectPoolService.js';
+import { getSelectionPoolStatus, resolveSelectionMaxGeneral } from '@sammo-ts/game-engine/turn/selectPoolService.js';
 import {
     ConflictingTurnDaemonCommandError,
     RejectedNpcPossessionCommandError,
@@ -53,6 +49,31 @@ const resolveSelectionCommandResult = (
     }
     return { ok: true, generalId: result.generalId };
 };
+
+const resolveSelectionReservationCommandResult = (
+    result: Awaited<ReturnType<GameApiContext['turnDaemon']['requestCommand']>> | null
+) => {
+    if (!result) {
+        throw new TRPCError({
+            code: 'TIMEOUT',
+            message:
+                '장수 선택 목록 요청은 접수됐지만 처리 결과를 아직 확인하지 못했습니다. 같은 요청으로 다시 시도해 주세요.',
+        });
+    }
+    if (result.type !== 'selectPoolReserve') {
+        throw new TRPCError({
+            code: 'INTERNAL_SERVER_ERROR',
+            message: '턴 데몬이 올바르지 않은 장수 선택 목록 결과를 반환했습니다.',
+        });
+    }
+    if (!result.ok) {
+        throw new TRPCError({ code: result.code, message: result.reason });
+    }
+    return result.reservation;
+};
+
+const resolveSelectionReservationRequestId = (contextRequestId: string | undefined, userId: string) =>
+    contextRequestId ? `select-pool:${userId}:${contextRequestId}:reserve` : undefined;
 
 const resolveSelectionRequestId = (
     contextRequestId: string | undefined,
@@ -366,26 +387,22 @@ export const joinRouter = router({
             },
         };
     }),
-    getSelectionPool: authedProcedure.mutation(async ({ ctx }) => {
+    getSelectionPool: engineAuthedProcedure.mutation(async ({ ctx }) => {
         const userId = ctx.auth?.user.id;
         if (!userId) {
             throw new TRPCError({ code: 'UNAUTHORIZED' });
         }
-        const worldState = await ctx.db.worldState.findFirst();
-        if (!worldState) {
-            throw new TRPCError({
-                code: 'PRECONDITION_FAILED',
-                message: 'World state is not initialized.',
-            });
-        }
         const gameTime = await loadCurrentGameTime(ctx.db);
-        return reserveSelectionPool({
-            db: ctx.db,
-            worldState,
+        const commandRequestId = resolveSelectionReservationRequestId(ctx.requestId, userId);
+        const result = await ctx.turnDaemon.requestCommand({
+            type: 'selectPoolReserve',
+            ...(commandRequestId ? { requestId: commandRequestId } : {}),
             userId,
-            now: gameTime.now,
             seedOwnerIdentity: ctx.auth?.user.legacyMemberNo ?? userId,
+            acceptedGameAt: gameTime.now.toISOString(),
+            ...(gameTime.tick === null ? {} : { acceptedGameTick: gameTime.tick }),
         });
+        return resolveSelectionReservationCommandResult(result);
     }),
     selectPoolGeneral: engineAuthedProcedure
         .input(
@@ -413,6 +430,7 @@ export const joinRouter = router({
                 });
             }
             const commandRequestId = resolveSelectionRequestId(ctx.requestId, userId, input.clientRequestId, 'create');
+            const gameTime = await loadCurrentGameTime(ctx.db);
             const result = await ctx.turnDaemon.requestCommand({
                 type: 'selectPoolCreate',
                 ...(commandRequestId ? { requestId: commandRequestId } : {}),
@@ -421,6 +439,8 @@ export const joinRouter = router({
                 uniqueName: input.uniqueName,
                 personality: input.personality,
                 seedOwnerIdentity: auth.user.legacyMemberNo ?? userId,
+                acceptedGameAt: gameTime.now.toISOString(),
+                ...(gameTime.tick === null ? {} : { acceptedGameTick: gameTime.tick }),
                 ...(selectedIcon
                     ? {
                           ownerPicture: selectedIcon.picture,
@@ -450,12 +470,15 @@ export const joinRouter = router({
                 input.clientRequestId,
                 'reselect'
             );
+            const gameTime = await loadCurrentGameTime(ctx.db);
             const result = await ctx.turnDaemon.requestCommand({
                 type: 'selectPoolReselect',
                 ...(commandRequestId ? { requestId: commandRequestId } : {}),
                 userId,
                 ownerDisplayName: auth.user.displayName,
                 uniqueName: input.uniqueName,
+                acceptedGameAt: gameTime.now.toISOString(),
+                ...(gameTime.tick === null ? {} : { acceptedGameTick: gameTime.tick }),
             });
             return resolveSelectionCommandResult(result, 'selectPoolReselect');
         }),

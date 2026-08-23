@@ -1,5 +1,19 @@
 import { GAME_TICKS_PER_TURN, JosaUtil, LiteHashDRBG, RandUtil, asRecord } from '@sammo-ts/common';
-import { LogCategory, LogFormat, LogScope, type TurnCommandEnv } from '@sammo-ts/logic';
+import {
+    buildScenarioGeneralPoolClaimMeta,
+    CENTENNIAL_ALL_STAR_NPC_PROGRESS_MULTIPLIER,
+    LogCategory,
+    LogFormat,
+    LogScope,
+    applyCentennialAllStarTarget,
+    initializeCentennialGeneratedNpc,
+    pickUniqueScenarioGeneralPoolCandidates,
+    readCentennialAllStarPoolTarget,
+    resolveCentennialAllStarRules,
+    resolveCentennialNpcDexTargetRatio,
+    type ScenarioGeneralPoolCandidate,
+    type TurnCommandEnv,
+} from '@sammo-ts/logic';
 import { simpleSerialize } from '@sammo-ts/logic/war/utils.js';
 
 import type { InMemoryTurnWorld } from './inMemoryWorld.js';
@@ -113,19 +127,21 @@ const buildNpc = (options: {
     environment: MonthlyEventEnvironment;
     env: TurnCommandEnv;
     baseName: string;
+    candidate?: ScenarioGeneralPoolCandidate;
 }): TurnGeneral => {
     const { world, reservedTurns, rng, environment, env } = options;
+    const centennialTarget = readCentennialAllStarPoolTarget(options.candidate);
     const age = rng.nextRangeInt(20, 25);
     const bornYear = environment.year - age;
     const deadYear = environment.year + rng.nextRangeInt(10, 50);
-    const stats = buildNpcStats(rng, env);
-    const affinity = rng.nextRangeInt(1, 150);
+    const stats = centennialTarget ? buildNpcStats(rng, env) : (options.candidate?.stats ?? buildNpcStats(rng, env));
+    const affinity = options.candidate?.affinity ?? rng.nextRangeInt(1, 150);
     const relativeYear = Math.max(environment.year - environment.startyear, 0);
     const configValues = asRecord(world.getScenarioConfig().const);
     const retirementYear = readLegacyNumber(configValues.retirementYear, 80);
     const specAge = buildSpecialityAge(retirementYear, age, relativeYear, 12);
     const specAge2 = buildSpecialityAge(retirementYear, age, relativeYear, 6);
-    const personality = rng.choice(env.availablePersonalities ?? ['che_안전']);
+    const personality = options.candidate?.personality ?? rng.choice(env.availablePersonalities ?? ['che_안전']);
     const cities = world.listCities();
     if (cities.length === 0) {
         throw new Error('CreateManyNPC requires at least one city.');
@@ -145,7 +161,7 @@ const buildNpc = (options: {
     const turnTime = world.gameTickToDate(turnTick);
     const killturn = (deadYear - environment.year) * 12 + rng.nextRangeInt(0, 11) + environment.month - 1;
     const id = world.getNextGeneralId();
-    const general: TurnGeneral = {
+    let general: TurnGeneral = {
         id,
         userId: null,
         name: `${NPC_NAME_PREFIX}${options.baseName}`,
@@ -158,8 +174,12 @@ const buildNpc = (options: {
         officerLevel: 0,
         role: {
             personality,
-            specialDomestic: env.defaultSpecialDomestic,
-            specialWar: env.defaultSpecialWar,
+            specialDomestic: centennialTarget
+                ? env.defaultSpecialDomestic
+                : (options.candidate?.specialDomestic ?? env.defaultSpecialDomestic),
+            specialWar: centennialTarget
+                ? env.defaultSpecialWar
+                : (options.candidate?.specialWar ?? env.defaultSpecialWar),
             items: { horse: null, weapon: null, book: null, item: null },
         },
         injury: 0,
@@ -174,7 +194,8 @@ const buildNpc = (options: {
         bornYear,
         deadYear,
         affinity,
-        picture: 'default.jpg',
+        picture: typeof options.candidate?.picture === 'string' ? options.candidate.picture : 'default.jpg',
+        imageServer: options.candidate?.imageServer ?? 0,
         triggerState: {
             flags: {},
             counters: {},
@@ -193,13 +214,32 @@ const buildNpc = (options: {
             dedlevel: 1,
             specage: specAge,
             specage2: specAge2,
-            dex1: 0,
-            dex2: 0,
-            dex3: 0,
-            dex4: 0,
-            dex5: 0,
+            dex1: centennialTarget ? 0 : (options.candidate?.dex?.[0] ?? 0),
+            dex2: centennialTarget ? 0 : (options.candidate?.dex?.[1] ?? 0),
+            dex3: centennialTarget ? 0 : (options.candidate?.dex?.[2] ?? 0),
+            dex4: centennialTarget ? 0 : (options.candidate?.dex?.[3] ?? 0),
+            dex5: centennialTarget ? 0 : (options.candidate?.dex?.[4] ?? 0),
+            ...(options.candidate ? buildScenarioGeneralPoolClaimMeta(options.candidate, environment.turnTime) : {}),
         },
     };
+    if (centennialTarget) {
+        const scenario = world.getScenarioConfig();
+        const rules = resolveCentennialAllStarRules(scenario, env.defaultSpecialDomestic);
+        const initialized = initializeCentennialGeneratedNpc(general, centennialTarget, rules);
+        const growth = applyCentennialAllStarTarget(
+            { ...general, ...initialized },
+            centennialTarget,
+            {
+                startYear: environment.startyear,
+                year: environment.year,
+                month: environment.month,
+            },
+            rules,
+            CENTENNIAL_ALL_STAR_NPC_PROGRESS_MULTIPLIER,
+            resolveCentennialNpcDexTargetRatio(scenario)
+        );
+        general = { ...general, stats: growth.stats, role: growth.role, meta: growth.meta };
+    }
     if (!world.addGeneral(general)) {
         throw new Error(`CreateManyNPC generated a duplicate general id: ${id}`);
     }
@@ -241,8 +281,15 @@ export const createCreateManyNpcHandler = (options: {
                 simpleSerialize(resolveHiddenSeed(world), 'CreateManyNPC', environment.year, environment.month)
             )
         );
-        const baseNames = pickNpcNames(rng, requestedCount, world.listGenerals(), options.env);
-        const created = baseNames.map((baseName) =>
+        const generalPool = world.listGeneralPoolCandidates(environment.turnTime);
+        const candidates: Array<{ baseName: string; candidate?: ScenarioGeneralPoolCandidate }> =
+            generalPool === undefined
+                ? pickNpcNames(rng, requestedCount, world.listGenerals(), options.env).map((baseName) => ({ baseName }))
+                : pickUniqueScenarioGeneralPoolCandidates(rng, generalPool, requestedCount).map((candidate) => ({
+                      baseName: candidate.name,
+                      candidate,
+                  }));
+        const created = candidates.map(({ baseName, candidate }) =>
             buildNpc({
                 world,
                 reservedTurns: options.reservedTurns,
@@ -250,6 +297,7 @@ export const createCreateManyNpcHandler = (options: {
                 environment,
                 env: options.env,
                 baseName,
+                ...(candidate ? { candidate } : {}),
             })
         );
 

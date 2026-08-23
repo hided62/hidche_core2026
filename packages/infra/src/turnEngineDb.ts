@@ -147,6 +147,16 @@ export interface TurnEngineEventRow {
     meta: JsonValue;
 }
 
+export interface TurnEngineSelectPoolEntryRow {
+    id: number;
+    uniqueName: string;
+    ownerUserId: string | null;
+    generalId: number | null;
+    reservedUntil: Date | null;
+    reservedUntilTick: bigint | null;
+    info: JsonValue;
+}
+
 export interface TurnEngineGeneralTurnRow {
     generalId: number;
     turnIdx: number;
@@ -459,6 +469,9 @@ export interface TurnEngineDatabaseClient {
         findMany(args?: unknown): Promise<TurnEngineEventRow[]>;
         createMany(args: { data: TurnEngineEventCreateManyInput[] }): Promise<unknown>;
         deleteMany(args?: unknown): Promise<unknown>;
+    };
+    selectPoolEntry: {
+        findMany(args?: unknown): Promise<TurnEngineSelectPoolEntryRow[]>;
     };
     logEntry: {
         createMany(args: { data: TurnEngineLogEntryCreateManyInput[] }): Promise<unknown>;

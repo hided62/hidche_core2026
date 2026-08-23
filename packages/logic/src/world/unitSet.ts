@@ -170,12 +170,19 @@ export const getTechLevel = (tech: number, maxLevel = DEFAULT_MAX_TECH_LEVEL): n
     return Math.max(0, Math.min(level, maxLevel));
 };
 
-export const getTechAbility = (tech: number): number => getTechLevel(tech) * 25;
+export const getTechAbility = (tech: number, maxLevel = DEFAULT_MAX_TECH_LEVEL): number =>
+    getTechLevel(tech, maxLevel) * 25;
 
-export const getTechCost = (tech: number): number => 1 + getTechLevel(tech) * 0.15;
+export const getTechCost = (tech: number, maxLevel = DEFAULT_MAX_TECH_LEVEL): number =>
+    1 + getTechLevel(tech, maxLevel) * 0.15;
 
-export const getCrewTypePickScore = (crewType: CrewTypeDefinition, tech: number, armPerPhase: number): number => {
-    let score = armPerPhase + crewType.attack + crewType.defence + getTechAbility(tech) * 2;
+export const getCrewTypePickScore = (
+    crewType: CrewTypeDefinition,
+    tech: number,
+    armPerPhase: number,
+    maxTechLevel = DEFAULT_MAX_TECH_LEVEL
+): number => {
+    let score = armPerPhase + crewType.attack + crewType.defence + getTechAbility(tech, maxTechLevel) * 2;
     score *= 1 + crewType.speed / 2;
     score /= Math.max(1 - crewType.avoid / 100, 0.1);
     score *= 1 + crewType.magicCoef / 2;

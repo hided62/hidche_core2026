@@ -21,7 +21,7 @@ import type { GamePrisma } from '@sammo-ts/infra';
 import type { MapDefinition, ScenarioConfig, ScenarioMeta, TurnSchedule } from '@sammo-ts/logic';
 
 import { buildAuctionTimerKeys } from '../src/auction/keys.js';
-import { processDueAuctionId, runAuctionWorker } from '../src/auction/worker.js';
+import { buildAuctionFinalizeRequestId, processDueAuctionId, runAuctionWorker } from '../src/auction/worker.js';
 
 const databaseUrl = process.env.INPUT_EVENT_DATABASE_URL;
 const liveDescribe = databaseUrl && process.env.REDIS_URL ? describe : describe.skip;
@@ -80,8 +80,11 @@ liveDescribe('auction worker durable recovery', () => {
         return auction;
     };
 
-    const requestIdFor = (auction: { id: number; closeAt: Date }): string =>
-        `auction:finalize:${auction.id}:${auction.closeAt.getTime()}`;
+    const requestIdFor = (auction: { id: number; closeAt: Date; closeTick?: bigint | null }): string =>
+        buildAuctionFinalizeRequestId(auction.id, {
+            closeAt: auction.closeAt,
+            closeTick: auction.closeTick ?? null,
+        });
 
     const memoryRedis = () => ({
         zRangeByScore: vi.fn(async () => []),
@@ -91,7 +94,7 @@ liveDescribe('auction worker durable recovery', () => {
         zRemRangeByScore: vi.fn(async () => 0),
     });
 
-    it('atomically moves OPEN to FINALIZING and creates one deterministic input event', async () => {
+    it('leaves OPEN and creates one deterministic input event', async () => {
         const auction = await createAuction('OPEN');
         const redis = memoryRedis();
 
@@ -104,7 +107,7 @@ liveDescribe('auction worker durable recovery', () => {
                 id: String(auction.id),
                 nowMs: Date.now(),
             })
-        ).resolves.toBe('FINALIZING');
+        ).resolves.toBe('PENDING');
         await expect(
             processDueAuctionId({
                 db: connector.prisma,
@@ -114,13 +117,13 @@ liveDescribe('auction worker durable recovery', () => {
                 id: String(auction.id),
                 nowMs: Date.now(),
             })
-        ).resolves.toBe('FINALIZING');
+        ).resolves.toBe('PENDING');
 
         const [storedAuction, events] = await Promise.all([
             connector.prisma.auction.findUniqueOrThrow({ where: { id: auction.id } }),
             connector.prisma.inputEvent.findMany({ where: { requestId: requestIdFor(auction) } }),
         ]);
-        expect(storedAuction.status).toBe('FINALIZING');
+        expect(storedAuction.status).toBe('OPEN');
         expect(events).toHaveLength(1);
         expect(events[0]).toMatchObject({
             target: 'ENGINE',
@@ -130,6 +133,7 @@ liveDescribe('auction worker durable recovery', () => {
                 type: 'auctionFinalize',
                 requestId: requestIdFor(auction),
                 auctionId: auction.id,
+                expectedCloseAt: auction.closeAt.toISOString(),
             },
         });
     });
@@ -191,7 +195,7 @@ liveDescribe('auction worker durable recovery', () => {
                 id: String(auction.id),
                 nowMs: Date.now(),
             })
-        ).resolves.toBe('FINALIZING');
+        ).resolves.toBe('PENDING');
         await expect(
             processDueAuctionId({
                 db: connector.prisma,
@@ -201,7 +205,7 @@ liveDescribe('auction worker durable recovery', () => {
                 id: String(auction.id),
                 nowMs: Date.now(),
             })
-        ).resolves.toBe('FINALIZING');
+        ).resolves.toBe('PENDING');
         await expect(
             connector.prisma.inputEvent.findMany({
                 where: { requestId: { startsWith: requestId } },
@@ -258,7 +262,7 @@ liveDescribe('auction worker durable recovery', () => {
                 id: String(auction.id),
                 nowMs: Date.now(),
             })
-        ).resolves.toBe('FINALIZING');
+        ).resolves.toBe('PENDING');
 
         await expect(
             connector.prisma.inputEvent.findUnique({ where: { requestId: requestIdFor(auction) } })
@@ -531,7 +535,11 @@ liveDescribe('auction worker durable recovery', () => {
                     where: { id: extensionAuction.id },
                     data: { closeAt: secondCloseAt, closeTick: BigInt(secondCloseTick) },
                 });
-                const secondExtensionRequestId = requestIdFor({ id: extensionAuction.id, closeAt: secondCloseAt });
+                const secondExtensionRequestId = requestIdFor({
+                    id: extensionAuction.id,
+                    closeAt: secondCloseAt,
+                    closeTick: BigInt(secondCloseTick),
+                });
                 await processDueAuctionId({
                     db: connector.prisma,
                     redis: memoryRedis(),

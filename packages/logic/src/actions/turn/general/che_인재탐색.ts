@@ -20,22 +20,44 @@ import { createGeneralAddEffect } from '@sammo-ts/logic/actions/engine.js';
 import { LogCategory, LogFormat, LogScope } from '@sammo-ts/logic/logging/types.js';
 import { buildRecruitmentGeneral } from './recruitment.js';
 import type { ActionContextBuilder } from '@sammo-ts/logic/actions/turn/actionContext.js';
-import { buildWorldSummary } from '@sammo-ts/logic/actions/turn/actionContextHelpers.js';
+import { buildWorldSummary, resolveStartYear } from '@sammo-ts/logic/actions/turn/actionContextHelpers.js';
 import type { TurnCommandEnv } from '@sammo-ts/logic/actions/turn/commandEnv.js';
 import { tryApplyUniqueLottery } from '@sammo-ts/logic/rewards/uniqueLottery.js';
 import type { GeneralTurnCommandSpec } from './index.js';
+import {
+    buildScenarioGeneralPoolClaimMeta,
+    pickUniqueScenarioGeneralPoolCandidates,
+    resolveLegacyNpcStatTypeFromFixedStats,
+    type ScenarioGeneralPoolCandidate,
+} from '@sammo-ts/logic/actions/turn/generalPool.js';
+import {
+    CENTENNIAL_ALL_STAR_NPC_PROGRESS_MULTIPLIER,
+    applyCentennialAllStarTarget,
+    initializeCentennialGeneratedNpc,
+    readCentennialAllStarPoolTarget,
+    resolveCentennialAllStarRules,
+    resolveCentennialNpcDexTargetRatio,
+    type CentennialAllStarRules,
+} from '@sammo-ts/logic/scenario/centennialAllStar.js';
 
 export interface TalentScoutArgs {}
 
 export interface TalentScoutCandidate {
     name: string;
+    poolEntryId?: number;
+    uniqueName?: string;
     stats?: Partial<StatBlock>;
+    dex?: [number, number, number, number, number];
     personality?: string | null;
     affinity?: number | null;
     specialDomestic?: string | null;
     specialWar?: string | null;
     picture?: number | string | null;
+    imageServer?: number;
     text?: string | null;
+    experience?: number;
+    dedication?: number;
+    sourceInfo?: Record<string, unknown>;
 }
 
 export interface TalentScoutWorldSummary {
@@ -50,9 +72,12 @@ export interface TalentScoutResolveContext<
 > extends GeneralActionResolveContext<TriggerState> {
     currentYear: number;
     currentMonth: number;
+    startYear: number;
     retirementYear: number;
+    centennialRules: CentennialAllStarRules;
+    centennialNpcDexTargetRatio: number;
     worldSummary: TalentScoutWorldSummary;
-    generalPool?: TalentScoutCandidate[];
+    generalPool?: ScenarioGeneralPoolCandidate[];
     cityPool?: City[];
     existingGeneralNames: string[];
     createGeneralId: () => number;
@@ -228,11 +253,10 @@ const resolveCandidate = (
         return env.pickCandidate(context, rng);
     }
     const pool = context.generalPool ?? [];
-    if (pool.length === 0) {
+    if (context.generalPool === undefined) {
         return null;
     }
-    const idx = legacyChoiceIndex(rng, pool.length);
-    return pool[idx] ?? null;
+    return pickUniqueScenarioGeneralPoolCandidates(rng, pool, 1)[0] ?? null;
 };
 
 const resolveSpawnCityId = (
@@ -371,51 +395,66 @@ export class ActionResolver<
                 this.env.maxDeathYears ?? DEFAULT_DEATH_MAX
             );
         const candidate = resolveCandidate(context, context.rng, this.env);
+        const centennialTarget =
+            candidate?.sourceInfo && candidate.uniqueName
+                ? readCentennialAllStarPoolTarget({
+                      uniqueName: candidate.uniqueName,
+                      name: candidate.name,
+                      sourceInfo: candidate.sourceInfo,
+                  })
+                : null;
         const firstNames = this.env.randomGeneralFirstNames ?? ['가'];
         const middleNames = this.env.randomGeneralMiddleNames ?? [''];
         const lastNames = this.env.randomGeneralLastNames ?? ['가'];
-        let generatedName: string;
-        let duplicateLoopCount = 0;
-        while (true) {
-            generatedName = `${legacyChoice(context.rng, firstNames)}${legacyChoice(
-                context.rng,
-                middleNames
-            )}${legacyChoice(context.rng, lastNames)}`;
-            const duplicateCount = countLegacyNameDuplicates(context.existingGeneralNames, generatedName);
-            if (duplicateCount === 0) {
-                break;
+        let generatedName: string | null = null;
+        if (!candidate) {
+            let duplicateLoopCount = 0;
+            while (true) {
+                generatedName = `${legacyChoice(context.rng, firstNames)}${legacyChoice(
+                    context.rng,
+                    middleNames
+                )}${legacyChoice(context.rng, lastNames)}`;
+                const duplicateCount = countLegacyNameDuplicates(context.existingGeneralNames, generatedName);
+                if (duplicateCount === 0) {
+                    break;
+                }
+                if (duplicateLoopCount >= 99 || duplicateCount < 2) {
+                    generatedName += duplicateCount + 1;
+                    break;
+                }
+                duplicateLoopCount += 1;
             }
-            if (duplicateLoopCount >= 99 || duplicateCount < 2) {
-                generatedName += duplicateCount + 1;
-                break;
-            }
-            duplicateLoopCount += 1;
         }
         const newGeneralId = context.createGeneralId();
-        const resolvedCandidate: TalentScoutCandidate = candidate ?? { name: generatedName };
+        const resolvedCandidate: TalentScoutCandidate = candidate ?? { name: generatedName! };
         const affinity = randomRangeInt(context.rng, 1, 150);
         const npcStatTotal = this.env.npcStatTotal ?? 150;
         const npcStatMin = this.env.npcStatMin ?? 10;
         const npcStatMax = this.env.npcStatMax ?? 50;
-        const pickType = pickByWeight(context.rng, { 무: 6, 지: 6, 무지: 3 });
-        const mainStat = npcStatMax - randomRangeInt(context.rng, 0, npcStatMin);
-        const otherStat = npcStatMin + randomRangeInt(context.rng, 0, Math.trunc(npcStatMin / 2));
-        const subStat = npcStatTotal - mainStat - otherStat;
-        let generatedStats: StatBlock;
-        if (pickType === '무') {
-            generatedStats = { leadership: subStat, strength: mainStat, intelligence: otherStat };
-        } else if (pickType === '지') {
-            generatedStats = { leadership: subStat, strength: otherStat, intelligence: mainStat };
+        let pickType: '무' | '지' | '무지';
+        let stats: StatBlock;
+        if (candidate?.stats && !centennialTarget) {
+            stats = resolveStats(context, context.rng, this.env, resolvedCandidate);
+            pickType = resolveLegacyNpcStatTypeFromFixedStats(context.rng, stats);
         } else {
-            generatedStats = { leadership: otherStat, strength: subStat, intelligence: mainStat };
+            pickType = pickByWeight(context.rng, { 무: 6, 지: 6, 무지: 3 });
+            const mainStat = npcStatMax - randomRangeInt(context.rng, 0, npcStatMin);
+            const otherStat = npcStatMin + randomRangeInt(context.rng, 0, Math.trunc(npcStatMin / 2));
+            const subStat = npcStatTotal - mainStat - otherStat;
+            if (pickType === '무') {
+                stats = { leadership: subStat, strength: mainStat, intelligence: otherStat };
+            } else if (pickType === '지') {
+                stats = { leadership: subStat, strength: otherStat, intelligence: mainStat };
+            } else {
+                stats = { leadership: otherStat, strength: subStat, intelligence: mainStat };
+            }
         }
-        const stats = candidate?.stats
-            ? resolveStats(context, context.rng, this.env, resolvedCandidate)
-            : generatedStats;
         const averageDex = context.worldSummary.averageDex ?? [0, 0, 0, 0, 0];
         const dexTotal = averageDex[0] + averageDex[1] + averageDex[2] + averageDex[3];
         let dex: [number, number, number, number, number];
-        if (pickType === '무') {
+        if (candidate?.dex?.[0] && !centennialTarget) {
+            dex = candidate.dex;
+        } else if (pickType === '무') {
             const distributions = [
                 [(dexTotal * 5) / 8, dexTotal / 8, dexTotal / 8, dexTotal / 8],
                 [dexTotal / 8, (dexTotal * 5) / 8, dexTotal / 8, dexTotal / 8],
@@ -469,11 +508,14 @@ export class ActionResolver<
             dex5: dex[4],
             turnSecond,
             turnFraction,
+            ...(candidate && candidate.poolEntryId !== undefined && candidate.uniqueName
+                ? buildScenarioGeneralPoolClaimMeta(candidate as ScenarioGeneralPoolCandidate, context.turnTimeBase)
+                : {}),
         };
         addMetaValue(meta, 'picture', resolvedCandidate.picture ?? null);
         addMetaValue(meta, 'text', resolvedCandidate.text ?? null);
 
-        const newGeneral = {
+        let newGeneral = {
             ...buildRecruitmentGeneral<TriggerState>({
                 id: newGeneralId,
                 name,
@@ -485,8 +527,8 @@ export class ActionResolver<
                 npcState: NPC_TYPE,
                 gold: this.env.defaultNpcGold,
                 rice: this.env.defaultNpcRice,
-                experience: age * 100,
-                dedication: age * 100,
+                experience: resolvedCandidate.experience || age * 100,
+                dedication: resolvedCandidate.dedication || age * 100,
                 crewTypeId: this.env.defaultCrewTypeId,
                 role: {
                     personality,
@@ -500,7 +542,25 @@ export class ActionResolver<
             bornYear: birthYear,
             deadYear: deathYear,
             affinity,
+            imageServer: resolvedCandidate.imageServer ?? 0,
+            picture: resolvedCandidate.picture ?? 'default.jpg',
         };
+        if (centennialTarget) {
+            const initialized = initializeCentennialGeneratedNpc(newGeneral, centennialTarget, context.centennialRules);
+            const growth = applyCentennialAllStarTarget(
+                { ...newGeneral, ...initialized },
+                centennialTarget,
+                {
+                    startYear: context.startYear,
+                    year: context.currentYear,
+                    month: context.currentMonth,
+                },
+                context.centennialRules,
+                CENTENNIAL_ALL_STAR_NPC_PROGRESS_MULTIPLIER,
+                context.centennialNpcDexTargetRatio
+            );
+            newGeneral = { ...newGeneral, stats: growth.stats, role: growth.role, meta: growth.meta };
+        }
 
         const recruitVerb = '발견';
         const nameRa = JosaUtil.pick(name, '라');
@@ -578,10 +638,13 @@ export const actionContextBuilder: ActionContextBuilder = (base, options) => ({
     ...base,
     currentYear: options.world.currentYear,
     currentMonth: options.world.currentMonth,
+    startYear: resolveStartYear(options.world, options.scenarioMeta),
     retirementYear:
         typeof options.scenarioConfig.const.retirementYear === 'number'
             ? options.scenarioConfig.const.retirementYear
             : 80,
+    centennialRules: resolveCentennialAllStarRules(options.scenarioConfig),
+    centennialNpcDexTargetRatio: resolveCentennialNpcDexTargetRatio(options.scenarioConfig),
     worldSummary: {
         ...buildWorldSummary(options.worldRef),
         averageDex: (() => {
@@ -605,6 +668,11 @@ export const actionContextBuilder: ActionContextBuilder = (base, options) => ({
     // AbsGeneralPool::checkDuplicatedCnt semantics; the duplicated ⓝ prefix in
     // GeneralBuilder::$prefixList intentionally counts NPC matches twice.
     existingGeneralNames: options.worldRef?.listGenerals().map(restoreLegacyStoredName) ?? [],
+    ...(() => {
+        const claimedAt = options.world.lastTurnTime ?? base.general.turnTime;
+        const generalPool = options.worldRef?.listGeneralPoolCandidates?.(claimedAt);
+        return generalPool === undefined ? {} : { generalPool };
+    })(),
     createGeneralId: options.createGeneralId,
     turnTermMinutes: Math.max(1, Math.round(options.world.tickSeconds / 60)),
     // GeneralBuilder::build() derives a new NPC turn from gameStor.turntime,

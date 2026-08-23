@@ -77,10 +77,7 @@ const USER_RULER_ACTION_FEATURE: Readonly<Record<string, UserRulerAutomationFeat
 };
 
 /** NPC는 기존 계약을 유지하고, 사용자 군주는 명시적으로 고른 업무만 위임한다. */
-export const canUseRulerAutomation = (
-    general: TurnGeneral,
-    feature: UserRulerAutomationFeature
-): boolean => {
+export const canUseRulerAutomation = (general: TurnGeneral, feature: UserRulerAutomationFeature): boolean => {
     if (general.npcState >= 2) {
         return true;
     }
@@ -316,8 +313,8 @@ export class AutorunNationPolicy {
         const stat = scenarioConfig.stat;
         if (this.reqNpcWarGold === 0 || this.reqNpcWarRice === 0) {
             const crewType = findCrewTypeById(unitSet, env.defaultCrewTypeId);
-            const baseGold = crewType ? crewType.cost * getTechCost(tech) * stat.npcMax : 0;
-            const baseRice = crewType ? crewType.rice * getTechCost(tech) * stat.npcMax : 0;
+            const baseGold = crewType ? crewType.cost * getTechCost(tech, env.maxTechLevel) * stat.npcMax : 0;
+            const baseRice = crewType ? crewType.rice * getTechCost(tech, env.maxTechLevel) * stat.npcMax : 0;
             if (this.reqNpcWarGold === 0) {
                 this.reqNpcWarGold = roundTo(baseGold * 4, -2);
             }
@@ -328,8 +325,8 @@ export class AutorunNationPolicy {
 
         if (this.reqHumanWarUrgentGold === 0 || this.reqHumanWarUrgentRice === 0) {
             const crewType = findCrewTypeById(unitSet, env.defaultCrewTypeId);
-            const baseGold = crewType ? crewType.cost * getTechCost(tech) * stat.max : 0;
-            const baseRice = crewType ? crewType.rice * getTechCost(tech) * stat.max : 0;
+            const baseGold = crewType ? crewType.cost * getTechCost(tech, env.maxTechLevel) * stat.max : 0;
+            const baseRice = crewType ? crewType.rice * getTechCost(tech, env.maxTechLevel) * stat.max : 0;
             if (this.reqHumanWarUrgentGold === 0) {
                 this.reqHumanWarUrgentGold = roundTo(baseGold * 6, -2);
             }

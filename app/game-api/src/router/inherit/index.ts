@@ -11,6 +11,7 @@ import {
     WarTraitLoader,
     WAR_TRAIT_KEYS,
     isWarTraitKey,
+    isCentennialStatResetAllowed,
 } from '@sammo-ts/logic';
 import type { InheritBuffType, ItemSlot, MessageDraft, MessageRecordDraft } from '@sammo-ts/logic';
 import { simpleSerialize } from '@sammo-ts/logic/war/utils.js';
@@ -307,6 +308,7 @@ export const inheritRouter = router({
         const resetTurnLevel = asNumber(asRecord(general.meta).inheritResetTurnTime, -1) + 1;
 
         const config = asRecord(worldState.config);
+        const canResetStat = isCentennialStatResetAllowed(config);
         const constValues = asRecord(config.const);
         const availableSpecialWar = Array.isArray(constValues.availableSpecialWar)
             ? constValues.availableSpecialWar.filter((key): key is string => typeof key === 'string')
@@ -347,6 +349,7 @@ export const inheritRouter = router({
             availableTargetGenerals: others,
             turnTimeZones: buildTurnTimeZoneList(Math.max(1, Math.round(worldState.tickSeconds / 60))),
             isUnited,
+            canResetStat,
             currentSpecialWar: general.special2Code ?? 'None',
             currentStat: {
                 leadership: general.leadership,
@@ -700,12 +703,6 @@ export const inheritRouter = router({
                 });
             }
 
-            const currentPoint = await readInheritancePoint(ctx.db, userId, 'previous');
-            const cost = bonusSum > 0 ? inheritConst.inheritBornStatPoint : 0;
-            if (currentPoint < cost) {
-                throw new TRPCError({ code: 'BAD_REQUEST', message: '유산 포인트가 부족합니다.' });
-            }
-
             const general = await ctx.db.general.findFirst({
                 where: { userId },
                 select: { id: true, npcState: true },
@@ -715,6 +712,18 @@ export const inheritRouter = router({
             }
             if (general.npcState >= 2) {
                 throw new TRPCError({ code: 'BAD_REQUEST', message: 'NPC는 능력치 초기화를 할 수 없습니다.' });
+            }
+            if (!isCentennialStatResetAllowed(config)) {
+                throw new TRPCError({
+                    code: 'BAD_REQUEST',
+                    message: '100기 올스타 장수는 능력치 초기화를 사용할 수 없습니다.',
+                });
+            }
+
+            const currentPoint = await readInheritancePoint(ctx.db, userId, 'previous');
+            const cost = bonusSum > 0 ? inheritConst.inheritBornStatPoint : 0;
+            if (currentPoint < cost) {
+                throw new TRPCError({ code: 'BAD_REQUEST', message: '유산 포인트가 부족합니다.' });
             }
 
             const seasonValue = resolveSeasonValue(worldMeta);

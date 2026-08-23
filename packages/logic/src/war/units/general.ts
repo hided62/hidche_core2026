@@ -14,7 +14,7 @@ import type { WarStatName } from '@sammo-ts/logic/actionModules/types.js';
 import { getTechAbility, getTechCost } from '@sammo-ts/logic/world/unitSet.js';
 import { LEGACY_DEFAULT_MAX_LEVEL } from '@sammo-ts/logic/scenario/constants.js';
 import type { WarActionPipeline, WarActionContext } from '../actions.js';
-import type { WarEngineConfig } from '../types.js';
+import type { WarEngineConfig, WarTimeContext } from '../types.js';
 import type { WarCrewType } from '../crewType.js';
 import { clamp, clampMin, getMetaNumber, increaseMetaNumber, round } from '../utils.js';
 import { WAR_CRITICAL_RANGE, WarUnit, resolveNationTech } from './base.js';
@@ -58,7 +58,8 @@ export class WarUnitGeneral<
         isAttacker: boolean,
         crewType: WarCrewType,
         logger: ActionLogger,
-        pipeline: WarActionPipeline<TriggerState>
+        pipeline: WarActionPipeline<TriggerState>,
+        private readonly time?: WarTimeContext
     ) {
         super(rng, config, crewType, logger, isAttacker, nation);
         this.actionPipeline = pipeline;
@@ -89,6 +90,8 @@ export class WarUnitGeneral<
             log: this.logger,
             rng: this.rng,
             unit: this,
+            ...(this.time ? { time: this.time } : {}),
+            maxTechLevel: this.config.maxTechLevel ?? 12,
         };
     }
 
@@ -243,13 +246,13 @@ export class WarUnitGeneral<
             ratio = 50 + ratio / 2;
         }
 
-        const attack = this.getCrewType().attack + getTechAbility(tech);
+        const attack = this.getCrewType().attack + getTechAbility(tech, this.config.maxTechLevel);
         return attack * (ratio / 100);
     }
 
     public override getComputedDefence(): number {
         const tech = resolveNationTech(this.nation);
-        const defence = this.getCrewType().defence + getTechAbility(tech);
+        const defence = this.getCrewType().defence + getTechAbility(tech, this.config.maxTechLevel);
         const crew = this.general.crew / (7000 / 30) + 70;
         return defence * (crew / 100);
     }
@@ -407,7 +410,7 @@ export class WarUnitGeneral<
             rice *= 0.8;
         }
         rice *= this.getCrewType().rice;
-        rice *= getTechCost(resolveNationTech(this.nation));
+        rice *= getTechCost(resolveNationTech(this.nation), this.config.maxTechLevel);
         rice = this.actionPipeline.onCalcStat(this.getActionContext(), 'killRice', rice);
         return rice;
     }

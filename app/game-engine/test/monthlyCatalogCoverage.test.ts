@@ -1,11 +1,12 @@
 import { existsSync } from 'node:fs';
+import { readdir } from 'node:fs/promises';
+import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 
-import {
-    MONTHLY_EVENT_ACTION_CATALOG,
-    type MonthlyEventActionName,
-} from '../src/turn/monthlyEventHandler.js';
+import { resolveScenarioDefaultsPath } from '../src/scenario/scenarioLoader.js';
+import { MONTHLY_EVENT_ACTION_CATALOG, type MonthlyEventActionName } from '../src/turn/monthlyEventHandler.js';
+import { hasRefSourceRoot, resolveRefSourceRoot } from './refSourceRoot.js';
 
 interface CatalogSegment {
     name: string;
@@ -34,13 +35,7 @@ const segments = [
     {
         name: 'city-economy-boundaries',
         kind: 'single-boundary',
-        actions: [
-            'RaiseDisaster',
-            'UpdateCitySupply',
-            'UpdateNationLevel',
-            'ProcessSemiAnnual',
-            'ProcessWarIncome',
-        ],
+        actions: ['RaiseDisaster', 'UpdateCitySupply', 'UpdateNationLevel', 'ProcessSemiAnnual', 'ProcessWarIncome'],
         coreEvidence: [
             'monthlyDisasterPersistence.integration.test.ts',
             'monthlyCitySupplyPersistence.integration.test.ts',
@@ -84,11 +79,7 @@ const segments = [
         kind: 'multi-month',
         actions: ['RaiseInvader', 'AutoDeleteInvader', 'InvaderEnding'],
         coreEvidence: ['monthlyInvaderPersistence.integration.test.ts'],
-        refEvidence: [
-            'monthly_raise_invader.json',
-            'monthly_auto_delete_invader.json',
-            'monthly_invader_ending.json',
-        ],
+        refEvidence: ['monthly_raise_invader.json', 'monthly_auto_delete_invader.json', 'monthly_invader_ending.json'],
     },
     {
         name: 'npc-troop-support',
@@ -136,15 +127,60 @@ const segments = [
         coreEvidence: ['monthlyUniqueInheritPersistence.integration.test.ts'],
         refEvidence: ['monthly_lost_unique_item.json', 'monthly_merge_inherit_point_rank.json'],
     },
+    {
+        name: 'centennial-all-star-growth',
+        kind: 'multi-month',
+        actions: ['AdvanceCentennialAllStar'],
+        coreEvidence: ['monthlyCentennialAllStarAction.test.ts'],
+        refEvidence: ['CentennialAllStarGrowthTest.php', 'AdvanceCentennialAllStar.php'],
+    },
 ] as const satisfies readonly CatalogSegment[];
 
+const KNOWN_MISSING_SCENARIO_RESOURCES = [] as const;
+const KNOWN_MISSING_MONTHLY_ACTIONS = [] as const;
+
+const listBasenames = async (directory: string, pattern: RegExp): Promise<string[]> =>
+    (await readdir(directory, { withFileTypes: true }))
+        .filter((entry) => entry.isFile() && pattern.test(entry.name))
+        .map((entry) => entry.name)
+        .sort();
+
+const difference = (left: readonly string[], right: readonly string[]): string[] => {
+    const rightSet = new Set(right);
+    return left.filter((value) => !rightSet.has(value)).sort();
+};
+
+const refSourceIt = hasRefSourceRoot() ? it : it.skip;
+
 describe('monthly event catalog coverage', () => {
-    it('assigns every legacy action to exactly one dependency-safe segment', () => {
+    it('assigns every Core monthly action to exactly one dependency-safe segment', () => {
         const covered = segments.flatMap((segment) => segment.actions);
 
-        expect(covered).toHaveLength(29);
-        expect(new Set(covered).size).toBe(29);
+        expect(new Set(covered).size).toBe(covered.length);
+        expect(new Set(MONTHLY_EVENT_ACTION_CATALOG).size).toBe(MONTHLY_EVENT_ACTION_CATALOG.length);
         expect([...covered].sort()).toEqual([...MONTHLY_EVENT_ACTION_CATALOG].sort());
+    });
+
+    refSourceIt('keeps the Core and Ref scenario resource catalogs complete', async () => {
+        const refScenarioDirectory = path.join(resolveRefSourceRoot(), 'hwe', 'scenario');
+        const coreScenarioDirectory = path.dirname(resolveScenarioDefaultsPath());
+        const [refScenarios, coreScenarios] = await Promise.all([
+            listBasenames(refScenarioDirectory, /^scenario_\d+\.json$/),
+            listBasenames(coreScenarioDirectory, /^scenario_\d+\.json$/),
+        ]);
+
+        expect(difference(refScenarios, coreScenarios)).toEqual([...KNOWN_MISSING_SCENARIO_RESOURCES]);
+        expect(difference(coreScenarios, refScenarios)).toEqual([]);
+    });
+
+    refSourceIt('keeps the Core and Ref monthly action catalogs complete', async () => {
+        const refActionDirectory = path.join(resolveRefSourceRoot(), 'hwe', 'sammo', 'Event', 'Action');
+        const refActions = (await listBasenames(refActionDirectory, /\.php$/)).map((fileName) =>
+            fileName.replace(/\.php$/, '')
+        );
+
+        expect(difference(refActions, MONTHLY_EVENT_ACTION_CATALOG)).toEqual([...KNOWN_MISSING_MONTHLY_ACTIONS]);
+        expect(difference(MONTHLY_EVENT_ACTION_CATALOG, refActions)).toEqual([]);
     });
 
     it('keeps every core evidence file executable in this suite', () => {
@@ -170,6 +206,7 @@ describe('monthly event catalog coverage', () => {
             'InvaderEnding',
             'OpenNationBetting',
             'FinishNationBetting',
+            'AdvanceCentennialAllStar',
         ]);
         expect(specialDispositions).toEqual(['CreateAdminNPC', 'UnblockScoutAction']);
         expect(segments.every((segment) => segment.refEvidence.length > 0)).toBe(true);

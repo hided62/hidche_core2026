@@ -1,10 +1,11 @@
 import { randomUUID } from 'node:crypto';
 
 import { createGamePostgresConnector, GamePrisma, type GamePrismaClient } from '@sammo-ts/infra';
-import { isItemKey, ItemLoader } from '@sammo-ts/logic';
+import { isItemKey, ItemLoader, type MessageDraft } from '@sammo-ts/logic';
 
 import type { TurnDaemonCommand, TurnDaemonCommandResult } from '../lifecycle/types.js';
 import type { InMemoryTurnWorld } from '../turn/inMemoryWorld.js';
+import type { TurnGeneral } from '../turn/types.js';
 
 export interface AuctionBidder {
     bid(
@@ -20,6 +21,7 @@ type AuctionStatus = 'OPEN' | 'FINALIZING' | 'FINISHED' | 'CANCELED';
 
 const COEFF_EXTENSION_MINUTES_PER_BID = 1 / 6;
 const MIN_EXTENSION_MINUTES_PER_BID = 1;
+export const MIN_AUCTION_REMAINING_RESOURCE = 1_000;
 
 interface AuctionRow {
     id: number;
@@ -29,6 +31,7 @@ interface AuctionRow {
     detail: unknown;
     status: AuctionStatus;
     closeAt: Date;
+    closeTick: bigint | null;
     latestEventId: string;
 }
 
@@ -40,11 +43,77 @@ interface AuctionBidRow {
 }
 
 interface AuctionDetail {
+    title?: string;
     isReverse?: boolean;
     startBidAmount?: number;
     finishBidAmount?: number | null;
     availableLatestBidCloseDate?: string | null;
 }
+
+export const hasEnoughResourceForAuctionBid = (current: number, additionalBid: number): boolean =>
+    Number.isFinite(current) &&
+    Number.isFinite(additionalBid) &&
+    additionalBid > 0 &&
+    current >= additionalBid + MIN_AUCTION_REMAINING_RESOURCE;
+
+export const hasAuctionClosePassed = (
+    auction: { closeAt: Date; closeTick: bigint | null },
+    now: Date,
+    nowTick: number | null
+): boolean =>
+    auction.closeTick !== null && nowTick !== null
+        ? auction.closeTick < BigInt(nowTick)
+        : auction.closeAt.getTime() < now.getTime();
+
+export const resolveAuctionBidTiming = (
+    world: Pick<InMemoryTurnWorld, 'dateToGameTick' | 'gameTickToDate'>,
+    processingNow: Date,
+    acceptedGameTick?: number
+): { bidAt: Date; bidTick: number } =>
+    acceptedGameTick === undefined
+        ? { bidAt: processingNow, bidTick: world.dateToGameTick(processingNow) }
+        : { bidAt: world.gameTickToDate(acceptedGameTick), bidTick: acceptedGameTick };
+
+export const hasAuctionBidClosePassed = (
+    auction: { closeAt: Date; closeTick: bigint | null },
+    world: Pick<InMemoryTurnWorld, 'dateToGameTick' | 'gameTickToDate'>,
+    processingNow: Date,
+    acceptedGameTick?: number
+): boolean => {
+    const { bidAt, bidTick } = resolveAuctionBidTiming(world, processingNow, acceptedGameTick);
+    return hasAuctionClosePassed(auction, bidAt, bidTick);
+};
+
+export const buildAuctionOutbidRefundMessage = (options: {
+    auctionId: number;
+    title?: string;
+    bidder: TurnGeneral;
+    nation?: { name: string; color: string } | null;
+    time: Date;
+}): MessageDraft => ({
+    msgType: 'private',
+    src: {
+        generalId: 0,
+        generalName: '',
+        nationId: 0,
+        nationName: 'System',
+        color: '#000000',
+        icon: '',
+    },
+    dest: {
+        generalId: options.bidder.id,
+        generalName: options.bidder.name,
+        nationId: options.bidder.nationId,
+        nationName: options.nation?.name ?? '재야',
+        color: options.nation?.color ?? '#000000',
+        icon: options.bidder.picture ?? '',
+    },
+    text: `${options.auctionId}번 ${options.title ?? '경매'}에 상회입찰자가 나타났습니다.`,
+    time: new Date(options.time.getTime()),
+    validUntil: new Date('9999-12-31T00:00:00.000Z'),
+    option: {},
+    sendDestOnly: true,
+});
 
 const parseDetail = (detail: unknown): AuctionDetail => {
     if (!detail || typeof detail !== 'object') {
@@ -106,6 +175,7 @@ const loadAuction = async (prisma: QueryClient, auctionId: number): Promise<Auct
                 detail,
                 status,
                 close_at as "closeAt",
+                close_tick as "closeTick",
                 latest_event_id as "latestEventId"
             FROM auction
             WHERE id = ${auctionId}
@@ -198,8 +268,9 @@ export const createAuctionBidder = async (options: {
                     reason: '경매가 종료되었습니다.',
                 };
             }
-            const now = world.getGameNow(new Date());
-            if (auction.closeAt.getTime() <= now.getTime()) {
+            const processingNow = world.getGameNow(new Date());
+            const { bidAt, bidTick } = resolveAuctionBidTiming(world, processingNow, command.acceptedGameTick);
+            if (hasAuctionClosePassed(auction, bidAt, bidTick)) {
                 return {
                     type: 'auctionBid',
                     ok: false,
@@ -371,7 +442,7 @@ export const createAuctionBidder = async (options: {
                 };
             }
 
-            if (auction.type === 'BUY_RICE' && general.gold < morePoint) {
+            if (auction.type === 'BUY_RICE' && !hasEnoughResourceForAuctionBid(general.gold, morePoint)) {
                 return {
                     type: 'auctionBid',
                     ok: false,
@@ -379,7 +450,7 @@ export const createAuctionBidder = async (options: {
                     reason: '금이 부족합니다.',
                 };
             }
-            if (auction.type === 'SELL_RICE' && general.rice < morePoint) {
+            if (auction.type === 'SELL_RICE' && !hasEnoughResourceForAuctionBid(general.rice, morePoint)) {
                 return {
                     type: 'auctionBid',
                     ok: false,
@@ -410,7 +481,7 @@ export const createAuctionBidder = async (options: {
                 ? new Date(detail.availableLatestBidCloseDate)
                 : null;
             let nextCloseAt = extendCloseDate({
-                now,
+                now: bidAt,
                 closeAt: auction.closeAt,
                 turnMinutes,
                 availableLatestBidCloseDate,
@@ -420,11 +491,11 @@ export const createAuctionBidder = async (options: {
                 detail.finishBidAmount != null &&
                 command.amount === detail.finishBidAmount
             ) {
-                nextCloseAt = new Date(now.getTime() + turnMinutes * 60_000);
+                nextCloseAt = new Date(bidAt.getTime() + turnMinutes * 60_000);
             }
 
             const eventId = randomUUID();
-            const eventAt = now;
+            const eventAt = bidAt;
             const rankTrackedAmount = auction.type === 'UNIQUE_ITEM' ? readRankTrackedAmount(myPrevBid) + morePoint : 0;
             const previousRankTrackedAmount = readRankTrackedAmount(highestBid);
 
@@ -610,6 +681,21 @@ export const createAuctionBidder = async (options: {
                             rice: resourceType === 'rice' ? prev.rice + highestBid.amount : prev.rice,
                         });
                     }
+                }
+            }
+
+            if (highestBid && highestBid.generalId !== command.generalId && !myPrevBid) {
+                const previousBidder = world.getGeneralById(highestBid.generalId);
+                if (previousBidder) {
+                    world.queueMessage(
+                        buildAuctionOutbidRefundMessage({
+                            auctionId: auction.id,
+                            title: detail.title,
+                            bidder: previousBidder,
+                            nation: world.getNationById(previousBidder.nationId),
+                            time: eventAt,
+                        })
+                    );
                 }
             }
 

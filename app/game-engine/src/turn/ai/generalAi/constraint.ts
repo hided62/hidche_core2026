@@ -33,6 +33,7 @@ export const resolveConstraintEnv = (
         develCost: env.develCost,
         openingPartYear: env.openingPartYear,
         minAvailableRecruitPop: env.minAvailableRecruitPop,
+        maxTechLevel: env.maxTechLevel,
         ...(Number.isFinite(killturn) ? { killturn } : {}),
     };
 };

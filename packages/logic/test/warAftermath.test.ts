@@ -8,7 +8,7 @@ import type { UnitSetDefinition } from '../src/world/types.js';
 import { resolveWarAftermath } from '../src/war/aftermath.js';
 import type { WarAftermathConfig } from '../src/war/types.js';
 import { LogFormat } from '../src/logging/types.js';
-import { buildWarAftermathConfig } from '../src/actions/turn/actionContextHelpers.js';
+import { buildWarAftermathConfig, buildWarConfig } from '../src/actions/turn/actionContextHelpers.js';
 import type { ScenarioConfig } from '../src/scenario/types.js';
 
 const buildUnitSet = (): UnitSetDefinition => ({
@@ -135,6 +135,62 @@ describe('war aftermath', () => {
         const config = buildWarAftermathConfig({ const: {} } as ScenarioConfig, 999);
 
         expect(config.maxTechLevel).toBe(12);
+    });
+
+    it('propagates the scenario maximum tech level to battle and aftermath configs', () => {
+        const scenarioConfig: ScenarioConfig = {
+            stat: { total: 0, min: 0, max: 0, npcTotal: 0, npcMax: 0, npcMin: 0, chiefMin: 0 },
+            iconPath: '',
+            map: {},
+            const: { maxTechLevel: 15 },
+            environment: { mapName: 'test', unitSet: 'test' },
+        };
+
+        expect(buildWarConfig(scenarioConfig, buildUnitSet()).maxTechLevel).toBe(15);
+        expect(buildWarAftermathConfig(scenarioConfig, 999).maxTechLevel).toBe(15);
+    });
+
+    it('uses the scenario maximum tech level for supply-city rice consumption', () => {
+        const attackerNation = buildNation(1);
+        const defenderNation = buildNation(2);
+        defenderNation.meta.tech = 15_000;
+        const attackerCity = buildCity(1, 1);
+        const defenderCity = buildCity(2, 2);
+        defenderCity.meta.supply = 1;
+        const attacker = buildGeneral(1, 1, 1);
+
+        resolveWarAftermath({
+            battle: {
+                attacker,
+                defenders: [],
+                defenderCity,
+                logs: [],
+                conquered: false,
+                reports: [
+                    {
+                        id: defenderCity.id,
+                        type: 'city',
+                        name: defenderCity.name,
+                        isAttacker: false,
+                        killed: 100,
+                        dead: 0,
+                        phase: 1,
+                    },
+                ],
+            },
+            attackerNation,
+            defenderNation,
+            attackerCity,
+            defenderCity,
+            nations: [attackerNation, defenderNation],
+            cities: [attackerCity, defenderCity],
+            generals: [attacker],
+            unitSet: buildUnitSet(),
+            config: { ...buildConfig(), maxTechLevel: 15 },
+            time: { year: 200, month: 1, startYear: 180 },
+        });
+
+        expect(defenderNation.rice).toBe(985);
     });
 
     it('updates tech and diplomacy deltas', () => {

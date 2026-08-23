@@ -241,6 +241,49 @@ describe('TurnDaemonLifecycle', () => {
         expect(observedTargets[0]?.toISOString()).toBe('2042-01-01T02:59:59.999Z');
     });
 
+    it('limits an explicit manual run target to the next monthly boundary', async () => {
+        const lastTurnTime = new Date('2042-01-01T00:00:00.000Z');
+        const requestedTarget = addMinutes(lastTurnTime, 180);
+        const queue = new InMemoryControlQueue();
+        const processor: TurnProcessor = {
+            run: vi.fn(async (target): Promise<TurnRunResult> => {
+                queue.enqueue({ type: 'shutdown', reason: 'verified' });
+                return {
+                    lastTurnTime: target.toISOString(),
+                    processedGenerals: 1,
+                    processedTurns: 1,
+                    durationMs: 0,
+                    partial: false,
+                };
+            }),
+        };
+        const lifecycle = new TurnDaemonLifecycle(
+            {
+                clock: new ManualClock(lastTurnTime.getTime()),
+                controlQueue: queue,
+                getNextTickTime: (value) => addMinutes(value, 60),
+                stateStore: {
+                    loadLastTurnTime: async () => lastTurnTime,
+                    loadNextGeneralTurnTime: async () => addMinutes(lastTurnTime, 30),
+                    saveLastTurnTime: async () => {},
+                    loadCheckpoint: async () => undefined,
+                    saveCheckpoint: async () => {},
+                },
+                processor,
+            },
+            {
+                profile: 'manual-explicit-boundary',
+                defaultBudget: { budgetMs: 100, maxGenerals: 10, catchUpCap: 1 },
+            }
+        );
+
+        lifecycle.requestRun('manual', requestedTarget);
+        await lifecycle.start();
+
+        expect(processor.run).toHaveBeenCalledOnce();
+        expect((processor.run as ReturnType<typeof vi.fn>).mock.calls[0]?.[0]).toEqual(addMinutes(lastTurnTime, 60));
+    });
+
     it('produces the same command, RNG, and resource state in realtime and manual modes', async () => {
         const start = new Date('2042-01-01T00:00:00.000Z');
         const runMode = async (mode: 'realtime' | 'manual') => {

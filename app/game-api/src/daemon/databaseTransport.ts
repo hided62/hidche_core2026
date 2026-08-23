@@ -21,14 +21,26 @@ const stableJson = (value: unknown): string => {
     }
     return JSON.stringify(value) ?? 'null';
 };
-const commandIdentityJson = (value: unknown): string => {
+export const commandIdentityJson = (value: unknown): string => {
+    if (!value || typeof value !== 'object' || Array.isArray(value)) {
+        return stableJson(value);
+    }
+    const commandType = String(Reflect.get(value, 'type'));
     if (
-        value &&
-        typeof value === 'object' &&
-        !Array.isArray(value) &&
-        Reflect.get(value, 'type') === 'npcPossessGeneral'
+        [
+            'npcPossessGeneral',
+            'selectPoolReserve',
+            'selectPoolCreate',
+            'selectPoolReselect',
+            'voteReward',
+            'auctionBid',
+        ].includes(commandType)
     ) {
-        const { acceptedGameAt: _acceptedGameAt, ...identity } = value as Record<string, unknown>;
+        const {
+            acceptedGameAt: _acceptedGameAt,
+            acceptedGameTick: _acceptedGameTick,
+            ...identity
+        } = value as Record<string, unknown>;
         return stableJson(identity);
     }
     return stableJson(value);

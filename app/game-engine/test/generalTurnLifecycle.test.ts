@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { LEGACY_RANK_DATA_TYPES } from '@sammo-ts/common';
-import type { TurnSchedule } from '@sammo-ts/logic';
+import { finalizeLogEntry, type TurnSchedule } from '@sammo-ts/logic';
 
 import { rankMetaKey } from '../src/turn/rankData.js';
 import type { TurnGeneral, TurnWorldSnapshot, TurnWorldState } from '../src/turn/types.js';
@@ -159,7 +159,7 @@ const makeState = (meta: Record<string, unknown> = {}): TurnWorldState => ({
 });
 
 describe('legacy general turn lifecycle', () => {
-    it('timestamps action logs with the executing general turn instead of the shared flush cursor', async () => {
+    it('timestamps action logs with the executing turn before the same run advances the month', async () => {
         const flushCursor = new Date('0200-01-01T00:35:00.000Z');
         const generalTurnTime = new Date('0200-01-01T00:37:43.000Z');
         const harness = await createTurnTestHarness({
@@ -175,7 +175,28 @@ describe('legacy general turn lifecycle', () => {
         const actionLog = harness.world
             .peekDirtyState()
             .logs.find((log) => log.text.includes('아무것도 실행하지 않았습니다.'));
-        expect(actionLog?.occurredAt).toEqual(generalTurnTime);
+        expect(harness.world.getState()).toMatchObject({ currentYear: 200, currentMonth: 2 });
+        expect(actionLog).toMatchObject({
+            year: 200,
+            month: 1,
+            occurredAt: generalTurnTime,
+        });
+        if (!actionLog) {
+            throw new Error('expected the rest action log');
+        }
+        const finalState = harness.world.getState();
+        expect(
+            finalizeLogEntry(actionLog, {
+                year: finalState.currentYear,
+                month: finalState.currentMonth,
+                at: finalState.lastTurnTime,
+            })
+        ).toMatchObject({
+            year: 200,
+            month: 1,
+            text: '<C>●</>1월:아무것도 실행하지 않았습니다.',
+            createdAt: generalTurnTime,
+        });
     });
 
     it('emits legacy plain logs when command gains cross experience and dedication levels', async () => {

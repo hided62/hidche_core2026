@@ -2,6 +2,7 @@ export * from './definition.js';
 export * from './engine.js';
 export * from './turn/commandEnv.js';
 export * from './turn/actionContext.js';
+export * from './turn/generalPool.js';
 export * from './turn/commandModule.js';
 export * from './turn/commandProfile.js';
 export * from './turn/general/index.js';

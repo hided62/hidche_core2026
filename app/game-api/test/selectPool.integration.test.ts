@@ -221,6 +221,25 @@ integration('scenario 903 select pool through the durable turn daemon', () => {
         expect(concurrentReservation).toEqual(firstReservation);
         expect(firstReservation.candidates).toHaveLength(14);
         expect(await db.selectPoolEntry.count({ where: { ownerUserId: userId } })).toBe(14);
+        const reservedNames = new Set(firstReservation.candidates.map((candidate) => candidate.uniqueName));
+        expect(
+            runtime!.world
+                .listGeneralPoolCandidates(new Date(firstReservation.validUntil))
+                ?.some((candidate) => reservedNames.has(candidate.uniqueName))
+        ).toBe(false);
+        await expect(
+            db.inputEvent.findUniqueOrThrow({
+                where: { requestId: `select-pool:${userId}:select-pool-reserve-a:reserve` },
+            })
+        ).resolves.toMatchObject({
+            eventType: 'selectPoolReserve',
+            status: 'SUCCEEDED',
+            actorUserId: userId,
+            payload: {
+                acceptedGameAt: expect.any(String),
+                acceptedGameTick: expect.any(Number),
+            },
+        });
 
         const attempts = await Promise.allSettled([
             appRouter.createCaller(buildContext('select-pool-create-a')).join.selectPoolGeneral({
@@ -290,6 +309,10 @@ integration('scenario 903 select pool through the durable turn daemon', () => {
         expect(initialRankRows.every(({ nationId, value }) => nationId === 0 && value === 0)).toBe(true);
         expect(await db.selectPoolEntry.count({ where: { generalId: initial.id } })).toBe(1);
         expect(await db.selectPoolEntry.count({ where: { ownerUserId: userId } })).toBe(0);
+        expect(runtime!.world.listGeneralPoolEntries()?.filter((entry) => entry.ownerUserId === userId)).toEqual([]);
+        expect(
+            runtime!.world.listGeneralPoolEntries()?.find((entry) => entry.generalId === initial.id)?.candidate.name
+        ).toBe(initial.name);
         expect(
             await db.logEntry.count({
                 where: { meta: { path: ['ownerUserId'], equals: userId } },
@@ -336,6 +359,16 @@ integration('scenario 903 select pool through the durable turn daemon', () => {
                 .createCaller(buildContext('select-pool-reselect'))
                 .join.reselectPoolGeneral({ uniqueName: target.uniqueName })
         ).resolves.toEqual({ ok: true, generalId: initial.id });
+        await expect(
+            db.inputEvent.findUniqueOrThrow({ where: { requestId: 'select-pool-reselect:join.reselectPoolGeneral' } })
+        ).resolves.toMatchObject({
+            eventType: 'selectPoolReselect',
+            actorUserId: userId,
+            payload: {
+                acceptedGameAt: expect.any(String),
+                acceptedGameTick: expect.any(Number),
+            },
+        });
 
         const updated = await db.general.findUniqueOrThrow({ where: { id: initial.id } });
         expect(updated).toMatchObject({
@@ -368,6 +401,10 @@ integration('scenario 903 select pool through the durable turn daemon', () => {
             ownerUserId: null,
             reservedUntil: null,
         });
+        expect(runtime!.world.listGeneralPoolEntries()?.filter((entry) => entry.ownerUserId === userId)).toEqual([]);
+        expect(
+            runtime!.world.listGeneralPoolEntries()?.find((entry) => entry.generalId === initial.id)?.uniqueName
+        ).toBe(target.uniqueName);
         expect(
             await db.logEntry.count({
                 where: { meta: { path: ['ownerUserId'], equals: userId } },
@@ -518,6 +555,10 @@ integration('scenario 903 select pool through the durable turn daemon', () => {
             status: 'SUCCEEDED',
             attempts: 1,
             actorUserId: otherUserId,
+            payload: {
+                acceptedGameAt: expect.any(String),
+                acceptedGameTick: expect.any(Number),
+            },
         });
     }, 30_000);
 

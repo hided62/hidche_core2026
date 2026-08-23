@@ -1,11 +1,23 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { PERSONALITY_TRAIT_KEYS, type City, type MapDefinition, type Nation } from '@sammo-ts/logic';
+import {
+    parseScenarioGeneralPoolCandidate,
+    PERSONALITY_TRAIT_KEYS,
+    type City,
+    type MapDefinition,
+    type Nation,
+} from '@sammo-ts/logic';
 
 import { InMemoryTurnWorld } from '../src/turn/inMemoryWorld.js';
 import { createRaiseNpcNationHandler } from '../src/turn/monthlyRaiseNpcNationAction.js';
 import { InMemoryReservedTurnStore } from '../src/turn/reservedTurnStore.js';
 import { buildCommandEnv } from '../src/turn/reservedTurnCommands.js';
-import type { TurnEvent, TurnGeneral, TurnWorldSnapshot, TurnWorldState } from '../src/turn/types.js';
+import type {
+    TurnEvent,
+    TurnGeneral,
+    TurnGeneralPoolEntry,
+    TurnWorldSnapshot,
+    TurnWorldState,
+} from '../src/turn/types.js';
 
 const buildCity = (id: number, nationId: number, level = 5): City => ({
     id,
@@ -119,7 +131,13 @@ const event: TurnEvent = {
     meta: {},
 };
 
-const buildHarness = (archivedNationMaxId = 0, hiddenSeed = 'raise-npc-nation-fixture') => {
+const buildHarness = (
+    archivedNationMaxId = 0,
+    hiddenSeed = 'raise-npc-nation-fixture',
+    generalPoolEntries?: TurnGeneralPoolEntry[],
+    additionalGeneralCount = 0,
+    poolName = 'SPoolUnderU30'
+) => {
     const state: TurnWorldState = {
         id: 1,
         currentYear: 200,
@@ -132,7 +150,12 @@ const buildHarness = (archivedNationMaxId = 0, hiddenSeed = 'raise-npc-nation-fi
         scenarioConfig: {
             stat: { total: 300, min: 10, max: 100, npcTotal: 150, npcMax: 75, npcMin: 10, chiefMin: 70 },
             iconPath: '.',
-            map: {},
+            map: generalPoolEntries
+                ? {
+                      targetGeneralPool: poolName,
+                      ...(poolName === 'SPoolUnderU100' ? { centennialNpcDexTargetRatio: 0.4 } : {}),
+                  }
+                : {},
             const: {
                 retirementYear: 80,
                 availablePersonality: ['che_안전'],
@@ -143,19 +166,22 @@ const buildHarness = (archivedNationMaxId = 0, hiddenSeed = 'raise-npc-nation-fi
             environment: { mapName: 'test', unitSet: 'default' },
         },
         map,
-        generals: [buildGeneral()],
-        cities: [
-            buildCity(1, 1),
-            buildCity(2, 0),
-            buildCity(3, 0, 4),
-            buildCity(4, 0),
-            buildCity(5, 0, 4),
+        generals: [
+            buildGeneral(),
+            ...Array.from({ length: additionalGeneralCount }, (_, index) => ({
+                ...buildGeneral(),
+                id: index + 2,
+                name: `장수${index + 2}`,
+                officerLevel: 1,
+            })),
         ],
+        cities: [buildCity(1, 1), buildCity(2, 0), buildCity(3, 0, 4), buildCity(4, 0), buildCity(5, 0, 4)],
         nations: [buildNation(1)],
         troops: [],
         diplomacy: [],
         events: [event],
         initialEvents: [],
+        ...(generalPoolEntries ? { generalPoolEntries } : {}),
     };
     const world = new InMemoryTurnWorld(state, snapshot, {
         schedule: { entries: [{ startMinute: 0, tickMinutes: 10 }] },
@@ -200,6 +226,94 @@ describe('RaiseNPCNation monthly action', () => {
 
     afterEach(() => {
         vi.restoreAllMocks();
+    });
+
+    it('uses a U30 subordinate name/dex/special while preserving RaiseNPCNation random stats', async () => {
+        const info = {
+            generalName: '부장후보',
+            leadership: 99,
+            strength: 1,
+            intel: 1,
+            specialDomestic: 'che_event_징병',
+            dex: [10, 20, 30, 40, 50],
+            imgsvr: 1,
+            picture: 'subordinate.gif',
+        };
+        const entry: TurnGeneralPoolEntry = {
+            id: 41,
+            uniqueName: info.generalName,
+            ownerUserId: null,
+            generalId: null,
+            reservedUntil: null,
+            reservedUntilTick: null,
+            candidate: parseScenarioGeneralPoolCandidate({ id: 41, uniqueName: info.generalName, info }),
+        };
+        const { world, handler, environment } = buildHarness(0, 'raise-pool-fixture', [entry], 1);
+
+        await handler([], environment, event);
+
+        const subordinate = world.peekDirtyState().createdGenerals.find((general) => general.name === 'ⓤ부장후보');
+        expect(subordinate).toMatchObject({
+            name: 'ⓤ부장후보',
+            picture: 'subordinate.gif',
+            imageServer: 1,
+            role: { specialDomestic: 'che_event_징병' },
+            meta: {
+                dex1: 10,
+                dex2: 20,
+                dex3: 30,
+                dex4: 40,
+                dex5: 50,
+                scenarioGeneralPoolClaim: {
+                    poolEntryId: 41,
+                    uniqueName: '부장후보',
+                },
+            },
+        });
+        expect(subordinate?.stats).not.toEqual({ leadership: 99, strength: 1, intelligence: 1 });
+    });
+
+    it('attaches the S100 target to a type-6 subordinate without applying current growth', async () => {
+        const info = {
+            generalName: '100기건국',
+            leadership: 100,
+            strength: 80,
+            intel: 10,
+            specialDomestic: 'che_event_징병',
+            dex: [900_000, 800_000, 700_000, 600_000, 500_000],
+            imgsvr: 1,
+            picture: 'centennial-ruler.gif',
+            event100Growth: true,
+        };
+        const entry: TurnGeneralPoolEntry = {
+            id: 101,
+            uniqueName: 'A1000101',
+            ownerUserId: null,
+            generalId: null,
+            reservedUntil: null,
+            reservedUntilTick: null,
+            candidate: parseScenarioGeneralPoolCandidate({ id: 101, uniqueName: 'A1000101', info }),
+        };
+        const { world, handler, environment } = buildHarness(0, 'raise-s100-fixture', [entry], 1, 'SPoolUnderU100');
+
+        await handler([], environment, event);
+
+        const subordinate = world.peekDirtyState().createdGenerals.find((general) => general.name === 'ⓤ100기건국')!;
+        expect(subordinate.stats).not.toEqual({ leadership: 100, strength: 80, intelligence: 10 });
+        expect(subordinate.role.specialDomestic).toBeNull();
+        expect(subordinate.meta).toMatchObject({
+            dex1: 0,
+            dex2: 0,
+            dex3: 0,
+            dex4: 0,
+            dex5: 0,
+            scenarioGeneralPoolClaim: { poolEntryId: 101, uniqueName: 'A1000101' },
+            event100_allstar: {
+                targetId: 'A1000101',
+                progressMonth: -1,
+                milestone: 0,
+            },
+        });
     });
 
     it('creates only distance-qualified NPC nations and initializes their ruler and turns', async () => {
@@ -265,12 +379,7 @@ describe('RaiseNPCNation monthly action', () => {
         });
         expect(world.getCityById(5)?.nationId).toBe(0);
         expect(reservedTurns.getGeneralTurns(2)).toHaveLength(30);
-        expect(reservedTurns.peekDirtyState().nationInitializationKeys).toEqual([
-            '2:12',
-            '2:11',
-            '2:10',
-            '2:9',
-        ]);
+        expect(reservedTurns.peekDirtyState().nationInitializationKeys).toEqual(['2:12', '2:11', '2:10', '2:9']);
         expect(dirty.logs).toEqual([
             expect.objectContaining({
                 category: 'HISTORY',

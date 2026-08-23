@@ -5,6 +5,7 @@ import type {
     Nation,
     ScenarioConfig,
     ScenarioMeta,
+    ScenarioGeneralPoolCandidate,
     Troop,
     UnitSetDefinition,
     WorldSnapshot,
@@ -60,6 +61,16 @@ export interface TurnEvent {
     condition: unknown;
     action: unknown;
     meta: Record<string, unknown>;
+}
+
+export interface TurnGeneralPoolEntry {
+    id: number;
+    uniqueName: string;
+    ownerUserId: string | null;
+    generalId: number | null;
+    reservedUntil: Date | null;
+    reservedUntilTick: number | null;
+    candidate: ScenarioGeneralPoolCandidate;
 }
 
 export interface PendingNeutralAuction {
@@ -152,6 +163,7 @@ export interface TurnWorldSnapshot extends Omit<
     diplomacy: TurnDiplomacy[];
     events: TurnEvent[];
     initialEvents: TurnEvent[];
+    generalPoolEntries?: TurnGeneralPoolEntry[];
     generals: TurnGeneral[];
     cities: City[];
     nations: Nation[];

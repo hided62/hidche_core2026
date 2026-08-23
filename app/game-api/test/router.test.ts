@@ -693,6 +693,42 @@ describe('appRouter', () => {
         ).rejects.toMatchObject({ code: 'FORBIDDEN' });
     });
 
+    it('queues selection-pool reservation with the authenticated actor and server logical time', async () => {
+        const transport = new InMemoryTurnDaemonTransport();
+        const requestId = 'select-pool-reserve-http';
+        const commandRequestId = `select-pool:user-1:${requestId}:reserve`;
+        const acceptedGameAt = '2026-07-30T12:00:00.000Z';
+        const reservation = {
+            poolName: 'SPoolUnderU30',
+            hasGeneral: false,
+            validUntil: '2026-07-30T12:20:00.000Z',
+            candidates: [],
+        };
+        transport.setCommandResult(commandRequestId, {
+            type: 'selectPoolReserve',
+            ok: true,
+            reservation,
+        });
+        const state = {
+            ...buildWorldState(),
+            clockBaseTime: new Date(acceptedGameAt),
+            clockTick: 0n,
+            clockMode: 'manual',
+            clockWallAnchor: new Date(acceptedGameAt),
+        } as WorldStateRow;
+        const context = { ...buildContext({ state, transport }), requestId };
+
+        await expect(appRouter.createCaller(context).join.getSelectionPool()).resolves.toEqual(reservation);
+        expect(transport.commands.at(-1)?.command).toEqual({
+            type: 'selectPoolReserve',
+            requestId: commandRequestId,
+            userId: 'user-1',
+            seedOwnerIdentity: 'user-1',
+            acceptedGameAt,
+            acceptedGameTick: 0,
+        });
+    });
+
     it('queues turn daemon run commands', async () => {
         const transport = new InMemoryTurnDaemonTransport();
         const caller = appRouter.createCaller(buildContext({ transport }));

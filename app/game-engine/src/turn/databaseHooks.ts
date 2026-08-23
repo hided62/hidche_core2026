@@ -24,6 +24,7 @@ import {
     LogFormat,
     LogScope,
     sendMessage,
+    readScenarioGeneralPoolClaim,
     type City,
     type LogEntryDraft,
     type MessageRecordDraft,
@@ -1192,6 +1193,21 @@ export const createDatabaseTurnHooks = async (
                         WHERE status = 'OPEN'
                     `
                 );
+                await prisma.$executeRaw(
+                    GamePrisma.sql`
+                        UPDATE select_pool
+                        SET reserved_until_tick = CASE
+                                WHEN reserved_until_tick IS NULL THEN NULL
+                                ELSE reserved_until_tick + ${deltaTicks}
+                            END,
+                            reserved_until = CASE
+                                WHEN reserved_until IS NULL THEN NULL
+                                ELSE reserved_until + (${deltaSeconds} * INTERVAL '1 second')
+                            END
+                        WHERE general_id IS NULL
+                          AND (reserved_until_tick IS NOT NULL OR reserved_until IS NOT NULL)
+                    `
+                );
             }
 
             if (
@@ -1360,6 +1376,66 @@ export const createDatabaseTurnHooks = async (
                 createdDiplomacy.map((entry) => `${entry.fromNationId}:${entry.toNationId}`)
             );
 
+            // Ref first claims a select_pool row and then finalizes it with the
+            // newly inserted general ID. Core computes the turn in memory, so
+            // perform the equivalent CAS in the same fenced flush transaction.
+            // Releasing deaths first also preserves same-batch pool reuse.
+            if (deletedGenerals.length > 0) {
+                await prisma.selectPoolEntry.updateMany({
+                    where: { generalId: { in: deletedGenerals } },
+                    data: {
+                        generalId: null,
+                        ownerUserId: null,
+                        reservedUntil: null,
+                        reservedUntilTick: null,
+                    },
+                });
+            }
+            const createdGeneralPoolClaims = createdGenerals.flatMap((general) => {
+                const claim = readScenarioGeneralPoolClaim(general.meta);
+                return claim ? [{ general, claim }] : [];
+            });
+            const claimedPoolIds = new Set<number>();
+            for (const { general, claim } of createdGeneralPoolClaims) {
+                if (claimedPoolIds.has(claim.poolEntryId)) {
+                    throw new Error(`한 flush에서 select_pool 후보 ${claim.poolEntryId}를 중복 점유할 수 없습니다.`);
+                }
+                claimedPoolIds.add(claim.poolEntryId);
+                const claimedAt = new Date(claim.claimedAt);
+                const claimedAtTick = world.dateToGameTick(claimedAt);
+                if (!Number.isSafeInteger(claimedAtTick)) {
+                    throw new Error(
+                        `select_pool 후보 점유 tick이 안전한 정수 범위를 벗어났습니다: ${claim.uniqueName}`
+                    );
+                }
+                const occupied = await prisma.selectPoolEntry.updateMany({
+                    where: {
+                        id: claim.poolEntryId,
+                        uniqueName: claim.uniqueName,
+                        OR: [
+                            { generalId: general.id },
+                            {
+                                generalId: null,
+                                OR: [
+                                    { ownerUserId: null, reservedUntil: null, reservedUntilTick: null },
+                                    { reservedUntilTick: { lt: BigInt(claimedAtTick) } },
+                                    { reservedUntilTick: null, reservedUntil: { lt: claimedAt } },
+                                ],
+                            },
+                        ],
+                    },
+                    data: {
+                        generalId: general.id,
+                        ownerUserId: null,
+                        reservedUntil: null,
+                        reservedUntilTick: null,
+                    },
+                });
+                if (occupied.count !== 1) {
+                    throw new Error(`select_pool 후보를 점유하지 못했습니다: ${claim.uniqueName}`);
+                }
+            }
+
             if (createdGenerals.length > 0) {
                 await prisma.general.createMany({
                     data: createdGenerals.map(buildGeneralCreate),
@@ -1426,6 +1502,7 @@ export const createDatabaseTurnHooks = async (
                         generalId: null,
                         ownerUserId: null,
                         reservedUntil: null,
+                        reservedUntilTick: null,
                     },
                 });
                 if (prisma.generalTurnRevision) {

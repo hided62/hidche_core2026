@@ -54,6 +54,7 @@ import {
 } from './scenarioStaticEvents.js';
 import {
     createGeneralFromSelectionPool,
+    reserveSelectionPool,
     reselectGeneralFromSelectionPool,
     SelectPoolError,
 } from './selectPoolService.js';
@@ -158,6 +159,7 @@ const resolveCommandAcceptedAt = async (
                 | 'ensureDieOnPrestartStatus'
                 | 'joinCreateGeneral'
                 | 'npcPossessGeneral'
+                | 'selectPoolReserve'
                 | 'selectPoolCreate'
                 | 'selectPoolReselect'
                 | 'adjustGeneralIcon';
@@ -181,6 +183,21 @@ const resolveCommandAcceptedAt = async (
         throw new Error(`ENGINE input event type does not match ${command.type}.`);
     }
     return event.createdAt;
+};
+
+const resolveSelectionCommandAcceptedAt = async (
+    db: DatabaseClient,
+    world: InMemoryTurnWorld,
+    command: Extract<TurnDaemonCommand, { type: 'selectPoolReserve' | 'selectPoolCreate' | 'selectPoolReselect' }>
+): Promise<Date> => {
+    const operationalAcceptedAt = await resolveCommandAcceptedAt(db, command);
+    if (command.acceptedGameTick !== undefined) {
+        return world.gameTickToDate(command.acceptedGameTick);
+    }
+    if (command.acceptedGameAt !== undefined) {
+        return new Date(command.acceptedGameAt);
+    }
+    return world.getGameNow(operationalAcceptedAt);
 };
 
 const resolveOperationalAcceptedAt = async (
@@ -347,8 +364,7 @@ async function handleSelectPoolCreate(
     if (!worldState) {
         throw new Error('Selection-pool world state is missing.');
     }
-    const operationalAcceptedAt = await resolveCommandAcceptedAt(db, command);
-    const acceptedAt = ctx.world.getGameNow(operationalAcceptedAt);
+    const acceptedAt = await resolveSelectionCommandAcceptedAt(db, ctx.world, command);
     try {
         return {
             type: 'selectPoolCreate',
@@ -380,6 +396,45 @@ async function handleSelectPoolCreate(
     }
 }
 
+async function handleSelectPoolReserve(
+    ctx: CommandHandlerContext,
+    command: Extract<TurnDaemonCommand, { type: 'selectPoolReserve' }>
+): Promise<TurnDaemonCommandResult> {
+    const db = requireCommandDatabase(ctx);
+    const worldState = await db.worldState.findUnique({
+        where: { id: ctx.world.getState().id },
+    });
+    if (!worldState) {
+        throw new Error('Selection-pool world state is missing.');
+    }
+    const acceptedAt = await resolveSelectionCommandAcceptedAt(db, ctx.world, command);
+    try {
+        return {
+            type: 'selectPoolReserve',
+            ok: true,
+            reservation: await reserveSelectionPool({
+                db,
+                world: ctx.world,
+                worldState,
+                userId: command.userId,
+                seedOwnerIdentity: command.seedOwnerIdentity,
+                now: acceptedAt,
+                ...(command.acceptedGameTick === undefined ? {} : { acceptedGameTick: command.acceptedGameTick }),
+            }),
+        };
+    } catch (error) {
+        if (error instanceof SelectPoolError) {
+            return {
+                type: 'selectPoolReserve',
+                ok: false,
+                code: error.code,
+                reason: error.message,
+            };
+        }
+        throw error;
+    }
+}
+
 async function handleSelectPoolReselect(
     ctx: CommandHandlerContext,
     command: Extract<TurnDaemonCommand, { type: 'selectPoolReselect' }>
@@ -391,8 +446,7 @@ async function handleSelectPoolReselect(
     if (!worldState) {
         throw new Error('Selection-pool world state is missing.');
     }
-    const operationalAcceptedAt = await resolveCommandAcceptedAt(db, command);
-    const acceptedAt = ctx.world.getGameNow(operationalAcceptedAt);
+    const acceptedAt = await resolveSelectionCommandAcceptedAt(db, ctx.world, command);
     try {
         return {
             type: 'selectPoolReselect',
@@ -420,7 +474,10 @@ async function handleSelectPoolReselect(
 }
 
 interface AuctionFinalizer {
-    finalize(auctionId: number, db?: GamePrisma.TransactionClient): Promise<TurnDaemonCommandResult>;
+    finalize(
+        command: Extract<TurnDaemonCommand, { type: 'auctionFinalize' }>,
+        db?: GamePrisma.TransactionClient
+    ): Promise<TurnDaemonCommandResult>;
 }
 
 interface AuctionBidder {
@@ -1780,7 +1837,7 @@ async function handleAuctionFinalize(
             reason: '경매 확정기가 준비되지 않았습니다.',
         };
     }
-    return ctx.auctionFinalizer.finalize(command.auctionId, ctx.commandDb);
+    return ctx.auctionFinalizer.finalize(command, ctx.commandDb);
 }
 
 async function handleAuctionOpen(
@@ -2277,48 +2334,56 @@ async function handleTournamentBettingPayout(
         };
     }
 
+    const tournamentName = ['전력전', '통솔전', '일기토', '설전'][command.tournamentType ?? -1] ?? '대회';
+    const payoutsByGeneral = new Map<number, number>();
+    for (const payout of command.payouts) {
+        if (
+            !payout ||
+            typeof payout.generalId !== 'number' ||
+            typeof payout.amount !== 'number' ||
+            payout.amount <= 0
+        ) {
+            continue;
+        }
+        payoutsByGeneral.set(payout.generalId, (payoutsByGeneral.get(payout.generalId) ?? 0) + payout.amount);
+    }
+
     let processed = 0;
     let missing = 0;
     let totalPayout = 0;
-    const metaDeltas = new Map<number, { betwin: number; betwingold: number }>();
-
-    for (const payout of command.payouts) {
-        if (!payout || typeof payout.generalId !== 'number' || typeof payout.amount !== 'number') {
-            continue;
-        }
-        if (payout.amount <= 0) {
-            continue;
-        }
-        const general = world.getGeneralById(payout.generalId);
+    for (const [generalId, amount] of payoutsByGeneral) {
+        const general = world.getGeneralById(generalId);
         if (!general) {
             missing += 1;
             continue;
         }
-        world.updateGeneral(payout.generalId, {
-            gold: general.gold + payout.amount,
+        const shouldRecordRank =
+            general.npcState === 0 ||
+            (general.npcState === 1 &&
+                typeof general.meta.betgold === 'number' &&
+                Number.isFinite(general.meta.betgold) &&
+                general.meta.betgold > 0);
+        const nextMeta = { ...general.meta } as TurnGeneral['meta'];
+        if (shouldRecordRank) {
+            const currentBetwin = typeof nextMeta.betwin === 'number' ? Number(nextMeta.betwin) : 0;
+            const currentBetwingold = typeof nextMeta.betwingold === 'number' ? Number(nextMeta.betwingold) : 0;
+            nextMeta.betwin = currentBetwin + 1;
+            nextMeta.betwingold = currentBetwingold + amount;
+        }
+        world.updateGeneral(generalId, {
+            gold: general.gold + amount,
+            ...(shouldRecordRank ? { meta: nextMeta } : {}),
         });
         processed += 1;
-        totalPayout += payout.amount;
-        const currentDelta = metaDeltas.get(payout.generalId) ?? { betwin: 0, betwingold: 0 };
-        metaDeltas.set(payout.generalId, {
-            betwin: currentDelta.betwin + 1,
-            betwingold: currentDelta.betwingold + payout.amount,
+        totalPayout += amount;
+        world.pushLog({
+            scope: LogScope.GENERAL,
+            category: LogCategory.ACTION,
+            format: LogFormat.EVENT_PLAIN,
+            generalId,
+            text: `<C>${tournamentName}</>의 베팅 당첨 보상으로 <C>${amount.toLocaleString('ko-KR')}</>의 <S>금</> 획득!`,
+            meta: {},
         });
-    }
-
-    for (const [generalId, delta] of metaDeltas) {
-        const general = world.getGeneralById(generalId);
-        if (!general) {
-            continue;
-        }
-        const nextMeta = { ...general.meta } as TurnGeneral['meta'];
-        const betwinKey = 'betwin';
-        const betwingoldKey = 'betwingold';
-        const currentBetwin = typeof nextMeta[betwinKey] === 'number' ? Number(nextMeta[betwinKey]) : 0;
-        const currentBetwingold = typeof nextMeta[betwingoldKey] === 'number' ? Number(nextMeta[betwingoldKey]) : 0;
-        nextMeta[betwinKey] = currentBetwin + delta.betwin;
-        nextMeta[betwingoldKey] = currentBetwingold + delta.betwingold;
-        world.updateGeneral(generalId, { meta: nextMeta });
     }
     return {
         type: 'tournamentBettingPayout',
@@ -2346,7 +2411,147 @@ async function handleTournamentReward(
     return ctx.tournamentRewardFinalizer.finalize(command, ctx.commandDb);
 }
 
-// 설문 보상은 API에서 전달된 RNG 결과를 재검증한 뒤 월드에 반영한다.
+type VoteSelectionPersistenceResult = 'inserted' | 'existing-match' | 'existing-mismatch' | 'missing';
+
+const normalizePersistedVoteSelection = (value: unknown): number[] | null => {
+    let parsed = value;
+    if (typeof value === 'string') {
+        try {
+            parsed = JSON.parse(value) as unknown;
+        } catch {
+            return null;
+        }
+    }
+    if (!Array.isArray(parsed)) return null;
+    if (parsed.some((entry) => typeof entry !== 'number' || !Number.isInteger(entry))) return null;
+    const normalized = [...parsed].sort((left, right) => left - right);
+    return new Set(normalized).size === normalized.length ? normalized : null;
+};
+
+const voteSelectionsMatch = (stored: unknown, submitted: number[]): boolean => {
+    const normalized = normalizePersistedVoteSelection(stored);
+    return (
+        normalized !== null &&
+        normalized.length === submitted.length &&
+        normalized.every((value, index) => value === submitted[index])
+    );
+};
+
+const readExistingVoteSelection = async (
+    ctx: CommandHandlerContext,
+    command: Extract<TurnDaemonCommand, { type: 'voteReward' }>,
+    selection: number[]
+): Promise<Exclude<VoteSelectionPersistenceResult, 'inserted'>> => {
+    if (!ctx.commandDb) return 'missing';
+    const rows = await ctx.commandDb.$queryRaw<Array<{ selection: unknown }>>(GamePrisma.sql`
+        SELECT selection
+        FROM vote
+        WHERE vote_id = ${command.voteId}
+          AND general_id = ${command.generalId}
+        FOR UPDATE
+    `);
+    if (!rows[0]) return 'missing';
+    return voteSelectionsMatch(rows[0].selection, selection) ? 'existing-match' : 'existing-mismatch';
+};
+
+const insertVoteSelection = async (
+    ctx: CommandHandlerContext,
+    command: Extract<TurnDaemonCommand, { type: 'voteReward' }>,
+    general: TurnGeneral,
+    selection: number[]
+): Promise<VoteSelectionPersistenceResult> => {
+    if (!ctx.commandDb) {
+        return 'missing';
+    }
+    const rows = await ctx.commandDb.$queryRaw<Array<{ id: number }>>(GamePrisma.sql`
+        INSERT INTO vote (vote_id, general_id, nation_id, selection)
+        SELECT poll.id,
+            ${general.id},
+            ${general.nationId},
+            CAST(${JSON.stringify(selection)} AS jsonb)
+        FROM vote_poll poll
+        WHERE poll.id = ${command.voteId}
+        ON CONFLICT (vote_id, general_id) DO NOTHING
+        RETURNING id
+    `);
+    if (rows[0]?.id) return 'inserted';
+    return readExistingVoteSelection(ctx, command, selection);
+};
+
+type VotePollValidationRow = {
+    options: unknown;
+    multipleOptions: number;
+    endAt: Date | null;
+    endTick: bigint | number | string | null;
+    closedAt: Date | null;
+};
+
+export const hasVotePollDeadlinePassed = (
+    poll: Pick<VotePollValidationRow, 'endAt' | 'endTick' | 'closedAt'>,
+    acceptedGameAt: Date,
+    acceptedGameTick: number
+): boolean => {
+    const endTick =
+        poll.endTick === null ? null : typeof poll.endTick === 'bigint' ? poll.endTick : BigInt(poll.endTick);
+    return (
+        poll.closedAt !== null ||
+        (endTick !== null
+            ? endTick < BigInt(acceptedGameTick)
+            : Boolean(poll.endAt && poll.endAt.getTime() < acceptedGameAt.getTime()))
+    );
+};
+
+const parseVoteOptionCount = (value: unknown): number => {
+    if (Array.isArray(value)) {
+        return value.filter((entry) => typeof entry === 'string').length;
+    }
+    if (typeof value !== 'string') return 0;
+    try {
+        const parsed = JSON.parse(value) as unknown;
+        return Array.isArray(parsed) ? parsed.filter((entry) => typeof entry === 'string').length : 0;
+    } catch {
+        return 0;
+    }
+};
+
+const validateVoteSelectionInTransaction = async (
+    ctx: CommandHandlerContext,
+    command: Extract<TurnDaemonCommand, { type: 'voteReward' }>,
+    selection: number[]
+): Promise<string | null> => {
+    if (!ctx.commandDb) return '설문 응답 트랜잭션이 준비되지 않았습니다.';
+    const rows = await ctx.commandDb.$queryRaw<VotePollValidationRow[]>(GamePrisma.sql`
+        SELECT options,
+               multiple_options AS "multipleOptions",
+               end_at AS "endAt",
+               end_tick AS "endTick",
+               closed_at AS "closedAt"
+        FROM vote_poll
+        WHERE id = ${command.voteId}
+        FOR UPDATE
+    `);
+    const poll = rows[0];
+    if (!poll) return '설문조사가 없습니다.';
+
+    const processingNow = ctx.world.getGameNow(new Date());
+    const acceptedGameTick = command.acceptedGameTick ?? ctx.world.dateToGameTick(processingNow);
+    const acceptedGameAt =
+        command.acceptedGameTick === undefined ? processingNow : ctx.world.gameTickToDate(command.acceptedGameTick);
+    if (hasVotePollDeadlinePassed(poll, acceptedGameAt, acceptedGameTick)) {
+        return '설문조사가 종료되었습니다.';
+    }
+
+    const optionCount = parseVoteOptionCount(poll.options);
+    if (selection.some((value) => value < 0 || value >= optionCount)) {
+        return '선택한 항목이 없습니다.';
+    }
+    if (poll.multipleOptions >= 1 && selection.length > poll.multipleOptions) {
+        return '선택한 항목이 너무 많습니다.';
+    }
+    return null;
+};
+
+// 설문 응답과 보상은 같은 ENGINE mutation transaction에서 확정한다.
 async function handleVoteReward(
     ctx: CommandHandlerContext,
     command: Extract<TurnDaemonCommand, { type: 'voteReward' }>
@@ -2367,7 +2572,8 @@ async function handleVoteReward(
     const metaRecord = asRecord(baseMeta);
     const existingRewards = asRecord(metaRecord.voteRewards);
     const rewardKey = String(command.voteId);
-    if (Object.prototype.hasOwnProperty.call(existingRewards, rewardKey)) {
+    const hasExistingReward = Object.prototype.hasOwnProperty.call(existingRewards, rewardKey);
+    const buildAlreadyAppliedResult = (): TurnDaemonCommandResult => {
         const existingValue = existingRewards[rewardKey];
         const existingEntry = asRecord(existingValue);
         const existingItemKey = typeof existingEntry.itemKey === 'string' ? existingEntry.itemKey : null;
@@ -2381,6 +2587,71 @@ async function handleVoteReward(
             itemKey: existingItemKey ?? null,
             alreadyApplied: true,
         };
+    };
+
+    const sortedSelection = [...command.selection].sort((a, b) => a - b);
+    if (
+        sortedSelection.length === 0 ||
+        sortedSelection.some((value) => !Number.isInteger(value)) ||
+        new Set(sortedSelection).size !== sortedSelection.length
+    ) {
+        return {
+            type: 'voteReward',
+            ok: false,
+            voteId: command.voteId,
+            generalId: command.generalId,
+            reason: '선택한 항목이 올바르지 않습니다.',
+        };
+    }
+    if (!ctx.commandDb) {
+        return {
+            type: 'voteReward',
+            ok: false,
+            voteId: command.voteId,
+            generalId: command.generalId,
+            reason: '설문 응답 트랜잭션이 준비되지 않았습니다.',
+        };
+    }
+    if (hasExistingReward) {
+        // The reward marker is the idempotency authority. Do not invent a vote
+        // row from a later retry when the original selection is unavailable.
+        return buildAlreadyAppliedResult();
+    }
+
+    const selectionError = await validateVoteSelectionInTransaction(ctx, command, sortedSelection);
+    let votePersistence: VoteSelectionPersistenceResult | null = null;
+    if (selectionError === '설문조사가 종료되었습니다.') {
+        // Before vote+reward became one ENGINE transaction, the API could
+        // persist the vote and fail before the reward command committed. A
+        // matching locked row is sufficient evidence to repair that partial
+        // even when the poll has since closed.
+        votePersistence = await readExistingVoteSelection(ctx, command, sortedSelection);
+        if (votePersistence === 'existing-mismatch') {
+            return {
+                type: 'voteReward',
+                ok: false,
+                voteId: command.voteId,
+                generalId: command.generalId,
+                reason: '이미 설문조사를 완료하였습니다.',
+            };
+        }
+        if (votePersistence !== 'existing-match') {
+            return {
+                type: 'voteReward',
+                ok: false,
+                voteId: command.voteId,
+                generalId: command.generalId,
+                reason: selectionError,
+            };
+        }
+    } else if (selectionError) {
+        return {
+            type: 'voteReward',
+            ok: false,
+            voteId: command.voteId,
+            generalId: command.generalId,
+            reason: selectionError,
+        };
     }
 
     const worldState = world.getState();
@@ -2391,9 +2662,20 @@ async function handleVoteReward(
     const initMonth = readMetaNumber(worldMeta, 'initMonth', 1);
     const scenarioId = readMetaNumber(worldMeta, 'scenarioId', 0);
     const hiddenSeed = worldMeta.hiddenSeed ?? worldMeta.seed ?? worldState.id;
+    const configConst = asRecord(world.getScenarioConfig().const);
+    const configuredDevelCost = readMetaNumber(
+        configConst,
+        'develCost',
+        readMetaNumber(configConst, 'develcost', readMetaNumber(configConst, 'develrate', 0))
+    );
+    const voteReward =
+        readMetaNumber(
+            worldMeta,
+            'develcost',
+            readMetaNumber(worldMeta, 'develCost', readMetaNumber(worldMeta, 'develrate', configuredDevelCost))
+        ) * 5;
 
     const itemRegistry = await getItemRegistry();
-    const configConst = asRecord(world.getScenarioConfig().const);
     const uniqueConfig = resolveUniqueConfig(configConst);
     const generals = world.listGenerals();
     const occupiedUniqueCounts = countOccupiedUniqueItems(
@@ -2438,34 +2720,27 @@ async function handleVoteReward(
         acquireType: '설문조사',
     });
 
-    const expectedUnique = command.unique?.expected ?? false;
-    const expectedItemKey = command.unique?.itemKey ?? null;
-    if (expectedUnique !== Boolean(itemKey)) {
+    const awardedItemModule = itemKey ? itemRegistry.get(itemKey) : null;
+    if (itemKey && !awardedItemModule) {
         return {
             type: 'voteReward',
             ok: false,
             voteId: command.voteId,
             generalId: command.generalId,
-            reason: '유니크 판정이 일치하지 않습니다.',
+            reason: '유니크 아이템을 찾을 수 없습니다.',
         };
     }
-    if (expectedUnique) {
-        if (!expectedItemKey || !itemKey || expectedItemKey !== itemKey) {
-            return {
-                type: 'voteReward',
-                ok: false,
-                voteId: command.voteId,
-                generalId: command.generalId,
-                reason: '유니크 판정이 일치하지 않습니다.',
-            };
-        }
-    } else if (itemKey) {
+
+    if (votePersistence === null) {
+        votePersistence = await insertVoteSelection(ctx, command, general, sortedSelection);
+    }
+    if (votePersistence !== 'inserted' && votePersistence !== 'existing-match') {
         return {
             type: 'voteReward',
             ok: false,
             voteId: command.voteId,
             generalId: command.generalId,
-            reason: '유니크 판정이 일치하지 않습니다.',
+            reason: '이미 설문조사를 완료하였습니다.',
         };
     }
 
@@ -2488,36 +2763,26 @@ async function handleVoteReward(
     };
 
     const patch: Partial<TurnGeneral> = {
-        gold: general.gold + command.goldReward,
+        gold: general.gold + voteReward,
         meta: nextMeta,
     };
 
-    if (itemKey) {
-        const itemModule = itemRegistry.get(itemKey);
-        if (!itemModule) {
-            return {
-                type: 'voteReward',
-                ok: false,
-                voteId: command.voteId,
-                generalId: command.generalId,
-                reason: '유니크 아이템을 찾을 수 없습니다.',
-            };
-        }
+    if (itemKey && awardedItemModule) {
         const nextGeneral = {
             ...general,
             role: { ...general.role, items: { ...general.role.items } },
             itemInventory: cloneItemInventory(ensureItemInventory(general)),
         };
-        equipNewItem(nextGeneral, itemModule.slot, itemKey, {
-            ...(itemModule.initialCharges === undefined ? {} : { charges: itemModule.initialCharges }),
+        equipNewItem(nextGeneral, awardedItemModule.slot, itemKey, {
+            ...(awardedItemModule.initialCharges === undefined ? {} : { charges: awardedItemModule.initialCharges }),
         });
         patch.role = nextGeneral.role;
         patch.itemInventory = nextGeneral.itemInventory;
 
         const nationName = world.getNationById(general.nationId)?.name ?? '재야';
         const generalName = general.name;
-        const itemName = itemModule.name;
-        const itemRawName = itemModule.rawName;
+        const itemName = awardedItemModule.name;
+        const itemRawName = awardedItemModule.rawName;
         const josaYi = JosaUtil.pick(generalName, '이');
         const josaUl = JosaUtil.pick(itemRawName, '을');
 
@@ -2677,6 +2942,8 @@ export const createTurnDaemonCommandHandler = (options: {
             handleJoinCreateGeneral(ctx, command as Extract<TurnDaemonCommand, { type: 'joinCreateGeneral' }>),
         npcPossessGeneral: (command) =>
             handleNpcPossessGeneral(ctx, command as Extract<TurnDaemonCommand, { type: 'npcPossessGeneral' }>),
+        selectPoolReserve: (command) =>
+            handleSelectPoolReserve(ctx, command as Extract<TurnDaemonCommand, { type: 'selectPoolReserve' }>),
         selectPoolCreate: (command) =>
             handleSelectPoolCreate(ctx, command as Extract<TurnDaemonCommand, { type: 'selectPoolCreate' }>),
         selectPoolReselect: (command) =>

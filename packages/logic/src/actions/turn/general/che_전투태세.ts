@@ -68,7 +68,7 @@ export class ActionDefinition<
                         ? (view.get({ kind: 'nation', id: ctx.nationId }) as Nation | null)
                         : null;
                 const crew = typeof general?.crew === 'number' ? general.crew : 0;
-                const techCost = getTechCost(readNationTech(nation));
+                const techCost = getTechCost(readNationTech(nation), this.env.maxTechLevel);
                 return Math.round((crew / 100) * 3 * techCost);
             }, nationRequirement),
             reqGeneralRice(() => 0),

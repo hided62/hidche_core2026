@@ -90,7 +90,7 @@ const sourceEvent: TurnEvent = {
     meta: {},
 };
 
-const buildWorld = () => {
+const buildWorld = (options: { promotedNeutral?: boolean; generals?: TurnGeneral[]; nations?: Nation[] } = {}) => {
     const state: TurnWorldState = {
         id: 1,
         currentYear: 200,
@@ -111,9 +111,13 @@ const buildWorld = () => {
         {
             scenarioConfig,
             map: { id: 'test', name: 'test', cities: [] },
-            generals: [buildGeneral(1), buildGeneral(2)],
+            generals: options.generals ?? [buildGeneral(1), buildGeneral(2)],
             cities: [buildCity(1), buildCity(2)],
-            nations: [buildNation(1, 100), buildNation(2, 300)],
+            nations: options.nations ?? [
+                ...(options.promotedNeutral ? [{ ...buildNation(0, 0), name: '재야', level: 1 }] : []),
+                buildNation(1, 100),
+                buildNation(2, 300),
+            ],
             troops: [],
             diplomacy: [],
             events: [sourceEvent],
@@ -146,25 +150,18 @@ describe('nation betting monthly actions', () => {
             closeYearMonth: 2_424,
             bonusPoint: 500,
         });
-        expect(dirty.pendingNationBettingOpens[0]?.candidates.map((candidate) => candidate.aux.nation)).toEqual([
-            2, 1,
-        ]);
+        expect(dirty.pendingNationBettingOpens[0]?.candidates.map((candidate) => candidate.aux.nation)).toEqual([2, 1]);
         expect(dirty.createdEvents).toEqual([
             expect.objectContaining({
                 targetCode: 'DESTROY_NATION',
                 priority: 1_000,
                 condition: ['RemainNation', '<=', 1],
-                action: [
-                    ['FinishNationBetting', 5],
-                    ['DeleteEvent'],
-                ],
+                action: [['FinishNationBetting', 5], ['DeleteEvent']],
             }),
         ]);
         expect(dirty.logs).toHaveLength(1);
         expect(dirty.messages).toHaveLength(2);
-        expect(dirty.messages[0]?.text).toBe(
-            '새로운 천통국 내기가 열렸습니다. 천통국 베팅란을 확인해주세요.'
-        );
+        expect(dirty.messages[0]?.text).toBe('새로운 천통국 내기가 열렸습니다. 천통국 베팅란을 확인해주세요.');
 
         await createFinishNationBettingHandler({ getWorld: () => world })([5], environment, sourceEvent);
         expect(world.peekDirtyState().pendingNationBettingFinishes).toEqual([
@@ -176,5 +173,56 @@ describe('nation betting monthly actions', () => {
                 turnTime: new Date('0200-01-01T00:00:00.000Z'),
             },
         ]);
+    });
+
+    it('never treats the synthetic neutral row as a nation-betting winner', async () => {
+        const world = buildWorld({ promotedNeutral: true });
+        const environment = {
+            year: 200,
+            month: 1,
+            startyear: 190,
+            currentEventID: 7,
+            turnTime: new Date('0200-01-01T00:00:00.000Z'),
+        };
+
+        await createFinishNationBettingHandler({ getWorld: () => world })([5], environment, sourceEvent);
+
+        expect(world.peekDirtyState().pendingNationBettingFinishes).toEqual([
+            expect.objectContaining({ winnerNationIds: [1, 2] }),
+        ]);
+    });
+
+    it('uses stored gennum and excludes npc state 5 from the fallback candidate count', async () => {
+        const nationOne = buildNation(1, 100);
+        nationOne.meta = { ...nationOne.meta, gennum: 0 };
+        const nationTwo = buildNation(2, 300);
+        const nationTwoMeta = { ...nationTwo.meta };
+        delete nationTwoMeta.gennum;
+        nationTwo.meta = nationTwoMeta;
+        const npcFiveNationOne = { ...buildGeneral(3), nationId: 1, npcState: 5 };
+        const npcFiveNationTwo = { ...buildGeneral(4), nationId: 2, npcState: 5 };
+        const world = buildWorld({
+            generals: [buildGeneral(1), buildGeneral(2), npcFiveNationOne, npcFiveNationTwo],
+            nations: [nationOne, nationTwo],
+        });
+        const environment = {
+            year: 200,
+            month: 1,
+            startyear: 190,
+            currentEventID: 7,
+            turnTime: new Date('0200-01-01T00:00:00.000Z'),
+        };
+
+        await createOpenNationBettingHandler({ getWorld: () => world })([1, 500], environment, sourceEvent);
+
+        const candidates = world.peekDirtyState().pendingNationBettingOpens[0]?.candidates;
+        expect(candidates?.find((candidate) => candidate.aux.nation === 1)).toMatchObject({
+            info: '국력: 100<br>장수 수: 0<br>도시 수: 1',
+            aux: { gennum: 0 },
+        });
+        expect(candidates?.find((candidate) => candidate.aux.nation === 2)).toMatchObject({
+            info: '국력: 300<br>장수 수: 1<br>도시 수: 1',
+            aux: { gennum: 1 },
+        });
     });
 });

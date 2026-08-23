@@ -1,10 +1,7 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
-import {
-    createGamePostgresConnector,
-    type GamePrisma,
-    type GamePrismaClient,
-} from '@sammo-ts/infra';
+import { createGamePostgresConnector, type GamePrisma, type GamePrismaClient } from '@sammo-ts/infra';
+import { buildScenarioGeneralPoolClaimMeta } from '@sammo-ts/logic';
 
 import { createDatabaseTurnHooks } from '../src/turn/databaseHooks.js';
 import { InMemoryTurnWorld } from '../src/turn/inMemoryWorld.js';
@@ -13,6 +10,10 @@ import { loadTurnWorldFromDatabase } from '../src/turn/worldLoader.js';
 const databaseUrl = process.env.SELECT_POOL_DATABASE_URL;
 const integration = describe.skipIf(!databaseUrl);
 const generalId = 990_904;
+const claimedGeneralId = 990_905;
+const conflictedGeneralId = 990_906;
+const protectedGeneralId = 990_907;
+const laterGeneralId = 990_908;
 const cityId = 990_904;
 const scenarioCode = 'select-pool-release-integration';
 
@@ -36,9 +37,23 @@ integration('select pool release during general deletion', () => {
 
         await db.$executeRawUnsafe('DROP TABLE IF EXISTS "select_pool_delete_blocker"');
         await db.selectPoolEntry.deleteMany({
-            where: { uniqueName: 'release-candidate' },
+            where: {
+                uniqueName: {
+                    in: [
+                        'release-candidate',
+                        'claim-candidate',
+                        'conflict-candidate',
+                        'early-protected-candidate',
+                        'later-free-candidate',
+                    ],
+                },
+            },
         });
-        await db.general.deleteMany({ where: { id: generalId } });
+        await db.general.deleteMany({
+            where: {
+                id: { in: [generalId, claimedGeneralId, conflictedGeneralId, protectedGeneralId, laterGeneralId] },
+            },
+        });
         await db.city.deleteMany({ where: { id: cityId } });
         await db.worldState.deleteMany({ where: { scenarioCode } });
 
@@ -154,6 +169,25 @@ integration('select pool release during general deletion', () => {
                 } as GamePrisma.InputJsonValue,
             },
         });
+        await db.selectPoolEntry.createMany({
+            data: ['claim-candidate', 'conflict-candidate'].map((uniqueName) => ({
+                uniqueName,
+                ownerUserId: null,
+                generalId: null,
+                reservedUntil: null,
+                info: {
+                    uniqueName,
+                    generalName: uniqueName === 'claim-candidate' ? '점유후보' : '충돌후보',
+                    leadership: 70,
+                    strength: 80,
+                    intel: 10,
+                    specialDomestic: 'che_event_징병',
+                    dex: [10, 20, 30, 40, 50],
+                    imgsvr: 0,
+                    picture: 'default.jpg',
+                } as GamePrisma.InputJsonValue,
+            })),
+        });
     });
 
     afterAll(async () => {
@@ -163,9 +197,23 @@ integration('select pool release during general deletion', () => {
         }
         await db.$executeRawUnsafe('DROP TABLE IF EXISTS "select_pool_delete_blocker"');
         await db.selectPoolEntry.deleteMany({
-            where: { uniqueName: 'release-candidate' },
+            where: {
+                uniqueName: {
+                    in: [
+                        'release-candidate',
+                        'claim-candidate',
+                        'conflict-candidate',
+                        'early-protected-candidate',
+                        'later-free-candidate',
+                    ],
+                },
+            },
         });
-        await db.general.deleteMany({ where: { id: generalId } });
+        await db.general.deleteMany({
+            where: {
+                id: { in: [generalId, claimedGeneralId, conflictedGeneralId, protectedGeneralId, laterGeneralId] },
+            },
+        });
         await db.city.deleteMany({ where: { id: cityId } });
         await db.worldState.deleteMany({ where: { scenarioCode } });
         await closeDb?.();
@@ -201,12 +249,220 @@ integration('select pool release during general deletion', () => {
             special2Code: 'che_무쌍',
         });
         const reloaded = await loadTurnWorldFromDatabase({ databaseUrl: databaseUrl! });
-        expect(
-            reloaded.snapshot.generals.find((general) => general.id === generalId)?.role
-        ).toMatchObject({
+        expect(reloaded.snapshot.generals.find((general) => general.id === generalId)?.role).toMatchObject({
             specialDomestic: 'che_event_신산',
             specialWar: 'che_무쌍',
         });
+    });
+
+    it('claims a pool row in the same fenced transaction that creates the NPC', async () => {
+        const loaded = await loadTurnWorldFromDatabase({ databaseUrl: databaseUrl! });
+        const world = new InMemoryTurnWorld(loaded.state, loaded.snapshot, {
+            schedule: { entries: [{ startMinute: 0, tickMinutes: 5 }] },
+        });
+        const candidate = world
+            .listGeneralPoolCandidates(loaded.state.lastTurnTime)
+            ?.find((entry) => entry.uniqueName === 'claim-candidate');
+        expect(candidate).toBeDefined();
+        const template = world.getGeneralById(generalId)!;
+        expect(
+            world.addGeneral({
+                ...structuredClone(template),
+                id: claimedGeneralId,
+                userId: null,
+                name: 'ⓜ점유후보',
+                npcState: 3,
+                officerLevel: 0,
+                meta: {
+                    ...template.meta,
+                    ...buildScenarioGeneralPoolClaimMeta(candidate!, loaded.state.lastTurnTime),
+                },
+            })
+        ).toBe(true);
+
+        const hooks = await createDatabaseTurnHooks(databaseUrl!, world);
+        try {
+            await hooks.hooks.flushChanges?.({
+                lastTurnTime: loaded.state.lastTurnTime.toISOString(),
+                processedGenerals: 0,
+                processedTurns: 0,
+                durationMs: 0,
+                partial: false,
+            });
+        } finally {
+            await hooks.close();
+        }
+
+        await expect(db.general.findUnique({ where: { id: claimedGeneralId } })).resolves.not.toBeNull();
+        await expect(
+            db.selectPoolEntry.findUniqueOrThrow({ where: { uniqueName: 'claim-candidate' } })
+        ).resolves.toMatchObject({
+            generalId: claimedGeneralId,
+            ownerUserId: null,
+            reservedUntil: null,
+            reservedUntilTick: null,
+        });
+    });
+
+    it('rolls back the NPC and pool mutation when a concurrent user reservation wins', async () => {
+        const loaded = await loadTurnWorldFromDatabase({ databaseUrl: databaseUrl! });
+        const world = new InMemoryTurnWorld(loaded.state, loaded.snapshot, {
+            schedule: { entries: [{ startMinute: 0, tickMinutes: 5 }] },
+        });
+        const candidate = world
+            .listGeneralPoolCandidates(loaded.state.lastTurnTime)
+            ?.find((entry) => entry.uniqueName === 'conflict-candidate');
+        expect(candidate).toBeDefined();
+        const template = world.getGeneralById(generalId)!;
+        expect(
+            world.addGeneral({
+                ...structuredClone(template),
+                id: conflictedGeneralId,
+                userId: null,
+                name: 'ⓜ충돌후보',
+                npcState: 3,
+                officerLevel: 0,
+                meta: {
+                    ...template.meta,
+                    ...buildScenarioGeneralPoolClaimMeta(candidate!, loaded.state.lastTurnTime),
+                },
+            })
+        ).toBe(true);
+        const reservedUntil = new Date(loaded.state.lastTurnTime.getTime() + 60_000);
+        await db.selectPoolEntry.update({
+            where: { uniqueName: 'conflict-candidate' },
+            data: { ownerUserId: 'concurrent-user', reservedUntil },
+        });
+
+        const hooks = await createDatabaseTurnHooks(databaseUrl!, world);
+        try {
+            await expect(
+                hooks.hooks.flushChanges?.({
+                    lastTurnTime: loaded.state.lastTurnTime.toISOString(),
+                    processedGenerals: 0,
+                    processedTurns: 0,
+                    durationMs: 0,
+                    partial: false,
+                })
+            ).rejects.toThrow('select_pool 후보를 점유하지 못했습니다: conflict-candidate');
+        } finally {
+            await hooks.close();
+        }
+
+        await expect(db.general.findUnique({ where: { id: conflictedGeneralId } })).resolves.toBeNull();
+        await expect(
+            db.selectPoolEntry.findUniqueOrThrow({ where: { uniqueName: 'conflict-candidate' } })
+        ).resolves.toMatchObject({
+            generalId: null,
+            ownerUserId: 'concurrent-user',
+            reservedUntil,
+        });
+    });
+
+    it('checks every NPC claim at its own claimedAt without clearing a later-expiring user reservation', async () => {
+        const earlyClaimedAt = new Date('2026-07-30T12:00:00.000Z');
+        const reservedUntil = new Date('2026-07-30T12:05:00.000Z');
+        const laterClaimedAt = new Date('2026-07-30T12:10:00.000Z');
+        await db.selectPoolEntry.createMany({
+            data: [
+                {
+                    uniqueName: 'early-protected-candidate',
+                    ownerUserId: 'protected-user',
+                    generalId: null,
+                    reservedUntil,
+                    info: {
+                        uniqueName: 'early-protected-candidate',
+                        generalName: '보호후보',
+                        leadership: 70,
+                        strength: 80,
+                        intel: 10,
+                        specialDomestic: 'che_event_징병',
+                        dex: [10, 20, 30, 40, 50],
+                        imgsvr: 0,
+                        picture: 'default.jpg',
+                    } as GamePrisma.InputJsonValue,
+                },
+                {
+                    uniqueName: 'later-free-candidate',
+                    ownerUserId: null,
+                    generalId: null,
+                    reservedUntil: null,
+                    info: {
+                        uniqueName: 'later-free-candidate',
+                        generalName: '후행후보',
+                        leadership: 70,
+                        strength: 80,
+                        intel: 10,
+                        specialDomestic: 'che_event_징병',
+                        dex: [10, 20, 30, 40, 50],
+                        imgsvr: 0,
+                        picture: 'default.jpg',
+                    } as GamePrisma.InputJsonValue,
+                },
+            ],
+        });
+        const loaded = await loadTurnWorldFromDatabase({ databaseUrl: databaseUrl! });
+        const world = new InMemoryTurnWorld(loaded.state, loaded.snapshot, {
+            schedule: { entries: [{ startMinute: 0, tickMinutes: 5 }] },
+        });
+        const entries = world.listGeneralPoolEntries()!;
+        const protectedCandidate = entries.find((entry) => entry.uniqueName === 'early-protected-candidate')!.candidate;
+        const laterCandidate = entries.find((entry) => entry.uniqueName === 'later-free-candidate')!.candidate;
+        const template = world.getGeneralById(generalId)!;
+        expect(
+            world.addGeneral({
+                ...structuredClone(template),
+                id: protectedGeneralId,
+                userId: null,
+                name: 'ⓜ보호후보',
+                npcState: 3,
+                meta: {
+                    ...template.meta,
+                    ...buildScenarioGeneralPoolClaimMeta(protectedCandidate, earlyClaimedAt),
+                },
+            })
+        ).toBe(true);
+        expect(
+            world.addGeneral({
+                ...structuredClone(template),
+                id: laterGeneralId,
+                userId: null,
+                name: 'ⓜ후행후보',
+                npcState: 3,
+                meta: {
+                    ...template.meta,
+                    ...buildScenarioGeneralPoolClaimMeta(laterCandidate, laterClaimedAt),
+                },
+            })
+        ).toBe(true);
+
+        const hooks = await createDatabaseTurnHooks(databaseUrl!, world);
+        try {
+            await expect(
+                hooks.hooks.flushChanges?.({
+                    lastTurnTime: loaded.state.lastTurnTime.toISOString(),
+                    processedGenerals: 0,
+                    processedTurns: 0,
+                    durationMs: 0,
+                    partial: false,
+                })
+            ).rejects.toThrow('select_pool 후보를 점유하지 못했습니다: early-protected-candidate');
+        } finally {
+            await hooks.close();
+        }
+
+        await expect(db.general.findUnique({ where: { id: protectedGeneralId } })).resolves.toBeNull();
+        await expect(db.general.findUnique({ where: { id: laterGeneralId } })).resolves.toBeNull();
+        await expect(
+            db.selectPoolEntry.findUniqueOrThrow({ where: { uniqueName: 'early-protected-candidate' } })
+        ).resolves.toMatchObject({
+            generalId: null,
+            ownerUserId: 'protected-user',
+            reservedUntil,
+        });
+        await expect(
+            db.selectPoolEntry.findUniqueOrThrow({ where: { uniqueName: 'later-free-candidate' } })
+        ).resolves.toMatchObject({ generalId: null, ownerUserId: null, reservedUntil: null });
     });
 
     it('rolls back a failed flush, then releases all Ref fields before deleting the general', async () => {
@@ -224,9 +480,7 @@ integration('select pool release during general deletion', () => {
                         REFERENCES "general"("id") ON DELETE RESTRICT
                 )
             `);
-            await db.$executeRawUnsafe(
-                `INSERT INTO "select_pool_delete_blocker" ("general_id") VALUES (${generalId})`
-            );
+            await db.$executeRawUnsafe(`INSERT INTO "select_pool_delete_blocker" ("general_id") VALUES (${generalId})`);
 
             await expect(
                 hooks.hooks.flushChanges?.({

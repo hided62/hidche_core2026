@@ -21,6 +21,7 @@ const runtimeSettingsRequestId = 'integration:engine:runtime-game-settings';
 const runtimeSettingsActionId = 'c9f68480-dba9-4e03-a62b-499e6234f18a';
 const generalIds = [990_301, 990_302, 990_303, 990_304] as const;
 const runtimeSettingsLogText = 'runtime-settings-existing-log';
+const backlogPoolUniqueName = 'rebase-pool-990304';
 
 const buildGeneral = (id: number, turnTime: Date): TurnGeneral =>
     ({
@@ -86,6 +87,7 @@ integration('runtime clock shift persistence', () => {
         await db.message.deleteMany({ where: { mailbox: generalIds[2] } });
         await db.logEntry.deleteMany({ where: { text: runtimeSettingsLogText } });
         await db.auction.deleteMany({ where: { hostGeneralId: { in: [...generalIds] } } });
+        await db.selectPoolEntry.deleteMany({ where: { uniqueName: backlogPoolUniqueName } });
         await db.general.deleteMany({ where: { id: { in: [...generalIds] } } });
         await db.worldState.deleteMany({
             where: {
@@ -100,6 +102,7 @@ integration('runtime clock shift persistence', () => {
         await db.message.deleteMany({ where: { mailbox: generalIds[2] } });
         await db.logEntry.deleteMany({ where: { text: runtimeSettingsLogText } });
         await db.auction.deleteMany({ where: { hostGeneralId: { in: [...generalIds] } } });
+        await db.selectPoolEntry.deleteMany({ where: { uniqueName: backlogPoolUniqueName } });
         await db.general.deleteMany({ where: { id: { in: [...generalIds] } } });
         await db.worldState.deleteMany({
             where: {
@@ -351,6 +354,26 @@ integration('runtime clock shift persistence', () => {
                 })
             )
         );
+        const poolEntry = await db.selectPoolEntry.create({
+            data: {
+                uniqueName: backlogPoolUniqueName,
+                ownerUserId: 'rebase-pool-user',
+                generalId: null,
+                reservedUntil: new Date('2099-09-01T00:10:00.000Z'),
+                reservedUntilTick: BigInt(2 * GAME_TICKS_PER_TURN),
+                info: {
+                    uniqueName: backlogPoolUniqueName,
+                    generalName: '재개예약후보',
+                    leadership: 70,
+                    strength: 70,
+                    intel: 10,
+                    specialDomestic: null,
+                    dex: [10, 10, 10, 10, 10],
+                    imgsvr: 0,
+                    picture: 'default.jpg',
+                } as GamePrisma.InputJsonValue,
+            },
+        });
         const world = new InMemoryTurnWorld(
             {
                 id: row.id,
@@ -422,8 +445,15 @@ integration('runtime clock shift persistence', () => {
             closeTick: BigInt(2 * GAME_TICKS_PER_TURN),
             closeAt: new Date('2099-09-01T00:10:00.000Z'),
         });
+        expect(await db.selectPoolEntry.findUniqueOrThrow({ where: { id: poolEntry.id } })).toMatchObject({
+            ownerUserId: 'rebase-pool-user',
+            generalId: null,
+            reservedUntilTick: BigInt(9 * GAME_TICKS_PER_TURN),
+            reservedUntil: new Date('2099-09-01T00:45:00.000Z'),
+        });
 
         await db.auction.deleteMany({ where: { id: { in: [openAuction.id, finishedAuction.id] } } });
+        await db.selectPoolEntry.delete({ where: { id: poolEntry.id } });
         await db.general.delete({ where: { id: general.id } });
         await db.worldState.delete({ where: { id: row.id } });
     });

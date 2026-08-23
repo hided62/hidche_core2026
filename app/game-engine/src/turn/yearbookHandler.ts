@@ -58,6 +58,9 @@ const resolveStartYear = (meta: Record<string, unknown>): number => {
     return 0;
 };
 
+const readStoredSnapshotNumber = (value: unknown): number | null =>
+    typeof value === 'number' && Number.isFinite(value) ? value : null;
+
 const buildMapSnapshot = (world: InMemoryTurnWorld, year: number, month: number): YearbookMap => {
     const state = world.getState();
     const cityList: MapCityCompact[] = world.listCities().map((city) => {
@@ -134,40 +137,57 @@ const buildNationSnapshot = (world: InMemoryTurnWorld): YearbookNation[] => {
         generalStatsByNation.set(general.nationId, entry);
     }
 
-    return nations.map((nation) => {
+    const projected = nations.map((nation) => {
         const generalStats = generalStatsByNation.get(nation.id) ?? {
             goldRice: 0,
             statPower: 0,
             expDed: 0,
             generalCount: 0,
         };
-        const cityStats = cityStatsByNation.get(nation.id) ?? { popSum: 0, valueSum: 0, maxSum: 0 };
-        const resource = Math.round(((nation.gold ?? 0) + (nation.rice ?? 0) + generalStats.goldRice) / 100);
-        const tech = asNumber(asRecord(nation.meta).tech, 0);
-        const cityPower =
-            nation.level > 0 && cityStats.maxSum > 0
-                ? Math.round((cityStats.popSum * cityStats.valueSum) / cityStats.maxSum / 100)
-                : 0;
-        const expDed = Math.round(generalStats.expDed / 100);
-        const power = Math.round((resource + tech + cityPower + generalStats.statPower + expDed) / 10);
+        const nationMeta = asRecord(nation.meta);
+        const storedPower = readStoredSnapshotNumber(nation.power);
+        let power = 1;
+        if (nation.id !== 0) {
+            if (storedPower !== null) {
+                power = storedPower;
+            } else {
+                // Old or malformed in-memory snapshots can lack the monthly
+                // nation projection. Only that absence uses the former derived
+                // value; current worlds archive the stored Ref-compatible value.
+                const cityStats = cityStatsByNation.get(nation.id) ?? { popSum: 0, valueSum: 0, maxSum: 0 };
+                const resource = Math.round((nation.gold + nation.rice + generalStats.goldRice) / 100);
+                const tech = asNumber(nationMeta.tech, 0);
+                const cityPower =
+                    nation.level > 0 && cityStats.maxSum > 0
+                        ? Math.round((cityStats.popSum * cityStats.valueSum) / cityStats.maxSum / 100)
+                        : 0;
+                const expDed = Math.round(generalStats.expDed / 100);
+                power = Math.round((resource + tech + cityPower + generalStats.statPower + expDed) / 10);
+            }
+        }
+        const storedGeneralCount = readStoredSnapshotNumber(nationMeta.gennum);
+        const generalCount = nation.id === 0 ? 1 : (storedGeneralCount ?? generalStats.generalCount);
 
         return {
             id: nation.id,
-            name: nation.name,
-            color: nation.color,
-            level: nation.level,
+            name: nation.id === 0 ? '재야' : nation.name,
+            color: nation.id === 0 ? '#000000' : nation.color,
+            level: nation.id === 0 ? 0 : nation.level,
             power,
-            generalCount: generalStats.generalCount,
+            generalCount,
             cities: cityNamesByNation.get(nation.id) ?? [],
         };
     });
+    // Ref's getCurrentHistory() replaces nation 0 with its canonical static
+    // projection and then applies a stable descending-power sort.
+    return projected.sort((left, right) => right.power - left.power);
 };
 
 const increment = (target: Record<string, number>, key: string): void => {
     target[key] = (target[key] ?? 0) + 1;
 };
 
-const updateDynastyStatistics = (world: InMemoryTurnWorld): void => {
+export const updateDynastyStatistics = (world: InMemoryTurnWorld): void => {
     const state = world.getState();
     const previous = asRecord(state.meta.dynastyStatistics);
     const activeNations = world
@@ -247,8 +267,22 @@ export const createYearbookHandler = (options: {
         beforeMonthChanged: (context) => {
             const world = options.getWorld();
             if (!world) return;
-            updateDynastyStatistics(world);
             queueYearbookSnapshot(world, options.profileName, context.previousYear, context.previousMonth);
+        },
+    },
+});
+
+export const createDynastyStatisticsHandler = (options: {
+    getWorld: () => InMemoryTurnWorld | null;
+}): { handler: TurnCalendarHandler } => ({
+    handler: {
+        // Ref calls checkStatistic() after turnDate() only when the newly
+        // entered month is January. Unification takes one additional sample.
+        onMonthChanged: (context) => {
+            if (context.currentMonth !== 1) return;
+            const world = options.getWorld();
+            if (!world) return;
+            updateDynastyStatistics(world);
         },
     },
 });

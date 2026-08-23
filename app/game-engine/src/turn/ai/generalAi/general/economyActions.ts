@@ -70,13 +70,14 @@ export const do금쌀구매 = (ai: GeneralAI) => {
               }
             : {}),
         time: { year: ai.world.currentYear, month: ai.world.currentMonth, startYear: ai.startYear },
+        maxTechLevel: ai.commandEnv.maxTechLevel,
     };
     const recruitment = new RecruitmentCommandResolver(ai.commandEnv.generalActionModules ?? [], ai.commandEnv);
     const goldCost = crewType
         ? recruitment.getCost(recruitContext, crewType.id, crewAmount, crewType).gold *
           (ai.generalPolicy.can('모병') ? 2 : 1)
         : 0;
-    const riceCost = crewType ? (crewType.rice * getTechCost(tech) * crewAmount) / 100 : 0;
+    const riceCost = crewType ? (crewType.rice * getTechCost(tech, ai.commandEnv.maxTechLevel) * crewAmount) / 100 : 0;
     trace('recruit-cost', {
         crewTypeId: crewType?.id ?? null,
         crewCost: crewType?.cost ?? null,

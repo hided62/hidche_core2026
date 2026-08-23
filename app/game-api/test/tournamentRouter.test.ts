@@ -129,6 +129,7 @@ const buildContext = (options: {
     userId: string;
     roles?: string[];
     develCost?: number;
+    currentDevelCost?: number;
     rankRows?: Array<{ generalId: number; type: string; value: number }>;
 }): GameApiContext => {
     const db = {
@@ -142,7 +143,10 @@ const buildContext = (options: {
             findMany: async () => options.rankRows ?? [],
         },
         worldState: {
-            findFirst: async () => ({ config: { const: { develCost: options.develCost ?? 200 } } }),
+            findFirst: async () => ({
+                config: { const: { develCost: options.develCost ?? 200 } },
+                ...(options.currentDevelCost === undefined ? {} : { meta: { develcost: options.currentDevelCost } }),
+            }),
         },
     } as unknown as DatabaseClient;
     return {
@@ -265,6 +269,42 @@ describe('tournament router permissions and mutations', () => {
         });
         expect(snapshot.participants[0]!.groupId).toBeGreaterThanOrEqual(0);
         expect(snapshot.participants[0]!.groupId).toBeLessThan(8);
+    });
+
+    it('charges the current game_env develcost instead of the scenario snapshot', async () => {
+        const redis = new MemoryRedis();
+        const transport = new TournamentTransport();
+        const general = buildGeneral(1, 'user-1');
+        transport.gold.set(general.id, general.gold);
+        await setTournamentFixture(redis, {
+            stage: 1,
+            phase: 0,
+            type: 0,
+            auto: true,
+            openYear: 193,
+            openMonth: 1,
+            termSeconds: 60,
+            nextAt: '2026-07-26T01:00:00.000Z',
+        });
+        await redis.set('sammo:che:default:tournament:participants', '[]');
+        const caller = appRouter.createCaller(
+            buildContext({
+                redis,
+                transport,
+                generals: [general],
+                userId: 'user-1',
+                develCost: 200,
+                currentDevelCost: 64,
+            })
+        );
+
+        await expect(caller.tournament.join()).resolves.toEqual({ ok: true, count: 1 });
+        expect(transport.gold.get(general.id)).toBe(1_936);
+        expect(transport.commands).toContainEqual({
+            type: 'adjustGeneralResources',
+            reason: 'tournamentJoin',
+            adjustments: [{ generalId: general.id, goldDelta: -64, minGoldAfter: 0 }],
+        });
     });
 
     it('serializes concurrent bets and enforces the legacy per-user 1000 limit', async () => {

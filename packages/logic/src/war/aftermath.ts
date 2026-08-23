@@ -520,7 +520,7 @@ export const resolveWarAftermath = <TriggerState extends GeneralTriggerState = G
 
             let rice = (cityKilled / 100) * 0.8;
             rice *= riceCoef;
-            rice *= getTechCost(getMetaNumber(defenderNation.meta, 'tech', 0));
+            rice *= getTechCost(getMetaNumber(defenderNation.meta, 'tech', 0), input.config.maxTechLevel);
             rice *= resolveCityTrainAtmos(input.time.year, input.time.startYear) / 100 - 0.2;
             rice = round(rice);
 

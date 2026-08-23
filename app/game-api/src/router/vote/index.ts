@@ -1,20 +1,8 @@
 import { TRPCError } from '@trpc/server';
 import { z } from 'zod';
 
-import { asRecord, LiteHashDRBG, RandUtil } from '@sammo-ts/common';
+import { asRecord } from '@sammo-ts/common';
 import { GamePrisma } from '@sammo-ts/infra';
-import {
-    ITEM_KEYS,
-    addOccupiedUniqueItemKeys,
-    buildVoteUniqueSeed,
-    countOccupiedUniqueItems,
-    createItemModuleRegistry,
-    loadItemModules,
-    resolveUniqueConfig,
-    rollUniqueLottery,
-    type GeneralItemSlots,
-    type ItemModule,
-} from '@sammo-ts/logic';
 
 import { authedProcedure, router } from '../../trpc.js';
 import { getMyGeneral } from '../shared/general.js';
@@ -40,15 +28,6 @@ const adminProcedure = authedProcedure.use(({ ctx, next }) => {
     return next();
 });
 
-let itemRegistryPromise: Promise<Map<string, ItemModule>> | null = null;
-
-const getItemRegistry = async (): Promise<Map<string, ItemModule>> => {
-    if (!itemRegistryPromise) {
-        itemRegistryPromise = loadItemModules([...ITEM_KEYS]).then((modules) => createItemModuleRegistry(modules));
-    }
-    return itemRegistryPromise;
-};
-
 const resolveNumber = (source: Record<string, unknown>, keys: string[], fallback: number): number => {
     for (const key of keys) {
         const value = source[key];
@@ -65,29 +44,8 @@ const resolveNumber = (source: Record<string, unknown>, keys: string[], fallback
     return fallback;
 };
 
-const normalizeCode = (value: string | null | undefined): string | null => {
-    if (!value || value === 'None') {
-        return null;
-    }
-    return value;
-};
-
 const normalizeOptions = (options: string[]): string[] =>
     options.map((option) => option.trim()).filter((option) => option.length > 0);
-
-const readMetaNumber = (meta: Record<string, unknown>, key: string, fallback: number): number => {
-    const value = meta[key];
-    if (typeof value === 'number' && Number.isFinite(value)) {
-        return Math.floor(value);
-    }
-    if (typeof value === 'string') {
-        const parsed = Number(value);
-        if (Number.isFinite(parsed)) {
-            return Math.floor(parsed);
-        }
-    }
-    return fallback;
-};
 
 const parseOptions = (value: unknown): string[] => {
     if (Array.isArray(value)) {
@@ -138,11 +96,14 @@ type VotePollRow = {
     closed_at: Date | null;
 };
 
-const hasPollEnded = (poll: Pick<VotePollRow, 'closed_at' | 'end_at' | 'end_tick'>, time: CurrentGameTime): boolean =>
+export const hasPollEnded = (
+    poll: Pick<VotePollRow, 'closed_at' | 'end_at' | 'end_tick'>,
+    time: CurrentGameTime
+): boolean =>
     Boolean(poll.closed_at) ||
     (poll.end_tick !== null && time.tick !== null
-        ? poll.end_tick <= BigInt(time.tick)
-        : Boolean(poll.end_at && poll.end_at <= time.now));
+        ? poll.end_tick < BigInt(time.tick)
+        : Boolean(poll.end_at && poll.end_at.getTime() < time.now.getTime()));
 
 const toGameTickOrNull = (time: CurrentGameTime, date: Date | null): bigint | null => {
     if (!date) return null;
@@ -388,116 +349,12 @@ export const voteRouter = router({
             }
             const general = await getMyGeneral(ctx);
 
-            const rows = await ctx.db.$queryRaw<Array<{ id: number }>>(GamePrisma.sql`
-                INSERT INTO vote (vote_id, general_id, nation_id, selection)
-                VALUES (
-                    ${input.voteId},
-                    ${general.id},
-                    ${general.nationId},
-                    CAST(${JSON.stringify(sortedSelection)} AS jsonb)
-                )
-                ON CONFLICT (vote_id, general_id) DO NOTHING
-                RETURNING id
-            `);
-
-            if (!rows[0]?.id) {
-                throw new TRPCError({ code: 'BAD_REQUEST', message: '이미 설문조사를 완료하였습니다.' });
-            }
-
-            const worldState = await ctx.db.worldState.findFirst();
-            if (!worldState) {
-                throw new TRPCError({ code: 'PRECONDITION_FAILED', message: 'World state is not initialized.' });
-            }
-
-            const worldMeta = asRecord(worldState.meta);
-            const config = asRecord(worldState.config);
-            const constValues = asRecord(config.const);
-            const develCost = resolveNumber(
-                worldMeta,
-                ['develcost', 'develCost'],
-                resolveNumber(constValues, ['develCost', 'develcost', 'develrate'], 0)
-            );
-            const voteReward = develCost * 5;
-
-            const scenarioMeta = asRecord(worldMeta.scenarioMeta);
-            const startYear = readMetaNumber(scenarioMeta, 'startYear', worldState.currentYear);
-            const initYear = readMetaNumber(worldMeta, 'initYear', startYear);
-            const initMonth = readMetaNumber(worldMeta, 'initMonth', 1);
-            const scenarioId = readMetaNumber(worldMeta, 'scenarioId', 0);
-            const hiddenSeed = worldMeta.hiddenSeed ?? worldMeta.seed ?? worldState.id;
-
-            const itemRegistry = await getItemRegistry();
-            const uniqueConfig = resolveUniqueConfig(constValues);
-
-            const [generalRows, reservedUniqueRows] = await Promise.all([
-                ctx.db.general.findMany({
-                    select: {
-                        horseCode: true,
-                        weaponCode: true,
-                        bookCode: true,
-                        itemCode: true,
-                    },
-                }),
-                ctx.db.auction.findMany({
-                    where: {
-                        type: 'UNIQUE_ITEM',
-                        status: { in: ['OPEN', 'FINALIZING'] },
-                        targetCode: { not: null },
-                    },
-                    select: { targetCode: true },
-                }),
-            ]);
-            const generalItems: GeneralItemSlots[] = generalRows.map((row) => ({
-                horse: normalizeCode(row.horseCode),
-                weapon: normalizeCode(row.weaponCode),
-                book: normalizeCode(row.bookCode),
-                item: normalizeCode(row.itemCode),
-            }));
-
-            const occupiedUniqueCounts = countOccupiedUniqueItems(generalItems, itemRegistry);
-            addOccupiedUniqueItemKeys(
-                occupiedUniqueCounts,
-                reservedUniqueRows.map((row) => row.targetCode),
-                itemRegistry
-            );
-            const userCount = await ctx.db.general.count({ where: { npcState: { lt: 2 } } });
-
-            const rngSeed = buildVoteUniqueSeed(
-                typeof hiddenSeed === 'string' || typeof hiddenSeed === 'number' ? hiddenSeed : String(hiddenSeed),
-                input.voteId,
-                general.id
-            );
-            const rng = new RandUtil(LiteHashDRBG.build(rngSeed));
-            const itemKey = rollUniqueLottery({
-                rng,
-                config: uniqueConfig,
-                itemRegistry,
-                generalItems: {
-                    horse: normalizeCode(general.horseCode),
-                    weapon: normalizeCode(general.weaponCode),
-                    book: normalizeCode(general.bookCode),
-                    item: normalizeCode(general.itemCode),
-                },
-                occupiedUniqueCounts,
-                scenarioId,
-                userCount,
-                currentYear: worldState.currentYear,
-                currentMonth: worldState.currentMonth,
-                startYear,
-                initYear,
-                initMonth,
-                acquireType: '설문조사',
-            });
-
             const rewardResult = await ctx.turnDaemon.requestCommand({
                 type: 'voteReward',
                 voteId: input.voteId,
                 generalId: general.id,
-                goldReward: voteReward,
-                unique: {
-                    expected: Boolean(itemKey),
-                    itemKey: itemKey ?? null,
-                },
+                selection: sortedSelection,
+                ...(gameTime.tick === null ? {} : { acceptedGameTick: gameTime.tick }),
             });
 
             if (!rewardResult || rewardResult.type !== 'voteReward') {
@@ -559,6 +416,7 @@ export const voteRouter = router({
         )
         .mutation(async ({ ctx, input }) => {
             const general = await getMyGeneral(ctx);
+            const openerName = ctx.auth?.user.username ?? general.name;
             const options = normalizeOptions(input.options);
             if (options.length === 0) {
                 throw new TRPCError({ code: 'BAD_REQUEST', message: '항목이 없습니다.' });
@@ -610,7 +468,7 @@ export const voteRouter = router({
                     ${multipleOptions},
                     ${input.revealMode},
                     ${general.id},
-                    ${general.name},
+                    ${openerName},
                     ${gameTime.now},
                     ${gameTime.tick === null ? null : BigInt(gameTime.tick)},
                     ${endAt},

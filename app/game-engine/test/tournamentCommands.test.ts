@@ -10,7 +10,7 @@ import { buildPersistedRankRows } from '../src/turn/rankData.js';
 
 const schedule: TurnSchedule = { entries: [{ startMinute: 0, tickMinutes: 10 }] };
 
-const buildGeneral = (id: number, meta: Record<string, number> = {}): TurnGeneral => ({
+const buildGeneral = (id: number, meta: Record<string, number> = {}, npcState = 0): TurnGeneral => ({
     id,
     name: `장수${id}`,
     nationId: 1,
@@ -39,7 +39,7 @@ const buildGeneral = (id: number, meta: Record<string, number> = {}): TurnGenera
     train: 0,
     atmos: 0,
     age: 30,
-    npcState: 0,
+    npcState,
 });
 
 const buildWorld = (
@@ -106,10 +106,7 @@ describe('tournament world commands', () => {
     });
 
     it('updates the persisted tt rank keys for a tournament match', async () => {
-        const world = buildWorld([
-            buildGeneral(1, { ttg: 10, ttw: 2 }),
-            buildGeneral(2, { ttg: 5, ttl: 1 }),
-        ]);
+        const world = buildWorld([buildGeneral(1, { ttg: 10, ttw: 2 }), buildGeneral(2, { ttg: 5, ttl: 1 })]);
         const handler = createTurnDaemonCommandHandler({ world });
 
         await expect(
@@ -135,6 +132,7 @@ describe('tournament world commands', () => {
             handler.handle({
                 type: 'tournamentBettingPayout',
                 bettingId: 1,
+                tournamentType: 0,
                 payouts: [{ generalId: 1, amount: 500 }],
             })
         ).resolves.toMatchObject({ ok: true, totalPayout: 500 });
@@ -144,6 +142,48 @@ describe('tournament world commands', () => {
             meta: { betwin: 3, betwingold: 600 },
         });
         expect(world.getGeneralById(1)?.meta).not.toHaveProperty('rank_betwin');
+        expect(world.peekDirtyState().logs).toContainEqual(
+            expect.objectContaining({
+                generalId: 1,
+                category: 'ACTION',
+                text: '<C>전력전</>의 베팅 당첨 보상으로 <C>500</>의 <S>금</> 획득!',
+            })
+        );
+    });
+
+    it('pays every winner but records betting ranks only for Ref-eligible generals', async () => {
+        const world = buildWorld([
+            buildGeneral(1, {}, 0),
+            buildGeneral(2, { betgold: 100 }, 1),
+            buildGeneral(3, { betgold: 100 }, 2),
+        ]);
+        const handler = createTurnDaemonCommandHandler({ world });
+
+        await expect(
+            handler.handle({
+                type: 'tournamentBettingPayout',
+                bettingId: 1,
+                tournamentType: 3,
+                payouts: [
+                    { generalId: 1, amount: 2_000 },
+                    { generalId: 2, amount: 2_000 },
+                    { generalId: 3, amount: 2_000 },
+                ],
+            })
+        ).resolves.toMatchObject({ ok: true, processed: 3, totalPayout: 6_000 });
+
+        expect(world.getGeneralById(1)).toMatchObject({ gold: 3_000, meta: { betwin: 1, betwingold: 2_000 } });
+        expect(world.getGeneralById(2)).toMatchObject({
+            gold: 3_000,
+            meta: { betgold: 100, betwin: 1, betwingold: 2_000 },
+        });
+        expect(world.getGeneralById(3)).toMatchObject({ gold: 3_000, meta: { betgold: 100 } });
+        expect(world.getGeneralById(3)?.meta).not.toHaveProperty('betwin');
+        expect(world.peekDirtyState().logs.map((entry) => entry.text)).toEqual([
+            '<C>설전</>의 베팅 당첨 보상으로 <C>2,000</>의 <S>금</> 획득!',
+            '<C>설전</>의 베팅 당첨 보상으로 <C>2,000</>의 <S>금</> 획득!',
+            '<C>설전</>의 베팅 당첨 보상으로 <C>2,000</>의 <S>금</> 획득!',
+        ]);
     });
 
     it('records all four tournament types and NPC betting for at least ten generals', async () => {
@@ -174,6 +214,7 @@ describe('tournament world commands', () => {
         await handler.handle({
             type: 'tournamentBettingPayout',
             bettingId: 1,
+            tournamentType: 0,
             payouts: generals.map((general) => ({ generalId: general.id, amount: 2_000 })),
         });
 

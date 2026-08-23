@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import type { City, General, Nation } from '@sammo-ts/logic';
+import { loadItemModules, type City, type General, type Nation } from '@sammo-ts/logic';
 import { createRefOrderedActionStack } from '@sammo-ts/logic/actionModules/bundle.js';
 
 import { GeneralAI, shouldUseNationAi } from '../src/turn/ai/generalAi.js';
@@ -712,9 +712,7 @@ describe('legacy NPC user-chief promotion parity', () => {
         expect(run(2)).toEqual([]);
         expect(run(3)).toEqual([{ generalId: 2, officerLevel: 11, officerCity: 0, permission: 'ambassador' }]);
         expect(run(3, 0)).toEqual([]);
-        expect(run(3, 0, 1)).toEqual([
-            { generalId: 2, officerLevel: 11, officerCity: 0, permission: 'ambassador' },
-        ]);
+        expect(run(3, 0, 1)).toEqual([{ generalId: 2, officerLevel: 11, officerCity: 0, permission: 'ambassador' }]);
     });
 
     it('keeps user-ruler duties individually disabled until each setting is enabled', () => {
@@ -880,6 +878,27 @@ describe('legacy NPC AI final-decision parity', () => {
         expect(resolveLegacyAiStatsWithModules(general, baseNation(), 100, modules, null, world, 180)).toMatchObject({
             fullLeadership: 85,
             effectiveLeadership: 85,
+        });
+    });
+
+    it('passes scenario time and maximum tech level to year-scaling stat items', async () => {
+        const [leadershipWine] = await loadItemModules(['che_능력치_통솔_보령압주']);
+        expect(leadershipWine).toBeDefined();
+        const modules = singleActionModuleStack(leadershipWine!);
+        const world = {
+            id: 1,
+            currentYear: 200,
+            currentMonth: 1,
+            tickSeconds: 600,
+            lastTurnTime: new Date('0200-01-01T00:00:00Z'),
+            meta: {},
+        };
+
+        expect(
+            resolveLegacyAiStatsWithModules(baseGeneral(), baseNation(), 100, modules, null, world, 180, 15)
+        ).toMatchObject({
+            fullLeadership: 80,
+            effectiveLeadership: 80,
         });
     });
     it.each([

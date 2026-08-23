@@ -9,6 +9,7 @@ import { InMemoryFlushStore } from '../src/auth/flushStore.js';
 import type { DatabaseClient, GameApiContext, GeneralRow } from '../src/context.js';
 import type { TurnDaemonTransport } from '../src/daemon/transport.js';
 import { appRouter } from '../src/router.js';
+import { hasPollEnded } from '../src/router/vote/index.js';
 
 const poll = {
     id: 1,
@@ -95,10 +96,11 @@ const buildContext = (options: {
     configConst?: Record<string, unknown>;
     metaDevelCost?: number;
     auctionTargets?: string[];
+    clockTick?: number;
 }) => {
     const auth = options.auth === undefined ? buildAuth() : options.auth;
     const general = options.general === undefined ? buildGeneral() : options.general;
-    const requestCommand = vi.fn(async () => ({
+    const requestCommand = vi.fn(async (_command?: unknown) => ({
         type: 'voteReward' as const,
         ok: true as const,
         voteId: 1,
@@ -139,6 +141,14 @@ const buildContext = (options: {
                 currentYear: 200,
                 currentMonth: 1,
                 tickSeconds: 3600,
+                ...(options.clockTick === undefined
+                    ? {}
+                    : {
+                          clockBaseTime: new Date('0200-01-01T00:00:00.000Z'),
+                          clockTick: BigInt(options.clockTick),
+                          clockMode: 'manual',
+                          clockWallAnchor: new Date('2026-07-26T00:00:00.000Z'),
+                      }),
                 config: { const: { develCost: 18, allItems: {}, ...(options.configConst ?? {}) } },
                 meta: {
                     ...(options.metaDevelCost === undefined ? {} : { develcost: options.metaDevelCost }),
@@ -201,6 +211,29 @@ const buildContext = (options: {
 };
 
 describe('vote router actor and permission boundaries', () => {
+    it('keeps a poll open at its exact Ref end tick and closes it after that tick', () => {
+        const now = new Date('2026-07-26T00:00:00Z');
+        const time = {
+            now,
+            wallNow: now,
+            tick: 100,
+            mode: 'manual' as const,
+            running: false,
+            startsAt: null,
+            dateToTick: () => 100,
+        };
+
+        expect(hasPollEnded({ closed_at: null, end_at: now, end_tick: 100n }, time)).toBe(false);
+        expect(hasPollEnded({ closed_at: null, end_at: now, end_tick: 99n }, time)).toBe(true);
+        expect(hasPollEnded({ closed_at: null, end_at: now, end_tick: null }, { ...time, tick: null })).toBe(false);
+        expect(
+            hasPollEnded(
+                { closed_at: null, end_at: now, end_tick: null },
+                { ...time, now: new Date(now.getTime() + 1), tick: null }
+            )
+        ).toBe(true);
+    });
+
     it('rejects unauthenticated survey access', async () => {
         const fixture = buildContext({ auth: null });
 
@@ -211,18 +244,20 @@ describe('vote router actor and permission boundaries', () => {
 
     it('uses only the general owned by the authenticated user for voting and reward dispatch', async () => {
         const owned = buildGeneral({ id: 7, userId: 'user-1', name: '유비' });
-        const fixture = buildContext({ general: owned });
+        const fixture = buildContext({ general: owned, clockTick: 100 });
 
         await expect(
             appRouter.createCaller(fixture.context).vote.submitVote({ voteId: 1, selection: [0] })
         ).resolves.toEqual({ ok: true, wonLottery: false });
-        expect(fixture.requestCommand).toHaveBeenCalledWith(
-            expect.objectContaining({
-                type: 'voteReward',
-                voteId: 1,
-                generalId: 7,
-                goldReward: 90,
-            })
+        expect(fixture.requestCommand).toHaveBeenCalledWith({
+            type: 'voteReward',
+            voteId: 1,
+            generalId: 7,
+            selection: [0],
+            acceptedGameTick: 100,
+        });
+        expect(fixture.queryRaw.mock.calls.some(([query]) => sqlText(query).includes('INSERT INTO vote ('))).toBe(
+            false
         );
         expect(fixture.changeJournal.snapshot()).toEqual([{ domain: 'front.general', entityId: 7 }]);
         expect(fixture.redisIncr).not.toHaveBeenCalled();
@@ -230,7 +265,10 @@ describe('vote router actor and permission boundaries', () => {
     });
 
     it('publishes a global front-status projection after creating a survey', async () => {
-        const fixture = buildContext({ auth: buildAuth(['admin.survey.open']) });
+        const auth = buildAuth(['admin.survey.open']);
+        auth.user.username = 'admin-account';
+        auth.user.displayName = '관리자 표시명';
+        const fixture = buildContext({ auth, general: buildGeneral({ name: '관리자 장수' }) });
 
         await expect(
             appRouter.createCaller(fixture.context).vote.createPoll({
@@ -244,19 +282,22 @@ describe('vote router actor and permission boundaries', () => {
         expect(fixture.requestCommand).not.toHaveBeenCalled();
         expect(fixture.redisIncr).not.toHaveBeenCalled();
         expect(fixture.redisPublish).not.toHaveBeenCalled();
+        const insert = fixture.queryRaw.mock.calls
+            .map(([query]) => query)
+            .find((query) => sqlText(query).includes('INSERT INTO vote_poll'));
+        expect(insert?.values).toContain('admin-account');
+        expect(insert?.values).not.toContain('관리자 장수');
     });
 
-    it('uses the current world develcost for the legacy five-times survey reward', async () => {
+    it('reports the current world develcost as the legacy five-times survey reward', async () => {
         const fixture = buildContext({ metaDevelCost: 30, configConst: { develCost: 0 } });
 
         await expect(appRouter.createCaller(fixture.context).vote.getVoteList()).resolves.toMatchObject({
             voteReward: 150,
         });
-        await appRouter.createCaller(fixture.context).vote.submitVote({ voteId: 1, selection: [0] });
-        expect(fixture.requestCommand).toHaveBeenCalledWith(expect.objectContaining({ goldReward: 150 }));
     });
 
-    it('includes active unique auctions in the API-side reward expectation', async () => {
+    it('leaves live reward and unique occupancy calculation to ENGINE', async () => {
         const fixture = buildContext({
             configConst: {
                 allItems: { weapon: { che_무기_12_칠성검: 1 } },
@@ -270,11 +311,11 @@ describe('vote router actor and permission boundaries', () => {
 
         await appRouter.createCaller(fixture.context).vote.submitVote({ voteId: 1, selection: [0] });
 
-        expect(fixture.requestCommand).toHaveBeenCalledWith(
-            expect.objectContaining({
-                unique: { expected: false, itemKey: null },
-            })
-        );
+        expect(fixture.db.general.findMany).not.toHaveBeenCalled();
+        expect(fixture.db.general.count).not.toHaveBeenCalled();
+        expect(fixture.db.auction.findMany).not.toHaveBeenCalled();
+        expect(fixture.requestCommand.mock.calls[0]?.[0]).not.toHaveProperty('goldReward');
+        expect(fixture.requestCommand.mock.calls[0]?.[0]).not.toHaveProperty('unique');
     });
 
     it('rejects voting and comments when the authenticated user owns no general', async () => {

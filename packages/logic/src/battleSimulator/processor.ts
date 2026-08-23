@@ -286,6 +286,7 @@ const resolveCityRiceConsumption = (options: {
     castleCrewTypeId: number;
     year: number;
     startYear: number;
+    maxTechLevel?: number;
 }): number => {
     const cityReport = options.battle.reports.find((report: WarUnitReport) => report.type === 'city');
     if (!cityReport) {
@@ -304,7 +305,7 @@ const resolveCityRiceConsumption = (options: {
 
     let rice = (cityReport.killed / 100) * 0.8;
     rice *= riceCoef;
-    rice *= getTechCost(tech);
+    rice *= getTechCost(tech, options.maxTechLevel);
     rice *= trainAtmos / 100 - 0.2;
     return Math.round(rice);
 };
@@ -454,6 +455,7 @@ export const processBattleSimJob = (
             castleCrewTypeId: payload.config.castleCrewTypeId,
             year: payload.time.year,
             startYear: payload.time.startYear,
+            ...(payload.config.maxTechLevel === undefined ? {} : { maxTechLevel: payload.config.maxTechLevel }),
         });
         defenderAvgRice += (defenderRiceInit - defenderRiceAfter + cityRice) * weight;
 

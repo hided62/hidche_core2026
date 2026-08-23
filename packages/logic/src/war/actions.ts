@@ -4,6 +4,7 @@ import type { City, General, GeneralTriggerState, Nation } from '@sammo-ts/logic
 import type { ActionLogger } from '@sammo-ts/logic/logging/actionLogger.js';
 import type { WarStatName } from '@sammo-ts/logic/actionModules/types.js';
 import type { WarUnit } from './units.js';
+import type { WarTimeContext } from './types.js';
 import { WarTriggerCaller } from './triggers.js';
 
 export interface WarActionContext<TriggerState extends GeneralTriggerState = GeneralTriggerState> {
@@ -13,6 +14,8 @@ export interface WarActionContext<TriggerState extends GeneralTriggerState = Gen
     log?: ActionLogger;
     rng?: RandUtil;
     unit?: WarUnit<TriggerState>;
+    time?: WarTimeContext;
+    maxTechLevel?: number;
 }
 
 export interface WarActionModule<TriggerState extends GeneralTriggerState = GeneralTriggerState> {
