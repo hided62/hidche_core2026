@@ -11,6 +11,7 @@ import type { TurnEvent, TurnWorldSnapshot, TurnWorldState } from '../src/turn/t
 const databaseUrl = process.env.INPUT_EVENT_DATABASE_URL;
 const integration = describe.skipIf(!databaseUrl);
 const nationIds = [990_081, 990_082] as const;
+const neutralNationId = 0;
 
 const buildNation = (id: number): Nation => ({
     id,
@@ -49,7 +50,7 @@ integration('monthly scout block persistence', () => {
                 OR: [{ srcNationId: { in: [...nationIds] } }, { destNationId: { in: [...nationIds] } }],
             },
         });
-        await db.nation.deleteMany({ where: { id: { in: [...nationIds] } } });
+        await db.nation.deleteMany({ where: { id: { in: [neutralNationId, ...nationIds] } } });
     });
 
     afterAll(async () => {
@@ -58,12 +59,13 @@ integration('monthly scout block persistence', () => {
                 OR: [{ srcNationId: { in: [...nationIds] } }, { destNationId: { in: [...nationIds] } }],
             },
         });
-        await db.nation.deleteMany({ where: { id: { in: [...nationIds] } } });
+        await db.nation.deleteMany({ where: { id: { in: [neutralNationId, ...nationIds] } } });
         await closeDb?.();
     });
 
     it('persists every nation scout flag and the global policy lock in one flush', async () => {
-        const nations = nationIds.map(buildNation);
+        const neutralNation = { ...buildNation(neutralNationId), name: '재야', level: 0 };
+        const nations = [neutralNation, ...nationIds.map(buildNation)];
         await db.nation.createMany({
             data: nations.map((nation) => ({
                 id: nation.id,
@@ -146,6 +148,9 @@ integration('monthly scout block persistence', () => {
                 { power: 0, scout: 1 },
                 { power: 0, scout: 1 },
             ]);
+            expect(await db.nation.findUniqueOrThrow({ where: { id: neutralNationId } })).toMatchObject({
+                meta: { scout: 0 },
+            });
             expect(await db.worldState.findUniqueOrThrow({ where: { id: row.id } })).toMatchObject({
                 meta: { block_change_scout: true },
             });

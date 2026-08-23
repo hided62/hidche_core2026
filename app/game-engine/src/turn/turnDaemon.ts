@@ -414,7 +414,8 @@ const createMonthlyCalendarRuntime = async (options: {
     clock: Clock;
 }) => {
     const cache: MonthlyRuntimeCache = {
-        nationPowerRollCount: options.snapshot.nations.length,
+        // Ref's monthly nation query has no Core-only id=0 neutral row.
+        nationPowerRollCount: options.snapshot.nations.filter((nation) => nation.id > 0).length,
         tournamentRollConsumed: false,
     };
     const unification = options.calendarHandlerOverride

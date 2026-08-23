@@ -119,7 +119,8 @@ export const createNeutralAuctionRegistrar = async (options: {
                 hiddenSeed,
                 seedYear: context.previousYear,
                 seedMonth: context.previousMonth,
-                nationCount: options.getNationPowerRollCount?.() ?? world.listNations().length,
+                nationCount:
+                    options.getNationPowerRollCount?.() ?? world.listNations().filter((nation) => nation.id > 0).length,
                 consumeTournamentRoll,
                 averageGold: average(eligibleGenerals.map((general) => general.gold)),
                 averageRice: average(eligibleGenerals.map((general) => general.rice)),

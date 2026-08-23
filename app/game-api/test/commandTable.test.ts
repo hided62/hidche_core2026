@@ -213,9 +213,10 @@ describe('buildTurnCommandTable', () => {
                 for (const field of command.inputFields) {
                     expect(supportedKinds.has(field.kind), `${scope}:${command.key}:${field.key}`).toBe(true);
                     if (field.kind === 'select') {
-                        expect(Boolean(field.options?.length || field.optionSource), `${scope}:${command.key}:${field.key}`).toBe(
-                            true
-                        );
+                        expect(
+                            Boolean(field.options?.length || field.optionSource),
+                            `${scope}:${command.key}:${field.key}`
+                        ).toBe(true);
                     }
                 }
             }
@@ -337,6 +338,34 @@ describe('buildTurnCommandTable', () => {
             possible: false,
             status: 'blocked',
             reason: '랜덤 임관만 가능합니다',
+        });
+    });
+
+    it('hides founding at the Ref maxnation boundary without counting Core id=0', async () => {
+        const worldState = buildWorldState();
+        worldState.meta = {
+            ...((worldState.meta ?? {}) as Record<string, unknown>),
+            refGameEnv: { maxnation: '2' },
+        };
+        const buildAtCount = (realNationCount: number) =>
+            buildTurnCommandTable({
+                worldState,
+                general: buildGeneral(),
+                city: buildCity(),
+                nation: buildNation(),
+                nationGenerals: null,
+                realNationCount,
+            });
+        const findFounding = (table: Awaited<ReturnType<typeof buildAtCount>>) =>
+            table.general.flatMap((group) => group.values).find((command) => command.key === 'che_건국');
+
+        expect(findFounding(await buildAtCount(1))).not.toMatchObject({
+            reason: '더 이상 건국은 불가능합니다.',
+        });
+        expect(findFounding(await buildAtCount(2))).toMatchObject({
+            possible: false,
+            status: 'blocked',
+            reason: '더 이상 건국은 불가능합니다.',
         });
     });
 

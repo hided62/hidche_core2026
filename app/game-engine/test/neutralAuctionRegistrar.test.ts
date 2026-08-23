@@ -41,7 +41,9 @@ const buildSnapshot = (): TurnWorldSnapshot => ({
         buildGeneral(2, 2, 99_999, 99_999),
     ],
     cities: [],
-    nations: [1, 2, 3].map((id) => ({
+    // Core persists a synthetic id=0 row that Ref's nation-power loop never
+    // sees. The registrar fallback must therefore still consume three rolls.
+    nations: [0, 1, 2, 3].map((id) => ({
         id,
         name: `Nation_${id}`,
         color: '#000000',
@@ -151,7 +153,7 @@ describe('neutral auction monthly registrar', () => {
             loadNeutralAuctionCounts: async () => [],
         });
         const snapshot = buildSnapshot();
-        snapshot.nations = snapshot.nations.slice(0, 2);
+        snapshot.nations = snapshot.nations.slice(1, 3);
         snapshot.generals = [buildGeneral(1, 0, 5_000, 7_000), buildGeneral(2, 0, 6_000, 8_000)];
         const state: TurnWorldState = {
             id: 1,
