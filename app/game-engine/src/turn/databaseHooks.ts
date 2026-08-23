@@ -379,7 +379,7 @@ export const summarizeRealtimeReadModelChanges = (
         lobbyGeneralIds,
         reservedGeneralIds,
         recordGeneralIds,
-        worldChanged: false,
+        worldChanged: changes.realtimeBacklogShiftTicks > 0,
         globalRecordsChanged,
         worldHistoryChanged,
         contactsChanged,
@@ -1078,6 +1078,7 @@ export const createDatabaseTurnHooks = async (
         let persistedVisibleLogs: PersistedVisibleLogRow[] = [];
         let visibleLogFloor = directLogFloor;
         const {
+            realtimeBacklogShiftTicks,
             accessScoreResetGeneralIds,
             generals,
             cities,
@@ -1160,6 +1161,27 @@ export const createDatabaseTurnHooks = async (
                 where: { id: state.id },
                 data: worldStateUpdate,
             });
+
+            if (realtimeBacklogShiftTicks > 0) {
+                const deltaTicks = BigInt(realtimeBacklogShiftTicks);
+                const deltaSeconds = (realtimeBacklogShiftTicks / GAME_TICKS_PER_TURN) * state.tickSeconds;
+                await prisma.$executeRaw(
+                    GamePrisma.sql`
+                        UPDATE general
+                        SET turn_tick = CASE WHEN turn_tick IS NULL THEN NULL ELSE turn_tick + ${deltaTicks} END,
+                            turn_time = turn_time + (${deltaSeconds} * INTERVAL '1 second')
+                    `
+                );
+                await prisma.$executeRaw(
+                    GamePrisma.sql`
+                        UPDATE auction
+                        SET close_tick = CASE WHEN close_tick IS NULL THEN NULL ELSE close_tick + ${deltaTicks} END,
+                            close_at = close_at + (${deltaSeconds} * INTERVAL '1 second'),
+                            updated_at = NOW()
+                        WHERE status = 'OPEN'
+                    `
+                );
+            }
 
             if (
                 state.tickSeconds !== persistedTickSeconds &&

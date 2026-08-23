@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 
 import type { GamePrismaClient } from '@sammo-ts/infra';
+import { GAME_TICKS_PER_TURN } from '@sammo-ts/common';
 import { InMemoryTurnWorld } from '../src/turn/inMemoryWorld.js';
 import { applyRuntimeClockShift } from '../src/turn/runtimeClockShift.js';
 import { applyRuntimeGameSettings } from '../src/turn/runtimeGameSettings.js';
@@ -171,6 +172,119 @@ describe('runtime clock shift', () => {
         );
         expect(world.getGeneralById(1)?.turnTick).toBe(beforeTurnTick);
         expect(world.getGameClockState().wallAnchor).toEqual(resumedAt);
+    });
+
+    it.each([
+        [5, 6],
+        [10, 3],
+        [20, 1],
+    ])('uses the Ref catch-up threshold for a %i-minute turn', (turnMinutes, threshold) => {
+        const wallAnchor = new Date('2026-07-30T10:00:00.000Z');
+        const world = buildWorld({
+            tickSeconds: turnMinutes * 60,
+            clockBaseTime: wallAnchor,
+            clockTick: 0,
+            clockMode: 'realtime',
+            clockWallAnchor: wallAnchor,
+            lastTurnTick: 0,
+            lastTurnTime: wallAnchor,
+        });
+
+        expect(
+            world.shouldRebaseRealtimeBacklog(new Date(wallAnchor.getTime() + threshold * turnMinutes * 60_000))
+        ).toBe(false);
+        expect(
+            world.shouldRebaseRealtimeBacklog(new Date(wallAnchor.getTime() + (threshold + 1) * turnMinutes * 60_000))
+        ).toBe(true);
+    });
+
+    it('skips a long realtime backlog while preserving the turn phase and wall-clock display', () => {
+        const wallAnchor = new Date('2026-07-30T10:00:00.000Z');
+        const resumedAt = new Date('2026-07-30T10:35:00.000Z');
+        const world = buildWorld({
+            tickSeconds: 300,
+            clockBaseTime: wallAnchor,
+            clockTick: 0,
+            clockMode: 'realtime',
+            clockWallAnchor: wallAnchor,
+            lastTurnTick: 0,
+            lastTurnTime: wallAnchor,
+        });
+        world.setCheckpoint({
+            turnTime: '2026-07-30T10:10:00.000Z',
+            turnTick: 2 * GAME_TICKS_PER_TURN,
+            generalId: 1,
+            year: 190,
+            month: 1,
+        });
+
+        const result = world.rebaseRealtimeBacklog(resumedAt);
+
+        expect(result).toMatchObject({
+            skippedTurns: 7,
+            shiftedTicks: 7 * GAME_TICKS_PER_TURN,
+            lastTurnTime: resumedAt.toISOString(),
+        });
+        expect(world.getGameNow(resumedAt)).toEqual(resumedAt);
+        expect(world.getState()).toMatchObject({
+            clockTick: 7 * GAME_TICKS_PER_TURN,
+            clockWallAnchor: resumedAt,
+            lastTurnTick: 7 * GAME_TICKS_PER_TURN,
+            meta: {
+                turntime: '2026-07-30 10:35:00.123456',
+                starttime: '2026-07-01 00:35:00',
+            },
+        });
+        expect(world.getGeneralById(1)).toMatchObject({
+            turnTick: 9 * GAME_TICKS_PER_TURN,
+            turnTime: new Date('2026-07-30T10:45:00.000Z'),
+        });
+        expect(world.getCheckpoint()).toMatchObject({
+            turnTick: 9 * GAME_TICKS_PER_TURN,
+            turnTime: '2026-07-30T10:45:00.000Z',
+        });
+        expect(world.peekDirtyState()).toMatchObject({
+            realtimeBacklogShiftTicks: 7 * GAME_TICKS_PER_TURN,
+            generals: [],
+        });
+    });
+
+    it('repairs an already accumulated realtime projection lag during a long rebase', () => {
+        const base = new Date('2026-07-30T10:00:00.000Z');
+        const staleAnchor = new Date('2026-07-30T11:00:00.000Z');
+        const resumedAt = new Date('2026-07-30T11:50:00.000Z');
+        const world = buildWorld({
+            tickSeconds: 300,
+            clockBaseTime: base,
+            clockTick: 5 * GAME_TICKS_PER_TURN,
+            clockMode: 'realtime',
+            clockWallAnchor: staleAnchor,
+            lastTurnTick: 0,
+            lastTurnTime: base,
+        });
+
+        expect(world.getGameNow(resumedAt).toISOString()).toBe('2026-07-30T11:15:00.000Z');
+        expect(world.rebaseRealtimeBacklog(resumedAt)).toMatchObject({ skippedTurns: 22 });
+        expect(world.getGameNow(resumedAt)).toEqual(resumedAt);
+    });
+
+    it('does not lose realtime elapsed time when an overdue target is committed later', () => {
+        const base = new Date('2026-07-30T10:00:00.000Z');
+        const world = buildWorld({
+            tickSeconds: 300,
+            clockBaseTime: base,
+            clockTick: 0,
+            clockMode: 'realtime',
+            clockWallAnchor: base,
+            lastTurnTick: 0,
+            lastTurnTime: base,
+        });
+        const completedAt = new Date('2026-07-30T10:07:00.000Z');
+
+        world.advanceGameClockTo(new Date('2026-07-30T10:05:00.000Z'), completedAt);
+
+        expect(world.getGameNow(completedAt)).toEqual(completedAt);
+        expect(world.getGameClockState().tick).toBe(50_400_000);
     });
 });
 

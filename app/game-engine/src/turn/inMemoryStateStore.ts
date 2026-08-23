@@ -42,6 +42,14 @@ export class InMemoryTurnStateStore implements TurnStateStore {
         };
     }
 
+    async rebaseRealtimeBacklog(wallNow: Date) {
+        return this.world.rebaseRealtimeBacklog(wallNow);
+    }
+
+    async shouldRebaseRealtimeBacklog(wallNow: Date): Promise<boolean> {
+        return this.world.shouldRebaseRealtimeBacklog(wallNow);
+    }
+
     async advanceGameClockTo(target: Date, wallNow: Date): Promise<void> {
         this.world.advanceGameClockTo(target, wallNow);
     }

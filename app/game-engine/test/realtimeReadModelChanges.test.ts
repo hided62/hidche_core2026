@@ -62,6 +62,7 @@ describe('durable read-model change journal mapping', () => {
 
     it('detects troop, leader-turn, and aggregate dashboard dependencies conservatively', () => {
         const emptyWorldChanges = {
+            realtimeBacklogShiftTicks: 0,
             accessScoreResetGeneralIds: [],
             generals: [],
             cities: [],

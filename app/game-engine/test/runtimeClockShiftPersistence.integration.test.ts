@@ -19,7 +19,7 @@ const requestId = 'integration:engine:runtime-clock-shift';
 const actionId = 'b9f68480-dba9-4e03-a62b-499e6234f18a';
 const runtimeSettingsRequestId = 'integration:engine:runtime-game-settings';
 const runtimeSettingsActionId = 'c9f68480-dba9-4e03-a62b-499e6234f18a';
-const generalIds = [990_301, 990_302, 990_303] as const;
+const generalIds = [990_301, 990_302, 990_303, 990_304] as const;
 const runtimeSettingsLogText = 'runtime-settings-existing-log';
 
 const buildGeneral = (id: number, turnTime: Date): TurnGeneral =>
@@ -88,7 +88,9 @@ integration('runtime clock shift persistence', () => {
         await db.auction.deleteMany({ where: { hostGeneralId: { in: [...generalIds] } } });
         await db.general.deleteMany({ where: { id: { in: [...generalIds] } } });
         await db.worldState.deleteMany({
-            where: { scenarioCode: { in: ['runtime-clock-shift', 'runtime-game-settings'] } },
+            where: {
+                scenarioCode: { in: ['runtime-clock-shift', 'runtime-game-settings', 'realtime-backlog-rebase'] },
+            },
         });
     });
 
@@ -100,7 +102,9 @@ integration('runtime clock shift persistence', () => {
         await db.auction.deleteMany({ where: { hostGeneralId: { in: [...generalIds] } } });
         await db.general.deleteMany({ where: { id: { in: [...generalIds] } } });
         await db.worldState.deleteMany({
-            where: { scenarioCode: { in: ['runtime-clock-shift', 'runtime-game-settings'] } },
+            where: {
+                scenarioCode: { in: ['runtime-clock-shift', 'runtime-game-settings', 'realtime-backlog-rebase'] },
+            },
         });
         await closeDb?.();
     });
@@ -296,6 +300,131 @@ integration('runtime clock shift persistence', () => {
             },
         });
 
+        await db.worldState.delete({ where: { id: row.id } });
+    });
+
+    it('atomically rebases a long realtime backlog and open auction deadlines', async () => {
+        const base = new Date('2099-09-01T00:00:00.000Z');
+        const resumedAt = new Date('2099-09-01T00:35:00.000Z');
+        const row = await db.worldState.create({
+            data: {
+                scenarioCode: 'realtime-backlog-rebase',
+                currentYear: 192,
+                currentMonth: 3,
+                tickSeconds: 300,
+                clockBaseTime: base,
+                clockTick: 0,
+                clockMode: 'realtime',
+                clockWallAnchor: base,
+                lastTurnTick: 0,
+                config: {},
+                meta: {
+                    lastTurnTime: base.toISOString(),
+                    turntime: '2099-09-01 00:00:00.123456',
+                    starttime: '2099-08-01 00:00:00',
+                },
+            },
+        });
+        const general = buildGeneral(generalIds[3], new Date('2099-09-01T00:05:00.000Z'));
+        await db.general.create({
+            data: {
+                id: general.id,
+                name: general.name,
+                nationId: general.nationId,
+                cityId: general.cityId,
+                troopId: general.troopId,
+                turnTime: general.turnTime,
+                turnTick: BigInt(GAME_TICKS_PER_TURN),
+            },
+        });
+        const [openAuction, finishedAuction] = await Promise.all(
+            (['OPEN', 'FINISHED'] as const).map((status) =>
+                db.auction.create({
+                    data: {
+                        type: 'BUY_RICE',
+                        hostGeneralId: general.id,
+                        detail: {},
+                        status,
+                        closeAt: new Date('2099-09-01T00:10:00.000Z'),
+                        closeTick: BigInt(2 * GAME_TICKS_PER_TURN),
+                    },
+                })
+            )
+        );
+        const world = new InMemoryTurnWorld(
+            {
+                id: row.id,
+                currentYear: 192,
+                currentMonth: 3,
+                tickSeconds: 300,
+                lastTurnTime: base,
+                clockBaseTime: base,
+                clockTick: 0,
+                clockMode: 'realtime',
+                clockWallAnchor: base,
+                lastTurnTick: 0,
+                meta: row.meta as Record<string, unknown>,
+            },
+            {
+                scenarioConfig: {
+                    stat: { total: 300, min: 10, max: 100, npcTotal: 150, npcMax: 50, npcMin: 10, chiefMin: 70 },
+                    iconPath: '',
+                    map: {},
+                    const: {},
+                    environment: { mapName: 'test', unitSet: 'default' },
+                },
+                map: {
+                    id: 'test',
+                    name: 'test',
+                    cities: [],
+                    defaults: { trust: 50, trade: 100, supplyState: 1, frontState: 0 },
+                },
+                generals: [general],
+                cities: [],
+                nations: [],
+                troops: [],
+                diplomacy: [],
+                events: [],
+                initialEvents: [],
+            },
+            { schedule: { entries: [{ startMinute: 0, tickMinutes: 5 }] } }
+        );
+        const hooks = await createDatabaseTurnHooks(databaseUrl!, world);
+        try {
+            expect(world.rebaseRealtimeBacklog(resumedAt)).toMatchObject({ skippedTurns: 7 });
+            await hooks.hooks.flushChanges?.({
+                lastTurnTime: resumedAt.toISOString(),
+                processedGenerals: 0,
+                processedTurns: 0,
+                durationMs: 0,
+                partial: false,
+            });
+        } finally {
+            await hooks.close();
+        }
+
+        const storedWorld = await db.worldState.findUniqueOrThrow({ where: { id: row.id } });
+        expect(storedWorld).toMatchObject({
+            clockTick: BigInt(7 * GAME_TICKS_PER_TURN),
+            lastTurnTick: BigInt(7 * GAME_TICKS_PER_TURN),
+            clockWallAnchor: resumedAt,
+        });
+        const storedGeneral = await db.general.findUniqueOrThrow({ where: { id: general.id } });
+        expect(storedGeneral).toMatchObject({
+            turnTick: BigInt(8 * GAME_TICKS_PER_TURN),
+            turnTime: new Date('2099-09-01T00:40:00.000Z'),
+        });
+        expect(await db.auction.findUniqueOrThrow({ where: { id: openAuction.id } })).toMatchObject({
+            closeTick: BigInt(9 * GAME_TICKS_PER_TURN),
+            closeAt: new Date('2099-09-01T00:45:00.000Z'),
+        });
+        expect(await db.auction.findUniqueOrThrow({ where: { id: finishedAuction.id } })).toMatchObject({
+            closeTick: BigInt(2 * GAME_TICKS_PER_TURN),
+            closeAt: new Date('2099-09-01T00:10:00.000Z'),
+        });
+
+        await db.auction.deleteMany({ where: { id: { in: [openAuction.id, finishedAuction.id] } } });
+        await db.general.delete({ where: { id: general.id } });
         await db.worldState.delete({ where: { id: row.id } });
     });
 

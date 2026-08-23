@@ -9,7 +9,7 @@ import type {
     UnitSetDefinition,
 } from '@sammo-ts/logic';
 import { getNextTurnAt } from '@sammo-ts/logic';
-import { GameClock, type GameClockMode } from '@sammo-ts/common';
+import { GAME_TICKS_PER_TURN, GameClock, type GameClockMode } from '@sammo-ts/common';
 
 import type { TurnCheckpoint } from '../lifecycle/types.js';
 import type {
@@ -115,6 +115,7 @@ export interface InMemoryGameClockState {
 }
 
 export interface TurnWorldChanges {
+    realtimeBacklogShiftTicks: number;
     accessScoreResetGeneralIds: number[];
     generals: TurnGeneral[];
     cities: City[];
@@ -178,6 +179,7 @@ export interface InMemoryTurnWorldStateSnapshot {
     pendingNationBettingFinishes: PendingNationBettingFinish[];
     pendingYearbookSnapshots: PendingYearbookSnapshot[];
     pendingUnificationFinalizations: PendingUnificationFinalization[];
+    pendingRealtimeBacklogShiftTicks: number;
 }
 
 export interface InMemoryTurnWorldInspection {
@@ -380,6 +382,38 @@ const readMetaNumber = (meta: Record<string, unknown>, key: string): number | nu
     return null;
 };
 
+const shiftGameClockMetaDate = (value: unknown, deltaMilliseconds: number): unknown => {
+    if (typeof value !== 'string' || !value.trim()) {
+        return value;
+    }
+    if (value.includes('T')) {
+        const shifted = new Date(new Date(value).getTime() + deltaMilliseconds);
+        return Number.isNaN(shifted.getTime()) ? value : shifted.toISOString();
+    }
+    const match = /^(\d{4})-(\d{2})-(\d{2})[ ](\d{2}):(\d{2}):(\d{2})(\.\d{1,6})?$/.exec(value);
+    if (!match) {
+        return value;
+    }
+    const parts = match.slice(1).map(Number);
+    const shifted = new Date(
+        Date.UTC(parts[0]!, parts[1]! - 1, parts[2]!, parts[3]!, parts[4]!, parts[5]!) + deltaMilliseconds
+    );
+    return (
+        [
+            shifted.getUTCFullYear().toString().padStart(4, '0'),
+            (shifted.getUTCMonth() + 1).toString().padStart(2, '0'),
+            shifted.getUTCDate().toString().padStart(2, '0'),
+        ].join('-') +
+        ' ' +
+        [
+            shifted.getUTCHours().toString().padStart(2, '0'),
+            shifted.getUTCMinutes().toString().padStart(2, '0'),
+            shifted.getUTCSeconds().toString().padStart(2, '0'),
+        ].join(':') +
+        (match[7] ?? '')
+    );
+};
+
 const resolveWorldKillturn = (meta: Record<string, unknown>): number | null => {
     const killturn = readMetaNumber(meta, 'killturn');
     if (killturn !== null) {
@@ -448,6 +482,7 @@ export class InMemoryTurnWorld {
     private readonly pendingNationBettingFinishes: PendingNationBettingFinish[] = [];
     private readonly pendingYearbookSnapshots: PendingYearbookSnapshot[] = [];
     private readonly pendingUnificationFinalizations: PendingUnificationFinalization[] = [];
+    private pendingRealtimeBacklogShiftTicks = 0;
     private readonly scenarioConfig: ScenarioConfig;
     private readonly worldConfig: Record<string, unknown>;
     private readonly unitSet?: UnitSetDefinition;
@@ -592,11 +627,102 @@ export class InMemoryTurnWorld {
     advanceGameClockTo(target: Date, wallNow: Date): void {
         const clock = this.getGameClock();
         const targetTick = clock.dateToTick(target);
-        const nextTick = Math.max(clock.tick, targetTick);
+        // Realtime의 권위 시각은 wall anchor 이후 경과입니다. 밀린 턴을 과거
+        // target으로 처리한 완료 시각에 anchor를 다시 고정하면, 처리에 걸린
+        // 시간만큼 게임 시계가 매 pass마다 뒤로 누적됩니다.
+        const observedTick = clock.mode === 'realtime' ? clock.nowTick(wallNow) : clock.tick;
+        const nextTick = Math.max(observedTick, targetTick);
         this.state = {
             ...this.state,
             clockTick: nextTick,
             clockWallAnchor: new Date(wallNow.getTime()),
+        };
+    }
+
+    private resolveRealtimeBacklogRebase(wallNow: Date): {
+        clock: GameClock;
+        wallAlignedTick: number;
+        lastTurnTick: number;
+        skippedTurns: number;
+    } | null {
+        const clock = this.getGameClock();
+        if (clock.mode !== 'realtime') {
+            return null;
+        }
+        const turnMinutes = Math.max(1, Math.round(this.state.tickSeconds / 60));
+        const threshold = turnMinutes >= 20 ? 1 : turnMinutes >= 10 ? 3 : 6;
+        const currentTick = clock.nowTick(wallNow);
+        const wallAlignedTick = Math.max(currentTick, clock.dateToTick(wallNow));
+        const lastTurnTick = this.state.lastTurnTick ?? clock.dateToTick(this.state.lastTurnTime);
+        const skippedTurns = Math.floor((wallAlignedTick - lastTurnTick) / GAME_TICKS_PER_TURN);
+        return skippedTurns > threshold ? { clock, wallAlignedTick, lastTurnTick, skippedTurns } : null;
+    }
+
+    shouldRebaseRealtimeBacklog(wallNow: Date): boolean {
+        return this.resolveRealtimeBacklogRebase(wallNow) !== null;
+    }
+
+    rebaseRealtimeBacklog(wallNow: Date): {
+        skippedTurns: number;
+        shiftedTicks: number;
+        lastTurnTime: string;
+        checkpoint?: TurnCheckpoint;
+    } | null {
+        const plan = this.resolveRealtimeBacklogRebase(wallNow);
+        if (!plan) {
+            return null;
+        }
+        const { clock, wallAlignedTick, lastTurnTick, skippedTurns } = plan;
+        // Ref realtime clock always projects the current wall time. Core may
+        // already have accumulated lag from anchoring an overdue target, so a
+        // long-backlog rebase also repairs that projection without rewinding.
+        const shiftedTicks = skippedTurns * GAME_TICKS_PER_TURN;
+        const shiftedMilliseconds = skippedTurns * this.state.tickSeconds * 1_000;
+        const nextLastTurnTick = clock.addTicks(lastTurnTick, shiftedTicks);
+        const nextLastTurnTime = clock.tickToDate(nextLastTurnTick);
+
+        this.state = {
+            ...this.state,
+            clockTick: wallAlignedTick,
+            clockWallAnchor: new Date(wallNow.getTime()),
+            lastTurnTick: nextLastTurnTick,
+            lastTurnTime: nextLastTurnTime,
+            meta: {
+                ...this.state.meta,
+                lastTurnTime: nextLastTurnTime.toISOString(),
+                turntime: shiftGameClockMetaDate(this.state.meta.turntime, shiftedMilliseconds),
+                starttime: shiftGameClockMetaDate(this.state.meta.starttime, shiftedMilliseconds),
+            },
+        };
+
+        // Ref checkDelay()는 한 번의 UPDATE로 전 장수의 다음 턴만 옮깁니다.
+        // recent-war를 비롯한 이미 발생한 gameplay 시각은 그대로 보존합니다.
+        for (const [generalId, general] of this.generals) {
+            const turnTick = clock.addTicks(general.turnTick ?? clock.dateToTick(general.turnTime), shiftedTicks);
+            this.generals.set(generalId, {
+                ...general,
+                turnTick,
+                turnTime: clock.tickToDate(turnTick),
+            });
+        }
+        if (this.checkpoint) {
+            const checkpointTick = clock.addTicks(
+                this.checkpoint.turnTick ?? clock.dateToTick(new Date(this.checkpoint.turnTime)),
+                shiftedTicks
+            );
+            this.checkpoint = {
+                ...this.checkpoint,
+                turnTick: checkpointTick,
+                turnTime: clock.tickToDate(checkpointTick).toISOString(),
+            };
+        }
+        this.pendingRealtimeBacklogShiftTicks += shiftedTicks;
+
+        return {
+            skippedTurns,
+            shiftedTicks,
+            lastTurnTime: nextLastTurnTime.toISOString(),
+            checkpoint: this.checkpoint,
         };
     }
 
@@ -637,6 +763,7 @@ export class InMemoryTurnWorld {
             pendingNationBettingFinishes: this.pendingNationBettingFinishes,
             pendingYearbookSnapshots: this.pendingYearbookSnapshots,
             pendingUnificationFinalizations: this.pendingUnificationFinalizations,
+            pendingRealtimeBacklogShiftTicks: this.pendingRealtimeBacklogShiftTicks,
         } satisfies InMemoryTurnWorldStateSnapshot);
     }
 
@@ -680,6 +807,7 @@ export class InMemoryTurnWorld {
         this.replaceArray(this.pendingNationBettingFinishes, restored.pendingNationBettingFinishes);
         this.replaceArray(this.pendingYearbookSnapshots, restored.pendingYearbookSnapshots);
         this.replaceArray(this.pendingUnificationFinalizations, restored.pendingUnificationFinalizations);
+        this.pendingRealtimeBacklogShiftTicks = restored.pendingRealtimeBacklogShiftTicks ?? 0;
     }
 
     inspectState(): InMemoryTurnWorldInspection {
@@ -1156,38 +1284,6 @@ export class InMemoryTurnWorld {
         }
         const deltaMs = deltaMinutes * 60_000;
         const shiftDate = (date: Date): Date => new Date(date.getTime() + deltaMs);
-        const shiftMetaDate = (value: unknown): unknown => {
-            if (typeof value !== 'string' || !value.trim()) {
-                return value;
-            }
-            if (value.includes('T')) {
-                const shifted = shiftDate(new Date(value));
-                return Number.isNaN(shifted.getTime()) ? value : shifted.toISOString();
-            }
-            const match = /^(\d{4})-(\d{2})-(\d{2})[ ](\d{2}):(\d{2}):(\d{2})(\.\d{1,6})?$/.exec(value);
-            if (!match) {
-                return value;
-            }
-            const parts = match.slice(1).map(Number);
-            const shifted = new Date(
-                Date.UTC(parts[0]!, parts[1]! - 1, parts[2]!, parts[3]!, parts[4]!, parts[5]!) + deltaMs
-            );
-            return (
-                [
-                    shifted.getUTCFullYear().toString().padStart(4, '0'),
-                    (shifted.getUTCMonth() + 1).toString().padStart(2, '0'),
-                    shifted.getUTCDate().toString().padStart(2, '0'),
-                ].join('-') +
-                ' ' +
-                [
-                    shifted.getUTCHours().toString().padStart(2, '0'),
-                    shifted.getUTCMinutes().toString().padStart(2, '0'),
-                    shifted.getUTCSeconds().toString().padStart(2, '0'),
-                ].join(':') +
-                (match[7] ?? '')
-            );
-        };
-
         const previousClock = this.getGameClock();
         const generalTicks = new Map(
             Array.from(this.generals.values(), (general) => [
@@ -1212,9 +1308,9 @@ export class InMemoryTurnWorld {
         const nextMeta = {
             ...this.state.meta,
             lastTurnTime: nextLastTurnTime.toISOString(),
-            turntime: shiftMetaDate(this.state.meta.turntime),
-            starttime: shiftMetaDate(this.state.meta.starttime),
-            tnmt_time: shiftMetaDate(this.state.meta.tnmt_time),
+            turntime: shiftGameClockMetaDate(this.state.meta.turntime, deltaMs),
+            starttime: shiftGameClockMetaDate(this.state.meta.starttime, deltaMs),
+            tnmt_time: shiftGameClockMetaDate(this.state.meta.tnmt_time, deltaMs),
         };
         this.state = {
             ...this.state,
@@ -1615,6 +1711,7 @@ export class InMemoryTurnWorld {
         );
 
         return {
+            realtimeBacklogShiftTicks: this.pendingRealtimeBacklogShiftTicks,
             accessScoreResetGeneralIds,
             generals,
             cities,
@@ -1644,6 +1741,10 @@ export class InMemoryTurnWorld {
     }
 
     acknowledgeDirtyState(changes: TurnWorldChanges): void {
+        this.pendingRealtimeBacklogShiftTicks = Math.max(
+            0,
+            this.pendingRealtimeBacklogShiftTicks - changes.realtimeBacklogShiftTicks
+        );
         for (const id of changes.accessScoreResetGeneralIds) this.accessScoreResetGeneralIds.delete(id);
         for (const general of changes.generals) this.dirtyGeneralIds.delete(general.id);
         for (const city of changes.cities) this.dirtyCityIds.delete(city.id);
