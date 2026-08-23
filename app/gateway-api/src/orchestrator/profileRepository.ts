@@ -158,7 +158,12 @@ export interface GatewayProfileRepository {
     updateLastError(profileName: string, lastError: string | null): Promise<void>;
     updateWorkspaceUsage(profileName: string, workspace: string, lastUsedAt: string): Promise<void>;
     clearWorkspaceUsage(profileNames: string[]): Promise<void>;
-    listOperations(options?: { profileName?: string; limit?: number }): Promise<GatewayOperationRecord[]>;
+    listOperations(options?: {
+        profileName?: string;
+        statuses?: GatewayOperationStatus[];
+        types?: GatewayOperationType[];
+        limit?: number;
+    }): Promise<GatewayOperationRecord[]>;
     listActiveOperationProfileNames?(now: Date): Promise<string[]>;
     getOperation(id: string): Promise<GatewayOperationRecord | null>;
     listOperationLogs(id: string, afterCursor?: string, limit?: number): Promise<GatewayOperationLogRecord[]>;
@@ -546,9 +551,21 @@ export const createGatewayProfileRepository = (prisma: GatewayPrismaClient): Gat
             },
         });
     },
-    async listOperations(options?: { profileName?: string; limit?: number }): Promise<GatewayOperationRecord[]> {
+    async listOperations(options?: {
+        profileName?: string;
+        statuses?: GatewayOperationStatus[];
+        types?: GatewayOperationType[];
+        limit?: number;
+    }): Promise<GatewayOperationRecord[]> {
         const rows = await prisma.gatewayOperation.findMany({
-            where: options?.profileName ? { profileName: options.profileName } : undefined,
+            where:
+                options?.profileName || options?.statuses?.length || options?.types?.length
+                    ? {
+                          ...(options.profileName ? { profileName: options.profileName } : {}),
+                          ...(options.statuses?.length ? { status: { in: options.statuses } } : {}),
+                          ...(options.types?.length ? { type: { in: options.types } } : {}),
+                      }
+                    : undefined,
             orderBy: { createdAt: 'desc' },
             take: Math.min(Math.max(options?.limit ?? 50, 1), 200),
         });

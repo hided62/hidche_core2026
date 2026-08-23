@@ -152,6 +152,7 @@ const form = reactive({
     openAt: '',
     preopenAt: '',
     scheduledAt: '',
+    publishSchedule: false,
     reason: '',
 });
 const RESET_AUTORUN_FORM_KEYS = {
@@ -653,12 +654,16 @@ const requestReset = async () => {
         errorMessage.value = '초기화 소스와 시나리오를 먼저 선택해주세요.';
         return;
     }
+    if (form.publishSchedule && (!form.scheduledAt || !form.preopenAt || !form.openAt)) {
+        errorMessage.value = '로비 일정 공개에는 초기화 시작, 가오픈 시작과 정식 오픈을 모두 입력해주세요.';
+        return;
+    }
     const scenarioId = form.scenarioId;
     const sourceLabel =
         form.sourceMode === 'CURRENT' ? '서버 지정 버전' : form.sourceMode === 'BRANCH' ? '브랜치' : '커밋';
     if (
         !window.confirm(
-            `${selectedProfileName.value}의 게임 DB를 초기화합니다.\n${sourceLabel}${form.sourceMode === 'CURRENT' ? '' : `: ${form.sourceRef}`}\n시나리오: ${scenarioId}`
+            `${selectedProfileName.value}의 게임 DB를 초기화합니다.\n${sourceLabel}${form.sourceMode === 'CURRENT' ? '' : `: ${form.sourceRef}`}\n시나리오: ${scenarioId}${form.publishSchedule ? '\n예약 등록 즉시 로비에 오픈 일정을 공개합니다.' : ''}`
         )
     ) {
         return;
@@ -670,6 +675,7 @@ const requestReset = async () => {
             sourceMode: form.sourceMode,
             sourceRef: form.sourceMode === 'CURRENT' ? undefined : form.sourceRef.trim(),
             scheduledAt: toIso(form.scheduledAt),
+            publishSchedule: form.publishSchedule,
             reason: form.reason.trim() || undefined,
             install: {
                 scenarioId,
@@ -1384,6 +1390,23 @@ onBeforeUnmount(() => {
                                 />
                             </div>
                         </div>
+                        <label
+                            class="flex cursor-pointer items-start gap-3 rounded border border-zinc-800 bg-zinc-950/50 px-3 py-2 text-sm text-zinc-200"
+                        >
+                            <input
+                                v-model="form.publishSchedule"
+                                type="checkbox"
+                                class="publish-schedule-checkbox mt-0.5 h-4 w-4 accent-amber-500"
+                                data-testid="reset-publish-schedule"
+                            />
+                            <span>
+                                <span class="block font-medium">예약 등록 즉시 로비에 오픈 일정 공개</span>
+                                <span class="mt-0.5 block text-xs leading-5 text-zinc-500">
+                                    빌드는 초기화 시작 시각까지 대기합니다. 공개하려면 위 세 시각을 모두 입력해야
+                                    합니다.
+                                </span>
+                            </span>
+                        </label>
                     </div>
 
                     <input
@@ -1859,3 +1882,10 @@ onBeforeUnmount(() => {
         </div>
     </AdminConsoleLayout>
 </template>
+
+<style scoped>
+.publish-schedule-checkbox:focus-visible {
+    outline: 2px solid #fcd34d;
+    outline-offset: 2px;
+}
+</style>

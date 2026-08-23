@@ -111,8 +111,7 @@ const formatAnnouncementDate = (value: string | null | undefined): string =>
 const profileScenarioTitle = (profileName: string): string =>
     profileDetails.value[profileName]?.scenarioTitle.trim() || '-';
 const npcModeText = (mode: number): string => ['불가', '가능', '선택 생성'][mode] ?? '불가';
-const autorunDetailText = (info: LobbyInfo): string => {
-    const autorun = info.autorunUser;
+const autorunDetailText = (autorun: LobbyInfo['autorunUser']): string => {
     if (!autorun) return '';
 
     const enabled = new Set(autorun.options);
@@ -134,8 +133,14 @@ const autorunDetailText = (info: LobbyInfo): string => {
     labels.push(limit);
     return labels.join(', ');
 };
-const autorunTooltipId = (profileName: string): string =>
-    `profile-autorun-${profileName.replaceAll(/[^a-zA-Z0-9_-]/g, '-')}`;
+const autorunTooltipId = (profileName: string, scope = 'current'): string =>
+    'profile-autorun-' + scope + '-' + profileName.replaceAll(/[^a-zA-Z0-9_-]/g, '-');
+const upcomingResetPhaseText = (profile: LobbyProfile): string => {
+    if (profile.upcomingReset?.phase === 'DELAYED') return '준비 지연 · 일정 확인 중';
+    if (profile.upcomingReset?.phase === 'READY') return '오픈 준비 완료 · 가오픈 대기';
+    if (profile.upcomingReset?.phase === 'PREPARING') return '오픈 준비 중';
+    return '오픈 예정 · 빌드 대기';
+};
 const isProfileRuntimeAvailable = (profile: LobbyProfile): boolean => profile.lifecycle.userAccessible;
 const unavailableProfileText = (profile: LobbyProfile): string => {
     if (!profile.lifecycle.dataInitialized) return '- DB 초기화 전 · 접근 불가 -';
@@ -503,8 +508,75 @@ const handleEnter = async (profile: LobbyProfile, targetPath: string) => {
 
                                 <!-- Server Info -->
                                 <td class="profile-info-cell px-4 py-4 border-r border-zinc-800">
+                                    <div
+                                        v-if="profile.upcomingReset"
+                                        class="upcoming-reset-announcement"
+                                        data-testid="upcoming-reset-announcement"
+                                    >
+                                        <div
+                                            class="upcoming-reset-phase"
+                                            :class="{ 'is-delayed': profile.upcomingReset.phase === 'DELAYED' }"
+                                            data-testid="upcoming-reset-phase"
+                                        >
+                                            {{ upcomingResetPhaseText(profile) }}
+                                        </div>
+                                        <div data-testid="upcoming-reset-scheduled-at">
+                                            - 초기화 시작 :
+                                            {{ formatAnnouncementDate(profile.upcomingReset.scheduledAt) }} -
+                                        </div>
+                                        <div data-testid="upcoming-reset-preopen-at">
+                                            - 가오픈 일시 :
+                                            {{ formatAnnouncementDate(profile.upcomingReset.preopenAt) }} -
+                                        </div>
+                                        <div data-testid="upcoming-reset-open-at">
+                                            - 오픈 일시 : {{ formatAnnouncementDate(profile.upcomingReset.openAt) }} -
+                                        </div>
+                                        <div data-testid="upcoming-reset-scenario-announcement">
+                                            <span class="text-orange-400" data-testid="upcoming-reset-scenario-title">
+                                                {{ profile.upcomingReset.scenarioTitle }} </span
+                                            >{{ ' ' }}
+                                            <span class="text-green-400">
+                                                {{ profile.upcomingReset.turnTermMinutes }}분 턴 서버
+                                            </span>
+                                        </div>
+                                        <div class="profile-announcement-settings text-xs text-zinc-500">
+                                            (상성 설정:{{ profile.upcomingReset.fictionMode }}), (빙의 여부:{{
+                                                npcModeText(profile.upcomingReset.npcMode)
+                                            }}), (최대 스탯:{{ profile.upcomingReset.defaultStatTotal }}), (기타
+                                            설정:<template v-if="profile.upcomingReset.otherTextInfo"
+                                                >{{ profile.upcomingReset.otherTextInfo
+                                                }}<template v-if="profile.upcomingReset.autorunUser"
+                                                    >,
+                                                </template></template
+                                            ><span
+                                                v-if="profile.upcomingReset.autorunUser"
+                                                class="copyable-autorun"
+                                                tabindex="0"
+                                                :aria-describedby="autorunTooltipId(profile.profileName, 'upcoming')"
+                                                >자율행동<span
+                                                    :id="autorunTooltipId(profile.profileName, 'upcoming')"
+                                                    class="copyable-autorun-detail"
+                                                    role="tooltip"
+                                                    ><span class="copyable-autorun-bracket">[</span
+                                                    ><span>{{
+                                                        autorunDetailText(profile.upcomingReset.autorunUser)
+                                                    }}</span
+                                                    ><span class="copyable-autorun-bracket">]</span></span
+                                                ></span
+                                            ><template
+                                                v-if="
+                                                    !profile.upcomingReset.otherTextInfo &&
+                                                    !profile.upcomingReset.autorunUser
+                                                "
+                                                >없음</template
+                                            >)
+                                        </div>
+                                    </div>
                                     <template v-if="profileDetails[profile.profileName]">
-                                        <div class="space-y-1">
+                                        <div
+                                            class="space-y-1"
+                                            :class="{ 'mt-3 border-t border-zinc-800 pt-3': profile.upcomingReset }"
+                                        >
                                             <template v-if="profile.status === 'PREOPEN'">
                                                 <div
                                                     v-if="profileDetails[profile.profileName]?.preopenAt"
@@ -586,7 +658,9 @@ const handleEnter = async (profile: LobbyProfile, targetPath: string) => {
                                                         role="tooltip"
                                                         ><span class="copyable-autorun-bracket">[</span
                                                         ><span>{{
-                                                            autorunDetailText(profileDetails[profile.profileName]!)
+                                                            autorunDetailText(
+                                                                profileDetails[profile.profileName]!.autorunUser
+                                                            )
                                                         }}</span
                                                         ><span class="copyable-autorun-bracket">]</span></span
                                                     ></span
@@ -594,7 +668,7 @@ const handleEnter = async (profile: LobbyProfile, targetPath: string) => {
                                             </div>
                                         </div>
                                     </template>
-                                    <template v-else-if="!isProfileRuntimeAvailable(profile)">
+                                    <template v-else-if="!isProfileRuntimeAvailable(profile) && !profile.upcomingReset">
                                         <div class="text-center text-zinc-600 py-2">
                                             {{ unavailableProfileText(profile) }}
                                         </div>
@@ -927,6 +1001,23 @@ const handleEnter = async (profile: LobbyProfile, targetPath: string) => {
 
 .season-status {
     user-select: none;
+}
+
+.upcoming-reset-announcement {
+    border-left: 2px solid #f59e0b;
+    padding-left: 10px;
+    line-height: 1.5;
+}
+
+.upcoming-reset-phase {
+    margin-bottom: 4px;
+    color: #fbbf24;
+    font-size: 12px;
+    font-weight: 700;
+}
+
+.upcoming-reset-phase.is-delayed {
+    color: #fca5a5;
 }
 
 .copyable-autorun {

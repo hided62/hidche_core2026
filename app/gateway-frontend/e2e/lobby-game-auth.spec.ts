@@ -63,8 +63,25 @@ type LobbyFixtureOptions = {
         limitMinutes: number;
         options: string[];
     } | null;
+    upcomingReset?: {
+        phase: 'SCHEDULED' | 'PREPARING' | 'READY' | 'DELAYED';
+        scheduledAt: string;
+        preopenAt: string;
+        openAt: string;
+        scenarioId: number;
+        scenarioTitle: string;
+        turnTermMinutes: number;
+        fictionMode: string;
+        npcMode: number;
+        defaultStatTotal: number;
+        otherTextInfo: string;
+        autorunUser: {
+            limitMinutes: number;
+            options: string[];
+        } | null;
+    } | null;
     lobbyBundleFailures?: number;
-    profileStatus?: 'RUNNING' | 'PREOPEN' | 'PAUSED' | 'COMPLETED' | 'STOPPED';
+    profileStatus?: 'RUNNING' | 'PREOPEN' | 'PAUSED' | 'COMPLETED' | 'STOPPED' | 'RESERVED';
     includeStoppedProfile?: boolean;
 };
 
@@ -98,10 +115,12 @@ const installFixture = async (page: Page, options: LobbyFixtureOptions = {}) => 
         korName = 'hwe',
         otherTextInfo = '',
         autorunUser = null,
+        upcomingReset = null,
         lobbyBundleFailures = 0,
         profileStatus = 'RUNNING',
         includeStoppedProfile = false,
     } = options;
+    const runtimeAvailable = ['RUNNING', 'PREOPEN', 'PAUSED', 'COMPLETED'].includes(profileStatus);
     let remainingLobbyBundleFailures = lobbyBundleFailures;
     const gameOperations: Array<{ operation: string; authorization: string | undefined }> = [];
     if (authenticated) {
@@ -139,22 +158,23 @@ const installFixture = async (page: Page, options: LobbyFixtureOptions = {}) => 
                             scenario: '903',
                             status: profileStatus,
                             lifecycle: {
-                                runtimeExpected: profileStatus !== 'STOPPED',
-                                userAccessible: profileStatus !== 'STOPPED',
+                                runtimeExpected: runtimeAvailable,
+                                userAccessible: runtimeAvailable,
                                 turnsRunning: profileStatus === 'RUNNING',
                                 operatorResumable: profileStatus === 'PAUSED' || profileStatus === 'STOPPED',
                                 dataInitialized: true,
                             },
                             apiPort: 15015,
                             runtime: {
-                                apiRunning: true,
-                                daemonRunning: true,
-                                auctionRunning: true,
-                                battleSimRunning: true,
-                                tournamentRunning: true,
+                                apiRunning: runtimeAvailable,
+                                daemonRunning: runtimeAvailable,
+                                auctionRunning: runtimeAvailable,
+                                battleSimRunning: runtimeAvailable,
+                                tournamentRunning: runtimeAvailable,
                             },
                             korName,
                             color: '#ffffff',
+                            upcomingReset,
                             localAccountPolicy: {
                                 accessAllowed: true,
                                 canCreateGeneral,
@@ -480,6 +500,114 @@ test('does not contact a STOPPED game runtime and labels it inaccessible', async
     await expect(page.getByRole('tab', { name: 'hwe섭' })).toHaveCount(0);
     expect(gameOperations).toEqual([]);
     await page.screenshot({ path: testInfo.outputPath('gateway-stopped-profile-lobby.png'), fullPage: true });
+});
+
+test('shows a complete upcoming reset announcement without contacting the stopped runtime', async ({
+    page,
+}, testInfo) => {
+    const gameOperations = await installFixture(page, {
+        profileStatus: 'STOPPED',
+        korName: '체',
+        upcomingReset: {
+            phase: 'SCHEDULED',
+            scheduledAt: '2026-08-27T05:00:00.000Z',
+            preopenAt: '2026-08-27T05:30:00.000Z',
+            openAt: '2026-08-27T11:00:00.000Z',
+            scenarioId: 1010,
+            scenarioTitle: '【가상】황건적의 난',
+            turnTermMinutes: 60,
+            fictionMode: '가상',
+            npcMode: 1,
+            defaultStatTotal: 70,
+            otherTextInfo: '랜덤 임관',
+            autorunUser: {
+                limitMinutes: 1440,
+                options: ['develop', 'battle'],
+            },
+        },
+    });
+    await page.setViewportSize({ width: 1200, height: 900 });
+
+    await page.goto('lobby');
+    const row = page.locator('tbody tr').filter({ hasText: '체섭' });
+    const announcement = row.getByTestId('upcoming-reset-announcement');
+    const autorun = announcement.locator('.copyable-autorun');
+    const tooltip = announcement.locator('.copyable-autorun-detail');
+    await expect(row.getByTestId('upcoming-reset-phase')).toHaveText('오픈 예정 · 빌드 대기');
+    await expect(row.getByTestId('upcoming-reset-scheduled-at')).toHaveText('- 초기화 시작 : 2026-08-27 14:00:00 -');
+    await expect(row.getByTestId('upcoming-reset-preopen-at')).toHaveText('- 가오픈 일시 : 2026-08-27 14:30:00 -');
+    await expect(row.getByTestId('upcoming-reset-open-at')).toHaveText('- 오픈 일시 : 2026-08-27 20:00:00 -');
+    await expect(row.getByTestId('upcoming-reset-scenario-announcement')).toHaveText(
+        '【가상】황건적의 난 60분 턴 서버'
+    );
+    expect((await announcement.textContent())?.replace(/\s+/g, ' ')).toContain(
+        '(상성 설정:가상), (빙의 여부:가능), (최대 스탯:70), (기타 설정:랜덤 임관, 자율행동[내정, 출병, 24시간 유효])'
+    );
+    await expect(row).not.toContainText('서버 중지 · 접근 불가');
+    await expect(row.getByRole('button', { name: '입장' })).toHaveCount(0);
+    await expect(page.getByRole('tab', { name: 'hwe섭' })).toHaveCount(0);
+    expect(gameOperations).toEqual([]);
+
+    const desktopGeometry = await announcement.evaluate((element) => ({
+        announcement: element.getBoundingClientRect().toJSON(),
+        cell: element.parentElement?.getBoundingClientRect().toJSON(),
+        documentWidth: document.documentElement.scrollWidth,
+        viewportWidth: window.innerWidth,
+    }));
+    expect(desktopGeometry.announcement.left).toBeGreaterThanOrEqual(desktopGeometry.cell?.left ?? 0);
+    expect(desktopGeometry.announcement.right).toBeLessThanOrEqual(desktopGeometry.cell?.right ?? 0);
+    await autorun.hover();
+    await expect(tooltip).toBeVisible();
+    await autorun.focus();
+    await expect(autorun).toBeFocused();
+    await expect(autorun).toHaveCSS('outline-width', '2px');
+    await page.screenshot({ path: testInfo.outputPath('gateway-upcoming-reset-desktop.png'), fullPage: true });
+
+    await page.setViewportSize({ width: 390, height: 844 });
+    await announcement.scrollIntoViewIfNeeded();
+    const mobileGeometry = await announcement.evaluate((element) => {
+        const rect = element.getBoundingClientRect();
+        return {
+            left: rect.left,
+            right: rect.right,
+            documentWidth: document.documentElement.scrollWidth,
+            viewportWidth: window.innerWidth,
+        };
+    });
+    expect(mobileGeometry.left).toBeGreaterThanOrEqual(0);
+    expect(mobileGeometry.right).toBeLessThanOrEqual(mobileGeometry.viewportWidth);
+    expect(mobileGeometry.documentWidth).toBe(mobileGeometry.viewportWidth);
+    await autorun.hover();
+    await expect(tooltip).toBeVisible();
+    await page.screenshot({ path: testInfo.outputPath('gateway-upcoming-reset-mobile.png'), fullPage: true });
+});
+
+test('keeps the announcement through the RESERVED handoff after the build completes', async ({ page }) => {
+    const gameOperations = await installFixture(page, {
+        profileStatus: 'RESERVED',
+        upcomingReset: {
+            phase: 'READY',
+            scheduledAt: '2026-08-27T05:00:00.000Z',
+            preopenAt: '2026-08-27T05:30:00.000Z',
+            openAt: '2026-08-27T11:00:00.000Z',
+            scenarioId: 1010,
+            scenarioTitle: '【가상】황건적의 난',
+            turnTermMinutes: 60,
+            fictionMode: '가상',
+            npcMode: 1,
+            defaultStatTotal: 70,
+            otherTextInfo: '',
+            autorunUser: null,
+        },
+    });
+
+    await page.goto('lobby');
+    const row = page.locator('tbody tr').filter({ hasText: 'hwe섭' });
+    await expect(row.getByTestId('upcoming-reset-phase')).toHaveText('오픈 준비 완료 · 가오픈 대기');
+    await expect(row.getByTestId('upcoming-reset-scenario-title')).toHaveText('【가상】황건적의 난');
+    await expect(row).not.toContainText('준 비 중 · 접근 불가');
+    await expect(row.getByRole('button', { name: '입장' })).toHaveCount(0);
+    expect(gameOperations).toEqual([]);
 });
 
 test('automatically recovers profile details after a transient update outage', async ({ page }) => {

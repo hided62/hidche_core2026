@@ -604,6 +604,19 @@ test('separates branch and commit semantics and submits a reset from the dedicat
     await page.getByTestId('reset-scheduled-at').fill('2030-08-13T09:30');
     await page.getByTestId('reset-preopen-at').fill('2030-08-13T10:00');
     await page.getByTestId('reset-open-at').fill('2030-08-13T11:00');
+    const publishSchedule = page.getByTestId('reset-publish-schedule');
+    await publishSchedule.check();
+    await page.getByTestId('reset-open-at').focus();
+    await page.keyboard.press('Tab');
+    await publishSchedule.focus();
+    await expect(publishSchedule).toBeFocused();
+    const publishFocusStyle = await publishSchedule.evaluate((element) => {
+        const style = getComputedStyle(element);
+        return { style: style.outlineStyle, width: Number.parseFloat(style.outlineWidth) };
+    });
+    expect(publishFocusStyle.style).not.toBe('none');
+    expect(publishFocusStyle.width).toBeGreaterThanOrEqual(2);
+    await expect(page.getByText('빌드는 초기화 시작 시각까지 대기합니다.')).toBeVisible();
     const scheduledHelp = page.getByTestId('reset-help-scheduled-at');
     await scheduledHelp.hover();
     await expect(page.getByTestId('reset-help-scheduled-at-tooltip')).toContainText(
@@ -664,6 +677,7 @@ test('separates branch and commit semantics and submits a reset from the dedicat
     expect(JSON.stringify(resetRequest?.body)).toContain('0123456789abcdef0123456789abcdef01234567');
     expect(JSON.stringify(resetRequest?.body)).toContain('"scenarioId":5');
     expect(JSON.stringify(resetRequest?.body)).toContain('"scheduledAt":"2030-08-13T00:30:00.000Z"');
+    expect(JSON.stringify(resetRequest?.body)).toContain('"publishSchedule":true');
     expect(JSON.stringify(resetRequest?.body)).toContain('"preopenAt":"2030-08-13T01:00:00.000Z"');
     expect(JSON.stringify(resetRequest?.body)).toContain('"openAt":"2030-08-13T02:00:00.000Z"');
     await page.screenshot({ path: testInfo.outputPath('reset-operation-log-desktop.png'), fullPage: true });
@@ -681,6 +695,20 @@ test('separates branch and commit semantics and submits a reset from the dedicat
             return children;
         });
     expect(mobileGeometry[0]!.width).toBeLessThanOrEqual(390);
+    const mobilePublishGeometry = await publishSchedule.evaluate((element) => {
+        const label = element.closest('label');
+        if (!label) throw new Error('expected publish schedule label');
+        const rect = label.getBoundingClientRect();
+        return {
+            left: rect.left,
+            right: rect.right,
+            documentWidth: document.documentElement.scrollWidth,
+            viewportWidth: window.innerWidth,
+        };
+    });
+    expect(mobilePublishGeometry.left).toBeGreaterThanOrEqual(0);
+    expect(mobilePublishGeometry.right).toBeLessThanOrEqual(mobilePublishGeometry.viewportWidth);
+    expect(mobilePublishGeometry.documentWidth).toBe(mobilePublishGeometry.viewportWidth);
     const mobileTabs = await page
         .getByTestId('server-profile-tabs')
         .locator('a')

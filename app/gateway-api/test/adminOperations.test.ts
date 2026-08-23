@@ -734,13 +734,30 @@ describe('admin operation API', () => {
             sourceMode: 'COMMIT',
             sourceRef: 'HEAD',
             scheduledAt: '2099-01-01T00:00:00.000Z',
+            publishSchedule: true,
             install,
         });
 
         expect(harness.createdInputs[0]).toMatchObject({
             type: 'RESET',
             scheduledAt: '2099-01-01T00:00:00.000Z',
-            payload: { install },
+            payload: {
+                install,
+                publicAnnouncement: {
+                    enabled: true,
+                    scenarioId: 1010,
+                    scenarioTitle: expect.any(String),
+                    scheduledAt: '2099-01-01T00:00:00.000Z',
+                    preopenAt: install.preopenAt,
+                    openAt: install.openAt,
+                    turnTermMinutes: 60,
+                    fictionMode: '가상',
+                    npcMode: 0,
+                    defaultStatTotal: expect.any(Number),
+                    otherTextInfo: expect.any(String),
+                    autorunUser: null,
+                },
+            },
         });
 
         await expect(
@@ -754,6 +771,20 @@ describe('admin operation API', () => {
         ).rejects.toMatchObject({
             code: 'BAD_REQUEST',
             message: 'preopenAt cannot be earlier than scheduledAt.',
+        });
+
+        await expect(
+            harness.caller.admin.operations.requestReset({
+                profileName: 'che:2',
+                sourceMode: 'COMMIT',
+                sourceRef: 'HEAD',
+                scheduledAt: '2099-01-01T00:00:00.000Z',
+                publishSchedule: true,
+                install: { ...install, preopenAt: undefined },
+            })
+        ).rejects.toMatchObject({
+            code: 'BAD_REQUEST',
+            message: '로비 일정 공개에는 초기화 시작, 가오픈 시작과 정식 오픈이 모두 필요합니다.',
         });
     });
 
