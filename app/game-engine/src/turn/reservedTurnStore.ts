@@ -189,6 +189,13 @@ export class InMemoryReservedTurnStore {
         return this.captureState();
     }
 
+    inspectGeneralTurnActivity(): Array<[number, boolean]> {
+        return Array.from(this.generalTurns, ([generalId, turns]) => [
+            generalId,
+            turns.some((turn) => turn.action !== DEFAULT_TURN_ACTION || Object.keys(turn.args).length > 0),
+        ]);
+    }
+
     async loadAll(): Promise<void> {
         const [generalRows, nationRows] = await Promise.all([
             this.prisma.generalTurn.findMany(),

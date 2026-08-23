@@ -10,3 +10,4 @@ export * from './readModelChangeJournal.js';
 export * from './readModelOutboxDispatcher.js';
 export * from './readModelCoverageActivation.js';
 export * from './gameSchemaAdvisoryLock.js';
+export * from './webPushOutbox.js';

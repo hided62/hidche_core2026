@@ -8,10 +8,19 @@ import DefaultLayout from '../layouts/DefaultLayout.vue';
 import { createGameTrpc } from '../utils/gameTrpc';
 import { trpc } from '../utils/trpc';
 import { sealPassword } from '../utils/passwordEnvelope';
+import type { WebPushEventType } from '@sammo-ts/common';
 
 type Account = Awaited<ReturnType<typeof trpc.account.get.query>>;
 type IconSyncProfile = Awaited<ReturnType<typeof trpc.account.changeIcon.mutate>>['profiles'][number];
 type IconSyncState = 'idle' | 'pending' | 'success' | 'error';
+type NotificationState = Awaited<ReturnType<typeof trpc.account.notifications.get.query>>;
+type LocalNotificationPreference = {
+    profileName: string;
+    eventType: WebPushEventType;
+    enabled: boolean;
+    targetYear: number | null;
+    targetMonth: number | null;
+};
 type IconSyncRow = IconSyncProfile & {
     selected: boolean;
     state: IconSyncState;
@@ -40,11 +49,203 @@ const iconServerStaticFeedback = ref(false);
 const iconServerMessage = ref('');
 const iconServerRows = ref<IconSyncRow[]>([]);
 const iconServerDialog = ref<HTMLElement | null>(null);
+const notificationState = ref<NotificationState | null>(null);
+const notificationPreferences = ref<LocalNotificationPreference[]>([]);
+const selectedNotificationProfile = ref('');
+const notificationBusy = ref(false);
+const notificationPermission = ref<NotificationPermission | 'unsupported'>('default');
+const currentPushSubscription = ref<PushSubscription | null>(null);
 let iconServerReturnFocus: HTMLElement | null = null;
 let previousBodyOverflow = '';
 let iconServerStaticTimer: ReturnType<typeof setTimeout> | null = null;
 
+const notificationLabels: Record<WebPushEventType, string> = {
+    TROOP_ANNIHILATED: '내 병력 전멸',
+    PRIVATE_MESSAGE_RECEIVED: '개인 메시지 수신',
+    AUTONOMOUS_ACTION_ENDED: '자율행동 종료',
+    RESERVED_TURNS_ENDED: '예턴 종료',
+    PROFILE_PREOPENED: '서버 가오픈',
+    PROFILE_OPEN_SCHEDULED: '서버 오픈 예약',
+    PROFILE_OPENED: '서버 오픈',
+    NATION_DESTROYED: '내 국가 멸망',
+    TARGET_DATE_REACHED: '특정 연월 도달',
+};
+
+const supportsWebPush = computed(
+    () => 'serviceWorker' in navigator && 'PushManager' in window && 'Notification' in window
+);
+const isIos = computed(() => /iPad|iPhone|iPod/u.test(navigator.userAgent));
+const isStandalone = computed(
+    () =>
+        window.matchMedia('(display-mode: standalone)').matches ||
+        Boolean((navigator as Navigator & { standalone?: boolean }).standalone)
+);
+const currentProfile = computed(() =>
+    notificationState.value?.profiles.find((profile) => profile.profileName === selectedNotificationProfile.value)
+);
+const notificationEventTypes = computed(
+    () => (notificationState.value?.eventTypes ?? []) as readonly WebPushEventType[]
+);
+
 const sessionToken = (): string | null => window.localStorage.getItem('sammo-session-token');
+
+const ensureNotificationPreference = (eventType: WebPushEventType): LocalNotificationPreference => {
+    const profileName = selectedNotificationProfile.value;
+    let preference = notificationPreferences.value.find(
+        (candidate) => candidate.profileName === profileName && candidate.eventType === eventType
+    );
+    if (!preference) {
+        preference = {
+            profileName,
+            eventType,
+            enabled: false,
+            targetYear: null,
+            targetMonth: null,
+        };
+        notificationPreferences.value.push(preference);
+    }
+    return preference;
+};
+
+const loadNotificationSettings = async (): Promise<void> => {
+    const token = sessionToken();
+    if (!token) return;
+    let endpoint: string | undefined;
+    if (supportsWebPush.value) {
+        notificationPermission.value = Notification.permission;
+        const registration = await navigator.serviceWorker.getRegistration(import.meta.env.BASE_URL);
+        currentPushSubscription.value = (await registration?.pushManager.getSubscription()) ?? null;
+        endpoint = currentPushSubscription.value?.endpoint;
+    } else {
+        notificationPermission.value = 'unsupported';
+    }
+    const state = await trpc.account.notifications.get.query({
+        sessionToken: token,
+        ...(endpoint ? { currentEndpoint: endpoint } : {}),
+    });
+    notificationState.value = state;
+    notificationPreferences.value = state.preferences.map((preference) => ({
+        profileName: preference.profileName,
+        eventType: preference.eventType as WebPushEventType,
+        enabled: preference.enabled,
+        targetYear: preference.targetYear,
+        targetMonth: preference.targetMonth,
+    }));
+    if (
+        !selectedNotificationProfile.value ||
+        !state.profiles.some((profile) => profile.profileName === selectedNotificationProfile.value)
+    ) {
+        selectedNotificationProfile.value = state.profiles[0]?.profileName ?? '';
+    }
+};
+
+const base64UrlToUint8Array = (value: string): Uint8Array<ArrayBuffer> => {
+    const padding = '='.repeat((4 - (value.length % 4)) % 4);
+    const raw = window.atob((value + padding).replace(/-/gu, '+').replace(/_/gu, '/'));
+    const result = new Uint8Array(new ArrayBuffer(raw.length));
+    for (let index = 0; index < raw.length; index += 1) result[index] = raw.charCodeAt(index);
+    return result;
+};
+
+const subscribeCurrentDevice = async (): Promise<void> => {
+    if (notificationBusy.value || !notificationState.value?.capability.enabled) return;
+    notificationBusy.value = true;
+    errorMessage.value = '';
+    try {
+        const token = sessionToken();
+        const publicKey = notificationState.value.capability.publicKey;
+        if (!token || !publicKey) throw new Error('웹 알림 전송이 아직 활성화되지 않았습니다.');
+        if (!supportsWebPush.value) throw new Error('이 브라우저는 Web Push를 지원하지 않습니다.');
+        if (isIos.value && !isStandalone.value) {
+            throw new Error('iPhone에서는 Safari의 공유 메뉴에서 홈 화면에 추가한 뒤 그 아이콘으로 열어 주세요.');
+        }
+        const permission = await Notification.requestPermission();
+        notificationPermission.value = permission;
+        if (permission !== 'granted') throw new Error('브라우저 알림 권한이 허용되지 않았습니다.');
+        const registration = await navigator.serviceWorker.ready;
+        const subscription =
+            (await registration.pushManager.getSubscription()) ??
+            (await registration.pushManager.subscribe({
+                userVisibleOnly: true,
+                applicationServerKey: base64UrlToUint8Array(publicKey),
+            }));
+        const json = subscription.toJSON();
+        if (!json.endpoint || !json.keys?.p256dh || !json.keys.auth) {
+            throw new Error('브라우저가 올바른 Push 구독 정보를 반환하지 않았습니다.');
+        }
+        await trpc.account.notifications.subscribe.mutate({
+            sessionToken: token,
+            subscription: {
+                endpoint: json.endpoint,
+                expirationTime: subscription.expirationTime,
+                keys: { p256dh: json.keys.p256dh, auth: json.keys.auth },
+            },
+        });
+        currentPushSubscription.value = subscription;
+        notificationState.value = {
+            ...notificationState.value,
+            currentDeviceSubscribed: true,
+            subscriptionCount: notificationState.value.subscriptionCount + 1,
+        };
+        successMessage.value = '이 기기의 웹 알림을 등록했습니다.';
+    } catch (error) {
+        errorMessage.value = error instanceof Error ? error.message : '이 기기의 웹 알림을 등록하지 못했습니다.';
+    } finally {
+        notificationBusy.value = false;
+    }
+};
+
+const unsubscribeCurrentDevice = async (): Promise<void> => {
+    if (notificationBusy.value || !currentPushSubscription.value) return;
+    notificationBusy.value = true;
+    errorMessage.value = '';
+    try {
+        const token = sessionToken();
+        if (!token) throw new Error('로그인이 필요합니다.');
+        const endpoint = currentPushSubscription.value.endpoint;
+        await trpc.account.notifications.unsubscribe.mutate({ sessionToken: token, endpoint });
+        await currentPushSubscription.value.unsubscribe();
+        currentPushSubscription.value = null;
+        if (notificationState.value) {
+            notificationState.value = {
+                ...notificationState.value,
+                currentDeviceSubscribed: false,
+                subscriptionCount: Math.max(0, notificationState.value.subscriptionCount - 1),
+            };
+        }
+        successMessage.value = '이 기기의 웹 알림을 해제했습니다.';
+    } catch (error) {
+        errorMessage.value = error instanceof Error ? error.message : '이 기기의 웹 알림을 해제하지 못했습니다.';
+    } finally {
+        notificationBusy.value = false;
+    }
+};
+
+const saveNotificationPreference = async (eventType: WebPushEventType, revertToggle = false): Promise<void> => {
+    if (notificationBusy.value || !selectedNotificationProfile.value) return;
+    const preference = ensureNotificationPreference(eventType);
+    const previousEnabled = revertToggle ? !preference.enabled : preference.enabled;
+    notificationBusy.value = true;
+    errorMessage.value = '';
+    try {
+        const token = sessionToken();
+        if (!token) throw new Error('로그인이 필요합니다.');
+        await trpc.account.notifications.setPreference.mutate({
+            sessionToken: token,
+            profileName: selectedNotificationProfile.value,
+            eventType,
+            enabled: preference.enabled,
+            targetYear: preference.targetYear,
+            targetMonth: preference.targetMonth,
+        });
+        successMessage.value = `${notificationLabels[eventType]} 알림 설정을 저장했습니다.`;
+    } catch (error) {
+        preference.enabled = previousEnabled;
+        errorMessage.value = error instanceof Error ? error.message : '알림 설정을 저장하지 못했습니다.';
+    } finally {
+        notificationBusy.value = false;
+    }
+};
 
 const gradeLabel = computed(() => {
     if (!account.value) return '-';
@@ -79,6 +280,7 @@ const loadAccount = async (): Promise<void> => {
     }
     try {
         account.value = await trpc.account.get.query({ sessionToken: token });
+        await loadNotificationSettings();
     } catch (error) {
         errorMessage.value = error instanceof Error ? error.message : '계정 정보를 불러오지 못했습니다.';
     } finally {
@@ -590,6 +792,117 @@ onBeforeUnmount(() => {
                     </tr>
                 </tfoot>
             </table>
+            <table v-if="notificationState" id="notification-table" class="legacy-bg0">
+                <thead>
+                    <tr>
+                        <th colspan="2" class="legacy-bg1">웹 알림 설정</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr>
+                        <th class="legacy-bg1 notification-label">전송 상태</th>
+                        <td class="notification-copy">
+                            <strong>{{
+                                notificationState.capability.enabled ? '사용 가능' : '준비됨 · 운영 비활성'
+                            }}</strong>
+                            <p v-if="!notificationState.capability.enabled">
+                                전송 기능은 아직 운영 설정에서 꺼져 있습니다. 개별 설정은 저장되지만 실제 알림은
+                                발송되지 않습니다.
+                            </p>
+                            <p v-else>
+                                권한: {{ notificationPermission }} · 등록 기기
+                                {{ notificationState.subscriptionCount }}대
+                            </p>
+                            <p v-if="isIos && !isStandalone">
+                                iPhone은 Safari 공유 메뉴의 ‘홈 화면에 추가’ 후, 설치된 아이콘으로 열어야 알림을 켤 수
+                                있습니다.
+                            </p>
+                            <button
+                                v-if="currentPushSubscription"
+                                class="skin-button"
+                                type="button"
+                                :disabled="notificationBusy"
+                                @click="unsubscribeCurrentDevice"
+                            >
+                                이 기기 알림 해제
+                            </button>
+                            <button
+                                v-else
+                                class="skin-button"
+                                type="button"
+                                :disabled="
+                                    notificationBusy || !notificationState.capability.enabled || !supportsWebPush
+                                "
+                                @click="subscribeCurrentDevice"
+                            >
+                                이 기기 알림 켜기
+                            </button>
+                        </td>
+                    </tr>
+                    <tr>
+                        <th class="legacy-bg1 notification-label">서버</th>
+                        <td>
+                            <select
+                                v-model="selectedNotificationProfile"
+                                class="skin-input notification-profile-select"
+                            >
+                                <option
+                                    v-for="profile in notificationState.profiles"
+                                    :key="profile.profileName"
+                                    :value="profile.profileName"
+                                >
+                                    {{ profile.profile }} · {{ profile.currentScenario ?? profile.profileName }}
+                                </option>
+                            </select>
+                            <span v-if="currentProfile" class="notification-profile-status">{{
+                                currentProfile.status
+                            }}</span>
+                        </td>
+                    </tr>
+                    <tr v-for="eventType in notificationEventTypes" :key="eventType">
+                        <th class="legacy-bg1 notification-label">{{ notificationLabels[eventType] }}</th>
+                        <td class="notification-preference">
+                            <label>
+                                <input
+                                    v-model="ensureNotificationPreference(eventType).enabled"
+                                    type="checkbox"
+                                    :disabled="notificationBusy || !selectedNotificationProfile"
+                                    @change="saveNotificationPreference(eventType, true)"
+                                />
+                                알림 받기
+                            </label>
+                            <span v-if="eventType === 'TARGET_DATE_REACHED'" class="target-date-fields">
+                                <input
+                                    v-model.number="ensureNotificationPreference(eventType).targetYear"
+                                    class="skin-input target-year"
+                                    type="number"
+                                    min="0"
+                                    max="9999"
+                                    aria-label="목표 연도"
+                                    @change="
+                                        ensureNotificationPreference(eventType).enabled &&
+                                        saveNotificationPreference(eventType)
+                                    "
+                                />
+                                년
+                                <input
+                                    v-model.number="ensureNotificationPreference(eventType).targetMonth"
+                                    class="skin-input target-month"
+                                    type="number"
+                                    min="1"
+                                    max="12"
+                                    aria-label="목표 월"
+                                    @change="
+                                        ensureNotificationPreference(eventType).enabled &&
+                                        saveNotificationPreference(eventType)
+                                    "
+                                />
+                                월
+                            </span>
+                        </td>
+                    </tr>
+                </tbody>
+            </table>
             <p v-if="successMessage" class="feedback success" role="status">{{ successMessage }}</p>
             <p v-if="errorMessage" class="feedback error" role="alert">{{ errorMessage }}</p>
         </div>
@@ -715,6 +1028,65 @@ onBeforeUnmount(() => {
     border-spacing: 0;
     table-layout: fixed;
     text-align: center;
+}
+
+#notification-table {
+    width: 100%;
+    margin-top: 16px;
+    border: 1px solid gray;
+    border-spacing: 0;
+    table-layout: fixed;
+}
+
+#notification-table th,
+#notification-table td {
+    border: 1px solid;
+    border-color: gray #000 #000 gray;
+    padding: 6px;
+}
+
+.notification-label {
+    width: 150px;
+    text-align: center;
+}
+
+.notification-copy {
+    text-align: left;
+}
+
+.notification-copy p {
+    margin: 4px 0;
+    color: #ddd;
+    line-height: 1.4;
+}
+
+.notification-profile-select {
+    width: min(310px, calc(100% - 80px));
+    min-height: 28px;
+}
+
+.notification-profile-status {
+    margin-left: 8px;
+    color: #bbb;
+}
+
+.notification-preference {
+    text-align: left;
+}
+
+.target-date-fields {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    margin-left: 18px;
+}
+
+.target-year {
+    width: 72px;
+}
+
+.target-month {
+    width: 48px;
 }
 
 .legacy-bg0 {
@@ -1136,6 +1508,20 @@ onBeforeUnmount(() => {
 @media (max-width: 600px) {
     #account-container {
         margin-left: 0;
+    }
+
+    #notification-table {
+        width: 100vw;
+        max-width: 100vw;
+    }
+
+    .notification-label {
+        width: 118px;
+    }
+
+    .target-date-fields {
+        flex-wrap: wrap;
+        margin: 6px 0 0;
     }
 
     .icon-server-backdrop {
