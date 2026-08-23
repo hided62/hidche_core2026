@@ -214,6 +214,7 @@ describe('persistUnificationFinalization', () => {
                     { generalId: 1, type: 'firenum', value: 4 },
                     { generalId: 1, type: 'killcrew', value: 1_200 },
                     { generalId: 1, type: 'deathcrew', value: 800 },
+                    { generalId: 1, type: 'inherit_earned', value: 4_321 },
                     { generalId: 1, type: 'ttw', value: 3 },
                     { generalId: 1, type: 'ttd', value: 2 },
                     { generalId: 1, type: 'ttl', value: 1 },
@@ -266,6 +267,11 @@ describe('persistUnificationFinalization', () => {
                 data: expect.objectContaining({
                     aux: expect.objectContaining({ ownerDisplayName: '표시 이름', fgColor: '#000000' }),
                 }),
+            })
+        );
+        expect(hallCreate).toHaveBeenCalledWith(
+            expect.objectContaining({
+                data: expect.objectContaining({ type: 'inherit_earned', value: 4_321 }),
             })
         );
         expect(gameHistoryUpdate).toHaveBeenCalledWith(

@@ -476,6 +476,7 @@ export const rankingRouter = router({
             { key: 'betwin', title: '베 팅 당 첨', type: 'int' },
             { key: 'betwingold', title: '베 팅 수 익 금', type: 'int' },
             { key: 'betrate', title: '베 팅 수 익 률', type: 'percent' },
+            { key: 'inherit_earned', title: '유 산 획 득 량', type: 'int' },
         ];
         const allowedTypes = new Set(HALL_OF_FAME_TYPES);
 

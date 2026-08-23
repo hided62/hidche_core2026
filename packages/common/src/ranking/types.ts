@@ -137,6 +137,7 @@ export const HALL_OF_FAME_TYPES = [
     'betwin',
     'betwingold',
     'betrate',
+    'inherit_earned',
 ] as const;
 
 export type HallOfFameType = (typeof HALL_OF_FAME_TYPES)[number];

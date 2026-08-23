@@ -205,11 +205,11 @@ const buildContext = (options?: {
         },
         hallOfFame: {
             findMany: async (args: { where: { type: string } }) =>
-                args.where.type === 'experience'
+                args.where.type === 'experience' || args.where.type === 'inherit_earned'
                     ? [
                           {
                               generalNo: 1,
-                              value: 1200,
+                              value: args.where.type === 'experience' ? 1200 : 4321,
                               aux: {
                                   name: '유비',
                                   ownerName: 'private-hall-user-id',
@@ -449,5 +449,18 @@ describe('ranking hall of fame', () => {
             .createCaller(buildContext({ authenticated: false }))
             .ranking.getHallOfFame({ season: 3 });
         expect(redacted.sections[0]?.entries[0]?.ownerName).toBeNull();
+    });
+
+    it('returns the inheritance earned ranking for each completed season', async () => {
+        const result = await appRouter
+            .createCaller(buildContext({ authenticated: false }))
+            .ranking.getHallOfFame({ season: 3 });
+
+        expect(result.sections).toHaveLength(25);
+        expect(result.sections.at(-1)).toMatchObject({
+            title: '유 산 획 득 량',
+            valueType: 'int',
+            entries: [expect.objectContaining({ generalId: 1, value: 4321, printValue: '4,321' })],
+        });
     });
 });

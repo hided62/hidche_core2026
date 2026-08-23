@@ -251,6 +251,9 @@ integration('general turn lifecycle persistence', () => {
         await db.rankData.create({
             data: { generalId: general.id, nationId: 0, type: 'warnum', value: 10 },
         });
+        await db.rankData.create({
+            data: { generalId: general.id, nationId: 0, type: 'inherit_earned', value: 4_321 },
+        });
 
         await db.$transaction((tx) =>
             persistGeneralLifecycleEvents(
@@ -278,6 +281,17 @@ integration('general turn lifecycle persistence', () => {
                 },
             })
         ).toMatchObject({ value: 1_000 });
+        expect(
+            await db.hallOfFame.findUnique({
+                where: {
+                    serverId_type_generalNo: {
+                        serverId,
+                        type: 'inherit_earned',
+                        generalNo: general.id,
+                    },
+                },
+            })
+        ).toMatchObject({ value: 4_321 });
         expect(
             await db.inheritancePoint.findUnique({
                 where: { userId_key: { userId: general.userId!, key: 'previous' } },
