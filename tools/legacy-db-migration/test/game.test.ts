@@ -30,6 +30,14 @@ const sourceRows = {
             data: JSON.stringify({ leader: 80, power: 70, intel: 60, history: 'first<br>second<br>' }),
         },
     ],
+    storage: [
+        {
+            id: 12,
+            namespace: 'inheritance_42',
+            key: 'point',
+            value: '[30,null]',
+        },
+    ],
 } satisfies Record<string, Array<Record<string, unknown>>>;
 
 const sourcePool = (): MariaPool => {
@@ -148,6 +156,8 @@ describe('legacy archive game migration', () => {
         expect(summary.importRunId).toBe('77');
         expect(sql).toContain('INSERT INTO "legacy_archive"."game_history"');
         expect(sql).toContain('INSERT INTO "legacy_archive"."general"');
+        expect(sql).toContain('INSERT INTO "legacy_game_storage"');
+        expect(sql).toContain('ON CONFLICT ("namespace", "key")');
         expect(sql).not.toContain('INSERT INTO "ng_games"');
         expect(sql).not.toContain('INSERT INTO "ng_old_generals"');
         expect(sql).toContain(`SET "status" = 'COMPLETED'`);

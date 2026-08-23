@@ -92,18 +92,25 @@ apply. It also refuses a changed host/database/user identity or a source table
 whose maximum ID moved behind its checkpoint. Password rotation does not change
 the source fingerprint.
 
-| Source data                                   | Incremental policy                                                      |
-| --------------------------------------------- | ----------------------------------------------------------------------- |
-| `member_log`                                  | Read only IDs after the committed high-water mark.                      |
-| game archive/event-history tables             | Read only IDs after the profile checkpoint.                             |
-| `member`, root/game `storage`, `system`, bans | Rescan and idempotently upsert because old rows are mutable.            |
-| `ng_games`                                    | Rescan because a season row can gain its final winner after creation.   |
-| preserved `batres<general_no>.txt` seasons    | Hash each season; import new immutable seasons after a full checkpoint. |
+| Source data                                | Incremental policy                                                      |
+| ------------------------------------------ | ----------------------------------------------------------------------- |
+| `member_log`                               | Read only IDs after the committed high-water mark.                      |
+| game archive/event-history tables          | Read only IDs after the profile checkpoint.                             |
+| `member`, root `storage`, `system`, bans   | Rescan and idempotently upsert because old rows are mutable.            |
+| game `storage`                             | Rescan by `(namespace, key)` and refresh a recreated row's source ID.   |
+| `ng_games`                                 | Rescan because a season row can gain its final winner after creation.   |
+| preserved `batres<general_no>.txt` seasons | Hash each season; import new immutable seasons after a full checkpoint. |
 
 The append policy assumes Ref primary keys are never reused and completed
 archive rows are immutable. Incremental mode does not mirror source deletions.
 If either assumption is false, take a new reviewed backup and run full mode;
 do not edit checkpoint rows by hand.
+
+Ref may delete and recreate a mutable game-storage tuple with the same
+`(namespace, key)` and a new auto-increment ID. That tuple is the durable
+identity; the latest source ID is retained only as recovery metadata. Rows for
+deleted tuples remain archived because incremental mode does not infer
+tombstones.
 
 The optional file importer reads only immediate
 `logs/preserved/<profile>_*/batres<general_no>.txt` regular files. It maps the

@@ -504,7 +504,9 @@ const migrateStorage = async (
             }
         }
         if (target) {
-            await upsertRows(target, 'legacy_game_storage', archives, ['source_id']);
+            // Ref storage는 같은 namespace/key를 삭제 후 새 auto-increment ID로 다시 만들 수 있다.
+            // 장기 상태의 권위 identity로 자연키를 사용하고 최신 source ID까지 함께 갱신한다.
+            await upsertRows(target, 'legacy_game_storage', archives, ['namespace', 'key']);
             await upsertRows(target, 'inheritance_point', points, ['user_id', 'key']);
             await upsertRows(target, 'inheritance_user_state', userStates, ['user_id']);
         }
