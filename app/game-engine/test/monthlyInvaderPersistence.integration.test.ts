@@ -28,6 +28,7 @@ const ordinaryCityId = 991_100;
 const invaderCityId = 991_101;
 const sourceEventId = 991_100;
 const createdEventIds = [991_101, 991_102];
+const serverId = 'raise-invader-persistence';
 
 type ReferenceInvaderLifecycleTrace = {
     phases: {
@@ -172,6 +173,11 @@ integration('RaiseInvader database persistence', () => {
 
     const clean = async () => {
         const createdGeneralIds = Array.from({ length: 10 }, (_, index) => firstCreatedGeneralId + index);
+        await db.unificationFinalization.deleteMany({ where: { serverId } });
+        await db.yearbookHistory.deleteMany({ where: { profileName: serverId } });
+        await db.hallOfFame.deleteMany({ where: { serverId } });
+        await db.emperor.deleteMany({ where: { serverId } });
+        await db.gameHistory.deleteMany({ where: { serverId } });
         await db.logEntry.deleteMany({
             where: { year: 200, text: { contains: '【이벤트】' } },
         });
@@ -304,10 +310,10 @@ integration('RaiseInvader database persistence', () => {
                 tickSeconds: 600,
                 config: {},
                 meta: {
-                    hiddenSeed: 'raise-invader-persistence',
+                    hiddenSeed: serverId,
                     lastGeneralId: firstCreatedGeneralId - 1,
                     lastNationId: createdNationId - 1,
-                    serverId: 'raise-invader-persistence',
+                    serverId,
                     refreshLimit: 3,
                 },
             },
@@ -319,10 +325,10 @@ integration('RaiseInvader database persistence', () => {
             tickSeconds: 600,
             lastTurnTime: new Date('0200-01-01T00:00:00.000Z'),
             meta: {
-                hiddenSeed: 'raise-invader-persistence',
+                hiddenSeed: serverId,
                 lastGeneralId: firstCreatedGeneralId - 1,
                 lastNationId: createdNationId - 1,
-                serverId: 'raise-invader-persistence',
+                serverId,
                 refreshLimit: 3,
             },
         };
@@ -572,6 +578,11 @@ integration('RaiseInvader database persistence', () => {
                 { text: '<C>●</>200년 4월:<L><b>【이벤트】</b></>이민족을 모두 소탕했습니다!' },
                 { text: '<C>●</>200년 4월:<L><b>【이벤트】</b></>중원은 당분간 태평성대를 누릴 것입니다.' },
             ]);
+            await expect(db.unificationFinalization.count({ where: { serverId } })).resolves.toBe(0);
+            await expect(db.yearbookHistory.count({ where: { profileName: serverId } })).resolves.toBe(0);
+            await expect(db.hallOfFame.count({ where: { serverId } })).resolves.toBe(0);
+            await expect(db.emperor.count({ where: { serverId } })).resolves.toBe(0);
+            await expect(db.gameHistory.count({ where: { serverId } })).resolves.toBe(0);
             if (referenceTrace) {
                 expect(referenceTrace.phases.afterUserWin).toEqual({
                     result: 'Deleted',
