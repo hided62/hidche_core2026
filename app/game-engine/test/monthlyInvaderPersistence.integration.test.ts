@@ -109,6 +109,19 @@ const buildCity = (id: number, nationId: number, level: number, name: string): C
 
 const ordinaryCity = buildCity(ordinaryCityId, existingNationId, 3, '기준도시');
 const invaderCity = buildCity(invaderCityId, 0, 4, '남만');
+const neutralNation: Nation = {
+    id: 0,
+    name: '재야',
+    color: '#000000',
+    capitalCityId: null,
+    chiefGeneralId: null,
+    gold: 0,
+    rice: 0,
+    power: 0,
+    level: 0,
+    typeCode: 'che_중립',
+    meta: {},
+};
 const existingNation: Nation = {
     id: existingNationId,
     name: '기준국',
@@ -199,7 +212,9 @@ integration('RaiseInvader database persistence', () => {
                 ],
             },
         });
-        await db.nation.deleteMany({ where: { id: { in: [existingNationId, createdNationId] } } });
+        await db.nation.deleteMany({
+            where: { id: { in: [neutralNation.id, existingNationId, createdNationId] } },
+        });
         await db.city.deleteMany({ where: { id: { in: [ordinaryCityId, invaderCityId] } } });
         await db.event.deleteMany({ where: { id: { in: [sourceEventId, ...createdEventIds] } } });
         await db.worldState.deleteMany({ where: { scenarioCode: 'monthly-invader-persistence' } });
@@ -251,6 +266,21 @@ integration('RaiseInvader database persistence', () => {
             });
         await createCity(ordinaryCity);
         await createCity(invaderCity);
+        await db.nation.create({
+            data: {
+                id: neutralNation.id,
+                name: neutralNation.name,
+                color: neutralNation.color,
+                capitalCityId: neutralNation.capitalCityId,
+                chiefGeneralId: neutralNation.chiefGeneralId,
+                gold: neutralNation.gold,
+                rice: neutralNation.rice,
+                tech: 0,
+                level: neutralNation.level,
+                typeCode: neutralNation.typeCode,
+                meta: neutralNation.meta,
+            },
+        });
         await db.nation.create({
             data: {
                 id: existingNationId,
@@ -343,7 +373,7 @@ integration('RaiseInvader database persistence', () => {
             map: { id: 'test', name: 'test', cities: [] },
             generals: [existingGeneral],
             cities: [ordinaryCity, invaderCity],
-            nations: [existingNation],
+            nations: [neutralNation, existingNation],
             troops: [],
             diplomacy: [],
             events: [sourceEvent],
@@ -406,7 +436,22 @@ integration('RaiseInvader database persistence', () => {
                         OR: [{ srcNationId: createdNationId }, { destNationId: createdNationId }],
                     },
                 })
-            ).toBe(2);
+            ).toBe(4);
+            expect(
+                await db.diplomacy.findMany({
+                    where: {
+                        OR: [
+                            { srcNationId: neutralNation.id, destNationId: createdNationId },
+                            { srcNationId: createdNationId, destNationId: neutralNation.id },
+                        ],
+                    },
+                    orderBy: [{ srcNationId: 'asc' }, { destNationId: 'asc' }],
+                    select: { srcNationId: true, destNationId: true, stateCode: true, term: true },
+                })
+            ).toEqual([
+                { srcNationId: neutralNation.id, destNationId: createdNationId, stateCode: 2, term: 0 },
+                { srcNationId: createdNationId, destNationId: neutralNation.id, stateCode: 2, term: 0 },
+            ]);
             expect(
                 await db.event.findMany({
                     where: { id: { in: createdEventIds } },
