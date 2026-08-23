@@ -89,10 +89,10 @@ const main = async (): Promise<void> => {
         if (now >= nextWorkspaceCleanupAt) {
             nextWorkspaceCleanupAt = now + RELEASE_WORKSPACE_CLEANUP_INTERVAL_MS;
             try {
-                const result = await controller.cleanupStaleWorkspaces();
-                if (result.removed.length > 0) {
-                    console.info(`[release-controller] removed ${result.removed.length} stale Gateway worktrees`);
-                }
+                const result = await controller.cleanupStaleResources();
+                console.info(
+                    `[release-controller] managed cleanup completed: removed ${result.workspaces.removed.length} Gateway worktrees and ${result.artifacts.removed.length} frontend artifacts; retained ${result.artifacts.retained.length}, skipped ${result.artifacts.skipped.length}`
+                );
             } catch (error) {
                 console.error('[release-controller] workspace cleanup failed', error);
             }

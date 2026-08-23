@@ -14,6 +14,7 @@ import {
 
 const roots: string[] = [];
 const sha = 'a'.repeat(40);
+const cleanupNow = new Date('2026-08-23T00:00:00.000Z');
 
 afterEach(async () => {
     await Promise.all(roots.splice(0).map((root) => fs.rm(root, { recursive: true, force: true })));
@@ -144,5 +145,163 @@ describe('FrontendArtifactManager', () => {
 
         expect(rendered).not.toContain('trpc?</script>');
         expect(rendered).toContain('\\u003c/script\\u003e');
+    });
+
+    it('removes only expired unreferenced releases while preserving pointers, active commits, grace, and caches', async () => {
+        const { source, artifacts } = await fixture();
+        const manager = new FrontendArtifactManager(artifacts);
+        const stage = async (marker: string, commitMarker: string) => {
+            await fs.writeFile(path.join(source, 'index.html'), `<div>${marker}</div>`);
+            return manager.stage({
+                frontendKey: 'gateway',
+                sourceRoot: source,
+                commitSha: commitMarker.repeat(40),
+            });
+        };
+        const current = await stage('current', '1');
+        await manager.activate('gateway', current.releaseId);
+        const next = await stage('next', '2');
+        await manager.activate('gateway', next.releaseId);
+        const pinned = await stage('pinned', '3');
+        const recent = await stage('recent', '4');
+        const cached = await stage('cached', '5');
+        const stale = await stage('stale', '6');
+        const releasesRoot = path.join(artifacts, 'gateway', 'releases');
+        const staging = path.join(releasesRoot, '.staging-00000000-0000-0000-0000-000000000000');
+        const unknownSymlink = path.join(releasesRoot, `${'7'.repeat(40)}-${'7'.repeat(16)}`);
+        await fs.mkdir(staging);
+        await fs.symlink(stale.releasePath, unknownSymlink);
+        const old = new Date(cleanupNow.getTime() - 72 * 60 * 60 * 1_000);
+        for (const artifact of [current, next, pinned, cached, stale]) {
+            await fs.utimes(artifact.releasePath, old, old);
+        }
+        await fs.utimes(cached.releasePath, new Date(old.getTime() + 1_000), new Date(old.getTime() + 1_000));
+        await fs.utimes(staging, old, old);
+        const recentAt = new Date(cleanupNow.getTime() - 60 * 60 * 1_000);
+        await fs.utimes(recent.releasePath, recentAt, recentAt);
+
+        const result = await manager.cleanup({
+            frontendKeys: ['gateway'],
+            protectedCommitShas: [pinned.manifest.commitSha],
+            retentionMs: 24 * 60 * 60 * 1_000,
+            keepNewest: 2,
+            now: cleanupNow,
+        });
+
+        expect(result.removed.sort()).toEqual([staging, stale.releasePath].sort());
+        expect(result.retained).toEqual(
+            expect.arrayContaining([
+                current.releasePath,
+                next.releasePath,
+                pinned.releasePath,
+                recent.releasePath,
+                cached.releasePath,
+            ])
+        );
+        expect(result.skipped).toContain(unknownSymlink);
+        await expect(fs.access(stale.releasePath)).rejects.toMatchObject({ code: 'ENOENT' });
+        await expect(fs.readFile(path.join(artifacts, 'gateway', 'current', 'index.html'), 'utf8')).resolves.toContain(
+            'next'
+        );
+        await expect(fs.readFile(path.join(artifacts, 'gateway', 'previous', 'index.html'), 'utf8')).resolves.toContain(
+            'current'
+        );
+    });
+
+    it('preserves shared assets referenced by current and previous profile wrappers, including old manifests', async () => {
+        const { source, artifacts } = await fixture();
+        await fs.writeFile(
+            path.join(source, 'index.html'),
+            '<!doctype html><head><script type="module" src="./assets/app-deadbeef.js"></script></head>'
+        );
+        await fs.writeFile(path.join(source, 'deployment-version.json'), `${JSON.stringify({ commitSha: sha })}\n`);
+        const manager = new FrontendArtifactManager(artifacts);
+        const publish = async (commitMarker: string, script: string) => {
+            const commitSha = commitMarker.repeat(40);
+            await fs.writeFile(path.join(source, 'assets', 'app-deadbeef.js'), script);
+            await fs.writeFile(path.join(source, 'deployment-version.json'), `${JSON.stringify({ commitSha })}\n`);
+            const shared = await manager.stage({
+                frontendKey: SHARED_GAME_FRONTEND_KEY,
+                sourceRoot: source,
+                commitSha,
+            });
+            const wrapper = await manager.stageProfileWrapper({
+                frontendKey: 'pya',
+                sharedArtifact: shared,
+                sharedAssetPublicBase: '/gateway/profile-assets',
+                runtimeConfig: {
+                    version: 1,
+                    profile: 'pya',
+                    profileName: 'pya:default',
+                    appBasePath: '/pya/',
+                    gameApiUrl: '/pya/api/trpc',
+                    gameSseUrl: '/pya/api/events',
+                    gatewayApiUrl: '/gateway/api/trpc',
+                    gatewayWebUrl: '/gateway/',
+                },
+            });
+            await manager.activate('pya', wrapper.releaseId);
+            return { shared, wrapper };
+        };
+        const first = await publish('1', 'console.log(1)');
+        const second = await publish('2', 'console.log(2)');
+        await fs.writeFile(path.join(source, 'assets', 'app-deadbeef.js'), 'console.log(3)');
+        const unused = await manager.stage({
+            frontendKey: SHARED_GAME_FRONTEND_KEY,
+            sourceRoot: source,
+            commitSha: '3'.repeat(40),
+        });
+        const firstManifestPath = path.join(first.wrapper.releasePath, '.sammo-artifact.json');
+        const firstManifest = JSON.parse(await fs.readFile(firstManifestPath, 'utf8')) as Record<string, unknown>;
+        delete firstManifest.dependencies;
+        await fs.writeFile(firstManifestPath, `${JSON.stringify(firstManifest, null, 2)}\n`);
+        const old = new Date(cleanupNow.getTime() - 72 * 60 * 60 * 1_000);
+        for (const artifact of [first.shared, first.wrapper, second.shared, second.wrapper, unused]) {
+            await fs.utimes(artifact.releasePath, old, old);
+        }
+
+        const result = await manager.cleanup({
+            frontendKeys: ['pya', SHARED_GAME_FRONTEND_KEY],
+            retentionMs: 24 * 60 * 60 * 1_000,
+            keepNewest: 0,
+            now: cleanupNow,
+        });
+
+        expect(result.removed).toEqual([unused.releasePath]);
+        expect(result.retained).toEqual(
+            expect.arrayContaining([
+                first.shared.releasePath,
+                first.wrapper.releasePath,
+                second.shared.releasePath,
+                second.wrapper.releasePath,
+            ])
+        );
+        await expect(
+            fs.readFile(path.join(first.shared.releasePath, 'assets', 'app-deadbeef.js'), 'utf8')
+        ).resolves.toBe('console.log(1)');
+        await expect(
+            fs.readFile(path.join(second.shared.releasePath, 'assets', 'app-deadbeef.js'), 'utf8')
+        ).resolves.toBe('console.log(2)');
+    });
+
+    it('fails closed when a live pointer cannot be validated', async () => {
+        const { source, artifacts } = await fixture();
+        const manager = new FrontendArtifactManager(artifacts);
+        const stale = await manager.stage({ frontendKey: 'gateway', sourceRoot: source, commitSha: sha });
+        const old = new Date(cleanupNow.getTime() - 72 * 60 * 60 * 1_000);
+        await fs.utimes(stale.releasePath, old, old);
+        await fs.mkdir(path.join(artifacts, 'gateway'), { recursive: true });
+        await fs.symlink(`releases/${'f'.repeat(40)}-${'f'.repeat(16)}`, path.join(artifacts, 'gateway', 'current'));
+
+        const result = await manager.cleanup({
+            frontendKeys: ['gateway'],
+            retentionMs: 24 * 60 * 60 * 1_000,
+            keepNewest: 0,
+            now: cleanupNow,
+        });
+
+        expect(result.removed).toEqual([]);
+        expect(result.skipped).toEqual([path.join(artifacts, 'gateway')]);
+        await expect(fs.access(stale.releasePath)).resolves.toBeUndefined();
     });
 });
