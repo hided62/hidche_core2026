@@ -61,11 +61,13 @@ scenario parser, resource schema, PostgreSQL world loader와 battle simulator
 않습니다.
 
 전투 시뮬레이터의 효과는 공개 request가 아니라 저장된 world config에서
-서버가 파생합니다. `battle.prepareSimulation`은 해당 효과와 전체 병종 정의,
-전투 상수, 시나리오 시작 연도, 반복별 seed를 권위 payload로 만들고 브라우저
-Web Worker가 `@sammo-ts/logic`의 공용 프로세서를 실행합니다. 기존
-`battle.simulate`와 Redis worker도 같은 processor와 payload를 사용하므로
-검증·호환 fallback 경로에서 결과를 대조할 수 있습니다.
+서버가 파생합니다. `battle.getSimulatorContext`는 화면을 열 때 해당 효과와 전체
+병종 정의, 전투 상수, 시나리오 시작 연도를 한 번 전달합니다.
+`battle.prepareSimulation`은 실행할 때 입력을 검증하고 반복 실행용 단일
+`seedBase`만 발급하며, 브라우저 Web Worker가 두 자료를 합쳐
+`@sammo-ts/logic`의 공용 프로세서를 실행합니다. 기존 `battle.simulate`와 Redis
+worker도 같은 processor와 payload를 사용하므로 검증·호환 fallback 경로에서
+결과를 대조할 수 있습니다.
 
 ## 닫힌 의미 이벤트
 

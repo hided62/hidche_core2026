@@ -26,6 +26,7 @@ import {
     createCrewTypeWarTriggerRegistry,
     resolveDefenderOrder,
     resolveWarBattle,
+    simpleSerialize,
     type WarBattleOutcome,
     type WarActionModule,
     type WarUnitReport,
@@ -264,6 +265,17 @@ const resolveRandomSeed = (): string => {
     return globalThis.crypto.randomUUID();
 };
 
+const resolveRepeatSeed = (payload: BattleSimJobPayload, index: number): string => {
+    const legacySeed = payload.seeds?.[index];
+    if (legacySeed) {
+        return legacySeed;
+    }
+    if (payload.seedBase) {
+        return simpleSerialize(payload.seedBase, 'battle-simulator', index);
+    }
+    return resolveRandomSeed();
+};
+
 const resolveCityTrainAtmos = (year: number, startYear: number): number =>
     Math.min(110, Math.max(60, year - startYear + 59));
 
@@ -369,7 +381,7 @@ export const processBattleSimJob = (
     const weight = 1 / Math.max(1, repeatCnt);
 
     for (let idx = 0; idx < repeatCnt; idx += 1) {
-        const seed = baseSeed || payload.seeds?.[idx] || resolveRandomSeed();
+        const seed = baseSeed || resolveRepeatSeed(payload, idx);
         const attackerNation = mapNationPayload(payload.attackerNation);
         const defenderNation = mapNationPayload(payload.defenderNation);
         const attackerCity = mapCityPayload(payload.attackerCity);

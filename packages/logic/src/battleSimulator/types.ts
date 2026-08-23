@@ -103,7 +103,9 @@ export interface BattleSimJobPayload extends BattleSimRequestPayload {
     config: WarEngineConfig;
     time: WarTimeContext;
     scenarioEffect?: string | null;
-    /** Server-issued seeds make a repeated run exactly reproducible in Node and browser runtimes. */
+    /** One secure random value expands deterministically into every repeated battle seed. */
+    seedBase?: string;
+    /** Legacy queue payload compatibility. New jobs use seedBase instead of an O(repeatCnt) array. */
     seeds?: string[];
 }
 
