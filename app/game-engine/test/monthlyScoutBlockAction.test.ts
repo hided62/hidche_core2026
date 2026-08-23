@@ -87,16 +87,18 @@ const buildWorld = (
 describe('monthly scout block actions', () => {
     it('blocks joining for all nations and globally locks policy changes', async () => {
         const world = buildWorld(0);
+        world.addNation(buildNation(0, 0));
         await createScoutBlockHandler({ actionName: 'BlockScoutAction', getWorld: () => world })(
             [true],
             { year: 200, month: 1, startyear: 190, currentEventID: 1, turnTime: new Date() },
             event
         );
 
-        expect(world.listNations().map((nation) => nation.meta)).toEqual([
-            { scout: 1, marker: 1 },
-            { scout: 1, marker: 2 },
-        ]);
+        expect(Object.fromEntries(world.listNations().map((nation) => [nation.id, nation.meta]))).toEqual({
+            0: { scout: 0, marker: 0 },
+            1: { scout: 1, marker: 1 },
+            2: { scout: 1, marker: 2 },
+        });
         expect(world.getState().meta.block_change_scout).toBe(true);
     });
 
