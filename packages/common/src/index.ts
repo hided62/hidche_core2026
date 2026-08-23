@@ -29,3 +29,4 @@ export * from './legacyArchive/ArchivedGeneralSnapshot.js';
 export * from './gateway/profileStatus.js';
 export * from './game/accessPenalty.js';
 export * from './http/trpcTransport.js';
+export * from './webPush/types.js';

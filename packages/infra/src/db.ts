@@ -47,4 +47,5 @@ export interface DatabaseClient {
     inputEvent: GamePrisma.InputEventDelegate;
     turnDaemonLease: GamePrisma.TurnDaemonLeaseDelegate;
     readModelOutbox: GamePrisma.ReadModelOutboxDelegate;
+    webPushOutbox: GamePrisma.WebPushOutboxDelegate;
 }

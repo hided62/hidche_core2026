@@ -33,6 +33,7 @@ export interface GameApiConfig {
     gatewayInternalApiUrl: string;
     accountIconResetReconcileIntervalMs: number;
     flushChannel: string;
+    webPushOutboxPollMs: number;
 }
 
 export const resolveGameApiConfigFromEnv = (env: NodeJS.ProcessEnv = process.env): GameApiConfig => {
@@ -86,5 +87,6 @@ export const resolveGameApiConfigFromEnv = (env: NodeJS.ProcessEnv = process.env
         gatewayInternalApiUrl: env.GATEWAY_INTERNAL_API_URL ?? 'http://127.0.0.1:13000',
         accountIconResetReconcileIntervalMs: parseReconcileInterval(env.ACCOUNT_ICON_RESET_RECONCILE_INTERVAL_MS),
         flushChannel: `${gatewayPrefix}:flush`,
+        webPushOutboxPollMs: parseNumberWithFallback(env.WEB_PUSH_OUTBOX_POLL_MS, 1_000, 'WEB_PUSH_OUTBOX_POLL_MS'),
     };
 };

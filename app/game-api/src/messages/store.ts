@@ -2,6 +2,7 @@ import type { MessagePayload, MessageRecordDraft, MessageType } from '@sammo-ts/
 
 import type { DatabaseClient } from '../context.js';
 import { loadCurrentGameTime } from '../services/gameClock.js';
+import { enqueuePrivateMessageWebPush } from '@sammo-ts/infra';
 
 export interface MessageView {
     id: number;
@@ -88,6 +89,7 @@ export const insertMessage = async (db: DatabaseClient, draft: MessageRecordDraf
     if (!id) {
         throw new Error('Failed to insert message row.');
     }
+    await enqueuePrivateMessageWebPush(db, draft, id);
     return id;
 };
 

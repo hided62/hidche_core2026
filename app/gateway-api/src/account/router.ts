@@ -9,6 +9,7 @@ import { procedure, router } from '../trpc.js';
 import type { UserRecord, UserSanctions } from '../auth/userRepository.js';
 import { openPassword, zPasswordEnvelope } from '../auth/registrationInput.js';
 import { resolveEffectiveAccountIcon } from '../auth/accountIconProjection.js';
+import { WEB_PUSH_EVENT_TYPES } from '@sammo-ts/common';
 
 const zSessionToken = z.string().min(1);
 const MAX_ICON_BYTES = 50 * 1024;
@@ -117,6 +118,84 @@ const publishIconFlush = async (
 };
 
 export const accountRouter = router({
+    notifications: router({
+        get: procedure
+            .input(
+                z.object({
+                    sessionToken: zSessionToken,
+                    currentEndpoint: z.string().url().max(4096).optional(),
+                })
+            )
+            .query(async ({ ctx, input }) => {
+                const user = await requireSessionUser(ctx, input.sessionToken);
+                return ctx.webPush.getAccountState(user.id, input.currentEndpoint);
+            }),
+        setPreference: procedure
+            .input(
+                z.object({
+                    sessionToken: zSessionToken,
+                    profileName: z.string().min(1).max(128),
+                    eventType: z.enum(WEB_PUSH_EVENT_TYPES),
+                    enabled: z.boolean(),
+                    targetYear: z.number().int().min(0).max(9999).nullable().optional(),
+                    targetMonth: z.number().int().min(1).max(12).nullable().optional(),
+                })
+            )
+            .mutation(async ({ ctx, input }) => {
+                const user = await requireSessionUser(ctx, input.sessionToken);
+                try {
+                    await ctx.webPush.setPreference(user.id, input);
+                } catch (error) {
+                    throw new TRPCError({
+                        code: 'BAD_REQUEST',
+                        message: error instanceof Error ? error.message : '알림 설정을 저장하지 못했습니다.',
+                    });
+                }
+                return { ok: true };
+            }),
+        subscribe: procedure
+            .input(
+                z.object({
+                    sessionToken: zSessionToken,
+                    subscription: z
+                        .object({
+                            endpoint: z.string().url().max(4096),
+                            expirationTime: z.number().int().positive().nullable(),
+                            keys: z.object({
+                                p256dh: z.string().min(1).max(1024),
+                                auth: z.string().min(1).max(1024),
+                            }),
+                        })
+                        .strict(),
+                })
+            )
+            .mutation(async ({ ctx, input }) => {
+                const user = await requireSessionUser(ctx, input.sessionToken);
+                try {
+                    const rawUserAgent = ctx.requestHeaders['user-agent'];
+                    const userAgent = Array.isArray(rawUserAgent) ? rawUserAgent[0] : rawUserAgent;
+                    await ctx.webPush.subscribe(user.id, input.subscription, userAgent);
+                } catch (error) {
+                    throw new TRPCError({
+                        code: 'PRECONDITION_FAILED',
+                        message: error instanceof Error ? error.message : '이 기기의 알림 구독을 저장하지 못했습니다.',
+                    });
+                }
+                return { ok: true };
+            }),
+        unsubscribe: procedure
+            .input(
+                z.object({
+                    sessionToken: zSessionToken,
+                    endpoint: z.string().url().max(4096),
+                })
+            )
+            .mutation(async ({ ctx, input }) => {
+                const user = await requireSessionUser(ctx, input.sessionToken);
+                await ctx.webPush.unsubscribe(user.id, input.endpoint);
+                return { ok: true };
+            }),
+    }),
     get: procedure.input(z.object({ sessionToken: zSessionToken })).query(async ({ ctx, input }) => {
         const user = await requireSessionUser(ctx, input.sessionToken);
         const icons = await ctx.users.listIcons(user.id);

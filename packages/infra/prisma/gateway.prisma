@@ -111,6 +111,9 @@ model AppUser {
   legacyData             Json                        @default(dbgenerated("'{}'::jsonb")) @map("legacy_data")
   icons                  UserIcon[]
   specialAccessGrants    SpecialAccountAccessGrant[]
+  webPushSubscriptions   WebPushSubscription[]
+  webPushPreferences     WebPushPreference[]
+  webPushNotifications   WebPushNotification[]
 
   @@map("app_user")
 }
@@ -238,6 +241,100 @@ model GatewayProfile {
 
   @@unique([profile, instanceKey])
   @@map("gateway_profile")
+}
+
+model WebPushSubscription {
+  id             String    @id @default(uuid())
+  userId         String    @map("user_id")
+  user           AppUser   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  endpoint       String    @unique @db.Text
+  p256dh         String    @db.Text
+  auth           String    @db.Text
+  expirationTime DateTime? @map("expiration_time")
+  userAgent      String?   @map("user_agent") @db.Text
+  disabledAt     DateTime? @map("disabled_at")
+  lastSeenAt     DateTime  @default(now()) @map("last_seen_at")
+  createdAt      DateTime  @default(now()) @map("created_at")
+  updatedAt      DateTime  @updatedAt @map("updated_at")
+  deliveries     WebPushDelivery[]
+
+  @@index([userId, disabledAt, updatedAt])
+  @@map("web_push_subscription")
+}
+
+model WebPushPreference {
+  id          String   @id @default(uuid())
+  userId      String   @map("user_id")
+  user        AppUser  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  profileName String   @map("profile_name")
+  eventType   String   @map("event_type")
+  enabled     Boolean  @default(false)
+  targetYear  Int?     @map("target_year")
+  targetMonth Int?     @map("target_month")
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  @@unique([userId, profileName, eventType])
+  @@index([profileName, eventType, enabled])
+  @@map("web_push_preference")
+}
+
+model WebPushEventReceipt {
+  eventId     String   @id @map("event_id")
+  profileName String   @map("profile_name")
+  eventType   String   @map("event_type")
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  @@index([createdAt])
+  @@map("web_push_event_receipt")
+}
+
+model WebPushNotification {
+  id          String            @id @default(uuid())
+  dedupeKey   String            @unique @map("dedupe_key")
+  userId      String            @map("user_id")
+  user        AppUser           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  profileName String            @map("profile_name")
+  eventType   String            @map("event_type")
+  title       String
+  body        String
+  url         String
+  tag         String
+  createdAt   DateTime          @default(now()) @map("created_at")
+  deliveries  WebPushDelivery[]
+
+  @@index([userId, createdAt])
+  @@map("web_push_notification")
+}
+
+model WebPushDelivery {
+  id             BigInt              @id @default(autoincrement())
+  notificationId String              @map("notification_id")
+  notification   WebPushNotification @relation(fields: [notificationId], references: [id], onDelete: Cascade)
+  subscriptionId String              @map("subscription_id")
+  subscription   WebPushSubscription @relation(fields: [subscriptionId], references: [id], onDelete: Cascade)
+  status         String              @default("PENDING")
+  attempts       Int                 @default(0)
+  availableAt    DateTime            @default(now()) @map("available_at")
+  lockedAt       DateTime?           @map("locked_at")
+  lockOwner      String?             @map("lock_owner")
+  deliveredAt    DateTime?           @map("delivered_at")
+  lastError      String?             @map("last_error")
+  createdAt      DateTime            @default(now()) @map("created_at")
+
+  @@unique([notificationId, subscriptionId])
+  @@index([status, availableAt, id])
+  @@map("web_push_delivery")
+}
+
+model WebPushProfileCursor {
+  profileName String   @id @map("profile_name")
+  status      String
+  preopenAt   DateTime? @map("preopen_at")
+  openAt      DateTime? @map("open_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  @@map("web_push_profile_cursor")
 }
 
 model GatewayRuntimeAction {

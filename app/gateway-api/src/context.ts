@@ -17,6 +17,7 @@ import { createAdminAuditStore, type AdminAuditStore } from './adminAudit.js';
 import type { UserIconUploadStore } from './account/remoteUserIconStore.js';
 import path from 'node:path';
 import { RuntimeNavigationConfigStore } from './navigation/runtimeNavigationConfig.js';
+import { WebPushCoordinator } from './webPush/coordinator.js';
 
 export interface GatewayApiContext {
     users: UserRepository;
@@ -44,6 +45,7 @@ export interface GatewayApiContext {
     adminAudit: AdminAuditStore;
     adminAuth?: AdminAuthContext;
     navigationConfig: RuntimeNavigationConfigStore;
+    webPush: WebPushCoordinator;
 }
 
 export const createGatewayApiContext = (options: {
@@ -71,6 +73,7 @@ export const createGatewayApiContext = (options: {
     prisma: GatewayPrismaClient;
     adminAudit?: AdminAuditStore;
     navigationConfig?: RuntimeNavigationConfigStore;
+    webPush?: WebPushCoordinator;
 }): GatewayApiContext => ({
     users: options.users,
     sessions: options.sessions,
@@ -98,4 +101,5 @@ export const createGatewayApiContext = (options: {
     navigationConfig:
         options.navigationConfig ??
         new RuntimeNavigationConfigStore(null, path.resolve(process.cwd(), 'resources/navigation.json')),
+    webPush: options.webPush ?? new WebPushCoordinator(options.prisma, { enabled: false }),
 });

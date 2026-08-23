@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { parseBooleanWithFallback, parseNumberWithFallback } from '@sammo-ts/common';
 import { resolveFrontendServeMode, type FrontendServeMode } from './orchestrator/frontendArtifactManager.js';
@@ -41,6 +42,11 @@ export interface GatewayApiConfig {
     frontendArtifactRoot: string;
     frontendReadinessOrigin: string;
     releaseBuilderUrl?: string;
+    webPushEnabled: boolean;
+    webPushVapidSubject?: string;
+    webPushVapidPublicKey?: string;
+    webPushVapidPrivateKey?: string;
+    webPushPollIntervalMs: number;
 }
 
 export interface GatewayOrchestratorConfig {
@@ -82,6 +88,23 @@ export const resolveGatewayApiConfigFromEnv = (env: NodeJS.ProcessEnv = process.
     const redisKeyPrefix = env.GATEWAY_REDIS_PREFIX ?? 'sammo:gateway';
     const port = parseNumberWithFallback(env.GATEWAY_API_PORT, 13000, 'GATEWAY_API_PORT');
     const workspaceRootHint = env.GATEWAY_WORKSPACE_ROOT ?? process.cwd();
+    const webPushEnabled = parseBooleanWithFallback(env.WEB_PUSH_ENABLED, false);
+    const webPushVapidSubject = env.WEB_PUSH_VAPID_SUBJECT?.trim() || undefined;
+    const webPushVapidPublicKey = env.WEB_PUSH_VAPID_PUBLIC_KEY?.trim() || undefined;
+    let webPushVapidPrivateKey = env.WEB_PUSH_VAPID_PRIVATE_KEY?.trim() || undefined;
+    const webPushVapidPrivateKeyFile = env.WEB_PUSH_VAPID_PRIVATE_KEY_FILE?.trim();
+    if (webPushEnabled && !webPushVapidPrivateKey && webPushVapidPrivateKeyFile) {
+        try {
+            webPushVapidPrivateKey = readFileSync(webPushVapidPrivateKeyFile, 'utf8').trim() || undefined;
+        } catch (error) {
+            throw new Error('WEB_PUSH_VAPID_PRIVATE_KEY_FILE could not be read.', { cause: error });
+        }
+    }
+    if (webPushEnabled && (!webPushVapidSubject || !webPushVapidPublicKey || !webPushVapidPrivateKey)) {
+        throw new Error(
+            'WEB_PUSH_ENABLED requires WEB_PUSH_VAPID_SUBJECT, WEB_PUSH_VAPID_PUBLIC_KEY, and a VAPID private key.'
+        );
+    }
     return {
         host: env.GATEWAY_API_HOST ?? '0.0.0.0',
         port,
@@ -149,6 +172,15 @@ export const resolveGatewayApiConfigFromEnv = (env: NodeJS.ProcessEnv = process.
         frontendArtifactRoot: path.resolve(env.FRONTEND_ARTIFACT_ROOT ?? '/srv/frontend-artifacts'),
         frontendReadinessOrigin: env.FRONTEND_READINESS_ORIGIN?.trim() || 'http://caddy',
         releaseBuilderUrl: env.RELEASE_BUILDER_URL?.trim() || undefined,
+        webPushEnabled,
+        webPushVapidSubject,
+        webPushVapidPublicKey,
+        webPushVapidPrivateKey,
+        webPushPollIntervalMs: parseNumberWithFallback(
+            env.WEB_PUSH_POLL_INTERVAL_MS,
+            1_000,
+            'WEB_PUSH_POLL_INTERVAL_MS'
+        ),
     };
 };
 

@@ -1,5 +1,5 @@
 import { asRecord, HALL_OF_FAME_TYPES, resolveLegacyTextColor, type HallOfFameType } from '@sammo-ts/common';
-import { acquireGameSchemaAdvisoryXactLock } from '@sammo-ts/infra';
+import { acquireGameSchemaAdvisoryXactLock, enqueuePrivateMessageWebPush } from '@sammo-ts/infra';
 import type { GamePrisma, InputJsonValue } from '@sammo-ts/infra';
 import { LogCategory, LogScope, sendMessage, type MessageDraft, type MessageRecordDraft } from '@sammo-ts/logic';
 
@@ -130,6 +130,7 @@ const insertMessage = async (transaction: GamePrisma.TransactionClient, draft: M
     `;
     const id = rows[0]?.id;
     if (!id) throw new Error('Failed to persist unification auction cancellation message.');
+    await enqueuePrivateMessageWebPush(transaction, draft, id);
     return id;
 };
 
