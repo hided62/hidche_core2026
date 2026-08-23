@@ -11,7 +11,11 @@ import {
     readOnlyAuthedProcedure,
     router,
 } from '../../trpc.js';
-import { buildBattleSimEnvironment, buildBattleSimJobPayload } from '../../battleSim/environment.js';
+import {
+    buildBattleSimEnvironment,
+    buildBattleSimJobPayload,
+    buildBattleSimSeedBase,
+} from '../../battleSim/environment.js';
 import { zBattleSimJobId, zBattleSimRequest } from '../../battleSim/schema.js';
 import {
     BATTLE_SIM_CITY_LEVELS,
@@ -62,17 +66,9 @@ const resolveDexValue = (meta: Record<string, unknown>, key: string): number => 
 };
 
 export const battleRouter = router({
-    prepareSimulation: accessReadOnlyAuthedInputProcedure(zBattleSimRequest).mutation(async ({ ctx, input }) => {
-        const worldState = await ctx.db.worldState.findFirst();
-        if (!worldState) {
-            throw new TRPCError({
-                code: 'PRECONDITION_FAILED',
-                message: 'World state is not initialized.',
-            });
-        }
-
-        return buildBattleSimJobPayload(worldState, input, ctx.profile.id);
-    }),
+    prepareSimulation: accessReadOnlyAuthedInputProcedure(zBattleSimRequest).mutation(({ input }) => ({
+        seedBase: buildBattleSimSeedBase(input),
+    })),
     simulate: accessReadOnlyAuthedInputProcedure(zBattleSimRequest).mutation(async ({ ctx, input }) => {
         const worldState = await ctx.db.worldState.findFirst();
         if (!worldState) {
@@ -104,30 +100,15 @@ export const battleRouter = router({
         const environment = await buildBattleSimEnvironment(worldState, ctx.profile.id);
         const [traits, items] = await Promise.all([loadBattleSimTraitOptions(), loadBattleSimItemOptions()]);
 
-        const crewTypes = (environment.unitSet.crewTypes ?? [])
-            .filter((crewType) => crewType.armType !== environment.config.armTypes.castle)
-            .map((crewType) => ({
-                id: crewType.id,
-                name: crewType.name,
-                armType: crewType.armType,
-            }));
-
         return {
             world: {
                 startYear: environment.startYear,
                 currentYear: worldState.currentYear,
                 currentMonth: worldState.currentMonth,
             },
-            config: {
-                maxTrainByWar: environment.config.maxTrainByWar,
-                maxAtmosByWar: environment.config.maxAtmosByWar,
-                maxTrainByCommand: environment.config.maxTrainByCommand,
-                maxAtmosByCommand: environment.config.maxAtmosByCommand,
-            },
-            unitSet: {
-                defaultCrewTypeId: environment.unitSet.defaultCrewTypeId ?? crewTypes[0]?.id ?? 0,
-                crewTypes,
-            },
+            config: environment.config,
+            unitSet: environment.unitSet,
+            scenarioEffect: environment.scenarioEffect,
             nationTypes: traits.nationTypes,
             eventDomesticTraits: traits.eventDomesticTraits,
             warTraits: traits.warTraits,

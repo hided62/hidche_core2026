@@ -257,7 +257,7 @@ const buildContext = (options: {
 };
 
 describe('battle router orchestration', () => {
-    it('prepares the authoritative browser-worker payload without queuing server work', async () => {
+    it('returns one repeat seed base without reading world state or echoing the browser-worker payload', async () => {
         const battleSim = new QueuedBattleSimTransport();
         const state: WorldStateRow = {
             id: 1,
@@ -269,26 +269,29 @@ describe('battle router orchestration', () => {
             meta: { scenarioMeta: { startYear: 180 } },
             updatedAt: new Date('2026-01-01T00:00:00Z'),
         };
-        const caller = appRouter.createCaller(buildContext({ state, battleSim }));
+        let worldStateReads = 0;
+        const db = {
+            worldState: {
+                findFirst: async () => {
+                    worldStateReads += 1;
+                    return state;
+                },
+            },
+        } as unknown as DatabaseClient;
+        const caller = appRouter.createCaller(buildContext({ state, battleSim, db }));
         const request = { ...buildBattleRequest(), repeatCnt: 1000 };
         delete (request as Partial<typeof request>).seed;
 
         const prepared = await caller.battle.prepareSimulation(request);
 
-        expect(prepared).toMatchObject({
-            action: 'battle',
-            repeatCnt: 1000,
-            scenarioEffect: 'event_MoreEffect',
-            time: { year: 200, month: 1, startYear: 180 },
-            config: { armPerPhase: 500, maxTrainByWar: 110, maxAtmosByWar: 150 },
-        });
-        expect(prepared.unitSet.crewTypes?.length).toBeGreaterThan(0);
-        expect(prepared.seeds).toHaveLength(1000);
-        expect(new Set(prepared.seeds).size).toBe(1000);
+        expect(prepared.seedBase).toMatch(/^[0-9a-f-]{36}$/u);
+        expect(Object.keys(prepared)).toEqual(['seedBase']);
+        expect(Buffer.byteLength(JSON.stringify(prepared))).toBeLessThan(128);
+        expect(worldStateReads).toBe(0);
         expect(battleSim.simulateCalls).toBe(0);
     });
 
-    it('does not allocate repeat seeds when the client supplies a fixed seed', async () => {
+    it('does not allocate a repeat seed base when the client supplies a fixed seed', async () => {
         const battleSim = new QueuedBattleSimTransport();
         const state: WorldStateRow = {
             id: 1,
@@ -304,9 +307,46 @@ describe('battle router orchestration', () => {
 
         const prepared = await caller.battle.prepareSimulation(buildBattleRequest());
 
-        expect(prepared.seed).toBe('test-seed');
-        expect(prepared.seeds).toEqual([]);
+        expect(prepared).toEqual({ seedBase: null });
         expect(battleSim.simulateCalls).toBe(0);
+    });
+
+    it('loads the full authoritative execution context once with the simulator form options', async () => {
+        const battleSim = new QueuedBattleSimTransport();
+        const state: WorldStateRow = {
+            id: 1,
+            scenarioCode: 'default',
+            currentYear: 200,
+            currentMonth: 1,
+            tickSeconds: 600,
+            config: { environment: { scenarioEffect: 'event_MoreEffect' } },
+            meta: { scenarioMeta: { startYear: 180 } },
+            updatedAt: new Date('2026-01-01T00:00:00Z'),
+        };
+        let worldStateReads = 0;
+        const db = {
+            worldState: {
+                findFirst: async () => {
+                    worldStateReads += 1;
+                    return state;
+                },
+            },
+        } as unknown as DatabaseClient;
+        const caller = appRouter.createCaller(buildContext({ state, battleSim, db }));
+
+        const context = await caller.battle.getSimulatorContext();
+
+        expect(context).toMatchObject({
+            world: { startYear: 180, currentYear: 200, currentMonth: 1 },
+            scenarioEffect: 'event_MoreEffect',
+            config: { armPerPhase: 500, maxTrainByWar: 110, maxAtmosByWar: 150 },
+        });
+        expect(context.unitSet.crewTypes?.[0]).toMatchObject({
+            id: expect.any(Number),
+            attack: expect.any(Number),
+            defence: expect.any(Number),
+        });
+        expect(worldStateReads).toBe(1);
     });
 
     it('rejects the neutral storage nation type before preparing or queuing a simulation', async () => {
@@ -358,6 +398,40 @@ describe('battle router orchestration', () => {
         const completed = await caller.battle.getSimulation({ jobId: response.jobId });
         expect(completed.status).toBe('completed');
         expect(completed.payload?.result).toBe(true);
+    });
+
+    it('queues one seed base instead of 1000 repeated UUID strings for the server fallback', async () => {
+        const battleSim = new QueuedBattleSimTransport();
+        const state: WorldStateRow = {
+            id: 1,
+            scenarioCode: 'default',
+            currentYear: 200,
+            currentMonth: 1,
+            tickSeconds: 600,
+            config: {},
+            meta: {},
+            updatedAt: new Date('2026-01-01T00:00:00Z'),
+        };
+        const caller = appRouter.createCaller(buildContext({ state, battleSim }));
+        const request = { ...buildBattleRequest(), repeatCnt: 1000 };
+        delete (request as Partial<typeof request>).seed;
+
+        await caller.battle.simulate(request);
+
+        const payload = battleSim.lastPayload;
+        if (!payload) {
+            throw new Error('Expected the fallback transport payload.');
+        }
+        expect(payload?.seedBase).toMatch(/^[0-9a-f-]{36}$/u);
+        expect(payload?.seeds).toBeUndefined();
+        const legacyPayload = {
+            ...payload,
+            seedBase: undefined,
+            seeds: Array.from({ length: 1000 }, (_, index) => String(index).padStart(36, '0')),
+        };
+        expect(Buffer.byteLength(JSON.stringify(payload))).toBeLessThan(
+            Buffer.byteLength(JSON.stringify(legacyPayload)) * 0.45
+        );
     });
 
     it('uses the stored scenario effect even when a client sends a same-named field', async () => {
@@ -435,8 +509,7 @@ describe('battle router orchestration', () => {
             buildContext({ state, battleSim, userId: 'user-without-general', db })
         );
         await expect(noGeneralUser.battle.prepareSimulation(buildBattleRequest())).resolves.toMatchObject({
-            action: 'battle',
-            seed: 'test-seed',
+            seedBase: null,
         });
         await expect(noGeneralUser.battle.simulate(buildBattleRequest())).resolves.toMatchObject({
             status: 'queued',

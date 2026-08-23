@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, reactive, ref } from 'vue';
+import { computed, onBeforeUnmount, onMounted, reactive, ref, shallowRef } from 'vue';
 import type { BattleSimRequestPayload, BattleSimResultPayload } from '@sammo-ts/game-api';
 import PanelCard from '../components/ui/PanelCard.vue';
 import SkeletonLines from '../components/ui/SkeletonLines.vue';
@@ -33,7 +33,8 @@ type GeneralMeResponse = Awaited<ReturnType<typeof trpc.general.me.query>>;
 
 const loading = ref(true);
 const error = ref<string | null>(null);
-const options = ref<BattleSimOptions | null>(null);
+// Worker execution data must stay outside Vue's deep reactive proxy graph so it remains structured-cloneable.
+const options = shallowRef<BattleSimOptions | null>(null);
 const battleResult = ref<BattleSimResultPayload | null>(null);
 
 const attackerNation = reactive({
@@ -83,6 +84,16 @@ const generalListLoading = ref(false);
 const selectedGeneralId = ref<number | null>(null);
 const gameDefaults = ref<GeneralMeResponse>(null);
 
+const availableCrewTypes = computed(() => {
+    const context = options.value;
+    if (!context) {
+        return [];
+    }
+    return (context.unitSet.crewTypes ?? [])
+        .filter((crewType) => crewType.armType !== context.config.armTypes.castle)
+        .map((crewType) => ({ id: crewType.id, name: crewType.name, armType: crewType.armType }));
+});
+
 let generalIdSeed = 0;
 
 const createInheritBuff = (): InheritBuff => ({
@@ -125,7 +136,7 @@ const resolveGeneralNo = (preferred: number | null, excludeId?: string): number 
 };
 
 const createGeneralDraft = (overrides?: Partial<GeneralDraft>): GeneralDraft => {
-    const baseCrew = options.value?.unitSet.defaultCrewTypeId ?? options.value?.unitSet.crewTypes[0]?.id ?? 1;
+    const baseCrew = options.value?.unitSet.defaultCrewTypeId ?? availableCrewTypes.value[0]?.id ?? 1;
     const draft: GeneralDraft = {
         id: nextGeneralId(),
         no: 0,
@@ -219,7 +230,7 @@ const applyGeneralExport = (target: GeneralDraft, data: GeneralExport) => {
     target.killcrew = data.killcrew;
     target.inheritBuff = data.inheritBuff ? { ...data.inheritBuff } : createInheritBuff();
     if (target.crewtype <= 0) {
-        target.crewtype = options.value?.unitSet.defaultCrewTypeId ?? options.value?.unitSet.crewTypes[0]?.id ?? 1;
+        target.crewtype = options.value?.unitSet.defaultCrewTypeId ?? availableCrewTypes.value[0]?.id ?? 1;
     }
 };
 
@@ -590,8 +601,19 @@ const runSimulation = async (action: BattleSimRequestPayload['action']) => {
 
     try {
         const payload = buildBattlePayload(action);
-        const preparedPayload = await trpc.battle.prepareSimulation.mutate(payload);
-        const result = await simulationWorker.run(preparedPayload);
+        const preparation = await trpc.battle.prepareSimulation.mutate(payload);
+        const result = await simulationWorker.run({
+            ...payload,
+            ...(preparation.seedBase ? { seedBase: preparation.seedBase } : {}),
+            unitSet: options.value.unitSet,
+            config: options.value.config,
+            time: {
+                year: payload.year,
+                month: payload.month,
+                startYear: options.value.world.startYear,
+            },
+            scenarioEffect: options.value.scenarioEffect,
+        });
 
         if (!result.result) {
             error.value = result.reason || 'battle_failed';
@@ -1106,6 +1128,7 @@ const shouldShowUI = computed(() => !loading.value && !!options.value);
                     v-model:general="attackerGeneral"
                     data-parity-id="attacker-general"
                     :options="options!"
+                    :crew-types="availableCrewTypes"
                     mode="attacker"
                     title="출병자 설정"
                     :can-import-server="hasGameGeneral"
@@ -1192,6 +1215,7 @@ const shouldShowUI = computed(() => !loading.value && !!options.value);
                         v-model:general="defenders[index]"
                         :data-parity-id="index === 0 ? 'defender-general' : `defender-general-${index + 1}`"
                         :options="options!"
+                        :crew-types="availableCrewTypes"
                         mode="defender"
                         title="수비자 설정"
                         :can-import-server="hasGameGeneral"

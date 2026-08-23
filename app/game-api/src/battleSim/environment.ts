@@ -90,6 +90,9 @@ export interface BattleSimEnvironment {
     scenarioEffect: ScenarioEffectKey | null;
 }
 
+export const buildBattleSimSeedBase = (request: Pick<BattleSimRequestPayload, 'seed'>): string | null =>
+    request.seed ? null : randomUUID();
+
 export const buildBattleSimEnvironment = async (
     worldState: WorldStateRow,
     profileFallback: string
@@ -138,10 +141,11 @@ export const buildBattleSimJobPayload = async (
     profileFallback: string
 ): Promise<BattleSimJobPayload> => {
     const environment = await buildBattleSimEnvironment(worldState, profileFallback);
+    const seedBase = buildBattleSimSeedBase(request);
 
     return {
         ...request,
-        seeds: request.seed ? [] : Array.from({ length: request.repeatCnt }, () => randomUUID()),
+        ...(seedBase ? { seedBase } : {}),
         unitSet: environment.unitSet,
         config: environment.config,
         time: {

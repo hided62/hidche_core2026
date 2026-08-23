@@ -266,6 +266,7 @@ describe('battle sim processor', () => {
         const firstPayload = buildPayload('battle');
         delete firstPayload.seed;
         firstPayload.repeatCnt = 2;
+        firstPayload.seedBase = 'ignored-while-legacy-seeds-exist';
         firstPayload.seeds = ['server-repeat-0', 'server-repeat-1'];
         const secondPayload = structuredClone(firstPayload);
         const observedSeeds: string[] = [];
@@ -281,6 +282,30 @@ describe('battle sim processor', () => {
         expect(first).toEqual(second);
         expect(first.repeatCnt).toBe(2);
         expect(observedSeeds).toEqual(['server-repeat-0', 'server-repeat-1']);
+    });
+
+    it('expands one seed base deterministically without a repeated seed array', () => {
+        const firstPayload = buildPayload('battle');
+        delete firstPayload.seed;
+        firstPayload.repeatCnt = 2;
+        firstPayload.seedBase = 'server-root';
+        const secondPayload = structuredClone(firstPayload);
+        const observedSeeds: string[] = [];
+
+        const first = processBattleSimJob(firstPayload, {
+            rngFactory: (seed) => {
+                observedSeeds.push(seed);
+                return new RandUtil(LiteHashDRBG.build(seed));
+            },
+        });
+        const second = processBattleSimJob(secondPayload);
+
+        expect(first).toEqual(second);
+        expect(first.repeatCnt).toBe(2);
+        expect(observedSeeds).toEqual([
+            'str(11,server-root)|str(16,battle-simulator)|int(0)',
+            'str(11,server-root)|str(16,battle-simulator)|int(1)',
+        ]);
     });
 
     it('returns the fixed defender ID order for reorder action', () => {

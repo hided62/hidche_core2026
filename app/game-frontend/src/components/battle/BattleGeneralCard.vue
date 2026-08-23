@@ -4,6 +4,7 @@ import type { BattleSimOptions, GeneralDraft } from '../../utils/battleSimulator
 
 interface Props {
     options: BattleSimOptions;
+    crewTypes: Array<{ id: number; name: string; armType: number }>;
     mode: 'attacker' | 'defender';
     title: string;
     canImportServer: boolean;
@@ -175,7 +176,7 @@ const officerLevelOptions = [
                 <label class="field">
                     <span>병종</span>
                     <select v-model.number="general.crewtype">
-                        <option v-for="crew in options.unitSet.crewTypes" :key="crew.id" :value="crew.id">
+                        <option v-for="crew in crewTypes" :key="crew.id" :value="crew.id">
                             {{ crew.name }}
                         </option>
                     </select>

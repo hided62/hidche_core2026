@@ -43,7 +43,7 @@ const readImage = async (relative: string): Promise<Buffer> => {
     throw new Error(`Reference image not found: ${relative}`);
 };
 
-const simulatorOptions = {
+const simulatorFormOptions = {
     world: { startYear: 190, currentYear: 205, currentMonth: 8 },
     config: {
         maxTrainByWar: 120,
@@ -138,6 +138,16 @@ const engineConfig: BattleSimJobPayload['config'] = {
     },
 };
 
+const simulatorOptions = {
+    ...simulatorFormOptions,
+    config: {
+        ...engineConfig,
+        ...simulatorFormOptions.config,
+    },
+    unitSet: engineUnitSet,
+    scenarioEffect: null,
+};
+
 const generalMe = {
     general: {
         id: 7,
@@ -206,6 +216,7 @@ type Fixture = {
     requests: string[];
     preparedPayloads: BattleSimJobPayload[];
     serverResults: BattleSimResultPayload[];
+    prepareResponseBytes?: number[];
 };
 
 const readOperationInput = (
@@ -294,26 +305,29 @@ const installApi = async (page: Page, fixture: Fixture) => {
                     operations.length,
                     operationIndex
                 ) as BattleSimRequestPayload;
+                const seedBase = request.seed ? null : 'playwright-repeat-seed';
                 const prepared: BattleSimJobPayload = {
                     ...request,
-                    seeds: request.seed
-                        ? []
-                        : Array.from({ length: request.repeatCnt }, (_, index) => `playwright-repeat-${index}`),
+                    ...(seedBase ? { seedBase } : {}),
                     unitSet: engineUnitSet,
-                    config: engineConfig,
+                    config: simulatorOptions.config,
                     time: { year: request.year, month: request.month, startYear: 190 },
                     scenarioEffect: null,
                 };
                 fixture.preparedPayloads.push(prepared);
                 fixture.serverResults.push(processBattleSimJob(structuredClone(prepared)));
-                return response(prepared);
+                return response({ seedBase });
             }
             return errorResponse(operation, `Unhandled battle simulator fixture operation: ${operation}`);
         });
+        const body = JSON.stringify(results);
+        if (operations.includes('battle.prepareSimulation')) {
+            fixture.prepareResponseBytes?.push(Buffer.byteLength(body));
+        }
         await route.fulfill({
             status: 200,
             contentType: 'application/json',
-            body: JSON.stringify(results),
+            body,
         });
     });
 };
@@ -351,6 +365,7 @@ test('operates independent/game presets, imports my general, and renders battle 
         requests: [],
         preparedPayloads: [],
         serverResults: [],
+        prepareResponseBytes: [],
     };
     await installApi(page, fixture);
     await page.setViewportSize({ width: 1280, height: 900 });
@@ -398,6 +413,8 @@ test('operates independent/game presets, imports my general, and renders battle 
     }
     expect(fixture.requests).not.toContain('battle.simulate');
     expect(fixture.requests).not.toContain('battle.getSimulation');
+    expect(fixture.prepareResponseBytes).toEqual([expect.any(Number)]);
+    expect(fixture.prepareResponseBytes?.every((bytes) => bytes < 128)).toBe(true);
     expect(fixture.preparedPayloads[0]).toMatchObject({
         attackerGeneral: { special: 'che_event_신산' },
     });
@@ -439,6 +456,7 @@ test('keeps simulation available without a game general and preserves input afte
         requests: [],
         preparedPayloads: [],
         serverResults: [],
+        prepareResponseBytes: [],
     };
     await installApi(page, fixture);
     await page.setViewportSize({ width: 500, height: 900 });
@@ -453,6 +471,7 @@ test('keeps simulation available without a game general and preserves input afte
     await page.getByRole('button', { name: '전투', exact: true }).click();
     await expect(page.getByText('시뮬레이터 입력 오류')).toBeVisible();
     await expect(page.getByLabel('시드')).toHaveValue('keep-this-seed');
+    await expect(page.getByTestId('game-toast').filter({ hasText: '전투를 진행 중입니다.' })).toHaveCount(0);
 
     fixture.prepareDelayMs = 1_500;
     await page.getByRole('button', { name: '전투', exact: true }).click();
@@ -493,6 +512,7 @@ test('runs 1000 battles in the Chromium worker and matches the Node processor ex
         requests: [],
         preparedPayloads: [],
         serverResults: [],
+        prepareResponseBytes: [],
     };
     await installApi(page, fixture);
     await page.setViewportSize({ width: 1280, height: 900 });
@@ -520,8 +540,8 @@ test('runs 1000 battles in the Chromium worker and matches the Node processor ex
     await expect(progressToast).toHaveCount(0, { timeout: 30_000 });
 
     expect(fixture.preparedPayloads).toHaveLength(1);
-    expect(fixture.preparedPayloads[0]?.seeds).toHaveLength(1000);
-    expect(new Set(fixture.preparedPayloads[0]?.seeds).size).toBe(1000);
+    expect(fixture.preparedPayloads[0]?.seedBase).toBe('playwright-repeat-seed');
+    expect(fixture.preparedPayloads[0]?.seeds).toBeUndefined();
     expect(await readBrowserWorkerResult(page, 0)).toEqual(fixture.serverResults[0]);
     const battleSummary = page.locator('[data-parity-id="battle-summary"]');
     await expect(battleSummary.locator('tr').filter({ hasText: '전투 횟수' }).locator('td')).toHaveText('1,000');
@@ -531,6 +551,8 @@ test('runs 1000 battles in the Chromium worker and matches the Node processor ex
     expect(fixture.preparedPayloads[0]?.attackerGeneral.turntime).toMatch(/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/u);
     expect(fixture.requests).not.toContain('battle.simulate');
     expect(fixture.requests).not.toContain('battle.getSimulation');
+    expect(fixture.prepareResponseBytes).toEqual([expect.any(Number)]);
+    expect(fixture.prepareResponseBytes?.[0]).toBeLessThan(128);
     const workerUrls = await page.evaluate(() => {
         const testWindow = window as unknown as { __battleWorkerUrls?: string[] };
         return testWindow.__battleWorkerUrls ?? [];

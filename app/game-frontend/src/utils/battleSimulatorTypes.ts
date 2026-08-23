@@ -1,3 +1,5 @@
+import type { UnitSetDefinition, WarEngineConfig } from '@sammo-ts/logic';
+
 export type InheritBuff = {
     warAvoidRatio: number;
     warCriticalRatio: number;
@@ -47,16 +49,9 @@ export type BattleSimOptions = {
         currentYear: number;
         currentMonth: number;
     };
-    config: {
-        maxTrainByWar: number;
-        maxAtmosByWar: number;
-        maxTrainByCommand: number;
-        maxAtmosByCommand: number;
-    };
-    unitSet: {
-        defaultCrewTypeId: number;
-        crewTypes: Array<{ id: number; name: string; armType: number }>;
-    };
+    config: WarEngineConfig;
+    unitSet: UnitSetDefinition;
+    scenarioEffect: string | null;
     nationTypes: Array<{ key: string; name: string; info: string }>;
     eventDomesticTraits: Array<{ key: string; name: string; info: string }>;
     warTraits: Array<{ key: string; name: string; info: string }>;
