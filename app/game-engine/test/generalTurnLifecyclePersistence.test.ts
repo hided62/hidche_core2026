@@ -103,4 +103,62 @@ describe('general lifecycle archive history', () => {
             })
         );
     });
+
+    it('stores the inheritance earned rank in the hall before a rebirth resets ranks', async () => {
+        const general = archivedGeneral();
+        const hallCreateMany = vi.fn(async () => ({ count: 1 }));
+        const prisma = {
+            generalAccessLog: {
+                updateMany: vi.fn(async () => ({ count: 1 })),
+            },
+            rankData: {
+                findMany: vi.fn(async () => [{ type: 'inherit_earned', value: 4_321 }]),
+                updateMany: vi.fn(async () => ({ count: 1 })),
+            },
+            nation: {
+                findUnique: vi.fn(async () => null),
+            },
+            gameHistory: {
+                count: vi.fn(async () => 2),
+            },
+            hallOfFame: {
+                findUnique: vi.fn(async () => null),
+                createMany: hallCreateMany,
+                update: vi.fn(async () => undefined),
+            },
+        } as unknown as GamePrisma.TransactionClient;
+        const event: GeneralLifecycleEvent = {
+            generalId: general.id,
+            outcome: 'retired',
+            before: general,
+            after: general,
+            year: 200,
+            month: 1,
+        };
+
+        await persistGeneralLifecycleEvents(
+            prisma,
+            [event],
+            { serverId: 'hall-fixture', season: 4, scenarioId: 22, isUnited: 0 },
+            {}
+        );
+
+        expect(hallCreateMany).toHaveBeenCalledWith({
+            data: [
+                expect.objectContaining({
+                    serverId: 'hall-fixture',
+                    season: 4,
+                    scenario: 22,
+                    generalNo: general.id,
+                    type: 'inherit_earned',
+                    value: 4_321,
+                }),
+            ],
+            skipDuplicates: true,
+        });
+        expect(prisma.rankData.updateMany).toHaveBeenCalledWith({
+            where: { generalId: general.id },
+            data: { value: 0 },
+        });
+    });
 });

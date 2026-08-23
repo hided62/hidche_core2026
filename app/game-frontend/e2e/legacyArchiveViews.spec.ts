@@ -60,6 +60,24 @@ const installArchiveViews = async (page: Page) => {
                                 },
                             ],
                         },
+                        {
+                            title: '유 산 획 득 량',
+                            valueType: 'int',
+                            entries: [
+                                {
+                                    generalId: 1,
+                                    name: legacy ? '이전장수' : '현재장수',
+                                    ownerName: null,
+                                    nationName: legacy ? '이전국' : '현재국',
+                                    bgColor: '#330000',
+                                    fgColor: '#ffffff',
+                                    picture: null,
+                                    imageServer: 0,
+                                    value: 4321,
+                                    printValue: '4,321',
+                                },
+                            ],
+                        },
                     ],
                 });
             }
@@ -201,9 +219,13 @@ test('명예의 전당은 현재 profile의 현재·이전 서버 기록만 조�
     await page.setViewportSize({ width: 1000, height: 800 });
     await page.goto('hall-of-fame');
 
-    await expect(page.getByText('현재장수')).toBeVisible();
+    await expect(page.getByText('현재장수')).toHaveCount(2);
+    await expect(page.getByRole('heading', { name: '유 산 획 득 량' })).toBeVisible();
+    await expect(page.getByText('4,321')).toBeVisible();
     await page.getByLabel('기록 구분').selectOption('legacy');
-    await expect(page.getByText('이전장수')).toBeVisible();
+    await expect(page.getByText('이전장수')).toHaveCount(2);
+    await expect(page.getByRole('heading', { name: '유 산 획 득 량' })).toBeVisible();
+    await expect(page.getByText('4,321')).toBeVisible();
     await expect(page.getByLabel('시나리오 검색')).toContainText('이전 시나리오');
     await expect(page.getByLabel('시나리오 검색')).not.toContainText('HWE /');
     expect(state.hallRequests.some((request) => request.includes('legacy'))).toBe(true);
