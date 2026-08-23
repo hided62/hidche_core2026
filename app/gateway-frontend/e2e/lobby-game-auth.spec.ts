@@ -502,7 +502,7 @@ test('does not contact a STOPPED game runtime and labels it inaccessible', async
     await page.screenshot({ path: testInfo.outputPath('gateway-stopped-profile-lobby.png'), fullPage: true });
 });
 
-test('shows a complete upcoming reset announcement without contacting the stopped runtime', async ({
+test('shows a compact upcoming reset announcement without contacting the stopped runtime', async ({
     page,
 }, testInfo) => {
     const gameOperations = await installFixture(page, {
@@ -531,36 +531,65 @@ test('shows a complete upcoming reset announcement without contacting the stoppe
     await page.goto('lobby');
     const row = page.locator('tbody tr').filter({ hasText: '체섭' });
     const announcement = row.getByTestId('upcoming-reset-announcement');
-    const autorun = announcement.locator('.copyable-autorun');
-    const tooltip = announcement.locator('.copyable-autorun-detail');
-    await expect(row.getByTestId('upcoming-reset-phase')).toHaveText('오픈 예정 · 빌드 대기');
-    await expect(row.getByTestId('upcoming-reset-scheduled-at')).toHaveText('- 초기화 시작 : 2026-08-27 14:00:00 -');
+    const marker = announcement.getByTestId('upcoming-reset-options-marker');
+    const swatch = announcement.getByTestId('upcoming-reset-options-swatch');
+    const tooltip = announcement.getByTestId('upcoming-reset-options-tooltip');
+    await expect(row.getByTestId('upcoming-reset-phase')).toHaveCount(0);
+    await expect(row.getByTestId('upcoming-reset-scheduled-at')).toHaveCount(0);
     await expect(row.getByTestId('upcoming-reset-preopen-at')).toHaveText('- 가오픈 일시 : 2026-08-27 14:30:00 -');
     await expect(row.getByTestId('upcoming-reset-open-at')).toHaveText('- 오픈 일시 : 2026-08-27 20:00:00 -');
-    await expect(row.getByTestId('upcoming-reset-scenario-announcement')).toHaveText(
-        '【가상】황건적의 난 60분 턴 서버'
+    await expect(row.getByTestId('upcoming-reset-scenario-title')).toHaveText('【가상】황건적의 난');
+    await expect(
+        row.getByTestId('upcoming-reset-scenario-announcement').locator(':scope > .text-green-400')
+    ).toHaveText('60분 턴 서버');
+    expect(
+        (await announcement.evaluate((element) => (element as HTMLElement).innerText)).replace(/\s+/g, ' ').trim()
+    ).toBe(
+        '- 가오픈 일시 : 2026-08-27 14:30:00 - - 오픈 일시 : 2026-08-27 20:00:00 - 【가상】황건적의 난 60분 턴 서버'
     );
-    expect((await announcement.textContent())?.replace(/\s+/g, ' ')).toContain(
-        '(상성 설정:가상), (빙의 여부:가능), (최대 스탯:70), (기타 설정:랜덤 임관, 자율행동[내정, 출병, 24시간 유효])'
-    );
+    await expect(tooltip).toBeHidden();
+    await expect(marker).toHaveAttribute('aria-label', '초기화 옵션 보기');
+    await expect(swatch).toHaveCSS('background-color', 'rgb(217, 119, 6)');
     await expect(row).not.toContainText('서버 중지 · 접근 불가');
+    await expect(row).not.toContainText('정보를 불러오는 중');
     await expect(row.getByRole('button', { name: '입장' })).toHaveCount(0);
     await expect(page.getByRole('tab', { name: 'hwe섭' })).toHaveCount(0);
     expect(gameOperations).toEqual([]);
 
-    const desktopGeometry = await announcement.evaluate((element) => ({
-        announcement: element.getBoundingClientRect().toJSON(),
-        cell: element.parentElement?.getBoundingClientRect().toJSON(),
-        documentWidth: document.documentElement.scrollWidth,
-        viewportWidth: window.innerWidth,
-    }));
+    const desktopGeometry = await announcement.evaluate((element) => {
+        const marker = element.querySelector<HTMLElement>('[data-testid="upcoming-reset-options-marker"]');
+        const swatch = element.querySelector<HTMLElement>('[data-testid="upcoming-reset-options-swatch"]');
+        if (!marker || !swatch) throw new Error('expected upcoming reset option marker');
+        return {
+            announcement: element.getBoundingClientRect().toJSON(),
+            cell: element.parentElement?.getBoundingClientRect().toJSON(),
+            marker: marker.getBoundingClientRect().toJSON(),
+            swatch: swatch.getBoundingClientRect().toJSON(),
+            documentWidth: document.documentElement.scrollWidth,
+            viewportWidth: window.innerWidth,
+        };
+    });
     expect(desktopGeometry.announcement.left).toBeGreaterThanOrEqual(desktopGeometry.cell?.left ?? 0);
     expect(desktopGeometry.announcement.right).toBeLessThanOrEqual(desktopGeometry.cell?.right ?? 0);
-    await autorun.hover();
+    expect(desktopGeometry.marker.width).toBe(18);
+    expect(desktopGeometry.marker.height).toBe(18);
+    expect(desktopGeometry.swatch.width).toBe(8);
+    expect(desktopGeometry.swatch.height).toBe(8);
+    await marker.hover();
     await expect(tooltip).toBeVisible();
-    await autorun.focus();
-    await expect(autorun).toBeFocused();
-    await expect(autorun).toHaveCSS('outline-width', '2px');
+    await expect(tooltip).toContainText('초기화 옵션');
+    await expect(tooltip).toContainText('상성 설정: 가상 · 빙의 여부: 가능 · 최대 스탯: 70');
+    await expect(tooltip).toContainText('기타 설정: 랜덤 임관 · 자율행동: 내정, 출병, 24시간 유효');
+    await expect(tooltip).not.toContainText('초기화 시작');
+    await expect(tooltip).not.toContainText('빌드 대기');
+    const desktopTooltipGeometry = await tooltip.evaluate((element) => element.getBoundingClientRect().toJSON());
+    expect(desktopTooltipGeometry.left).toBeGreaterThanOrEqual(8);
+    expect(desktopTooltipGeometry.right).toBeLessThanOrEqual(desktopGeometry.viewportWidth - 8);
+    expect(desktopTooltipGeometry.top).toBeGreaterThanOrEqual(desktopGeometry.cell?.top ?? 0);
+    expect(desktopTooltipGeometry.bottom).toBeLessThanOrEqual(desktopGeometry.cell?.bottom ?? 0);
+    await marker.focus();
+    await expect(marker).toBeFocused();
+    await expect(marker).toHaveCSS('outline-width', '2px');
     await page.screenshot({ path: testInfo.outputPath('gateway-upcoming-reset-desktop.png'), fullPage: true });
 
     await page.setViewportSize({ width: 390, height: 844 });
@@ -577,8 +606,12 @@ test('shows a complete upcoming reset announcement without contacting the stoppe
     expect(mobileGeometry.left).toBeGreaterThanOrEqual(0);
     expect(mobileGeometry.right).toBeLessThanOrEqual(mobileGeometry.viewportWidth);
     expect(mobileGeometry.documentWidth).toBe(mobileGeometry.viewportWidth);
-    await autorun.hover();
+    await marker.hover();
     await expect(tooltip).toBeVisible();
+    const mobileTooltipGeometry = await tooltip.evaluate((element) => element.getBoundingClientRect().toJSON());
+    expect(mobileTooltipGeometry.left).toBeGreaterThanOrEqual(8);
+    expect(mobileTooltipGeometry.right).toBeLessThanOrEqual(mobileGeometry.viewportWidth - 8);
+    expect(mobileTooltipGeometry.bottom).toBeLessThanOrEqual(844 - 8);
     await page.screenshot({ path: testInfo.outputPath('gateway-upcoming-reset-mobile.png'), fullPage: true });
 });
 
@@ -603,8 +636,12 @@ test('keeps the announcement through the RESERVED handoff after the build comple
 
     await page.goto('lobby');
     const row = page.locator('tbody tr').filter({ hasText: 'hwe섭' });
-    await expect(row.getByTestId('upcoming-reset-phase')).toHaveText('오픈 준비 완료 · 가오픈 대기');
+    const marker = row.getByTestId('upcoming-reset-options-marker');
+    await expect(row.getByTestId('upcoming-reset-phase')).toHaveCount(0);
     await expect(row.getByTestId('upcoming-reset-scenario-title')).toHaveText('【가상】황건적의 난');
+    await marker.hover();
+    await expect(row.getByTestId('upcoming-reset-options-tooltip')).toContainText('초기화 옵션');
+    await expect(row.getByTestId('upcoming-reset-options-tooltip')).not.toContainText('오픈 준비 완료');
     await expect(row).not.toContainText('준 비 중 · 접근 불가');
     await expect(row.getByRole('button', { name: '입장' })).toHaveCount(0);
     expect(gameOperations).toEqual([]);

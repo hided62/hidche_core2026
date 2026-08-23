@@ -135,12 +135,8 @@ const autorunDetailText = (autorun: LobbyInfo['autorunUser']): string => {
 };
 const autorunTooltipId = (profileName: string, scope = 'current'): string =>
     'profile-autorun-' + scope + '-' + profileName.replaceAll(/[^a-zA-Z0-9_-]/g, '-');
-const upcomingResetPhaseText = (profile: LobbyProfile): string => {
-    if (profile.upcomingReset?.phase === 'DELAYED') return '준비 지연 · 일정 확인 중';
-    if (profile.upcomingReset?.phase === 'READY') return '오픈 준비 완료 · 가오픈 대기';
-    if (profile.upcomingReset?.phase === 'PREPARING') return '오픈 준비 중';
-    return '오픈 예정 · 빌드 대기';
-};
+const upcomingResetOptionsTooltipId = (profileName: string): string =>
+    'upcoming-reset-options-' + profileName.replaceAll(/[^a-zA-Z0-9_-]/g, '-');
 const isProfileRuntimeAvailable = (profile: LobbyProfile): boolean => profile.lifecycle.userAccessible;
 const unavailableProfileText = (profile: LobbyProfile): string => {
     if (!profile.lifecycle.dataInitialized) return '- DB 초기화 전 · 접근 불가 -';
@@ -513,17 +509,6 @@ const handleEnter = async (profile: LobbyProfile, targetPath: string) => {
                                         class="upcoming-reset-announcement"
                                         data-testid="upcoming-reset-announcement"
                                     >
-                                        <div
-                                            class="upcoming-reset-phase"
-                                            :class="{ 'is-delayed': profile.upcomingReset.phase === 'DELAYED' }"
-                                            data-testid="upcoming-reset-phase"
-                                        >
-                                            {{ upcomingResetPhaseText(profile) }}
-                                        </div>
-                                        <div data-testid="upcoming-reset-scheduled-at">
-                                            - 초기화 시작 :
-                                            {{ formatAnnouncementDate(profile.upcomingReset.scheduledAt) }} -
-                                        </div>
                                         <div data-testid="upcoming-reset-preopen-at">
                                             - 가오픈 일시 :
                                             {{ formatAnnouncementDate(profile.upcomingReset.preopenAt) }} -
@@ -538,38 +523,41 @@ const handleEnter = async (profile: LobbyProfile, targetPath: string) => {
                                             <span class="text-green-400">
                                                 {{ profile.upcomingReset.turnTermMinutes }}분 턴 서버
                                             </span>
-                                        </div>
-                                        <div class="profile-announcement-settings text-xs text-zinc-500">
-                                            (상성 설정:{{ profile.upcomingReset.fictionMode }}), (빙의 여부:{{
-                                                npcModeText(profile.upcomingReset.npcMode)
-                                            }}), (최대 스탯:{{ profile.upcomingReset.defaultStatTotal }}), (기타
-                                            설정:<template v-if="profile.upcomingReset.otherTextInfo"
-                                                >{{ profile.upcomingReset.otherTextInfo
-                                                }}<template v-if="profile.upcomingReset.autorunUser"
-                                                    >,
-                                                </template></template
-                                            ><span
-                                                v-if="profile.upcomingReset.autorunUser"
-                                                class="copyable-autorun"
+                                            <span
+                                                class="upcoming-reset-options-marker"
                                                 tabindex="0"
-                                                :aria-describedby="autorunTooltipId(profile.profileName, 'upcoming')"
-                                                >자율행동<span
-                                                    :id="autorunTooltipId(profile.profileName, 'upcoming')"
-                                                    class="copyable-autorun-detail"
+                                                aria-label="초기화 옵션 보기"
+                                                :aria-describedby="upcomingResetOptionsTooltipId(profile.profileName)"
+                                                data-testid="upcoming-reset-options-marker"
+                                            >
+                                                <span
+                                                    class="upcoming-reset-options-swatch"
+                                                    data-testid="upcoming-reset-options-swatch"
+                                                    aria-hidden="true"
+                                                ></span>
+                                                <span
+                                                    :id="upcomingResetOptionsTooltipId(profile.profileName)"
+                                                    class="upcoming-reset-options-tooltip"
                                                     role="tooltip"
-                                                    ><span class="copyable-autorun-bracket">[</span
-                                                    ><span>{{
-                                                        autorunDetailText(profile.upcomingReset.autorunUser)
-                                                    }}</span
-                                                    ><span class="copyable-autorun-bracket">]</span></span
-                                                ></span
-                                            ><template
-                                                v-if="
-                                                    !profile.upcomingReset.otherTextInfo &&
-                                                    !profile.upcomingReset.autorunUser
-                                                "
-                                                >없음</template
-                                            >)
+                                                    data-testid="upcoming-reset-options-tooltip"
+                                                >
+                                                    <strong>초기화 옵션</strong>
+                                                    <span
+                                                        >상성 설정: {{ profile.upcomingReset.fictionMode }} · 빙의 여부:
+                                                        {{ npcModeText(profile.upcomingReset.npcMode) }} · 최대 스탯:
+                                                        {{ profile.upcomingReset.defaultStatTotal }}</span
+                                                    >
+                                                    <span
+                                                        >기타 설정: {{ profile.upcomingReset.otherTextInfo || '없음'
+                                                        }}<template v-if="profile.upcomingReset.autorunUser">
+                                                            · 자율행동:
+                                                            {{
+                                                                autorunDetailText(profile.upcomingReset.autorunUser)
+                                                            }}</template
+                                                        ></span
+                                                    >
+                                                </span>
+                                            </span>
                                         </div>
                                     </div>
                                     <template v-if="profileDetails[profile.profileName]">
@@ -668,8 +656,8 @@ const handleEnter = async (profile: LobbyProfile, targetPath: string) => {
                                             </div>
                                         </div>
                                     </template>
-                                    <template v-else-if="!isProfileRuntimeAvailable(profile) && !profile.upcomingReset">
-                                        <div class="text-center text-zinc-600 py-2">
+                                    <template v-else-if="!isProfileRuntimeAvailable(profile)">
+                                        <div v-if="!profile.upcomingReset" class="text-center text-zinc-600 py-2">
                                             {{ unavailableProfileText(profile) }}
                                         </div>
                                     </template>
@@ -1004,20 +992,66 @@ const handleEnter = async (profile: LobbyProfile, targetPath: string) => {
 }
 
 .upcoming-reset-announcement {
-    border-left: 2px solid #f59e0b;
-    padding-left: 10px;
     line-height: 1.5;
 }
 
-.upcoming-reset-phase {
-    margin-bottom: 4px;
-    color: #fbbf24;
-    font-size: 12px;
-    font-weight: 700;
+.upcoming-reset-options-marker {
+    position: relative;
+    display: inline-flex;
+    width: 18px;
+    height: 18px;
+    align-items: center;
+    justify-content: center;
+    margin-left: 3px;
+    border-radius: 2px;
+    cursor: help;
+    vertical-align: text-bottom;
 }
 
-.upcoming-reset-phase.is-delayed {
-    color: #fca5a5;
+.upcoming-reset-options-swatch {
+    width: 8px;
+    height: 8px;
+    border: 1px solid #fbbf24;
+    border-radius: 1px;
+    background: #d97706;
+    box-shadow: 0 0 0 1px rgb(24 24 27 / 70%);
+}
+
+.upcoming-reset-options-tooltip {
+    position: absolute;
+    z-index: 30;
+    bottom: -16px;
+    left: calc(100% + 6px);
+    display: flex;
+    visibility: hidden;
+    box-sizing: border-box;
+    width: max-content;
+    max-width: min(400px, calc(100vw - 32px));
+    flex-direction: column;
+    gap: 2px;
+    padding: 7px 9px;
+    border: 1px solid #52525b;
+    border-radius: 4px;
+    background: #18181b;
+    box-shadow: 0 4px 12px rgb(0 0 0 / 45%);
+    color: #f4f4f5;
+    font-size: 12px;
+    line-height: 1.4;
+    opacity: 0;
+    pointer-events: none;
+    text-align: left;
+    white-space: normal;
+}
+
+.upcoming-reset-options-marker:hover .upcoming-reset-options-tooltip,
+.upcoming-reset-options-marker:focus-visible .upcoming-reset-options-tooltip {
+    visibility: visible;
+    opacity: 1;
+}
+
+.upcoming-reset-options-marker:focus-visible {
+    outline: 2px solid #fdba74;
+    outline-offset: 1px;
 }
 
 .copyable-autorun {
@@ -1067,6 +1101,17 @@ const handleEnter = async (profile: LobbyProfile, targetPath: string) => {
 }
 
 @media (max-width: 640px) {
+    .upcoming-reset-options-marker:hover .upcoming-reset-options-tooltip,
+    .upcoming-reset-options-marker:focus-visible .upcoming-reset-options-tooltip {
+        position: fixed;
+        top: auto;
+        right: 16px;
+        bottom: 16px;
+        left: 16px;
+        width: auto;
+        max-width: none;
+    }
+
     .copyable-autorun:hover .copyable-autorun-detail,
     .copyable-autorun:focus-visible .copyable-autorun-detail {
         position: fixed;
