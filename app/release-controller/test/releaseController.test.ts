@@ -3,8 +3,11 @@ import os from 'node:os';
 import path from 'node:path';
 
 import {
+    DEFAULT_FRONTEND_ARTIFACT_KEEP_NEWEST,
+    DEFAULT_FRONTEND_ARTIFACT_RETENTION_MS,
     DEFAULT_MANAGED_WORKSPACE_KEEP_NEWEST,
     DEFAULT_MANAGED_WORKSPACE_RETENTION_MS,
+    FrontendArtifactManager,
     type BuildRunner,
     type GatewayReleaseOperationRecord,
     type GatewayReleaseRepository,
@@ -224,8 +227,7 @@ describe('GatewayReleaseController', () => {
             } as unknown as GitWorkspaceManager,
             { run: async () => ({ ok: true, exitCode: 0, output: '' }) },
             {
-                list: async () =>
-                    [...running].map(([name, cwd]) => ({ name, cwd, status: 'online', restartCount: 0 })),
+                list: async () => [...running].map(([name, cwd]) => ({ name, cwd, status: 'online', restartCount: 0 })),
                 start: async (definition) => {
                     running.set(definition.name, definition.cwd);
                 },
@@ -319,6 +321,61 @@ describe('GatewayReleaseController', () => {
             retentionMs: DEFAULT_MANAGED_WORKSPACE_RETENTION_MS,
             keepNewest: DEFAULT_MANAGED_WORKSPACE_KEEP_NEWEST,
         });
+    });
+
+    it('cleans expired unreferenced Gateway frontend releases with the managed daily policy', async () => {
+        const workspace = await createReleaseWorkspace();
+        const artifactRoot = path.join(workspace, 'artifact-cleanup-volume');
+        const sourceRoot = path.join(workspace, 'gateway-cleanup-dist');
+        await fs.mkdir(sourceRoot, { recursive: true });
+        const manager = new FrontendArtifactManager(artifactRoot);
+        const stage = async (marker: string, commitSha: string) => {
+            await fs.writeFile(path.join(sourceRoot, 'index.html'), `<div>${marker}</div>`);
+            return manager.stage({ frontendKey: 'gateway', sourceRoot, commitSha });
+        };
+        const active = await stage('active', OLD_SHA);
+        await manager.activate('gateway', active.releaseId);
+        const cacheOne = await stage('cache-one', '3'.repeat(40));
+        const cacheTwo = await stage('cache-two', '4'.repeat(40));
+        const stale = await stage('stale', '5'.repeat(40));
+        const now = new Date('2026-08-23T00:00:00.000Z');
+        const old = new Date(now.getTime() - 72 * 60 * 60 * 1_000);
+        for (const artifact of [active, cacheOne, cacheTwo, stale]) {
+            await fs.utimes(artifact.releasePath, old, old);
+        }
+        await fs.utimes(cacheTwo.releasePath, new Date(old.getTime() + 2_000), new Date(old.getTime() + 2_000));
+        await fs.utimes(cacheOne.releasePath, new Date(old.getTime() + 1_000), new Date(old.getTime() + 1_000));
+        const harness = createRepository();
+        const controller = new GatewayReleaseController(
+            harness.repository,
+            {
+                listManagedWorkspaces: async () => [],
+                cleanup: async () => ({ removed: [], skipped: [] }),
+            } as unknown as GitWorkspaceManager,
+            { run: async () => ({ ok: true, exitCode: 0, output: '' }) },
+            {
+                list: async () => [],
+                start: async () => {},
+                stop: async () => {},
+                delete: async () => {},
+            },
+            {
+                ...config,
+                frontendServeMode: 'static',
+                frontendArtifactRoot: artifactRoot,
+            },
+            () => now
+        );
+
+        const result = await controller.cleanupStaleResources();
+
+        expect(result.workspaces).toEqual({ removed: [], skipped: [] });
+        expect(result.artifacts.removed).toEqual([stale.releasePath]);
+        expect(result.artifacts.retained).toEqual(
+            expect.arrayContaining([active.releasePath, cacheOne.releasePath, cacheTwo.releasePath])
+        );
+        expect(DEFAULT_FRONTEND_ARTIFACT_RETENTION_MS).toBe(24 * 60 * 60 * 1_000);
+        expect(DEFAULT_FRONTEND_ARTIFACT_KEEP_NEWEST).toBe(2);
     });
 
     it('builds, migrates, switches all gateway roles, verifies readiness, and publishes atomically', async () => {

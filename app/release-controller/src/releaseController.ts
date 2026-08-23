@@ -6,6 +6,8 @@ import {
     assertReleaseComponents,
     buildTurboReleaseCommand,
     buildTurboReleaseTaskCommand,
+    DEFAULT_FRONTEND_ARTIFACT_KEEP_NEWEST,
+    DEFAULT_FRONTEND_ARTIFACT_RETENTION_MS,
     DEFAULT_MANAGED_WORKSPACE_KEEP_NEWEST,
     DEFAULT_MANAGED_WORKSPACE_RETENTION_MS,
     type BuildCommand,
@@ -14,6 +16,7 @@ import {
     type GatewayReleaseOperationRecord,
     type GatewayReleaseRepository,
     type GatewayReleaseStateRecord,
+    type FrontendArtifactCleanupResult,
     type GitWorkspaceManager,
     type ProcessDefinition,
     type ProcessManager,
@@ -33,6 +36,11 @@ const CANCELLATION_POLL_INTERVAL_MS = 500;
 const MANAGED_PROCESS_NAMES = ['sammo:gateway-api', 'sammo:gateway-frontend', 'sammo:gateway-orchestrator'] as const;
 const SENSITIVE_ENV_NAME = /(SECRET|TOKEN|PASSWORD|PASSWD|PRIVATE_KEY|CLIENT_SECRET|DATABASE_URL|REDIS_URL)/iu;
 export const RELEASE_WORKSPACE_CLEANUP_INTERVAL_MS = 24 * 60 * 60 * 1_000;
+
+export interface ReleaseManagedCleanupResult {
+    workspaces: { removed: string[]; skipped: string[] };
+    artifacts: FrontendArtifactCleanupResult;
+}
 
 const isRuntimeProcessActive = (status: string): boolean =>
     ['online', 'launching', 'stopping'].includes(status.toLowerCase());
@@ -181,6 +189,36 @@ export class GatewayReleaseController {
             retentionMs: DEFAULT_MANAGED_WORKSPACE_RETENTION_MS,
             keepNewest: DEFAULT_MANAGED_WORKSPACE_KEEP_NEWEST,
         });
+    }
+
+    async cleanupStaleResources(): Promise<ReleaseManagedCleanupResult> {
+        const workspaces = await this.cleanupStaleWorkspaces();
+        let artifacts: FrontendArtifactCleanupResult = { removed: [], retained: [], skipped: [] };
+        if (this.config.frontendServeMode === 'static') {
+            const [state, operations] = await Promise.all([
+                this.repository.getState(),
+                this.repository.listOperations(100),
+            ]);
+            artifacts = await this.artifactManager.cleanup({
+                frontendKeys: ['gateway'],
+                protectedCommitShas: [
+                    ...[state.activeCommitSha, state.previousCommitSha].filter((commitSha): commitSha is string =>
+                        Boolean(commitSha)
+                    ),
+                    ...operations
+                        .filter(
+                            (operation) =>
+                                operation.resolvedCommitSha &&
+                                (operation.status === 'QUEUED' || operation.status === 'RUNNING')
+                        )
+                        .map((operation) => operation.resolvedCommitSha as string),
+                ],
+                retentionMs: DEFAULT_FRONTEND_ARTIFACT_RETENTION_MS,
+                keepNewest: DEFAULT_FRONTEND_ARTIFACT_KEEP_NEWEST,
+                now: this.now(),
+            });
+        }
+        return { workspaces, artifacts };
     }
 
     private sanitizeLogMessage(message: string): string {

@@ -25,6 +25,13 @@ cluster `exec_mode`가 없으므로 모두 단일 fork입니다. Frontend는 Cad
 API는 하나의 Fastify process입니다. worker 역할 분리는 API event loop의 작업을
 줄이지만 API replica나 장애 대체 backend를 제공하지는 않습니다.
 
+정적 artifact 수명도 두 control-plane daemon이 소유합니다. Gateway orchestrator는
+profile wrapper와 commit 공용 `game-assets`, release-controller는 Gateway release를
+startup 직후와 24시간마다 operation/worktree 정리와 직렬화해 점검합니다. 현재·이전
+pointer, wrapper dependency, 진행 중 commit, 24시간 grace와 key별 최신 cache 2개를
+제외한 미참조 release만 제거합니다. 손상되거나 알 수 없는 pointer·manifest·symlink는
+삭제하지 않으며, sourcemap은 참조하는 bundle과 같은 release 단위로 유지됩니다.
+
 Profile은 PostgreSQL schema와 Redis namespace를 분리하지만 같은 database,
 PostgreSQL instance, runtime cgroup을 공유합니다. 관리되는 PM2 정의는 game API 4,
 turn daemon 2, auction/battle/tournament worker 각 1, Gateway API 4, Gateway

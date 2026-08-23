@@ -1,8 +1,11 @@
+import fs from 'node:fs/promises';
+import os from 'node:os';
 import path from 'node:path';
 
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it } from 'vitest';
 
 import { GatewayOrchestrator } from '../src/orchestrator/gatewayOrchestrator.js';
+import { FrontendArtifactManager } from '../src/orchestrator/frontendArtifactManager.js';
 import type { ProcessManager } from '../src/orchestrator/processManager.js';
 import type { GatewayProfileRecord, GatewayProfileRepository } from '../src/orchestrator/profileRepository.js';
 import {
@@ -14,6 +17,11 @@ import {
 
 const COMMIT_SHA = '0123456789abcdef0123456789abcdef01234567';
 const oldUsage = '2025-01-01T00:00:00.000Z';
+const temporaryDirectories: string[] = [];
+
+afterEach(async () => {
+    await Promise.all(temporaryDirectories.splice(0).map((directory) => fs.rm(directory, { recursive: true })));
+});
 
 const makeProfile = (
     profileName: string,
@@ -40,10 +48,14 @@ const makeProfile = (
 const createHarness = (
     profiles: GatewayProfileRecord[],
     processes: Awaited<ReturnType<ProcessManager['list']>>,
-    managedPaths: string[]
+    managedPaths: string[],
+    frontendArtifactRoot?: string
 ) => {
     const cleanupCalls: ManagedWorkspaceCleanupOptions[] = [];
-    const repository = { listProfiles: async () => profiles } as unknown as GatewayProfileRepository;
+    const repository = {
+        listProfiles: async () => profiles,
+        listOperations: async () => [],
+    } as unknown as GatewayProfileRepository;
     const processManager: ProcessManager = {
         list: async () => processes,
         start: async () => {},
@@ -73,11 +85,13 @@ const createHarness = (
             redisKeyPrefix: 'sammo:test',
             gameTokenSecret: 'test-secret',
             gatewayInternalApiUrl: 'http://127.0.0.1:13000',
+            ...(frontendArtifactRoot ? { frontendServeMode: 'static' as const, frontendArtifactRoot } : {}),
         },
         reconcileIntervalMs: 60_000,
         scheduleIntervalMs: 60_000,
         buildIntervalMs: 60_000,
         adminActionIntervalMs: 60_000,
+        now: () => new Date('2026-08-23T00:00:00.000Z'),
     });
     return { orchestrator, cleanupCalls };
 };
@@ -140,5 +154,48 @@ describe('GatewayOrchestrator workspace cleanup', () => {
             removed: [workspace],
             skipped: [],
         });
+    });
+
+    it('serializes profile worktree and frontend artifact cleanup under the same managed cycle', async () => {
+        const root = await fs.mkdtemp(path.join(os.tmpdir(), 'sammo-profile-artifact-cleanup-'));
+        temporaryDirectories.push(root);
+        const sourceRoot = path.join(root, 'dist');
+        const artifactRoot = path.join(root, 'artifacts');
+        await fs.mkdir(sourceRoot, { recursive: true });
+        const manager = new FrontendArtifactManager(artifactRoot);
+        const stage = async (marker: string, commitMarker: string) => {
+            await fs.writeFile(path.join(sourceRoot, 'index.html'), `<div>${marker}</div>`);
+            return manager.stage({
+                frontendKey: 'che',
+                sourceRoot,
+                commitSha: commitMarker.repeat(40),
+            });
+        };
+        const active = await stage('active', '1');
+        await manager.activate('che', active.releaseId);
+        const cacheOne = await stage('cache-one', '2');
+        const cacheTwo = await stage('cache-two', '3');
+        const stale = await stage('stale', '4');
+        const now = new Date('2026-08-23T00:00:00.000Z');
+        const old = new Date(now.getTime() - 72 * 60 * 60 * 1_000);
+        for (const artifact of [active, cacheOne, cacheTwo, stale]) {
+            await fs.utimes(artifact.releasePath, old, old);
+        }
+        await fs.utimes(cacheTwo.releasePath, new Date(old.getTime() + 2_000), new Date(old.getTime() + 2_000));
+        await fs.utimes(cacheOne.releasePath, new Date(old.getTime() + 1_000), new Date(old.getTime() + 1_000));
+        const harness = createHarness(
+            [makeProfile('che:default', undefined, { buildCommitSha: active.manifest.commitSha })],
+            [],
+            [],
+            artifactRoot
+        );
+
+        const result = await harness.orchestrator.cleanupStaleResources();
+
+        expect(result.workspaces).toEqual({ removed: [], skipped: [] });
+        expect(result.artifacts.removed).toEqual([stale.releasePath]);
+        expect(result.artifacts.retained).toEqual(
+            expect.arrayContaining([active.releasePath, cacheOne.releasePath, cacheTwo.releasePath])
+        );
     });
 });

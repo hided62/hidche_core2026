@@ -105,6 +105,36 @@ Timeout은 scheduled task 오류로 끝나 정리 flag를 해제하고 다음 5�
 queue를 다시 claim하게 합니다. PM2 mutation이 timeout된 경우에는 같은 mutation을 즉시
 직접 반복하지 않고 실제 process 목록과 operation terminal 상태를 먼저 재조회합니다.
 
+## Frontend artifact 자동 정리
+
+정적 운영의 `frontend-artifacts/<key>/releases`도 commit worktree와 같은 daemon 주기에
+정리합니다. Profile orchestrator는 profile wrapper와 `game-assets` 공용 bundle을,
+release-controller는 Gateway bundle을 소유하며 startup 직후와 이후 24시간마다 한 번
+점검합니다. 별도 상시 polling process나 cron은 두지 않습니다.
+
+- `current`와 `previous` pointer가 가리키는 release는 기간과 무관하게 보호합니다.
+- Profile wrapper manifest는 참조하는 `game-assets` release를 dependency로 기록합니다.
+  전환 전에 생성된 manifest는 wrapper의 `sammo-runtime-config.assetReleaseId`를 읽어 같은
+  보호 집합을 복원하므로 기존 공용 bundle도 안전합니다.
+- `QUEUED`/`RUNNING` operation과 profile build가 고정한 commit의 release도 보호합니다.
+- 그 밖의 release는 마지막 stage/activation 이후 최소 24시간을 유예하고, key별 최신
+  2개를 재배포 cache로 추가 보존합니다. 두 조건 밖의 오래된 미참조 release만
+  재귀 삭제합니다.
+- activation은 release와 dependency 디렉터리의 마지막 사용 시각을 갱신합니다. 오래된
+  commit으로 rollback한 직후 cache가 즉시 만료되는 일을 막습니다.
+- 24시간이 지난 crash 잔여 `.staging-*`와 profile wrapper 임시 디렉터리도 같은 소유
+  daemon이 operation과 직렬화된 상태에서만 제거합니다.
+- pointer, manifest, dependency 또는 symlink가 예상 형식이 아니면 해당 정리 주기는
+  fail-closed로 건너뜁니다. 알 수 없는 파일과 디렉터리를 일반 release로 간주해
+  삭제하지 않습니다.
+
+이 정리는 Caddy가 읽는 재생성 가능한 frontend 산출물만 대상으로 하며 sourcemap도
+bundle과 함께 동일한 release 단위로 보존·정리합니다. PostgreSQL, Redis, `/image/*`,
+사용자 업로드, 현재/이전 rollback pointer에는 접근하지 않습니다. Profile 관리자 API의
+`admin.profiles.cleanupWorkspaces`를 실행하면 같은 직렬화 경계에서 profile artifact도
+점검하지만 응답의 기존 worktree 목록 계약은 유지합니다. 실제 삭제 수·보존 수·skip
+수는 orchestrator와 release-controller의 일일 managed cleanup 로그에서 확인합니다.
+
 ## Profile 배포
 
 버전 업데이트 화면에서 profile의 branch 또는 commit을 선택합니다. Branch는 worker가

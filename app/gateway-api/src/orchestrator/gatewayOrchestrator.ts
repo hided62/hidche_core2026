@@ -55,9 +55,12 @@ import {
 import type { AdminSeedUser } from './seedProfileDatabase.js';
 import { assertReleaseComponents, readReleaseManifest } from './releaseManifest.js';
 import {
+    DEFAULT_FRONTEND_ARTIFACT_KEEP_NEWEST,
+    DEFAULT_FRONTEND_ARTIFACT_RETENTION_MS,
     FrontendArtifactManager,
     resolveFrontendServeMode,
     SHARED_GAME_FRONTEND_KEY,
+    type FrontendArtifactCleanupResult,
     type FrontendServeMode,
     type StagedFrontendArtifact,
 } from './frontendArtifactManager.js';
@@ -136,6 +139,11 @@ export interface GatewayOrchestratorHandle {
     }>;
     listRuntimeStates(profileNames: string[]): Promise<ProfileRuntimeSnapshot[]>;
     listRuntimeSettings?(profileNames: string[]): Promise<ProfileRuntimeSettingsSnapshot[]>;
+}
+
+export interface GatewayManagedCleanupResult {
+    workspaces: { removed: string[]; skipped: string[] };
+    artifacts: FrontendArtifactCleanupResult;
 }
 
 const SENSITIVE_ENV_NAME = /(SECRET|TOKEN|PASSWORD|PASSWD|PRIVATE_KEY|CLIENT_SECRET|DATABASE_URL|REDIS_URL)/iu;
@@ -2318,15 +2326,21 @@ export class GatewayOrchestrator implements GatewayOrchestratorHandle {
         }
     }
 
-    async cleanupStaleWorkspaces(): Promise<{ removed: string[]; skipped: string[] }> {
+    async cleanupStaleResources(): Promise<GatewayManagedCleanupResult> {
         if (this.buildInFlight || this.operationInFlight || this.workspaceCleanupInFlight) {
             const managedWorkspaces = await this.workspaceManager.listManagedWorkspaces();
-            return { removed: [], skipped: managedWorkspaces.map((workspace) => workspace.root) };
+            return {
+                workspaces: { removed: [], skipped: managedWorkspaces.map((workspace) => workspace.root) },
+                artifacts: { removed: [], retained: [], skipped: [] },
+            };
         }
         this.workspaceCleanupInFlight = true;
         try {
             const managedWorkspaces = await this.workspaceManager.listManagedWorkspaces();
-            const profiles = await this.repository.listProfiles();
+            const [profiles, operations] = await Promise.all([
+                this.repository.listProfiles(),
+                this.repository.listOperations({ limit: 100 }),
+            ]);
             const protectedWorkspaces = new Set<string>();
             for (const profile of profiles) {
                 if (profile.buildWorkspace) {
@@ -2353,22 +2367,56 @@ export class GatewayOrchestrator implements GatewayOrchestratorHandle {
                 }
             }
 
-            return await this.workspaceManager.cleanup({
+            const workspaces = await this.workspaceManager.cleanup({
                 protectedPaths: [...protectedWorkspaces],
                 retentionMs: DEFAULT_MANAGED_WORKSPACE_RETENTION_MS,
                 keepNewest: DEFAULT_MANAGED_WORKSPACE_KEEP_NEWEST,
             });
+            const artifacts: FrontendArtifactCleanupResult =
+                this.frontendServeMode === 'static'
+                    ? await this.artifactManager.cleanup({
+                          frontendKeys: [
+                              ...new Set(profiles.map((profile) => profile.profile)),
+                              SHARED_GAME_FRONTEND_KEY,
+                          ],
+                          protectedCommitShas: [
+                              ...profiles
+                                  .filter(
+                                      (profile) =>
+                                          profile.buildCommitSha &&
+                                          (profile.buildStatus === 'QUEUED' || profile.buildStatus === 'RUNNING')
+                                  )
+                                  .map((profile) => profile.buildCommitSha as string),
+                              ...operations
+                                  .filter(
+                                      (operation) =>
+                                          operation.resolvedCommitSha &&
+                                          (operation.status === 'QUEUED' || operation.status === 'RUNNING')
+                                  )
+                                  .map((operation) => operation.resolvedCommitSha as string),
+                          ],
+                          retentionMs: DEFAULT_FRONTEND_ARTIFACT_RETENTION_MS,
+                          keepNewest: DEFAULT_FRONTEND_ARTIFACT_KEEP_NEWEST,
+                          now: this.now(),
+                          cleanupProfileWrapperStaging: true,
+                      })
+                    : { removed: [], retained: [], skipped: [] };
+            return { workspaces, artifacts };
         } finally {
             this.workspaceCleanupInFlight = false;
         }
     }
 
+    async cleanupStaleWorkspaces(): Promise<{ removed: string[]; skipped: string[] }> {
+        return (await this.cleanupStaleResources()).workspaces;
+    }
+
     private async cleanupWorkspacesScheduled(): Promise<void> {
         if (this.stopping || this.buildInFlight || this.operationInFlight || this.workspaceCleanupInFlight) return;
-        const result = await this.cleanupStaleWorkspaces();
-        if (result.removed.length > 0) {
-            console.info(`[gateway-orchestrator] removed ${result.removed.length} stale profile worktrees`);
-        }
+        const result = await this.cleanupStaleResources();
+        console.info(
+            `[gateway-orchestrator] managed cleanup completed: removed ${result.workspaces.removed.length} profile worktrees and ${result.artifacts.removed.length} frontend artifacts; retained ${result.artifacts.retained.length}, skipped ${result.artifacts.skipped.length}`
+        );
     }
 
     private async stageStaticProfileFrontend(profile: GatewayProfileRecord): Promise<StagedFrontendArtifact> {
