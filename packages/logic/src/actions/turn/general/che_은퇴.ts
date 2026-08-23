@@ -60,7 +60,7 @@ export class ActionResolver<
         context.addLog(`<Y>${general.name}</>${josaYi} <R>은퇴</>하고 그 자손이 유지를 이어받았습니다.`, {
             scope: LogScope.SYSTEM,
             category: LogCategory.SUMMARY,
-            format: LogFormat.RAWTEXT,
+            format: LogFormat.MONTH,
         });
         context.addLog('나이가 들어 <R>은퇴</>하고 자손에게 자리를 물려줍니다.', {
             category: LogCategory.ACTION,

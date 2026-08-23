@@ -72,6 +72,7 @@ export class ActionDefinition<
                     category: LogCategory.ACTION,
                     format: LogFormat.PLAIN,
                     generalId: member.id,
+                    legacyFlushGroup: -1,
                 })
             );
         }

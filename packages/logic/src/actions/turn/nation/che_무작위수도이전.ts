@@ -148,8 +148,8 @@ export class ActionDefinition<
                 `<Y>${generalName}</>${josaYi} <G><b>${destCityName}</b></>${josaRo} <M>수도 이전</>하였습니다.`,
                 {
                     scope: LogScope.SYSTEM,
-                    category: LogCategory.ACTION,
-                    format: LogFormat.PLAIN,
+                    category: LogCategory.SUMMARY,
+                    format: LogFormat.MONTH,
                 }
             ),
             // Global History Log
@@ -202,6 +202,7 @@ export class ActionDefinition<
                         category: LogCategory.ACTION,
                         generalId: targetGeneral.id,
                         format: LogFormat.PLAIN,
+                        legacyFlushGroup: -1,
                     })
                 );
             }

@@ -157,6 +157,7 @@ const buildNonAggressionEffects = <TriggerState extends GeneralTriggerState>(
                 category: LogCategory.HISTORY,
                 generalId: context.proposer.id,
                 format: LogFormat.YEAR_MONTH,
+                legacyFlushGroup: 1,
             }
         ),
         createLogEffect(
@@ -166,6 +167,7 @@ const buildNonAggressionEffects = <TriggerState extends GeneralTriggerState>(
                 category: LogCategory.ACTION,
                 generalId: context.proposer.id,
                 format: LogFormat.PLAIN,
+                legacyFlushGroup: 1,
             }
         ),
     ];
@@ -226,12 +228,14 @@ const buildCancelNonAggressionEffects = <TriggerState extends GeneralTriggerStat
             category: LogCategory.HISTORY,
             generalId: context.proposer.id,
             format: LogFormat.YEAR_MONTH,
+            legacyFlushGroup: 1,
         }),
         createLogEffect(`<D><b>${actorNationName}</b></>${actorNationJosaWa}의 불가침 파기에 성공했습니다.`, {
             scope: LogScope.GENERAL,
             category: LogCategory.ACTION,
             generalId: context.proposer.id,
             format: LogFormat.PLAIN,
+            legacyFlushGroup: 1,
         }),
     ];
 };
@@ -297,18 +301,21 @@ const buildStopWarEffects = <TriggerState extends GeneralTriggerState>(
             generalId: context.proposer.id,
             category: LogCategory.HISTORY,
             format: LogFormat.YEAR_MONTH,
+            legacyFlushGroup: 1,
         }),
         createLogEffect(`<D><b>${actorNationName}</b></>${actorNationJosaWa} 종전에 성공했습니다.`, {
             scope: LogScope.GENERAL,
             generalId: context.proposer.id,
             category: LogCategory.ACTION,
             format: LogFormat.PLAIN,
+            legacyFlushGroup: 1,
         }),
         createLogEffect(`<D><b>${actorNationName}</b></>${actorNationJosaWa} 종전`, {
             scope: LogScope.NATION,
             nationId: proposerNation.id,
             category: LogCategory.HISTORY,
             format: LogFormat.YEAR_MONTH,
+            legacyFlushGroup: 1,
         }),
     ];
 };

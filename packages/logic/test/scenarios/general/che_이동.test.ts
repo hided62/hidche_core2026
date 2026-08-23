@@ -3,6 +3,8 @@ import type { General, Nation } from '../../../src/domain/entities.js';
 import { buildScenarioBootstrap } from '../../../src/world/bootstrap.js';
 import { InMemoryWorld, TestGameRunner } from '../../testEnv.js';
 import type { MapDefinition } from '../../../src/world/types.js';
+import { resolveGeneralAction } from '../../../src/actions/engine.js';
+import { orderLegacyActionLoggerFlush } from '../../../src/logging/actionLogger.js';
 
 const MOCK_SCENARIO_BASE = {
     title: 'Test',
@@ -56,6 +58,49 @@ const LINEAR_MAP: MapDefinition = {
     defaults: { trust: 50, trade: 100, supplyState: 1, frontState: 0 },
 };
 
+const buildGeneral = (id: number, name: string): General => ({
+    id,
+    name,
+    nationId: 1,
+    cityId: 101,
+    troopId: 0,
+    stats: { leadership: 50, strength: 50, intelligence: 50 },
+    experience: 0,
+    dedication: 0,
+    officerLevel: 1,
+    role: {
+        personality: null,
+        specialDomestic: null,
+        specialWar: null,
+        items: { horse: null, weapon: null, book: null, item: null },
+    },
+    injury: 0,
+    gold: 1000,
+    rice: 1000,
+    crew: 0,
+    crewTypeId: 0,
+    train: 0,
+    atmos: 10,
+    age: 20,
+    npcState: 0,
+    triggerState: { flags: {}, counters: {}, modifiers: {}, meta: {} },
+    meta: { killturn: 24 },
+});
+
+const buildNation = (level = 1): Nation => ({
+    id: 1,
+    name: 'MyNation',
+    color: '#000',
+    capitalCityId: 101,
+    chiefGeneralId: 1,
+    gold: 0,
+    rice: 0,
+    power: 0,
+    level,
+    typeCode: 'che_def',
+    meta: {},
+});
+
 describe('che_이동', () => {
     it('applies movement side effects (gold/atmos/exp/leadership_exp)', async () => {
         const bootstrapResult = buildScenarioBootstrap({
@@ -66,47 +111,8 @@ describe('che_이동', () => {
         const world = new InMemoryWorld(bootstrapResult.snapshot);
         const runner = new TestGameRunner(world, 200, 1);
 
-        const general: General = {
-            id: 1,
-            name: 'Mover',
-            nationId: 1,
-            cityId: 101,
-            troopId: 0,
-            stats: { leadership: 50, strength: 50, intelligence: 50 },
-            experience: 0,
-            dedication: 0,
-            officerLevel: 1,
-            role: {
-                personality: null,
-                specialDomestic: null,
-                specialWar: null,
-                items: { horse: null, weapon: null, book: null, item: null },
-            },
-            injury: 0,
-            gold: 1000,
-            rice: 1000,
-            crew: 0,
-            crewTypeId: 0,
-            train: 0,
-            atmos: 10,
-            age: 20,
-            npcState: 0,
-            triggerState: { flags: {}, counters: {}, modifiers: {}, meta: {} },
-            meta: { killturn: 24 },
-        };
-        const nation: Nation = {
-            id: 1,
-            name: 'MyNation',
-            color: '#000',
-            capitalCityId: 101,
-            chiefGeneralId: 1,
-            gold: 0,
-            rice: 0,
-            power: 0,
-            level: 1,
-            typeCode: 'che_def',
-            meta: {},
-        };
+        const general = buildGeneral(1, 'Mover');
+        const nation = buildNation();
         world.snapshot.generals.push(general);
         world.snapshot.nations.push(nation);
 
@@ -133,5 +139,47 @@ describe('che_이동', () => {
         expect(updated?.atmos).toBe(20);
         expect(updated?.experience).toBe(50);
         expect(updated?.meta.leadership_exp).toBe(1);
+    });
+
+    it('logs roaming followers before the actor logger flush', async () => {
+        const leader = { ...buildGeneral(1, 'Leader'), officerLevel: 12 };
+        const follower = buildGeneral(2, 'Follower');
+        const nation = buildNation(0);
+        const moveDef = (await import('../../../src/actions/turn/general/che_이동.js')).commandSpec.createDefinition(
+            {} as any
+        );
+
+        const resolution = resolveGeneralAction(
+            moveDef,
+            {
+                general: leader,
+                nation,
+                moveGenerals: [leader, follower],
+                map: LINEAR_MAP,
+                develCost: 100,
+                rng: {} as any,
+                addLog: () => {},
+            } as any,
+            {
+                now: new Date('2026-08-23T00:00:00.000Z'),
+                schedule: { entries: [{ startMinute: 0, tickMinutes: 60 }] },
+            },
+            { destCityId: 102 }
+        );
+
+        expect(resolution.patches?.generals).toContainEqual({
+            id: follower.id,
+            patch: expect.objectContaining({ cityId: 102 }),
+        });
+        const orderedLogs = orderLegacyActionLoggerFlush(resolution.logs);
+        expect(orderedLogs.map((log) => log.generalId)).toEqual([follower.id, leader.id]);
+        expect(orderedLogs[0]).toEqual(
+            expect.objectContaining({
+                text: '방랑군 세력이 <G><b>City2</b></>로 이동했습니다.',
+                generalId: follower.id,
+                legacyFlushGroup: -1,
+            })
+        );
+        expect(orderedLogs[1]?.legacyFlushGroup).toBeUndefined();
     });
 });

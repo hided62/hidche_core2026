@@ -54,8 +54,16 @@ pnpm check:legacy:nation
 즉시 외교 3종의 core log는 명령 파일이 아니라 공통
 `packages/logic/src/diplomacy/instantResponse.ts`에서 생성됩니다.
 정적 log 비교의 이 예외는 명령별 allowlist로 제한하며,
-`instantDiplomacyReference.integration.test.ts`에서 실제 ref/core 결과를
-별도로 비교합니다.
+`instantDiplomacyCoreReference.integration.test.ts`에서 실제 Ref API entry와 Core
+router 결과를 별도로 비교합니다.
+
+장수·수뇌 registry 전수 성공 case는 각각
+`turnCommandGeneralMatrix.integration.test.ts`와
+`turnCommandNationMatrix.integration.test.ts`가 registry와 exact-set으로 닫습니다.
+두 matrix의 `includeLifecycle`은 요청 scope의 queue shift와 tail lifecycle까지이며,
+같은 actor의 수뇌→장수 제품 outer loop를 뜻하지 않습니다. 결합 outer lifecycle은
+`turnCommandFullLifecycle.integration.test.ts`, 실제 PostgreSQL flush/reload는
+`turnCommandFullLifecyclePersistence.integration.test.ts`가 대표 fixture로 검증합니다.
 
 기본 integration:
 
@@ -82,16 +90,24 @@ pnpm --filter @sammo-ts/integration-tests test:integration
 
 Canonical 비교값은 의미 단위로 정규화합니다.
 
-- general: 위치, 소속, 자원, 병력, 능력치, 경험·공헌, penalty, aux, turn time
-- nation: 자원, level, 수도, 외교, 정책, aux
+- general: 위치, 소속, owner identity, 자원, 병력, 능력치, 경험·공헌·rank mirror,
+  affinity·NPC origin/state, penalty, aux, turn time
+- nation: 자원, level, 수도, 외교, 정책, flag·spy·rate·bill·secret limit, 저장 `gennum`, aux
 - city: 소유권, 인구·내정·방어, conflict, supply와 인접 상태
+- troop과 실행 중 새로 생긴 general/city/nation/troop의 created-entity closure
 - queue: command, args, term, next available, revision
-- output: 개인·국가·역사 log, message, 공개 문구와 error
+- output: `general_record`/`world_history`별 물리 순서, log year·month·format·text,
+  strict message payload·option·icon·lifetime·unread timeline, 공개 문구와 error
 - execution: RNG trace, handler 순서, input event와 checkpoint
 
 DB auto ID, 생성 시각처럼 의미 없는 차이는 comparator에서 이름과 이유를
 명시합니다. 의미 field를 ignore하거나 숫자 허용 범위를 넓혀 mismatch를
 숨기지 않습니다.
+
+JSON missing·`{}`·`[]`는 snapshot 원형에서 구분합니다. 일반 message option 부재의
+Ref `[]`와 Core `{}`만 의미상 같게 보며, actionable diplomacy의 `option=null` sentinel은
+부재로 합치지 않습니다. Ref log prefix와 Core format은 독립적으로 해석하고, 서로 다른
+`ActionLogger::flush()`/`applyDB()` 경계는 고유 `legacyFlushGroup`으로 보존합니다.
 
 ## RNG
 

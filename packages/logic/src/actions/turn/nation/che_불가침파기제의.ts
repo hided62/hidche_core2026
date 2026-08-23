@@ -18,6 +18,7 @@ import type { ActionContextBuilder } from '@sammo-ts/logic/actions/turn/actionCo
 import type { NationTurnCommandSpec } from './index.js';
 import { z } from 'zod';
 import { parseArgsWithSchema } from '../parseArgs.js';
+import { resolveMessageTargetIcon } from '@sammo-ts/logic/messages/message.js';
 
 const ARGS_SCHEMA = z.object({
     destNationId: z.number().int().positive(),
@@ -30,6 +31,7 @@ interface NonAggressionCancelProposalContext<
     destNation: Nation;
     messageValidMinutes: number;
     messageTime: Date;
+    messageSharedIconBaseUrl?: string;
 }
 
 const ACTION_NAME = '불가침 파기 제의';
@@ -86,7 +88,7 @@ export class ActionDefinition<
                         nationId: nation.id,
                         nationName: nation.name,
                         color: nation.color,
-                        icon: '',
+                        icon: resolveMessageTargetIcon(general, context.messageSharedIconBaseUrl),
                     },
                     dest: {
                         generalId: 0,
@@ -94,7 +96,7 @@ export class ActionDefinition<
                         nationId: destNation.id,
                         nationName: destNation.name,
                         color: destNation.color,
-                        icon: '',
+                        icon: resolveMessageTargetIcon(null, context.messageSharedIconBaseUrl),
                     },
                     text: `${nation.name}의 불가침 파기 제의 서신`,
                     time: context.messageTime,
@@ -120,7 +122,8 @@ export const actionContextBuilder: ActionContextBuilder<NonAggressionCancelPropo
     return {
         ...base,
         destNation,
-        messageTime: base.general.turnTime,
+        messageSharedIconBaseUrl: options.messageSharedIconBaseUrl,
+        messageTime: options.gameNow ?? base.general.turnTime,
         messageValidMinutes: Math.max(30, Math.floor((options.world.tickSeconds / 60) * 3)),
     };
 };

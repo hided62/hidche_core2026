@@ -117,5 +117,24 @@ export const runReferenceTurnCommandTraceRequest = (
             ...referenceRunnerEnvironment(workspaceRoot, stackDirectory),
         },
     });
-    return withProjectedTraceMeta(JSON.parse(stdout) as CanonicalTurnCommandTrace);
+    const raw = JSON.parse(stdout) as CanonicalTurnCommandTrace & {
+        harness?: { messageSharedIconBaseUrl?: unknown };
+    };
+    const messageSharedIconBaseUrl = raw.harness?.messageSharedIconBaseUrl;
+    if (typeof messageSharedIconBaseUrl === 'string' && messageSharedIconBaseUrl !== '') {
+        const setup =
+            typeof request.setup === 'object' && request.setup !== null && !Array.isArray(request.setup)
+                ? (request.setup as Record<string, unknown>)
+                : {};
+        const world =
+            typeof setup.world === 'object' && setup.world !== null && !Array.isArray(setup.world)
+                ? (setup.world as Record<string, unknown>)
+                : {};
+        request.setup = {
+            ...setup,
+            world: { ...world, messageSharedIconBaseUrl },
+        };
+    }
+    const { harness: _harness, ...trace } = raw;
+    return withProjectedTraceMeta(trace);
 };

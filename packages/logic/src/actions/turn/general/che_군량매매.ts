@@ -105,7 +105,7 @@ export class ActionDefinition<
                 `군량 <C>${Math.round(buyAmount).toLocaleString()}</>을 사서 자금 <C>${Math.round(
                     sellAmount
                 ).toLocaleString()}</>을 썼습니다.`,
-                { format: LogFormat.PLAIN }
+                { format: LogFormat.MONTH }
             );
         } else {
             const sellAmount = Math.min(args.amount, general.rice);
@@ -118,7 +118,7 @@ export class ActionDefinition<
                 `군량 <C>${Math.round(sellAmount).toLocaleString()}</>을 팔아 자금 <C>${Math.round(
                     buyAmount
                 ).toLocaleString()}</>을 얻었습니다.`,
-                { format: LogFormat.PLAIN }
+                { format: LogFormat.MONTH }
             );
         }
 

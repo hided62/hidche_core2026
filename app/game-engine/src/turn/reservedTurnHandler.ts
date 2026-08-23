@@ -36,6 +36,7 @@ import {
     getNextTurnAt,
     getBillByLevel,
     LEGACY_DEFAULT_MAX_LEVEL,
+    orderLegacyActionLoggerFlush,
     type ItemModule,
     type UniqueLotteryRunner,
 } from '@sammo-ts/logic';
@@ -121,6 +122,42 @@ const LEGACY_STAT_CHANGE_GENERAL_ACTIONS = new Set([
     'che_전투태세',
 ]);
 
+// 아래 Ref 커맨드는 성공 로그보다 addExperience/addDedication을 먼저 호출한다.
+// 이 차이는 같은 ActionLogger의 GENERAL/ACTION 버퍼 안에서 보이며, 등용수락은
+// 메시지 즉시 실행과 예약 턴 차등 fixture 모두 같은 순서를 사용한다.
+const LEGACY_PROGRESSION_BEFORE_ACTION_LOGS = new Set([
+    'che_등용수락',
+    'che_감축',
+    'che_국기변경',
+    'che_국호변경',
+    'che_무작위수도이전',
+    'che_증축',
+    'che_천도',
+    'che_초토화',
+    'cr_인구이동',
+    'event_극병연구',
+    'event_대검병연구',
+    'event_무희연구',
+    'event_산저병연구',
+    'event_상병연구',
+    'event_원융노병연구',
+    'event_음귀병연구',
+    'event_화륜차연구',
+    'event_화시병연구',
+]);
+
+const orderLegacyCommandLogs = (
+    actionKey: string,
+    actionLogs: readonly LogEntryDraft[],
+    progressionLogs: readonly LogEntryDraft[],
+    postProgressionLogs: readonly LogEntryDraft[]
+): LogEntryDraft[] =>
+    orderLegacyActionLoggerFlush(
+        LEGACY_PROGRESSION_BEFORE_ACTION_LOGS.has(actionKey)
+            ? [...progressionLogs, ...actionLogs, ...postProgressionLogs]
+            : [...actionLogs, ...progressionLogs, ...postProgressionLogs]
+    );
+
 export const applyLegacyGeneralProgression = (
     general: TurnGeneral,
     previousGeneral: TurnGeneral,
@@ -152,36 +189,49 @@ export const applyLegacyGeneralProgression = (
         actionKey === 'che_선양' ||
         actionKey === 'che_출병' ||
         actionKey === 'che_물자조달';
-    if (!preserveLevel && (forceRefreshLevel || general.experience !== previousGeneral.experience)) {
+    const preservesResolvedProcurementLevel = actionKey === 'che_물자조달';
+    if (
+        preservesResolvedProcurementLevel ||
+        (!preserveLevel && (forceRefreshLevel || general.experience !== previousGeneral.experience))
+    ) {
         const previousExpLevel = readMetaNumber(previousGeneral.meta, 'explevel', 0);
         const actionResolvedExpLevel = readMetaNumber(general.meta, 'explevel', previousExpLevel);
-        meta.explevel = expLevel;
-        if (expLevel !== previousExpLevel && actionResolvedExpLevel !== expLevel) {
-            const josaRo = JosaUtil.pick(String(expLevel), '로');
+        const nextExpLevel = preservesResolvedProcurementLevel ? actionResolvedExpLevel : expLevel;
+        meta.explevel = nextExpLevel;
+        if (
+            nextExpLevel !== previousExpLevel &&
+            (preservesResolvedProcurementLevel || actionResolvedExpLevel !== nextExpLevel)
+        ) {
+            const josaRo = JosaUtil.pick(String(nextExpLevel), '로');
             logs.push(
                 createGeneralActionLog(
                     general.id,
-                    expLevel > previousExpLevel
-                        ? `<C>Lv ${expLevel}</>${josaRo} <C>레벨업</>!`
-                        : `<C>Lv ${expLevel}</>${josaRo} <R>레벨다운</>!`,
+                    nextExpLevel > previousExpLevel
+                        ? `<C>Lv ${nextExpLevel}</>${josaRo} <C>레벨업</>!`
+                        : `<C>Lv ${nextExpLevel}</>${josaRo} <R>레벨다운</>!`,
                     { format: LogFormat.PLAIN }
                 )
             );
         }
     }
-    if (!preserveLevel && (forceRefreshLevel || general.dedication !== previousGeneral.dedication)) {
+    if (
+        preservesResolvedProcurementLevel ||
+        (!preserveLevel && (forceRefreshLevel || general.dedication !== previousGeneral.dedication))
+    ) {
         const previousDedicationLevel = readMetaNumber(previousGeneral.meta, 'dedlevel', 0);
-        meta.dedlevel = dedicationLevel;
-        if (dedicationLevel !== previousDedicationLevel) {
+        const actionResolvedDedicationLevel = readMetaNumber(general.meta, 'dedlevel', previousDedicationLevel);
+        const nextDedicationLevel = preservesResolvedProcurementLevel ? actionResolvedDedicationLevel : dedicationLevel;
+        meta.dedlevel = nextDedicationLevel;
+        if (nextDedicationLevel !== previousDedicationLevel) {
             const dedicationLevelText =
-                dedicationLevel === 0 ? '무품관' : `${maxDedicationLevel - dedicationLevel + 1}품관`;
-            const billText = getBillByLevel(dedicationLevel).toLocaleString('en-US');
+                nextDedicationLevel === 0 ? '무품관' : `${maxDedicationLevel - nextDedicationLevel + 1}품관`;
+            const billText = getBillByLevel(nextDedicationLevel).toLocaleString('en-US');
             const josaRoDedication = JosaUtil.pick(dedicationLevelText, '로');
             const josaRoBill = JosaUtil.pick(billText, '로');
             logs.push(
                 createGeneralActionLog(
                     general.id,
-                    dedicationLevel > previousDedicationLevel
+                    nextDedicationLevel > previousDedicationLevel
                         ? `<Y>${dedicationLevelText}</>${josaRoDedication} <C>승급</>하여 봉록이 <C>${billText}</>${josaRoBill} <C>상승</>했습니다!`
                         : `<Y>${dedicationLevelText}</>${josaRoDedication} <R>강등</>되어 봉록이 <C>${billText}</>${josaRoBill} <R>하락</>했습니다!`,
                     { format: LogFormat.PLAIN }
@@ -778,8 +828,14 @@ const createGeneralActionLog = (
 const resolveDefinition = (
     actionKey: string,
     definitions: Map<string, GeneralActionDefinition>,
-    fallback: GeneralActionDefinition
-): GeneralActionDefinition => definitions.get(actionKey) ?? fallback;
+    kind: 'general' | 'nation'
+): GeneralActionDefinition => {
+    const definition = definitions.get(actionKey);
+    if (!definition) {
+        throw new Error(`Unknown reserved ${kind} turn command: ${actionKey}`);
+    }
+    return definition;
+};
 
 export const createReservedTurnHandler = async (options: {
     reservedTurns: InMemoryReservedTurnStore;
@@ -790,6 +846,8 @@ export const createReservedTurnHandler = async (options: {
     getWorld: () => InMemoryTurnWorld | null;
     commandProfile?: TurnCommandProfile;
     commandEnv?: TurnCommandEnv;
+    now?: () => Date;
+    messageSharedIconBaseUrl?: string;
     commandRngFactory?: (input: { kind: 'nation' | 'general'; actionKey: string; seed: string }) => RandUtil;
     getAdditionalOccupiedUniqueItemKeys?: () => Iterable<string | null | undefined>;
     calculateNpcNationFinance?: (
@@ -957,6 +1015,9 @@ export const createReservedTurnHandler = async (options: {
             let currentGeneral = context.general;
             let currentCity = context.city;
             let currentNation = context.nation ?? null;
+            // Ref는 장수와 첫 커맨드를 만들 때 getNationStaticInfo 캐시를 채운다.
+            // 같은 장수 lifecycle의 국호변경은 뒤이은 유니크 획득 로그의 국호를 바꾸지 않는다.
+            const legacyStaticNationName = currentNation?.name ?? '재야';
 
             const runAction = (
                 kind: 'nation' | 'general',
@@ -973,7 +1034,7 @@ export const createReservedTurnHandler = async (options: {
                 completed: boolean;
                 blockedReason?: string;
             } => {
-                const resolvedDefinition = resolveDefinition(command.action, definitionMap, fallbackDefinition);
+                const resolvedDefinition = resolveDefinition(command.action, definitionMap, kind);
                 const rawArgs = extractArgsRecord(command.args);
                 const parsedArgs = resolvedDefinition.parseArgs(rawArgs);
                 let definition = resolvedDefinition;
@@ -1098,12 +1159,15 @@ export const createReservedTurnHandler = async (options: {
                     time: actionTime,
                     maxTechLevel: env.maxTechLevel,
                     uniqueLottery,
+                    legacyStaticNationName,
                 };
                 let specificContext = buildActionContext(
                     actionKey,
                     baseContext,
                     {
                         world: context.world,
+                        gameNow: options.now?.() ?? currentGeneral.turnTime,
+                        messageSharedIconBaseUrl: options.messageSharedIconBaseUrl,
                         scenarioConfig: options.scenarioConfig,
                         scenarioMeta: options.scenarioMeta,
                         map: options.map,
@@ -1280,15 +1344,24 @@ export const createReservedTurnHandler = async (options: {
                         };
                     }
                 }
+                const progressionLogs: LogEntryDraft[] = [];
                 if (!resolution.alternative && !usedFallback && resolution.completed) {
                     currentGeneral = applyLegacyGeneralProgression(
                         currentGeneral,
                         generalBeforeExecution,
                         actionKey,
                         env,
-                        logs
+                        progressionLogs
                     );
                 }
+                logs.push(
+                    ...orderLegacyCommandLogs(
+                        actionKey,
+                        resolution.logs,
+                        progressionLogs,
+                        resolution.postProgressionLogs
+                    )
+                );
                 if (
                     !resolution.alternative &&
                     kind === 'nation' &&
@@ -1418,7 +1491,6 @@ export const createReservedTurnHandler = async (options: {
                     };
                 }
 
-                logs.push(...resolution.logs);
                 for (const nationId of resolution.destroyedNationIds ?? []) {
                     destroyedNationIds.add(nationId);
                 }
@@ -1535,10 +1607,9 @@ export const createReservedTurnHandler = async (options: {
                 if (resolution.created?.generals) {
                     const newGenerals = resolution.created.generals as TurnGeneral[];
                     createdGenerals.push(...newGenerals);
-                    if (worldOverlay) {
-                        for (const general of newGenerals) {
-                            worldOverlay.syncGeneral(general);
-                        }
+                    for (const general of newGenerals) {
+                        worldOverlay?.syncGeneral(general);
+                        options.reservedTurns.ensureGeneralTurns(general.id);
                     }
                 }
                 if (resolution.created?.nations) {
@@ -1990,7 +2061,7 @@ export const createReservedTurnHandler = async (options: {
                         src: messageTarget,
                         dest: messageTarget,
                         text: npcMessage,
-                        time: new Date(context.world.lastTurnTime),
+                        time: options.now?.() ?? new Date(context.world.lastTurnTime),
                         validUntil: new Date('9999-12-31T00:00:00.000Z'),
                         option: {},
                     });
@@ -2438,6 +2509,7 @@ export const createImmediateGeneralActionExecutor = async (options: {
                 },
                 maxTechLevel: env.maxTechLevel,
                 uniqueLottery,
+                legacyStaticNationName: nation?.name ?? '재야',
             };
             const actionContext =
                 buildActionContext(
@@ -2476,7 +2548,10 @@ export const createImmediateGeneralActionExecutor = async (options: {
             );
 
             if (input.actionKey === 'che_접경귀환' && (resolution.general as TurnGeneral).cityId === general.cityId) {
-                for (const log of resolution.logs) {
+                for (const log of orderLegacyActionLoggerFlush([
+                    ...resolution.logs,
+                    ...resolution.postProgressionLogs,
+                ])) {
                     options.world.pushLog(log, general.turnTime);
                 }
                 return { ok: false, reason: '가까운 아국 도시가 없습니다.' };
@@ -2514,7 +2589,11 @@ export const createImmediateGeneralActionExecutor = async (options: {
                     },
                 };
             }
-            if (input.actionKey === 'che_거병') {
+            // Ref's immediate uprising and recruitment-accept commands both
+            // finish their actor addExperience/addDedication calls before the
+            // actor logger is applied. Keep the same level/rank state and logs
+            // outside the ordinary reserved-turn lifecycle.
+            if (input.actionKey === 'che_거병' || input.actionKey === 'che_등용수락') {
                 nextGeneral = applyLegacyGeneralProgression(
                     {
                         ...nextGeneral,
@@ -2566,7 +2645,12 @@ export const createImmediateGeneralActionExecutor = async (options: {
             for (const troopId of resolution.deletedTroopIds ?? []) {
                 options.world.removeTroop(troopId);
             }
-            for (const log of [...resolution.logs, ...progressionLogs]) {
+            for (const log of orderLegacyCommandLogs(
+                input.actionKey,
+                resolution.logs,
+                progressionLogs,
+                resolution.postProgressionLogs
+            )) {
                 options.world.pushLog(log, general.turnTime);
             }
             options.world.updateGeneral(input.generalId, nextGeneral);

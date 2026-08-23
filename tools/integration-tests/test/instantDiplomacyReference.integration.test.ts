@@ -41,7 +41,10 @@ const observe = {
 const addedLogs = (trace: ReturnType<typeof runReferenceTurnCommandTraceRequest>) =>
     trace.after.logs.filter((log) => Number(log.id) > trace.before.watermarks.logId);
 
-integration('legacy instant diplomacy responses', () => {
+// This suite intentionally records the Ref command behavior only. The dynamic
+// Core-vs-Ref product-path comparison lives in
+// instantDiplomacyCoreReference.integration.test.ts.
+integration('legacy instant diplomacy command behavior (Ref-only)', () => {
     it('accepts non-aggression without RNG and copies received assistance', () => {
         const setup = baseSetup(2, 0);
         setup.nations[1] = {

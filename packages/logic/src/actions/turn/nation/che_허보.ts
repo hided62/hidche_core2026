@@ -127,21 +127,25 @@ export class ActionResolver<
 
         const effects: Array<GeneralActionEffect<TriggerState>> = [];
 
-        for (const target of context.friendlyGenerals) {
-            if (target.id === general.id) {
-                continue;
-            }
+        const friendlyTargets = context.friendlyGenerals.filter((target) => target.id !== general.id);
+        const firstLegacyFlushGroup = -(
+            friendlyTargets.length +
+            context.destCityGenerals.length +
+            (context.destNation ? 1 : 0)
+        );
+        for (const [index, target] of friendlyTargets.entries()) {
             effects.push(
                 createLogEffect(broadcastMessage, {
                     scope: LogScope.GENERAL,
                     category: LogCategory.ACTION,
                     generalId: target.id,
                     format: LogFormat.PLAIN,
+                    legacyFlushGroup: firstLegacyFlushGroup + index,
                 })
             );
         }
 
-        for (const target of context.destCityGenerals) {
+        for (const [index, target] of context.destCityGenerals.entries()) {
             const moveCityId = pickMoveCityId(context.rng, context.destCity.id, context.destNationSupplyCities);
             effects.push(
                 createLogEffect(destBroadcastMessage, {
@@ -149,6 +153,7 @@ export class ActionResolver<
                     category: LogCategory.ACTION,
                     generalId: target.id,
                     format: LogFormat.PLAIN,
+                    legacyFlushGroup: firstLegacyFlushGroup + friendlyTargets.length + index,
                 })
             );
             if (moveCityId !== target.cityId) {
@@ -163,12 +168,15 @@ export class ActionResolver<
                 strategic_cmd_limit: globalDelay,
             };
             effects.push(
-                createLogEffect(broadcastMessage, {
-                    scope: LogScope.NATION,
-                    category: LogCategory.HISTORY,
-                    nationId: nation.id,
-                    format: LogFormat.YEAR_MONTH,
-                })
+                createLogEffect(
+                    `<Y>${generalName}</>${generalJosa} <G><b>${cityName}</b></>에 <M>${ACTION_NAME}</>를 발동`,
+                    {
+                        scope: LogScope.NATION,
+                        category: LogCategory.HISTORY,
+                        nationId: nation.id,
+                        format: LogFormat.YEAR_MONTH,
+                    }
+                )
             );
         }
 
@@ -181,6 +189,7 @@ export class ActionResolver<
                         category: LogCategory.HISTORY,
                         nationId: context.destNation.id,
                         format: LogFormat.PLAIN,
+                        legacyFlushGroup: -1,
                     }
                 )
             );

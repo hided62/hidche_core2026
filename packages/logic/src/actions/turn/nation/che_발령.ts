@@ -128,6 +128,7 @@ export class ActionResolver<
                 category: LogCategory.ACTION,
                 generalId: destGeneral.id,
                 format: LogFormat.MONTH,
+                legacyFlushGroup: 1,
             })
         );
         effects.push(

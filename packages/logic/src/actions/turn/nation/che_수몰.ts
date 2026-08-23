@@ -127,6 +127,7 @@ export class ActionResolver<
                     category: LogCategory.ACTION,
                     generalId: target.id,
                     format: LogFormat.PLAIN,
+                    legacyFlushGroup: -1,
                 })
             );
         }
@@ -138,6 +139,7 @@ export class ActionResolver<
                     category: LogCategory.ACTION,
                     generalId: target.id,
                     format: LogFormat.PLAIN,
+                    legacyFlushGroup: -1,
                 })
             );
         }
@@ -180,6 +182,7 @@ export class ActionResolver<
                         category: LogCategory.HISTORY,
                         nationId: context.destNation.id,
                         format: LogFormat.PLAIN,
+                        legacyFlushGroup: -1,
                     }
                 )
             );

@@ -1,5 +1,9 @@
-import type { CanonicalTurnCommandTrace, TurnSnapshotSelector } from './canonical.js';
-import { readCoreDatabaseSnapshot } from './databaseSnapshot.js';
+import {
+    closeTurnSnapshotSelectorOverCreatedEntities,
+    type CanonicalTurnCommandTrace,
+    type TurnSnapshotSelector,
+} from './canonical.js';
+import { readCoreDatabaseEntityIds, readCoreDatabaseSnapshot } from './databaseSnapshot.js';
 
 export interface CoreTurnTraceRequest {
     kind: 'general' | 'nation';
@@ -17,10 +21,19 @@ export const captureCoreDatabaseTurnTrace = async (
         rng?: CanonicalTurnCommandTrace['rng'];
     }>
 ): Promise<CanonicalTurnCommandTrace> => {
-    const before = await readCoreDatabaseSnapshot(databaseUrl, request.observe);
+    const [before, entityIdsBefore] = await Promise.all([
+        readCoreDatabaseSnapshot(databaseUrl, request.observe),
+        readCoreDatabaseEntityIds(databaseUrl),
+    ]);
     const result = await execute();
+    const entityIdsAfter = await readCoreDatabaseEntityIds(databaseUrl);
+    const afterSelector = closeTurnSnapshotSelectorOverCreatedEntities(
+        request.observe,
+        entityIdsBefore,
+        entityIdsAfter
+    );
     const after = await readCoreDatabaseSnapshot(databaseUrl, {
-        ...request.observe,
+        ...afterSelector,
         logAfterId: request.observe.logAfterId ?? before.watermarks.logId,
         messageAfterId: request.observe.messageAfterId ?? before.watermarks.messageId,
     });

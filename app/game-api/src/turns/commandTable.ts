@@ -142,15 +142,6 @@ const REF_GENERAL_COMMAND_GROUPS = [
     commands: ReadonlyArray<GeneralTurnCommandKey>;
 }>;
 
-const REF_GENERAL_CATEGORY_ORDER = new Map<string, number>(
-    REF_GENERAL_COMMAND_GROUPS.map(({ category }, index) => [category, index] as const)
-);
-const REF_GENERAL_COMMAND_POSITION = new Map<string, { category: string; index: number }>(
-    REF_GENERAL_COMMAND_GROUPS.flatMap(({ category, commands }) =>
-        commands.map((command, index) => [command, { category, index }] as const)
-    )
-);
-
 const REF_NATION_COMMAND_GROUPS = [
     {
         category: '휴식',
@@ -189,15 +180,6 @@ const REF_NATION_COMMAND_GROUPS = [
     category: string;
     commands: ReadonlyArray<NationTurnCommandKey>;
 }>;
-
-const REF_NATION_CATEGORY_ORDER = new Map<string, number>(
-    REF_NATION_COMMAND_GROUPS.map(({ category }, index) => [category, index] as const)
-);
-const REF_NATION_COMMAND_POSITION = new Map<string, { category: string; index: number }>(
-    REF_NATION_COMMAND_GROUPS.flatMap(({ category, commands }) =>
-        commands.map((command, index) => [command, { category, index }] as const)
-    )
-);
 
 const INPUT_REQUIREMENT_KINDS = new Set<RequirementKey['kind']>([
     'destGeneral',
@@ -746,34 +728,22 @@ const buildGroups = (entries: CommandEntry[], ctx: ConstraintContext, view: Stat
     }));
 };
 
-const projectRefGeneralCommandGroups = (entries: CommandEntry[]): CommandEntry[] =>
-    entries
-        .map((entry, profileIndex) => {
-            const refPosition = REF_GENERAL_COMMAND_POSITION.get(entry.definition.key as GeneralTurnCommandKey);
-            return {
-                entry: refPosition ? { ...entry, category: refPosition.category } : entry,
-                categoryIndex:
-                    REF_GENERAL_CATEGORY_ORDER.get(refPosition?.category ?? entry.category) ?? Number.MAX_SAFE_INTEGER,
-                commandIndex: refPosition?.index ?? profileIndex,
-                profileIndex,
-            };
-        })
-        .sort(
-            (left, right) =>
-                left.categoryIndex - right.categoryIndex ||
-                left.commandIndex - right.commandIndex ||
-                left.profileIndex - right.profileIndex
-        )
-        .map(({ entry }) => entry);
+type CommandGroupLayout = ReadonlyArray<{ category: string; commands: ReadonlyArray<string> }>;
 
-const projectRefNationCommandGroups = (entries: CommandEntry[]): CommandEntry[] =>
-    entries
+const projectCommandGroups = (entries: CommandEntry[], layout: CommandGroupLayout): CommandEntry[] => {
+    const categoryOrder = new Map<string, number>(layout.map(({ category }, index) => [category, index] as const));
+    const commandPosition = new Map<string, { category: string; index: number }>(
+        layout.flatMap(({ category, commands }) =>
+            commands.map((command, index) => [command, { category, index }] as const)
+        )
+    );
+
+    return entries
         .map((entry, profileIndex) => {
-            const refPosition = REF_NATION_COMMAND_POSITION.get(entry.definition.key as NationTurnCommandKey);
+            const refPosition = commandPosition.get(entry.definition.key);
             return {
                 entry: refPosition ? { ...entry, category: refPosition.category } : entry,
-                categoryIndex:
-                    REF_NATION_CATEGORY_ORDER.get(refPosition?.category ?? entry.category) ?? Number.MAX_SAFE_INTEGER,
+                categoryIndex: categoryOrder.get(refPosition?.category ?? entry.category) ?? Number.MAX_SAFE_INTEGER,
                 commandIndex: refPosition?.index ?? profileIndex,
                 profileIndex,
             };
@@ -785,6 +755,7 @@ const projectRefNationCommandGroups = (entries: CommandEntry[]): CommandEntry[] 
                 left.profileIndex - right.profileIndex
         )
         .map(({ entry }) => entry);
+};
 
 export const buildTurnCommandTable = async (options: {
     worldState: WorldStateRow;
@@ -814,7 +785,13 @@ export const buildTurnCommandTable = async (options: {
     };
 
     const env = buildCommandEnv(options.worldState);
-    const { general: generalSpecs, nation: nationSpecs } = await loadTurnCommandSpecs();
+    const scenarioConst = asRecord(options.worldState.config).const;
+    const {
+        general: generalSpecs,
+        nation: nationSpecs,
+        generalGroups,
+        nationGroups,
+    } = await loadTurnCommandSpecs(scenarioConst);
     const generalEntries = buildEntries(env, generalSpecs, {
         foundingAvailable:
             options.realNationCount === undefined
@@ -824,8 +801,12 @@ export const buildTurnCommandTable = async (options: {
     const nationEntries = buildEntries(env, nationSpecs);
 
     return {
-        general: buildGroups(projectRefGeneralCommandGroups(generalEntries), ctx, view),
-        nation: buildGroups(projectRefNationCommandGroups(nationEntries), ctx, view),
+        general: buildGroups(
+            projectCommandGroups(generalEntries, generalGroups ?? REF_GENERAL_COMMAND_GROUPS),
+            ctx,
+            view
+        ),
+        nation: buildGroups(projectCommandGroups(nationEntries, nationGroups ?? REF_NATION_COMMAND_GROUPS), ctx, view),
         inputOptions: options.inputOptions ?? {
             cities: [],
             nations: [],
@@ -850,7 +831,8 @@ export const evaluateReservedTurnPermission = async (options: {
     action: string;
     args: Record<string, unknown>;
 }): Promise<ConstraintResult> => {
-    const specs = await loadTurnCommandSpecs();
+    const scenarioConst = asRecord(options.worldState.config).const;
+    const specs = await loadTurnCommandSpecs(scenarioConst);
     const spec = specs[options.scope].find((entry) => entry.key === options.action);
     if (!spec) {
         throw new Error(`Unknown ${options.scope} turn command: ${options.action}`);

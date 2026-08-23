@@ -2,6 +2,33 @@ export type MessageType = 'public' | 'private' | 'national' | 'diplomacy';
 
 export const MESSAGE_MAILBOX_PUBLIC = 9999;
 export const MESSAGE_MAILBOX_NATIONAL_BASE = 9000;
+export const DEFAULT_MESSAGE_SHARED_ICON_BASE_URL = 'https://sam-image.hided.net/icons';
+
+export interface MessageIconSource {
+    picture?: unknown;
+    imageServer?: unknown;
+    meta?: Record<string, unknown>;
+}
+
+/**
+ * Match Ref GetImageURL for message payloads. Shared icons are absolute;
+ * user icons retain the legacy d_pic marker consumed by the frontend.
+ */
+export const resolveMessageTargetIcon = (
+    source: MessageIconSource | null = null,
+    sharedIconBaseUrl = DEFAULT_MESSAGE_SHARED_ICON_BASE_URL
+): string => {
+    const rawPicture = source?.picture ?? source?.meta?.picture;
+    const picture =
+        (typeof rawPicture === 'string' && rawPicture.trim() !== '') || typeof rawPicture === 'number'
+            ? String(rawPicture)
+            : 'default.jpg';
+    const imageServer = source?.imageServer ?? source?.meta?.imageServer;
+    if (typeof imageServer === 'number' && imageServer !== 0) {
+        return `d_pic/${picture}`;
+    }
+    return `${sharedIconBaseUrl.replace(/\/+$/u, '')}/${picture}`;
+};
 
 export interface MessageTarget {
     generalId: number;
@@ -80,7 +107,7 @@ const buildPayload = (draft: MessageDraft, optionOverride?: MessageOption | null
     src: draft.src,
     dest: draft.dest,
     text: draft.text,
-    option: optionOverride ?? draft.option ?? {},
+    option: optionOverride !== undefined ? optionOverride : (draft.option ?? {}),
 });
 
 const buildRecord = (
@@ -110,15 +137,18 @@ const buildRecord = (
     };
 };
 
-const buildSenderOption = (draft: MessageDraft, receiverId: number): MessageOption => {
+const buildSenderOption = (draft: MessageDraft, receiverId: number): MessageOption | null => {
     const option = {
         ...(draft.option ?? {}),
         receiverMessageID: receiverId,
     };
 
     if (draft.msgType === 'diplomacy' && 'action' in option) {
-        const { action: _action, ...rest } = option;
-        return rest;
+        // Ref Message::sendToSender temporarily replaces the entire actionable
+        // diplomacy option with null. Keeping year/month/deletable or the
+        // receiver row id would make the sender copy actionable in a way Ref is
+        // deliberately not.
+        return null;
     }
 
     return option;

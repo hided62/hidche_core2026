@@ -3,6 +3,8 @@ import { LEGACY_RANK_DATA_TYPES, RANK_DATA_TYPES } from '@sammo-ts/common';
 
 import {
     applyPersistedRankRowsToMeta,
+    buildInitialRankRows,
+    buildLegacyComparableInitialRankRows,
     buildLegacyComparableRankRows,
     buildPersistedRankRows,
     rankMetaKey,
@@ -34,13 +36,39 @@ describe('rank data projection', () => {
                 { generalId: 7, nationId: 2, type: 'dex1', value: 12 },
             ])
         );
-        expect(buildLegacyComparableRankRows({
-            id: 7,
+        expect(
+            buildLegacyComparableRankRows({
+                id: 7,
+                nationId: 2,
+                experience: 10.5,
+                dedication: 20.49,
+                meta: {},
+            })
+        ).toHaveLength(LEGACY_RANK_DATA_TYPES.length);
+
+        const initialRows = buildInitialRankRows({
+            id: 8,
             nationId: 2,
-            experience: 10.5,
-            dedication: 20.49,
-            meta: {},
-        })).toHaveLength(LEGACY_RANK_DATA_TYPES.length);
+            experience: 100,
+            dedication: 200,
+            meta: { rank_warnum: 9, inherit_spent_dyn: 7 },
+        });
+        expect(initialRows).toEqual(
+            expect.arrayContaining([
+                { generalId: 8, nationId: 0, type: 'experience', value: 0 },
+                { generalId: 8, nationId: 0, type: 'warnum', value: 0 },
+                { generalId: 8, nationId: 0, type: 'inherit_spent_dyn', value: 7 },
+            ])
+        );
+        expect(
+            buildLegacyComparableInitialRankRows({
+                id: 8,
+                nationId: 2,
+                experience: 100,
+                dedication: 200,
+                meta: {},
+            })
+        ).toHaveLength(LEGACY_RANK_DATA_TYPES.length);
     });
 
     it('loads persisted rows into the same raw and prefixed meta keys used by commands', () => {

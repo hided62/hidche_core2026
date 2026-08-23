@@ -6,12 +6,16 @@ import { MINIMAL_MAP } from '../../fixtures/minimalMap.js';
 import type { TurnCommandEnv, TurnCommandItemCatalogEntry } from '../../../src/actions/turn/commandEnv.js';
 import { commandSpec as rebellionSpec } from '../../../src/actions/turn/general/che_모반시도.js';
 import { commandSpec as abdicationSpec } from '../../../src/actions/turn/general/che_선양.js';
+import { commandSpec as uprisingSpec } from '../../../src/actions/turn/general/che_거병.js';
 import { commandSpec as giftSpec } from '../../../src/actions/turn/general/che_증여.js';
 import { commandSpec as disbandSpec } from '../../../src/actions/turn/general/che_해산.js';
 import { commandSpec as foundNationSpec } from '../../../src/actions/turn/general/cr_건국.js';
 import { commandSpec as tradeItemSpec } from '../../../src/actions/turn/general/che_장비매매.js';
 import type { ConstraintContext, RequirementKey, StateView } from '../../../src/constraints/types.js';
 import { evaluateActionConstraints } from '../../../src/constraints/evaluate.js';
+import { resolveGeneralAction } from '../../../src/actions/engine.js';
+import { orderLegacyActionLoggerFlush } from '../../../src/logging/actionLogger.js';
+import { LogCategory, LogFormat, LogScope } from '../../../src/logging/types.js';
 
 const SYSTEM_ENV: TurnCommandEnv = {
     develCost: 100,
@@ -168,6 +172,31 @@ const makeSnapshot = (params: {
     initialEvents: [],
 });
 
+const resolveForLogOrdering = (
+    resolver: any,
+    general: General,
+    city: City,
+    nation: Nation | null,
+    args: unknown,
+    context: Record<string, unknown>
+) =>
+    resolveGeneralAction(
+        resolver,
+        {
+            general,
+            city,
+            nation,
+            rng: {} as any,
+            addLog: () => {},
+            ...context,
+        } as any,
+        {
+            now: new Date('2026-08-23T00:00:00.000Z'),
+            schedule: { entries: [{ startMinute: 0, tickMinutes: 60 }] },
+        },
+        args
+    );
+
 describe('migrated general commands', () => {
     it('che_모반시도: 군주를 찬탈한다', async () => {
         const lord = makeGeneral({ id: 1, nationId: 1, cityId: 1, name: '군주', officerLevel: 12, experience: 1000 });
@@ -317,6 +346,208 @@ describe('migrated general commands', () => {
         expect(world.getCity(1)!.nationId).toBe(0);
         expect(world.getCity(2)!.nationId).toBe(0);
         expect(world.getNation(1)!.meta.collapsed).toBe(true);
+    });
+
+    it('별도 General logger를 actor applyDB 전후 순서로 flush한다', () => {
+        const city = makeCity({ id: 1, nationId: 1 });
+        const nation = makeNation({ id: 1, name: '위', chiefGeneralId: 1, capitalCityId: 1 });
+
+        const rebel = makeGeneral({ id: 2, nationId: 1, cityId: 1, name: '중신', officerLevel: 2 });
+        const displacedLord = makeGeneral({
+            id: 1,
+            nationId: 1,
+            cityId: 1,
+            name: '군주',
+            officerLevel: 12,
+            experience: 1000,
+        });
+        const rebellionLogs = orderLegacyActionLoggerFlush(
+            resolveForLogOrdering(
+                rebellionSpec.createDefinition(SYSTEM_ENV),
+                rebel,
+                city,
+                nation,
+                {},
+                {
+                    nationGenerals: [displacedLord, rebel],
+                }
+            ).logs
+        );
+        expect(
+            rebellionLogs
+                .filter((log) => log.generalId === displacedLord.id)
+                .map((log) => [log.category, log.legacyFlushGroup])
+        ).toEqual([
+            [LogCategory.HISTORY, 1],
+            [LogCategory.ACTION, 1],
+        ]);
+
+        const abdicator = makeGeneral({ id: 1, nationId: 1, cityId: 1, name: '군주', officerLevel: 12 });
+        const recipient = makeGeneral({ id: 2, nationId: 1, cityId: 1, name: '후계자' });
+        const abdicationLogs = orderLegacyActionLoggerFlush(
+            resolveForLogOrdering(
+                abdicationSpec.createDefinition(SYSTEM_ENV),
+                abdicator,
+                city,
+                nation,
+                { destGeneralID: recipient.id },
+                { destGeneral: recipient }
+            ).logs
+        );
+        expect(
+            abdicationLogs
+                .filter((log) => log.generalId === recipient.id)
+                .map((log) => [log.category, log.legacyFlushGroup])
+        ).toEqual([
+            [LogCategory.HISTORY, 1],
+            [LogCategory.ACTION, 1],
+        ]);
+
+        const giver = makeGeneral({ id: 1, nationId: 1, cityId: 1, name: '증여자', gold: 1300 });
+        const receiver = makeGeneral({ id: 2, nationId: 1, cityId: 1, name: '수령자', gold: 200 });
+        const giftLogs = orderLegacyActionLoggerFlush(
+            resolveForLogOrdering(
+                giftSpec.createDefinition(SYSTEM_ENV),
+                giver,
+                city,
+                nation,
+                { isGold: true, amount: 500, destGeneralID: receiver.id },
+                { destGeneral: receiver }
+            ).logs
+        );
+        expect(giftLogs.map((log) => [log.generalId, log.legacyFlushGroup ?? 0])).toEqual([
+            [giver.id, 0],
+            [receiver.id, 1],
+        ]);
+
+        const disbandActor = makeGeneral({ id: 10, nationId: 1, cityId: 1, name: '방랑군주', officerLevel: 12 });
+        const member2 = makeGeneral({ id: 2, nationId: 1, cityId: 1, name: '부하2' });
+        const member3 = makeGeneral({ id: 3, nationId: 1, cityId: 1, name: '부하3' });
+        const wanderingNation = makeNation({
+            id: 1,
+            name: '방랑군',
+            chiefGeneralId: disbandActor.id,
+            capitalCityId: 1,
+            level: 0,
+            typeCode: 'None',
+        });
+        const disbandLogs = orderLegacyActionLoggerFlush(
+            resolveForLogOrdering(
+                disbandSpec.createDefinition(SYSTEM_ENV),
+                disbandActor,
+                city,
+                wanderingNation,
+                {},
+                {
+                    nationGenerals: [disbandActor, member3, member2],
+                    nationCities: [city],
+                    currentYearMonth: 201 * 12 + 2 - 1,
+                    initYearMonth: 201 * 12 + 1 - 1,
+                }
+            ).logs
+        );
+        const nonActorDestructionLogs = disbandLogs.filter(
+            (log) =>
+                log.scope === LogScope.GENERAL && log.generalId !== disbandActor.id && log.text.includes('<R>멸망</>')
+        );
+        expect(nonActorDestructionLogs.map((log) => [log.generalId, log.category, log.legacyFlushGroup])).toEqual([
+            [member2.id, LogCategory.HISTORY, -2],
+            [member2.id, LogCategory.ACTION, -2],
+            [member3.id, LogCategory.HISTORY, -1],
+            [member3.id, LogCategory.ACTION, -1],
+        ]);
+        const actorLogs = disbandLogs.filter(
+            (log) => log.scope === LogScope.GENERAL && log.generalId === disbandActor.id
+        );
+        expect(actorLogs).toHaveLength(4);
+        expect(actorLogs.every((log) => (log.legacyFlushGroup ?? 0) === 0)).toBe(true);
+    });
+
+    it('선양·모반시도의 Ref logger format과 거병 중립 nation flush 계약을 보존한다', () => {
+        const city = makeCity({ id: 1, nationId: 1 });
+        const nation = makeNation({ id: 1, name: '위', chiefGeneralId: 1, capitalCityId: 1 });
+        const projectRoute = (logs: ReturnType<typeof orderLegacyActionLoggerFlush>) =>
+            logs.map((log) => [
+                log.scope,
+                log.category,
+                log.generalId ?? null,
+                log.nationId ?? null,
+                log.format,
+                log.legacyFlushGroup ?? 0,
+            ]);
+
+        const rebel = makeGeneral({ id: 2, nationId: 1, cityId: 1, name: '중신', officerLevel: 2 });
+        const displacedLord = makeGeneral({
+            id: 1,
+            nationId: 1,
+            cityId: 1,
+            name: '군주',
+            officerLevel: 12,
+            experience: 1_000,
+        });
+        const rebellionLogs = orderLegacyActionLoggerFlush(
+            resolveForLogOrdering(
+                rebellionSpec.createDefinition(SYSTEM_ENV),
+                rebel,
+                city,
+                nation,
+                {},
+                { nationGenerals: [displacedLord, rebel] }
+            ).logs
+        );
+        expect(projectRoute(rebellionLogs)).toEqual([
+            [LogScope.GENERAL, LogCategory.HISTORY, rebel.id, null, LogFormat.YEAR_MONTH, 0],
+            [LogScope.GENERAL, LogCategory.ACTION, rebel.id, null, LogFormat.MONTH, 0],
+            [LogScope.NATION, LogCategory.HISTORY, null, nation.id, LogFormat.YEAR_MONTH, 0],
+            [LogScope.SYSTEM, LogCategory.HISTORY, null, null, LogFormat.YEAR_MONTH, 0],
+            [LogScope.GENERAL, LogCategory.HISTORY, displacedLord.id, null, LogFormat.YEAR_MONTH, 1],
+            [LogScope.GENERAL, LogCategory.ACTION, displacedLord.id, null, LogFormat.MONTH, 1],
+        ]);
+
+        const abdicator = makeGeneral({ id: 1, nationId: 1, cityId: 1, name: '군주', officerLevel: 12 });
+        const recipient = makeGeneral({ id: 2, nationId: 1, cityId: 1, name: '후계자' });
+        const abdicationLogs = orderLegacyActionLoggerFlush(
+            resolveForLogOrdering(
+                abdicationSpec.createDefinition(SYSTEM_ENV),
+                abdicator,
+                city,
+                nation,
+                { destGeneralID: recipient.id },
+                { destGeneral: recipient }
+            ).logs
+        );
+        expect(projectRoute(abdicationLogs)).toEqual([
+            [LogScope.GENERAL, LogCategory.HISTORY, abdicator.id, null, LogFormat.YEAR_MONTH, 0],
+            [LogScope.GENERAL, LogCategory.ACTION, abdicator.id, null, LogFormat.MONTH, 0],
+            [LogScope.NATION, LogCategory.HISTORY, null, nation.id, LogFormat.YEAR_MONTH, 0],
+            [LogScope.SYSTEM, LogCategory.HISTORY, null, null, LogFormat.YEAR_MONTH, 0],
+            [LogScope.GENERAL, LogCategory.HISTORY, recipient.id, null, LogFormat.YEAR_MONTH, 1],
+            [LogScope.GENERAL, LogCategory.ACTION, recipient.id, null, LogFormat.MONTH, 1],
+        ]);
+
+        const founder = makeGeneral({ id: 7, nationId: 0, cityId: 1, name: '운영자' });
+        const uprisingLogs = orderLegacyActionLoggerFlush(
+            resolveForLogOrdering(
+                uprisingSpec.createDefinition(SYSTEM_ENV),
+                founder,
+                city,
+                null,
+                {},
+                {
+                    createNationId: () => 2,
+                    listNations: () => [],
+                    scenarioId: 1,
+                    baseRice: 1_000,
+                }
+            ).logs
+        );
+        expect(projectRoute(uprisingLogs)).toEqual([
+            [LogScope.GENERAL, LogCategory.HISTORY, founder.id, null, LogFormat.YEAR_MONTH, 0],
+            [LogScope.GENERAL, LogCategory.ACTION, founder.id, null, LogFormat.MONTH, 0],
+            [LogScope.SYSTEM, LogCategory.HISTORY, null, null, LogFormat.YEAR_MONTH, 0],
+            [LogScope.SYSTEM, LogCategory.SUMMARY, null, null, LogFormat.MONTH, 0],
+        ]);
+        expect(uprisingLogs.some((log) => log.scope === LogScope.NATION)).toBe(false);
     });
 
     it('cr_건국: 국가 정보를 건국 상태로 갱신한다', async () => {

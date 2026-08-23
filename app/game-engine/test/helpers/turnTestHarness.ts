@@ -200,6 +200,7 @@ export const createTurnTestHarness = async (options: TurnTestHarnessOptions) => 
     return {
         world,
         worldRef,
+        mockPrisma,
         reservedTurnStore,
         handler,
         processor,

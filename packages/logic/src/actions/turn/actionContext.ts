@@ -13,6 +13,8 @@ export interface ActionRandomSource {
 }
 
 export interface ActionContextGeneral extends General {
+    picture?: string | null;
+    imageServer?: number;
     turnTime: Date;
 }
 
@@ -23,6 +25,8 @@ export type ActionContextBase = {
     worldView?: GeneralWorldView;
     rng: ActionRandomSource;
     uniqueLottery?: UniqueLotteryRunner;
+    /** Ref General#getStaticNation()이 수뇌턴과 장수턴 사이에 유지하는 캐시값. */
+    legacyStaticNationName?: string;
     time?: {
         year: number;
         month: number;
@@ -72,6 +76,10 @@ export interface ActionContextWorldRef {
 
 export interface ActionContextOptions<TArgs extends Record<string, unknown> = Record<string, unknown>> {
     world: ActionContextWorldState;
+    /** Ref Message::sendRaw stamps the current logical game tick, not the actor turn time. */
+    gameNow?: Date;
+    /** Differential fixtures may point shared message icons at the Ref asset origin. */
+    messageSharedIconBaseUrl?: string;
     scenarioConfig: ScenarioConfig;
     scenarioMeta?: ScenarioMeta;
     map?: MapDefinition;

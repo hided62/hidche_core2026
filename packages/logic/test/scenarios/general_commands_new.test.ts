@@ -390,7 +390,9 @@ describe('General Commands New Scenario', () => {
 
         const g1_after_resign = world.getGeneral(1)!;
         expect(g1_after_resign.nationId).toBe(0);
-        expect(g1_after_resign.meta.max_belong).toBe(18);
+        // Ref clears belong before refreshing max_belong, so the existing
+        // historical maximum is retained instead of the pre-resign belong.
+        expect(g1_after_resign.meta.max_belong).toBe(12);
 
         // 6. Retire (Needs age >= 60)
         // Manually set age

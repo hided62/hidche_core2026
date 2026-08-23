@@ -140,13 +140,8 @@ export class ActionDefinition<
             category: LogCategory.HISTORY,
             format: LogFormat.YEAR_MONTH,
         });
-        context.addLog(`<Y>${general.name}</>${josaYi} <G><b>${cityName}</b></>에서 거병`, {
-            scope: LogScope.NATION,
-            nationId: newNationId,
-            category: LogCategory.HISTORY,
-            format: LogFormat.YEAR_MONTH,
-        });
-
+        // Ref queues the national history entry on the actor logger created
+        // while nationID is still 0, so ActionLogger::flush discards it.
         tryApplyUniqueLottery(context, {
             acquireType: '아이템',
             reason: ACTION_NAME,

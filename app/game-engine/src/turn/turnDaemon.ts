@@ -663,11 +663,10 @@ const createTurnDaemonRuntimeWithLease = async (
               });
     const commandProfile =
         options.commandProfile ??
-        (options.commandProfilePath
-            ? await loadTurnCommandProfile({
-                  filePath: options.commandProfilePath,
-              })
-            : await loadTurnCommandProfile());
+        (await loadTurnCommandProfile({
+            ...(options.commandProfilePath ? { filePath: options.commandProfilePath } : {}),
+            scenarioConst: snapshot.scenarioConfig.const,
+        }));
     let worldRef: InMemoryTurnWorld | null = null;
     let redisConnector: RedisConnector | null = null;
     const nationTraits = await loadNationTraitModules([...NATION_TRAIT_KEYS], new NationTraitLoader());
@@ -730,6 +729,10 @@ const createTurnDaemonRuntimeWithLease = async (
                 map: snapshot.map,
                 unitSet: snapshot.unitSet,
                 getWorld: () => worldRef,
+                now: () => {
+                    const wallNow = new Date(clock.nowMs());
+                    return worldRef?.getGameNow(wallNow) ?? wallNow;
+                },
                 commandProfile,
                 commandEnv: monthlyCommandEnv,
                 calculateNpcNationFinance: (financeWorld, nation, currentMonth) =>

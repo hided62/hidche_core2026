@@ -115,28 +115,29 @@ export class ActionResolver<
             }),
         ];
 
-        for (const target of context.friendlyGenerals) {
-            if (target.id === general.id) {
-                continue;
-            }
+        const friendlyTargets = context.friendlyGenerals.filter((target) => target.id !== general.id);
+        const firstLegacyFlushGroup = -(friendlyTargets.length + context.destNationGenerals.length + 1);
+        for (const [index, target] of friendlyTargets.entries()) {
             effects.push(
                 createLogEffect(broadcastMessage, {
                     scope: LogScope.GENERAL,
                     category: LogCategory.ACTION,
                     generalId: target.id,
                     format: LogFormat.PLAIN,
+                    legacyFlushGroup: firstLegacyFlushGroup + index,
                 })
             );
         }
 
         const destBroadcast = `아국에 <M>${ACTION_NAME}</>${JosaUtil.pick(ACTION_NAME, '이')} 발동되었습니다.`;
-        for (const target of context.destNationGenerals) {
+        for (const [index, target] of context.destNationGenerals.entries()) {
             effects.push(
                 createLogEffect(destBroadcast, {
                     scope: LogScope.GENERAL,
                     category: LogCategory.ACTION,
                     generalId: target.id,
                     format: LogFormat.PLAIN,
+                    legacyFlushGroup: firstLegacyFlushGroup + friendlyTargets.length + index,
                 })
             );
         }
@@ -148,12 +149,15 @@ export class ActionResolver<
                 strategic_cmd_limit: globalDelay,
             };
             effects.push(
-                createLogEffect(broadcastMessage, {
-                    scope: LogScope.NATION,
-                    category: LogCategory.HISTORY,
-                    nationId: nation.id,
-                    format: LogFormat.YEAR_MONTH,
-                })
+                createLogEffect(
+                    `<Y>${generalName}</>${generalJosa} <D><b>${destNationName}</b></>에 <M>${ACTION_NAME}</>${actionJosa} 발동`,
+                    {
+                        scope: LogScope.NATION,
+                        category: LogCategory.HISTORY,
+                        nationId: nation.id,
+                        format: LogFormat.YEAR_MONTH,
+                    }
+                )
             );
         }
         effects.push(
@@ -163,7 +167,8 @@ export class ActionResolver<
                     scope: LogScope.NATION,
                     category: LogCategory.HISTORY,
                     nationId: context.destNation.id,
-                    format: LogFormat.PLAIN,
+                    format: LogFormat.YEAR_MONTH,
+                    legacyFlushGroup: -1,
                 }
             )
         );

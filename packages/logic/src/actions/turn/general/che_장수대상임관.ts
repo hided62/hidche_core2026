@@ -179,6 +179,7 @@ export class ActionDefinition<
         context.addLog(`<D><b>${destNation.name}</b></>에 임관`, {
             scope: LogScope.GENERAL,
             category: LogCategory.HISTORY,
+            format: LogFormat.YEAR_MONTH,
         });
         context.addLog(`<Y>${general.name}</>${josaYi} <D><b>${destNation.name}</b></>에 <S>임관</>했습니다.`, {
             scope: LogScope.SYSTEM,

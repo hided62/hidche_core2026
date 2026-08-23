@@ -3,7 +3,6 @@ import path from 'node:path';
 
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { asRecord } from '@sammo-ts/common';
-import { buildLegacyComparableRankRows } from '@sammo-ts/game-engine/turn/rankData.js';
 import { createDatabaseTurnHooks } from '@sammo-ts/game-engine/turn/databaseHooks.js';
 import { InMemoryTurnWorld } from '@sammo-ts/game-engine/turn/inMemoryWorld.js';
 import { createReservedTurnHandler } from '@sammo-ts/game-engine/turn/reservedTurnHandler.js';
@@ -24,6 +23,10 @@ import {
     type TurnCommandFixtureRequest,
 } from '../src/turn-differential/coreCommandTrace.js';
 import {
+    clearCoreTurnCommandPersistenceFixture,
+    seedCoreTurnCommandPersistenceFixture,
+} from '../src/turn-differential/coreCommandPersistenceFixture.js';
+import {
     findTurnDifferentialWorkspaceRoot,
     runReferenceTurnCommandTraceRequest,
 } from '../src/turn-differential/referenceSnapshot.js';
@@ -41,7 +44,6 @@ const turnRunResult = {
 } as const;
 
 const asJson = (value: unknown): InputJsonValue => value as InputJsonValue;
-const nullableCode = (value: string | null | undefined): string => value ?? 'None';
 
 const assertDedicatedDatabase = (rawUrl: string): void => {
     const schema = new URL(rawUrl).searchParams.get('schema');
@@ -81,21 +83,7 @@ const readFixture = (fixtureName: string, scenarioEffect?: string): TurnCommandF
     };
 };
 
-const cleanup = async (db: GamePrismaClient): Promise<void> => {
-    await db.logEntry.deleteMany();
-    await db.oldNation.deleteMany();
-    await db.rankData.deleteMany();
-    await db.generalTurn.deleteMany();
-    await db.generalTurnRevision.deleteMany();
-    await db.nationTurn.deleteMany();
-    await db.nationTurnRevision.deleteMany();
-    await db.diplomacy.deleteMany();
-    await db.general.deleteMany();
-    await db.troop.deleteMany();
-    await db.city.deleteMany();
-    await db.nation.deleteMany();
-    await db.worldState.deleteMany();
-};
+const cleanup = clearCoreTurnCommandPersistenceFixture;
 
 integration('live sortie PostgreSQL persistence retry', () => {
     let db: GamePrismaClient;
@@ -189,138 +177,15 @@ integration('live sortie PostgreSQL persistence retry', () => {
             const map = await loadMapDefinitionByName('che');
             const { state, snapshot } = buildCoreTurnCommandWorldInput(request, reference.before, unitSet, map);
 
-            await db.worldState.create({
-                data: {
-                    id: state.id,
-                    scenarioCode: 'live-sortie-persistence',
-                    currentYear: state.currentYear,
-                    currentMonth: state.currentMonth,
-                    tickSeconds: state.tickSeconds,
-                    config: asJson(snapshot.scenarioConfig),
-                    meta: asJson(state.meta),
-                },
-            });
-            await db.nation.createMany({
-                data: snapshot.nations.map((nation) => ({
-                    id: nation.id,
-                    name: nation.name,
-                    color: nation.color,
-                    capitalCityId: nation.capitalCityId,
-                    chiefGeneralId: nation.chiefGeneralId,
-                    gold: nation.gold,
-                    rice: nation.rice,
-                    tech: Number(nation.meta.tech ?? 0),
-                    level: nation.level,
-                    typeCode: nation.typeCode,
-                    meta: asJson(nation.meta),
-                })),
-            });
-            await db.city.createMany({
-                data: snapshot.cities.map((city) => {
-                    const definition = map.cities.find((entry) => entry.id === city.id);
-                    return {
-                        id: city.id,
-                        name: city.name,
-                        level: city.level,
-                        nationId: city.nationId,
-                        supplyState: city.supplyState,
-                        frontState: city.frontState,
-                        population: Math.round(city.population),
-                        populationMax: city.populationMax,
-                        agriculture: Math.round(city.agriculture),
-                        agricultureMax: city.agricultureMax,
-                        commerce: Math.round(city.commerce),
-                        commerceMax: city.commerceMax,
-                        security: Math.round(city.security),
-                        securityMax: city.securityMax,
-                        trust: Number(city.meta.trust ?? 0),
-                        trade: Number(city.meta.trade ?? 100),
-                        defence: Math.round(city.defence),
-                        defenceMax: city.defenceMax,
-                        wall: Math.round(city.wall),
-                        wallMax: city.wallMax,
-                        region: definition?.region ?? 0,
-                        conflict: asJson(city.conflict ?? {}),
-                        meta: asJson({ ...city.meta, state: city.state }),
-                    };
-                }),
-            });
-            await db.troop.createMany({
-                data: snapshot.troops.map((troop) => ({
-                    troopLeaderId: troop.id,
-                    nationId: troop.nationId,
-                    name: troop.name,
-                })),
-            });
-            await db.general.createMany({
-                data: snapshot.generals.map((general) => ({
-                    id: general.id,
-                    userId: general.userId,
-                    name: general.name,
-                    nationId: general.nationId,
-                    cityId: general.cityId,
-                    troopId: general.troopId,
-                    npcState: general.npcState,
-                    affinity: general.affinity,
-                    bornYear: general.bornYear,
-                    deadYear: general.deadYear,
-                    picture: general.picture,
-                    leadership: Math.round(general.stats.leadership),
-                    strength: Math.round(general.stats.strength),
-                    intel: Math.round(general.stats.intelligence),
-                    injury: Math.round(general.injury),
-                    experience: Math.round(general.experience),
-                    dedication: Math.round(general.dedication),
-                    officerLevel: general.officerLevel,
-                    gold: Math.round(general.gold),
-                    rice: Math.round(general.rice),
-                    crew: Math.round(general.crew),
-                    crewTypeId: general.crewTypeId,
-                    train: Math.round(general.train),
-                    atmos: Math.round(general.atmos),
-                    age: general.age,
-                    startAge: general.startAge,
-                    personalCode: nullableCode(general.role.personality),
-                    specialCode: nullableCode(general.role.specialDomestic),
-                    special2Code: nullableCode(general.role.specialWar),
-                    horseCode: nullableCode(general.role.items.horse),
-                    weaponCode: nullableCode(general.role.items.weapon),
-                    bookCode: nullableCode(general.role.items.book),
-                    itemCode: nullableCode(general.role.items.item),
-                    turnTime: general.turnTime,
-                    recentWarTime: general.recentWarTime,
-                    lastTurn: asJson(general.lastTurn ?? { command: '휴식' }),
-                    meta: asJson(general.meta),
-                    penalty: asJson(general.penalty ?? {}),
-                })),
-            });
-            await db.rankData.createMany({
-                data: snapshot.generals.flatMap((general) =>
-                    buildLegacyComparableRankRows(general).map((row) => ({
-                        generalId: row.generalId,
-                        nationId: row.nationId,
-                        type: row.type,
-                        value: row.value,
-                    }))
-                ),
-            });
-            await db.diplomacy.createMany({
-                data: snapshot.diplomacy.map((entry) => ({
-                    srcNationId: entry.fromNationId,
-                    destNationId: entry.toNationId,
-                    stateCode: entry.state,
-                    term: entry.term,
-                    isDead: entry.dead !== 0,
-                    meta: asJson(entry.meta),
-                })),
-            });
-            await db.generalTurn.createMany({
-                data: snapshot.generals.flatMap((general) =>
-                    Array.from({ length: 30 }, (_, turnIdx) => ({
+            await seedCoreTurnCommandPersistenceFixture(db, {
+                worldInput: { state, snapshot, map },
+                scenarioCode: 'live-sortie-persistence',
+                generalTurns: snapshot.generals.flatMap((general) =>
+                    Array.from({ length: 30 }, (_, turnIndex) => ({
                         generalId: general.id,
-                        turnIdx,
-                        actionCode: general.id === request.actorGeneralId && turnIdx === 0 ? request.action : '휴식',
-                        arg: asJson(general.id === request.actorGeneralId && turnIdx === 0 ? coreArgs : {}),
+                        turnIndex,
+                        action: general.id === request.actorGeneralId && turnIndex === 0 ? request.action : '휴식',
+                        args: general.id === request.actorGeneralId && turnIndex === 0 ? coreArgs : {},
                     }))
                 ),
             });

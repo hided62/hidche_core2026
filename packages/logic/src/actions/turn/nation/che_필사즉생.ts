@@ -112,10 +112,9 @@ export class ActionResolver<
             general.atmos = selfPatch.atmos;
         }
 
-        for (const target of context.nationGenerals) {
-            if (target.id === general.id) {
-                continue;
-            }
+        const nationTargets = context.nationGenerals.filter((target) => target.id !== general.id);
+        const firstLegacyFlushGroup = -nationTargets.length;
+        for (const [index, target] of nationTargets.entries()) {
             const patch = updateTrainAtmos(target);
             if (patch) {
                 effects.push(createGeneralPatchEffect(patch, target.id));
@@ -126,6 +125,7 @@ export class ActionResolver<
                     category: LogCategory.ACTION,
                     generalId: target.id,
                     format: LogFormat.PLAIN,
+                    legacyFlushGroup: firstLegacyFlushGroup + index,
                 })
             );
         }
@@ -137,7 +137,7 @@ export class ActionResolver<
                 strategic_cmd_limit: globalDelay,
             };
             effects.push(
-                createLogEffect(broadcastMessage, {
+                createLogEffect(`<Y>${generalName}</>${generalJosa} <M>${ACTION_NAME}</>을 발동`, {
                     scope: LogScope.NATION,
                     category: LogCategory.HISTORY,
                     nationId: nation.id,

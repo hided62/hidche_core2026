@@ -375,7 +375,7 @@ describe('unique auction inheritance log compatibility', () => {
         );
     });
 
-    it('builds all four Ref award logs with the original formats and labels', () => {
+    it('builds all four Ref award logs in the original flush order with the original formats and labels', () => {
         const bidder = {
             id: 7,
             name: '관우',
@@ -392,29 +392,29 @@ describe('unique auction inheritance log compatibility', () => {
         ).toEqual([
             expect.objectContaining({
                 scope: LogScope.GENERAL,
-                category: LogCategory.ACTION,
-                format: LogFormat.MONTH,
-                generalId: 7,
-                text: '<C>칠성검(+12)</>을 습득했습니다!',
-            }),
-            expect.objectContaining({
-                scope: LogScope.GENERAL,
                 category: LogCategory.HISTORY,
                 format: LogFormat.YEAR_MONTH,
                 generalId: 7,
                 text: '<C>칠성검(+12)</>을 습득',
             }),
             expect.objectContaining({
-                scope: LogScope.SYSTEM,
-                category: LogCategory.SUMMARY,
+                scope: LogScope.GENERAL,
+                category: LogCategory.ACTION,
                 format: LogFormat.MONTH,
-                text: '<Y>관우</>가 <C>칠성검(+12)</>을 습득했습니다!',
+                generalId: 7,
+                text: '<C>칠성검(+12)</>을 습득했습니다!',
             }),
             expect.objectContaining({
                 scope: LogScope.SYSTEM,
                 category: LogCategory.HISTORY,
                 format: LogFormat.YEAR_MONTH,
                 text: '<C><b>【보물수배】</b></><D><b>촉</b></>의 <Y>관우</>가 <C>칠성검(+12)</>을 습득했습니다!',
+            }),
+            expect.objectContaining({
+                scope: LogScope.SYSTEM,
+                category: LogCategory.SUMMARY,
+                format: LogFormat.MONTH,
+                text: '<Y>관우</>가 <C>칠성검(+12)</>을 습득했습니다!',
             }),
         ]);
     });

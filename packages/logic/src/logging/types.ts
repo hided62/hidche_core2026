@@ -33,6 +33,8 @@ export interface LogEntryDraft {
     month?: number;
     /** 로그를 만든 논리 게임 시각. 생략하면 flush context의 시각을 사용한다. */
     occurredAt?: Date;
+    /** 하나의 명령에서 별도 Ref ActionLogger로 저장한 순서. 작은 그룹을 먼저 flush한다. */
+    legacyFlushGroup?: number;
 }
 
 export interface LogEntryRecord {

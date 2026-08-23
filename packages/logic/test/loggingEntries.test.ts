@@ -1,6 +1,96 @@
 import { describe, expect, it } from 'vitest';
 
-import { finalizeLogEntry, LogCategory, LogFormat, LogScope } from '../src/index.js';
+import {
+    ActionLogger,
+    finalizeLogEntry,
+    LogCategory,
+    LogFormat,
+    LogScope,
+    orderLegacyActionLoggerFlush,
+} from '../src/index.js';
+
+describe('ActionLogger', () => {
+    it('flushes Ref category buffers in physical persistence order', () => {
+        const logger = new ActionLogger({ generalId: 7, nationId: 3 });
+
+        logger.pushGlobalActionLog('global action');
+        logger.pushGlobalHistoryLog('global history');
+        logger.pushNationHistoryLog('nation history');
+        logger.pushGeneralActionLog(['first action', 'second action']);
+        logger.pushGeneralHistoryLog('general history');
+
+        expect(logger.flush().map((entry) => entry.text)).toEqual([
+            'general history',
+            'first action',
+            'second action',
+            'nation history',
+            'global history',
+            'global action',
+        ]);
+    });
+
+    it('keeps a separately flushed logger after every category of the earlier logger', () => {
+        expect(
+            orderLegacyActionLoggerFlush([
+                {
+                    scope: LogScope.NATION,
+                    category: LogCategory.HISTORY,
+                    nationId: 1,
+                    text: 'actor nation history',
+                },
+                {
+                    scope: LogScope.NATION,
+                    category: LogCategory.HISTORY,
+                    nationId: 2,
+                    text: 'destination nation history',
+                    legacyFlushGroup: 1,
+                },
+                {
+                    scope: LogScope.SYSTEM,
+                    category: LogCategory.HISTORY,
+                    text: 'global history',
+                },
+            ]).map((entry) => entry.text)
+        ).toEqual(['actor nation history', 'global history', 'destination nation history']);
+    });
+
+    it('preserves early, actor, and destructor flush stages before applying category buckets', () => {
+        const ordered = orderLegacyActionLoggerFlush([
+            {
+                scope: LogScope.NATION,
+                category: LogCategory.HISTORY,
+                nationId: 1,
+                text: 'actor nation history',
+            },
+            {
+                scope: LogScope.NATION,
+                category: LogCategory.HISTORY,
+                nationId: 2,
+                text: 'destructor nation history',
+                legacyFlushGroup: 1,
+            },
+            {
+                scope: LogScope.GENERAL,
+                category: LogCategory.ACTION,
+                generalId: 7,
+                text: 'early chief action',
+                legacyFlushGroup: -1,
+            },
+            {
+                scope: LogScope.SYSTEM,
+                category: LogCategory.HISTORY,
+                text: 'actor global history',
+            },
+        ]);
+
+        expect(ordered.map((entry) => entry.text)).toEqual([
+            'early chief action',
+            'actor nation history',
+            'actor global history',
+            'destructor nation history',
+        ]);
+    });
+});
 
 describe('finalizeLogEntry', () => {
     it('uses an explicit draft year and month for pre-month logs', () => {

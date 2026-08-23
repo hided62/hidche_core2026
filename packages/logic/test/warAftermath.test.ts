@@ -8,8 +8,11 @@ import type { UnitSetDefinition } from '../src/world/types.js';
 import { resolveWarAftermath } from '../src/war/aftermath.js';
 import type { WarAftermathConfig } from '../src/war/types.js';
 import { LogFormat } from '../src/logging/types.js';
+import { LegacyWarLogFlushSequence } from '../src/war/legacyFlushSequence.js';
 import { buildWarAftermathConfig, buildWarConfig } from '../src/actions/turn/actionContextHelpers.js';
 import type { ScenarioConfig } from '../src/scenario/types.js';
+
+const MESSAGE_TIME = new Date('0185-01-01T00:00:00.000Z');
 
 const buildUnitSet = (): UnitSetDefinition => ({
     id: 'test',
@@ -188,6 +191,7 @@ describe('war aftermath', () => {
             unitSet: buildUnitSet(),
             config: { ...buildConfig(), maxTechLevel: 15 },
             time: { year: 200, month: 1, startYear: 180 },
+            messageTime: MESSAGE_TIME,
         });
 
         expect(defenderNation.rice).toBe(985);
@@ -232,6 +236,7 @@ describe('war aftermath', () => {
                 month: 1,
                 startYear: 180,
             },
+            messageTime: MESSAGE_TIME,
         });
 
         expect(attackerNation.meta.tech).toBe(Math.fround(1000.6));
@@ -271,6 +276,7 @@ describe('war aftermath', () => {
             unitSet: buildUnitSet(),
             config: buildConfig(),
             time: { year: 200, month: 1, startYear: 180 },
+            messageTime: MESSAGE_TIME,
         });
 
         expect(attackerCity.meta.dead).toBe(71);
@@ -320,6 +326,7 @@ describe('war aftermath', () => {
                 month: 1,
                 startYear: 180,
             },
+            messageTime: MESSAGE_TIME,
         });
 
         expect(defenderNation.capitalCityId).toBe(nextCapital.id);
@@ -330,6 +337,7 @@ describe('war aftermath', () => {
                 '수뇌는 <G><b>City3</b></>으로 집합되었습니다.',
             ])
         );
+        expect(outcome.logs.find((log) => log.text.startsWith('수뇌는'))?.format).toBe(LogFormat.MONTH);
     });
 
     it('uses the city battle phase, not retained casualties, for conquered supply-city rice', () => {
@@ -372,6 +380,7 @@ describe('war aftermath', () => {
             unitSet: buildUnitSet(),
             config: buildConfig(),
             time: { year: 200, month: 1, startYear: 180 },
+            messageTime: MESSAGE_TIME,
         });
 
         expect(defenderNation.rice).toBe(6500);
@@ -389,6 +398,11 @@ describe('war aftermath', () => {
         const attacker = buildGeneral(1, 1, 1);
         attacker.officerLevel = 12;
         const defender = buildGeneral(2, 2, 2);
+        defender.officerLevel = 12;
+        defender.experience = 2_000;
+        defender.dedication = 2_000;
+        defender.meta.explevel = 14;
+        defender.meta.dedlevel = 3;
 
         const outcome = resolveWarAftermath({
             battle: {
@@ -430,14 +444,16 @@ describe('war aftermath', () => {
                 month: 1,
                 startYear: 180,
             },
+            messageTime: MESSAGE_TIME,
             rng,
+            legacyFlushSequence: new LegacyWarLogFlushSequence(100),
         });
 
         expect(outcome.conquest?.nationCollapsed).toBe(true);
         expect(attackerNation.gold).toBe(3600);
         expect(attackerNation.rice).toBe(4600);
-        expect(defender.experience).toBe(90);
-        expect(defender.dedication).toBe(50);
+        expect(defender.experience).toBe(1_800);
+        expect(defender.dedication).toBe(1_000);
         // Removed nations can remain in old persisted conflict data. They
         // must never receive ownership during a later conquest.
         expect(defenderCity.nationId).toBe(attackerNation.id);
@@ -447,9 +463,14 @@ describe('war aftermath', () => {
                 '<D><b>Nation2</b></>를 정복',
                 '<R><b>【멸망】</b></><D><b>Nation2</b></>는 <R>멸망</>했습니다.',
                 '<D><b>Nation2</b></>가 <R>멸망</>했습니다.',
+                '<C>Lv 13</>으로 <R>레벨다운</>!',
+                '<Y>27품관</>으로 <C>승급</>하여 봉록이 <C>1,200</>으로 <C>상승</>했습니다!',
                 '<D><b>Nation2</b></> 정복으로 금<C>2,600</> 쌀<C>3,600</>을 획득했습니다.',
             ])
         );
+        expect(outcome.logs.filter((log) => log.generalId === defender.id).map((log) => log.legacyFlushGroup)).toEqual([
+            103, 103, 103, 103, 103,
+        ]);
     });
 
     it('matches ruined-nation lord ordering and NPC appointment draws', () => {
@@ -464,7 +485,7 @@ describe('war aftermath', () => {
         npc.npcState = 2;
 
         const rangeDraws = [0.2, 0.21, 0.4, 0.41];
-        const nextBool = vi.fn().mockReturnValueOnce(false).mockReturnValueOnce(true).mockReturnValueOnce(false);
+        const nextBool = vi.fn().mockReturnValueOnce(true).mockReturnValueOnce(true).mockReturnValueOnce(false);
         const rng = {
             nextRange: vi.fn(() => rangeDraws.shift()!),
             nextBool,
@@ -495,6 +516,8 @@ describe('war aftermath', () => {
                 joinRuinedNpcProbability: 0.1,
             },
             time: { year: 186, month: 1, startYear: 179 },
+            messageTime: MESSAGE_TIME,
+            messageSharedIconBaseUrl: 'https://ref.example/image/icons',
             rng,
         });
 
@@ -503,6 +526,32 @@ describe('war aftermath', () => {
         expect(lord.gold).toBe(600);
         expect(lord.rice).toBe(590);
         expect(nextBool.mock.calls.map(([probability]) => probability)).toEqual([0.5, 0.1, 0.5]);
+        expect(outcome.conquest?.messages).toEqual([
+            {
+                msgType: 'private',
+                src: {
+                    generalId: attacker.id,
+                    generalName: attacker.name,
+                    nationId: attackerNation.id,
+                    nationName: attackerNation.name,
+                    color: attackerNation.color,
+                    icon: 'https://ref.example/image/icons/default.jpg',
+                },
+                dest: {
+                    generalId: npc.id,
+                    generalName: npc.name,
+                    nationId: 0,
+                    nationName: '재야',
+                    color: '#000000',
+                    icon: 'https://ref.example/image/icons/default.jpg',
+                },
+                text: 'Nation1로 망명 권유 서신',
+                time: MESSAGE_TIME,
+                validUntil: new Date('9999-12-31T12:59:59.000Z'),
+                option: { action: 'scout' },
+                sendDestOnly: true,
+            },
+        ]);
         expect(outcome.conquest?.ruinedNpcJoinPlans).toEqual([
             { generalId: npc.id, destNationId: attackerNation.id, joinTurn: 6 },
         ]);
@@ -523,10 +572,12 @@ describe('war aftermath', () => {
         const attackerCity = buildCity(1, 1);
         const defenderCity = buildCity(2, 2);
         const attacker = buildGeneral(1, 1, 1);
+        attacker.officerLevel = 12;
         const firstDefender = buildGeneral(2, 2, 2);
         const secondDefender = buildGeneral(3, 2, 2);
         secondDefender.crew = 0;
         const elsewhere = buildGeneral(4, 2, 3);
+        elsewhere.officerLevel = 12;
         const dispatchOrder: number[] = [];
         const module: GeneralActionModule = {
             eventHandlers: {
@@ -562,8 +613,10 @@ describe('war aftermath', () => {
                 month: 1,
                 startYear: 180,
             },
+            messageTime: MESSAGE_TIME,
             rng,
             generalActionModules: [module],
+            legacyFlushSequence: new LegacyWarLogFlushSequence(200),
         });
 
         expect(dispatchOrder).toEqual([firstDefender.id, secondDefender.id]);
@@ -585,6 +638,27 @@ describe('war aftermath', () => {
             LogFormat.MONTH,
             LogFormat.MONTH,
         ]);
+        expect(
+            outcome.logs.filter((log) => log.text.startsWith('점령 이벤트')).map((log) => log.legacyFlushGroup)
+        ).toEqual([200, 201]);
+        expect(
+            outcome.logs.find((log) => log.nationId === defenderNation.id && log.text.includes('<O>함락</>'))
+                ?.legacyFlushGroup
+        ).toBe(202);
+        expect(
+            outcome.logs.find((log) => log.text.includes(`Nation${defenderNation.id}</b></>를 정복`))?.legacyFlushGroup
+        ).toBe(203);
+        expect(
+            outcome.logs
+                .filter((log) => log.text.includes('도주하며'))
+                .map((log) => [log.generalId, log.legacyFlushGroup])
+        ).toEqual([
+            [firstDefender.id, 204],
+            [secondDefender.id, 205],
+            [elsewhere.id, 206],
+        ]);
+        expect(outcome.logs.find((log) => log.text.includes('【멸망】'))?.legacyFlushGroup).toBe(206);
+        expect(outcome.logs.find((log) => log.text.includes('정복으로 금'))?.legacyFlushGroup).toBeUndefined();
         expect(outcome.generals.map((general) => general.id)).toEqual(
             expect.arrayContaining([firstDefender.id, secondDefender.id])
         );
@@ -626,11 +700,21 @@ describe('war aftermath', () => {
                 month: 1,
                 startYear: 180,
             },
+            messageTime: MESSAGE_TIME,
+            legacyFlushSequence: new LegacyWarLogFlushSequence(300),
         });
 
         expect(outcome.conquest?.conquerNationId).toBe(4);
         expect(defenderCity.nationId).toBe(4);
         expect(defenderCity.meta.conflict_order).toEqual([]);
         expect(attacker.cityId).toBe(1);
+        expect(outcome.logs.find((log) => log.nationId === defenderNation.id)?.legacyFlushGroup).toBe(300);
+        expect(outcome.logs.find((log) => log.nationId === firstNation.id)?.legacyFlushGroup).toBe(301);
+        expect(
+            outcome.logs
+                .filter((log) => log.generalId === attacker.id || log.scope === 'SYSTEM')
+                .filter((log) => log.text.includes('영토분쟁') || log.text.includes('점령'))
+                .every((log) => log.legacyFlushGroup === undefined)
+        ).toBe(true);
     });
 });

@@ -194,7 +194,7 @@ describe('scenario general pool within one reserved turn', () => {
             state: buildState(),
             schedule,
             map,
-            reservedTurnStoreOptions: { maxGeneralTurns: 10, maxNationTurns: 12 },
+            reservedTurnStoreOptions: { maxGeneralTurns: 30, maxNationTurns: 12 },
             commandRngFactory: ({ actionKey }) =>
                 actionKey === 'che_의병모집'
                     ? new RandUtil(new SequenceRNG([0, 0.26, 0.51, 0.76]))
@@ -210,5 +210,29 @@ describe('scenario general pool within one reserved turn', () => {
         expect(created.map((general) => general.npcState).sort()).toEqual([3, 4, 4, 4]);
         expect(claims.every(Boolean)).toBe(true);
         expect(new Set(claims.map((claim) => claim?.poolEntryId))).toEqual(new Set([1, 2, 3, 4]));
+
+        const createdIds = created.map((general) => general.id);
+        expect(harness.reservedTurnStore.peekDirtyState().generalInitializationIds).toEqual(createdIds);
+        for (const generalId of createdIds) {
+            expect(harness.reservedTurnStore.getGeneralTurns(generalId)).toEqual(
+                Array.from({ length: 30 }, () => ({ action: '휴식', args: {} }))
+            );
+        }
+
+        await harness.reservedTurnStore.flushChanges();
+
+        const persistedRows = harness.mockPrisma.generalTurn.createMany.mock.calls.flatMap(([input]) => input.data);
+        const persistedCreatedRows = persistedRows.filter((row) => createdIds.includes(row.generalId));
+        expect(persistedCreatedRows).toHaveLength(createdIds.length * 30);
+        for (const generalId of createdIds) {
+            expect(persistedCreatedRows.filter((row) => row.generalId === generalId)).toEqual(
+                Array.from({ length: 30 }, (_, turnIdx) => ({
+                    generalId,
+                    turnIdx,
+                    actionCode: '휴식',
+                    arg: {},
+                }))
+            );
+        }
     });
 });

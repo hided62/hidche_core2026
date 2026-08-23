@@ -24,6 +24,7 @@ export const processGeneralActionWithFallback = async <TriggerState extends Gene
     let currentArgs = initialArgs;
     let loopLimit = 5; // Prevent infinite loops
     const accumulatedLogs: LogEntryDraft[] = [];
+    const accumulatedPostProgressionLogs: LogEntryDraft[] = [];
 
     while (loopLimit > 0) {
         loopLimit--;
@@ -32,6 +33,7 @@ export const processGeneralActionWithFallback = async <TriggerState extends Gene
 
         if (resolution.alternative) {
             accumulatedLogs.push(...resolution.logs);
+            accumulatedPostProgressionLogs.push(...resolution.postProgressionLogs);
             const { commandKey, args } = resolution.alternative;
             const nextResolver = await commandLoader.load(commandKey);
 
@@ -45,6 +47,9 @@ export const processGeneralActionWithFallback = async <TriggerState extends Gene
         // Prepend accumulated logs to the final resolution
         if (accumulatedLogs.length > 0) {
             resolution.logs.unshift(...accumulatedLogs);
+        }
+        if (accumulatedPostProgressionLogs.length > 0) {
+            resolution.postProgressionLogs.unshift(...accumulatedPostProgressionLogs);
         }
         return resolution;
     }

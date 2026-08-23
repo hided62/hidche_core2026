@@ -18,6 +18,7 @@ const snapshot = (
     rankData: [],
     cities: [{ id: 1, nationId: 1, agriculture: 1000, defence: 500 }],
     nations: [{ id: 1, gold: 0, rice: 0 }],
+    troops: [],
     diplomacy: [],
     generalTurns: [{ generalId: 1, turnIndex: 0, action: 'che_농지개간', args: null }],
     nationTurns: [],
@@ -89,6 +90,114 @@ describe('turn snapshot differential comparator', () => {
         ).toEqual([]);
     });
 
+    it('distinguishes a present empty collection from a missing property', () => {
+        const reference = snapshot('ref', {
+            world: {
+                year: 183,
+                month: 1,
+                tickMinutes: 10,
+                turnTime: '0183-01-01T00:00:00.000Z',
+                isUnited: 0,
+                nationCooldowns: [],
+                generalFlags: {},
+            },
+        });
+        const core = snapshot('core2026');
+
+        const differences = compareTurnSnapshots(reference, core);
+        expect(differences).toContainEqual({
+            path: 'world.nationCooldowns',
+            reference: { $snapshotState: 'array' },
+            core: { $snapshotState: 'missing' },
+        });
+        expect(differences).toContainEqual({
+            path: 'world.generalFlags',
+            reference: { $snapshotState: 'object' },
+            core: { $snapshotState: 'missing' },
+        });
+        expect(
+            compareTurnSnapshots(reference, core, {
+                ignoredPathPatterns: [/^world\.(?:nationCooldowns|generalFlags)(?:\.|$)/],
+            })
+        ).toEqual([]);
+    });
+
+    it('distinguishes an empty JSON object from an empty JSON array', () => {
+        const reference = snapshot('ref', {
+            generals: [{ id: 1, gold: 1000, rice: 1000, crew: 1000, nationId: 1, cityId: 1, meta: {} }],
+        });
+        const core = snapshot('core2026', {
+            generals: [{ id: 1, gold: 1000, rice: 1000, crew: 1000, nationId: 1, cityId: 1, meta: [] }],
+        });
+
+        expect(compareTurnSnapshots(reference, core)).toContainEqual({
+            path: 'generals[1].meta',
+            reference: { $snapshotState: 'object' },
+            core: { $snapshotState: 'array' },
+        });
+    });
+
+    it('distinguishes collection deletion from replacement with an empty collection in deltas', () => {
+        const beforeRef = snapshot('ref', {
+            world: {
+                year: 183,
+                month: 1,
+                tickMinutes: 10,
+                turnTime: '0183-01-01T00:00:00.000Z',
+                isUnited: 0,
+                nationCooldowns: [{ nationId: 1, remaining: 2 }],
+            },
+        });
+        const afterRef = snapshot('ref');
+        const beforeCore = snapshot('core2026', {
+            world: {
+                year: 183,
+                month: 1,
+                tickMinutes: 10,
+                turnTime: '0183-01-01T00:00:00.000Z',
+                isUnited: 0,
+                nationCooldowns: [{ nationId: 1, remaining: 2 }],
+            },
+        });
+        const afterCore = snapshot('core2026', {
+            world: {
+                year: 183,
+                month: 1,
+                tickMinutes: 10,
+                turnTime: '0183-01-01T00:00:00.000Z',
+                isUnited: 0,
+                nationCooldowns: [],
+            },
+        });
+
+        expect(compareTurnSnapshotDeltas(beforeRef, afterRef, beforeCore, afterCore)).toContainEqual({
+            path: 'world.nationCooldowns',
+            reference: {
+                before: { $snapshotState: 'array' },
+                after: { $snapshotState: 'missing' },
+            },
+            core: { $snapshotState: 'missing' },
+        });
+    });
+
+    it('fails closed when an entity array repeats a semantic key', () => {
+        const reference = snapshot('ref', {
+            cities: [
+                { id: 1, nationId: 1, agriculture: 900 },
+                { id: 1, nationId: 1, agriculture: 1000 },
+            ],
+        });
+        const core = snapshot('core2026', {
+            cities: [{ id: 1, nationId: 1, agriculture: 1000 }],
+        });
+
+        const expectedError = 'Duplicate semantic entity key "1" at "cities": indexes 0 and 1';
+        expect(() => compareTurnSnapshots(reference, core)).toThrowError(expectedError);
+        expect(() => compareTurnSnapshotDeltas(snapshot('ref'), reference, snapshot('core2026'), core)).toThrowError(
+            expectedError
+        );
+    });
+
     it('reports exact changed paths for general and nation command state', () => {
         const reference = snapshot('ref', {
             diplomacy: [{ fromNationId: 1, toNationId: 2, state: 1, term: 24 }],
@@ -154,8 +263,8 @@ describe('turn snapshot differential comparator', () => {
 
         expect(compareTurnSnapshotDeltas(beforeRef, afterRef, beforeCore, afterCore)).toContainEqual({
             path: 'nations[2].gold',
-            reference: { before: 0, after: undefined },
-            core: undefined,
+            reference: { before: 0, after: { $snapshotState: 'missing' } },
+            core: { $snapshotState: 'missing' },
         });
     });
 });

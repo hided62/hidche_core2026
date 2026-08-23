@@ -128,6 +128,7 @@ export class ActionDefinition<
                     category: LogCategory.ACTION,
                     generalId: destGeneral.id,
                     format: LogFormat.PLAIN,
+                    legacyFlushGroup: 1,
                 }),
                 createLogEffect(`<Y>${destGeneral.name}</>에게 ${resName} <C>${amountText}</>을 증여했습니다.`, {
                     scope: LogScope.GENERAL,

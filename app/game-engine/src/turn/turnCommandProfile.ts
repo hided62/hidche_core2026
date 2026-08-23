@@ -1,7 +1,12 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
 
-import { DEFAULT_TURN_COMMAND_PROFILE, parseTurnCommandProfile, type TurnCommandProfile } from '@sammo-ts/logic';
+import {
+    parseTurnCommandProfile,
+    resolveScenarioTurnCommandProfile,
+    type ScenarioTurnCommandProfileResolution,
+    type TurnCommandProfile,
+} from '@sammo-ts/logic';
 
 import { resolveWorkspaceRoot } from '../paths.js';
 
@@ -10,6 +15,7 @@ const DEFAULT_PROFILE_PATH = path.resolve(REPO_ROOT, 'resources', 'turn-commands
 
 export interface TurnCommandProfileOptions {
     filePath?: string;
+    scenarioConst?: unknown;
 }
 
 const readCommandProfile = async (filePath: string): Promise<TurnCommandProfile> => {
@@ -17,14 +23,13 @@ const readCommandProfile = async (filePath: string): Promise<TurnCommandProfile>
     return parseTurnCommandProfile(JSON.parse(raw) as unknown);
 };
 
-export const loadTurnCommandProfile = async (options?: TurnCommandProfileOptions): Promise<TurnCommandProfile> => {
+export const loadScenarioTurnCommandProfile = async (
+    options?: TurnCommandProfileOptions
+): Promise<ScenarioTurnCommandProfileResolution> => {
     const filePath = options?.filePath ?? process.env.TURN_COMMANDS_PATH ?? DEFAULT_PROFILE_PATH;
-    try {
-        return await readCommandProfile(filePath);
-    } catch (error) {
-        if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
-            return DEFAULT_TURN_COMMAND_PROFILE;
-        }
-        throw error;
-    }
+    const fallback = await readCommandProfile(filePath);
+    return resolveScenarioTurnCommandProfile(options?.scenarioConst, fallback);
 };
+
+export const loadTurnCommandProfile = async (options?: TurnCommandProfileOptions): Promise<TurnCommandProfile> =>
+    (await loadScenarioTurnCommandProfile(options)).profile;

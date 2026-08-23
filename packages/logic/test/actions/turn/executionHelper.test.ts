@@ -27,18 +27,21 @@ describe('processGeneralActionWithFallback', () => {
 
     const fallbackResolver: GeneralActionResolver = {
         key: 'fallbackCmd',
-        resolve: () => ({
-            effects: [
-                {
-                    type: 'log',
-                    entry: { text: 'Primary failed', scope: 'general', category: 'action', format: 'month' },
-                } as any,
-            ],
-            alternative: {
-                commandKey: 'alternativeCmd',
-                args: { foo: 'bar' },
-            },
-        }),
+        resolve: (context) => {
+            context.addPostProgressionLog?.('Primary post-progression');
+            return {
+                effects: [
+                    {
+                        type: 'log',
+                        entry: { text: 'Primary failed', scope: 'general', category: 'action', format: 'month' },
+                    } as any,
+                ],
+                alternative: {
+                    commandKey: 'alternativeCmd',
+                    args: { foo: 'bar' },
+                },
+            };
+        },
     };
 
     const alternativeResolver: GeneralActionResolver = {
@@ -100,18 +103,8 @@ describe('processGeneralActionWithFallback', () => {
             mockLoader
         );
 
-        // It should eventually execute alternativeResolver
-        // BUT resolveGeneralAction creates a FRESH resolution from the FINAL resolver.
-        // It does NOT merge logs currently. (As per my implementation comment)
-        // Wait, did I implement log merging? No.
-        // I implemented a simple loop that re-runs `resolveGeneralAction`.
-        // So the final resolution comes from `alternativeResolver`.
-
-        // Let's verify what we expect.
-        // If we want legacy parity, we might expect logs from the first attempt too.
-        // But for now, let's verify the loop works.
-
         expect(resolution.logs).toHaveLength(2); // 'Primary failed' + 'Alternative executed...'
+        expect(resolution.postProgressionLogs.map((entry) => entry.text)).toEqual(['Primary post-progression']);
         expect(resolution.alternative).toBeUndefined(); // The final one succeeded
         expect(mockLoader.load).toHaveBeenCalledWith('alternativeCmd');
     });

@@ -49,7 +49,7 @@ import type { DatabaseTurnDaemonLease } from '../lifecycle/databaseTurnDaemonLea
 import { calculateNationBettingRewards } from '../betting/nationBettingSettlement.js';
 import type { NationBettingCandidate, PendingNationBettingFinish, PendingNationBettingOpen } from './types.js';
 import type { TurnGeneral } from './types.js';
-import { buildPersistedRankRows } from './rankData.js';
+import { buildInitialRankRows, buildPersistedRankRows } from './rankData.js';
 import { persistUnificationFinalization } from './unificationPersistence.js';
 import { buildOldNationArchiveData } from './oldNationArchive.js';
 import { persistYearbookSnapshot } from './yearbookPersistence.js';
@@ -768,17 +768,6 @@ const buildPersistedGeneralMeta = (
     }
     return asJson(meta);
 };
-
-const buildInitialRankRows = (
-    general: ReturnType<InMemoryTurnWorld['consumeDirtyState']>['generals'][number]
-): Array<{ generalId: number; nationId: number; type: string; value: number }> =>
-    buildPersistedRankRows(general).map((row) => ({
-        ...row,
-        nationId: 0,
-        // Ref Join은 전체 rank_data를 0으로 만든 직후 장수 생성에 사용한
-        // 유산 포인트만 inherit_spent_dyn에 반영한다.
-        value: row.type === 'inherit_spent_dyn' ? row.value : 0,
-    }));
 
 const RANK_DATA_UPSERT_BATCH_SIZE = 1_000;
 

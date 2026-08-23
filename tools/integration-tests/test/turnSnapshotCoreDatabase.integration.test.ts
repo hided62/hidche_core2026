@@ -12,11 +12,13 @@ const ids = {
     city: 2_147_000_102,
     nation: 2_147_000_103,
 };
+const ownerIdentity = 'turn-differential-database-owner';
 
 integration('core2026 turn state database snapshot adapter', () => {
     let db: GamePrismaClient;
     let disconnect: (() => Promise<void>) | undefined;
     let createdWorldId: number | null = null;
+    let createdMessageId: number | null = null;
 
     beforeAll(async () => {
         const connector = createGamePostgresConnector({ url: databaseUrl! });
@@ -80,6 +82,7 @@ integration('core2026 turn state database snapshot adapter', () => {
         await db.general.create({
             data: {
                 id: ids.general,
+                userId: ownerIdentity,
                 name: '비교장수',
                 nationId: ids.nation,
                 cityId: ids.city,
@@ -97,9 +100,33 @@ integration('core2026 turn state database snapshot adapter', () => {
                 meta: { killturn: 24, myset: 6, intel_exp: 3 },
             },
         });
+        await db.troop.create({
+            data: {
+                troopLeaderId: ids.general,
+                nationId: ids.nation,
+                name: '비교부대',
+            },
+        });
+        createdMessageId = (
+            await db.message.create({
+                data: {
+                    mailbox: ids.general,
+                    type: 'private',
+                    src: ids.general,
+                    dest: ids.general,
+                    time: new Date('0183-01-01T00:01:00.000Z'),
+                    validUntil: new Date('9999-12-31T00:00:00.000Z'),
+                    message: { text: '비교 메시지' },
+                },
+            })
+        ).id;
     });
 
     afterAll(async () => {
+        if (createdMessageId !== null) {
+            await db.message.deleteMany({ where: { id: createdMessageId } });
+        }
+        await db.troop.deleteMany({ where: { troopLeaderId: ids.general } });
         await db.general.deleteMany({ where: { id: ids.general } });
         await db.city.deleteMany({ where: { id: ids.city } });
         await db.nation.deleteMany({ where: { id: ids.nation } });
@@ -114,6 +141,8 @@ integration('core2026 turn state database snapshot adapter', () => {
             generalIds: [ids.general],
             cityIds: [ids.city],
             nationIds: [ids.nation],
+            troopIds: [ids.general],
+            messageAfterId: (createdMessageId ?? 1) - 1,
         });
 
         expect(result.engine).toBe('core2026');
@@ -125,6 +154,7 @@ integration('core2026 turn state database snapshot adapter', () => {
                 intelligence: 80,
                 killTurn: 24,
                 mySet: 6,
+                ownerIdentity,
             })
         );
         expect(result.cities).toContainEqual(
@@ -141,6 +171,18 @@ integration('core2026 turn state database snapshot adapter', () => {
                 id: ids.nation,
                 generalCount: 1,
                 power: 300,
+            })
+        );
+        expect(result.troops).toContainEqual({ id: ids.general, nationId: ids.nation, name: '비교부대' });
+        expect(result.messages).toContainEqual(
+            expect.objectContaining({
+                id: createdMessageId,
+                mailbox: ids.general,
+                type: 'private',
+                sourceId: ids.general,
+                destinationId: ids.general,
+                validUntil: 'infinite',
+                payload: { text: '비교 메시지' },
             })
         );
     });

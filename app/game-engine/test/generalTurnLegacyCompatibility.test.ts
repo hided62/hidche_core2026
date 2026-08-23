@@ -193,6 +193,34 @@ describe('legacy general-turn execution contract', () => {
         expect(resolved.meta).toMatchObject({ explevel: 25, dedlevel: 8 });
     });
 
+    it('preserves procurement-computed levels while emitting their Ref progression logs', () => {
+        const previous = makeGeneral({
+            experience: 995,
+            dedication: 899,
+            meta: { killturn: 24, explevel: 9, dedlevel: 3 },
+        });
+        const afterProcurement = makeGeneral({
+            experience: 1_005,
+            dedication: 901,
+            meta: { killturn: 24, explevel: 10, dedlevel: 4 },
+        });
+        const logs: Array<{ text: string }> = [];
+
+        const resolved = applyLegacyGeneralProgression(
+            afterProcurement,
+            previous,
+            'che_물자조달',
+            { maxStatLevel: 255, maxDedicationLevel: 30 } as never,
+            logs as never
+        );
+
+        expect(resolved.meta).toMatchObject({ explevel: 10, dedlevel: 4 });
+        expect(logs.map((entry) => entry.text)).toEqual([
+            '<C>Lv 10</>으로 <C>레벨업</>!',
+            '<Y>27품관</>으로 <C>승급</>하여 봉록이 <C>1,200</>으로 <C>상승</>했습니다!',
+        ]);
+    });
+
     it('quantizes integer general columns at each in-memory DB mutation boundary', async () => {
         const harness = await createTurnTestHarness({
             snapshot: makeSnapshot(makeGeneral()),
@@ -216,6 +244,23 @@ describe('legacy general-turn execution contract', () => {
             rice: 1_000,
             meta: { killturn: 24, dex4: 101, intel_exp: 30 },
         });
+    });
+
+    it('fails closed instead of silently resting on an unknown queued command', async () => {
+        const harness = await createTurnTestHarness({
+            snapshot: makeSnapshot(makeGeneral()),
+            state: makeState(),
+            schedule,
+            map,
+        });
+        harness.reservedTurnStore.getGeneralTurns(1)[0] = { action: 'unknown-command', args: {} };
+        const beforeGeneral = structuredClone(harness.world.getGeneralById(1));
+        const beforeTurns = structuredClone(harness.reservedTurnStore.getGeneralTurns(1));
+
+        await expect(harness.runOneTick()).rejects.toThrow('Unknown reserved general turn command: unknown-command');
+        expect(harness.world.getGeneralById(1)).toEqual(beforeGeneral);
+        expect(harness.reservedTurnStore.getGeneralTurns(1)).toEqual(beforeTurns);
+        expect(harness.world.peekDirtyState()).toMatchObject({ logs: [], messages: [] });
     });
 
     it('keeps fractional nation rewards in the same general object until the following command is persisted', async () => {

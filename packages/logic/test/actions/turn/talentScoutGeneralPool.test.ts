@@ -130,6 +130,7 @@ describe('talent scout scenario general pool', () => {
             imageServer: 1,
             role: { specialDomestic: null, specialWar: null },
             meta: {
+                npc_org: 3,
                 dex1: 12,
                 dex2: 24,
                 dex3: 36,

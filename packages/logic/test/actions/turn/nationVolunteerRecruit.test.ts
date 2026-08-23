@@ -109,16 +109,21 @@ describe('nation volunteer recruitment lifespan', () => {
             return;
         }
 
-        const created = createdEffect.general as General & { bornYear?: number; deadYear?: number };
+        const created = createdEffect.general as General & { affinity?: number; bornYear?: number; deadYear?: number };
         expect(created).toMatchObject({
             name: 'ⓖ장수',
+            affinity: 1,
             bornYear: 170,
             deadYear: 200,
             experience: 2_000,
             dedication: 2_000,
             meta: {
+                affinity: 1,
                 birthYear: 170,
                 deathYear: 200,
+                npc_org: 4,
+                explevel: 0,
+                dedlevel: 1,
             },
         });
     });

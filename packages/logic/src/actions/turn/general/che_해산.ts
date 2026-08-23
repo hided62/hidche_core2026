@@ -23,8 +23,7 @@ import type { GeneralTurnCommandSpec } from './index.js';
 const ACTION_NAME = '해산';
 const ACTION_KEY = 'che_해산';
 
-const readMetaNumber = (value: unknown): number =>
-    typeof value === 'number' && Number.isFinite(value) ? value : 0;
+const readMetaNumber = (value: unknown): number => (typeof value === 'number' && Number.isFinite(value) ? value : 0);
 
 export interface DisbandFactionArgs {}
 
@@ -77,7 +76,13 @@ export class ActionDefinition<
         const defaultGold = this.env.defaultNpcGold > 0 ? this.env.defaultNpcGold : 1000;
         const defaultRice = this.env.defaultNpcRice > 0 ? this.env.defaultNpcRice : 1000;
 
-        const nationGenerals = context.nationGenerals ?? [];
+        const nationGenerals = [...(context.nationGenerals ?? [])].sort((left, right) => {
+            const leftIsActor = left.id === general.id;
+            const rightIsActor = right.id === general.id;
+            if (leftIsActor !== rightIsActor) return leftIsActor ? 1 : -1;
+            return left.id - right.id;
+        });
+        const nonActorCount = nationGenerals.filter((targetGeneral) => targetGeneral.id !== general.id).length;
         for (const targetGeneral of nationGenerals) {
             const isActor = targetGeneral.id === general.id;
             const belong = readMetaNumber(targetGeneral.meta.belong);
@@ -148,6 +153,7 @@ export class ActionDefinition<
         context.addLog(`<D><b>${nation.name}</b></>${josaUl} 해산`, {
             scope: LogScope.GENERAL,
             category: LogCategory.HISTORY,
+            format: LogFormat.YEAR_MONTH,
         });
 
         const josaUn = JosaUtil.pick(nation.name, '은');
@@ -159,19 +165,22 @@ export class ActionDefinition<
                 format: LogFormat.YEAR_MONTH,
             })
         );
-        for (const targetGeneral of nationGenerals) {
+        for (const [targetIndex, targetGeneral] of nationGenerals.entries()) {
+            const legacyFlushGroup = targetGeneral.id === general.id ? undefined : targetIndex - nonActorCount;
             effects.push(
                 createLogEffect(`<D><b>${nation.name}</b></>${josaNationYi} <R>멸망</>했습니다.`, {
                     scope: LogScope.GENERAL,
                     category: LogCategory.ACTION,
                     format: LogFormat.PLAIN,
                     generalId: targetGeneral.id,
+                    ...(legacyFlushGroup === undefined ? {} : { legacyFlushGroup }),
                 }),
                 createLogEffect(`<D><b>${nation.name}</b></>${josaNationYi} <R>멸망</>`, {
                     scope: LogScope.GENERAL,
                     category: LogCategory.HISTORY,
                     format: LogFormat.YEAR_MONTH,
                     generalId: targetGeneral.id,
+                    ...(legacyFlushGroup === undefined ? {} : { legacyFlushGroup }),
                 })
             );
         }

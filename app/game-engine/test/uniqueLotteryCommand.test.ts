@@ -39,7 +39,11 @@ const buildGeneral = (id: number): TurnGeneral => ({
 describe('unique lottery on general commands', () => {
     it('awards a unique item for eligible commands', async () => {
         const schedule: TurnSchedule = { entries: [{ startMinute: 0, tickMinutes: 10 }] };
-        const generals = [buildGeneral(1)];
+        const lotteryGeneral = buildGeneral(1);
+        lotteryGeneral.experience = 995;
+        lotteryGeneral.dedication = 899;
+        lotteryGeneral.meta = { killturn: 24, explevel: 9, dedlevel: 3 };
+        const generals = [lotteryGeneral];
         const snapshot: TurnWorldSnapshot = {
             generals: generals as any,
             cities: [
@@ -172,6 +176,14 @@ describe('unique lottery on general commands', () => {
         expect(result.general?.role.items.weapon).toBe('che_무기_12_칠성검');
         const logTexts = (result.logs ?? []).map((entry) => entry.text);
         expect(logTexts.some((text) => text.includes('【아이템】'))).toBe(true);
+        const actionIndex = logTexts.findIndex((text) => text.includes('훈련'));
+        const levelIndex = logTexts.findIndex((text) => text.includes('레벨업'));
+        const dedicationIndex = logTexts.findIndex((text) => text.includes('승급'));
+        const uniqueIndex = logTexts.findIndex((text) => text.includes('습득했습니다'));
+        expect([actionIndex, levelIndex, dedicationIndex, uniqueIndex].every((index) => index >= 0)).toBe(true);
+        expect(actionIndex).toBeLessThan(levelIndex);
+        expect(levelIndex).toBeLessThan(dedicationIndex);
+        expect(dedicationIndex).toBeLessThan(uniqueIndex);
     });
 
     it('does not award a unique item reserved by an active auction', async () => {

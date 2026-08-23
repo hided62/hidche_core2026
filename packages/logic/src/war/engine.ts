@@ -3,7 +3,7 @@ import { JosaUtil, LiteHashDRBG, RandUtil } from '@sammo-ts/common';
 import type { City, GeneralTriggerState } from '@sammo-ts/logic/domain/entities.js';
 import { compileCrewTypeCatalog, isCrewTypeWarActionRouter } from '@sammo-ts/logic/crewType/catalog.js';
 import { ActionLogger } from '@sammo-ts/logic/logging/actionLogger.js';
-import { LogFormat } from '@sammo-ts/logic/logging/types.js';
+import { LogFormat, type LogEntryDraft } from '@sammo-ts/logic/logging/types.js';
 import { buildCrewTypeIndex as buildCrewTypeDefinitionIndex } from '@sammo-ts/logic/world/unitSet.js';
 import { WarActionPipeline, type WarActionModule } from './actions.js';
 import { createCrewTypeWarTriggerRegistry } from './crewTypeTriggers.js';
@@ -16,6 +16,7 @@ import type {
     WarGeneralInput,
     WarUnitReport,
 } from './types.js';
+import { LegacyWarLogFlushSequence } from './legacyFlushSequence.js';
 import { getMetaNumber } from './utils.js';
 import { WarUnitCity, WarUnitGeneral, type WarUnit } from './units.js';
 
@@ -240,20 +241,13 @@ const buildTraceUnitSnapshot = (unit: WarUnit, defenderCity: City): WarBattleTra
     };
 };
 
-const flushLoggers = (loggers: ActionLogger[]): Array<ReturnType<ActionLogger['flush']>[number]> => {
-    const logs: Array<ReturnType<ActionLogger['flush']>[number]> = [];
-    for (const logger of loggers) {
-        logs.push(...logger.flush());
-    }
-    return logs;
-};
-
 export const resolveWarBattle = <TriggerState extends GeneralTriggerState = GeneralTriggerState>(
     input: WarBattleInput<TriggerState>
 ): WarBattleOutcome<TriggerState> => {
     // process_war.php 전투 루프를 순수 로직으로 이식한다.
     const rng = input.rng ?? new RandUtil(LiteHashDRBG.build(input.seed ?? ''));
     const loggerFactory = input.loggerFactory ?? defaultLoggerFactory;
+    const legacyFlushSequence = input.legacyFlushSequence ?? new LegacyWarLogFlushSequence();
     const triggerRegistry: WarTriggerRegistry = {
         ...createCrewTypeWarTriggerRegistry(),
         ...(input.triggerRegistry ?? {}),
@@ -340,11 +334,21 @@ export const resolveWarBattle = <TriggerState extends GeneralTriggerState = Gene
     );
 
     const iter = defenderUnits.values();
+    const logs: LogEntryDraft[] = [];
 
     const getNextDefender = (
-        _prevDefender: WarUnit<TriggerState> | null,
+        prevDefender: WarUnit<TriggerState> | null,
         reqNext: boolean
     ): WarUnit<TriggerState> | null => {
+        if (prevDefender instanceof WarUnitGeneral) {
+            // Ref getNextDefender()는 다음 상대를 고르기 전에 직전 수비 장수의
+            // General::applyDB()를 호출해 그 logger만 먼저 flush한다.
+            logs.push(...legacyFlushSequence.flush(prevDefender.getLogger()));
+        } else if (prevDefender instanceof WarUnitCity) {
+            // WarUnitCity::applyDB()는 도시 logger를 rollback하므로 저장하지 않는다.
+            legacyFlushSequence.discard(prevDefender.getLogger());
+        }
+
         if (!reqNext) {
             return null;
         }
@@ -698,9 +702,11 @@ export const resolveWarBattle = <TriggerState extends GeneralTriggerState = Gene
             );
         }
     }
+    getNextDefender(defender, false);
     emitTrace('battle_end', defender, { conquered: conquerCity });
 
-    const logs = flushLoggers([attackerLogger, ...defenderGenerals.map((unit) => unit.getLogger())]);
+    // processWar()는 마지막 수비자 applyDB 뒤 공격자 applyDB를 별도 epoch으로 수행한다.
+    logs.push(...legacyFlushSequence.flush(attackerLogger));
 
     const reports: WarUnitReport[] = [
         resolveUnitReport(attackerUnit),

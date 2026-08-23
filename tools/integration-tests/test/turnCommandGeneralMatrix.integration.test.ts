@@ -1,8 +1,18 @@
 import { describe, expect, it } from 'vitest';
-import { asRecord, LEGACY_RANK_DATA_TYPES } from '@sammo-ts/common';
+import { asRecord, GAME_TICKS_PER_TURN, LEGACY_RANK_DATA_TYPES } from '@sammo-ts/common';
+import { GENERAL_TURN_COMMAND_KEYS } from '@sammo-ts/logic';
 
 import { compareTurnSnapshotDeltas } from '../src/turn-differential/compare.js';
 import { runCoreTurnCommandTrace, type TurnCommandFixtureRequest } from '../src/turn-differential/coreCommandTrace.js';
+import {
+    normalizeStoredTurnLogText as normalizeStoredLogText,
+    orderedSemanticLogStreams,
+} from '../src/turn-differential/logProjection.js';
+import {
+    projectSemanticTurnMessages,
+    projectSemanticUnreadMessageDeltas,
+    projectStrictTurnMessageTimeline,
+} from '../src/turn-differential/messageProjection.js';
 import {
     findTurnDifferentialWorkspaceRoot,
     runReferenceTurnCommandTraceRequest,
@@ -12,24 +22,8 @@ const configuredWorkspaceRoot = process.env.TURN_DIFFERENTIAL_WORKSPACE_ROOT;
 const workspaceRoot = configuredWorkspaceRoot ?? findTurnDifferentialWorkspaceRoot(process.cwd());
 const integration = describe.skipIf(!workspaceRoot || process.env.TURN_DIFFERENTIAL_REFERENCE !== '1');
 
-const normalizeStoredLogText = (value: unknown): string =>
-    String(value)
-        .replace(/^(?:<C>●<\/>|<S>◆<\/>|<R>★<\/>)(?:(?:\d+년 )?\d+월:|\d+년:)?/, '')
-        .replace(/ ?<1>\d{2}:\d{2}<\/>$/, '');
-
 const semanticLogSignatures = (logs: Array<Record<string, unknown>>): string[] =>
-    logs
-        .filter((entry) => normalizeStoredLogText(entry.text) !== '아무것도 실행하지 않았습니다.')
-        .map((entry) =>
-            JSON.stringify({
-                scope: String(entry.scope).toLowerCase(),
-                category: String(entry.category).toLowerCase(),
-                generalId: Number(entry.generalId) || null,
-                nationId: Number(entry.nationId) || null,
-                text: normalizeStoredLogText(entry.text),
-            })
-        )
-        .sort();
+    orderedSemanticLogStreams(logs, { omitRest: true });
 
 const addedReferenceLogs = (
     before: { watermarks: { logId: number; historyLogId: number } },
@@ -51,6 +45,20 @@ const ignoredLifecyclePaths = [
     /^logs/,
     /^messages/,
     /^world\.turnTime$/,
+    /^world\.gameNow$/,
+    /^generals\[[^\]]+\]\.(?:turnTime|recentWarTime|lastTurn|killTurn|mySet)(?:\.|$)/,
+    /^generals\[1\]\.(?:turnTick|turnSecond|turnFraction)$/,
+    /^generals\[[^\]]+\]\.meta(?:\.|$)/,
+    /^nations\[[^\]]+\]\.meta(?:\.|$)/,
+];
+
+const successfulLifecycleIgnoredPaths = [
+    /^nationTurns/,
+    /^logs/,
+    /^messages/,
+    /^world\.turnTime$/,
+    /^world\.gameNow$/,
+    /^generalTurns\[[^\]]+\]\.args(?:\.|$)/,
     /^generals\[[^\]]+\]\.(?:turnTime|recentWarTime|lastTurn|killTurn|mySet)(?:\.|$)/,
     /^generals\[[^\]]+\]\.meta(?:\.|$)/,
     /^nations\[[^\]]+\]\.meta(?:\.|$)/,
@@ -129,6 +137,7 @@ const buildRequest = (
             year: 190,
             month: 1,
             hiddenSeed: 'turn-command-general-matrix-v1',
+            freezeClock: true,
             ...fixturePatches.world,
         },
         nations: [
@@ -230,6 +239,10 @@ const buildRequest = (
         ],
     },
     observe: {
+        allGenerals: true,
+        allCities: true,
+        allNations: true,
+        allTroops: true,
         generalIds: [1, 2, 3],
         cityIds: [
             3,
@@ -238,6 +251,8 @@ const buildRequest = (
         ],
         nationIds: [1, 2],
         logAfterId: 0,
+        includeNationHistoryLogs: true,
+        includeGlobalHistoryLogs: true,
         messageAfterId: 0,
     },
 });
@@ -286,6 +301,58 @@ const cases: Array<
     ],
     ['che_전투특기초기화', undefined, { specialWar: 'che_귀병', lastTurn: { command: '전투 특기 초기화', term: 1 } }],
     ['che_장비매매', { itemType: 'weapon', itemCode: 'che_무기_01_단도' }, undefined],
+    [
+        'che_출병',
+        { destCityID: 70 },
+        { leadership: 100, strength: 100, intelligence: 100, crew: 10_000, train: 100, atmos: 100 },
+        {
+            world: { startYear: 180, year: 185 },
+            nations: { 2: { capitalCityId: 71, generalCount: 2 } },
+            cities: { 70: { population: 10_000, defence: 1, wall: 1 } },
+            generals: {
+                2: {
+                    cityId: 71,
+                    officerLevel: 1,
+                    officerCityId: 0,
+                    rice: 10_000,
+                    crew: 0,
+                    train: 0,
+                    atmos: 0,
+                    npcState: 2,
+                },
+                3: {
+                    nationId: 2,
+                    cityId: 71,
+                    officerLevel: 12,
+                    officerCityId: 71,
+                    rice: 10_000,
+                    crew: 0,
+                    train: 0,
+                    atmos: 0,
+                    npcState: 2,
+                },
+            },
+            additionalCities: [
+                {
+                    id: 71,
+                    nationId: 2,
+                    population: 100_000,
+                    populationMax: 200_000,
+                    agriculture: 1_000,
+                    commerce: 1_000,
+                    security: 1_000,
+                    defence: 5_000,
+                    wall: 5_000,
+                    supplyState: 1,
+                    frontState: 1,
+                    state: 0,
+                    term: 0,
+                    trust: 80,
+                    trade: 100,
+                },
+            ],
+        },
+    ],
     ['che_하야', undefined, { officerLevel: 1 }],
     ['che_은퇴', undefined, { age: 60, lastTurn: { command: '은퇴', term: 1 } }],
     [
@@ -372,6 +439,7 @@ integration('general command success matrix', () => {
         '%s matches the legacy state delta and command RNG',
         async (action, args, actorPatch, fixturePatches) => {
             const request = buildRequest(action, args, actorPatch, fixturePatches);
+            request.includeLifecycle = true;
             const reference = runReferenceTurnCommandTraceRequest(
                 workspaceRoot!,
                 request as unknown as Record<string, unknown>
@@ -390,14 +458,14 @@ integration('general command success matrix', () => {
                                 reference.after,
                                 reference.before,
                                 reference.before,
-                                { ignoredPathPatterns: ignoredLifecyclePaths }
+                                { ignoredPathPatterns: successfulLifecycleIgnoredPaths }
                             ).filter((entry) => entry.path.startsWith('generals')),
                             coreGeneralDelta: compareTurnSnapshotDeltas(
                                 core.before,
                                 core.after,
                                 core.before,
                                 core.before,
-                                { ignoredPathPatterns: ignoredLifecyclePaths }
+                                { ignoredPathPatterns: successfulLifecycleIgnoredPaths }
                             ).filter((entry) => entry.path.startsWith('generals')),
                             referenceGenerals: reference.after.generals,
                             coreGenerals: core.after.generals,
@@ -416,29 +484,91 @@ integration('general command success matrix', () => {
             expect(reference.execution.outcome).toMatchObject({ completed: true });
             expect(core.execution.outcome).not.toHaveProperty('blockedReason');
             expect(core.rng).toEqual(reference.rng);
+
+            const actorGeneralId = request.actorGeneralId;
+            const referenceBeforeActor = reference.before.generals.find((general) => general.id === actorGeneralId);
+            const referenceAfterActor = reference.after.generals.find((general) => general.id === actorGeneralId);
+            const coreBeforeActor = core.before.generals.find((general) => general.id === actorGeneralId);
+            const coreAfterActor = core.after.generals.find((general) => general.id === actorGeneralId);
+            const actorTurnAt = (turns: Array<Record<string, unknown>>, turnIndex: number) =>
+                turns.find((turn) => turn.generalId === actorGeneralId && turn.turnIndex === turnIndex);
+            expect(actorTurnAt(reference.before.generalTurns, 0)?.action).toBe(action);
+            expect(actorTurnAt(core.before.generalTurns, 0)?.action).toBe(action);
+            if (referenceAfterActor) {
+                expect(actorTurnAt(reference.after.generalTurns, 0)?.action).toBe('휴식');
+                expect(actorTurnAt(core.after.generalTurns, 0)?.action).toBe('휴식');
+                expect(Number(referenceAfterActor.turnTick) - Number(referenceBeforeActor?.turnTick)).toBe(
+                    GAME_TICKS_PER_TURN
+                );
+                expect(Number(coreAfterActor?.turnTick) - Number(coreBeforeActor?.turnTick)).toBe(GAME_TICKS_PER_TURN);
+            } else {
+                expect(coreAfterActor).toBeUndefined();
+                expect(actorTurnAt(reference.after.generalTurns, 0)).toBeUndefined();
+                expect(actorTurnAt(core.after.generalTurns, 0)).toBeUndefined();
+            }
             expect(
                 compareTurnSnapshotDeltas(reference.before, reference.after, core.before, core.after, {
-                    ignoredPathPatterns: ignoredLifecyclePaths,
+                    ignoredPathPatterns: successfulLifecycleIgnoredPaths,
                 })
             ).toEqual([]);
+
+            // Logs and messages live outside the generic state-delta graph.
+            // Assert both for every registered success case so a command cannot
+            // stay green merely because those paths are excluded above.
+            expect(semanticLogSignatures(addedReferenceLogs(core.before, core.after.logs))).toEqual(
+                semanticLogSignatures(addedReferenceLogs(reference.before, reference.after.logs))
+            );
+            const messageAfterId = reference.before.watermarks.messageId;
+            const coreTimeline = projectStrictTurnMessageTimeline(core.before, core.after, messageAfterId);
+            const referenceTimeline = projectStrictTurnMessageTimeline(
+                reference.before,
+                reference.after,
+                messageAfterId
+            );
+            expect({
+                unreadDeltas: projectSemanticUnreadMessageDeltas(core.before, core.after),
+                messages: projectSemanticTurnMessages(core.after.messages, messageAfterId),
+                timeline: coreTimeline,
+            }).toEqual({
+                unreadDeltas: projectSemanticUnreadMessageDeltas(reference.before, reference.after),
+                messages: projectSemanticTurnMessages(reference.after.messages, messageAfterId),
+                timeline: referenceTimeline,
+            });
+            expect(referenceTimeline.usesSingleTick).toBe(true);
             if (action === 'che_이동' || action === 'che_강행') {
                 const actionLogSuffix = action === 'che_이동' ? '이동했습니다.' : '강행했습니다.';
-                expect(
-                    semanticLogSignatures(
-                        core.after.logs.filter((entry) => String(entry.text).includes(actionLogSuffix))
-                    )
-                ).toEqual(
-                    semanticLogSignatures(
-                        addedReferenceLogs(reference.before, reference.after.logs).filter((entry) =>
-                            String(entry.text).includes(actionLogSuffix)
-                        )
-                    )
-                );
                 expect(core.after.logs.some((entry) => String(entry.text).includes('도시('))).toBe(false);
+                expect(
+                    addedReferenceLogs(reference.before, reference.after.logs).some((entry) =>
+                        String(entry.text).includes(actionLogSuffix)
+                    )
+                ).toBe(true);
             }
         },
         120_000
     );
+});
+
+integration('turn command fixture clock validation', () => {
+    it('rejects a non-boolean setup.world.freezeClock', () => {
+        const request = buildRequest('휴식');
+        const setup = request.setup!;
+        const world = setup.world!;
+        const invalidRequest = {
+            ...request,
+            setup: {
+                ...setup,
+                world: {
+                    ...world,
+                    freezeClock: 'yes',
+                },
+            },
+        };
+
+        expect(() =>
+            runReferenceTurnCommandTraceRequest(workspaceRoot!, invalidRequest as unknown as Record<string, unknown>)
+        ).toThrow(/setup\.world\.freezeClock must be a boolean/);
+    });
 });
 
 type GeneralActiveActionInheritanceCase = {
@@ -4229,4 +4359,13 @@ integration('general command full-constraint fallback matrix', () => {
         },
         120_000
     );
+});
+
+describe('general command success matrix manifest', () => {
+    it('covers every registered general command exactly once', () => {
+        const matrixActions = cases.map(([action]) => action);
+
+        expect(new Set(matrixActions).size).toBe(matrixActions.length);
+        expect([...matrixActions].sort()).toEqual([...GENERAL_TURN_COMMAND_KEYS].sort());
+    });
 });

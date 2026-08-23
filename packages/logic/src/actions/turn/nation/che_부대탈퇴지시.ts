@@ -90,8 +90,9 @@ export class ActionDefinition<
             createLogEffect(`<Y>${general.name}</>에게 부대 탈퇴를 지시 받았습니다.`, {
                 scope: LogScope.GENERAL,
                 category: LogCategory.ACTION,
-                format: LogFormat.PLAIN,
+                format: LogFormat.MONTH,
                 generalId: destGeneral.id,
+                legacyFlushGroup: 1,
             })
         );
 

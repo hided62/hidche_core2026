@@ -3,6 +3,7 @@ import type { City, General, Nation } from '../../../src/domain/entities.js';
 import type { ConstraintContext, RequirementKey, StateView } from '../../../src/constraints/types.js';
 import { evaluateConstraints } from '../../../src/constraints/evaluate.js';
 import { resolveGeneralAction } from '../../../src/actions/engine.js';
+import { orderLegacyActionLoggerFlush } from '../../../src/logging/actionLogger.js';
 import type { MapDefinition } from '../../../src/world/types.js';
 import type { TurnSchedule } from '../../../src/turn/calendar.js';
 import type { TurnCommandEnv } from '../../../src/actions/turn/commandEnv.js';
@@ -355,6 +356,8 @@ describe('Nation Missing Actions', () => {
         expect(definition.parseArgs({ destNationId: 2, amountList: [-1, 10] })).toBeNull();
 
         const general = buildGeneral(1, 1, 1);
+        const sourceChief = buildGeneral(2, 1, 1, 'SourceChief');
+        const destChief = buildGeneral(3, 2, 2, 'DestChief');
         const nation = { ...buildNation(1), gold: 1000, rice: 1000 };
         const destNation = { ...buildNation(2), gold: 100, rice: 100 };
         const resolution = resolveGeneralAction(
@@ -364,8 +367,8 @@ describe('Nation Missing Actions', () => {
                 city: buildCity(1, 1),
                 nation,
                 destNation,
-                friendlyChiefs: [general],
-                destNationChiefs: [],
+                friendlyChiefs: [general, sourceChief],
+                destNationChiefs: [destChief],
                 rng: {} as any,
                 addLog: () => {},
             } as any,
@@ -388,6 +391,16 @@ describe('Nation Missing Actions', () => {
                 }),
             }),
         });
+
+        const orderedLogs = orderLegacyActionLoggerFlush(resolution.logs);
+        expect(orderedLogs.map((log) => log.legacyFlushGroup ?? 0)).toEqual([-1, -1, 0, 0, 0, 0, 0, 1]);
+        expect(orderedLogs.slice(0, 2).map((log) => log.generalId)).toEqual([sourceChief.id, destChief.id]);
+        expect(orderedLogs.at(-1)).toEqual(
+            expect.objectContaining({
+                nationId: destNation.id,
+                legacyFlushGroup: 1,
+            })
+        );
     });
 
     it('che_초토화: blocks when diplomacy limit exists', () => {

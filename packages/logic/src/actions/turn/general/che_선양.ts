@@ -7,11 +7,7 @@ import type {
     GeneralActionOutcome,
     GeneralActionResolveContext,
 } from '@sammo-ts/logic/actions/engine.js';
-import {
-    createGeneralPatchEffect,
-    createLogEffect,
-    createNationPatchEffect,
-} from '@sammo-ts/logic/actions/engine.js';
+import { createGeneralPatchEffect, createLogEffect, createNationPatchEffect } from '@sammo-ts/logic/actions/engine.js';
 import { LogCategory, LogFormat, LogScope } from '@sammo-ts/logic/logging/types.js';
 import { JosaUtil } from '@sammo-ts/common';
 import { z } from 'zod';
@@ -107,11 +103,13 @@ export class ActionDefinition<
             {
                 scope: LogScope.SYSTEM,
                 category: LogCategory.HISTORY,
+                format: LogFormat.YEAR_MONTH,
             }
         );
         context.addLog(`<Y>${general.name}</>${josaYi} <Y>${destGeneral.name}</>에게 선양`, {
             scope: LogScope.NATION,
             category: LogCategory.HISTORY,
+            format: LogFormat.YEAR_MONTH,
         });
         context.addLog(`<Y>${destGeneral.name}</>에게 군주의 자리를 물려줍니다.`, {
             scope: LogScope.GENERAL,
@@ -121,6 +119,7 @@ export class ActionDefinition<
         context.addLog(`<D><b>${nation.name}</b></>의 군주자리를 <Y>${destGeneral.name}</>에게 선양`, {
             scope: LogScope.GENERAL,
             category: LogCategory.HISTORY,
+            format: LogFormat.YEAR_MONTH,
         });
 
         effects.push(
@@ -128,13 +127,15 @@ export class ActionDefinition<
                 scope: LogScope.GENERAL,
                 generalId: destGeneral.id,
                 category: LogCategory.ACTION,
-                format: LogFormat.PLAIN,
+                format: LogFormat.MONTH,
+                legacyFlushGroup: 1,
             }),
             createLogEffect(`<D><b>${nation.name}</b></>의 군주자리를 물려 받음`, {
                 scope: LogScope.GENERAL,
                 generalId: destGeneral.id,
                 category: LogCategory.HISTORY,
-                format: LogFormat.PLAIN,
+                format: LogFormat.YEAR_MONTH,
+                legacyFlushGroup: 1,
             }),
             createGeneralPatchEffect(
                 {

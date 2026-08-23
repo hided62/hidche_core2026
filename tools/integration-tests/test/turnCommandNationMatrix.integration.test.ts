@@ -5,6 +5,15 @@ import { NATION_TURN_COMMAND_KEYS } from '@sammo-ts/logic';
 import { compareTurnSnapshotDeltas } from '../src/turn-differential/compare.js';
 import { runCoreTurnCommandTrace, type TurnCommandFixtureRequest } from '../src/turn-differential/coreCommandTrace.js';
 import {
+    normalizeStoredTurnLogText as normalizeStoredLogText,
+    orderedSemanticLogStreams,
+} from '../src/turn-differential/logProjection.js';
+import {
+    projectSemanticTurnMessages,
+    projectSemanticUnreadMessageDeltas,
+    projectStrictTurnMessageTimeline,
+} from '../src/turn-differential/messageProjection.js';
+import {
     findTurnDifferentialWorkspaceRoot,
     runReferenceTurnCommandTraceRequest,
 } from '../src/turn-differential/referenceSnapshot.js';
@@ -35,23 +44,7 @@ const timestampMillis = (value: unknown): number => {
     return new Date(normalized).getTime();
 };
 
-const normalizeStoredLogText = (value: unknown): string =>
-    String(value)
-        .replace(/^(?:<C>●<\/>|<S>◆<\/>|<R>★<\/>)(?:(?:\d+년 )?\d+월:|\d+년:)?/, '')
-        .replace(/ ?<1>\d{2}:\d{2}<\/>$/, '');
-
-const semanticLogSignatures = (logs: Array<Record<string, unknown>>): string[] =>
-    logs
-        .map((entry) =>
-            JSON.stringify({
-                scope: String(entry.scope).toLowerCase(),
-                category: String(entry.category).toLowerCase(),
-                generalId: Number(entry.generalId) || null,
-                nationId: Number(entry.nationId) || null,
-                text: normalizeStoredLogText(entry.text),
-            })
-        )
-        .sort();
+const semanticLogSignatures = (logs: Array<Record<string, unknown>>): string[] => orderedSemanticLogStreams(logs);
 
 const nationCommandLogs = (logs: Array<Record<string, unknown>>): Array<Record<string, unknown>> =>
     logs.filter((entry) => normalizeStoredLogText(entry.text) !== '아무것도 실행하지 않았습니다.');
@@ -62,7 +55,9 @@ const ignoredLifecyclePaths = [
     /^logs/,
     /^messages/,
     /^world\.turnTime$/,
+    /^world\.gameNow$/,
     /^generals\[[^\]]+\]\.(?:turnTime|recentWarTime|lastTurn|killTurn|mySet)(?:\.|$)/,
+    /^generals\[1\]\.(?:turnTick|turnSecond|turnFraction)$/,
     /^generals\[[^\]]+\]\.meta(?:\.|$)/,
     /^nations\[[^\]]+\]\.meta\.(?:turn_last_\d+|next_execute_.+|capset|tech|gennum|war|surlimit|strategic_cmd_limit)(?:\.|$)/,
 ];
@@ -211,6 +206,7 @@ const buildRequest = (
             year: 190,
             month: 1,
             hiddenSeed: 'turn-command-nation-matrix-v1',
+            freezeClock: true,
             ...fixturePatches.world,
         },
         nations: [
@@ -364,6 +360,10 @@ const buildRequest = (
         ],
     },
     observe: {
+        allGenerals: true,
+        allCities: true,
+        allNations: true,
+        allTroops: true,
         generalIds: [
             1,
             2,
@@ -430,6 +430,8 @@ const buildRequest = (
               }
             : {}),
         logAfterId: 0,
+        includeNationHistoryLogs: true,
+        includeGlobalHistoryLogs: true,
         messageAfterId: 0,
     },
 });
@@ -647,7 +649,10 @@ const cases: NationMatrixCase[] = [
 
 describe('nation command differential coverage manifest', () => {
     it('keeps one successful Ref/Core case for every registered nation turn command', () => {
-        expect(new Set(cases.map(([action]) => action))).toEqual(new Set(NATION_TURN_COMMAND_KEYS));
+        const matrixActions = cases.map(([action]) => action);
+
+        expect(new Set(matrixActions).size).toBe(matrixActions.length);
+        expect([...matrixActions].sort()).toEqual([...NATION_TURN_COMMAND_KEYS].sort());
     });
 });
 
@@ -732,6 +737,30 @@ integration('nation command success matrix', () => {
                     ignoredPathPatterns: ignoredLifecyclePaths,
                 })
             ).toEqual([]);
+
+            // Ref persists logs in two independent ID streams and messages in
+            // per-mailbox rows, so they are excluded from the state comparator.
+            // Compare those observable graphs for every registered command.
+            expect(semanticLogSignatures(nationCommandLogs(addedReferenceLogs(core.before, core.after.logs)))).toEqual(
+                semanticLogSignatures(nationCommandLogs(addedReferenceLogs(reference.before, reference.after.logs)))
+            );
+            const messageAfterId = reference.before.watermarks.messageId;
+            const coreTimeline = projectStrictTurnMessageTimeline(core.before, core.after, messageAfterId);
+            const referenceTimeline = projectStrictTurnMessageTimeline(
+                reference.before,
+                reference.after,
+                messageAfterId
+            );
+            expect({
+                unreadDeltas: projectSemanticUnreadMessageDeltas(core.before, core.after),
+                messages: projectSemanticTurnMessages(core.after.messages, messageAfterId),
+                timeline: coreTimeline,
+            }).toEqual({
+                unreadDeltas: projectSemanticUnreadMessageDeltas(reference.before, reference.after),
+                messages: projectSemanticTurnMessages(reference.after.messages, messageAfterId),
+                timeline: referenceTimeline,
+            });
+            expect(referenceTimeline.usesSingleTick).toBe(true);
             const researchConfig = researchConfigs[action];
             if (researchConfig) {
                 for (const snapshot of [reference, core]) {
@@ -1291,6 +1320,24 @@ integration('nation diplomacy proposal boundary and message parity', () => {
                 })
             ).toEqual([]);
 
+            const messageAfterId = reference.before.watermarks.messageId;
+            const coreTimeline = projectStrictTurnMessageTimeline(core.before, core.after, messageAfterId);
+            const referenceTimeline = projectStrictTurnMessageTimeline(
+                reference.before,
+                reference.after,
+                messageAfterId
+            );
+            expect({
+                unreadDeltas: projectSemanticUnreadMessageDeltas(core.before, core.after),
+                messages: projectSemanticTurnMessages(core.after.messages, messageAfterId),
+                timeline: coreTimeline,
+            }).toEqual({
+                unreadDeltas: projectSemanticUnreadMessageDeltas(reference.before, reference.after),
+                messages: projectSemanticTurnMessages(reference.after.messages, messageAfterId),
+                timeline: referenceTimeline,
+            });
+            expect(referenceTimeline.usesSingleTick).toBe(true);
+
             const referenceMessages = reference.after.messages.slice(reference.before.messages.length);
             if (!completed) {
                 expect(referenceMessages).toEqual([]);
@@ -1319,10 +1366,12 @@ integration('nation diplomacy proposal boundary and message parity', () => {
                     option: expected.option,
                 },
             });
-            expect(core.after.messages).toHaveLength(1);
-            expect(core.after.messages[0]).toMatchObject({
+            expect(core.after.messages).toHaveLength(2);
+            expect(core.after.messages.find((entry) => entry.mailbox === 9002)).toMatchObject({
+                type: expected.type,
+                sourceId: 9001,
+                destinationId: 9002,
                 payload: {
-                    msgType: expected.type,
                     src: { nationId: 1, nationName: sourceNation?.name },
                     dest: { nationId: 2, nationName: destinationNation?.name },
                     text: expected.text,
@@ -2819,7 +2868,14 @@ integration('nation seizure NPC public message parity', () => {
             { isGold: true, amount: 100, destGeneralID: 3 },
             {
                 world: { hiddenSeed: 'seizure-message-37' },
-                generals: { 3: { name: '몰수NPC', npcState: 2 } },
+                generals: {
+                    3: {
+                        name: '몰수NPC',
+                        npcState: 2,
+                        picture: 'npc/custom.png',
+                        imageServer: 0,
+                    },
+                },
             }
         );
         const reference = runReferenceTurnCommandTraceRequest(
@@ -2835,22 +2891,62 @@ integration('nation seizure NPC public message parity', () => {
         const referenceMessages = reference.after.messages.slice(reference.before.messages.length);
         expect(referenceMessages).toHaveLength(1);
         expect(core.after.messages).toHaveLength(1);
+        const messageAfterId = reference.before.watermarks.messageId;
+        const coreTimeline = projectStrictTurnMessageTimeline(core.before, core.after, messageAfterId);
+        const referenceTimeline = projectStrictTurnMessageTimeline(reference.before, reference.after, messageAfterId);
+        expect({
+            unreadDeltas: projectSemanticUnreadMessageDeltas(core.before, core.after),
+            messages: projectSemanticTurnMessages(core.after.messages, messageAfterId),
+            timeline: coreTimeline,
+        }).toEqual({
+            unreadDeltas: projectSemanticUnreadMessageDeltas(reference.before, reference.after),
+            messages: projectSemanticTurnMessages(reference.after.messages, messageAfterId),
+            timeline: referenceTimeline,
+        });
+        expect(referenceTimeline.usesSingleTick).toBe(true);
         expect(referenceMessages[0]).toMatchObject({
             mailbox: 9999,
             type: 'public',
             sourceId: 3,
             destinationId: 9999,
             payload: {
-                src: { id: 3, name: '몰수NPC', nation_id: 1, nation: '아국' },
-                dest: { id: 3, name: '몰수NPC', nation_id: 1, nation: '아국' },
+                src: {
+                    id: 3,
+                    name: '몰수NPC',
+                    nation_id: 1,
+                    nation: '아국',
+                    icon: 'https://dev-sam-ref.hided.net/image/icons/npc/custom.png',
+                },
+                dest: {
+                    id: 3,
+                    name: '몰수NPC',
+                    nation_id: 1,
+                    nation: '아국',
+                    icon: 'https://dev-sam-ref.hided.net/image/icons/npc/custom.png',
+                },
                 text: NPC_SEIZURE_MESSAGE_TEXT,
             },
         });
         expect(core.after.messages[0]).toMatchObject({
+            mailbox: 9999,
+            type: 'public',
+            sourceId: 3,
+            destinationId: 9999,
             payload: {
-                msgType: 'public',
-                src: { generalId: 3, generalName: '몰수NPC', nationId: 1, nationName: '아국' },
-                dest: { generalId: 3, generalName: '몰수NPC', nationId: 1, nationName: '아국' },
+                src: {
+                    generalId: 3,
+                    generalName: '몰수NPC',
+                    nationId: 1,
+                    nationName: '아국',
+                    icon: 'https://dev-sam-ref.hided.net/image/icons/npc/custom.png',
+                },
+                dest: {
+                    generalId: 3,
+                    generalName: '몰수NPC',
+                    nationId: 1,
+                    nationName: '아국',
+                    icon: 'https://dev-sam-ref.hided.net/image/icons/npc/custom.png',
+                },
                 text: NPC_SEIZURE_MESSAGE_TEXT,
             },
         });
@@ -2919,13 +3015,27 @@ integration('nation seizure zero target balance parity', () => {
         expect(core.rng).toEqual(reference.rng);
         expect(referenceMessages).toHaveLength(1);
         expect(core.after.messages).toHaveLength(1);
+        const messageAfterId = reference.before.watermarks.messageId;
+        const coreTimeline = projectStrictTurnMessageTimeline(core.before, core.after, messageAfterId);
+        const referenceTimeline = projectStrictTurnMessageTimeline(reference.before, reference.after, messageAfterId);
+        expect({
+            unreadDeltas: projectSemanticUnreadMessageDeltas(core.before, core.after),
+            messages: projectSemanticTurnMessages(core.after.messages, messageAfterId),
+            timeline: coreTimeline,
+        }).toEqual({
+            unreadDeltas: projectSemanticUnreadMessageDeltas(reference.before, reference.after),
+            messages: projectSemanticTurnMessages(reference.after.messages, messageAfterId),
+            timeline: referenceTimeline,
+        });
+        expect(referenceTimeline.usesSingleTick).toBe(true);
         expect(referenceMessages[0]).toMatchObject({
             type: 'public',
             sourceId: 3,
             payload: { text: NPC_SEIZURE_MESSAGE_TEXT },
         });
         expect(core.after.messages[0]).toMatchObject({
-            payload: { msgType: 'public', text: NPC_SEIZURE_MESSAGE_TEXT },
+            type: 'public',
+            payload: { text: NPC_SEIZURE_MESSAGE_TEXT },
         });
         expect(
             compareTurnSnapshotDeltas(reference.before, reference.after, core.before, core.after, {

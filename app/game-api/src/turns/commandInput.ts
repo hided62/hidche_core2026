@@ -1,4 +1,6 @@
 import {
+    isGeneralTurnCommandKey,
+    isNationTurnCommandKey,
     loadGeneralTurnCommandSpecs,
     loadNationTurnCommandSpecs,
     type GeneralTurnCommandSpec,
@@ -9,7 +11,7 @@ import type { ItemModule } from '@sammo-ts/logic/items/types.js';
 import { resolveLegacyPurchasableItemKeys } from '@sammo-ts/logic/rewards/legacyUniqueItemPool.js';
 import { z } from 'zod';
 
-import { loadTurnCommandProfile } from '@sammo-ts/game-engine/turn/turnCommandProfile.js';
+import { loadScenarioTurnCommandProfile } from '@sammo-ts/game-engine/turn/turnCommandProfile.js';
 
 export type TurnCommandOptionValue = string | number;
 
@@ -345,22 +347,35 @@ export const buildTurnCommandInputFields = (
     return Object.entries(properties).map(([key, schema]) => buildField(key, schema, required.has(key)));
 };
 
-export const loadTurnCommandSpecs = async () => {
-    const profile = await loadTurnCommandProfile();
+export const loadTurnCommandSpecs = async (scenarioConst?: unknown) => {
+    const resolution = await loadScenarioTurnCommandProfile({ scenarioConst });
+    const profile = resolution.profile;
     const [general, nation] = await Promise.all([
         loadGeneralTurnCommandSpecs(profile.general),
         loadNationTurnCommandSpecs(profile.nation),
     ]);
-    return { general, nation };
+    return {
+        general,
+        nation,
+        generalGroups: resolution.generalGroups,
+        nationGroups: resolution.nationGroups,
+    };
 };
 
-export const parseReservedTurnArgs = async (
+export const parseRegisteredTurnArgs = async (
     scope: 'general' | 'nation',
     action: string,
     rawArgs: unknown
 ): Promise<Record<string, unknown>> => {
-    const specs = await loadTurnCommandSpecs();
-    const spec = specs[scope].find((entry) => entry.key === action);
+    const specs =
+        scope === 'general'
+            ? isGeneralTurnCommandKey(action)
+                ? await loadGeneralTurnCommandSpecs([action])
+                : []
+            : isNationTurnCommandKey(action)
+              ? await loadNationTurnCommandSpecs([action])
+              : [];
+    const spec = specs[0];
     if (!spec) {
         throw new Error(`Unknown ${scope} turn command: ${action}`);
     }
@@ -368,4 +383,25 @@ export const parseReservedTurnArgs = async (
         return {};
     }
     return spec.argsSchema.parse(rawArgs);
+};
+
+export const assertReservedTurnActionAvailable = async (
+    scope: 'general' | 'nation',
+    action: string,
+    scenarioConst?: unknown
+): Promise<void> => {
+    const specs = await loadTurnCommandSpecs(scenarioConst);
+    if (!specs[scope].some((entry) => entry.key === action)) {
+        throw new Error(`Unknown ${scope} turn command: ${action}`);
+    }
+};
+
+export const parseReservedTurnArgs = async (
+    scope: 'general' | 'nation',
+    action: string,
+    rawArgs: unknown,
+    scenarioConst?: unknown
+): Promise<Record<string, unknown>> => {
+    await assertReservedTurnActionAvailable(scope, action, scenarioConst);
+    return parseRegisteredTurnArgs(scope, action, rawArgs);
 };

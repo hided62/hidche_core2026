@@ -13,8 +13,8 @@ import type {
     GeneralActionResolver,
     GeneralActionEffect,
 } from '@sammo-ts/logic/actions/engine.js';
-import { createGeneralPatchEffect } from '@sammo-ts/logic/actions/engine.js';
-import { LogCategory, LogFormat } from '@sammo-ts/logic/logging/types.js';
+import { createGeneralPatchEffect, createLogEffect } from '@sammo-ts/logic/actions/engine.js';
+import { LogCategory, LogFormat, LogScope } from '@sammo-ts/logic/logging/types.js';
 import { JosaUtil } from '@sammo-ts/common';
 import { z } from 'zod';
 import type { TurnCommandEnv } from '@sammo-ts/logic/actions/turn/commandEnv.js';
@@ -113,6 +113,17 @@ export class ActionResolver<
                     target.id
                 )
             );
+            if (!isSelf) {
+                effects.push(
+                    createLogEffect(`방랑군 세력이 <G><b>${destCityName}</b></>${josaRo} 이동했습니다.`, {
+                        scope: LogScope.GENERAL,
+                        category: LogCategory.ACTION,
+                        generalId: target.id,
+                        format: LogFormat.PLAIN,
+                        legacyFlushGroup: -1,
+                    })
+                );
+            }
         }
 
         return { effects };

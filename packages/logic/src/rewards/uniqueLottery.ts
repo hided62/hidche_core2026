@@ -334,27 +334,28 @@ const applyUniqueItemGain = <TriggerState extends GeneralTriggerState = GeneralT
     const itemRawName = itemModule.rawName;
     const josaYi = JosaUtil.pick(generalName, '이');
     const josaUl = JosaUtil.pick(itemRawName, '을');
+    const addLog = context.addPostProgressionLog ?? context.addLog;
 
     equipNewItem(general, itemModule.slot, itemModule.key, {
         ...(itemModule.initialCharges === undefined ? {} : { charges: itemModule.initialCharges }),
     });
 
-    context.addLog(`<C>${itemName}</>${josaUl} 습득했습니다!`, {
+    addLog(`<C>${itemName}</>${josaUl} 습득했습니다!`, {
         scope: LogScope.GENERAL,
         category: LogCategory.ACTION,
         format: LogFormat.MONTH,
     });
-    context.addLog(`<C>${itemName}</>${josaUl} 습득`, {
+    addLog(`<C>${itemName}</>${josaUl} 습득`, {
         scope: LogScope.GENERAL,
         category: LogCategory.HISTORY,
         format: LogFormat.YEAR_MONTH,
     });
-    context.addLog(`<Y>${generalName}</>${josaYi} <C>${itemName}</>${josaUl} 습득했습니다!`, {
+    addLog(`<Y>${generalName}</>${josaYi} <C>${itemName}</>${josaUl} 습득했습니다!`, {
         scope: LogScope.SYSTEM,
         category: LogCategory.SUMMARY,
         format: LogFormat.MONTH,
     });
-    context.addLog(
+    addLog(
         `<C><b>【${acquireType}】</b></><D><b>${nationName}</b></>의 <Y>${generalName}</>${josaYi} <C>${itemName}</>${josaUl} 습득했습니다!`,
         {
             scope: LogScope.SYSTEM,
@@ -376,6 +377,6 @@ export const tryApplyUniqueLottery = <TriggerState extends GeneralTriggerState =
     if (!itemModule) {
         return false;
     }
-    applyUniqueItemGain(context, itemModule, request.acquireType, request.nationName);
+    applyUniqueItemGain(context, itemModule, request.acquireType, request.nationName ?? context.legacyStaticNationName);
     return true;
 };

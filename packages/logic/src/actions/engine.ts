@@ -28,12 +28,15 @@ export interface GeneralActionResolveContext<
     rng: RandomGenerator;
     city?: City;
     nation?: Nation | null;
+    /** Ref General이 한 장수 lifecycle 동안 유지하는 정적 국가 조회값. */
+    legacyStaticNationName?: string;
     addLog(message: string, options?: Partial<Omit<LogEntryDraft, 'text'>>): void;
+    addPostProgressionLog?(message: string, options?: Partial<Omit<LogEntryDraft, 'text'>>): void;
 }
 
 export type GeneralActionResolveInputContext<TriggerState extends GeneralTriggerState = GeneralTriggerState> = Omit<
     GeneralActionResolveContext<TriggerState>,
-    'addLog'
+    'addLog' | 'addPostProgressionLog'
 >;
 
 export interface TurnScheduleContext {
@@ -125,6 +128,7 @@ export interface GeneralActionResolution {
     completed: boolean;
     nextTurnAt: Date;
     logs: LogEntryDraft[];
+    postProgressionLogs: LogEntryDraft[];
     effects: GeneralActionEffect[];
     destroyedNationIds?: NationId[];
     created?: {
@@ -216,6 +220,7 @@ export const createLogEffect = (message: string, options: Partial<Omit<LogEntryD
         ...(options.userId !== undefined ? { userId: options.userId } : {}),
         ...(options.subType !== undefined ? { subType: options.subType } : {}),
         ...(options.meta !== undefined ? { meta: options.meta } : {}),
+        ...(options.legacyFlushGroup !== undefined ? { legacyFlushGroup: options.legacyFlushGroup } : {}),
         format: options.format ?? LogFormat.MONTH,
     },
 });
@@ -357,6 +362,7 @@ export const resolveGeneralAction = <TriggerState extends GeneralTriggerState = 
     args: Args
 ): GeneralActionResolution => {
     const logs: LogEntryDraft[] = [];
+    const postProgressionLogs: LogEntryDraft[] = [];
     const accumulator: ActionResolutionAccumulator = {
         createdGenerals: [],
         createdNations: [],
@@ -372,6 +378,7 @@ export const resolveGeneralAction = <TriggerState extends GeneralTriggerState = 
         } as WorldState<TriggerState>,
         (draft) => {
             const addLog = createActionLogSink(context, logs);
+            const addPostProgressionLog = createActionLogSink(context, postProgressionLogs);
 
             outcome = resolver.resolve(
                 {
@@ -381,6 +388,7 @@ export const resolveGeneralAction = <TriggerState extends GeneralTriggerState = 
                     city: castDraft(draft.city),
                     nation: castDraft(draft.nation),
                     addLog,
+                    addPostProgressionLog,
                 } as GeneralActionResolveContext<TriggerState>,
                 args
             );
@@ -405,6 +413,7 @@ export const resolveGeneralAction = <TriggerState extends GeneralTriggerState = 
         completed: outcome?.completed !== false,
         nextTurnAt,
         logs,
+        postProgressionLogs,
         effects: accumulator.pendingEffects,
         ...(outcome?.alternative ? { alternative: outcome.alternative } : {}),
         ...(outcome?.deletedTroopIds?.length ? { deletedTroopIds: outcome.deletedTroopIds } : {}),

@@ -199,6 +199,7 @@ export class ActionDefinition<
                     nationId: destNation.id,
                     category: LogCategory.HISTORY,
                     format: LogFormat.YEAR_MONTH,
+                    legacyFlushGroup: 1,
                 }
             ),
             // General Action Log
@@ -222,6 +223,7 @@ export class ActionDefinition<
                         category: LogCategory.ACTION,
                         generalId: chief.id,
                         format: LogFormat.PLAIN,
+                        legacyFlushGroup: -1,
                     })
                 );
             }
@@ -234,6 +236,7 @@ export class ActionDefinition<
                     category: LogCategory.ACTION,
                     generalId: chief.id,
                     format: LogFormat.PLAIN,
+                    legacyFlushGroup: -1,
                 })
             );
         }

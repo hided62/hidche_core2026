@@ -5,6 +5,9 @@ import { InMemoryWorld, TestGameRunner } from '../../testEnv.js';
 import { evaluateActionConstraints } from '../../../src/constraints/evaluate.js';
 import type { TurnCommandEnv } from '../../../src/actions/turn/commandEnv.js';
 import type { ConstraintContext, RequirementKey, StateView } from '../../../src/constraints/types.js';
+import { resolveGeneralAction } from '../../../src/actions/engine.js';
+import { orderLegacyActionLoggerFlush } from '../../../src/logging/actionLogger.js';
+import { LogCategory, LogFormat, LogScope } from '../../../src/logging/types.js';
 
 const MOCK_SCENARIO_BASE = {
     title: 'Test',
@@ -223,6 +226,57 @@ describe('che_등용수락', () => {
         world.snapshot.nations.push(nation2);
 
         const { commandSpec } = await import('../../../src/actions/turn/general/che_등용수락.js');
+
+        const orderingResolution = resolveGeneralAction(
+            commandSpec.createDefinition(systemEnv),
+            {
+                general: structuredClone(neutralGen),
+                city: structuredClone(world.getCity(neutralGen.cityId)),
+                nation: null,
+                destNation: structuredClone(nation2),
+                destGeneral: structuredClone(recruiterGen),
+                rng: {} as any,
+                addLog: () => {},
+            } as any,
+            {
+                now: new Date('2026-08-23T00:00:00.000Z'),
+                schedule: { entries: [{ startMinute: 0, tickMinutes: 60 }] },
+            },
+            { destNationId: 2, destGeneralId: 2 }
+        );
+        const recruiterLogs = orderLegacyActionLoggerFlush(orderingResolution.logs).filter(
+            (log) => log.generalId === recruiterGen.id
+        );
+        expect(recruiterLogs.map((log) => [log.category, log.legacyFlushGroup])).toEqual([
+            [LogCategory.HISTORY, 1],
+            [LogCategory.ACTION, 1],
+            [LogCategory.ACTION, 1],
+            [LogCategory.ACTION, 1],
+        ]);
+        expect(recruiterLogs.map((log) => log.text)).toEqual([
+            expect.stringContaining('등용에 성공'),
+            expect.stringContaining('레벨업'),
+            expect.stringContaining('승급'),
+            expect.stringContaining('등용에 성공했습니다.'),
+        ]);
+        expect(recruiterLogs.map((log) => log.format)).toEqual([
+            LogFormat.YEAR_MONTH,
+            LogFormat.PLAIN,
+            LogFormat.PLAIN,
+            LogFormat.MONTH,
+        ]);
+        expect(
+            orderingResolution.logs.find(
+                (log) =>
+                    log.scope === LogScope.GENERAL &&
+                    log.category === LogCategory.ACTION &&
+                    log.text.includes('망명하여 수도로')
+            )?.format
+        ).toBe(LogFormat.MONTH);
+        expect(
+            orderingResolution.logs.find((log) => log.scope === LogScope.SYSTEM && log.category === LogCategory.SUMMARY)
+                ?.format
+        ).toBe(LogFormat.MONTH);
 
         await runner.runTurn([
             {

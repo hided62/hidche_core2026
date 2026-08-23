@@ -215,7 +215,7 @@ export class ActionResolver<
                               : '<C>↓</>미미';
                 ctx.addLog(`【<span class='ev_notice'>${destNation.name}</span>】아국대비기술:${techText}`, {
                     category: LogCategory.ACTION,
-                    format: LogFormat.RAWTEXT,
+                    format: LogFormat.MONTH,
                 });
             }
         } else if (distance === 2) {
@@ -317,12 +317,7 @@ export class ActionDefinition<
         return [notOccupiedDestCity(), reqGeneralGold(() => cost), reqGeneralRice(() => cost)];
     }
 
-    formatConstraintFailure(
-        reason: string,
-        _ctx: ConstraintContext,
-        args: SpyArgs,
-        view: StateView
-    ): string | null {
+    formatConstraintFailure(reason: string, _ctx: ConstraintContext, args: SpyArgs, view: StateView): string | null {
         return formatDestCityConstraintFailure(reason, this.name, args.destCityId, view, 'location');
     }
 

@@ -1933,9 +1933,17 @@ export class InMemoryTurnWorld {
                 continue;
             }
             delete conflict[key];
+            // Ref decodes a non-empty JSON object into a PHP array. Removing
+            // its last nation key and encoding that value persists `[]`, not
+            // `{}`. Preserve that observable storage shape until the next
+            // world load (where an empty conflict is normalized for logic).
+            const persistedConflict =
+                Object.keys(conflict).length === 0
+                    ? ([] as unknown as City['conflict'])
+                    : (conflict as City['conflict']);
             this.cities.set(city.id, {
                 ...city,
-                conflict: conflict as City['conflict'],
+                conflict: persistedConflict,
             });
             this.dirtyCityIds.add(city.id);
         }

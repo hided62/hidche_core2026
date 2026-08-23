@@ -19,6 +19,7 @@ import type { NationTurnCommandSpec } from './index.js';
 import { z } from 'zod';
 import { parseArgsWithSchema } from '../parseArgs.js';
 import { resolveDiplomacyMessageValidMinutes } from '../../../diplomacy/messageValidity.js';
+import { resolveMessageTargetIcon } from '@sammo-ts/logic/messages/message.js';
 
 const ARGS_SCHEMA = z.object({
     destNationId: z.number().int().positive(),
@@ -33,6 +34,7 @@ interface NonAggressionProposalContext<
     destNation: Nation;
     messageValidMinutes: number;
     messageTime: Date;
+    messageSharedIconBaseUrl?: string;
 }
 
 const ACTION_NAME = '불가침 제의';
@@ -161,7 +163,7 @@ export class ActionDefinition<
                         nationId: nation.id,
                         nationName: nation.name,
                         color: nation.color,
-                        icon: '',
+                        icon: resolveMessageTargetIcon(general, context.messageSharedIconBaseUrl),
                     },
                     dest: {
                         generalId: 0,
@@ -169,7 +171,7 @@ export class ActionDefinition<
                         nationId: destNation.id,
                         nationName: destNation.name,
                         color: destNation.color,
-                        icon: '',
+                        icon: resolveMessageTargetIcon(null, context.messageSharedIconBaseUrl),
                     },
                     text: `${nation.name}${josaWa} ${args.year}년 ${args.month}월까지 불가침 제의 서신`,
                     time: context.messageTime,
@@ -195,7 +197,8 @@ export const actionContextBuilder: ActionContextBuilder<NonAggressionProposalArg
     return {
         ...base,
         destNation,
-        messageTime: base.general.turnTime,
+        messageSharedIconBaseUrl: options.messageSharedIconBaseUrl,
+        messageTime: options.gameNow ?? base.general.turnTime,
         messageValidMinutes: resolveDiplomacyMessageValidMinutes(options.world.tickSeconds),
     };
 };

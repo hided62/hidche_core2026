@@ -1,11 +1,15 @@
-import { LiteHashDRBG, RandUtil, type RNG } from '@sammo-ts/common';
+import { GameClock, LiteHashDRBG, RandUtil, type RNG } from '@sammo-ts/common';
 import { readLegacyStoredFloat } from '@sammo-ts/logic/compat/legacyFloat.js';
 import {
     GENERAL_TURN_COMMAND_KEYS,
+    LogFormat,
     NATION_TURN_COMMAND_KEYS,
     normalizeScenarioEffect,
     readLegacyCityTrust,
+    sendMessage,
     type MapDefinition,
+    type MessageDraft,
+    type MessageRecordDraft,
     type Nation,
     type TurnCommandProfile,
     type UnitSetDefinition,
@@ -21,12 +25,25 @@ import type {
     TurnWorldSnapshot,
     TurnWorldState,
 } from '@sammo-ts/game-engine/turn/types.js';
-import { applyPersistedRankRowsToMeta, buildLegacyComparableRankRows } from '@sammo-ts/game-engine/turn/rankData.js';
+import {
+    applyPersistedRankRowsToMeta,
+    buildInitialRankRows,
+    buildLegacyComparableInitialRankRows,
+    buildLegacyComparableRankRows,
+    buildPersistedRankRows,
+} from '@sammo-ts/game-engine/turn/rankData.js';
 
 import {
     canonicalizeTurnCommandArgs,
+    closeTurnSnapshotSelectorOverCreatedEntities,
+    projectCanonicalGeneralCommandState,
+    projectCanonicalGeneralStoredFields,
+    projectCanonicalMessageValidUntil,
+    projectCanonicalNationCommandState,
+    projectCanonicalTurnOffset,
     type CanonicalTurnCommandTrace,
     type CanonicalTurnSnapshot,
+    type TurnSnapshotEntityIds,
 } from './canonical.js';
 
 interface GeneralCooldownSelector {
@@ -56,6 +73,8 @@ export interface TurnCommandFixtureRequest {
             hiddenSeed?: string;
             scenarioEffect?: string | null;
             staticEventHandlers?: Record<string, string[]>;
+            freezeClock?: boolean;
+            messageSharedIconBaseUrl?: string;
         };
         isolateWorld?: boolean;
         generals?: Array<Record<string, unknown>>;
@@ -73,6 +92,12 @@ export interface TurnCommandFixtureRequest {
         generalIds?: number[];
         cityIds?: number[];
         nationIds?: number[];
+        troopIds?: number[];
+        allGenerals?: boolean;
+        allCities?: boolean;
+        allNations?: boolean;
+        allTroops?: boolean;
+        includeRankMirrors?: boolean;
         logAfterId?: number;
         messageAfterId?: number;
         includeNationHistoryLogs?: boolean;
@@ -164,6 +189,18 @@ const readNullableString = (record: Record<string, unknown>, key: string): strin
     return typeof value === 'string' && value !== '' && value !== 'None' ? value : null;
 };
 
+const parseSnapshotDate = (value: unknown, fallback: Date): Date => {
+    if (typeof value !== 'string') {
+        return new Date(fallback.getTime());
+    }
+    const mysqlTimestamp = /^(\d{4})-(\d{2})-(\d{2})[ T](\d{2}):(\d{2}):(\d{2})(?:\.(\d+))?$/.exec(value);
+    const normalized = mysqlTimestamp
+        ? `${mysqlTimestamp[1]}-${mysqlTimestamp[2]}-${mysqlTimestamp[3]}T${mysqlTimestamp[4]}:${mysqlTimestamp[5]}:${mysqlTimestamp[6]}.${(mysqlTimestamp[7] ?? '').slice(0, 3).padEnd(3, '0')}Z`
+        : value;
+    const parsed = new Date(normalized);
+    return Number.isNaN(parsed.getTime()) ? new Date(fallback.getTime()) : parsed;
+};
+
 const toDatabaseInt = (value: number): number => Math.round(value);
 
 const COMMANDS_WITH_LEGACY_CORE_ARG_KEYS = new Set([
@@ -186,32 +223,57 @@ export const resolveCoreTurnCommandArgs = (request: TurnCommandFixtureRequest): 
 };
 
 export const createCoreTurnCommandProfile = (request: TurnCommandFixtureRequest): TurnCommandProfile => {
+    const configuredGeneralActions = (request.setup?.generalTurns ?? []).map((turn) => readString(turn, 'action', ''));
+    const configuredNationActions = (request.setup?.nationTurns ?? []).map((turn) => readString(turn, 'action', ''));
+    for (const action of configuredGeneralActions) {
+        if (!GENERAL_TURN_COMMAND_KEYS.includes(action as (typeof GENERAL_TURN_COMMAND_KEYS)[number])) {
+            throw new Error(`Unknown configured general command: ${action}`);
+        }
+    }
+    for (const action of configuredNationActions) {
+        if (!NATION_TURN_COMMAND_KEYS.includes(action as (typeof NATION_TURN_COMMAND_KEYS)[number])) {
+            throw new Error(`Unknown configured nation command: ${action}`);
+        }
+    }
     if (request.kind === 'general') {
         if (!GENERAL_TURN_COMMAND_KEYS.includes(request.action as (typeof GENERAL_TURN_COMMAND_KEYS)[number])) {
             throw new Error(`Unknown general command: ${request.action}`);
         }
-        const generalActions = [request.action, '휴식', 'che_인재탐색', 'che_해산', 'che_이동'] as Array<
-            (typeof GENERAL_TURN_COMMAND_KEYS)[number]
-        >;
+        const generalActions = [
+            request.action,
+            ...configuredGeneralActions,
+            '휴식',
+            'che_인재탐색',
+            'che_해산',
+            'che_이동',
+        ] as Array<(typeof GENERAL_TURN_COMMAND_KEYS)[number]>;
         return {
             general: [...new Set(generalActions)],
-            nation: ['휴식'],
+            nation: [...new Set(['휴식', ...configuredNationActions])] as Array<
+                (typeof NATION_TURN_COMMAND_KEYS)[number]
+            >,
         };
     }
     if (!NATION_TURN_COMMAND_KEYS.includes(request.action as (typeof NATION_TURN_COMMAND_KEYS)[number])) {
         throw new Error(`Unknown nation command: ${request.action}`);
     }
     return {
-        general: ['휴식'],
-        nation: [request.action as (typeof NATION_TURN_COMMAND_KEYS)[number], '휴식'],
+        general: [...new Set(['휴식', ...configuredGeneralActions])] as Array<
+            (typeof GENERAL_TURN_COMMAND_KEYS)[number]
+        >,
+        nation: [
+            ...new Set([
+                request.action as (typeof NATION_TURN_COMMAND_KEYS)[number],
+                '휴식',
+                ...configuredNationActions,
+            ]),
+        ] as Array<(typeof NATION_TURN_COMMAND_KEYS)[number]>,
     };
 };
 
 const buildGeneral = (row: Record<string, unknown>, fallbackTurnTime: Date): TurnGeneral => {
     const meta = asRecord(row.meta);
-    const rawTurnTime = row.turnTime;
-    const parsedTurnTime = typeof rawTurnTime === 'string' ? new Date(rawTurnTime) : fallbackTurnTime;
-    const turnTime = Number.isNaN(parsedTurnTime.getTime()) ? fallbackTurnTime : parsedTurnTime;
+    const turnTime = parseSnapshotDate(row.turnTime, fallbackTurnTime);
     const rawLastTurn = asRecord(row.lastTurn);
     const lastTurn =
         typeof rawLastTurn.command === 'string'
@@ -256,7 +318,17 @@ const buildGeneral = (row: Record<string, unknown>, fallbackTurnTime: Date): Tur
         atmos: readNumber(row, 'atmos'),
         age: readNumber(row, 'age', 30),
         npcState: readNumber(row, 'npcState'),
-        userId: row.hasOwner === true ? 'turn-differential-owner' : null,
+        ...(typeof row.affinity === 'number' || row.affinity === null ? { affinity: row.affinity } : {}),
+        ...(typeof row.bornYear === 'number' ? { bornYear: row.bornYear } : {}),
+        ...(typeof row.deadYear === 'number' ? { deadYear: row.deadYear } : {}),
+        picture: readNullableString(row, 'picture'),
+        imageServer: readNumber(row, 'imageServer'),
+        userId:
+            typeof row.ownerIdentity === 'string' && row.ownerIdentity.length > 0
+                ? row.ownerIdentity
+                : row.hasOwner === true
+                  ? 'turn-differential-owner'
+                  : null,
         penalty: row.penalty,
         triggerState: { flags: {}, counters: {}, modifiers: {}, meta: {} },
         meta: {
@@ -275,6 +347,12 @@ const buildGeneral = (row: Record<string, unknown>, fallbackTurnTime: Date): Tur
             dex4: readNumber(row, 'dex4', readNumber(meta, 'dex4')),
             dex5: readNumber(row, 'dex5', readNumber(meta, 'dex5')),
             explevel: readNumber(row, 'expLevel', readNumber(meta, 'explevel')),
+            dedlevel: readNumber(row, 'dedLevel', readNumber(meta, 'dedlevel')),
+            npc_org: readNumber(row, 'npcOriginalState', readNumber(meta, 'npc_org')),
+            affinity: readNumber(row, 'affinity', readNumber(meta, 'affinity')),
+            birthYear: readNumber(row, 'bornYear', readNumber(meta, 'birthYear')),
+            deathYear: readNumber(row, 'deadYear', readNumber(meta, 'deathYear')),
+            ...(typeof row.npcMessage === 'string' && row.npcMessage !== '' ? { text: row.npcMessage } : {}),
             betray: readNumber(row, 'betray', readNumber(meta, 'betray')),
             officerCityId: readNumber(
                 row,
@@ -296,6 +374,7 @@ const buildGeneral = (row: Record<string, unknown>, fallbackTurnTime: Date): Tur
             block: readNumber(row, 'blockState', readNumber(meta, 'block')),
         },
         ...(lastTurn ? { lastTurn } : {}),
+        ...(typeof row.turnTick === 'number' ? { turnTick: row.turnTick } : {}),
         turnTime,
         recentWarTime: null,
     };
@@ -304,6 +383,7 @@ const buildGeneral = (row: Record<string, unknown>, fallbackTurnTime: Date): Tur
 const buildNation = (row: Record<string, unknown>, generals: TurnGeneral[]): Nation => {
     const id = readNumber(row, 'id');
     const meta = asRecord(row.meta);
+    const commandState = asRecord(row.commandState);
     const turnLastByOfficerLevel = asRecord(row.turnLastByOfficerLevel);
     return {
         id,
@@ -330,6 +410,9 @@ const buildNation = (row: Record<string, unknown>, generals: TurnGeneral[]): Nat
             surlimit: readNumber(row, 'diplomacyLimit', readNumber(meta, 'surlimit')),
             capset: readNumber(row, 'capitalRevision', readNumber(meta, 'capset')),
             strategic_cmd_limit: readNumber(row, 'strategicCommandLimit', readNumber(meta, 'strategic_cmd_limit')),
+            rate: readNumber(commandState, 'rate', readNumber(meta, 'rate')),
+            bill: readNumber(commandState, 'bill', readNumber(meta, 'bill')),
+            secretlimit: readNumber(commandState, 'secretLimit', readNumber(meta, 'secretlimit', 3)),
         },
     };
 };
@@ -342,7 +425,17 @@ export const buildCoreTurnCommandWorldInput = (
 ): { state: TurnWorldState; snapshot: TurnWorldSnapshot; map: MapDefinition } => {
     const year = readNumber(referenceBefore.world, 'year', request.setup?.world?.year ?? 185);
     const month = readNumber(referenceBefore.world, 'month', request.setup?.world?.month ?? 1);
-    const turnTime = new Date(`${String(year).padStart(4, '0')}-${String(month).padStart(2, '0')}-01T00:00:00.000Z`);
+    const calendarFallback = new Date(
+        `${String(year).padStart(4, '0')}-${String(month).padStart(2, '0')}-01T00:00:00.000Z`
+    );
+    const turnTime = parseSnapshotDate(referenceBefore.world.turnTime, calendarFallback);
+    const tickSeconds = readNumber(referenceBefore.world, 'tickMinutes', 10) * 60;
+    const lastTurnTick = readNumber(referenceBefore.world, 'lastTurnTick');
+    // Ref's tick is absolute within GameClock's domain, while turnTime is the
+    // display date at that tick. Derive the clock epoch instead of treating
+    // the scenario year/month as the epoch and rewriting 2026 snapshots into
+    // year 0185 during InMemoryTurnWorld normalization.
+    const clockBaseTime = GameClock.baseTimeForProjection(turnTime, lastTurnTick, tickSeconds);
     const generals = referenceBefore.generals.map((row) => buildGeneral(row, turnTime));
     for (const general of generals) {
         applyPersistedRankRowsToMeta(
@@ -437,9 +530,10 @@ export const buildCoreTurnCommandWorldInput = (
             environment: {
                 mapName: map.id,
                 unitSet: unitSet.id,
-                ...(request.setup?.world?.scenarioEffect !== undefined
-                    ? { scenarioEffect: normalizeScenarioEffect(request.setup.world.scenarioEffect) }
-                    : {}),
+                // worldLoader materializes the optional empty value as null.
+                // Keep the in-memory fixture on that same product boundary so
+                // a persistence round trip cannot add a synthetic field.
+                scenarioEffect: normalizeScenarioEffect(request.setup?.world?.scenarioEffect),
             },
         },
         scenarioMeta: {
@@ -525,8 +619,13 @@ export const buildCoreTurnCommandWorldInput = (
             id: 1,
             currentYear: year,
             currentMonth: month,
-            tickSeconds: readNumber(referenceBefore.world, 'tickMinutes', 10) * 60,
+            tickSeconds,
+            lastTurnTick,
             lastTurnTime: turnTime,
+            clockBaseTime,
+            clockTick: lastTurnTick,
+            clockMode: 'manual',
+            clockWallAnchor: turnTime,
             meta: {
                 hiddenSeed: request.setup?.world?.hiddenSeed ?? 'turn-command-differential-seed',
                 killturn: readNumber(referenceBefore.world, 'killTurn', 24),
@@ -538,6 +637,11 @@ export const buildCoreTurnCommandWorldInput = (
                     request.setup?.world?.initYear ?? request.setup?.world?.startYear ?? year
                 ),
                 initMonth: readNumber(referenceBefore.world, 'initMonth', request.setup?.world?.initMonth ?? 1),
+                differentialGameNow: readString(
+                    referenceBefore.world,
+                    'gameNow',
+                    readString(referenceBefore.world, 'turnTime', turnTime.toISOString())
+                ),
             },
         },
         snapshot,
@@ -545,19 +649,127 @@ export const buildCoreTurnCommandWorldInput = (
     };
 };
 
+interface InMemorySnapshotSelector {
+    generalIds: Set<number>;
+    initialGeneralIds: Set<number>;
+    cityIds: Set<number>;
+    nationIds: Set<number>;
+    troopIds: Set<number>;
+    includeRankMirrors: boolean;
+    messageReadStateByGeneralId: Map<number, SemanticMessageReadState>;
+    generalCooldowns: GeneralCooldownSelector[];
+    nationCooldowns: NationCooldownSelector[];
+}
+
+interface SemanticMessageReadState {
+    unreadPrivateCount: number;
+    unreadDiplomacyCount: number;
+}
+
+const readSemanticMessageState = (general: Record<string, unknown>): SemanticMessageReadState => {
+    const state = asRecord(general.messageReadState);
+    return {
+        unreadPrivateCount: readNumber(state, 'unreadPrivateCount'),
+        unreadDiplomacyCount: readNumber(state, 'unreadDiplomacyCount'),
+    };
+};
+
+export const projectCoreMessageReadState = (
+    generalId: number,
+    nationId: number,
+    messages: CanonicalTurnSnapshot['messages'],
+    baseline?: SemanticMessageReadState
+): SemanticMessageReadState & { hasUnreadMessage: boolean } => {
+    const startingState = baseline ?? { unreadPrivateCount: 0, unreadDiplomacyCount: 0 };
+    const diplomacyMailbox = 9_000 + nationId;
+    const unreadPrivateCount =
+        startingState.unreadPrivateCount +
+        messages.filter(
+            (message) =>
+                message.type === 'private' &&
+                readNumber(message, 'mailbox') === generalId &&
+                readNumber(message, 'sourceId') !== generalId
+        ).length;
+    const unreadDiplomacyCount =
+        startingState.unreadDiplomacyCount +
+        messages.filter(
+            (message) =>
+                message.type === 'diplomacy' &&
+                readNumber(message, 'mailbox') === diplomacyMailbox &&
+                readNumber(message, 'sourceId') !== diplomacyMailbox
+        ).length;
+    return {
+        unreadPrivateCount,
+        unreadDiplomacyCount,
+        hasUnreadMessage: unreadPrivateCount + unreadDiplomacyCount > 0,
+    };
+};
+
+const readWorldEntityIds = (world: InMemoryTurnWorld): TurnSnapshotEntityIds => ({
+    generalIds: world.listGenerals().map((general) => general.id),
+    cityIds: world.listCities().map((city) => city.id),
+    nationIds: world.listNations().map((nation) => nation.id),
+    troopIds: world.listTroops().map((troop) => troop.id),
+});
+
+const extendSelectorOverCreatedEntities = (
+    selector: InMemorySnapshotSelector,
+    before: TurnSnapshotEntityIds,
+    after: TurnSnapshotEntityIds
+): void => {
+    const closed = closeTurnSnapshotSelectorOverCreatedEntities(
+        {
+            generalIds: [...selector.generalIds],
+            cityIds: [...selector.cityIds],
+            nationIds: [...selector.nationIds],
+            troopIds: [...selector.troopIds],
+        },
+        before,
+        after
+    );
+    for (const id of closed.generalIds) selector.generalIds.add(id);
+    for (const id of closed.cityIds) selector.cityIds.add(id);
+    for (const id of closed.nationIds) selector.nationIds.add(id);
+    for (const id of closed.troopIds ?? []) selector.troopIds.add(id);
+};
+
+export const projectCoreMessageDrafts = async (
+    drafts: readonly MessageDraft[],
+    messageIdWatermark: number
+): Promise<CanonicalTurnSnapshot['messages']> => {
+    const records: Array<MessageRecordDraft & { id: number }> = [];
+    let nextId = messageIdWatermark;
+    for (const draft of drafts) {
+        await sendMessage(
+            {
+                insertMessage: async (record) => {
+                    const id = ++nextId;
+                    records.push({ ...record, id });
+                    return id;
+                },
+            },
+            draft,
+            { sendDestOnly: draft.sendDestOnly }
+        );
+    }
+    return records.map((record) => ({
+        id: record.id,
+        mailbox: record.mailbox,
+        type: record.msgType,
+        sourceId: record.srcId,
+        destinationId: record.destId,
+        createdAt: record.time.toISOString(),
+        validUntil: projectCanonicalMessageValidUntil(record.validUntil),
+        payload: record.payload,
+    }));
+};
+
 const projectWorld = (
     world: InMemoryTurnWorld,
     reservedTurns: InMemoryReservedTurnStore,
     logs: CanonicalTurnSnapshot['logs'],
     messages: CanonicalTurnSnapshot['messages'],
-    selector: {
-        generalIds: Set<number>;
-        cityIds: Set<number>;
-        nationIds: Set<number>;
-        initialGeneralIds: Set<number>;
-        generalCooldowns: GeneralCooldownSelector[];
-        nationCooldowns: NationCooldownSelector[];
-    }
+    selector: InMemorySnapshotSelector
 ): CanonicalTurnSnapshot => {
     const state = world.getState();
     const generals = world
@@ -574,7 +786,6 @@ const projectWorld = (
             intelligence: general.stats.intelligence,
             experience: toDatabaseInt(general.experience),
             dedication: toDatabaseInt(general.dedication),
-            expLevel: readNumber(general.meta, 'explevel'),
             officerLevel: general.officerLevel,
             officerCityId: readNumber(
                 general.meta,
@@ -593,6 +804,8 @@ const projectWorld = (
             itemWeapon: general.role.items.weapon,
             itemBook: general.role.items.book,
             itemExtra: general.role.items.item,
+            picture: general.picture ?? null,
+            imageServer: general.imageServer ?? 0,
             injury: general.injury,
             gold: toDatabaseInt(general.gold),
             rice: toDatabaseInt(general.rice),
@@ -603,10 +816,28 @@ const projectWorld = (
             age: general.age,
             npcState: general.npcState,
             hasOwner: Boolean(general.userId),
+            ownerIdentity: general.userId ?? null,
+            messageReadState: projectCoreMessageReadState(
+                general.id,
+                general.nationId,
+                messages,
+                selector.messageReadStateByGeneralId.get(general.id)
+            ),
             turnTime: general.turnTime.toISOString(),
             recentWarTime: general.recentWarTime?.toISOString() ?? null,
-            lastTurn: general.lastTurn ?? null,
+            // Core's persisted JSON column and Ref both represent the
+            // pre-command state as an empty object. Do not invent a null-only
+            // in-memory variant at the canonical boundary.
+            lastTurn: general.lastTurn ?? {},
             meta: general.meta,
+            ...projectCanonicalGeneralStoredFields(general.meta, {
+                affinity: general.affinity,
+                bornYear: general.bornYear,
+                deadYear: general.deadYear,
+                turnTick: general.turnTick,
+                ...projectCanonicalTurnOffset(general.turnTick, state.lastTurnTick, state.tickSeconds),
+            }),
+            commandState: projectCanonicalGeneralCommandState(general.meta),
             leadershipExp: toDatabaseInt(readNumber(general.meta, 'leadership_exp')),
             strengthExp: toDatabaseInt(readNumber(general.meta, 'strength_exp')),
             intelExp: toDatabaseInt(readNumber(general.meta, 'intel_exp')),
@@ -631,7 +862,9 @@ const projectWorld = (
             year: state.currentYear,
             month: state.currentMonth,
             tickMinutes: Math.max(1, Math.round(state.tickSeconds / 60)),
+            lastTurnTick: state.lastTurnTick,
             turnTime: state.lastTurnTime.toISOString(),
+            gameNow: readString(state.meta, 'differentialGameNow', state.lastTurnTime.toISOString()),
             isUnited: readNumber(state.meta, 'isUnited'),
             generalCooldowns: selector.generalCooldowns.map(({ generalId, actionName }) => {
                 const general = world.getGeneralById(generalId);
@@ -657,9 +890,13 @@ const projectWorld = (
             .listGenerals()
             .filter((general) => selector.generalIds.has(general.id))
             .flatMap((general) =>
-                buildLegacyComparableRankRows(general).map((row) =>
-                    selector.initialGeneralIds.has(general.id) ? row : { ...row, nationId: 0, value: 0 }
-                )
+                selector.includeRankMirrors
+                    ? selector.initialGeneralIds.has(general.id)
+                        ? buildPersistedRankRows(general)
+                        : buildInitialRankRows(general)
+                    : selector.initialGeneralIds.has(general.id)
+                      ? buildLegacyComparableRankRows(general)
+                      : buildLegacyComparableInitialRankRows(general)
             )
             .map((row) => ({ ...row })),
         cities: world
@@ -706,18 +943,44 @@ const projectWorld = (
                 tech: readLegacyStoredFloat(readNumber(nation.meta, 'tech')),
                 level: nation.level,
                 typeCode: nation.typeCode,
-                generalCount: world.listGenerals().filter((general) => general.nationId === nation.id).length,
+                generalCount: readNumber(
+                    nation.meta,
+                    'gennum',
+                    world.listGenerals().filter((general) => general.nationId === nation.id).length
+                ),
                 power: nation.power,
                 war: readNumber(nation.meta, 'war'),
                 diplomacyLimit: readNumber(nation.meta, 'surlimit'),
                 capitalRevision: readNumber(nation.meta, 'capset'),
                 strategicCommandLimit: readNumber(nation.meta, 'strategic_cmd_limit'),
                 meta: nation.meta,
+                commandState: projectCanonicalNationCommandState(nation.meta),
             })),
+        troops: world
+            .listTroops()
+            .filter(
+                (troop) =>
+                    selector.troopIds.has(troop.id) ||
+                    selector.generalIds.has(troop.id) ||
+                    world
+                        .listGenerals()
+                        .some((general) => selector.generalIds.has(general.id) && general.troopId === troop.id)
+            )
+            .map((troop) => ({ ...troop })),
         diplomacy: world
             .listDiplomacy()
             .filter((entry) => selector.nationIds.has(entry.fromNationId) && selector.nationIds.has(entry.toNationId))
-            .map((entry) => ({ ...entry })),
+            // Keep the in-memory adapter on the same canonical boundary as the
+            // PostgreSQL and Ref adapters. Core's internal `meta` container has
+            // no Ref diplomacy-table counterpart and must not appear/disappear
+            // as a synthetic graph mutation.
+            .map((entry) => ({
+                fromNationId: entry.fromNationId,
+                toNationId: entry.toNationId,
+                state: entry.state,
+                term: entry.term,
+                dead: entry.dead,
+            })),
         generalTurns: generals.flatMap((general) =>
             reservedTurns.getGeneralTurns(Number(general.id)).map((turn, turnIndex) => ({
                 generalId: general.id,
@@ -739,7 +1002,11 @@ const projectWorld = (
         ),
         logs,
         messages,
-        watermarks: { logId: logs.length, historyLogId: logs.length, messageId: messages.length },
+        watermarks: {
+            logId: logs.reduce((max, row) => Math.max(max, readNumber(row, 'id')), 0),
+            historyLogId: logs.reduce((max, row) => Math.max(max, readNumber(row, 'id')), 0),
+            messageId: messages.reduce((max, row) => Math.max(max, readNumber(row, 'id')), 0),
+        },
     };
 };
 
@@ -781,17 +1048,43 @@ export const runCoreTurnCommandTrace = async (
     const map = await loadMapDefinitionByName('che');
     const worldInput = buildCoreTurnCommandWorldInput(request, referenceBefore, unitSet, map);
     const { state, snapshot } = worldInput;
-    const selector = {
-        generalIds: new Set([
-            ...referenceBefore.generals.map((row) => readNumber(row, 'id')),
-            ...(request.observe?.generalIds ?? []),
-        ]),
-        cityIds: new Set(referenceBefore.cities.map((row) => readNumber(row, 'id'))),
-        nationIds: new Set([
-            ...referenceBefore.nations.map((row) => readNumber(row, 'id')),
-            ...(request.observe?.nationIds ?? []),
-        ]),
-        initialGeneralIds: new Set(referenceBefore.generals.map((row) => readNumber(row, 'id'))),
+    const selector: InMemorySnapshotSelector = {
+        generalIds: new Set(
+            request.observe?.allGenerals
+                ? snapshot.generals.map((general) => general.id)
+                : [
+                      ...referenceBefore.generals.map((row) => readNumber(row, 'id')),
+                      ...(request.observe?.generalIds ?? []),
+                  ]
+        ),
+        initialGeneralIds: new Set(snapshot.generals.map((general) => general.id)),
+        cityIds: new Set(
+            request.observe?.allCities
+                ? snapshot.cities.map((city) => city.id)
+                : [...referenceBefore.cities.map((row) => readNumber(row, 'id')), ...(request.observe?.cityIds ?? [])]
+        ),
+        nationIds: new Set(
+            request.observe?.allNations
+                ? snapshot.nations.map((nation) => nation.id)
+                : [
+                      ...referenceBefore.nations.map((row) => readNumber(row, 'id')),
+                      ...(request.observe?.nationIds ?? []),
+                  ]
+        ),
+        troopIds: new Set(
+            request.observe?.allTroops
+                ? snapshot.troops.map((troop) => troop.id)
+                : [
+                      ...(referenceBefore.troops ?? []).map((row) => readNumber(row, 'id')),
+                      ...(request.observe?.troopIds ?? []),
+                  ]
+        ),
+        includeRankMirrors: request.observe?.includeRankMirrors === true,
+        messageReadStateByGeneralId: new Map(
+            referenceBefore.generals.map(
+                (general) => [readNumber(general, 'id'), readSemanticMessageState(general)] as const
+            )
+        ),
         generalCooldowns: request.observe?.generalCooldowns ?? [],
         nationCooldowns: request.observe?.nationCooldowns ?? [],
     };
@@ -818,16 +1111,17 @@ export const runCoreTurnCommandTrace = async (
     }
 
     let world: InMemoryTurnWorld | null = null;
-    let resolution:
-        | {
-              kind: 'nation' | 'general';
-              actionKey: string;
-              requestedAction: string;
-              usedFallback: boolean;
-              blockedReason?: string;
-          }
-        | undefined;
+    type LifecycleResolution = {
+        kind: 'nation' | 'general';
+        actionKey: string;
+        requestedAction: string;
+        usedFallback: boolean;
+        blockedReason?: string;
+    };
+    let resolution: LifecycleResolution | undefined;
+    const lifecycleResolutions: LifecycleResolution[] = [];
     const commandRngCalls: RandomCall[] = [];
+    const gameNow = parseSnapshotDate(referenceBefore.world.gameNow, actor.turnTime);
     const handler = await createReservedTurnHandler({
         reservedTurns,
         scenarioConfig: snapshot.scenarioConfig,
@@ -835,6 +1129,8 @@ export const runCoreTurnCommandTrace = async (
         map,
         unitSet,
         getWorld: () => world,
+        now: () => new Date(gameNow.getTime()),
+        messageSharedIconBaseUrl: request.setup?.world?.messageSharedIconBaseUrl,
         commandProfile: createCoreTurnCommandProfile(request),
         commandRngFactory: ({ kind, actionKey, seed }) => {
             const tracing = new TracingRng(new LiteHashDRBG(seed));
@@ -867,6 +1163,7 @@ export const runCoreTurnCommandTrace = async (
             return new RandUtil(new LiteHashDRBG(seed));
         },
         onActionResolved: (payload) => {
+            lifecycleResolutions.push(payload);
             if (payload.kind === request.kind && payload.requestedAction === request.action) {
                 resolution = payload;
             }
@@ -878,9 +1175,12 @@ export const runCoreTurnCommandTrace = async (
         },
         generalTurnHandler: handler,
     });
+    const initialWorldEntityIds = readWorldEntityIds(world);
     const before = projectWorld(world, reservedTurns, [], [], selector);
     world.executeGeneralTurn(actor);
+    extendSelectorOverCreatedEntities(selector, initialWorldEntityIds, readWorldEntityIds(world));
     const dirty = world.peekDirtyState();
+    const projectedMessages = await projectCoreMessageDrafts(dirty.messages, referenceBefore.watermarks.messageId);
     const after = projectWorld(
         world,
         reservedTurns,
@@ -892,14 +1192,12 @@ export const runCoreTurnCommandTrace = async (
             // GENERAL logs that finalizeLogEntry would reject in production.
             generalId: log.generalId,
             nationId: log.nationId,
-            year: state.currentYear,
-            month: state.currentMonth,
+            year: log.year ?? state.currentYear,
+            month: log.month ?? state.currentMonth,
+            format: log.format ?? LogFormat.RAWTEXT,
             text: log.text,
         })),
-        dirty.messages.map((message, index) => ({
-            id: index + 1,
-            payload: message,
-        })),
+        projectedMessages,
         selector
     );
 
@@ -912,7 +1210,18 @@ export const runCoreTurnCommandTrace = async (
             action: request.action,
             args,
             seedDomain: request.kind === 'general' ? 'generalCommand' : 'nationCommand',
-            outcome: resolution,
+            outcome: resolution
+                ? {
+                      ...resolution,
+                      lifecycleActions: lifecycleResolutions.map((entry) => ({
+                          kind: entry.kind,
+                          requestedAction: entry.requestedAction,
+                          actionKey: entry.actionKey,
+                          usedFallback: entry.usedFallback,
+                          ...(entry.blockedReason ? { blockedReason: entry.blockedReason } : {}),
+                      })),
+                  }
+                : resolution,
         },
         before,
         after,

@@ -116,5 +116,8 @@ describe('appointment global summary log format', () => {
         );
 
         expectMonthlySummary(logs);
+        expect(
+            logs.find((entry) => entry.scope === LogScope.GENERAL && entry.category === LogCategory.HISTORY)?.format
+        ).toBe(LogFormat.YEAR_MONTH);
     });
 });

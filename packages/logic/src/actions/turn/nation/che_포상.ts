@@ -138,6 +138,7 @@ export class ActionResolver<
                 category: LogCategory.ACTION,
                 generalId: context.destGeneral.id,
                 format: LogFormat.PLAIN,
+                legacyFlushGroup: 1,
             })
         );
         effects.push(

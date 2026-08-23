@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import {
     MESSAGE_MAILBOX_NATIONAL_BASE,
     MESSAGE_MAILBOX_PUBLIC,
+    resolveMessageTargetIcon,
     sendMessage,
     type MessageDraft,
     type MessageRecordDraft,
@@ -88,7 +89,7 @@ describe('sendMessage', () => {
         expect(store.records[0]!.draft.mailbox).toBe(MESSAGE_MAILBOX_PUBLIC);
     });
 
-    it('removes diplomacy action from sender copy', async () => {
+    it('clears the entire actionable diplomacy option from the sender copy', async () => {
         const store = new InMemoryMessageStore();
         const draft = buildDraft({
             msgType: 'diplomacy',
@@ -98,8 +99,38 @@ describe('sendMessage', () => {
 
         await sendMessage(store, draft);
 
-        const senderPayload = store.records[1]!.draft.payload.option ?? {};
-        expect(senderPayload).not.toHaveProperty('action');
-        expect(senderPayload).toMatchObject({ payload: 1 });
+        expect(store.records[1]!.draft.payload.option).toBeNull();
+    });
+
+    it('can persist only the receiver copy like Ref Message::send(true)', async () => {
+        const store = new InMemoryMessageStore();
+        const draft = buildDraft({ sendDestOnly: true });
+
+        const result = await sendMessage(store, draft);
+
+        expect(result).toEqual({ receiverId: 1 });
+        expect(store.records).toHaveLength(1);
+        expect(store.records[0]!.draft.mailbox).toBe(draft.dest.generalId);
+    });
+});
+
+describe('resolveMessageTargetIcon', () => {
+    it('uses the product shared origin by default and accepts an explicit differential origin', () => {
+        expect(resolveMessageTargetIcon()).toBe('https://sam-image.hided.net/icons/default.jpg');
+        expect(resolveMessageTargetIcon(null, 'https://dev-sam-ref.hided.net/image/icons/')).toBe(
+            'https://dev-sam-ref.hided.net/image/icons/default.jpg'
+        );
+    });
+
+    it('keeps a non-default shared picture and legacy user-icon marker visible', () => {
+        expect(
+            resolveMessageTargetIcon(
+                { picture: '장수/관우.png', imageServer: 0 },
+                'https://dev-sam-ref.hided.net/image/icons'
+            )
+        ).toBe('https://dev-sam-ref.hided.net/image/icons/장수/관우.png');
+        expect(resolveMessageTargetIcon({ picture: 'users/custom.webp', imageServer: 1 })).toBe(
+            'd_pic/users/custom.webp'
+        );
     });
 });

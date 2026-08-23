@@ -5,6 +5,12 @@ import { describe, expect, it } from 'vitest';
 
 import { compareTurnSnapshotDeltas } from '../src/turn-differential/compare.js';
 import { runCoreTurnCommandTrace, type TurnCommandFixtureRequest } from '../src/turn-differential/coreCommandTrace.js';
+import { orderedSemanticLogStreams } from '../src/turn-differential/logProjection.js';
+import {
+    projectSemanticTurnMessages,
+    projectSemanticUnreadMessageDeltas,
+    projectStrictTurnMessageTimeline,
+} from '../src/turn-differential/messageProjection.js';
 import {
     findTurnDifferentialWorkspaceRoot,
     runReferenceTurnCommandTraceRequest,
@@ -20,7 +26,9 @@ const ignoredLifecyclePaths = [
     /^logs/,
     /^messages/,
     /^world\.turnTime$/,
+    /^world\.gameNow$/,
     /^generals\[[^\]]+\]\.(?:turnTime|recentWarTime|lastTurn|mySet)(?:\.|$)/,
+    /^generals\[1\]\.(?:turnTick|turnSecond|turnFraction)$/,
     /^generals\[[^\]]+\]\.meta(?:\.|$)/,
     /^nations\[[^\]]+\]\.meta(?:\.|$)/,
 ];
@@ -30,6 +38,7 @@ const comparedLifecycleIgnoredPaths = [
     /^logs/,
     /^messages/,
     /^world\.turnTime$/,
+    /^world\.gameNow$/,
     /^generalTurns\[[^\]]+\]\.args(?:\.|$)/,
     /^generals\[[^\]]+\]\.(?:lastTurn|recentWarTime|turnTime)(?:\.|$)/,
     /^generals\[[^\]]+\]\.meta(?:\.|$)/,
@@ -42,24 +51,7 @@ const timestampMillis = (value: unknown): number => {
     return new Date(normalized).getTime();
 };
 
-const normalizeStoredLogText = (value: unknown): string =>
-    String(value)
-        .replace(/^(?:<C>●<\/>|<S>◆<\/>|<R>★<\/>)(?:(?:\d+년 )?\d+월:|\d+년:)?/, '')
-        .replace(/<span class='hidden_but_copyable'>(.*?)<\/span>/g, '$1')
-        .replace(/ <1>\d{2}:\d{2}<\/>$/, '');
-
-const semanticLogSignatures = (logs: Array<Record<string, unknown>>): string[] =>
-    logs
-        .map((entry) =>
-            JSON.stringify({
-                scope: String(entry.scope).toLowerCase(),
-                category: String(entry.category).toLowerCase(),
-                generalId: Number(entry.generalId) || null,
-                nationId: Number(entry.nationId) || null,
-                text: normalizeStoredLogText(entry.text),
-            })
-        )
-        .sort();
+const semanticLogSignatures = (logs: Array<Record<string, unknown>>): string[] => orderedSemanticLogStreams(logs);
 
 const readFixture = (relativePath: string): TurnCommandFixtureRequest => {
     const stackRoot = path.join(workspaceRoot!, 'docker_compose_files/reference');
@@ -74,6 +66,7 @@ const readFixture = (relativePath: string): TurnCommandFixtureRequest => {
             world: {
                 ...fixture.setup?.world,
                 hiddenSeed: 'turn-command-differential-seed',
+                freezeClock: true,
             },
             generals: fixture.setup?.generals?.map((general) => ({
                 ...general,
@@ -257,6 +250,25 @@ integration('core ↔ legacy command-boundary differential', () => {
             });
             expect(reference.execution.outcome).toMatchObject({ completed: true });
             expect(core.rng).toEqual(reference.rng);
+            const messageAfterId = reference.before.watermarks.messageId;
+            const coreMessages = projectSemanticTurnMessages(core.after.messages, messageAfterId);
+            const referenceMessages = projectSemanticTurnMessages(reference.after.messages, messageAfterId);
+            const coreMessageTimeline = projectStrictTurnMessageTimeline(core.before, core.after, messageAfterId);
+            const referenceMessageTimeline = projectStrictTurnMessageTimeline(
+                reference.before,
+                reference.after,
+                messageAfterId
+            );
+            expect({
+                messages: coreMessages,
+                unreadDeltas: projectSemanticUnreadMessageDeltas(core.before, core.after),
+                timeline: coreMessageTimeline,
+            }).toEqual({
+                messages: referenceMessages,
+                unreadDeltas: projectSemanticUnreadMessageDeltas(reference.before, reference.after),
+                timeline: referenceMessageTimeline,
+            });
+            expect(referenceMessageTimeline.usesSingleTick).toBe(true);
             if (request.action === 'che_출병') {
                 const generalLogWatermark = reference.before.watermarks.logId;
                 const historyLogWatermark = reference.before.watermarks.historyLogId;
@@ -282,4 +294,61 @@ integration('core ↔ legacy command-boundary differential', () => {
         },
         120_000
     );
+
+    it('matches the Ref receiver-only scout message on a positive collapse draw', async () => {
+        const request = readFixture('fixtures/turn-differential/live-sortie-conquest.json');
+        request.setup!.world!.hiddenSeed = 'collapse-scout-positive-4';
+        const reference = runReferenceTurnCommandTraceRequest(
+            workspaceRoot!,
+            request as unknown as Record<string, unknown>
+        );
+        const core = await runCoreTurnCommandTrace(request, reference.before);
+
+        const messageAfterId = reference.before.watermarks.messageId;
+        const coreMessages = projectSemanticTurnMessages(core.after.messages, messageAfterId);
+        const referenceMessages = projectSemanticTurnMessages(reference.after.messages, messageAfterId);
+        const coreTimeline = projectStrictTurnMessageTimeline(core.before, core.after, messageAfterId);
+        const referenceTimeline = projectStrictTurnMessageTimeline(reference.before, reference.after, messageAfterId);
+        const coreUnread = projectSemanticUnreadMessageDeltas(core.before, core.after);
+        const referenceUnread = projectSemanticUnreadMessageDeltas(reference.before, reference.after);
+
+        expect(core.rng).toEqual(reference.rng);
+        expect(coreMessages).toEqual(referenceMessages);
+        expect(coreTimeline).toEqual(referenceTimeline);
+        expect(coreUnread).toEqual(referenceUnread);
+        expect(referenceTimeline.usesSingleTick).toBe(true);
+        expect(referenceMessages).toHaveLength(1);
+        expect(referenceMessages[0]).toMatchObject({
+            mailbox: 2,
+            type: 'private',
+            sourceId: 1,
+            destinationId: 2,
+            createdAt: referenceTimeline.beforeGameNow,
+            validUntil: { kind: 'infinite' },
+            source: {
+                generalId: 1,
+                nationId: 1,
+                nationName: '공격국',
+            },
+            destination: {
+                generalId: 2,
+                nationId: 0,
+                nationName: '재야',
+                color: '#000000',
+            },
+            text: '공격국으로 망명 권유 서신',
+            option: { action: 'scout' },
+        });
+        expect(referenceMessages[0]!.source.icon).toBe(referenceMessages[0]!.destination.icon);
+        expect(referenceMessages[0]!.source.icon).toMatch(/\/default\.jpg$/u);
+        expect(referenceUnread.find((entry) => entry.generalId === 2)).toMatchObject({
+            unreadPrivateDelta: 1,
+            hasUnreadMessage: true,
+        });
+        expect(
+            compareTurnSnapshotDeltas(reference.before, reference.after, core.before, core.after, {
+                ignoredPathPatterns: ignoredLifecyclePaths,
+            })
+        ).toEqual([]);
+    }, 120_000);
 });

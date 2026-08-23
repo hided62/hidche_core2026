@@ -30,6 +30,7 @@ import { clamp } from 'es-toolkit';
 import { z } from 'zod';
 import { parseArgsWithSchema } from '../parseArgs.js';
 import { normalizeResourceActionAmount } from '../resourceAmount.js';
+import { resolveMessageTargetIcon } from '@sammo-ts/logic/messages/message.js';
 
 const ARGS_SCHEMA = z.object({
     isGold: z.boolean(),
@@ -43,6 +44,7 @@ export interface SeizureResolveContext<
 > extends GeneralActionResolveContext<TriggerState> {
     destGeneral: General<TriggerState>;
     messageTime: Date;
+    messageSharedIconBaseUrl?: string;
 }
 
 const ACTION_NAME = '몰수';
@@ -65,16 +67,6 @@ const pickLegacyNpcMessage = (rng: GeneralActionResolveContext['rng']): string =
         ? inclusive.nextIntInclusive(NPC_SEIZURE_MESSAGES.length - 1)
         : rng.nextInt(0, NPC_SEIZURE_MESSAGES.length);
     return NPC_SEIZURE_MESSAGES[index]!;
-};
-
-const resolveGeneralIcon = (general: General): string => {
-    const runtimePicture = (general as General & { picture?: unknown }).picture;
-    const rawPicture = runtimePicture ?? general.meta.picture;
-    const picture =
-        (typeof rawPicture === 'string' && rawPicture !== '') || typeof rawPicture === 'number'
-            ? String(rawPicture)
-            : 'default.jpg';
-    return `https://sam-image.hided.net/icons/${picture}`;
 };
 
 export class ActionDefinition<
@@ -170,6 +162,7 @@ export class ActionDefinition<
                 generalId: destGeneral.id,
                 category: LogCategory.ACTION,
                 format: LogFormat.PLAIN,
+                legacyFlushGroup: 1,
             }),
         ];
 
@@ -183,7 +176,7 @@ export class ActionDefinition<
                 nationId: nation.id,
                 nationName: nation.name,
                 color: nation.color,
-                icon: resolveGeneralIcon(destGeneral),
+                icon: resolveMessageTargetIcon(destGeneral, context.messageSharedIconBaseUrl),
             };
             effects.push(
                 createMessageEffect({
@@ -214,7 +207,8 @@ export const actionContextBuilder: ActionContextBuilder<SeizureArgs> = (base, op
     return {
         ...base,
         destGeneral,
-        messageTime: base.general.turnTime,
+        messageSharedIconBaseUrl: options.messageSharedIconBaseUrl,
+        messageTime: options.gameNow ?? base.general.turnTime,
     };
 };
 

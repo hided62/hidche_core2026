@@ -1,7 +1,14 @@
 import { describe, expect, it, vi } from 'vitest';
 
 import { LiteHashDRBG, RandUtil } from '@sammo-ts/common';
-import type { MapDefinition, ScenarioEffectKey, TurnSchedule } from '@sammo-ts/logic';
+import {
+    LogCategory,
+    LogFormat,
+    LogScope,
+    type MapDefinition,
+    type ScenarioEffectKey,
+    type TurnSchedule,
+} from '@sammo-ts/logic';
 import { simpleSerialize } from '@sammo-ts/logic/war/utils.js';
 
 import { InMemoryTurnWorld } from '../src/turn/inMemoryWorld.js';
@@ -562,6 +569,25 @@ describe('my information world commands', () => {
             experience: recruiter.experience + 100,
             dedication: recruiter.dedication + 100,
         });
+        const actionLogs = fixture.world
+            .consumeDirtyState()
+            .logs.filter((log) => log.scope === LogScope.GENERAL && log.category === LogCategory.ACTION);
+        expect(actionLogs.map((log) => log.text)).toEqual([
+            expect.stringContaining('레벨업'),
+            expect.stringContaining('승급'),
+            expect.stringContaining('망명하여 수도로'),
+            expect.stringContaining('레벨업'),
+            expect.stringContaining('승급'),
+            expect.stringContaining('등용에 성공했습니다.'),
+        ]);
+        expect(actionLogs.map((log) => log.format)).toEqual([
+            LogFormat.PLAIN,
+            LogFormat.PLAIN,
+            LogFormat.MONTH,
+            LogFormat.PLAIN,
+            LogFormat.PLAIN,
+            LogFormat.MONTH,
+        ]);
     });
 
     it('preserves the Ref uprising precheck order and messages after the game starts', async () => {

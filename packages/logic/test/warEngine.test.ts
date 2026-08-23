@@ -7,6 +7,7 @@ import type { UnitSetDefinition } from '../src/world/types.js';
 import { ActionLogger } from '../src/logging/actionLogger.js';
 import { WarActionPipeline } from '../src/war/actions.js';
 import { resolveWarBattle } from '../src/war/engine.js';
+import { LegacyWarLogFlushSequence } from '../src/war/legacyFlushSequence.js';
 import type { WarEngineConfig } from '../src/war/types.js';
 import { WarCrewType } from '../src/war/crewType.js';
 import { loadWarTriggerModules } from '../src/war/triggers/index.js';
@@ -535,6 +536,64 @@ describe('war triggers', () => {
 });
 
 describe('resolveWarBattle', () => {
+    it('flushes each fought defender before the attacker with a unique legacy epoch', () => {
+        const attackerNation = buildNation();
+        const defenderNation = { ...buildNation(), id: 2, name: 'DefenderNation', capitalCityId: 2 };
+        const attackerCity = buildCity();
+        const defenderCity = {
+            ...buildCity(),
+            id: 2,
+            name: 'DefenderCity',
+            nationId: defenderNation.id,
+            defence: 0,
+            wall: 0,
+        };
+        const attacker = { ...buildGeneral(100), crew: 10_000, rice: 100_000 };
+        const firstDefender = {
+            ...buildGeneral(10),
+            id: 2,
+            name: 'FirstDefender',
+            nationId: defenderNation.id,
+            cityId: defenderCity.id,
+            crew: 1,
+        };
+        const secondDefender = {
+            ...buildGeneral(10),
+            id: 3,
+            name: 'SecondDefender',
+            nationId: defenderNation.id,
+            cityId: defenderCity.id,
+            crew: 1,
+        };
+        const outcome = resolveWarBattle({
+            rng: new RandUtil(new ConstantRNG(0)),
+            unitSet: buildUnitSet(),
+            config: buildConfig(),
+            time: { year: 200, month: 1, startYear: 180 },
+            attacker: { general: attacker, city: attackerCity, nation: attackerNation },
+            defenders: [
+                { general: firstDefender, city: defenderCity, nation: defenderNation },
+                { general: secondDefender, city: defenderCity, nation: defenderNation },
+            ],
+            defenderCity,
+            defenderNation,
+            legacyFlushSequence: new LegacyWarLogFlushSequence(100),
+        });
+
+        const groupsFor = (generalId: number): number[] => [
+            ...new Set(
+                outcome.logs
+                    .filter((log) => log.generalId === generalId)
+                    .map((log) => log.legacyFlushGroup)
+                    .filter((group): group is number => group !== undefined)
+            ),
+        ];
+        expect(groupsFor(firstDefender.id)).toEqual([100]);
+        expect(groupsFor(secondDefender.id)).toEqual([101]);
+        // group 102 is the city applyDB/rollback epoch. Ref then flushes the attacker.
+        expect(groupsFor(attacker.id)).toEqual([103]);
+    });
+
     it('persists multi-use battle item charges and removes the last charge', async () => {
         const general = buildGeneral(100);
         equipNewItem(general, 'item', 'event_충차', { charges: 2 });

@@ -493,6 +493,7 @@ export class ActionResolver<
         const meta: GeneralMeta = {
             killturn,
             npcType: NPC_TYPE,
+            npc_org: NPC_TYPE,
             explevel: 0,
             dedlevel: 1,
             crewTypeId: this.env.defaultCrewTypeId,

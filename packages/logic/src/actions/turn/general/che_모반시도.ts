@@ -14,11 +14,7 @@ import type {
     GeneralActionOutcome,
     GeneralActionResolveContext,
 } from '@sammo-ts/logic/actions/engine.js';
-import {
-    createGeneralPatchEffect,
-    createLogEffect,
-    createNationPatchEffect,
-} from '@sammo-ts/logic/actions/engine.js';
+import { createGeneralPatchEffect, createLogEffect, createNationPatchEffect } from '@sammo-ts/logic/actions/engine.js';
 import { LogCategory, LogFormat, LogScope } from '@sammo-ts/logic/logging/types.js';
 import { JosaUtil } from '@sammo-ts/common';
 import type { ActionContextBuilder } from '@sammo-ts/logic/actions/turn/actionContext.js';
@@ -76,11 +72,13 @@ export class ActionDefinition<
             {
                 scope: LogScope.SYSTEM,
                 category: LogCategory.HISTORY,
+                format: LogFormat.YEAR_MONTH,
             }
         );
         context.addLog(`<Y>${general.name}</>${josaYi} <Y>${lord.name}</>에게서 군주자리를 찬탈`, {
             scope: LogScope.NATION,
             category: LogCategory.HISTORY,
+            format: LogFormat.YEAR_MONTH,
         });
         context.addLog('모반에 성공했습니다.', {
             scope: LogScope.GENERAL,
@@ -90,6 +88,7 @@ export class ActionDefinition<
         context.addLog(`모반으로 <D><b>${nation.name}</b></>의 군주자리를 찬탈`, {
             scope: LogScope.GENERAL,
             category: LogCategory.HISTORY,
+            format: LogFormat.YEAR_MONTH,
         });
 
         effects.push(
@@ -97,7 +96,8 @@ export class ActionDefinition<
                 scope: LogScope.GENERAL,
                 generalId: lord.id,
                 category: LogCategory.ACTION,
-                format: LogFormat.PLAIN,
+                format: LogFormat.MONTH,
+                legacyFlushGroup: 1,
             }),
             createLogEffect(
                 `<D><b>${general.name}</b></>의 모반으로 인해 <D><b>${nation.name}</b></>의 군주자리를 박탈당함`,
@@ -105,7 +105,8 @@ export class ActionDefinition<
                     scope: LogScope.GENERAL,
                     generalId: lord.id,
                     category: LogCategory.HISTORY,
-                    format: LogFormat.PLAIN,
+                    format: LogFormat.YEAR_MONTH,
+                    legacyFlushGroup: 1,
                 }
             ),
             createGeneralPatchEffect(

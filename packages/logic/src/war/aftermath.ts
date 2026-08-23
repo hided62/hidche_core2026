@@ -4,7 +4,8 @@ import type { City, General, GeneralTriggerState, Nation } from '@sammo-ts/logic
 import { createGeneralActionEvent } from '@sammo-ts/logic/actionModules/events.js';
 import { GeneralActionPipeline } from '@sammo-ts/logic/actionModules/general.js';
 import { ActionLogger } from '@sammo-ts/logic/logging/actionLogger.js';
-import { LogCategory, LogFormat, LogScope, type LogEntryDraft } from '@sammo-ts/logic/logging/types.js';
+import { LogFormat, type LogEntryDraft } from '@sammo-ts/logic/logging/types.js';
+import { buildScoutMessageDraft } from '@sammo-ts/logic/messages/scoutMessage.js';
 import { buildCrewTypeIndex, getTechCost, getTechLevel } from '@sammo-ts/logic/world/unitSet.js';
 import { LEGACY_DEFAULT_MAX_LEVEL } from '@sammo-ts/logic/scenario/constants.js';
 import type { WarUnitReport } from './types.js';
@@ -26,17 +27,45 @@ import {
     simpleSerialize,
     sortConflictEntries,
 } from './utils.js';
+import { LegacyWarLogFlushSequence } from './legacyFlushSequence.js';
 
 const META_DEAD = 'dead';
 const MAX_DEDICATION_LEVEL = 30;
 
-const updateLegacyProgressionLevels = (general: General): void => {
+const updateLegacyProgressionLevels = (general: General, logger: ActionLogger): void => {
+    const previousExpLevel = getMetaNumber(general.meta, 'explevel', 0);
+    const previousDedLevel = getMetaNumber(general.meta, 'dedlevel', 0);
     const expLevel =
         general.experience < 1_000
             ? Math.trunc(general.experience / 100)
             : Math.trunc(Math.sqrt(general.experience / 10));
-    general.meta.explevel = clamp(expLevel, 0, LEGACY_DEFAULT_MAX_LEVEL);
-    general.meta.dedlevel = clamp(Math.ceil(Math.sqrt(general.dedication) / 10), 0, MAX_DEDICATION_LEVEL);
+    const nextExpLevel = clamp(expLevel, 0, LEGACY_DEFAULT_MAX_LEVEL);
+    const nextDedLevel = clamp(Math.ceil(Math.sqrt(general.dedication) / 10), 0, MAX_DEDICATION_LEVEL);
+    general.meta.explevel = nextExpLevel;
+    general.meta.dedlevel = nextDedLevel;
+
+    if (nextExpLevel !== previousExpLevel) {
+        const josaRo = JosaUtil.pick(String(nextExpLevel), '로');
+        logger.pushGeneralActionLog(
+            nextExpLevel > previousExpLevel
+                ? `<C>Lv ${nextExpLevel}</>${josaRo} <C>레벨업</>!`
+                : `<C>Lv ${nextExpLevel}</>${josaRo} <R>레벨다운</>!`,
+            LogFormat.PLAIN
+        );
+    }
+
+    if (nextDedLevel !== previousDedLevel) {
+        const dedicationLevelText = nextDedLevel === 0 ? '무품관' : `${MAX_DEDICATION_LEVEL - nextDedLevel + 1}품관`;
+        const billText = (nextDedLevel * 200 + 400).toLocaleString('en-US');
+        const josaRoDedication = JosaUtil.pick(dedicationLevelText, '로');
+        const josaRoBill = JosaUtil.pick(billText, '로');
+        logger.pushGeneralActionLog(
+            nextDedLevel > previousDedLevel
+                ? `<Y>${dedicationLevelText}</>${josaRoDedication} <C>승급</>하여 봉록이 <C>${billText}</>${josaRoBill} <C>상승</>했습니다!`
+                : `<Y>${dedicationLevelText}</>${josaRoDedication} <R>강등</>되어 봉록이 <C>${billText}</>${josaRoBill} <R>하락</>했습니다!`,
+            LogFormat.PLAIN
+        );
+    }
 };
 
 const findReport = (reports: WarUnitReport[], predicate: (report: WarUnitReport) => boolean): WarUnitReport | null => {
@@ -207,16 +236,19 @@ const findNextCapital = (
         })[0]!.city;
 };
 
-const pushLoggers = (loggers: ActionLogger[], logs: LogEntryDraft[]): void => {
-    for (const logger of loggers) {
-        logs.push(...logger.flush());
-    }
+const pushLogger = (
+    logger: ActionLogger,
+    logs: LogEntryDraft[],
+    legacyFlushSequence: LegacyWarLogFlushSequence
+): void => {
+    logs.push(...legacyFlushSequence.flush(logger));
 };
 
 // 도시 점령 이후의 국가 붕괴/수도 이동/도시 리셋 처리.
 const resolveConquerCity = <TriggerState extends GeneralTriggerState>(
     input: WarAftermathInput<TriggerState>,
-    rng: RandUtil
+    rng: RandUtil,
+    legacyFlushSequence: LegacyWarLogFlushSequence
 ): ConquerCityOutcome<TriggerState> => {
     const { attackerNation, defenderNation, defenderCity, cities, generals, config } = input;
     const attacker = input.battle.attacker;
@@ -257,12 +289,11 @@ const resolveConquerCity = <TriggerState extends GeneralTriggerState>(
         `<Y>${attackerGeneralName}</>${josaYiGen} ${defenderNationDecoration} <G><b>${cityName}</b></> ${josaUl} <S>점령</>`
     );
 
-    if (defenderNationId) {
-        const defenderNationLogger = new ActionLogger({ nationId: defenderNationId });
+    const defenderNationLogger = defenderNationId ? new ActionLogger({ nationId: defenderNationId }) : null;
+    if (defenderNationLogger) {
         defenderNationLogger.pushNationHistoryLog(
             `<D><b>${attackerNationName}</b></>의 <Y>${attackerGeneralName}</>에 의해 <G><b>${cityName}</b></>${josaYiCity} <O>함락</>`
         );
-        pushLoggers([defenderNationLogger], logs);
     }
 
     const defenderCityCount = defenderNationId ? cities.filter((city) => city.nationId === defenderNationId).length : 0;
@@ -270,32 +301,44 @@ const resolveConquerCity = <TriggerState extends GeneralTriggerState>(
 
     let collapseRewardGold = 0;
     let collapseRewardRice = 0;
+    const messages: ConquerCityOutcome<TriggerState>['messages'] = [];
     const ruinedNpcJoinPlans: ConquerCityOutcome<TriggerState>['ruinedNpcJoinPlans'] = [];
 
     // 국가 붕괴 시 자원 손실과 포상 정산.
     if (nationCollapsed && defenderNation) {
-        const defenderGenerals = generals
-            .filter((general) => general.nationId === defenderNationId)
-            .sort((lhs, rhs) => {
-                // deleteNation() reads the non-lord rows in primary-key order,
-                // then appends the lord object to the returned PHP array.
-                const lhsIsLord = lhs.id === defenderNation.chiefGeneralId;
-                const rhsIsLord = rhs.id === defenderNation.chiefGeneralId;
-                if (lhsIsLord !== rhsIsLord) {
-                    return lhsIsLord ? 1 : -1;
-                }
-                return lhs.id - rhs.id;
-            });
+        const defenderNationGenerals = generals.filter((general) => general.nationId === defenderNationId);
+        const collapseLord =
+            defenderNationGenerals.find((general) => general.officerLevel === 12) ??
+            (defenderNation.chiefGeneralId === null
+                ? undefined
+                : defenderNationGenerals.find((general) => general.id === defenderNation.chiefGeneralId));
+        if (!collapseLord) {
+            throw new Error(`Collapsed nation ${defenderNationId} has no lord general.`);
+        }
+        const collapseLordId = collapseLord.id;
+        const defenderGenerals = defenderNationGenerals.sort((lhs, rhs) => {
+            // deleteNation() reads the non-lord rows in primary-key order,
+            // then appends the lord object to the returned PHP array.
+            const lhsIsLord = lhs.id === collapseLordId;
+            const rhsIsLord = rhs.id === collapseLordId;
+            if (lhsIsLord !== rhsIsLord) {
+                return lhsIsLord ? 1 : -1;
+            }
+            return lhs.id - rhs.id;
+        });
         let totalGoldLoss = 0;
         let totalRiceLoss = 0;
 
         const defenderNationJosaUl = JosaUtil.pick(defenderNationName, '을');
         const defenderNationJosaUn = JosaUtil.pick(defenderNationName, '은');
         const defenderNationJosaYi = JosaUtil.pick(defenderNationName, '이');
+        // Ref는 도시 수비 장수들의 onArbitraryAction/applyDB 뒤 이 순서로
+        // defender nation logger와 attacker logger를 각각 flush한다.
+        if (defenderNationLogger) {
+            pushLogger(defenderNationLogger, logs, legacyFlushSequence);
+        }
         attackerLogger.pushNationHistoryLog(`<D><b>${defenderNationName}</b></>${defenderNationJosaUl} 정복`);
-        attackerLogger.pushGlobalHistoryLog(
-            `<R><b>【멸망】</b></><D><b>${defenderNationName}</b></>${defenderNationJosaUn} <R>멸망</>했습니다.`
-        );
+        pushLogger(attackerLogger, logs, legacyFlushSequence);
 
         for (const general of defenderGenerals) {
             // Legacy Util::toInt truncates these losses rather than rounding.
@@ -305,7 +348,6 @@ const resolveConquerCity = <TriggerState extends GeneralTriggerState>(
             general.rice = clampMin(general.rice - loseRice, 0);
             general.experience = round(general.experience * 0.9);
             general.dedication = round(general.dedication * 0.5);
-            updateLegacyProgressionLevels(general);
 
             totalGoldLoss += loseGold;
             totalRiceLoss += loseRice;
@@ -323,13 +365,46 @@ const resolveConquerCity = <TriggerState extends GeneralTriggerState>(
                 `도주하며 금<C>${loseGold}</> 쌀<C>${loseRice}</>을 분실했습니다.`,
                 LogFormat.PLAIN
             );
-            pushLoggers([generalLogger], logs);
+            // Ref calls addExperience()/addDedication() after the loss action
+            // and before this former general's applyDB(), so any level/rank
+            // notices belong to the same logger/flush epoch.
+            updateLegacyProgressionLevels(general, generalLogger);
+            if (general.id === collapseLordId) {
+                // deleteNation()은 멸망 전역사를 군주의 logger에 먼저 넣고,
+                // 군주가 배열의 마지막에서 applyDB될 때 같은 epoch으로 저장한다.
+                generalLogger.pushGlobalHistoryLog(
+                    `<R><b>【멸망】</b></><D><b>${defenderNationName}</b></>${defenderNationJosaUn} <R>멸망</>했습니다.`
+                );
+            }
+            pushLogger(generalLogger, logs, legacyFlushSequence);
             affectedGenerals.add(general);
 
             if (config.joinMode !== 'onlyRandom') {
-                // Ref attempts to build/send a scout message after every loss.
-                // Message availability does not affect this draw.
-                rng.nextBool(0.5);
+                // deleteNation() has already persisted every former member as
+                // an unaffiliated officer before this draw and message build.
+                // The snapshot in the receiver-only ScoutMessage must
+                // therefore be neutral even though Core removes the nation
+                // after applying the command outcome.
+                if (rng.nextBool(0.5)) {
+                    const message = buildScoutMessageDraft({
+                        srcGeneral: attacker,
+                        destGeneral: {
+                            id: general.id,
+                            name: general.name,
+                            nationId: 0,
+                            officerLevel: 0,
+                        },
+                        srcNation: attackerNation,
+                        destNation: null,
+                        time: input.messageTime,
+                        ...(input.messageSharedIconBaseUrl
+                            ? { sharedIconBaseUrl: input.messageSharedIconBaseUrl }
+                            : {}),
+                    });
+                    if (message) {
+                        messages.push(message);
+                    }
+                }
 
                 const eligibleNpc = general.npcState >= 2 && general.npcState <= 8 && general.npcState !== 5;
                 if (eligibleNpc && rng.nextBool(config.joinRuinedNpcProbability ?? 0.1)) {
@@ -365,7 +440,7 @@ const resolveConquerCity = <TriggerState extends GeneralTriggerState>(
                 nationId: attackerNation.id,
             });
             chiefLogger.pushGeneralActionLog(resourceLog, LogFormat.PLAIN);
-            pushLoggers([chiefLogger], logs);
+            pushLogger(chiefLogger, logs, legacyFlushSequence);
         }
 
         defenderNation.meta.collapsed = true;
@@ -402,9 +477,11 @@ const resolveConquerCity = <TriggerState extends GeneralTriggerState>(
                 });
                 defenderLogger.pushGeneralActionLog(moveLog, LogFormat.PLAIN);
                 if (general.officerLevel >= 5) {
-                    defenderLogger.pushGeneralActionLog(gatherLog, LogFormat.PLAIN);
+                    // Ref omits the explicit PLAIN argument for the chief
+                    // gathering notice, so ActionLogger's MONTH format applies.
+                    defenderLogger.pushGeneralActionLog(gatherLog);
                 }
-                pushLoggers([defenderLogger], logs);
+                pushLogger(defenderLogger, logs, legacyFlushSequence);
 
                 general.atmos = round(general.atmos * 0.8);
                 if (general.officerLevel >= 5) {
@@ -422,12 +499,13 @@ const resolveConquerCity = <TriggerState extends GeneralTriggerState>(
             ? attackerNation
             : (input.nations.find((nation) => nation.id === conquerNationId) ?? attackerNation);
 
+    let conquerNationLogger: ActionLogger | null = null;
     if (conquerNationId === attackerNation.id) {
         attacker.cityId = defenderCity.id;
         affectedGenerals.add(attacker);
     } else {
         const conquerNationName = conquerNation.name;
-        const conquerNationLogger = new ActionLogger({ nationId: conquerNationId });
+        conquerNationLogger = new ActionLogger({ nationId: conquerNationId });
         const josaUl = JosaUtil.pick(cityName, '을');
         const josaYi = JosaUtil.pick(conquerNationName, '이');
 
@@ -440,7 +518,6 @@ const resolveConquerCity = <TriggerState extends GeneralTriggerState>(
         attackerLogger.pushNationHistoryLog(
             `<G><b>${cityName}</b></>${josaUl} <D><b>${conquerNationName}</b></>에 <Y>양도</>`
         );
-        pushLoggers([conquerNationLogger], logs);
     }
 
     // 점령 후 도시 상태를 방어 기본 상태로 되돌린다.
@@ -465,7 +542,16 @@ const resolveConquerCity = <TriggerState extends GeneralTriggerState>(
     affectedCities.add(defenderCity);
     affectedNations.add(conquerNation);
 
-    pushLoggers([attackerLogger], logs);
+    // 비멸망 경로의 defender/conquer logger는 ConquerCity() 함수가 끝날 때
+    // 생성 순서대로 destruct/flush된다. attacker logger는 외부 General이
+    // 소유하므로 여기서 그룹을 소비하지 않고 che_출병 line 259 epoch으로 넘긴다.
+    if (!nationCollapsed && defenderNationLogger) {
+        pushLogger(defenderNationLogger, logs, legacyFlushSequence);
+    }
+    if (conquerNationLogger) {
+        pushLogger(conquerNationLogger, logs, legacyFlushSequence);
+    }
+    logs.push(...attackerLogger.flush());
 
     return {
         conquerNationId,
@@ -476,6 +562,7 @@ const resolveConquerCity = <TriggerState extends GeneralTriggerState>(
         nations: Array.from(affectedNations),
         cities: Array.from(affectedCities),
         generals: Array.from(affectedGenerals),
+        messages,
         ruinedNpcJoinPlans,
     };
 };
@@ -484,6 +571,7 @@ export const resolveWarAftermath = <TriggerState extends GeneralTriggerState = G
     input: WarAftermathInput<TriggerState>
 ): WarAftermathOutcome<TriggerState> => {
     const logs: LogEntryDraft[] = [];
+    const legacyFlushSequence = input.legacyFlushSequence ?? new LegacyWarLogFlushSequence();
     const diplomacyDeltas: WarDiplomacyDelta[] = [];
     const affectedNations = new Set<Nation>();
     const affectedCities = new Set<City>();
@@ -591,13 +679,19 @@ export const resolveWarAftermath = <TriggerState extends GeneralTriggerState = G
         // nation-collapse RNG is consumed. Keep that order and the same RNG
         // object instead of opening a second random stream.
         const pipeline = new GeneralActionPipeline(input.generalActionModules ?? []);
-        const cityDefenders = input.generals.filter(
-            (general) =>
-                general.nationId !== 0 &&
-                general.nationId === input.defenderCity.nationId &&
-                general.cityId === input.defenderCity.id
-        );
+        const cityDefenders = input.generals
+            .filter(
+                (general) =>
+                    general.nationId !== 0 &&
+                    general.nationId === input.defenderCity.nationId &&
+                    general.cityId === input.defenderCity.id
+            )
+            .sort((left, right) => left.id - right.id);
         for (const general of cityDefenders) {
+            const generalLogger = new ActionLogger({
+                generalId: general.id,
+                nationId: general.nationId,
+            });
             pipeline.dispatch(
                 {
                     general,
@@ -610,25 +704,20 @@ export const resolveWarAftermath = <TriggerState extends GeneralTriggerState = G
                         listNations: () => input.nations,
                     },
                     log: {
-                        push: (text) =>
-                            logs.push({
-                                scope: LogScope.GENERAL,
-                                category: LogCategory.ACTION,
-                                format: LogFormat.MONTH,
-                                generalId: general.id,
-                                nationId: general.nationId,
-                                text,
-                            }),
+                        push: (text) => generalLogger.pushGeneralActionLog(text, LogFormat.MONTH),
                     },
                 },
                 createGeneralActionEvent('city.conquered', {
                     attacker: input.battle.attacker,
                 })
             );
+            // Ref는 ID 오름차순 city defender마다 onArbitraryAction 직후
+            // General::applyDB()를 호출한다. 로그가 없어도 epoch은 하나 소비한다.
+            pushLogger(generalLogger, logs, legacyFlushSequence);
             affectedGenerals.add(general);
         }
 
-        conquest = resolveConquerCity(input, rng);
+        conquest = resolveConquerCity(input, rng, legacyFlushSequence);
         logs.push(...conquest.logs);
 
         conquest.nations.forEach((nation) => affectedNations.add(nation));

@@ -86,14 +86,14 @@ export class ActionResolver<
         // Self Log
         context.addLog(`<D>${destNationName}</>${josaRo} 망명하여 수도로 이동합니다.`, {
             category: LogCategory.ACTION,
-            format: LogFormat.PLAIN,
+            format: LogFormat.MONTH,
         });
 
         // Global Log
         context.addLog(`<Y>${generalName}</>${josaYi} <D><b>${destNationName}</b></>${josaRo} <S>망명</>하였습니다.`, {
             scope: LogScope.SYSTEM,
             category: LogCategory.SUMMARY,
-            format: LogFormat.PLAIN,
+            format: LogFormat.MONTH,
         });
 
         // 2. Recruiter Rewards
@@ -143,6 +143,7 @@ export class ActionResolver<
                         generalId: destGeneral.id,
                         category: LogCategory.ACTION,
                         format: LogFormat.PLAIN,
+                        legacyFlushGroup: 1,
                     }
                 )
             );
@@ -164,6 +165,7 @@ export class ActionResolver<
                         generalId: destGeneral.id,
                         category: LogCategory.ACTION,
                         format: LogFormat.PLAIN,
+                        legacyFlushGroup: 1,
                     }
                 )
             );
@@ -283,18 +285,22 @@ export class ActionResolver<
             category: LogCategory.HISTORY,
             format: LogFormat.YEAR_MONTH,
         });
-        context.addLog(`<Y>${generalName}</> 등용에 성공했습니다.`, {
-            scope: LogScope.GENERAL,
-            generalId: destGeneral.id,
-            category: LogCategory.ACTION,
-            format: LogFormat.PLAIN,
-        });
-        context.addLog(`<Y>${generalName}</> 등용에 성공`, {
-            scope: LogScope.GENERAL,
-            generalId: destGeneral.id,
-            category: LogCategory.HISTORY,
-            format: LogFormat.YEAR_MONTH,
-        });
+        effects.push(
+            createLogEffect(`<Y>${generalName}</> 등용에 성공했습니다.`, {
+                scope: LogScope.GENERAL,
+                generalId: destGeneral.id,
+                category: LogCategory.ACTION,
+                format: LogFormat.MONTH,
+                legacyFlushGroup: 1,
+            }),
+            createLogEffect(`<Y>${generalName}</> 등용에 성공`, {
+                scope: LogScope.GENERAL,
+                generalId: destGeneral.id,
+                category: LogCategory.HISTORY,
+                format: LogFormat.YEAR_MONTH,
+                legacyFlushGroup: 1,
+            })
+        );
 
         const deletedTroopIds: number[] = [];
         if (general.troopId === general.id) {

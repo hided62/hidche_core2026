@@ -4,6 +4,7 @@ import {
     loadGeneralTurnCommandSpecs,
     loadNationTurnCommandSpecs,
 } from '@sammo-ts/logic';
+import { loadScenarioDefinitionById } from '@sammo-ts/game-engine/scenario/scenarioLoader.js';
 import { describe, expect, it } from 'vitest';
 
 import {
@@ -96,6 +97,52 @@ describe('turn command argument input', () => {
             destGeneralId: 7,
         });
         await expect(parseReservedTurnArgs('general', 'che_포상', {})).rejects.toThrow('Unknown general turn command');
+    });
+
+    it('accepts and rejects reserved commands from the real 904/905/910/912 world config', async () => {
+        const scenarioConsts = Object.fromEntries(
+            await Promise.all(
+                [904, 905, 910, 912].map(async (scenarioId) => [
+                    scenarioId,
+                    (await loadScenarioDefinitionById(scenarioId)).config.const,
+                ])
+            )
+        ) as Record<number, Record<string, unknown>>;
+
+        await expect(parseReservedTurnArgs('general', 'che_거병', {}, scenarioConsts[904])).rejects.toThrow(
+            'Unknown general turn command: che_거병'
+        );
+        await expect(
+            parseReservedTurnArgs('nation', 'che_선전포고', { destNationId: 2 }, scenarioConsts[904])
+        ).rejects.toThrow('Unknown nation turn command: che_선전포고');
+
+        await expect(
+            parseReservedTurnArgs(
+                'general',
+                'che_무작위건국',
+                { nationName: '신국', nationType: 'che_도적', colorType: 1 },
+                scenarioConsts[905]
+            )
+        ).resolves.toEqual({ nationName: '신국', nationType: 'che_도적', colorType: 1 });
+        await expect(parseReservedTurnArgs('nation', 'che_무작위수도이전', {}, scenarioConsts[905])).resolves.toEqual(
+            {}
+        );
+        await expect(parseReservedTurnArgs('general', 'cr_맹훈련', {}, scenarioConsts[905])).rejects.toThrow(
+            'Unknown general turn command: cr_맹훈련'
+        );
+
+        await expect(parseReservedTurnArgs('general', 'cr_맹훈련', {}, scenarioConsts[910])).resolves.toEqual({});
+        await expect(
+            parseReservedTurnArgs('nation', 'cr_인구이동', { destCityId: 7, amount: 1234 }, scenarioConsts[910])
+        ).resolves.toEqual({ destCityId: 7, amount: 1234 });
+        await expect(parseReservedTurnArgs('nation', 'che_무작위수도이전', {}, scenarioConsts[910])).rejects.toThrow(
+            'Unknown nation turn command: che_무작위수도이전'
+        );
+
+        await expect(parseReservedTurnArgs('nation', 'event_대검병연구', {}, scenarioConsts[912])).resolves.toEqual({});
+        await expect(parseReservedTurnArgs('nation', 'cr_인구이동', {}, scenarioConsts[912])).rejects.toThrow(
+            'Unknown nation turn command: cr_인구이동'
+        );
     });
 
     it('limits equipment trade options to the Ref default items when a scenario omits allItems', () => {

@@ -4,10 +4,12 @@ import type { City, General, GeneralTriggerState, Nation } from '@sammo-ts/logic
 import type { GeneralActionModule } from '@sammo-ts/logic/actionModules/general.js';
 import type { ActionLogger } from '@sammo-ts/logic/logging/actionLogger.js';
 import type { LogEntryDraft } from '@sammo-ts/logic/logging/types.js';
+import type { MessageDraft } from '@sammo-ts/logic/messages/message.js';
 import type { TracePort } from '@sammo-ts/logic/ports/trace.js';
 import type { UnitSetDefinition } from '@sammo-ts/logic/world/types.js';
 import type { WarActionModule } from './actions.js';
 import type { WarTriggerRegistry } from './triggers.js';
+import type { LegacyWarLogFlushSequence } from './legacyFlushSequence.js';
 
 export interface WarArmTypes {
     footman?: number;
@@ -58,6 +60,8 @@ export interface WarBattleInput<TriggerState extends GeneralTriggerState = Gener
     defenderNation: Nation | null;
     triggerRegistry?: WarTriggerRegistry;
     loggerFactory?: (options: { generalId?: number; nationId?: number }) => ActionLogger;
+    /** Ref processWar의 logger/applyDB epoch을 명령 전체에서 이어 주는 순서 cursor. */
+    legacyFlushSequence?: LegacyWarLogFlushSequence;
     trace?: (event: WarBattleTraceEvent) => void;
 }
 
@@ -177,6 +181,7 @@ export interface ConquerCityOutcome<TriggerState extends GeneralTriggerState = G
     nations: Nation[];
     cities: City[];
     generals: General<TriggerState>[];
+    messages: MessageDraft[];
     ruinedNpcJoinPlans: RuinedNpcJoinPlan[];
 }
 
@@ -192,9 +197,14 @@ export interface WarAftermathInput<TriggerState extends GeneralTriggerState = Ge
     unitSet: UnitSetDefinition;
     config: WarAftermathConfig;
     time: WarTimeContext;
+    /** Ref Message::gameNow() at the command transaction's logical tick. */
+    messageTime: Date;
+    messageSharedIconBaseUrl?: string;
     hiddenSeed?: string;
     rng?: RandUtil;
     generalActionModules?: ReadonlyArray<GeneralActionModule<TriggerState> | null | undefined>;
+    /** 전투에서 시작한 Ref logger/applyDB epoch 순서를 점령 후처리까지 이어 간다. */
+    legacyFlushSequence?: LegacyWarLogFlushSequence;
     calcNationTechGain?: (context: WarAftermathTechContext) => number;
     trace?: TracePort;
 }

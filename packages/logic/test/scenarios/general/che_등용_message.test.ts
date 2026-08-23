@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { ActionResolver } from '../../../src/actions/turn/general/che_등용.js';
+import { ActionResolver, actionContextBuilder } from '../../../src/actions/turn/general/che_등용.js';
 
 describe('che_등용 recruitment message', () => {
     it('queues the Ref scout prompt with sender and receiver snapshots', () => {
@@ -30,6 +30,23 @@ describe('che_등용 recruitment message', () => {
         const sourceNation = { id: 1, name: '위', color: '#ffffff' };
         const destinationNation = { id: 2, name: '촉', color: '#000000' };
         const messageTime = new Date('0200-01-01T00:10:00.000Z');
+        const actorTurnTime = new Date('0200-01-01T00:00:00.000Z');
+
+        const builtContext = actionContextBuilder(
+            {
+                general: { ...general, turnTime: actorTurnTime },
+                nation: sourceNation,
+                rng: {},
+            } as never,
+            {
+                gameNow: messageTime,
+                messageSharedIconBaseUrl: 'https://ref.example/image/icons',
+                actionArgs: { destGeneralId: destination.id },
+                worldRef: { getGeneralById: () => destination },
+                scenarioConfig: { const: {} },
+            } as never
+        );
+        expect(builtContext).toMatchObject({ messageTime });
 
         const result = new ActionResolver().resolve(
             {
@@ -54,7 +71,7 @@ describe('che_등용 recruitment message', () => {
                     nationId: sourceNation.id,
                     nationName: sourceNation.name,
                     color: sourceNation.color,
-                    icon: '',
+                    icon: 'https://sam-image.hided.net/icons/default.jpg',
                 },
                 dest: {
                     generalId: destination.id,
@@ -62,13 +79,16 @@ describe('che_등용 recruitment message', () => {
                     nationId: destinationNation.id,
                     nationName: destinationNation.name,
                     color: destinationNation.color,
-                    icon: '',
+                    icon: 'https://sam-image.hided.net/icons/default.jpg',
                 },
                 text: '위로 망명 권유 서신',
                 time: messageTime,
                 validUntil: new Date('9999-12-31T12:59:59.000Z'),
                 option: { action: 'scout' },
+                sendDestOnly: true,
             },
         });
+        expect(result.effects.filter((effect) => effect.type === 'log')).toEqual([]);
+        expect(logs).toHaveLength(1);
     });
 });

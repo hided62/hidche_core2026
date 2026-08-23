@@ -13,42 +13,74 @@ export interface SnapshotComparisonOptions {
 
 type FlatSnapshot = Map<string, unknown>;
 
-const entityKey = (value: Record<string, unknown>, index: number): string => {
+const flatArray = Symbol('turn-snapshot-array');
+const flatObject = Symbol('turn-snapshot-object');
+const flatMissing = Symbol('turn-snapshot-missing');
+
+const publicFlatStates = {
+    array: Object.freeze({ $snapshotState: 'array' }),
+    object: Object.freeze({ $snapshotState: 'object' }),
+    missing: Object.freeze({ $snapshotState: 'missing' }),
+} as const;
+
+interface EntityIdentity {
+    key: string;
+    semantic: boolean;
+}
+
+const entityIdentity = (value: Record<string, unknown>, index: number): EntityIdentity => {
     if (
         (typeof value.generalId === 'number' || typeof value.generalId === 'string') &&
         typeof value.type === 'string'
     ) {
-        return `${String(value.generalId)}:${value.type}`;
+        return { key: `${String(value.generalId)}:${value.type}`, semantic: true };
     }
     for (const key of ['id', 'generalId', 'nationId', 'fromNationId']) {
         const candidate = value[key];
         if (typeof candidate === 'number' || typeof candidate === 'string') {
             if (key === 'fromNationId' && value.toNationId !== undefined) {
-                return `${String(candidate)}->${String(value.toNationId)}`;
+                return { key: `${String(candidate)}->${String(value.toNationId)}`, semantic: true };
             }
             if (value.turnIndex !== undefined) {
-                return `${String(candidate)}:${String(value.officerLevel ?? '')}:${String(value.turnIndex)}`;
+                return {
+                    key: `${String(candidate)}:${String(value.officerLevel ?? '')}:${String(value.turnIndex)}`,
+                    semantic: true,
+                };
             }
-            return String(candidate);
+            return { key: String(candidate), semantic: true };
         }
     }
-    return String(index);
+    return { key: String(index), semantic: false };
 };
 
 const flatten = (value: unknown, path: string, output: FlatSnapshot): void => {
     if (Array.isArray(value)) {
+        output.set(path, flatArray);
+        const semanticKeys = new Map<string, number>();
         value.forEach((entry, index) => {
-            const key =
+            const identity =
                 path === 'logs' || path === 'messages'
-                    ? String(index)
+                    ? { key: String(index), semantic: false }
                     : typeof entry === 'object' && entry !== null && !Array.isArray(entry)
-                      ? entityKey(entry as Record<string, unknown>, index)
-                      : String(index);
-            flatten(entry, `${path}[${key}]`, output);
+                      ? entityIdentity(entry as Record<string, unknown>, index)
+                      : { key: String(index), semantic: false };
+            if (identity.semantic) {
+                const firstIndex = semanticKeys.get(identity.key);
+                if (firstIndex !== undefined) {
+                    throw new Error(
+                        `Duplicate semantic entity key ${JSON.stringify(identity.key)} at ${JSON.stringify(
+                            path
+                        )}: indexes ${firstIndex} and ${index}`
+                    );
+                }
+                semanticKeys.set(identity.key, index);
+            }
+            flatten(entry, `${path}[${identity.key}]`, output);
         });
         return;
     }
     if (typeof value === 'object' && value !== null) {
+        output.set(path, flatObject);
         const record = value as Record<string, unknown>;
         for (const key of Object.keys(record).sort()) {
             flatten(record[key], path ? `${path}.${key}` : key, output);
@@ -63,6 +95,22 @@ const canonicalFlatSnapshot = (snapshot: CanonicalTurnSnapshot): FlatSnapshot =>
     const output = new Map<string, unknown>();
     flatten(comparable, '', output);
     return output;
+};
+
+const flatValueAt = (snapshot: FlatSnapshot, path: string): unknown =>
+    snapshot.has(path) ? snapshot.get(path) : flatMissing;
+
+const publicFlatValue = (value: unknown): unknown => {
+    if (value === flatArray) {
+        return publicFlatStates.array;
+    }
+    if (value === flatObject) {
+        return publicFlatStates.object;
+    }
+    if (value === flatMissing) {
+        return publicFlatStates.missing;
+    }
+    return value;
 };
 
 const valuesEqual = (left: unknown, right: unknown, numericTolerance: number): boolean => {
@@ -96,11 +144,11 @@ export const compareTurnSnapshots = (
     const paths = [...new Set([...referenceFlat.keys(), ...coreFlat.keys()])].sort();
     return paths
         .filter((path) => !ignored.some((pattern) => pattern.test(path)))
-        .filter((path) => !valuesEqual(referenceFlat.get(path), coreFlat.get(path), tolerance))
+        .filter((path) => !valuesEqual(flatValueAt(referenceFlat, path), flatValueAt(coreFlat, path), tolerance))
         .map((path) => ({
             path,
-            reference: referenceFlat.get(path),
-            core: coreFlat.get(path),
+            reference: publicFlatValue(flatValueAt(referenceFlat, path)),
+            core: publicFlatValue(flatValueAt(coreFlat, path)),
         }));
 };
 
@@ -113,15 +161,15 @@ export const buildTurnSnapshotDelta = (
     const paths = [...new Set([...beforeFlat.keys(), ...afterFlat.keys()])].sort();
     const delta = new Map<string, unknown>();
     for (const path of paths) {
-        const previous = beforeFlat.get(path);
-        const next = afterFlat.get(path);
+        const previous = flatValueAt(beforeFlat, path);
+        const next = flatValueAt(afterFlat, path);
         if (Object.is(previous, next)) {
             continue;
         }
         if (typeof previous === 'number' && typeof next === 'number') {
             delta.set(path, next - previous);
         } else {
-            delta.set(path, { before: previous, after: next });
+            delta.set(path, { before: publicFlatValue(previous), after: publicFlatValue(next) });
         }
     }
     return delta;
@@ -141,10 +189,10 @@ export const compareTurnSnapshotDeltas = (
     const paths = [...new Set([...referenceDelta.keys(), ...coreDelta.keys()])].sort();
     return paths
         .filter((path) => !ignored.some((pattern) => pattern.test(path)))
-        .filter((path) => !valuesEqual(referenceDelta.get(path), coreDelta.get(path), tolerance))
+        .filter((path) => !valuesEqual(flatValueAt(referenceDelta, path), flatValueAt(coreDelta, path), tolerance))
         .map((path) => ({
             path,
-            reference: referenceDelta.get(path),
-            core: coreDelta.get(path),
+            reference: publicFlatValue(flatValueAt(referenceDelta, path)),
+            core: publicFlatValue(flatValueAt(coreDelta, path)),
         }));
 };

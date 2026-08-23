@@ -7,6 +7,7 @@ import {
     finalizeLogEntry,
     LogFormat,
     MESSAGE_MAILBOX_NATIONAL_BASE,
+    orderLegacyActionLoggerFlush,
     resolveInstantDiplomacyResponse,
     sendMessage,
     type GeneralActionEffect,
@@ -121,7 +122,7 @@ const persistEffects = async (
             logs.push(effect.entry);
         }
     }
-    await persistLogs(db, logs, year, month, at);
+    await persistLogs(db, orderLegacyActionLoggerFlush(logs), year, month, at);
 };
 
 const refreshFrontStates = async (db: DatabaseClient, mapName: string, nationIds: number[]): Promise<number[]> => {

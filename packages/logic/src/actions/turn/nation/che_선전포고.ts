@@ -23,6 +23,7 @@ import { JosaUtil } from '@sammo-ts/common';
 import type { NationTurnCommandSpec } from './index.js';
 import { z } from 'zod';
 import { parseArgsWithSchema } from '../parseArgs.js';
+import { resolveMessageTargetIcon } from '@sammo-ts/logic/messages/message.js';
 
 const ARGS_SCHEMA = z.object({
     destNationId: z.number().int().positive(),
@@ -36,6 +37,7 @@ interface DeclareWarResolveContext<
     currentYear: number;
     currentMonth: number;
     messageTime: Date;
+    messageSharedIconBaseUrl?: string;
 }
 
 const ACTION_NAME = '선전포고';
@@ -152,6 +154,8 @@ export class ActionDefinition<
                 nationId: args.destNationId,
                 category: LogCategory.HISTORY,
                 format: LogFormat.YEAR_MONTH,
+                // Ref는 actor logger를 applyDB로 flush한 뒤 상대국 logger를 따로 flush한다.
+                legacyFlushGroup: 1,
             }),
             // Global Action Log
             createLogEffect(
@@ -179,7 +183,7 @@ export class ActionDefinition<
                     nationId,
                     nationName,
                     color: context.nation?.color ?? '',
-                    icon: '',
+                    icon: resolveMessageTargetIcon(context.general, context.messageSharedIconBaseUrl),
                 },
                 dest: {
                     generalId: 0,
@@ -187,7 +191,7 @@ export class ActionDefinition<
                     nationId: args.destNationId,
                     nationName: destNationName,
                     color: context.destNation.color,
-                    icon: '',
+                    icon: resolveMessageTargetIcon(null, context.messageSharedIconBaseUrl),
                 },
                 text: `【외교】${context.currentYear}년 ${context.currentMonth}월:${nationName}에서 ${destNationName}에 선전포고`,
                 time: context.messageTime,
@@ -219,7 +223,8 @@ export const actionContextBuilder: ActionContextBuilder<DeclareWarArgs> = (base,
         destNation,
         currentYear: options.world.currentYear,
         currentMonth: options.world.currentMonth,
-        messageTime: base.general.turnTime,
+        messageSharedIconBaseUrl: options.messageSharedIconBaseUrl,
+        messageTime: options.gameNow ?? base.general.turnTime,
     };
 };
 

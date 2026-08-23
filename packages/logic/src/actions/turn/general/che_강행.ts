@@ -131,6 +131,7 @@ export class ActionResolver<
                         category: LogCategory.ACTION,
                         format: LogFormat.PLAIN,
                         generalId: target.id,
+                        legacyFlushGroup: -1,
                     })
                 );
             }

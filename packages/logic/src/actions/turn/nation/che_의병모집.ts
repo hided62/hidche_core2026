@@ -376,7 +376,7 @@ export class ActionResolver<
 
         const actionName = ACTION_NAME;
         context.addLog(`${actionName} 발동!`);
-        context.addLog(`${actionName} 발동`, {
+        context.addLog(`<M>${actionName}</>${actionJosa} 발동`, {
             category: LogCategory.HISTORY,
             format: LogFormat.YEAR_MONTH,
         });
@@ -416,6 +416,7 @@ export class ActionResolver<
                     category: LogCategory.ACTION,
                     generalId: target.id,
                     format: LogFormat.PLAIN,
+                    legacyFlushGroup: -1,
                 })
             );
         }
@@ -518,6 +519,9 @@ export class ActionResolver<
             const meta: GeneralMeta = {
                 killturn,
                 npcType: NPC_TYPE,
+                npc_org: NPC_TYPE,
+                explevel: 0,
+                dedlevel: 1,
                 crewTypeId: this.env.defaultCrewTypeId,
                 dex1: dex[0],
                 dex2: dex[1],
@@ -567,6 +571,7 @@ export class ActionResolver<
                 }),
                 turnTime,
                 ...(turnTick === undefined ? {} : { turnTick }),
+                affinity,
                 bornYear: birthYear,
                 deadYear: deathYear,
                 imageServer: candidate.imageServer ?? 0,

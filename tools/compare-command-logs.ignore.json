@@ -1,8 +1,8 @@
 {
     "SharedTsLogCommands": {
-        "Nation/che_불가침수락": "logs are emitted by diplomacy/instantResponse.ts and verified by instantDiplomacyReference.integration.test.ts",
-        "Nation/che_불가침파기수락": "logs are emitted by diplomacy/instantResponse.ts and verified by instantDiplomacyReference.integration.test.ts",
-        "Nation/che_종전수락": "logs are emitted by diplomacy/instantResponse.ts and verified by instantDiplomacyReference.integration.test.ts"
+        "Nation/che_불가침수락": "shared resolver logs are dynamically compared through Core messages.respond and Ref DecideMessageResponse by instantDiplomacyCoreReference.integration.test.ts",
+        "Nation/che_불가침파기수락": "shared resolver logs are dynamically compared through Core messages.respond and Ref DecideMessageResponse by instantDiplomacyCoreReference.integration.test.ts",
+        "Nation/che_종전수락": "shared resolver logs are dynamically compared through Core messages.respond and Ref DecideMessageResponse by instantDiplomacyCoreReference.integration.test.ts"
     },
     "Global": {
         "templates": [

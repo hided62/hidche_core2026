@@ -1,10 +1,11 @@
 import { describe, expect, it } from 'vitest';
 
 import type { CityRow, GeneralRow, NationRow, WorldStateRow } from '../src/context.js';
+import { loadScenarioDefinitionById } from '@sammo-ts/game-engine/scenario/scenarioLoader.js';
 import type { GeneralActionModule, MapDefinition, UnitSetDefinition } from '@sammo-ts/logic';
 import { buildRecruitmentCommandInfo, buildTurnCommandTable } from '../src/turns/commandTable.js';
 
-const buildWorldState = (joinMode = 'full'): WorldStateRow =>
+const buildWorldState = (joinMode = 'full', constOverrides: Record<string, unknown> = {}): WorldStateRow =>
     ({
         id: 1,
         scenarioCode: 'default',
@@ -17,6 +18,7 @@ const buildWorldState = (joinMode = 'full'): WorldStateRow =>
                 baseGold: 1000,
                 baseRice: 1000,
                 develCost: 100,
+                ...constOverrides,
             },
         },
         meta: {
@@ -188,6 +190,89 @@ describe('buildTurnCommandTable', () => {
             전략: ['필사즉생', '백성동원', '수몰', '허보', '의병모집', '이호경식', '급습', '피장파장'],
             기타: ['국기변경', '국호변경'],
         });
+    });
+
+    it('projects scenario-specific command categories instead of the default profile', async () => {
+        const table = await buildTurnCommandTable({
+            worldState: buildWorldState('full', {
+                availableGeneralCommand: {
+                    개인: ['휴식'],
+                    내정: ['che_물자조달'],
+                    군사: ['cr_맹훈련'],
+                },
+                availableChiefCommand: {
+                    휴식: ['휴식'],
+                    특수: ['cr_인구이동'],
+                    연구: ['event_대검병연구', 'event_화륜차연구'],
+                },
+            }),
+            general: buildGeneral(),
+            city: buildCity(),
+            nation: buildNation(),
+            nationGenerals: null,
+        });
+
+        expect(table.general.map(({ category }) => category)).toEqual(['개인', '내정', '군사']);
+        expect(table.general.flatMap(({ values }) => values.map(({ key }) => key))).toEqual([
+            '휴식',
+            'che_물자조달',
+            'cr_맹훈련',
+        ]);
+        expect(table.nation.map(({ category }) => category)).toEqual(['휴식', '특수', '연구']);
+        expect(table.nation.flatMap(({ values }) => values.map(({ key }) => key))).toEqual([
+            '휴식',
+            'cr_인구이동',
+            'event_대검병연구',
+            'event_화륜차연구',
+        ]);
+    });
+
+    it('projects the real 904/905/910/912 world command profiles into the API table', async () => {
+        const buildScenarioTable = async (scenarioId: number) => {
+            const scenario = await loadScenarioDefinitionById(scenarioId);
+            return buildTurnCommandTable({
+                worldState: buildWorldState('full', scenario.config.const),
+                general: buildGeneral(),
+                city: buildCity(),
+                nation: buildNation(),
+                nationGenerals: null,
+            });
+        };
+        const commandCategory = (groups: Awaited<ReturnType<typeof buildScenarioTable>>['general'], key: string) =>
+            groups.find((group) => group.values.some((command) => command.key === key))?.category;
+        const nationCommandCategory = (groups: Awaited<ReturnType<typeof buildScenarioTable>>['nation'], key: string) =>
+            groups.find((group) => group.values.some((command) => command.key === key))?.category;
+        const [scenario904, scenario905, scenario910, scenario912] = await Promise.all(
+            [904, 905, 910, 912].map(buildScenarioTable)
+        );
+
+        expect(commandCategory(scenario904.general, 'che_물자조달')).toBe('내정');
+        expect(commandCategory(scenario904.general, 'che_거병')).toBeUndefined();
+        expect(nationCommandCategory(scenario904.nation, 'che_피장파장')).toBe('기타');
+        expect(nationCommandCategory(scenario904.nation, 'che_선전포고')).toBeUndefined();
+        expect(nationCommandCategory(scenario904.nation, 'che_부대탈퇴지시')).toBeUndefined();
+
+        expect(commandCategory(scenario905.general, 'che_무작위건국')).toBe('국가');
+        expect(nationCommandCategory(scenario905.nation, 'che_무작위수도이전')).toBe('기타');
+
+        expect(commandCategory(scenario910.general, 'cr_맹훈련')).toBe('군사');
+        expect(commandCategory(scenario910.general, 'cr_건국')).toBe('국가');
+        expect(nationCommandCategory(scenario910.nation, 'cr_인구이동')).toBe('특수');
+
+        expect(nationCommandCategory(scenario912.nation, 'event_대검병연구')).toBe('연구');
+        expect(
+            scenario912.nation.find((group) => group.category === '연구')?.values.map((command) => command.key)
+        ).toEqual([
+            'event_대검병연구',
+            'event_극병연구',
+            'event_화시병연구',
+            'event_원융노병연구',
+            'event_산저병연구',
+            'event_음귀병연구',
+            'event_무희연구',
+            'event_상병연구',
+            'event_화륜차연구',
+        ]);
     });
 
     it('keeps every default general and chief argument command inside the shared frontend field contract', async () => {

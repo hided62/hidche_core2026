@@ -90,6 +90,8 @@ describe('도시 점령 시 국가 멸망 처리', () => {
         strongFrontCity.supplyState = 1;
         const conflictCity = cities.find((city) => city.id === 3)!;
         conflictCity.conflict = { 2: 100, 1: 50 };
+        const emptiedConflictCity = cities.find((city) => city.id === 4)!;
+        emptiedConflictCity.conflict = { 2: 25 };
 
         const unitSet: UnitSetDefinition = {
             id: 'test_unit_set',
@@ -291,6 +293,7 @@ describe('도시 점령 시 국가 멸망 처리', () => {
         expect(world.listEvents('destroy_nation')).toEqual([]);
         expect(world.getState().meta.block_change_scout).toBeUndefined();
         expect(world.getCityById(conflictCity.id)?.conflict).toEqual({ 1: 50 });
+        expect(world.getCityById(emptiedConflictCity.id)?.conflict).toEqual([]);
 
         const updatedWeakGeneral = world.getGeneralById(weakGeneral.id);
         expect(updatedWeakGeneral?.nationId).toBe(0);

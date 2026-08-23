@@ -113,6 +113,7 @@ export class ActionResolver<
                     category: LogCategory.ACTION,
                     generalId: target.id,
                     format: LogFormat.PLAIN,
+                    legacyFlushGroup: -1,
                 })
             );
         }
@@ -136,12 +137,15 @@ export class ActionResolver<
                 strategic_cmd_limit: globalDelay,
             };
             effects.push(
-                createLogEffect(broadcastMessage, {
-                    scope: LogScope.NATION,
-                    category: LogCategory.HISTORY,
-                    nationId: nation.id,
-                    format: LogFormat.YEAR_MONTH,
-                })
+                createLogEffect(
+                    `<Y>${generalName}</>${generalJosa} <G><b>${cityName}</b></>에 <M>${ACTION_NAME}</>을 발동`,
+                    {
+                        scope: LogScope.NATION,
+                        category: LogCategory.HISTORY,
+                        nationId: nation.id,
+                        format: LogFormat.YEAR_MONTH,
+                    }
+                )
             );
         }
 

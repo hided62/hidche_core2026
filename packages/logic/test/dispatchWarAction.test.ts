@@ -7,6 +7,9 @@ import type { DispatchResolveContext } from '../src/actions/turn/general/che_출
 import type { TurnSchedule } from '../src/turn/calendar.js';
 import type { WarAftermathConfig, WarEngineConfig } from '../src/war/types.js';
 import type { UnitSetDefinition } from '../src/world/types.js';
+import type { ItemModule } from '../src/items/types.js';
+import { orderLegacyActionLoggerFlush } from '../src/logging/actionLogger.js';
+import { LogCategory, LogFormat, LogScope } from '../src/logging/types.js';
 
 const buildGeneral = (id: number, nationId: number, cityId: number): General => ({
     id,
@@ -175,6 +178,19 @@ const schedule: TurnSchedule = {
     entries: [{ startMinute: 0, tickMinutes: 60 }],
 };
 
+const uniqueItem: ItemModule = {
+    key: 'test_unique',
+    name: '테스트 유니크',
+    rawName: '테스트 유니크',
+    info: 'test',
+    slot: 'item',
+    cost: null,
+    buyable: false,
+    consumable: false,
+    reqSecu: 0,
+    unique: true,
+};
+
 describe('che_출병', () => {
     it('runs war battle and emits patches/logs', () => {
         const attackerNation = buildNation(1);
@@ -183,14 +199,18 @@ describe('che_출병', () => {
         const defenderCity = buildCity(2, defenderNation.id);
         const neutralCity = buildCity(3, 0);
         const attacker = buildGeneral(1, attackerNation.id, attackerCity.id);
+        attacker.officerLevel = 12;
         attacker.turnTime = new Date('2000-01-01T00:00:00Z');
         const defender = buildGeneral(2, defenderNation.id, defenderCity.id);
+        defender.officerLevel = 12;
         defender.crew = 0;
         defenderCity.defence = 0;
         defenderCity.wall = 0;
 
         const definition = new ActionDefinition();
-        const context: Omit<DispatchResolveContext, 'addLog'> = {
+        const context: Omit<DispatchResolveContext, 'addLog'> & {
+            uniqueLottery: () => ItemModule;
+        } = {
             general: attacker,
             city: attackerCity,
             nation: attackerNation,
@@ -246,9 +266,12 @@ describe('che_출병', () => {
                 month: 1,
                 startYear: 180,
             },
-            seedBase: 'test-seed',
+            seedBase: 'test-seed-2',
             warConfig,
             aftermathConfig,
+            messageTime: new Date('2000-01-01T00:00:00.000Z'),
+            messageSharedIconBaseUrl: 'https://ref.example/image/icons',
+            uniqueLottery: () => uniqueItem,
         };
         const resolution = resolveGeneralAction(
             definition,
@@ -278,6 +301,44 @@ describe('che_출병', () => {
                     effect.destNationId === defenderNation.id
             )
         ).toBe(true);
+        expect(resolution.effects.find((effect) => effect.type === 'message:add')).toEqual({
+            type: 'message:add',
+            draft: expect.objectContaining({
+                msgType: 'private',
+                dest: expect.objectContaining({
+                    generalId: defender.id,
+                    nationId: 0,
+                    nationName: '재야',
+                    icon: 'https://ref.example/image/icons/default.jpg',
+                }),
+                text: 'Nation1로 망명 권유 서신',
+                option: { action: 'scout' },
+                sendDestOnly: true,
+            }),
+        });
+
+        const uniqueGroups = new Set(resolution.postProgressionLogs.map((log) => log.legacyFlushGroup));
+        expect(uniqueGroups.size).toBe(1);
+        const [internalFinalGroup] = uniqueGroups;
+        expect(internalFinalGroup).toBeTypeOf('number');
+        expect(internalFinalGroup).toBeLessThan(0);
+        expect(resolution.logs.find((log) => log.text.includes('정복으로 금'))?.legacyFlushGroup).toBe(
+            internalFinalGroup
+        );
+
+        const outerProgressionLog = {
+            scope: LogScope.GENERAL,
+            category: LogCategory.ACTION,
+            format: LogFormat.PLAIN,
+            generalId: attacker.id,
+            text: 'outer progression',
+        } as const;
+        const ordered = orderLegacyActionLoggerFlush([
+            ...resolution.logs,
+            ...resolution.postProgressionLogs,
+            outerProgressionLog,
+        ]);
+        expect(ordered.at(-1)?.text).toBe(outerProgressionLog.text);
     });
 
     it('orders equal-priority defender inputs by general number before the stable battle sort', () => {
@@ -347,6 +408,7 @@ describe('che_출병', () => {
             seedBase: 'route-layer-seed',
             warConfig,
             aftermathConfig,
+            messageTime: new Date('2000-01-01T00:00:00.000Z'),
         };
 
         const resolution = resolveGeneralAction(

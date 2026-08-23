@@ -41,7 +41,7 @@ node_tag=$(printf '%s' "${CI_NODE_INDEX:-local}" | tr -cd 'a-zA-Z0-9_' | tr 'A-Z
 run_id=$(date -u +%m%d%H%M%S)_$$_${node_tag}
 export CONDITIONAL_INTEGRATION_RUN_ID=$run_id
 schema_ownership_token="sammo-conditional-integration:$run_id"
-supported_registry_modes="core create_general external_fixture gateway_runtime immediate_action npc_possession read_model_journal reference_live_sortie reference_npc_possession select_pool"
+supported_registry_modes="core create_general external_fixture gateway_runtime immediate_action npc_possession read_model_journal reference_full_lifecycle reference_live_sortie reference_npc_possession select_pool web_push_gateway"
 term_grace_seconds=${CONDITIONAL_INTEGRATION_TERM_GRACE_SECONDS:-10}
 case "$term_grace_seconds" in
     ''|*[!0-9]*)
@@ -60,9 +60,11 @@ create_general_schema=${CREATE_GENERAL_INTEGRATION_SCHEMA:-ci_${run_id}_create_g
 select_pool_schema=${SELECT_POOL_INTEGRATION_SCHEMA:-ci_${run_id}_select_pool_integration}
 immediate_action_schema=${IMMEDIATE_ACTION_INTEGRATION_SCHEMA:-ci_${run_id}_immediate_action_integration}
 gateway_runtime_schema=${GATEWAY_RUNTIME_INTEGRATION_SCHEMA:-ci_${run_id}_gateway_runtime_integration}
+web_push_gateway_schema=${WEB_PUSH_GATEWAY_INTEGRATION_SCHEMA:-ci_${run_id}_web_push_integration}
 read_model_journal_schema=${READ_MODEL_JOURNAL_INTEGRATION_SCHEMA:-ci_${run_id}_read_model_journal_integration}
 npc_possession_differential_schema=${NPC_POSSESSION_DIFFERENTIAL_SCHEMA:-ci_${run_id}_npc_possession_differential}
 live_sortie_schema=${LIVE_SORTIE_PERSISTENCE_SCHEMA:-ci_${run_id}_live_sortie_persistence}
+turn_full_lifecycle_schema=${TURN_FULL_LIFECYCLE_PERSISTENCE_SCHEMA:-ci_${run_id}_turn_full_lifecycle_persistence}
 
 for schema in \
     "$integration_schema" \
@@ -72,9 +74,11 @@ for schema in \
     "$select_pool_schema" \
     "$immediate_action_schema" \
     "$gateway_runtime_schema" \
+    "$web_push_gateway_schema" \
     "$read_model_journal_schema" \
     "$npc_possession_differential_schema" \
-    "$live_sortie_schema"; do
+    "$live_sortie_schema" \
+    "$turn_full_lifecycle_schema"; do
     case "$schema" in
         ''|[!a-z_]*|*[!a-z0-9_]*)
             echo "integration schema must be a lowercase PostgreSQL identifier: $schema" >&2
@@ -576,6 +580,20 @@ run_marked_tests app/game-engine \
     "$(markers_for_mode gateway_runtime)" \
     "gateway_runtime_postgresql"
 
+create_owned_schema "$web_push_gateway_schema"
+web_push_gateway_database_url=$(build_database_url "$web_push_gateway_schema")
+(
+    export POSTGRES_SCHEMA=$web_push_gateway_schema
+    export DATABASE_URL=$web_push_gateway_database_url
+    export GATEWAY_DATABASE_URL=$web_push_gateway_database_url
+    pnpm --filter @sammo-ts/infra prisma:migrate:deploy:gateway
+)
+export WEB_PUSH_GATEWAY_DATABASE_URL=$web_push_gateway_database_url
+export WEB_PUSH_GATEWAY_INTEGRATION_SCHEMA=$web_push_gateway_schema
+run_marked_tests app/gateway-api \
+    "$(markers_for_mode web_push_gateway)" \
+    "web_push_gateway_postgresql"
+
 npc_possession_database_url=$(build_database_url "$npc_possession_schema")
 (
     export POSTGRES_SCHEMA=$npc_possession_schema
@@ -653,6 +671,20 @@ if [ "${TURN_DIFFERENTIAL_REFERENCE:-}" = "1" ]; then
     run_marked_tests tools/integration-tests \
         "$(markers_for_mode reference_live_sortie)" \
         "live_sortie_postgresql"
+
+    create_owned_schema "$turn_full_lifecycle_schema"
+    turn_full_lifecycle_database_url=$(build_database_url "$turn_full_lifecycle_schema")
+    (
+        export POSTGRES_SCHEMA=$turn_full_lifecycle_schema
+        export DATABASE_URL=$turn_full_lifecycle_database_url
+        pnpm --filter @sammo-ts/infra prisma:db:push:game
+    )
+    export POSTGRES_SCHEMA=$turn_full_lifecycle_schema
+    export DATABASE_URL=$turn_full_lifecycle_database_url
+    export TURN_FULL_LIFECYCLE_PERSISTENCE_DATABASE_URL=$turn_full_lifecycle_database_url
+    run_marked_tests tools/integration-tests \
+        "$(markers_for_mode reference_full_lifecycle)" \
+        "turn_full_lifecycle_postgresql"
     export POSTGRES_SCHEMA=$integration_schema
     export DATABASE_URL=$database_url
 fi

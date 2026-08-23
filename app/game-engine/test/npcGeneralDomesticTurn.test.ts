@@ -251,6 +251,7 @@ describe('NPC 일반 내정 턴', () => {
         });
         await reservedTurnStore.loadAll();
 
+        const logicalGameNow = addMinutes(mockDate, 3);
         const wrapper = { world: null as InMemoryTurnWorld | null };
         const handler = await createReservedTurnHandler({
             reservedTurns: reservedTurnStore,
@@ -259,6 +260,7 @@ describe('NPC 일반 내정 턴', () => {
             map: MINIMAL_MAP as any,
             unitSet: snapshot.unitSet,
             getWorld: () => wrapper.world,
+            now: () => logicalGameNow,
         });
 
         const world = new InMemoryTurnWorld(state, snapshot, {
@@ -296,6 +298,7 @@ describe('NPC 일반 내정 턴', () => {
                 msgType: 'public',
                 text: '기부는 저처럼 돈 많은 사람들이 많이 하면 됩니다',
                 src: expect.objectContaining({ generalId: 1, generalName: 'NPC_무장', nationId: 1 }),
+                time: logicalGameNow,
             })
         );
     });

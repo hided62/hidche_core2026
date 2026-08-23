@@ -177,27 +177,28 @@ export class ActionResolver<
             '이'
         )} 발동되었습니다.`;
 
-        for (const target of context.friendlyGenerals) {
-            if (target.id === general.id) {
-                continue;
-            }
+        const friendlyTargets = context.friendlyGenerals.filter((target) => target.id !== general.id);
+        const firstLegacyFlushGroup = -(friendlyTargets.length + context.destNationGenerals.length + 1);
+        for (const [index, target] of friendlyTargets.entries()) {
             effects.push(
                 createLogEffect(broadcastMessage, {
                     scope: LogScope.GENERAL,
                     category: LogCategory.ACTION,
                     generalId: target.id,
                     format: LogFormat.PLAIN,
+                    legacyFlushGroup: firstLegacyFlushGroup + index,
                 })
             );
         }
 
-        for (const target of context.destNationGenerals) {
+        for (const [index, target] of context.destNationGenerals.entries()) {
             effects.push(
                 createLogEffect(destBroadcastMessage, {
                     scope: LogScope.GENERAL,
                     category: LogCategory.ACTION,
                     generalId: target.id,
                     format: LogFormat.PLAIN,
+                    legacyFlushGroup: firstLegacyFlushGroup + friendlyTargets.length + index,
                 })
             );
         }
@@ -232,7 +233,8 @@ export class ActionResolver<
                     scope: LogScope.NATION,
                     category: LogCategory.HISTORY,
                     nationId: destNation.id,
-                    format: LogFormat.PLAIN,
+                    format: LogFormat.YEAR_MONTH,
+                    legacyFlushGroup: -1,
                 }
             )
         );

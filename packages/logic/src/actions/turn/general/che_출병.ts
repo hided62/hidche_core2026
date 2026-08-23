@@ -21,6 +21,7 @@ import {
     createCityPatchEffect,
     createDiplomacyPatchEffect,
     createGeneralPatchEffect,
+    createMessageEffect,
     createNationPatchEffect,
 } from '@sammo-ts/logic/actions/engine.js';
 import { JosaUtil, LiteHashDRBG } from '@sammo-ts/common';
@@ -30,6 +31,7 @@ import type { GeneralTurnCommandSpec } from './index.js';
 import type { WarAftermathConfig, WarEngineConfig, WarTimeContext } from '@sammo-ts/logic/war/types.js';
 import { resolveWarAftermath } from '@sammo-ts/logic/war/aftermath.js';
 import { resolveWarBattle } from '@sammo-ts/logic/war/engine.js';
+import { LegacyWarLogFlushSequence } from '@sammo-ts/logic/war/legacyFlushSequence.js';
 import type { WarActionModule } from '@sammo-ts/logic/war/actions.js';
 import type { NationTraitModule } from '@sammo-ts/logic/actionModules/traits/nation/index.js';
 import type { GeneralActionModule } from '@sammo-ts/logic/actionModules/general.js';
@@ -63,6 +65,8 @@ export interface DispatchResolveContext<
     seedBase: string;
     warConfig: WarEngineConfig;
     aftermathConfig: WarAftermathConfig;
+    messageTime: Date;
+    messageSharedIconBaseUrl?: string;
 }
 
 export const orderDefenderGenerals = <TriggerState extends GeneralTriggerState>(
@@ -70,6 +74,7 @@ export const orderDefenderGenerals = <TriggerState extends GeneralTriggerState>(
 ): General<TriggerState>[] => [...generals].sort((left, right) => left.id - right.id);
 
 const ACTION_NAME = '출병';
+const LEGACY_SORTIE_FLUSH_GROUP_START = Number.MIN_SAFE_INTEGER;
 const ARGS_SCHEMA = z.object({
     destCityId: z.number(),
 });
@@ -512,16 +517,24 @@ export class ActionDefinition<
             };
         }
 
+        // Ref che_출병은 명령 내부에서도 General::applyDB()/ActionLogger::flush()를
+        // 여러 번 수행한다. 외부 TurnExecutionHelper progression(group 0)과
+        // 섞이지 않도록 명령 내부 epoch은 작은 음수부터 단조 증가시킨다.
+        const legacyFlushSequence = new LegacyWarLogFlushSequence(LEGACY_SORTIE_FLUSH_GROUP_START);
+        const preWarFlushGroup = legacyFlushSequence.claimGroup()!;
+
         if (finalTargetCity.id !== destCity.id) {
             const josaRo = JosaUtil.pick(finalTargetCity.name, '로');
             const josaUl = JosaUtil.pick(destCity.name, '을');
             if (minDist === 0) {
                 context.addLog(
-                    `<G><b>${finalTargetCity.name}</b></>${josaRo} 가기 위해 <G><b>${destCity.name}</b></>${josaUl} 거쳐야 합니다.`
+                    `<G><b>${finalTargetCity.name}</b></>${josaRo} 가기 위해 <G><b>${destCity.name}</b></>${josaUl} 거쳐야 합니다.`,
+                    { legacyFlushGroup: preWarFlushGroup }
                 );
             } else {
                 context.addLog(
-                    `<G><b>${finalTargetCity.name}</b></>${josaRo} 가는 도중 <G><b>${destCity.name}</b></>${josaUl} 거치기로 합니다.`
+                    `<G><b>${finalTargetCity.name}</b></>${josaRo} 가는 도중 <G><b>${destCity.name}</b></>${josaUl} 거치기로 합니다.`,
+                    { legacyFlushGroup: preWarFlushGroup }
                 );
             }
         }
@@ -614,6 +627,7 @@ export class ActionDefinition<
             })),
             defenderCity,
             defenderNation,
+            legacyFlushSequence,
             ...(shouldTraceWar
                 ? {
                       trace: (event) => {
@@ -635,7 +649,9 @@ export class ActionDefinition<
             unitSet,
             config: context.aftermathConfig,
             time,
+            messageTime: context.messageTime,
             hiddenSeed: context.seedBase,
+            legacyFlushSequence,
             generalActionModules: this.generalModules,
             calcNationTechGain: ({ nation, baseGain }) => {
                 const module = this.nationTraitModules.get(nation.typeCode);
@@ -644,6 +660,7 @@ export class ActionDefinition<
                     baseGain
                 );
             },
+            ...(context.messageSharedIconBaseUrl ? { messageSharedIconBaseUrl: context.messageSharedIconBaseUrl } : {}),
             ...(this.trace ? { trace: this.trace } : {}),
         });
 
@@ -676,12 +693,22 @@ export class ActionDefinition<
         }
 
         const effects: Array<GeneralActionEffect<TriggerState>> = [];
+        // processWar() 반환 후 StaticEvent/unique 로직이 끝나면 Ref line 259의
+        // actor applyDB가 실행된다. 이 epoch은 command 반환 후 outer progression과 별개다.
+        const finalActorFlushGroup = legacyFlushSequence.claimGroup()!;
 
         for (const entry of battle.logs) {
             effects.push({ type: 'log', entry });
         }
         for (const entry of aftermath.logs) {
-            effects.push({ type: 'log', entry });
+            effects.push({
+                type: 'log',
+                entry:
+                    entry.legacyFlushGroup === undefined ? { ...entry, legacyFlushGroup: finalActorFlushGroup } : entry,
+            });
+        }
+        for (const message of aftermath.conquest?.messages ?? []) {
+            effects.push(createMessageEffect(message));
         }
 
         const generalPatches = new Map<number, General<TriggerState>>();
@@ -745,7 +772,20 @@ export class ActionDefinition<
             );
         }
 
-        tryApplyUniqueLottery(context, { acquireType: '아이템', reason: ACTION_NAME });
+        const addFinalActorLog: NonNullable<typeof context.addPostProgressionLog> = (message, options = {}) => {
+            const sink = context.addPostProgressionLog ?? context.addLog;
+            sink(message, {
+                ...options,
+                legacyFlushGroup: finalActorFlushGroup,
+            });
+        };
+        tryApplyUniqueLottery(
+            {
+                ...context,
+                addPostProgressionLog: addFinalActorLog,
+            },
+            { acquireType: '아이템', reason: ACTION_NAME }
+        );
 
         return {
             effects,
@@ -792,6 +832,8 @@ export const actionContextBuilder: ActionContextBuilder = (base, options) => {
         seedBase: options.seedBase,
         warConfig,
         aftermathConfig,
+        messageTime: options.gameNow ?? base.general.turnTime,
+        ...(options.messageSharedIconBaseUrl ? { messageSharedIconBaseUrl: options.messageSharedIconBaseUrl } : {}),
     };
 };
 

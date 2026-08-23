@@ -64,12 +64,34 @@ export const buildPersistedRankRows = (general: RankedGeneralState): PersistedRa
     });
 };
 
+/**
+ * Ref GeneralBuilder/Join initializes every rank row in nation 0 with value 0.
+ * The one exception is a user-creation inheritance debit already carried in
+ * `inherit_spent_dyn`. Keep this persistence boundary shared by the database
+ * hooks and differential projection.
+ */
+export const buildInitialRankRows = (general: RankedGeneralState): PersistedRankRow[] =>
+    buildPersistedRankRows(general).map((row) => ({
+        ...row,
+        nationId: 0,
+        value: row.type === 'inherit_spent_dyn' ? row.value : 0,
+    }));
+
+export const buildLegacyComparableInitialRankRows = (
+    general: RankedGeneralState
+): Array<PersistedRankRow & { type: LegacyRankDataType }> => {
+    const legacyTypes = new Set<RankDataType>(LEGACY_RANK_DATA_TYPES);
+    return buildInitialRankRows(general).filter((row): row is PersistedRankRow & { type: LegacyRankDataType } =>
+        legacyTypes.has(row.type)
+    );
+};
+
 export const buildLegacyComparableRankRows = (
     general: RankedGeneralState
 ): Array<PersistedRankRow & { type: LegacyRankDataType }> => {
     const legacyTypes = new Set<RankDataType>(LEGACY_RANK_DATA_TYPES);
-    return buildPersistedRankRows(general).filter(
-        (row): row is PersistedRankRow & { type: LegacyRankDataType } => legacyTypes.has(row.type)
+    return buildPersistedRankRows(general).filter((row): row is PersistedRankRow & { type: LegacyRankDataType } =>
+        legacyTypes.has(row.type)
     );
 };
 

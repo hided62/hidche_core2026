@@ -101,7 +101,7 @@ export class ActionDefinition<
         const amount = clamp(args.amount, 0, available);
 
         const cost = calcCost(this.env.develCost, args.amount);
-        const amountText = amount.toLocaleString();
+        const amountText = String(amount);
         const destCityName = destCity.name;
         const josaRo = JosaUtil.pick(destCityName, '로');
 

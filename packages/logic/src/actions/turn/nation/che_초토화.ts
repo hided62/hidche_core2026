@@ -204,8 +204,8 @@ export class ActionDefinition<
                 `<Y>${generalName}</>${josaYi} <G><b>${destCityName}</b></>${josaUl} <M>${ACTION_NAME}</>하였습니다.`,
                 {
                     scope: LogScope.SYSTEM,
-                    category: LogCategory.ACTION,
-                    format: LogFormat.PLAIN,
+                    category: LogCategory.SUMMARY,
+                    format: LogFormat.MONTH,
                 }
             ),
             createLogEffect(

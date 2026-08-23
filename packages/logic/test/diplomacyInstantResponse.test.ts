@@ -73,6 +73,7 @@ describe('instant diplomatic response parity', () => {
         const logs = result.effects.filter((effect) => effect.type === 'log');
         expect(logs).toHaveLength(4);
         expect(logs.map((effect) => effect.entry.generalId)).toEqual([11, 11, 22, 22]);
+        expect(logs.map((effect) => effect.entry.legacyFlushGroup ?? 0)).toEqual([0, 0, 1, 1]);
     });
 
     it('counts an accepted pact down through every month and returns both directions to trade', () => {
@@ -123,6 +124,7 @@ describe('instant diplomatic response parity', () => {
         expect(result.actionKey).toBe('che_불가침파기수락');
         expect(result.refreshFront).toBe(false);
         expect(logs).toHaveLength(6);
+        expect(logs.map((effect) => effect.entry.legacyFlushGroup ?? 0)).toEqual([0, 0, 0, 0, 1, 1]);
         expect(logs).toContainEqual(
             expect.objectContaining({
                 entry: expect.objectContaining({
@@ -135,6 +137,7 @@ describe('instant diplomatic response parity', () => {
 
     it('creates both nation histories and requests front refresh for stop-war', () => {
         const result = resolveInstantDiplomacyResponse(context, { action: 'stopWar' });
+        const logs = result.effects.filter((effect) => effect.type === 'log');
         const nationLogIds = result.effects.flatMap((effect) =>
             effect.type === 'log' && effect.entry.scope === LogScope.NATION ? [effect.entry.nationId] : []
         );
@@ -142,6 +145,7 @@ describe('instant diplomatic response parity', () => {
         expect(result.actionKey).toBe('che_종전수락');
         expect(result.refreshFront).toBe(true);
         expect(nationLogIds).toEqual([1, 2]);
+        expect(logs.map((effect) => effect.entry.legacyFlushGroup ?? 0)).toEqual([0, 0, 0, 0, 0, 1, 1, 1]);
     });
 
     it('recomputes only requested nation fronts with legacy priority', () => {
