@@ -1,5 +1,9 @@
 import { asNumber, asRecord } from '@sammo-ts/common';
 import { GamePrisma } from '@sammo-ts/infra';
+import {
+    ALL_MERGED_INHERITANCE_KEYS,
+    computeActiveInheritancePoint,
+} from '@sammo-ts/logic/inheritance/pointCalculation.js';
 import type { DatabaseClient, WorldStateRow, InputJsonValue } from '../context.js';
 
 export type InheritPointKey =
@@ -163,73 +167,34 @@ export const appendInheritanceLog = async (
     });
 };
 
-const readUserMetaValue = (meta: Record<string, unknown>, key: string): number => {
-    const value = meta[key];
-    if (typeof value !== 'number' || !Number.isFinite(value)) {
-        return 0;
-    }
-    return value;
-};
-
-const computeDexPoint = (meta: Record<string, unknown>): number => {
-    let total = 0;
-    for (const [key, value] of Object.entries(meta)) {
-        if (!key.startsWith('dex')) {
-            continue;
-        }
-        if (typeof value === 'number' && Number.isFinite(value)) {
-            total += value;
-        }
-    }
-    return total * 0.001;
-};
-
 export const computeInheritanceItems = async (options: {
     db: DatabaseClient;
     userId: string;
     generalMeta: Record<string, unknown> | null;
     isUnited: boolean;
 }): Promise<Record<InheritPointKey, number>> => {
-    const previous = await readInheritancePoint(options.db, options.userId, 'previous');
-    const unifier = await readInheritancePoint(options.db, options.userId, 'unifier');
+    const pointRows = await options.db.inheritancePoint.findMany({
+        where: { userId: options.userId },
+        select: { key: true, value: true },
+    });
+    const inheritancePoints = Object.fromEntries(pointRows.map((row) => [row.key, row.value]));
+    const previous = inheritancePoints.previous ?? 0;
+    const general = {
+        meta: options.generalMeta ?? {},
+        inheritancePoints,
+    };
 
     if (options.isUnited) {
-        return {
-            previous,
-            lived_month: 0,
-            max_domestic_critical: 0,
-            active_action: 0,
-            combat: 0,
-            sabotage: 0,
-            dex: 0,
-            unifier,
-            tournament: 0,
-            betting: 0,
-            max_belong: 0,
-        };
+        return Object.fromEntries([
+            ['previous', previous],
+            ...ALL_MERGED_INHERITANCE_KEYS.map((key) => [key, inheritancePoints[key] ?? 0] as const),
+        ]) as Record<InheritPointKey, number>;
     }
 
-    const meta = options.generalMeta ?? {};
-    const livedMonth = readUserMetaValue(meta, 'inherit_lived_month');
-    const maxDomestic = readUserMetaValue(meta, 'max_domestic_critical');
-    const activeAction = readUserMetaValue(meta, 'inherit_active_action');
-    const combat = readUserMetaValue(meta, 'rank_warnum') * 5;
-    const sabotage = readUserMetaValue(meta, 'firenum') * 20;
-    const dex = computeDexPoint(meta);
-
-    return {
-        previous,
-        lived_month: livedMonth,
-        max_domestic_critical: maxDomestic,
-        active_action: activeAction,
-        combat,
-        sabotage,
-        dex,
-        unifier,
-        tournament: 0,
-        betting: 0,
-        max_belong: 0,
-    };
+    return Object.fromEntries([
+        ['previous', previous],
+        ...ALL_MERGED_INHERITANCE_KEYS.map((key) => [key, computeActiveInheritancePoint(general, key)] as const),
+    ]) as Record<InheritPointKey, number>;
 };
 
 export const sumInheritanceItems = (items: Record<InheritPointKey, number>): number => {

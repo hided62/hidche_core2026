@@ -106,6 +106,8 @@ const buildContext = (options: {
     general?: GeneralRow | null;
     target?: GeneralRow | null;
     inheritancePoint?: number;
+    inheritanceRows?: Array<{ key: string; value: number }>;
+    rankRows?: Array<{ type: string; value: number }>;
     inheritanceLogs?: Array<{ id: number; year: number; month: number; text: string; createdAt: Date }>;
     configConst?: Record<string, unknown>;
 }) => {
@@ -176,6 +178,12 @@ const buildContext = (options: {
         },
         inheritancePoint: {
             upsert: pointUpsert,
+            findMany: vi.fn(
+                async () => options.inheritanceRows ?? [{ key: 'previous', value: options.inheritancePoint ?? 10_000 }]
+            ),
+        },
+        rankData: {
+            findMany: vi.fn(async () => options.rankRows ?? []),
         },
         inheritanceLog: {
             create: logCreate,
@@ -252,6 +260,58 @@ describe('inherit router actor and permission boundaries', () => {
             select: { id: true, name: true },
             orderBy: { id: 'asc' },
         });
+    });
+
+    it('projects every Ref inheritance source with its own coefficient and stored/calculated boundary', async () => {
+        const fixture = buildContext({
+            general: buildGeneral({
+                meta: {
+                    inherit_lived_month: 12,
+                    max_domestic_critical: 20,
+                    inherit_active_action: 0.5,
+                    belong: 7,
+                    max_belong: 9,
+                    rank_warnum: 300,
+                    firenum: 200,
+                    dex1: 1_275_978,
+                    dex2: 100,
+                    event100_allstar: { granted: { dex2: 40 } },
+                    betwin: 200,
+                    betgold: 200_000,
+                    betwingold: 100_000,
+                },
+            }),
+            rankRows: [
+                { type: 'warnum', value: 3 },
+                { type: 'firenum', value: 2 },
+                { type: 'betwin', value: 2 },
+                { type: 'betgold', value: 2_000 },
+                { type: 'betwingold', value: 1_000 },
+            ],
+            inheritanceRows: [
+                { key: 'previous', value: 100 },
+                { key: 'max_domestic_critical', value: 80 },
+                { key: 'unifier', value: 250 },
+                { key: 'tournament', value: 50 },
+            ],
+        });
+
+        const status = await appRouter.createCaller(fixture.context).inherit.getStatus();
+
+        expect(status.items).toEqual({
+            previous: 100,
+            lived_month: 12,
+            max_domestic_critical: 80,
+            active_action: 1.5,
+            unifier: 250,
+            tournament: 50,
+            max_belong: 90,
+            combat: 15,
+            sabotage: 40,
+            dex: 1_276.036,
+            betting: 5,
+        });
+        expect(status.totalPoint).toBeCloseTo(1_919.536, 8);
     });
 
     it.each([{}, { allItems: '{}' }])(

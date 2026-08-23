@@ -251,7 +251,7 @@ describe('General Commands New Scenario', () => {
                 items: { horse: null, weapon: null, book: null, item: null },
             },
             triggerState: { flags: {}, counters: {}, modifiers: {}, meta: {} },
-            meta: { killturn: 24 },
+            meta: { killturn: 24, belong: 18, max_belong: 12 },
         };
 
         const snapshot: WorldSnapshot = {
@@ -390,6 +390,7 @@ describe('General Commands New Scenario', () => {
 
         const g1_after_resign = world.getGeneral(1)!;
         expect(g1_after_resign.nationId).toBe(0);
+        expect(g1_after_resign.meta.max_belong).toBe(18);
 
         // 6. Retire (Needs age >= 60)
         // Manually set age

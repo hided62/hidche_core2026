@@ -268,6 +268,7 @@ const readConfigNumber = (config: ScenarioConfig, key: string, fallback: number)
 
 const cloneTurnGeneral = (general: TurnGeneral): TurnGeneral => ({
     ...general,
+    ...(general.inheritancePoints ? { inheritancePoints: { ...general.inheritancePoints } } : {}),
     stats: { ...general.stats },
     role: {
         ...general.role,
@@ -371,6 +372,25 @@ const readMetaNumber = (meta: Record<string, unknown>, key: string, fallback: nu
     }
     return fallback;
 };
+
+const readInheritanceNumber = (value: unknown): number => {
+    if (typeof value === 'number' && Number.isFinite(value)) {
+        return value;
+    }
+    if (typeof value === 'string') {
+        const parsed = Number(value);
+        return Number.isFinite(parsed) ? parsed : 0;
+    }
+    return 0;
+};
+
+const canAccumulateInheritance = (
+    general: Pick<TurnGeneral, 'userId' | 'npcState'>,
+    worldMeta: Record<string, unknown>
+): general is Pick<TurnGeneral, 'userId' | 'npcState'> & { userId: string } =>
+    Boolean(general.userId) &&
+    general.npcState < 2 &&
+    readMetaNumber(worldMeta, 'isunited', readMetaNumber(worldMeta, 'isUnited', 0)) === 0;
 
 const readMetaBool = (meta: Record<string, unknown>, key: string, fallback = false): boolean => {
     const value = meta[key];
@@ -1214,6 +1234,34 @@ export const createReservedTurnHandler = async (options: {
                 currentGeneral = resolution.general as TurnGeneral;
                 currentCity = resolution.city ?? currentCity;
                 currentNation = resolution.nation ?? currentNation;
+                const inheritanceEnabled = canAccumulateInheritance(currentGeneral, asRecord(context.world.meta));
+                const inheritanceUserId = inheritanceEnabled ? currentGeneral.userId : null;
+                if (actionKey === 'che_인재탐색') {
+                    const previousActive = readMetaNumber(
+                        asRecord(generalBeforeExecution.meta),
+                        'inherit_active_action',
+                        0
+                    );
+                    const nextActive = readMetaNumber(asRecord(currentGeneral.meta), 'inherit_active_action', 0);
+                    if (!inheritanceUserId) {
+                        currentGeneral = {
+                            ...currentGeneral,
+                            meta: { ...currentGeneral.meta, inherit_active_action: previousActive },
+                        };
+                    } else if (nextActive > previousActive) {
+                        const pointAmount = (nextActive - previousActive) * 3;
+                        worldRef?.queueInheritancePointAdjustment(inheritanceUserId, 'active_action', pointAmount);
+                        currentGeneral = {
+                            ...currentGeneral,
+                            inheritancePoints: {
+                                ...currentGeneral.inheritancePoints,
+                                active_action:
+                                    readInheritanceNumber(currentGeneral.inheritancePoints?.active_action) +
+                                    pointAmount,
+                            },
+                        };
+                    }
+                }
                 if (!resolution.alternative && !usedFallback && resolution.completed) {
                     currentGeneral = applyLegacyGeneralProgression(
                         currentGeneral,
@@ -1229,13 +1277,20 @@ export const createReservedTurnHandler = async (options: {
                     !usedFallback &&
                     resolution.completed &&
                     definition.countsAsInheritanceActiveAction &&
-                    Boolean(currentGeneral.userId) &&
-                    currentGeneral.npcState < 2
+                    inheritanceUserId
                 ) {
                     const meta = { ...currentGeneral.meta };
                     const active = typeof meta.inherit_active_action === 'number' ? meta.inherit_active_action : 0;
                     meta.inherit_active_action = active + 1;
-                    currentGeneral = { ...currentGeneral, meta };
+                    worldRef?.queueInheritancePointAdjustment(inheritanceUserId, 'active_action', 3);
+                    currentGeneral = {
+                        ...currentGeneral,
+                        meta,
+                        inheritancePoints: {
+                            ...currentGeneral.inheritancePoints,
+                            active_action: readInheritanceNumber(currentGeneral.inheritancePoints?.active_action) + 3,
+                        },
+                    };
                 }
                 if (
                     !resolution.alternative &&
@@ -1243,16 +1298,52 @@ export const createReservedTurnHandler = async (options: {
                     !usedFallback &&
                     resolution.completed &&
                     executionDefinition.getInheritanceActiveActionAmount &&
-                    Boolean(currentGeneral.userId) &&
-                    currentGeneral.npcState < 2
+                    inheritanceEnabled
                 ) {
                     const amount = executionDefinition.getInheritanceActiveActionAmount(actionContext, actionArgs);
                     if (Number.isFinite(amount) && amount !== 0) {
                         const meta = { ...currentGeneral.meta };
                         const active = typeof meta.inherit_active_action === 'number' ? meta.inherit_active_action : 0;
                         meta.inherit_active_action = active + amount;
-                        currentGeneral = { ...currentGeneral, meta };
+                        const pointAmount = amount * 3;
+                        worldRef?.queueInheritancePointAdjustment(inheritanceUserId!, 'active_action', pointAmount);
+                        currentGeneral = {
+                            ...currentGeneral,
+                            meta,
+                            inheritancePoints: {
+                                ...currentGeneral.inheritancePoints,
+                                active_action:
+                                    readInheritanceNumber(currentGeneral.inheritancePoints?.active_action) +
+                                    pointAmount,
+                            },
+                        };
                     }
+                }
+                if (
+                    !resolution.alternative &&
+                    kind === 'general' &&
+                    !usedFallback &&
+                    resolution.completed &&
+                    inheritanceUserId
+                ) {
+                    const inheritancePoints = { ...currentGeneral.inheritancePoints };
+                    const storedDomesticMaximum = readInheritanceNumber(inheritancePoints.max_domestic_critical);
+                    const currentDomesticStreak = readInheritanceNumber(
+                        asRecord(currentGeneral.meta).max_domestic_critical
+                    );
+                    if (currentDomesticStreak > storedDomesticMaximum) {
+                        worldRef?.queueInheritancePointAdjustment(
+                            inheritanceUserId,
+                            'max_domestic_critical',
+                            currentDomesticStreak - storedDomesticMaximum
+                        );
+                        inheritancePoints.max_domestic_critical = currentDomesticStreak;
+                    }
+                    if (actionKey === 'che_건국') {
+                        worldRef?.queueInheritancePointAdjustment(inheritanceUserId, 'unifier', 250);
+                        inheritancePoints.unifier = readInheritanceNumber(inheritancePoints.unifier) + 250;
+                    }
+                    currentGeneral = { ...currentGeneral, inheritancePoints };
                 }
 
                 if (!currentNation && resolution.created?.nations) {
@@ -1551,9 +1642,14 @@ export const createReservedTurnHandler = async (options: {
 
             const lifecycleBefore = cloneTurnGeneral(currentGeneral);
             currentGeneral = cloneTurnGeneral(currentGeneral);
-            if (currentGeneral.npcState < 2) {
+            if (canAccumulateInheritance(currentGeneral, asRecord(context.world.meta))) {
                 currentGeneral.meta.inherit_lived_month =
                     readMetaNumber(currentGeneral.meta, 'inherit_lived_month', 0) + 1;
+                worldRef?.queueInheritancePointAdjustment(currentGeneral.userId, 'lived_month', 1);
+                currentGeneral.inheritancePoints = {
+                    ...currentGeneral.inheritancePoints,
+                    lived_month: readInheritanceNumber(currentGeneral.inheritancePoints?.lived_month) + 1,
+                };
             }
             const preprocessRng = new RandUtil(
                 new LiteHashDRBG(
@@ -1626,10 +1722,7 @@ export const createReservedTurnHandler = async (options: {
                     currentGeneral.crew = 0;
                     currentGeneral.rice = 0;
                     logs.push(
-                        createGeneralActionLog(
-                            currentGeneral.id,
-                            '군량이 모자라 병사들이 <R>소집해제</>되었습니다!'
-                        )
+                        createGeneralActionLog(currentGeneral.id, '군량이 모자라 병사들이 <R>소집해제</>되었습니다!')
                     );
                     preTurnContext.skill.activate('pre.소집해제');
                 }
@@ -2125,10 +2218,7 @@ export const createReservedTurnHandler = async (options: {
                 currentGeneral = resetRetiredGeneral(currentGeneral);
                 lifecycleOutcome = 'retired';
                 logs.push(
-                    createGeneralActionLog(
-                        currentGeneral.id,
-                        '나이가 들어 <R>은퇴</>하고 자손에게 자리를 물려줍니다.'
-                    )
+                    createGeneralActionLog(currentGeneral.id, '나이가 들어 <R>은퇴</>하고 자손에게 자리를 물려줍니다.')
                 );
             }
 
@@ -2384,11 +2474,17 @@ export const createImmediateGeneralActionExecutor = async (options: {
             if (
                 Number.isFinite(activeActionAmount) &&
                 activeActionAmount !== 0 &&
-                nextGeneral.userId &&
-                nextGeneral.npcState < 2
+                canAccumulateInheritance(nextGeneral, asRecord(state.meta))
             ) {
+                const pointAmount = activeActionAmount * 3;
+                options.world.queueInheritancePointAdjustment(nextGeneral.userId, 'active_action', pointAmount);
                 nextGeneral = {
                     ...nextGeneral,
+                    inheritancePoints: {
+                        ...nextGeneral.inheritancePoints,
+                        active_action:
+                            readInheritanceNumber(nextGeneral.inheritancePoints?.active_action) + pointAmount,
+                    },
                     meta: {
                         ...nextGeneral.meta,
                         inherit_active_action:

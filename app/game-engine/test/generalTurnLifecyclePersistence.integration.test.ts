@@ -96,19 +96,28 @@ integration('general turn lifecycle persistence', () => {
                 killturn: 0,
                 inherit_lived_month: 10,
                 inherit_active_action: 2,
+                max_belong: 9,
                 inheritRandomUnique: true,
                 dex1: 1_000,
                 dex2: 1,
                 dex3: 1,
                 dex4: 1,
                 dex5: 1,
+                betwin: 2,
+                betgold: 2_000,
+                betwingold: 1_000,
             },
         });
         await db.generalAccessLog.create({
             data: { generalId: general.id, userId: general.userId, refreshScore: 99 },
         });
-        await db.inheritancePoint.create({
-            data: { userId: general.userId!, key: 'previous', value: 100 },
+        await db.inheritancePoint.createMany({
+            data: [
+                { userId: general.userId!, key: 'previous', value: 100 },
+                { userId: general.userId!, key: 'max_domestic_critical', value: 80 },
+                { userId: general.userId!, key: 'unifier', value: 250 },
+                { userId: general.userId!, key: 'tournament', value: 50 },
+            ],
         });
         await db.rankData.createMany({
             data: [
@@ -202,7 +211,7 @@ integration('general turn lifecycle persistence', () => {
             await db.inheritancePoint.findUnique({
                 where: { userId_key: { userId: general.userId!, key: 'previous' } },
             })
-        ).toMatchObject({ value: 3_147 });
+        ).toMatchObject({ value: 3_622 });
         expect(
             (
                 await db.inheritanceLog.findMany({
@@ -211,16 +220,33 @@ integration('general turn lifecycle persistence', () => {
                     select: { text: true },
                 })
             ).map(({ text }) => text)
-        ).toEqual(['사망으로 랜덤 유니크 구입 3000 포인트 반환', '사망 정산: 3,147 포인트']);
+        ).toEqual(['사망으로 랜덤 유니크 구입 3000 포인트 반환', '사망 정산: 3,622 포인트']);
     });
 
     it('resets access/ranks and records pre-rebirth hall and inheritance values', async () => {
-        const general = makeGeneral(generalIds[1]!, userIds[1]!);
+        const general = makeGeneral(generalIds[1]!, userIds[1]!, {
+            meta: {
+                killturn: 0,
+                inherit_lived_month: 10,
+                inherit_active_action: 2,
+                max_domestic_critical: 20,
+                max_belong: 7,
+                dex1: 1_000,
+                betwin: 2,
+                betgold: 2_000,
+                betwingold: 1_000,
+            },
+        });
         await db.generalAccessLog.create({
             data: { generalId: general.id, userId: general.userId, refreshScore: 77 },
         });
-        await db.inheritancePoint.create({
-            data: { userId: general.userId!, key: 'previous', value: 50 },
+        await db.inheritancePoint.createMany({
+            data: [
+                { userId: general.userId!, key: 'previous', value: 50 },
+                { userId: general.userId!, key: 'max_domestic_critical', value: 80 },
+                { userId: general.userId!, key: 'unifier', value: 250 },
+                { userId: general.userId!, key: 'tournament', value: 50 },
+            ],
         });
         await db.rankData.create({
             data: { generalId: general.id, nationId: 0, type: 'warnum', value: 10 },
@@ -256,7 +282,19 @@ integration('general turn lifecycle persistence', () => {
             await db.inheritancePoint.findUnique({
                 where: { userId_key: { userId: general.userId!, key: 'previous' } },
             })
-        ).toMatchObject({ value: 116 });
+        ).toMatchObject({ value: 171 });
+        expect(
+            await db.inheritancePoint.findMany({
+                where: { userId: general.userId! },
+                orderBy: { key: 'asc' },
+                select: { key: true, value: true },
+            })
+        ).toEqual([
+            { key: 'max_belong', value: 70 },
+            { key: 'max_domestic_critical', value: 80 },
+            { key: 'previous', value: 171 },
+            { key: 'unifier', value: 250 },
+        ]);
     });
 
     it('does not settle a possessed NPC before the legacy minimum possession period', async () => {

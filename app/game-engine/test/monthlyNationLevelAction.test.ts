@@ -216,6 +216,7 @@ describe('UpdateNationLevel monthly action', () => {
         expect(world.peekDirtyState().inheritancePointAdjustments).toEqual([
             { userId: 'user-1', key: 'unifier', amount: 500 },
         ]);
+        expect(world.getGeneralById(1)?.inheritancePoints?.unifier).toBe(500);
         expect(world.peekDirtyState().logs).toEqual(
             expect.arrayContaining([
                 {
@@ -292,6 +293,7 @@ describe('UpdateNationLevel monthly action', () => {
         expect(world.peekDirtyState().inheritancePointAdjustments).toEqual([
             { userId: 'user-1', key: 'unifier', amount: 250 },
         ]);
+        expect(world.getGeneralById(1)?.inheritancePoints?.unifier).toBe(250);
     });
 
     it('does not duplicate a unique item reserved by an unfinished auction', async () => {
@@ -306,6 +308,7 @@ describe('UpdateNationLevel monthly action', () => {
         expect(world.peekDirtyState().inheritancePointAdjustments).toEqual([
             { userId: 'user-1', key: 'unifier', amount: 250 },
         ]);
+        expect(world.getGeneralById(1)?.inheritancePoints?.unifier).toBe(250);
     });
 });
 

@@ -1241,21 +1241,6 @@ export const createDatabaseTurnHooks = async (
             const meta = asRecord(state.meta);
             const serverId =
                 typeof meta.serverId === 'string' && meta.serverId.trim() ? meta.serverId.trim() : 'default';
-            await persistGeneralLifecycleEvents(
-                prisma,
-                lifecycleEvents,
-                meta,
-                asRecord(world.getScenarioConfig().const),
-                world.gameTickToDate(state.clockTick ?? state.lastTurnTick ?? 0)
-            );
-
-            if (accessScoreResetGeneralIds.length > 0) {
-                await prisma.generalAccessLog.updateMany({
-                    where: { generalId: { in: accessScoreResetGeneralIds } },
-                    data: { refreshScore: 0 },
-                });
-            }
-
             if (inheritancePointAdjustments.length > 0) {
                 const grouped = new Map<string, { userId: string; key: string; amount: number }>();
                 for (const entry of inheritancePointAdjustments) {
@@ -1274,6 +1259,20 @@ export const createDatabaseTurnHooks = async (
                         create: { userId: entry.userId, key: entry.key, value: entry.amount },
                     });
                 }
+            }
+            await persistGeneralLifecycleEvents(
+                prisma,
+                lifecycleEvents,
+                meta,
+                asRecord(world.getScenarioConfig().const),
+                world.gameTickToDate(state.clockTick ?? state.lastTurnTick ?? 0)
+            );
+
+            if (accessScoreResetGeneralIds.length > 0) {
+                await prisma.generalAccessLog.updateMany({
+                    where: { generalId: { in: accessScoreResetGeneralIds } },
+                    data: { refreshScore: 0 },
+                });
             }
 
             if (deletedNationSnapshots.length > 0) {
