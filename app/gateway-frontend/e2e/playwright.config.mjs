@@ -15,6 +15,7 @@ export default defineConfig({
         'lobby-game-auth.spec.ts',
         'logout.spec.ts',
         'account-icon-sync.spec.ts',
+        'web-push-settings.spec.ts',
         'legacy-log-html.spec.ts',
         'gateway-notice-html.spec.ts',
         'kakao-otp.spec.ts',
@@ -40,8 +41,7 @@ export default defineConfig({
         screenshot: 'only-on-failure',
     },
     webServer: {
-        command:
-            `export VITE_APP_BASE_PATH=/gateway VITE_GATEWAY_API_URL=/gateway/api/trpc VITE_GAME_WEB_URL_TEMPLATE='/{profile}/' VITE_GAME_API_URL_TEMPLATE='/{profile}/api/trpc'; pnpm --filter @sammo-ts/gateway-frontend build && pnpm --filter @sammo-ts/gateway-frontend preview --host 127.0.0.1 --port ${port}`,
+        command: `export VITE_APP_BASE_PATH=/gateway VITE_GATEWAY_API_URL=/gateway/api/trpc VITE_GAME_WEB_URL_TEMPLATE='/{profile}/' VITE_GAME_API_URL_TEMPLATE='/{profile}/api/trpc'; pnpm --filter @sammo-ts/gateway-frontend build && pnpm --filter @sammo-ts/gateway-frontend preview --host 127.0.0.1 --port ${port}`,
         cwd: repositoryRoot,
         url: `http://127.0.0.1:${port}/gateway/`,
         reuseExistingServer: false,

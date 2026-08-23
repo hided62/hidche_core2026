@@ -46,6 +46,7 @@ import { createBestEffortResourceCloser } from './services/bestEffortResourceClo
 import { RemoteContentImageStore } from './services/remoteContentImageStore.js';
 import { ReadModelOutboxWorker } from './realtime/outboxWorker.js';
 import { DeferredGeneralAccessWorker } from './services/deferredGeneralAccess.js';
+import { WebPushOutboxWorker } from './services/webPushOutboxWorker.js';
 
 const extractBearerToken = (value: string | string[] | undefined): string | null => {
     if (!value) {
@@ -168,9 +169,23 @@ export const createGameApiServer = async () => {
             onError: (error) => app.log.error({ err: error }, 'deferred general access flush failed'),
         }
     );
+    const webPushOutboxWorker = new WebPushOutboxWorker(
+        postgres.prisma,
+        config.gatewayInternalApiUrl,
+        config.gameTokenSecret,
+        config.profileName,
+        {
+            intervalMs: config.webPushOutboxPollMs,
+            onError: (error) => app.log.error({ err: error }, 'web push outbox dispatch failed'),
+        }
+    );
     let flushSubscriberStarted = false;
     let realtimeHubStarted = false;
     const closeResources = createBestEffortResourceCloser([
+        {
+            name: 'web-push-outbox-worker',
+            run: () => webPushOutboxWorker.stop(),
+        },
         {
             name: 'deferred-general-access-worker',
             run: () => deferredGeneralAccessWorker.stop(),
@@ -395,6 +410,7 @@ export const createGameApiServer = async () => {
         await flushSubscriber.start();
         flushSubscriberStarted = true;
         readModelOutboxWorker.start();
+        webPushOutboxWorker.start();
         deferredGeneralAccessWorker.start();
         accountIconResetReconciler.start();
     } catch (error) {

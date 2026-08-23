@@ -126,6 +126,7 @@ const buildContext = (options: {
     const logCreate = vi.fn(async () => ({}));
     const findMany = vi.fn(async () => (target ? [{ id: target.id, name: target.name }] : []));
     const inheritanceLogFindMany = vi.fn(async () => options.inheritanceLogs ?? []);
+    const webPushOutboxCreateMany = vi.fn(async () => ({ count: 1 }));
     const activeWorldState =
         options.configConst === undefined
             ? worldState
@@ -167,9 +168,11 @@ const buildContext = (options: {
                 general?.userId === where.userId ? general : null
             ),
             findMany,
-            findUnique: vi.fn(async ({ where }: { where: { id: number } }) =>
-                target?.id === where.id ? target : null
-            ),
+            findUnique: vi.fn(async ({ where }: { where: { id: number } }) => {
+                if (target?.id === where.id) return target;
+                if (general?.id === where.id) return general;
+                return null;
+            }),
         },
         nation: {
             findUnique: vi.fn(async ({ where }: { where: { id: number } }) =>
@@ -192,6 +195,9 @@ const buildContext = (options: {
         inheritanceUserState: {
             findUnique: vi.fn(async () => null),
             upsert: vi.fn(async () => ({})),
+        },
+        webPushOutbox: {
+            createMany: webPushOutboxCreateMany,
         },
     };
     const accessTokenStore = new RedisAccessTokenStore(
@@ -225,6 +231,7 @@ const buildContext = (options: {
         findMany,
         inheritanceLogFindMany,
         messageRows,
+        webPushOutboxCreateMany,
         changeJournal,
     };
 };
@@ -613,6 +620,14 @@ describe('inherit router actor and permission boundaries', () => {
                 }),
             }),
         ]);
+        expect(fixture.webPushOutboxCreateMany).toHaveBeenNthCalledWith(1, {
+            data: [{ eventId: 'message:101', eventType: 'PRIVATE_MESSAGE_RECEIVED', userIds: ['user-1'] }],
+            skipDuplicates: true,
+        });
+        expect(fixture.webPushOutboxCreateMany).toHaveBeenNthCalledWith(2, {
+            data: [{ eventId: 'message:102', eventType: 'PRIVATE_MESSAGE_RECEIVED', userIds: ['user-2'] }],
+            skipDuplicates: true,
+        });
         expect(fixture.changeJournal.snapshot()).toEqual([
             { domain: 'messages.mailbox', entityId: 7 },
             { domain: 'messages.mailbox', entityId: 8 },

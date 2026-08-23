@@ -1,0 +1,20 @@
+{
+    "name": "삼국지 모의전투 HiDCHe",
+    "short_name": "삼모",
+    "description": "삼국지 모의전투 Gateway",
+    "lang": "ko",
+    "id": "./",
+    "start_url": "./",
+    "scope": "./",
+    "display": "standalone",
+    "background_color": "#000000",
+    "theme_color": "#172a52",
+    "icons": [
+        {
+            "src": "web-push-icon.svg",
+            "sizes": "any",
+            "type": "image/svg+xml",
+            "purpose": "any maskable"
+        }
+    ]
+}

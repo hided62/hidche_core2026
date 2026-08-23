@@ -38,8 +38,8 @@ describe('readReleaseManifest', () => {
 
         await expect(readReleaseManifest(workspaceRoot)).resolves.toMatchObject({
             controllerProtocol: RELEASE_CONTROLLER_PROTOCOL,
-            gatewaySchemaHead: '20260821173000_gateway_release_instant_timestamps',
-            gameSchemaHead: '20260820002000_persist_official_game_index',
+            gatewaySchemaHead: '20260823010000_add_web_push_notifications',
+            gameSchemaHead: '20260823010000_add_web_push_outbox',
         });
     });
 

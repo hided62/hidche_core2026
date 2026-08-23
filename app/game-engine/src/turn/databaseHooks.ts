@@ -3,6 +3,8 @@ import {
     createGamePostgresConnector,
     GamePrisma,
     writeReadModelChangeJournal,
+    enqueuePrivateMessageWebPush,
+    enqueueWebPushOutboxEvents,
     type InputJsonValue,
     type ReadModelJournalWriteResult,
     type TurnEngineCityUpdateInput,
@@ -50,6 +52,7 @@ import { buildPersistedRankRows } from './rankData.js';
 import { persistUnificationFinalization } from './unificationPersistence.js';
 import { buildOldNationArchiveData } from './oldNationArchive.js';
 import { persistYearbookSnapshot } from './yearbookPersistence.js';
+import { buildTurnWebPushEvents, captureWebPushTurnBaseline } from './webPushEvents.js';
 
 export interface DatabaseTurnHooks {
     hooks: TurnDaemonHooks;
@@ -1039,6 +1042,7 @@ export const createDatabaseTurnHooks = async (
     const readModelBaseline = createRealtimeReadModelBaseline(world);
     let worldReadModelBaseline = createWorldReadModelSignature(world);
     let persistedTickSeconds = world.getState().tickSeconds;
+    let webPushTurnBaseline = captureWebPushTurnBaseline(world, options?.reservedTurns);
     const committedReceipts = new Map<bigint, CommittedReadModelChangeReceipt>();
 
     const enqueueCommittedReceipt = (
@@ -1109,6 +1113,13 @@ export const createDatabaseTurnHooks = async (
         const persistedReservedTurnChanges = reservedTurnChanges
             ? excludeDeletedReservedTurnQueues(reservedTurnChanges, deletedGenerals, deletedNations)
             : undefined;
+        const nextWebPushTurnBaseline = captureWebPushTurnBaseline(world, options?.reservedTurns);
+        const webPushEvents = buildTurnWebPushEvents({
+            before: webPushTurnBaseline,
+            after: nextWebPushTurnBaseline,
+            changes,
+            ...(persistedReservedTurnChanges ? { reservedTurnChanges: persistedReservedTurnChanges } : {}),
+        });
 
         const worldStateUpdate: TurnEngineWorldStateUpdateInput = {
             currentYear: state.currentYear,
@@ -1597,6 +1608,7 @@ export const createDatabaseTurnHooks = async (
                             if (!id) {
                                 throw new Error('Failed to persist turn message.');
                             }
+                            await enqueuePrivateMessageWebPush(prisma, draft, id);
                             persistedMessageMailboxes.push(draft.mailbox);
                             return id;
                         },
@@ -1657,6 +1669,7 @@ export const createDatabaseTurnHooks = async (
                 journal.mark('betting');
             }
             const journalWrite = await writeReadModelChangeJournal(prisma, journal.snapshot());
+            await enqueueWebPushOutboxEvents(prisma, webPushEvents);
             return { readModelChanges, journalWrite, worldReadModelSignature };
         };
         const persisted = transaction
@@ -1671,6 +1684,7 @@ export const createDatabaseTurnHooks = async (
                 applyRealtimeReadModelBaseline(readModelBaseline, changes);
                 worldReadModelBaseline = persisted.worldReadModelSignature;
                 persistedTickSeconds = state.tickSeconds;
+                webPushTurnBaseline = nextWebPushTurnBaseline;
             },
             readModelChanges: persisted.readModelChanges,
             journalWrite: persisted.journalWrite,

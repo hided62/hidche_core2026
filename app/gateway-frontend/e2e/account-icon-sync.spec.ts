@@ -111,6 +111,26 @@ const installFixture = async (page: Page, options: FixtureOptions = {}) => {
                     deleteAfter: null,
                 });
             }
+            if (operation === 'account.notifications.get') {
+                return response({
+                    capability: { enabled: false, publicKey: null },
+                    eventTypes: [
+                        'TROOP_ANNIHILATED',
+                        'PRIVATE_MESSAGE_RECEIVED',
+                        'AUTONOMOUS_ACTION_ENDED',
+                        'RESERVED_TURNS_ENDED',
+                        'PROFILE_PREOPENED',
+                        'PROFILE_OPEN_SCHEDULED',
+                        'PROFILE_OPENED',
+                        'NATION_DESTROYED',
+                        'TARGET_DATE_REACHED',
+                    ],
+                    profiles: [],
+                    preferences: [],
+                    subscriptionCount: 0,
+                    currentDeviceSubscribed: false,
+                });
+            }
             if (operation === 'account.changeIcon') {
                 return response({
                     ok: true,

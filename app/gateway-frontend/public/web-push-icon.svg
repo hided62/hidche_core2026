@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 192 192" role="img" aria-label="삼모">
+  <rect width="192" height="192" rx="32" fill="#172a52"/>
+  <rect x="12" y="12" width="168" height="168" rx="24" fill="none" stroke="#d6b25e" stroke-width="8"/>
+  <text x="96" y="119" fill="#fff" font-family="serif" font-size="72" font-weight="700" text-anchor="middle">삼모</text>
+</svg>

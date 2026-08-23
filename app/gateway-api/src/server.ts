@@ -33,6 +33,8 @@ import { RemoteUserIconStore } from './account/remoteUserIconStore.js';
 import { gatewayFastifyRouterOptions } from './fastifyOptions.js';
 import { RuntimeNavigationConfigStore } from './navigation/runtimeNavigationConfig.js';
 import { registerRuntimeNavigationRoute } from './navigation/runtimeNavigationRoute.js';
+import { WebPushCoordinator } from './webPush/coordinator.js';
+import { registerWebPushInternalRoute } from './webPush/internalRoute.js';
 
 export const createGatewayApiServer = async () => {
     const config = resolveGatewayApiConfigFromEnv();
@@ -86,11 +88,21 @@ export const createGatewayApiServer = async () => {
         config.navigationConfigFile,
         config.defaultNavigationConfigFile
     );
-
     const app = fastify({
         logger: true,
         routerOptions: gatewayFastifyRouterOptions,
     });
+    const webPush = new WebPushCoordinator(
+        postgres.prisma as GatewayPrismaClient,
+        {
+            enabled: config.webPushEnabled,
+            vapidSubject: config.webPushVapidSubject,
+            vapidPublicKey: config.webPushVapidPublicKey,
+            vapidPrivateKey: config.webPushVapidPrivateKey,
+            pollIntervalMs: config.webPushPollIntervalMs,
+        },
+        (error) => app.log.error({ err: error }, 'web push delivery failed')
+    );
 
     await app.register(cors, {
         origin: true,
@@ -110,6 +122,7 @@ export const createGatewayApiServer = async () => {
         profiles,
         secret: config.gameTokenSecret,
     });
+    registerWebPushInternalRoute(app, { secret: config.gameTokenSecret, webPush });
     registerRuntimeNavigationRoute(app, navigationConfig);
 
     await app.register(fastifyTRPCPlugin, {
@@ -142,6 +155,7 @@ export const createGatewayApiServer = async () => {
                     requestHeaders: req.headers,
                     prisma: postgres.prisma as GatewayPrismaClient,
                     navigationConfig,
+                    webPush,
                 }),
         },
     });
@@ -152,10 +166,13 @@ export const createGatewayApiServer = async () => {
     }));
 
     app.addHook('onClose', async () => {
+        await webPush.stop();
         await orchestrator.stop();
         await redis.disconnect();
         await postgres.disconnect();
     });
+
+    webPush.start();
 
     return {
         app,
