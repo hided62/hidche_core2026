@@ -31,11 +31,19 @@ Redis 투영은 DB commit 뒤 action ID로 멱등 적용됩니다.
 
 ## 중단 후 재개
 
-운영 중단 시간을 따라잡지 않으려면 Gateway의 일정 지연/가속 작업을 사용해
-표시 기준시각을 옮깁니다. 이 작업은 `clock_base_time`과 DateTime 투영값을
-같이 이동하고, game tick 및 장수 턴 tick은 바꾸지 않습니다. 동시에
-`clock_wall_anchor`를 작업 실행 시각으로 다시 고정하므로 장기간 중단 뒤에도
-누락된 기간의 턴을 몰아서 실행하지 않습니다.
+realtime daemon은 재개할 때 Ref `checkDelay()`와 같은 한도를 적용합니다.
+밀린 완전 턴 수가 턴 간격 20분 이상이면 1턴, 10분 이상이면 3턴, 그보다
+짧으면 6턴을 초과할 때 장기 중단으로 봅니다. 한도 이내의 짧은 중단은 턴을
+순서대로 실행해 따라잡고, 한도를 넘으면 밀린 완전 턴만큼 `last_turn_tick`,
+전 장수의 `turn_tick`, 미완료 경매의 `close_tick`과 각각의 DateTime 투영값을
+한 transaction에서 옮깁니다. 이 보정은 명령이나 월 이벤트를 실행하지 않으므로
+건너뛴 기간의 RNG를 소비하지 않습니다. 이미 처리 중 anchor 갱신으로 표시
+시각이 늦어진 상태도 현재 wall time에 맞추되 game tick은 되감지 않습니다.
+
+운영자가 명시적으로 일정을 지연하거나 가속하려면 Gateway 작업을 사용합니다.
+이 작업은 `clock_base_time`과 DateTime 투영값을 같이 이동하고, game tick 및
+장수 턴 tick은 바꾸지 않습니다. 동시에 `clock_wall_anchor`를 작업 실행
+시각으로 다시 고정합니다.
 
 DB migration은 기존 DateTime 값에서 tick을 채웁니다. 새 설치와 migration
 재실행은 `prisma:migrate:deploy:game`으로 수행합니다. 메시지의 연도 9999 같은

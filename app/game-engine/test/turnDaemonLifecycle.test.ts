@@ -14,6 +14,103 @@ import {
 const addMinutes = (time: Date, minutes: number): Date => new Date(time.getTime() + minutes * 60_000);
 
 describe('TurnDaemonLifecycle', () => {
+    it('durably rebases a long realtime backlog before executing another turn', async () => {
+        const wallNow = new Date('2026-08-23T01:35:00.000Z');
+        const clock = new ManualClock(wallNow.getTime());
+        const controlQueue = new InMemoryControlQueue();
+        const processor = { run: vi.fn() };
+        let needsRebase = true;
+        const flushChanges = vi.fn(async () => {});
+        const publishEvents = vi.fn(async () => {
+            controlQueue.enqueue({ type: 'shutdown', reason: 'rebase verified' });
+        });
+        const lifecycle = new TurnDaemonLifecycle(
+            {
+                clock,
+                controlQueue,
+                getNextTickTime: (value) => addMinutes(value, 5),
+                stateStore: {
+                    loadLastTurnTime: async () => new Date('2026-08-22T16:35:00.000Z'),
+                    loadNextGeneralTurnTime: async () => new Date('2026-08-22T16:36:00.000Z'),
+                    saveLastTurnTime: async () => {},
+                    loadCheckpoint: async () => undefined,
+                    saveCheckpoint: async () => {},
+                    loadGameClock: async () => ({ mode: 'realtime', now: wallNow }),
+                    shouldRebaseRealtimeBacklog: async () => needsRebase,
+                    rebaseRealtimeBacklog: async () => {
+                        needsRebase = false;
+                        return {
+                            skippedTurns: 108,
+                            shiftedTicks: 108 * 36_000_000,
+                            lastTurnTime: '2026-08-23T01:35:00.000Z',
+                        };
+                    },
+                },
+                processor,
+                hooks: { flushChanges, publishEvents },
+            },
+            {
+                profile: 'realtime-resume-rebase',
+                defaultBudget: { budgetMs: 100, maxGenerals: 10, catchUpCap: 1 },
+            }
+        );
+
+        await lifecycle.start();
+
+        expect(flushChanges).toHaveBeenCalledOnce();
+        expect(publishEvents).toHaveBeenCalledOnce();
+        expect(processor.run).not.toHaveBeenCalled();
+        expect(lifecycle.getStatus().lastTurnTime).toBe('2026-08-23T01:35:00.000Z');
+    });
+
+    it('does not execute overdue turns when the realtime backlog rebase fails to flush', async () => {
+        const wallNow = new Date('2026-08-23T01:35:00.000Z');
+        const clock = new ManualClock(wallNow.getTime());
+        const controlQueue = new InMemoryControlQueue();
+        const processor = { run: vi.fn() };
+        const failure = new Error('rebase flush failed');
+        const onRunError = vi.fn(async () => {
+            controlQueue.enqueue({ type: 'shutdown', reason: 'failure verified' });
+        });
+        const lifecycle = new TurnDaemonLifecycle(
+            {
+                clock,
+                controlQueue,
+                getNextTickTime: (value) => addMinutes(value, 5),
+                stateStore: {
+                    loadLastTurnTime: async () => new Date('2026-08-22T16:35:00.000Z'),
+                    loadNextGeneralTurnTime: async () => new Date('2026-08-22T16:36:00.000Z'),
+                    saveLastTurnTime: async () => {},
+                    loadCheckpoint: async () => undefined,
+                    saveCheckpoint: async () => {},
+                    loadGameClock: async () => ({ mode: 'realtime', now: wallNow }),
+                    shouldRebaseRealtimeBacklog: async () => true,
+                    rebaseRealtimeBacklog: async () => ({
+                        skippedTurns: 108,
+                        shiftedTicks: 108 * 36_000_000,
+                        lastTurnTime: wallNow.toISOString(),
+                    }),
+                },
+                processor,
+                hooks: {
+                    flushChanges: async () => {
+                        throw failure;
+                    },
+                    onRunError,
+                },
+            },
+            {
+                profile: 'realtime-resume-rebase-flush-failure',
+                defaultBudget: { budgetMs: 100, maxGenerals: 10, catchUpCap: 1 },
+            }
+        );
+
+        await lifecycle.start();
+
+        expect(onRunError).toHaveBeenCalledWith(failure);
+        expect(processor.run).not.toHaveBeenCalled();
+    });
+
     it('does not schedule another processor run after the world reaches a terminal united state', async () => {
         const clock = new ManualClock(new Date('2026-01-01T00:00:00.000Z').getTime());
         const controlQueue = new InMemoryControlQueue();

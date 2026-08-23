@@ -45,6 +45,13 @@ export interface TurnProcessor {
     run(targetTime: Date, budget: TurnRunBudget, checkpoint?: TurnCheckpoint): Promise<TurnRunResult>;
 }
 
+export interface RealtimeBacklogRebaseResult {
+    skippedTurns: number;
+    shiftedTicks: number;
+    lastTurnTime: string;
+    checkpoint?: TurnCheckpoint;
+}
+
 export interface TurnStateStore {
     loadLastTurnTime(): Promise<Date>;
     // 월드에서 관리하는 턴 대기열의 선두(가장 이른 장수 턴 시간)를 조회한다.
@@ -54,6 +61,8 @@ export interface TurnStateStore {
     saveCheckpoint(checkpoint?: TurnCheckpoint): Promise<void>;
     shouldHaltScheduledRuns?(): Promise<boolean>;
     loadGameClock?(wallNow?: Date): Promise<{ mode: GameClockMode; now: Date }>;
+    shouldRebaseRealtimeBacklog?(wallNow: Date): Promise<boolean>;
+    rebaseRealtimeBacklog?(wallNow: Date): Promise<RealtimeBacklogRebaseResult | null>;
     advanceGameClockTo?(target: Date, wallNow: Date): Promise<void>;
 }
 

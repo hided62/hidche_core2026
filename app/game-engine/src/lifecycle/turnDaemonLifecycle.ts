@@ -171,7 +171,8 @@ export class TurnDaemonLifecycle {
             }
 
             const nowMs = this.clock.nowMs();
-            const gameClock = await this.stateStore.loadGameClock?.(new Date(nowMs));
+            const wallNow = new Date(nowMs);
+            const gameClock = await this.stateStore.loadGameClock?.(wallNow);
             if (gameClock?.mode === 'manual') {
                 // Ref observes all generals due before one monthly boundary in
                 // a single snapshot. Manual mode advances directly to that
@@ -184,6 +185,13 @@ export class TurnDaemonLifecycle {
                     ? new Date(gameNowMs - 1)
                     : this.getNextTickTime(new Date(this.status.lastTurnTime!));
                 await this.runOnce({ reason: 'schedule', targetTime });
+                continue;
+            }
+            if (
+                gameClock?.mode === 'realtime' &&
+                (await this.stateStore.shouldRebaseRealtimeBacklog?.(wallNow)) &&
+                (await this.rebaseRealtimeBacklog(wallNow))
+            ) {
                 continue;
             }
             const gameNowMs = gameClock?.now.getTime() ?? nowMs;
@@ -417,6 +425,58 @@ export class TurnDaemonLifecycle {
         } catch (error) {
             this.status.lastError = error instanceof Error ? error.message : 'Unknown event publication error.';
         }
+    }
+
+    private async rebaseRealtimeBacklog(wallNow: Date): Promise<boolean> {
+        if (!this.stateStore.rebaseRealtimeBacklog) {
+            return false;
+        }
+        const startMs = this.clock.nowMs();
+        let result: TurnRunResult | null;
+        try {
+            const rebaseAndFlush = async (): Promise<TurnRunResult | null> => {
+                const rebased = await this.stateStore.rebaseRealtimeBacklog!(wallNow);
+                if (!rebased) {
+                    return null;
+                }
+                const nextResult: TurnRunResult = {
+                    lastTurnTime: rebased.lastTurnTime,
+                    processedGenerals: 0,
+                    processedTurns: 0,
+                    durationMs: 0,
+                    partial: false,
+                    checkpoint: rebased.checkpoint,
+                };
+                this.status.state = 'flushing';
+                await this.hooks?.flushChanges?.(nextResult);
+                return nextResult;
+            };
+            result = this.stateManager ? await this.stateManager.transaction(rebaseAndFlush) : await rebaseAndFlush();
+        } catch (error) {
+            this.status.running = false;
+            this.status.state = 'paused';
+            this.status.paused = true;
+            this.errorPaused = true;
+            this.status.lastError = error instanceof Error ? error.message : 'Unknown realtime backlog rebase error.';
+            await this.hooks?.onRunError?.(error);
+            // The rebase attempt was handled, albeit as a pause. Do not fall
+            // through and execute overdue turns against a transaction that
+            // failed to persist its clock/schedule shift.
+            return true;
+        }
+        if (!result) {
+            return false;
+        }
+
+        await this.applyRunResult(result, startMs);
+        this.status.state = 'idle';
+        try {
+            await this.hooks?.publishEvents?.(result);
+        } catch (error) {
+            this.status.lastError =
+                error instanceof Error ? error.message : 'Unknown backlog rebase event publication error.';
+        }
+        return true;
     }
 
     private async applyRunResult(result: TurnRunResult, startMs: number): Promise<void> {
