@@ -7,7 +7,12 @@ import { gatewayProfileCapabilities } from '@sammo-ts/common';
 import type { GatewayPrisma } from '@sammo-ts/infra';
 
 import { procedure, router } from './trpc.js';
-import { listScenarioPreviews, resolveGitBranchCommitSha, resolveGitCommitSha } from './scenario/scenarioCatalog.js';
+import {
+    listScenarioPreviews,
+    resolveGitBranchCommitSha,
+    resolveGitCommitSha,
+    type ScenarioPreview,
+} from './scenario/scenarioCatalog.js';
 import type { UserSanctions, UserServerRestriction } from './auth/userRepository.js';
 import { toPublicUser } from './auth/userRepository.js';
 import type { AdminAuthContext } from './adminAuth.js';
@@ -498,6 +503,20 @@ const SYSTEM_PROFILE_RESET_DEFAULTS: z.infer<typeof zProfileResetDefaults> = {
     tournamentTrig: true,
     joinMode: 'full',
     autorunUser: null,
+};
+
+const buildResetOtherTextInfo = (install: z.infer<typeof zOperationInstallOptions>): string => {
+    const settings: string[] = [];
+    if (!install.sync) settings.push('시간동기화 없음');
+    if (!install.extend) settings.push('확장 NPC 미포함');
+    if (install.blockGeneralCreate === 1) settings.push('장수 생성 불가');
+    if (install.blockGeneralCreate === 2) settings.push('장수명 무작위');
+    if (install.joinMode === 'onlyRandom') settings.push('랜덤 임관');
+    if (install.showImgLevel !== SYSTEM_PROFILE_RESET_DEFAULTS.showImgLevel) {
+        settings.push(['이미지 표시 안함', '전콘 표시', '전콘/병종 표시'][install.showImgLevel] ?? '이미지 표시');
+    }
+    if (!install.tournamentTrig) settings.push('토너먼트 수동 시작');
+    return settings.join(', ');
 };
 const zSourceMode = z.enum(['BRANCH', 'COMMIT']);
 const zResetSourceMode = z.enum(['CURRENT', 'BRANCH', 'COMMIT']);
@@ -1151,6 +1170,7 @@ export const adminRouter = router({
                     sourceRef: z.string().min(1).max(128).optional(),
                     install: zOperationInstallOptions,
                     scheduledAt: z.string().datetime().optional(),
+                    publishSchedule: z.boolean().optional().default(false),
                     reason: z.string().max(200).optional(),
                 })
             )
@@ -1176,6 +1196,15 @@ export const adminRouter = router({
                 const scheduledAt = input.scheduledAt ? new Date(input.scheduledAt) : null;
                 const openAt = input.install.openAt ? new Date(input.install.openAt) : null;
                 const preopenAt = input.install.preopenAt ? new Date(input.install.preopenAt) : null;
+                if (
+                    input.publishSchedule &&
+                    (!input.scheduledAt || !input.install.preopenAt || !input.install.openAt)
+                ) {
+                    throw new TRPCError({
+                        code: 'BAD_REQUEST',
+                        message: '로비 일정 공개에는 초기화 시작, 가오픈 시작과 정식 오픈이 모두 필요합니다.',
+                    });
+                }
                 if (preopenAt && !openAt) {
                     throw new TRPCError({
                         code: 'BAD_REQUEST',
@@ -1225,6 +1254,7 @@ export const adminRouter = router({
                                 : 'sourceRef is required.',
                     });
                 }
+                let selectedScenario: ScenarioPreview | undefined;
                 try {
                     const resolved =
                         sourceMode === 'BRANCH'
@@ -1234,7 +1264,8 @@ export const adminRouter = router({
                         sourceRef = resolved;
                     }
                     const scenarios = await listScenarioPreviews({ gitRef: resolved });
-                    if (!scenarios.some((scenario) => scenario.id === input.install.scenarioId)) {
+                    selectedScenario = scenarios.find((scenario) => scenario.id === input.install.scenarioId);
+                    if (!selectedScenario) {
                         throw new Error('Scenario not found at source.');
                     }
                 } catch (error) {
@@ -1257,6 +1288,24 @@ export const adminRouter = router({
                             install: input.install,
                             requestedSource: input.sourceMode,
                             releaseSource: { mode: sourceMode, ref: sourceRef },
+                            ...(input.publishSchedule && selectedScenario
+                                ? {
+                                      publicAnnouncement: {
+                                          enabled: true,
+                                          scenarioId: selectedScenario.id,
+                                          scenarioTitle: selectedScenario.title,
+                                          scheduledAt: input.scheduledAt,
+                                          preopenAt: input.install.preopenAt,
+                                          openAt: input.install.openAt,
+                                          turnTermMinutes: input.install.turnTermMinutes,
+                                          fictionMode: input.install.fiction === 1 ? '가상' : '사실',
+                                          npcMode: input.install.npcMode,
+                                          defaultStatTotal: selectedScenario.defaultStatTotal,
+                                          otherTextInfo: buildResetOtherTextInfo(input.install),
+                                          autorunUser: input.install.autorunUser ?? null,
+                                      },
+                                  }
+                                : {}),
                         } as GatewayPrisma.JsonObject,
                         reason: input.reason,
                         requestedBy: adminAuth.user.id,
