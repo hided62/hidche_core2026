@@ -49,6 +49,14 @@ const buildNation = (id: number, capitalCityId = 1, name = `국가${id}`): Natio
     meta: { tech: 100, war: 1, scout: 1 },
 });
 
+const buildNeutralNation = (): Nation => ({
+    ...buildNation(0, 0, '재야'),
+    chiefGeneralId: null,
+    level: 0,
+    typeCode: 'che_중립',
+    meta: {},
+});
+
 const buildGeneral = (overrides: Partial<TurnGeneral> = {}): TurnGeneral => ({
     id: 1,
     userId: null,
@@ -347,6 +355,7 @@ describe('invader monthly actions', () => {
         };
         const harness = buildHarness({
             cities: [buildCity(1, 1, 3)],
+            nations: [buildNeutralNation(), buildNation(1)],
             events: [endingEvent],
             meta: { isunited: 1, refreshLimit: 3 },
         });
@@ -387,7 +396,7 @@ describe('invader monthly actions', () => {
         ];
         const harness = buildHarness({
             cities: [buildCity(1, 2, 4), buildCity(2, 3, 4)],
-            nations: invaderNations,
+            nations: [buildNeutralNation(), ...invaderNations],
             generals: [],
             events: [endingEvent],
             meta: { isunited: 1, refreshLimit: 3 },
@@ -427,7 +436,12 @@ describe('invader monthly actions', () => {
         };
         const harness = buildHarness({
             cities: [buildCity(1, 1, 3), buildCity(2, 2, 4), buildCity(3, 3, 4)],
-            nations: [buildNation(1), buildNation(2, 2, 'ⓞ남만족'), buildNation(3, 3, 'ⓞ산월족')],
+            nations: [
+                buildNeutralNation(),
+                buildNation(1),
+                buildNation(2, 2, 'ⓞ남만족'),
+                buildNation(3, 3, 'ⓞ산월족'),
+            ],
             events: [endingEvent],
             meta: { isunited: 1, refreshLimit: 3 },
         });

@@ -282,7 +282,12 @@ export const createRaiseInvaderHandler = (options: {
             world.updateCity(city.id, { nationId: 0, frontState: 0, supplyState: 1 });
         }
 
-        const existingNationIds = world.listNations().map((nation) => nation.id);
+        // Ref nation table에는 Core의 `id=0 재야` row가 없으므로, 이민족과
+        // 전쟁 관계를 만들 실제 국가만 ID 증가와 외교 생성의 기준으로 삼는다.
+        const existingNationIds = world
+            .listNations()
+            .filter((nation) => nation.id > 0)
+            .map((nation) => nation.id);
         const currentLastNationId = readNumber(world.getState().meta.lastNationId);
         const liveNationMaxId = existingNationIds.reduce((maxId, id) => Math.max(maxId, id), 0);
         let lastNationId = Math.max(currentLastNationId, liveNationMaxId);
@@ -499,12 +504,13 @@ export const createInvaderEndingHandler = (options: {
         if (isUnited === 0 || isUnited === 2) {
             return;
         }
-        const nations = world.listNations();
-        // Ref는 국가명 `ⓞ` prefix로 이벤트 승자를 구분한다. 전체 국가 수로
-        // 막으면 서로 불가침 중인 이민족이 여럿 남았을 때 일반국 전멸 뒤에도
-        // 종료할 수 없으므로, 일반국의 부재를 직접 판정한다.
-        const ordinaryNations = nations.filter((nation) => !nation.name.startsWith(INVADER_PREFIX));
-        const invaderNations = nations.filter((nation) => nation.name.startsWith(INVADER_PREFIX));
+        // Ref의 nation table에는 Core가 domain/DB에 유지하는 `id=0 재야` row가
+        // 없다. 실제 승패 국가만 남긴 뒤 `ⓞ` prefix로 이벤트 승자를 구분한다.
+        // 전체 국가 수로 막으면 서로 불가침 중인 이민족이 여럿 남았을 때
+        // 일반국 전멸 뒤에도 종료할 수 없으므로, 일반국의 부재를 직접 판정한다.
+        const activeNations = world.listNations().filter((nation) => nation.id > 0);
+        const ordinaryNations = activeNations.filter((nation) => !nation.name.startsWith(INVADER_PREFIX));
+        const invaderNations = activeNations.filter((nation) => nation.name.startsWith(INVADER_PREFIX));
         const cities = world.listCities();
         const neutralCityCount = cities.filter((city) => city.nationId === 0).length;
         const userWin = ordinaryNations.length === 1 && invaderNations.length === 0 && neutralCityCount === 0;
