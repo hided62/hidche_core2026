@@ -916,6 +916,7 @@ export const createReservedTurnHandler = async (options: {
             const createdGenerals: TurnGeneral[] = [];
             const createdNations: Nation[] = [];
             const commandDeletedTroopIds = new Set<number>();
+            const destroyedNationIds = new Set<number>();
 
             let currentGeneral = context.general;
             let currentCity = context.city;
@@ -1309,6 +1310,9 @@ export const createReservedTurnHandler = async (options: {
                 }
 
                 logs.push(...resolution.logs);
+                for (const nationId of resolution.destroyedNationIds ?? []) {
+                    destroyedNationIds.add(nationId);
+                }
                 if (worldOverlay) {
                     worldOverlay.syncGeneral(currentGeneral);
                     if (currentCity) {
@@ -2166,6 +2170,7 @@ export const createReservedTurnHandler = async (options: {
                           },
                       }
                     : undefined),
+                ...(destroyedNationIds.size > 0 ? { destroyedNationIds: [...destroyedNationIds] } : undefined),
                 lifecycleEvent: {
                     generalId: currentGeneral.id,
                     outcome: lifecycleOutcome,

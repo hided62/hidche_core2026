@@ -2,6 +2,8 @@ import { describe, expect, it } from 'vitest';
 import type { TurnSchedule, UnitSetDefinition } from '@sammo-ts/logic';
 import { DIPLOMACY_STATE } from '@sammo-ts/logic';
 import type { InMemoryTurnWorld } from '../src/turn/inMemoryWorld.js';
+import { createMonthlyEventHandler } from '../src/turn/monthlyEventHandler.js';
+import { createScoutBlockHandler } from '../src/turn/monthlyScoutBlockAction.js';
 import type { TurnGeneral, TurnWorldSnapshot, TurnWorldState } from '../src/turn/types.js';
 import { LARGE_TEST_MAP, buildLargeTestCities } from './fixtures/largeTestMap.js';
 import { createTurnTestHarness } from './helpers/turnTestHarness.js';
@@ -209,7 +211,16 @@ describe('도시 점령 시 국가 멸망 처리', () => {
                 { fromNationId: 1, toNationId: 2, state: DIPLOMACY_STATE.WAR, term: 12, dead: 0, meta: {} },
                 { fromNationId: 2, toNationId: 1, state: DIPLOMACY_STATE.WAR, term: 12, dead: 0, meta: {} },
             ],
-            events: [],
+            events: [
+                {
+                    id: 1,
+                    targetCode: 'destroy_nation',
+                    priority: 1_000,
+                    condition: ['and', ['Date', '>=', 183, 1], ['RemainNation', '==', 1]],
+                    action: [['BlockScoutAction'], ['DeleteEvent']],
+                    meta: {},
+                },
+            ],
             initialEvents: [],
             map: LARGE_TEST_MAP as any,
             scenarioConfig: {
@@ -244,12 +255,25 @@ describe('도시 점령 시 국가 멸망 처리', () => {
         };
 
         const worldRef = { current: null as InMemoryTurnWorld | null };
+        const blockScoutHandler = createScoutBlockHandler({
+            actionName: 'BlockScoutAction',
+            getWorld: () => worldRef.current,
+        });
+        const scenarioEventHandler = createMonthlyEventHandler({
+            getWorld: () => worldRef.current,
+            startYear: 180,
+            actions: new Map([['BlockScoutAction', blockScoutHandler]]),
+        });
         const { world, reservedTurnStore, runOneTick } = await createTurnTestHarness({
             snapshot,
             state,
             schedule,
             map: LARGE_TEST_MAP,
             worldRef,
+            turnProcessorOptions: {
+                tickMinutes: 10,
+                dispatchScenarioEvent: scenarioEventHandler.dispatchTarget,
+            },
         });
 
         const turns = reservedTurnStore.getGeneralTurns(strongLeader.id);
@@ -263,6 +287,9 @@ describe('도시 점령 시 국가 멸망 처리', () => {
         expect(world.getCityById(weakCityId)?.nationId).toBe(1);
         expect(world.getNationById(2)).toBeNull();
         expect(world.listNations().some((nation) => nation.id === 2)).toBe(false);
+        expect(world.getNationById(1)?.meta.scout).toBe(1);
+        expect(world.listEvents('destroy_nation')).toEqual([]);
+        expect(world.getState().meta.block_change_scout).toBeUndefined();
         expect(world.getCityById(conflictCity.id)?.conflict).toEqual({ 1: 50 });
 
         const updatedWeakGeneral = world.getGeneralById(weakGeneral.id);

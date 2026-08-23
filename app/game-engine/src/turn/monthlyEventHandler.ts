@@ -232,7 +232,9 @@ export const createMonthlyEventHandler = (options: {
         // postUpdateMonthly step has completed. Event actions therefore see
         // the previous monthly boundary even after turnDate() has advanced
         // year/month. Generated general turn times depend on this distinction.
-        const legacyTurnTime = new Date(context.turnTime.getTime() - world.getState().tickSeconds * 1_000);
+        const legacyTurnTime =
+            context.legacyTurnTime ??
+            new Date(context.turnTime.getTime() - world.getState().tickSeconds * 1_000);
 
         for (const event of world.listEvents(targetCode)) {
             const environment: MonthlyEventEnvironment = {

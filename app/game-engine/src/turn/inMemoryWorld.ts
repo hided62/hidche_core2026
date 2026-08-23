@@ -67,7 +67,13 @@ export interface GeneralTurnResult {
         general: boolean;
         troopIds?: number[];
     };
+    destroyedNationIds?: number[];
     lifecycleEvent?: GeneralLifecycleEvent;
+}
+
+export interface GeneralTurnExecution {
+    nextTurnAt: Date;
+    destroyedNationIds: number[];
 }
 
 export interface GeneralLifecycleEvent {
@@ -90,6 +96,7 @@ export interface TurnCalendarContext {
     currentYear: number;
     currentMonth: number;
     turnTime: Date;
+    legacyTurnTime?: Date;
 }
 
 export interface TurnCalendarHandler {
@@ -1432,7 +1439,7 @@ export class InMemoryTurnWorld {
         return due;
     }
 
-    executeGeneralTurn(general: TurnGeneral): Date {
+    executeGeneralTurn(general: TurnGeneral): GeneralTurnExecution {
         const currentGeneral = this.generals.get(general.id) ?? general;
         const city = this.cities.get(currentGeneral.cityId);
         const nation = currentGeneral.nationId > 0 ? (this.nations.get(currentGeneral.nationId) ?? null) : null;
@@ -1599,7 +1606,10 @@ export class InMemoryTurnWorld {
 
         this.removeCollapsedNations();
 
-        return nextTurnAt;
+        return {
+            nextTurnAt,
+            destroyedNationIds: (result.destroyedNationIds ?? []).filter((nationId) => !this.nations.has(nationId)),
+        };
     }
 
     async advanceMonth(turnTime: Date): Promise<void> {

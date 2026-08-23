@@ -69,6 +69,7 @@ export type TurnTestHarnessOptions = {
         tickMinutes: number;
         beforeExecuteGeneral?: InMemoryTurnProcessorOptions['beforeExecuteGeneral'];
         afterExecuteGeneral?: InMemoryTurnProcessorOptions['afterExecuteGeneral'];
+        dispatchScenarioEvent?: InMemoryTurnProcessorOptions['dispatchScenarioEvent'];
     };
     worldRef?: { current: InMemoryTurnWorld | null };
     onActionResolved?: Parameters<typeof createReservedTurnHandler>[0]['onActionResolved'];
@@ -155,6 +156,7 @@ export const createTurnTestHarness = async (options: TurnTestHarnessOptions) => 
         tickMinutes: options.turnProcessorOptions?.tickMinutes ?? 10,
         beforeExecuteGeneral: options.turnProcessorOptions?.beforeExecuteGeneral,
         afterExecuteGeneral: options.turnProcessorOptions?.afterExecuteGeneral,
+        dispatchScenarioEvent: options.turnProcessorOptions?.dispatchScenarioEvent,
     });
 
     const collectedLogs: LogEntryDraft[] = [];

@@ -778,6 +778,7 @@ const createTurnDaemonRuntimeWithLease = async (
     const stateStore = new InMemoryTurnStateStore(world);
     let fastForwardPreparedMonth = '';
     const processor = new InMemoryTurnProcessor(world, {
+        dispatchScenarioEvent: (targetCode, context) => monthlyEventHandler.dispatchTarget(targetCode, context),
         beforeExecuteGeneral: reservedTurnStoreHandle
             ? async (general) => {
                   if (options.exclusiveFastForward) {

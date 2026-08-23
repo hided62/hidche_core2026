@@ -1,6 +1,6 @@
 import type { TurnCheckpoint, TurnProcessor, TurnRunBudget, TurnRunResult } from '../lifecycle/types.js';
 import { getNextTickTime } from '../lifecycle/getNextTickTime.js';
-import type { InMemoryTurnWorld } from './inMemoryWorld.js';
+import type { InMemoryTurnWorld, TurnCalendarContext } from './inMemoryWorld.js';
 import type { TurnGeneral } from './types.js';
 import { asNumber, asRecord, calculateAccessRefreshLimit } from '@sammo-ts/common';
 
@@ -8,6 +8,7 @@ export interface InMemoryTurnProcessorOptions {
     tickMinutes?: number;
     beforeExecuteGeneral?: (general: TurnGeneral) => Promise<void>;
     afterExecuteGeneral?: (general: TurnGeneral, result: TurnGeneralExecutionResult) => Promise<void>;
+    dispatchScenarioEvent?: (targetCode: string, context: TurnCalendarContext) => Promise<void>;
 }
 
 export type TurnGeneralExecutionResult = {
@@ -38,12 +39,14 @@ export class InMemoryTurnProcessor implements TurnProcessor {
     private readonly tickMinutesOverride?: number;
     private readonly beforeExecuteGeneral?: (general: TurnGeneral) => Promise<void>;
     private readonly afterExecuteGeneral?: (general: TurnGeneral, result: TurnGeneralExecutionResult) => Promise<void>;
+    private readonly dispatchScenarioEvent?: (targetCode: string, context: TurnCalendarContext) => Promise<void>;
 
     constructor(world: InMemoryTurnWorld, options: InMemoryTurnProcessorOptions = {}) {
         this.world = world;
         this.tickMinutesOverride = options.tickMinutes;
         this.beforeExecuteGeneral = options.beforeExecuteGeneral;
         this.afterExecuteGeneral = options.afterExecuteGeneral;
+        this.dispatchScenarioEvent = options.dispatchScenarioEvent;
     }
 
     async run(targetTime: Date, budget: TurnRunBudget, checkpoint?: TurnCheckpoint): Promise<TurnRunResult> {
@@ -99,7 +102,22 @@ export class InMemoryTurnProcessor implements TurnProcessor {
             let nextTurnAt: Date | undefined;
             let executionError: unknown;
             try {
-                nextTurnAt = this.world.executeGeneralTurn(general);
+                const execution = this.world.executeGeneralTurn(general);
+                nextTurnAt = execution.nextTurnAt;
+                if (execution.destroyedNationIds.length > 0 && this.dispatchScenarioEvent) {
+                    const state = this.world.getState();
+                    const eventContext: TurnCalendarContext = {
+                        previousYear: state.currentYear,
+                        previousMonth: state.currentMonth,
+                        currentYear: state.currentYear,
+                        currentMonth: state.currentMonth,
+                        turnTime: new Date(state.lastTurnTime.getTime()),
+                        legacyTurnTime: new Date(state.lastTurnTime.getTime()),
+                    };
+                    for (const _nationId of execution.destroyedNationIds) {
+                        await this.dispatchScenarioEvent('destroy_nation', eventContext);
+                    }
+                }
             } catch (error) {
                 executionError = error;
             }

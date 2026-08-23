@@ -749,6 +749,9 @@ export class ActionDefinition<
 
         return {
             effects,
+            ...(aftermath.conquest?.nationCollapsed && defenderNation
+                ? { destroyedNationIds: [defenderNation.id] }
+                : {}),
             ...(aftermath.conquest?.ruinedNpcJoinPlans.length
                 ? { reservedGeneralTurnPlans: aftermath.conquest.ruinedNpcJoinPlans }
                 : {}),

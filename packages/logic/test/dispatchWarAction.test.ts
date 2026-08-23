@@ -263,6 +263,7 @@ describe('che_출병', () => {
         );
 
         expect(resolution.logs.length).toBeGreaterThan(0);
+        expect(resolution.destroyedNationIds).toEqual([defenderNation.id]);
         expect(resolution.general.recentWarTime?.toISOString()).toBe(attacker.turnTime.toISOString());
         expect(resolution.patches?.generals.some((patch) => patch.id === defender.id)).toBe(true);
         expect(resolution.patches?.cities.some((patch) => patch.id === defenderCity.id)).toBe(true);
