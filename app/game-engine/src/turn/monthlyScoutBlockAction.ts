@@ -25,7 +25,10 @@ export const createScoutBlockHandler = (options: {
             // changing nation or game state. No provided scenario invokes it.
             throw new Error('update(): at least 3 arguments expected');
         }
-        for (const nation of world.listNations()) {
+        // Ref updates every row in its nation table. Core additionally keeps a
+        // synthetic id=0 neutral row, which is not a Ref nation row and must
+        // remain outside the last-nation scout policy.
+        for (const nation of world.listNations().filter((entry) => entry.id > 0)) {
             world.updateNation(nation.id, {
                 meta: {
                     ...nation.meta,

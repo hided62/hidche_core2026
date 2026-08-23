@@ -315,6 +315,31 @@ const resolveOptionalString = (source: Record<string, unknown>, keys: string[]):
     return null;
 };
 
+const DEFAULT_MAX_NATION = 55;
+
+const resolveMaxNation = (worldState: WorldStateRow): number => {
+    const config = asRecord(worldState.config);
+    const constValues = asRecord(config.const);
+    const meta = asRecord(worldState.meta);
+    const refGameEnv = asRecord(meta.refGameEnv);
+    const candidates = [
+        refGameEnv.maxnation,
+        refGameEnv.maxNation,
+        config.maxnation,
+        config.maxNation,
+        constValues.defaultMaxNation,
+        constValues.maxNation,
+    ];
+    for (const candidate of candidates) {
+        const parsed =
+            typeof candidate === 'number' ? candidate : typeof candidate === 'string' ? Number(candidate) : Number.NaN;
+        if (Number.isFinite(parsed) && parsed >= 0) {
+            return Math.floor(parsed);
+        }
+    }
+    return DEFAULT_MAX_NATION;
+};
+
 const buildCommandEnv = (worldState: WorldStateRow): CommandEnv => {
     const config = asRecord(worldState.config);
     const constValues = asRecord(config.const);
@@ -630,7 +655,13 @@ const pickAvailability = (lhs: AvailabilityCore, rhs: AvailabilityCore): Availab
 
 type TurnCommandSpec = GeneralTurnCommandSpec | NationTurnCommandSpec;
 
-const buildEntries = (env: CommandEnv, specs: TurnCommandSpec[]): CommandEntry[] => {
+const FOUNDING_COMMAND_KEYS = new Set(['che_건국', 'cr_건국', 'che_무작위건국']);
+
+const buildEntries = (
+    env: CommandEnv,
+    specs: TurnCommandSpec[],
+    options: { foundingAvailable?: boolean } = {}
+): CommandEntry[] => {
     const entries: CommandEntry[] = [];
 
     for (const spec of specs) {
@@ -657,6 +688,14 @@ const buildEntries = (env: CommandEnv, specs: TurnCommandSpec[]): CommandEntry[]
                 });
                 return pickAvailability(gold, rice);
             };
+        }
+
+        if (FOUNDING_COMMAND_KEYS.has(spec.key) && options.foundingAvailable === false) {
+            entry.evaluate = () => ({
+                possible: false,
+                status: 'blocked',
+                reason: '더 이상 건국은 불가능합니다.',
+            });
         }
 
         entries.push(entry);
@@ -740,6 +779,8 @@ export const buildTurnCommandTable = async (options: {
     city: CityRow | null;
     nation: NationRow | null;
     nationGenerals: GeneralRow[] | null;
+    /** Ref's nation-table row count. Core callers must exclude synthetic id=0. */
+    realNationCount?: number;
     inputOptions?: TurnCommandInputOptions;
 }): Promise<TurnCommandTable> => {
     // 턴 입력 화면에서 쓰는 사전 판단이므로 최소 정보로 가능/불가만 계산한다.
@@ -761,7 +802,12 @@ export const buildTurnCommandTable = async (options: {
 
     const env = buildCommandEnv(options.worldState);
     const { general: generalSpecs, nation: nationSpecs } = await loadTurnCommandSpecs();
-    const generalEntries = buildEntries(env, generalSpecs);
+    const generalEntries = buildEntries(env, generalSpecs, {
+        foundingAvailable:
+            options.realNationCount === undefined
+                ? undefined
+                : options.realNationCount < resolveMaxNation(options.worldState),
+    });
     const nationEntries = buildEntries(env, nationSpecs);
 
     return {
