@@ -101,6 +101,7 @@ export interface GeneralActionOutcome<TriggerState extends GeneralTriggerState =
     effects: GeneralActionEffect<TriggerState>[];
     completed?: boolean;
     deletedTroopIds?: number[];
+    destroyedNationIds?: NationId[];
     reservedGeneralTurnPlans?: Array<{
         generalId: number;
         joinTurn: number;
@@ -125,6 +126,7 @@ export interface GeneralActionResolution {
     nextTurnAt: Date;
     logs: LogEntryDraft[];
     effects: GeneralActionEffect[];
+    destroyedNationIds?: NationId[];
     created?: {
         generals: General[];
         nations?: Nation[];
@@ -406,6 +408,7 @@ export const resolveGeneralAction = <TriggerState extends GeneralTriggerState = 
         effects: accumulator.pendingEffects,
         ...(outcome?.alternative ? { alternative: outcome.alternative } : {}),
         ...(outcome?.deletedTroopIds?.length ? { deletedTroopIds: outcome.deletedTroopIds } : {}),
+        ...(outcome?.destroyedNationIds?.length ? { destroyedNationIds: outcome.destroyedNationIds } : {}),
         ...(outcome?.reservedGeneralTurnPlans?.length
             ? { reservedGeneralTurnPlans: outcome.reservedGeneralTurnPlans }
             : {}),
