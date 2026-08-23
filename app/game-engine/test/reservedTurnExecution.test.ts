@@ -495,9 +495,7 @@ describe('Reserved Turn Execution Integration', () => {
             category: 'ACTION',
             generalId: 1,
         });
-        const personalActionLogs = dirty.logs.filter(
-            (log) => log.scope === 'GENERAL' && log.category === 'ACTION'
-        );
+        const personalActionLogs = dirty.logs.filter((log) => log.scope === 'GENERAL' && log.category === 'ACTION');
         expect(personalActionLogs.length).toBeGreaterThan(0);
         expect(personalActionLogs.every((log) => log.generalId === 1)).toBe(true);
         expect(
@@ -679,6 +677,7 @@ describe('Reserved Turn Execution Integration', () => {
             const generals: TurnGeneral[] = [
                 {
                     id: 1,
+                    userId: 'founder-user',
                     name: 'General_Leader',
                     nationId: 0,
                     cityId: 1,
@@ -708,6 +707,7 @@ describe('Reserved Turn Execution Integration', () => {
                 },
                 {
                     id: 2,
+                    userId: 'domestic-user',
                     name: 'General_Sub',
                     nationId: 0,
                     cityId: 1,
@@ -973,6 +973,14 @@ describe('Reserved Turn Execution Integration', () => {
             expect(world.getCityById(1)!.agriculture).toBe(100);
             expect(world.getCityById(1)!.nationId).toBe(0); // City 1 is still unowned
             expect(world.getCityById(2)!.agriculture).toBeGreaterThan(100); // City 2 agric increased
+            expect(gen1ReallyFinal.inheritancePoints?.unifier).toBe(250);
+            expect(world.peekDirtyState().inheritancePointAdjustments).toEqual(
+                expect.arrayContaining([
+                    { userId: 'founder-user', key: 'active_action', amount: 3 },
+                    { userId: 'founder-user', key: 'lived_month', amount: 1 },
+                    { userId: 'founder-user', key: 'unifier', amount: 250 },
+                ])
+            );
         });
 
         it('should fail founding with specific constraints', async () => {

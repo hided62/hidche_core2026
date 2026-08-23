@@ -1,6 +1,7 @@
 import { asRecord, HALL_OF_FAME_TYPES, resolveLegacyTextColor, type HallOfFameType } from '@sammo-ts/common';
 import type { GamePrisma, InputJsonValue } from '@sammo-ts/infra';
 import { LogCategory, LogScope } from '@sammo-ts/logic';
+import { computeInheritanceSettlementBreakdown } from '@sammo-ts/logic/inheritance/pointCalculation.js';
 
 import type { GeneralLifecycleEvent } from './inMemoryWorld.js';
 
@@ -21,14 +22,6 @@ const readNumber = (record: Record<string, unknown>, key: string): number => {
 const readWorldNumber = (record: Record<string, unknown>, key: string, fallback: number): number => {
     const value = readNumber(record, key);
     return value === 0 && record[key] === undefined ? fallback : Math.floor(value);
-};
-
-const computeDexPoint = (meta: Record<string, unknown>): number => {
-    let total = 0;
-    for (let dex = 1; dex <= 5; dex += 1) {
-        total += readNumber(meta, `dex${dex}`);
-    }
-    return total * 0.001;
 };
 
 const settleInheritance = async (
@@ -71,8 +64,6 @@ const settleInheritance = async (
         }),
     ]);
     const points = new Map(rows.map((row) => [row.key, row.value]));
-    const ranks = new Map(rankRows.map((row) => [row.type, row.value]));
-    const rank = (key: string): number => ranks.get(key) ?? readNumber(meta, `rank_${key}`);
     const previous = points.get('previous') ?? 0;
     const randomUniqueRefund = meta.inheritRandomUnique
         ? readWorldNumber(configConst, 'inheritItemRandomPoint', 3000)
@@ -81,30 +72,45 @@ const settleInheritance = async (
         ? readWorldNumber(configConst, 'inheritSpecificSpecialPoint', 4000)
         : 0;
     const refund = randomUniqueRefund + specificSpecialRefund;
-    const lived = readNumber(meta, 'inherit_lived_month');
-    const maxBelong = readNumber(meta, 'inherit_max_belong') * 10;
-    const maxDomestic = readNumber(meta, 'max_domestic_critical');
-    const active = readNumber(meta, 'inherit_active_action') * 3;
-    const combat = rank('warnum') * 5;
-    const sabotage = (ranks.get('firenum') ?? readNumber(meta, 'firenum')) * 20;
-    const dex = computeDexPoint(meta);
-    const unifier = points.get('unifier') ?? 0;
-    const earned = isRebirth
-        ? lived + active + combat + sabotage + dex * 0.5
-        : lived + maxBelong + maxDomestic + active + combat + sabotage + dex + unifier;
-    const total = Math.trunc(previous + refund + earned);
+    const calculationMeta = {
+        ...meta,
+        ...Object.fromEntries(rankRows.map((row) => [row.type, row.value])),
+        ...Object.fromEntries(rankRows.map((row) => [`rank_${row.type}`, row.value])),
+    };
+    const settlement = computeInheritanceSettlementBreakdown(
+        {
+            meta: calculationMeta,
+            inheritancePoints: Object.fromEntries(points),
+        },
+        isRebirth
+    );
+    const total = Math.trunc(previous + refund + settlement.totalEarned);
 
     await prisma.inheritancePoint.upsert({
         where: { userId_key: { userId, key: 'previous' } },
         update: { value: total },
         create: { userId, key: 'previous', value: total },
     });
-    await prisma.inheritancePoint.deleteMany({
-        where: {
-            userId,
-            key: isRebirth ? { notIn: ['previous', 'unifier'] } : { not: 'previous' },
-        },
-    });
+    if (isRebirth) {
+        const retainedEntries = Object.entries(settlement.retained).filter(
+            ([key, value]) => key === 'max_belong' || points.has(key) || value !== 0
+        );
+        for (const [key, value] of retainedEntries) {
+            await prisma.inheritancePoint.upsert({
+                where: { userId_key: { userId, key } },
+                update: { value },
+                create: { userId, key, value },
+            });
+        }
+        await prisma.inheritancePoint.deleteMany({
+            where: {
+                userId,
+                key: { notIn: ['previous', ...retainedEntries.map(([key]) => key)] },
+            },
+        });
+    } else {
+        await prisma.inheritancePoint.deleteMany({ where: { userId, key: { not: 'previous' } } });
+    }
     const serverId =
         typeof worldMeta.serverId === 'string' && worldMeta.serverId.trim() ? worldMeta.serverId.trim() : 'default';
     await prisma.inheritanceResult.create({
@@ -117,15 +123,10 @@ const settleInheritance = async (
             value: asJson({
                 previous,
                 refund,
-                lived_month: lived,
-                max_belong: maxBelong,
-                max_domestic_critical: maxDomestic,
-                active_action: active,
-                combat,
-                sabotage,
-                dex: isRebirth ? dex * 0.5 : dex,
-                unifier: isRebirth ? 0 : unifier,
+                ...settlement.earned,
+                ...(isRebirth ? { retained: settlement.retained } : {}),
                 rebirth: isRebirth,
+                total,
             }),
         },
     });

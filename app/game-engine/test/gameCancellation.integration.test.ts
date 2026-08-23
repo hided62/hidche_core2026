@@ -215,16 +215,16 @@ integration('game cancellation transaction', () => {
                 [userId]: {
                     openingPoint: 10_000,
                     currentPoint: 7_000,
-                    earnedPoint: 1_750.005,
-                    retainedEarnedPoint: 700,
-                    finalPoint: 10_700,
+                    earnedPoint: 1_790.005,
+                    retainedEarnedPoint: 716,
+                    finalPoint: 10_716,
                     baselineSource: 'OPENING',
                 },
             },
         });
         await expect(
             db.inheritancePoint.findMany({ where: { userId }, orderBy: { key: 'asc' } })
-        ).resolves.toMatchObject([{ key: 'previous', value: 10_700 }]);
+        ).resolves.toMatchObject([{ key: 'previous', value: 10_716 }]);
         await expect(db.gameHistory.findUniqueOrThrow({ where: { serverId } })).resolves.toMatchObject({
             status: 'ABANDONED',
             winnerNation: null,

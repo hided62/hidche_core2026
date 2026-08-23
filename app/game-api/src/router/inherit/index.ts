@@ -271,12 +271,27 @@ export const inheritRouter = router({
             throw new TRPCError({ code: 'PRECONDITION_FAILED', message: '장수가 존재하지 않습니다.' });
         }
 
+        const rankRows = await ctx.db.rankData.findMany({
+            where: {
+                generalId: general.id,
+                type: { in: ['warnum', 'firenum', 'betwin', 'betgold', 'betwingold'] },
+            },
+            select: { type: true, value: true },
+        });
+        const calculationMeta = {
+            ...asRecord(general.meta),
+            ...Object.fromEntries(rankRows.map((row) => [row.type, row.value])),
+            ...Object.fromEntries(rankRows.map((row) => [`rank_${row.type}`, row.value])),
+        };
+
         const meta = asRecord(worldState.meta);
-        const isUnited = typeof meta.isUnited === 'number' && meta.isUnited !== 0;
+        const isUnited =
+            (typeof meta.isUnited === 'number' && meta.isUnited !== 0) ||
+            (typeof meta.isunited === 'number' && meta.isunited !== 0);
         const items = await computeInheritanceItems({
             db: ctx.db,
             userId,
-            generalMeta: asRecord(general.meta),
+            generalMeta: calculationMeta,
             isUnited,
         });
         const totalPoint = sumInheritanceItems(items);

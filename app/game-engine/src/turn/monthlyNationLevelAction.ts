@@ -375,8 +375,15 @@ export const createUpdateNationLevelHandler = (options: {
                 });
             }
             const isUnited = readNumber(state.meta.isunited ?? state.meta.isUnited);
-            if (chief?.userId && isUnited === 0) {
-                world.queueInheritancePointAdjustment(chief.userId, 'unifier', 250 * levelDiff);
+            if (chief?.userId && chief.npcState < 2 && isUnited === 0) {
+                const amount = 250 * levelDiff;
+                world.queueInheritancePointAdjustment(chief.userId, 'unifier', amount);
+                world.updateGeneral(chief.id, {
+                    inheritancePoints: {
+                        ...chief.inheritancePoints,
+                        unifier: readNumber(chief.inheritancePoints?.unifier) + amount,
+                    },
+                });
             }
         }
     };

@@ -65,6 +65,8 @@ export class ActionResolver<
 
         // Penalty
         const betrayal = typeof general.meta.betray === 'number' ? general.meta.betray : 0;
+        const belong = typeof general.meta.belong === 'number' ? general.meta.belong : 0;
+        const maxBelong = typeof general.meta.max_belong === 'number' ? general.meta.max_belong : 0;
         const penaltyRatio = betrayal * 0.1;
         const nextExp = Math.round(general.experience * (1 - penaltyRatio));
         const nextDed = Math.round(general.dedication * (1 - penaltyRatio));
@@ -99,6 +101,7 @@ export class ActionResolver<
                         ...general.meta,
                         betray: Math.min(9, betrayal + 1),
                         belong: 0,
+                        ...(general.npcState < 2 ? { max_belong: Math.max(belong, maxBelong) } : {}),
                         makelimit: 12,
                         officer_city: 0,
                         permission: 'normal',

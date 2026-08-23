@@ -391,7 +391,9 @@ describe('legacy general-turn execution contract', () => {
         expect(updated.injury).toBe(10);
         expect(updated.experience).toBe(0);
         expect(updated.meta.killturn).toBe(4);
-        expect(updated.meta.inherit_lived_month).toBe(1);
+        // Ref InheritancePointManager ignores every source when the general
+        // has no owner, including the per-turn lived_month source.
+        expect(updated.meta.inherit_lived_month).toBeUndefined();
         expect(updated.meta.myset).toBe(3);
         expect(harness.reservedTurnStore.getGeneralTurn(1, 0).action).toBe('휴식');
         expect(harness.getCollectedLogs().some((log) => log.text.includes('악성유저'))).toBe(true);

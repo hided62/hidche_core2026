@@ -142,12 +142,12 @@ export const createTournamentRewardFinalizer = async (options: {
         const nameMap = new Map<number, string>();
         const generals = await db.general.findMany({
             where: { id: { in: Array.from(rewardMap.keys()) } },
-            select: { id: true, userId: true, name: true },
+            select: { id: true, userId: true, name: true, npcState: true },
         });
         const userMap = new Map<number, string>();
         for (const general of generals) {
             nameMap.set(general.id, general.name);
-            if (general.userId) {
+            if (general.userId && general.npcState < 2) {
                 userMap.set(general.id, general.userId);
             }
         }
@@ -261,6 +261,15 @@ export const createTournamentRewardFinalizer = async (options: {
                 update: { value: { increment: entry.value } },
                 create: { userId: entry.userId!, key: 'tournament', value: entry.value },
             });
+            const general = world.getGeneralById(entry.generalId);
+            if (general) {
+                world.updateGeneral(entry.generalId, {
+                    inheritancePoints: {
+                        ...general.inheritancePoints,
+                        tournament: Number(general.inheritancePoints?.tournament ?? 0) + entry.value,
+                    },
+                });
+            }
         }
 
         return {
