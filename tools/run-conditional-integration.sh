@@ -477,21 +477,21 @@ record_vitest_result() {
         import fs from "node:fs";
         const result = JSON.parse(fs.readFileSync(process.argv[1], "utf8"));
         const files = Array.isArray(result.testResults) ? result.testResults : [];
-        const isSkipped = ({ assertionResults = [], status }) =>
-            status === "pending" ||
-            (assertionResults.length > 0 &&
-                assertionResults.every(({ status: assertionStatus }) =>
-                    assertionStatus === "pending" || assertionStatus === "todo"
-                ));
-        const skipped = files.filter(isSkipped).length;
+        const skippedStatuses = new Set(["disabled", "pending", "skipped", "todo"]);
+        const hasSkippedAssertion = ({ assertionResults = [], status }) =>
+            skippedStatuses.has(status) ||
+            assertionResults.some(({ status: assertionStatus }) => skippedStatuses.has(assertionStatus));
+        const skipped = files.filter(hasSkippedAssertion).length;
         const failed = files.filter(({ status }) => status === "failed").length;
-        const passed = files.length - skipped - failed;
+        const passed = files.filter(
+            (file) => file.status !== "failed" && !hasSkippedAssertion(file)
+        ).length;
         process.stdout.write(`${passed}\t${skipped}\t${failed}`);
     ' "$result_file")
     printf '%s\t%s\n' "$label" "$counts" >>"$summary_file"
     skipped=$(printf '%s' "$counts" | cut -f2)
     if [ "$skipped" -ne 0 ]; then
-        echo "$label left $skipped integration test file(s) skipped" >&2
+        echo "$label left $skipped integration test file(s) with skipped assertion(s)" >&2
         return 1
     fi
 }
