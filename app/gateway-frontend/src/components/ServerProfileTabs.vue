@@ -5,6 +5,7 @@ type ServerProfileTab = 'status' | 'version' | 'scenario' | 'cancel';
 
 const props = defineProps<{
     profileName: string;
+    profileLabel: string;
     activeTab: ServerProfileTab;
     canDeploy: boolean;
     canReset: boolean;
@@ -45,7 +46,7 @@ const tabs = computed(() =>
     <nav
         class="server-profile-tabs"
         :style="{ '--server-tab-count': tabs.length }"
-        :aria-label="`${profileName} 서버 관리 탭`"
+        :aria-label="`${profileLabel} 서버 관리 탭`"
         data-testid="server-profile-tabs"
     >
         <RouterLink

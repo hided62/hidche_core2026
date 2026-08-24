@@ -23,7 +23,7 @@ import {
 import { isRecord } from '@sammo-ts/common';
 
 import { resolveGatewayPostgresConfigFromEnv } from '../gatewayPostgresConfig.js';
-import { resolveGatewayProfileKoreanName } from '../profileOrder.js';
+import { resolveGatewayProfileDisplayName, resolveGatewayProfileKoreanName } from '../profileOrder.js';
 
 import {
     buildTurboReleaseCommand,
@@ -1626,7 +1626,11 @@ export class GatewayOrchestrator implements GatewayOrchestratorHandle {
                           this.processConfig.workspaceRoot
                       )),
             ];
-            await this.appendOperationLog(operationId, 'build', `${profile.profileName} 구성 요소를 빌드합니다.`);
+            await this.appendOperationLog(
+                operationId,
+                'build',
+                `${resolveGatewayProfileDisplayName(profile.profile, profile.instanceKey, profile.meta.korName)} 구성 요소를 빌드합니다.`
+            );
             const result = await this.releaseBuildRunner.run(commands, this.buildProgress(operationId, 'build'), {
                 signal: this.activeOperationAbortSignal,
             });
@@ -2233,7 +2237,11 @@ export class GatewayOrchestrator implements GatewayOrchestratorHandle {
             await this.appendOperationLog(
                 operationId,
                 'build',
-                `${profile?.profileName ?? 'profile'} 구성 요소를 빌드합니다.`
+                `${
+                    profile
+                        ? resolveGatewayProfileDisplayName(profile.profile, profile.instanceKey, profile.meta.korName)
+                        : '대상 서버'
+                } 구성 요소를 빌드합니다.`
             );
         }
         return {
@@ -2435,7 +2443,13 @@ export class GatewayOrchestrator implements GatewayOrchestratorHandle {
 
     private async stageStaticProfileFrontend(profile: GatewayProfileRecord): Promise<StagedFrontendArtifact> {
         if (!profile.buildCommitSha) {
-            throw new Error(`Profile ${profile.profileName} is missing the build commit SHA.`);
+            throw new Error(
+                `${resolveGatewayProfileDisplayName(
+                    profile.profile,
+                    profile.instanceKey,
+                    profile.meta.korName
+                )} 서버의 build commit SHA가 없습니다.`
+            );
         }
         const runtimeWorkspace = profile.buildWorkspace ?? this.processConfig.workspaceRoot;
         const sharedSourceRoot = buildSharedProfileFrontendOutDir(runtimeWorkspace);

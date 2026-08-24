@@ -3,6 +3,7 @@ import { computed, onMounted, ref } from 'vue';
 import DefaultLayout from './DefaultLayout.vue';
 import { useAuthStore } from '../stores/auth';
 import { directTrpc } from '../utils/trpc';
+import { loadAdminProfileNavigation, type AdminProfileNavigationItem } from '../composables/useAdminProfileNavigation';
 
 defineProps<{
     title: string;
@@ -14,30 +15,9 @@ const menuOpen = ref(false);
 const auth = useAuthStore();
 const adminNavigationClient = directTrpc.admin as unknown as {
     capabilities: { list: { query: () => Promise<Array<{ permission: string; scopes?: string[] }>> } };
-    profiles: {
-        listNavigation: {
-            query: () => Promise<
-                Array<{
-                    profileName: string;
-                    profile: string;
-                    instanceKey: string;
-                    currentScenario: string | null;
-                    meta?: Record<string, unknown>;
-                }>
-            >;
-        };
-    };
 };
 const capabilities = ref<Array<{ permission: string; scopes?: string[] }>>([]);
-const profiles = ref<
-    Array<{
-        profileName: string;
-        profile: string;
-        instanceKey: string;
-        currentScenario: string | null;
-        meta?: Record<string, unknown>;
-    }>
->([]);
+const profiles = ref<AdminProfileNavigationItem[]>([]);
 
 const isRootAdmin = computed(() =>
     (auth.user?.roles ?? []).some((role) => role === 'superuser' || role === 'admin' || role === 'admin.superuser')
@@ -52,10 +32,12 @@ const hasAnyProfileCapability = computed(() =>
     )
 );
 
-const profileLabel = (profile: (typeof profiles.value)[number]): string => {
-    const korName = profile.meta?.korName;
-    const displayName = typeof korName === 'string' && korName.trim() ? korName.trim() : profile.profile;
-    return profile.instanceKey === 'default' ? displayName : `${displayName} [${profile.instanceKey}]`;
+const profileDisplayName = (profile: (typeof profiles.value)[number]): string => {
+    if (profile.displayName?.trim()) return profile.displayName.trim();
+    const configuredName = profile.meta?.korName;
+    const baseName =
+        typeof configuredName === 'string' && configuredName.trim() ? configuredName.trim() : profile.profile;
+    return profile.instanceKey === 'default' ? baseName : `${baseName} [${profile.instanceKey}]`;
 };
 
 const navigation = computed(() => [
@@ -86,8 +68,8 @@ const navigation = computed(() => [
             },
             ...profiles.value.map((profile) => ({
                 to: `/admin/servers/${encodeURIComponent(profile.profileName)}`,
-                label: profileLabel(profile),
-                title: `서버 ID: ${profile.profileName}`,
+                label: profileDisplayName(profile),
+                title: `${profileDisplayName(profile)} 서버 관리`,
                 icon: '└',
                 exact: false,
                 visible: true,
@@ -129,7 +111,7 @@ const navigation = computed(() => [
 onMounted(async () => {
     const [capabilityResult, profileResult] = await Promise.allSettled([
         adminNavigationClient.capabilities.list.query(),
-        adminNavigationClient.profiles.listNavigation.query(),
+        loadAdminProfileNavigation(),
     ]);
     capabilities.value = capabilityResult.status === 'fulfilled' ? capabilityResult.value : [];
     profiles.value = profileResult.status === 'fulfilled' ? profileResult.value : [];

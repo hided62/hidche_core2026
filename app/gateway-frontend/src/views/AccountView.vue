@@ -851,7 +851,8 @@ onBeforeUnmount(() => {
                                     :key="profile.profileName"
                                     :value="profile.profileName"
                                 >
-                                    {{ profile.profile }} · {{ profile.currentScenario ?? profile.profileName }}
+                                    {{ profile.displayName ?? profile.profile }} ·
+                                    {{ profile.currentScenario ?? '시나리오 미설정' }}
                                 </option>
                             </select>
                             <span v-if="currentProfile" class="notification-profile-status">{{

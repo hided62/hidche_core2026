@@ -71,6 +71,7 @@ const profile = (runtimeRunning: boolean, resetDefaults?: Record<string, unknown
     profileName: 'che:default',
     profile: 'che',
     instanceKey: 'default',
+    displayName: '천하서버',
     currentScenario: '2',
     scenario: '2',
     apiPort: 15003,
@@ -200,6 +201,7 @@ const installFixture = async (page: Page, state: FixtureState) => {
                         profileName: 'che:default',
                         profile: 'che',
                         instanceKey: 'default',
+                        displayName: '천하서버',
                         currentScenario: '2',
                         meta: { korName: '천하서버' },
                     },
@@ -639,7 +641,7 @@ test('separates branch and commit semantics and submits a reset from the dedicat
     await expect(page.getByText('초기화 작업을 등록했습니다.').first()).toBeVisible();
     await expect(page.getByTestId('operations-table')).toContainText('시나리오 초기화');
     await expect(page.getByTestId('profile-operation-log-panel')).toBeVisible();
-    await expect(page.getByTestId('profile-operation-log')).toContainText('che:default 구성 요소를 빌드합니다.');
+    await expect(page.getByTestId('profile-operation-log')).toContainText('천하서버 구성 요소를 빌드합니다.');
     await expect(page.getByTestId('profile-operation-log')).toContainText('시나리오 초기 데이터 생성을 완료했습니다.');
     await expect(page.getByTestId('profile-operation-log-status')).toContainText('SUCCEEDED');
     const operationTable = page.getByTestId('operations-table');
@@ -652,7 +654,8 @@ test('separates branch and commit semantics and submits a reset from the dedicat
     await detailsToggle.click();
     await expect(detailsToggle).toHaveAttribute('aria-expanded', 'true');
     const operationDetail = operationTable.getByTestId('operation-detail');
-    await expect(operationDetail).toContainText('che:default');
+    await expect(operationDetail).toContainText('천하서버');
+    await expect(operationDetail).not.toContainText('che:default');
     await expect(operationDetail).toContainText('0123456789abcdef0123456789abcdef01234567');
     await expect(operationDetail).toContainText('admin');
     const operationTableGeometry = await page.getByTestId('operations-table').evaluate((table) => {
@@ -807,7 +810,7 @@ test('separates DB-preserving profile deployment from DB reset', async ({ page }
     await expect(page.getByText('DB 보존 배포 작업을 등록했습니다.').first()).toBeVisible();
     await expect(page.getByTestId('operations-table')).toContainText('버전 업데이트');
     await expect(page.getByTestId('profile-operation-log-panel')).toBeVisible();
-    await expect(page.getByTestId('profile-operation-log')).toContainText('che:default 구성 요소를 빌드합니다.');
+    await expect(page.getByTestId('profile-operation-log')).toContainText('천하서버 구성 요소를 빌드합니다.');
     await expect(page.getByTestId('profile-operation-log')).toContainText('game-frontend build complete');
     await expect(page.getByTestId('profile-operation-log-status')).toContainText('SUCCEEDED');
     expect(state.requestBodies.some((entry) => entry.operation === 'admin.operations.requestDeploy')).toBe(true);
@@ -834,7 +837,7 @@ test('submits a separately authorized destructive game cancellation on desktop a
 
     await page.goto('admin/servers/che%3Adefault/cancel');
     await expect(page).toHaveURL(/\/gateway\/admin\/servers\/che%3Adefault\/cancel$/);
-    await expect(page.getByRole('heading', { name: 'che:default 게임 취소' })).toBeVisible();
+    await expect(page.getByRole('heading', { name: '천하서버 게임 취소' })).toBeVisible();
     await expect(page.getByRole('link', { name: '게임 취소', exact: true })).toHaveAttribute('aria-current', 'page');
     await expect(page.getByRole('link', { name: '시나리오 초기화', exact: true })).toHaveCount(0);
     await expect(page.getByTestId('request-game-cancellation')).toBeDisabled();
@@ -843,7 +846,7 @@ test('submits a separately authorized destructive game cancellation on desktop a
     await page.getByTestId('cancellation-general-mode').selectOption('RETAIN');
     await page.getByTestId('cancellation-retention-percent').fill('35');
     await page.getByTestId('cancellation-reason').fill('잘못된 시나리오로 개장함');
-    await page.getByTestId('cancellation-confirmation').fill('che:default');
+    await page.getByTestId('cancellation-confirmation').fill('천하서버 게임 취소');
     const cancelButton = page.getByTestId('request-game-cancellation');
     await expect(cancelButton).toBeEnabled();
     await cancelButton.hover();
@@ -1348,10 +1351,11 @@ test('renders the stable server identity without exposing the default suffix as 
     const navigation = page.getByRole('navigation', { name: '관리자 메뉴' });
     const profileLink = navigation.getByRole('link', { name: '천하서버' });
     await expect(profileLink).toBeVisible({ timeout: 900 });
-    await expect(profileLink).toHaveAttribute('title', '서버 ID: che:default');
+    await expect(profileLink).toHaveAttribute('title', '천하서버 서버 관리');
     await expect(navigation).not.toContainText('천하서버 (che:default)');
     await expect(navigation.getByRole('link', { name: 'Gateway 릴리스' })).toBeVisible({ timeout: 900 });
-    await expect(page.getByText('서버 ID: che:default · 인스턴스: default')).toBeVisible();
+    await expect(page.getByText('서버 ID: che:default · 인스턴스: default')).toHaveCount(0);
+    await expect(page.getByText('천하서버', { exact: true })).toBeVisible();
     await expect(page.getByText('현재 시나리오: 2')).toBeVisible();
     await profileLink.focus();
     const desktop = await profileLink.evaluate((element) => {

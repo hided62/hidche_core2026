@@ -380,6 +380,7 @@ describe('admin profile navigation API', () => {
                 profileName: 'che:2',
                 profile: 'che',
                 instanceKey: '2',
+                displayName: '체 [2]',
                 currentScenario: '2',
                 meta: { korName: '체' },
             },

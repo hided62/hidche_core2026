@@ -59,6 +59,8 @@ const installFixture = async (page: Page) => {
                         {
                             profileName: 'hwe:default',
                             profile: 'hwe',
+                            instanceKey: 'default',
+                            displayName: '훼',
                             currentScenario: 'default',
                             status: 'RUNNING',
                         },
@@ -93,6 +95,8 @@ test('web push settings are default-off and remain configurable while delivery i
     const table = page.locator('#notification-table');
     await expect(table).toBeVisible();
     await expect(table).toContainText('준비됨 · 운영 비활성');
+    await expect(table).toContainText('훼 · default');
+    await expect(table).not.toContainText('hwe:default');
     await expect(page.getByRole('button', { name: '이 기기 알림 켜기' })).toBeDisabled();
     const checkboxes = table.getByRole('checkbox');
     await expect(checkboxes).toHaveCount(9);
