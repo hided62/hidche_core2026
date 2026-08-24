@@ -4,6 +4,7 @@ import { useRouter } from 'vue-router';
 
 import { JosaUtil } from '@sammo-ts/common/util/JosaUtil';
 
+import PermissionMultiSelect from '../components/personnel/PermissionMultiSelect.vue';
 import PersonnelSelectionDialog from '../components/personnel/PersonnelSelectionDialog.vue';
 import { useGameFeedback } from '../composables/useGameFeedback';
 import { resolveGeneralIconBackgroundImage } from '../utils/generalIcon';
@@ -251,9 +252,7 @@ const applySelection = async (id: number): Promise<void> => {
     else await appointCityOfficer(context.level, context.cityId, id);
 };
 
-const enforcePermissionLimit = (selection: number[]) => {
-    if (selection.length <= 2) return;
-    selection.splice(0, selection.length - 2);
+const reportPermissionLimit = () => {
     showErrorToast('최대 2명까지 설정 가능합니다.');
 };
 
@@ -390,23 +389,16 @@ onMounted(() => void loadPersonnel());
                     <tr>
                         <td class="green-cell permission-label">외교권자</td>
                         <td>
-                            <select
+                            <PermissionMultiSelect
                                 v-model="ambassadorSelection"
-                                multiple
-                                aria-label="외교권자"
-                                @change="enforcePermissionLimit(ambassadorSelection)"
-                            >
-                                <option
-                                    v-for="candidate in data.permissionCandidates.ambassadors"
-                                    :key="candidate.id"
-                                    :value="candidate.id"
-                                >
-                                    {{ candidate.name }}
-                                </option>
-                            </select>
+                                label="외교권자"
+                                :candidates="data.permissionCandidates.ambassadors"
+                                @limit="reportPermissionLimit"
+                            />
                             <button
                                 class="legacy-button legacy-button--primary"
                                 type="button"
+                                aria-label="외교권자 임명 반영"
                                 @click="changePermissions(true)"
                             >
                                 임명
@@ -414,23 +406,16 @@ onMounted(() => void loadPersonnel());
                         </td>
                         <td class="green-cell permission-label">조언자</td>
                         <td>
-                            <select
+                            <PermissionMultiSelect
                                 v-model="auditorSelection"
-                                multiple
-                                aria-label="조언자"
-                                @change="enforcePermissionLimit(auditorSelection)"
-                            >
-                                <option
-                                    v-for="candidate in data.permissionCandidates.auditors"
-                                    :key="candidate.id"
-                                    :value="candidate.id"
-                                >
-                                    {{ candidate.name }}
-                                </option>
-                            </select>
+                                label="조언자"
+                                :candidates="data.permissionCandidates.auditors"
+                                @limit="reportPermissionLimit"
+                            />
                             <button
                                 class="legacy-button legacy-button--primary"
                                 type="button"
+                                aria-label="조언자 임명 반영"
                                 @click="changePermissions(false)"
                             >
                                 임명
@@ -665,10 +650,6 @@ select {
     color: #fff;
     background: #000;
     font: inherit;
-}
-select[multiple] {
-    width: 300px;
-    height: 34px;
 }
 .nation-heading {
     height: 32px;

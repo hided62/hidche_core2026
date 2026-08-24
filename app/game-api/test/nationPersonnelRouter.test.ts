@@ -230,6 +230,45 @@ describe('nation personnel router', () => {
         expect(result.awards.eagles).toEqual([{ id: 30, name: '군사', value: 7 }]);
     });
 
+    it('keeps ambassador and auditor candidate pools mutually exclusive like Ref', async () => {
+        const me = { ...baseGeneral, officerLevel: 12 };
+        const rows = [
+            listRow({ id: 22, name: '군주', officerLevel: 12 }),
+            listRow({ id: 30, name: '현 외교권자', meta: { belong: 5, permission: 'ambassador' } }),
+            listRow({ id: 31, name: '현 조언자', meta: { belong: 5, permission: 'auditor' } }),
+            listRow({ id: 32, name: '일반 후보' }),
+            listRow({ id: 33, name: '외교 금지', penalty: { noAmbassador: true } }),
+        ];
+        const context = createContext({
+            me,
+            db: {
+                nation: {
+                    findUnique: vi.fn(async () => ({
+                        id: 1,
+                        name: '위',
+                        color: '#777777',
+                        level: 3,
+                        typeCode: 'che_법가',
+                        capitalCityId: 1,
+                        meta: { chief_set: 0 },
+                    })),
+                },
+                city: { findMany: vi.fn(async () => []) },
+                troop: { findMany: vi.fn(async () => []) },
+                general: {
+                    findFirst: vi.fn(async () => me),
+                    findMany: vi.fn(async () => rows),
+                },
+                worldState: { findFirst: vi.fn(async () => ({ config: { stat: { chiefMin: 65 } } })) },
+                rankData: { findMany: vi.fn(async () => []) },
+            },
+        });
+
+        const result = await appRouter.createCaller(context).nation.getPersonnelInfo();
+        expect(result.permissionCandidates.ambassadors.map((candidate) => candidate.id)).toEqual([30, 32]);
+        expect(result.permissionCandidates.auditors.map((candidate) => candidate.id)).toEqual([31, 32]);
+    });
+
     it('allows finance mutations only for a head officer or an eligible ambassador', async () => {
         const nationDb = {
             nation: {
