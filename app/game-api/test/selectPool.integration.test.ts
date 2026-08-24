@@ -472,7 +472,9 @@ integration('scenario 903 select pool through the durable turn daemon', () => {
     }, 30_000);
 
     it('keeps a stable ENGINE event for retries and rejects reservation bypasses', async () => {
-        const logicalNowMs = runtime!.world.getGameNow(new Date()).getTime();
+        const logicalNow = runtime!.world.getGameNow(new Date());
+        const logicalNowMs = logicalNow.getTime();
+        const logicalNowTick = runtime!.world.dateToGameTick(logicalNow);
         const reservation = await appRouter
             .createCaller(buildContext('select-pool-other-reserve', otherAuth))
             .join.getSelectionPool();
@@ -488,7 +490,10 @@ integration('scenario 903 select pool through the durable turn daemon', () => {
 
         await db.selectPoolEntry.update({
             where: { uniqueName: candidate.uniqueName },
-            data: { reservedUntil: new Date(logicalNowMs - 60_000) },
+            data: {
+                reservedUntil: new Date(logicalNowMs - 60_000),
+                reservedUntilTick: BigInt(logicalNowTick - 1),
+            },
         });
         await expect(
             appRouter.createCaller(buildContext('select-pool-expired-token', otherAuth)).join.selectPoolGeneral({

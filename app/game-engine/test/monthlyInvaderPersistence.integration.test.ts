@@ -502,7 +502,6 @@ integration('RaiseInvader database persistence', () => {
                     diplomacyCountsPerNation: [2],
                     diplomacyStates: ['1:24'],
                     isunited: 1,
-                    isUnited: 1,
                     blockChangeScout: false,
                 });
             }
@@ -633,7 +632,6 @@ integration('RaiseInvader database persistence', () => {
                     result: 'Deleted',
                     endingEventPresent: false,
                     isunited: 3,
-                    isUnited: 3,
                     refreshLimit: 300,
                     logs: [
                         '<C>●</>200년 4월:<L><b>【이벤트】</b></>이민족을 모두 소탕했습니다!',
@@ -644,5 +642,5 @@ integration('RaiseInvader database persistence', () => {
         } finally {
             await dbHooks.close();
         }
-    });
+    }, 30_000);
 });

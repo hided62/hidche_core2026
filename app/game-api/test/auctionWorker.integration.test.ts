@@ -34,6 +34,7 @@ liveDescribe('auction worker durable recovery', () => {
     const createdRequestPrefixes: string[] = [];
     const createdWorldIds: number[] = [];
     const createdGeneralIds: number[] = [];
+    const lifecycleUserIds = ['auction-durable-host', 'auction-durable-bidder'];
 
     beforeAll(async () => {
         await connector.connect();
@@ -56,6 +57,8 @@ liveDescribe('auction worker durable recovery', () => {
             await connector.prisma.worldState.deleteMany({ where: { id: { in: createdWorldIds } } });
         }
         if (createdGeneralIds.length > 0) {
+            await connector.prisma.message.deleteMany({ where: { mailbox: { in: createdGeneralIds } } });
+            await connector.prisma.webPushOutbox.deleteMany({ where: { userIds: { hasSome: lifecycleUserIds } } });
             await connector.prisma.logEntry.deleteMany({ where: { generalId: { in: createdGeneralIds } } });
             await connector.prisma.general.deleteMany({ where: { id: { in: createdGeneralIds } } });
         }
@@ -366,6 +369,8 @@ liveDescribe('auction worker durable recovery', () => {
             };
 
             const lifecycleGeneralIds = [8_032, 8_033];
+            await connector.prisma.message.deleteMany({ where: { mailbox: { in: lifecycleGeneralIds } } });
+            await connector.prisma.webPushOutbox.deleteMany({ where: { userIds: { hasSome: lifecycleUserIds } } });
             await connector.prisma.logEntry.deleteMany({ where: { generalId: { in: lifecycleGeneralIds } } });
             await connector.prisma.general.deleteMany({ where: { id: { in: lifecycleGeneralIds } } });
             await connector.prisma.worldState.deleteMany({ where: { id: worldId } });

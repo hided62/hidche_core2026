@@ -561,12 +561,6 @@ integration('immediate general action persistence', () => {
                     text: expect.stringContaining('낙양'),
                 }),
                 expect.objectContaining({
-                    scope: 'NATION',
-                    category: 'HISTORY',
-                    nationId: existingNationId + 1,
-                    text: expect.stringContaining('통합장수'),
-                }),
-                expect.objectContaining({
                     scope: 'SYSTEM',
                     category: 'SUMMARY',
                     text: expect.stringContaining('거병하였습니다'),
@@ -578,6 +572,17 @@ integration('immediate general action persistence', () => {
                 }),
             ])
         );
+        // Ref creates this action logger while the actor is still unaffiliated,
+        // so its queued national history is discarded when nationID is 0.
+        await expect(
+            db.logEntry.count({
+                where: {
+                    scope: 'NATION',
+                    category: 'HISTORY',
+                    nationId: existingNationId + 1,
+                },
+            })
+        ).resolves.toBe(0);
 
         const reloaded = await loadTurnWorldFromDatabase({ databaseUrl: databaseUrl! });
         expect(reloaded.snapshot.generals.find((entry) => entry.id === generalId)).toMatchObject({

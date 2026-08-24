@@ -14,7 +14,7 @@ import {
     type RedisConnector,
 } from '@sammo-ts/infra';
 
-const databaseUrl = process.env.INPUT_EVENT_DATABASE_URL;
+const databaseUrl = process.env.SCENARIO_LIFECYCLE_DATABASE_URL;
 const integration = describe.skipIf(!databaseUrl);
 const scenarioId = 2900;
 const userIds = ['scenario29-betting-winner', 'scenario29-betting-loser'] as const;

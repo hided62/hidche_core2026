@@ -43,8 +43,8 @@ integration('select pool release during general deletion', () => {
                         'release-candidate',
                         'claim-candidate',
                         'conflict-candidate',
-                        'early-protected-candidate',
-                        'later-free-candidate',
+                        'early-protected',
+                        'later-free',
                     ],
                 },
             },
@@ -203,8 +203,8 @@ integration('select pool release during general deletion', () => {
                         'release-candidate',
                         'claim-candidate',
                         'conflict-candidate',
-                        'early-protected-candidate',
-                        'later-free-candidate',
+                        'early-protected',
+                        'later-free',
                     ],
                 },
             },
@@ -366,12 +366,12 @@ integration('select pool release during general deletion', () => {
         await db.selectPoolEntry.createMany({
             data: [
                 {
-                    uniqueName: 'early-protected-candidate',
+                    uniqueName: 'early-protected',
                     ownerUserId: 'protected-user',
                     generalId: null,
                     reservedUntil,
                     info: {
-                        uniqueName: 'early-protected-candidate',
+                        uniqueName: 'early-protected',
                         generalName: '보호후보',
                         leadership: 70,
                         strength: 80,
@@ -383,12 +383,12 @@ integration('select pool release during general deletion', () => {
                     } as GamePrisma.InputJsonValue,
                 },
                 {
-                    uniqueName: 'later-free-candidate',
+                    uniqueName: 'later-free',
                     ownerUserId: null,
                     generalId: null,
                     reservedUntil: null,
                     info: {
-                        uniqueName: 'later-free-candidate',
+                        uniqueName: 'later-free',
                         generalName: '후행후보',
                         leadership: 70,
                         strength: 80,
@@ -406,8 +406,8 @@ integration('select pool release during general deletion', () => {
             schedule: { entries: [{ startMinute: 0, tickMinutes: 5 }] },
         });
         const entries = world.listGeneralPoolEntries()!;
-        const protectedCandidate = entries.find((entry) => entry.uniqueName === 'early-protected-candidate')!.candidate;
-        const laterCandidate = entries.find((entry) => entry.uniqueName === 'later-free-candidate')!.candidate;
+        const protectedCandidate = entries.find((entry) => entry.uniqueName === 'early-protected')!.candidate;
+        const laterCandidate = entries.find((entry) => entry.uniqueName === 'later-free')!.candidate;
         const template = world.getGeneralById(generalId)!;
         expect(
             world.addGeneral({
@@ -446,7 +446,7 @@ integration('select pool release during general deletion', () => {
                     durationMs: 0,
                     partial: false,
                 })
-            ).rejects.toThrow('select_pool 후보를 점유하지 못했습니다: early-protected-candidate');
+            ).rejects.toThrow('select_pool 후보를 점유하지 못했습니다: early-protected');
         } finally {
             await hooks.close();
         }
@@ -454,14 +454,14 @@ integration('select pool release during general deletion', () => {
         await expect(db.general.findUnique({ where: { id: protectedGeneralId } })).resolves.toBeNull();
         await expect(db.general.findUnique({ where: { id: laterGeneralId } })).resolves.toBeNull();
         await expect(
-            db.selectPoolEntry.findUniqueOrThrow({ where: { uniqueName: 'early-protected-candidate' } })
+            db.selectPoolEntry.findUniqueOrThrow({ where: { uniqueName: 'early-protected' } })
         ).resolves.toMatchObject({
             generalId: null,
             ownerUserId: 'protected-user',
             reservedUntil,
         });
         await expect(
-            db.selectPoolEntry.findUniqueOrThrow({ where: { uniqueName: 'later-free-candidate' } })
+            db.selectPoolEntry.findUniqueOrThrow({ where: { uniqueName: 'later-free' } })
         ).resolves.toMatchObject({ generalId: null, ownerUserId: null, reservedUntil: null });
     });
 
