@@ -17,7 +17,8 @@
     "dependencies": {
         "@sammo-ts/common": "workspace:*",
         "mariadb": "3.5.3",
-        "pg": "^8.16.3"
+        "pg": "^8.16.3",
+        "sharp": "^0.35.0"
     },
     "devDependencies": {
         "@types/node": "^26.2.0",

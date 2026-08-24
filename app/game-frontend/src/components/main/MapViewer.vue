@@ -92,6 +92,8 @@ const BASE_MAP_WIDTH = 700;
 const BASE_MAP_HEIGHT = 500;
 const SMALL_MAP_SCALE = 5 / 7;
 const MAP_BACKGROUND_TRANSITION_MS = 480;
+const TOOLTIP_FALLBACK_HEIGHT = 32;
+const TOOLTIP_VERTICAL_OFFSET = 30;
 
 const decodedImageCache = new Map<string, Promise<void>>();
 const decodedImageElements = new Map<string, HTMLImageElement>();
@@ -146,6 +148,7 @@ const reduceMotion = useMediaQuery('(prefers-reduced-motion: reduce)');
 const mapArea = ref<HTMLElement | null>(null);
 const mapBody = ref<HTMLElement | null>(null);
 const mapControls = ref<HTMLElement | null>(null);
+const tooltipElement = ref<HTMLElement | null>(null);
 const mapOptionsOpen = ref(false);
 const mapOptionsMenuId = `map-options-${useId()}`;
 const { width: mapBodyWidth } = useElementSize(mapBody);
@@ -568,10 +571,15 @@ const tooltipPosition = computed(() => {
     const width = 120;
     const offset = 10;
     const mapPixelWidth = BASE_MAP_WIDTH * mapScale.value;
+    const mapPixelHeight = BASE_MAP_HEIGHT * mapScale.value;
+    const tooltipHeight = tooltipElement.value?.offsetHeight ?? TOOLTIP_FALLBACK_HEIGHT;
     const left = elementX.value + width + offset > mapPixelWidth ? elementX.value - width - 5 : elementX.value + offset;
+    const belowTop = elementY.value + TOOLTIP_VERTICAL_OFFSET;
+    const top =
+        belowTop + tooltipHeight > mapPixelHeight ? elementY.value - tooltipHeight - TOOLTIP_VERTICAL_OFFSET : belowTop;
     return {
         left: `${Math.max(0, left)}px`,
-        top: `${elementY.value + 30}px`,
+        top: `${Math.max(0, top)}px`,
     };
 });
 
@@ -698,7 +706,7 @@ const selectCity = (cityId: number) => {
                 >
                     현재
                 </div>
-                <div v-if="hoveredCity" class="map-tooltip" :style="tooltipPosition">
+                <div v-if="hoveredCity" ref="tooltipElement" class="map-tooltip" :style="tooltipPosition">
                     <div class="tooltip-title">{{ hoveredCityTitle }}</div>
                     <div class="tooltip-body">{{ hoveredCity.nationId > 0 ? hoveredCity.nationName : '' }}</div>
                 </div>

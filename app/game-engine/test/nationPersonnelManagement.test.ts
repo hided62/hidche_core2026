@@ -312,6 +312,39 @@ describe('nation personnel world commands', () => {
         expect(fixture.world.peekDirtyState().logs).toHaveLength(2);
     });
 
+    it('rejects self, ruler, head officer, and ambassador targets without partial mutation', async () => {
+        const cases = [
+            { label: 'self', targetId: 2, reason: '본인은 추방할 수 없습니다.' },
+            { label: 'ruler', targetId: 1, reason: '군주는 추방할 수 없습니다.' },
+            { label: 'head officer', targetId: 3, reason: '수뇌는 추방할 수 없습니다.' },
+            { label: 'ambassador', targetId: 4, reason: '외교권자는 추방할 수 없습니다.' },
+        ] as const;
+
+        for (const testCase of cases) {
+            const fixture = buildWorld({
+                generals: [
+                    buildGeneral(1, { officerLevel: 12 }),
+                    buildGeneral(2, { officerLevel: 5 }),
+                    buildGeneral(3, { officerLevel: 7 }),
+                    buildGeneral(4, {
+                        meta: { killturn: 12, belong: 5, permission: 'ambassador' },
+                        penalty: { noAmbassador: true },
+                    }),
+                    buildGeneral(5),
+                ],
+            });
+            const originalTarget = fixture.world.getGeneralById(testCase.targetId);
+
+            await expect(
+                fixture.handler.handle({ type: 'kick', generalId: 2, destGeneralId: testCase.targetId })
+            ).resolves.toMatchObject({ ok: false, reason: testCase.reason });
+            expect(fixture.world.getGeneralById(testCase.targetId), testCase.label).toEqual(originalTarget);
+            expect(fixture.world.getGeneralById(2)?.meta.killturn, testCase.label).toBe(12);
+            expect(fixture.world.peekDirtyState().logs, testCase.label).toEqual([]);
+            expect(fixture.world.peekDirtyState().nations, testCase.label).toEqual([]);
+        }
+    });
+
     it('preserves the legacy kick year boundaries and deterministic NPC public message', async () => {
         const early = buildWorld({
             currentYear: 181,

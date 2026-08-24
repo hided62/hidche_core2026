@@ -3,7 +3,13 @@ import type { Pool as PgPool, PoolClient, QueryResult } from 'pg';
 import { describe, expect, it, vi } from 'vitest';
 
 import { upsertRows } from '../src/db.js';
-import { mapMember, MEMBER_PRESERVED_COLUMNS, migrateGateway, preflightMemberConflicts } from '../src/gateway.js';
+import {
+    mapMember,
+    MEMBER_PRESERVED_COLUMNS,
+    migrateGateway,
+    normalizeLegacyIconPicture,
+    preflightMemberConflicts,
+} from '../src/gateway.js';
 
 const memberRow = (overrides: Record<string, unknown> = {}) => ({
     NO: 7,
@@ -41,6 +47,25 @@ describe('legacy gateway member migration', () => {
             oauth_type: 'KAKAO',
             oauth_id: null,
             kakao_verified_at: null,
+        });
+    });
+
+    it('removes only the Ref cache marker while preserving the original icon metadata', () => {
+        const mapped = mapMember(
+            memberRow({ PICTURE: 'users/core/' + 'a'.repeat(32) + '.png?=20260809', IMGSVR: 0 }),
+            new Date('2026-08-17T00:00:00.000Z'),
+            null
+        );
+
+        expect(normalizeLegacyIconPicture('legacy.png?=20260809')).toBe('legacy.png');
+        expect(normalizeLegacyIconPicture('literal.png?other')).toBe('literal.png?other');
+        expect(mapped).toMatchObject({
+            picture: 'users/core/' + 'a'.repeat(32) + '.png',
+            image_server: 0,
+        });
+        expect((mapped.legacy_data as { value: unknown }).value).toMatchObject({
+            picture: 'users/core/' + 'a'.repeat(32) + '.png?=20260809',
+            imageServer: 0,
         });
     });
 
