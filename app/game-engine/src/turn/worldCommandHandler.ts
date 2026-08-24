@@ -1787,6 +1787,7 @@ async function handleSetMySetting(
     }
     for (const key of [
         'use_auto_nation_diplomacy',
+        'use_auto_nation_war',
         'use_auto_nation_promotion',
         'use_auto_nation_finance',
         'use_auto_nation_capital',

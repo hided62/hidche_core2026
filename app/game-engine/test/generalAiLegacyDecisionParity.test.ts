@@ -718,6 +718,7 @@ describe('legacy NPC user-chief promotion parity', () => {
     it('keeps user-ruler duties individually disabled until each setting is enabled', () => {
         const ruler = makePromotionGeneral({ id: 1, officerLevel: 12, npcState: 0, meta: { killturn: 0 } });
         expect(canUseAutomatedNationAction(ruler, '선전포고')).toBe(false);
+        expect(canUseAutomatedNationAction(ruler, '불가침제의')).toBe(false);
         expect(canUseAutomatedNationAction(ruler, '천도')).toBe(false);
         expect(canUseRulerAutomation(ruler, 'finance')).toBe(false);
 
@@ -728,9 +729,17 @@ describe('legacy NPC user-chief promotion parity', () => {
             use_auto_nation_finance: 1,
         };
         expect(canUseAutomatedNationAction(ruler, '불가침제의')).toBe(true);
-        expect(canUseAutomatedNationAction(ruler, '선전포고')).toBe(true);
+        expect(canUseAutomatedNationAction(ruler, '선전포고')).toBe(false);
         expect(canUseAutomatedNationAction(ruler, '천도')).toBe(true);
         expect(canUseRulerAutomation(ruler, 'finance')).toBe(true);
+
+        ruler.meta = {
+            ...ruler.meta,
+            use_auto_nation_diplomacy: 0,
+            use_auto_nation_war: 1,
+        };
+        expect(canUseAutomatedNationAction(ruler, '불가침제의')).toBe(false);
+        expect(canUseAutomatedNationAction(ruler, '선전포고')).toBe(true);
     });
 
     it('honors the existing automatic nation-turn master switch for user chiefs only', () => {
