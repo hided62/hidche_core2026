@@ -24,6 +24,7 @@ export * from './turn/joinCreateGeneralService.js';
 export * from './turn/npcPossessionService.js';
 export * from './turn/selectPoolService.js';
 export * from './turn/turnDaemon.js';
+export * from './turn/turnDaemonMemoryReporter.js';
 export * from './turn/cli.js';
 
 export const shouldRunTurnDaemon = (role: string | undefined): boolean => role === 'turn-daemon';

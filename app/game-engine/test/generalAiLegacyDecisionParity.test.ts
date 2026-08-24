@@ -20,6 +20,7 @@ import { do전투준비, do출병 } from '../src/turn/ai/generalAi/general/warAc
 import { do내정워프, do전방워프, do집합, do후방워프 } from '../src/turn/ai/generalAi/general/warpActions.js';
 import { doNPC몰수, doNPC포상, do유저장포상 } from '../src/turn/ai/generalAi/nation/rewards.js';
 import { do천도 } from '../src/turn/ai/generalAi/nation/capital.js';
+import { do선전포고 } from '../src/turn/ai/generalAi/nation/diplomacy.js';
 import {
     doNPC구출발령,
     doNPC전방발령,
@@ -42,6 +43,7 @@ type Candidate = {
 type ScriptedRng = {
     bools: boolean[];
     choices: unknown[];
+    weightedChoices: Array<Record<string, number>>;
     weightedPairs: Array<Array<[unknown, number]>>;
     nextBool: (probability?: number) => boolean;
     nextFloat1: () => number;
@@ -56,6 +58,7 @@ const makeRng = (bools: boolean[] = [], choices: unknown[] = []): ScriptedRng =>
     return {
         bools: [...bools],
         choices: scriptedChoices,
+        weightedChoices: [],
         weightedPairs: [],
         nextBool() {
             return this.bools.shift() ?? false;
@@ -79,6 +82,7 @@ const makeRng = (bools: boolean[] = [], choices: unknown[] = []): ScriptedRng =>
             return values[0]!;
         },
         choiceUsingWeight<T extends string | number>(items: Record<T, number>): T {
+            this.weightedChoices.push(Object.fromEntries(Object.entries(items)) as Record<string, number>);
             return this.choice(
                 Object.keys(items).map((key) => {
                     const numeric = Number(key);
@@ -415,6 +419,71 @@ const makePromotionGeneral = (overrides: Partial<TurnGeneral>): TurnGeneral => (
     stats: { ...baseGeneral().stats, ...overrides.stats },
     meta: { ...baseGeneral().meta, belong: 1, ...overrides.meta },
 });
+
+const makeDeclarationAi = (
+    targetNations: Nation[],
+    targetRulers: General[],
+    rng: ScriptedRng
+): GeneralAI => {
+    const actorNation = {
+        ...baseNation(),
+        meta: { ...baseNation().meta, tech: 2_000 },
+    };
+    const actor = {
+        ...baseGeneral(),
+        officerLevel: 12,
+        npcState: 2,
+    };
+    const targetCities = targetNations.map((nation, index) => ({
+        ...baseCity(),
+        id: index + 2,
+        name: `대상도시${nation.id}`,
+        nationId: nation.id,
+    }));
+    const cities = [baseCity(), ...targetCities];
+    const ai = makeAi({
+        general: actor,
+        nation: actorNation,
+        nations: [actorNation, ...targetNations],
+        generals: [actor, ...targetRulers],
+        rng,
+    });
+    const worldRef = ai.worldRef!;
+    const mapCityTemplate = ai.map!.cities[0]!;
+
+    Object.assign(ai as unknown as Record<string, unknown>, {
+        worldRef: {
+            ...worldRef,
+            listNations: () => [actorNation, ...targetNations],
+            listGenerals: () => [actor, ...targetRulers],
+            listCities: () => cities,
+            getNationById: (id: number) => [actorNation, ...targetNations].find((nation) => nation.id === id) ?? null,
+            getGeneralById: (id: number) =>
+                [actor, ...targetRulers].find((general) => general.id === id) ?? null,
+            getCityById: (id: number) => cities.find((city) => city.id === id) ?? null,
+        },
+        map: {
+            ...ai.map!,
+            cities: [
+                { ...mapCityTemplate, id: 1, connections: targetCities.map((city) => city.id) },
+                ...targetCities.map((city) => ({
+                    ...mapCityTemplate,
+                    id: city.id,
+                    name: city.name,
+                    connections: [1],
+                })),
+            ],
+        },
+        frontCities: {},
+        npcWarGenerals: { [actor.id]: actor },
+        npcCivilGenerals: {},
+        userWarGenerals: {},
+        userCivilGenerals: {},
+        devRate: { pop: 1, all: 1 },
+    });
+
+    return ai;
+};
 
 const makePromotionAi = (options: {
     ruler: TurnGeneral;
@@ -766,6 +835,86 @@ describe('legacy NPC user-chief promotion parity', () => {
  * selection and RNG-sensitive gates, not TypeScript implementation details.
  */
 describe('legacy NPC AI final-decision parity', () => {
+    it('does not declare war on an adjacent level-0 user wandering nation', () => {
+        const wanderingNation = {
+            ...baseNation(),
+            id: 2,
+            name: '유저방랑군',
+            capitalCityId: 2,
+            chiefGeneralId: 2,
+            level: 0,
+        };
+        const userRuler = {
+            ...baseGeneral(),
+            id: 2,
+            name: '유저방랑군주',
+            nationId: 2,
+            cityId: 2,
+            officerLevel: 12,
+            npcState: 0,
+        };
+        const rng = makeRng([true], [0]);
+        const ai = makeDeclarationAi([wanderingNation], [userRuler], rng);
+
+        expect(do선전포고(ai)).toBeNull();
+        expect(rng.bools).toEqual([]);
+        expect(rng.weightedChoices).toEqual([]);
+        expect(rng.choices).toEqual([0]);
+    });
+
+    it('keeps active user and NPC nations equally eligible while excluding the user wandering nation', () => {
+        const targets = [
+            { id: 2, name: '유저방랑군', level: 0, npcState: 0 },
+            { id: 3, name: '정식유저국', level: 1, npcState: 0 },
+            { id: 4, name: '정식NPC국', level: 1, npcState: 2 },
+        ];
+        const nations = targets.map(
+            ({ id, name, level }) =>
+                ({
+                    ...baseNation(),
+                    id,
+                    name,
+                    capitalCityId: id,
+                    chiefGeneralId: id,
+                    level,
+                    power: 100,
+                }) satisfies Nation
+        );
+        const rulers = targets.map(
+            ({ id, name, npcState }) =>
+                ({
+                    ...baseGeneral(),
+                    id,
+                    name: `${name}군주`,
+                    nationId: id,
+                    cityId: id,
+                    officerLevel: 12,
+                    npcState,
+                }) satisfies General
+        );
+
+        const userTargetRng = makeRng([true], [0]);
+        const userTargetAi = makeDeclarationAi(nations, rulers, userTargetRng);
+        expect(do선전포고(userTargetAi)).toMatchObject({
+            action: 'che_선전포고',
+            args: { destNationId: 3 },
+        });
+        expect(userTargetRng.weightedChoices).toEqual([
+            {
+                '3': 1 / Math.sqrt(101),
+                '4': 1 / Math.sqrt(101),
+            },
+        ]);
+
+        const npcTargetRng = makeRng([true], [1]);
+        const npcTargetAi = makeDeclarationAi(nations, rulers, npcTargetRng);
+        expect(do선전포고(npcTargetAi)).toMatchObject({
+            action: 'che_선전포고',
+            args: { destNationId: 4 },
+        });
+        expect(npcTargetRng.weightedChoices).toEqual(userTargetRng.weightedChoices);
+    });
+
     it('rejects the malformed Ref low-rice donation candidate and continues the priority loop', () => {
         const rng = makeRng([false], [0]);
         const ai = makeAi({

@@ -175,7 +175,11 @@ export const do선전포고 = (ai: GeneralAI) => {
     const currentNationId = ai.nation.id;
     const cities = ai.worldRef.listCities();
     const neighbors = ai.worldRef.listNations().filter((nation) => {
-        if (nation.id <= 0 || nation.id === currentNationId) {
+        // Ref getAllNationStaticInfo() also contains level-0 wandering nations,
+        // but automatic declarations explicitly skip them before adjacency and
+        // weighted target selection. A wandering user ruler must not become an
+        // NPC war target merely because its occupied city is adjacent.
+        if (nation.id <= 0 || nation.id === currentNationId || nation.level === 0) {
             return false;
         }
         return isNeighbor(ai.map!, cities, currentNationId, nation.id, true);
