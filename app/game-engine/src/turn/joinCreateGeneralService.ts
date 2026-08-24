@@ -522,8 +522,9 @@ export const createGeneralFromJoin = async (options: {
     worldState: WorldStateRow;
     input: JoinCreateGeneralInput;
     acceptedAt: Date;
+    operationalAcceptedAt: Date;
 }): Promise<{ ok: true; generalId: number }> => {
-    const { db, world, worldState, input, acceptedAt } = options;
+    const { db, world, worldState, input, acceptedAt, operationalAcceptedAt } = options;
     await lockJoinMutation(db, input.userId);
     await assertGeneralIdSnapshotMatches(db, world);
 
@@ -734,7 +735,10 @@ export const createGeneralFromJoin = async (options: {
     const nextInheritancePoint = currentInheritancePoint - inheritRequiredPoint;
     const restInheritanceBonus = await resolveRestInheritanceBonus(db, worldState, input.userId);
     const finalInheritancePoint = nextInheritancePoint + restInheritanceBonus;
-    const prestartDeleteAfter = buildPrestartDeleteAfter(acceptedAt, worldState.tickSeconds, config);
+    // Ref의 가오픈 삭제 대기는 정지된 게임 clock이 아니라 실제 요청 접수 시각부터 흐른다.
+    // 미래 정식 오픈에 clock을 고정한 PREOPEN에서도 사용자가 가오픈 중 두 턴을 기다리면
+    // 삭제할 수 있어야 하므로 RNG/턴 배치용 acceptedAt과 이 벽시계 경계를 분리한다.
+    const prestartDeleteAfter = buildPrestartDeleteAfter(operationalAcceptedAt, worldState.tickSeconds, config);
     const general: TurnGeneral = {
         id: generalId,
         userId: input.userId,
@@ -839,11 +843,11 @@ export const createGeneralFromJoin = async (options: {
     });
     await db.generalAccessLog.upsert({
         where: { generalId },
-        update: { userId: input.userId, lastRefresh: acceptedAt },
+        update: { userId: input.userId, lastRefresh: operationalAcceptedAt },
         create: {
             generalId,
             userId: input.userId,
-            lastRefresh: acceptedAt,
+            lastRefresh: operationalAcceptedAt,
         },
     });
     if (inheritRequiredPoint > 0) {

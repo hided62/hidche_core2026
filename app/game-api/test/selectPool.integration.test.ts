@@ -258,12 +258,17 @@ integration('scenario 903 select pool through the durable turn daemon', () => {
         const initialRuntime = runtime!.world.getGeneralById(initial.id);
         const initialAccess = await db.generalAccessLog.findUniqueOrThrow({ where: { generalId: initial.id } });
         expect(initial).toMatchObject({ picture: 'default.jpg', imageServer: 0 });
+        const acceptedEvent = await db.inputEvent.findFirstOrThrow({
+            where: { actorUserId: userId, eventType: 'selectPoolCreate', status: 'SUCCEEDED' },
+            orderBy: { sequence: 'desc' },
+        });
         if (!initialAccess.lastRefresh) {
             throw new Error('selected general must have an initial access timestamp');
         }
+        expect(initialAccess.lastRefresh).toEqual(acceptedEvent.createdAt);
         expect(
             new Date((initial.meta as Record<string, unknown>).prestart_delete_after as string).getTime() -
-                initialAccess.lastRefresh.getTime()
+                acceptedEvent.createdAt.getTime()
         ).toBe(2 * 5 * 60 * 1_000);
         expect(initialRuntime).toMatchObject({
             id: initial.id,

@@ -702,6 +702,7 @@ export const createGeneralFromSelectionPool = async (options: {
     uniqueName: string;
     personality: string;
     now?: Date;
+    operationalAcceptedAt: Date;
     seedOwnerIdentity?: string | number;
     ownerPicture?: string;
     ownerImageServer?: number;
@@ -766,7 +767,7 @@ export const createGeneralFromSelectionPool = async (options: {
     const nextChangeAt = new Date(
         now.getTime() + resolveTurnTermMinutes(worldState) * RESELECTION_TURN_MULTIPLIER * 60_000
     );
-    const prestartDeleteAfter = buildPrestartDeleteAfter(now, worldState.tickSeconds, config);
+    const prestartDeleteAfter = buildPrestartDeleteAfter(options.operationalAcceptedAt, worldState.tickSeconds, config);
     // 후보 picture는 NPC용 preset이다. 후보가 사람 장수(npcState=0)가 되는
     // 순간부터는 명시적으로 선택한 계정 전용 아이콘 또는 기본 아이콘만 허용한다.
     const { picture, imageServer } = resolveSelectionPoolUserIcon({
@@ -908,8 +909,8 @@ export const createGeneralFromSelectionPool = async (options: {
     }
     await db.generalAccessLog.upsert({
         where: { generalId },
-        update: { userId, lastRefresh: now },
-        create: { generalId, userId, lastRefresh: now },
+        update: { userId, lastRefresh: options.operationalAcceptedAt },
+        create: { generalId, userId, lastRefresh: options.operationalAcceptedAt },
     });
     await clearUnusedReservations(db, userId, now, nowTick);
     await synchronizeSelectionPoolWorld(db, world);

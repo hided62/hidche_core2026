@@ -6,6 +6,7 @@ import path from 'node:path';
 import { resolveBattleResultSourceConfig, type BattleResultSourceConfig } from './battleResultSource.js';
 import { isLegacyArchiveProfile, LEGACY_ARCHIVE_PROFILES, type LegacyArchiveProfile } from './game.js';
 import { fingerprintMariaConnection, type MigrationSourceIdentity } from './incremental.js';
+import type { LegacyUserIconTransferConfig } from './legacyUserIcons.js';
 
 export interface ResolvedMigrationStage {
     kind: 'gateway' | 'game';
@@ -15,6 +16,7 @@ export interface ResolvedMigrationStage {
     targetUrl: string;
     sourceIdentity: MigrationSourceIdentity;
     battleResults?: BattleResultSourceConfig;
+    userIcons?: LegacyUserIconTransferConfig;
 }
 
 export interface ResolvedMigrationPlan {
@@ -139,9 +141,46 @@ const resolveTargetUrl = (record: Record<string, unknown>, label: string): strin
 
 const parseStage = (value: unknown, label: string): Record<string, unknown> => {
     const record = asRecord(value, label);
-    rejectUnknownKeys(record, ['source', 'targetUrlEnv', 'profile', 'enabled', 'battleResults'], label);
+    rejectUnknownKeys(record, ['source', 'targetUrlEnv', 'profile', 'enabled', 'battleResults', 'userIcons'], label);
     if (!('source' in record)) throw new Error(`${label}.source is required`);
     return record;
+};
+
+const resolveWebBaseUrl = (value: string, label: string): string => {
+    let url: URL;
+    try {
+        url = new URL(value);
+    } catch (error) {
+        throw new Error(`${label} must be an absolute URL`, { cause: error });
+    }
+    const loopback = url.hostname === 'localhost' || url.hostname === '127.0.0.1' || url.hostname === '::1';
+    if (url.protocol !== 'https:' && !(url.protocol === 'http:' && loopback)) {
+        throw new Error(`${label} must use HTTPS except for a loopback test service`);
+    }
+    if (url.username || url.password || url.search || url.hash) {
+        throw new Error(`${label} must not contain credentials, a query, or a fragment`);
+    }
+    return url.toString().replace(/\/$/u, '');
+};
+
+const resolveUserIcons = async (
+    value: unknown,
+    configDirectory: string,
+    label: string
+): Promise<LegacyUserIconTransferConfig> => {
+    const record = asRecord(value, label);
+    rejectUnknownKeys(record, ['sourceDirectory', 'uploadBaseUrl', 'publicBaseUrl', 'uploadSecretFile'], label);
+    const sourceDirectory = path.resolve(configDirectory, requiredString(record, 'sourceDirectory', label));
+    const sourceInfo = await lstat(sourceDirectory);
+    if (!sourceInfo.isDirectory() || sourceInfo.isSymbolicLink()) {
+        throw new Error(`${label}.sourceDirectory must be a directory and not a symbolic link`);
+    }
+    const uploadBaseUrl = resolveWebBaseUrl(requiredString(record, 'uploadBaseUrl', label), `${label}.uploadBaseUrl`);
+    const publicBaseUrl = resolveWebBaseUrl(requiredString(record, 'publicBaseUrl', label), `${label}.publicBaseUrl`);
+    const secretPath = path.resolve(configDirectory, requiredString(record, 'uploadSecretFile', label));
+    const uploadSecret = (await readSecureText(secretPath, `${label}.uploadSecretFile`)).replace(/\r?\n$/u, '');
+    if (uploadSecret.length < 32) throw new Error(`${label}.uploadSecretFile must contain at least 32 characters`);
+    return { sourceDirectory, uploadBaseUrl, publicBaseUrl, uploadSecret };
 };
 
 export const loadMigrationPlan = async (configPathInput: string): Promise<ResolvedMigrationPlan> => {
@@ -164,6 +203,10 @@ export const loadMigrationPlan = async (configPathInput: string): Promise<Resolv
     if (root.gateway !== undefined) {
         const gateway = parseStage(root.gateway, 'gateway');
         const sourceUrl = await resolveSource(gateway.source, configDirectory, 'gateway.source');
+        const userIcons =
+            gateway.userIcons === undefined
+                ? undefined
+                : await resolveUserIcons(gateway.userIcons, configDirectory, 'gateway.userIcons');
         stages.push({
             kind: 'gateway',
             name: 'gateway',
@@ -173,6 +216,7 @@ export const loadMigrationPlan = async (configPathInput: string): Promise<Resolv
                 key: `${sourceSet}:gateway`,
                 fingerprint: fingerprintMariaConnection(sourceUrl),
             },
+            ...(userIcons ? { userIcons } : {}),
         });
     }
 

@@ -296,6 +296,7 @@ async function handleJoinCreateGeneral(
                     ...(command.inheritBonusStat !== undefined ? { inheritBonusStat: command.inheritBonusStat } : {}),
                 },
                 acceptedAt,
+                operationalAcceptedAt,
             })),
         };
     } catch (error) {
@@ -366,7 +367,13 @@ async function handleSelectPoolCreate(
     if (!worldState) {
         throw new Error('Selection-pool world state is missing.');
     }
-    const acceptedAt = await resolveSelectionCommandAcceptedAt(db, ctx.world, command);
+    const operationalAcceptedAt = await resolveCommandAcceptedAt(db, command);
+    const acceptedAt =
+        command.acceptedGameTick !== undefined
+            ? ctx.world.gameTickToDate(command.acceptedGameTick)
+            : command.acceptedGameAt !== undefined
+              ? new Date(command.acceptedGameAt)
+              : ctx.world.getGameNow(operationalAcceptedAt);
     try {
         return {
             type: 'selectPoolCreate',
@@ -383,6 +390,7 @@ async function handleSelectPoolCreate(
                 ...(command.ownerImageServer !== undefined ? { ownerImageServer: command.ownerImageServer } : {}),
                 ...(command.ownerIconRevision ? { ownerIconRevision: command.ownerIconRevision } : {}),
                 now: acceptedAt,
+                operationalAcceptedAt,
             })),
         };
     } catch (error) {
@@ -1779,6 +1787,7 @@ async function handleSetMySetting(
     }
     for (const key of [
         'use_auto_nation_diplomacy',
+        'use_auto_nation_war',
         'use_auto_nation_promotion',
         'use_auto_nation_finance',
         'use_auto_nation_capital',
@@ -1988,7 +1997,7 @@ async function handleKick(
     }
 
     const target = world.getGeneralById(command.destGeneralId);
-    if (!target || target.id === general.id || target.nationId !== general.nationId) {
+    if (!target || target.nationId !== general.nationId) {
         return {
             type: 'kick',
             ok: false,
@@ -1996,7 +2005,18 @@ async function handleKick(
             reason: '대상을 찾을 수 없거나 같은 국가가 아닙니다.',
         };
     }
-    if (resolveMaxSecretPermission(target) === 4 && resolvePermissionKind(target) === 'ambassador') {
+    if (target.id === general.id) {
+        return { type: 'kick', ok: false, generalId: command.generalId, reason: '본인은 추방할 수 없습니다.' };
+    }
+    // Ref 화면은 군주와 본인을 후보에서 제외하지만 서버는 조작 요청을 막지 못했다.
+    // 국가 소유권을 깨뜨리는 대상은 UI와 무관하게 durable command 경계에서 거부한다.
+    if (target.id === nation.chiefGeneralId || target.officerLevel === 12) {
+        return { type: 'kick', ok: false, generalId: command.generalId, reason: '군주는 추방할 수 없습니다.' };
+    }
+    if (target.officerLevel >= 5) {
+        return { type: 'kick', ok: false, generalId: command.generalId, reason: '수뇌는 추방할 수 없습니다.' };
+    }
+    if (resolvePermissionKind(target) === 'ambassador') {
         return {
             type: 'kick',
             ok: false,
