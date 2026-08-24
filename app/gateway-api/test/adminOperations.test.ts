@@ -31,6 +31,7 @@ const buildCaller = async (
         initialProfileStatus?: GatewayProfileRecord['status'];
         profileScenario?: string | null;
         profileMeta?: GatewayProfileRecord['meta'];
+        gameIsUnited?: number;
         releaseCommitSha?: string;
         initialOperation?: GatewayOperationRecord;
         profileLogVisibilityAfterPolls?: number;
@@ -291,6 +292,7 @@ const buildCaller = async (
                 listRuntimeSettings: async () => [
                     {
                         profileName: 'che:2',
+                        isUnited: options.gameIsUnited ?? 0,
                         turnTermMinutes: 20,
                         blockGeneralCreate: 2,
                         autorunUser: { limitMinutes: 720, options: ['develop', 'recruit_high', 'chief'] },
@@ -405,6 +407,7 @@ describe('admin profile navigation API', () => {
 
         expect(result[0]?.runtimeSettings).toEqual({
             profileName: 'che:2',
+            isUnited: 0,
             turnTermMinutes: 20,
             blockGeneralCreate: 2,
             autorunUser: { limitMinutes: 720, options: ['develop', 'recruit_high', 'chief'] },
@@ -1425,6 +1428,63 @@ describe('admin runtime clock action API', () => {
         ).resolves.toMatchObject({ ok: true });
         expect(harness.updatedStatuses).toEqual(['STOPPED']);
         expect(harness.getReconcileCount()).toBe(1);
+    });
+
+    it('lets a scoped scenario opener close a unified game without runtime authority', async () => {
+        const harness = await buildCaller(unusedCreateOperation, {
+            adminRoles: ['user', 'admin.scenarios.reset:che:2'],
+            firstUserIsAdmin: false,
+            initialProfileStatus: 'RUNNING',
+            gameIsUnited: 2,
+        });
+
+        await expect(
+            harness.caller.admin.profiles.requestAction({
+                profileName: 'che:2',
+                action: 'CLOSE_COMPLETED',
+            })
+        ).resolves.toMatchObject({ ok: true });
+        expect(harness.updatedStatuses).toEqual(['STOPPED']);
+        expect(harness.getReconcileCount()).toBe(1);
+        expect(harness.auditEvents.at(-1)).toMatchObject({ capability: 'admin.scenarios.reset' });
+    });
+
+    it('does not let a scenario opener close a game before unification', async () => {
+        const harness = await buildCaller(unusedCreateOperation, {
+            adminRoles: ['user', 'admin.scenarios.reset:che:2'],
+            firstUserIsAdmin: false,
+            initialProfileStatus: 'RUNNING',
+            gameIsUnited: 0,
+        });
+
+        await expect(
+            harness.caller.admin.profiles.requestAction({
+                profileName: 'che:2',
+                action: 'CLOSE_COMPLETED',
+            })
+        ).rejects.toMatchObject({
+            code: 'BAD_REQUEST',
+            message: 'Only a unified game can be closed by a scenario opener.',
+        });
+        expect(harness.updatedStatuses).toEqual([]);
+        expect(harness.getReconcileCount()).toBe(0);
+    });
+
+    it('does not turn runtime authority into scenario-opener cleanup authority', async () => {
+        const harness = await buildCaller(unusedCreateOperation, {
+            adminRoles: ['user', 'admin.profiles.runtime:che:2'],
+            firstUserIsAdmin: false,
+            initialProfileStatus: 'RUNNING',
+            gameIsUnited: 2,
+        });
+
+        await expect(
+            harness.caller.admin.profiles.requestAction({
+                profileName: 'che:2',
+                action: 'CLOSE_COMPLETED',
+            })
+        ).rejects.toMatchObject({ code: 'FORBIDDEN' });
+        expect(harness.updatedStatuses).toEqual([]);
     });
 
     it('creates a first-class clock action owned by the authenticated administrator', async () => {

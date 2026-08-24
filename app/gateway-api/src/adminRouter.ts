@@ -45,6 +45,7 @@ const zServerAction = z.enum([
     'RESUME',
     'PAUSE',
     'STOP',
+    'CLOSE_COMPLETED',
     'ACCELERATE',
     'DELAY',
     'UPDATE_RUNTIME_SETTINGS',
@@ -2227,6 +2228,7 @@ export const adminRouter = router({
                     canManageProfiles || hasScopedPermission(adminAuth, ROLE_RESUME_WHEN_STOPPED, profile.profileName);
                 const canOpenSurvey =
                     canManageProfiles || hasScopedPermission(adminAuth, ROLE_SURVEY_OPEN, profile.profileName);
+                const canResetScenario = hasScopedPermission(adminAuth, ROLE_ADMIN_SCENARIO_RESET, profile.profileName);
 
                 if (input.action === 'RESUME') {
                     if (profile.status !== 'STOPPED' && profile.status !== 'PAUSED') {
@@ -2257,6 +2259,28 @@ export const adminRouter = router({
                         code: 'BAD_REQUEST',
                         message: 'Stop is allowed only while the profile runtime is available.',
                     });
+                } else if (input.action === 'CLOSE_COMPLETED') {
+                    if (!canResetScenario) {
+                        throw new TRPCError({
+                            code: 'FORBIDDEN',
+                            message: 'Scenario reset permission is required.',
+                        });
+                    }
+                    if (!gatewayProfileCapabilities(profile.status).runtimeExpected) {
+                        throw new TRPCError({
+                            code: 'BAD_REQUEST',
+                            message: 'Completed cleanup is allowed only while the profile runtime is available.',
+                        });
+                    }
+                    const [runtimeSettings] =
+                        (await ctx.orchestrator.listRuntimeSettings?.([profile.profileName])) ?? [];
+                    const isUnited = profile.status === 'COMPLETED' || Number(runtimeSettings?.isUnited ?? 0) !== 0;
+                    if (!isUnited) {
+                        throw new TRPCError({
+                            code: 'BAD_REQUEST',
+                            message: 'Only a unified game can be closed by a scenario opener.',
+                        });
+                    }
                 } else if (input.action === 'OPEN_SURVEY') {
                     if (!canOpenSurvey) {
                         throw new TRPCError({
@@ -2323,6 +2347,7 @@ export const adminRouter = router({
                     RESUME: 'RUNNING',
                     PAUSE: 'PAUSED',
                     STOP: 'STOPPED',
+                    CLOSE_COMPLETED: 'STOPPED',
                     SHUTDOWN: 'DISABLED',
                 } as const;
                 const mappedStatus = statusMap[input.action as keyof typeof statusMap];
