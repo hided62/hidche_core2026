@@ -174,7 +174,10 @@ const processIncomeForNation = (
         world.updateNation(nation.id, { rice: next, meta: nextMeta });
     }
 
-    const incomeText = incomeValue.toLocaleString();
+    // Ref keeps the fractional pre-flush value for the payout ratio and
+    // prev_income_* metadata, but number_format() rounds the user-facing log
+    // to the same integer precision as the persisted resource column.
+    const incomeText = Math.round(incomeValue).toLocaleString('en-US');
     const incomeLog =
         type === 'gold' ? `이번 수입은 금 <C>${incomeText}</>입니다.` : `이번 수입은 쌀 <C>${incomeText}</>입니다.`;
     for (const general of nationGenerals) {
