@@ -585,6 +585,7 @@ describe('in-game my information ownership', () => {
             use_treatment: 21,
             use_auto_nation_turn: 1,
             use_auto_nation_diplomacy: 0,
+            use_auto_nation_war: 0,
             use_auto_nation_promotion: 0,
             use_auto_nation_finance: 0,
             use_auto_nation_capital: 0,
@@ -598,6 +599,16 @@ describe('in-game my information ownership', () => {
             settings: { tnmt: 1, defence_train: 999 },
         });
         expect(fixture.db.general.update).not.toHaveBeenCalled();
+    });
+
+    it('rejects an invalid automatic war setting before dispatching it to ENGINE', async () => {
+        const requestCommand = vi.fn(async () => ({ type: 'setMySetting', ok: true, generalId: 7 }));
+        const fixture = createContext({ requestCommand });
+
+        await expect(
+            appRouter.createCaller(fixture.context).general.setMySetting({ use_auto_nation_war: 2 })
+        ).rejects.toMatchObject({ code: 'BAD_REQUEST' });
+        expect(requestCommand).not.toHaveBeenCalled();
     });
 
     it('sends settings directly to ENGINE without creating an API input event', async () => {

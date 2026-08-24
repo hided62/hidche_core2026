@@ -164,6 +164,7 @@ export type TurnDaemonCommand =
               use_treatment?: number;
               use_auto_nation_turn?: number;
               use_auto_nation_diplomacy?: number;
+              use_auto_nation_war?: number;
               use_auto_nation_promotion?: number;
               use_auto_nation_finance?: number;
               use_auto_nation_capital?: number;
