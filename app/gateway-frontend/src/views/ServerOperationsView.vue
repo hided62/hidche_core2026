@@ -268,14 +268,34 @@ const pageDescription = computed(() => {
     return '현재 게임 DB를 유지한 채 코드와 forward migration을 배포합니다.';
 });
 
-const activeOperation = computed(
+const activeOperations = computed(() =>
+    operations.value.filter(
+        (operation) =>
+            operation.profileName === selectedProfileName.value &&
+            (operation.status === 'QUEUED' || operation.status === 'RUNNING')
+    )
+);
+
+const activeOperation = computed(() => activeOperations.value[0] ?? null);
+
+const queuedFutureScheduledReset = computed(
     () =>
-        operations.value.find(
+        activeOperations.value.find(
             (operation) =>
-                operation.profileName === selectedProfileName.value &&
-                (operation.status === 'QUEUED' || operation.status === 'RUNNING')
+                operation.type === 'RESET' &&
+                operation.status === 'QUEUED' &&
+                Boolean(operation.scheduledAt) &&
+                new Date(operation.scheduledAt ?? '').getTime() > Date.now()
         ) ?? null
 );
+
+const deployBlockingOperation = computed(() => {
+    if (activeOperations.value.length === 1 && queuedFutureScheduledReset.value) return null;
+    return (
+        activeOperations.value.find((operation) => operation.id !== queuedFutureScheduledReset.value?.id) ??
+        activeOperation.value
+    );
+});
 
 const sourceHelp = computed(() =>
     form.sourceMode === 'CURRENT'
@@ -564,15 +584,18 @@ const requestDeploy = async () => {
     if (
         !selectedProfileName.value ||
         !selectedProfileIdentityReady.value ||
-        activeOperation.value ||
+        deployBlockingOperation.value ||
         !form.sourceRef.trim() ||
         form.sourceMode === 'CURRENT'
     ) {
         return;
     }
+    const reservedResetReminder = queuedFutureScheduledReset.value?.scheduledAt
+        ? `\n예약된 시나리오 초기화(${formatTime(queuedFutureScheduledReset.value.scheduledAt)})는 유지됩니다. 이 배포가 그 시각까지 시작되지 못하면 자동 취소됩니다.`
+        : '';
     if (
         !window.confirm(
-            `${selectedProfileDisplayName.value}의 인게임 DB를 유지하고 ${form.sourceRef.trim()} 버전으로 배포하시겠습니까?`
+            `${selectedProfileDisplayName.value}의 인게임 DB를 유지하고 ${form.sourceRef.trim()} 버전으로 배포하시겠습니까?${reservedResetReminder}`
         )
     ) {
         return;
@@ -1054,6 +1077,18 @@ onBeforeUnmount(() => {
                         </span>
                     </div>
 
+                    <div
+                        v-if="mode === 'version' && queuedFutureScheduledReset"
+                        class="rounded border border-cyan-800/80 bg-cyan-950/35 px-4 py-3 text-sm text-cyan-100"
+                        data-testid="interim-deploy-notice"
+                    >
+                        <strong>예약 초기화 유지</strong>
+                        <span class="ml-2">
+                            {{ formatTime(queuedFutureScheduledReset.scheduledAt) }} 시나리오 초기화 예약은 취소되지
+                            않습니다. 지금 DB 유지 배포가 그 시각까지 시작되지 못하면 자동 취소됩니다.
+                        </span>
+                    </div>
+
                     <fieldset class="space-y-2">
                         <legend class="text-xs text-zinc-400">소스 종류</legend>
                         <div class="flex gap-5">
@@ -1493,7 +1528,7 @@ onBeforeUnmount(() => {
                             :disabled="
                                 submitting ||
                                 !selectedProfileIdentityReady ||
-                                Boolean(activeOperation) ||
+                                Boolean(deployBlockingOperation) ||
                                 !form.sourceRef.trim()
                             "
                             data-testid="request-deploy"

@@ -52,7 +52,7 @@ describeDatabase('gateway operation lease and profile serialization', () => {
         await connector.disconnect();
     });
 
-    it('allows only one queued or running operation for a profile', async () => {
+    it('allows only one incompatible queued or running operation for a profile', async () => {
         const results = await Promise.allSettled([
             repository.createOperation({
                 profileName,
@@ -71,6 +71,118 @@ describeDatabase('gateway operation lease and profile serialization', () => {
         expect(results.filter(({ status }) => status === 'fulfilled')).toHaveLength(1);
         expect(results.filter(({ status }) => status === 'rejected')).toHaveLength(1);
         await expect(repository.listOperations({ profileName })).resolves.toHaveLength(1);
+    });
+
+    it('keeps a future scheduled RESET while one interim DEPLOY runs and completes first', async () => {
+        const scheduledAt = new Date('2099-01-01T00:00:00.000Z');
+        const scheduledReset = await repository.createOperation({
+            profileName,
+            type: 'RESET',
+            sourceMode: 'BRANCH',
+            sourceRef: 'main',
+            scheduledAt: scheduledAt.toISOString(),
+            requestedBy: 'reset-admin',
+        });
+        const interimDeploy = await repository.createOperation({
+            profileName,
+            type: 'DEPLOY',
+            sourceMode: 'BRANCH',
+            sourceRef: 'main',
+            requestedBy: 'deploy-admin',
+        });
+
+        await expect(
+            repository.createOperation({
+                profileName,
+                type: 'STOP',
+                requestedBy: 'runtime-admin',
+            })
+        ).rejects.toThrow('incompatible queued or running operation');
+        await expect(repository.listOperations({ profileName })).resolves.toHaveLength(2);
+
+        const beforeReset = new Date('2098-12-31T23:00:00.000Z');
+        await expect(
+            repository.claimNextOperation(beforeReset, { ownerId: 'worker-a', durationMs: 1_000 })
+        ).resolves.toMatchObject({ id: interimDeploy.id, type: 'DEPLOY', status: 'RUNNING' });
+        await repository.completeOperation(interimDeploy.id, 'SUCCEEDED', { error: null }, 'worker-a');
+        await expect(repository.getOperation(scheduledReset.id)).resolves.toMatchObject({
+            status: 'QUEUED',
+            scheduledAt: scheduledAt.toISOString(),
+        });
+        await expect(
+            repository.claimNextOperation(beforeReset, { ownerId: 'worker-b', durationMs: 1_000 })
+        ).resolves.toBeNull();
+        await expect(
+            repository.claimNextOperation(scheduledAt, { ownerId: 'worker-b', durationMs: 1_000 })
+        ).resolves.toMatchObject({ id: scheduledReset.id, type: 'RESET', status: 'RUNNING' });
+    });
+
+    it('accepts only one of two concurrent interim DEPLOY requests beside a scheduled RESET', async () => {
+        await repository.createOperation({
+            profileName,
+            type: 'RESET',
+            sourceMode: 'BRANCH',
+            sourceRef: 'main',
+            scheduledAt: new Date('2099-01-01T00:00:00.000Z').toISOString(),
+            requestedBy: 'reset-admin',
+        });
+
+        const results = await Promise.allSettled([
+            repository.createOperation({
+                profileName,
+                type: 'DEPLOY',
+                sourceMode: 'BRANCH',
+                sourceRef: 'main',
+                requestedBy: 'deploy-admin-a',
+            }),
+            repository.createOperation({
+                profileName,
+                type: 'DEPLOY',
+                sourceMode: 'BRANCH',
+                sourceRef: 'main',
+                requestedBy: 'deploy-admin-b',
+            }),
+        ]);
+
+        expect(results.filter((result) => result.status === 'fulfilled')).toHaveLength(1);
+        expect(results.filter((result) => result.status === 'rejected')).toHaveLength(1);
+        await expect(repository.listOperations({ profileName })).resolves.toHaveLength(2);
+    });
+
+    it('auto-cancels an interim DEPLOY that is still queued when the scheduled RESET becomes due', async () => {
+        const scheduledAt = new Date('2099-01-01T00:00:00.000Z');
+        const scheduledReset = await repository.createOperation({
+            profileName,
+            type: 'RESET',
+            sourceMode: 'COMMIT',
+            sourceRef: 'a'.repeat(40),
+            scheduledAt: scheduledAt.toISOString(),
+            requestedBy: 'reset-admin',
+        });
+        const interimDeploy = await repository.createOperation({
+            profileName,
+            type: 'DEPLOY',
+            sourceMode: 'COMMIT',
+            sourceRef: 'b'.repeat(40),
+            requestedBy: 'deploy-admin',
+        });
+
+        await expect(
+            repository.claimNextOperation(scheduledAt, { ownerId: 'worker-a', durationMs: 1_000 })
+        ).resolves.toMatchObject({ id: scheduledReset.id, type: 'RESET', status: 'RUNNING' });
+        await expect(repository.getOperation(interimDeploy.id)).resolves.toMatchObject({
+            status: 'CANCELLED',
+            completedAt: scheduledAt.toISOString(),
+        });
+        await expect(repository.listOperationLogs(interimDeploy.id)).resolves.toEqual([
+            expect.objectContaining({
+                phase: 'queue',
+            }),
+            expect.objectContaining({
+                phase: 'cancel',
+                message: expect.stringContaining('중간 버전 업데이트를 자동 취소'),
+            }),
+        ]);
     });
 
     it('stores durable cursor logs for profile operations', async () => {
