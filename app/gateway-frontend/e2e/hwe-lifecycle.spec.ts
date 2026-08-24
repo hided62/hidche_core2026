@@ -95,7 +95,7 @@ test('admin resets and opens hwe, then two users create generals and reach main'
         await page.getByTestId('load-scenarios').click();
         await expect(page.getByText(/개 시나리오를 확인했습니다/)).toBeVisible();
         await page.getByTestId('scenario-select').selectOption(scenarioId);
-        const latestOperation = page.getByTestId('operations-table').locator('tbody tr').first();
+        const latestOperation = page.getByTestId('operation-summary-row').first();
         const previousLatestOperation = await latestOperation.textContent();
         await page.getByTestId('request-reset').click();
         await expect(page.getByText('초기화 작업을 등록했습니다.').first()).toBeVisible();
@@ -105,12 +105,17 @@ test('admin resets and opens hwe, then two users create generals and reach main'
                 timeout: 15_000,
             })
             .not.toBe(previousLatestOperation);
-        await expect(latestOperation).toContainText(sourceCommit, {
+        await latestOperation.getByTestId('operation-details-toggle').click();
+        await expect(page.getByTestId('operation-detail').first()).toContainText(sourceCommit, {
             timeout: 15_000,
         });
-        await expect(latestOperation.locator('td').nth(4)).toHaveText('SUCCEEDED', {
-            timeout: 300_000,
-        });
+        await expect(latestOperation.locator('[data-operation-status]')).toHaveAttribute(
+            'data-operation-status',
+            'SUCCEEDED',
+            {
+                timeout: 300_000,
+            }
+        );
     }
     await expect(profileStatus).toContainText('RUNNING', { timeout: 30_000 });
     await expect(profileStatus).toContainText('SUCCEEDED');

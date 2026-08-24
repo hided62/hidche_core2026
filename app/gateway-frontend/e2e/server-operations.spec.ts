@@ -637,47 +637,59 @@ test('separates branch and commit semantics and submits a reset from the dedicat
     await page.getByTestId('request-reset').click();
 
     await expect(page.getByText('초기화 작업을 등록했습니다.').first()).toBeVisible();
-    await expect(page.getByTestId('operations-table')).toContainText('RESET');
+    await expect(page.getByTestId('operations-table')).toContainText('시나리오 초기화');
     await expect(page.getByTestId('profile-operation-log-panel')).toBeVisible();
     await expect(page.getByTestId('profile-operation-log')).toContainText('che:default 구성 요소를 빌드합니다.');
     await expect(page.getByTestId('profile-operation-log')).toContainText('시나리오 초기 데이터 생성을 완료했습니다.');
     await expect(page.getByTestId('profile-operation-log-status')).toContainText('SUCCEEDED');
+    const operationTable = page.getByTestId('operations-table');
+    await expect(operationTable.getByRole('columnheader')).toHaveText(['요청 · 작업', '상태', '보기']);
+    await expect(operationTable.getByText('시나리오 초기화', { exact: true })).toBeVisible();
+    await expect(operationTable.getByText('완료', { exact: true })).toBeVisible();
+    await expect(operationTable.getByText('che:default', { exact: true })).toBeHidden();
+    const detailsToggle = operationTable.getByTestId('operation-details-toggle');
+    await expect(detailsToggle).toHaveAttribute('aria-expanded', 'false');
+    await detailsToggle.click();
+    await expect(detailsToggle).toHaveAttribute('aria-expanded', 'true');
+    const operationDetail = operationTable.getByTestId('operation-detail');
+    await expect(operationDetail).toContainText('che:default');
+    await expect(operationDetail).toContainText('0123456789abcdef0123456789abcdef01234567');
+    await expect(operationDetail).toContainText('admin');
     const operationTableGeometry = await page.getByTestId('operations-table').evaluate((table) => {
         const columnWidths = Array.from(table.querySelectorAll('thead th')).map(
             (heading) => heading.getBoundingClientRect().width
         );
-        const rowHeight = table.querySelector('tbody tr')?.getBoundingClientRect().height ?? 0;
+        const summaryRowHeight = table
+            .querySelector('[data-testid="operation-summary-row"]')
+            ?.getBoundingClientRect().height;
         return {
             columnWidths,
-            rowHeight,
+            summaryRowHeight,
             tableWidth: table.getBoundingClientRect().width,
             scrollerWidth: table.parentElement?.getBoundingClientRect().width ?? 0,
+            scrollerScrollWidth: table.parentElement?.scrollWidth ?? 0,
             tableLayout: getComputedStyle(table).tableLayout,
         };
     });
     const sourceRefGeometry = await page.getByTestId('operation-source-ref').evaluate((element) => {
         const style = getComputedStyle(element);
         return {
-            title: element.getAttribute('title'),
+            text: element.textContent?.trim(),
             overflow: style.overflow,
-            textOverflow: style.textOverflow,
             whiteSpace: style.whiteSpace,
         };
     });
     expect(operationTableGeometry.tableLayout).toBe('fixed');
-    expect(operationTableGeometry.tableWidth).toBeGreaterThanOrEqual(1_300);
-    expect(operationTableGeometry.tableWidth).toBeGreaterThan(operationTableGeometry.scrollerWidth);
-    expect(operationTableGeometry.columnWidths[0]).toBeGreaterThanOrEqual(159);
-    expect(operationTableGeometry.columnWidths[1]).toBeGreaterThanOrEqual(263);
-    expect(operationTableGeometry.columnWidths[5]).toBeLessThanOrEqual(113);
-    expect(operationTableGeometry.columnWidths[7]).toBeGreaterThanOrEqual(175);
-    expect(operationTableGeometry.columnWidths[1]).toBeGreaterThan(operationTableGeometry.columnWidths[5]! * 2);
-    expect(operationTableGeometry.rowHeight).toBeLessThanOrEqual(50);
+    expect(operationTableGeometry.columnWidths).toHaveLength(3);
+    expect(operationTableGeometry.tableWidth).toBeLessThanOrEqual(operationTableGeometry.scrollerWidth + 1);
+    expect(operationTableGeometry.scrollerScrollWidth).toBeLessThanOrEqual(operationTableGeometry.scrollerWidth + 1);
+    expect(operationTableGeometry.columnWidths[0]).toBeGreaterThan(operationTableGeometry.columnWidths[1]!);
+    expect(operationTableGeometry.columnWidths[2]).toBeGreaterThan(operationTableGeometry.columnWidths[1]!);
+    expect(operationTableGeometry.summaryRowHeight).toBeLessThanOrEqual(90);
     expect(sourceRefGeometry).toEqual({
-        title: '0123456789abcdef0123456789abcdef01234567',
-        overflow: 'hidden',
-        textOverflow: 'ellipsis',
-        whiteSpace: 'nowrap',
+        text: 'COMMIT 0123456789abcdef0123456789abcdef01234567',
+        overflow: 'visible',
+        whiteSpace: 'normal',
     });
     await writeFile(
         testInfo.outputPath('operation-table-metrics.json'),
@@ -693,7 +705,7 @@ test('separates branch and commit semantics and submits a reset from the dedicat
     expect(JSON.stringify(resetRequest?.body)).toContain('"openAt":"2030-08-13T02:00:00.000Z"');
     await page.screenshot({ path: testInfo.outputPath('reset-operation-log-desktop.png'), fullPage: true });
 
-    await page.setViewportSize({ width: 390, height: 844 });
+    await page.setViewportSize({ width: 500, height: 844 });
     const mobileGeometry = await page
         .getByTestId('server-operations-page')
         .locator('section')
@@ -705,7 +717,7 @@ test('separates branch and commit semantics and submits a reset from the dedicat
             });
             return children;
         });
-    expect(mobileGeometry[0]!.width).toBeLessThanOrEqual(390);
+    expect(mobileGeometry[0]!.width).toBeLessThanOrEqual(500);
     const mobilePublishGeometry = await publishSchedule.evaluate((element) => {
         const label = element.closest('label');
         if (!label) throw new Error('expected publish schedule label');
@@ -735,18 +747,21 @@ test('separates branch and commit semantics and submits a reset from the dedicat
     const mobileOperationTableGeometry = await page.getByTestId('operations-table').evaluate((table) => {
         const scroller = table.parentElement!;
         const scrollerRect = scroller.getBoundingClientRect();
+        const detailRect = table.querySelector('[data-testid="operation-detail"]')?.getBoundingClientRect();
         return {
             tableWidth: table.getBoundingClientRect().width,
             scrollerX: scrollerRect.x,
             scrollerWidth: scrollerRect.width,
             scrollerScrollWidth: scroller.scrollWidth,
+            detailX: detailRect?.x,
+            detailRight: detailRect?.right,
             viewportWidth: document.documentElement.clientWidth,
             documentScrollWidth: document.documentElement.scrollWidth,
         };
     });
-    expect(mobileOperationTableGeometry.tableWidth).toBeGreaterThanOrEqual(1_300);
-    expect(mobileOperationTableGeometry.scrollerScrollWidth).toBeGreaterThan(
-        mobileOperationTableGeometry.scrollerWidth
+    expect(mobileOperationTableGeometry.tableWidth).toBeLessThanOrEqual(mobileOperationTableGeometry.scrollerWidth + 1);
+    expect(mobileOperationTableGeometry.scrollerScrollWidth).toBeLessThanOrEqual(
+        mobileOperationTableGeometry.scrollerWidth + 1
     );
     expect(mobileOperationTableGeometry.scrollerX).toBeGreaterThanOrEqual(0);
     expect(mobileOperationTableGeometry.scrollerX + mobileOperationTableGeometry.scrollerWidth).toBeLessThanOrEqual(
@@ -755,6 +770,13 @@ test('separates branch and commit semantics and submits a reset from the dedicat
     expect(mobileOperationTableGeometry.documentScrollWidth).toBeLessThanOrEqual(
         mobileOperationTableGeometry.viewportWidth
     );
+    expect(mobileOperationTableGeometry.detailX).toBeGreaterThanOrEqual(mobileOperationTableGeometry.scrollerX);
+    expect(mobileOperationTableGeometry.detailRight).toBeLessThanOrEqual(
+        mobileOperationTableGeometry.scrollerX + mobileOperationTableGeometry.scrollerWidth
+    );
+    await page.screenshot({ path: testInfo.outputPath('mobile-operation-detail.png'), fullPage: true });
+    await detailsToggle.click();
+    await expect(operationDetail).toBeHidden();
     await writeFile(
         testInfo.outputPath('operation-table-mobile-metrics.json'),
         JSON.stringify(mobileOperationTableGeometry, null, 2)
@@ -783,7 +805,7 @@ test('separates DB-preserving profile deployment from DB reset', async ({ page }
     await page.getByTestId('request-deploy').click();
 
     await expect(page.getByText('DB 보존 배포 작업을 등록했습니다.').first()).toBeVisible();
-    await expect(page.getByTestId('operations-table')).toContainText('DEPLOY');
+    await expect(page.getByTestId('operations-table')).toContainText('버전 업데이트');
     await expect(page.getByTestId('profile-operation-log-panel')).toBeVisible();
     await expect(page.getByTestId('profile-operation-log')).toContainText('che:default 구성 요소를 빌드합니다.');
     await expect(page.getByTestId('profile-operation-log')).toContainText('game-frontend build complete');
@@ -848,7 +870,7 @@ test('submits a separately authorized destructive game cancellation on desktop a
 
     await cancelButton.click();
     await expect(page.getByText('게임 취소 작업을 등록했습니다.').first()).toBeVisible();
-    await expect(page.getByTestId('operations-table')).toContainText('CANCEL_GAME');
+    await expect(page.getByTestId('operations-table')).toContainText('게임 취소');
     expect(confirmations).toHaveLength(1);
     expect(confirmations[0]).toContain('기수 행 물리 삭제');
     expect(confirmations[0]).toContain('장수 기록 보존');
@@ -1416,7 +1438,7 @@ test('stops a running profile build while keeping the existing runtime available
     await page.getByRole('button', { name: '빌드 중단' }).click();
 
     await expect(page.getByText('프로필 빌드를 중단했습니다.').first()).toBeVisible();
-    await expect(page.getByTestId('operations-table').getByText('CANCELLED', { exact: true })).toBeVisible();
+    await expect(page.getByTestId('operations-table').getByText('중단됨', { exact: true })).toBeVisible();
     expect(state.requestBodies.some((entry) => entry.operation === 'admin.operations.cancel')).toBe(true);
 });
 
@@ -1688,17 +1710,20 @@ test('renders a failed reset, retries it as a new operation, and reaches success
     page.on('dialog', (dialog) => dialog.accept());
 
     await page.goto('admin/servers/che%3Adefault/scenario');
-    await expect(page.getByTestId('operations-table').getByText('FAILED', { exact: true })).toBeVisible();
-    await expect(page.getByRole('cell', { name: 'fedcba987654', exact: true })).toBeVisible();
+    const operationTable = page.getByTestId('operations-table');
+    await expect(operationTable.getByText('실패', { exact: true })).toBeVisible();
+    await expect(operationTable.getByText(longError)).toBeHidden();
+    await operationTable.getByRole('button', { name: '오류 상세' }).click();
+    await expect(operationTable.getByText('fedcba9876543210fedcba9876543210fedcba98', { exact: true })).toBeVisible();
     const failure = page.getByTestId('operations-table').getByText(longError);
     await expect(failure).toBeVisible();
-    expect(await failure.evaluate((element) => getComputedStyle(element).color)).toBe('oklch(0.704 0.191 22.216)');
+    expect(await failure.evaluate((element) => getComputedStyle(element).color)).toBe('oklch(0.808 0.114 19.571)');
 
     await page.getByRole('button', { name: '재시도' }).click();
     await expect(page.getByText('재시도 작업을 등록했습니다.').first()).toBeVisible();
-    await expect(page.getByTestId('operations-table').getByText('FAILED', { exact: true })).toBeVisible();
-    await expect(page.getByTestId('operations-table').getByText('QUEUED', { exact: true })).toBeVisible();
-    await expect(page.getByTestId('operations-table').locator('tbody tr')).toHaveCount(2);
+    await expect(page.getByTestId('operations-table').getByText('실패', { exact: true })).toBeVisible();
+    await expect(page.getByTestId('operations-table').getByText('대기 중', { exact: true })).toBeVisible();
+    await expect(page.getByTestId('operation-summary-row')).toHaveCount(2);
 
     state.operations[0] = {
         ...state.operations[0]!,
@@ -1709,7 +1734,7 @@ test('renders a failed reset, retries it as a new operation, and reaches success
     };
     state.runtimeRunning = true;
     await page.getByTestId('refresh-operations').click();
-    await expect(page.getByTestId('operations-table').getByText('SUCCEEDED', { exact: true })).toBeVisible();
+    await expect(page.getByTestId('operations-table').getByText('완료', { exact: true })).toBeVisible();
     await expect(page.getByText('운영 프로필', { exact: true })).toHaveCount(0);
 
     await page.screenshot({ path: testInfo.outputPath('failed-retry-succeeded-desktop.png'), fullPage: true });
@@ -1717,8 +1742,14 @@ test('renders a failed reset, retries it as a new operation, and reaches success
     const tableGeometry = await page.getByTestId('operations-table').evaluate((table) => {
         const tableRect = table.getBoundingClientRect();
         const scrollerRect = table.parentElement!.getBoundingClientRect();
-        return { tableWidth: tableRect.width, scrollerWidth: scrollerRect.width };
+        return {
+            tableWidth: tableRect.width,
+            scrollerWidth: scrollerRect.width,
+            documentScrollWidth: document.documentElement.scrollWidth,
+            viewportWidth: document.documentElement.clientWidth,
+        };
     });
-    expect(tableGeometry.tableWidth).toBeGreaterThan(tableGeometry.scrollerWidth);
+    expect(tableGeometry.tableWidth).toBeLessThanOrEqual(tableGeometry.scrollerWidth + 1);
+    expect(tableGeometry.documentScrollWidth).toBeLessThanOrEqual(tableGeometry.viewportWidth);
     await page.screenshot({ path: testInfo.outputPath('failed-retry-succeeded-mobile.png'), fullPage: true });
 });

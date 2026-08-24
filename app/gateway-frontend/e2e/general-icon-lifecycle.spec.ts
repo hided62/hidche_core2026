@@ -34,15 +34,20 @@ const resetScenario = async (page: Page, scenarioId: string, sourceCommit: strin
     await expect(page.getByText(/개 시나리오를 확인했습니다/)).toBeVisible();
     await page.getByTestId('scenario-select').selectOption(scenarioId);
 
-    const latestOperation = page.getByTestId('operations-table').locator('tbody tr').first();
+    const latestOperation = page.getByTestId('operation-summary-row').first();
     const previousLatestOperation = await latestOperation.textContent();
     await page.getByTestId('request-reset').click();
     await expect(page.getByText('초기화 작업을 시작했습니다.')).toBeVisible();
     await expect.poll(() => latestOperation.textContent(), { timeout: 15_000 }).not.toBe(previousLatestOperation);
-    await expect(latestOperation).toContainText(sourceCommit, { timeout: 15_000 });
-    await expect(latestOperation.locator('td').nth(3)).toHaveText('SUCCEEDED', {
-        timeout: 300_000,
-    });
+    await latestOperation.getByTestId('operation-details-toggle').click();
+    await expect(page.getByTestId('operation-detail').first()).toContainText(sourceCommit, { timeout: 15_000 });
+    await expect(latestOperation.locator('[data-operation-status]')).toHaveAttribute(
+        'data-operation-status',
+        'SUCCEEDED',
+        {
+            timeout: 300_000,
+        }
+    );
     const profileStatus = page.getByTestId('selected-profile-status');
     await expect(profileStatus.locator(':scope > div').nth(0)).toContainText('RUNNING', {
         timeout: 30_000,
