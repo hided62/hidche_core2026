@@ -91,7 +91,7 @@ const ownTarget = target(1, '테스트장수', 1, '테스트국', '#d32f2f');
 const foreignTarget = target(8, '상대장수', 2, '상대국', '#2457a6');
 const messageTime = new Date().toISOString().replace('T', ' ').slice(0, 19);
 
-const buildMessages = (permission: number) => ({
+const buildMessages = (permission: number, tombstonedMessageIds: ReadonlySet<number> = new Set()) => ({
     result: true,
     public: [
         {
@@ -99,8 +99,8 @@ const buildMessages = (permission: number) => ({
             msgType: 'public',
             src: ownTarget,
             dest: null,
-            text: '전체 메시지 본문',
-            option: {},
+            text: tombstonedMessageIds.has(101) ? '삭제된 메시지입니다.' : '전체 메시지 본문',
+            option: tombstonedMessageIds.has(101) ? { invalid: true } : {},
             time: messageTime,
         },
     ],
@@ -150,11 +150,11 @@ const buildMessages = (permission: number) => ({
             msgType: 'diplomacy',
             src: foreignTarget,
             dest: target(0, '', 1, '테스트국', '#d32f2f'),
-            text: permission >= 3 ? '외교 메시지 본문' : '(외교 메시지입니다)',
+            text: permission >= 3 ? '외교 메시지 본문' : '조회 권한이 없는 외교 메시지입니다.',
             option:
                 permission >= 3
                     ? { action: 'noAggression', deletable: false }
-                    : { action: 'noAggression', deletable: false, invalid: true },
+                    : { action: 'noAggression', deletable: false },
             time: messageTime,
         },
     ],
@@ -203,6 +203,7 @@ const installFixture = async (
     options: { permission: number; sendError?: string }
 ): Promise<Array<{ operation: string; body: unknown }>> => {
     const mutations: Array<{ operation: string; body: unknown }> = [];
+    const tombstonedMessageIds = new Set<number>();
     await page.addInitScript(
         ({ gameToken, profile }) => {
             window.localStorage.setItem('sammo-game-token', gameToken);
@@ -272,7 +273,9 @@ const installFixture = async (
             if (operation === 'general.getRecentRecords') {
                 return response({ global: [], general: [], history: [] });
             }
-            if (operation === 'messages.getRecent') return response(buildMessages(options.permission));
+            if (operation === 'messages.getRecent') {
+                return response(buildMessages(options.permission, tombstonedMessageIds));
+            }
             if (operation === 'messages.getContacts') return response(contacts);
             if (operation === 'board.getAccess') return response({ canMeeting: true, canSecret: true });
             if (operation === 'tournament.getState') return response({ stage: 0 });
@@ -286,6 +289,10 @@ const installFixture = async (
                 mutations.push({ operation, body });
                 if (operation === 'messages.send' && options.sendError) {
                     return errorResponse(operation, options.sendError);
+                }
+                if (operation === 'messages.delete') {
+                    tombstonedMessageIds.add(101);
+                    return response({ ok: true, deletedIds: [101] });
                 }
                 return response(operation === 'messages.respond' ? { result: true, reason: 'success' } : { ok: true });
             }
@@ -437,6 +444,16 @@ test('exposes nation targets including wanderers, reply, read, delete, and succe
     page.once('dialog', (dialog) => dialog.accept());
     await deleteButton.click();
     await expect.poll(() => mutations.filter((entry) => entry.operation === 'messages.delete').length).toBe(1);
+    await expect(page.locator('.PublicTalk .msg-plate').filter({ hasText: '삭제된 메시지입니다' })).toBeVisible();
+    await expect(page.locator('.PublicTalk')).not.toContainText('전체 메시지 본문');
+    await expect(page.locator('.PublicTalk .delete-message')).toHaveCount(0);
+    if (artifactRoot) {
+        await mkdir(artifactRoot, { recursive: true });
+        await page.locator('.PublicTalk').screenshot({
+            path: resolve(artifactRoot, 'message-delete-tombstone-500.png'),
+            animations: 'disabled',
+        });
+    }
 
     await select.selectOption('9000');
     await page.getByLabel('메시지 입력').fill('우리 나라로 와주세요');
@@ -496,9 +513,17 @@ test('redacts diplomacy for a low-permission general and preserves the failed-se
     const select = page.getByLabel('메시지 수신 대상');
     await expect(select.locator('option[value="9000"]')).toHaveCount(0);
     await expect(select.locator('option[value="9002"]')).toHaveCount(0);
-    await expect(page.locator('.DiplomacyTalk')).toContainText('삭제된 메시지입니다');
+    await expect(page.locator('.DiplomacyTalk')).toContainText('조회 권한이 없는 외교 메시지입니다.');
+    await expect(page.locator('.DiplomacyTalk')).not.toContainText('삭제된 메시지입니다');
     await expect(page.locator('.DiplomacyTalk')).not.toContainText('외교 메시지 본문');
     await expect(page.locator('.DiplomacyTalk .message-response button').first()).toBeDisabled();
+    if (artifactRoot) {
+        await mkdir(artifactRoot, { recursive: true });
+        await page.locator('.DiplomacyTalk').screenshot({
+            path: resolve(artifactRoot, 'diplomacy-permission-redaction-500.png'),
+            animations: 'disabled',
+        });
+    }
 
     await select.selectOption('9999');
     await page.getByLabel('메시지 입력').fill('차단될 메시지');

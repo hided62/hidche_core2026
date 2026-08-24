@@ -429,7 +429,7 @@ onBeforeUnmount(() => {
                                 <th class="legacy-bg1">전콘 선택</th>
                                 <td class="pool-icon-choice">
                                     <label>
-                                        <input v-model="selectedIconId" type="radio" value="" /> 선택한 장수 전콘
+                                        <input v-model="selectedIconId" type="radio" value="" /> 기본 아이콘
                                     </label>
                                     <label v-for="icon in config.user.icons" :key="icon.id">
                                         <input v-model="selectedIconId" type="radio" :value="icon.id" />
