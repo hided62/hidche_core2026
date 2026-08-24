@@ -6,7 +6,9 @@ import { GeneralActionPipeline } from '@sammo-ts/logic/actionModules/general.js'
 import { ActionLogger } from '@sammo-ts/logic/logging/actionLogger.js';
 import { LogFormat, type LogEntryDraft } from '@sammo-ts/logic/logging/types.js';
 import { buildScoutMessageDraft } from '@sammo-ts/logic/messages/scoutMessage.js';
+import { searchDistanceEntries } from '@sammo-ts/logic/world/distance.js';
 import { buildCrewTypeIndex, getTechCost, getTechLevel } from '@sammo-ts/logic/world/unitSet.js';
+import type { MapDefinition } from '@sammo-ts/logic/world/types.js';
 import { LEGACY_DEFAULT_MAX_LEVEL } from '@sammo-ts/logic/scenario/constants.js';
 import type { WarUnitReport } from './types.js';
 import type {
@@ -197,43 +199,45 @@ const resolveConquerNation = (city: City, attackerNationId: number, nations: Nat
     return entries[0]![0];
 };
 
-const getCityPosition = (city: City): { x: number; y: number } | null => {
-    const x = getMetaNumber(city.meta, 'positionX', Number.NaN);
-    const y = getMetaNumber(city.meta, 'positionY', Number.NaN);
-    if (!Number.isFinite(x) || !Number.isFinite(y)) {
-        return null;
-    }
-    return { x, y };
-};
-
 const findNextCapital = (
     cities: City[],
     defenderNationId: number,
     capturedCityId: number,
-    oldCapital: City
-): City | null => {
+    map: MapDefinition
+): City => {
     const candidates = cities.filter((city) => city.nationId === defenderNationId && city.id !== capturedCityId);
     if (!candidates.length) {
-        return null;
+        throw new Error('도시가 남지 않았는데 긴천을 시도하고 있습니다');
     }
 
-    const oldPos = getCityPosition(oldCapital);
-    if (!oldPos) {
-        return candidates.sort((lhs, rhs) => rhs.population - lhs.population)[0]!;
+    const candidatesById = new Map(candidates.map((city) => [city.id, city] as const));
+    let nearestDistance: number | null = null;
+    let nextCapital: City | null = null;
+
+    // Ref searchDistance(..., true)는 CityConst::path 순서의 BFS 결과를
+    // 거리별로 훑는다. 첫 보유 거리만 보고, 같은 인구면 뒤 도시로
+    // 교체하는 findNextCapital의 >= 동률 처리까지 그대로 보존한다.
+    for (const [cityId, distance] of searchDistanceEntries(map, capturedCityId, 99)) {
+        if (distance === 0) {
+            continue;
+        }
+        if (nearestDistance !== null && distance > nearestDistance) {
+            break;
+        }
+        const candidate = candidatesById.get(cityId);
+        if (!candidate) {
+            continue;
+        }
+        nearestDistance ??= distance;
+        if (!nextCapital || candidate.population >= nextCapital.population) {
+            nextCapital = candidate;
+        }
     }
 
-    return candidates
-        .map((city) => {
-            const pos = getCityPosition(city);
-            const distance = pos ? Math.hypot(pos.x - oldPos.x, pos.y - oldPos.y) : Number.MAX_SAFE_INTEGER;
-            return { city, distance };
-        })
-        .sort((lhs, rhs) => {
-            if (lhs.distance !== rhs.distance) {
-                return lhs.distance - rhs.distance;
-            }
-            return rhs.city.population - lhs.city.population;
-        })[0]!.city;
+    if (!nextCapital) {
+        throw new Error('도시가 남지 않았는데 긴천을 시도하고 있습니다');
+    }
+    return nextCapital;
 };
 
 const pushLogger = (
@@ -450,7 +454,7 @@ const resolveConquerCity = <TriggerState extends GeneralTriggerState>(
 
     // 수도 함락 시 수도 이전 및 내부 사기/자원 페널티.
     if (!nationCollapsed && defenderNation && defenderNation.capitalCityId === defenderCity.id) {
-        const nextCapital = findNextCapital(cities, defenderNationId, defenderCity.id, defenderCity);
+        const nextCapital = findNextCapital(cities, defenderNationId, defenderCity.id, input.map);
         if (nextCapital) {
             const josaRo = JosaUtil.pick(nextCapital.name, '로');
             const josaYi = JosaUtil.pick(defenderNation.name, '이');

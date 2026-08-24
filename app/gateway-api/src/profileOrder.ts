@@ -20,6 +20,19 @@ export const resolveGatewayProfileKoreanName = (profile: string, configuredName?
     return gatewayProfileKoreanNames.get(profile) ?? profile;
 };
 
+/**
+ * User-facing profile label. The immutable profileName (`che:default`) remains
+ * an internal routing/storage key and must not leak into ordinary UI copy.
+ */
+export const resolveGatewayProfileDisplayName = (
+    profile: string,
+    instanceKey: string,
+    configuredName?: unknown
+): string => {
+    const koreanName = resolveGatewayProfileKoreanName(profile, configuredName);
+    return instanceKey === 'default' ? koreanName : `${koreanName} [${instanceKey}]`;
+};
+
 const compareGatewayProfiles = (
     left: { profile: string; instanceKey: string },
     right: { profile: string; instanceKey: string }

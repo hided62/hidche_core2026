@@ -5,6 +5,7 @@ import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } 
 import CompactHelp from '../components/CompactHelp.vue';
 import ServerProfileTabs from '../components/ServerProfileTabs.vue';
 import { useToast } from '../composables/useToast';
+import { loadAdminProfileNavigation, type AdminProfileNavigationItem } from '../composables/useAdminProfileNavigation';
 import AdminConsoleLayout from '../layouts/AdminConsoleLayout.vue';
 import {
     normalizeProfileResetDefaults,
@@ -86,6 +87,7 @@ type GatewayReleaseLog = {
 const scenarios = ref<Scenario[]>([]);
 const operations = ref<Operation[]>([]);
 const selectedProfileOperationId = ref('');
+const expandedProfileOperationId = ref('');
 const profileOperationLogs = ref<GatewayReleaseLog[]>([]);
 const profileOperationLogCursor = ref<string>();
 const profileOperationLogStatus = ref('');
@@ -102,6 +104,28 @@ const gatewayReleaseLogConnection = ref<'idle' | 'connected' | 'reconnecting'>('
 const gatewayReleaseLogViewport = ref<HTMLElement>();
 const gatewayReleaseAvailable = ref(false);
 const selectedProfileName = computed(() => props.profileName ?? '');
+const profileIdentities = ref<AdminProfileNavigationItem[]>([]);
+const profileDisplayName = (profileName: string): string => {
+    const profile = profileIdentities.value.find((candidate) => candidate.profileName === profileName);
+    if (!profile) return '삭제되었거나 접근할 수 없는 서버';
+    if (profile.displayName?.trim()) return profile.displayName.trim();
+    const configuredName = profile.meta?.korName;
+    const baseName =
+        typeof configuredName === 'string' && configuredName.trim() ? configuredName.trim() : profile.profile;
+    return profile.instanceKey === 'default' ? baseName : `${baseName} [${profile.instanceKey}]`;
+};
+const selectedProfileIdentityReady = computed(() =>
+    profileIdentities.value.some((profile) => profile.profileName === selectedProfileName.value)
+);
+const selectedProfileDisplayName = computed(() => {
+    if (!selectedProfileName.value) return '대상 서버';
+    return selectedProfileIdentityReady.value ? profileDisplayName(selectedProfileName.value) : '대상 서버';
+});
+const cancellationConfirmation = computed(() => `${selectedProfileDisplayName.value} 게임 취소`);
+const displayOperationText = (value?: string): string => {
+    if (!value || !selectedProfileName.value) return value ?? '';
+    return value.replaceAll(selectedProfileName.value, selectedProfileDisplayName.value);
+};
 const capabilities = ref<Array<{ permission: string; scopes?: string[] }>>([]);
 const loading = ref(false);
 const catalogLoading = ref(false);
@@ -204,7 +228,7 @@ const profileOperationLogEmptyMessage = computed(() => {
         return '오케스트레이터 로그를 기다리고 있습니다…';
     }
     if (operation.error) {
-        return `이 작업에는 진행 로그가 기록되지 않았습니다. 작업 오류: ${operation.error}`;
+        return `이 작업에는 진행 로그가 기록되지 않았습니다. 작업 오류: ${displayOperationText(operation.error)}`;
     }
     return '이 작업에는 진행 로그가 기록되지 않았습니다. 로그 기능 적용 전 작업일 수 있습니다.';
 });
@@ -228,9 +252,9 @@ const hasCapability = (permission: string): boolean =>
 
 const pageTitle = computed(() => {
     if (props.mode === 'gateway') return 'Gateway 릴리스';
-    if (props.mode === 'cancel') return `${props.profileName ?? ''} 게임 취소`;
-    if (props.mode === 'scenario') return `${props.profileName ?? ''} 시나리오 초기화`;
-    return `${props.profileName ?? ''} 버전 업데이트`;
+    if (props.mode === 'cancel') return `${selectedProfileDisplayName.value} 게임 취소`;
+    if (props.mode === 'scenario') return `${selectedProfileDisplayName.value} 시나리오 초기화`;
+    return `${selectedProfileDisplayName.value} 버전 업데이트`;
 });
 
 const pageDescription = computed(() => {
@@ -268,6 +292,40 @@ const toIso = (value: string): string | undefined => {
 const formatTime = (value?: string): string => formatServerDateTime(value, { fallback: '-' });
 const formatLogTime = (value: string): string => formatServerDateTime(value, { format: 'timeSeconds' });
 const shortSha = (value?: string): string => (value ? value.slice(0, 12) : '-');
+
+const operationTypeLabel = (type: Operation['type']): string => {
+    const labels: Record<Operation['type'], string> = {
+        DEPLOY: '버전 업데이트',
+        RESET: '시나리오 초기화',
+        CANCEL_GAME: '게임 취소',
+        START: '서버 시작',
+        STOP: '서버 중지',
+    };
+    return labels[type];
+};
+
+const operationStatusLabel = (status: Operation['status']): string => {
+    const labels: Record<Operation['status'], string> = {
+        QUEUED: '대기 중',
+        RUNNING: '진행 중',
+        SUCCEEDED: '완료',
+        FAILED: '실패',
+        CANCELLED: '중단됨',
+    };
+    return labels[status];
+};
+
+const operationStatusClass = (status: Operation['status']): string => {
+    if (status === 'RUNNING') return 'border-emerald-700 bg-emerald-950/70 text-emerald-200';
+    if (status === 'QUEUED') return 'border-amber-700 bg-amber-950/70 text-amber-200';
+    if (status === 'SUCCEEDED') return 'border-cyan-800 bg-cyan-950/60 text-cyan-200';
+    if (status === 'FAILED') return 'border-red-800 bg-red-950/70 text-red-200';
+    return 'border-zinc-700 bg-zinc-800 text-zinc-300';
+};
+
+const toggleProfileOperationDetails = (operationId: string) => {
+    expandedProfileOperationId.value = expandedProfileOperationId.value === operationId ? '' : operationId;
+};
 
 const clearStatus = () => {
     message.value = '';
@@ -307,6 +365,15 @@ const loadResetDefaults = async () => {
     } catch {
         applyResetDefaults(SYSTEM_PROFILE_RESET_DEFAULTS);
         resetDefaultsSource.value = 'SYSTEM';
+    }
+};
+
+const loadProfileIdentities = async () => {
+    if (props.mode === 'gateway') return;
+    try {
+        profileIdentities.value = await loadAdminProfileNavigation();
+    } catch {
+        profileIdentities.value = [];
     }
 };
 
@@ -496,6 +563,7 @@ const requestDeploy = async () => {
     clearStatus();
     if (
         !selectedProfileName.value ||
+        !selectedProfileIdentityReady.value ||
         activeOperation.value ||
         !form.sourceRef.trim() ||
         form.sourceMode === 'CURRENT'
@@ -504,7 +572,7 @@ const requestDeploy = async () => {
     }
     if (
         !window.confirm(
-            `${selectedProfileName.value}의 인게임 DB를 유지하고 ${form.sourceRef.trim()} 버전으로 배포하시겠습니까?`
+            `${selectedProfileDisplayName.value}의 인게임 DB를 유지하고 ${form.sourceRef.trim()} 버전으로 배포하시겠습니까?`
         )
     ) {
         return;
@@ -647,7 +715,7 @@ const selectedAutorunOptions = (): ResetAutorunOption[] => {
 
 const requestReset = async () => {
     clearStatus();
-    if (!selectedProfileName.value || activeOperation.value) {
+    if (!selectedProfileName.value || !selectedProfileIdentityReady.value || activeOperation.value) {
         return;
     }
     if ((form.sourceMode !== 'CURRENT' && !form.sourceRef.trim()) || form.scenarioId === null) {
@@ -663,7 +731,7 @@ const requestReset = async () => {
         form.sourceMode === 'CURRENT' ? '서버 지정 버전' : form.sourceMode === 'BRANCH' ? '브랜치' : '커밋';
     if (
         !window.confirm(
-            `${selectedProfileName.value}의 게임 DB를 초기화합니다.\n${sourceLabel}${form.sourceMode === 'CURRENT' ? '' : `: ${form.sourceRef}`}\n시나리오: ${scenarioId}${form.publishSchedule ? '\n예약 등록 즉시 로비에 오픈 일정을 공개합니다.' : ''}`
+            `${selectedProfileDisplayName.value}의 게임 DB를 초기화합니다.\n${sourceLabel}${form.sourceMode === 'CURRENT' ? '' : `: ${form.sourceRef}`}\n시나리오: ${scenarioId}${form.publishSchedule ? '\n예약 등록 즉시 로비에 오픈 일정을 공개합니다.' : ''}`
         )
     ) {
         return;
@@ -711,13 +779,13 @@ const requestReset = async () => {
 const requestGameCancellation = async () => {
     clearStatus();
     const profileName = selectedProfileName.value;
-    if (!profileName || activeOperation.value) return;
+    if (!profileName || !selectedProfileIdentityReady.value || activeOperation.value) return;
     if (cancellationForm.reason.trim().length < 5) {
         errorMessage.value = '취소 사유를 5자 이상 입력해주세요.';
         return;
     }
-    if (cancellationForm.confirmation.trim() !== profileName) {
-        errorMessage.value = `확인란에 ${profileName}을 정확히 입력해주세요.`;
+    if (cancellationForm.confirmation.trim() !== cancellationConfirmation.value) {
+        errorMessage.value = `확인란에 ${cancellationConfirmation.value}를 정확히 입력해주세요.`;
         return;
     }
     const historyText =
@@ -725,7 +793,7 @@ const requestGameCancellation = async () => {
     const generalText = cancellationForm.generalMode === 'RETAIN' ? '장수 기록 보존' : '장수 기록 삭제';
     if (
         !window.confirm(
-            `${profileName}의 진행 중 게임을 취소합니다.\n${historyText}\n${generalText}\n유산 획득분 ${cancellationForm.earnedPointRetentionPercent}% 보전\n취소 후 시나리오 초기화 전에는 재개할 수 없습니다.`
+            `${selectedProfileDisplayName.value}의 진행 중 게임을 취소합니다.\n${historyText}\n${generalText}\n유산 획득분 ${cancellationForm.earnedPointRetentionPercent}% 보전\n취소 후 시나리오 초기화 전에는 재개할 수 없습니다.`
         )
     ) {
         return;
@@ -818,6 +886,7 @@ onMounted(async () => {
     componentMounted = true;
     await Promise.all([
         loadCapabilities(),
+        loadProfileIdentities(),
         loadState(),
         loadResetDefaults(),
         props.mode === 'scenario' ? loadScenarios() : Promise.resolve(),
@@ -852,6 +921,7 @@ onBeforeUnmount(() => {
             <ServerProfileTabs
                 v-if="mode !== 'gateway' && profileName"
                 :profile-name="profileName"
+                :profile-label="selectedProfileDisplayName"
                 :active-tab="mode === 'scenario' ? 'scenario' : mode === 'cancel' ? 'cancel' : 'version'"
                 :can-deploy="hasCapability('admin.profiles.deploy')"
                 :can-reset="hasCapability('admin.scenarios.reset')"
@@ -942,11 +1012,11 @@ onBeforeUnmount(() => {
                         ></textarea>
                     </label>
                     <label class="block text-sm text-zinc-300">
-                        확인을 위해 <strong>{{ selectedProfileName }}</strong> 입력
+                        확인을 위해 <strong>{{ cancellationConfirmation }}</strong> 입력
                         <input
                             v-model="cancellationForm.confirmation"
                             class="mt-1 w-full rounded border border-red-800 bg-zinc-950 px-3 py-2 font-mono"
-                            :placeholder="selectedProfileName"
+                            :placeholder="cancellationConfirmation"
                             data-testid="cancellation-confirmation"
                         />
                     </label>
@@ -955,9 +1025,10 @@ onBeforeUnmount(() => {
                         class="w-full rounded bg-red-700 px-4 py-3 font-bold text-white hover:bg-red-600 disabled:cursor-not-allowed disabled:opacity-40"
                         :disabled="
                             submitting ||
+                            !selectedProfileIdentityReady ||
                             Boolean(activeOperation) ||
                             cancellationForm.reason.trim().length < 5 ||
-                            cancellationForm.confirmation.trim() !== selectedProfileName
+                            cancellationForm.confirmation.trim() !== cancellationConfirmation
                         "
                         data-testid="request-game-cancellation"
                     >
@@ -1419,7 +1490,12 @@ onBeforeUnmount(() => {
                             v-if="mode === 'version'"
                             type="submit"
                             class="rounded bg-sky-700 px-4 py-3 font-bold text-white hover:bg-sky-600 disabled:cursor-not-allowed disabled:opacity-40"
-                            :disabled="submitting || Boolean(activeOperation) || !form.sourceRef.trim()"
+                            :disabled="
+                                submitting ||
+                                !selectedProfileIdentityReady ||
+                                Boolean(activeOperation) ||
+                                !form.sourceRef.trim()
+                            "
                             data-testid="request-deploy"
                             @click="requestDeploy"
                         >
@@ -1429,7 +1505,12 @@ onBeforeUnmount(() => {
                             v-else
                             type="submit"
                             class="w-full rounded bg-amber-500 px-4 py-3 font-bold text-black hover:bg-amber-400 disabled:cursor-not-allowed disabled:opacity-40"
-                            :disabled="submitting || Boolean(activeOperation) || form.scenarioId === null"
+                            :disabled="
+                                submitting ||
+                                !selectedProfileIdentityReady ||
+                                Boolean(activeOperation) ||
+                                form.scenarioId === null
+                            "
                             data-testid="request-reset"
                         >
                             {{ form.scheduledAt ? '시나리오 초기화 예약' : '시나리오 초기화' }}
@@ -1748,12 +1829,14 @@ onBeforeUnmount(() => {
                     >
                         <span class="text-zinc-600">{{ formatLogTime(entry.createdAt) }}</span>
                         <span class="ml-2 text-violet-300">[{{ entry.phase }}]</span>
-                        <span class="ml-2 whitespace-pre-wrap break-all">{{ entry.message }}</span>
+                        <span class="ml-2 whitespace-pre-wrap break-all">{{
+                            displayOperationText(entry.message)
+                        }}</span>
                     </div>
                 </div>
             </section>
 
-            <section v-if="mode !== 'gateway'" class="rounded-lg border border-zinc-800 bg-zinc-900 p-5">
+            <section v-if="mode !== 'gateway'" class="rounded-lg border border-zinc-800 bg-zinc-900 p-3 sm:p-5">
                 <div
                     class="mb-4 rounded border border-amber-800/80 bg-amber-950/30 px-4 py-3 text-sm text-amber-100"
                     data-testid="profile-build-recovery-guide"
@@ -1764,116 +1847,170 @@ onBeforeUnmount(() => {
                 </div>
                 <div class="mb-4 flex items-center justify-between">
                     <h3 class="text-lg font-semibold">작업 이력</h3>
-                    <span class="text-xs text-zinc-500">3초마다 상태 갱신</span>
+                    <span class="text-right text-xs text-zinc-500">진행 상태를 3초마다 갱신</span>
                 </div>
-                <div class="overflow-x-auto">
-                    <table class="w-full min-w-[1300px] table-fixed text-left text-sm" data-testid="operations-table">
+                <div>
+                    <table class="w-full table-fixed text-left text-xs sm:text-sm" data-testid="operations-table">
                         <colgroup>
-                            <col style="width: 160px" />
-                            <col style="width: 264px" />
-                            <col style="width: 72px" />
-                            <col style="width: 64px" />
-                            <col style="width: 88px" />
-                            <col style="width: 112px" />
-                            <col style="width: 104px" />
-                            <col style="width: 176px" />
-                            <col style="width: 176px" />
-                            <col style="width: 84px" />
+                            <col class="w-[42%]" />
+                            <col class="w-[24%]" />
+                            <col class="w-[34%]" />
                         </colgroup>
                         <thead class="border-b border-zinc-700 text-xs text-zinc-500">
                             <tr>
-                                <th class="p-2">요청/예약</th>
-                                <th class="p-2">작업 ID</th>
-                                <th class="p-2">프로필</th>
-                                <th class="p-2">작업</th>
+                                <th class="p-2">요청 · 작업</th>
                                 <th class="p-2">상태</th>
-                                <th class="p-2">소스</th>
-                                <th class="p-2">해석 커밋</th>
-                                <th class="p-2">요청자/사유</th>
-                                <th class="p-2">완료/오류</th>
-                                <th class="p-2">동작</th>
+                                <th class="p-2">보기</th>
                             </tr>
                         </thead>
                         <tbody>
-                            <tr
-                                v-for="operation in operations"
-                                :key="operation.id"
-                                class="border-b border-zinc-800 align-top"
-                            >
-                                <td class="p-2 text-xs">
-                                    {{ formatTime(operation.createdAt) }}
-                                    <div v-if="operation.scheduledAt" class="mt-1 text-amber-300">
-                                        예약 {{ formatTime(operation.scheduledAt) }}
-                                    </div>
-                                </td>
-                                <td class="max-w-48 break-all p-2 font-mono text-xs">{{ operation.id }}</td>
-                                <td class="p-2">{{ operation.profileName }}</td>
-                                <td class="p-2">{{ operation.type }}</td>
-                                <td class="p-2 font-semibold">{{ operation.status }}</td>
-                                <td class="p-2 font-mono text-xs">
-                                    <div>{{ operation.sourceMode ?? '-' }}</div>
-                                    <div
-                                        v-if="operation.sourceRef"
-                                        class="truncate"
-                                        data-testid="operation-source-ref"
-                                        :title="operation.sourceRef"
-                                    >
-                                        {{ operation.sourceRef }}
-                                    </div>
-                                </td>
-                                <td class="p-2 font-mono text-xs">{{ shortSha(operation.resolvedCommitSha) }}</td>
-                                <td class="max-w-xs p-2 text-xs">
-                                    <div class="font-mono">{{ operation.requestedBy }}</div>
-                                    <div v-if="operation.reason" class="mt-1 text-zinc-400">{{ operation.reason }}</div>
-                                </td>
-                                <td class="max-w-xs p-2 text-xs">
-                                    {{ formatTime(operation.completedAt) }}
-                                    <div
-                                        v-if="operation.error"
-                                        class="mt-1"
-                                        :class="operation.status === 'FAILED' ? 'text-red-400' : 'text-amber-300'"
-                                    >
-                                        {{ operation.error }}
-                                    </div>
-                                </td>
-                                <td class="p-2">
-                                    <div class="flex flex-wrap gap-2">
-                                        <button
-                                            type="button"
-                                            class="rounded border border-zinc-700 px-2 py-1 text-xs text-zinc-300 hover:bg-zinc-800"
-                                            :class="
-                                                operation.id === selectedProfileOperationId
-                                                    ? 'border-violet-500 text-violet-200'
-                                                    : ''
-                                            "
-                                            @click="selectProfileOperation(operation.id)"
+                            <template v-for="operation in operations" :key="operation.id">
+                                <tr class="border-b border-zinc-800 align-top" data-testid="operation-summary-row">
+                                    <td class="p-2">
+                                        <div class="font-semibold text-zinc-100">
+                                            {{ operationTypeLabel(operation.type) }}
+                                        </div>
+                                        <div class="mt-1 text-[11px] leading-4 text-zinc-400">
+                                            {{ formatTime(operation.createdAt) }}
+                                        </div>
+                                        <div
+                                            v-if="operation.scheduledAt"
+                                            class="mt-1 text-[11px] leading-4 text-amber-300"
                                         >
-                                            로그
-                                        </button>
-                                        <button
-                                            v-if="
-                                                operation.status === 'QUEUED' ||
-                                                (operation.status === 'RUNNING' && operation.type === 'DEPLOY')
-                                            "
-                                            class="rounded border border-red-800 px-2 py-1 text-xs text-red-300 hover:bg-red-950"
-                                            @click="cancelOperation(operation)"
+                                            예약 {{ formatTime(operation.scheduledAt) }}
+                                        </div>
+                                    </td>
+                                    <td class="p-2">
+                                        <span
+                                            class="inline-flex min-h-7 items-center rounded-full border px-2 py-1 text-[11px] font-semibold leading-none"
+                                            :class="operationStatusClass(operation.status)"
+                                            :data-operation-status="operation.status"
                                         >
-                                            {{ operation.status === 'RUNNING' ? '빌드 중단' : '취소' }}
-                                        </button>
-                                        <button
-                                            v-else-if="
-                                                operation.status === 'FAILED' || operation.status === 'CANCELLED'
-                                            "
-                                            class="rounded border border-amber-700 px-2 py-1 text-xs text-amber-300 hover:bg-amber-950"
-                                            @click="retryOperation(operation)"
+                                            {{ operationStatusLabel(operation.status) }}
+                                        </span>
+                                    </td>
+                                    <td class="p-2">
+                                        <div class="flex flex-wrap gap-1.5">
+                                            <button
+                                                type="button"
+                                                class="rounded border border-zinc-700 px-2 py-1 text-xs text-zinc-300 hover:bg-zinc-800 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-violet-400"
+                                                :class="
+                                                    operation.id === selectedProfileOperationId
+                                                        ? 'border-violet-500 text-violet-200'
+                                                        : ''
+                                                "
+                                                @click="selectProfileOperation(operation.id)"
+                                            >
+                                                로그
+                                            </button>
+                                            <button
+                                                type="button"
+                                                class="rounded border border-zinc-700 px-2 py-1 text-xs text-zinc-300 hover:bg-zinc-800 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-violet-400"
+                                                :aria-expanded="expandedProfileOperationId === operation.id"
+                                                :aria-controls="`profile-operation-detail-${operation.id}`"
+                                                data-testid="operation-details-toggle"
+                                                @click="toggleProfileOperationDetails(operation.id)"
+                                            >
+                                                {{ operation.error ? '오류 상세' : '상세' }}
+                                            </button>
+                                            <button
+                                                v-if="
+                                                    operation.status === 'QUEUED' ||
+                                                    (operation.status === 'RUNNING' && operation.type === 'DEPLOY')
+                                                "
+                                                type="button"
+                                                class="rounded border border-red-800 px-2 py-1 text-xs text-red-300 hover:bg-red-950 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-red-400"
+                                                @click="cancelOperation(operation)"
+                                            >
+                                                {{ operation.status === 'RUNNING' ? '빌드 중단' : '취소' }}
+                                            </button>
+                                            <button
+                                                v-else-if="
+                                                    operation.status === 'FAILED' || operation.status === 'CANCELLED'
+                                                "
+                                                type="button"
+                                                class="rounded border border-amber-700 px-2 py-1 text-xs text-amber-300 hover:bg-amber-950 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-400"
+                                                @click="retryOperation(operation)"
+                                            >
+                                                재시도
+                                            </button>
+                                        </div>
+                                    </td>
+                                </tr>
+                                <tr
+                                    v-show="expandedProfileOperationId === operation.id"
+                                    :id="`profile-operation-detail-${operation.id}`"
+                                    class="border-b border-zinc-700 bg-zinc-950/60"
+                                    data-testid="operation-detail"
+                                >
+                                    <td colspan="3" class="p-3 sm:p-4">
+                                        <div
+                                            class="rounded border border-zinc-800 bg-zinc-950 px-3 py-3"
+                                            role="region"
+                                            :aria-label="`${operationTypeLabel(operation.type)} 상세`"
                                         >
-                                            재시도
-                                        </button>
-                                    </div>
-                                </td>
-                            </tr>
+                                            <dl class="grid grid-cols-1 gap-x-6 gap-y-3 sm:grid-cols-2">
+                                                <div>
+                                                    <dt class="text-[11px] font-semibold text-zinc-500">서버</dt>
+                                                    <dd class="mt-1 break-all text-xs text-zinc-300">
+                                                        {{ profileDisplayName(operation.profileName) }}
+                                                    </dd>
+                                                </div>
+                                                <div>
+                                                    <dt class="text-[11px] font-semibold text-zinc-500">작업 ID</dt>
+                                                    <dd class="mt-1 break-all font-mono text-xs text-zinc-300">
+                                                        {{ operation.id }}
+                                                    </dd>
+                                                </div>
+                                                <div>
+                                                    <dt class="text-[11px] font-semibold text-zinc-500">소스</dt>
+                                                    <dd
+                                                        class="mt-1 break-all font-mono text-xs text-zinc-300"
+                                                        data-testid="operation-source-ref"
+                                                    >
+                                                        {{ operation.sourceMode ?? '-' }}
+                                                        {{ operation.sourceRef ?? '' }}
+                                                    </dd>
+                                                </div>
+                                                <div>
+                                                    <dt class="text-[11px] font-semibold text-zinc-500">해석 커밋</dt>
+                                                    <dd class="mt-1 break-all font-mono text-xs text-zinc-300">
+                                                        {{ operation.resolvedCommitSha ?? '-' }}
+                                                    </dd>
+                                                </div>
+                                                <div>
+                                                    <dt class="text-[11px] font-semibold text-zinc-500">요청자</dt>
+                                                    <dd class="mt-1 break-all font-mono text-xs text-zinc-300">
+                                                        {{ operation.requestedBy }}
+                                                    </dd>
+                                                </div>
+                                                <div>
+                                                    <dt class="text-[11px] font-semibold text-zinc-500">완료 시각</dt>
+                                                    <dd class="mt-1 text-xs text-zinc-300">
+                                                        {{ formatTime(operation.completedAt) }}
+                                                    </dd>
+                                                </div>
+                                                <div v-if="operation.reason" class="sm:col-span-2">
+                                                    <dt class="text-[11px] font-semibold text-zinc-500">사유</dt>
+                                                    <dd
+                                                        class="mt-1 whitespace-pre-wrap break-all text-xs text-zinc-300"
+                                                    >
+                                                        {{ operation.reason }}
+                                                    </dd>
+                                                </div>
+                                                <div v-if="operation.error" class="sm:col-span-2">
+                                                    <dt class="text-[11px] font-semibold text-red-400">오류</dt>
+                                                    <dd class="mt-1 whitespace-pre-wrap break-all text-xs text-red-300">
+                                                        {{ displayOperationText(operation.error) }}
+                                                    </dd>
+                                                </div>
+                                            </dl>
+                                        </div>
+                                    </td>
+                                </tr>
+                            </template>
                             <tr v-if="operations.length === 0">
-                                <td colspan="10" class="p-6 text-center text-zinc-500">작업 이력이 없습니다.</td>
+                                <td colspan="3" class="p-6 text-center text-zinc-500">작업 이력이 없습니다.</td>
                             </tr>
                         </tbody>
                     </table>

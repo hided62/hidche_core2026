@@ -34,16 +34,23 @@ Gateway 관리자 콘솔은 `/gateway/admin`에서 시작합니다. 공개 로�
   `aria-current`로 구분하며 desktop과 mobile에서 본문보다 먼저 표시합니다.
 - `profileName`은 `${profile}:${instanceKey}` 형식의 불변 기술 ID입니다.
   `che:default`의 `default`는 현재 시나리오가 아니라 기본 인스턴스 키입니다.
-  좌측 메뉴는 기본 인스턴스의 suffix를 숨기고 표시명만 보여 주며, 상태 상세에서
-  기술 ID·인스턴스 키·nullable 현재 시나리오를 분리해 확인할 수 있습니다.
+  route, 권한 scope, mutation payload, DB FK, process와 Redis namespace는 이 값을
+  유지합니다. 화면·알림·확인 문구·작업 로그는 API의 `displayName`만 소비하여 기본
+  인스턴스는 `체`, 비기본 인스턴스는 `체 [2]`처럼 구분합니다.
 - 버전 업데이트와 시나리오 초기화 route는 URL의 `profileName`으로 대상 서버가
   이미 고정됩니다. 따라서 작업 화면에서 전체 profile 목록이나 중복 실행 상태를
   기다리지 않고 작업 form과 해당 서버의 operation 이력을 먼저 표시합니다. 상세
   runtime·빌드 상태는 상태 설정 탭에서 확인합니다.
+- 버전 업데이트·시나리오 초기화·게임 취소 화면의 작업 이력은 요청·작업, 상태,
+  보기의 3열 요약으로 표시합니다. `진행 중`, `완료`, `실패` 등 현재 상태와 로그를
+  먼저 확인하고, 서버 표시명·작업 ID·소스·커밋·요청자·사유·완료 시각·오류 원문은
+  각 작업의 `상세` 행에서 확인합니다. 상세 버튼은 `aria-expanded`와
+  `aria-controls`로 연결되며 500px 화면에서도 페이지 가로 스크롤 없이 열립니다.
 - 공통 좌측 메뉴는 `admin.profiles.listNavigation`으로 접근 가능한 profile의 이름과
   표시명만 읽습니다. 이 요청은 PM2 runtime 상태를 포함하는 본문용
-  `admin.profiles.list`와 별도의 non-batch 요청으로 전송하므로, 상태 조회가 늦거나
-  중단되어도 관리자 capability와 서버 메뉴를 함께 기다리게 하지 않습니다.
+  `admin.profiles.list`와 별도의 non-batch 요청으로 전송하되 한 페이지 안의 layout과
+  작업 화면은 같은 in-flight 결과를 공유합니다. 상태 조회가 늦거나 중단되어도
+  관리자 capability와 서버 메뉴를 함께 기다리게 하지 않습니다.
 - `DEPLOY`는 현재 game DB를 유지하고 migration/build를 적용합니다. `RESET`은
   현재 시즌 데이터를 새 시나리오로 교체하며 장기 보존 자료를 유지합니다.
 - `CANCEL_GAME`은 `RESET`과 다른 비가역 운영 작업입니다. `PREOPEN`, `RUNNING`,

@@ -23,6 +23,7 @@ import {
 import { isRecord } from '@sammo-ts/common';
 
 import { resolveGatewayPostgresConfigFromEnv } from '../gatewayPostgresConfig.js';
+import { resolveGatewayProfileDisplayName, resolveGatewayProfileKoreanName } from '../profileOrder.js';
 
 import {
     buildTurboReleaseCommand,
@@ -279,6 +280,13 @@ const buildServerId = (profileName: string, now: Date, installOperationId?: stri
         ? createHash('sha256').update(installOperationId).digest('hex').slice(0, 16)
         : randomBytes(2).toString('hex');
     return `${profileName}_${year}${month}${day}_${suffix}`;
+};
+
+export const resolveProfileArchiveServerName = (
+    profile: Pick<GatewayProfileRecord, 'profileName' | 'profile' | 'meta'>
+): string => {
+    const meta = normalizeMeta(profile.meta);
+    return resolveGatewayProfileKoreanName(profile.profile, meta.korName);
 };
 
 const readMetaNumber = (meta: Record<string, unknown>, key: string): number | null => {
@@ -1618,7 +1626,11 @@ export class GatewayOrchestrator implements GatewayOrchestratorHandle {
                           this.processConfig.workspaceRoot
                       )),
             ];
-            await this.appendOperationLog(operationId, 'build', `${profile.profileName} 구성 요소를 빌드합니다.`);
+            await this.appendOperationLog(
+                operationId,
+                'build',
+                `${resolveGatewayProfileDisplayName(profile.profile, profile.instanceKey, profile.meta.korName)} 구성 요소를 빌드합니다.`
+            );
             const result = await this.releaseBuildRunner.run(commands, this.buildProgress(operationId, 'build'), {
                 signal: this.activeOperationAbortSignal,
             });
@@ -2010,6 +2022,9 @@ export class GatewayOrchestrator implements GatewayOrchestratorHandle {
                         season,
                         firstGameIdx,
                         serverId,
+                        // Snapshot the Gateway display name into this season. Hall and
+                        // dynasty archives must not fall back to the runtime instance key.
+                        serverName: resolveProfileArchiveServerName(profile),
                         installCommitSha: commitSha,
                     },
                     adminUser,
@@ -2222,7 +2237,11 @@ export class GatewayOrchestrator implements GatewayOrchestratorHandle {
             await this.appendOperationLog(
                 operationId,
                 'build',
-                `${profile?.profileName ?? 'profile'} 구성 요소를 빌드합니다.`
+                `${
+                    profile
+                        ? resolveGatewayProfileDisplayName(profile.profile, profile.instanceKey, profile.meta.korName)
+                        : '대상 서버'
+                } 구성 요소를 빌드합니다.`
             );
         }
         return {
@@ -2424,7 +2443,13 @@ export class GatewayOrchestrator implements GatewayOrchestratorHandle {
 
     private async stageStaticProfileFrontend(profile: GatewayProfileRecord): Promise<StagedFrontendArtifact> {
         if (!profile.buildCommitSha) {
-            throw new Error(`Profile ${profile.profileName} is missing the build commit SHA.`);
+            throw new Error(
+                `${resolveGatewayProfileDisplayName(
+                    profile.profile,
+                    profile.instanceKey,
+                    profile.meta.korName
+                )} 서버의 build commit SHA가 없습니다.`
+            );
         }
         const runtimeWorkspace = profile.buildWorkspace ?? this.processConfig.workspaceRoot;
         const sharedSourceRoot = buildSharedProfileFrontendOutDir(runtimeWorkspace);

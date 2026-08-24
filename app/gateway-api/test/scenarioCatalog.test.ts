@@ -3,6 +3,16 @@ import { describe, expect, it } from 'vitest';
 import { listScenarioPreviews, resolveGitCommitSha } from '../src/scenario/scenarioCatalog.js';
 
 describe('scenarioCatalog git ref support', () => {
+    it('includes the CHE zero-season dawn scenario in the local catalog', async () => {
+        const previews = await listScenarioPreviews();
+
+        expect(previews.find((scenario) => scenario.id === 916)).toMatchObject({
+            id: 916,
+            title: '【공백지】 여명',
+            year: 180,
+        });
+    });
+
     it('resolves HEAD to a commit hash', async () => {
         const commitSha = await resolveGitCommitSha('HEAD');
         expect(commitSha).toMatch(/^[0-9a-f]{40}$/i);
@@ -18,6 +28,11 @@ describe('scenarioCatalog git ref support', () => {
         expect(previews.every((scenario) => scenario.fiction === null || Number.isInteger(scenario.fiction))).toBe(
             true
         );
+        expect(previews.find((scenario) => scenario.id === 916)).toMatchObject({
+            id: 916,
+            title: '【공백지】 여명',
+            year: 180,
+        });
     });
 
     it('rejects without crashing when git cannot be spawned', async () => {

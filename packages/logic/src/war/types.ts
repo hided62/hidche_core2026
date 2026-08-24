@@ -6,7 +6,7 @@ import type { ActionLogger } from '@sammo-ts/logic/logging/actionLogger.js';
 import type { LogEntryDraft } from '@sammo-ts/logic/logging/types.js';
 import type { MessageDraft } from '@sammo-ts/logic/messages/message.js';
 import type { TracePort } from '@sammo-ts/logic/ports/trace.js';
-import type { UnitSetDefinition } from '@sammo-ts/logic/world/types.js';
+import type { MapDefinition, UnitSetDefinition } from '@sammo-ts/logic/world/types.js';
 import type { WarActionModule } from './actions.js';
 import type { WarTriggerRegistry } from './triggers.js';
 import type { LegacyWarLogFlushSequence } from './legacyFlushSequence.js';
@@ -195,6 +195,8 @@ export interface WarAftermathInput<TriggerState extends GeneralTriggerState = Ge
     cities: City[];
     generals: General<TriggerState>[];
     unitSet: UnitSetDefinition;
+    /** 긴급천도 BFS에 사용하는 Ref CityConst::path 대응 topology. */
+    map: MapDefinition;
     config: WarAftermathConfig;
     time: WarTimeContext;
     /** Ref Message::gameNow() at the command transaction's logical tick. */

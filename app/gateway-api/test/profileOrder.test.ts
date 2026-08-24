@@ -4,6 +4,7 @@ import {
     GATEWAY_PROFILE_KOREAN_NAMES,
     GATEWAY_PROFILE_ORDER,
     orderGatewayProfiles,
+    resolveGatewayProfileDisplayName,
     resolveGatewayProfileKoreanName,
 } from '../src/profileOrder.js';
 
@@ -54,5 +55,14 @@ describe('resolveGatewayProfileKoreanName', () => {
     it('preserves configured and unknown profile names', () => {
         expect(resolveGatewayProfileKoreanName('che', ' 천하서버 ')).toBe('천하서버');
         expect(resolveGatewayProfileKoreanName('custom')).toBe('custom');
+    });
+});
+
+describe('resolveGatewayProfileDisplayName', () => {
+    it('hides the default instance key and distinguishes non-default instances', () => {
+        expect(resolveGatewayProfileDisplayName('che', 'default')).toBe('체');
+        expect(resolveGatewayProfileDisplayName('hwe', '2')).toBe('훼 [2]');
+        expect(resolveGatewayProfileDisplayName('che', 'default', ' 천하서버 ')).toBe('천하서버');
+        expect(resolveGatewayProfileDisplayName('custom', 'blue')).toBe('custom [blue]');
     });
 });

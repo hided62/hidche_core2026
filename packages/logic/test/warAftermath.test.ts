@@ -4,7 +4,7 @@ import { ConstantRNG, RandUtil } from '@sammo-ts/common';
 
 import type { City, General, Nation } from '../src/domain/entities.js';
 import type { GeneralActionModule } from '../src/actionModules/general.js';
-import type { UnitSetDefinition } from '../src/world/types.js';
+import type { MapDefinition, UnitSetDefinition } from '../src/world/types.js';
 import { resolveWarAftermath } from '../src/war/aftermath.js';
 import type { WarAftermathConfig } from '../src/war/types.js';
 import { LogFormat } from '../src/logging/types.js';
@@ -72,6 +72,43 @@ const buildCity = (id: number, nationId: number): City => ({
     wall: 100,
     wallMax: 200,
     meta: {},
+});
+
+const buildMap = (connections: Record<number, number[]>): MapDefinition => ({
+    id: 'test',
+    name: 'test',
+    cities: Object.entries(connections).map(([rawId, cityConnections]) => ({
+        id: Number(rawId),
+        name: `City${rawId}`,
+        level: 2,
+        region: 1,
+        position: { x: Number(rawId), y: Number(rawId) },
+        connections: cityConnections,
+        max: {
+            population: 10000,
+            agriculture: 1000,
+            commerce: 1000,
+            security: 1000,
+            defence: 200,
+            wall: 200,
+        },
+        initial: {
+            population: 10000,
+            agriculture: 1000,
+            commerce: 1000,
+            security: 1000,
+            defence: 100,
+            wall: 100,
+        },
+    })),
+});
+
+const DEFAULT_MAP = buildMap({
+    1: [2, 3, 4, 5],
+    2: [1, 3, 4, 5],
+    3: [1, 2, 4, 5],
+    4: [1, 2, 3, 5],
+    5: [1, 2, 3, 4],
 });
 
 const buildNation = (id: number): Nation => ({
@@ -189,6 +226,7 @@ describe('war aftermath', () => {
             cities: [attackerCity, defenderCity],
             generals: [attacker],
             unitSet: buildUnitSet(),
+            map: DEFAULT_MAP,
             config: { ...buildConfig(), maxTechLevel: 15 },
             time: { year: 200, month: 1, startYear: 180 },
             messageTime: MESSAGE_TIME,
@@ -230,6 +268,7 @@ describe('war aftermath', () => {
             cities: [attackerCity, defenderCity],
             generals: [attacker],
             unitSet: buildUnitSet(),
+            map: DEFAULT_MAP,
             config: buildConfig(),
             time: {
                 year: 200,
@@ -274,6 +313,7 @@ describe('war aftermath', () => {
             cities: [attackerCity, defenderCity],
             generals: [attacker],
             unitSet: buildUnitSet(),
+            map: DEFAULT_MAP,
             config: buildConfig(),
             time: { year: 200, month: 1, startYear: 180 },
             messageTime: MESSAGE_TIME,
@@ -320,6 +360,7 @@ describe('war aftermath', () => {
             cities: [attackerCity, defenderCity, nextCapital],
             generals: [attacker, defender],
             unitSet: buildUnitSet(),
+            map: DEFAULT_MAP,
             config: buildConfig(),
             time: {
                 year: 200,
@@ -338,6 +379,61 @@ describe('war aftermath', () => {
             ])
         );
         expect(outcome.logs.find((log) => log.text.startsWith('수뇌는'))?.format).toBe(LogFormat.MONTH);
+    });
+
+    it('chooses the most populous city at the nearest map-path distance for emergency relocation', () => {
+        const attackerNation = buildNation(1);
+        const defenderNation = buildNation(2);
+        const attackerCity = buildCity(1, 1);
+        const defenderCity = buildCity(2, 2);
+        const firstNearest = buildCity(3, 2);
+        const lastNearest = buildCity(4, 2);
+        const coordinateNearButTwoHopsAway = buildCity(5, 2);
+        firstNearest.population = 30_000;
+        lastNearest.population = 30_000;
+        coordinateNearButTwoHopsAway.population = 90_000;
+        defenderCity.meta.positionX = 0;
+        defenderCity.meta.positionY = 0;
+        firstNearest.meta.positionX = 100;
+        firstNearest.meta.positionY = 100;
+        lastNearest.meta.positionX = 200;
+        lastNearest.meta.positionY = 200;
+        coordinateNearButTwoHopsAway.meta.positionX = 0;
+        coordinateNearButTwoHopsAway.meta.positionY = 1;
+        const attacker = buildGeneral(1, 1, 1);
+        const defender = buildGeneral(2, 2, 2);
+
+        resolveWarAftermath({
+            battle: {
+                attacker,
+                defenders: [],
+                defenderCity,
+                logs: [],
+                conquered: true,
+                reports: [],
+            },
+            attackerNation,
+            defenderNation,
+            attackerCity,
+            defenderCity,
+            nations: [attackerNation, defenderNation],
+            cities: [attackerCity, defenderCity, firstNearest, lastNearest, coordinateNearButTwoHopsAway],
+            generals: [attacker, defender],
+            unitSet: buildUnitSet(),
+            map: buildMap({
+                1: [],
+                2: [3, 4],
+                3: [2, 5],
+                4: [2],
+                5: [3],
+            }),
+            config: buildConfig(),
+            time: { year: 200, month: 1, startYear: 180 },
+            messageTime: MESSAGE_TIME,
+        });
+
+        // Ref replaces on equal population, so the later city in the BFS layer wins.
+        expect(defenderNation.capitalCityId).toBe(lastNearest.id);
     });
 
     it('uses the city battle phase, not retained casualties, for conquered supply-city rice', () => {
@@ -378,6 +474,7 @@ describe('war aftermath', () => {
             cities: [attackerCity, defenderCity, defenderCapital],
             generals: [attacker],
             unitSet: buildUnitSet(),
+            map: DEFAULT_MAP,
             config: buildConfig(),
             time: { year: 200, month: 1, startYear: 180 },
             messageTime: MESSAGE_TIME,
@@ -438,6 +535,7 @@ describe('war aftermath', () => {
             cities: [attackerCity, defenderCity],
             generals: [attacker, defender],
             unitSet: buildUnitSet(),
+            map: DEFAULT_MAP,
             config: buildConfig(),
             time: {
                 year: 200,
@@ -510,6 +608,7 @@ describe('war aftermath', () => {
             // The caller order deliberately puts the lord first.
             generals: [attacker, lord, npc],
             unitSet: buildUnitSet(),
+            map: DEFAULT_MAP,
             config: {
                 ...buildConfig(),
                 joinMode: 'full',
@@ -607,6 +706,7 @@ describe('war aftermath', () => {
             cities: [attackerCity, defenderCity],
             generals: [attacker, firstDefender, secondDefender, elsewhere],
             unitSet: buildUnitSet(),
+            map: DEFAULT_MAP,
             config: buildConfig(),
             time: {
                 year: 200,
@@ -694,6 +794,7 @@ describe('war aftermath', () => {
             cities: [attackerCity, defenderCity, defenderCapital],
             generals: [attacker],
             unitSet: buildUnitSet(),
+            map: DEFAULT_MAP,
             config: buildConfig(),
             time: {
                 year: 200,

@@ -131,6 +131,9 @@ const installFixture = async (page: Page) => {
                     profiles: [
                         {
                             profileName: 'che:default',
+                            profile: 'che',
+                            instanceKey: 'default',
+                            displayName: '체',
                             requiresKakaoVerification: true,
                             kakaoVerified: false,
                             accessAllowed: true,
@@ -219,15 +222,16 @@ test('operates OAuth grace and scheduled deletion with reasoned audit history', 
     await page.getByRole('button', { name: /접근 · 권한/ }).click();
     await expect(page.getByRole('option', { name: /Profile 전체 운영/ })).toHaveCount(0);
     await expect(page.getByRole('option', { name: /Profile 실행 관리/ })).toHaveCount(1);
-    await expect(page.getByRole('cell', { name: 'che:default' })).toBeVisible();
+    await expect(page.getByRole('cell', { name: '체' })).toBeVisible();
+    await expect(page.getByText('che:default', { exact: true })).toHaveCount(0);
     await page.screenshot({ path: testInfo.outputPath('gateway-admin-account-controls-desktop.png'), fullPage: true });
     await page.getByPlaceholder('권한·제재·복구·탈퇴 조치 사유 (필수)').fill('본인 확인 처리 중');
     await page.getByLabel('특수 접근 만료 시각').fill('2026-08-20T00:00');
-    await page.getByPlaceholder('che 또는 che:2 (쉼표 구분, 비우면 전체)').fill('che');
+    await page.getByRole('checkbox', { name: '체' }).check();
     await page.getByPlaceholder('권한·제재·복구·탈퇴 조치 사유 (필수)').fill('휴대폰 분실 임시 복구');
     await page.getByRole('button', { name: '특수 접근 부여', exact: true }).click();
     await expect(page.getByText('특수 접근 자격을 부여했습니다.').first()).toBeVisible();
-    await expect(page.getByText(/RECOVERY · che/)).toBeVisible();
+    await expect(page.getByText(/RECOVERY · 체/)).toBeVisible();
     await page.screenshot({ path: testInfo.outputPath('gateway-admin-special-access-granted.png'), fullPage: true });
 
     const gracePanel = page.getByRole('heading', { name: 'Kakao 인증 유예' }).locator('..');

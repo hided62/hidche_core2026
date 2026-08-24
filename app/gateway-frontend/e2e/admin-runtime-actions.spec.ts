@@ -165,6 +165,7 @@ const installFixture = async (
                         profileName: 'hwe:default',
                         profile: 'hwe',
                         instanceKey: 'default',
+                        displayName: '훼',
                         currentScenario: options.currentScenario === undefined ? '1010' : options.currentScenario,
                         meta: {},
                     },
@@ -177,6 +178,7 @@ const installFixture = async (
                         profileName: 'hwe:default',
                         profile: 'hwe',
                         instanceKey: 'default',
+                        displayName: '훼',
                         currentScenario: options.currentScenario === undefined ? '1010' : options.currentScenario,
                         scenario: options.currentScenario ?? 'default',
                         apiPort: 15015,
@@ -542,7 +544,7 @@ test('directs profile deployment to the selected server version tab', async ({ p
     const tabAndHeaderGeometry = await Promise.all([
         tabs.evaluate((element) => element.getBoundingClientRect().top),
         page
-            .getByText('서버 ID: hwe:default · 인스턴스: default', { exact: true })
+            .getByText('현재 시나리오: 1010', { exact: true })
             .evaluate((element) => element.getBoundingClientRect().top),
     ]);
     expect(tabAndHeaderGeometry[0]).toBeLessThan(tabAndHeaderGeometry[1]);

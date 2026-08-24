@@ -59,7 +59,7 @@ export interface DispatchResolveContext<
     nations: Nation[];
     generals: General<TriggerState>[];
     unitSet: UnitSetDefinition;
-    map?: MapDefinition;
+    map: MapDefinition;
     diplomacy?: Array<{ fromNationId: number; toNationId: number; state: number; term: number }>;
     time: WarTimeContext;
     seedBase: string;
@@ -647,6 +647,7 @@ export class ActionDefinition<
             cities,
             generals,
             unitSet,
+            map: context.map,
             config: context.aftermathConfig,
             time,
             messageTime: context.messageTime,
@@ -801,7 +802,7 @@ export class ActionDefinition<
 
 // 예약 턴 실행에 필요한 전투 컨텍스트를 구성한다.
 export const actionContextBuilder: ActionContextBuilder = (base, options) => {
-    if (!options.unitSet || !options.worldRef) {
+    if (!options.unitSet || !options.worldRef || !options.map) {
         return null;
     }
     const destCityId = options.actionArgs.destCityId;

@@ -164,15 +164,15 @@ integration('core ↔ legacy command-boundary differential', () => {
             }
             if (fixturePath.endsWith('live-sortie-emergency-capital.json')) {
                 const defenderNation = reference.after.nations.find((nation) => nation.id === 2);
-                expect(defenderNation?.capitalCityId).toBe(71);
+                expect(defenderNation?.capitalCityId).toBe(35);
                 expect(defenderNation?.gold).toBe(50_000);
                 expect(defenderNation?.rice).toBe(40_000);
                 expect(reference.after.generals.find((general) => general.id === 2)).toMatchObject({
                     nationId: 2,
-                    cityId: 71,
+                    cityId: 35,
                     atmos: 80,
                 });
-                expect(reference.after.cities.find((city) => city.id === 71)?.supplyState).toBe(1);
+                expect(reference.after.cities.find((city) => city.id === 35)?.supplyState).toBe(1);
             }
             if (fixturePath.endsWith('live-sortie-collapse-conflict.json')) {
                 expect(reference.before.cities.find((city) => city.id === 71)?.conflict).toEqual({ 2: 1234 });

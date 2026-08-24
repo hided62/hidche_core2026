@@ -48,6 +48,7 @@ const installGatewayFixture = async (page: Page, roles: string[]) => {
                                   profileName: 'hwe:2',
                                   profile: 'hwe',
                                   instanceKey: '2',
+                                  displayName: '환상서버 [2]',
                                   currentScenario: '1010',
                                   scenario: '1010',
                                   status: 'RUNNING',
@@ -68,6 +69,7 @@ const installGatewayFixture = async (page: Page, roles: string[]) => {
                                   profileName: 'hwe:2',
                                   profile: 'hwe',
                                   instanceKey: '2',
+                                  displayName: '환상서버 [2]',
                                   currentScenario: '1010',
                                   meta: { korName: '환상서버' },
                               },
@@ -306,23 +308,26 @@ test('keeps mobile account actions on clean rows for users and administrators', 
     const adminLink = adminPage.getByRole('link', { name: '관리자 페이지' });
     const baseBackground = await adminLink.evaluate((element) => getComputedStyle(element).backgroundColor);
     await adminLink.hover();
-    await expect.poll(() => adminLink.evaluate((element) => getComputedStyle(element).backgroundColor)).not.toBe(
-        baseBackground
-    );
+    await expect
+        .poll(() => adminLink.evaluate((element) => getComputedStyle(element).backgroundColor))
+        .not.toBe(baseBackground);
     await adminLink.focus();
     await expect(adminLink).toBeFocused();
-    await adminPage.screenshot({ path: testInfo.outputPath('gateway-account-actions-admin-500px.png'), fullPage: true });
+    await adminPage.screenshot({
+        path: testInfo.outputPath('gateway-account-actions-admin-500px.png'),
+        fullPage: true,
+    });
 
     await adminPage.setViewportSize({ width: 390, height: 844 });
     const adminNarrowGeometry = await measureAccountActions(adminPage);
     expect(adminNarrowGeometry.documentWidth).toBe(adminNarrowGeometry.viewportWidth);
     expect(adminNarrowGeometry.items[0]?.top).toBeCloseTo(adminNarrowGeometry.items[1]?.top ?? 0, 0);
-    expect(adminNarrowGeometry.items[2]?.top).toBeCloseTo(
-        (adminNarrowGeometry.items[1]?.bottom ?? 0) + 16,
-        0
-    );
+    expect(adminNarrowGeometry.items[2]?.top).toBeCloseTo((adminNarrowGeometry.items[1]?.bottom ?? 0) + 16, 0);
     expect(adminNarrowGeometry.items.every(({ scrollWidth, clientWidth }) => scrollWidth <= clientWidth)).toBe(true);
-    await adminPage.screenshot({ path: testInfo.outputPath('gateway-account-actions-admin-390px.png'), fullPage: true });
+    await adminPage.screenshot({
+        path: testInfo.outputPath('gateway-account-actions-admin-390px.png'),
+        fullPage: true,
+    });
 
     await adminPage.setViewportSize({ width: 360, height: 800 });
     const adminSmallGeometry = await measureAccountActions(adminPage);
