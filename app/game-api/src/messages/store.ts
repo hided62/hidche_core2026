@@ -1,8 +1,8 @@
+import { enqueuePrivateMessageWebPush, GamePrisma } from '@sammo-ts/infra';
 import type { MessagePayload, MessageRecordDraft, MessageType } from '@sammo-ts/logic';
 
 import type { DatabaseClient } from '../context.js';
 import { loadCurrentGameTime } from '../services/gameClock.js';
-import { enqueuePrivateMessageWebPush } from '@sammo-ts/infra';
 
 export interface MessageView {
     id: number;
@@ -202,4 +202,27 @@ export const invalidateMessages = async (db: DatabaseClient, ids: number[]): Pro
             ...(gameTime.tick === null ? {} : { validUntilTick: BigInt(gameTime.tick) }),
         },
     });
+};
+
+export const tombstoneMessages = async (db: DatabaseClient, ids: number[]): Promise<void> => {
+    const uniqueIds = Array.from(new Set(ids.filter((id) => Number.isInteger(id) && id > 0)));
+    if (uniqueIds.length === 0) return;
+
+    await db.$executeRaw(
+        GamePrisma.sql`
+            UPDATE message
+            SET message = jsonb_set(
+                jsonb_set(message, '{text}', to_jsonb(${'삭제된 메시지입니다.'}::text), true),
+                '{option}',
+                (
+                    CASE
+                        WHEN jsonb_typeof(message->'option') = 'object' THEN message->'option'
+                        ELSE '{}'::jsonb
+                    END
+                ) || jsonb_build_object('invalid', true),
+                true
+            )
+            WHERE id IN (${GamePrisma.join(uniqueIds)})
+        `
+    );
 };
