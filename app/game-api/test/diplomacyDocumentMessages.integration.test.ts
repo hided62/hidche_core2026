@@ -1,6 +1,6 @@
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 
-import { JosaUtil } from '@sammo-ts/common';
+import { JosaUtil, MAX_SAFE_GAME_TICK } from '@sammo-ts/common';
 import type { GameSessionTokenPayload } from '@sammo-ts/common/auth/gameToken';
 import { createGamePostgresConnector, type GamePrismaClient, type RedisConnector } from '@sammo-ts/infra';
 import {
@@ -15,6 +15,7 @@ import { InMemoryFlushStore } from '../src/auth/flushStore.js';
 import { InMemoryBattleSimTransport } from '../src/battleSim/inMemoryTransport.js';
 import type { GameApiContext } from '../src/context.js';
 import { InMemoryTurnDaemonTransport } from '../src/daemon/inMemoryTransport.js';
+import { fetchMessagesFromMailbox } from '../src/messages/store.js';
 import { appRouter } from '../src/router.js';
 
 const databaseUrl = process.env.INPUT_EVENT_DATABASE_URL;
@@ -251,14 +252,22 @@ integration('diplomacy document message persistence', () => {
 
     const buildRollbackDatabase = (failure: Error): GameApiContext['db'] => {
         const database = db as unknown as GameApiContext['db'];
+        let failNextTransaction = true;
         return new Proxy(database, {
             get(target, property) {
                 if (property === '$transaction') {
-                    return async (callback: (transaction: GameApiContext['db']) => Promise<unknown>) =>
-                        db.$transaction(async (transaction) => {
+                    return async (callback: (transaction: GameApiContext['db']) => Promise<unknown>) => {
+                        if (!failNextTransaction) {
+                            return db.$transaction((transaction) =>
+                                callback(transaction as unknown as GameApiContext['db'])
+                            );
+                        }
+                        failNextTransaction = false;
+                        return db.$transaction(async (transaction) => {
                             await callback(transaction as unknown as GameApiContext['db']);
                             throw failure;
                         });
+                    };
                 }
                 return Reflect.get(target, property, target);
             },
@@ -368,6 +377,51 @@ integration('diplomacy document message persistence', () => {
         });
         expect(await db.message.count({ where: { mailbox: { in: [...fixtureMailboxes] } } })).toBe(4);
         await expectInputEvent(chainedRequestId, 'sendLetter', fixtureUserId);
+    });
+
+    it('keeps permanent messages readable while a profile has no logical clock', async () => {
+        const created = await appRouter
+            .createCaller(buildContext('legacy-clock-fallback', fixtureAuth))
+            .diplomacy.sendLetter({
+                destNationId: foreignNationId,
+                brief: '시계 이관 중 외교문서',
+                detail: '시계 이관 중에도 보여야 합니다.',
+            });
+        const receiverMailbox = MESSAGE_MAILBOX_NATIONAL_BASE + foreignNationId;
+        const receiver = await db.message.findFirstOrThrow({
+            where: { mailbox: receiverMailbox, type: 'diplomacy' },
+            orderBy: { id: 'desc' },
+        });
+        expect(receiver.validUntilTick).toBe(BigInt(MAX_SAFE_GAME_TICK));
+
+        await db.worldState.update({
+            where: { id: fixtureWorldStateId },
+            data: { clockBaseTime: null, clockTick: null, clockWallAnchor: null },
+        });
+        try {
+            const messages = await fetchMessagesFromMailbox({
+                db,
+                mailbox: receiverMailbox,
+                msgType: 'diplomacy',
+                limit: 15,
+                fromSeq: 0,
+            });
+            expect(messages).toContainEqual(
+                expect.objectContaining({
+                    id: receiver.id,
+                    text: expect.stringContaining(`#${created.id}`),
+                })
+            );
+        } finally {
+            await db.worldState.update({
+                where: { id: fixtureWorldStateId },
+                data: {
+                    clockBaseTime,
+                    clockTick: logicalGameTick,
+                    clockWallAnchor: new Date('2026-08-24T00:00:00.000Z'),
+                },
+            });
+        }
     });
 
     it('stores diplomacy and national copies for both approval and rejection responses', async () => {
