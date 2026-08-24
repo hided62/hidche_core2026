@@ -399,4 +399,153 @@ describe('legacy general turn lifecycle', () => {
         }
         expect(harness.world.peekDirtyState().lifecycleEvents[0]?.outcome).toBe('retired');
     });
+
+    it('emits an explicit retirement lifecycle event with the pre-rebirth snapshot', async () => {
+        const harness = await createTurnTestHarness({
+            snapshot: makeSnapshot([
+                makeGeneral({
+                    age: 65,
+                    experience: 1_001,
+                    dedication: 801,
+                    role: {
+                        personality: null,
+                        specialDomestic: null,
+                        specialWar: null,
+                        items: {
+                            horse: 'che_명마_07_백마',
+                            weapon: 'che_무기_07_동추',
+                            book: 'che_서적_07_위료자',
+                            item: 'che_의술_정력견혈산',
+                        },
+                    },
+                    meta: {
+                        killturn: 24,
+                        rank_warnum: 11,
+                        firenum: 9,
+                        inherit_earned: 4_321,
+                        inherit_lived_month: 10,
+                        inherit_active_action: 4,
+                        inheritRandomUnique: 1,
+                        inherit_spent_dyn: 3_000,
+                        dex1: 101,
+                    },
+                    inheritancePoints: { previous: 50 },
+                }),
+            ]),
+            state: makeState(),
+            schedule,
+            map,
+        });
+        harness.reservedTurnStore.getGeneralTurns(1)[0] = { action: 'che_은퇴', args: {} };
+        harness.reservedTurnStore.getGeneralTurns(1)[1] = { action: 'che_은퇴', args: {} };
+
+        await harness.runOneTick();
+        await harness.runOneTick();
+
+        const current = harness.world.getGeneralById(1)!;
+        const lifecycle = harness.world.peekDirtyState().lifecycleEvents.find((event) => event.outcome === 'retired');
+        expect(lifecycle).toMatchObject({
+            outcome: 'retired',
+            isUnitedAtEvent: 0,
+            before: {
+                age: 65,
+                experience: 1_001,
+                dedication: 801,
+                meta: {
+                    rank_warnum: 11,
+                    firenum: 9,
+                    inherit_earned: 4_321,
+                    inherit_lived_month: 12,
+                    inherit_active_action: 4,
+                    inheritRandomUnique: 1,
+                    inherit_spent_dyn: 3_000,
+                    dex1: 101,
+                },
+            },
+            after: {
+                age: 20,
+                meta: { inherit_lived_month: 0, inherit_active_action: 0 },
+            },
+        });
+        expect(current).toMatchObject({
+            age: 20,
+            experience: 501,
+            dedication: 401,
+            inheritancePoints: { previous: 3_050 },
+            meta: {
+                rank_warnum: 0,
+                firenum: 0,
+                inherit_earned: 0,
+                inherit_lived_month: 0,
+                inherit_active_action: 0,
+                inherit_spent_dyn: -3_000,
+                dex1: 51,
+            },
+        });
+        expect(current.meta).not.toHaveProperty('inheritRandomUnique');
+        expect(harness.world.peekDirtyState().inheritancePointAdjustments).toContainEqual({
+            userId: 'user-1',
+            key: 'previous',
+            amount: 3_000,
+            phase: 'after_lifecycle',
+        });
+        expect(harness.world.peekDirtyState().pendingInheritanceLogs).toContainEqual({
+            userId: 'user-1',
+            year: 200,
+            month: 2,
+            text: '유니크를 얻을 공간이 없어 3000 포인트 반환',
+            phase: 'after_lifecycle',
+        });
+    });
+
+    it('refunds a failed pending lottery before automatic retirement and resets the spent rank to zero', async () => {
+        const harness = await createTurnTestHarness({
+            snapshot: makeSnapshot([
+                makeGeneral({
+                    age: 80,
+                    crew: 100,
+                    role: {
+                        personality: null,
+                        specialDomestic: null,
+                        specialWar: null,
+                        items: {
+                            horse: 'che_명마_07_백마',
+                            weapon: 'che_무기_07_동추',
+                            book: 'che_서적_07_위료자',
+                            item: 'che_의술_정력견혈산',
+                        },
+                    },
+                    meta: {
+                        killturn: 24,
+                        inheritRandomUnique: true,
+                        inherit_spent_dyn: 3_000,
+                        inherit_lived_month: 10,
+                    },
+                    inheritancePoints: { previous: 70 },
+                }),
+            ]),
+            state: makeState(),
+            schedule,
+            map,
+        });
+        harness.reservedTurnStore.getGeneralTurns(1)[0] = { action: 'che_훈련', args: {} };
+
+        await harness.runOneTick();
+
+        const current = harness.world.getGeneralById(1)!;
+        expect(current).toMatchObject({
+            age: 20,
+            inheritancePoints: { previous: 3_070 },
+            meta: { inherit_spent_dyn: 0, inherit_lived_month: 0 },
+        });
+        expect(current.meta).not.toHaveProperty('inheritRandomUnique');
+        expect(harness.world.peekDirtyState().inheritancePointAdjustments).toContainEqual({
+            userId: 'user-1',
+            key: 'previous',
+            amount: 3_000,
+        });
+        const lifecycle = harness.world.peekDirtyState().lifecycleEvents.find((event) => event.outcome === 'retired');
+        expect(lifecycle?.before.meta).toMatchObject({ inherit_spent_dyn: 0 });
+        expect(lifecycle?.before.meta).not.toHaveProperty('inheritRandomUnique');
+    });
 });

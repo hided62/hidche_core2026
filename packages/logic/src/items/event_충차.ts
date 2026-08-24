@@ -1,5 +1,5 @@
 import { TriggerPriority } from '@sammo-ts/logic/triggers/core.js';
-import { consumeEquippedItemCharge, getEquippedItemInstance } from './inventory.js';
+import { getEquippedItemInstance } from './inventory.js';
 import { BaseWarUnitTrigger, WarTriggerCaller } from '@sammo-ts/logic/war/triggers.js';
 import { WarUnitCity, WarUnitGeneral, type WarUnit } from '@sammo-ts/logic/war/units.js';
 import type { ItemModule } from './types.js';
@@ -17,6 +17,15 @@ class EventRamConsumptionTrigger extends BaseWarUnitTrigger {
         _selfEnv: Record<string, unknown>,
         _opposeEnv: Record<string, unknown>
     ): boolean {
+        if (self.hasActivatedSkillOnLog('충차공격') > 0 && self.getPhase() === self.getMaxPhase() - 1) {
+            if (self instanceof WarUnitGeneral) {
+                const equipped = getEquippedItemInstance(self.getGeneral(), 'item');
+                if (equipped?.itemKey === ITEM_KEY && (equipped.state.charges ?? 0) <= 0) {
+                    this.processConsumableItem();
+                }
+            }
+            return true;
+        }
         if (!(self instanceof WarUnitGeneral) || !(oppose instanceof WarUnitCity)) {
             return true;
         }
@@ -28,9 +37,15 @@ class EventRamConsumptionTrigger extends BaseWarUnitTrigger {
             return true;
         }
 
-        self.activateSkill('충차공격', '아이템사용');
         self.getLogger().pushGeneralBattleDetailLog('<C>충차</>로 성벽을 공격합니다.');
-        consumeEquippedItemCharge(general, 'item', ITEM_KEY, 2);
+        self.activateSkill('충차공격');
+        const equipped = getEquippedItemInstance(general, 'item');
+        if (equipped?.itemKey === ITEM_KEY) {
+            const remaining = equipped.state.charges ?? 2;
+            // Ref decrements the purchase-time remain값 at first city contact,
+            // but only deletes the item in the last battle phase.
+            equipped.state.charges = remaining - 1;
+        }
         return true;
     }
 }

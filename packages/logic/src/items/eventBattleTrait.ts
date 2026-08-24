@@ -1,4 +1,7 @@
 import type { TraitModule } from '@sammo-ts/logic/actionModules/traits/types.js';
+import { BaseWarUnitTrigger, WarTriggerCaller } from '@sammo-ts/logic/war/triggers.js';
+import { che_의술발동, che_의술시도 } from '@sammo-ts/logic/war/triggers/che_의술.js';
+import { che_저격발동, che_저격시도 } from '@sammo-ts/logic/war/triggers/che_저격.js';
 import type { ItemModule } from './types.js';
 
 export const createEventBattleTraitItemModule = (
@@ -45,7 +48,25 @@ export const createEventBattleTraitItemModule = (
         itemModule.getBattleInitTriggerList = traitModule.getBattleInitTriggerList;
     }
     if (traitModule.getBattlePhaseTriggerList) {
-        itemModule.getBattlePhaseTriggerList = traitModule.getBattlePhaseTriggerList;
+        if (traitModule.key === 'che_저격') {
+            itemModule.getBattlePhaseTriggerList = (context) =>
+                context.unit
+                    ? new WarTriggerCaller(
+                          new che_저격시도(context.unit, BaseWarUnitTrigger.TYPE_ITEM, 0.5, 20, 40),
+                          new che_저격발동(context.unit, BaseWarUnitTrigger.TYPE_ITEM)
+                      )
+                    : null;
+        } else if (traitModule.key === 'che_의술') {
+            itemModule.getBattlePhaseTriggerList = (context) =>
+                context.unit
+                    ? new WarTriggerCaller(
+                          new che_의술시도(context.unit, BaseWarUnitTrigger.TYPE_ITEM),
+                          new che_의술발동(context.unit)
+                      )
+                    : null;
+        } else {
+            itemModule.getBattlePhaseTriggerList = traitModule.getBattlePhaseTriggerList;
+        }
     }
     if (traitModule.getWarPowerMultiplier) {
         itemModule.getWarPowerMultiplier =

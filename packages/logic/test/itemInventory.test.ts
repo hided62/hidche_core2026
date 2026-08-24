@@ -101,4 +101,13 @@ describe('GeneralItemInventory', () => {
             values: { source: 'shop' },
         });
     });
+
+    it('round-trips the negative remain value produced by the legacy ram lifecycle', () => {
+        const general = makeGeneral();
+        equipNewItem(general, 'item', 'event_충차', { charges: -1 });
+
+        const parsed = parseItemInventory(serializeItemInventory(general.itemInventory!), general.role.items);
+
+        expect(getEquippedItemInstance({ ...general, itemInventory: parsed }, 'item')?.state.charges).toBe(-1);
+    });
 });

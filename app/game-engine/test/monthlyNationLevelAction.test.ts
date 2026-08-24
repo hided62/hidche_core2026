@@ -214,7 +214,7 @@ describe('UpdateNationLevel monthly action', () => {
         expect(world.getGeneralById(1)?.role.items.horse).toBe(uniqueHorse.key);
         expect(world.getGeneralById(2)?.role.items.horse).toBeNull();
         expect(world.peekDirtyState().inheritancePointAdjustments).toEqual([
-            { userId: 'user-1', key: 'unifier', amount: 500 },
+            { userId: 'user-1', key: 'unifier', amount: 500, phase: 'after_lifecycle' },
         ]);
         expect(world.getGeneralById(1)?.inheritancePoints?.unifier).toBe(500);
         expect(world.peekDirtyState().logs).toEqual(
@@ -291,7 +291,7 @@ describe('UpdateNationLevel monthly action', () => {
             meta: { marker: 1, can_국기변경: 1, can_국호변경: 1 },
         });
         expect(world.peekDirtyState().inheritancePointAdjustments).toEqual([
-            { userId: 'user-1', key: 'unifier', amount: 250 },
+            { userId: 'user-1', key: 'unifier', amount: 250, phase: 'after_lifecycle' },
         ]);
         expect(world.getGeneralById(1)?.inheritancePoints?.unifier).toBe(250);
     });
@@ -306,7 +306,7 @@ describe('UpdateNationLevel monthly action', () => {
         expect(world.getGeneralById(1)?.role.items.horse).toBeNull();
         expect(world.peekDirtyState().logs.some((entry) => entry.text.includes('작위보상'))).toBe(false);
         expect(world.peekDirtyState().inheritancePointAdjustments).toEqual([
-            { userId: 'user-1', key: 'unifier', amount: 250 },
+            { userId: 'user-1', key: 'unifier', amount: 250, phase: 'after_lifecycle' },
         ]);
         expect(world.getGeneralById(1)?.inheritancePoints?.unifier).toBe(250);
     });

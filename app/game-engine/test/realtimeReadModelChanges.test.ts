@@ -84,6 +84,7 @@ describe('durable read-model change journal mapping', () => {
             lifecycleEvents: [],
             pendingNeutralAuctions: [],
             inheritancePointAdjustments: [],
+            pendingInheritanceLogs: [],
             pendingNationBettingOpens: [],
             pendingNationBettingFinishes: [],
             pendingYearbookSnapshots: [],

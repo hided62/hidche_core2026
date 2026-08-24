@@ -1,3 +1,5 @@
+import { readCentennialRecordableDexterity, type CentennialDexKey } from '../scenario/centennialAllStar.js';
+
 export const LEGACY_DEX_INHERITANCE_LIMIT = 1_275_975;
 
 export const ALL_MERGED_INHERITANCE_KEYS = [
@@ -38,9 +40,6 @@ export const REBIRTH_INHERITANCE_COEFFICIENTS: Readonly<Record<MergedInheritance
     betting: 1,
 };
 
-const asRecord = (value: unknown): Record<string, unknown> =>
-    typeof value === 'object' && value !== null && !Array.isArray(value) ? (value as Record<string, unknown>) : {};
-
 const readNumber = (source: Record<string, unknown>, ...keys: string[]): number => {
     for (const key of keys) {
         const value = source[key];
@@ -59,17 +58,10 @@ const readStoredPoint = (
     storedOverride?: number
 ): number => storedOverride ?? general.inheritancePoints?.[key] ?? 0;
 
-const readRecordableDexterity = (general: InheritancePointGeneral, key: string): number => {
-    const value = readNumber(general.meta, key);
-    const allStar = asRecord(general.meta.event100_allstar);
-    const granted = readNumber(asRecord(allStar.granted), key);
-    return Math.max(0, value - Math.min(Math.max(0, value), Math.max(0, granted)));
-};
-
 export const computeDexInheritancePoint = (general: InheritancePointGeneral): number => {
     let totalDexterity = 0;
     for (let index = 1; index <= 5; index += 1) {
-        let dexterity = readRecordableDexterity(general, `dex${index}`);
+        let dexterity = readCentennialRecordableDexterity(general.meta, `dex${index}` as CentennialDexKey);
         if (dexterity > LEGACY_DEX_INHERITANCE_LIMIT) {
             totalDexterity += (dexterity - LEGACY_DEX_INHERITANCE_LIMIT) / 3;
             dexterity = LEGACY_DEX_INHERITANCE_LIMIT;

@@ -44,7 +44,7 @@ import type { InMemoryTurnWorld, TurnWorldChanges } from './inMemoryWorld.js';
 import type { InMemoryReservedTurnStore, ReservedTurnChanges } from './reservedTurnStore.js';
 import { buildDiplomacyMeta } from '@sammo-ts/logic';
 import { ensureItemInventory, withSerializedItemInventory } from '@sammo-ts/logic/items/index.js';
-import { persistGeneralLifecycleEvents } from './generalTurnLifecyclePersistence.js';
+import { persistGeneralLifecycleEvents, type GeneralLifecycleArchiveLog } from './generalTurnLifecyclePersistence.js';
 import type { DatabaseTurnDaemonLease } from '../lifecycle/databaseTurnDaemonLease.js';
 import { calculateNationBettingRewards } from '../betting/nationBettingSettlement.js';
 import type { NationBettingCandidate, PendingNationBettingFinish, PendingNationBettingOpen } from './types.js';
@@ -1094,6 +1094,7 @@ export const createDatabaseTurnHooks = async (
             lifecycleEvents,
             pendingNeutralAuctions,
             inheritancePointAdjustments,
+            pendingInheritanceLogs,
             pendingNationBettingOpens,
             pendingNationBettingFinishes,
             pendingYearbookSnapshots,
@@ -1137,6 +1138,20 @@ export const createDatabaseTurnHooks = async (
                         select: { id: true },
                     })
                 )?.id ?? 0;
+            const logContext = {
+                year: state.currentYear,
+                month: state.currentMonth,
+                at: state.lastTurnTime,
+            };
+            const pendingLogRows = logs
+                .map((entry) => buildLogCreateData(entry, logContext))
+                .filter((entry): entry is TurnEngineLogEntryCreateManyInput => Boolean(entry));
+            const pendingLifecycleArchiveLogs: GeneralLifecycleArchiveLog[] = pendingLogRows.flatMap((entry) =>
+                entry.generalId !== null &&
+                (entry.category === LogCategory.HISTORY || entry.category === LogCategory.BATTLE_BRIEF)
+                    ? [{ generalId: entry.generalId, category: entry.category, text: entry.text }]
+                    : []
+            );
             // Lock and validate the fencing row in the same transaction as every
             // world mutation. A stale daemon can finish calculating, but it can
             // never commit after another owner has advanced the epoch.
@@ -1257,15 +1272,24 @@ export const createDatabaseTurnHooks = async (
             const meta = asRecord(state.meta);
             const serverId =
                 typeof meta.serverId === 'string' && meta.serverId.trim() ? meta.serverId.trim() : 'default';
-            if (inheritancePointAdjustments.length > 0) {
+            const persistInheritancePointAdjustments = async (
+                entries: typeof inheritancePointAdjustments
+            ): Promise<void> => {
+                if (entries.length === 0) {
+                    return;
+                }
                 const grouped = new Map<string, { userId: string; key: string; amount: number }>();
-                for (const entry of inheritancePointAdjustments) {
+                for (const entry of entries) {
                     const groupKey = `${entry.userId}\u0000${entry.key}`;
                     const current = grouped.get(groupKey);
                     if (current) {
                         current.amount += entry.amount;
                     } else {
-                        grouped.set(groupKey, { ...entry });
+                        grouped.set(groupKey, {
+                            userId: entry.userId,
+                            key: entry.key,
+                            amount: entry.amount,
+                        });
                     }
                 }
                 for (const entry of grouped.values()) {
@@ -1275,14 +1299,41 @@ export const createDatabaseTurnHooks = async (
                         create: { userId: entry.userId, key: entry.key, value: entry.amount },
                     });
                 }
-            }
+            };
+            const persistInheritanceLogs = async (entries: typeof pendingInheritanceLogs): Promise<void> => {
+                if (entries.length === 0) {
+                    return;
+                }
+                await prisma.inheritanceLog.createMany({
+                    data: entries.map((entry) => ({
+                        userId: entry.userId,
+                        year: entry.year,
+                        month: entry.month,
+                        text: entry.text,
+                    })),
+                });
+            };
+            const beforeLifecycleAdjustments = inheritancePointAdjustments.filter(
+                (entry) => entry.phase !== 'after_lifecycle'
+            );
+            const afterLifecycleAdjustments = inheritancePointAdjustments.filter(
+                (entry) => entry.phase === 'after_lifecycle'
+            );
+            const beforeLifecycleLogs = pendingInheritanceLogs.filter((entry) => entry.phase !== 'after_lifecycle');
+            const afterLifecycleLogs = pendingInheritanceLogs.filter((entry) => entry.phase === 'after_lifecycle');
+
+            await persistInheritancePointAdjustments(beforeLifecycleAdjustments);
+            await persistInheritanceLogs(beforeLifecycleLogs);
             await persistGeneralLifecycleEvents(
                 prisma,
                 lifecycleEvents,
                 meta,
                 asRecord(world.getScenarioConfig().const),
-                world.gameTickToDate(state.clockTick ?? state.lastTurnTick ?? 0)
+                world.gameTickToDate(state.clockTick ?? state.lastTurnTick ?? 0),
+                pendingLifecycleArchiveLogs
             );
+            await persistInheritancePointAdjustments(afterLifecycleAdjustments);
+            await persistInheritanceLogs(afterLifecycleLogs);
 
             if (accessScoreResetGeneralIds.length > 0) {
                 await prisma.generalAccessLog.updateMany({
@@ -1611,20 +1662,10 @@ export const createDatabaseTurnHooks = async (
                 await upsertRankRows(prisma, rankRows);
             }
 
-            if (logs.length > 0) {
-                const logContext = {
-                    year: state.currentYear,
-                    month: state.currentMonth,
-                    at: state.lastTurnTime,
-                };
-                const payload = logs
-                    .map((entry) => buildLogCreateData(entry, logContext))
-                    .filter((entry): entry is TurnEngineLogEntryCreateManyInput => Boolean(entry));
-                if (payload.length > 0) {
-                    await prisma.logEntry.createMany({
-                        data: payload,
-                    });
-                }
+            if (pendingLogRows.length > 0) {
+                await prisma.logEntry.createMany({
+                    data: pendingLogRows,
+                });
             }
             for (const snapshot of pendingYearbookSnapshots) {
                 await persistYearbookSnapshot(prisma, snapshot);

@@ -20,7 +20,7 @@ const STAT_KEYS = ['leadership', 'strength', 'intel'] as const;
 const DEX_KEYS = ['dex1', 'dex2', 'dex3', 'dex4', 'dex5'] as const;
 
 type CentennialStatKey = (typeof STAT_KEYS)[number];
-type CentennialDexKey = (typeof DEX_KEYS)[number];
+export type CentennialDexKey = (typeof DEX_KEYS)[number];
 
 export interface CentennialAllStarTarget {
     uniqueName: string;
@@ -670,3 +670,14 @@ export const reconcileCentennialDexConversion = (
 
 export const centennialRecordableValue = (current: number, granted: number): number =>
     Math.max(0, current - Math.max(0, granted));
+
+/**
+ * Ref CentennialAllStarGrowthService::recordableRawValue. Event-provided
+ * mastery is useful during the season, but must not enter permanent ranking,
+ * Hall of Fame, or inheritance records.
+ */
+export const readCentennialRecordableDexterity = (meta: Record<string, unknown>, key: CentennialDexKey): number => {
+    const current = asNumber(meta[key], 0);
+    const granted = asNumber(asRecord(asRecord(meta[CENTENNIAL_ALL_STAR_AUX_KEY]).granted)[key], 0);
+    return centennialRecordableValue(current, granted);
+};

@@ -22,6 +22,9 @@ const ACTION_NAME = '은퇴';
 const ACTION_KEY = 'che_은퇴';
 
 const REQ_AGE = 60;
+const hasPendingRandomUnique = (value: unknown): boolean =>
+    value === true || value === 1 || (typeof value === 'string' && (value === '1' || value.toLowerCase() === 'true'));
+
 const reqGeneralValue = (): Constraint => ({
     name: 'reqGeneralValue',
     requires: (ctx) => [{ kind: 'general', id: ctx.actorId }],
@@ -43,18 +46,6 @@ export class ActionResolver<
         const general = context.general;
 
         const effects: GeneralActionEffect<TriggerState>[] = [];
-        const nextMeta = { ...general.meta };
-        for (const key of ['dex1', 'dex2', 'dex3', 'dex4', 'dex5'] as const) {
-            const value = typeof nextMeta[key] === 'number' ? nextMeta[key] : 0;
-            nextMeta[key] = Math.round(value * 0.5);
-        }
-        delete nextMeta.specAge;
-        delete nextMeta.specAge2;
-        nextMeta.specage = 0;
-        nextMeta.specage2 = 0;
-        for (const type of LEGACY_RANK_DATA_TYPES) {
-            nextMeta[rankDataMetaKey(type)] = 0;
-        }
 
         const josaYi = JosaUtil.pick(general.name, '이');
         context.addLog(`<Y>${general.name}</>${josaYi} <R>은퇴</>하고 그 자손이 유지를 이어받았습니다.`, {
@@ -75,7 +66,32 @@ export class ActionResolver<
             format: LogFormat.MONTH,
         });
 
-        tryApplyUniqueLottery(context, { acquireType: '아이템', reason: ACTION_NAME });
+        const hadPendingRandomUnique = hasPendingRandomUnique(general.meta.inheritRandomUnique);
+        const acquiredUnique = tryApplyUniqueLottery(context, { acquireType: '아이템', reason: ACTION_NAME });
+        const refundedPendingRandomUnique =
+            hadPendingRandomUnique && !acquiredUnique && !hasPendingRandomUnique(general.meta.inheritRandomUnique);
+        const postLotterySpentDynamic = general.meta.inherit_spent_dyn;
+
+        // The lottery can consume a pending inheritance reservation and mutate meta.
+        // Build the reborn projection afterwards so the consumed flag is not restored
+        // by the action patch while still applying the retirement resets atomically.
+        const nextMeta = { ...general.meta };
+        for (const key of ['dex1', 'dex2', 'dex3', 'dex4', 'dex5'] as const) {
+            const value = typeof nextMeta[key] === 'number' ? nextMeta[key] : 0;
+            nextMeta[key] = Math.round(value * 0.5);
+        }
+        delete nextMeta.specAge;
+        delete nextMeta.specAge2;
+        nextMeta.specage = 0;
+        nextMeta.specage2 = 0;
+        nextMeta.inherit_lived_month = 0;
+        nextMeta.inherit_active_action = 0;
+        for (const type of LEGACY_RANK_DATA_TYPES) {
+            nextMeta[rankDataMetaKey(type)] = 0;
+        }
+        if (refundedPendingRandomUnique && typeof postLotterySpentDynamic === 'number') {
+            nextMeta.inherit_spent_dyn = postLotterySpentDynamic;
+        }
 
         effects.push(
             createGeneralPatchEffect(

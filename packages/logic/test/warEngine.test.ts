@@ -167,6 +167,93 @@ const buildGeneral = (strength: number): General => ({
 });
 
 describe('war triggers', () => {
+    it('applies the legacy talisman immunity to self and snipe restriction to the opponent', async () => {
+        const attacker = buildGeneral(80);
+        attacker.role.items.item = 'che_부적_태현청생부';
+        const defender = { ...buildGeneral(80), id: 2, name: 'Defender' };
+        const itemModules = createItemActionModules(
+            createItemModuleRegistry(await loadItemModules(['che_부적_태현청생부']))
+        ).war;
+        const events: Array<{
+            event: string;
+            attacker: { activatedSkills: Record<string, number> };
+            defender: { activatedSkills: Record<string, number> } | null;
+        }> = [];
+
+        resolveWarBattle({
+            rng: new RandUtil(new ConstantRNG(0)),
+            unitSet: buildUnitSet(),
+            config: buildConfig(),
+            time: { year: 200, month: 1, startYear: 180 },
+            attacker: {
+                general: attacker,
+                city: buildCity(),
+                nation: buildNation(),
+                modules: itemModules,
+            },
+            defenders: [
+                {
+                    general: defender,
+                    city: buildCity(),
+                    nation: buildNation(),
+                    modules: itemModules,
+                },
+            ],
+            defenderCity: buildCity(),
+            defenderNation: buildNation(),
+            trace: (event) => events.push(event),
+        });
+
+        const initialized = events.find((event) => event.event === 'opponent_initialized');
+        expect(initialized?.attacker.activatedSkills).toMatchObject({ 부상무효: 1 });
+        expect(initialized?.attacker.activatedSkills).not.toHaveProperty('저격불가');
+        expect(initialized?.defender?.activatedSkills).toMatchObject({ 저격불가: 1 });
+        expect(initialized?.defender?.activatedSkills).not.toHaveProperty('부상무효');
+    });
+
+    it('applies the legacy suppression restrictions to the opponent', async () => {
+        const attacker = buildGeneral(80);
+        attacker.role.items.item = 'che_진압_박혁론';
+        const defender = { ...buildGeneral(80), id: 2, name: 'Defender' };
+        const itemModules = createItemActionModules(
+            createItemModuleRegistry(await loadItemModules(['che_진압_박혁론']))
+        ).war;
+        const events: Array<{
+            event: string;
+            attacker: { activatedSkills: Record<string, number> };
+            defender: { activatedSkills: Record<string, number> } | null;
+        }> = [];
+
+        resolveWarBattle({
+            rng: new RandUtil(new ConstantRNG(0)),
+            unitSet: buildUnitSet(),
+            config: buildConfig(),
+            time: { year: 200, month: 1, startYear: 180 },
+            attacker: {
+                general: attacker,
+                city: buildCity(),
+                nation: buildNation(),
+                modules: itemModules,
+            },
+            defenders: [
+                {
+                    general: defender,
+                    city: buildCity(),
+                    nation: buildNation(),
+                    modules: itemModules,
+                },
+            ],
+            defenderCity: buildCity(),
+            defenderNation: buildNation(),
+            trace: (event) => events.push(event),
+        });
+
+        const phase = events.find((event) => event.event === 'phase_triggered');
+        expect(phase?.attacker.activatedSkills).not.toHaveProperty('반계불가');
+        expect(phase?.attacker.activatedSkills).not.toHaveProperty('격노불가');
+        expect(phase?.defender?.activatedSkills).toMatchObject({ 반계불가: 1, 격노불가: 1 });
+    });
+
     it('passes battle time and maximum tech level to year-scaling stat items', async () => {
         const general = buildGeneral(80);
         const [leadershipWine] = await loadItemModules(['che_능력치_통솔_보령압주']);
@@ -604,8 +691,14 @@ describe('resolveWarBattle', () => {
         for (const expectedCharges of [1, null] as const) {
             general.crew = 5000;
             general.rice = 10000;
-            const defenderCity = { ...buildCity(), wall: 3000, wallMax: 3000 };
-            resolveWarBattle({
+            const defenderCity = {
+                ...buildCity(),
+                defence: 100_000,
+                defenceMax: 100_000,
+                wall: 3000,
+                wallMax: 3000,
+            };
+            const outcome = resolveWarBattle({
                 rng: new RandUtil(new ConstantRNG(0)),
                 unitSet: buildUnitSet(),
                 config: buildConfig(),
@@ -625,11 +718,49 @@ describe('resolveWarBattle', () => {
             if (expectedCharges === null) {
                 expect(equipped).toBeNull();
                 expect(general.role.items.item).toBeNull();
+                expect(outcome.metrics?.attackerActivatedSkills).toMatchObject({
+                    충차공격: 1,
+                    아이템사용: 1,
+                    충차: 1,
+                    아이템소모: 1,
+                });
+                expect(outcome.logs.some((entry) => entry.text === '<C>충차</>를 사용!')).toBe(true);
             } else {
                 expect(equipped?.state.charges).toBe(expectedCharges);
                 expect(general.role.items.item).toBe('event_충차');
+                expect(outcome.metrics?.attackerActivatedSkills).toMatchObject({ 충차공격: 1 });
+                expect(outcome.metrics?.attackerActivatedSkills).not.toHaveProperty('아이템사용');
             }
         }
+    });
+
+    it('preserves a negative legacy ram remain value when combat ends before the final phase', async () => {
+        const general = { ...buildGeneral(100), crew: 5000, rice: 10000 };
+        equipNewItem(general, 'item', 'event_충차', { charges: 0 });
+        const itemModules = createItemActionModules(
+            createItemModuleRegistry(await loadItemModules(['event_충차']))
+        ).war;
+
+        const outcome = resolveWarBattle({
+            rng: new RandUtil(new ConstantRNG(0)),
+            unitSet: buildUnitSet(),
+            config: buildConfig(),
+            time: { year: 200, month: 1, startYear: 180 },
+            attacker: {
+                general,
+                city: buildCity(),
+                nation: buildNation(),
+                modules: itemModules,
+            },
+            defenders: [],
+            defenderCity: { ...buildCity(), defence: 1, defenceMax: 1 },
+            defenderNation: buildNation(),
+        });
+
+        expect(outcome.conquered).toBe(true);
+        expect(getEquippedItemInstance(general, 'item')?.state.charges).toBe(-1);
+        expect(general.role.items.item).toBe('event_충차');
+        expect(outcome.metrics?.attackerActivatedSkills).not.toHaveProperty('아이템사용');
     });
 
     it('removes a one-use battle item through the canonical inventory', async () => {
@@ -639,7 +770,7 @@ describe('resolveWarBattle', () => {
             createItemModuleRegistry(await loadItemModules(['che_저격_수극']))
         ).war;
 
-        resolveWarBattle({
+        const outcome = resolveWarBattle({
             rng: new RandUtil(new ConstantRNG(0)),
             unitSet: buildUnitSet(),
             config: buildConfig(),
@@ -657,6 +788,42 @@ describe('resolveWarBattle', () => {
 
         expect(getEquippedItemInstance(general, 'item')).toBeNull();
         expect(general.role.items.item).toBeNull();
+        expect(outcome.metrics?.attackerActivatedSkills).toMatchObject({
+            아이템사용: 1,
+            '수극(저격)': 1,
+            아이템소모: 1,
+        });
+        expect(outcome.logs.some((entry) => entry.text === '<C>수극(저격)</>을 사용!')).toBe(true);
+    });
+
+    it("keeps Ref's '-' item-name activation when a weapon trigger fires without an item-slot item", async () => {
+        const general = { ...buildGeneral(100), crew: 5000, rice: 10000 };
+        equipNewItem(general, 'weapon', 'che_무기_07_맥궁');
+        const itemModules = createItemActionModules(
+            createItemModuleRegistry(await loadItemModules(['che_무기_07_맥궁']))
+        ).war;
+
+        const outcome = resolveWarBattle({
+            rng: new RandUtil(new ConstantRNG(0)),
+            unitSet: buildUnitSet(),
+            config: buildConfig(),
+            time: { year: 200, month: 1, startYear: 180 },
+            attacker: {
+                general,
+                city: buildCity(),
+                nation: buildNation(),
+                modules: itemModules,
+            },
+            defenders: [],
+            defenderCity: buildCity(),
+            defenderNation: buildNation(),
+        });
+
+        expect(outcome.metrics?.attackerActivatedSkills).toMatchObject({
+            아이템사용: 1,
+            '-': 1,
+        });
+        expect(general.role.items.weapon).toBe('che_무기_07_맥궁');
     });
 
     it('handles supply rout when defender nation has no rice', () => {

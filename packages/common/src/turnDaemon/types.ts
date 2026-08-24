@@ -79,6 +79,33 @@ export interface TurnDaemonSelectPoolReservation {
     candidates: TurnDaemonSelectPoolCandidate[];
 }
 
+export type TurnDaemonInheritanceAction =
+    | {
+          action: 'buyHiddenBuff';
+          buffType:
+              | 'warAvoidRatio'
+              | 'warCriticalRatio'
+              | 'warMagicTrialProb'
+              | 'domesticSuccessProb'
+              | 'domesticFailProb'
+              | 'warAvoidRatioOppose'
+              | 'warCriticalRatioOppose'
+              | 'warMagicTrialProbOppose';
+          level: number;
+      }
+    | { action: 'setNextSpecialWar'; specialKey: string }
+    | { action: 'resetSpecialWar' }
+    | { action: 'resetTurnTime' }
+    | {
+          action: 'resetStat';
+          leadership: number;
+          strength: number;
+          intel: number;
+          inheritBonusStat?: [number, number, number];
+      }
+    | { action: 'buyRandomUnique' }
+    | { action: 'checkOwner'; targetGeneralId: number };
+
 export type TurnDaemonCommand =
     | {
           type: 'run';
@@ -265,6 +292,12 @@ export type TurnDaemonCommand =
               };
               specialWar?: string | null;
           };
+      }
+    | {
+          type: 'inheritanceAction';
+          requestId?: string;
+          userId: string;
+          input: TurnDaemonInheritanceAction;
       }
     | {
           type: 'adjustGeneralIcon';
@@ -633,6 +666,25 @@ export type TurnDaemonCommandResult =
           type: 'patchGeneral';
           ok: false;
           generalId: number;
+          reason: string;
+      }
+    | {
+          type: 'inheritanceAction';
+          ok: true;
+          action: TurnDaemonInheritanceAction['action'];
+          generalId: number;
+          remainPoint: number;
+          nextTurnTimeBase?: number;
+          nextTurnTimeLabel?: string;
+          stats?: { leadership: number; strength: number; intel: number };
+          ownerName?: string;
+          targetName?: string;
+      }
+    | {
+          type: 'inheritanceAction';
+          ok: false;
+          action: TurnDaemonInheritanceAction['action'];
+          code: 'BAD_REQUEST' | 'FORBIDDEN' | 'PRECONDITION_FAILED' | 'INTERNAL_SERVER_ERROR';
           reason: string;
       }
     | {

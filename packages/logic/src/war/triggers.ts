@@ -1,9 +1,10 @@
-import type { RandUtil } from '@sammo-ts/common';
+import { JosaUtil, type RandUtil } from '@sammo-ts/common';
 
 import type { General } from '@sammo-ts/logic/domain/entities.js';
+import { getLegacyBattleItemIdentity, removeEquippedItem } from '@sammo-ts/logic/items/inventory.js';
+import { LogFormat } from '@sammo-ts/logic/logging/types.js';
 import { TriggerCaller, type Trigger } from '@sammo-ts/logic/triggers/core.js';
 import type { WarUnit } from './units.js';
-import { removeEquippedItem } from '@sammo-ts/logic/items/inventory.js';
 
 export interface WarTriggerContext {
     rng: RandUtil;
@@ -97,12 +98,6 @@ export abstract class BaseWarUnitTrigger implements WarTrigger {
             return false;
         }
         this.unit.activateSkill('아이템사용');
-        if (this.raiseType !== BaseWarUnitTrigger.TYPE_CONSUMABLE_ITEM) {
-            return false;
-        }
-        if (this.unit.hasActivatedSkill('아이템소모')) {
-            return false;
-        }
         const unit = this.unit as WarUnit & {
             getGeneral?: () => General;
         };
@@ -110,7 +105,18 @@ export abstract class BaseWarUnitTrigger implements WarTrigger {
         if (!general) {
             return false;
         }
+        const item = getLegacyBattleItemIdentity(general);
+        this.unit.activateSkill(item.name);
+        if (this.raiseType !== BaseWarUnitTrigger.TYPE_CONSUMABLE_ITEM) {
+            return false;
+        }
+        if (this.unit.hasActivatedSkill('아이템소모')) {
+            return false;
+        }
         this.unit.activateSkill('아이템소모');
-        return removeEquippedItem(general, 'item') !== null;
+        const josaUl = JosaUtil.pick(item.rawName, '을');
+        this.unit.getLogger().pushGeneralActionLog(`<C>${item.name}</>${josaUl} 사용!`, LogFormat.PLAIN);
+        removeEquippedItem(general, 'item');
+        return true;
     }
 }

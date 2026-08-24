@@ -5,6 +5,10 @@ import { ITEM_KEYS, ItemLoader, loadItemModules } from '@sammo-ts/logic/items/in
 import type { ItemModule } from '@sammo-ts/logic/items/types.js';
 import { buildLegacyDefaultUniqueItemPool } from '@sammo-ts/logic/rewards/legacyUniqueItemPool.js';
 import { resolveUniqueConfig } from '@sammo-ts/logic/rewards/uniqueLottery.js';
+import {
+    readCentennialRecordableDexterity,
+    type CentennialDexKey,
+} from '@sammo-ts/logic/scenario/centennialAllStar.js';
 
 import { accessAuthedInputProcedure, accessInputProcedure, procedure, router } from '../../trpc.js';
 import {
@@ -182,11 +186,17 @@ export const rankingRouter = router({
                     return (r.killcrew_person ?? 0) / Math.max(1, r.deathcrew_person ?? 0);
                 },
             ],
-            ['보 병 숙 련 도', 'int', (g) => readMetaNumber(asRecord(g.meta).dex1)],
-            ['궁 병 숙 련 도', 'int', (g) => readMetaNumber(asRecord(g.meta).dex2)],
-            ['기 병 숙 련 도', 'int', (g) => readMetaNumber(asRecord(g.meta).dex3)],
-            ['귀 병 숙 련 도', 'int', (g) => readMetaNumber(asRecord(g.meta).dex4)],
-            ['차 병 숙 련 도', 'int', (g) => readMetaNumber(asRecord(g.meta).dex5)],
+            ...(['dex1', 'dex2', 'dex3', 'dex4', 'dex5'] as const).map(
+                (key, index) =>
+                    [
+                        ['보 병 숙 련 도', '궁 병 숙 련 도', '기 병 숙 련 도', '귀 병 숙 련 도', '차 병 숙 련 도'][
+                            index
+                        ]!,
+                        'int',
+                        (general: (typeof generals)[number]) =>
+                            readCentennialRecordableDexterity(asRecord(general.meta), key as CentennialDexKey),
+                    ] as [string, 'int', (general: (typeof generals)[number], ranks: Record<string, number>) => number]
+            ),
             [
                 '전 력 전 승 률',
                 'percent',
@@ -415,7 +425,7 @@ export const rankingRouter = router({
                 return Array.from(optionMap.values());
             }
             const rows = await ctx.db.gameHistory.findMany({
-                where: { status: 'COMPLETED' },
+                where: { status: { in: ['OPEN', 'COMPLETED'] } },
                 select: { season: true, scenario: true, scenarioName: true },
                 orderBy: [{ season: 'desc' }, { scenario: 'asc' }],
             });

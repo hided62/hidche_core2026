@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 
 import type { GameSessionTokenPayload } from '@sammo-ts/common/auth/gameToken';
 import { RANK_DATA_TYPES } from '@sammo-ts/common';
@@ -108,6 +108,7 @@ const buildContext = (options?: {
     profileId?: string;
     generals?: RankingGeneralRow[];
     rankRows?: Array<{ generalId: number; type: string; value: number }>;
+    gameHistoryFindMany?: (args: unknown) => Promise<Array<{ season: number; scenario: number; scenarioName: string }>>;
 }): GameApiContext => {
     const selectedGeneralRows = options?.generals ?? generalRows;
     const selectedProfile = options?.profileId
@@ -198,10 +199,12 @@ const buildContext = (options?: {
             findMany: async () => [{ targetCode: 'che_명마_15_적토마' }],
         },
         gameHistory: {
-            findMany: async () => [
-                { season: 3, scenario: 22, scenarioName: '가상모드22' },
-                { season: 3, scenario: 22, scenarioName: '가상모드22' },
-            ],
+            findMany:
+                options?.gameHistoryFindMany ??
+                (async () => [
+                    { season: 3, scenario: 22, scenarioName: '가상모드22' },
+                    { season: 3, scenario: 22, scenarioName: '가상모드22' },
+                ]),
         },
         hallOfFame: {
             findMany: async (args: { where: { type: string } }) =>
@@ -303,6 +306,28 @@ describe('ranking.getBestGeneral', () => {
         });
     });
 
+    it('excludes 100th-season event mastery from current Best General values', async () => {
+        const generals = [
+            {
+                ...generalRows[0]!,
+                meta: {
+                    ...generalRows[0]!.meta,
+                    dex1: 120,
+                    event100_allstar: { granted: { dex1: 70 } },
+                } as unknown as RankingGeneralRow['meta'],
+            },
+        ];
+        const result = await appRouter.createCaller(buildContext({ generals })).ranking.getBestGeneral({
+            view: 'user',
+        });
+
+        expect(result.sections.find((section) => section.title === '보 병 숙 련 도')?.entries[0]).toMatchObject({
+            id: 1,
+            value: 50,
+            printValue: '50',
+        });
+    });
+
     it('returns positions one through ten for every populated ranking section', async () => {
         const generals = Array.from({ length: 12 }, (_, index) => {
             const id = index + 1;
@@ -384,6 +409,21 @@ describe('ranking hall of fame', () => {
                 scenarios: [{ id: 22, name: '가상모드22', count: 2 }],
             },
         ]);
+    });
+
+    it('includes the active OPEN game while excluding ABANDONED options', async () => {
+        const findMany = vi.fn(async () => [
+            { season: 4, scenario: 23, scenarioName: '현재 시나리오' },
+            { season: 3, scenario: 22, scenarioName: '완료 시나리오' },
+        ]);
+        const options = await appRouter
+            .createCaller(buildContext({ authenticated: false, gameHistoryFindMany: findMany }))
+            .ranking.getHallOfFameOptions();
+
+        expect(findMany).toHaveBeenCalledWith(
+            expect.objectContaining({ where: { status: { in: ['OPEN', 'COMPLETED'] } } })
+        );
+        expect(options.map((entry) => entry.season)).toEqual([4, 3]);
     });
 
     it('scopes previous-server options and rankings to the request profile', async () => {

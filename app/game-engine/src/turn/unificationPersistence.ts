@@ -2,11 +2,17 @@ import { asRecord, HALL_OF_FAME_TYPES, resolveLegacyTextColor, type HallOfFameTy
 import { acquireGameSchemaAdvisoryXactLock, enqueuePrivateMessageWebPush } from '@sammo-ts/infra';
 import type { GamePrisma, InputJsonValue } from '@sammo-ts/infra';
 import { LogCategory, LogScope, sendMessage, type MessageDraft, type MessageRecordDraft } from '@sammo-ts/logic';
+import {
+    readCentennialRecordableDexterity,
+    type CentennialDexKey,
+} from '@sammo-ts/logic/scenario/centennialAllStar.js';
 
 import type { InMemoryTurnWorld } from './inMemoryWorld.js';
+import { persistHallOfFameCandidate, resolveOfficialGameIndex } from './hallOfFamePersistence.js';
 import { ALL_MERGED_INHERITANCE_KEYS, computeActiveInheritancePoint } from './inheritancePointCalculation.js';
+import { buildInheritanceSettlementLogTexts } from './inheritanceSettlementLogs.js';
 import { buildOldNationArchiveData } from './oldNationArchive.js';
-import type { PendingUnificationAuctionCancellation, TurnGeneral } from './types.js';
+import type { PendingUnificationAuctionCancellation } from './types.js';
 
 const UNIFIER_POINT = 2000;
 const asJson = (value: unknown): InputJsonValue => value as InputJsonValue;
@@ -49,14 +55,13 @@ const ownerDisplayName = (meta: Record<string, unknown>): string | null => {
 
 export const resolveStoredInheritancePoint = (
     currentPoints: ReadonlyMap<string, number>,
-    general: Pick<TurnGeneral, 'inheritancePoints'>,
-    key: (typeof ALL_MERGED_INHERITANCE_KEYS)[number],
-    unifierAward: number
-): number =>
-    currentPoints.get(key) ??
-    (key === 'unifier'
-        ? Math.max(0, (general.inheritancePoints?.[key] ?? 0) - unifierAward)
-        : (general.inheritancePoints?.[key] ?? 0));
+    key: (typeof ALL_MERGED_INHERITANCE_KEYS)[number]
+): number => {
+    // All turn/month/auction mutations are persisted before finalization. A
+    // missing row therefore means zero; the general snapshot can still contain
+    // a rebirth-paid bucket that the lifecycle transaction deliberately deleted.
+    return currentPoints.get(key) ?? 0;
+};
 
 const formatHistogram = (value: unknown): string =>
     Object.entries(asRecord(value))
@@ -329,7 +334,7 @@ export const persistUnificationFinalization = async (
         const unifierAward = general.nationId === input.winnerNationId && general.officerLevel > 4 ? UNIFIER_POINT : 0;
         const mergedPoints = Object.fromEntries(
             ALL_MERGED_INHERITANCE_KEYS.map((key) => {
-                const stored = resolveStoredInheritancePoint(currentPoints, general, key, unifierAward);
+                const stored = resolveStoredInheritancePoint(currentPoints, key);
                 const effectiveStored = key === 'unifier' ? stored + unifierAward : stored;
                 return [key, computeActiveInheritancePoint(general, key, effectiveStored)];
             })
@@ -359,15 +364,23 @@ export const persistUnificationFinalization = async (
                 },
             },
         });
-        await transaction.inheritanceLog.create({
-            data: {
-                userId,
-                serverId,
-                year: input.year,
-                month: input.month,
-                text: `천하 통일 정산: ${total.toLocaleString('ko-KR')} 포인트`,
-            },
-        });
+        for (const text of buildInheritanceSettlementLogTexts({
+            previous,
+            points: mergedPoints,
+            storedKeys: new Set([...currentPoints.keys(), ...(unifierAward > 0 ? (['unifier'] as const) : [])]),
+            total,
+            isRebirth: false,
+        })) {
+            await transaction.inheritanceLog.create({
+                data: {
+                    userId,
+                    serverId,
+                    year: input.year,
+                    month: input.month,
+                    text,
+                },
+            });
+        }
     }
 
     const rankRows = generals.length
@@ -388,7 +401,7 @@ export const persistUnificationFinalization = async (
     const scenarioName = String(asRecord(meta.scenarioMeta).title ?? '');
     const startTime = typeof meta.starttime === 'string' ? meta.starttime : null;
     const unitedTime = input.completedAt.toISOString();
-    const serverCount = await transaction.gameHistory.count();
+    const serverIdx = await resolveOfficialGameIndex(transaction, meta);
     const minHallAge = readInteger(asRecord(world.getScenarioConfig().const).minPushHallAge, 30);
 
     const hallTypes: Array<[HallOfFameType, 'natural' | 'rank' | 'calc']> = HALL_OF_FAME_TYPES.map((type) => {
@@ -429,7 +442,7 @@ export const persistUnificationFinalization = async (
             unitedTime,
             ownerDisplayName: ownerDisplayName(generalMeta),
             serverID: serverId,
-            serverIdx: serverCount,
+            serverIdx,
             serverName,
             scenarioName,
             generationKey: input.generationKey,
@@ -445,7 +458,7 @@ export const persistUnificationFinalization = async (
                         ? general.experience
                         : type === 'dedication'
                           ? general.dedication
-                          : readNumber(generalMeta[type]);
+                          : readCentennialRecordableDexterity(generalMeta, type as CentennialDexKey);
             if ((type === 'winrate' || type === 'killrate') && (ranks.warnum ?? 0) < 10) continue;
             if (type === 'ttrate' && totals.tt < 50) continue;
             if (type === 'tlrate' && totals.tl < 50) continue;
@@ -454,30 +467,16 @@ export const persistUnificationFinalization = async (
             if (type === 'betrate' && (ranks.betgold ?? 0) < 1000) continue;
             if (value <= 0) continue;
 
-            const existing = await transaction.hallOfFame.findFirst({
-                where: {
-                    OR: [
-                        { serverId, type, generalNo: general.id },
-                        { serverId, type, owner: general.userId },
-                    ],
-                },
+            await persistHallOfFameCandidate(transaction, {
+                serverId,
+                season,
+                scenario,
+                generalNo: general.id,
+                type,
+                value,
+                owner: general.userId ?? null,
+                aux,
             });
-            if (!existing) {
-                await transaction.hallOfFame.create({
-                    data: {
-                        serverId,
-                        season,
-                        scenario,
-                        generalNo: general.id,
-                        type,
-                        value,
-                        owner: general.userId ?? null,
-                        aux,
-                    },
-                });
-            } else if (value > existing.value) {
-                await transaction.hallOfFame.update({ where: { id: existing.id }, data: { value, aux } });
-            }
         }
     }
 
@@ -631,7 +630,7 @@ export const persistUnificationFinalization = async (
     await transaction.emperor.create({
         data: {
             serverId,
-            phase: `${serverName}${serverCount}기`,
+            phase: `${serverName}${serverIdx}기`,
             nationCount,
             nationName: statisticNationNames || archivedNationNames.join(', '),
             nationHist: formatHistogram(statistics.maxNationHist),

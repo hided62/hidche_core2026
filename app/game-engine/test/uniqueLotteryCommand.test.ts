@@ -186,9 +186,13 @@ describe('unique lottery on general commands', () => {
         expect(dedicationIndex).toBeLessThan(uniqueIndex);
     });
 
-    it('does not award a unique item reserved by an active auction', async () => {
+    it('refunds a pending inheritance purchase when active auctions exhaust the supply', async () => {
         const schedule: TurnSchedule = { entries: [{ startMinute: 0, tickMinutes: 10 }] };
-        const generals = [buildGeneral(1)];
+        const lotteryGeneral = buildGeneral(1);
+        lotteryGeneral.userId = 'inherit-user';
+        lotteryGeneral.meta = { killturn: 24, inheritRandomUnique: true, inherit_spent_dyn: 3_000 };
+        lotteryGeneral.inheritancePoints = { previous: 200 };
+        const generals = [lotteryGeneral];
         const snapshot: TurnWorldSnapshot = {
             generals: generals as any,
             cities: [
@@ -267,6 +271,7 @@ describe('unique lottery on general commands', () => {
                     uniqueTrialCoef: 10,
                     maxUniqueTrialProb: 10,
                     minMonthToAllowInheritItem: 0,
+                    inheritItemRandomPoint: 3_000,
                 },
                 environment: { mapName: 'test_map', unitSet: 'default' },
             },
@@ -317,6 +322,22 @@ describe('unique lottery on general commands', () => {
         });
 
         expect(result.general?.role.items.weapon).toBeNull();
+        expect(result.general?.meta).toMatchObject({ inherit_spent_dyn: 0 });
+        expect(result.general?.meta).not.toHaveProperty('inheritRandomUnique');
+        expect(result.general?.inheritancePoints?.previous).toBe(3_200);
         expect((result.logs ?? []).some((entry) => entry.text.includes('【아이템】'))).toBe(false);
+        expect(world.peekDirtyState().inheritancePointAdjustments).toContainEqual({
+            userId: 'inherit-user',
+            key: 'previous',
+            amount: 3_000,
+        });
+        expect(world.peekDirtyState().pendingInheritanceLogs).toEqual([
+            {
+                userId: 'inherit-user',
+                year: 180,
+                month: 1,
+                text: '얻을 유니크가 없어 3000 포인트 반환',
+            },
+        ]);
     });
 });

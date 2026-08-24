@@ -192,10 +192,16 @@ export class WarUnitGeneral<
         return truncate ? Math.trunc(clamped) : clamped;
     }
 
-    private resolveMainStat(armType: number, withInjury = true): number {
-        const leadership = this.getComputedStat('leadership', this.general.stats.leadership, { withInjury });
-        const strength = this.getComputedStat('strength', this.general.stats.strength, { withInjury });
-        const intelligence = this.getComputedStat('intelligence', this.general.stats.intelligence, { withInjury });
+    private resolveMainStat(armType: number, withInjury = true, truncate = true): number {
+        const leadership = this.getComputedStat('leadership', this.general.stats.leadership, {
+            withInjury,
+            truncate,
+        });
+        const strength = this.getComputedStat('strength', this.general.stats.strength, { withInjury, truncate });
+        const intelligence = this.getComputedStat('intelligence', this.general.stats.intelligence, {
+            withInjury,
+            truncate,
+        });
 
         if (armType === this.config.armTypes.wizard) {
             return intelligence;
@@ -279,7 +285,10 @@ export class WarUnitGeneral<
             return 0;
         }
 
-        const mainStat = this.resolveMainStat(armType, false);
+        // GameUnitDetail::getCriticalRatio requests each Ref stat with
+        // useFloor=false, so action bonuses such as 징병's +25% leadership must
+        // retain their fractional part until after the probability is formed.
+        const mainStat = this.resolveMainStat(armType, false, false);
         const coef =
             armType === this.config.armTypes.wizard ||
             armType === this.config.armTypes.siege ||

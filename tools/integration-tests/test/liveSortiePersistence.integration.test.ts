@@ -210,7 +210,9 @@ integration('live sortie PostgreSQL persistence retry', () => {
                 commandProfile: createCoreTurnCommandProfile(request),
             });
             world = new InMemoryTurnWorld(state, snapshot, {
-                schedule: { entries: [{ startMinute: 0, tickMinutes: 10 }] },
+                schedule: {
+                    entries: [{ startMinute: 0, tickMinutes: Math.max(1, Math.round(state.tickSeconds / 60)) }],
+                },
                 generalTurnHandler: handler,
             });
             const actor = world.getGeneralById(request.actorGeneralId);

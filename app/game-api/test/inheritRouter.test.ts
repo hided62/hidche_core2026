@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 
-import { ChangeJournal } from '@sammo-ts/common';
+import { ChangeJournal, type TurnDaemonCommand, type TurnDaemonCommandResult } from '@sammo-ts/common';
 import type { GameSessionTokenPayload } from '@sammo-ts/common/auth/gameToken';
 import type { RedisConnector } from '@sammo-ts/infra';
 import type { MessagePayload } from '@sammo-ts/logic';
@@ -111,6 +111,7 @@ const buildContext = (options: {
     inheritanceLogs?: Array<{ id: number; year: number; month: number; text: string; createdAt: Date }>;
     configConst?: Record<string, unknown>;
     configMap?: Record<string, unknown>;
+    daemonResult?: TurnDaemonCommandResult;
 }) => {
     const auth = options.auth === undefined ? buildAuth() : options.auth;
     const general = options.general === undefined ? buildGeneral() : options.general;
@@ -118,11 +119,19 @@ const buildContext = (options: {
         options.target === undefined
             ? buildGeneral({ id: 8, userId: 'user-2', name: '조조', meta: { ownerName: '위유저' } })
             : options.target;
-    const requestCommand = vi.fn(async (command: { type: string; generalId: number }) => ({
-        type: command.type,
-        ok: true,
-        generalId: command.generalId,
-    }));
+    const requestCommand = vi.fn(async (command: TurnDaemonCommand): Promise<TurnDaemonCommandResult> => {
+        if (options.daemonResult) return options.daemonResult;
+        if (command.type === 'inheritanceAction') {
+            return {
+                type: 'inheritanceAction',
+                ok: true,
+                action: command.input.action,
+                generalId: general?.id ?? 7,
+                remainPoint: options.inheritancePoint ?? 10_000,
+            };
+        }
+        return { type: 'patchGeneral', ok: true, generalId: 7 };
+    });
     const pointUpsert = vi.fn(async () => ({}));
     const logCreate = vi.fn(async () => ({}));
     const findMany = vi.fn(async () => (target ? [{ id: target.id, name: target.name }] : []));
@@ -272,10 +281,17 @@ describe('inherit router actor and permission boundaries', () => {
         });
     });
 
-    it('reports and enforces the Ref S100 stat-reset ban without dispatching or charging', async () => {
+    it('reports the Ref S100 stat-reset ban and maps the authoritative daemon rejection', async () => {
         const fixture = buildContext({
             configMap: { targetGeneralPool: 'SPoolUnderU100' },
             inheritancePoint: 0,
+            daemonResult: {
+                type: 'inheritanceAction',
+                ok: false,
+                action: 'resetStat',
+                code: 'BAD_REQUEST',
+                reason: '100기 올스타 장수는 능력치 초기화를 사용할 수 없습니다.',
+            },
         });
         const caller = appRouter.createCaller(fixture.context);
 
@@ -291,7 +307,17 @@ describe('inherit router actor and permission boundaries', () => {
             code: 'BAD_REQUEST',
             message: '100기 올스타 장수는 능력치 초기화를 사용할 수 없습니다.',
         });
-        expect(fixture.requestCommand).not.toHaveBeenCalled();
+        expect(fixture.requestCommand).toHaveBeenCalledWith({
+            type: 'inheritanceAction',
+            userId: 'user-1',
+            input: {
+                action: 'resetStat',
+                leadership: 70,
+                strength: 45,
+                intel: 85,
+                inheritBonusStat: [2, 1, 1],
+            },
+        });
         expect(fixture.pointUpsert).not.toHaveBeenCalled();
         expect(fixture.logCreate).not.toHaveBeenCalled();
     });
@@ -429,10 +455,17 @@ describe('inherit router actor and permission boundaries', () => {
         expect(fixture.inheritanceLogFindMany).not.toHaveBeenCalled();
     });
 
-    it('does not dispatch or charge when the authenticated user owns no general', async () => {
+    it('delegates the authenticated actor and maps a missing-general daemon rejection', async () => {
         const fixture = buildContext({
             auth: buildAuth('user-2'),
             general: buildGeneral({ userId: 'user-1' }),
+            daemonResult: {
+                type: 'inheritanceAction',
+                ok: false,
+                action: 'buyHiddenBuff',
+                code: 'PRECONDITION_FAILED',
+                reason: '장수가 존재하지 않습니다.',
+            },
         });
 
         await expect(
@@ -444,12 +477,25 @@ describe('inherit router actor and permission boundaries', () => {
             code: 'PRECONDITION_FAILED',
             message: '장수가 존재하지 않습니다.',
         });
-        expect(fixture.requestCommand).not.toHaveBeenCalled();
+        expect(fixture.requestCommand).toHaveBeenCalledWith({
+            type: 'inheritanceAction',
+            userId: 'user-2',
+            input: { action: 'buyHiddenBuff', buffType: 'domesticSuccessProb', level: 1 },
+        });
         expect(fixture.pointUpsert).not.toHaveBeenCalled();
     });
 
     it('mutates only the authenticated user general and inheritance balance', async () => {
-        const fixture = buildContext({ inheritancePoint: 1000 });
+        const fixture = buildContext({
+            inheritancePoint: 1000,
+            daemonResult: {
+                type: 'inheritanceAction',
+                ok: true,
+                action: 'buyHiddenBuff',
+                generalId: 7,
+                remainPoint: 800,
+            },
+        });
 
         await expect(
             appRouter.createCaller(fixture.context).inherit.buyHiddenBuff({
@@ -458,29 +504,26 @@ describe('inherit router actor and permission boundaries', () => {
             })
         ).resolves.toEqual({ ok: true, remainPoint: 800 });
 
-        expect(fixture.requestCommand).toHaveBeenCalledWith(
-            expect.objectContaining({
-                type: 'patchGeneral',
-                generalId: 7,
-                patch: expect.objectContaining({
-                    meta: expect.objectContaining({
-                        inheritBuff: JSON.stringify({ domesticSuccessProb: 1 }),
-                    }),
-                }),
-            })
-        );
-        expect(fixture.pointUpsert).toHaveBeenCalledWith(
-            expect.objectContaining({
-                where: { userId_key: { userId: 'user-1', key: 'previous' } },
-                update: { value: 800 },
-            })
-        );
+        expect(fixture.requestCommand).toHaveBeenCalledWith({
+            type: 'inheritanceAction',
+            userId: 'user-1',
+            input: { action: 'buyHiddenBuff', buffType: 'domesticSuccessProb', level: 1 },
+        });
+        expect(fixture.pointUpsert).not.toHaveBeenCalled();
+        expect(fixture.logCreate).not.toHaveBeenCalled();
     });
 
     it('reserves the selected Ref war trait and charges the authenticated owner once', async () => {
         const fixture = buildContext({
             inheritancePoint: 5_000,
             configConst: { availableSpecialWar: ['che_의술'] },
+            daemonResult: {
+                type: 'inheritanceAction',
+                ok: true,
+                action: 'setNextSpecialWar',
+                generalId: 7,
+                remainPoint: 1_000,
+            },
         });
 
         await expect(
@@ -488,19 +531,12 @@ describe('inherit router actor and permission boundaries', () => {
         ).resolves.toEqual({ ok: true });
 
         expect(fixture.requestCommand).toHaveBeenCalledWith({
-            type: 'patchGeneral',
-            generalId: 7,
-            patch: { meta: { inheritSpecificSpecialWar: 'che_의술' } },
+            type: 'inheritanceAction',
+            userId: 'user-1',
+            input: { action: 'setNextSpecialWar', specialKey: 'che_의술' },
         });
-        expect(fixture.pointUpsert).toHaveBeenCalledWith(expect.objectContaining({ update: { value: 1_000 } }));
-        expect(fixture.logCreate).toHaveBeenCalledWith({
-            data: {
-                userId: 'user-1',
-                year: 200,
-                month: 4,
-                text: '4000 포인트로 다음 전투 특기로 의술 지정',
-            },
-        });
+        expect(fixture.pointUpsert).not.toHaveBeenCalled();
+        expect(fixture.logCreate).not.toHaveBeenCalled();
     });
 
     it('does not dispatch or charge when a different war trait is already reserved', async () => {
@@ -508,12 +544,19 @@ describe('inherit router actor and permission boundaries', () => {
             inheritancePoint: 5_000,
             general: buildGeneral({ meta: { inheritSpecificSpecialWar: 'che_신산' } }),
             configConst: { availableSpecialWar: ['che_의술'] },
+            daemonResult: {
+                type: 'inheritanceAction',
+                ok: false,
+                action: 'setNextSpecialWar',
+                code: 'BAD_REQUEST',
+                reason: '이미 예약한 특기가 있습니다.',
+            },
         });
 
         await expect(
             appRouter.createCaller(fixture.context).inherit.setNextSpecialWar({ specialKey: 'che_의술' })
         ).rejects.toMatchObject({ code: 'BAD_REQUEST', message: '이미 예약한 특기가 있습니다.' });
-        expect(fixture.requestCommand).not.toHaveBeenCalled();
+        expect(fixture.requestCommand).toHaveBeenCalledOnce();
         expect(fixture.pointUpsert).not.toHaveBeenCalled();
         expect(fixture.logCreate).not.toHaveBeenCalled();
     });
@@ -522,41 +565,44 @@ describe('inherit router actor and permission boundaries', () => {
         const fixture = buildContext({
             inheritancePoint: 2_000,
             general: buildGeneral({ meta: { prev_types_special2: ['che_돌격'], marker: 3 } }),
+            daemonResult: {
+                type: 'inheritanceAction',
+                ok: true,
+                action: 'resetSpecialWar',
+                generalId: 7,
+                remainPoint: 1_000,
+            },
         });
 
         await expect(appRouter.createCaller(fixture.context).inherit.resetSpecialWar()).resolves.toEqual({ ok: true });
 
         expect(fixture.requestCommand).toHaveBeenCalledWith({
-            type: 'patchGeneral',
-            generalId: 7,
-            patch: {
-                specialWar: null,
-                meta: {
-                    prev_types_special2: ['che_돌격', 'che_선봉'],
-                    marker: 3,
-                    inheritResetSpecialWar: 0,
-                },
-            },
+            type: 'inheritanceAction',
+            userId: 'user-1',
+            input: { action: 'resetSpecialWar' },
         });
-        expect(fixture.pointUpsert).toHaveBeenCalledWith(expect.objectContaining({ update: { value: 1_000 } }));
-        expect(fixture.logCreate).toHaveBeenCalledWith({
-            data: {
-                userId: 'user-1',
-                year: 200,
-                month: 4,
-                text: '1000 포인트로 전투 특기 초기화',
-            },
-        });
+        expect(fixture.pointUpsert).not.toHaveBeenCalled();
+        expect(fixture.logCreate).not.toHaveBeenCalled();
     });
 
     it('does not dispatch or charge when the current war trait is already blank', async () => {
-        const fixture = buildContext({ inheritancePoint: 2_000, general: buildGeneral({ special2Code: 'None' }) });
+        const fixture = buildContext({
+            inheritancePoint: 2_000,
+            general: buildGeneral({ special2Code: 'None' }),
+            daemonResult: {
+                type: 'inheritanceAction',
+                ok: false,
+                action: 'resetSpecialWar',
+                code: 'BAD_REQUEST',
+                reason: '이미 전투 특기가 공란입니다.',
+            },
+        });
 
         await expect(appRouter.createCaller(fixture.context).inherit.resetSpecialWar()).rejects.toMatchObject({
             code: 'BAD_REQUEST',
             message: '이미 전투 특기가 공란입니다.',
         });
-        expect(fixture.requestCommand).not.toHaveBeenCalled();
+        expect(fixture.requestCommand).toHaveBeenCalledOnce();
         expect(fixture.pointUpsert).not.toHaveBeenCalled();
         expect(fixture.logCreate).not.toHaveBeenCalled();
     });
@@ -572,34 +618,41 @@ describe('inherit router actor and permission boundaries', () => {
             previousTurnTimeBase: 123_456,
             tickSeconds: worldState.tickSeconds,
         });
+        fixture.requestCommand.mockResolvedValueOnce({
+            type: 'inheritanceAction',
+            ok: true,
+            action: 'resetTurnTime',
+            generalId: 7,
+            remainPoint: 1_000,
+            ...expected,
+        });
 
         await expect(appRouter.createCaller(fixture.context).inherit.resetTurnTime()).resolves.toEqual({
             ok: true,
             ...expected,
         });
         expect(fixture.requestCommand).toHaveBeenCalledWith({
-            type: 'patchGeneral',
-            generalId: 7,
-            patch: {
-                meta: {
-                    nextTurnTimeBase: expected.nextTurnTimeBase,
-                    inheritResetTurnTime: 0,
-                },
-            },
+            type: 'inheritanceAction',
+            userId: 'user-1',
+            input: { action: 'resetTurnTime' },
         });
-        expect(fixture.pointUpsert).toHaveBeenCalledWith(expect.objectContaining({ update: { value: 1_000 } }));
-        expect(fixture.logCreate).toHaveBeenCalledWith({
-            data: {
-                userId: 'user-1',
-                year: 200,
-                month: 4,
-                text: `1000 포인트로 턴 시간을 바꾸어 다다음 턴부터 ${expected.nextTurnTimeLabel} 적용`,
-            },
-        });
+        expect(fixture.pointUpsert).not.toHaveBeenCalled();
+        expect(fixture.logCreate).not.toHaveBeenCalled();
     });
 
     it('reveals a target owner to the caller without using the caller general id from input', async () => {
-        const fixture = buildContext({ inheritancePoint: 1500 });
+        const fixture = buildContext({
+            inheritancePoint: 1500,
+            daemonResult: {
+                type: 'inheritanceAction',
+                ok: true,
+                action: 'checkOwner',
+                generalId: 7,
+                remainPoint: 500,
+                ownerName: '위유저',
+                targetName: '조조',
+            },
+        });
 
         await expect(
             appRouter.createCaller(fixture.context).inherit.checkOwner({ targetGeneralId: 8 })
@@ -608,64 +661,27 @@ describe('inherit router actor and permission boundaries', () => {
             ownerName: '위유저',
             targetName: '조조',
         });
-        expect(fixture.pointUpsert).toHaveBeenCalledWith(
-            expect.objectContaining({
-                where: { userId_key: { userId: 'user-1', key: 'previous' } },
-                update: { value: 500 },
-            })
-        );
-        expect(fixture.logCreate).toHaveBeenCalledWith({
-            data: {
-                userId: 'user-1',
-                year: 200,
-                month: 4,
-                text: '1000 포인트로 장수 소유자 확인',
-            },
+        expect(fixture.requestCommand).toHaveBeenCalledWith({
+            type: 'inheritanceAction',
+            userId: 'user-1',
+            input: { action: 'checkOwner', targetGeneralId: 8 },
         });
-        expect(fixture.messageRows).toHaveLength(2);
-        expect(fixture.messageRows).toEqual([
-            expect.objectContaining({
-                mailbox: 7,
-                type: 'private',
-                src: 0,
-                dest: 7,
-                payload: expect.objectContaining({
-                    src: expect.objectContaining({ generalId: 0, nationName: 'System' }),
-                    dest: expect.objectContaining({ generalId: 7, generalName: '유비' }),
-                    text: '조조의 소유자는 위유저 입니다.',
-                }),
-            }),
-            expect.objectContaining({
-                mailbox: 8,
-                type: 'private',
-                src: 0,
-                dest: 8,
-                payload: expect.objectContaining({
-                    src: expect.objectContaining({ generalId: 0, nationName: 'System' }),
-                    dest: expect.objectContaining({ generalId: 8, generalName: '조조' }),
-                    text: '소유자명이 누군가에 의해 확인되었습니다.',
-                }),
-            }),
-        ]);
-        expect(fixture.webPushOutboxCreateMany).toHaveBeenNthCalledWith(1, {
-            data: [{ eventId: 'message:101', eventType: 'PRIVATE_MESSAGE_RECEIVED', userIds: ['user-1'] }],
-            skipDuplicates: true,
-        });
-        expect(fixture.webPushOutboxCreateMany).toHaveBeenNthCalledWith(2, {
-            data: [{ eventId: 'message:102', eventType: 'PRIVATE_MESSAGE_RECEIVED', userIds: ['user-2'] }],
-            skipDuplicates: true,
-        });
-        expect(fixture.changeJournal.snapshot()).toEqual([
-            { domain: 'messages.mailbox', entityId: 7 },
-            { domain: 'messages.mailbox', entityId: 8 },
-        ]);
-        expect(fixture.requestCommand).not.toHaveBeenCalled();
+        expect(fixture.pointUpsert).not.toHaveBeenCalled();
+        expect(fixture.logCreate).not.toHaveBeenCalled();
+        expect(fixture.messageRows).toHaveLength(0);
     });
 
     it('does not charge or send messages when the owner lookup target is the actor', async () => {
         const fixture = buildContext({
             inheritancePoint: 1_500,
             target: buildGeneral({ id: 7, userId: 'user-1', name: '유비' }),
+            daemonResult: {
+                type: 'inheritanceAction',
+                ok: false,
+                action: 'checkOwner',
+                code: 'BAD_REQUEST',
+                reason: '자신의 정보는 확인할 수 없습니다.',
+            },
         });
 
         await expect(
@@ -681,13 +697,22 @@ describe('inherit router actor and permission boundaries', () => {
     });
 
     it('does not charge or send messages when inheritance points are insufficient', async () => {
-        const fixture = buildContext({ inheritancePoint: 999 });
+        const fixture = buildContext({
+            inheritancePoint: 999,
+            daemonResult: {
+                type: 'inheritanceAction',
+                ok: false,
+                action: 'checkOwner',
+                code: 'BAD_REQUEST',
+                reason: '충분한 유산 포인트를 가지고 있지 않습니다.',
+            },
+        });
 
         await expect(
             appRouter.createCaller(fixture.context).inherit.checkOwner({ targetGeneralId: 8 })
         ).rejects.toMatchObject({
             code: 'BAD_REQUEST',
-            message: '유산 포인트가 부족합니다.',
+            message: '충분한 유산 포인트를 가지고 있지 않습니다.',
         });
         expect(fixture.pointUpsert).not.toHaveBeenCalled();
         expect(fixture.logCreate).not.toHaveBeenCalled();

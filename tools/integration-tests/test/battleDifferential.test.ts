@@ -1,4 +1,5 @@
 import { execFileSync } from 'node:child_process';
+import { createHash } from 'node:crypto';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -16,8 +17,16 @@ import {
     loadNationTraitModules,
     loadPersonalityTraitModules,
     loadWarTraitModules,
+    ActionLogger,
+    formatLogText,
+    LogCategory,
+    LogFormat,
+    LogScope,
+    type LogEntryDraft,
     type UnitSetDefinition,
+    type WarBattleOutcome,
     type WarBattleTraceEvent,
+    type WarBattleTraceUnitSnapshot,
     type WarEngineConfig,
 } from '@sammo-ts/logic';
 import { describe, expect, it } from 'vitest';
@@ -32,18 +41,36 @@ import type {
 
 interface ReferenceTrace {
     engine: 'ref';
+    seed: string;
+    fixtureIdentity: FixtureIdentity;
     conquered: boolean;
+    attacker: WarBattleTraceEvent['attacker'];
+    city: WarBattleTraceEvent['city'];
+    finishedDefenders: WarBattleTraceEvent['attacker'][];
     defenderOrder?: {
         before: Array<{ id: number; order: number }>;
         after: Array<{ id: number; order: number }>;
     };
     events: WarBattleTraceEvent[];
     rng: RandomCall[];
+    boolRng: BoolRandomCall[];
     logs: {
         attacker: ReferenceLogBuckets;
         defenders: Record<string, ReferenceLogBuckets>;
         city: ReferenceLogBuckets;
     };
+}
+
+interface FixtureIdentity {
+    schemaVersion: 1;
+    seed: string;
+    sha256: string;
+}
+
+interface BoolRandomCall {
+    rngSeq: number;
+    probability: number;
+    result: boolean;
 }
 
 interface ReferenceLogBuckets {
@@ -55,6 +82,65 @@ interface ReferenceLogBuckets {
     globalHistoryLog: string[];
     globalActionLog: string[];
 }
+
+interface CapturedCoreLogger {
+    generalId?: number;
+    nationId?: number;
+    entries: LogEntryDraft[];
+}
+
+interface CoreLogCapture {
+    loggerFactory: (options: { generalId?: number; nationId?: number }) => ActionLogger;
+    byGeneralId: Map<number, CapturedCoreLogger>;
+    city: CapturedCoreLogger | null;
+}
+
+class ComparisonCapturingActionLogger extends ActionLogger {
+    public constructor(
+        options: { generalId?: number; nationId?: number },
+        private readonly capture: (entries: LogEntryDraft[]) => void
+    ) {
+        super(options);
+    }
+
+    public override flush(): LogEntryDraft[] {
+        const entries = super.flush();
+        this.capture(entries);
+        return entries;
+    }
+
+    public override rollback(): LogEntryDraft[] {
+        const entries = super.rollback();
+        this.capture(entries);
+        return entries;
+    }
+}
+
+const createCoreLogCapture = (): CoreLogCapture => {
+    const capture: CoreLogCapture = {
+        byGeneralId: new Map(),
+        city: null,
+        loggerFactory: () => {
+            throw new Error('loggerFactory is not initialized');
+        },
+    };
+    capture.loggerFactory = (options) => {
+        const bucket: CapturedCoreLogger = { ...options, entries: [] };
+        if (options.generalId === undefined) {
+            if (capture.city) {
+                throw new Error('battle comparison created more than one city logger');
+            }
+            capture.city = bucket;
+        } else {
+            if (capture.byGeneralId.has(options.generalId)) {
+                throw new Error(`battle comparison duplicated general logger ${options.generalId}`);
+            }
+            capture.byGeneralId.set(options.generalId, bucket);
+        }
+        return new ComparisonCapturingActionLogger(options, (entries) => bucket.entries.push(...entries));
+    };
+    return capture;
+};
 
 interface RandomCall {
     seq: number;
@@ -80,6 +166,7 @@ type ReferenceTraitCatalog = Record<
 
 class TracingRng implements RNG {
     public readonly calls: RandomCall[] = [];
+    public readonly boolCalls: BoolRandomCall[] = [];
 
     public constructor(private readonly inner: RNG) {}
 
@@ -111,6 +198,19 @@ class TracingRng implements RNG {
         return result;
     }
 
+    public createRandUtil(): RandUtil {
+        const calls = this.calls;
+        const boolCalls = this.boolCalls;
+        return new (class extends RandUtil {
+            public override nextBool(probability: number = 0.5): boolean {
+                const rngSeq = calls.length;
+                const result = super.nextBool(probability);
+                boolCalls.push({ rngSeq, probability, result });
+                return result;
+            }
+        })(this);
+    }
+
     private record(operation: string, args: Record<string, unknown>, result: unknown): void {
         this.calls.push({ seq: this.calls.length, operation, arguments: args, result });
     }
@@ -135,7 +235,213 @@ const findWorkspaceRoot = (start: string): string | null => {
 
 const readJson = <T>(filePath: string): T => JSON.parse(fs.readFileSync(filePath, 'utf8')) as T;
 
+const isRecord = (value: unknown): value is Record<string, unknown> =>
+    typeof value === 'object' && value !== null && !Array.isArray(value);
+
+const sha256 = (value: string): string => createHash('sha256').update(value).digest('hex');
+
+const assertFixtureGeneralCityContract = (fixtureJson: string, label = 'battle fixture'): FixtureIdentity => {
+    const normalizedFixtureJson = fixtureJson.trim();
+    const fixture = JSON.parse(normalizedFixtureJson) as unknown;
+    if (!isRecord(fixture)) {
+        throw new Error(`${label}: fixture root must be an object`);
+    }
+
+    const assertSide = (side: 'attacker' | 'defender', general: unknown, city: unknown, index?: number): void => {
+        const suffix = index === undefined ? '' : `[${index}]`;
+        if (!isRecord(general) || !isRecord(city)) {
+            throw new Error(`${label}: ${side}${suffix} general/city must be objects`);
+        }
+        const generalCity = general['city'];
+        const currentCity = city['city'];
+        if (!Number.isSafeInteger(generalCity) || (generalCity as number) <= 0) {
+            throw new Error(`${label}: ${side}General${suffix}.city must be an explicit positive integer`);
+        }
+        if (!Number.isSafeInteger(currentCity) || (currentCity as number) <= 0) {
+            throw new Error(`${label}: ${side}City.city must be a positive integer`);
+        }
+        if (generalCity !== currentCity) {
+            throw new Error(
+                `${label}: ${side}General${suffix}.city=${String(generalCity)} must equal current city ${String(currentCity)}`
+            );
+        }
+    };
+
+    assertSide('attacker', fixture['attackerGeneral'], fixture['attackerCity']);
+    const defenderCity = fixture['defenderCity'];
+    const rawDefenders = fixture['defenderGenerals'];
+    const defenders = Array.isArray(rawDefenders)
+        ? rawDefenders
+        : isRecord(rawDefenders)
+          ? Object.values(rawDefenders)
+          : null;
+    if (!defenders) {
+        throw new Error(`${label}: defenderGenerals must be an array or ID-keyed object`);
+    }
+    defenders.forEach((general, index) => assertSide('defender', general, defenderCity, index));
+
+    const seed = typeof fixture['seed'] === 'string' ? fixture['seed'] : 'battle-differential';
+    return {
+        schemaVersion: 1,
+        seed,
+        sha256: sha256(normalizedFixtureJson),
+    };
+};
+
+const assertReferenceFixtureIdentity = (
+    reference: ReferenceTrace,
+    fixtureJson: string,
+    label = 'reference trace'
+): void => {
+    const expected = assertFixtureGeneralCityContract(fixtureJson, label);
+    expect(reference.fixtureIdentity, `${label}: fixture identity`).toEqual(expected);
+    expect(reference.seed, `${label}: seed`).toBe(expected.seed);
+};
+
+const referenceRuntimeCopyFilter = (resolvedCompareRoot: string, source: string): boolean => {
+    const relative = path.relative(resolvedCompareRoot, source);
+    return !(
+        relative === '.git' ||
+        relative.startsWith(`.git${path.sep}`) ||
+        relative === 'vendor' ||
+        relative.startsWith(`vendor${path.sep}`) ||
+        relative === 'd_log' ||
+        relative.startsWith(`d_log${path.sep}`) ||
+        relative === path.join('hwe', 'd_setting') ||
+        relative.startsWith(`${path.join('hwe', 'd_setting')}${path.sep}`)
+    );
+};
+
+const assertSafeDockerNetworkName = (network: string): string => {
+    if (!/^[A-Za-z0-9_.-]+$/u.test(network)) {
+        throw new Error('Reference Docker network name contains unsupported characters.');
+    }
+    return network;
+};
+
+const resolveReferenceDockerNetwork = (workspaceRoot: string): string => {
+    const explicitNetwork = process.env['REF_COMPARE_NETWORK'];
+    if (explicitNetwork) {
+        const network = assertSafeDockerNetworkName(explicitNetwork);
+        try {
+            const resolved = execFileSync('docker', ['network', 'inspect', '--format', '{{.Name}}', network], {
+                encoding: 'utf8',
+                stdio: ['ignore', 'pipe', 'pipe'],
+            }).trim();
+            if (resolved !== network) {
+                throw new Error('network identity mismatch');
+            }
+            return network;
+        } catch {
+            throw new Error('REF_COMPARE_NETWORK does not identify an available Docker network.');
+        }
+    }
+
+    const composeDirectory = path.join(workspaceRoot, 'docker_compose_files/reference');
+    try {
+        const phpContainerId = execFileSync('docker', ['compose', 'ps', '-q', 'php'], {
+            cwd: composeDirectory,
+            encoding: 'utf8',
+            stdio: ['ignore', 'pipe', 'pipe'],
+        }).trim();
+        if (!phpContainerId || !/^[a-f0-9]+$/u.test(phpContainerId)) {
+            throw new Error('reference php container is unavailable');
+        }
+        const networks = execFileSync(
+            'docker',
+            [
+                'inspect',
+                '--format',
+                '{{range $name, $_ := .NetworkSettings.Networks}}{{println $name}}{{end}}',
+                phpContainerId,
+            ],
+            {
+                encoding: 'utf8',
+                stdio: ['ignore', 'pipe', 'pipe'],
+            }
+        )
+            .split(/\r?\n/u)
+            .map((entry) => entry.trim())
+            .filter(Boolean);
+        if (networks.length !== 1) {
+            throw new Error('reference php container must have exactly one discoverable network');
+        }
+        return assertSafeDockerNetworkName(networks[0]!);
+    } catch {
+        throw new Error(
+            'Unable to discover the official reference Compose network. Start that stack or set REF_COMPARE_NETWORK explicitly.'
+        );
+    }
+};
+
+const runReferenceSourceScript = (options: {
+    workspaceRoot: string;
+    compareSourceRoot: string;
+    script: string;
+    args?: string[];
+    input?: string;
+    maxBuffer?: number;
+}): string => {
+    const resolvedCompareRoot = path.resolve(options.compareSourceRoot);
+    const runtimeRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'sammo-ref-compare-'));
+    fs.cpSync(resolvedCompareRoot, runtimeRoot, {
+        recursive: true,
+        filter: (source) => referenceRuntimeCopyFilter(resolvedCompareRoot, source),
+    });
+    fs.mkdirSync(path.join(runtimeRoot, 'd_log'));
+    try {
+        const network = resolveReferenceDockerNetwork(options.workspaceRoot);
+        try {
+            return execFileSync(
+                'docker',
+                [
+                    'run',
+                    '--rm',
+                    '-i',
+                    '--network',
+                    network,
+                    '-v',
+                    `${runtimeRoot}:/var/www/html`,
+                    '-v',
+                    `${path.join(options.workspaceRoot, 'ref/sam/vendor')}:/var/www/html/vendor:ro`,
+                    '-v',
+                    `${path.join(options.workspaceRoot, 'ref/sam/hwe/d_setting')}:/var/www/html/hwe/d_setting:ro`,
+                    'sam-rebuild-ref-php:8.3',
+                    'php',
+                    '-d',
+                    'display_errors=0',
+                    '-d',
+                    'log_errors=0',
+                    `/var/www/html/${options.script}`,
+                    ...(options.args ?? []),
+                ],
+                {
+                    input: options.input,
+                    encoding: 'utf8',
+                    stdio: ['pipe', 'pipe', 'pipe'],
+                    ...(options.maxBuffer === undefined ? {} : { maxBuffer: options.maxBuffer }),
+                }
+            );
+        } catch (error) {
+            const failure = error as { status?: number | null; stderr?: string | Buffer };
+            const stderr = String(failure.stderr ?? '')
+                .replace(/\s+/gu, ' ')
+                .trim()
+                .slice(0, 500);
+            // Intentionally omit the raw child-process error as the cause: it
+            // retains prior JSONL stdout and can expose a huge fixture corpus.
+            // eslint-disable-next-line preserve-caught-error
+            throw new Error(
+                `reference comparison script failed (exit ${String(failure.status ?? 'unknown')})${stderr ? `: ${stderr}` : ''}`
+            );
+        }
+    } finally {
+        fs.rmSync(runtimeRoot, { recursive: true, force: true });
+    }
+};
+
 const runReferenceTrace = (workspaceRoot: string, fixtureJson: string): ReferenceTrace => {
+    assertFixtureGeneralCityContract(fixtureJson);
     const compareContainer = process.env.REF_COMPARE_CONTAINER;
     if (compareContainer) {
         const stdout = execFileSync(
@@ -156,61 +462,22 @@ const runReferenceTrace = (workspaceRoot: string, fixtureJson: string): Referenc
                 stdio: ['pipe', 'pipe', 'pipe'],
             }
         );
-        return JSON.parse(stdout) as ReferenceTrace;
+        const reference = JSON.parse(stdout) as ReferenceTrace;
+        assertReferenceFixtureIdentity(reference, fixtureJson);
+        return reference;
     }
     const compareSourceRoot = process.env.REF_COMPARE_SOURCE_ROOT;
     if (compareSourceRoot) {
-        const resolvedCompareRoot = path.resolve(compareSourceRoot);
-        const runtimeRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'sammo-ref-battle-'));
-        fs.cpSync(resolvedCompareRoot, runtimeRoot, {
-            recursive: true,
-            filter: (source) => {
-                const relative = path.relative(resolvedCompareRoot, source);
-                return !(
-                    relative === '.git' ||
-                    relative.startsWith(`.git${path.sep}`) ||
-                    relative === 'vendor' ||
-                    relative.startsWith(`vendor${path.sep}`) ||
-                    relative === 'd_log' ||
-                    relative.startsWith(`d_log${path.sep}`) ||
-                    relative === path.join('hwe', 'd_setting') ||
-                    relative.startsWith(`${path.join('hwe', 'd_setting')}${path.sep}`)
-                );
-            },
+        const stdout = runReferenceSourceScript({
+            workspaceRoot,
+            compareSourceRoot,
+            script: 'hwe/compare/battle_trace.php',
+            args: ['-'],
+            input: fixtureJson,
         });
-        fs.mkdirSync(path.join(runtimeRoot, 'd_log'));
-        try {
-            const stdout = execFileSync(
-                'docker',
-                [
-                    'run',
-                    '--rm',
-                    '-i',
-                    '-v',
-                    `${runtimeRoot}:/var/www/html`,
-                    '-v',
-                    `${path.join(workspaceRoot, 'ref/sam/vendor')}:/var/www/html/vendor:ro`,
-                    '-v',
-                    `${path.join(workspaceRoot, 'ref/sam/hwe/d_setting')}:/var/www/html/hwe/d_setting:ro`,
-                    'sam-rebuild-ref-php:8.3',
-                    'php',
-                    '-d',
-                    'display_errors=0',
-                    '-d',
-                    'log_errors=0',
-                    '/var/www/html/hwe/compare/battle_trace.php',
-                    '-',
-                ],
-                {
-                    input: fixtureJson,
-                    encoding: 'utf8',
-                    stdio: ['pipe', 'pipe', 'pipe'],
-                }
-            );
-            return JSON.parse(stdout) as ReferenceTrace;
-        } finally {
-            fs.rmSync(runtimeRoot, { recursive: true, force: true });
-        }
+        const reference = JSON.parse(stdout) as ReferenceTrace;
+        assertReferenceFixtureIdentity(reference, fixtureJson);
+        return reference;
     }
     const stdout = execFileSync(
         'docker',
@@ -222,21 +489,63 @@ const runReferenceTrace = (workspaceRoot: string, fixtureJson: string): Referenc
             stdio: ['pipe', 'pipe', 'pipe'],
         }
     );
-    return JSON.parse(stdout) as ReferenceTrace;
+    const reference = JSON.parse(stdout) as ReferenceTrace;
+    assertReferenceFixtureIdentity(reference, fixtureJson);
+    return reference;
+};
+
+interface BattleReferenceManifest {
+    schemaVersion: 1;
+    fixtureCount: number;
+    fixtureJsonlSha256: string;
+    traceCount: number;
+    traceJsonlSha256: string;
+}
+
+const normalizeJsonlForManifest = (lines: string[]): string => `${lines.map((line) => line.trim()).join('\n')}\n`;
+
+const readBoundPrecomputedTraces = (tracePath: string, fixtureLines: string[]): ReferenceTrace[] => {
+    const resolvedTracePath = path.resolve(tracePath);
+    const rawTraceJsonl = fs.readFileSync(resolvedTracePath, 'utf8');
+    const traceLines = rawTraceJsonl.split(/\r?\n/u).filter(Boolean);
+    const manifestPath = path.resolve(
+        process.env['BATTLE_REFERENCE_MANIFEST_PATH'] ?? `${resolvedTracePath}.manifest.json`
+    );
+    if (!fs.existsSync(manifestPath)) {
+        throw new Error(
+            'BATTLE_REFERENCE_TRACE_PATH requires BATTLE_REFERENCE_MANIFEST_PATH or a sibling .manifest.json file.'
+        );
+    }
+    const manifest = readJson<BattleReferenceManifest>(manifestPath);
+    if (manifest.schemaVersion !== 1) {
+        throw new Error('Unsupported battle reference manifest schemaVersion.');
+    }
+    if (traceLines.length !== fixtureLines.length) {
+        throw new Error(`precomputed ref corpus has ${traceLines.length} traces for ${fixtureLines.length} fixtures`);
+    }
+    const expectedFixtureJsonl = normalizeJsonlForManifest(fixtureLines);
+    const checks: Array<[string, unknown, unknown]> = [
+        ['fixtureCount', manifest.fixtureCount, fixtureLines.length],
+        ['traceCount', manifest.traceCount, traceLines.length],
+        ['fixtureJsonlSha256', manifest.fixtureJsonlSha256, sha256(expectedFixtureJsonl)],
+        ['traceJsonlSha256', manifest.traceJsonlSha256, sha256(rawTraceJsonl)],
+    ];
+    for (const [label, actual, expected] of checks) {
+        if (actual !== expected) {
+            throw new Error(`battle reference manifest ${label} mismatch`);
+        }
+    }
+
+    const traces = traceLines.map((line) => JSON.parse(line) as ReferenceTrace);
+    traces.forEach((trace, index) => assertReferenceFixtureIdentity(trace, fixtureLines[index]!, `trace[${index}]`));
+    return traces;
 };
 
 const runReferenceTraceBatch = (workspaceRoot: string, fixtureLines: string[]): ReferenceTrace[] => {
+    fixtureLines.forEach((line, index) => assertFixtureGeneralCityContract(line, `fixture[${index}]`));
     const precomputedTracePath = process.env.BATTLE_REFERENCE_TRACE_PATH;
     if (precomputedTracePath) {
-        const traces = fs
-            .readFileSync(path.resolve(precomputedTracePath), 'utf8')
-            .split(/\r?\n/u)
-            .filter(Boolean)
-            .map((line) => JSON.parse(line) as ReferenceTrace);
-        if (traces.length < fixtureLines.length) {
-            throw new Error(`precomputed ref corpus has ${traces.length} traces for ${fixtureLines.length} fixtures`);
-        }
-        return traces.slice(0, fixtureLines.length);
+        return readBoundPrecomputedTraces(precomputedTracePath, fixtureLines);
     }
     const compareContainer = process.env.REF_COMPARE_CONTAINER;
     if (compareContainer) {
@@ -259,84 +568,54 @@ const runReferenceTraceBatch = (workspaceRoot: string, fixtureLines: string[]): 
                 maxBuffer: 512 * 1024 * 1024,
             }
         );
-        return stdout
+        const traces = stdout
             .split(/\r?\n/u)
             .filter(Boolean)
             .map((line) => JSON.parse(line) as ReferenceTrace);
+        if (traces.length !== fixtureLines.length) {
+            throw new Error(`ref batch returned ${traces.length} traces for ${fixtureLines.length} fixtures`);
+        }
+        traces.forEach((trace, index) =>
+            assertReferenceFixtureIdentity(trace, fixtureLines[index]!, `container trace[${index}]`)
+        );
+        return traces;
     }
     const compareSourceRoot = process.env.REF_COMPARE_SOURCE_ROOT;
     if (!compareSourceRoot) {
         throw new Error('BATTLE_CORPUS_PATH requires REF_COMPARE_SOURCE_ROOT with the JSONL-capable ref harness.');
     }
-    const resolvedCompareRoot = path.resolve(compareSourceRoot);
-    const runtimeRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'sammo-ref-battle-corpus-'));
-    fs.cpSync(resolvedCompareRoot, runtimeRoot, {
-        recursive: true,
-        filter: (source) => {
-            const relative = path.relative(resolvedCompareRoot, source);
-            return !(
-                relative === '.git' ||
-                relative.startsWith(`.git${path.sep}`) ||
-                relative === 'vendor' ||
-                relative.startsWith(`vendor${path.sep}`) ||
-                relative === 'd_log' ||
-                relative.startsWith(`d_log${path.sep}`) ||
-                relative === path.join('hwe', 'd_setting') ||
-                relative.startsWith(`${path.join('hwe', 'd_setting')}${path.sep}`)
-            );
-        },
+    const stdout = runReferenceSourceScript({
+        workspaceRoot,
+        compareSourceRoot,
+        script: 'hwe/compare/battle_trace.php',
+        args: ['--jsonl'],
+        input: normalizeJsonlForManifest(fixtureLines),
+        maxBuffer: 512 * 1024 * 1024,
     });
-    fs.mkdirSync(path.join(runtimeRoot, 'd_log'));
-    try {
-        const traces: ReferenceTrace[] = [];
-        const chunkSize = 200;
-        for (let offset = 0; offset < fixtureLines.length; offset += chunkSize) {
-            const chunk = fixtureLines.slice(offset, offset + chunkSize);
-            const stdout = execFileSync(
-                'docker',
-                [
-                    'run',
-                    '--rm',
-                    '-i',
-                    '-v',
-                    `${runtimeRoot}:/var/www/html`,
-                    '-v',
-                    `${path.join(workspaceRoot, 'ref/sam/vendor')}:/var/www/html/vendor:ro`,
-                    '-v',
-                    `${path.join(workspaceRoot, 'ref/sam/hwe/d_setting')}:/var/www/html/hwe/d_setting:ro`,
-                    'sam-rebuild-ref-php:8.3',
-                    'php',
-                    '-d',
-                    'display_errors=0',
-                    '-d',
-                    'log_errors=0',
-                    '/var/www/html/hwe/compare/battle_trace.php',
-                    '--jsonl',
-                ],
-                {
-                    input: `${chunk.join('\n')}\n`,
-                    encoding: 'utf8',
-                    stdio: ['pipe', 'pipe', 'pipe'],
-                    maxBuffer: 512 * 1024 * 1024,
-                }
-            );
-            traces.push(
-                ...stdout
-                    .split(/\r?\n/u)
-                    .filter(Boolean)
-                    .map((line) => JSON.parse(line) as ReferenceTrace)
-            );
-        }
-        if (traces.length !== fixtureLines.length) {
-            throw new Error(`ref batch returned ${traces.length} traces for ${fixtureLines.length} fixtures`);
-        }
-        return traces;
-    } finally {
-        fs.rmSync(runtimeRoot, { recursive: true, force: true });
+    const traces = stdout
+        .split(/\r?\n/u)
+        .filter(Boolean)
+        .map((line) => JSON.parse(line) as ReferenceTrace);
+    if (traces.length !== fixtureLines.length) {
+        throw new Error(`ref batch returned ${traces.length} traces for ${fixtureLines.length} fixtures`);
     }
+    traces.forEach((trace, index) =>
+        assertReferenceFixtureIdentity(trace, fixtureLines[index]!, `source trace[${index}]`)
+    );
+    return traces;
 };
 
 const runReferenceItemCatalog = (workspaceRoot: string, itemKeys: string[]): Record<string, ReferenceItemMetadata> => {
+    const compareSourceRoot = process.env.REF_COMPARE_SOURCE_ROOT;
+    if (compareSourceRoot) {
+        const stdout = runReferenceSourceScript({
+            workspaceRoot,
+            compareSourceRoot,
+            script: 'hwe/compare/item_catalog.php',
+            input: JSON.stringify(itemKeys),
+        });
+        return JSON.parse(stdout) as Record<string, ReferenceItemMetadata>;
+    }
     const stdout = execFileSync(
         'docker',
         ['compose', 'exec', '-T', 'php', 'php', '/var/www/html/hwe/compare/item_catalog.php'],
@@ -351,6 +630,15 @@ const runReferenceItemCatalog = (workspaceRoot: string, itemKeys: string[]): Rec
 };
 
 const runReferenceTraitCatalog = (workspaceRoot: string): ReferenceTraitCatalog => {
+    const compareSourceRoot = process.env.REF_COMPARE_SOURCE_ROOT;
+    if (compareSourceRoot) {
+        const stdout = runReferenceSourceScript({
+            workspaceRoot,
+            compareSourceRoot,
+            script: 'hwe/compare/trait_catalog.php',
+        });
+        return JSON.parse(stdout) as ReferenceTraitCatalog;
+    }
     const stdout = execFileSync(
         'docker',
         ['compose', 'exec', '-T', 'php', 'php', '/var/www/html/hwe/compare/trait_catalog.php'],
@@ -366,44 +654,152 @@ const runReferenceTraitCatalog = (workspaceRoot: string): ReferenceTraitCatalog 
 const expectNearlyEqual = (actual: unknown, expected: unknown, label: string): void => {
     expect(typeof actual, `${label}: actual type`).toBe('number');
     expect(typeof expected, `${label}: reference type`).toBe('number');
-    if (process.env['STRICT_BATTLE_PARITY'] === '1') {
-        expect(actual, `${label}: exact battle parity`).toBe(expected);
+    const actualNumber = actual as number;
+    const expectedNumber = expected as number;
+    expect(Number.isFinite(actualNumber), `${label}: actual must be finite`).toBe(true);
+    expect(Number.isFinite(expectedNumber), `${label}: reference must be finite`).toBe(true);
+    if (Number.isSafeInteger(actualNumber) && Number.isSafeInteger(expectedNumber)) {
+        expect(actualNumber, `${label}: integer battle parity`).toBe(expectedNumber);
         return;
     }
-    const reference = expected as number;
-    const configuredRelativeTolerance = Number.parseFloat(
-        process.env['BATTLE_TRACE_RELATIVE_TOLERANCE'] ?? '0.01'
-    );
-    if (!Number.isFinite(configuredRelativeTolerance) || configuredRelativeTolerance < 0) {
-        throw new Error('BATTLE_TRACE_RELATIVE_TOLERANCE must be a non-negative finite number');
-    }
     const tolerance = Math.max(
-        Number.EPSILON * Math.max(1, Math.abs(reference)) * 8,
-        Math.abs(reference) * configuredRelativeTolerance
+        Number.EPSILON * Math.max(1, Math.abs(expectedNumber)) * 16,
+        Math.abs(expectedNumber) * 1e-12,
+        1e-12
     );
     expect(
-        Math.abs((actual as number) - reference),
-        `${label}: core=${String(actual)}, ref=${String(expected)}, tolerance=${tolerance}`
+        Math.abs(actualNumber - expectedNumber),
+        `${label}: core=${String(actualNumber)}, ref=${String(expectedNumber)}, tolerance=${tolerance}`
     ).toBeLessThanOrEqual(tolerance);
+};
+
+const isCanonicalEmptyMapPath = (label: string): boolean =>
+    label.endsWith('.activatedSkills') || label.endsWith('.details');
+
+const normalizeCanonicalEmptyMap = (value: unknown, label: string): unknown => {
+    if (isCanonicalEmptyMapPath(label) && Array.isArray(value) && value.length === 0) {
+        return {};
+    }
+    return value;
+};
+
+const assertCanonicalValue = (rawActual: unknown, rawExpected: unknown, label: string): void => {
+    const actual = normalizeCanonicalEmptyMap(rawActual, label);
+    const expected = normalizeCanonicalEmptyMap(rawExpected, label);
+    if (typeof actual === 'number' || typeof expected === 'number') {
+        expectNearlyEqual(actual, expected, label);
+        return;
+    }
+    if (Array.isArray(actual) || Array.isArray(expected)) {
+        expect(Array.isArray(actual), `${label}: core array type`).toBe(true);
+        expect(Array.isArray(expected), `${label}: ref array type`).toBe(true);
+        const actualArray = actual as unknown[];
+        const expectedArray = expected as unknown[];
+        expect(actualArray.length, `${label}: array length`).toBe(expectedArray.length);
+        for (let index = 0; index < expectedArray.length; index += 1) {
+            assertCanonicalValue(actualArray[index], expectedArray[index], `${label}[${index}]`);
+        }
+        return;
+    }
+    if (isRecord(actual) || isRecord(expected)) {
+        expect(isRecord(actual), `${label}: core object type`).toBe(true);
+        expect(isRecord(expected), `${label}: ref object type`).toBe(true);
+        const actualObject = actual as Record<string, unknown>;
+        const expectedObject = expected as Record<string, unknown>;
+        const actualKeys = Object.keys(actualObject)
+            .filter((key) => actualObject[key] !== undefined)
+            .sort();
+        const expectedKeys = Object.keys(expectedObject)
+            .filter((key) => expectedObject[key] !== undefined)
+            .sort();
+        expect(actualKeys, `${label}: object keys`).toEqual(expectedKeys);
+        for (const key of expectedKeys) {
+            assertCanonicalValue(actualObject[key], expectedObject[key], `${label}.${key}`);
+        }
+        return;
+    }
+    expect(actual, label).toBe(expected);
+};
+
+const buildCapturedLogBuckets = (
+    capture: CapturedCoreLogger | null | undefined,
+    year: number,
+    month: number
+): ReferenceLogBuckets => {
+    const buckets: ReferenceLogBuckets = {
+        generalHistoryLog: [],
+        generalActionLog: [],
+        generalBattleResultLog: [],
+        generalBattleDetailLog: [],
+        nationalHistoryLog: [],
+        globalHistoryLog: [],
+        globalActionLog: [],
+    };
+    for (const entry of capture?.entries ?? []) {
+        const text = formatLogText(entry.text, entry.format ?? LogFormat.RAWTEXT, year, month);
+        if (entry.scope === LogScope.GENERAL) {
+            switch (entry.category) {
+                case LogCategory.HISTORY:
+                    buckets.generalHistoryLog.push(text);
+                    break;
+                case LogCategory.ACTION:
+                    buckets.generalActionLog.push(text);
+                    break;
+                case LogCategory.BATTLE_BRIEF:
+                    buckets.generalBattleResultLog.push(text);
+                    break;
+                case LogCategory.BATTLE_DETAIL:
+                    buckets.generalBattleDetailLog.push(text);
+                    break;
+                default:
+                    break;
+            }
+        } else if (entry.scope === LogScope.NATION && entry.category === LogCategory.HISTORY) {
+            buckets.nationalHistoryLog.push(text);
+        } else if (entry.scope === LogScope.SYSTEM && entry.category === LogCategory.HISTORY) {
+            buckets.globalHistoryLog.push(text);
+        } else if (entry.scope === LogScope.SYSTEM && entry.category === LogCategory.SUMMARY) {
+            buckets.globalActionLog.push(text);
+        }
+    }
+    return buckets;
+};
+
+const assertAllLogBucketsParity = (
+    capture: CoreLogCapture,
+    reference: ReferenceTrace,
+    fixture: BattleSimRequestPayload,
+    label: string
+): void => {
+    assertCanonicalValue(
+        buildCapturedLogBuckets(capture.byGeneralId.get(fixture.attackerGeneral.no), fixture.year, fixture.month),
+        reference.logs.attacker,
+        `${label}.logs.attacker`
+    );
+    for (const defender of fixture.defenderGenerals) {
+        assertCanonicalValue(
+            buildCapturedLogBuckets(capture.byGeneralId.get(defender.no), fixture.year, fixture.month),
+            reference.logs.defenders[String(defender.no)] ?? {
+                generalHistoryLog: [],
+                generalActionLog: [],
+                generalBattleResultLog: [],
+                generalBattleDetailLog: [],
+                nationalHistoryLog: [],
+                globalHistoryLog: [],
+                globalActionLog: [],
+            },
+            `${label}.logs.defenders.${defender.no}`
+        );
+    }
+    assertCanonicalValue(
+        buildCapturedLogBuckets(capture.city, fixture.year, fixture.month),
+        reference.logs.city,
+        `${label}.logs.city`
+    );
 };
 
 const normalizeRandomArguments = (value: Record<string, unknown>): Record<string, unknown> =>
     Array.isArray(value) && value.length === 0 ? {} : value;
-
-const describeSequenceDifference = (label: string, actual: unknown[], expected: unknown[]): string | null => {
-    const commonLength = Math.min(actual.length, expected.length);
-    for (let index = 0; index < commonLength; index += 1) {
-        if (JSON.stringify(actual[index]) !== JSON.stringify(expected[index])) {
-            const start = Math.max(0, index - 2);
-            const end = index + 3;
-            return `${label}[${index}]: core=${JSON.stringify(actual.slice(start, end))} ref=${JSON.stringify(expected.slice(start, end))}`;
-        }
-    }
-    if (actual.length !== expected.length) {
-        return `${label} length: core=${actual.length} ref=${expected.length}`;
-    }
-    return null;
-};
 
 const describeTextDifference = (actual: string | undefined, expected: string): string => {
     const actualText = actual ?? '';
@@ -448,19 +844,23 @@ const assertRngParity = (reference: ReferenceTrace, coreRng: TracingRng | null):
         arguments: normalizeRandomArguments(args),
         result,
     }));
-    const rngDifference = describeSequenceDifference('rng', normalizedCoreRng, normalizedReferenceRng);
-    if (rngDifference) {
-        throw new Error(rngDifference);
-    }
+    assertCanonicalValue(normalizedCoreRng, normalizedReferenceRng, 'rng');
+    assertCanonicalValue(coreRng?.boolCalls ?? [], reference.boolRng, 'boolRng');
 };
 
 const assertTraceParity = (
     coreEvents: WarBattleTraceEvent[],
     reference: ReferenceTrace,
-    coreRng: TracingRng | null
+    coreRng: TracingRng | null,
+    coreOutcome: WarBattleOutcome | null
 ): void => {
     const defenderOrderEvent = coreEvents[0]?.event === 'defender_order' ? coreEvents[0] : null;
-    const comparableCoreEvents = defenderOrderEvent ? coreEvents.slice(1) : coreEvents;
+    const comparableCoreEvents = (defenderOrderEvent ? coreEvents.slice(1) : coreEvents).map((event, seq) => ({
+        ...event,
+        // Core emits one comparison-only defender_order event before the Ref
+        // processWar_NG sequence. Renumber only the canonical shared sequence.
+        seq,
+    }));
     if (reference.defenderOrder) {
         // Ref retains non-participating (order <= 0) defenders at the tail and
         // stops when it reaches them. Core discards them before sorting. The
@@ -470,12 +870,14 @@ const assertTraceParity = (
             after: reference.defenderOrder.after.filter(({ order }) => order > 0),
         };
         const coreOrder = defenderOrderEvent?.details as typeof effectiveReferenceOrder | undefined;
-        expect(coreOrder?.before.map(({ id }) => id), 'defender order before IDs').toEqual(
-            effectiveReferenceOrder.before.map(({ id }) => id)
-        );
-        expect(coreOrder?.after.map(({ id }) => id), 'defender order after IDs').toEqual(
-            effectiveReferenceOrder.after.map(({ id }) => id)
-        );
+        expect(
+            coreOrder?.before.map(({ id }) => id),
+            'defender order before IDs'
+        ).toEqual(effectiveReferenceOrder.before.map(({ id }) => id));
+        expect(
+            coreOrder?.after.map(({ id }) => id),
+            'defender order after IDs'
+        ).toEqual(effectiveReferenceOrder.after.map(({ id }) => id));
         for (const side of ['before', 'after'] as const) {
             for (let index = 0; index < effectiveReferenceOrder[side].length; index += 1) {
                 expectNearlyEqual(
@@ -487,37 +889,145 @@ const assertTraceParity = (
         }
     }
     assertRngParity(reference, coreRng);
-    const coreEventNames = comparableCoreEvents.map((event) => event.event);
-    const referenceEventNames = reference.events.map((event) => event.event);
-    expect(
-        coreEventNames,
-        `event sequence\ncore=${JSON.stringify(coreEventNames)}\nref=${JSON.stringify(referenceEventNames)}`
-    ).toEqual(referenceEventNames);
+    assertCanonicalValue(comparableCoreEvents, reference.events, 'events');
+    assertFinalOutcomeParity(coreOutcome, coreEvents, reference);
+};
 
-    for (let index = 0; index < reference.events.length; index += 1) {
-        const core = comparableCoreEvents[index]!;
-        const ref = reference.events[index]!;
-        expectNearlyEqual(core.attacker.hp, ref.attacker.hp, `event ${index} attacker.hp`);
-        expectNearlyEqual(core.attacker.warPower, ref.attacker.warPower, `event ${index} attacker.warPower`);
-        expect(core.attacker.phase, `event ${index} attacker.phase`).toBe(ref.attacker.phase);
-        expect(core.attacker.realPhase, `event ${index} attacker.realPhase`).toBe(ref.attacker.realPhase);
-        expect(core.attacker.maxPhase, `event ${index} attacker.maxPhase`).toBe(ref.attacker.maxPhase);
-        if (core.defender && ref.defender) {
-            expect(core.defender.kind, `event ${index} defender.kind`).toBe(ref.defender.kind);
-            expectNearlyEqual(core.defender.hp, ref.defender.hp, `event ${index} defender.hp`);
-            expectNearlyEqual(core.defender.warPower, ref.defender.warPower, `event ${index} defender.warPower`);
-            expect(core.defender.phase, `event ${index} defender.phase`).toBe(ref.defender.phase);
-            expect(core.defender.realPhase, `event ${index} defender.realPhase`).toBe(ref.defender.realPhase);
-            expect(core.defender.maxPhase, `event ${index} defender.maxPhase`).toBe(ref.defender.maxPhase);
-        } else {
-            expect(core.defender, `event ${index} defender presence`).toBe(ref.defender);
-        }
-        if (core.event === 'phase_damage') {
-            for (const key of ['rawDeadAttacker', 'rawDeadDefender', 'deadAttacker', 'deadDefender']) {
-                expectNearlyEqual(core.details[key], ref.details[key], `event ${index} ${key}`);
-            }
+const outcomeMetaNumber = (general: WarBattleOutcome['attacker'], key: string): number => {
+    const value = general.meta[key];
+    return typeof value === 'number' ? value : 0;
+};
+
+const buildOutcomeGeneralSnapshot = (
+    transient: WarBattleTraceUnitSnapshot,
+    general: WarBattleOutcome['attacker'],
+    report: WarBattleOutcome['reports'][number],
+    activatedSkills: Record<string, number>
+): WarBattleTraceUnitSnapshot => ({
+    ...transient,
+    kind: 'general',
+    id: general.id,
+    name: general.name,
+    isAttacker: report.isAttacker,
+    crewTypeId: general.crewTypeId,
+    phase: report.phase ?? transient.phase,
+    hp: general.crew,
+    killed: report.killed,
+    dead: report.dead,
+    activatedSkills,
+    general: {
+        crew: general.crew,
+        rice: general.rice,
+        train: general.train,
+        atmos: general.atmos,
+        injury: general.injury,
+        experience: general.experience,
+        dedication: general.dedication,
+        dex1: outcomeMetaNumber(general, 'dex1'),
+        dex2: outcomeMetaNumber(general, 'dex2'),
+        dex3: outcomeMetaNumber(general, 'dex3'),
+        dex4: outcomeMetaNumber(general, 'dex4'),
+        dex5: outcomeMetaNumber(general, 'dex5'),
+    },
+});
+
+const assertFinalOutcomeParity = (
+    coreOutcome: WarBattleOutcome | null,
+    coreEvents: WarBattleTraceEvent[],
+    reference: ReferenceTrace
+): void => {
+    expect(coreOutcome, 'comparison onBattleResolved callback').not.toBeNull();
+    if (!coreOutcome) {
+        return;
+    }
+    const finalEvent = coreEvents.at(-1);
+    expect(finalEvent?.event, 'final battle trace event').toBe('battle_end');
+    if (!finalEvent) {
+        return;
+    }
+
+    const attackerReport = coreOutcome.reports.find(
+        (report) => report.type === 'general' && report.id === coreOutcome.attacker.id && report.isAttacker
+    );
+    const cityReport = coreOutcome.reports.find(
+        (report) => report.type === 'city' && report.id === coreOutcome.defenderCity.id
+    );
+    expect(attackerReport, 'final attacker report').toBeDefined();
+    expect(cityReport, 'final city report').toBeDefined();
+    if (!attackerReport || !cityReport) {
+        return;
+    }
+
+    const latestDefenderSnapshots = new Map<number, WarBattleTraceUnitSnapshot>();
+    for (const event of coreEvents) {
+        if (event.defender?.kind === 'general') {
+            latestDefenderSnapshots.set(event.defender.id, event.defender);
         }
     }
+    const metrics = coreOutcome.metrics;
+    const coreAttacker = buildOutcomeGeneralSnapshot(
+        finalEvent.attacker,
+        coreOutcome.attacker,
+        attackerReport,
+        metrics?.attackerActivatedSkills ?? {}
+    );
+    const coreCity: WarBattleTraceUnitSnapshot = {
+        ...finalEvent.city,
+        kind: 'city',
+        id: coreOutcome.defenderCity.id,
+        name: coreOutcome.defenderCity.name,
+        isAttacker: cityReport.isAttacker,
+        phase: cityReport.phase ?? finalEvent.city.phase,
+        killed: cityReport.killed,
+        dead: cityReport.dead,
+        cityState: {
+            defence: coreOutcome.defenderCity.defence,
+            wall: coreOutcome.defenderCity.wall,
+            population: coreOutcome.defenderCity.population,
+        },
+    };
+    const coreFinishedDefenders = reference.finishedDefenders.map((expectedSnapshot) => {
+        if (expectedSnapshot.kind === 'city') {
+            return coreCity;
+        }
+        const defenderIndex = coreOutcome.defenders.findIndex((general) => general.id === expectedSnapshot.id);
+        expect(defenderIndex, `final defender ${expectedSnapshot.id} exists`).toBeGreaterThanOrEqual(0);
+        const general = coreOutcome.defenders[defenderIndex];
+        const orderedDefenderReports = coreOutcome.reports.filter(
+            (candidate) => candidate.type === 'general' && !candidate.isAttacker
+        );
+        const metricIndex = orderedDefenderReports.findIndex((candidate) => candidate.id === expectedSnapshot.id);
+        const report = metricIndex >= 0 ? orderedDefenderReports[metricIndex] : undefined;
+        const transient = latestDefenderSnapshots.get(expectedSnapshot.id);
+        expect(general, `final defender ${expectedSnapshot.id} state`).toBeDefined();
+        expect(report, `final defender ${expectedSnapshot.id} report`).toBeDefined();
+        expect(transient, `final defender ${expectedSnapshot.id} transient snapshot`).toBeDefined();
+        if (!general || !report || !transient) {
+            return expectedSnapshot;
+        }
+        return buildOutcomeGeneralSnapshot(
+            transient,
+            general,
+            report,
+            metrics?.defenderActivatedSkills[metricIndex] ?? {}
+        );
+    });
+
+    assertCanonicalValue(
+        {
+            conquered: coreOutcome.conquered,
+            attacker: coreAttacker,
+            city: coreCity,
+            finishedDefenders: coreFinishedDefenders,
+        },
+        {
+            conquered: reference.conquered,
+            attacker: reference.attacker,
+            city: reference.city,
+            finishedDefenders: reference.finishedDefenders,
+        },
+        'finalOutcome'
+    );
 };
 
 const configuredWorkspaceRoot = process.env.TURN_DIFFERENTIAL_WORKSPACE_ROOT;
@@ -533,8 +1043,27 @@ const battleCorpusPath = process.env.BATTLE_CORPUS_PATH;
 const itWithBattleCorpus = battleCorpusPath ? it : it.skip;
 
 describeWithReference('ref ↔ core2026 battle differential', () => {
+    it('rejects battle fixtures whose general current-city contract is missing or inconsistent', () => {
+        const fixture = readJson<BattleSimRequestPayload & { startYear: number }>(
+            path.resolve(process.cwd(), 'fixtures/battle/basic-infantry.json')
+        );
+        const missingCity = structuredClone(fixture) as BattleSimRequestPayload & {
+            attackerGeneral: BattleSimGeneralPayload & { city?: number };
+        };
+        delete missingCity.attackerGeneral.city;
+        expect(() => assertFixtureGeneralCityContract(JSON.stringify(missingCity), 'missing-city')).toThrow(
+            'attackerGeneral.city must be an explicit positive integer'
+        );
+
+        const wrongDefenderCity = structuredClone(fixture);
+        wrongDefenderCity.defenderGenerals[0]!.city = fixture.attackerCity.city;
+        expect(() => assertFixtureGeneralCityContract(JSON.stringify(wrongDefenderCity), 'wrong-city')).toThrow(
+            'defenderGeneral[0].city=1 must equal current city 2'
+        );
+    });
+
     itWithBattleCorpus(
-        'replays a captured battle corpus with matching trace, RNG, skills, outcome, and attacker logs',
+        'replays a captured battle corpus with matching trace, RNG, full outcome, and all log buckets [conditional: BATTLE_CORPUS_PATH]',
         { timeout: 600_000 },
         () => {
             const requestedLimit = Number.parseInt(process.env.BATTLE_CORPUS_LIMIT ?? '', 10);
@@ -560,7 +1089,12 @@ describeWithReference('ref ↔ core2026 battle differential', () => {
             };
             const failures: string[] = [];
             const categoryCounts = new Map<string, number>();
-            const recordFailure = (category: string, index: number, fixture: BattleSimRequestPayload, detail: string) => {
+            const recordFailure = (
+                category: string,
+                index: number,
+                fixture: BattleSimRequestPayload,
+                detail: string
+            ) => {
                 categoryCounts.set(category, (categoryCounts.get(category) ?? 0) + 1);
                 if (failures.length < 40) {
                     failures.push(
@@ -593,7 +1127,9 @@ describeWithReference('ref ↔ core2026 battle differential', () => {
                 };
                 const reference = referenceTraces[index]!;
                 const coreEvents: WarBattleTraceEvent[] = [];
+                const coreLogs = createCoreLogCapture();
                 let coreRng: TracingRng | null = null;
+                let coreOutcome: WarBattleOutcome | null = null;
                 const coreResult = processBattleSimJob(
                     {
                         ...fixture,
@@ -604,50 +1140,27 @@ describeWithReference('ref ↔ core2026 battle differential', () => {
                     },
                     {
                         trace: (event) => coreEvents.push(event),
+                        loggerFactory: coreLogs.loggerFactory,
+                        onBattleResolved: (outcome) => {
+                            coreOutcome = outcome;
+                        },
                         rngFactory: (seed) => {
                             coreRng = new TracingRng(LiteHashDRBG.build(seed));
-                            return new RandUtil(coreRng);
+                            return coreRng.createRandUtil();
                         },
                     }
                 );
 
                 try {
-                    assertTraceParity(coreEvents, reference, coreRng);
+                    assertTraceParity(coreEvents, reference, coreRng, coreOutcome);
                 } catch (error) {
                     recordFailure('trace', index, fixture, error instanceof Error ? error.message : String(error));
                 }
 
-                const finalReference = reference.events.at(-1);
-                if (finalReference) {
-                    const outcome = {
-                        phase: coreResult.phase,
-                        killed: coreResult.killed,
-                        dead: coreResult.dead,
-                    };
-                    const expectedOutcome = {
-                        phase: finalReference.attacker.phase,
-                        killed: finalReference.attacker.killed,
-                        dead: finalReference.attacker.dead,
-                    };
-                    if (JSON.stringify(outcome) !== JSON.stringify(expectedOutcome)) {
-                        recordFailure(
-                            'outcome',
-                            index,
-                            fixture,
-                            `core=${JSON.stringify(outcome)} ref=${JSON.stringify(expectedOutcome)}`
-                        );
-                    }
-                    const coreSkills = coreResult.attackerSkills ?? {};
-                    const rawReferenceSkills = finalReference.attacker.activatedSkills;
-                    const referenceSkills = Array.isArray(rawReferenceSkills) ? {} : (rawReferenceSkills ?? {});
-                    if (JSON.stringify(coreSkills) !== JSON.stringify(referenceSkills)) {
-                        recordFailure(
-                            'skills',
-                            index,
-                            fixture,
-                            `core=${JSON.stringify(coreSkills)} ref=${JSON.stringify(referenceSkills)}`
-                        );
-                    }
+                try {
+                    assertAllLogBucketsParity(coreLogs, reference, fixture, `fixture[${index}]`);
+                } catch (error) {
+                    recordFailure('logs', index, fixture, error instanceof Error ? error.message : String(error));
                 }
 
                 const expectedBrief = convertLog(reference.logs.attacker.generalBattleResultLog.join('<br>'));
@@ -734,6 +1247,7 @@ describeWithReference('ref ↔ core2026 battle differential', () => {
 
             const coreEvents: WarBattleTraceEvent[] = [];
             let coreRng: TracingRng | null = null;
+            let coreOutcome: WarBattleOutcome | null = null;
             const coreResult = processBattleSimJob(
                 {
                     ...base,
@@ -744,16 +1258,19 @@ describeWithReference('ref ↔ core2026 battle differential', () => {
                 },
                 {
                     trace: (event) => coreEvents.push(event),
+                    onBattleResolved: (outcome) => {
+                        coreOutcome = outcome;
+                    },
                     rngFactory: (seed) => {
                         coreRng = new TracingRng(LiteHashDRBG.build(seed));
-                        return new RandUtil(coreRng);
+                        return coreRng.createRandUtil();
                     },
                 }
             );
 
             try {
                 const reference = runReferenceTrace(workspaceRoot!, JSON.stringify(base));
-                assertTraceParity(coreEvents, reference, coreRng);
+                assertTraceParity(coreEvents, reference, coreRng, coreOutcome);
                 const opponentSwitches = coreEvents.filter((event) => event.event === 'opponent_switched');
                 if (entry.directCity) {
                     expect(
@@ -792,7 +1309,7 @@ describeWithReference('ref ↔ core2026 battle differential', () => {
                         '<C>●</>아군의 전멸에 상대의 <R>진격</>이 이어집니다!'
                     );
                     expect(coreResult.lastWarLog?.generalBattleDetailLog).toContain(
-                        '적군의 전멸에 <font color=cyan>진격</font>이 이어집니다!'
+                        '적군의 전멸에 <span style="color: cyan;">진격</span>이 이어집니다!'
                     );
                 }
             } catch (error) {
@@ -874,17 +1391,9 @@ describeWithReference('ref ↔ core2026 battle differential', () => {
             base.attackerGeneral.strength = 85;
             base.attackerGeneral.intel = 80;
             base.attackerGeneral.special =
-                entry.kind === 'dualSlot'
-                    ? entry.special
-                    : entry.kind === 'eventDomestic'
-                      ? entry.key
-                      : 'None';
+                entry.kind === 'dualSlot' ? entry.special : entry.kind === 'eventDomestic' ? entry.key : 'None';
             base.attackerGeneral.special2 =
-                entry.kind === 'dualSlot'
-                    ? entry.special2
-                    : entry.kind === 'war'
-                      ? entry.key
-                      : 'None';
+                entry.kind === 'dualSlot' ? entry.special2 : entry.kind === 'war' ? entry.key : 'None';
             base.attackerGeneral.personal = entry.kind === 'personality' ? entry.key : 'None';
             if (entry.kind === 'nation') {
                 base.attackerNation.type = entry.key;
@@ -892,6 +1401,7 @@ describeWithReference('ref ↔ core2026 battle differential', () => {
 
             const coreEvents: WarBattleTraceEvent[] = [];
             let coreRng: TracingRng | null = null;
+            let coreOutcome: WarBattleOutcome | null = null;
             processBattleSimJob(
                 {
                     ...base,
@@ -901,14 +1411,22 @@ describeWithReference('ref ↔ core2026 battle differential', () => {
                 },
                 {
                     trace: (event) => coreEvents.push(event),
+                    onBattleResolved: (outcome) => {
+                        coreOutcome = outcome;
+                    },
                     rngFactory: (seed) => {
                         coreRng = new TracingRng(LiteHashDRBG.build(seed));
-                        return new RandUtil(coreRng);
+                        return coreRng.createRandUtil();
                     },
                 }
             );
             try {
-                assertTraceParity(coreEvents, runReferenceTrace(workspaceRoot!, JSON.stringify(base)), coreRng);
+                assertTraceParity(
+                    coreEvents,
+                    runReferenceTrace(workspaceRoot!, JSON.stringify(base)),
+                    coreRng,
+                    coreOutcome
+                );
             } catch (error) {
                 throw new Error(
                     `${entry.kind}/${entry.key}: ${error instanceof Error ? error.message : String(error)}`,
@@ -989,7 +1507,9 @@ describeWithReference('ref ↔ core2026 battle differential', () => {
             armTypes: { footman: 1, archer: 2, cavalry: 3, wizard: 4, siege: 5, misc: 6, castle: 0 },
         };
         const coreEvents: WarBattleTraceEvent[] = [];
+        const coreLogs = createCoreLogCapture();
         let coreRng: TracingRng | null = null;
+        let coreOutcome: WarBattleOutcome | null = null;
         processBattleSimJob(
             {
                 ...base,
@@ -999,13 +1519,45 @@ describeWithReference('ref ↔ core2026 battle differential', () => {
             },
             {
                 trace: (event) => coreEvents.push(event),
+                loggerFactory: coreLogs.loggerFactory,
+                onBattleResolved: (outcome) => {
+                    coreOutcome = outcome;
+                },
                 rngFactory: (seed) => {
                     coreRng = new TracingRng(LiteHashDRBG.build(seed));
-                    return new RandUtil(coreRng);
+                    return coreRng.createRandUtil();
                 },
             }
         );
-        assertTraceParity(coreEvents, runReferenceTrace(workspaceRoot!, JSON.stringify(base)), coreRng);
+        const reference = runReferenceTrace(workspaceRoot!, JSON.stringify(base));
+        assertTraceParity(coreEvents, reference, coreRng, coreOutcome);
+        assertAllLogBucketsParity(coreLogs, reference, base, 'trait-item.non-stacking-musang');
+
+        const runFirstPhasePower = (fixture: BattleSimRequestPayload & { startYear: number }): number => {
+            const events: WarBattleTraceEvent[] = [];
+            processBattleSimJob(
+                {
+                    ...fixture,
+                    unitSet,
+                    config,
+                    time: { year: fixture.year, month: fixture.month, startYear: fixture.startYear },
+                },
+                { trace: (event) => events.push(event) }
+            );
+            const firstPhase = events.find((event) => event.event === 'phase_power');
+            expect(firstPhase, '무쌍 first phase power').toBeDefined();
+            return firstPhase!.attacker.rawWarPower;
+        };
+        const combinedPower = coreEvents.find((event) => event.event === 'phase_power')!.attacker.rawWarPower;
+        const traitOnly = structuredClone(base);
+        traitOnly.attackerGeneral.item = 'None';
+        const itemOnly = structuredClone(base);
+        itemOnly.attackerGeneral.special2 = 'None';
+        const control = structuredClone(itemOnly);
+        control.attackerGeneral.item = 'None';
+        expect(combinedPower, 'duplicate 무쌍 does not stack over trait').toBe(runFirstPhasePower(traitOnly));
+        expect(combinedPower, 'duplicate 무쌍 does not stack over item').toBe(runFirstPhasePower(itemOnly));
+        expect(combinedPower, '무쌍 has a real battle effect').not.toBe(runFirstPhasePower(control));
     });
 
     it('matches 척사 items against region-restricted troops', () => {
@@ -1033,7 +1585,9 @@ describeWithReference('ref ↔ core2026 battle differential', () => {
             base.attackerGeneral.crew = 5000;
             base.defenderGenerals[0]!.crewtype = 1101;
             const coreEvents: WarBattleTraceEvent[] = [];
+            const coreLogs = createCoreLogCapture();
             let coreRng: TracingRng | null = null;
+            let coreOutcome: WarBattleOutcome | null = null;
             processBattleSimJob(
                 {
                     ...base,
@@ -1043,17 +1597,39 @@ describeWithReference('ref ↔ core2026 battle differential', () => {
                 },
                 {
                     trace: (event) => coreEvents.push(event),
+                    loggerFactory: coreLogs.loggerFactory,
+                    onBattleResolved: (outcome) => {
+                        coreOutcome = outcome;
+                    },
                     rngFactory: (seed) => {
                         coreRng = new TracingRng(LiteHashDRBG.build(seed));
-                        return new RandUtil(coreRng);
+                        return coreRng.createRandUtil();
                     },
                 }
             );
-            assertTraceParity(coreEvents, runReferenceTrace(workspaceRoot!, JSON.stringify(base)), coreRng);
+            const reference = runReferenceTrace(workspaceRoot!, JSON.stringify(base));
+            assertTraceParity(coreEvents, reference, coreRng, coreOutcome);
+            assertAllLogBucketsParity(coreLogs, reference, base, `item.${itemKey}.region-opponent`);
+
+            const control = structuredClone(base);
+            control.attackerGeneral.item = 'None';
+            const controlEvents: WarBattleTraceEvent[] = [];
+            processBattleSimJob(
+                {
+                    ...control,
+                    unitSet,
+                    config,
+                    time: { year: control.year, month: control.month, startYear: control.startYear },
+                },
+                { trace: (event) => controlEvents.push(event) }
+            );
+            const itemPower = coreEvents.find((event) => event.event === 'phase_power')?.attacker.rawWarPower;
+            const controlPower = controlEvents.find((event) => event.event === 'phase_power')?.attacker.rawWarPower;
+            expect(itemPower, `${itemKey}: region troop effect is observed`).not.toBe(controlPower);
         }
     });
 
-    it('keeps the detailed event sequence and phase values within 1%', () => {
+    it('matches the complete canonical event, RNG, state, and logger snapshots', () => {
         const fixturePath = path.resolve(process.cwd(), 'fixtures/battle/basic-infantry.json');
         const fixtureJson = fs.readFileSync(fixturePath, 'utf8');
         const request = JSON.parse(fixtureJson) as BattleSimRequestPayload & { startYear: number };
@@ -1086,18 +1662,271 @@ describeWithReference('ref ↔ core2026 battle differential', () => {
         };
 
         const coreEvents: WarBattleTraceEvent[] = [];
+        const coreLogs = createCoreLogCapture();
         let coreRng: TracingRng | null = null;
+        let coreOutcome: WarBattleOutcome | null = null;
         const coreResult = processBattleSimJob(payload, {
             trace: (event) => coreEvents.push(event),
+            loggerFactory: coreLogs.loggerFactory,
+            onBattleResolved: (outcome) => {
+                coreOutcome = outcome;
+            },
             rngFactory: (seed) => {
                 coreRng = new TracingRng(LiteHashDRBG.build(seed));
-                return new RandUtil(coreRng);
+                return coreRng.createRandUtil();
             },
         });
         const reference = runReferenceTrace(workspaceRoot!, fixtureJson);
 
         expect(coreResult.result).toBe(true);
-        assertTraceParity(coreEvents, reference, coreRng);
+        assertTraceParity(coreEvents, reference, coreRng, coreOutcome);
+        assertAllLogBucketsParity(coreLogs, reference, request, 'basic-infantry');
+    });
+
+    it('matches officer levels 1-4 in assigned and off-city battles on both sides', () => {
+        const unitSet = readJson<UnitSetDefinition>(
+            path.resolve(process.cwd(), '../../resources/unitset/unitset_che.json')
+        );
+        const config: WarEngineConfig = {
+            armPerPhase: 500,
+            maxTrainByCommand: 100,
+            maxAtmosByCommand: 100,
+            maxTrainByWar: 110,
+            maxAtmosByWar: 150,
+            castleCrewTypeId: 1000,
+            armTypes: { footman: 1, archer: 2, cavalry: 3, wizard: 4, siege: 5, misc: 6, castle: 0 },
+        };
+        const cases: Array<{
+            role: 'attacker' | 'defender';
+            level: number;
+            assigned: boolean;
+            fixture: BattleSimRequestPayload & { startYear: number };
+        }> = [];
+        for (const role of ['attacker', 'defender'] as const) {
+            for (const level of [1, 2, 3, 4]) {
+                for (const assigned of [true, false]) {
+                    const fixture = readJson<BattleSimRequestPayload & { startYear: number }>(
+                        path.resolve(process.cwd(), 'fixtures/battle/basic-infantry.json')
+                    );
+                    fixture.seed = `battle-differential-officer-${role}-${level}-${assigned ? 'assigned' : 'off-city'}`;
+                    const general = role === 'attacker' ? fixture.attackerGeneral : fixture.defenderGenerals[0]!;
+                    const counterpart = role === 'attacker' ? fixture.defenderGenerals[0]! : fixture.attackerGeneral;
+                    const currentCity = role === 'attacker' ? fixture.attackerCity.city : fixture.defenderCity.city;
+                    const counterpartCity = role === 'attacker' ? fixture.defenderCity.city : fixture.attackerCity.city;
+                    general.officer_level = level;
+                    general.officer_city = assigned ? currentCity : currentCity + 1000;
+                    // Keep the opposite unit neutral so the subject officer's attack/defence
+                    // multiplier is observable without the counterpart's level-3 5% modifier.
+                    counterpart.officer_level = 1;
+                    counterpart.officer_city = counterpartCity;
+                    cases.push({ role, level, assigned, fixture });
+                }
+            }
+        }
+
+        const fixtureLines = cases.map(({ fixture }) => JSON.stringify(fixture));
+        const references = runReferenceTraceBatch(workspaceRoot!, fixtureLines);
+        const officerSignatures = new Map<string, string>();
+        cases.forEach(({ role, level, assigned, fixture }, index) => {
+            const coreEvents: WarBattleTraceEvent[] = [];
+            const coreLogs = createCoreLogCapture();
+            let coreRng: TracingRng | null = null;
+            let coreOutcome: WarBattleOutcome | null = null;
+            processBattleSimJob(
+                {
+                    ...fixture,
+                    unitSet,
+                    config,
+                    time: { year: fixture.year, month: fixture.month, startYear: fixture.startYear },
+                },
+                {
+                    trace: (event) => coreEvents.push(event),
+                    loggerFactory: coreLogs.loggerFactory,
+                    onBattleResolved: (outcome) => {
+                        coreOutcome = outcome;
+                    },
+                    rngFactory: (seed) => {
+                        coreRng = new TracingRng(LiteHashDRBG.build(seed));
+                        return coreRng.createRandUtil();
+                    },
+                }
+            );
+            const reference = references[index]!;
+            const label = `officer.${role}.level${level}.${assigned ? 'assigned' : 'off-city'}`;
+            assertTraceParity(coreEvents, reference, coreRng, coreOutcome);
+            assertAllLogBucketsParity(coreLogs, reference, fixture, label);
+            const phasePower = coreEvents.find((event) => event.event === 'phase_power');
+            const snapshot = role === 'attacker' ? phasePower?.attacker : phasePower?.defender;
+            const counterpartSnapshot = role === 'attacker' ? phasePower?.defender : phasePower?.attacker;
+            expect(snapshot?.kind, `${label}: participating general`).toBe('general');
+            expect(counterpartSnapshot?.kind, `${label}: counterpart general`).toBe('general');
+            officerSignatures.set(
+                `${role}-${level}-${assigned}`,
+                JSON.stringify({
+                    subjectRawWarPower: snapshot!.rawWarPower,
+                    counterpartWarPowerMultiplier: counterpartSnapshot!.warPowerMultiplier,
+                })
+            );
+        });
+
+        for (const role of ['attacker', 'defender'] as const) {
+            expect(officerSignatures.get(`${role}-1-true`), `${role}: level 1 ignores assignment`).toBe(
+                officerSignatures.get(`${role}-1-false`)
+            );
+            for (const level of [2, 3, 4]) {
+                expect(
+                    officerSignatures.get(`${role}-${level}-false`),
+                    `${role}: off-city level ${level} falls back`
+                ).toBe(officerSignatures.get(`${role}-1-true`));
+                expect(
+                    officerSignatures.get(`${role}-${level}-true`),
+                    `${role}: assigned level ${level} keeps the officer battle signature`
+                ).not.toBe(officerSignatures.get(`${role}-${level}-false`));
+            }
+        }
+    });
+
+    it('matches every distinct CHE crew battle signature on attacker and defender paths', { timeout: 180_000 }, () => {
+        const unitSet = readJson<UnitSetDefinition>(
+            path.resolve(process.cwd(), '../../resources/unitset/unitset_che.json')
+        );
+        const crewTypes = unitSet.crewTypes ?? [];
+        const signatures = crewTypes.map((crewType) =>
+            JSON.stringify({
+                armType: crewType.armType,
+                attack: crewType.attack,
+                defence: crewType.defence,
+                speed: crewType.speed,
+                avoid: crewType.avoid,
+                magicCoef: crewType.magicCoef,
+                rice: crewType.rice,
+                attackCoef: crewType.attackCoef,
+                defenceCoef: crewType.defenceCoef,
+                iActionList: crewType.iActionList,
+                initSkillTrigger: crewType.initSkillTrigger,
+                phaseSkillTrigger: crewType.phaseSkillTrigger,
+            })
+        );
+        expect(new Set(signatures).size, 'unitset_che distinct battle signatures').toBe(crewTypes.length);
+
+        const config: WarEngineConfig = {
+            armPerPhase: 500,
+            maxTrainByCommand: 100,
+            maxAtmosByCommand: 100,
+            maxTrainByWar: 110,
+            maxAtmosByWar: 150,
+            castleCrewTypeId: 1000,
+            armTypes: { footman: 1, archer: 2, cavalry: 3, wizard: 4, siege: 5, misc: 6, castle: 0 },
+        };
+        const cases: Array<{
+            role: 'attacker' | 'defender';
+            crewTypeId: number;
+            fixture: BattleSimRequestPayload & { startYear: number };
+        }> = [];
+        const crewFilter = process.env.CREW_PARITY_FILTER;
+        const crewRoleFilter = process.env.CREW_PARITY_ROLE;
+        for (const crewType of crewTypes.filter((entry) => entry.id !== config.castleCrewTypeId)) {
+            if (crewFilter && String(crewType.id) !== crewFilter) {
+                continue;
+            }
+            for (const role of ['attacker', 'defender'] as const) {
+                if (crewRoleFilter && role !== crewRoleFilter) {
+                    continue;
+                }
+                // In the official assertion-enabled Ref image, attacker-side
+                // 정란/벽력거 routes the castle first and then the castle's
+                // general-only phase trigger aborts. Their distinct phase skill
+                // remains covered on the defender path; the Ref runtime defect is
+                // documented as an explicit remaining boundary.
+                if (role === 'attacker' && (crewType.id === 1500 || crewType.id === 1502)) {
+                    continue;
+                }
+                const fixture = readJson<BattleSimRequestPayload & { startYear: number }>(
+                    path.resolve(process.cwd(), 'fixtures/battle/basic-infantry.json')
+                );
+                fixture.seed = `battle-differential-crew-${role}-${crewType.id}`;
+                // Keep every synthetic pairing in general-vs-general combat for the
+                // whole phase budget. City combat is covered separately and the Ref
+                // castle unit intentionally carries a general-only phase assertion.
+                fixture.attackerGeneral.crew = 50000;
+                fixture.attackerGeneral.rice = 1000000;
+                fixture.attackerGeneral.leadership = 90;
+                fixture.attackerGeneral.strength = 90;
+                fixture.attackerGeneral.intel = 90;
+                fixture.defenderGenerals[0]!.crew = 50000;
+                fixture.defenderGenerals[0]!.rice = 1000000;
+                fixture.defenderGenerals[0]!.leadership = 85;
+                fixture.defenderGenerals[0]!.strength = 85;
+                fixture.defenderGenerals[0]!.intel = 85;
+                fixture.defenderCity.def = 400;
+                fixture.defenderCity.wall = 400;
+                fixture.defenderCity.def_max = 400;
+                fixture.defenderCity.wall_max = 400;
+                const general = role === 'attacker' ? fixture.attackerGeneral : fixture.defenderGenerals[0]!;
+                general.crewtype = crewType.id;
+                general.dex1 = 12000;
+                general.dex2 = 12000;
+                general.dex3 = 12000;
+                general.dex4 = 12000;
+                general.dex5 = 12000;
+                cases.push({ role, crewTypeId: crewType.id, fixture });
+            }
+        }
+
+        const fixtureLines = cases.map(({ fixture }) => JSON.stringify(fixture));
+        const references = runReferenceTraceBatch(workspaceRoot!, fixtureLines);
+        cases.forEach(({ role, crewTypeId, fixture }, index) => {
+            const coreEvents: WarBattleTraceEvent[] = [];
+            const coreLogs = createCoreLogCapture();
+            let coreRng: TracingRng | null = null;
+            let coreOutcome: WarBattleOutcome | null = null;
+            processBattleSimJob(
+                {
+                    ...fixture,
+                    unitSet,
+                    config,
+                    time: { year: fixture.year, month: fixture.month, startYear: fixture.startYear },
+                },
+                {
+                    trace: (event) => coreEvents.push(event),
+                    loggerFactory: coreLogs.loggerFactory,
+                    onBattleResolved: (outcome) => {
+                        coreOutcome = outcome;
+                    },
+                    rngFactory: (seed) => {
+                        coreRng = new TracingRng(LiteHashDRBG.build(seed));
+                        return coreRng.createRandUtil();
+                    },
+                }
+            );
+            const reference = references[index]!;
+            const label = `crew.${role}.${crewTypeId}`;
+            try {
+                assertTraceParity(coreEvents, reference, coreRng, coreOutcome);
+                assertAllLogBucketsParity(coreLogs, reference, fixture, label);
+            } catch (error) {
+                const debug =
+                    process.env.CREW_PARITY_DEBUG === '1'
+                        ? ` coreEvents=${JSON.stringify(coreEvents.map((event) => [event.seq, event.event, event.attacker.phase, event.defender?.phase, event.defender?.activatedSkills]))} refEvents=${JSON.stringify(reference.events.map((event) => [event.seq, event.event, event.attacker.phase, event.defender?.phase, event.defender?.activatedSkills]))}`
+                        : '';
+                throw new Error(`${label}: ${error instanceof Error ? error.message : String(error)}${debug}`, {
+                    cause: error,
+                });
+            }
+
+            if (role === 'defender' && (crewTypeId === 1500 || crewTypeId === 1502)) {
+                expect(
+                    coreEvents.some((event) => (event.defender?.activatedSkills['선제'] ?? 0) > 0),
+                    `${label}: 정란/벽력거 선제사격 must activate`
+                ).toBe(true);
+            }
+            if (role === 'defender' && crewTypeId === 1503) {
+                expect(
+                    coreEvents.some((event) => (event.defender?.activatedSkills['저지'] ?? 0) > 0),
+                    `${label}: 목우 저지 must activate for the fixed seed`
+                ).toBe(true);
+            }
+        });
     });
 
     it('matches wizard strategy attempts, outcomes, and RNG consumption', () => {
@@ -1142,11 +1971,15 @@ describeWithReference('ref ↔ core2026 battle differential', () => {
         };
         const coreEvents: WarBattleTraceEvent[] = [];
         let coreRng: TracingRng | null = null;
+        let coreOutcome: WarBattleOutcome | null = null;
         const result = processBattleSimJob(payload, {
             trace: (event) => coreEvents.push(event),
+            onBattleResolved: (outcome) => {
+                coreOutcome = outcome;
+            },
             rngFactory: (seed) => {
                 coreRng = new TracingRng(LiteHashDRBG.build(seed));
-                return new RandUtil(coreRng);
+                return coreRng.createRandUtil();
             },
         });
         const reference = runReferenceTrace(workspaceRoot!, fixtureJson);
@@ -1157,12 +1990,7 @@ describeWithReference('ref ↔ core2026 battle differential', () => {
                 Object.keys(event.attacker.activatedSkills).some((skill) => ['계략', '계략실패'].includes(skill))
             )
         ).toBe(true);
-        assertRngParity(reference, coreRng);
-        const finalReference = reference.events.at(-1)!;
-        expect({ phase: result.phase, killed: result.killed }).toEqual({
-            phase: finalReference.attacker.phase,
-            killed: finalReference.attacker.killed,
-        });
+        assertTraceParity(coreEvents, reference, coreRng, coreOutcome);
 
         // Ref keeps the injury-adjusted intelligence fraction here:
         // (((81 * 0.63) + round((58 * 0.63) / 4)) / 100) * 0.5 + 0.2
@@ -1185,7 +2013,7 @@ describeWithReference('ref ↔ core2026 battle differential', () => {
             {
                 rngFactory: (seed) => {
                     fractionalCoreRng = new TracingRng(LiteHashDRBG.build(seed));
-                    return new RandUtil(fractionalCoreRng);
+                    return fractionalCoreRng.createRandUtil();
                 },
             }
         );
@@ -1262,18 +2090,22 @@ describeWithReference('ref ↔ core2026 battle differential', () => {
         };
         const coreEvents: WarBattleTraceEvent[] = [];
         let coreRng: TracingRng | null = null;
+        let coreOutcome: WarBattleOutcome | null = null;
         const result = processBattleSimJob(payload, {
             trace: (event) => coreEvents.push(event),
+            onBattleResolved: (outcome) => {
+                coreOutcome = outcome;
+            },
             rngFactory: (seed) => {
                 coreRng = new TracingRng(LiteHashDRBG.build(seed));
-                return new RandUtil(coreRng);
+                return coreRng.createRandUtil();
             },
         });
         const reference = runReferenceTrace(workspaceRoot!, fixtureJson);
 
         expect(result.result).toBe(true);
         expect(reference.events.filter((event) => event.event === 'opponent_switched')).toHaveLength(2);
-        assertTraceParity(coreEvents, reference, coreRng);
+        assertTraceParity(coreEvents, reference, coreRng, coreOutcome);
     });
 
     it('matches siege dexterity and castle damage handling', () => {
@@ -1315,18 +2147,22 @@ describeWithReference('ref ↔ core2026 battle differential', () => {
         };
         const coreEvents: WarBattleTraceEvent[] = [];
         let coreRng: TracingRng | null = null;
+        let coreOutcome: WarBattleOutcome | null = null;
         const result = processBattleSimJob(payload, {
             trace: (event) => coreEvents.push(event),
+            onBattleResolved: (outcome) => {
+                coreOutcome = outcome;
+            },
             rngFactory: (seed) => {
                 coreRng = new TracingRng(LiteHashDRBG.build(seed));
-                return new RandUtil(coreRng);
+                return coreRng.createRandUtil();
             },
         });
         const reference = runReferenceTrace(workspaceRoot!, fixtureJson);
 
         expect(result.result).toBe(true);
         expect(reference.events.some((event) => event.defender?.kind === 'city')).toBe(true);
-        assertTraceParity(coreEvents, reference, coreRng);
+        assertTraceParity(coreEvents, reference, coreRng, coreOutcome);
     });
 
     it('matches the no-defender supply-retreat branch without consuming RNG', () => {
@@ -1358,18 +2194,22 @@ describeWithReference('ref ↔ core2026 battle differential', () => {
         };
         const coreEvents: WarBattleTraceEvent[] = [];
         let coreRng: TracingRng | null = null;
+        let coreOutcome: WarBattleOutcome | null = null;
         const result = processBattleSimJob(payload, {
             trace: (event) => coreEvents.push(event),
+            onBattleResolved: (outcome) => {
+                coreOutcome = outcome;
+            },
             rngFactory: (seed) => {
                 coreRng = new TracingRng(LiteHashDRBG.build(seed));
-                return new RandUtil(coreRng);
+                return coreRng.createRandUtil();
             },
         });
         const reference = runReferenceTrace(workspaceRoot!, fixtureJson);
 
         expect(result.result).toBe(true);
         expect(reference.events.map((event) => event.event)).toEqual(['battle_start', 'supply_retreat', 'battle_end']);
-        assertTraceParity(coreEvents, reference, coreRng);
+        assertTraceParity(coreEvents, reference, coreRng, coreOutcome);
     });
 
     it('matches every scenario item in an attacker battle simulation', { timeout: 180_000 }, () => {
@@ -1450,17 +2290,24 @@ describeWithReference('ref ↔ core2026 battle differential', () => {
                 time: { year: base.year, month: base.month, startYear: base.startYear },
             };
             const coreEvents: WarBattleTraceEvent[] = [];
+            const coreLogs = createCoreLogCapture();
             let coreRng: TracingRng | null = null;
+            let coreOutcome: WarBattleOutcome | null = null;
             processBattleSimJob(payload, {
                 trace: (event) => coreEvents.push(event),
+                loggerFactory: coreLogs.loggerFactory,
+                onBattleResolved: (outcome) => {
+                    coreOutcome = outcome;
+                },
                 rngFactory: (seed) => {
                     coreRng = new TracingRng(LiteHashDRBG.build(seed));
-                    return new RandUtil(coreRng);
+                    return coreRng.createRandUtil();
                 },
             });
             const reference = runReferenceTrace(workspaceRoot!, JSON.stringify(base));
             try {
-                assertTraceParity(coreEvents, reference, coreRng);
+                assertTraceParity(coreEvents, reference, coreRng, coreOutcome);
+                assertAllLogBucketsParity(coreLogs, reference, base, `item.attacker.${itemKey}`);
             } catch (error) {
                 const debug =
                     process.env['ITEM_PARITY_DEBUG'] === '1'
@@ -1558,17 +2405,24 @@ describeWithReference('ref ↔ core2026 battle differential', () => {
                 time: { year: base.year, month: base.month, startYear: base.startYear },
             };
             const coreEvents: WarBattleTraceEvent[] = [];
+            const coreLogs = createCoreLogCapture();
             let coreRng: TracingRng | null = null;
+            let coreOutcome: WarBattleOutcome | null = null;
             processBattleSimJob(payload, {
                 trace: (event) => coreEvents.push(event),
+                loggerFactory: coreLogs.loggerFactory,
+                onBattleResolved: (outcome) => {
+                    coreOutcome = outcome;
+                },
                 rngFactory: (seed) => {
                     coreRng = new TracingRng(LiteHashDRBG.build(seed));
-                    return new RandUtil(coreRng);
+                    return coreRng.createRandUtil();
                 },
             });
             const reference = runReferenceTrace(workspaceRoot!, JSON.stringify(base));
             try {
-                assertTraceParity(coreEvents, reference, coreRng);
+                assertTraceParity(coreEvents, reference, coreRng, coreOutcome);
+                assertAllLogBucketsParity(coreLogs, reference, base, `item.defender.${itemKey}`);
             } catch (error) {
                 const debug =
                     process.env['ITEM_PARITY_DEBUG'] === '1'

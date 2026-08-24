@@ -35,6 +35,7 @@ const buildWorld = (): InMemoryTurnWorld => {
             rank_warnum: 4,
             firenum: 2,
             dex1: 100,
+            event100_allstar: { granted: { dex1: 40 } },
         },
         officerLevel: 12,
         experience: 10,
@@ -141,18 +142,12 @@ const input = {
 
 describe('persistUnificationFinalization', () => {
     it.each([
-        { label: 'missing row', rows: [], memoryValue: 2_000, expected: 0 },
-        { label: 'zero row', rows: [['unifier', 0] as const], memoryValue: 2_000, expected: 0 },
-        { label: 'positive row', rows: [['unifier', 7] as const], memoryValue: 2_007, expected: 7 },
-    ])('resolves the pre-award unifier value for $label', ({ rows, memoryValue, expected }) => {
-        expect(
-            resolveStoredInheritancePoint(
-                new Map<string, number>(rows),
-                { inheritancePoints: { unifier: memoryValue } },
-                'unifier',
-                2_000
-            )
-        ).toBe(expected);
+        { label: 'missing unifier row', rows: [], key: 'unifier' as const, expected: 0 },
+        { label: 'missing resettable row', rows: [], key: 'tournament' as const, expected: 0 },
+        { label: 'zero row', rows: [['unifier', 0] as const], key: 'unifier' as const, expected: 0 },
+        { label: 'positive row', rows: [['unifier', 7] as const], key: 'unifier' as const, expected: 7 },
+    ])('uses only transaction-visible inheritance storage for $label', ({ rows, key, expected }) => {
+        expect(resolveStoredInheritancePoint(new Map<string, number>(rows), key)).toBe(expected);
     });
 
     it('does not write when the transaction-scoped generation was already applied', async () => {
@@ -222,7 +217,7 @@ describe('persistUnificationFinalization', () => {
             },
             gameHistory: { count: vi.fn().mockResolvedValue(1), update: gameHistoryUpdate },
             hallOfFame: {
-                findFirst: vi.fn().mockResolvedValue(null),
+                findMany: vi.fn().mockResolvedValue([]),
                 create: hallCreate,
                 update: vi.fn().mockResolvedValue({}),
             },
@@ -272,6 +267,11 @@ describe('persistUnificationFinalization', () => {
         expect(hallCreate).toHaveBeenCalledWith(
             expect.objectContaining({
                 data: expect.objectContaining({ type: 'inherit_earned', value: 4_321 }),
+            })
+        );
+        expect(hallCreate).toHaveBeenCalledWith(
+            expect.objectContaining({
+                data: expect.objectContaining({ type: 'dex1', value: 60 }),
             })
         );
         expect(gameHistoryUpdate).toHaveBeenCalledWith(
