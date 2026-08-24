@@ -8,6 +8,8 @@ export interface TurnDaemonMemoryContext {
     nations: number;
     troops: number;
     events: number;
+    generalTurnQueues?: number;
+    nationTurnQueues?: number;
     lifecycleState: string;
 }
 
@@ -48,6 +50,10 @@ export const buildTurnDaemonMemoryReport = (
         `nations=${context.nations}`,
         `troops=${context.troops}`,
         `events=${context.events}`,
+        ...(context.generalTurnQueues === undefined
+            ? []
+            : [`generalTurnQueues=${context.generalTurnQueues}`]),
+        ...(context.nationTurnQueues === undefined ? [] : [`nationTurnQueues=${context.nationTurnQueues}`]),
         `lifecycle=${context.lifecycleState}`,
     ].join(' ');
     return { message, warning: heapRatio >= HEAP_WARNING_RATIO };
