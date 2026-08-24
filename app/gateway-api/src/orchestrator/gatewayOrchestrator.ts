@@ -23,6 +23,7 @@ import {
 import { isRecord } from '@sammo-ts/common';
 
 import { resolveGatewayPostgresConfigFromEnv } from '../gatewayPostgresConfig.js';
+import { resolveGatewayProfileKoreanName } from '../profileOrder.js';
 
 import {
     buildTurboReleaseCommand,
@@ -279,6 +280,13 @@ const buildServerId = (profileName: string, now: Date, installOperationId?: stri
         ? createHash('sha256').update(installOperationId).digest('hex').slice(0, 16)
         : randomBytes(2).toString('hex');
     return `${profileName}_${year}${month}${day}_${suffix}`;
+};
+
+export const resolveProfileArchiveServerName = (
+    profile: Pick<GatewayProfileRecord, 'profileName' | 'profile' | 'meta'>
+): string => {
+    const meta = normalizeMeta(profile.meta);
+    return resolveGatewayProfileKoreanName(profile.profile, meta.korName);
 };
 
 const readMetaNumber = (meta: Record<string, unknown>, key: string): number | null => {
@@ -2010,6 +2018,9 @@ export class GatewayOrchestrator implements GatewayOrchestratorHandle {
                         season,
                         firstGameIdx,
                         serverId,
+                        // Snapshot the Gateway display name into this season. Hall and
+                        // dynasty archives must not fall back to the runtime instance key.
+                        serverName: resolveProfileArchiveServerName(profile),
                         installCommitSha: commitSha,
                     },
                     adminUser,
