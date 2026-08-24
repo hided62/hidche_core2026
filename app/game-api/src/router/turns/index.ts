@@ -2,6 +2,7 @@ import { TRPCError } from '@trpc/server';
 import { z } from 'zod';
 import { loadActionModuleBundle } from '@sammo-ts/logic';
 import { asRecord } from '@sammo-ts/common';
+import { GamePrisma } from '@sammo-ts/infra';
 
 import { accessAuthedInputProcedure, authedProcedure, router } from '../../trpc.js';
 import { buildBattleSimEnvironment } from '../../battleSim/environment.js';
@@ -23,6 +24,7 @@ import {
     MAX_GENERAL_TURNS,
     MAX_NATION_TURNS,
     ReservedTurnRevisionConflictError,
+    type ReservedTurnUpdate,
     expandGeneralTurnIndices,
     getGeneralTurnSnapshot,
     getNationTurnSnapshot,
@@ -141,6 +143,68 @@ const readGeneralMetaNumber = (meta: unknown, key: string): number | null => {
         if (Number.isFinite(parsed)) return parsed;
     }
     return null;
+};
+
+const assertNationTurnInputAllowed = (general: GeneralRow): void => {
+    if (!Object.prototype.hasOwnProperty.call(asRecord(general.penalty), 'noChiefTurnInput')) {
+        return;
+    }
+    throw new TRPCError({
+        code: 'PRECONDITION_FAILED',
+        message: '수뇌 턴 입력 불가능',
+    });
+};
+
+const refillNationTurnInputKillturn = async (
+    ctx: GameApiContext,
+    general: GeneralRow,
+    worldState: WorldStateRow
+): Promise<boolean> => {
+    if (general.npcState >= 2) {
+        return false;
+    }
+
+    const worldKillturn = readGeneralMetaNumber(worldState.meta, 'killturn');
+    if (worldKillturn === null) {
+        return false;
+    }
+    const currentKillturn = readGeneralMetaNumber(general.meta, 'killturn');
+    const nextKillturn = Math.max(currentKillturn ?? 0, worldKillturn);
+    if (currentKillturn !== null && nextKillturn === currentKillturn) {
+        return false;
+    }
+
+    const updated = await ctx.db.$queryRaw<Array<{ id: number }>>(
+        GamePrisma.sql`
+            UPDATE general
+            SET meta = jsonb_set(
+                CASE
+                    WHEN jsonb_typeof(meta) = 'object' THEN meta
+                    ELSE '{}'::jsonb
+                END,
+                '{killturn}',
+                to_jsonb(
+                    GREATEST(
+                        CASE
+                            WHEN jsonb_typeof(meta->'killturn') = 'number'
+                                THEN (meta->>'killturn')::double precision
+                            ELSE 0::double precision
+                        END,
+                        ${nextKillturn}::double precision
+                    )
+                ),
+                true
+            )
+            WHERE id = ${general.id}
+              AND npc_state < 2
+              AND (
+                  jsonb_typeof(meta->'killturn') IS DISTINCT FROM 'number'
+                  OR (meta->>'killturn')::double precision < ${nextKillturn}
+              )
+            RETURNING id
+        `
+    );
+    return updated.length > 0;
 };
 
 const assertReservedTurnPermission = async (
@@ -535,6 +599,7 @@ export const turnsRouter = router({
                 const args = await parseCommandArgs('nation', input.action, input.args);
                 const worldState = await getReservationWorldState(ctx);
                 await assertScenarioCommandAvailable('nation', input.action, worldState);
+                assertNationTurnInputAllowed(general);
                 await assertReservedTurnPermission(worldState, general, 'nation', input.action, args);
 
                 const snapshot = await mutateReservedTurns(() =>
@@ -548,6 +613,10 @@ export const turnsRouter = router({
                         input.expectedRevision
                     )
                 );
+                if (await refillNationTurnInputKillturn(ctx, general, worldState)) {
+                    ctx.changeJournal?.mark('general.content', general.id);
+                    ctx.changeJournal?.mark('dashboard.global');
+                }
                 return { ok: true, ...snapshot };
             }),
         shiftNation: authedProcedure
@@ -639,17 +708,18 @@ export const turnsRouter = router({
                         message: 'General is not an officer.',
                     });
                 }
-                const updates = await Promise.all(
-                    input.entries.map(async (entry) => ({
+                const worldState = await getReservationWorldState(ctx);
+                const updates: ReservedTurnUpdate[] = [];
+                for (const entry of input.entries) {
+                    const update = {
                         turnIndices: entry.turnList,
                         action: entry.action,
                         args: await parseCommandArgs('nation', entry.action, entry.args),
-                    }))
-                );
-                const worldState = await getReservationWorldState(ctx);
-                for (const update of updates) {
+                    };
                     await assertScenarioCommandAvailable('nation', update.action, worldState);
+                    assertNationTurnInputAllowed(general);
                     await assertReservedTurnPermission(worldState, general, 'nation', update.action, update.args);
+                    updates.push(update);
                 }
                 const snapshot = await mutateReservedTurns(() =>
                     setNationTurnsAtCurrentPositions(
@@ -660,6 +730,10 @@ export const turnsRouter = router({
                         input.expectedRevision
                     )
                 );
+                if (await refillNationTurnInputKillturn(ctx, general, worldState)) {
+                    ctx.changeJournal?.mark('general.content', general.id);
+                    ctx.changeJournal?.mark('dashboard.global');
+                }
                 return { ok: true, ...snapshot };
             }),
     }),

@@ -24,7 +24,7 @@ const profile: GameProfile = {
     name: 'che:default',
 };
 
-const buildWorldState = (joinMode = 'full'): WorldStateRow =>
+const buildWorldState = (joinMode = 'full', killturn?: number): WorldStateRow =>
     ({
         id: 1,
         scenarioCode: 'default',
@@ -39,6 +39,7 @@ const buildWorldState = (joinMode = 'full'): WorldStateRow =>
             scenarioMeta: {
                 startYear: 180,
             },
+            ...(killturn === undefined ? {} : { killturn }),
         },
         updatedAt: new Date('2026-01-01T00:00:00Z'),
     }) as unknown as WorldStateRow;
@@ -114,6 +115,7 @@ const buildContext = (options?: {
     nationTurns?: NationTurnRow[];
     generalTurnWrites?: unknown[];
     nationTurnWrites?: unknown[];
+    generalUpdates?: unknown[];
     auth?: GameSessionTokenPayload | null;
     currentAccountIcon?: unknown;
     accountIconGet?: (userId: string) => Promise<unknown>;
@@ -128,6 +130,10 @@ const buildContext = (options?: {
     let generalTurnRevision: number | undefined;
     let nationTurnRevision: number | undefined;
     const db = {
+        $queryRaw: async (query: unknown) => {
+            options?.generalUpdates?.push(query);
+            return options?.generalUpdates ? [{ id: options.general?.id ?? 0 }] : [];
+        },
         worldState: {
             findFirst: async () => {
                 if (options?.worldStateReads) {
@@ -1104,6 +1110,213 @@ describe('appRouter', () => {
         expect(rebased.revision).toBe(2);
         expect(rebased.turns[2]?.args).toEqual({ isGold: true, amount: 3, destGeneralId: 9 });
         expect(nationWrites).toHaveLength(2);
+    });
+
+    it('preserves Ref nation-turn penalty key semantics and validation priority', async () => {
+        const general = buildGeneralRow({
+            id: 22,
+            nationId: 3,
+            officerLevel: 12,
+            penalty: { noChiefTurnInput: 0 },
+            meta: { killturn: 3 },
+        });
+
+        const malformedWrites: unknown[] = [];
+        const malformedUpdates: unknown[] = [];
+        const malformedCaller = appRouter.createCaller(
+            buildContext({
+                state: buildWorldState('full', 12),
+                general,
+                nationTurnWrites: malformedWrites,
+                generalUpdates: malformedUpdates,
+            })
+        );
+        await expect(
+            malformedCaller.turns.reserved.setNation({
+                generalId: general.id,
+                turnIndex: 0,
+                action: 'che_포상',
+                args: { isGold: true, amount: '1', destGeneralId: 7 },
+                expectedRevision: 0,
+            })
+        ).rejects.toMatchObject({ code: 'BAD_REQUEST' });
+        expect(malformedWrites).toHaveLength(0);
+        expect(malformedUpdates).toHaveLength(0);
+
+        const singleWrites: unknown[] = [];
+        const singleUpdates: unknown[] = [];
+        const singleJournal = new ChangeJournal();
+        const singleCaller = appRouter.createCaller(
+            buildContext({
+                state: buildWorldState('full', 12),
+                general,
+                nationTurnWrites: singleWrites,
+                generalUpdates: singleUpdates,
+                changeJournal: singleJournal,
+            })
+        );
+        await expect(
+            singleCaller.turns.reserved.setNation({
+                generalId: general.id,
+                turnIndex: 0,
+                action: '휴식',
+                expectedRevision: 0,
+            })
+        ).rejects.toMatchObject({
+            code: 'PRECONDITION_FAILED',
+            message: '수뇌 턴 입력 불가능',
+        });
+        expect(singleWrites).toHaveLength(0);
+        expect(singleUpdates).toHaveLength(0);
+        expect(singleJournal.snapshot()).toEqual([]);
+
+        const bulkWrites: unknown[] = [];
+        const bulkUpdates: unknown[] = [];
+        const bulkCaller = appRouter.createCaller(
+            buildContext({
+                state: buildWorldState('full', 12),
+                general,
+                nationTurnWrites: bulkWrites,
+                generalUpdates: bulkUpdates,
+            })
+        );
+        await expect(
+            bulkCaller.turns.reserved.setNationBulk({
+                generalId: general.id,
+                entries: [
+                    { turnList: [0], action: '휴식' },
+                    { turnList: [1], action: 'not-a-command' },
+                ],
+                expectedRevision: 0,
+            })
+        ).rejects.toMatchObject({
+            code: 'PRECONDITION_FAILED',
+            message: '수뇌 턴 입력 불가능',
+        });
+        expect(bulkWrites).toHaveLength(0);
+        expect(bulkUpdates).toHaveLength(0);
+    });
+
+    it('refills user killturn after a successful nation reservation and invalidates its readers', async () => {
+        const general = buildGeneralRow({
+            id: 23,
+            nationId: 3,
+            officerLevel: 12,
+            npcState: 0,
+            meta: { killturn: 3, marker: 'kept' },
+        });
+        const nationWrites: unknown[] = [];
+        const generalUpdates: unknown[] = [];
+        const changeJournal = new ChangeJournal();
+        const caller = appRouter.createCaller(
+            buildContext({
+                state: buildWorldState('full', 12),
+                general,
+                nationTurnWrites: nationWrites,
+                generalUpdates,
+                changeJournal,
+            })
+        );
+
+        await expect(
+            caller.turns.reserved.setNation({
+                generalId: general.id,
+                turnIndex: 0,
+                action: '휴식',
+                expectedRevision: 0,
+            })
+        ).resolves.toMatchObject({ ok: true });
+
+        expect(nationWrites).toHaveLength(1);
+        expect(generalUpdates).toHaveLength(1);
+        expect(generalUpdates[0]).toMatchObject({ values: [12, general.id, 12] });
+        expect(changeJournal.snapshot()).toEqual([
+            { domain: 'dashboard.global', entityId: 0 },
+            { domain: 'general.content', entityId: general.id },
+        ]);
+    });
+
+    it('refills killturn once after all nation bulk entries succeed', async () => {
+        const general = buildGeneralRow({
+            id: 24,
+            nationId: 3,
+            officerLevel: 12,
+            npcState: 1,
+            meta: { killturn: 2 },
+        });
+        const nationWrites: unknown[] = [];
+        const generalUpdates: unknown[] = [];
+        const caller = appRouter.createCaller(
+            buildContext({
+                state: buildWorldState('full', 12),
+                general,
+                nationTurnWrites: nationWrites,
+                generalUpdates,
+            })
+        );
+
+        await expect(
+            caller.turns.reserved.setNationBulk({
+                generalId: general.id,
+                entries: [
+                    { turnList: [0], action: '휴식' },
+                    {
+                        turnList: [1],
+                        action: 'che_포상',
+                        args: { isGold: true, amount: 1, destGeneralId: 7 },
+                    },
+                ],
+                expectedRevision: 0,
+            })
+        ).resolves.toMatchObject({ ok: true });
+
+        expect(nationWrites).toHaveLength(1);
+        expect(generalUpdates).toHaveLength(1);
+        expect(generalUpdates[0]).toMatchObject({ values: [12, general.id, 12] });
+    });
+
+    it.each([
+        {
+            label: '자동 장수',
+            npcState: 2,
+            currentKillturn: 3,
+            worldKillturn: 12,
+        },
+        {
+            label: '세계 기본보다 삭턴이 많은 유저 장수',
+            npcState: 0,
+            currentKillturn: 20,
+            worldKillturn: 12,
+        },
+    ])('$label nation reservation does not change killturn', async ({ npcState, currentKillturn, worldKillturn }) => {
+        const general = buildGeneralRow({
+            id: 25 + npcState,
+            nationId: 3,
+            officerLevel: 12,
+            npcState,
+            meta: { killturn: currentKillturn },
+        });
+        const generalUpdates: unknown[] = [];
+        const changeJournal = new ChangeJournal();
+        const caller = appRouter.createCaller(
+            buildContext({
+                state: buildWorldState('full', worldKillturn),
+                general,
+                generalUpdates,
+                changeJournal,
+            })
+        );
+
+        await expect(
+            caller.turns.reserved.setNation({
+                generalId: general.id,
+                turnIndex: 0,
+                action: '휴식',
+                expectedRevision: 0,
+            })
+        ).resolves.toMatchObject({ ok: true });
+        expect(generalUpdates).toHaveLength(0);
+        expect(changeJournal.snapshot()).toEqual([]);
     });
 
     it('enforces only legacy reservation permissions without applying full execution constraints', async () => {

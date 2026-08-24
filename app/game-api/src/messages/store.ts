@@ -1,4 +1,5 @@
 import { enqueuePrivateMessageWebPush, GamePrisma } from '@sammo-ts/infra';
+import { MAX_SAFE_GAME_TICK } from '@sammo-ts/common';
 import type { MessagePayload, MessageRecordDraft, MessageType } from '@sammo-ts/logic';
 
 import type { DatabaseClient } from '../context.js';
@@ -63,6 +64,11 @@ const toMessageView = (row: MessageRow): MessageView => {
 export const insertMessage = async (db: DatabaseClient, draft: MessageRecordDraft): Promise<number> => {
     const gameTime = await loadCurrentGameTime(db);
     const toTickOrNull = (date: Date): bigint | null => {
+        // Ref represents its unlimited 9999-12-31 message lifetime with the
+        // largest safe game tick instead of falling back to a wall-clock-only row.
+        if (date.getUTCFullYear() >= 9000) {
+            return BigInt(MAX_SAFE_GAME_TICK);
+        }
         try {
             const tick = gameTime.dateToTick(date);
             return tick === null ? null : BigInt(tick);

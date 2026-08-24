@@ -1,14 +1,94 @@
 import { TRPCError } from '@trpc/server';
 import { z } from 'zod';
 
-import { asRecord } from '@sammo-ts/common';
+import { asRecord, JosaUtil } from '@sammo-ts/common';
 import type { GamePrisma } from '@sammo-ts/infra';
+import {
+    MESSAGE_MAILBOX_NATIONAL_BASE,
+    resolveMessageTargetIcon,
+    sendMessage,
+    type MessageDraft,
+    type MessageRecordDraft,
+    type MessageTarget,
+} from '@sammo-ts/logic';
 
+import type { GameApiContext, GeneralRow, NationRow } from '../../context.js';
+import { insertMessage } from '../../messages/store.js';
 import { purifyDiplomacyHtml } from '../../security/diplomacyHtml.js';
 import { loadCurrentGameTime } from '../../services/gameClock.js';
 import { accessAuthedInputProcedure, accessAuthedProcedure, router } from '../../trpc.js';
 import { getMyGeneral } from '../shared/general.js';
 import { assertNationAccess, resolveNationPermission } from '../nation/shared.js';
+
+const DIPLOMACY_MESSAGE_VALID_UNTIL = new Date('9999-12-31T00:00:00.000Z');
+
+type DiplomacyNation = Pick<NationRow, 'id' | 'name' | 'color'>;
+
+const buildActorTarget = (general: GeneralRow, nation: DiplomacyNation): MessageTarget => ({
+    generalId: general.id,
+    generalName: general.name,
+    nationId: nation.id,
+    nationName: nation.name,
+    color: nation.color,
+    icon: resolveMessageTargetIcon({ picture: general.picture, imageServer: general.imageServer }),
+});
+
+const buildNationTarget = (nation: DiplomacyNation): MessageTarget => ({
+    generalId: 0,
+    generalName: '',
+    nationId: nation.id,
+    nationName: nation.name,
+    color: nation.color,
+    icon: resolveMessageTargetIcon(null),
+});
+
+const loadLetterNations = async (
+    ctx: Pick<GameApiContext, 'db'>,
+    srcNationId: number,
+    destNationId: number
+): Promise<{ srcNation: DiplomacyNation; destNation: DiplomacyNation }> => {
+    const nations = await ctx.db.nation.findMany({
+        where: { id: { in: [srcNationId, destNationId] } },
+        select: { id: true, name: true, color: true },
+    });
+    const srcNation = nations.find((nation) => nation.id === srcNationId);
+    const destNation = nations.find((nation) => nation.id === destNationId);
+    if (!srcNation || !destNation) {
+        throw new TRPCError({ code: 'BAD_REQUEST', message: '올바르지 않은 국가입니다.' });
+    }
+    return { srcNation, destNation };
+};
+
+const sendDocumentNotice = async (options: {
+    ctx: Pick<GameApiContext, 'db' | 'changeJournal'>;
+    src: MessageTarget;
+    dest: MessageTarget;
+    text: string;
+    time: Date;
+    includeNational?: boolean;
+}): Promise<void> => {
+    const store = {
+        insertMessage: (draft: MessageRecordDraft) => insertMessage(options.ctx.db, draft),
+    };
+    const draft = {
+        msgType: 'diplomacy',
+        src: options.src,
+        dest: options.dest,
+        text: options.text,
+        time: options.time,
+        validUntil: DIPLOMACY_MESSAGE_VALID_UNTIL,
+        option: { deletable: false },
+    } satisfies MessageDraft;
+
+    // Ref는 외교 사본을 먼저, 응답 때만 같은 문구의 국가 사본을 뒤이어 보낸다.
+    await sendMessage(store, draft);
+    if (options.includeNational) {
+        await sendMessage(store, { ...draft, msgType: 'national' });
+    }
+
+    options.ctx.changeJournal?.mark('messages.mailbox', MESSAGE_MAILBOX_NATIONAL_BASE + options.src.nationId);
+    options.ctx.changeJournal?.mark('messages.mailbox', MESSAGE_MAILBOX_NATIONAL_BASE + options.dest.nationId);
+};
 
 const resolvePermissionLevel = async (ctx: Parameters<typeof getMyGeneral>[0], nationId: number) => {
     const nation = await ctx.db.nation.findUnique({
@@ -211,13 +291,15 @@ export const diplomacyRouter = router({
                 throw new TRPCError({ code: 'BAD_REQUEST', message: '올바르지 않은 국가입니다.' });
             }
 
+            const srcTarget = buildActorTarget(me, srcNation);
+            const destTarget = buildNationTarget(destNation);
             const aux = {
                 src: {
                     nationName: srcNation.name,
                     nationColor: srcNation.color,
                     generalId: me.id,
                     generalName: me.name,
-                    generalIcon: null,
+                    generalIcon: srcTarget.icon,
                 },
                 dest: {
                     nationName: destNation.name,
@@ -238,6 +320,19 @@ export const diplomacyRouter = router({
                     srcSignerId: me.id,
                     aux: aux as GamePrisma.InputJsonValue,
                 },
+            });
+
+            const letterIdText = String(created.id);
+            const josaYi = JosaUtil.pick(letterIdText, '이');
+            const text = prevId
+                ? `문서 #${prevId}의 새로운 외교 문서 #${letterIdText}${josaYi} 준비되었습니다. 외교부에서 확인해주세요.`
+                : `새로운 외교 문서 #${letterIdText}${josaYi} 준비되었습니다. 외교부에서 확인해주세요.`;
+            await sendDocumentNotice({
+                ctx,
+                src: srcTarget,
+                dest: destTarget,
+                text,
+                time: letterDate,
             });
 
             return { id: created.id };
@@ -269,12 +364,21 @@ export const diplomacyRouter = router({
                 throw new TRPCError({ code: 'NOT_FOUND', message: '서신이 없습니다.' });
             }
 
+            const { srcNation, destNation } = await loadLetterNations(
+                ctx,
+                letter.srcNationId,
+                letter.destNationId
+            );
+            const messageSrc = buildActorTarget(me, destNation);
+            const messageDest = buildNationTarget(srcNation);
+            const messageTime = (await loadCurrentGameTime(ctx.db)).now;
             const aux = asRecord(letter.aux);
+            let messageText: string;
             if (input.agree) {
                 const dest = asRecord(aux.dest);
                 dest.generalId = me.id;
                 dest.generalName = me.name;
-                dest.generalIcon = null;
+                dest.generalIcon = messageSrc.icon;
                 aux.dest = dest;
 
                 await ctx.db.diplomacyLetter.update({
@@ -289,7 +393,7 @@ export const diplomacyRouter = router({
                 let prevId = letter.prevId;
                 while (prevId) {
                     const prevLetter = await ctx.db.diplomacyLetter.findFirst({ where: { id: prevId } });
-                    if (!prevLetter || prevLetter.state === 'CANCELLED') {
+                    if (!prevLetter) {
                         break;
                     }
                     await ctx.db.diplomacyLetter.update({
@@ -298,6 +402,7 @@ export const diplomacyRouter = router({
                     });
                     prevId = prevLetter.prevId;
                 }
+                messageText = `외교 서신( #${letter.id})이 승인되었습니다.`;
             } else {
                 aux.reason = {
                     who: me.id,
@@ -308,7 +413,20 @@ export const diplomacyRouter = router({
                     where: { id: letter.id },
                     data: { state: 'CANCELLED', aux: aux as GamePrisma.InputJsonValue },
                 });
+                messageText = `외교 서신(#${letter.id})이 거부되었습니다.`;
+                if (input.reason && input.reason !== '0') {
+                    messageText += ` 이유 : ${input.reason}`;
+                }
             }
+
+            await sendDocumentNotice({
+                ctx,
+                src: messageSrc,
+                dest: messageDest,
+                text: messageText,
+                time: messageTime,
+                includeNational: true,
+            });
 
             return { ok: true };
         }),
@@ -333,6 +451,14 @@ export const diplomacyRouter = router({
                 throw new TRPCError({ code: 'NOT_FOUND', message: '서신이 없습니다.' });
             }
 
+            const { srcNation, destNation } = await loadLetterNations(
+                ctx,
+                letter.srcNationId,
+                letter.destNationId
+            );
+            const messageSrc = buildActorTarget(me, srcNation);
+            const messageDest = buildNationTarget(destNation);
+            const messageTime = (await loadCurrentGameTime(ctx.db)).now;
             const aux = asRecord(letter.aux);
             aux.reason = {
                 who: me.id,
@@ -343,6 +469,14 @@ export const diplomacyRouter = router({
             await ctx.db.diplomacyLetter.update({
                 where: { id: letter.id },
                 data: { state: 'CANCELLED', aux: aux as GamePrisma.InputJsonValue },
+            });
+
+            await sendDocumentNotice({
+                ctx,
+                src: messageSrc,
+                dest: messageDest,
+                text: `외교 서신(#${letter.id})이 회수되었습니다.`,
+                time: messageTime,
             });
 
             return { ok: true };
@@ -376,24 +510,43 @@ export const diplomacyRouter = router({
                 throw new TRPCError({ code: 'BAD_REQUEST', message: '이미 파기 신청을 했습니다.' });
             }
 
+            const { srcNation, destNation } = await loadLetterNations(
+                ctx,
+                letter.srcNationId,
+                letter.destNationId
+            );
+            const actorNation = letter.srcNationId === me.nationId ? srcNation : destNation;
+            const otherNation = letter.srcNationId === me.nationId ? destNation : srcNation;
+            const messageSrc = buildActorTarget(me, actorNation);
+            const messageDest = buildNationTarget(otherNation);
+            const messageTime = (await loadCurrentGameTime(ctx.db)).now;
+            let resultState: 'ACTIVATED' | 'CANCELLED';
+            let messageText: string;
+
             if (stateOpt && stateOpt !== myStateOpt) {
-                aux.reason = {
-                    who: me.id,
-                    action: 'destroy',
-                    reason: '파기',
-                };
                 await ctx.db.diplomacyLetter.update({
                     where: { id: letter.id },
                     data: { state: 'CANCELLED', aux: aux as GamePrisma.InputJsonValue },
                 });
-                return { state: 'CANCELLED' };
+                resultState = 'CANCELLED';
+                messageText = `외교 서신(#${letter.id})을 파기했습니다.`;
+            } else {
+                aux.state_opt = myStateOpt;
+                await ctx.db.diplomacyLetter.update({
+                    where: { id: letter.id },
+                    data: { aux: aux as GamePrisma.InputJsonValue },
+                });
+                resultState = 'ACTIVATED';
+                messageText = `외교 서신(#${letter.id})을 파기 요청합니다.`;
             }
 
-            aux.state_opt = myStateOpt;
-            await ctx.db.diplomacyLetter.update({
-                where: { id: letter.id },
-                data: { aux: aux as GamePrisma.InputJsonValue },
+            await sendDocumentNotice({
+                ctx,
+                src: messageSrc,
+                dest: messageDest,
+                text: messageText,
+                time: messageTime,
             });
-            return { state: 'ACTIVATED' };
+            return { state: resultState };
         }),
 });
