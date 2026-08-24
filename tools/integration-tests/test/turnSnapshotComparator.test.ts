@@ -6,6 +6,10 @@ import {
     compareTurnSnapshotDeltas,
     compareTurnSnapshots,
 } from '../src/turn-differential/compare.js';
+import {
+    projectRefFloatRead,
+    projectSnapshotThroughRefFloatRead,
+} from '../src/turn-differential/legacyNumericProjection.js';
 
 const snapshot = (
     engine: 'ref' | 'core2026',
@@ -29,6 +33,23 @@ const snapshot = (
 });
 
 describe('turn snapshot differential comparator', () => {
+    it('projects only explicitly selected Core numeric state through the Ref FLOAT boundary', () => {
+        expect(projectRefFloatRead(1_000.0048)).toBe(1_000);
+        expect(projectRefFloatRead(1_000.009)).toBe(1_000.01);
+        expect(projectRefFloatRead(70.10659591920879)).toBe(70.1066);
+
+        const core = snapshot('core2026', {
+            cities: [{ id: 1, trust: 70.10659591920879, agriculture: 123.456789 }],
+            nations: [{ id: 1, tech: 1_000.009, gold: 123.456789 }],
+        });
+        const projected = projectSnapshotThroughRefFloatRead(core, { cityTrust: true, nationTech: true });
+
+        expect(projected.cities[0]).toEqual({ id: 1, trust: 70.1066, agriculture: 123.456789 });
+        expect(projected.nations[0]).toEqual({ id: 1, tech: 1_000.01, gold: 123.456789 });
+        expect(core.cities[0]?.trust).toBe(70.10659591920879);
+        expect(core.nations[0]?.tech).toBe(1_000.009);
+    });
+
     it('compares entity arrays by semantic identity instead of database row order', () => {
         const reference = snapshot('ref', {
             cities: [

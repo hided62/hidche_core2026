@@ -2,12 +2,17 @@ import { describe, expect, it } from 'vitest';
 import { asRecord, GAME_TICKS_PER_TURN, LEGACY_RANK_DATA_TYPES } from '@sammo-ts/common';
 import { GENERAL_TURN_COMMAND_KEYS } from '@sammo-ts/logic';
 
-import { compareTurnSnapshotDeltas } from '../src/turn-differential/compare.js';
+import type { CanonicalTurnSnapshot } from '../src/turn-differential/canonical.js';
+import { compareTurnSnapshotDeltas, type SnapshotDifference } from '../src/turn-differential/compare.js';
 import { runCoreTurnCommandTrace, type TurnCommandFixtureRequest } from '../src/turn-differential/coreCommandTrace.js';
 import {
     normalizeStoredTurnLogText as normalizeStoredLogText,
     orderedSemanticLogStreams,
 } from '../src/turn-differential/logProjection.js';
+import {
+    projectSnapshotThroughRefFloatRead,
+    type RefFloatSnapshotProjection,
+} from '../src/turn-differential/legacyNumericProjection.js';
 import {
     projectSemanticTurnMessages,
     projectSemanticUnreadMessageDeltas,
@@ -63,6 +68,28 @@ const successfulLifecycleIgnoredPaths = [
     /^generals\[[^\]]+\]\.meta(?:\.|$)/,
     /^nations\[[^\]]+\]\.meta(?:\.|$)/,
 ];
+
+const expectRefFloatProjectedDeltaParity = (
+    reference: { before: CanonicalTurnSnapshot; after: CanonicalTurnSnapshot },
+    core: { before: CanonicalTurnSnapshot; after: CanonicalTurnSnapshot },
+    ignoredPathPatterns: RegExp[],
+    expectedRawDifferences: SnapshotDifference[],
+    projection: RefFloatSnapshotProjection
+): void => {
+    const rawDifferences = compareTurnSnapshotDeltas(reference.before, reference.after, core.before, core.after, {
+        ignoredPathPatterns,
+    });
+    expect(rawDifferences).toEqual(expectedRawDifferences);
+    expect(
+        compareTurnSnapshotDeltas(
+            reference.before,
+            reference.after,
+            projectSnapshotThroughRefFloatRead(core.before, projection),
+            projectSnapshotThroughRefFloatRead(core.after, projection),
+            { ignoredPathPatterns }
+        )
+    ).toEqual([]);
+};
 
 const general = (id: number, nationId: number, cityId: number, officerLevel: number): Record<string, unknown> => ({
     id,
@@ -508,11 +535,26 @@ integration('general command success matrix', () => {
                 expect(actorTurnAt(reference.after.generalTurns, 0)).toBeUndefined();
                 expect(actorTurnAt(core.after.generalTurns, 0)).toBeUndefined();
             }
-            expect(
-                compareTurnSnapshotDeltas(reference.before, reference.after, core.before, core.after, {
-                    ignoredPathPatterns: successfulLifecycleIgnoredPaths,
-                })
-            ).toEqual([]);
+            expectRefFloatProjectedDeltaParity(
+                reference,
+                core,
+                successfulLifecycleIgnoredPaths,
+                action === 'che_출병'
+                    ? [
+                          {
+                              path: 'nations[1].tech',
+                              reference: { $snapshotState: 'missing' },
+                              core: 0.004800000000045657,
+                          },
+                          {
+                              path: 'nations[2].tech',
+                              reference: 0.009999999999990905,
+                              core: 0.009000000000014552,
+                          },
+                      ]
+                    : [],
+                { nationTech: action === 'che_출병' }
+            );
 
             // Logs and messages live outside the generic state-delta graph.
             // Assert both for every registered success case so a command cannot
@@ -2647,11 +2689,21 @@ integration('general command in-action failure matrix', () => {
                 failureLogTexts(reference.after.logs, failureText).map(legacyActionLogBody)
             );
             expect(core.rng).toEqual(reference.rng);
-            expect(
-                compareTurnSnapshotDeltas(reference.before, reference.after, core.before, core.after, {
-                    ignoredPathPatterns: ignoredLifecyclePaths,
-                })
-            ).toEqual([]);
+            expectRefFloatProjectedDeltaParity(
+                reference,
+                core,
+                ignoredLifecyclePaths,
+                action === 'che_주민선정'
+                    ? [
+                          {
+                              path: 'cities[3].trust',
+                              reference: 2.9643999999999977,
+                              core: 2.9644093559690674,
+                          },
+                      ]
+                    : [],
+                { cityTrust: action === 'che_주민선정' }
+            );
         },
         120_000
     );
@@ -3047,11 +3099,21 @@ integration('general sabotage successful effect matrix', () => {
             if ('actor' in expected) {
                 expect(findById(reference.after.generals, 1)).toMatchObject(expected.actor);
             }
-            expect(
-                compareTurnSnapshotDeltas(reference.before, reference.after, core.before, core.after, {
-                    ignoredPathPatterns: ignoredLifecyclePaths,
-                })
-            ).toEqual([]);
+            expectRefFloatProjectedDeltaParity(
+                reference,
+                core,
+                ignoredLifecyclePaths,
+                action === 'che_선동'
+                    ? [
+                          {
+                              path: 'cities[70].trust',
+                              reference: -9.8934,
+                              core: -9.893404080791214,
+                          },
+                      ]
+                    : [],
+                { cityTrust: action === 'che_선동' }
+            );
 
             if (process.env.TURN_DIFFERENTIAL_SABOTAGE_EVIDENCE === '1') {
                 process.stderr.write(
@@ -3109,11 +3171,21 @@ integration('general sabotage stat progression matrix', () => {
             expect(core.rng).toEqual(reference.rng);
             expect(reference.after.generals.find((entry) => entry.id === 1)?.[stat]).toBe(101);
             expect(core.after.generals.find((entry) => entry.id === 1)?.[stat]).toBe(101);
-            expect(
-                compareTurnSnapshotDeltas(reference.before, reference.after, core.before, core.after, {
-                    ignoredPathPatterns: ignoredLifecyclePaths,
-                })
-            ).toEqual([]);
+            expectRefFloatProjectedDeltaParity(
+                reference,
+                core,
+                ignoredLifecyclePaths,
+                action === 'che_선동'
+                    ? [
+                          {
+                              path: 'cities[70].trust',
+                              reference: -9.8934,
+                              core: -9.893404080791214,
+                          },
+                      ]
+                    : [],
+                { cityTrust: action === 'che_선동' }
+            );
         },
         120_000
     );
@@ -3171,11 +3243,21 @@ integration('general sabotage probability clamp matrix', () => {
                     : { operation: 'nextBits', arguments: { bits: 1 } }
             );
             expect(core.rng).toEqual(reference.rng);
-            expect(
-                compareTurnSnapshotDeltas(reference.before, reference.after, core.before, core.after, {
-                    ignoredPathPatterns: ignoredLifecyclePaths,
-                })
-            ).toEqual([]);
+            expectRefFloatProjectedDeltaParity(
+                reference,
+                core,
+                ignoredLifecyclePaths,
+                action === 'che_선동' && boundary === 'max'
+                    ? [
+                          {
+                              path: 'cities[70].trust',
+                              reference: -11.155500000000004,
+                              core: -11.15547143003728,
+                          },
+                      ]
+                    : [],
+                { cityTrust: action === 'che_선동' && boundary === 'max' }
+            );
         },
         120_000
     );
@@ -3334,11 +3416,21 @@ integration('general sabotage injury boundary matrix', () => {
                 injuryLogTexts(reference.after.logs).map(legacyInjuryLogBody)
             );
             expect(core.rng).toEqual(reference.rng);
-            expect(
-                compareTurnSnapshotDeltas(reference.before, reference.after, core.before, core.after, {
-                    ignoredPathPatterns: ignoredLifecyclePaths,
-                })
-            ).toEqual([]);
+            expectRefFloatProjectedDeltaParity(
+                reference,
+                core,
+                ignoredLifecyclePaths,
+                action === 'che_선동'
+                    ? [
+                          {
+                              path: 'cities[70].trust',
+                              reference: -4.810900000000004,
+                              core: -4.810929741150531,
+                          },
+                      ]
+                    : [],
+                { cityTrust: action === 'che_선동' }
+            );
         },
         120_000
     );

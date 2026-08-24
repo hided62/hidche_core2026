@@ -104,6 +104,12 @@ DB auto ID, 생성 시각처럼 의미 없는 차이는 comparator에서 이름�
 명시합니다. 의미 field를 ignore하거나 숫자 허용 범위를 넓혀 mismatch를
 숨기지 않습니다.
 
+Core가 의도적으로 full precision을 유지하는 `nation.tech`와 `city.trust`를 Ref의
+MariaDB `FLOAT` snapshot과 비교할 때는 raw 차이 경로를 fixture별로 먼저 고정합니다.
+그 뒤 test-only binary32 저장·6자리 읽기 projection을 Core의 절대 before/after 값에
+적용해 Ref delta와 정확히 일치하는지 다시 검사합니다. 제품 상태를 양자화하거나
+전역 tolerance·전역 ignore로 다른 차이를 숨기지 않습니다.
+
 JSON missing·`{}`·`[]`는 snapshot 원형에서 구분합니다. 일반 message option 부재의
 Ref `[]`와 Core `{}`만 의미상 같게 보며, actionable diplomacy의 `option=null` sentinel은
 부재로 합치지 않습니다. Ref log prefix와 Core format은 독립적으로 해석하고, 서로 다른
