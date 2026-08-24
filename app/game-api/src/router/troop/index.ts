@@ -24,7 +24,8 @@ import {
     resolveRemainingMinutes,
 } from '../../services/generalBasicCardProjection.js';
 import { loadTraitNames } from '../nation/shared.js';
-import { getMyGeneral } from '../shared/general.js';
+import { getAuthenticatedUserId, getMyGeneral } from '../shared/general.js';
+import { throwIfCommandRejected } from '../shared/turnDaemon.js';
 
 const TROOP_PANEL_RECORD_TYPES = [
     'firenum',
@@ -54,6 +55,7 @@ const assertCommandResult = <T extends 'troopCreate' | 'troopJoin' | 'troopExit'
     result: TurnDaemonCommandResult | null,
     expectedType: T
 ): never => {
+    throwIfCommandRejected(result);
     if (!result) {
         throw new TRPCError({ code: 'TIMEOUT', message: 'Turn daemon did not respond.' });
     }
@@ -427,6 +429,7 @@ export const troopRouter = router({
         };
     }),
     create: engineAuthedProcedure.input(z.object({ troopName: troopNameSchema })).mutation(async ({ ctx, input }) => {
+        const userId = getAuthenticatedUserId(ctx);
         const me = await getMyGeneral(ctx);
         const troopName = normalizeRequiredTroopName(input.troopName);
         if (me.troopId !== 0) {
@@ -444,6 +447,7 @@ export const troopRouter = router({
         const result = await ctx.turnDaemon.requestCommand({
             type: 'troopCreate',
             ...(ctx.requestId ? { requestId: `${ctx.requestId}:troop.create:engine:0:troopCreate` } : {}),
+            userId,
             generalId: me.id,
             troopName,
         });
@@ -458,10 +462,12 @@ export const troopRouter = router({
     join: engineAuthedProcedure
         .input(z.object({ troopId: z.number().int().positive() }))
         .mutation(async ({ ctx, input }) => {
+            const userId = getAuthenticatedUserId(ctx);
             const me = await getMyGeneral(ctx);
             const result = await ctx.turnDaemon.requestCommand({
                 type: 'troopJoin',
                 ...(ctx.requestId ? { requestId: `${ctx.requestId}:troop.join:engine:0:troopJoin` } : {}),
+                userId,
                 generalId: me.id,
                 troopId: input.troopId,
             });
@@ -474,10 +480,12 @@ export const troopRouter = router({
             return { ok: true };
         }),
     exit: engineAuthedProcedure.mutation(async ({ ctx }) => {
+        const userId = getAuthenticatedUserId(ctx);
         const me = await getMyGeneral(ctx);
         const result = await ctx.turnDaemon.requestCommand({
             type: 'troopExit',
             ...(ctx.requestId ? { requestId: `${ctx.requestId}:troop.exit:engine:0:troopExit` } : {}),
+            userId,
             generalId: me.id,
         });
         if (!result || result.type !== 'troopExit') {
@@ -496,6 +504,7 @@ export const troopRouter = router({
             })
         )
         .mutation(async ({ ctx, input }) => {
+            const userId = getAuthenticatedUserId(ctx);
             const me = await getMyGeneral(ctx);
             if (me.id !== input.troopId || me.troopId !== me.id) {
                 throw new TRPCError({ code: 'FORBIDDEN', message: '권한이 부족합니다.' });
@@ -520,6 +529,7 @@ export const troopRouter = router({
             const result = await ctx.turnDaemon.requestCommand({
                 type: 'troopKick',
                 ...(ctx.requestId ? { requestId: `${ctx.requestId}:troop.kick:engine:0:troopKick` } : {}),
+                userId,
                 generalId: me.id,
                 troopId: input.troopId,
                 targetGeneralId: input.targetGeneralId,
@@ -541,6 +551,7 @@ export const troopRouter = router({
             })
         )
         .mutation(async ({ ctx, input }) => {
+            const userId = getAuthenticatedUserId(ctx);
             const me = await getMyGeneral(ctx);
             const troopName = normalizeRequiredTroopName(input.troopName);
             const nation = await ctx.db.nation.findUnique({
@@ -562,6 +573,7 @@ export const troopRouter = router({
             const result = await ctx.turnDaemon.requestCommand({
                 type: 'troopRename',
                 ...(ctx.requestId ? { requestId: `${ctx.requestId}:troop.rename:engine:0:troopRename` } : {}),
+                userId,
                 generalId: me.id,
                 troopId: input.troopId,
                 troopName,

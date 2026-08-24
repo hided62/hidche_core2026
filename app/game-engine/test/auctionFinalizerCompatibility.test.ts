@@ -120,6 +120,7 @@ describe('unique auction inheritance log compatibility', () => {
         const result = await openAuction(
             {
                 type: 'auctionOpen',
+                userId: 'user-7',
                 auctionType: 'UNIQUE_ITEM',
                 generalId: general.id,
                 amount: 6_000,

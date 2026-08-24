@@ -1,4 +1,4 @@
-import { asNumber, asRecord, JosaUtil, LiteHashDRBG, RandUtil } from '@sammo-ts/common';
+import { asNumber, asRecord, isRecord, JosaUtil, LiteHashDRBG, RandUtil } from '@sammo-ts/common';
 import { GamePrisma } from '@sammo-ts/infra';
 import { LogCategory, LogFormat, LogScope, type MessageDraft, type MessagePayload } from '@sammo-ts/logic';
 
@@ -15,6 +15,7 @@ interface MessageRow {
     id: number;
     mailbox: number;
     type: string;
+    time: Date;
     validUntil: Date;
     message: unknown;
 }
@@ -25,8 +26,31 @@ export interface ActionableMessageResponseResult {
     reason: string;
 }
 
-const parsePayload = (value: unknown): MessagePayload =>
-    (typeof value === 'string' ? JSON.parse(value) : value) as MessagePayload;
+const parsePayload = (value: unknown): MessagePayload | null => {
+    let parsed: unknown;
+    try {
+        parsed = typeof value === 'string' ? JSON.parse(value) : value;
+    } catch {
+        return null;
+    }
+    const payload = asRecord(parsed);
+    const src = asRecord(payload.src);
+    const dest = asRecord(payload.dest);
+    const isTarget = (target: Record<string, unknown>): boolean =>
+        Number.isSafeInteger(target.generalId) &&
+        Number.isSafeInteger(target.nationId) &&
+        typeof target.generalName === 'string' &&
+        typeof target.nationName === 'string' &&
+        typeof target.color === 'string' &&
+        typeof target.icon === 'string';
+    if (!isTarget(src) || !isTarget(dest) || typeof payload.text !== 'string') {
+        return null;
+    }
+    if (payload.option !== undefined && payload.option !== null && !isRecord(payload.option)) {
+        return null;
+    }
+    return payload as unknown as MessagePayload;
+};
 
 const systemTarget: MessageDraft['src'] = {
     generalId: 0,
@@ -35,6 +59,16 @@ const systemTarget: MessageDraft['src'] = {
     nationName: 'System',
     color: '#000000',
     icon: '',
+};
+
+const isLegacyTruthy = (value: unknown): boolean => {
+    if (value === undefined || value === null || value === false || value === 0 || value === '' || value === '0') {
+        return false;
+    }
+    if (Array.isArray(value)) {
+        return value.length > 0;
+    }
+    return true;
 };
 
 const queuePrivateNotice = (
@@ -103,7 +137,7 @@ const fetchMessageForUpdate = async (
 ): Promise<MessageRow | null> => {
     const currentTick = BigInt(world.dateToGameTick(now));
     const rows = await db.$queryRaw<MessageRow[]>(GamePrisma.sql`
-        SELECT id, mailbox, type, valid_until AS "validUntil", message
+        SELECT id, mailbox, type, time, valid_until AS "validUntil", message
         FROM message
         WHERE id = ${messageId}
           AND (
@@ -130,7 +164,7 @@ const respondToScout = async (options: {
     if (row.type !== 'private' || row.mailbox !== actorId || payload.dest.generalId !== actorId) {
         return { ok: false, action: 'scout', reason: '올바른 수신자가 아닙니다.' };
     }
-    if (asRecord(payload.option).used === true) {
+    if (row.validUntil.getTime() <= row.time.getTime() || isLegacyTruthy(asRecord(payload.option).used)) {
         return { ok: false, action: 'scout', reason: '유효하지 않은 등용장입니다.' };
     }
 
@@ -280,6 +314,7 @@ export const respondToActionableMessage = async (options: {
     const row = await fetchMessageForUpdate(options.db, options.world, options.messageId, now);
     if (!row) return { ok: false, reason: '존재하지 않는 메시지입니다.' };
     const payload = parsePayload(row.message);
+    if (!payload) return { ok: false, reason: '응답할 수 없는 메시지입니다.' };
     const action = asRecord(payload.option).action;
     if (action === 'scout') {
         return await respondToScout({ ...options, actorId: options.generalId, row, payload, now });

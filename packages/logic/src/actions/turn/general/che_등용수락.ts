@@ -46,10 +46,10 @@ export interface AcceptScoutResolveContext<
 
 const differentDestGeneral = (destGeneralId: number): Constraint => ({
     name: 'differentDestGeneral',
-    requires: (ctx) => [
-        { kind: 'general', id: ctx.actorId },
-        { kind: 'destGeneral', id: destGeneralId },
-    ],
+    // Ref keeps only the recruiter id/nation snapshot in the letter. The
+    // recruiter can be deleted before the receiver accepts it, so this
+    // self-check must not turn the missing live recruiter into a dependency.
+    requires: (ctx) => [{ kind: 'general', id: ctx.actorId }],
     test: (ctx) =>
         ctx.actorId === destGeneralId
             ? { kind: 'deny', reason: '본인의 등용장을 수락할 수 없습니다.' }
@@ -74,7 +74,6 @@ export class ActionResolver<
         const effects: GeneralActionEffect<TriggerState>[] = [];
 
         if (!destNation) throw new Error('Target nation not found.');
-        if (!destGeneral) throw new Error('Recruiter not found.');
 
         // 1. Logs
         const destNationName = destNation.name;
@@ -96,78 +95,101 @@ export class ActionResolver<
             format: LogFormat.MONTH,
         });
 
-        // 2. Recruiter Rewards
-        const recruiterExperience = destGeneral.experience + 100;
-        const recruiterDedication = destGeneral.dedication + 100;
+        // 2. Recruiter Rewards. Ref resolves a deleted recruiter as a dummy
+        // general: joining still succeeds, while recruiter-only rewards and
+        // logs are discarded.
         const belong = readMetaNumberFromUnknown(general.meta, 'belong') ?? 0;
         const maxBelong = readMetaNumberFromUnknown(general.meta, 'max_belong') ?? 0;
-        const recruiterExpLevel = Math.max(
-            0,
-            Math.min(
-                this.env.maxStatLevel ?? LEGACY_DEFAULT_MAX_LEVEL,
-                recruiterExperience < 1_000
-                    ? Math.trunc(recruiterExperience / 100)
-                    : Math.trunc(Math.sqrt(recruiterExperience / 10))
-            )
-        );
-        const recruiterDedicationLevel = Math.max(
-            0,
-            Math.min(this.env.maxDedicationLevel ?? 30, Math.ceil(Math.sqrt(recruiterDedication) / 10))
-        );
-        const previousRecruiterExpLevel = typeof destGeneral.meta.explevel === 'number' ? destGeneral.meta.explevel : 0;
-        const previousRecruiterDedicationLevel =
-            typeof destGeneral.meta.dedlevel === 'number' ? destGeneral.meta.dedlevel : 0;
-        effects.push(
-            createGeneralPatchEffect(
-                {
-                    experience: recruiterExperience,
-                    dedication: recruiterDedication,
-                    meta: {
-                        ...destGeneral.meta,
-                        explevel: recruiterExpLevel,
-                        dedlevel: recruiterDedicationLevel,
-                    },
-                },
-                destGeneral.id
-            )
-        );
-        if (recruiterExpLevel !== previousRecruiterExpLevel) {
-            const josaRo = JosaUtil.pick(String(recruiterExpLevel), '로');
-            effects.push(
-                createLogEffect(
-                    recruiterExpLevel > previousRecruiterExpLevel
-                        ? `<C>Lv ${recruiterExpLevel}</>${josaRo} <C>레벨업</>!`
-                        : `<C>Lv ${recruiterExpLevel}</>${josaRo} <R>레벨다운</>!`,
-                    {
-                        scope: LogScope.GENERAL,
-                        generalId: destGeneral.id,
-                        category: LogCategory.ACTION,
-                        format: LogFormat.PLAIN,
-                        legacyFlushGroup: 1,
-                    }
+        if (destGeneral) {
+            const recruiterExperience = destGeneral.experience + 100;
+            const recruiterDedication = destGeneral.dedication + 100;
+            const recruiterExpLevel = Math.max(
+                0,
+                Math.min(
+                    this.env.maxStatLevel ?? LEGACY_DEFAULT_MAX_LEVEL,
+                    recruiterExperience < 1_000
+                        ? Math.trunc(recruiterExperience / 100)
+                        : Math.trunc(Math.sqrt(recruiterExperience / 10))
                 )
             );
-        }
-        if (recruiterDedicationLevel !== previousRecruiterDedicationLevel) {
-            const maxDedicationLevel = this.env.maxDedicationLevel ?? 30;
-            const dedicationLevelText =
-                recruiterDedicationLevel === 0 ? '무품관' : `${maxDedicationLevel - recruiterDedicationLevel + 1}품관`;
-            const billText = new Intl.NumberFormat('en-US').format(recruiterDedicationLevel * 200 + 400);
-            const josaRoDedication = JosaUtil.pick(dedicationLevelText, '로');
-            const josaRoBill = JosaUtil.pick(billText, '로');
+            const recruiterDedicationLevel = Math.max(
+                0,
+                Math.min(this.env.maxDedicationLevel ?? 30, Math.ceil(Math.sqrt(recruiterDedication) / 10))
+            );
+            const previousRecruiterExpLevel =
+                typeof destGeneral.meta.explevel === 'number' ? destGeneral.meta.explevel : 0;
+            const previousRecruiterDedicationLevel =
+                typeof destGeneral.meta.dedlevel === 'number' ? destGeneral.meta.dedlevel : 0;
             effects.push(
-                createLogEffect(
-                    recruiterDedicationLevel > previousRecruiterDedicationLevel
-                        ? `<Y>${dedicationLevelText}</>${josaRoDedication} <C>승급</>하여 봉록이 <C>${billText}</>${josaRoBill} <C>상승</>했습니다!`
-                        : `<Y>${dedicationLevelText}</>${josaRoDedication} <R>강등</>되어 봉록이 <C>${billText}</>${josaRoBill} <R>하락</>했습니다!`,
+                createGeneralPatchEffect(
                     {
-                        scope: LogScope.GENERAL,
-                        generalId: destGeneral.id,
-                        category: LogCategory.ACTION,
-                        format: LogFormat.PLAIN,
-                        legacyFlushGroup: 1,
-                    }
+                        experience: recruiterExperience,
+                        dedication: recruiterDedication,
+                        meta: {
+                            ...destGeneral.meta,
+                            explevel: recruiterExpLevel,
+                            dedlevel: recruiterDedicationLevel,
+                        },
+                    },
+                    destGeneral.id
                 )
+            );
+            if (recruiterExpLevel !== previousRecruiterExpLevel) {
+                const recruiterLevelJosaRo = JosaUtil.pick(String(recruiterExpLevel), '로');
+                effects.push(
+                    createLogEffect(
+                        recruiterExpLevel > previousRecruiterExpLevel
+                            ? `<C>Lv ${recruiterExpLevel}</>${recruiterLevelJosaRo} <C>레벨업</>!`
+                            : `<C>Lv ${recruiterExpLevel}</>${recruiterLevelJosaRo} <R>레벨다운</>!`,
+                        {
+                            scope: LogScope.GENERAL,
+                            generalId: destGeneral.id,
+                            category: LogCategory.ACTION,
+                            format: LogFormat.PLAIN,
+                            legacyFlushGroup: 1,
+                        }
+                    )
+                );
+            }
+            if (recruiterDedicationLevel !== previousRecruiterDedicationLevel) {
+                const maxDedicationLevel = this.env.maxDedicationLevel ?? 30;
+                const dedicationLevelText =
+                    recruiterDedicationLevel === 0
+                        ? '무품관'
+                        : `${maxDedicationLevel - recruiterDedicationLevel + 1}품관`;
+                const billText = new Intl.NumberFormat('en-US').format(recruiterDedicationLevel * 200 + 400);
+                const josaRoDedication = JosaUtil.pick(dedicationLevelText, '로');
+                const josaRoBill = JosaUtil.pick(billText, '로');
+                effects.push(
+                    createLogEffect(
+                        recruiterDedicationLevel > previousRecruiterDedicationLevel
+                            ? `<Y>${dedicationLevelText}</>${josaRoDedication} <C>승급</>하여 봉록이 <C>${billText}</>${josaRoBill} <C>상승</>했습니다!`
+                            : `<Y>${dedicationLevelText}</>${josaRoDedication} <R>강등</>되어 봉록이 <C>${billText}</>${josaRoBill} <R>하락</>했습니다!`,
+                        {
+                            scope: LogScope.GENERAL,
+                            generalId: destGeneral.id,
+                            category: LogCategory.ACTION,
+                            format: LogFormat.PLAIN,
+                            legacyFlushGroup: 1,
+                        }
+                    )
+                );
+            }
+            effects.push(
+                createLogEffect(`<Y>${generalName}</> 등용에 성공했습니다.`, {
+                    scope: LogScope.GENERAL,
+                    generalId: destGeneral.id,
+                    category: LogCategory.ACTION,
+                    format: LogFormat.MONTH,
+                    legacyFlushGroup: 1,
+                }),
+                createLogEffect(`<Y>${generalName}</> 등용에 성공`, {
+                    scope: LogScope.GENERAL,
+                    generalId: destGeneral.id,
+                    category: LogCategory.HISTORY,
+                    format: LogFormat.YEAR_MONTH,
+                    legacyFlushGroup: 1,
+                })
             );
         }
 
@@ -285,22 +307,6 @@ export class ActionResolver<
             category: LogCategory.HISTORY,
             format: LogFormat.YEAR_MONTH,
         });
-        effects.push(
-            createLogEffect(`<Y>${generalName}</> 등용에 성공했습니다.`, {
-                scope: LogScope.GENERAL,
-                generalId: destGeneral.id,
-                category: LogCategory.ACTION,
-                format: LogFormat.MONTH,
-                legacyFlushGroup: 1,
-            }),
-            createLogEffect(`<Y>${generalName}</> 등용에 성공`, {
-                scope: LogScope.GENERAL,
-                generalId: destGeneral.id,
-                category: LogCategory.HISTORY,
-                format: LogFormat.YEAR_MONTH,
-                legacyFlushGroup: 1,
-            })
-        );
 
         const deletedTroopIds: number[] = [];
         if (general.troopId === general.id) {

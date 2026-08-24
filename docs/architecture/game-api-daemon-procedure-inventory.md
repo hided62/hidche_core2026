@@ -23,7 +23,7 @@ transaction을 만든다. `engineAuthedProcedure`, `accessEngineAuthedProcedure`
 - **ENGINE 소유 + 불필요한 API outer**: gameplay durable mutation은 ENGINE이 전부
   소유하지만 route가 아직 API `input_event`/journal transaction에 감싸여 있다.
 
-현재 합계는 **ENGINE 전환 26 + 혼합 13 + 기존 ENGINE 9 + 불필요한 API
+현재 합계는 **ENGINE 전환 36 + 혼합 3 + 기존 ENGINE 9 + 불필요한 API
 outer 1 = 49**다.
 
 ENGINE 전환 route의 explicit `requestId`는 각 route가 기존에 사용하던 HTTP 요청
@@ -45,19 +45,19 @@ selection-pool create/reselect는 client request ID가 있을 때
 | `inherit.openUniqueAuction` | `engineAuthedProcedure`; world/general/minimum bid 조기 validation (`app/game-api/src/router/inherit/index.ts:389-428`) | 공통 `auctionOpen` ENGINE handler가 mutation을 소유하고 API는 Redis timer index만 갱신 (`app/game-api/src/auction/open.ts:22-51`) |
 | `join.getSelectionPool` | `engineAuthedProcedure`; actor와 accepted game time만 전달 (`app/game-api/src/router/join/index.ts:390-406`) | `selectPoolReserve` ENGINE handler가 world/DB 상태에서 예약을 재검증하고 저장 (`app/game-engine/src/turn/worldCommandHandler.ts:401-437`) |
 | `inherit.buyHiddenBuff`, `inherit.setNextSpecialWar`, `inherit.resetSpecialWar`, `inherit.resetTurnTime`, `inherit.resetStat`, `inherit.buyRandomUnique`, `inherit.checkOwner` | 모두 `engineAuthedProcedure`; 인증 user ID와 action 입력만 전달 (`app/game-api/src/router/inherit/index.ts:107-124`, `:301-388`, `:429-445`) | `inheritanceAction` ENGINE handler가 general/user 소유권, 통일 상태, 잔액, 대상, RNG, general patch, inheritance point/log/message를 한 transaction에서 처리 (`app/game-engine/src/turn/worldCommandHandler.ts:807-818`, `app/game-engine/src/turn/inheritanceActionService.ts:313-669`) |
+| `nation.setNotice`, `nation.setScoutMsg`, `nation.setSecretLimit`, `nation.setRate`, `nation.setBlockWar`, `nation.setBill`, `nation.setBlockScout` | `engineAuthedProcedure`; API는 인증 actor, 현재 국가와 조기 권한만 읽고 semantic mutation을 전달 (`app/game-api/src/router/nation/endpoints/setNotice.ts`, `setScoutMsg.ts`, `setSecretLimit.ts`, `setRate.ts`, `setBlockWar.ts`, `setBill.ts`, `setBlockScout.ts`) | `setNationSetting`이 실행 시점 owner/nation/직책·permission을 다시 검사한다. 전쟁 설정 잔여 횟수 차감과 임관 잠금 검사를 현재 ENGINE state에서 수행하고, 공지는 logical game time과 author snapshot을 국가 meta와 같은 transaction에 저장한다 (`app/game-engine/src/turn/nationSettingMutation.ts`, `worldCommandHandler.ts`). |
+| `npc.setNationPolicy`, `npc.setNationPriority`, `npc.setGeneralPriority` | `accessEngineAuthedInputProcedure`; API는 현재 화면값과 unit-set 기반 입력 보조만 수행하고 actor-bound semantic delta와 명시적 nullable revision을 전달 (`app/game-api/src/router/npc/index.ts`) | `setNpcPolicy`가 실행 시점 owner/nation/permission, strict CAS, 현재 troop/city membership, priority와 numeric policy를 검증하고 logical setter snapshot과 delta만 반영한다 (`app/game-engine/src/turn/npcPolicyMutation.ts`, `worldCommandHandler.ts`). |
 
-합계 **26개 route**다.
+합계 **36개 route**다.
 
 ## 혼합 또는 validation 이관이 먼저 필요한 route
 
 | route | 현재 procedure / outer transaction | 보류 근거 |
 | --- | --- | --- |
 | `messages.respond` | `authedProcedure`, action별 분기 (`app/game-api/src/router/messages/index.ts:318-372`) | `scout`/`raiseInvader`는 `messageRespond` ENGINE command가 처리하지만 `noAggression`/`cancelNA`/`stopWar`는 API transaction의 `respondToDiplomaticMessage` 경로가 처리한다. route 전체를 ENGINE-owned로 보지 않는다. |
-| `nation.setNotice`, `nation.setScoutMsg`, `nation.setSecretLimit`, `nation.setRate`, `nation.setBlockWar`, `nation.setBill`, `nation.setBlockScout` | `authedProcedure`, outer 있음 (`app/game-api/src/router/nation/endpoints/setNotice.ts:11`, `setScoutMsg.ts:11`, `setSecretLimit.ts:10`, `setRate.ts:10`, `setBlockWar.ts:10`, `setBill.ts:10`, `setBlockScout.ts:10`) | API가 actor 권한과 nation meta를 읽어 full metadata patch를 합성한다. `setNationMeta`는 `_updatedAt` CAS만 검사하므로 actor/permission과 합성 의미를 ENGINE으로 옮겨야 한다 (`app/game-api/src/router/nation/shared.ts:431-458`, `app/game-engine/src/turn/worldCommandHandler.ts:499-542`). |
-| `npc.setNationPolicy`, `npc.setNationPriority`, `npc.setGeneralPriority` | `accessAuthedInputProcedure`, outer 있음 (`app/game-api/src/router/npc/index.ts:545-812`) | API가 nation/general/world를 읽어 권한, unit-set 기반 기본값과 full policy object를 합성한 뒤 `setNationMeta` CAS를 사용한다. ENGINE은 권한/합성 의미를 소유하지 않는다. |
 | `tournament.join`, `tournament.placeBet` | `authedProcedure`, outer 있음 (`app/game-api/src/router/tournament/index.ts:393-458`, `:515-620`) | PostgreSQL ENGINE resource/meta 명령과 Redis-owned participants/bets를 결합하고 실패 시 보상 ENGINE 명령을 보낸다. 하나의 DB transaction이 아니며 durable saga/Redis atomic revision이 필요하다. |
 
-합계 **13개 route**다.
+합계 **3개 route**다.
 
 ## 기존에 API outer transaction이 없던 ENGINE route
 
@@ -84,6 +84,12 @@ selection-pool create/reselect는 client request ID가 있을 때
   `$transaction`을 호출하지 않고 기존 형식의 stable ENGINE request ID를 전달한다.
 - `app/game-api/test/nationPersonnelRouter.test.ts`: nation personnel route의 동일 계약을
   검증한다.
+- `app/game-api/test/nationSettingRouter.test.ts`, `nationHtmlRouter.test.ts`,
+  `scoutBlockRouter.test.ts`: 일곱 국가 설정이 API outer transaction 없이 인증 actor와
+  semantic intent를 전달하고 ENGINE 거절을 그대로 매핑하는지 검증한다.
+- `app/game-api/test/npcPolicyRouter.test.ts`,
+  `app/game-engine/test/npcPolicyLifecycle.test.ts`: NPC policy의 명시적 nullable CAS,
+  실행 시점 권한과 delta merge/replay 경계를 검증한다.
 - `app/game-api/test/troopRouter.test.ts`: troop mutation의 동일 계약을 검증한다.
 - `app/game-api/test/auctionRouter.test.ts`: auction mutation이 API transaction 없이
   daemon command와 Redis timer projection을 완료하는 계약을 검증한다.
@@ -94,7 +100,8 @@ selection-pool create/reselect는 client request ID가 있을 때
   validation과 ENGINE의 vote insert/reward/idempotency 경계를 검증한다. API outer/journal
   제거는 아직 검증 대상이 아니다.
 - raw inventory 재검색: `rg -n "requestCommand\\(" app/game-api/src/router`와
-  `openAuctionWithDaemon`, `requestInheritanceAction`, `updateNationMeta`,
+  `openAuctionWithDaemon`, `requestInheritanceAction`, `updateNationSetting`,
+  `requestNpcPolicyMutation`,
   `adjustAccountIconForUser`, `requestImmediateAction`, `requestJoinCreateCommand`,
   `requestNpcPossessionCommand` caller 검색을 함께 실행해 helper 경유 route를 놓치지
   않는다.

@@ -55,7 +55,7 @@ const buildGeneral = (overrides: Partial<TurnGeneral> = {}): TurnGeneral => ({
     turnTime: new Date('0185-01-01T00:00:00Z'),
     recentWarTime: null,
     role: {
-        items: { horse: 'che_명마', weapon: null, book: null, item: null },
+        items: { horse: 'che_명마_02_조랑', weapon: null, book: null, item: null },
         personality: null,
         specialDomestic: null,
         specialWar: null,
@@ -103,7 +103,21 @@ const buildWorld = (
     const snapshot: TurnWorldSnapshot = {
         generals: [general],
         cities: [],
-        nations: [],
+        nations: [
+            {
+                id: 1,
+                name: '테스트국',
+                color: '#111111',
+                typeCode: 'che_중립',
+                level: 1,
+                capitalCityId: null,
+                chiefGeneralId: 7,
+                gold: 0,
+                rice: 0,
+                power: 0,
+                meta: {},
+            },
+        ],
         troops: [],
         diplomacy: [],
         events: [],
@@ -216,6 +230,7 @@ describe('my information world commands', () => {
         await expect(
             fixture.handler.handle({
                 type: 'setMySetting',
+                userId: 'user-7',
                 generalId: 7,
                 settings: {
                     tnmt: 9,
@@ -250,6 +265,7 @@ describe('my information world commands', () => {
 
         await fixture.handler.handle({
             type: 'setMySetting',
+            userId: 'user-7',
             generalId: 7,
             settings: { tnmt: 0, defence_train: 999, use_treatment: 1 },
         });
@@ -270,6 +286,7 @@ describe('my information world commands', () => {
             const fixture = buildWorld(buildGeneral(), { scenarioEffect });
             await fixture.handler.handle({
                 type: 'setMySetting',
+                userId: 'user-7',
                 generalId: 7,
                 settings: { defence_train: 999 },
             });
@@ -279,26 +296,110 @@ describe('my information world commands', () => {
 
     it('applies vacation killturn and rejects it in automatic-turn mode', async () => {
         const allowed = buildWorld();
-        await expect(allowed.handler.handle({ type: 'vacation', generalId: 7 })).resolves.toMatchObject({ ok: true });
+        await expect(
+            allowed.handler.handle({ type: 'vacation', userId: 'user-7', generalId: 7 })
+        ).resolves.toMatchObject({ ok: true });
         expect(allowed.world.getGeneralById(7)?.meta.killturn).toBe(72);
 
         const blocked = buildWorld(buildGeneral(), { autorunLimit: true });
-        await expect(blocked.handler.handle({ type: 'vacation', generalId: 7 })).resolves.toMatchObject({
+        await expect(
+            blocked.handler.handle({ type: 'vacation', userId: 'user-7', generalId: 7 })
+        ).resolves.toMatchObject({
             ok: false,
             reason: '자동 턴인 경우에는 휴가 명령이 불가능합니다.',
         });
         expect(blocked.world.getGeneralById(7)?.meta.killturn).toBe(12);
     });
 
-    it('drops only the authenticated command target slot and rejects an empty slot', async () => {
+    it('drops a buyable item with only the Ref personal action log', async () => {
         const fixture = buildWorld();
         await expect(
-            fixture.handler.handle({ type: 'dropItem', generalId: 7, itemType: 'weapon' })
+            fixture.handler.handle({ type: 'dropItem', userId: 'user-7', generalId: 7, itemType: 'weapon' })
         ).resolves.toMatchObject({ ok: false });
         await expect(
-            fixture.handler.handle({ type: 'dropItem', generalId: 7, itemType: 'horse' })
+            fixture.handler.handle({ type: 'dropItem', userId: 'user-7', generalId: 7, itemType: 'horse' })
         ).resolves.toMatchObject({ ok: true });
         expect(fixture.world.getGeneralById(7)?.role.items.horse).toBeNull();
+        expect(fixture.world.peekDirtyState().logs).toEqual([
+            {
+                scope: LogScope.GENERAL,
+                category: LogCategory.ACTION,
+                format: LogFormat.MONTH,
+                text: '<C>조랑(+2)</>을 버렸습니다.',
+                generalId: 7,
+                meta: {},
+            },
+        ]);
+    });
+
+    it('adds Ref global loss logs when dropping a non-buyable item', async () => {
+        const fixture = buildWorld(
+            buildGeneral({
+                role: {
+                    items: { horse: null, weapon: null, book: 'che_서적_14_한비자', item: null },
+                    personality: null,
+                    specialDomestic: null,
+                    specialWar: null,
+                },
+            })
+        );
+
+        await expect(
+            fixture.handler.handle({ type: 'dropItem', userId: 'user-7', generalId: 7, itemType: 'book' })
+        ).resolves.toMatchObject({ ok: true });
+        expect(fixture.world.getGeneralById(7)?.role.items.book).toBeNull();
+        expect(fixture.world.peekDirtyState().logs).toEqual([
+            {
+                scope: LogScope.GENERAL,
+                category: LogCategory.ACTION,
+                format: LogFormat.MONTH,
+                text: '<C>한비자(+14)</>를 버렸습니다.',
+                generalId: 7,
+                meta: {},
+            },
+            {
+                scope: LogScope.SYSTEM,
+                category: LogCategory.SUMMARY,
+                format: LogFormat.MONTH,
+                text: '<Y>테스트장수</>가 <C>한비자(+14)</>를 잃었습니다!',
+                meta: {},
+            },
+            {
+                scope: LogScope.SYSTEM,
+                category: LogCategory.HISTORY,
+                format: LogFormat.YEAR_MONTH,
+                text: '<R><b>【망실】</b></><D><b>테스트국</b></>의 <Y>테스트장수</>가 <C>한비자(+14)</>를 잃었습니다!',
+                meta: {},
+            },
+        ]);
+    });
+
+    it('drops and logs an item stored under a mismatched equipment slot like Ref', async () => {
+        const fixture = buildWorld(
+            buildGeneral({
+                role: {
+                    items: { horse: null, weapon: 'che_명마_02_조랑', book: null, item: null },
+                    personality: null,
+                    specialDomestic: null,
+                    specialWar: null,
+                },
+            })
+        );
+
+        await expect(
+            fixture.handler.handle({ type: 'dropItem', userId: 'user-7', generalId: 7, itemType: 'weapon' })
+        ).resolves.toMatchObject({ type: 'dropItem', ok: true, generalId: 7 });
+        expect(fixture.world.getGeneralById(7)?.role.items.weapon).toBeNull();
+        expect(fixture.world.peekDirtyState().logs).toEqual([
+            {
+                scope: LogScope.GENERAL,
+                category: LogCategory.ACTION,
+                format: LogFormat.MONTH,
+                text: '<C>조랑(+2)</>을 버렸습니다.',
+                generalId: 7,
+                meta: {},
+            },
+        ]);
     });
 
     it('executes pre-open uprising through the action stack without advancing the turn clock', async () => {
@@ -499,6 +600,7 @@ describe('my information world commands', () => {
     });
 
     it('loads the internal recruitment acceptance action outside the selectable command profile', async () => {
+        const originalLastTurn = { command: '전투태세', arg: { term: 3 } };
         const recipient = buildGeneral({
             id: 8,
             userId: 'user-8',
@@ -506,6 +608,7 @@ describe('my information world commands', () => {
             nationId: 0,
             cityId: 1,
             officerLevel: 0,
+            lastTurn: originalLastTurn,
         });
         const recruiter = buildGeneral({
             id: 9,
@@ -566,6 +669,7 @@ describe('my information world commands', () => {
             nationId: 2,
             cityId: 2,
             officerLevel: 1,
+            lastTurn: originalLastTurn,
         });
         expect(fixture.world.getGeneralById(recruiter.id)).toMatchObject({
             experience: recruiter.experience + 100,
@@ -590,6 +694,75 @@ describe('my information world commands', () => {
             LogFormat.PLAIN,
             LogFormat.MONTH,
         ]);
+    });
+
+    it('accepts a recruitment letter after the recruiter was deleted and preserves the reserved command', async () => {
+        const deletedRecruiterId = 99;
+        const originalLastTurn = { command: '내정 특기 초기화', arg: { phase: 2 } };
+        const recipient = buildGeneral({
+            id: 8,
+            userId: 'user-8',
+            name: '재야장수',
+            nationId: 0,
+            cityId: 1,
+            officerLevel: 0,
+            lastTurn: originalLastTurn,
+        });
+        const map = {
+            id: 'test',
+            name: 'test',
+            cities: [buildMapCity(1, [2]), buildMapCity(2, [1])],
+        };
+        const fixture = buildImmediateActionWorld({
+            general: recipient,
+            cities: [
+                { id: 1, name: '낙양', nationId: 0, supplyState: 1, meta: {} },
+                { id: 2, name: '장안', nationId: 2, supplyState: 1, meta: {} },
+            ] as TurnWorldSnapshot['cities'],
+            nations: [
+                {
+                    id: 2,
+                    name: '등용국',
+                    color: '#222222',
+                    typeCode: 'che_중립',
+                    level: 1,
+                    capitalCityId: 2,
+                    chiefGeneralId: deletedRecruiterId,
+                    gold: 0,
+                    rice: 0,
+                    power: 0,
+                    meta: { gennum: 1 },
+                },
+            ] as TurnWorldSnapshot['nations'],
+            map,
+        });
+        const executor = await createImmediateGeneralActionExecutor({
+            world: fixture.world,
+            reservedTurns: fixture.reservedTurns,
+            scenarioMeta: fixture.scenarioMeta,
+            map,
+            commandProfile: { general: ['che_등용'], nation: [] },
+        });
+
+        await expect(
+            executor.execute({
+                actionKey: 'che_등용수락',
+                generalId: recipient.id,
+                rng: new RandUtil(new LiteHashDRBG('accept-deleted-recruiter-letter')),
+                args: { destNationId: 2, destGeneralId: deletedRecruiterId },
+            })
+        ).resolves.toEqual({ ok: true });
+
+        expect(fixture.world.getGeneralById(recipient.id)).toMatchObject({
+            nationId: 2,
+            cityId: 2,
+            officerLevel: 1,
+            lastTurn: originalLastTurn,
+        });
+        expect(fixture.world.getNationById(2)?.meta.gennum).toBe(2);
+        expect(fixture.world.peekDirtyState().logs).not.toEqual(
+            expect.arrayContaining([expect.objectContaining({ generalId: deletedRecruiterId })])
+        );
     });
 
     it('preserves the Ref uprising precheck order and messages after the game starts', async () => {

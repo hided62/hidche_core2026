@@ -18,6 +18,7 @@ import { createTurnDaemonCommandHandler, hasVotePollDeadlinePassed } from '../sr
 
 const buildGeneral = (id: number): TurnGeneral => ({
     id,
+    userId: `user-${id}`,
     name: `General_${id}`,
     nationId: 1,
     cityId: 1,
@@ -46,6 +47,12 @@ const buildGeneral = (id: number): TurnGeneral => ({
     npcState: 0,
 });
 
+const actorBindingDb = (userId = 'user-1') => ({
+    inputEvent: {
+        findUnique: async () => ({ actorUserId: userId, target: 'ENGINE', eventType: 'voteReward' }),
+    },
+});
+
 describe('voteReward command', () => {
     it('keeps the wall-time fallback open at exact deadline equality', () => {
         const deadline = new Date('0180-01-01T00:00:00.000Z');
@@ -67,6 +74,7 @@ describe('voteReward command', () => {
                 sentAt: '2026-08-23T00:00:00.000Z',
                 command: {
                     type: 'voteReward',
+                    userId: 'user-1',
                     voteId: 1,
                     generalId: 1,
                     selection: [0],
@@ -224,6 +232,7 @@ describe('voteReward command', () => {
         let voteQueryCount = 0;
         let voteInsertQuery: { strings: readonly string[]; values: readonly unknown[] } | undefined;
         const commandDb = {
+            ...actorBindingDb(),
             auction: {
                 findMany: async () => [],
             },
@@ -249,6 +258,8 @@ describe('voteReward command', () => {
         const handler = createTurnDaemonCommandHandler({ world });
         const command = {
             type: 'voteReward' as const,
+            requestId: 'vote-reward-1',
+            userId: 'user-1',
             voteId: 1,
             generalId: 1,
             selection: [0],
@@ -269,9 +280,7 @@ describe('voteReward command', () => {
         expect(
             voteInsertQuery?.values.filter(
                 (value) =>
-                    value instanceof Date &&
-                    value.getTime() >= writerWindowStart &&
-                    value.getTime() <= writerWindowEnd
+                    value instanceof Date && value.getTime() >= writerWindowStart && value.getTime() <= writerWindowEnd
             )
         ).toHaveLength(1);
 
@@ -311,6 +320,7 @@ describe('voteReward command', () => {
         const duplicateHandler = createTurnDaemonCommandHandler({ world: duplicateWorld });
         const duplicateResult = await duplicateHandler.handle(command, {
             db: {
+                ...actorBindingDb(),
                 auction: { findMany: async () => [] },
                 $queryRaw: async (query: { strings: readonly string[] }) => {
                     const text = query.strings.join(' ');
@@ -346,6 +356,7 @@ describe('voteReward command', () => {
         const mismatchHandler = createTurnDaemonCommandHandler({ world: mismatchWorld });
         const mismatchResult = await mismatchHandler.handle(command, {
             db: {
+                ...actorBindingDb(),
                 auction: { findMany: async () => [] },
                 $queryRaw: async (query: { strings: readonly string[] }) => {
                     const text = query.strings.join(' ');
@@ -383,6 +394,7 @@ describe('voteReward command', () => {
         const { acceptedGameTick: _acceptedGameTick, ...legacyLateCommand } = command;
         const legacyLateResult = await legacyLateHandler.handle(legacyLateCommand, {
             db: {
+                ...actorBindingDb(),
                 $queryRaw: async (query: { strings: readonly string[] }) =>
                     query.strings.join(' ').includes('SELECT options')
                         ? [
@@ -456,6 +468,7 @@ describe('voteReward command', () => {
         });
         const handler = createTurnDaemonCommandHandler({ world });
         const commandDb = {
+            ...actorBindingDb(),
             auction: {
                 findMany: async () => [{ targetCode: 'che_무기_12_칠성검' }],
             },
@@ -476,6 +489,8 @@ describe('voteReward command', () => {
         const result = await handler.handle(
             {
                 type: 'voteReward',
+                requestId: 'vote-reward-occupied',
+                userId: 'user-1',
                 voteId: 1,
                 generalId: 1,
                 selection: [0],

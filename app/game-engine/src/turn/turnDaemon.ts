@@ -962,6 +962,7 @@ const createTurnDaemonRuntimeWithLease = async (
         scenarioMeta: snapshot.scenarioMeta,
         map: snapshot.map,
         commandProfile,
+        generalActionModules: monthlyActionModules.general,
         getAdditionalOccupiedUniqueItemKeys: () => occupiedAuctionUniqueItemKeys,
         auctionFinalizer: auctionFinalizer ?? undefined,
         auctionBidder: auctionBidder ?? undefined,

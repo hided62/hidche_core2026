@@ -14,9 +14,9 @@ describe('IdempotentTurnDaemonTransport', () => {
         const firstAttempt = new IdempotentTurnDaemonTransport(inner, 'api-event');
         const retry = new IdempotentTurnDaemonTransport(inner, 'api-event');
 
-        await firstAttempt.sendCommand({ type: 'vacation', generalId: 7 });
-        await firstAttempt.sendCommand({ type: 'dropItem', generalId: 7, itemType: 'weapon' });
-        await retry.sendCommand({ type: 'vacation', generalId: 7 });
+        await firstAttempt.sendCommand({ type: 'vacation', userId: 'user-7', generalId: 7 });
+        await firstAttempt.sendCommand({ type: 'dropItem', userId: 'user-7', generalId: 7, itemType: 'weapon' });
+        await retry.sendCommand({ type: 'vacation', userId: 'user-7', generalId: 7 });
 
         expect(inner.commands.map((entry) => entry.requestId)).toEqual([
             'api-event:engine:0:vacation',
@@ -29,6 +29,7 @@ describe('IdempotentTurnDaemonTransport', () => {
         const auctionBid = {
             type: 'auctionBid',
             requestId: 'auction-bid',
+            userId: 'user-7',
             auctionId: 31,
             generalId: 7,
             amount: 500,
@@ -40,6 +41,7 @@ describe('IdempotentTurnDaemonTransport', () => {
         const voteReward = {
             type: 'voteReward',
             requestId: 'vote-reward',
+            userId: 'user-7',
             voteId: 1,
             generalId: 7,
             selection: [0],
@@ -93,6 +95,7 @@ describe('IdempotentTurnDaemonTransport', () => {
         const persistedPayload = {
             type: 'voteReward' as const,
             requestId: 'vote-reward',
+            userId: 'user-7',
             voteId: 1,
             generalId: 7,
             selection: [0],

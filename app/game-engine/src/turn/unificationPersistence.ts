@@ -496,15 +496,12 @@ export const persistUnificationFinalization = async (
     const cityCount = cities.filter((city) => city.nationId === input.winnerNationId).length;
     const totalPop = cities.reduce((sum, city) => sum + city.population, 0);
     const totalMaxPop = cities.reduce((sum, city) => sum + city.populationMax, 0);
-    const winnerMeta = asRecord(winner.meta);
     const winnerData = {
         ...buildOldNationArchiveData({
             nation: winner,
             generalIds: winnerGenerals.map((general) => general.id),
             history: nationHistory,
         }),
-        msg: String(asRecord(winnerMeta.nationNotice).msg ?? winnerMeta.msg ?? ''),
-        scout_msg: String(winnerMeta.scout_msg ?? ''),
         generationKey: input.generationKey,
     };
     await transaction.oldNation.upsert({

@@ -1,20 +1,16 @@
 import { TRPCError } from '@trpc/server';
 import { z } from 'zod';
 
-import { asRecord } from '@sammo-ts/common';
-
 import { purifyNationHtml } from '../../../security/nationHtml.js';
-import { authedProcedure } from '../../../trpc.js';
-import { getMyGeneral } from '../../shared/general.js';
-import { assertNationAccess, assertNationEditable, updateNationMeta } from '../shared.js';
+import { engineAuthedProcedure } from '../../../trpc.js';
+import { getAuthenticatedUserId, getMyGeneral } from '../../shared/general.js';
+import { legacyRequiredText } from '../settingInput.js';
+import { assertNationAccess, assertNationEditable, updateNationSetting } from '../shared.js';
 
-export const setNotice = authedProcedure
-    .input(
-        z.object({
-            msg: z.string().min(1).max(16384),
-        })
-    )
+export const setNotice = engineAuthedProcedure
+    .input(z.object({ msg: legacyRequiredText(16_384) }))
     .mutation(async ({ ctx, input }) => {
+        const userId = getAuthenticatedUserId(ctx);
         const me = await getMyGeneral(ctx);
         assertNationAccess(me);
         const nation = await ctx.db.nation.findUnique({
@@ -25,16 +21,7 @@ export const setNotice = authedProcedure
             throw new TRPCError({ code: 'NOT_FOUND', message: 'Nation not found' });
         }
         assertNationEditable(me, nation.meta);
-        const nationMeta = asRecord(nation.meta);
         const msg = purifyNationHtml(input.msg);
-        await updateNationMeta(
-            ctx,
-            me.nationId,
-            {
-                notice: msg,
-            },
-            nationMeta
-        );
-        ctx.changeJournal?.mark('front.nation', me.nationId);
+        await updateNationSetting(ctx, userId, me, 'setNotice', { kind: 'notice', message: msg });
         return { ok: true, msg };
     });

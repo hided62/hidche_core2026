@@ -67,8 +67,14 @@ const auth: GameSessionTokenPayload = {
     sanctions: {},
 };
 
-const buildContext = (blockChangeScout: boolean) => {
-    const requestCommand = vi.fn();
+const buildContext = () => {
+    const requestCommand = vi.fn(async () => ({
+        type: 'setNationSetting' as const,
+        ok: false as const,
+        code: 'FORBIDDEN' as const,
+        nationId: 1,
+        reason: '임관 설정을 바꿀 수 없도록 설정되어 있습니다.',
+    }));
     const db = {
         general: {
             findFirst: vi.fn(async () => general),
@@ -77,7 +83,7 @@ const buildContext = (blockChangeScout: boolean) => {
             findUnique: vi.fn(async () => ({ meta: {} })),
         },
         worldState: {
-            findFirst: vi.fn(async () => ({ meta: { block_change_scout: blockChangeScout } })),
+            findFirst: vi.fn(async () => ({ meta: { block_change_scout: true } })),
         },
     };
     const redisClient = {
@@ -102,14 +108,21 @@ const buildContext = (blockChangeScout: boolean) => {
 };
 
 describe('nation scout policy lock', () => {
-    it('rejects policy changes before daemon dispatch while the scenario lock is enabled', async () => {
-        const fixture = buildContext(true);
-        await expect(appRouter.createCaller(fixture.context).nation.setBlockScout({ value: false })).rejects.toMatchObject(
-            {
-                code: 'FORBIDDEN',
-                message: '임관 설정을 바꿀 수 없도록 설정되어 있습니다.',
-            }
-        );
-        expect(fixture.requestCommand).not.toHaveBeenCalled();
+    it('lets the engine recheck the scenario lock and maps its rejection', async () => {
+        const fixture = buildContext();
+        await expect(
+            appRouter.createCaller(fixture.context).nation.setBlockScout({ value: false })
+        ).rejects.toMatchObject({
+            code: 'FORBIDDEN',
+            message: '임관 설정을 바꿀 수 없도록 설정되어 있습니다.',
+        });
+        expect(fixture.requestCommand).toHaveBeenCalledWith({
+            type: 'setNationSetting',
+            userId: 'user-1',
+            generalId: 1,
+            nationId: 1,
+            mutation: { kind: 'blockScout', value: false },
+        });
+        expect(fixture.context.db.worldState.findFirst).not.toHaveBeenCalled();
     });
 });

@@ -97,6 +97,7 @@ const buildContext = (options: {
     metaDevelCost?: number;
     auctionTargets?: string[];
     clockTick?: number;
+    requestId?: string;
 }) => {
     const auth = options.auth === undefined ? buildAuth() : options.auth;
     const general = options.general === undefined ? buildGeneral() : options.general;
@@ -202,6 +203,7 @@ const buildContext = (options: {
         battleSim: {} as GameApiContext['battleSim'],
         profile: { id: 'che', scenario: 'default', name: 'che:default' },
         auth,
+        ...(options.requestId ? { requestId: options.requestId } : {}),
         uploadDir: 'uploads',
         uploadPath: '/uploads',
         uploadPublicUrl: null,
@@ -247,13 +249,15 @@ describe('vote router actor and permission boundaries', () => {
 
     it('uses only the general owned by the authenticated user for voting and reward dispatch', async () => {
         const owned = buildGeneral({ id: 7, userId: 'user-1', name: '유비' });
-        const fixture = buildContext({ general: owned, clockTick: 100 });
+        const fixture = buildContext({ general: owned, clockTick: 100, requestId: 'http-vote-submit' });
 
         await expect(
             appRouter.createCaller(fixture.context).vote.submitVote({ voteId: 1, selection: [0] })
         ).resolves.toEqual({ ok: true, wonLottery: false });
         expect(fixture.requestCommand).toHaveBeenCalledWith({
             type: 'voteReward',
+            requestId: 'http-vote-submit:vote.submitVote:engine:0:voteReward',
+            userId: 'user-1',
             voteId: 1,
             generalId: 7,
             selection: [0],

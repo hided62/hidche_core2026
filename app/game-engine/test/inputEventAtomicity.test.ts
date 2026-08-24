@@ -176,6 +176,7 @@ describe('input event atomicity', () => {
         queue.enqueue({
             type: 'auctionBid',
             requestId: 'event-1',
+            userId: 'user-7',
             auctionId: 3,
             generalId: 7,
             amount: 1000,
@@ -239,7 +240,7 @@ describe('input event atomicity', () => {
             }
         );
 
-        queue.enqueue({ type: 'vacation', requestId: 'event-uow', generalId: 7 });
+        queue.enqueue({ type: 'vacation', requestId: 'event-uow', userId: 'user-7', generalId: 7 });
         const loop = lifecycle.start();
         await responded;
 
@@ -304,7 +305,7 @@ describe('input event atomicity', () => {
             }
         );
 
-        queue.enqueue({ type: 'vacation', requestId: 'event-2', generalId: 7 });
+        queue.enqueue({ type: 'vacation', requestId: 'event-2', userId: 'user-7', generalId: 7 });
         const loop = lifecycle.start();
         await errorObserved;
 
@@ -374,7 +375,7 @@ describe('input event atomicity', () => {
             }
         );
 
-        queue.enqueue({ type: 'vacation', requestId: 'event-3', generalId: 7 });
+        queue.enqueue({ type: 'vacation', requestId: 'event-3', userId: 'user-7', generalId: 7 });
         const loop = lifecycle.start();
         await errorObserved;
 

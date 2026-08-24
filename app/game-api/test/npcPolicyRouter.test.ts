@@ -105,7 +105,7 @@ const createContext = (
     const requestCommand =
         options.requestCommand ??
         vi.fn(async () => ({
-            type: 'setNationMeta',
+            type: 'setNpcPolicy',
             ok: true,
             nationId: 1,
             updatedAt: '2026-01-01T00:01:00.000Z',
@@ -161,46 +161,43 @@ describe('NPC policy router', () => {
         });
     });
 
-    it('lets a secret-level reader load the page but rejects every mutation before daemon dispatch', async () => {
+    it('lets a secret-level reader load the page while mapping authoritative ENGINE rejection', async () => {
         const reader = { ...baseGeneral, officerLevel: 2 };
-        const fixture = createContext({ me: reader });
+        const requestCommand = vi.fn(async () => ({
+            type: 'setNpcPolicy' as const,
+            ok: false as const,
+            code: 'FORBIDDEN' as const,
+            reason: '권한이 부족합니다.',
+            nationId: 1,
+        }));
+        const fixture = createContext({ me: reader, requestCommand });
         const caller = appRouter.createCaller(fixture.context);
 
         await expect(caller.npc.getPolicy()).resolves.toMatchObject({ permissionLevel: 1 });
         await expect(caller.npc.setNationPriority(['천도'])).rejects.toMatchObject({ code: 'FORBIDDEN' });
-        await expect(caller.npc.setGeneralPriority(['출병', '일반내정'])).rejects.toMatchObject({
-            code: 'FORBIDDEN',
-        });
-        await expect(caller.npc.setNationPolicy({ reqNationGold: 100 })).rejects.toMatchObject({
-            code: 'FORBIDDEN',
-        });
-        expect(fixture.requestCommand).not.toHaveBeenCalled();
+        expect(fixture.requestCommand).toHaveBeenCalledOnce();
     });
 
     it.each([
         ['군주', { ...baseGeneral, officerLevel: 12 }],
         ['감찰권자', { ...baseGeneral, officerLevel: 1, meta: { belong: 0, permission: 'auditor' } }],
         ['외교권자', { ...baseGeneral, officerLevel: 1, meta: { belong: 0, permission: 'ambassador' } }],
-    ])('%s can persist policy through the daemon-owned metadata command', async (_label, me) => {
+    ])('%s dispatches actor-bound policy intent to the daemon', async (_label, me) => {
         const fixture = createContext({ me });
         await expect(appRouter.createCaller(fixture.context).npc.setNationPriority(['천도', '천도'])).resolves.toEqual({
             ok: true,
         });
         expect(fixture.requestCommand).toHaveBeenCalledWith({
-            type: 'setNationMeta',
+            type: 'setNpcPolicy',
+            userId: 'user-22',
+            generalId: 22,
             nationId: 1,
-            updates: {
-                npc_nation_policy: expect.objectContaining({
-                    priority: ['천도', '천도'],
-                    prioritySetter: '정책담당',
-                    prioritySetTime: expect.any(String),
-                }),
-            },
             expectedUpdatedAt: '2026-01-01T00:00:00.000Z',
+            mutation: { kind: 'nationPriority', priority: ['천도', '천도'] },
         });
     });
 
-    it('clamps legacy integer values, preserves float values, and validates troop ownership before dispatch', async () => {
+    it('forwards raw policy intent so ENGINE can validate current troop and city state atomically', async () => {
         const fixture = createContext();
         const caller = appRouter.createCaller(fixture.context);
 
@@ -211,43 +208,29 @@ describe('NPC policy router', () => {
         });
         expect(fixture.requestCommand).toHaveBeenCalledWith(
             expect.objectContaining({
-                updates: {
-                    npc_nation_policy: expect.objectContaining({
-                        values: expect.objectContaining({
-                            reqNationGold: 0,
-                            safeRecruitCityPopulationRatio: -0.5,
-                            CombatForce: { 101: [1, 2] },
-                        }),
-                    }),
+                type: 'setNpcPolicy',
+                mutation: {
+                    kind: 'nationPolicy',
+                    values: {
+                        reqNationGold: -100,
+                        safeRecruitCityPopulationRatio: -0.5,
+                        CombatForce: { 101: [1, 2] },
+                    },
                 },
             })
         );
-
-        fixture.requestCommand.mockClear();
-        await expect(caller.npc.setNationPolicy({ SupportForce: [999] })).rejects.toMatchObject({
-            code: 'BAD_REQUEST',
-        });
-        expect(fixture.requestCommand).not.toHaveBeenCalled();
     });
 
-    it('preserves duplicate legacy priority entries and enforces required general actions and ordering', async () => {
+    it('preserves duplicate priority entries in the dispatched intent', async () => {
         const fixture = createContext();
         const caller = appRouter.createCaller(fixture.context);
 
         await caller.npc.setGeneralPriority(['출병', '출병', '일반내정']);
         expect(fixture.requestCommand).toHaveBeenCalledWith(
             expect.objectContaining({
-                updates: {
-                    npc_general_policy: expect.objectContaining({
-                        priority: ['출병', '출병', '일반내정'],
-                    }),
-                },
+                mutation: { kind: 'generalPriority', priority: ['출병', '출병', '일반내정'] },
             })
         );
-        await expect(caller.npc.setGeneralPriority(['일반내정', '출병'])).rejects.toMatchObject({
-            code: 'BAD_REQUEST',
-        });
-        await expect(caller.npc.setGeneralPriority(['출병'])).rejects.toMatchObject({ code: 'BAD_REQUEST' });
     });
 
     it('blocks nationless, penalized, and stale writers without changing lifecycle state directly', async () => {
@@ -262,10 +245,11 @@ describe('NPC policy router', () => {
         });
 
         const staleCommand = vi.fn(async () => ({
-            type: 'setNationMeta',
+            type: 'setNpcPolicy',
             ok: false,
+            code: 'CONFLICT',
             nationId: 1,
-            reason: 'CONFLICT',
+            reason: '다른 사용자가 정책을 변경했습니다.',
         }));
         const stale = createContext({ requestCommand: staleCommand });
         await expect(appRouter.createCaller(stale.context).npc.setNationPriority(['천도'])).rejects.toMatchObject({

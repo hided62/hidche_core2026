@@ -110,6 +110,7 @@ const runDelayedResourceBid = async (finishImmediately: boolean) => {
     const result = await auctionBidder.bid(
         {
             type: 'auctionBid',
+            userId: 'user-7',
             auctionId: 31,
             generalId: general.id,
             amount,
@@ -155,6 +156,7 @@ describe('resource auction Ref compatibility', () => {
                 sentAt: '2026-08-23T00:00:00.000Z',
                 command: {
                     type: 'auctionBid',
+                    userId: 'user-7',
                     auctionId: 31,
                     generalId: 7,
                     amount: 500,

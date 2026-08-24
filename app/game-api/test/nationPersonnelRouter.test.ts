@@ -140,9 +140,26 @@ describe('nation personnel router', () => {
         await caller.nation.changePermission({ isAmbassador: true, targetGeneralIds: [9] });
 
         expect(requestCommand.mock.calls).toEqual([
-            [{ type: 'appoint', generalId: 22, destGeneralId: 7, destCityId: 1, officerLevel: 4 }],
-            [{ type: 'kick', generalId: 22, destGeneralId: 8 }],
-            [{ type: 'changePermission', generalId: 22, isAmbassador: true, targetGeneralIds: [9] }],
+            [
+                {
+                    type: 'appoint',
+                    userId: 'user-22',
+                    generalId: 22,
+                    destGeneralId: 7,
+                    destCityId: 1,
+                    officerLevel: 4,
+                },
+            ],
+            [{ type: 'kick', userId: 'user-22', generalId: 22, destGeneralId: 8 }],
+            [
+                {
+                    type: 'changePermission',
+                    userId: 'user-22',
+                    generalId: 22,
+                    isAmbassador: true,
+                    targetGeneralIds: [9],
+                },
+            ],
         ]);
     });
 
@@ -160,6 +177,7 @@ describe('nation personnel router', () => {
         expect(requestCommand).toHaveBeenCalledWith({
             type: 'kick',
             requestId: 'http-nation-kick:nation.kick:engine:0:kick',
+            userId: 'user-22',
             generalId: 22,
             destGeneralId: 8,
         });
@@ -277,7 +295,7 @@ describe('nation personnel router', () => {
         };
         const makeCommand = () =>
             vi.fn(async () => ({
-                type: 'setNationMeta',
+                type: 'setNationSetting',
                 ok: true,
                 nationId: 1,
                 updatedAt: '2026-01-01T00:01:00.000Z',
@@ -291,15 +309,13 @@ describe('nation personnel router', () => {
                 .nation.setRate({ amount: 20 })
         ).resolves.toEqual({ ok: true });
         expect(headCommand).toHaveBeenCalledWith({
-            type: 'setNationMeta',
+            type: 'setNationSetting',
+            userId: 'user-22',
+            generalId: 22,
             nationId: 1,
-            updates: { rate: 20 },
-            expectedUpdatedAt: '2026-01-01T00:00:00.000Z',
+            mutation: { kind: 'rate', amount: 20 },
         });
-        expect(changeJournal.snapshot()).toEqual([
-            { domain: 'dashboard.global', entityId: 0 },
-            { domain: 'nation.content', entityId: 1 },
-        ]);
+        expect(changeJournal.snapshot()).toEqual([]);
 
         const ambassadorCommand = makeCommand();
         const ambassador = {
@@ -312,6 +328,13 @@ describe('nation personnel router', () => {
                 .createCaller(createContext({ me: ambassador, db: nationDb, requestCommand: ambassadorCommand }))
                 .nation.setRate({ amount: 25 })
         ).resolves.toEqual({ ok: true });
+        expect(ambassadorCommand).toHaveBeenCalledWith({
+            type: 'setNationSetting',
+            userId: 'user-22',
+            generalId: 22,
+            nationId: 1,
+            mutation: { kind: 'rate', amount: 25 },
+        });
 
         const memberCommand = makeCommand();
         const member = { ...baseGeneral, officerLevel: 1 };

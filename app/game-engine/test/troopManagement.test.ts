@@ -10,6 +10,7 @@ const schedule: TurnSchedule = { entries: [{ startMinute: 0, tickMinutes: 10 }] 
 
 const buildGeneral = (id: number, overrides: Partial<TurnGeneral> = {}): TurnGeneral => ({
     id,
+    userId: `user-${id}`,
     name: `장수${id}`,
     nationId: 1,
     cityId: 1,
@@ -132,7 +133,9 @@ describe('troop management world commands', () => {
         });
         const handler = createTurnDaemonCommandHandler({ world });
 
-        await expect(handler.handle({ type: 'troopJoin', generalId: 1, troopId: 2 })).resolves.toEqual({
+        await expect(
+            handler.handle({ type: 'troopJoin', userId: 'user-1', generalId: 1, troopId: 2 })
+        ).resolves.toEqual({
             type: 'troopJoin',
             ok: true,
             generalId: 1,
@@ -159,7 +162,9 @@ describe('troop management world commands', () => {
         });
         const handler = createTurnDaemonCommandHandler({ world });
 
-        await expect(handler.handle({ type: 'troopJoin', generalId: 1, troopId: 2 })).resolves.toMatchObject({
+        await expect(
+            handler.handle({ type: 'troopJoin', userId: 'user-1', generalId: 1, troopId: 2 })
+        ).resolves.toMatchObject({
             ok: true,
         });
         expect(world.getGeneralById(1)).toMatchObject({ troopId: 2, cityId: 1 });
@@ -177,7 +182,9 @@ describe('troop management world commands', () => {
         });
         const handler = createTurnDaemonCommandHandler({ world });
 
-        await expect(handler.handle({ type: 'troopJoin', generalId: 1, troopId: 2 })).resolves.toMatchObject({
+        await expect(
+            handler.handle({ type: 'troopJoin', userId: 'user-1', generalId: 1, troopId: 2 })
+        ).resolves.toMatchObject({
             ok: true,
         });
         expect(world.getGeneralById(1)).toMatchObject({ troopId: 2, cityId: 2 });
@@ -188,7 +195,9 @@ describe('troop management world commands', () => {
         const world = buildWorld({});
         const handler = createTurnDaemonCommandHandler({ world });
 
-        await expect(handler.handle({ type: 'troopCreate', generalId: 1, troopName: ' 백마대 ' })).resolves.toEqual({
+        await expect(
+            handler.handle({ type: 'troopCreate', userId: 'user-1', generalId: 1, troopName: ' 백마대 ' })
+        ).resolves.toEqual({
             type: 'troopCreate',
             ok: true,
             generalId: 1,
@@ -202,7 +211,12 @@ describe('troop management world commands', () => {
         const escapedWorld = buildWorld({ generals: [buildGeneral(2)] });
         const escapedHandler = createTurnDaemonCommandHandler({ world: escapedWorld });
         await expect(
-            escapedHandler.handle({ type: 'troopCreate', generalId: 2, troopName: '<백마대>' })
+            escapedHandler.handle({
+                type: 'troopCreate',
+                userId: 'user-2',
+                generalId: 2,
+                troopName: '<백마대>',
+            })
         ).resolves.toMatchObject({ ok: true, troopName: '&lt;백마대&gt;' });
     });
 
@@ -213,13 +227,13 @@ describe('troop management world commands', () => {
         });
         const assignedHandler = createTurnDaemonCommandHandler({ world: assigned });
         await expect(
-            assignedHandler.handle({ type: 'troopCreate', generalId: 1, troopName: '신규대' })
+            assignedHandler.handle({ type: 'troopCreate', userId: 'user-1', generalId: 1, troopName: '신규대' })
         ).resolves.toMatchObject({ ok: false, reason: '이미 부대에 소속되어 있습니다.' });
 
         const blank = buildWorld({});
         const blankHandler = createTurnDaemonCommandHandler({ world: blank });
         await expect(
-            blankHandler.handle({ type: 'troopCreate', generalId: 1, troopName: '   ' })
+            blankHandler.handle({ type: 'troopCreate', userId: 'user-1', generalId: 1, troopName: '   ' })
         ).resolves.toMatchObject({
             ok: false,
             reason: '부대 이름이 없습니다.',
@@ -244,6 +258,7 @@ describe('troop management world commands', () => {
         await expect(
             forbiddenHandler.handle({
                 type: 'troopKick',
+                userId: 'user-2',
                 generalId: 2,
                 troopId: 1,
                 targetGeneralId: 3,
@@ -256,6 +271,7 @@ describe('troop management world commands', () => {
         await expect(
             allowedHandler.handle({
                 type: 'troopKick',
+                userId: 'user-1',
                 generalId: 1,
                 troopId: 1,
                 targetGeneralId: 3,
@@ -266,6 +282,7 @@ describe('troop management world commands', () => {
         await expect(
             allowedHandler.handle({
                 type: 'troopKick',
+                userId: 'user-1',
                 generalId: 1,
                 troopId: 1,
                 targetGeneralId: 1,
@@ -280,7 +297,13 @@ describe('troop management world commands', () => {
         });
         const leaderHandler = createTurnDaemonCommandHandler({ world: leaderWorld });
         await expect(
-            leaderHandler.handle({ type: 'troopRename', generalId: 1, troopId: 1, troopName: '신대' })
+            leaderHandler.handle({
+                type: 'troopRename',
+                userId: 'user-1',
+                generalId: 1,
+                troopId: 1,
+                troopName: '신대',
+            })
         ).resolves.toMatchObject({ ok: true, troopName: '신대' });
 
         const managerWorld = buildWorld({
@@ -292,7 +315,13 @@ describe('troop management world commands', () => {
         });
         const managerHandler = createTurnDaemonCommandHandler({ world: managerWorld });
         await expect(
-            managerHandler.handle({ type: 'troopRename', generalId: 2, troopId: 1, troopName: '신대' })
+            managerHandler.handle({
+                type: 'troopRename',
+                userId: 'user-2',
+                generalId: 2,
+                troopId: 1,
+                troopName: '신대',
+            })
         ).resolves.toMatchObject({ ok: true, troopName: '신대' });
 
         const penalizedWorld = buildWorld({
@@ -307,7 +336,13 @@ describe('troop management world commands', () => {
         });
         const penalizedHandler = createTurnDaemonCommandHandler({ world: penalizedWorld });
         await expect(
-            penalizedHandler.handle({ type: 'troopRename', generalId: 2, troopId: 1, troopName: '신대' })
+            penalizedHandler.handle({
+                type: 'troopRename',
+                userId: 'user-2',
+                generalId: 2,
+                troopId: 1,
+                troopName: '신대',
+            })
         ).resolves.toMatchObject({ ok: false, reason: '권한이 부족합니다.' });
         expect(penalizedWorld.getTroopById(1)?.name).toBe('구대');
     });

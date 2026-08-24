@@ -108,6 +108,15 @@ const buildContext = (officerLevel = 12, letter: Record<string, unknown> = store
             findFirst: vi.fn(async () => null),
             create,
         },
+        worldState: {
+            findFirst: vi.fn(async () => ({
+                clockBaseTime: new Date('0185-01-01T00:00:00.000Z'),
+                clockTick: 6n,
+                clockMode: 'manual',
+                clockWallAnchor: new Date('2026-07-31T00:00:00.000Z'),
+                tickSeconds: 600,
+            })),
+        },
     };
     const redis = {
         get: async () => null,
@@ -146,6 +155,7 @@ describe('diplomacy HTML API boundary', () => {
                 textBrief: '<p><strong>공개</strong></p>',
                 textDetail:
                     '<ul><li>조건</li></ul><a href="https://example.com" target="_blank" rel="noopener noreferrer nofollow">자료</a>',
+                date: new Date('0185-01-01T00:00:00.000Z'),
             }),
         });
     });

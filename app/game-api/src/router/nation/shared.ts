@@ -1,7 +1,7 @@
 import { TRPCError } from '@trpc/server';
 import { z } from 'zod';
 
-import { asNumber, asRecord } from '@sammo-ts/common';
+import { asNumber, asRecord, type TurnDaemonCommand } from '@sammo-ts/common';
 import {
     createIncomeActionContext,
     DomesticTraitLoader,
@@ -26,7 +26,7 @@ import {
     type TriggerValue,
 } from '@sammo-ts/logic';
 
-import type { GameApiContext, InputJsonValue, WorldStateRow } from '../../context.js';
+import type { GameApiContext, WorldStateRow } from '../../context.js';
 import { purifyNationHtml } from '../../security/nationHtml.js';
 import { sanitizeInternalDisplayCode } from '../../services/gameDisplayNames.js';
 import { resolveSecretPermission } from '../shared/secretPermission.js';
@@ -277,8 +277,10 @@ export const resolveNationScoutMessage = (meta: Record<string, unknown>): string
 
 export const resolveWarSettingRemain = (meta: Record<string, unknown>): number => {
     const legacy = readMetaNumber(meta, 'available_war_setting_cnt', -1);
-    const fallback =
-        legacy >= 0 ? legacy : readMetaNumber(meta, 'availableWarSettingCnt', MAX_AVAILABLE_WAR_SETTING_CNT);
+    // Ref treats an absent counter as zero. The monthly refill is responsible
+    // for creating or replenishing it; a missing migration value must not grant
+    // ten free policy changes.
+    const fallback = legacy >= 0 ? legacy : readMetaNumber(meta, 'availableWarSettingCnt', 0);
     return Math.max(0, Math.min(MAX_AVAILABLE_WAR_SETTING_CNT, fallback));
 };
 
@@ -428,38 +430,30 @@ export const assertNationEditable = (
     }
 };
 
-export const updateNationMeta = async (
-    ctx: Pick<GameApiContext, 'turnDaemon' | 'changeJournal'>,
-    nationId: number,
-    updates: Record<string, unknown>,
-    currentMeta: Record<string, unknown>
-): Promise<InputJsonValue> => {
-    const expectedUpdatedAt = typeof currentMeta._updatedAt === 'string' ? currentMeta._updatedAt : undefined;
+type NationSettingMutation = Extract<TurnDaemonCommand, { type: 'setNationSetting' }>['mutation'];
+
+export const updateNationSetting = async (
+    ctx: Pick<GameApiContext, 'turnDaemon' | 'requestId'>,
+    userId: string,
+    general: { id: number; nationId: number },
+    endpoint: string,
+    mutation: NationSettingMutation
+) => {
     const result = await ctx.turnDaemon.requestCommand({
-        type: 'setNationMeta',
-        nationId,
-        updates,
-        expectedUpdatedAt,
+        type: 'setNationSetting',
+        ...(ctx.requestId ? { requestId: `${ctx.requestId}:nation.${endpoint}:engine:0:setNationSetting` } : {}),
+        userId,
+        generalId: general.id,
+        nationId: general.nationId,
+        mutation,
     });
-    if (!result || result.type !== 'setNationMeta') {
+    if (!result || result.type !== 'setNationSetting') {
         throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: 'Unexpected response' });
     }
     if (!result.ok) {
-        if (result.reason === 'CONFLICT') {
-            throw new TRPCError({
-                code: 'CONFLICT',
-                message: '다른 사용자가 정책을 변경했습니다. 재시도하거나 현재 상태로 갱신해주세요.',
-            });
-        }
-        throw new TRPCError({ code: 'BAD_REQUEST', message: result.reason });
+        throw new TRPCError({ code: result.code, message: result.reason });
     }
-    ctx.changeJournal?.mark('nation.content', nationId);
-    ctx.changeJournal?.mark('dashboard.global');
-    return {
-        ...currentMeta,
-        ...updates,
-        _updatedAt: result.updatedAt,
-    } as InputJsonValue;
+    return result;
 };
 
 export const mapGeneralList = async (

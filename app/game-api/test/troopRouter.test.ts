@@ -295,6 +295,7 @@ describe('troop router permissions and mutations', () => {
         });
         expect(requestCommand).toHaveBeenCalledWith({
             type: 'troopCreate',
+            userId: 'user-1',
             generalId: 1,
             troopName: '백마대',
         });
@@ -317,8 +318,27 @@ describe('troop router permissions and mutations', () => {
         expect(requestCommand).toHaveBeenCalledWith({
             type: 'troopCreate',
             requestId: 'http-troop-create:troop.create:engine:0:troopCreate',
+            userId: 'user-1',
             generalId: 1,
             troopName: '백마대',
+        });
+    });
+
+    it('maps an ENGINE actor-binding rejection to a forbidden API response', async () => {
+        const fixture = buildContext({
+            result: {
+                type: 'commandRejected',
+                ok: false,
+                commandType: 'troopCreate',
+                reason: '명령 수행 장수의 현재 소유자가 일치하지 않습니다.',
+            },
+        });
+
+        await expect(
+            appRouter.createCaller(fixture.context).troop.create({ troopName: '백마대' })
+        ).rejects.toMatchObject({
+            code: 'FORBIDDEN',
+            message: '명령 수행 장수의 현재 소유자가 일치하지 않습니다.',
         });
     });
 
@@ -372,6 +392,7 @@ describe('troop router permissions and mutations', () => {
         ).resolves.toEqual({ ok: true });
         expect(authorized.requestCommand).toHaveBeenCalledWith({
             type: 'troopKick',
+            userId: 'user-1',
             generalId: 1,
             troopId: 1,
             targetGeneralId: 3,

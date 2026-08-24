@@ -5,6 +5,7 @@ import { asRecord } from '@sammo-ts/common';
 import type { GamePrisma } from '@sammo-ts/infra';
 
 import { purifyDiplomacyHtml } from '../../security/diplomacyHtml.js';
+import { loadCurrentGameTime } from '../../services/gameClock.js';
 import { accessAuthedInputProcedure, accessAuthedProcedure, router } from '../../trpc.js';
 import { getMyGeneral } from '../shared/general.js';
 import { assertNationAccess, resolveNationPermission } from '../nation/shared.js';
@@ -223,6 +224,7 @@ export const diplomacyRouter = router({
                     nationColor: destNation.color,
                 },
             };
+            const letterDate = (await loadCurrentGameTime(ctx.db)).now;
 
             const created = await ctx.db.diplomacyLetter.create({
                 data: {
@@ -232,6 +234,7 @@ export const diplomacyRouter = router({
                     state: 'PROPOSED',
                     textBrief: purifyDiplomacyHtml(input.brief),
                     textDetail: purifyDiplomacyHtml(input.detail),
+                    date: letterDate,
                     srcSignerId: me.id,
                     aux: aux as GamePrisma.InputJsonValue,
                 },

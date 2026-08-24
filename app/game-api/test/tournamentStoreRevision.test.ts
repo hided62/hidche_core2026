@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import { buildTournamentKeys } from '../src/tournament/keys.js';
-import { TournamentStore } from '../src/tournament/store.js';
+import { CorruptTournamentProjectionError, TournamentStore } from '../src/tournament/store.js';
 
 class AtomicMemoryRedis {
     readonly events: string[] = [];
@@ -130,4 +130,114 @@ describe('TournamentStore source revision', () => {
         await expect(store.getSourceRevision()).resolves.toBe('50');
         expect(redis.published).toHaveLength(100);
     });
+
+    it('distinguishes missing projections from malformed JSON and invalid shapes', async () => {
+        const redis = new AtomicMemoryRedis();
+        const keys = buildTournamentKeys('corrupt:default');
+        const store = new TournamentStore(redis, keys);
+
+        await expect(store.getParticipants()).resolves.toEqual([]);
+        await redis.set(keys.participantsKey, '{broken');
+        await expect(store.getParticipants()).rejects.toBeInstanceOf(CorruptTournamentProjectionError);
+        await redis.set(keys.participantsKey, JSON.stringify([{ id: 'not-a-number' }]));
+        await expect(store.getParticipants()).rejects.toBeInstanceOf(CorruptTournamentProjectionError);
+    });
+
+    it('rejects corrupt settlement flags instead of silently skipping tournament settlement', async () => {
+        const redis = new AtomicMemoryRedis();
+        const keys = buildTournamentKeys('corrupt-settlement:default');
+        const store = new TournamentStore(redis, keys);
+        const canonicalState = {
+            stage: 0,
+            phase: 0,
+            type: 0,
+            auto: false,
+            openYear: 185,
+            openMonth: 2,
+            termSeconds: 300,
+            nextAt: '2026-08-17T00:00:00.000Z',
+            bettingId: 123,
+            bettingCloseAt: '2026-08-17T00:05:00.000Z',
+            winnerId: 7,
+            bettingSettled: false,
+            rewardSettled: false,
+            participantsLockedAt: '2026-08-17T00:01:00.000Z',
+            lastError: 'retryable fixture',
+            lastErrorAt: '2026-08-17T00:02:00.000Z',
+        };
+
+        await redis.set(keys.stateKey, JSON.stringify(canonicalState));
+        await expect(store.getState()).resolves.toEqual(canonicalState);
+
+        for (const [field, value] of [
+            ['winnerId', '7'],
+            ['bettingId', '123'],
+            ['rewardSettled', 'yes'],
+            ['bettingSettled', 1],
+        ] as const) {
+            await redis.set(keys.stateKey, JSON.stringify({ ...canonicalState, [field]: value }));
+            await expect(store.getState(), field).rejects.toBeInstanceOf(CorruptTournamentProjectionError);
+        }
+    });
+
+    it('validates known optional participant and match projection fields', async () => {
+        const redis = new AtomicMemoryRedis();
+        const keys = buildTournamentKeys('corrupt-optional:default');
+        const store = new TournamentStore(redis, keys);
+        const participant = {
+            id: 7,
+            name: '관우',
+            leadership: 90,
+            strength: 97,
+            intel: 75,
+            level: 5,
+            groupId: 0,
+            groupNo: 1,
+            win: 2,
+            draw: 1,
+            lose: 0,
+            gl: 10,
+            seedRank: 1,
+            finalRank: 2,
+            preliminaryGroupId: 0,
+            preliminaryGroupNo: 1,
+            preliminaryRank: 2,
+            preliminaryWin: 2,
+            preliminaryDraw: 1,
+            preliminaryLose: 0,
+            preliminaryGl: 10,
+        };
+        const match = {
+            id: 1,
+            stage: 7,
+            roundIndex: 0,
+            groupId: 0,
+            attackerId: 7,
+            defenderId: 8,
+            winnerId: 7,
+            log: ['결과'],
+            logEntries: [
+                {
+                    phase: 1,
+                    attackerEnergy: 90,
+                    defenderEnergy: 0,
+                    attackerDamage: 10,
+                    defenderDamage: 100,
+                    text: '결과',
+                },
+            ],
+            lastEnergy: { attacker: 90, defender: 0 },
+        };
+
+        await redis.set(keys.participantsKey, JSON.stringify([participant]));
+        await redis.set(keys.matchesKey, JSON.stringify([match]));
+        await expect(store.getParticipants()).resolves.toEqual([participant]);
+        await expect(store.getMatches()).resolves.toEqual([match]);
+
+        await redis.set(keys.participantsKey, JSON.stringify([{ ...participant, win: '2' }]));
+        await expect(store.getParticipants()).rejects.toBeInstanceOf(CorruptTournamentProjectionError);
+        await redis.set(keys.matchesKey, JSON.stringify([{ ...match, lastEnergy: { attacker: '90', defender: 0 } }]));
+        await expect(store.getMatches()).rejects.toBeInstanceOf(CorruptTournamentProjectionError);
+    });
+
 });

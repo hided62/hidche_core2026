@@ -26,7 +26,8 @@ import {
     resolveRegionName,
     sanitizeInternalDisplayCode,
 } from '../../services/gameDisplayNames.js';
-import { getMyGeneral } from '../shared/general.js';
+import { getAuthenticatedUserId, getMyGeneral } from '../shared/general.js';
+import { throwIfCommandRejected } from '../shared/turnDaemon.js';
 import {
     loadTraitNames,
     resolveNationBill,
@@ -299,88 +300,97 @@ export const getGeneralContext = async (ctx: GameApiContext) => {
 
     const metaRecord = asRecord(general.meta);
     const officerCityId = readNumber(metaRecord.officerCity ?? metaRecord.officer_city ?? metaRecord.officerCityId, 0);
-    const [city, queriedNation, worldState, officerCity, troop, troopLeader, troopLeaderFirstTurn, accessLog, rankRows] =
-        await Promise.all([
-            general.cityId > 0
-                ? ctx.db.city.findUnique({
-                      where: { id: general.cityId },
-                      select: {
-                          id: true,
-                          name: true,
-                          level: true,
-                          nationId: true,
-                          population: true,
-                          populationMax: true,
-                          agriculture: true,
-                          agricultureMax: true,
-                          commerce: true,
-                          commerceMax: true,
-                          security: true,
-                          securityMax: true,
-                          trust: true,
-                          trade: true,
-                          defence: true,
-                          defenceMax: true,
-                          wall: true,
-                          wallMax: true,
-                          region: true,
-                          supplyState: true,
-                          frontState: true,
-                      },
-                  })
-                : null,
-            general.nationId > 0
-                ? ctx.db.nation.findUnique({
-                      where: { id: general.nationId },
-                      select: {
-                          id: true,
-                          name: true,
-                          color: true,
-                          level: true,
-                          gold: true,
-                          rice: true,
-                          tech: true,
-                          typeCode: true,
-                          capitalCityId: true,
-                          meta: true,
-                      },
-                  })
-                : Promise.resolve(NEUTRAL_NATION_CONTEXT),
-            ctx.db.worldState.findFirst({
-                select: {
-                    currentYear: true,
-                    currentMonth: true,
-                    tickSeconds: true,
-                    lastTurnTick: true,
-                    config: true,
-                    meta: true,
-                },
-            }),
-            officerCityId > 0
-                ? ctx.db.city.findUnique({ where: { id: officerCityId }, select: { name: true } })
-                : Promise.resolve(null),
-            general.troopId > 0
-                ? ctx.db.troop.findUnique({ where: { troopLeaderId: general.troopId }, select: { name: true } })
-                : Promise.resolve(null),
-            general.troopId > 0
-                ? ctx.db.general.findUnique({ where: { id: general.troopId }, select: { cityId: true } })
-                : Promise.resolve(null),
-            general.troopId > 0
-                ? ctx.db.generalTurn.findFirst({
-                      where: { generalId: general.troopId },
-                      orderBy: { turnIdx: 'asc' },
-                      select: { actionCode: true },
-                  })
-                : Promise.resolve(null),
-            ctx.db.generalAccessLog.findUnique({
-                where: { generalId: general.id },
-                select: { refreshScore: true, refreshScoreTotal: true },
-            }),
-            ctx.db.rankData.findMany({
-                where: { generalId: general.id, type: { in: [...PERSONAL_RECORD_TYPES] } },
-                select: { type: true, value: true },
-            }),
-        ]);
+    const [
+        city,
+        queriedNation,
+        worldState,
+        officerCity,
+        troop,
+        troopLeader,
+        troopLeaderFirstTurn,
+        accessLog,
+        rankRows,
+    ] = await Promise.all([
+        general.cityId > 0
+            ? ctx.db.city.findUnique({
+                  where: { id: general.cityId },
+                  select: {
+                      id: true,
+                      name: true,
+                      level: true,
+                      nationId: true,
+                      population: true,
+                      populationMax: true,
+                      agriculture: true,
+                      agricultureMax: true,
+                      commerce: true,
+                      commerceMax: true,
+                      security: true,
+                      securityMax: true,
+                      trust: true,
+                      trade: true,
+                      defence: true,
+                      defenceMax: true,
+                      wall: true,
+                      wallMax: true,
+                      region: true,
+                      supplyState: true,
+                      frontState: true,
+                  },
+              })
+            : null,
+        general.nationId > 0
+            ? ctx.db.nation.findUnique({
+                  where: { id: general.nationId },
+                  select: {
+                      id: true,
+                      name: true,
+                      color: true,
+                      level: true,
+                      gold: true,
+                      rice: true,
+                      tech: true,
+                      typeCode: true,
+                      capitalCityId: true,
+                      meta: true,
+                  },
+              })
+            : Promise.resolve(NEUTRAL_NATION_CONTEXT),
+        ctx.db.worldState.findFirst({
+            select: {
+                currentYear: true,
+                currentMonth: true,
+                tickSeconds: true,
+                lastTurnTick: true,
+                config: true,
+                meta: true,
+            },
+        }),
+        officerCityId > 0
+            ? ctx.db.city.findUnique({ where: { id: officerCityId }, select: { name: true } })
+            : Promise.resolve(null),
+        general.troopId > 0
+            ? ctx.db.troop.findUnique({ where: { troopLeaderId: general.troopId }, select: { name: true } })
+            : Promise.resolve(null),
+        general.troopId > 0
+            ? ctx.db.general.findUnique({ where: { id: general.troopId }, select: { cityId: true } })
+            : Promise.resolve(null),
+        general.troopId > 0
+            ? ctx.db.generalTurn.findFirst({
+                  where: { generalId: general.troopId },
+                  orderBy: { turnIdx: 'asc' },
+                  select: { actionCode: true },
+              })
+            : Promise.resolve(null),
+        ctx.db.generalAccessLog.findUnique({
+            where: { generalId: general.id },
+            select: { refreshScore: true, refreshScoreTotal: true },
+        }),
+        ctx.db.rankData.findMany({
+            where: { generalId: general.id, type: { in: [...PERSONAL_RECORD_TYPES] } },
+            select: { type: true, value: true },
+        }),
+    ]);
     const nation = queriedNation ?? NEUTRAL_NATION_CONTEXT;
 
     const [capitalCity, cityNation, troopLeaderCity, nationPopulation, nationCrew, chiefAndCityOfficerRows] =
@@ -450,14 +460,15 @@ export const getGeneralContext = async (ctx: GameApiContext) => {
             }
         }
     }
-    const [personalityNames, domesticNames, warNames, nationTypeNames, crewTypeDetails, itemDetails] = await Promise.all([
-        loadTraitNames([general.personalCode], 'personality'),
-        loadTraitNames([general.specialCode], 'domestic'),
-        loadTraitNames([general.special2Code], 'war'),
-        loadTraitNames([nation.typeCode], 'nation'),
-        loadCrewTypeDisplayDetails(worldState, ctx.profile.id),
-        loadItemDisplayDetails([general.horseCode, general.weaponCode, general.bookCode, general.itemCode]),
-    ]);
+    const [personalityNames, domesticNames, warNames, nationTypeNames, crewTypeDetails, itemDetails] =
+        await Promise.all([
+            loadTraitNames([general.personalCode], 'personality'),
+            loadTraitNames([general.specialCode], 'domestic'),
+            loadTraitNames([general.special2Code], 'war'),
+            loadTraitNames([nation.typeCode], 'nation'),
+            loadCrewTypeDisplayDetails(worldState, ctx.profile.id),
+            loadItemDisplayDetails([general.horseCode, general.weaponCode, general.bookCode, general.itemCode]),
+        ]);
 
     const worldConfig = asRecord(worldState?.config);
     const constValues = asRecord(worldConfig.const ?? worldConfig.consts);
@@ -711,15 +722,15 @@ export const generalRouter = router({
             const selected = input?.iconId ? ctx.auth?.user.icons?.find((icon) => icon.id === input.iconId) : undefined;
             const resetToDefault = input?.resetToDefault === true;
             if (resetToDefault && input?.iconId) {
-                throw new TRPCError({ code: 'BAD_REQUEST', message: '아이콘 선택과 기본 아이콘 초기화를 함께 요청할 수 없습니다.' });
+                throw new TRPCError({
+                    code: 'BAD_REQUEST',
+                    message: '아이콘 선택과 기본 아이콘 초기화를 함께 요청할 수 없습니다.',
+                });
             }
             if (!resetToDefault && !input?.iconId) {
                 throw new TRPCError({ code: 'BAD_REQUEST', message: '적용할 활성 전용 아이콘을 선택해 주세요.' });
             }
-            if (
-                resetToDefault &&
-                (ctx.auth?.user.picture !== 'default.jpg' || ctx.auth?.user.imageServer !== 0)
-            ) {
+            if (resetToDefault && (ctx.auth?.user.picture !== 'default.jpg' || ctx.auth?.user.imageServer !== 0)) {
                 throw new TRPCError({ code: 'FORBIDDEN', message: '현재 계정 아이콘이 기본 아이콘이 아닙니다.' });
             }
             if (!resetToDefault && (!selected || ctx.auth?.user.canUseGeneralPicture === false)) {
@@ -727,7 +738,10 @@ export const generalRouter = router({
             }
             const iconRevision = ctx.auth?.user.iconUpdatedAt ?? (resetToDefault ? undefined : selected!.createdAt);
             if (!iconRevision) {
-                throw new TRPCError({ code: 'PRECONDITION_FAILED', message: '계정 아이콘 변경 시각을 확인할 수 없습니다.' });
+                throw new TRPCError({
+                    code: 'PRECONDITION_FAILED',
+                    message: '계정 아이콘 변경 시각을 확인할 수 없습니다.',
+                });
             }
             const projection = resetToDefault
                 ? {
@@ -740,13 +754,7 @@ export const generalRouter = router({
                       imageServer: selected!.imageServer,
                       revision: iconRevision,
                   };
-            return adjustAccountIconForUser(
-                ctx,
-                userId,
-                projection,
-                true,
-                input?.clientRequestId ?? ctx.requestId
-            );
+            return adjustAccountIconForUser(ctx, userId, projection, true, input?.clientRequestId ?? ctx.requestId);
         }),
     me: authedProcedure.query(({ ctx }) => getGeneralContext(ctx)),
     ensureDieOnPrestartStatus: accessEngineAuthedProcedure.mutation(async ({ ctx }) => {
@@ -795,12 +803,15 @@ export const generalRouter = router({
         requestImmediateAction(ctx, input, 'instantRetreat')
     ),
     vacation: engineAuthedProcedure.mutation(async ({ ctx }) => {
+        const userId = getAuthenticatedUserId(ctx);
         const general = await getMyGeneral(ctx);
         const result = await ctx.turnDaemon.requestCommand({
             type: 'vacation',
             ...(ctx.requestId ? { requestId: `${ctx.requestId}:general.vacation:engine:0:vacation` } : {}),
+            userId,
             generalId: general.id,
         });
+        throwIfCommandRejected(result);
         if (!result || result.type !== 'vacation') {
             throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: 'Unexpected response' });
         }
@@ -810,15 +821,16 @@ export const generalRouter = router({
         return { ok: true };
     }),
     setMySetting: accessEngineAuthedInputProcedure(zGeneralSettings).mutation(async ({ ctx, input }) => {
+        const userId = getAuthenticatedUserId(ctx);
         const general = await getMyGeneral(ctx);
         const result = await ctx.turnDaemon.requestCommand({
             type: 'setMySetting',
-            ...(ctx.requestId
-                ? { requestId: `${ctx.requestId}:general.setMySetting:engine:0:setMySetting` }
-                : {}),
+            ...(ctx.requestId ? { requestId: `${ctx.requestId}:general.setMySetting:engine:0:setMySetting` } : {}),
+            userId,
             generalId: general.id,
             settings: input,
         });
+        throwIfCommandRejected(result);
         if (!result || result.type !== 'setMySetting') {
             throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: 'Unexpected response' });
         }
@@ -828,22 +840,27 @@ export const generalRouter = router({
 
         return { ok: true };
     }),
-    dropItem: engineAuthedProcedure.input(z.object({ itemType: z.string() })).mutation(async ({ ctx, input }) => {
-        const general = await getMyGeneral(ctx);
-        const result = await ctx.turnDaemon.requestCommand({
-            type: 'dropItem',
-            ...(ctx.requestId ? { requestId: `${ctx.requestId}:general.dropItem:engine:0:dropItem` } : {}),
-            generalId: general.id,
-            itemType: input.itemType,
-        });
-        if (!result || result.type !== 'dropItem') {
-            throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: 'Unexpected response' });
-        }
-        if (!result.ok) {
-            throw new TRPCError({ code: 'BAD_REQUEST', message: result.reason });
-        }
-        return { ok: true };
-    }),
+    dropItem: engineAuthedProcedure
+        .input(z.object({ itemType: z.enum(['horse', 'weapon', 'book', 'item']) }))
+        .mutation(async ({ ctx, input }) => {
+            const userId = getAuthenticatedUserId(ctx);
+            const general = await getMyGeneral(ctx);
+            const result = await ctx.turnDaemon.requestCommand({
+                type: 'dropItem',
+                ...(ctx.requestId ? { requestId: `${ctx.requestId}:general.dropItem:engine:0:dropItem` } : {}),
+                userId,
+                generalId: general.id,
+                itemType: input.itemType,
+            });
+            throwIfCommandRejected(result);
+            if (!result || result.type !== 'dropItem') {
+                throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: 'Unexpected response' });
+            }
+            if (!result.ok) {
+                throw new TRPCError({ code: 'BAD_REQUEST', message: result.reason });
+            }
+            return { ok: true };
+        }),
     getMyLog: authedProcedure
         .input(
             z.object({

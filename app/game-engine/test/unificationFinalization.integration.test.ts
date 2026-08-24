@@ -80,6 +80,8 @@ integration('unification finalization transaction', () => {
                 meta: {
                     power: 3_000,
                     max_power: { maxPower: 3_500, maxCrew: 400, maxCities: ['원자도시'] },
+                    notice: '통일 공지',
+                    infoText: '통일 임관 안내',
                 },
             },
         });
@@ -268,6 +270,7 @@ integration('unification finalization transaction', () => {
             await expect(
                 bidder.bid({
                     type: 'auctionBid',
+                    userId,
                     auctionId: uniqueAuction.id,
                     generalId: fixtureId,
                     amount: 30,
@@ -277,6 +280,7 @@ integration('unification finalization transaction', () => {
             await expect(
                 bidder.bid({
                     type: 'auctionBid',
+                    userId,
                     auctionId: uniqueAuction.id,
                     generalId: fixtureId,
                     amount: 50,
@@ -404,6 +408,8 @@ integration('unification finalization transaction', () => {
                 maxCities: ['원자도시'],
                 aux: { maxPower: 3_500, maxCrew: 400, maxCities: ['원자도시'] },
                 generals: [fixtureId],
+                msg: '통일 공지',
+                scout_msg: '통일 임관 안내',
             });
             expect(legacyOfficerPicture.length).toBeGreaterThan(32);
             expect(await db.emperor.findFirstOrThrow({ where: { serverId } })).toMatchObject({
