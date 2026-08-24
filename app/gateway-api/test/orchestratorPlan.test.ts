@@ -5,6 +5,7 @@ import path from 'node:path';
 import {
     buildProfileFrontendCommands,
     buildProfileMigrationCommand,
+    buildProfileMigrationPreflightCommand,
     buildProcessDefinitions,
     buildSharedProfileFrontendCommands,
     buildWorkspaceCommands,
@@ -437,9 +438,88 @@ describe('buildWorkspaceCommands', () => {
             cwd: workspaceRoot,
             env: {
                 NODE_ENV: 'production',
-                DATABASE_URL: databaseUrl,
+                DATABASE_URL: 'postgresql://integration.invalid/sammo?schema=che&options=-c+TimeZone%3DAsia%2FSeoul',
             },
         });
+    });
+
+    it('preserves existing non-timezone options and adds the migration KST session', () => {
+        const command = buildProfileMigrationCommand(
+            '/srv/sammo/worktrees/0123456789abcdef',
+            'postgresql://integration.invalid/sammo?schema=che&options=-c%20statement_timeout%3D30000'
+        );
+        const migrationUrl = new URL(command.env?.DATABASE_URL ?? '');
+
+        expect(migrationUrl.searchParams.getAll('options')).toEqual(['-c statement_timeout=30000 -c TimeZone=Asia/Seoul']);
+    });
+
+    it('keeps an already explicit KST migration contract without adding another override', () => {
+        const command = buildProfileMigrationCommand(
+            '/srv/sammo/worktrees/0123456789abcdef',
+            'postgresql://integration.invalid/sammo?schema=che&options=-c%20TimeZone%3DAsia%2FSeoul'
+        );
+        const migrationUrl = new URL(command.env?.DATABASE_URL ?? '');
+
+        expect(migrationUrl.searchParams.getAll('options')).toEqual(['-c TimeZone=Asia/Seoul']);
+    });
+
+    it('fails closed on conflicting or ambiguous migration timezone sources without exposing the URL', () => {
+        const secretUrl =
+            'postgresql://migration:super-secret@integration.invalid/sammo?schema=che&options=-c%20TimeZone%3DUTC';
+
+        for (const build of [
+            () => buildProfileMigrationCommand('/srv/sammo/worktree', secretUrl),
+            () =>
+                buildProfileMigrationCommand(
+                    '/srv/sammo/worktree',
+                    'postgresql://integration.invalid/sammo?schema=che&timezone=UTC'
+                ),
+            () =>
+                buildProfileMigrationCommand('/srv/sammo/worktree', 'postgresql://integration.invalid/sammo', {
+                    PGOPTIONS: '-c statement_timeout=30000 --TimeZone=UTC',
+                }),
+            () =>
+                buildProfileMigrationCommand('/srv/sammo/worktree', 'postgresql://integration.invalid/sammo', {
+                    PGTZ: 'UTC',
+                }),
+            () =>
+                buildProfileMigrationCommand(
+                    '/srv/sammo/worktree',
+                    'postgresql://integration.invalid/sammo?options=--TimeZone%20UTC'
+                ),
+        ]) {
+            let error: unknown;
+            try {
+                build();
+            } catch (caught) {
+                error = caught;
+            }
+            expect(error).toBeInstanceOf(Error);
+            expect((error as Error).message).toContain('Profile migration refused');
+            expect((error as Error).message).not.toContain('super-secret');
+            expect((error as Error).message).not.toContain(secretUrl);
+        }
+    });
+
+    it('checks the unmodified runtime URL before building the separate migration-only URL', () => {
+        const profileDatabaseUrl = 'postgresql://integration.invalid/sammo?schema=che';
+        const preflight = buildProfileMigrationPreflightCommand('/srv/sammo/worktree', profileDatabaseUrl);
+        const migration = buildProfileMigrationCommand('/srv/sammo/worktree', profileDatabaseUrl);
+
+        expect(preflight.args.slice(0, 6)).toEqual([
+            '--filter',
+            '@sammo-ts/infra',
+            'exec',
+            'node',
+            '--input-type=module',
+            '--eval',
+        ]);
+        expect(preflight.args.at(-1)).toContain("current_setting('TimeZone')");
+        expect(preflight.env?.DATABASE_URL).toBe(profileDatabaseUrl);
+        expect(migration.env?.DATABASE_URL).toBe(
+            'postgresql://integration.invalid/sammo?schema=che&options=-c+TimeZone%3DAsia%2FSeoul'
+        );
+        expect(preflight.env?.DATABASE_URL).not.toBe(migration.env?.DATABASE_URL);
     });
 });
 

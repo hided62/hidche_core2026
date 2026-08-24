@@ -684,6 +684,197 @@ export const buildWorkspaceCommands = (
     return commands;
 };
 
+const PROFILE_MIGRATION_TIME_ZONE = 'Asia/Seoul';
+const PROFILE_MIGRATION_TIME_ZONE_OPTION = `-c TimeZone=${PROFILE_MIGRATION_TIME_ZONE}`;
+const PROFILE_MIGRATION_TIME_ZONE_MENTION = /(^|[^A-Z0-9_])timezone(?=$|[^A-Z0-9_])/iu;
+
+const profileMigrationTimeZoneError = (source: string): Error =>
+    new Error(
+        `Profile migration refused: ${source} must not configure a TimeZone other than ${PROFILE_MIGRATION_TIME_ZONE}.`
+    );
+
+const tokenizePostgresOptions = (rawOptions: string, source: string): string[] => {
+    const tokens: string[] = [];
+    let token = '';
+    let quote: "'" | '"' | null = null;
+    let escaping = false;
+
+    for (const character of rawOptions) {
+        if (escaping) {
+            token += character;
+            escaping = false;
+            continue;
+        }
+        if (character === '\\') {
+            escaping = true;
+            continue;
+        }
+        if (quote) {
+            if (character === quote) quote = null;
+            else token += character;
+            continue;
+        }
+        if (character === "'" || character === '"') {
+            quote = character;
+            continue;
+        }
+        if (/\s/u.test(character)) {
+            if (token) {
+                tokens.push(token);
+                token = '';
+            }
+            continue;
+        }
+        token += character;
+    }
+
+    if (escaping || quote) throw profileMigrationTimeZoneError(source);
+    if (token) tokens.push(token);
+    return tokens;
+};
+
+const readPostgresOptionTimeZones = (rawOptions: string, source: string): string[] => {
+    const tokens = tokenizePostgresOptions(rawOptions, source);
+    const timeZones: string[] = [];
+
+    for (let index = 0; index < tokens.length; index += 1) {
+        const token = tokens[index]!;
+        let setting: string | undefined;
+        if (token === '-c') {
+            setting = tokens[index + 1];
+            index += 1;
+        } else if (token.startsWith('-c') && token.length > 2) {
+            setting = token.slice(2);
+        } else if (token.startsWith('--') && token.length > 2) {
+            setting = token.slice(2);
+        }
+
+        if (!setting) {
+            if (PROFILE_MIGRATION_TIME_ZONE_MENTION.test(token)) throw profileMigrationTimeZoneError(source);
+            continue;
+        }
+
+        const separator = setting.indexOf('=');
+        const name = separator >= 0 ? setting.slice(0, separator).trim() : setting.trim();
+        if (name.toLowerCase() !== 'timezone') continue;
+        const value = separator >= 0 ? setting.slice(separator + 1).trim() : '';
+        if (!value) throw profileMigrationTimeZoneError(source);
+        timeZones.push(value);
+    }
+
+    if (timeZones.length === 0 && PROFILE_MIGRATION_TIME_ZONE_MENTION.test(rawOptions)) {
+        throw profileMigrationTimeZoneError(source);
+    }
+    return timeZones;
+};
+
+const assertProfileMigrationTimeZone = (timeZone: string, source: string): void => {
+    if (timeZone.trim().toLowerCase() !== PROFILE_MIGRATION_TIME_ZONE.toLowerCase()) {
+        throw profileMigrationTimeZoneError(source);
+    }
+};
+
+const inspectProfileMigrationDatabaseUrl = (
+    profileDatabaseUrl: string
+): { url: URL; optionKeys: string[]; existingOptions: string[]; configuredTimeZones: string[] } => {
+    let url: URL;
+    try {
+        url = new URL(profileDatabaseUrl);
+    } catch {
+        throw new Error('Profile migration refused: DATABASE_URL is not a valid URL.');
+    }
+
+    const optionKeys = [...new Set([...url.searchParams.keys()].filter((key) => key.toLowerCase() === 'options'))];
+    const existingOptions = optionKeys
+        .flatMap((key) => url.searchParams.getAll(key))
+        .map((value) => value.trim())
+        .filter(Boolean);
+    const configuredTimeZones = existingOptions.flatMap((options) =>
+        readPostgresOptionTimeZones(options, 'DATABASE_URL options')
+    );
+    for (const timeZone of configuredTimeZones) {
+        assertProfileMigrationTimeZone(timeZone, 'DATABASE_URL options');
+    }
+    for (const [key, value] of url.searchParams) {
+        if (key.toLowerCase() === 'timezone') assertProfileMigrationTimeZone(value, 'DATABASE_URL');
+    }
+
+    return { url, optionKeys, existingOptions, configuredTimeZones };
+};
+
+const buildProfileMigrationDatabaseUrl = (profileDatabaseUrl: string): string => {
+    const { url, optionKeys, existingOptions, configuredTimeZones } =
+        inspectProfileMigrationDatabaseUrl(profileDatabaseUrl);
+
+    for (const key of optionKeys) url.searchParams.delete(key);
+    if (configuredTimeZones.length === 0) existingOptions.push(PROFILE_MIGRATION_TIME_ZONE_OPTION);
+    url.searchParams.set('options', existingOptions.join(' '));
+    return url.href;
+};
+
+const assertProfileMigrationEnvironmentTimeZone = (env?: Record<string, string>): void => {
+    const pgOptions = env?.PGOPTIONS?.trim();
+    if (pgOptions) {
+        for (const timeZone of readPostgresOptionTimeZones(pgOptions, 'PGOPTIONS')) {
+            assertProfileMigrationTimeZone(timeZone, 'PGOPTIONS');
+        }
+    }
+    const pgTimeZone = env?.PGTZ?.trim();
+    if (pgTimeZone) assertProfileMigrationTimeZone(pgTimeZone, 'PGTZ');
+};
+
+const buildProfileMigrationEnv = (
+    profileDatabaseUrl: string,
+    env?: Record<string, string>
+): Record<string, string> => {
+    assertProfileMigrationEnvironmentTimeZone(env);
+    return { ...(env ?? {}), DATABASE_URL: buildProfileMigrationDatabaseUrl(profileDatabaseUrl) };
+};
+
+const buildProfileMigrationPreflightEnv = (
+    profileDatabaseUrl: string,
+    env?: Record<string, string>
+): Record<string, string> => {
+    inspectProfileMigrationDatabaseUrl(profileDatabaseUrl);
+    assertProfileMigrationEnvironmentTimeZone(env);
+    return { ...(env ?? {}), DATABASE_URL: profileDatabaseUrl };
+};
+
+const PROFILE_MIGRATION_TIME_ZONE_PREFLIGHT = `
+import pg from 'pg';
+const client = new pg.Client({ connectionString: process.env.DATABASE_URL });
+let connected = false;
+try {
+    await client.connect();
+    connected = true;
+    const result = await client.query("SELECT current_setting('TimeZone') AS timezone");
+    if (result.rows[0]?.timezone !== '${PROFILE_MIGRATION_TIME_ZONE}') {
+        throw new Error('Profile migration refused: database session TimeZone does not match the required migration contract.');
+    }
+} finally {
+    if (connected) await client.end();
+}
+`.trim();
+
+export const buildProfileMigrationPreflightCommand = (
+    workspaceRoot: string,
+    profileDatabaseUrl: string,
+    env?: Record<string, string>
+): BuildCommand => ({
+    command: 'pnpm',
+    args: [
+        '--filter',
+        '@sammo-ts/infra',
+        'exec',
+        'node',
+        '--input-type=module',
+        '--eval',
+        PROFILE_MIGRATION_TIME_ZONE_PREFLIGHT,
+    ],
+    cwd: workspaceRoot,
+    env: buildProfileMigrationPreflightEnv(profileDatabaseUrl, env),
+});
+
 export const buildProfileMigrationCommand = (
     workspaceRoot: string,
     profileDatabaseUrl: string,
@@ -692,7 +883,7 @@ export const buildProfileMigrationCommand = (
     command: 'pnpm',
     args: ['--filter', '@sammo-ts/infra', 'prisma:migrate:deploy:game'],
     cwd: workspaceRoot,
-    env: { ...(env ?? {}), DATABASE_URL: profileDatabaseUrl },
+    env: buildProfileMigrationEnv(profileDatabaseUrl, env),
 });
 
 const mapRuntimeStates = (profileNames: string[], processNames: Map<string, boolean>): ProfileRuntimeSnapshot[] =>
@@ -2269,7 +2460,10 @@ export class GatewayOrchestrator implements GatewayOrchestratorHandle {
         onProgress?: BuildProgressObserver
     ): Promise<Awaited<ReturnType<BuildRunner['run']>>> {
         return this.buildRunner.run(
-            [buildProfileMigrationCommand(workspaceRoot, profileDatabaseUrl, this.processConfig.baseEnv)],
+            [
+                buildProfileMigrationPreflightCommand(workspaceRoot, profileDatabaseUrl, this.processConfig.baseEnv),
+                buildProfileMigrationCommand(workspaceRoot, profileDatabaseUrl, this.processConfig.baseEnv),
+            ],
             onProgress,
             { signal: this.activeOperationAbortSignal }
         );

@@ -99,6 +99,8 @@ integration('API input event boundary', () => {
             actorUserId: 'user-7',
             attempts: 1,
         });
+        expect(event.processingAt).toBeInstanceOf(Date);
+        expect(Math.abs(event.createdAt.getTime() - (event.processingAt?.getTime() ?? 0))).toBeLessThan(1_000);
         expect(marker.status).toBe('PENDING');
     });
 
@@ -254,7 +256,12 @@ integration('API input event boundary', () => {
     it('reuses the same engine child event but rejects a changed retry payload', async () => {
         const transport = new DatabaseTurnDaemonTransport(db, 100);
         const requestId = 'integration:api:engine-child';
+        const acceptedWindowStart = Date.now();
         await transport.sendCommand({ type: 'vacation', requestId, generalId: 7 });
+        const acceptedWindowEnd = Date.now();
+        const event = await db.inputEvent.findUniqueOrThrow({ where: { requestId } });
+        expect(event.createdAt.getTime()).toBeGreaterThanOrEqual(acceptedWindowStart);
+        expect(event.createdAt.getTime()).toBeLessThanOrEqual(acceptedWindowEnd);
         await expect(transport.sendCommand({ type: 'vacation', requestId, generalId: 7 })).resolves.toBe(requestId);
         await expect(transport.sendCommand({ type: 'vacation', requestId, generalId: 8 })).rejects.toBeInstanceOf(
             ConflictingTurnDaemonCommandError

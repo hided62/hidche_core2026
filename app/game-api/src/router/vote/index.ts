@@ -394,10 +394,27 @@ export const voteRouter = router({
                 ? await ctx.db.nation.findFirst({ where: { id: general.nationId }, select: { name: true } })
                 : null;
             const nationName = nation?.name ?? '재야';
+            const createdAt = new Date();
 
             await ctx.db.$queryRaw(GamePrisma.sql`
-                INSERT INTO vote_comment (vote_id, general_id, nation_id, general_name, nation_name, text)
-                VALUES (${input.voteId}, ${general.id}, ${general.nationId}, ${general.name}, ${nationName}, ${input.text})
+                INSERT INTO vote_comment (
+                    vote_id,
+                    general_id,
+                    nation_id,
+                    general_name,
+                    nation_name,
+                    text,
+                    created_at
+                )
+                VALUES (
+                    ${input.voteId},
+                    ${general.id},
+                    ${general.nationId},
+                    ${general.name},
+                    ${nationName},
+                    ${input.text},
+                    ${createdAt}
+                )
             `);
 
             return { ok: true };
@@ -430,6 +447,7 @@ export const voteRouter = router({
             if (endAt && endAt < gameTime.now) {
                 throw new TRPCError({ code: 'BAD_REQUEST', message: '종료일이 이미 지났습니다.' });
             }
+            const operationalAt = new Date();
 
             let multipleOptions = input.multipleOptions;
             if (multipleOptions < 0) {
@@ -442,7 +460,7 @@ export const voteRouter = router({
             if (input.closePrevious) {
                 await ctx.db.$queryRaw(GamePrisma.sql`
                     UPDATE vote_poll
-                    SET closed_at = ${gameTime.now}, updated_at = NOW()
+                    SET closed_at = ${gameTime.now}, updated_at = ${operationalAt}
                     WHERE closed_at IS NULL
                 `);
             }
@@ -459,7 +477,9 @@ export const voteRouter = router({
                     start_at,
                     start_tick,
                     end_at,
-                    end_tick
+                    end_tick,
+                    created_at,
+                    updated_at
                 )
                 VALUES (
                     ${input.title},
@@ -472,7 +492,9 @@ export const voteRouter = router({
                     ${gameTime.now},
                     ${gameTime.tick === null ? null : BigInt(gameTime.tick)},
                     ${endAt},
-                    ${toGameTickOrNull(gameTime, endAt)}
+                    ${toGameTickOrNull(gameTime, endAt)},
+                    ${operationalAt},
+                    ${operationalAt}
                 )
             `);
 
@@ -547,6 +569,7 @@ export const voteRouter = router({
             if (endAt && endAt < gameTime.now) {
                 throw new TRPCError({ code: 'BAD_REQUEST', message: '종료일이 이미 지났습니다.' });
             }
+            const updatedAt = new Date();
 
             if (
                 input.title === undefined &&
@@ -569,7 +592,7 @@ export const voteRouter = router({
                     reveal_mode = COALESCE(${input.revealMode}, reveal_mode),
                     end_at = ${endAt ?? poll.end_at},
                     end_tick = ${endAt ? toGameTickOrNull(gameTime, endAt) : poll.end_tick},
-                    updated_at = NOW()
+                    updated_at = ${updatedAt}
                 WHERE id = ${input.voteId}
             `);
 
@@ -581,9 +604,11 @@ export const voteRouter = router({
     closePoll: adminProcedure
         .input(z.object({ voteId: z.number().int().positive() }))
         .mutation(async ({ ctx, input }) => {
+            const gameTime = await loadCurrentGameTime(ctx.db);
+            const updatedAt = new Date();
             const rows = await ctx.db.$queryRaw<Array<{ id: number }>>(GamePrisma.sql`
                 UPDATE vote_poll
-                SET closed_at = ${(await loadCurrentGameTime(ctx.db)).now}, updated_at = NOW()
+                SET closed_at = ${gameTime.now}, updated_at = ${updatedAt}
                 WHERE id = ${input.voteId}
                 RETURNING id
             `);

@@ -225,11 +225,25 @@ describe('profile DEPLOY operation', () => {
         expect(commandGroups[0]?.[2]?.env).not.toHaveProperty('VITE_GAME_API_URL');
         expect(commandGroups[0]?.[2]?.env).not.toHaveProperty('VITE_GAME_SSE_URL');
         expect(commandGroups[0]?.[2]?.env).not.toHaveProperty('VITE_GAME_PROFILE');
-        expect(commandGroups[1]?.map((command) => command.args)).toEqual([
-            ['--filter', '@sammo-ts/infra', 'prisma:migrate:deploy:game'],
+        expect(commandGroups[1]?.[0]?.args.slice(0, 6)).toEqual([
+            '--filter',
+            '@sammo-ts/infra',
+            'exec',
+            'node',
+            '--input-type=module',
+            '--eval',
+        ]);
+        expect(commandGroups[1]?.[0]?.args.at(-1)).toContain("current_setting('TimeZone')");
+        expect(commandGroups[1]?.[1]?.args).toEqual([
+            '--filter',
+            '@sammo-ts/infra',
+            'prisma:migrate:deploy:game',
         ]);
         expect(commandGroups[1]?.[0]?.env?.DATABASE_URL).toBe(
             'postgresql://user:encoded%23password@integration.invalid/sammo?schema=che'
+        );
+        expect(commandGroups[1]?.[1]?.env?.DATABASE_URL).toBe(
+            'postgresql://user:encoded%23password@integration.invalid/sammo?schema=che&options=-c+TimeZone%3DAsia%2FSeoul'
         );
         expect(startedDefinitions).toHaveLength(backendProcessNames.length);
         for (const definition of startedDefinitions) {

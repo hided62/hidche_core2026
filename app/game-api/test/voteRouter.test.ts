@@ -130,6 +130,9 @@ const buildContext = (options: {
         if (text.includes('INSERT INTO vote_comment')) {
             return [];
         }
+        if (text.includes('UPDATE vote_poll')) {
+            return [{ id: 1 }];
+        }
         return [];
     });
     const db = {
@@ -287,6 +290,60 @@ describe('vote router actor and permission boundaries', () => {
             .find((query) => sqlText(query).includes('INSERT INTO vote_poll'));
         expect(insert?.values).toContain('admin-account');
         expect(insert?.values).not.toContain('관리자 장수');
+    });
+
+    it('binds current operational timestamps in every raw SQL vote writer', async () => {
+        const auth = buildAuth(['admin.survey.open']);
+        const fixture = buildContext({ auth });
+        const caller = appRouter.createCaller(fixture.context);
+        const windowStart = Date.now();
+
+        await expect(caller.vote.addComment({ voteId: 1, text: '시각 댓글' })).resolves.toEqual({ ok: true });
+        await expect(
+            caller.vote.createPoll({
+                title: '시각 설문',
+                options: ['찬성', '반대'],
+                revealMode: 'after_vote',
+                closePrevious: true,
+            })
+        ).resolves.toEqual({ ok: true });
+        await expect(caller.vote.updatePoll({ voteId: 1, title: '시각 설문 수정' })).resolves.toEqual({ ok: true });
+        await expect(caller.vote.closePoll({ voteId: 1 })).resolves.toEqual({ ok: true });
+        const windowEnd = Date.now();
+
+        const mutationQueries = fixture.queryRaw.mock.calls
+            .map(([query]) => query)
+            .filter((query) => /INSERT INTO vote_comment|INSERT INTO vote_poll|UPDATE vote_poll/.test(sqlText(query)));
+        const commentInsert = mutationQueries.find((query) => sqlText(query).includes('INSERT INTO vote_comment'));
+        const pollInsert = mutationQueries.find((query) => sqlText(query).includes('INSERT INTO vote_poll'));
+        const pollUpdates = mutationQueries.filter((query) => sqlText(query).includes('UPDATE vote_poll'));
+        const closePreviousUpdate = pollUpdates.find((query) => sqlText(query).includes('WHERE closed_at IS NULL'));
+        const editPollUpdate = pollUpdates.find((query) => sqlText(query).includes('title = COALESCE'));
+        const closePollUpdate = pollUpdates.find((query) => sqlText(query).includes('RETURNING id'));
+        const expectCurrentDateAt = (query: GamePrisma.Sql | undefined, index: number): Date => {
+            expect(query).toBeDefined();
+            const value = query?.values.at(index);
+            expect(value).toBeInstanceOf(Date);
+            expect((value as Date).getTime()).toBeGreaterThanOrEqual(windowStart);
+            expect((value as Date).getTime()).toBeLessThanOrEqual(windowEnd);
+            return value as Date;
+        };
+
+        expect(sqlText(commentInsert!)).toContain('created_at');
+        expectCurrentDateAt(commentInsert, -1);
+        expect(sqlText(pollInsert!)).toContain('created_at');
+        expect(sqlText(pollInsert!)).toContain('updated_at');
+        const pollCreatedAt = expectCurrentDateAt(pollInsert, -2);
+        const pollUpdatedAt = expectCurrentDateAt(pollInsert, -1);
+        expect(pollUpdatedAt).toBe(pollCreatedAt);
+
+        expect(pollUpdates).toHaveLength(3);
+        expect(sqlText(closePreviousUpdate!)).toContain('updated_at');
+        expect(expectCurrentDateAt(closePreviousUpdate, -1)).toBe(pollCreatedAt);
+        expect(sqlText(editPollUpdate!)).toContain('updated_at');
+        expectCurrentDateAt(editPollUpdate, -2);
+        expect(sqlText(closePollUpdate!)).toContain('updated_at');
+        expectCurrentDateAt(closePollUpdate, -2);
     });
 
     it('reports the current world develcost as the legacy five-times survey reward', async () => {

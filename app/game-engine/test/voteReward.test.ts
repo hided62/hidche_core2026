@@ -222,11 +222,12 @@ describe('voteReward command', () => {
 
         let voteInserted = false;
         let voteQueryCount = 0;
+        let voteInsertQuery: { strings: readonly string[]; values: readonly unknown[] } | undefined;
         const commandDb = {
             auction: {
                 findMany: async () => [],
             },
-            $queryRaw: async (query: { strings: readonly string[] }) => {
+            $queryRaw: async (query: { strings: readonly string[]; values: readonly unknown[] }) => {
                 voteQueryCount += 1;
                 if (query.strings.join(' ').includes('SELECT options')) {
                     return [
@@ -239,6 +240,7 @@ describe('voteReward command', () => {
                         },
                     ];
                 }
+                voteInsertQuery = query;
                 if (voteInserted) return [];
                 voteInserted = true;
                 return [{ id: 11 }];
@@ -255,12 +257,23 @@ describe('voteReward command', () => {
             acceptedGameTick: 0,
         };
 
+        const writerWindowStart = Date.now();
         const result = await handler.handle(command, { db: commandDb as any });
+        const writerWindowEnd = Date.now();
         expect(result && result.type).toBe('voteReward');
         if (!result || result.type !== 'voteReward' || !result.ok) {
             throw new Error('voteReward result missing');
         }
         expect(result.awardedUnique).toBe(true);
+        expect(voteInsertQuery?.strings.join(' ')).toContain('created_at');
+        expect(
+            voteInsertQuery?.values.filter(
+                (value) =>
+                    value instanceof Date &&
+                    value.getTime() >= writerWindowStart &&
+                    value.getTime() <= writerWindowEnd
+            )
+        ).toHaveLength(1);
 
         const updated = world.getGeneralById(1);
         // ENGINE is the single reward linearization point, so it uses the

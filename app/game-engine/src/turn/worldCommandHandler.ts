@@ -2479,12 +2479,14 @@ const insertVoteSelection = async (
     if (!ctx.commandDb) {
         return 'missing';
     }
+    const createdAt = new Date();
     const rows = await ctx.commandDb.$queryRaw<Array<{ id: number }>>(GamePrisma.sql`
-        INSERT INTO vote (vote_id, general_id, nation_id, selection)
+        INSERT INTO vote (vote_id, general_id, nation_id, selection, created_at)
         SELECT poll.id,
             ${general.id},
             ${general.nationId},
-            CAST(${JSON.stringify(selection)} AS jsonb)
+            CAST(${JSON.stringify(selection)} AS jsonb),
+            ${createdAt}
         FROM vote_poll poll
         WHERE poll.id = ${command.voteId}
         ON CONFLICT (vote_id, general_id) DO NOTHING
