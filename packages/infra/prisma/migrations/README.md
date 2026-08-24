@@ -27,7 +27,11 @@ chain을 적용하고 두 번째 실행은 `No pending migrations to apply`여�
 - `world_state`, `nation`, `city`, `general`, `message`, `troop`
 - `general_turn`, `nation_turn`과 revision·lease field
 - `input_event`, `turn_daemon_lease`
-- `read_model_revision`, `read_model_outbox`, `read_model_revision_meta`
+- `read_model_revision`, `read_model_outbox`, `read_model_revision_meta`, `web_push_outbox`
+- 두 outbox의 `available_at`, `locked_at`, `delivered_at`, `created_at`은
+  millisecond 정밀도 `timestamp without time zone`을 유지한다. 이 migration
+  이후 신규 값과 pending/dispatcher 운영 계약은 UTC wall 값으로 통일하되,
+  이미 전달된 과거 행의 표시용 시각 전체를 일괄 재해석하지 않는다.
 - `read_model_revision_meta.id=1`의 `coverage_version=0`
 - `diplomacy`, `event`, `log_entry`, `error_log`
 - auction, board, vote, yearbook, archive와 inheritance table
@@ -41,6 +45,22 @@ chain을 적용하고 두 번째 실행은 `No pending migrations to apply`여�
 
 검증이 끝나면 이름을 직접 확인한 임시 database와 role만 제거합니다. 공유
 database나 Compose volume을 삭제하지 않습니다.
+
+## Game outbox UTC-wall populated upgrade 검증
+
+Git에서 제외된 전용 PostgreSQL URL을 주입해 target 직전 migration chain부터
+실제 data upgrade와 두 번째 deploy no-op까지 검증합니다.
+
+```sh
+GAME_OUTBOX_MIGRATION_TEST_DATABASE_URL=... \
+  pnpm --filter @sammo-ts/infra verify:migration:outbox-utc
+```
+
+검증기는 실행별 소유권 comment가 있는 schema만 만들고 정리합니다. KST DB
+default로 생성된 ReadModel `created_at`의 UTC-wall 변환, 기존 JavaScript UTC
+WebPush `created_at` 보존, 두 pending outbox의 requeue·lease 해제, delivered 행
+보존, target checksum과 이전 DML shape 호환성을 확인합니다. 이전 binary를 별도
+build해 실행하거나 down migration을 제공한다는 뜻은 아닙니다.
 
 ## NPC selection 중복 owner preflight
 

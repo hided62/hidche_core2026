@@ -97,12 +97,12 @@ model ReadModelOutbox {
   id          BigInt    @id @default(autoincrement())
   payload     Json
   attempts    Int       @default(0)
-  availableAt DateTime  @default(now()) @map("available_at")
-  lockedAt    DateTime? @map("locked_at")
+  availableAt DateTime  @default(dbgenerated("CURRENT_TIMESTAMP AT TIME ZONE 'UTC'")) @map("available_at") @db.Timestamp(3)
+  lockedAt    DateTime? @map("locked_at") @db.Timestamp(3)
   lockOwner   String?   @map("lock_owner")
-  deliveredAt DateTime? @map("delivered_at")
+  deliveredAt DateTime? @map("delivered_at") @db.Timestamp(3)
   lastError   String?   @map("last_error")
-  createdAt   DateTime  @default(now()) @map("created_at")
+  createdAt   DateTime  @default(dbgenerated("CURRENT_TIMESTAMP AT TIME ZONE 'UTC'")) @map("created_at") @db.Timestamp(3)
 
   @@index([deliveredAt, availableAt, id], map: "read_model_outbox_delivered_at_available_at_id_idx")
   @@map("read_model_outbox")
@@ -116,12 +116,12 @@ model WebPushOutbox {
   year        Int?
   month       Int?
   attempts    Int       @default(0)
-  availableAt DateTime  @default(now()) @map("available_at")
-  lockedAt    DateTime? @map("locked_at")
+  availableAt DateTime  @default(dbgenerated("CURRENT_TIMESTAMP AT TIME ZONE 'UTC'")) @map("available_at") @db.Timestamp(3)
+  lockedAt    DateTime? @map("locked_at") @db.Timestamp(3)
   lockOwner   String?   @map("lock_owner")
-  deliveredAt DateTime? @map("delivered_at")
+  deliveredAt DateTime? @map("delivered_at") @db.Timestamp(3)
   lastError   String?   @map("last_error")
-  createdAt   DateTime  @default(now()) @map("created_at")
+  createdAt   DateTime  @default(dbgenerated("CURRENT_TIMESTAMP AT TIME ZONE 'UTC'")) @map("created_at") @db.Timestamp(3)
 
   @@index([deliveredAt, availableAt, id], map: "web_push_outbox_delivered_at_available_at_id_idx")
   @@map("web_push_outbox")
