@@ -4,6 +4,7 @@ import { parseOptionalBoolean, parseOptionalNumber, type GameClockMode } from '@
 import type { TurnRunBudget } from '../lifecycle/types.js';
 import { resolveDatabaseUrl } from '../scenario/databaseUrl.js';
 import { createTurnDaemonRuntime } from './turnDaemon.js';
+import { createTurnDaemonMemoryReporter } from './turnDaemonMemoryReporter.js';
 
 export interface TurnDaemonCliOptions {
     profile?: string;
@@ -16,6 +17,7 @@ export interface TurnDaemonCliOptions {
     budget?: Partial<TurnRunBudget>;
     enableDatabaseFlush?: boolean;
     adminActionIntervalMs?: number;
+    memoryReportIntervalMs?: number;
     gameClockMode?: GameClockMode;
     env?: NodeJS.ProcessEnv;
 }
@@ -25,6 +27,9 @@ const DEFAULT_BUDGET: TurnRunBudget = {
     maxGenerals: 200,
     catchUpCap: 1,
 };
+
+const DEFAULT_MEMORY_REPORT_INTERVAL_MS = 5 * 60 * 1000;
+const MIN_MEMORY_REPORT_INTERVAL_MS = 10 * 1000;
 
 const buildBudgetOverride = (env: NodeJS.ProcessEnv, override?: Partial<TurnRunBudget>): TurnRunBudget | undefined => {
     const budgetOverride: Partial<TurnRunBudget> = {
@@ -59,6 +64,13 @@ export const runTurnDaemonCli = async (options: TurnDaemonCliOptions = {}): Prom
     const enableDatabaseFlush = options.enableDatabaseFlush ?? parseOptionalBoolean(env.TURN_FLUSH_DB) ?? true;
     const pauseGateIntervalMs = parseOptionalNumber(env.TURN_PAUSE_GATE_MS);
     const adminActionIntervalMs = options.adminActionIntervalMs ?? parseOptionalNumber(env.TURN_ADMIN_ACTION_MS);
+    const memoryReportIntervalMs =
+        options.memoryReportIntervalMs ??
+        parseOptionalNumber(env.TURN_MEMORY_REPORT_INTERVAL_MS) ??
+        DEFAULT_MEMORY_REPORT_INTERVAL_MS;
+    if (!Number.isFinite(memoryReportIntervalMs) || memoryReportIntervalMs < MIN_MEMORY_REPORT_INTERVAL_MS) {
+        throw new Error(`TURN_MEMORY_REPORT_INTERVAL_MS must be at least ${MIN_MEMORY_REPORT_INTERVAL_MS}.`);
+    }
     const rawGameClockMode = options.gameClockMode ?? env.GAME_CLOCK_MODE;
     if (rawGameClockMode && rawGameClockMode !== 'realtime' && rawGameClockMode !== 'manual') {
         throw new Error(`GAME_CLOCK_MODE must be realtime or manual: ${rawGameClockMode}`);
@@ -79,12 +91,28 @@ export const runTurnDaemonCli = async (options: TurnDaemonCliOptions = {}): Prom
         gameClockMode,
     });
 
+    const memoryReporter = createTurnDaemonMemoryReporter({
+        profile,
+        intervalMs: memoryReportIntervalMs,
+        getContext: () => {
+            const state = runtime.world.getState();
+            return {
+                year: state.currentYear,
+                month: state.currentMonth,
+                ...runtime.world.getEntityCounts(),
+                lifecycleState: runtime.lifecycle.getStatus().state,
+            };
+        },
+    });
+
     let closed = false;
     const closeOnce = async (): Promise<void> => {
         if (closed) {
             return;
         }
         closed = true;
+        memoryReporter.report('shutdown');
+        memoryReporter.stop();
         await runtime.close();
     };
 
@@ -104,6 +132,7 @@ export const runTurnDaemonCli = async (options: TurnDaemonCliOptions = {}): Prom
 
     const activeTickMinutes = tickMinutes ?? Math.max(1, Math.round(runtime.world.getState().tickSeconds / 60));
     console.info(`[turn-daemon] started profile=${profile} tickMinutes=${activeTickMinutes}`);
+    memoryReporter.report('startup');
 
     try {
         await runtime.lifecycle.start();
