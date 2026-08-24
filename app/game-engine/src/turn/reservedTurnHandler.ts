@@ -10,13 +10,13 @@ import type {
     ScenarioConfig,
     ScenarioMeta,
     Troop,
-    GeneralTurnCommandKey,
     TurnCommandProfile,
     TurnCommandEnv,
     UnitSetDefinition,
 } from '@sammo-ts/logic';
 import {
     DEFAULT_TURN_COMMAND_PROFILE,
+    INTERNAL_GENERAL_TURN_COMMAND_KEYS,
     GeneralTurnCommandLoader,
     GeneralActionPipeline,
     NationTurnCommandLoader,
@@ -71,8 +71,6 @@ import {
 } from './scenarioStaticEvents.js';
 
 const DEFAULT_ACTION = '휴식';
-const AI_INTERNAL_GENERAL_ACTION_KEYS = ['che_NPC능동'] as const satisfies readonly GeneralTurnCommandKey[];
-
 const LEGACY_STAT_CHANGE_GENERAL_ACTIONS = new Set([
     'che_소집해제',
     'che_랜덤임관',
@@ -964,10 +962,9 @@ export const createReservedTurnHandler = async (options: {
     };
     const generalModuleLoader = new GeneralTurnCommandLoader();
     const nationModuleLoader = new NationTurnCommandLoader();
-    // NPC AI emits a few engine-internal commands that are intentionally not
-    // exposed by the scenario's player command profile. Keep their definitions
-    // available to AI resolution without adding them to the public profile.
-    for (const key of AI_INTERNAL_GENERAL_ACTION_KEYS) {
+    // AI·월간 이벤트·서신이 생성하는 내부 명령은 사용자 선택 profile에는
+    // 노출하지 않지만, 내부 실행 경로에서는 항상 정의와 context를 찾을 수 있어야 한다.
+    for (const key of INTERNAL_GENERAL_TURN_COMMAND_KEYS) {
         const module = await generalModuleLoader.load(key);
         if (!generalDefinitions.has(key)) {
             generalDefinitions.set(key, module.commandSpec.createDefinition(env));
@@ -2460,18 +2457,13 @@ export const createImmediateGeneralActionExecutor = async (options: {
     const env = buildCommandEnv(options.world.getScenarioConfig(), options.world.getUnitSet());
     const commandProfile = options.commandProfile ?? DEFAULT_TURN_COMMAND_PROFILE;
     // 등용수락은 예약 화면에 노출되는 명령이 아니라 등용 서신의 응답이
-    // 직접 실행하는 내부 명령이다. 선택 가능 명령 프로필에 없더라도 등용
-    // 서신을 수락할 수 있도록 즉시 행동 정의에는 항상 포함한다.
-    const immediateCommandProfile: TurnCommandProfile = commandProfile.general.includes('che_등용수락')
-        ? commandProfile
-        : {
-              ...commandProfile,
-              general: [...commandProfile.general, 'che_등용수락'],
-          };
+    // 직접 실행하는 내부 명령이다. 공통 내부 집합 전체 대신 이 실행기에 필요한
+    // 정의만 명시해 loader 경계를 재사용한다.
     const { general: definitions } = await buildReservedTurnDefinitions({
         env,
-        commandProfile: immediateCommandProfile,
+        commandProfile,
         defaultActionKey: DEFAULT_ACTION,
+        internalGeneralCommandKeys: ['che_등용수락'],
     });
     const generalModuleLoader = new GeneralTurnCommandLoader();
     const contextBuilders = new Map<string, ActionContextBuilder>();
