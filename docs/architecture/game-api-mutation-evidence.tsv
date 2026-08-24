@@ -40,7 +40,7 @@ join.reselectPoolGeneral	engine-owned	direct-endpoint	session-user	actual-db	app
 join.selectPoolGeneral	engine-owned	direct-endpoint	session-user	actual-db	app/game-api/test/selectPool.integration.test.ts	no-dynamic-ref
 messages.delete	durable-journal	direct-endpoint	session-user-db-general	endpoint-unit	app/game-api/test/messagesRouter.test.ts	no-route-actual-db
 messages.readLatest	explicit-no-realtime-consumer	direct-endpoint	session-user-db-general	endpoint-unit	app/game-api/test/messagesRouter.test.ts	no-route-actual-db
-messages.respond	durable-journal	direct-endpoint	session-user-db-general	dynamic-ref	tools/integration-tests/test/instantDiplomacyCoreReference.integration.test.ts	none
+messages.respond	durable-journal	direct-endpoint	session-user-db-general	dynamic-ref	tools/integration-tests/test/instantDiplomacyCoreReference.integration.test.ts	no-route-actual-db
 messages.send	durable-journal	direct-endpoint	session-user-db-general	endpoint-unit	app/game-api/test/messagesRouter.test.ts	no-route-actual-db
 nation.appoint	engine-owned	domain-command	session-user-engine-general	endpoint-unit	app/game-api/test/nationPersonnelRouter.test.ts	no-route-actual-db
 nation.changePermission	engine-owned	domain-command	session-user-engine-general	endpoint-unit	app/game-api/test/nationPersonnelRouter.test.ts	no-route-actual-db
