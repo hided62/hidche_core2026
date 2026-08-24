@@ -238,6 +238,7 @@ export class ActionDefinition<
                 {
                     scope: LogScope.SYSTEM,
                     category: LogCategory.HISTORY,
+                    format: LogFormat.YEAR_MONTH,
                 }
             );
         }

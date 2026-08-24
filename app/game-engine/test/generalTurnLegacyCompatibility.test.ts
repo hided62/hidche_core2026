@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { ConstantRNG, RandUtil } from '@sammo-ts/common';
+import { LogFormat } from '@sammo-ts/logic';
 import type { TurnSchedule } from '@sammo-ts/logic/turn/calendar.js';
 import type { TurnGeneral, TurnWorldSnapshot, TurnWorldState } from '../src/turn/types.js';
 import { createTurnTestHarness } from './helpers/turnTestHarness.js';
@@ -358,7 +359,12 @@ describe('legacy general-turn execution contract', () => {
         expect(updated.crew).toBe(0);
         expect(updated.rice).toBe(0);
         expect(harness.world.getCityById(1)!.population).toBe(10_200);
-        expect(harness.getCollectedLogs().some((log) => log.text.includes('소집해제'))).toBe(true);
+        expect(harness.getCollectedLogs()).toContainEqual(
+            expect.objectContaining({
+                text: expect.stringContaining('소집해제'),
+                format: LogFormat.PLAIN,
+            })
+        );
     });
 
     it('persists pre-turn stacking and applies the inherited 60-turn cooldown', async () => {
