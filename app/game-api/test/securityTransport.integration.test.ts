@@ -16,6 +16,7 @@ import {
 } from '@sammo-ts/infra';
 
 import { RedisAccessTokenStore } from '../src/auth/accessTokenStore.js';
+import { createApiInputPayloadIdentity } from '../src/inputEventBoundary.js';
 import { scopeHttpIdempotencyKey } from '../src/requestId.js';
 import { createGameApiServer } from '../src/server.js';
 import { WebPushOutboxWorker } from '../src/services/webPushOutboxWorker.js';
@@ -46,6 +47,7 @@ const matrixApiEventTypes = [
     'messages.send',
     'turns.reserved.setGeneral',
     'turns.reserved.setNation',
+    'turns.reserved.setNationBulk',
 ] as const;
 const fixtureActorUserIds = [userId, noGeneralUserId, sameNationUserId, foreignUserId, ordinaryUserId];
 const secret = 'security-http-e2e-secret';
@@ -74,6 +76,7 @@ let disconnectDb: (() => Promise<void>) | null = null;
 let redis: RedisConnector | null = null;
 let accessTokenStore: RedisAccessTokenStore;
 let createdFixtureWorld = false;
+let reservationWorldId = fixtureWorldId;
 let gatewayStatusServer: HttpServer | null = null;
 let receivedGatewayWebPushEvents: Array<{ internalToken: string | null; body: unknown }> = [];
 
@@ -285,6 +288,7 @@ const readReservedMutationState = async () => ({
         where: {
             OR: [
                 { domain: 'reserved.general', entityId: { in: fixtureGeneralIds } },
+                { domain: 'general.content', entityId: { in: fixtureGeneralIds } },
                 { domain: 'dashboard.global', entityId: 0 },
             ],
         },
@@ -420,7 +424,12 @@ const readRealtimeRedisState = async (): Promise<Array<[string, string | null]>>
 const expectApiInputEvent = async (
     idempotencyKey: string,
     procedure: string,
-    expected: { actorUserId: string; status: 'FAILED' | 'SUCCEEDED' } | null
+    expected: {
+        actorUserId: string;
+        status: 'FAILED' | 'SUCCEEDED';
+        payload?: unknown;
+        result?: unknown;
+    } | null
 ): Promise<void> => {
     const events = await db.inputEvent.findMany({
         // The HTTP boundary hashes the raw client key together with profile and
@@ -455,10 +464,16 @@ const expectApiInputEvent = async (
             requestId,
             target: 'API',
             eventType: procedure,
-            payload: {},
+            payload:
+                expected.payload === undefined
+                    ? {
+                          version: 1,
+                          digest: expect.stringMatching(/^sha256:[0-9a-f]{64}$/u),
+                      }
+                    : createApiInputPayloadIdentity(expected.payload),
             actorUserId: expected.actorUserId,
             status: expected.status,
-            result: expected.status === 'SUCCEEDED' ? { ok: true } : null,
+            result: expected.status === 'SUCCEEDED' ? (expected.result ?? expect.objectContaining({ ok: true })) : null,
             error: expected.status === 'SUCCEEDED' ? null : expect.any(String),
             attempts: 1,
             lockedBy: null,
@@ -522,6 +537,33 @@ const requestReservedNation = (accessToken: string, idempotencyKey: string, targ
         accessToken,
         idempotencyKey,
     });
+
+const requestReservedNationBulk = (accessToken: string, idempotencyKey: string, targetGeneralId: number) =>
+    requestTrpc('turns.reserved.setNationBulk', {
+        method: 'POST',
+        input: {
+            generalId: targetGeneralId,
+            entries: [{ turnList: [0, 1], action: '휴식', args: {} }],
+            expectedRevision: 0,
+        },
+        accessToken,
+        idempotencyKey,
+    });
+
+type NationReservationKind = 'single' | 'bulk';
+
+const nationReservationProcedure = (kind: NationReservationKind) =>
+    kind === 'single' ? 'turns.reserved.setNation' : 'turns.reserved.setNationBulk';
+
+const requestNationReservation = (
+    kind: NationReservationKind,
+    accessToken: string,
+    idempotencyKey: string,
+    targetGeneralId = generalId
+) =>
+    kind === 'single'
+        ? requestReservedNation(accessToken, idempotencyKey, targetGeneralId)
+        : requestReservedNationBulk(accessToken, idempotencyKey, targetGeneralId);
 
 const ownershipDenialCases = [
     {
@@ -652,6 +694,13 @@ integration('game API security over HTTP transport', () => {
             });
             createdFixtureWorld = true;
         }
+        const reservationWorlds = await db.worldState.findMany({ select: { id: true } });
+        if (reservationWorlds.length !== 1 || !reservationWorlds[0]) {
+            throw new Error(
+                `security transport fixture requires exactly one world row, got ${reservationWorlds.length}`
+            );
+        }
+        reservationWorldId = reservationWorlds[0].id;
         await db.trafficPeriodGeneral.deleteMany({ where: { generalId: { in: fixtureGeneralIds } } });
         await db.trafficPeriod.deleteMany({ where: { worldStateId: fixtureWorldId } });
         await db.readModelOutbox.deleteMany();
@@ -683,6 +732,7 @@ integration('game API security over HTTP transport', () => {
             where: {
                 OR: [
                     { domain: 'reserved.general', entityId: { in: fixtureGeneralIds } },
+                    { domain: 'general.content', entityId: { in: fixtureGeneralIds } },
                     { domain: 'dashboard.global', entityId: 0 },
                 ],
             },
@@ -704,6 +754,14 @@ integration('game API security over HTTP transport', () => {
 
     beforeEach(async () => {
         await deleteMatrixInputEvents();
+        await db.general.update({
+            where: { id: generalId },
+            data: { npcState: 0, meta: {}, penalty: {} },
+        });
+        await db.worldState.update({
+            where: { id: reservationWorldId },
+            data: { meta: {} },
+        });
         await db.trafficPeriodGeneral.deleteMany({ where: { generalId: { in: fixtureGeneralIds } } });
         await db.trafficPeriod.deleteMany({ where: { worldStateId: fixtureWorldId } });
         await db.generalAccessLog.deleteMany({ where: { generalId: { in: fixtureGeneralIds } } });
@@ -715,6 +773,7 @@ integration('game API security over HTTP transport', () => {
             where: {
                 OR: [
                     { domain: 'reserved.general', entityId: { in: fixtureGeneralIds } },
+                    { domain: 'general.content', entityId: { in: fixtureGeneralIds } },
                     { domain: 'dashboard.global', entityId: 0 },
                 ],
             },
@@ -1050,6 +1109,258 @@ integration('game API security over HTTP transport', () => {
             status: 'FAILED',
         });
     });
+
+    it.each(
+        (['single', 'bulk'] as const).flatMap((kind) =>
+            [
+                { label: 'zero', value: 0 },
+                { label: 'false', value: false },
+                { label: 'null', value: null },
+            ].map((penalty) => ({ kind, ...penalty }))
+        )
+    )(
+        'rejects $kind nation reservation when noChiefTurnInput is $label without committing queue or journal',
+        async ({ kind, label, value }) => {
+            const procedure = nationReservationProcedure(kind);
+            const idempotencyKey = `${mutationRequestPrefix}nation-penalty-${kind}-${label}`;
+            const accessToken = await createAccessToken(`matrix-nation-penalty-${kind}-${label}`, {});
+            await db.general.update({
+                where: { id: generalId },
+                data: {
+                    meta: { killturn: 3, marker: 'penalty-preserved' },
+                    penalty: { noChiefTurnInput: value },
+                },
+            });
+            await db.worldState.update({
+                where: { id: reservationWorldId },
+                data: { meta: { killturn: 12 } },
+            });
+
+            const result = await requestNationReservation(kind, accessToken, idempotencyKey);
+
+            expect(result.response.status).toBe(412);
+            expect(result.body).toMatchObject({
+                error: {
+                    message: '수뇌 턴 입력 불가능',
+                    data: { code: 'PRECONDITION_FAILED' },
+                },
+            });
+            expect(await db.nationTurn.count({ where: { nationId: ownerNationId, officerLevel: 12 } })).toBe(0);
+            expect(
+                await db.nationTurnRevision.findUnique({
+                    where: { nationId_officerLevel: { nationId: ownerNationId, officerLevel: 12 } },
+                })
+            ).toBeNull();
+            expect(await db.general.findUniqueOrThrow({ where: { id: generalId } })).toMatchObject({
+                meta: { killturn: 3, marker: 'penalty-preserved' },
+                penalty: { noChiefTurnInput: value },
+            });
+            expect(await db.readModelRevision.count()).toBe(0);
+            expect(await db.readModelOutbox.count()).toBe(0);
+            await expectApiInputEvent(idempotencyKey, procedure, {
+                actorUserId: userId,
+                status: 'FAILED',
+            });
+        }
+    );
+
+    it.each([
+        { kind: 'single' as const, label: 'single' },
+        { kind: 'bulk' as const, label: 'bulk' },
+    ])('commits $label nation queue, JSONB killturn refill, and read-model journal together', async ({ kind }) => {
+        const procedure = nationReservationProcedure(kind);
+        const idempotencyKey = `${mutationRequestPrefix}nation-refill-${kind}`;
+        const accessToken = await createAccessToken(`matrix-nation-refill-${kind}`, {});
+        await db.general.update({
+            where: { id: generalId },
+            data: {
+                npcState: 0,
+                meta: { killturn: 3, marker: 'preserved-by-jsonb-set' },
+                penalty: {},
+            },
+        });
+        await db.worldState.update({
+            where: { id: reservationWorldId },
+            data: { meta: { killturn: 12, marker: 'world-preserved' } },
+        });
+
+        const result = await requestNationReservation(kind, accessToken, idempotencyKey);
+
+        expect(result.response.status).toBe(200);
+        expect(result.body).toMatchObject({ result: { data: { ok: true, revision: 1 } } });
+        expect(
+            await db.nationTurn.findMany({
+                where: { nationId: ownerNationId, officerLevel: 12 },
+                select: { turnIdx: true, actionCode: true, arg: true },
+                orderBy: { turnIdx: 'asc' },
+            })
+        ).toEqual(
+            Array.from({ length: 12 }, (_, turnIdx) => ({
+                turnIdx,
+                actionCode: '휴식',
+                arg: {},
+            }))
+        );
+        expect(
+            await db.nationTurnRevision.findUniqueOrThrow({
+                where: { nationId_officerLevel: { nationId: ownerNationId, officerLevel: 12 } },
+            })
+        ).toMatchObject({ revision: 1, leaseOwner: null, leaseExpiresAt: null });
+        expect(await db.general.findUniqueOrThrow({ where: { id: generalId } })).toMatchObject({
+            npcState: 0,
+            meta: { killturn: 12, marker: 'preserved-by-jsonb-set' },
+        });
+        expect(await db.worldState.findUniqueOrThrow({ where: { id: reservationWorldId } })).toMatchObject({
+            meta: { killturn: 12, marker: 'world-preserved' },
+        });
+        expect(
+            await db.readModelRevision.findMany({
+                select: { domain: true, entityId: true, revision: true },
+                orderBy: [{ domain: 'asc' }, { entityId: 'asc' }],
+            })
+        ).toEqual([
+            { domain: 'dashboard.global', entityId: 0, revision: 1n },
+            { domain: 'general.content', entityId: generalId, revision: 1n },
+        ]);
+        expect(await db.readModelOutbox.findMany({ select: { payload: true } })).toEqual([
+            {
+                payload: {
+                    version: 1,
+                    changes: [
+                        ['dashboard.global', 0, '1'],
+                        ['general.content', generalId, '1'],
+                    ],
+                },
+            },
+        ]);
+        await expectApiInputEvent(idempotencyKey, procedure, {
+            actorUserId: userId,
+            status: 'SUCCEEDED',
+        });
+    });
+
+    it.each([
+        {
+            kind: 'single' as const,
+            label: 'already-higher user killturn',
+            npcState: 0,
+            currentKillturn: 20,
+        },
+        {
+            kind: 'bulk' as const,
+            label: 'NPC actor',
+            npcState: 2,
+            currentKillturn: 3,
+        },
+    ])('keeps $label unchanged while committing its nation queue', async ({ kind, npcState, currentKillturn }) => {
+        const procedure = nationReservationProcedure(kind);
+        const idempotencyKey = `${mutationRequestPrefix}nation-refill-noop-${kind}`;
+        const accessToken = await createAccessToken(`matrix-nation-refill-noop-${kind}`, {});
+        await db.general.update({
+            where: { id: generalId },
+            data: {
+                npcState,
+                meta: { killturn: currentKillturn, marker: 'no-op-preserved' },
+                penalty: {},
+            },
+        });
+        await db.worldState.update({
+            where: { id: reservationWorldId },
+            data: { meta: { killturn: 12 } },
+        });
+
+        const result = await requestNationReservation(kind, accessToken, idempotencyKey);
+
+        expect(result.response.status).toBe(200);
+        expect(result.body).toMatchObject({ result: { data: { ok: true, revision: 1 } } });
+        expect(await db.nationTurn.count({ where: { nationId: ownerNationId, officerLevel: 12 } })).toBe(12);
+        expect(await db.general.findUniqueOrThrow({ where: { id: generalId } })).toMatchObject({
+            npcState,
+            meta: { killturn: currentKillturn, marker: 'no-op-preserved' },
+        });
+        expect(await db.readModelRevision.count()).toBe(0);
+        expect(await db.readModelOutbox.count()).toBe(0);
+        await expectApiInputEvent(idempotencyKey, procedure, {
+            actorUserId: userId,
+            status: 'SUCCEEDED',
+        });
+    });
+
+    it.each([
+        { kind: 'single' as const, label: 'single' },
+        { kind: 'bulk' as const, label: 'bulk' },
+    ])(
+        'rolls back $label queue, killturn, and read-model revisions when journal persistence fails',
+        async ({ kind }) => {
+            const procedure = nationReservationProcedure(kind);
+            const idempotencyKey = `${mutationRequestPrefix}nation-refill-rollback-${kind}`;
+            const accessToken = await createAccessToken(`matrix-nation-refill-rollback-${kind}`, {});
+            await db.general.update({
+                where: { id: generalId },
+                data: {
+                    npcState: 0,
+                    meta: { killturn: 3, marker: 'rollback-preserved' },
+                    penalty: {},
+                },
+            });
+            await db.worldState.update({
+                where: { id: reservationWorldId },
+                data: { meta: { killturn: 12 } },
+            });
+            await db.$executeRawUnsafe(`
+                CREATE FUNCTION security_transport_fail_read_model_outbox()
+                RETURNS trigger
+                LANGUAGE plpgsql
+                AS $$
+                BEGIN
+                    RAISE EXCEPTION 'forced security transport read-model journal failure';
+                END;
+                $$
+            `);
+            await db.$executeRawUnsafe(`
+                CREATE TRIGGER security_transport_fail_read_model_outbox
+                BEFORE INSERT ON read_model_outbox
+                FOR EACH ROW
+                EXECUTE FUNCTION security_transport_fail_read_model_outbox()
+            `);
+
+            const result = await (async () => {
+                try {
+                    return await requestNationReservation(kind, accessToken, idempotencyKey);
+                } finally {
+                    await db.$executeRawUnsafe(
+                        'DROP TRIGGER IF EXISTS security_transport_fail_read_model_outbox ON read_model_outbox'
+                    );
+                    await db.$executeRawUnsafe('DROP FUNCTION IF EXISTS security_transport_fail_read_model_outbox()');
+                }
+            })();
+
+            expect(result.response.status).toBe(500);
+            expect(result.body).toMatchObject({ error: { data: { code: 'INTERNAL_SERVER_ERROR' } } });
+            expect(await db.nationTurn.count({ where: { nationId: ownerNationId, officerLevel: 12 } })).toBe(0);
+            expect(
+                await db.nationTurnRevision.findUnique({
+                    where: { nationId_officerLevel: { nationId: ownerNationId, officerLevel: 12 } },
+                })
+            ).toBeNull();
+            expect(await db.general.findUniqueOrThrow({ where: { id: generalId } })).toMatchObject({
+                npcState: 0,
+                meta: { killturn: 3, marker: 'rollback-preserved' },
+            });
+            expect(await db.readModelRevision.count()).toBe(0);
+            expect(await db.readModelOutbox.count()).toBe(0);
+            await expectApiInputEvent(idempotencyKey, procedure, {
+                actorUserId: userId,
+                status: 'FAILED',
+            });
+            expect(
+                await db.inputEvent.findUniqueOrThrow({
+                    where: { requestId: resolveScopedApiRequestId(idempotencyKey, procedure, userId) },
+                    select: { error: true },
+                })
+            ).toEqual({ error: expect.stringContaining('forced security transport read-model journal failure') });
+        }
+    );
 
     it('commits an owned general reservation once with an authenticated actor and durable journal', async () => {
         const idempotencyKey = `${mutationRequestPrefix}general-success`;
@@ -1409,8 +1720,15 @@ integration('game API security over HTTP transport', () => {
         expect(await readRealtimeRedisState()).toEqual(redisBefore);
     }, 15_000);
 
-    it('commits an owned officer nation reservation and rejects duplicate idempotency replay without a second queue mutation', async () => {
+    it('commits an owned officer nation reservation and replays the durable response without a second queue mutation', async () => {
         const idempotencyKey = `${mutationRequestPrefix}nation-success`;
+        const inputPayload = {
+            generalId,
+            turnIndex: 0,
+            action: '휴식',
+            args: {},
+            expectedRevision: 0,
+        };
         const accessToken = await createAccessToken('matrix-nation-success', {});
         const databaseBefore = await readReservedMutationState();
         const durableBefore = await readDurableSchemaStateExcludingMatrixApiJournal();
@@ -1420,6 +1738,7 @@ integration('game API security over HTTP transport', () => {
         const first = await requestReservedNation(accessToken, idempotencyKey, generalId);
         expect(first.response.status).toBe(200);
         expect(first.body).toMatchObject({ result: { data: { ok: true, revision: 1 } } });
+        const firstResult = (first.body as { result: { data: unknown } }).result.data;
         expect(
             await db.nationTurn.findMany({
                 where: { nationId: ownerNationId, officerLevel: 12 },
@@ -1443,6 +1762,8 @@ integration('game API security over HTTP transport', () => {
         await expectApiInputEvent(idempotencyKey, 'turns.reserved.setNation', {
             actorUserId: userId,
             status: 'SUCCEEDED',
+            payload: inputPayload,
+            result: firstResult,
         });
 
         const committed = await readReservedMutationState();
@@ -1551,10 +1872,14 @@ integration('game API security over HTTP transport', () => {
             where: { requestId: replayRequestId },
         });
         const replay = await requestReservedNation(accessToken, idempotencyKey, generalId);
-        expect(replay.response.status).toBe(409);
-        expect(replay.body).toMatchObject({ error: { data: { code: 'CONFLICT' } } });
-        expect(await readReservedMutationState()).toEqual(committed);
-        expect(await readDurableSchemaStateExcludingMatrixApiJournal()).toEqual(replayDurableBefore);
+        expect(replay.response.status).toBe(200);
+        expect(replay.body).toEqual(first.body);
+        const replayState = await readReservedMutationState();
+        expect({ ...replayState, generalAccessLogs: committed.generalAccessLogs }).toEqual(committed);
+        expectSingleActorActivity(replayState.generalAccessLogs);
+        expect(
+            withoutDurableTables(await readDurableSchemaStateExcludingMatrixApiJournal(), ['general_access_log'])
+        ).toEqual(withoutDurableTables(replayDurableBefore, ['general_access_log']));
         expect(await readRealtimeRedisState()).toEqual(replayRedisBefore);
         expect(
             await db.inputEvent.findUniqueOrThrow({
@@ -1565,6 +1890,8 @@ integration('game API security over HTTP transport', () => {
         await expectApiInputEvent(idempotencyKey, 'turns.reserved.setNation', {
             actorUserId: userId,
             status: 'SUCCEEDED',
+            payload: inputPayload,
+            result: firstResult,
         });
     });
 

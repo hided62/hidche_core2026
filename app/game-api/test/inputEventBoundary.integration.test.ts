@@ -2,8 +2,12 @@ import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { z } from 'zod';
 import { createGamePostgresConnector, type GamePrismaClient } from '@sammo-ts/infra';
 
-import type { GameApiContext } from '../src/context.js';
-import { DuplicateInputEventError, executeInputEvent } from '../src/inputEventBoundary.js';
+import type { DatabaseClient, GameApiContext } from '../src/context.js';
+import {
+    createApiInputPayloadIdentity,
+    DuplicateInputEventError,
+    executeInputEvent,
+} from '../src/inputEventBoundary.js';
 import { procedure, router } from '../src/trpc.js';
 import {
     ConflictingTurnDaemonCommandError,
@@ -74,6 +78,7 @@ integration('API input event boundary', () => {
             db,
             requestId,
             eventType: 'test.success',
+            payload: { markerId },
             actorUserId: 'user-7',
             execute: async (transaction) => {
                 await transaction.inputEvent.create({
@@ -94,6 +99,8 @@ integration('API input event boundary', () => {
         expect(event).toMatchObject({
             status: 'SUCCEEDED',
             actorUserId: 'user-7',
+            payload: createApiInputPayloadIdentity({ markerId }),
+            result: { ok: true },
             attempts: 1,
         });
         expect(event.processingAt).toBeInstanceOf(Date);
@@ -168,6 +175,12 @@ integration('API input event boundary', () => {
         const outboxes = await db.readModelOutbox.findMany({ select: { payload: true } });
         expect(outboxes.some(({ payload }) => payloadHasGeneral(payload, journalGeneralIds[1]))).toBe(false);
         expect(wake).not.toHaveBeenCalled();
+        expect(await db.inputEvent.findUniqueOrThrow({ where: { requestId: `${requestId}:mutate` } })).toMatchObject({
+            payload: createApiInputPayloadIdentity({ generalId: journalGeneralIds[1], fail: true }),
+            status: 'FAILED',
+            result: null,
+            attempts: 1,
+        });
     });
 
     it('rolls back business writes, records failure, and permits one explicit retry', async () => {
@@ -178,6 +191,7 @@ integration('API input event boundary', () => {
                 db,
                 requestId,
                 eventType: 'test.failure',
+                payload: { markerId },
                 execute: async (transaction) => {
                     await transaction.inputEvent.create({
                         data: {
@@ -194,6 +208,8 @@ integration('API input event boundary', () => {
         expect(await db.inputEvent.findUnique({ where: { requestId: markerId } })).toBeNull();
         expect(await db.inputEvent.findUniqueOrThrow({ where: { requestId } })).toMatchObject({
             status: 'FAILED',
+            payload: createApiInputPayloadIdentity({ markerId }),
+            result: null,
             attempts: 1,
             error: 'injected transaction failure',
         });
@@ -202,15 +218,17 @@ integration('API input event boundary', () => {
             db,
             requestId,
             eventType: 'test.failure',
+            payload: { markerId },
             execute: async () => ({ ok: true }),
         });
         expect(await db.inputEvent.findUniqueOrThrow({ where: { requestId } })).toMatchObject({
             status: 'SUCCEEDED',
+            result: { ok: true },
             attempts: 2,
         });
     });
 
-    it('rejects a concurrent duplicate idempotency key', async () => {
+    it('serializes an exact concurrent retry and replays the original result without re-executing business', async () => {
         const requestId = 'integration:api:duplicate';
         let releaseFirst: (() => void) | undefined;
         let signalStarted: (() => void) | undefined;
@@ -224,25 +242,270 @@ integration('API input event boundary', () => {
             db,
             requestId,
             eventType: 'test.duplicate',
+            payload: { value: 7 },
             execute: async () => {
                 signalStarted?.();
                 await release;
-                return { ok: true };
+                return { ok: true, revision: 17 };
             },
         });
         await started;
+
+        const duplicateExecute = vi.fn(async () => ({ ok: true, revision: 99 }));
+        const duplicate = executeInputEvent({
+            db,
+            requestId,
+            eventType: 'test.duplicate',
+            payload: { value: 7 },
+            execute: duplicateExecute,
+        });
+        releaseFirst?.();
+        await expect(Promise.all([first, duplicate])).resolves.toEqual([
+            { ok: true, revision: 17 },
+            { ok: true, revision: 17 },
+        ]);
+        expect(duplicateExecute).not.toHaveBeenCalled();
+        expect(await db.inputEvent.findUniqueOrThrow({ where: { requestId } })).toMatchObject({
+            payload: createApiInputPayloadIdentity({ value: 7 }),
+            result: { ok: true, revision: 17 },
+            status: 'SUCCEEDED',
+            attempts: 1,
+        });
+    });
+
+    it('rejects request-id reuse with a changed payload, event type, or actor', async () => {
+        const requestId = 'integration:api:identity-conflict';
+        const original = await executeInputEvent({
+            db,
+            requestId,
+            eventType: 'test.identity',
+            payload: { value: 1, nested: { left: true, right: false } },
+            actorUserId: 'user-identity',
+            execute: async () => ({ ok: true, revision: 4 }),
+        });
+        expect(original).toEqual({ ok: true, revision: 4 });
+
+        const conflicts = [
+            {
+                eventType: 'test.identity',
+                payload: { value: 2, nested: { left: true, right: false } },
+                actorUserId: 'user-identity',
+            },
+            {
+                eventType: 'test.other-identity',
+                payload: { value: 1, nested: { left: true, right: false } },
+                actorUserId: 'user-identity',
+            },
+            {
+                eventType: 'test.identity',
+                payload: { value: 1, nested: { left: true, right: false } },
+                actorUserId: 'other-user',
+            },
+        ];
+        for (const conflict of conflicts) {
+            const conflictingExecute = vi.fn(async () => ({ ok: false }));
+            await expect(
+                executeInputEvent({ db, requestId, ...conflict, execute: conflictingExecute })
+            ).rejects.toBeInstanceOf(DuplicateInputEventError);
+            expect(conflictingExecute).not.toHaveBeenCalled();
+        }
+
+        expect(await db.inputEvent.findUniqueOrThrow({ where: { requestId } })).toMatchObject({
+            eventType: 'test.identity',
+            actorUserId: 'user-identity',
+            payload: createApiInputPayloadIdentity({ value: 1, nested: { left: true, right: false } }),
+            result: { ok: true, revision: 4 },
+            status: 'SUCCEEDED',
+            attempts: 1,
+        });
+    });
+
+    it('reclaims an exact PENDING row under lock and counts one execution attempt', async () => {
+        const requestId = 'integration:api:pending-reclaim';
+        const payload = { value: 'pending' };
+        await db.inputEvent.create({
+            data: {
+                requestId,
+                target: 'API',
+                eventType: 'test.pending',
+                payload: { ...createApiInputPayloadIdentity(payload) },
+                actorUserId: 'pending-user',
+                status: 'PENDING',
+                attempts: 3,
+            },
+        });
 
         await expect(
             executeInputEvent({
                 db,
                 requestId,
-                eventType: 'test.duplicate',
+                eventType: 'test.pending',
+                payload,
+                actorUserId: 'pending-user',
+                execute: async () => ({ ok: true, attempt: 4 }),
+            })
+        ).resolves.toEqual({ ok: true, attempt: 4 });
+        expect(await db.inputEvent.findUniqueOrThrow({ where: { requestId } })).toMatchObject({
+            status: 'SUCCEEDED',
+            result: { ok: true, attempt: 4 },
+            attempts: 4,
+        });
+    });
+
+    it('adopts only a matching legacy FAILED placeholder and replaces it with the canonical digest', async () => {
+        const requestId = 'integration:api:legacy-failed';
+        const payload = { value: 'legacy-retry' };
+        await db.inputEvent.create({
+            data: {
+                requestId,
+                target: 'API',
+                eventType: 'test.legacy-failed',
+                payload: {},
+                actorUserId: 'legacy-user',
+                status: 'FAILED',
+                attempts: 2,
+                error: 'legacy failure',
+                completedAt: new Date(),
+            },
+        });
+
+        await expect(
+            executeInputEvent({
+                db,
+                requestId,
+                eventType: 'test.legacy-failed',
+                payload,
+                actorUserId: 'legacy-user',
                 execute: async () => ({ ok: true }),
             })
-        ).rejects.toBeInstanceOf(DuplicateInputEventError);
+        ).resolves.toEqual({ ok: true });
+        expect(await db.inputEvent.findUniqueOrThrow({ where: { requestId } })).toMatchObject({
+            payload: createApiInputPayloadIdentity(payload),
+            status: 'SUCCEEDED',
+            result: { ok: true },
+            error: null,
+            attempts: 3,
+        });
+    });
 
-        releaseFirst?.();
-        await first;
+    it('fails closed on a committed legacy PROCESSING placeholder', async () => {
+        const requestId = 'integration:api:legacy-processing';
+        const processingAt = new Date(Date.now() - 60 * 60 * 1_000);
+        await db.inputEvent.create({
+            data: {
+                requestId,
+                target: 'API',
+                eventType: 'test.legacy-processing',
+                payload: {},
+                actorUserId: 'legacy-user',
+                status: 'PROCESSING',
+                attempts: 1,
+                processingAt,
+            },
+        });
+        const retryExecute = vi.fn(async () => ({ ok: true }));
+
+        await expect(
+            executeInputEvent({
+                db,
+                requestId,
+                eventType: 'test.legacy-processing',
+                payload: { value: 'cannot-prove-legacy-identity' },
+                actorUserId: 'legacy-user',
+                execute: retryExecute,
+            })
+        ).rejects.toBeInstanceOf(DuplicateInputEventError);
+        expect(retryExecute).not.toHaveBeenCalled();
+        expect(await db.inputEvent.findUniqueOrThrow({ where: { requestId } })).toMatchObject({
+            payload: {},
+            status: 'PROCESSING',
+            attempts: 1,
+            processingAt,
+        });
+    });
+
+    it('commits FAILED before a blocked exact retry and preserves the exact attempt count after success', async () => {
+        const requestId = 'integration:api:failure-race';
+        const payload = { value: 'race' };
+        let releaseFailure: (() => void) | undefined;
+        let signalStarted: (() => void) | undefined;
+        const started = new Promise<void>((resolve) => {
+            signalStarted = resolve;
+        });
+        const release = new Promise<void>((resolve) => {
+            releaseFailure = resolve;
+        });
+        const failed = executeInputEvent({
+            db,
+            requestId,
+            eventType: 'test.failure-race',
+            payload,
+            execute: async () => {
+                signalStarted?.();
+                await release;
+                throw new Error('first attempt failed');
+            },
+        });
+        await started;
+        const retry = executeInputEvent({
+            db,
+            requestId,
+            eventType: 'test.failure-race',
+            payload,
+            execute: async () => ({ ok: true, attempt: 2 }),
+        });
+
+        releaseFailure?.();
+        await expect(failed).rejects.toThrow('first attempt failed');
+        await expect(retry).resolves.toEqual({ ok: true, attempt: 2 });
+        expect(await db.inputEvent.findUniqueOrThrow({ where: { requestId } })).toMatchObject({
+            status: 'SUCCEEDED',
+            result: { ok: true, attempt: 2 },
+            error: null,
+            attempts: 2,
+        });
+    });
+
+    it('does not let a late unexpected-failure recorder overwrite a transaction that actually committed', async () => {
+        const requestId = 'integration:api:ambiguous-commit';
+        const payload = { value: 'committed-before-client-error' };
+        const ambiguousCommitDb = new Proxy(db, {
+            get(target, property, receiver) {
+                if (property !== '$transaction') return Reflect.get(target, property, receiver);
+                return async (callback: (transaction: DatabaseClient) => Promise<unknown>) => {
+                    await db.$transaction(async (transaction) => callback(transaction));
+                    throw new Error('injected post-commit transport failure');
+                };
+            },
+        }) as unknown as DatabaseClient;
+
+        await expect(
+            executeInputEvent({
+                db: ambiguousCommitDb,
+                requestId,
+                eventType: 'test.ambiguous-commit',
+                payload,
+                execute: async () => ({ ok: true, revision: 8 }),
+            })
+        ).rejects.toThrow('injected post-commit transport failure');
+        expect(await db.inputEvent.findUniqueOrThrow({ where: { requestId } })).toMatchObject({
+            status: 'SUCCEEDED',
+            result: { ok: true, revision: 8 },
+            error: null,
+            attempts: 1,
+        });
+
+        const replayExecute = vi.fn(async () => ({ ok: false }));
+        await expect(
+            executeInputEvent({
+                db,
+                requestId,
+                eventType: 'test.ambiguous-commit',
+                payload,
+                execute: replayExecute,
+            })
+        ).resolves.toEqual({ ok: true, revision: 8 });
+        expect(replayExecute).not.toHaveBeenCalled();
     });
 
     it('reuses the same engine child event but rejects a changed retry payload', async () => {

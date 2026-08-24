@@ -2,46 +2,60 @@ import { describe, expect, it, vi } from 'vitest';
 import { z } from 'zod';
 
 import type { GameApiContext } from '../src/context.js';
+import { createApiInputPayloadIdentity } from '../src/inputEventBoundary.js';
 import { procedure, router } from '../src/trpc.js';
 
 const testRouter = router({
-    mutate: procedure
-        .input(z.object({ fail: z.boolean().optional().default(false) }))
-        .mutation(({ ctx, input }) => {
-            (ctx as GameApiContext & { testOrder: string[] }).testOrder.push('handler');
-            ctx.changeJournal?.mark('front.general', 7);
-            if (input.fail) throw new Error('injected rollback');
-            return { ok: true };
-        }),
+    mutate: procedure.input(z.object({ fail: z.boolean().optional().default(false) })).mutation(({ ctx, input }) => {
+        (ctx as GameApiContext & { testOrder: string[] }).testOrder.push('handler');
+        ctx.changeJournal?.mark('front.general', 7);
+        if (input.fail) throw new Error('injected rollback');
+        return { ok: true };
+    }),
 });
 
-const createContext = () => {
+const createContext = (payload: unknown = {}) => {
     const order: string[] = [];
-    const queryRaw = vi.fn(async () => {
+    const queryRaw = vi.fn(async (query: { sql?: string }) => {
+        if (query.sql?.includes('FROM input_event')) {
+            order.push('locked');
+            return [
+                {
+                    target: 'API',
+                    eventType: 'mutate',
+                    payload: createApiInputPayloadIdentity(payload),
+                    actorUserId: null,
+                    status: 'PENDING',
+                    result: null,
+                    attempts: 0,
+                },
+            ];
+        }
         order.push('journal');
         return [{ domain: 'front.general', entityId: 7, revision: 1n, outboxId: 11n }];
     });
     const transaction = {
         $queryRaw: queryRaw,
+        $executeRaw: vi.fn(async () => {
+            order.push('accepted');
+            return 1;
+        }),
+        $executeRawUnsafe: vi.fn(async (statement: string) => {
+            if (statement.startsWith('SAVEPOINT ')) order.push('savepoint');
+            else if (statement.startsWith('ROLLBACK TO ')) order.push('savepoint-rollback');
+            else if (statement.startsWith('RELEASE ')) order.push('savepoint-release');
+            return 0;
+        }),
         inputEvent: {
-            update: vi.fn(async () => {
-                order.push('succeeded');
+            update: vi.fn(async (args: { data: { status: string } }) => {
+                if (args.data.status === 'PROCESSING') order.push('processing');
+                else if (args.data.status === 'SUCCEEDED') order.push('succeeded');
+                else if (args.data.status === 'FAILED') order.push('failed');
                 return {};
             }),
         },
     };
     const db = {
-        inputEvent: {
-            create: vi.fn(async () => {
-                order.push('accepted');
-                return {};
-            }),
-            updateMany: vi.fn(async () => ({ count: 0 })),
-            update: vi.fn(async () => {
-                order.push('failed');
-                return {};
-            }),
-        },
         $transaction: vi.fn(async (callback: (db: typeof transaction) => Promise<unknown>) => {
             order.push('transaction-begin');
             try {
@@ -73,11 +87,15 @@ describe('API input-event change journal boundary', () => {
         await expect(testRouter.createCaller(fixture.context).mutate({})).resolves.toEqual({ ok: true });
 
         expect(fixture.order).toEqual([
-            'accepted',
             'transaction-begin',
+            'accepted',
+            'locked',
+            'processing',
+            'savepoint',
             'handler',
             'journal',
             'succeeded',
+            'savepoint-release',
             'commit',
             'wake',
         ]);
@@ -86,14 +104,25 @@ describe('API input-event change journal boundary', () => {
     });
 
     it('rolls back a handler mark without writing or scheduling an outbox row', async () => {
-        const fixture = createContext();
+        const fixture = createContext({ fail: true });
 
         await expect(testRouter.createCaller(fixture.context).mutate({ fail: true })).rejects.toThrow(
             'injected rollback'
         );
 
-        expect(fixture.order).toEqual(['accepted', 'transaction-begin', 'handler', 'rollback', 'failed']);
-        expect(fixture.queryRaw).not.toHaveBeenCalled();
+        expect(fixture.order).toEqual([
+            'transaction-begin',
+            'accepted',
+            'locked',
+            'processing',
+            'savepoint',
+            'handler',
+            'savepoint-rollback',
+            'savepoint-release',
+            'failed',
+            'commit',
+        ]);
+        expect(fixture.queryRaw).toHaveBeenCalledTimes(1);
         expect(fixture.redisPublish).not.toHaveBeenCalled();
         expect(fixture.wake).not.toHaveBeenCalled();
     });
