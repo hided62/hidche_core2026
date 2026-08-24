@@ -64,7 +64,7 @@ const form = ref<JoinForm>({
     strength: 0,
     intel: 0,
     character: 'Random',
-    pic: true,
+    pic: false,
     iconId: undefined,
     inheritBonusStat: [0, 0, 0],
 });
@@ -437,6 +437,7 @@ const loadConfig = async () => {
         } else {
             form.value.name = config.rules.allowCustomName ? config.user.displayName || '' : '무작위';
             form.value.iconId = config.user.icons.find((icon) => icon.picture === config.user.preferredPicture)?.id;
+            form.value.pic = form.value.iconId !== undefined;
             applyBalancedStats();
         }
     } catch (err) {
