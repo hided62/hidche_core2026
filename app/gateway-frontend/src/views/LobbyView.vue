@@ -7,6 +7,7 @@ import type { AppRouter } from '@sammo-ts/gateway-api';
 import { writeGameSessionTransfer } from '@sammo-ts/common/auth/gameSessionTransfer';
 import DefaultLayout from '../layouts/DefaultLayout.vue';
 import MapPreview from '../components/MapPreview.vue';
+import ProfilePreopenAnnouncement from '../components/ProfilePreopenAnnouncement.vue';
 import { useToast } from '../composables/useToast';
 import { trpc } from '../utils/trpc';
 import { createGameTrpc } from '../utils/gameTrpc';
@@ -106,11 +107,8 @@ const handleMapTabKeydown = (event: KeyboardEvent, profileName: string): void =>
 
 const formatGraceEndsAt = (value: string | null | undefined): string => formatServerDateTime(value);
 const serverSeasonStatus = (info: LobbyInfo) => resolveServerSeasonStatus(info);
-const formatAnnouncementDate = (value: string | null | undefined): string =>
-    formatServerDateTime(value, { fallback: '-' });
 const profileScenarioTitle = (profileName: string): string =>
     profileDetails.value[profileName]?.scenarioTitle.trim() || '-';
-const npcModeText = (mode: number): string => ['불가', '가능', '선택 생성'][mode] ?? '불가';
 const autorunDetailText = (autorun: LobbyInfo['autorunUser']): string => {
     if (!autorun) return '';
 
@@ -133,10 +131,8 @@ const autorunDetailText = (autorun: LobbyInfo['autorunUser']): string => {
     labels.push(limit);
     return labels.join(', ');
 };
-const autorunTooltipId = (profileName: string, scope = 'current'): string =>
-    'profile-autorun-' + scope + '-' + profileName.replaceAll(/[^a-zA-Z0-9_-]/g, '-');
-const upcomingResetOptionsTooltipId = (profileName: string): string =>
-    'upcoming-reset-options-' + profileName.replaceAll(/[^a-zA-Z0-9_-]/g, '-');
+const autorunTooltipId = (profileName: string): string =>
+    'profile-autorun-current-' + profileName.replaceAll(/[^a-zA-Z0-9_-]/g, '-');
 const isProfileRuntimeAvailable = (profile: LobbyProfile): boolean => profile.lifecycle.userAccessible;
 const unavailableProfileText = (profile: LobbyProfile): string => {
     if (!profile.lifecycle.dataInitialized) return '- DB 초기화 전 · 접근 불가 -';
@@ -453,7 +449,7 @@ const handleEnter = async (profile: LobbyProfile, targetPath: string) => {
                                 <th class="px-4 py-3 border-b border-zinc-700 w-32 text-center">선 택</th>
                             </tr>
                         </thead>
-                        <tbody class="divide-y divide-zinc-800">
+                        <tbody class="profile-table-body">
                             <tr
                                 v-for="profile in profiles"
                                 :key="profile.profileName"
@@ -504,100 +500,47 @@ const handleEnter = async (profile: LobbyProfile, targetPath: string) => {
 
                                 <!-- Server Info -->
                                 <td class="profile-info-cell px-4 py-4 border-r border-zinc-800">
-                                    <div
+                                    <ProfilePreopenAnnouncement
                                         v-if="profile.upcomingReset"
-                                        class="upcoming-reset-announcement"
-                                        data-testid="upcoming-reset-announcement"
-                                    >
-                                        <div data-testid="upcoming-reset-preopen-at">
-                                            - 가오픈 일시 :
-                                            {{ formatAnnouncementDate(profile.upcomingReset.preopenAt) }} -
-                                        </div>
-                                        <div data-testid="upcoming-reset-open-at">
-                                            - 오픈 일시 : {{ formatAnnouncementDate(profile.upcomingReset.openAt) }} -
-                                        </div>
-                                        <div data-testid="upcoming-reset-scenario-announcement">
-                                            <span class="text-orange-400" data-testid="upcoming-reset-scenario-title">
-                                                {{ profile.upcomingReset.scenarioTitle }} </span
-                                            >{{ ' ' }}
-                                            <span class="text-green-400">
-                                                {{ profile.upcomingReset.turnTermMinutes }}분 턴 서버
-                                            </span>
-                                            <span
-                                                class="upcoming-reset-options-marker"
-                                                tabindex="0"
-                                                aria-label="초기화 옵션 보기"
-                                                :aria-describedby="upcomingResetOptionsTooltipId(profile.profileName)"
-                                                data-testid="upcoming-reset-options-marker"
-                                            >
-                                                <span
-                                                    class="upcoming-reset-options-swatch"
-                                                    data-testid="upcoming-reset-options-swatch"
-                                                    aria-hidden="true"
-                                                ></span>
-                                                <span
-                                                    :id="upcomingResetOptionsTooltipId(profile.profileName)"
-                                                    class="upcoming-reset-options-tooltip"
-                                                    role="tooltip"
-                                                    data-testid="upcoming-reset-options-tooltip"
-                                                >
-                                                    <strong>초기화 옵션</strong>
-                                                    <span
-                                                        >상성 설정: {{ profile.upcomingReset.fictionMode }} · 빙의 여부:
-                                                        {{ npcModeText(profile.upcomingReset.npcMode) }} · 최대 스탯:
-                                                        {{ profile.upcomingReset.defaultStatTotal }}</span
-                                                    >
-                                                    <span
-                                                        >기타 설정: {{ profile.upcomingReset.otherTextInfo || '없음'
-                                                        }}<template v-if="profile.upcomingReset.autorunUser">
-                                                            · 자율행동:
-                                                            {{
-                                                                autorunDetailText(profile.upcomingReset.autorunUser)
-                                                            }}</template
-                                                        ></span
-                                                    >
-                                                </span>
-                                            </span>
-                                        </div>
-                                    </div>
+                                        :profile-name="profile.profileName"
+                                        :preopen-at="profile.upcomingReset.preopenAt"
+                                        :open-at="profile.upcomingReset.openAt"
+                                        :scenario-title="profile.upcomingReset.scenarioTitle"
+                                        :turn-term-minutes="profile.upcomingReset.turnTermMinutes"
+                                        :fiction-mode="profile.upcomingReset.fictionMode"
+                                        :npc-mode="profile.upcomingReset.npcMode"
+                                        :default-stat-total="profile.upcomingReset.defaultStatTotal"
+                                        :other-text-info="profile.upcomingReset.otherTextInfo"
+                                        :autorun-user="profile.upcomingReset.autorunUser"
+                                        :scheduled-at="profile.upcomingReset.scheduledAt"
+                                        test-id-prefix="upcoming-reset"
+                                    />
                                     <template v-if="profileDetails[profile.profileName]">
                                         <div
                                             class="space-y-1"
                                             :class="{ 'mt-3 border-t border-zinc-800 pt-3': profile.upcomingReset }"
                                         >
                                             <template v-if="profile.status === 'PREOPEN'">
-                                                <div
-                                                    v-if="profileDetails[profile.profileName]?.preopenAt"
-                                                    data-testid="profile-preopen-at"
-                                                >
-                                                    - 가오픈 일시 :
-                                                    {{
-                                                        formatAnnouncementDate(
-                                                            profileDetails[profile.profileName]?.preopenAt
-                                                        )
-                                                    }}
-                                                    -
-                                                </div>
-                                                <div data-testid="profile-open-at">
-                                                    - 오픈 일시 :
-                                                    {{
-                                                        formatAnnouncementDate(
-                                                            profileDetails[profile.profileName]?.opentime ||
-                                                                profileDetails[profile.profileName]?.starttime
-                                                        )
-                                                    }}
-                                                    -
-                                                </div>
-                                                <div data-testid="profile-scenario-announcement">
-                                                    <span
-                                                        class="text-orange-400"
-                                                        data-testid="profile-scenario-title"
-                                                        >{{ profileScenarioTitle(profile.profileName) }}</span
-                                                    >{{ ' ' }}
-                                                    <span class="text-green-400">
-                                                        {{ profileDetails[profile.profileName]?.turnTerm }}분 턴 서버
-                                                    </span>
-                                                </div>
+                                                <ProfilePreopenAnnouncement
+                                                    :profile-name="profile.profileName"
+                                                    :preopen-at="profileDetails[profile.profileName]!.preopenAt"
+                                                    :open-at="
+                                                        profileDetails[profile.profileName]!.opentime ||
+                                                        profileDetails[profile.profileName]!.starttime
+                                                    "
+                                                    :scenario-title="profileScenarioTitle(profile.profileName)"
+                                                    :turn-term-minutes="profileDetails[profile.profileName]!.turnTerm"
+                                                    :fiction-mode="profileDetails[profile.profileName]!.fictionMode"
+                                                    :npc-mode="profileDetails[profile.profileName]!.npcMode"
+                                                    :default-stat-total="
+                                                        profileDetails[profile.profileName]!.defaultStatTotal
+                                                    "
+                                                    :other-text-info="
+                                                        profileDetails[profile.profileName]!.otherTextInfo
+                                                    "
+                                                    :autorun-user="profileDetails[profile.profileName]!.autorunUser"
+                                                    test-id-prefix="profile"
+                                                />
                                             </template>
                                             <template v-else>
                                                 <div>
@@ -620,15 +563,11 @@ const handleEnter = async (profile: LobbyProfile, targetPath: string) => {
                                                     >
                                                 </div>
                                             </template>
-                                            <div class="profile-announcement-settings text-xs text-zinc-500">
+                                            <div
+                                                v-if="profile.status !== 'PREOPEN'"
+                                                class="profile-announcement-settings text-xs text-zinc-500"
+                                            >
                                                 (상성 설정:{{ profileDetails[profile.profileName]?.fictionMode }}),
-                                                <template v-if="profile.status === 'PREOPEN'">
-                                                    (빙의 여부:{{
-                                                        npcModeText(profileDetails[profile.profileName]?.npcMode ?? 0)
-                                                    }}), (최대 스탯:{{
-                                                        profileDetails[profile.profileName]?.defaultStatTotal
-                                                    }}),
-                                                </template>
                                                 (기타 설정:<template
                                                     v-if="profileDetails[profile.profileName]?.otherTextInfo"
                                                     >{{ profileDetails[profile.profileName]?.otherTextInfo
@@ -987,71 +926,12 @@ const handleEnter = async (profile: LobbyProfile, targetPath: string) => {
     min-width: 760px;
 }
 
+.profile-table-body > tr:not(:last-child) {
+    border-bottom: 1px solid #52525b;
+}
+
 .season-status {
     user-select: none;
-}
-
-.upcoming-reset-announcement {
-    line-height: 1.5;
-}
-
-.upcoming-reset-options-marker {
-    position: relative;
-    display: inline-flex;
-    width: 18px;
-    height: 18px;
-    align-items: center;
-    justify-content: center;
-    margin-left: 3px;
-    border-radius: 2px;
-    cursor: help;
-    vertical-align: text-bottom;
-}
-
-.upcoming-reset-options-swatch {
-    width: 8px;
-    height: 8px;
-    border: 1px solid #fbbf24;
-    border-radius: 1px;
-    background: #d97706;
-    box-shadow: 0 0 0 1px rgb(24 24 27 / 70%);
-}
-
-.upcoming-reset-options-tooltip {
-    position: absolute;
-    z-index: 30;
-    bottom: -16px;
-    left: calc(100% + 6px);
-    display: flex;
-    visibility: hidden;
-    box-sizing: border-box;
-    width: max-content;
-    max-width: min(400px, calc(100vw - 32px));
-    flex-direction: column;
-    gap: 2px;
-    padding: 7px 9px;
-    border: 1px solid #52525b;
-    border-radius: 4px;
-    background: #18181b;
-    box-shadow: 0 4px 12px rgb(0 0 0 / 45%);
-    color: #f4f4f5;
-    font-size: 12px;
-    line-height: 1.4;
-    opacity: 0;
-    pointer-events: none;
-    text-align: left;
-    white-space: normal;
-}
-
-.upcoming-reset-options-marker:hover .upcoming-reset-options-tooltip,
-.upcoming-reset-options-marker:focus-visible .upcoming-reset-options-tooltip {
-    visibility: visible;
-    opacity: 1;
-}
-
-.upcoming-reset-options-marker:focus-visible {
-    outline: 2px solid #fdba74;
-    outline-offset: 1px;
 }
 
 .copyable-autorun {
@@ -1101,17 +981,6 @@ const handleEnter = async (profile: LobbyProfile, targetPath: string) => {
 }
 
 @media (max-width: 640px) {
-    .upcoming-reset-options-marker:hover .upcoming-reset-options-tooltip,
-    .upcoming-reset-options-marker:focus-visible .upcoming-reset-options-tooltip {
-        position: fixed;
-        top: auto;
-        right: 16px;
-        bottom: 16px;
-        left: 16px;
-        width: auto;
-        max-width: none;
-    }
-
     .copyable-autorun:hover .copyable-autorun-detail,
     .copyable-autorun:focus-visible .copyable-autorun-detail {
         position: fixed;
@@ -1148,8 +1017,8 @@ const handleEnter = async (profile: LobbyProfile, targetPath: string) => {
 
     .profile-table tbody {
         display: grid;
-        gap: 1px;
-        background: #27272a;
+        gap: 2px;
+        background: #3f3f46;
     }
 
     .profile-table tbody tr {
@@ -1171,7 +1040,7 @@ const handleEnter = async (profile: LobbyProfile, targetPath: string) => {
 
     .profile-server-cell {
         grid-area: server;
-        border-bottom: 1px solid #27272a;
+        border-bottom: 1px solid #3f3f46;
     }
 
     .profile-server-cell > div {
@@ -1182,7 +1051,7 @@ const handleEnter = async (profile: LobbyProfile, targetPath: string) => {
     .profile-info-cell {
         grid-area: info;
         border-right: 0;
-        border-bottom: 1px solid #27272a;
+        border-bottom: 1px solid #3f3f46;
     }
 
     .profile-portrait-cell {
