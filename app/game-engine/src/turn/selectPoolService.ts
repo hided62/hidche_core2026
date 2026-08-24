@@ -690,6 +690,7 @@ export const createGeneralFromSelectionPool = async (options: {
     uniqueName: string;
     personality: string;
     now?: Date;
+    operationalAcceptedAt: Date;
     seedOwnerIdentity?: string | number;
     ownerPicture?: string;
     ownerImageServer?: number;
@@ -754,7 +755,7 @@ export const createGeneralFromSelectionPool = async (options: {
     const nextChangeAt = new Date(
         now.getTime() + resolveTurnTermMinutes(worldState) * RESELECTION_TURN_MULTIPLIER * 60_000
     );
-    const prestartDeleteAfter = buildPrestartDeleteAfter(now, worldState.tickSeconds, config);
+    const prestartDeleteAfter = buildPrestartDeleteAfter(options.operationalAcceptedAt, worldState.tickSeconds, config);
     const showImgLevel = asNumber(config.showImgLevel, 0);
     const useOwnerPicture =
         showImgLevel >= 1 && typeof options.ownerPicture === 'string' && options.ownerPicture !== 'default.jpg';
@@ -893,8 +894,8 @@ export const createGeneralFromSelectionPool = async (options: {
     }
     await db.generalAccessLog.upsert({
         where: { generalId },
-        update: { userId, lastRefresh: now },
-        create: { generalId, userId, lastRefresh: now },
+        update: { userId, lastRefresh: options.operationalAcceptedAt },
+        create: { generalId, userId, lastRefresh: options.operationalAcceptedAt },
     });
     await clearUnusedReservations(db, userId, now, nowTick);
     await synchronizeSelectionPoolWorld(db, world);
