@@ -5,8 +5,9 @@ import { asRecord } from '@sammo-ts/common';
 import { GamePrisma } from '@sammo-ts/infra';
 
 import { authedProcedure, router } from '../../trpc.js';
-import { getMyGeneral } from '../shared/general.js';
+import { getAuthenticatedUserId, getMyGeneral } from '../shared/general.js';
 import { loadCurrentGameTime, type CurrentGameTime } from '../../services/gameClock.js';
+import { throwIfCommandRejected } from '../shared/turnDaemon.js';
 
 const hasAdminRole = (roles: string[], profileName: string): boolean => {
     if (roles.includes('superuser') || roles.includes('admin') || roles.includes('admin.superuser')) {
@@ -347,15 +348,19 @@ export const voteRouter = router({
             if (new Set(sortedSelection).size !== sortedSelection.length) {
                 throw new TRPCError({ code: 'BAD_REQUEST', message: '선택한 항목이 올바르지 않습니다.' });
             }
+            const userId = getAuthenticatedUserId(ctx);
             const general = await getMyGeneral(ctx);
 
             const rewardResult = await ctx.turnDaemon.requestCommand({
                 type: 'voteReward',
+                ...(ctx.requestId ? { requestId: `${ctx.requestId}:vote.submitVote:engine:0:voteReward` } : {}),
+                userId,
                 voteId: input.voteId,
                 generalId: general.id,
                 selection: sortedSelection,
                 ...(gameTime.tick === null ? {} : { acceptedGameTick: gameTime.tick }),
             });
+            throwIfCommandRejected(rewardResult);
 
             if (!rewardResult || rewardResult.type !== 'voteReward') {
                 throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: 'Unexpected response' });

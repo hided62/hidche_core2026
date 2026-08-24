@@ -130,17 +130,25 @@ export type TurnDaemonCommand =
           deltaMinutes: number;
       }
     | { type: 'getStatus'; requestId?: string }
-    | { type: 'troopCreate'; requestId?: string; generalId: number; troopName: string }
-    | { type: 'troopJoin'; requestId?: string; generalId: number; troopId: number }
-    | { type: 'troopExit'; requestId?: string; generalId: number }
+    | { type: 'troopCreate'; requestId?: string; userId: string; generalId: number; troopName: string }
+    | { type: 'troopJoin'; requestId?: string; userId: string; generalId: number; troopId: number }
+    | { type: 'troopExit'; requestId?: string; userId: string; generalId: number }
     | {
           type: 'troopKick';
           requestId?: string;
+          userId: string;
           generalId: number;
           troopId: number;
           targetGeneralId: number;
       }
-    | { type: 'troopRename'; requestId?: string; generalId: number; troopId: number; troopName: string }
+    | {
+          type: 'troopRename';
+          requestId?: string;
+          userId: string;
+          generalId: number;
+          troopId: number;
+          troopName: string;
+      }
     | { type: 'ensureDieOnPrestartStatus'; requestId?: string; userId: string; generalId: number }
     | { type: 'dieOnPrestart'; requestId?: string; userId: string; generalId: number }
     | { type: 'buildNationCandidate'; requestId?: string; userId: string; generalId: number }
@@ -153,10 +161,11 @@ export type TurnDaemonCommand =
           messageId: number;
           response: boolean;
       }
-    | { type: 'vacation'; requestId?: string; generalId: number }
+    | { type: 'vacation'; requestId?: string; userId: string; generalId: number }
     | {
           type: 'setMySetting';
           requestId?: string;
+          userId: string;
           generalId: number;
           settings: {
               tnmt?: number;
@@ -170,7 +179,13 @@ export type TurnDaemonCommand =
               use_auto_nation_capital?: number;
           };
       }
-    | { type: 'dropItem'; requestId?: string; generalId: number; itemType: string }
+    | {
+          type: 'dropItem';
+          requestId?: string;
+          userId: string;
+          generalId: number;
+          itemType: 'horse' | 'weapon' | 'book' | 'item';
+      }
     | {
           type: 'auctionFinalize';
           requestId?: string;
@@ -181,6 +196,7 @@ export type TurnDaemonCommand =
     | {
           type: 'auctionOpen';
           requestId?: string;
+          userId: string;
           generalId: number;
           auctionType: 'BUY_RICE' | 'SELL_RICE' | 'UNIQUE_ITEM';
           amount: number;
@@ -192,14 +208,16 @@ export type TurnDaemonCommand =
     | {
           type: 'changePermission';
           requestId?: string;
+          userId: string;
           generalId: number;
           isAmbassador: boolean;
           targetGeneralIds: number[];
       }
-    | { type: 'kick'; requestId?: string; generalId: number; destGeneralId: number }
+    | { type: 'kick'; requestId?: string; userId: string; generalId: number; destGeneralId: number }
     | {
           type: 'appoint';
           requestId?: string;
+          userId: string;
           generalId: number;
           destGeneralId: number;
           destCityId: number;
@@ -239,17 +257,38 @@ export type TurnDaemonCommand =
     | {
           type: 'voteReward';
           requestId?: string;
+          userId: string;
           voteId: number;
           generalId: number;
           selection: number[];
           acceptedGameTick?: number;
       }
     | {
-          type: 'setNationMeta';
+          type: 'setNationSetting';
           requestId?: string;
+          userId: string;
+          generalId: number;
           nationId: number;
-          updates: Record<string, unknown>;
-          expectedUpdatedAt?: string;
+          mutation:
+              | { kind: 'notice'; message: string }
+              | { kind: 'scoutMessage'; message: string }
+              | { kind: 'rate'; amount: number }
+              | { kind: 'bill'; amount: number }
+              | { kind: 'secretLimit'; amount: number }
+              | { kind: 'blockWar'; value: boolean }
+              | { kind: 'blockScout'; value: boolean };
+      }
+    | {
+          type: 'setNpcPolicy';
+          requestId?: string;
+          userId: string;
+          generalId: number;
+          nationId: number;
+          expectedUpdatedAt: string | null;
+          mutation:
+              | { kind: 'nationPolicy'; values: Record<string, unknown> }
+              | { kind: 'nationPriority'; priority: string[] }
+              | { kind: 'generalPriority'; priority: string[] };
       }
     | {
           type: 'adjustGeneralResources';
@@ -377,6 +416,7 @@ export type TurnDaemonCommand =
     | {
           type: 'auctionBid';
           requestId?: string;
+          userId: string;
           auctionId: number;
           generalId: number;
           amount: number;
@@ -605,17 +645,33 @@ export type TurnDaemonCommandResult =
           reason: string;
       }
     | {
-          type: 'setNationMeta';
+          type: 'setNationSetting';
+          ok: true;
+          nationId: number;
+          updatedAt: string;
+          availableCnt?: number;
+      }
+    | {
+          type: 'setNationSetting';
+          ok: false;
+          code: 'BAD_REQUEST' | 'FORBIDDEN' | 'NOT_FOUND' | 'PRECONDITION_FAILED';
+          nationId?: number;
+          reason: string;
+          currentUpdatedAt?: string | null;
+      }
+    | {
+          type: 'setNpcPolicy';
           ok: true;
           nationId: number;
           updatedAt: string;
       }
     | {
-          type: 'setNationMeta';
+          type: 'setNpcPolicy';
           ok: false;
-          nationId: number;
+          code: 'BAD_REQUEST' | 'FORBIDDEN' | 'NOT_FOUND' | 'PRECONDITION_FAILED' | 'CONFLICT';
           reason: string;
-          currentUpdatedAt?: string;
+          nationId?: number;
+          currentUpdatedAt?: string | null;
       }
     | {
           type: 'adjustGeneralResources';

@@ -15,6 +15,7 @@ export default defineConfig({
         'turn/monthlyDisasterAction': 'src/turn/monthlyDisasterAction.ts',
         'turn/monthlyEventHandler': 'src/turn/monthlyEventHandler.ts',
         'turn/monthlyNationBettingAction': 'src/turn/monthlyNationBettingAction.ts',
+        'turn/npcPolicyMutation': 'src/turn/npcPolicyMutation.ts',
         'turn/npcPossessionService': 'src/turn/npcPossessionService.ts',
         'turn/rankData': 'src/turn/rankData.ts',
         'turn/reservedTurnHandler': 'src/turn/reservedTurnHandler.ts',

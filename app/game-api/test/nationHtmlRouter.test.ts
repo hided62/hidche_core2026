@@ -73,8 +73,9 @@ const auth: GameSessionTokenPayload = {
 const buildContext = () => {
     const changeJournal = new ChangeJournal();
     const requestCommand = vi.fn(async (command: unknown) => ({
-        type: 'setNationMeta',
+        type: 'setNationSetting',
         ok: true,
+        nationId: 1,
         updatedAt: '2026-01-01T00:00:01.000Z',
         command,
     }));
@@ -97,6 +98,7 @@ const buildContext = () => {
         battleSim: {} as GameApiContext['battleSim'],
         profile: { id: 'che', scenario: 'default', name: 'che:default' },
         auth,
+        requestId: 'http-nation-html',
         changeJournal,
         uploadDir: 'uploads',
         uploadPath: '/uploads',
@@ -131,28 +133,58 @@ describe('nation HTML API boundary', () => {
         });
 
         expect(fixture.requestCommand).toHaveBeenCalledWith({
-            type: 'setNationMeta',
+            type: 'setNationSetting',
+            requestId: `http-nation-html:nation.${procedure}:engine:0:setNationSetting`,
+            userId: 'user-1',
+            generalId: 1,
             nationId: 1,
-            updates: {
-                [metaKey]: msg,
-            },
-            expectedUpdatedAt: undefined,
+            mutation: metaKey === 'notice' ? { kind: 'notice', message: msg } : { kind: 'scoutMessage', message: msg },
         });
-        expect(fixture.changeJournal.snapshot()).toEqual([
-            { domain: 'dashboard.global', entityId: 0 },
-            ...(procedure === 'setNotice' ? [{ domain: 'front.nation' as const, entityId: 1 }] : []),
-            { domain: 'nation.content', entityId: 1 },
-        ]);
+        expect(fixture.changeJournal.snapshot()).toEqual([]);
     });
 
     it.each(['setNotice', 'setScoutMsg'] as const)(
-        'rejects an empty $procedure value like Ref required validation',
+        'rejects empty and whitespace-only $procedure values like Ref required validation',
         async (procedure) => {
-            await expect(buildContext().caller.nation[procedure]({ msg: '' })).rejects.toMatchObject({
-                code: 'BAD_REQUEST',
-            });
+            for (const msg of ['', ' \t\n\v\0']) {
+                const fixture = buildContext();
+                await expect(fixture.caller.nation[procedure]({ msg })).rejects.toMatchObject({
+                    code: 'BAD_REQUEST',
+                });
+                expect(fixture.requestCommand).not.toHaveBeenCalled();
+            }
         }
     );
+
+    it.each(['setNotice', 'setScoutMsg'] as const)(
+        'keeps PHP trim semantics for a Unicode-only $procedure value',
+        async (procedure) => {
+            const fixture = buildContext();
+            await expect(fixture.caller.nation[procedure]({ msg: '　' })).resolves.toMatchObject({
+                ok: true,
+                msg: '　',
+            });
+            expect(fixture.requestCommand).toHaveBeenCalledOnce();
+        }
+    );
+
+    it.each([
+        ['setNotice', 'notice'],
+        ['setScoutMsg', 'scoutMessage'],
+    ] as const)('dispatches unsafe-only $procedure HTML as the empty string Ref persists', async (procedure, kind) => {
+        const fixture = buildContext();
+
+        await expect(fixture.caller.nation[procedure]({ msg: '<script></script>' })).resolves.toEqual({
+            ok: true,
+            msg: '',
+        });
+        expect(fixture.requestCommand).toHaveBeenCalledWith(
+            expect.objectContaining({
+                type: 'setNationSetting',
+                mutation: { kind, message: '' },
+            })
+        );
+    });
 
     it('purifies legacy stored values on every read resolver', () => {
         expect(

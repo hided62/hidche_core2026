@@ -9,6 +9,11 @@ const readNumber = (value: unknown): number => {
 const readTextArray = (value: unknown): string[] =>
     Array.isArray(value) ? value.filter((entry): entry is string => typeof entry === 'string') : [];
 
+const readArchiveText = (values: readonly unknown[], fallback: string | null): string | null => {
+    const value = values.find((candidate) => candidate !== undefined && candidate !== null);
+    return value === undefined ? fallback : String(value);
+};
+
 export const buildOldNationArchiveData = (options: {
     nation: Nation;
     generalIds: readonly number[];
@@ -22,6 +27,7 @@ export const buildOldNationArchiveData = (options: {
         ...maxPower,
     };
     const maxCities = readTextArray(maxPower.maxCities);
+    const nationNotice = asRecord(meta.nationNotice);
 
     return {
         ...nation,
@@ -34,5 +40,7 @@ export const buildOldNationArchiveData = (options: {
         aux,
         generals: [...options.generalIds],
         history: [...options.history],
+        msg: readArchiveText([meta.notice, nationNotice.msg, meta.msg], ''),
+        scout_msg: readArchiveText([meta.infoText, meta.scout_msg], null),
     };
 };

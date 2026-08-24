@@ -1,19 +1,18 @@
 import { TRPCError } from '@trpc/server';
 import { z } from 'zod';
 
-import { asRecord } from '@sammo-ts/common';
+import { engineAuthedProcedure } from '../../../trpc.js';
+import { getAuthenticatedUserId, getMyGeneral } from '../../shared/general.js';
+import { assertNationAccess, assertNationEditable, updateNationSetting } from '../shared.js';
 
-import { authedProcedure } from '../../../trpc.js';
-import { getMyGeneral } from '../../shared/general.js';
-import { assertNationAccess, assertNationEditable, updateNationMeta } from '../shared.js';
-
-export const setRate = authedProcedure
+export const setRate = engineAuthedProcedure
     .input(
         z.object({
             amount: z.number().int().min(5).max(30),
         })
     )
     .mutation(async ({ ctx, input }) => {
+        const userId = getAuthenticatedUserId(ctx);
         const me = await getMyGeneral(ctx);
         assertNationAccess(me);
         const nation = await ctx.db.nation.findUnique({
@@ -24,14 +23,6 @@ export const setRate = authedProcedure
             throw new TRPCError({ code: 'NOT_FOUND', message: 'Nation not found' });
         }
         assertNationEditable(me, nation.meta);
-        const nationMeta = asRecord(nation.meta);
-        await updateNationMeta(
-            ctx,
-            me.nationId,
-            {
-                rate: input.amount,
-            },
-            nationMeta
-        );
+        await updateNationSetting(ctx, userId, me, 'setRate', { kind: 'rate', amount: input.amount });
         return { ok: true };
     });

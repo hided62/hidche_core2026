@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { parseTournamentSourceRevision, writeTournamentProjection } from '@sammo-ts/common';
+import { z } from 'zod';
 
 import type { TournamentKeys } from './keys.js';
 import type { TournamentBetEntry, TournamentMatchEntry, TournamentParticipantEntry, TournamentState } from './types.js';
@@ -19,15 +20,115 @@ interface RedisClientLike {
     publish?(channel: string, message: string): Promise<unknown>;
 }
 
-const safeJsonParse = <T>(raw: string | null): T | null => {
-    if (!raw) {
+export class CorruptTournamentProjectionError extends Error {
+    constructor(readonly key: string) {
+        super(`Tournament projection is malformed: ${key}`);
+        this.name = 'CorruptTournamentProjectionError';
+    }
+}
+
+const zTournamentState = z
+    .object({
+        stage: z.number().int(),
+        phase: z.number().int(),
+        type: z.number().int(),
+        auto: z.boolean(),
+        openYear: z.number().int(),
+        openMonth: z.number().int(),
+        termSeconds: z.number(),
+        nextAt: z.string(),
+        bettingId: z.number().int().optional(),
+        bettingCloseAt: z.string().optional(),
+        winnerId: z.number().int().optional(),
+        bettingSettled: z.boolean().optional(),
+        rewardSettled: z.boolean().optional(),
+        participantsLockedAt: z.string().optional(),
+        lastError: z.string().optional(),
+        lastErrorAt: z.string().optional(),
+    })
+    .passthrough();
+
+const zTournamentParticipant = z
+    .object({
+        id: z.number().int(),
+        name: z.string(),
+        leadership: z.number(),
+        strength: z.number(),
+        intel: z.number(),
+        level: z.number(),
+        groupId: z.number().int().optional(),
+        groupNo: z.number().int().optional(),
+        win: z.number().int().optional(),
+        draw: z.number().int().optional(),
+        lose: z.number().int().optional(),
+        gl: z.number().int().optional(),
+        seedRank: z.number().int().optional(),
+        finalRank: z.number().int().optional(),
+        preliminaryGroupId: z.number().int().optional(),
+        preliminaryGroupNo: z.number().int().optional(),
+        preliminaryRank: z.number().int().optional(),
+        preliminaryWin: z.number().int().optional(),
+        preliminaryDraw: z.number().int().optional(),
+        preliminaryLose: z.number().int().optional(),
+        preliminaryGl: z.number().int().optional(),
+    })
+    .passthrough();
+
+const zTournamentLogEntry = z
+    .object({
+        phase: z.number().int(),
+        attackerEnergy: z.number(),
+        defenderEnergy: z.number(),
+        attackerDamage: z.number(),
+        defenderDamage: z.number(),
+        text: z.string(),
+    })
+    .passthrough();
+
+const zTournamentMatch = z
+    .object({
+        id: z.number().int(),
+        stage: z.number().int(),
+        roundIndex: z.number().int(),
+        attackerId: z.number().int(),
+        defenderId: z.number().int(),
+        groupId: z.number().int().optional(),
+        winnerId: z.number().int().optional(),
+        log: z.array(z.string()).optional(),
+        logEntries: z.array(zTournamentLogEntry).optional(),
+        lastEnergy: z
+            .object({
+                attacker: z.number(),
+                defender: z.number(),
+            })
+            .passthrough()
+            .optional(),
+    })
+    .passthrough();
+
+const zTournamentBet = z
+    .object({
+        generalId: z.number().int(),
+        targetId: z.number().int(),
+        amount: z.number(),
+    })
+    .passthrough();
+
+const parseProjection = <T>(raw: string | null, key: string, schema: z.ZodType<T>): T | null => {
+    if (raw === null) {
         return null;
     }
+    let value: unknown;
     try {
-        return JSON.parse(raw) as T;
+        value = JSON.parse(raw) as unknown;
     } catch {
-        return null;
+        throw new CorruptTournamentProjectionError(key);
     }
+    const parsed = schema.safeParse(value);
+    if (!parsed.success) {
+        throw new CorruptTournamentProjectionError(key);
+    }
+    return parsed.data;
 };
 
 export class TournamentStore {
@@ -61,7 +162,11 @@ export class TournamentStore {
     }
 
     async getState(): Promise<TournamentState | null> {
-        return safeJsonParse<TournamentState>(await this.redis.get(this.keys.stateKey));
+        return parseProjection(
+            await this.redis.get(this.keys.stateKey),
+            this.keys.stateKey,
+            zTournamentState
+        ) as TournamentState | null;
     }
 
     async getSourceRevision(): Promise<string | null> {
@@ -77,7 +182,13 @@ export class TournamentStore {
     }
 
     async getParticipants(): Promise<TournamentParticipantEntry[]> {
-        return safeJsonParse<TournamentParticipantEntry[]>(await this.redis.get(this.keys.participantsKey)) ?? [];
+        return (
+            parseProjection(
+                await this.redis.get(this.keys.participantsKey),
+                this.keys.participantsKey,
+                z.array(zTournamentParticipant)
+            ) ?? []
+        );
     }
 
     async setParticipants(participants: TournamentParticipantEntry[]): Promise<string> {
@@ -85,7 +196,13 @@ export class TournamentStore {
     }
 
     async getMatches(): Promise<TournamentMatchEntry[]> {
-        return safeJsonParse<TournamentMatchEntry[]>(await this.redis.get(this.keys.matchesKey)) ?? [];
+        return (
+            parseProjection(
+                await this.redis.get(this.keys.matchesKey),
+                this.keys.matchesKey,
+                z.array(zTournamentMatch)
+            ) ?? []
+        );
     }
 
     async setMatches(matches: TournamentMatchEntry[]): Promise<string> {
@@ -93,7 +210,13 @@ export class TournamentStore {
     }
 
     async getBettingEntries(): Promise<TournamentBetEntry[]> {
-        return safeJsonParse<TournamentBetEntry[]>(await this.redis.get(this.keys.bettingKey)) ?? [];
+        return (
+            parseProjection(
+                await this.redis.get(this.keys.bettingKey),
+                this.keys.bettingKey,
+                z.array(zTournamentBet)
+            ) ?? []
+        );
     }
 
     async setBettingEntries(entries: TournamentBetEntry[]): Promise<string> {

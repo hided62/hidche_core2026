@@ -323,6 +323,76 @@ describe('war aftermath', () => {
         expect(defenderCity.meta.dead).toBe(111);
     });
 
+    it('clears every captured-city officer assignment when the defending nation survives', () => {
+        const attackerNation = buildNation(1);
+        const defenderNation = buildNation(2);
+        const foreignNation = buildNation(3);
+        defenderNation.capitalCityId = 3;
+        const attackerCity = buildCity(1, 1);
+        const defenderCity = buildCity(2, 2);
+        const defenderCapital = buildCity(3, 2);
+        const foreignCity = buildCity(4, 3);
+        defenderCity.meta.officer_set = 7;
+        const attacker = buildGeneral(1, 1, 1);
+        const camelAssigned = buildGeneral(2, 2, 3);
+        camelAssigned.officerLevel = 4;
+        camelAssigned.meta.officerCity = defenderCity.id;
+        const snakeAssigned = buildGeneral(3, 1, 1);
+        snakeAssigned.officerLevel = 10;
+        snakeAssigned.meta.officer_city = defenderCity.id;
+        const idAssigned = buildGeneral(4, 3, 4);
+        idAssigned.officerLevel = 0;
+        idAssigned.meta.officerCityId = defenderCity.id;
+        const unrelated = buildGeneral(5, 2, 2);
+        unrelated.officerLevel = 3;
+        unrelated.meta.officerCity = defenderCapital.id;
+        unrelated.meta.officer_city = defenderCapital.id;
+        unrelated.meta.officerCityId = defenderCapital.id;
+
+        const outcome = resolveWarAftermath({
+            battle: {
+                attacker,
+                defenders: [],
+                defenderCity,
+                logs: [],
+                conquered: true,
+                reports: [],
+            },
+            attackerNation,
+            defenderNation,
+            attackerCity,
+            defenderCity,
+            nations: [attackerNation, defenderNation, foreignNation],
+            cities: [attackerCity, defenderCity, defenderCapital, foreignCity],
+            generals: [attacker, camelAssigned, snakeAssigned, idAssigned, unrelated],
+            unitSet: buildUnitSet(),
+            map: DEFAULT_MAP,
+            config: buildConfig(),
+            time: { year: 200, month: 1, startYear: 180 },
+            messageTime: MESSAGE_TIME,
+        });
+
+        expect(outcome.conquest?.nationCollapsed).toBe(false);
+        expect(defenderCity.meta.officer_set).toBe(0);
+        for (const assigned of [camelAssigned, snakeAssigned, idAssigned]) {
+            expect(assigned).toMatchObject({
+                officerLevel: 1,
+                meta: { officerCity: 0, officer_city: 0, officerCityId: 0 },
+            });
+        }
+        expect(unrelated).toMatchObject({
+            officerLevel: 3,
+            meta: {
+                officerCity: defenderCapital.id,
+                officer_city: defenderCapital.id,
+                officerCityId: defenderCapital.id,
+            },
+        });
+        expect(outcome.generals.map((general) => general.id)).toEqual(
+            expect.arrayContaining([attacker.id, camelAssigned.id, snakeAssigned.id, idAssigned.id])
+        );
+    });
+
     it('logs emergency relocation when a surviving nation loses its capital', () => {
         const attackerNation = buildNation(1);
         const defenderNation = buildNation(2);

@@ -92,6 +92,7 @@ const buildRow = (action: 'scout' | 'raiseInvader', overrides: Partial<MessagePa
     id: 29,
     mailbox: actor.id,
     type: 'private',
+    time: new Date('0200-01-01T00:00:00.000Z'),
     validUntil: new Date('9999-12-31T00:00:00.000Z'),
     message: {
         src: source,
@@ -170,6 +171,76 @@ describe('actionable message response', () => {
         expect(result).toEqual({ ok: true, action: 'scout', reason: '등용 수락 불가.' });
         expect(updateMany).not.toHaveBeenCalled();
         expect(world.peekDirtyState().messages).toHaveLength(0);
+    });
+
+    it('treats legacy truthy used values and an inverted validity interval as invalid scout letters', async () => {
+        for (const row of [
+            buildRow('scout', { option: { action: 'scout', used: 1 } }),
+            {
+                ...buildRow('scout'),
+                validUntil: new Date('0199-12-31T23:59:59.000Z'),
+            },
+        ]) {
+            const world = buildWorld();
+            const { db, updateMany } = buildDb([[row]]);
+            const executor = buildExecutor();
+
+            await expect(
+                respondToActionableMessage({
+                    db,
+                    world,
+                    executor,
+                    userId: actor.userId!,
+                    generalId: actor.id,
+                    messageId: row.id,
+                    response: true,
+                })
+            ).resolves.toEqual({ ok: false, action: 'scout', reason: '유효하지 않은 등용장입니다.' });
+            expect(executor.execute).not.toHaveBeenCalled();
+            expect(updateMany).not.toHaveBeenCalled();
+        }
+    });
+
+    it("keeps PHP's special string-zero used value false", async () => {
+        const world = buildWorld();
+        const row = buildRow('scout', { option: { action: 'scout', used: '0' } });
+        const { db, updateMany } = buildDb([[row], []]);
+        const executor = buildExecutor();
+
+        await expect(
+            respondToActionableMessage({
+                db,
+                world,
+                executor,
+                userId: actor.userId!,
+                generalId: actor.id,
+                messageId: row.id,
+                response: true,
+            })
+        ).resolves.toEqual({ ok: true, action: 'scout', reason: 'success' });
+        expect(executor.execute).toHaveBeenCalledOnce();
+        expect(updateMany).toHaveBeenCalledOnce();
+    });
+
+    it('rejects malformed actionable payloads without throwing inside the daemon transaction', async () => {
+        const world = buildWorld();
+        const row = { ...buildRow('scout'), message: { option: { action: 'scout' }, dest: null } };
+        const { db, updateMany } = buildDb([[row]]);
+        const executor = buildExecutor();
+
+        await expect(
+            respondToActionableMessage({
+                db,
+                world,
+                executor,
+                userId: actor.userId!,
+                generalId: actor.id,
+                messageId: row.id,
+                response: true,
+            })
+        ).resolves.toEqual({ ok: false, reason: '응답할 수 없는 메시지입니다.' });
+        expect(executor.execute).not.toHaveBeenCalled();
+        expect(updateMany).not.toHaveBeenCalled();
     });
 
     it('does not invalidate an invader prompt before validating its receiver', async () => {

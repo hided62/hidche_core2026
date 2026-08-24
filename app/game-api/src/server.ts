@@ -47,6 +47,7 @@ import { RemoteContentImageStore } from './services/remoteContentImageStore.js';
 import { ReadModelOutboxWorker } from './realtime/outboxWorker.js';
 import { DeferredGeneralAccessWorker } from './services/deferredGeneralAccess.js';
 import { WebPushOutboxWorker } from './services/webPushOutboxWorker.js';
+import { scopeHttpIdempotencyKey } from './requestId.js';
 
 const extractBearerToken = (value: string | string[] | undefined): string | null => {
     if (!value) {
@@ -247,11 +248,15 @@ export const createGameApiServer = async () => {
             createContext: async ({ req }: { req: FastifyRequest }) => {
                 const token = extractBearerToken(req.headers.authorization);
                 const auth = await resolveAuthFromToken(token, accessTokenStore, flushStore);
+                const rawIdempotencyKey = Array.isArray(req.headers['idempotency-key'])
+                    ? req.headers['idempotency-key'][0]
+                    : req.headers['idempotency-key'];
                 return createGameApiContext({
-                    requestId:
-                        (Array.isArray(req.headers['idempotency-key'])
-                            ? req.headers['idempotency-key'][0]
-                            : req.headers['idempotency-key']) || undefined,
+                    requestId: scopeHttpIdempotencyKey({
+                        rawKey: rawIdempotencyKey,
+                        profileId: config.profile,
+                        userId: auth?.user.id ?? null,
+                    }),
                     db: postgres.prisma,
                     redis: redis.client,
                     turnDaemon,

@@ -63,7 +63,7 @@ const buildWorld = (): InMemoryTurnWorld => {
         power: 3000,
         level: 1,
         typeCode: 'test',
-        meta: {},
+        meta: { notice: '통일 공지', infoText: '통일 임관 안내' },
     };
     const city: City = {
         id: 1,
@@ -184,6 +184,7 @@ describe('persistUnificationFinalization', () => {
         const gameHistoryUpdate = vi.fn().mockResolvedValue({});
         const emperorCreate = vi.fn().mockResolvedValue({});
         const oldGeneralUpsert = vi.fn().mockResolvedValue({});
+        const oldNationUpsert = vi.fn().mockResolvedValue({});
         const transaction = Object.assign({} as GamePrisma.TransactionClient, {
             $executeRaw: vi.fn().mockResolvedValue(1),
             $queryRaw: vi.fn().mockResolvedValue([]),
@@ -233,7 +234,7 @@ describe('persistUnificationFinalization', () => {
                 ),
             },
             oldNation: {
-                upsert: vi.fn().mockResolvedValue({}),
+                upsert: oldNationUpsert,
                 findMany: vi.fn().mockResolvedValue([]),
             },
             oldGeneral: { upsert: oldGeneralUpsert },
@@ -281,6 +282,14 @@ describe('persistUnificationFinalization', () => {
         );
         expect(gameHistoryUpdate).toHaveBeenCalledWith(
             expect.objectContaining({ data: expect.objectContaining({ winnerNation: 1 }) })
+        );
+        expect(oldNationUpsert).toHaveBeenCalledWith(
+            expect.objectContaining({
+                create: expect.objectContaining({
+                    nation: 1,
+                    data: expect.objectContaining({ msg: '통일 공지', scout_msg: '통일 임관 안내' }),
+                }),
+            })
         );
         expect(emperorCreate).toHaveBeenCalledWith(
             expect.objectContaining({

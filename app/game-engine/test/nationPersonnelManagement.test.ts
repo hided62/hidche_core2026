@@ -1,10 +1,17 @@
 import { describe, expect, it } from 'vitest';
 
-import type { TriggerValue, TurnSchedule } from '@sammo-ts/logic';
+import {
+    loadActionModuleBundle,
+    LogFormat,
+    type GeneralActionModule,
+    type TriggerValue,
+    type TurnSchedule,
+} from '@sammo-ts/logic';
 
 import { InMemoryTurnWorld } from '../src/turn/inMemoryWorld.js';
 import type { TurnGeneral, TurnWorldSnapshot, TurnWorldState } from '../src/turn/types.js';
 import { createTurnDaemonCommandHandler } from '../src/turn/worldCommandHandler.js';
+import { normalizeTurnDaemonCommand } from '../src/turn/commandRegistry.js';
 
 const schedule: TurnSchedule = { entries: [{ startMinute: 0, tickMinutes: 10 }] };
 
@@ -25,7 +32,7 @@ const buildGeneral = (id: number, overrides: Partial<TurnGeneral> = {}): TurnGen
         specialWar: null,
     },
     triggerState: { flags: {}, counters: {}, modifiers: {}, meta: {} },
-    meta: { killturn: 12, belong: 5, permission: 'normal' },
+    meta: { killturn: 12, belong: 5, permission: 'normal', explevel: 10, dedlevel: 5 },
     penalty: {},
     officerLevel: 1,
     experience: 1_000,
@@ -48,6 +55,11 @@ const buildWorld = (options: {
     cityMeta?: Record<string, TriggerValue>;
     currentYear?: number;
     scenarioConst?: Record<string, unknown>;
+    generalActionModules?: ReadonlyArray<GeneralActionModule>;
+    clock?: Pick<
+        TurnWorldState,
+        'clockBaseTime' | 'clockTick' | 'clockMode' | 'clockWallAnchor' | 'lastTurnTick'
+    >;
 }) => {
     const state: TurnWorldState = {
         id: 1,
@@ -56,6 +68,7 @@ const buildWorld = (options: {
         tickSeconds: 600,
         lastTurnTime: new Date('0185-01-01T00:00:00Z'),
         meta: { killturn: 24, scenarioMeta: { startYear: 180 } },
+        ...options.clock,
     };
     const snapshot: TurnWorldSnapshot = {
         generals: options.generals ?? [
@@ -129,14 +142,24 @@ const buildWorld = (options: {
         },
     };
     const world = new InMemoryTurnWorld(state, snapshot, { schedule });
-    return { world, handler: createTurnDaemonCommandHandler({ world }) };
+    return {
+        world,
+        handler: createTurnDaemonCommandHandler({ world, generalActionModules: options.generalActionModules }),
+    };
 };
 
 describe('nation personnel world commands', () => {
     it('allows any unlocked head officer to appoint and preserves legacy officer state', async () => {
         const { world, handler } = buildWorld({});
         await expect(
-            handler.handle({ type: 'appoint', generalId: 2, destGeneralId: 3, destCityId: 0, officerLevel: 9 })
+            handler.handle({
+                type: 'appoint',
+                userId: 'user-2',
+                generalId: 2,
+                destGeneralId: 3,
+                destCityId: 0,
+                officerLevel: 9,
+            })
         ).resolves.toMatchObject({ ok: true });
         expect(world.getGeneralById(3)).toMatchObject({
             officerLevel: 9,
@@ -154,6 +177,7 @@ describe('nation personnel world commands', () => {
         await expect(
             fixture.handler.handle({
                 type: 'appoint',
+                userId: 'user-3',
                 generalId: 3,
                 destGeneralId: 2,
                 destCityId: 0,
@@ -163,6 +187,7 @@ describe('nation personnel world commands', () => {
         await expect(
             fixture.handler.handle({
                 type: 'appoint',
+                userId: 'user-2',
                 generalId: 2,
                 destGeneralId: 3,
                 destCityId: 0,
@@ -175,6 +200,7 @@ describe('nation personnel world commands', () => {
         await expect(
             locked.handler.handle({
                 type: 'appoint',
+                userId: 'user-2',
                 generalId: 2,
                 destGeneralId: 3,
                 destCityId: 0,
@@ -196,6 +222,7 @@ describe('nation personnel world commands', () => {
         await expect(
             fixture.handler.handle({
                 type: 'appoint',
+                userId: 'user-2',
                 generalId: 2,
                 destGeneralId: 3,
                 destCityId: 1,
@@ -215,6 +242,7 @@ describe('nation personnel world commands', () => {
         await expect(
             locked.handler.handle({
                 type: 'appoint',
+                userId: 'user-2',
                 generalId: 2,
                 destGeneralId: 3,
                 destCityId: 1,
@@ -237,6 +265,7 @@ describe('nation personnel world commands', () => {
         await expect(
             fixture.handler.handle({
                 type: 'changePermission',
+                userId: 'user-2',
                 generalId: 2,
                 isAmbassador: true,
                 targetGeneralIds: [3],
@@ -245,6 +274,7 @@ describe('nation personnel world commands', () => {
         await expect(
             fixture.handler.handle({
                 type: 'changePermission',
+                userId: 'user-1',
                 generalId: 1,
                 isAmbassador: true,
                 targetGeneralIds: [3, 5, 6],
@@ -254,6 +284,7 @@ describe('nation personnel world commands', () => {
         await expect(
             fixture.handler.handle({
                 type: 'changePermission',
+                userId: 'user-1',
                 generalId: 1,
                 isAmbassador: true,
                 targetGeneralIds: [2, 3, 4],
@@ -263,6 +294,7 @@ describe('nation personnel world commands', () => {
         await expect(
             fixture.handler.handle({
                 type: 'changePermission',
+                userId: 'user-1',
                 generalId: 1,
                 isAmbassador: true,
                 targetGeneralIds: [2, 3],
@@ -271,6 +303,22 @@ describe('nation personnel world commands', () => {
         expect(fixture.world.getGeneralById(2)?.meta.permission).toBe('ambassador');
         expect(fixture.world.getGeneralById(3)?.meta.permission).toBe('ambassador');
         expect(fixture.world.getGeneralById(4)?.meta.permission).toBe('normal');
+
+        const clearCommand = normalizeTurnDaemonCommand({
+            requestId: 'clear-ambassadors',
+            sentAt: '2026-01-01T00:00:00.000Z',
+            command: {
+                type: 'changePermission',
+                userId: 'user-1',
+                generalId: 1,
+                isAmbassador: true,
+                targetGeneralIds: [],
+            },
+        });
+        expect(clearCommand).toMatchObject({ type: 'changePermission', targetGeneralIds: [] });
+        await expect(fixture.handler.handle(clearCommand!)).resolves.toMatchObject({ ok: true });
+        expect(fixture.world.getGeneralById(2)?.meta.permission).toBe('normal');
+        expect(fixture.world.getGeneralById(3)?.meta.permission).toBe('normal');
     });
 
     it('kicks for an unlocked head officer with resource, troop, permission, and log side effects', async () => {
@@ -280,7 +328,14 @@ describe('nation personnel world commands', () => {
             rice: 3_000,
             experience: 1_000,
             dedication: 2_000,
-            meta: { killturn: 12, permission: 'normal', belong: 8, betray: 1 },
+            meta: {
+                killturn: 12,
+                permission: 'normal',
+                belong: 8,
+                betray: 1,
+                explevel: 10,
+                dedlevel: 5,
+            },
         });
         const member = buildGeneral(4, { troopId: 3 });
         const fixture = buildWorld({
@@ -289,7 +344,9 @@ describe('nation personnel world commands', () => {
         });
         fixture.world.createTroop({ id: 3, nationId: 1, name: '추방대' });
 
-        await expect(fixture.handler.handle({ type: 'kick', generalId: 2, destGeneralId: 3 })).resolves.toMatchObject({
+        await expect(
+            fixture.handler.handle({ type: 'kick', userId: 'user-2', generalId: 2, destGeneralId: 3 })
+        ).resolves.toMatchObject({
             ok: true,
         });
         expect(fixture.world.getGeneralById(3)).toMatchObject({
@@ -309,7 +366,59 @@ describe('nation personnel world commands', () => {
             rice: 22_000,
             meta: expect.objectContaining({ gennum: 3 }),
         });
-        expect(fixture.world.peekDirtyState().logs).toHaveLength(2);
+        expect(fixture.world.peekDirtyState().logs).toEqual([
+            expect.objectContaining({ scope: 'SYSTEM', category: 'SUMMARY' }),
+            expect.objectContaining({
+                scope: 'GENERAL',
+                category: 'ACTION',
+                format: LogFormat.PLAIN,
+                generalId: 3,
+                text: '<D><b>위</b></>에서 <R>추방</>당했습니다.',
+            }),
+            expect.objectContaining({
+                scope: 'GENERAL',
+                category: 'ACTION',
+                text: expect.stringContaining('레벨다운'),
+            }),
+            expect.objectContaining({ scope: 'GENERAL', category: 'HISTORY' }),
+        ]);
+    });
+
+    it('applies Ref-ordered personality and item modifiers before legacy INT rounding on kick', async () => {
+        const modules = (await loadActionModuleBundle()).general;
+        const target = buildGeneral(3, {
+            experience: 1_001,
+            dedication: 2_001,
+            role: {
+                items: { horse: null, weapon: null, book: null, item: 'che_명성_구석' },
+                personality: 'che_대의',
+                specialDomestic: null,
+                specialWar: null,
+            },
+            meta: {
+                killturn: 12,
+                permission: 'normal',
+                belong: 8,
+                betray: 1,
+                explevel: 10,
+                dedlevel: 5,
+            },
+        });
+        const fixture = buildWorld({
+            generals: [buildGeneral(1, { officerLevel: 12 }), buildGeneral(2, { officerLevel: 5 }), target],
+            generalActionModules: modules,
+        });
+
+        await expect(
+            fixture.handler.handle({ type: 'kick', userId: 'user-2', generalId: 2, destGeneralId: 3 })
+        ).resolves.toMatchObject({
+            ok: true,
+        });
+        expect(fixture.world.getGeneralById(3)).toMatchObject({
+            experience: 803,
+            dedication: 1_701,
+            meta: expect.objectContaining({ explevel: 8, dedlevel: 5, betray: 2 }),
+        });
     });
 
     it('rejects self, ruler, head officer, and ambassador targets without partial mutation', async () => {
@@ -336,7 +445,12 @@ describe('nation personnel world commands', () => {
             const originalTarget = fixture.world.getGeneralById(testCase.targetId);
 
             await expect(
-                fixture.handler.handle({ type: 'kick', generalId: 2, destGeneralId: testCase.targetId })
+                fixture.handler.handle({
+                    type: 'kick',
+                    userId: 'user-2',
+                    generalId: 2,
+                    destGeneralId: testCase.targetId,
+                })
             ).resolves.toMatchObject({ ok: false, reason: testCase.reason });
             expect(fixture.world.getGeneralById(testCase.targetId), testCase.label).toEqual(originalTarget);
             expect(fixture.world.getGeneralById(2)?.meta.killturn, testCase.label).toBe(12);
@@ -354,7 +468,7 @@ describe('nation personnel world commands', () => {
                 buildGeneral(3, { meta: { killturn: 12, belong: 8, permission: 'normal', betray: 1 } }),
             ],
         });
-        await early.handler.handle({ type: 'kick', generalId: 2, destGeneralId: 3 });
+        await early.handler.handle({ type: 'kick', userId: 'user-2', generalId: 2, destGeneralId: 3 });
         expect(early.world.getGeneralById(3)).toMatchObject({
             experience: 850,
             dedication: 1_700,
@@ -372,12 +486,54 @@ describe('nation personnel world commands', () => {
                 buildGeneral(3, { npcState: 2 }),
             ],
         });
-        await npc.handler.handle({ type: 'kick', generalId: 2, destGeneralId: 3 });
+        await npc.handler.handle({ type: 'kick', userId: 'user-2', generalId: 2, destGeneralId: 3 });
         expect(npc.world.peekDirtyState().messages).toHaveLength(1);
         expect(npc.world.peekDirtyState().messages[0]).toMatchObject({
             msgType: 'public',
-            src: { generalId: 3, nationId: 1 },
-            dest: { generalId: 3, nationId: 1 },
+            src: { generalId: 3, nationId: 1, icon: 'https://sam-image.hided.net/icons/default.jpg' },
+            dest: { generalId: 3, nationId: 1, icon: 'https://sam-image.hided.net/icons/default.jpg' },
         });
+    });
+
+    it('timestamps a queued NPC kick message from the durable accepted instant', async () => {
+        const acceptedAt = new Date('2026-01-01T00:10:00.000Z');
+        const fixture = buildWorld({
+            currentYear: 185,
+            scenarioConst: { npcBanMessageProb: 1 },
+            clock: {
+                clockBaseTime: new Date('0185-01-01T00:00:00.000Z'),
+                clockTick: 0,
+                clockMode: 'realtime',
+                clockWallAnchor: new Date('2026-01-01T00:00:00.000Z'),
+                lastTurnTick: 0,
+            },
+            generals: [
+                buildGeneral(1, { officerLevel: 12 }),
+                buildGeneral(2, { officerLevel: 5 }),
+                buildGeneral(3, { npcState: 2 }),
+            ],
+        });
+        const command = {
+            type: 'kick' as const,
+            requestId: 'kick-accepted-time',
+            userId: 'user-2',
+            generalId: 2,
+            destGeneralId: 3,
+        };
+        const db = {
+            inputEvent: {
+                findUnique: async () => ({
+                    createdAt: acceptedAt,
+                    actorUserId: command.userId,
+                    target: 'ENGINE',
+                    eventType: command.type,
+                }),
+            },
+        };
+
+        await expect(fixture.handler.handle(command, { db: db as never })).resolves.toMatchObject({ ok: true });
+        expect(fixture.world.peekDirtyState().messages[0]?.time).toEqual(
+            new Date('0185-01-01T00:10:00.000Z')
+        );
     });
 });

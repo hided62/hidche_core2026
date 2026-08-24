@@ -2541,7 +2541,7 @@ export const createImmediateGeneralActionExecutor = async (options: {
                 const failureText =
                     definition.formatConstraintFailure?.(reason, constraintCtx, args, view) ??
                     `${reason} ${definition.name} 실패.`;
-                if (input.actionKey === 'che_접경귀환' || input.actionKey === 'che_등용수락') {
+                if (input.actionKey === 'che_접경귀환') {
                     options.world.pushLog(createGeneralActionLog(general.id, failureText), general.turnTime);
                 }
                 return { ok: false, reason: failureText };
@@ -2671,10 +2671,16 @@ export const createImmediateGeneralActionExecutor = async (options: {
                 nextGeneral = applyLegacyGeneralProgression(
                     {
                         ...nextGeneral,
-                        lastTurn: {
-                            command: definition.name,
-                            arg: extractArgsRecord(args),
-                        },
+                        // Ref's recruitment-letter acceptance is an immediate
+                        // side action and never replaces the receiver's
+                        // reserved-command repetition state.
+                        lastTurn:
+                            input.actionKey === 'che_등용수락'
+                                ? general.lastTurn
+                                : {
+                                      command: definition.name,
+                                      arg: extractArgsRecord(args),
+                                  },
                     },
                     general,
                     input.actionKey,

@@ -6,7 +6,7 @@ import { asRecord } from '@sammo-ts/common';
 import { InMemoryTurnWorld } from '../src/turn/inMemoryWorld.js';
 import { AutorunNationPolicy } from '../src/turn/ai/policies.js';
 import type { TurnGeneral, TurnWorldSnapshot, TurnWorldState } from '../src/turn/types.js';
-import { createTurnDaemonCommandHandler } from '../src/turn/worldCommandHandler.js';
+import { applyNpcPolicyMutation } from '../src/turn/npcPolicyMutation.js';
 
 const schedule: TurnSchedule = { entries: [{ startMinute: 0, tickMinutes: 10 }] };
 const general: TurnGeneral = {
@@ -83,7 +83,7 @@ const snapshot: TurnWorldSnapshot = {
             meta: { tech: 3_000, preserved: 'yes', _updatedAt: '2026-01-01T00:00:00.000Z' },
         },
     ],
-    troops: [],
+    troops: [{ id: 101, nationId: 1, name: '선봉부대' }],
     diplomacy: [],
     events: [],
     initialEvents: [],
@@ -176,28 +176,71 @@ const unitSet: UnitSetDefinition = {
 };
 
 describe('NPC policy lifecycle', () => {
-    it('applies one CAS-protected metadata command and the next AI instance consumes it without scheduler changes', async () => {
+    it('applies CAS-protected semantic policy changes and the next AI instance consumes them without scheduler changes', () => {
         const world = new InMemoryTurnWorld(state, snapshot, { schedule });
-        const handler = createTurnDaemonCommandHandler({ world });
-        const updates = {
+        const first = applyNpcPolicyMutation({
+            world,
+            acceptedAt: new Date('2026-02-03T04:05:06.000Z'),
+            command: {
+                type: 'setNpcPolicy',
+                userId: 'owner-1',
+                generalId: 1,
+                nationId: 1,
+                requestId: 'npc-policy-values',
+                expectedUpdatedAt: '2026-01-01T00:00:00.000Z',
+                mutation: { kind: 'nationPolicy', values: { reqNationGold: 4_321 } },
+            },
+        });
+        expect(first).toMatchObject({
+            type: 'setNpcPolicy',
+            ok: true,
+            nationId: 1,
+            updatedAt: expect.stringMatching(/^2026-02-03T04:05:06\.000Z#[0-9a-f]{16}$/),
+        });
+        if (!first.ok) {
+            throw new Error(first.reason);
+        }
+
+        world.updateNation(1, {
+            meta: {
+                ...world.getNationById(1)!.meta,
+                _updatedAt: '2026-02-03T04:05:06.500Z#unrelated-setting',
+            },
+        });
+
+        const second = applyNpcPolicyMutation({
+            world,
+            acceptedAt: new Date('2026-02-03T04:05:07.000Z'),
+            command: {
+                type: 'setNpcPolicy',
+                userId: 'owner-1',
+                generalId: 1,
+                nationId: 1,
+                requestId: 'npc-policy-priority',
+                expectedUpdatedAt: first.updatedAt,
+                mutation: { kind: 'nationPriority', priority: ['천도'] },
+            },
+        });
+        expect(second).toMatchObject({
+            type: 'setNpcPolicy',
+            ok: true,
+            nationId: 1,
+            updatedAt: expect.stringMatching(/^2026-02-03T04:05:07\.000Z#[0-9a-f]{16}$/),
+        });
+        if (!second.ok) {
+            throw new Error(second.reason);
+        }
+
+        const nation = world.getNationById(1)!;
+        expect(nation.meta).toMatchObject({
+            preserved: 'yes',
             npc_nation_policy: {
                 values: { reqNationGold: 4_321 },
                 priority: ['천도'],
-                valueSetter: '정책담당',
+                valueSetter: 'NPC군주',
+                prioritySetter: 'NPC군주',
             },
-        };
-
-        await expect(
-            handler.handle({
-                type: 'setNationMeta',
-                nationId: 1,
-                updates,
-                expectedUpdatedAt: '2026-01-01T00:00:00.000Z',
-            })
-        ).resolves.toMatchObject({ type: 'setNationMeta', ok: true, nationId: 1 });
-
-        const nation = world.getNationById(1)!;
-        expect(nation.meta).toMatchObject({ preserved: 'yes', npc_nation_policy: updates.npc_nation_policy });
+        });
         const policy = new AutorunNationPolicy({
             general: world.getGeneralById(1)!,
             aiOptions: null,
@@ -214,17 +257,214 @@ describe('NPC policy lifecycle', () => {
         expect(policy.reqNpcWarGold).toBe(3_900);
         expect(policy.reqNpcWarRice).toBe(3_900);
 
-        await expect(
-            handler.handle({
-                type: 'setNationMeta',
-                nationId: 1,
-                updates: { npc_nation_policy: { values: { reqNationGold: 9_999 } } },
-                expectedUpdatedAt: '2026-01-01T00:00:00.000Z',
+        const beforeConflict = structuredClone(world.getNationById(1)?.meta);
+        expect(
+            applyNpcPolicyMutation({
+                world,
+                acceptedAt: new Date('2026-02-03T04:05:08.000Z'),
+                command: {
+                    type: 'setNpcPolicy',
+                    userId: 'owner-1',
+                    generalId: 1,
+                    nationId: 1,
+                    expectedUpdatedAt: '2026-01-01T00:00:00.000Z',
+                    mutation: { kind: 'nationPolicy', values: { reqNationGold: 9_999 } },
+                },
             })
-        ).resolves.toMatchObject({ type: 'setNationMeta', ok: false, reason: 'CONFLICT' });
+        ).toMatchObject({
+            type: 'setNpcPolicy',
+            ok: false,
+            code: 'CONFLICT',
+            currentUpdatedAt: second.updatedAt,
+        });
+        expect(world.getNationById(1)?.meta).toEqual(beforeConflict);
         expect(asRecord(asRecord(world.getNationById(1)?.meta).npc_nation_policy).values).toEqual({
             reqNationGold: 4_321,
         });
         expect(world.getState()).toMatchObject({ currentYear: 185, currentMonth: 1, tickSeconds: 600 });
+    });
+
+    it('requires an exact nullable revision when policy metadata has never been versioned', () => {
+        const noRevisionSnapshot = structuredClone(snapshot);
+        delete noRevisionSnapshot.nations[0]!.meta._npcPolicyUpdatedAt;
+        delete noRevisionSnapshot.nations[0]!.meta._updatedAt;
+        const world = new InMemoryTurnWorld(state, noRevisionSnapshot, { schedule });
+        const initialMeta = structuredClone(world.getNationById(1)?.meta);
+
+        expect(
+            applyNpcPolicyMutation({
+                world,
+                acceptedAt: new Date('2026-02-03T04:05:06.000Z'),
+                command: {
+                    type: 'setNpcPolicy',
+                    userId: 'owner-1',
+                    generalId: 1,
+                    nationId: 1,
+                    expectedUpdatedAt: '2026-01-01T00:00:00.000Z',
+                    mutation: { kind: 'nationPriority', priority: ['천도'] },
+                },
+            })
+        ).toMatchObject({ type: 'setNpcPolicy', ok: false, code: 'CONFLICT', currentUpdatedAt: null });
+        expect(world.getNationById(1)?.meta).toEqual(initialMeta);
+
+        const accepted = applyNpcPolicyMutation({
+            world,
+            acceptedAt: new Date('2026-02-03T04:05:07.000Z'),
+            command: {
+                type: 'setNpcPolicy',
+                requestId: 'initial-null-revision',
+                userId: 'owner-1',
+                generalId: 1,
+                nationId: 1,
+                expectedUpdatedAt: null,
+                mutation: { kind: 'nationPriority', priority: ['천도'] },
+            },
+        });
+        expect(accepted).toMatchObject({
+            type: 'setNpcPolicy',
+            ok: true,
+            nationId: 1,
+            updatedAt: expect.stringMatching(/^2026-02-03T04:05:07\.000Z#[0-9a-f]{16}$/),
+        });
+        if (!accepted.ok) {
+            throw new Error(accepted.reason);
+        }
+        expect(world.getNationById(1)?.meta).toMatchObject({
+            preserved: 'yes',
+            _npcPolicyUpdatedAt: accepted.updatedAt,
+            npc_nation_policy: { priority: ['천도'] },
+        });
+    });
+
+    it('validates and merges policy intent against current ENGINE state without materialising defaults', () => {
+        const world = new InMemoryTurnWorld(
+            {
+                ...state,
+                clockBaseTime: new Date('0185-01-01T00:00:00.000Z'),
+                clockTick: 0,
+                clockMode: 'manual',
+                clockWallAnchor: new Date('2026-01-01T00:00:00.000Z'),
+                lastTurnTick: 0,
+            },
+            snapshot,
+            { schedule }
+        );
+        world.updateNation(1, {
+            meta: {
+                ...world.getNationById(1)!.meta,
+                npc_nation_policy: { values: { reqNationRice: 456 }, preserved: 'root' },
+            },
+        });
+
+        const result = applyNpcPolicyMutation({
+            world,
+            acceptedAt: new Date('2026-02-03T04:05:06.000Z'),
+            command: {
+                type: 'setNpcPolicy',
+                userId: 'owner-1',
+                generalId: 1,
+                nationId: 1,
+                expectedUpdatedAt: '2026-01-01T00:00:00.000Z',
+                mutation: {
+                    kind: 'nationPolicy',
+                    values: {
+                        reqNationGold: -100,
+                        safeRecruitCityPopulationRatio: -0.5,
+                        CombatForce: {},
+                        SupportForce: [101],
+                    },
+                },
+            },
+        });
+
+        expect(result).toMatchObject({
+            type: 'setNpcPolicy',
+            ok: true,
+            nationId: 1,
+            updatedAt: expect.stringMatching(/^2026-02-03T04:05:06\.000Z#[0-9a-f]{16}$/),
+        });
+        expect(asRecord(world.getNationById(1)?.meta).npc_nation_policy).toEqual({
+            values: {
+                reqNationRice: 456,
+                reqNationGold: 0,
+                safeRecruitCityPopulationRatio: -0.5,
+                CombatForce: {},
+                SupportForce: [101],
+            },
+            preserved: 'root',
+            valueSetter: 'NPC군주',
+            valueSetTime: '0185-01-01 09:00:00',
+        });
+    });
+
+    it('rejects stale authority, empty input, malformed combat targets, and lost CAS inside ENGINE', () => {
+        const world = new InMemoryTurnWorld(state, snapshot, { schedule });
+        const baseCommand = {
+            type: 'setNpcPolicy' as const,
+            userId: 'owner-1',
+            generalId: 1,
+            nationId: 1,
+            expectedUpdatedAt: '2026-01-01T00:00:00.000Z',
+        };
+        const acceptedAt = new Date('2026-02-03T04:05:06.000Z');
+
+        expect(
+            applyNpcPolicyMutation({
+                world,
+                acceptedAt,
+                command: { ...baseCommand, mutation: { kind: 'nationPolicy', values: {} } },
+            })
+        ).toMatchObject({ ok: false, code: 'BAD_REQUEST' });
+        expect(
+            applyNpcPolicyMutation({
+                world,
+                acceptedAt,
+                command: {
+                    ...baseCommand,
+                    mutation: { kind: 'nationPolicy', values: { CombatForce: { 101: [1, 1, 1] } } },
+                },
+            })
+        ).toMatchObject({ ok: false, code: 'BAD_REQUEST', reason: '101의 입력양식이 올바르지 않습니다.' });
+        expect(
+            applyNpcPolicyMutation({
+                world,
+                acceptedAt,
+                command: {
+                    ...baseCommand,
+                    mutation: { kind: 'nationPolicy', values: { CombatForce: { 101: [1, 1] } } },
+                },
+            })
+        ).toMatchObject({
+            ok: false,
+            code: 'BAD_REQUEST',
+            reason: '101의 도시 , 가 올바른 도시 번호가 아닙니다.',
+        });
+        expect(
+            applyNpcPolicyMutation({
+                world,
+                acceptedAt,
+                command: { ...baseCommand, mutation: { kind: 'nationPriority', priority: [] } },
+            })
+        ).toMatchObject({ ok: false, code: 'BAD_REQUEST' });
+        expect(
+            applyNpcPolicyMutation({
+                world,
+                acceptedAt,
+                command: {
+                    ...baseCommand,
+                    expectedUpdatedAt: '1999-01-01T00:00:00.000Z',
+                    mutation: { kind: 'nationPriority', priority: ['천도'] },
+                },
+            })
+        ).toMatchObject({ ok: false, code: 'CONFLICT' });
+
+        world.updateGeneral(1, { officerLevel: 2 });
+        expect(
+            applyNpcPolicyMutation({
+                world,
+                acceptedAt,
+                command: { ...baseCommand, mutation: { kind: 'nationPriority', priority: ['천도'] } },
+            })
+        ).toMatchObject({ ok: false, code: 'FORBIDDEN' });
     });
 });

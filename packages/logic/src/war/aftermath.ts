@@ -81,6 +81,14 @@ const findReport = (reports: WarUnitReport[], predicate: (report: WarUnitReport)
 
 const getDeadCounter = (city: City): number => getMetaNumber(city.meta, META_DEAD, 0);
 
+const isAssignedToOfficerCity = <TriggerState extends GeneralTriggerState>(
+    general: General<TriggerState>,
+    cityId: number
+): boolean =>
+    ['officerCity', 'officer_city', 'officerCityId'].some(
+        (key) => getMetaNumber(general.meta, key, Number.NaN) === cityId
+    );
+
 // REF-COMPAT:BEGIN ref-dead-split-int-binding
 const increaseDeadCounter = (city: City, delta: number): void => {
     // Ref binds each `dead + %i` increment as an integer before MariaDB adds
@@ -452,6 +460,21 @@ const resolveConquerCity = <TriggerState extends GeneralTriggerState>(
         affectedNations.add(attackerNation);
     }
 
+    if (!nationCollapsed) {
+        // Ref updates every row assigned to the captured city without filtering
+        // by nation, current city, or existing officer level.
+        for (const general of generals) {
+            if (!isAssignedToOfficerCity(general, defenderCity.id)) {
+                continue;
+            }
+            general.officerLevel = 1;
+            general.meta.officerCity = 0;
+            general.meta.officer_city = 0;
+            general.meta.officerCityId = 0;
+            affectedGenerals.add(general);
+        }
+    }
+
     // 수도 함락 시 수도 이전 및 내부 사기/자원 페널티.
     if (!nationCollapsed && defenderNation && defenderNation.capitalCityId === defenderCity.id) {
         const nextCapital = findNextCapital(cities, defenderNationId, defenderCity.id, input.map);
@@ -528,6 +551,7 @@ const resolveConquerCity = <TriggerState extends GeneralTriggerState>(
     defenderCity.supplyState = 1;
     defenderCity.frontState = 0;
     defenderCity.meta.term = 0;
+    defenderCity.meta.officer_set = 0;
     defenderCity.agriculture = round(defenderCity.agriculture * 0.7);
     defenderCity.commerce = round(defenderCity.commerce * 0.7);
     defenderCity.security = round(defenderCity.security * 0.7);

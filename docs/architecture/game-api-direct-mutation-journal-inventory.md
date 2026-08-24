@@ -33,10 +33,10 @@ writer reconciliation을 포함한다. rolling deployment가 끝난 뒤에만
 
 | 분류 | 수 | route |
 | --- | ---: | --- |
-| durable journal | 23 | `betting.bet`; `inherit.checkOwner`; `messages.delete`, `messages.respond`, `messages.send`; `nation.setBill`, `nation.setBlockScout`, `nation.setBlockWar`, `nation.setNotice`, `nation.setRate`, `nation.setScoutMsg`, `nation.setSecretLimit`; `npc.setGeneralPriority`, `npc.setNationPolicy`, `npc.setNationPriority`; `turns.repeatGeneral`, `turns.setGeneral`, `turns.setGeneralBulk`, `turns.shiftGeneral`; `vote.closePoll`, `vote.createPoll`, `vote.submitVote`, `vote.updatePoll` |
+| durable journal | 13 | `betting.bet`; `inherit.checkOwner`; `messages.delete`, `messages.respond`, `messages.send`; `turns.repeatGeneral`, `turns.setGeneral`, `turns.setGeneralBulk`, `turns.shiftGeneral`; `vote.closePoll`, `vote.createPoll`, `vote.submitVote`, `vote.updatePoll` |
 | separate access journal | 1 | `public.recordAccess` |
 | explicit no realtime consumer | 14 | `board.writeArticle`, `board.writeComment`; `diplomacy.destroyLetter`, `diplomacy.respondLetter`, `diplomacy.rollbackLetter`, `diplomacy.sendLetter`; `join.getSelectionPool`, `join.listPossessCandidates`; `messages.readLatest`; `turns.repeatNation`, `turns.setNation`, `turns.setNationBulk`, `turns.shiftNation`; `vote.addComment` |
-| engine owned | 27 | `auction.bidBuyRice`, `auction.bidSellRice`, `auction.bidUnique`, `auction.openBuyRice`, `auction.openSellRice`, `auction.openUnique`; `general.adjustIcon`, `general.buildNationCandidate`, `general.dieOnPrestart`, `general.dropItem`, `general.ensureDieOnPrestartStatus`, `general.instantRetreat`, `general.setMySetting`, `general.vacation`; `inherit.openUniqueAuction`; `join.createGeneral`, `join.possessGeneral`, `join.reselectPoolGeneral`, `join.selectPoolGeneral`; `nation.appoint`, `nation.changePermission`, `nation.kick`; `troop.create`, `troop.exit`, `troop.join`, `troop.kick`, `troop.rename` |
+| engine owned | 37 | `auction.bidBuyRice`, `auction.bidSellRice`, `auction.bidUnique`, `auction.openBuyRice`, `auction.openSellRice`, `auction.openUnique`; `general.adjustIcon`, `general.buildNationCandidate`, `general.dieOnPrestart`, `general.dropItem`, `general.ensureDieOnPrestartStatus`, `general.instantRetreat`, `general.setMySetting`, `general.vacation`; `inherit.openUniqueAuction`; `join.createGeneral`, `join.possessGeneral`, `join.reselectPoolGeneral`, `join.selectPoolGeneral`; `nation.appoint`, `nation.changePermission`, `nation.kick`, `nation.setBill`, `nation.setBlockScout`, `nation.setBlockWar`, `nation.setNotice`, `nation.setRate`, `nation.setScoutMsg`, `nation.setSecretLimit`; `npc.setGeneralPriority`, `npc.setNationPolicy`, `npc.setNationPriority`; `troop.create`, `troop.exit`, `troop.join`, `troop.kick`, `troop.rename` |
 | mixed saga | 9 | `inherit.buyHiddenBuff`, `inherit.buyRandomUnique`, `inherit.resetSpecialWar`, `inherit.resetStat`, `inherit.resetTurnTime`, `inherit.setNextSpecialWar`; `tournament.cancel`, `tournament.join`, `tournament.placeBet` |
 | Redis projection | 6 | `tournament.patchState`, `tournament.seedParticipants`, `tournament.setBettingEntries`, `tournament.setMatches`, `tournament.setParticipants`, `tournament.setState` |
 | operational | 3 | `turnDaemon.pause`, `turnDaemon.resume`, `turnDaemon.run` |
@@ -55,7 +55,6 @@ writer reconciliation을 포함한다. rolling deployment가 끝난 뒤에만
 | `messages.send` | 생성된 수신/송신 복사본의 `messages.mailbox:<mailbox>` | 해당 mailbox viewer에게 ID 없는 `messagesInvalidated` | 기존 pre-commit Redis `messageCreated`를 제거했다. outbox publish 뒤에도 browser에는 mailbox/message/sender/time/revision이 노출되지 않는다. |
 | `messages.delete` | 실제로 만료한 송신/수신 mailbox | 동일 | sender copy만 지우는 수동 외교 메시지는 그 mailbox만 표시한다. |
 | `messages.respond` | 영향 mailbox, `records.general`, 실제 외교 변경 국가의 `nation.content`, front-state patch 도시의 `city.content`, 필요 시 `map.world`, transitive aggregate용 `dashboard.global` | mailbox boolean 및 해당 dashboard slice | 실패 로그도 commit되면 actor 개인 기록을 표시한다. 외교 수락이 실제 diplomacy/city/nation dependency를 바꿀 때만 broad source key를 표시한다. |
-| nation metadata 7개 및 NPC policy 3개 | `nation.content:<nation>`, `dashboard.global:0`; notice만 추가로 `front.nation:<nation>` | 해당 국가 context/command/board, notice front status | `updateNationMeta()` 성공 뒤 API 표식을 사용하고, ENGINE 소유 transaction도 nation 변화와 `dashboard.global`을 함께 기록한다. 두 input-event의 업무 원자성은 기존 saga지만 source coverage는 ENGINE commit으로 보존된다. |
 | general reserved turn 4개 | `reserved.general:<general>`, `dashboard.global:0` | 본인 reserved-turn slice | queue row와 CAS revision을 쓴 같은 API transaction에서 표시한다. global key는 troop leader 첫 예약턴에 의존하는 다른 장수 context를 위한 source-only 표식이다. nation reserved turns는 main SSE consumer가 없어 명시적 no-op이다. |
 | vote 4개 | 기존 `front.general`/`front.global` | front-status boolean | vote producer 작업에서 pre-commit publish를 journal로 이미 치환했다. 댓글은 active survey 제목을 바꾸지 않아 별도 화면 no-op이다. |
 | `public.recordAccess` | `access.general:<general>` | 없음 | Ref 순서상 gameplay transaction 밖의 별도 access transaction에 저장한다. |
@@ -81,9 +80,9 @@ public dashboard event로 내보내지 않는다. browser wake-up은 정밀 enti
 
 ## 남은 업무 원자성 gap과 coverage 판정
 
-1. nation metadata/NPC policy의 API input-event와 ENGINE input-event는 여전히 하나의
-   업무 transaction이 아니다. 다만 실제 state 소유 ENGINE commit이 precise entity와
-   `dashboard.global`을 기록하므로 revision-first source coverage는 빠지지 않는다.
+1. 국가 설정 7개와 NPC policy 3개는 API outer input-event를 제거했다. semantic ENGINE
+   command가 actor 권한, 현재 state와 mutation을 검증하고 국가 저장·ENGINE input-event·
+   `nation.content`/`front.nation`/`dashboard.global` journal을 한 transaction에서 commit한다.
 2. inheritance/tournament command 일부는 보상 가능한 saga다. tournament payload와
    profile source revision 자체는 API store, 월 자동 개막, runtime clock shift 모두 공통
    Lua writer 한 번으로 원자화했다.

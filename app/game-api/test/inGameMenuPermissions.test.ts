@@ -595,6 +595,7 @@ describe('in-game my information ownership', () => {
         await caller.general.setMySetting({ tnmt: 1, defence_train: 999 });
         expect(requestCommand).toHaveBeenCalledWith({
             type: 'setMySetting',
+            userId: 'user-7',
             generalId: 7,
             settings: { tnmt: 1, defence_train: 999 },
         });
@@ -622,16 +623,49 @@ describe('in-game my information ownership', () => {
             requestCommand,
         });
 
-        await expect(
-            appRouter.createCaller(fixture.context).general.setMySetting({ tnmt: 1 })
-        ).resolves.toEqual({ ok: true });
+        await expect(appRouter.createCaller(fixture.context).general.setMySetting({ tnmt: 1 })).resolves.toEqual({
+            ok: true,
+        });
         expect(transaction).not.toHaveBeenCalled();
         expect(requestCommand).toHaveBeenCalledWith({
             type: 'setMySetting',
             requestId: 'http-general-setting:general.setMySetting:engine:0:setMySetting',
+            userId: 'user-7',
             generalId: 7,
             settings: { tnmt: 1 },
         });
+    });
+
+    it.each(['horse', 'weapon', 'book', 'item'] as const)(
+        'dispatches the authenticated dropItem command for the %s slot',
+        async (itemType) => {
+            const requestCommand = vi.fn(async () => ({
+                type: 'dropItem' as const,
+                ok: true as const,
+                generalId: 7,
+            }));
+            const fixture = createContext({ requestCommand });
+
+            await expect(appRouter.createCaller(fixture.context).general.dropItem({ itemType })).resolves.toEqual({
+                ok: true,
+            });
+            expect(requestCommand).toHaveBeenCalledWith({
+                type: 'dropItem',
+                userId: 'user-7',
+                generalId: 7,
+                itemType,
+            });
+        }
+    );
+
+    it('rejects an unknown dropItem slot before dispatching it to ENGINE', async () => {
+        const requestCommand = vi.fn(async () => ({ type: 'dropItem' as const, ok: true as const, generalId: 7 }));
+        const fixture = createContext({ requestCommand });
+
+        await expect(
+            appRouter.createCaller(fixture.context).general.dropItem({ itemType: 'armor' as never })
+        ).rejects.toMatchObject({ code: 'BAD_REQUEST' });
+        expect(requestCommand).not.toHaveBeenCalled();
     });
 
     it('uses the authenticated user for both the page and its logs without accepting a target general id', async () => {

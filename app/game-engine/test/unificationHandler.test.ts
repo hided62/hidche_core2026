@@ -245,10 +245,16 @@ describe('unification handler', () => {
             auctionBidder: { bid },
         });
         await expect(
-            commands.handle({ type: 'auctionBid', auctionId: 77, generalId: 1, amount: 100 })
+            commands.handle({ type: 'auctionBid', userId: 'user-1', auctionId: 77, generalId: 1, amount: 100 })
         ).resolves.toMatchObject({ ok: false, reason: '천하통일 후에는 경매를 이용할 수 없습니다.' });
         await expect(
-            commands.handle({ type: 'auctionOpen', auctionType: 'UNIQUE_ITEM', generalId: 1, amount: 100 })
+            commands.handle({
+                type: 'auctionOpen',
+                userId: 'user-1',
+                auctionType: 'UNIQUE_ITEM',
+                generalId: 1,
+                amount: 100,
+            })
         ).resolves.toMatchObject({ ok: false, reason: '천하통일 후에는 경매를 이용할 수 없습니다.' });
         expect(bid).not.toHaveBeenCalled();
     });

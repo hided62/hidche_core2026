@@ -16,6 +16,7 @@ import {
 } from '@sammo-ts/infra';
 
 import { RedisAccessTokenStore } from '../src/auth/accessTokenStore.js';
+import { scopeHttpIdempotencyKey } from '../src/requestId.js';
 import { createGameApiServer } from '../src/server.js';
 import { WebPushOutboxWorker } from '../src/services/webPushOutboxWorker.js';
 
@@ -41,6 +42,12 @@ const foreignNationId = 99_002;
 const fixtureNationIds = [ownerNationId, foreignNationId];
 const fixtureWorldId = 990_001;
 const mutationRequestPrefix = `security-http-matrix-${process.pid}-`;
+const matrixApiEventTypes = [
+    'messages.send',
+    'turns.reserved.setGeneral',
+    'turns.reserved.setNation',
+] as const;
+const fixtureActorUserIds = [userId, noGeneralUserId, sameNationUserId, foreignUserId, ordinaryUserId];
 const secret = 'security-http-e2e-secret';
 const redisPrefix = `sammo:security-http:${process.pid}`;
 const envKeys = [
@@ -303,7 +310,7 @@ const readReservedMutationState = async () => ({
         orderBy: { id: 'asc' },
     }),
     engineInputEvents: await db.inputEvent.findMany({
-        where: { target: 'ENGINE', requestId: { startsWith: mutationRequestPrefix } },
+        where: { target: 'ENGINE', actorUserId: { in: fixtureActorUserIds } },
         select: { requestId: true, eventType: true, status: true, actorUserId: true },
         orderBy: { sequence: 'asc' },
     }),
@@ -314,6 +321,31 @@ const readReservedMutationState = async () => ({
 });
 
 const quotePostgresIdentifier = (value: string): string => `"${value.replaceAll('"', '""')}"`;
+
+const isMatrixApiInputEvent = (rowJson: string): boolean => {
+    const row = JSON.parse(rowJson) as { target?: unknown; event_type?: unknown };
+    return row.target === 'API' && matrixApiEventTypes.includes(row.event_type as (typeof matrixApiEventTypes)[number]);
+};
+
+const deleteMatrixInputEvents = async (): Promise<void> => {
+    await db.inputEvent.deleteMany({
+        where: {
+            OR: [
+                { requestId: { startsWith: mutationRequestPrefix } },
+                { target: 'API', eventType: { in: [...matrixApiEventTypes] } },
+                { target: 'ENGINE', actorUserId: { in: fixtureActorUserIds } },
+            ],
+        },
+    });
+};
+
+const resolveScopedApiRequestId = (idempotencyKey: string, procedure: string, actorUserId: string): string => {
+    const scopedRequestId = scopeHttpIdempotencyKey({ rawKey: idempotencyKey, profileId, userId: actorUserId });
+    if (!scopedRequestId) {
+        throw new Error('matrix idempotency key unexpectedly resolved to an empty request ID');
+    }
+    return `${scopedRequestId}:${procedure}`;
+};
 
 const readDurableSchemaStateExcludingMatrixApiJournal = async () => {
     const tables = await db.$queryRawUnsafe<Array<{ tableName: string }>>(
@@ -326,16 +358,17 @@ const readDurableSchemaStateExcludingMatrixApiJournal = async () => {
     return Promise.all(
         tables.map(async ({ tableName }) => {
             const qualifiedTable = `${quotePostgresIdentifier(profileId)}.${quotePostgresIdentifier(tableName)}`;
-            const matrixApiFilter =
-                tableName === 'input_event' ? `WHERE NOT (target = 'API' AND request_id LIKE $1)` : '';
             const rows = await db.$queryRawUnsafe<Array<{ rowJson: string }>>(
                 `SELECT to_jsonb(snapshot_row)::text AS "rowJson"
                  FROM ${qualifiedTable} AS snapshot_row
-                 ${matrixApiFilter}
-                 ORDER BY to_jsonb(snapshot_row)::text`,
-                ...(matrixApiFilter ? [`${mutationRequestPrefix}%`] : [])
+                 ORDER BY to_jsonb(snapshot_row)::text`
             );
-            return { tableName, rows: rows.map(({ rowJson }) => rowJson) };
+            return {
+                tableName,
+                rows: rows
+                    .map(({ rowJson }) => rowJson)
+                    .filter((rowJson) => tableName !== 'input_event' || !isMatrixApiInputEvent(rowJson)),
+            };
         })
     );
 };
@@ -389,12 +422,11 @@ const expectApiInputEvent = async (
     procedure: string,
     expected: { actorUserId: string; status: 'FAILED' | 'SUCCEEDED' } | null
 ): Promise<void> => {
-    const requestId = `${idempotencyKey}:${procedure}`;
     const events = await db.inputEvent.findMany({
-        // beforeEach removes the whole matrix prefix. Query that complete
-        // namespace so an extra/rewritten API journal row cannot hide behind
-        // the full-schema snapshot's one explicitly allowed exclusion.
-        where: { target: 'API', requestId: { startsWith: mutationRequestPrefix } },
+        // The HTTP boundary hashes the raw client key together with profile and
+        // actor. Query the whole procedure matrix so an unexpected extra row
+        // cannot hide behind the full-schema snapshot's explicit exclusion.
+        where: { target: 'API', eventType: { in: [...matrixApiEventTypes] } },
         select: {
             requestId: true,
             target: true,
@@ -417,6 +449,7 @@ const expectApiInputEvent = async (
         expect(events).toEqual([]);
         return;
     }
+    const requestId = resolveScopedApiRequestId(idempotencyKey, procedure, expected.actorUserId);
     expect(events).toEqual([
         {
             requestId,
@@ -638,7 +671,7 @@ integration('game API security over HTTP transport', () => {
     afterAll(async () => {
         await server?.app.close();
         await closeGatewayStatusStub();
-        await db?.inputEvent.deleteMany({ where: { requestId: { startsWith: mutationRequestPrefix } } });
+        if (db) await deleteMatrixInputEvents();
         await db?.trafficPeriodGeneral.deleteMany({ where: { generalId: { in: fixtureGeneralIds } } });
         await db?.trafficPeriod.deleteMany({ where: { worldStateId: fixtureWorldId } });
         await db?.generalAccessLog.deleteMany({ where: { generalId: { in: fixtureGeneralIds } } });
@@ -670,7 +703,7 @@ integration('game API security over HTTP transport', () => {
     }, 30_000);
 
     beforeEach(async () => {
-        await db.inputEvent.deleteMany({ where: { requestId: { startsWith: mutationRequestPrefix } } });
+        await deleteMatrixInputEvents();
         await db.trafficPeriodGeneral.deleteMany({ where: { generalId: { in: fixtureGeneralIds } } });
         await db.trafficPeriod.deleteMany({ where: { worldStateId: fixtureWorldId } });
         await db.generalAccessLog.deleteMany({ where: { generalId: { in: fixtureGeneralIds } } });
@@ -1055,7 +1088,7 @@ integration('game API security over HTTP transport', () => {
         });
         expect(
             await db.inputEvent.count({
-                where: { target: 'ENGINE', requestId: { startsWith: idempotencyKey } },
+                where: { target: 'ENGINE', actorUserId: userId },
             })
         ).toBe(0);
         await expect.poll(() => db.readModelOutbox.count()).toBe(1);
@@ -1513,8 +1546,9 @@ integration('game API security over HTTP transport', () => {
         expect(await readRealtimeRedisState()).toEqual(redisBefore);
         const replayDurableBefore = await readDurableSchemaStateExcludingMatrixApiJournal();
         const replayRedisBefore = await readRealtimeRedisState();
+        const replayRequestId = resolveScopedApiRequestId(idempotencyKey, 'turns.reserved.setNation', userId);
         const replayJournalBefore = await db.inputEvent.findUniqueOrThrow({
-            where: { requestId: `${idempotencyKey}:turns.reserved.setNation` },
+            where: { requestId: replayRequestId },
         });
         const replay = await requestReservedNation(accessToken, idempotencyKey, generalId);
         expect(replay.response.status).toBe(409);
@@ -1524,12 +1558,10 @@ integration('game API security over HTTP transport', () => {
         expect(await readRealtimeRedisState()).toEqual(replayRedisBefore);
         expect(
             await db.inputEvent.findUniqueOrThrow({
-                where: { requestId: `${idempotencyKey}:turns.reserved.setNation` },
+                where: { requestId: replayRequestId },
             })
         ).toEqual(replayJournalBefore);
-        expect(await db.inputEvent.count({ where: { requestId: `${idempotencyKey}:turns.reserved.setNation` } })).toBe(
-            1
-        );
+        expect(await db.inputEvent.count({ where: { requestId: replayRequestId } })).toBe(1);
         await expectApiInputEvent(idempotencyKey, 'turns.reserved.setNation', {
             actorUserId: userId,
             status: 'SUCCEEDED',

@@ -2,7 +2,8 @@ import { TRPCError } from '@trpc/server';
 import { z } from 'zod';
 
 import { engineAuthedProcedure } from '../../../trpc.js';
-import { getMyGeneral } from '../../shared/general.js';
+import { getAuthenticatedUserId, getMyGeneral } from '../../shared/general.js';
+import { throwIfCommandRejected } from '../../shared/turnDaemon.js';
 
 export const changePermission = engineAuthedProcedure
     .input(
@@ -15,16 +16,19 @@ export const changePermission = engineAuthedProcedure
         })
     )
     .mutation(async ({ ctx, input }) => {
+        const userId = getAuthenticatedUserId(ctx);
         const general = await getMyGeneral(ctx);
         const result = await ctx.turnDaemon.requestCommand({
             type: 'changePermission',
             ...(ctx.requestId
                 ? { requestId: `${ctx.requestId}:nation.changePermission:engine:0:changePermission` }
                 : {}),
+            userId,
             generalId: general.id,
             isAmbassador: input.isAmbassador,
             targetGeneralIds: input.targetGeneralIds,
         });
+        throwIfCommandRejected(result);
         if (!result || result.type !== 'changePermission') {
             throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: 'Unexpected response' });
         }

@@ -22,20 +22,24 @@ import {
     buildVoteUniqueSeed,
     countOccupiedUniqueItems,
     createItemModuleRegistry,
+    GeneralActionPipeline,
     isDefenceTrainPenaltyWaivedByScenarioEffect,
     isValidTroopNameWidth,
     loadItemModules,
     normalizeTroopName,
     resolveTroopSecretPermission,
+    resolveMessageTargetIcon,
+    type GeneralActionModule,
     resolveUniqueConfig,
     rollUniqueLottery,
     type ItemModule,
+    type LogEntryDraft,
     type MapDefinition,
     type ScenarioMeta,
     type TriggerValue,
     type TurnCommandProfile,
 } from '@sammo-ts/logic';
-import { simpleSerialize } from '@sammo-ts/logic/war/utils.js';
+import { round as roundLegacyInteger, simpleSerialize } from '@sammo-ts/logic/war/utils.js';
 import {
     cloneItemInventory,
     ensureItemInventory,
@@ -45,7 +49,12 @@ import {
 import type { InMemoryTurnWorld } from './inMemoryWorld.js';
 import type { InMemoryReservedTurnStore } from './reservedTurnStore.js';
 import type { TurnGeneral } from './types.js';
-import { createImmediateGeneralActionExecutor, type ImmediateGeneralActionExecutor } from './reservedTurnHandler.js';
+import {
+    applyLegacyGeneralProgression,
+    createImmediateGeneralActionExecutor,
+    type ImmediateGeneralActionExecutor,
+} from './reservedTurnHandler.js';
+import { buildCommandEnv } from './reservedTurnCommands.js';
 import { openAuction } from '../auction/opener.js';
 import {
     hasScenarioStaticEventHandler,
@@ -63,6 +72,8 @@ import { NpcPossessionError, possessNpcGeneral } from './npcPossessionService.js
 import { buildPrestartDeleteAfter, formatPrestartDeleteAfter, readPrestartDeleteAfter } from './prestartDeletion.js';
 import { respondToActionableMessage } from './actionableMessageResponse.js';
 import { executeInheritanceAction } from './inheritanceActionService.js';
+import { applyNpcPolicyMutation } from './npcPolicyMutation.js';
+import { applyNationSettingMutation } from './nationSettingMutation.js';
 
 let itemRegistryPromise: Promise<Map<string, ItemModule>> | null = null;
 
@@ -140,6 +151,7 @@ interface CommandHandlerContext {
     tournamentRewardFinalizer?: TournamentRewardFinalizer;
     getImmediateGeneralActionExecutor?: () => Promise<ImmediateGeneralActionExecutor>;
     reservedTurns?: InMemoryReservedTurnStore;
+    generalActionModules?: ReadonlyArray<GeneralActionModule>;
     loadArchivedNationMaxId?: (serverId: string) => Promise<number>;
 }
 
@@ -148,6 +160,72 @@ const requireCommandDatabase = (ctx: CommandHandlerContext): DatabaseClient => {
         throw new Error('ENGINE mutation transaction is required for authenticated commands.');
     }
     return ctx.commandDb as unknown as DatabaseClient;
+};
+
+const ACTOR_BOUND_GENERAL_COMMAND_TYPE_LIST = [
+    'troopCreate',
+    'troopJoin',
+    'troopExit',
+    'troopKick',
+    'troopRename',
+    'vacation',
+    'setMySetting',
+    'dropItem',
+    'auctionOpen',
+    'auctionBid',
+    'changePermission',
+    'kick',
+    'appoint',
+    'voteReward',
+] as const satisfies readonly TurnDaemonCommand['type'][];
+
+type ActorBoundGeneralCommandType = (typeof ACTOR_BOUND_GENERAL_COMMAND_TYPE_LIST)[number];
+const ACTOR_BOUND_GENERAL_COMMAND_TYPES = new Set<ActorBoundGeneralCommandType>(ACTOR_BOUND_GENERAL_COMMAND_TYPE_LIST);
+
+type ActorBoundGeneralCommand = Extract<TurnDaemonCommand, { type: ActorBoundGeneralCommandType }>;
+
+const isActorBoundGeneralCommand = (command: TurnDaemonCommand): command is ActorBoundGeneralCommand =>
+    ACTOR_BOUND_GENERAL_COMMAND_TYPES.has(command.type as ActorBoundGeneralCommandType);
+
+const rejectActorBoundGeneralCommand = (
+    command: ActorBoundGeneralCommand,
+    reason: string
+): TurnDaemonCommandResult => ({
+    type: 'commandRejected',
+    ok: false,
+    commandType: command.type,
+    reason,
+});
+
+const validateActorBoundGeneralCommand = async (
+    ctx: CommandHandlerContext,
+    command: ActorBoundGeneralCommand
+): Promise<TurnDaemonCommandResult | null> => {
+    if (!ctx.commandDb) {
+        return null;
+    }
+    if (!command.requestId) {
+        return rejectActorBoundGeneralCommand(command, '인증 명령의 요청 ID가 없습니다.');
+    }
+
+    const event = await ctx.commandDb.inputEvent.findUnique({
+        where: { requestId: command.requestId },
+        select: { actorUserId: true, target: true, eventType: true },
+    });
+    if (
+        !event ||
+        event.actorUserId !== command.userId ||
+        event.target !== 'ENGINE' ||
+        event.eventType !== command.type
+    ) {
+        return rejectActorBoundGeneralCommand(command, '인증 명령의 입력 이벤트가 일치하지 않습니다.');
+    }
+
+    const general = ctx.world.getGeneralById(command.generalId);
+    if (!general || general.userId !== command.userId) {
+        return rejectActorBoundGeneralCommand(command, '명령 수행 장수의 현재 소유자가 일치하지 않습니다.');
+    }
+    return null;
 };
 
 const resolveCommandAcceptedAt = async (
@@ -164,7 +242,9 @@ const resolveCommandAcceptedAt = async (
                 | 'selectPoolCreate'
                 | 'selectPoolReselect'
                 | 'adjustGeneralIcon'
-                | 'inheritanceAction';
+                | 'inheritanceAction'
+                | 'setNationSetting'
+                | 'setNpcPolicy';
         }
     >
 ): Promise<Date> => {
@@ -504,49 +584,22 @@ interface TournamentRewardFinalizer {
     ): Promise<TurnDaemonCommandResult>;
 }
 
-async function handleSetNationMeta(
+async function handleSetNationSetting(
     ctx: CommandHandlerContext,
-    command: Extract<TurnDaemonCommand, { type: 'setNationMeta' }>
+    command: Extract<TurnDaemonCommand, { type: 'setNationSetting' }>
 ): Promise<TurnDaemonCommandResult> {
-    const { world } = ctx;
-    const nation = world.getNationById(command.nationId);
-    if (!nation) {
-        return {
-            type: 'setNationMeta',
-            ok: false,
-            nationId: command.nationId,
-            reason: '국가 정보를 찾을 수 없습니다.',
-        };
-    }
+    const db = requireCommandDatabase(ctx);
+    const acceptedAt = await resolveCommandAcceptedAt(db, command);
+    return applyNationSettingMutation({ world: ctx.world, command, acceptedAt });
+}
 
-    const meta = (nation.meta ?? {}) as Record<string, unknown>;
-    const currentUpdatedAt = typeof meta._updatedAt === 'string' ? meta._updatedAt : undefined;
-    if (command.expectedUpdatedAt && currentUpdatedAt && command.expectedUpdatedAt !== currentUpdatedAt) {
-        return {
-            type: 'setNationMeta',
-            ok: false,
-            nationId: command.nationId,
-            reason: 'CONFLICT',
-            currentUpdatedAt,
-        };
-    }
-
-    const updatedAt = new Date().toISOString();
-    const nextMeta = {
-        ...meta,
-        ...command.updates,
-        _updatedAt: updatedAt,
-    };
-
-    world.updateNation(command.nationId, {
-        meta: nextMeta,
-    });
-    return {
-        type: 'setNationMeta',
-        ok: true,
-        nationId: command.nationId,
-        updatedAt,
-    };
+async function handleSetNpcPolicy(
+    ctx: CommandHandlerContext,
+    command: Extract<TurnDaemonCommand, { type: 'setNpcPolicy' }>
+): Promise<TurnDaemonCommandResult> {
+    const db = requireCommandDatabase(ctx);
+    const acceptedAt = await resolveCommandAcceptedAt(db, command);
+    return applyNpcPolicyMutation({ world: ctx.world, command, acceptedAt });
 }
 
 async function handleAdjustGeneralResources(
@@ -1832,9 +1885,14 @@ async function handleDropItem(
     if (!general) {
         return { type: 'dropItem', ok: false, generalId: command.generalId, reason: '장수 정보를 찾을 수 없습니다.' };
     }
-    const slot = (['horse', 'weapon', 'book', 'item'] as const).find((candidate) => candidate === command.itemType);
-    if (!slot || !general.role.items[slot]) {
+    const slot = command.itemType;
+    const itemKey = general.role.items[slot];
+    if (!itemKey) {
         return { type: 'dropItem', ok: false, generalId: command.generalId, reason: '아이템을 가지고 있지 않습니다.' };
+    }
+    const item = (await getItemRegistry()).get(itemKey);
+    if (!item) {
+        return { type: 'dropItem', ok: false, generalId: command.generalId, reason: '아이템 정보를 찾을 수 없습니다.' };
     }
     const nextGeneral = {
         ...general,
@@ -1847,6 +1905,34 @@ async function handleDropItem(
         role: nextGeneral.role,
         itemInventory: nextGeneral.itemInventory,
     });
+
+    const josaUl = JosaUtil.pick(item.rawName, '을');
+    world.pushLog({
+        scope: LogScope.GENERAL,
+        category: LogCategory.ACTION,
+        format: LogFormat.MONTH,
+        text: `<C>${item.name}</>${josaUl} 버렸습니다.`,
+        generalId: general.id,
+        meta: {},
+    });
+    if (!item.buyable) {
+        const nationName = world.getNationById(general.nationId)?.name ?? '재야';
+        const josaYi = JosaUtil.pick(general.name, '이');
+        world.pushLog({
+            scope: LogScope.SYSTEM,
+            category: LogCategory.SUMMARY,
+            format: LogFormat.MONTH,
+            text: `<Y>${general.name}</>${josaYi} <C>${item.name}</>${josaUl} 잃었습니다!`,
+            meta: {},
+        });
+        world.pushLog({
+            scope: LogScope.SYSTEM,
+            category: LogCategory.HISTORY,
+            format: LogFormat.YEAR_MONTH,
+            text: `<R><b>【망실】</b></><D><b>${nationName}</b></>의 <Y>${general.name}</>${josaYi} <C>${item.name}</>${josaUl} 잃었습니다!`,
+            meta: {},
+        });
+    }
     return { type: 'dropItem', ok: true, generalId: command.generalId };
 }
 
@@ -1975,6 +2061,9 @@ async function handleKick(
     command: Extract<TurnDaemonCommand, { type: 'kick' }>
 ): Promise<TurnDaemonCommandResult> {
     const { world } = ctx;
+    const operationalAcceptedAt = ctx.commandDb
+        ? await resolveOperationalAcceptedAt(ctx.commandDb, command)
+        : new Date();
     const general = world.getGeneralById(command.generalId);
     if (!general) {
         return { type: 'kick', ok: false, generalId: command.generalId, reason: '장수 정보를 찾을 수 없습니다.' };
@@ -2043,14 +2132,38 @@ async function handleKick(
     const worldState = world.getState();
     const scenarioMeta = asRecord(asRecord(worldState.meta).scenarioMeta);
     const startYear = readMetaNumber(scenarioMeta, 'startYear', worldState.currentYear);
+    let nextExperience = target.experience;
+    let nextDedication = target.dedication;
+    let applyProgression = false;
     if (worldState.currentYear > startYear || target.npcState >= 2) {
         const betray = Math.max(0, readMetaNumber(targetMeta, 'betray', 0));
         const maxBetrayCnt = readMetaNumber(config, 'maxBetrayCnt', 9);
+        const detachedTarget: TurnGeneral = {
+            ...target,
+            nationId: 0,
+            officerLevel: 0,
+            troopId: 0,
+            meta: nextMeta,
+        };
+        const pipeline = new GeneralActionPipeline(ctx.generalActionModules ?? []);
+        const actionContext = {
+            general: detachedTarget,
+            nation: null,
+            worldView: world,
+            time: {
+                year: worldState.currentYear,
+                month: worldState.currentMonth,
+                startYear,
+            },
+        };
+        nextExperience = roundLegacyInteger(
+            target.experience + pipeline.onCalcStat(actionContext, 'experience', -target.experience * 0.15 * betray)
+        );
+        nextDedication = roundLegacyInteger(
+            target.dedication + pipeline.onCalcStat(actionContext, 'dedication', -target.dedication * 0.15 * betray)
+        );
         nextMeta.betray = Math.min(maxBetrayCnt, betray + 1);
-        world.updateGeneral(target.id, {
-            experience: Math.max(0, Math.floor(target.experience - target.experience * 0.15 * betray)),
-            dedication: Math.max(0, Math.floor(target.dedication - target.dedication * 0.15 * betray)),
-        });
+        applyProgression = true;
     } else {
         nextMeta.makelimit = targetMeta.makelimit ?? 12;
     }
@@ -2070,14 +2183,28 @@ async function handleKick(
         world.removeTroop(target.id);
     }
 
-    world.updateGeneral(command.destGeneralId, {
+    const detachedTarget: TurnGeneral = {
+        ...target,
         nationId: 0,
         officerLevel: 0,
         troopId: 0,
         gold: Math.min(target.gold, defaultGold),
         rice: Math.min(target.rice, defaultRice),
+        experience: nextExperience,
+        dedication: nextDedication,
         meta: nextMeta,
-    });
+    };
+    const progressionLogs: LogEntryDraft[] = [];
+    const nextTarget = applyProgression
+        ? applyLegacyGeneralProgression(
+              detachedTarget,
+              target,
+              'kick',
+              buildCommandEnv(world.getScenarioConfig(), world.getUnitSet()),
+              progressionLogs
+          )
+        : detachedTarget;
+    world.updateGeneral(command.destGeneralId, nextTarget);
     const nationMeta =
         worldState.currentYear >= startYear + 3
             ? setOfficerLock(nation.meta, 'chief_set', general.officerLevel)
@@ -2098,6 +2225,17 @@ async function handleKick(
         text: `<Y>${target.name}</>${josaYi} <D><b>${nation.name}</b></>에서 <R>추방</>당했습니다.`,
         meta: {},
     });
+    world.pushLog({
+        scope: LogScope.GENERAL,
+        category: LogCategory.ACTION,
+        format: LogFormat.PLAIN,
+        text: `<D><b>${nation.name}</b></>에서 <R>추방</>당했습니다.`,
+        generalId: target.id,
+        meta: {},
+    });
+    for (const log of progressionLogs) {
+        world.pushLog(log);
+    }
     world.pushLog({
         scope: LogScope.GENERAL,
         category: LogCategory.HISTORY,
@@ -2125,7 +2263,7 @@ async function handleKick(
             const text = rng.choice([
                 '날 버리다니... 곧 전장에서 복수해주겠다...',
                 '추방이라... 내가 무얼 잘못했단 말인가...',
-                '어디 추방해가면서 잘되나 보자... 꼭 복수하겠다.',
+                '어디 추방해가면서 잘되나 보자... 꼭 복수하겠다...',
                 '인덕이 제일이거늘... 추방이 웬말인가... 저주한다!',
                 '날 추방했으니 그 복수로 적국에 정보를 팔아 넘겨야겠군요. 그럼 이만.',
             ]);
@@ -2135,14 +2273,14 @@ async function handleKick(
                 nationId: nation.id,
                 nationName: nation.name,
                 color: nation.color,
-                icon: target.picture === null ? '' : String(target.picture),
+                icon: resolveMessageTargetIcon(target),
             };
             world.queueMessage({
                 msgType: 'public',
                 src: messageTarget,
                 dest: messageTarget,
                 text,
-                time: world.getGameNow(new Date()),
+                time: world.getGameNow(operationalAcceptedAt),
                 validUntil: new Date('9999-12-31T00:00:00.000Z'),
                 option: {},
             });
@@ -2873,6 +3011,7 @@ export const createTurnDaemonCommandHandler = (options: {
     scenarioMeta?: ScenarioMeta;
     map?: MapDefinition;
     commandProfile?: TurnCommandProfile;
+    generalActionModules?: ReadonlyArray<GeneralActionModule>;
     getAdditionalOccupiedUniqueItemKeys?: () => Iterable<string | null | undefined>;
     auctionFinalizer?: AuctionFinalizer;
     auctionBidder?: AuctionBidder;
@@ -2886,6 +3025,7 @@ export const createTurnDaemonCommandHandler = (options: {
         auctionBidder: options.auctionBidder,
         tournamentRewardFinalizer: options.tournamentRewardFinalizer,
         reservedTurns: options.reservedTurns,
+        generalActionModules: options.generalActionModules,
         loadArchivedNationMaxId: options.loadArchivedNationMaxId,
         getImmediateGeneralActionExecutor: () => {
             immediateGeneralActionExecutor ??= createImmediateGeneralActionExecutor({
@@ -2961,8 +3101,10 @@ export const createTurnDaemonCommandHandler = (options: {
         tournamentReward: (command) =>
             handleTournamentReward(ctx, command as Extract<TurnDaemonCommand, { type: 'tournamentReward' }>),
         voteReward: (command) => handleVoteReward(ctx, command as Extract<TurnDaemonCommand, { type: 'voteReward' }>),
-        setNationMeta: (command) =>
-            handleSetNationMeta(ctx, command as Extract<TurnDaemonCommand, { type: 'setNationMeta' }>),
+        setNationSetting: (command) =>
+            handleSetNationSetting(ctx, command as Extract<TurnDaemonCommand, { type: 'setNationSetting' }>),
+        setNpcPolicy: (command) =>
+            handleSetNpcPolicy(ctx, command as Extract<TurnDaemonCommand, { type: 'setNpcPolicy' }>),
         adjustGeneralResources: (command) =>
             handleAdjustGeneralResources(
                 ctx,
@@ -3005,6 +3147,12 @@ export const createTurnDaemonCommandHandler = (options: {
             }
             ctx.commandDb = executionContext?.db;
             try {
+                if (isActorBoundGeneralCommand(command)) {
+                    const rejected = await validateActorBoundGeneralCommand(ctx, command);
+                    if (rejected) {
+                        return rejected;
+                    }
+                }
                 return await handler(command);
             } finally {
                 ctx.commandDb = undefined;

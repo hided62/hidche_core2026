@@ -416,6 +416,7 @@ export const inheritRouter = router({
             }
             const result = await openAuctionWithDaemon(
                 ctx,
+                userId,
                 general.id,
                 {
                     auctionType: 'UNIQUE_ITEM',

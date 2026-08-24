@@ -25,6 +25,8 @@ const parseWith = <T>(schema: z.ZodType<T>, value: unknown): T | null => {
 const zFiniteNumber = z.number().finite();
 const zSafeInteger = zFiniteNumber.int().min(Number.MIN_SAFE_INTEGER).max(Number.MAX_SAFE_INTEGER);
 const zRecord = z.record(z.string(), z.unknown());
+const zBoundedCodePointText = (maximumCodePoints: number) =>
+    z.string().refine((value) => Array.from(value).length <= maximumCodePoints);
 
 const zRunReason = z.enum(['schedule', 'manual', 'poke']);
 const zTurnRunBudget = z.object({
@@ -42,6 +44,7 @@ const zAuctionFinalize = z.object({
 
 const zAuctionOpen = z.object({
     type: z.literal('auctionOpen'),
+    userId: z.string().min(1),
     generalId: zFiniteNumber,
     auctionType: z.enum(['BUY_RICE', 'SELL_RICE', 'UNIQUE_ITEM']),
     amount: zFiniteNumber,
@@ -53,6 +56,7 @@ const zAuctionOpen = z.object({
 
 const zAuctionBid = z.object({
     type: z.literal('auctionBid'),
+    userId: z.string().min(1),
     auctionId: zFiniteNumber,
     generalId: zFiniteNumber,
     amount: zFiniteNumber,
@@ -62,23 +66,27 @@ const zAuctionBid = z.object({
 
 const zTroopJoin = z.object({
     type: z.literal('troopJoin'),
+    userId: z.string().min(1),
     generalId: zFiniteNumber,
     troopId: zFiniteNumber,
 });
 
 const zTroopCreate = z.object({
     type: z.literal('troopCreate'),
+    userId: z.string().min(1),
     generalId: zFiniteNumber,
     troopName: z.string(),
 });
 
 const zTroopExit = z.object({
     type: z.literal('troopExit'),
+    userId: z.string().min(1),
     generalId: zFiniteNumber,
 });
 
 const zTroopKick = z.object({
     type: z.literal('troopKick'),
+    userId: z.string().min(1),
     generalId: zFiniteNumber,
     troopId: zFiniteNumber,
     targetGeneralId: zFiniteNumber,
@@ -86,6 +94,7 @@ const zTroopKick = z.object({
 
 const zTroopRename = z.object({
     type: z.literal('troopRename'),
+    userId: z.string().min(1),
     generalId: zFiniteNumber,
     troopId: zFiniteNumber,
     troopName: z.string(),
@@ -125,11 +134,13 @@ const zMessageRespond = z.object({
 
 const zVacation = z.object({
     type: z.literal('vacation'),
+    userId: z.string().min(1),
     generalId: zFiniteNumber,
 });
 
 const zSetMySetting = z.object({
     type: z.literal('setMySetting'),
+    userId: z.string().min(1),
     generalId: zFiniteNumber,
     settings: z.object({
         tnmt: z.number().int().optional(),
@@ -146,25 +157,30 @@ const zSetMySetting = z.object({
 
 const zDropItem = z.object({
     type: z.literal('dropItem'),
+    userId: z.string().min(1),
     generalId: zFiniteNumber,
-    itemType: z.string().min(1),
+    itemType: z.enum(['horse', 'weapon', 'book', 'item']),
 });
 
 const zChangePermission = z.object({
     type: z.literal('changePermission'),
+    userId: z.string().min(1),
     generalId: zFiniteNumber,
     isAmbassador: z.boolean(),
-    targetGeneralIds: z.array(zFiniteNumber).min(1),
+    // Ref uses an empty selection to clear every holder of the role.
+    targetGeneralIds: z.array(zFiniteNumber),
 });
 
 const zKick = z.object({
     type: z.literal('kick'),
+    userId: z.string().min(1),
     generalId: zFiniteNumber,
     destGeneralId: zFiniteNumber,
 });
 
 const zAppoint = z.object({
     type: z.literal('appoint'),
+    userId: z.string().min(1),
     generalId: zFiniteNumber,
     destGeneralId: zFiniteNumber,
     destCityId: zFiniteNumber,
@@ -198,17 +214,42 @@ const zTournamentReward = z.object({
 
 const zVoteReward = z.object({
     type: z.literal('voteReward'),
+    userId: z.string().min(1),
     voteId: zFiniteNumber,
     generalId: zFiniteNumber,
     selection: z.array(zFiniteNumber.int()).min(1),
     acceptedGameTick: zSafeInteger.optional(),
 });
 
-const zSetNationMeta = z.object({
-    type: z.literal('setNationMeta'),
+const zSetNationSetting = z.object({
+    type: z.literal('setNationSetting'),
+    userId: z.string().min(1),
+    generalId: zFiniteNumber,
     nationId: zFiniteNumber,
-    updates: zRecord,
-    expectedUpdatedAt: z.string().optional(),
+    mutation: z.discriminatedUnion('kind', [
+        // Ref validates required content before HTML purification. A raw,
+        // non-empty value can therefore become an empty persisted string.
+        z.object({ kind: z.literal('notice'), message: zBoundedCodePointText(16_384) }),
+        z.object({ kind: z.literal('scoutMessage'), message: zBoundedCodePointText(1_000) }),
+        z.object({ kind: z.literal('rate'), amount: z.number().int().min(5).max(30) }),
+        z.object({ kind: z.literal('bill'), amount: z.number().int().min(20).max(200) }),
+        z.object({ kind: z.literal('secretLimit'), amount: z.number().int().min(1).max(99) }),
+        z.object({ kind: z.literal('blockWar'), value: z.boolean() }),
+        z.object({ kind: z.literal('blockScout'), value: z.boolean() }),
+    ]),
+});
+
+const zSetNpcPolicy = z.object({
+    type: z.literal('setNpcPolicy'),
+    userId: z.string().min(1),
+    generalId: zFiniteNumber,
+    nationId: zFiniteNumber,
+    expectedUpdatedAt: z.string().nullable(),
+    mutation: z.discriminatedUnion('kind', [
+        z.object({ kind: z.literal('nationPolicy'), values: zRecord }),
+        z.object({ kind: z.literal('nationPriority'), priority: z.array(z.string()) }),
+        z.object({ kind: z.literal('generalPriority'), priority: z.array(z.string()) }),
+    ]),
 });
 
 const zAdjustGeneralResources = z.object({
@@ -640,8 +681,16 @@ const normalizeVoteReward: CommandNormalizer<'voteReward'> = (envelope) => {
     return { ...command, requestId: envelope.requestId };
 };
 
-const normalizeSetNationMeta: CommandNormalizer<'setNationMeta'> = (envelope) => {
-    const command = parseWith(zSetNationMeta, envelope.command);
+const normalizeSetNationSetting: CommandNormalizer<'setNationSetting'> = (envelope) => {
+    const command = parseWith(zSetNationSetting, envelope.command);
+    if (!command) {
+        return null;
+    }
+    return { ...command, requestId: envelope.requestId };
+};
+
+const normalizeSetNpcPolicy: CommandNormalizer<'setNpcPolicy'> = (envelope) => {
+    const command = parseWith(zSetNpcPolicy, envelope.command);
     if (!command) {
         return null;
     }
@@ -804,7 +853,8 @@ const normalizers: CommandNormalizerMap = {
     tournamentBettingPayout: normalizeTournamentBettingPayout,
     tournamentReward: normalizeTournamentReward,
     voteReward: normalizeVoteReward,
-    setNationMeta: normalizeSetNationMeta,
+    setNationSetting: normalizeSetNationSetting,
+    setNpcPolicy: normalizeSetNpcPolicy,
     adjustGeneralResources: normalizeAdjustGeneralResources,
     adjustGeneralMeta: normalizeAdjustGeneralMeta,
     tournamentMatchResult: normalizeTournamentMatchResult,

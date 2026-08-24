@@ -32,10 +32,7 @@ const payloadHasGeneral = (payload: unknown, generalId: number): boolean => {
     const changes = (payload as { changes?: unknown }).changes;
     return (
         Array.isArray(changes) &&
-        changes.some(
-            (change) =>
-                Array.isArray(change) && change[0] === 'front.general' && change[1] === generalId
-        )
+        changes.some((change) => Array.isArray(change) && change[0] === 'front.general' && change[1] === generalId)
     );
 };
 
@@ -134,10 +131,7 @@ integration('API input event boundary', () => {
         ).resolves.toEqual({ ok: true });
 
         expect(wakeSnapshot).toBeDefined();
-        const [event, revision] = (await wakeSnapshot) as [
-            { status: string },
-            { revision: bigint },
-        ];
+        const [event, revision] = (await wakeSnapshot) as [{ status: string }, { revision: bigint }];
         expect(event.status).toBe('SUCCEEDED');
         expect(revision.revision).toBe(1n);
         expect(redisPublish).not.toHaveBeenCalled();
@@ -158,9 +152,7 @@ integration('API input event boundary', () => {
         } as unknown as GameApiContext;
 
         await expect(
-            journalBoundaryRouter
-                .createCaller(context)
-                .mutate({ generalId: journalGeneralIds[1], fail: true })
+            journalBoundaryRouter.createCaller(context).mutate({ generalId: journalGeneralIds[1], fail: true })
         ).rejects.toThrow('injected journal rollback');
 
         await expect(
@@ -257,21 +249,24 @@ integration('API input event boundary', () => {
         const transport = new DatabaseTurnDaemonTransport(db, 100);
         const requestId = 'integration:api:engine-child';
         const acceptedWindowStart = Date.now();
-        await transport.sendCommand({ type: 'vacation', requestId, generalId: 7 });
+        await transport.sendCommand({ type: 'vacation', requestId, userId: 'user-7', generalId: 7 });
         const acceptedWindowEnd = Date.now();
         const event = await db.inputEvent.findUniqueOrThrow({ where: { requestId } });
+        expect(event.actorUserId).toBe('user-7');
         expect(event.createdAt.getTime()).toBeGreaterThanOrEqual(acceptedWindowStart);
         expect(event.createdAt.getTime()).toBeLessThanOrEqual(acceptedWindowEnd);
-        await expect(transport.sendCommand({ type: 'vacation', requestId, generalId: 7 })).resolves.toBe(requestId);
-        await expect(transport.sendCommand({ type: 'vacation', requestId, generalId: 8 })).rejects.toBeInstanceOf(
-            ConflictingTurnDaemonCommandError
-        );
+        await expect(
+            transport.sendCommand({ type: 'vacation', requestId, userId: 'user-7', generalId: 7 })
+        ).resolves.toBe(requestId);
+        await expect(
+            transport.sendCommand({ type: 'vacation', requestId, userId: 'user-7', generalId: 8 })
+        ).rejects.toBeInstanceOf(ConflictingTurnDaemonCommandError);
     });
 
     it('distinguishes a stored terminal engine failure from a result timeout', async () => {
         const transport = new DatabaseTurnDaemonTransport(db, 100);
         const requestId = 'integration:api:engine-failed';
-        const command = { type: 'vacation' as const, requestId, generalId: 7 };
+        const command = { type: 'vacation' as const, requestId, userId: 'user-7', generalId: 7 };
         await transport.sendCommand(command);
         await db.inputEvent.update({
             where: { requestId },

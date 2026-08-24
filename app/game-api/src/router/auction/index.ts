@@ -11,6 +11,7 @@ import { buildAuctionAlias } from '@sammo-ts/logic';
 import { openAuctionWithDaemon } from '../../auction/open.js';
 import { resolveAuctionTimerScore } from '../../auction/scheduler.js';
 import { loadCurrentGameTime } from '../../services/gameClock.js';
+import { throwIfCommandRejected } from '../shared/turnDaemon.js';
 
 const zBidInput = z.object({
     auctionId: z.number().int().positive(),
@@ -340,6 +341,7 @@ export const auctionRouter = router({
         await ensureAuctionSeasonActive(ctx.db);
         return openAuctionWithDaemon(
             ctx,
+            auth.user.id,
             general.id,
             { auctionType: 'BUY_RICE', ...input },
             ctx.requestId ? `${ctx.requestId}:auction.openBuyRice:engine:0:auctionOpen` : undefined
@@ -351,6 +353,7 @@ export const auctionRouter = router({
         await ensureAuctionSeasonActive(ctx.db);
         return openAuctionWithDaemon(
             ctx,
+            auth.user.id,
             general.id,
             { auctionType: 'SELL_RICE', ...input },
             ctx.requestId ? `${ctx.requestId}:auction.openSellRice:engine:0:auctionOpen` : undefined
@@ -362,6 +365,7 @@ export const auctionRouter = router({
         await ensureAuctionSeasonActive(ctx.db);
         return openAuctionWithDaemon(
             ctx,
+            auth.user.id,
             general.id,
             {
                 auctionType: 'UNIQUE_ITEM',
@@ -425,12 +429,14 @@ export const auctionRouter = router({
         const result = await ctx.turnDaemon.requestCommand({
             type: 'auctionBid',
             ...(ctx.requestId ? { requestId: `${ctx.requestId}:auction.bidBuyRice:engine:0:auctionBid` } : {}),
+            userId: auth.user.id,
             auctionId: auction.id,
             generalId: general.id,
             amount: input.amount,
             ...(gameTime.tick === null ? {} : { acceptedGameTick: gameTime.tick }),
             tryExtendCloseDate: true,
         });
+        throwIfCommandRejected(result);
         if (!result || result.type !== 'auctionBid') {
             throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: 'Unexpected response' });
         }
@@ -501,12 +507,14 @@ export const auctionRouter = router({
         const result = await ctx.turnDaemon.requestCommand({
             type: 'auctionBid',
             ...(ctx.requestId ? { requestId: `${ctx.requestId}:auction.bidSellRice:engine:0:auctionBid` } : {}),
+            userId: auth.user.id,
             auctionId: auction.id,
             generalId: general.id,
             amount: input.amount,
             ...(gameTime.tick === null ? {} : { acceptedGameTick: gameTime.tick }),
             tryExtendCloseDate: true,
         });
+        throwIfCommandRejected(result);
         if (!result || result.type !== 'auctionBid') {
             throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: 'Unexpected response' });
         }
@@ -638,12 +646,14 @@ export const auctionRouter = router({
         const result = await ctx.turnDaemon.requestCommand({
             type: 'auctionBid',
             ...(ctx.requestId ? { requestId: `${ctx.requestId}:auction.bidUnique:engine:0:auctionBid` } : {}),
+            userId: auth.user.id,
             auctionId: auction.id,
             generalId: general.id,
             amount: input.amount,
             ...(gameTime.tick === null ? {} : { acceptedGameTick: gameTime.tick }),
             tryExtendCloseDate: input.tryExtendCloseDate ?? false,
         });
+        throwIfCommandRejected(result);
         if (!result || result.type !== 'auctionBid') {
             throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: 'Unexpected response' });
         }

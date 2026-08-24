@@ -58,6 +58,10 @@
             "types": "./dist/turn/monthlyNationBettingAction.d.ts",
             "default": "./dist/turn/monthlyNationBettingAction.js"
         },
+        "./turn/npcPolicyMutation.js": {
+            "types": "./dist/turn/npcPolicyMutation.d.ts",
+            "default": "./dist/turn/npcPolicyMutation.js"
+        },
         "./turn/npcPossessionService.js": {
             "types": "./dist/turn/npcPossessionService.d.ts",
             "default": "./dist/turn/npcPossessionService.js"

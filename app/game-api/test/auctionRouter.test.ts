@@ -241,6 +241,7 @@ describe('auction router actor and permission boundaries', () => {
         expect(fixture.requestCommand).toHaveBeenCalledWith({
             type: 'auctionOpen',
             auctionType: 'BUY_RICE',
+            userId: 'user-1',
             generalId: 7,
             amount: 1000,
             closeTurnCnt: 3,
@@ -269,6 +270,7 @@ describe('auction router actor and permission boundaries', () => {
             type: 'auctionOpen',
             requestId: 'http-auction-open:auction.openBuyRice:engine:0:auctionOpen',
             auctionType: 'BUY_RICE',
+            userId: 'user-1',
             generalId: 7,
             amount: 1000,
             closeTurnCnt: 3,
@@ -381,6 +383,7 @@ describe('auction router actor and permission boundaries', () => {
 
         expect(fixture.requestCommand).toHaveBeenCalledWith({
             type: 'auctionBid',
+            userId: 'user-1',
             auctionId: 31,
             generalId: 7,
             amount: 110,
