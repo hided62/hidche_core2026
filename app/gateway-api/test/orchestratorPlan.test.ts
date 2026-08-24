@@ -9,6 +9,7 @@ import {
     buildSharedProfileFrontendCommands,
     buildWorkspaceCommands,
     planProfileReconcile,
+    resolveProfileArchiveServerName,
     resolveResetLifecycleStatus,
 } from '../src/orchestrator/gatewayOrchestrator.js';
 import { GATEWAY_PROFILE_ORDER } from '../src/profileOrder.js';
@@ -131,6 +132,30 @@ describe('resolveResetLifecycleStatus', () => {
         expect(
             resolveResetLifecycleStatus(now, new Date('2029-12-31T22:00:00.000Z'), new Date('2029-12-31T23:00:00.000Z'))
         ).toBe('RUNNING');
+    });
+});
+
+describe('resolveProfileArchiveServerName', () => {
+    it('uses the configured Gateway name and never the runtime instance key', () => {
+        expect(
+            resolveProfileArchiveServerName({
+                ...buildProfile(),
+                profile: 'hwe',
+                profileName: 'hwe:default',
+                meta: { korName: ' 훼 ' },
+            })
+        ).toBe('훼');
+    });
+
+    it('uses the canonical profile label when Gateway has no override', () => {
+        expect(
+            resolveProfileArchiveServerName({
+                ...buildProfile(),
+                profile: 'hwe',
+                profileName: 'hwe:default',
+                meta: {},
+            })
+        ).toBe('훼');
     });
 });
 
