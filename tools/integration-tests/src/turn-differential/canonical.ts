@@ -127,6 +127,11 @@ const readString = (record: Record<string, unknown>, key: string): string | null
     return typeof value === 'string' ? value : null;
 };
 
+const readNullableCode = (record: Record<string, unknown>, key: string): string | null => {
+    const value = readString(record, key);
+    return value && value !== 'None' ? value : null;
+};
+
 const readCommandInteger = (value: unknown, field: string, fallback: number | null): number | null => {
     if (value === null || value === undefined) {
         return fallback;
@@ -388,13 +393,13 @@ export const projectCoreDatabaseSnapshot = (rows: {
             maxBelong: readNumber(meta, 'max_belong'),
             maxDomesticCritical: readNumber(meta, 'max_domestic_critical'),
             betray: row.betray,
-            personality: row.personality ?? null,
-            specialDomestic: row.specialDomestic ?? null,
-            specialWar: row.specialWar ?? null,
-            itemHorse: row.itemHorse ?? null,
-            itemWeapon: row.itemWeapon ?? null,
-            itemBook: row.itemBook ?? null,
-            itemExtra: row.itemExtra ?? null,
+            personality: readNullableCode(row, 'personality') ?? readNullableCode(row, 'personalCode'),
+            specialDomestic: readNullableCode(row, 'specialDomestic') ?? readNullableCode(row, 'specialCode'),
+            specialWar: readNullableCode(row, 'specialWar') ?? readNullableCode(row, 'special2Code'),
+            itemHorse: readNullableCode(row, 'itemHorse') ?? readNullableCode(row, 'horseCode'),
+            itemWeapon: readNullableCode(row, 'itemWeapon') ?? readNullableCode(row, 'weaponCode'),
+            itemBook: readNullableCode(row, 'itemBook') ?? readNullableCode(row, 'bookCode'),
+            itemExtra: readNullableCode(row, 'itemExtra') ?? readNullableCode(row, 'itemCode'),
             picture: row.picture ?? null,
             imageServer: readNumber(row, 'imageServer'),
             injury: row.injury,

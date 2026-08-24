@@ -39,6 +39,13 @@ const databaseSnapshot = (
                 cityId: 1,
                 troopId: 1,
                 userId: 'owner-a',
+                personalCode: 'che_안전',
+                specialCode: 'che_농업',
+                special2Code: 'che_신산',
+                horseCode: 'che_명마_01_적토마',
+                weaponCode: 'che_무기_07_맥궁',
+                bookCode: 'che_서적_01_손자병법',
+                itemCode: 'che_도구_01_옥새',
                 meta: commandStateFixture?.generalMeta ?? {},
                 penalty: {},
                 ...commandStateFixture?.generalFields,
@@ -92,6 +99,18 @@ const databaseSnapshot = (
     });
 
 describe('turn snapshot canonical blind-spot coverage', () => {
+    it('projects Prisma general role and item column names into canonical fields', () => {
+        expect(databaseSnapshot().generals[0]).toMatchObject({
+            personality: 'che_안전',
+            specialDomestic: 'che_농업',
+            specialWar: 'che_신산',
+            itemHorse: 'che_명마_01_적토마',
+            itemWeapon: 'che_무기_07_맥궁',
+            itemBook: 'che_서적_01_손자병법',
+            itemExtra: 'che_도구_01_옥새',
+        });
+    });
+
     it('projects troop rows and detects a troop mutant', () => {
         const reference = databaseSnapshot();
         const core = {
