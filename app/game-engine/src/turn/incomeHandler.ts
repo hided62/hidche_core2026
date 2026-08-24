@@ -8,7 +8,7 @@ import {
     getOutcome,
     getRiceIncome,
     getWallIncome,
-    readLegacyCityTrust,
+    resolveCityTrustValue,
     type CityIncomeSource,
     type Nation,
     type NationIncomeContext,
@@ -37,6 +37,8 @@ const resolveNumber = (source: Record<string, unknown>, keys: string[], fallback
 
 const resolveNationBill = (nation: Nation): number => asNumber(nation.meta.bill, 100);
 
+export const resolveIncomeCityTrust = (trust: number): number => resolveCityTrustValue(trust);
+
 const resolveOfficerCity = (meta: Record<string, unknown>): number => {
     const camel = asNumber(meta.officerCity, 0);
     if (camel > 0) {
@@ -45,13 +47,8 @@ const resolveOfficerCity = (meta: Record<string, unknown>): number => {
     return asNumber(meta.officer_city, 0);
 };
 
-export const resolveLegacyIncomeCityTrust = (trust: number): number => readLegacyCityTrust(trust);
-
 const resolveCityTrust = (meta: Record<string, unknown>): number => {
-    const trust = asNumber(meta.trust, 50);
-    // Income is calculated in PHP after PDO exposes MariaDB FLOAT using a
-    // six-significant-digit decimal representation.
-    return resolveLegacyIncomeCityTrust(trust);
+    return resolveIncomeCityTrust(asNumber(meta.trust, 50));
 };
 
 const toIncomeCity = (city: ReturnType<InMemoryTurnWorld['listCities']>[number]): CityIncomeSource => ({
@@ -150,13 +147,11 @@ const processIncomeForNation = (
             : getRiceIncome(incomeContext, nationCities, officerCounts, nation.capitalCityId ?? 0, nation.level) +
               getWallIncome(incomeContext, nationCities, officerCounts, nation.capitalCityId ?? 0, nation.level);
 
-    // REF-COMPAT:BEGIN ref-income-preflush-fraction
     // Ref calculates the payout ratio from the pre-persistence income value.
     // Half-unit income (for example 943.5) is therefore not rounded before
     // salaries are distributed, even though the integer nation column is
     // rounded when the final state is flushed to MariaDB.
     const incomeValue = income;
-    // REF-COMPAT:END ref-income-preflush-fraction
     const originOutcome = getOutcome(100, nationGenerals);
     const bill = resolveNationBill(nation);
     const outcome = Math.round((bill / 100) * originOutcome);

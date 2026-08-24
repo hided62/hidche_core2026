@@ -30,7 +30,7 @@ import {
     isCrewTypeAvailable,
 } from '@sammo-ts/logic/world/unitSet.js';
 import { parseArgsWithSchema } from '../parseArgs.js';
-import { readLegacyCityTrust, storeLegacyCityTrust } from './legacyCityTrust.js';
+import { adjustCityTrust, resolveCityTrustValue } from './cityTrust.js';
 import { applyLegacyInjury, finalizeLegacyStat } from './legacyGeneralStat.js';
 
 export interface RecruitEnvironment {
@@ -61,14 +61,7 @@ const DEFAULT_MIN_POP = 30000;
 const DEFAULT_TRUST = 50;
 const MIN_CREW = 100;
 
-// REF-COMPAT:BEGIN ref-php-half-rounding
-// PHP round() compensates for the small binary drift around a half boundary.
-// Ref then converts the result to int through Util::round().
-export const roundLegacyRecruitCost = (value: number): number => {
-    const corrected = value + Math.sign(value) * Number.EPSILON * Math.max(1, Math.abs(value));
-    return corrected < 0 ? Math.ceil(corrected - 0.5) : Math.floor(corrected + 0.5);
-};
-// REF-COMPAT:END ref-php-half-rounding
+export const roundRecruitCost = (value: number): number => Math.round(value);
 
 export const ARGS_SCHEMA = z.preprocess(
     (raw) => {
@@ -330,7 +323,7 @@ export class CommandResolver<TriggerState extends GeneralTriggerState = GeneralT
             crewType ? { armType: crewType.armType } : undefined
         );
         return {
-            gold: roundLegacyRecruitCost(adjustedGold * costOffset),
+            gold: roundRecruitCost(adjustedGold * costOffset),
             rice: Math.round(adjustedRice),
             applied: plan.applied,
             requested: plan.requested,
@@ -444,9 +437,9 @@ export class ActionResolver<
         const costOffset = this.env.costOffset ?? DEFAULT_COST_OFFSET;
         const recruitPop = this.command.getRecruitPopulation(context, appliedCrew);
         const nextPopulation = Math.max(city.population - recruitPop, 0);
-        const baseTrust = readLegacyCityTrust(readCityTrust(city, this.env.defaultTrust ?? DEFAULT_TRUST));
+        const baseTrust = resolveCityTrustValue(readCityTrust(city, this.env.defaultTrust ?? DEFAULT_TRUST));
         const trustLoss = city.population > 0 ? (recruitPop / city.population / costOffset) * 100 : 0;
-        const nextTrust = storeLegacyCityTrust(Math.max(baseTrust - trustLoss, 0));
+        const nextTrust = adjustCityTrust(baseTrust, -trustLoss);
 
         const actionName = this.env.actionName ?? ACTION_NAME;
         const [nextCrewTypeId, nextCrew, nextTrain, nextAtmos] =

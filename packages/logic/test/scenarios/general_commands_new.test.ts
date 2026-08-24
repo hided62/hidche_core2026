@@ -5,7 +5,7 @@ import type { City, General, Nation } from '../../src/domain/entities.js';
 import type { WorldSnapshot } from '../../src/world/types.js';
 import {
     commandSpec as procureSpec,
-    roundLegacyAccumulatedInteger,
+    roundAccumulatedInteger,
     resolveLegacyDedicationLevel,
     resolveLegacyExperienceLevel,
 } from '../../src/actions/turn/general/che_물자조달.js';
@@ -35,13 +35,9 @@ import {
     normalizeLegacyGeneratedDex,
     resolveLegacySpecialityAge,
 } from '../../src/actions/turn/general/che_인재탐색.js';
-import {
-    addLegacyStoredTech,
-    readLegacyStoredTech,
-    toLegacyStoredTech,
-} from '../../src/actions/turn/general/che_기술연구.js';
-import { readLegacyCityTrust, storeLegacyCityTrust } from '../../src/actions/turn/general/legacyCityTrust.js';
-import { roundLegacyRecruitCost } from '../../src/actions/turn/general/che_징병.js';
+import { addTech } from '../../src/actions/turn/general/che_기술연구.js';
+import { adjustCityTrust, resolveCityTrustValue } from '../../src/actions/turn/general/cityTrust.js';
+import { roundRecruitCost } from '../../src/actions/turn/general/che_징병.js';
 import { resolveLegacyDomesticTrust } from '../../src/actions/turn/general/che_상업투자.js';
 import { traitModule as ambitiousPersonality } from '../../src/actionModules/traits/personality/che_출세.js';
 
@@ -54,7 +50,7 @@ describe('General Commands New Scenario', () => {
         const delta = (45 * 0.7) / 3;
         expect(delta).toBe(10.499999999999998);
         expect(Math.round(delta)).toBe(10);
-        expect(roundLegacyAccumulatedInteger(4554, delta)).toBe(4565);
+        expect(roundAccumulatedInteger(4554, delta)).toBe(4565);
     });
 
     it('calculates procurement levels before MariaDB rounds the INT columns', () => {
@@ -71,32 +67,28 @@ describe('General Commands New Scenario', () => {
         expect(resolveLegacySpecialityAge(80, 24, 12)).toBe(29);
     });
 
-    it('stores technology as binary32 without per-update decimal quantization', () => {
-        const value = 433.51797;
-        expect(toLegacyStoredTech(value)).toBe(Math.fround(value));
-        expect(toLegacyStoredTech(value)).not.toBe(Number(Math.fround(value).toPrecision(6)));
-        expect(readLegacyStoredTech(624.0966796875)).toBe(624.097);
-        expect(addLegacyStoredTech(624.0966796875, 22.9)).toBe(Math.fround(624.097 + 22.9));
-        expect(readLegacyStoredTech(533.3125)).toBe(533.312);
-        expect(readLegacyStoredTech(533.4375)).toBe(533.438);
+    it('keeps full precision while accumulating technology', () => {
+        const current = 624.0966796875;
+        const updated = addTech(current, 22.9);
+
+        expect(updated).toBe(current + 22.9);
+        expect(updated).not.toBe(Math.fround(current + 22.9));
+        expect(updated).not.toBe(Number((current + 22.9).toPrecision(6)));
     });
 
-    it('separates MariaDB FLOAT trust storage from its six-digit PHP read value', () => {
-        const stored = storeLegacyCityTrust(88.306755);
+    it('keeps full precision while adjusting city trust', () => {
+        const current = resolveCityTrustValue(88.306755);
 
-        expect(stored).toBe(Math.fround(88.306755));
-        expect(stored).not.toBe(readLegacyCityTrust(stored));
-        expect(readLegacyCityTrust(stored)).toBe(88.3068);
-        expect(readLegacyCityTrust(storeLegacyCityTrust(readLegacyCityTrust(stored) + 10))).toBe(98.3068);
-        expect(readLegacyCityTrust(storeLegacyCityTrust(93.40625))).toBe(93.4062);
+        expect(adjustCityTrust(current, 10)).toBe(98.306755);
+        expect(adjustCityTrust(current, 20)).toBe(100);
+        expect(adjustCityTrust(current, -100)).toBe(0);
     });
 
-    it('rounds recruitment cost across the PHP half boundary', () => {
+    it('uses the native integer boundary for recruitment cost', () => {
         const cavalryCost = (11 * 1.15 * 7000) / 100;
 
         expect(cavalryCost).toBe(885.4999999999999);
-        expect(Math.round(cavalryCost)).toBe(885);
-        expect(roundLegacyRecruitCost(cavalryCost)).toBe(886);
+        expect(roundRecruitCost(cavalryCost)).toBe(885);
     });
 
     it('uses the legacy minimum trust for domestic calculations', () => {

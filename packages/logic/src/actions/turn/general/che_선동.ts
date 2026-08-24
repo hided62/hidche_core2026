@@ -5,7 +5,7 @@ import type { GeneralTriggerState } from '@sammo-ts/logic/domain/entities.js';
 import { LogCategory, LogFormat, LogScope } from '@sammo-ts/logic/logging/types.js';
 
 import type { GeneralTurnCommandSpec } from './index.js';
-import { readLegacyCityTrust, storeLegacyCityTrust } from './legacyCityTrust.js';
+import { adjustCityTrust, resolveCityTrustValue } from './cityTrust.js';
 import {
     STRATEGY_ARGS_SCHEMA,
     StrategyActionDefinition,
@@ -43,9 +43,8 @@ export class ActionResolver<
         result: StrategyResult<TriggerState>,
         effects: GeneralActionEffect<TriggerState>[]
     ): void {
-        const currentTrust =
-            typeof context.destCity.meta.trust === 'number' ? readLegacyCityTrust(context.destCity.meta.trust) : 50;
-        const nextTrust = storeLegacyCityTrust(Math.max(0, currentTrust - result.secondaryAmount));
+        const currentTrust = resolveCityTrustValue(context.destCity.meta.trust);
+        const nextTrust = adjustCityTrust(currentTrust, -result.secondaryAmount);
 
         effects.push(
             createCityPatchEffect(

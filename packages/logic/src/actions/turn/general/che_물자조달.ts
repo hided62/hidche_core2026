@@ -26,9 +26,7 @@ interface ProcureContext<
 const ACTION_NAME = '물자조달';
 const ACTION_KEY = 'che_물자조달';
 
-// REF-COMPAT:BEGIN ref-int-column-write-rounding
-export const roundLegacyAccumulatedInteger = (current: number, delta: number): number => Math.round(current + delta);
-// REF-COMPAT:END ref-int-column-write-rounding
+export const roundAccumulatedInteger = (current: number, delta: number): number => Math.round(current + delta);
 
 export const resolveLegacyExperienceLevel = (experience: number): number =>
     Math.max(
@@ -123,8 +121,8 @@ export class ActionResolver<
         // accumulated binary value is exactly 4564.5 and persists as 4565.
         const rawNextExp = general.experience + exp;
         const rawNextDed = general.dedication + ded;
-        const nextExp = Math.round(rawNextExp);
-        const nextDed = Math.round(rawNextDed);
+        const nextExp = roundAccumulatedInteger(general.experience, exp);
+        const nextDed = roundAccumulatedInteger(general.dedication, ded);
 
         let appliedScore = score;
         if (context.city && [1, 3].includes(context.city.frontState)) {

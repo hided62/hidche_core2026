@@ -9,25 +9,7 @@ export const clamp = (value: number, min: number, max: number): number => Math.m
 
 export const clampMin = (value: number, min: number): number => (value < min ? min : value);
 
-// REF-COMPAT:BEGIN ref-php-half-rounding
-// PHP's round() compensates for small binary floating-point drift around a
-// half boundary and rounds halves away from zero. War state is persisted to
-// integer columns through legacy Util::round(), so Math.round() is not enough:
-// e.g. accumulated siege damage can produce 4159.499999999999, which PHP
-// rounds to 4160 while Math.round() returns 4159.
-export const round = (value: number): number => {
-    if (!Number.isFinite(value)) {
-        return Math.round(value);
-    }
-
-    // PHP 8.3's round() uses a wider half-boundary fuzz than one JavaScript
-    // ulp at four-digit battle totals. Accumulating several fractional battle
-    // rewards can land about three ulps below .5 (for example
-    // 8719.4999999999945), which PHP still rounds upward.
-    const corrected = value + Math.sign(value) * Number.EPSILON * Math.max(1, Math.abs(value)) * 4;
-    return corrected < 0 ? Math.ceil(corrected - 0.5) : Math.floor(corrected + 0.5);
-};
-// REF-COMPAT:END ref-php-half-rounding
+export const round = (value: number): number => Math.round(value);
 
 export const getMetaNumber = (meta: Record<string, TriggerValue>, key: string, fallback = 0): number => {
     const value = meta[key];

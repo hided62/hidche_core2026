@@ -22,8 +22,7 @@ import {
     updateDomesticCriticalMeta,
 } from './che_상업투자.js';
 import { JosaUtil } from '@sammo-ts/common';
-import { clamp } from 'es-toolkit';
-import { readLegacyCityTrust, storeLegacyCityTrust } from './legacyCityTrust.js';
+import { adjustCityTrust, resolveCityTrustValue } from './cityTrust.js';
 
 export interface TrustActionArgs {}
 
@@ -45,8 +44,7 @@ const CONFIG: InvestmentConfig = {
 };
 
 const readTrust = (city: City): number => {
-    const trust = city.meta.trust;
-    return typeof trust === 'number' && Number.isFinite(trust) ? readLegacyCityTrust(trust) : DEFAULT_TRUST;
+    return resolveCityTrustValue(city.meta.trust, DEFAULT_TRUST);
 };
 
 const remainCityTrust = (): Constraint => ({
@@ -105,7 +103,7 @@ export class ActionDefinition<
         const trustDelta = result.score / 10;
         context.city.meta = {
             ...context.city.meta,
-            trust: storeLegacyCityTrust(clamp(readTrust(context.city) + trustDelta, 0, 100)),
+            trust: adjustCityTrust(readTrust(context.city), trustDelta),
         };
         context.general.rice = Math.max(0, context.general.rice - result.costGold);
         context.general.experience += result.exp;

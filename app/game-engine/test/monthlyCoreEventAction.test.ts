@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { LogCategory, LogFormat, LogScope, type City, type MapDefinition, type Nation } from '@sammo-ts/logic';
 
-import { createIncomeHandler, resolveLegacyIncomeCityTrust } from '../src/turn/incomeHandler.js';
+import { createIncomeHandler, resolveIncomeCityTrust } from '../src/turn/incomeHandler.js';
 import { InMemoryTurnWorld } from '../src/turn/inMemoryWorld.js';
 import { calculateNpcNationFinance } from '../src/turn/npcTaxHandler.js';
 import {
@@ -146,8 +146,8 @@ const buildWorld = (
 };
 
 describe('core monthly event actions at the real month boundary', () => {
-    it('reads income trust through the PHP six-significant-digit FLOAT representation', () => {
-        expect(resolveLegacyIncomeCityTrust(98.12674)).toBe(98.1267);
+    it('uses the full-precision trust value for income', () => {
+        expect(resolveIncomeCityTrust(98.12674)).toBe(98.12674);
     });
 
     it('preserves notice format, NewYear month log, age/belong, and officer lock reset', async () => {

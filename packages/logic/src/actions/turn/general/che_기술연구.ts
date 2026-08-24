@@ -27,11 +27,6 @@ import {
 } from './che_상업투자.js';
 import { JosaUtil } from '@sammo-ts/common';
 import { clamp } from 'es-toolkit';
-import {
-    addLegacyStoredFloat,
-    readLegacyStoredFloat,
-    toLegacyStoredFloat,
-} from '@sammo-ts/logic/compat/legacyFloat.js';
 
 export interface TechResearchArgs {}
 
@@ -59,18 +54,7 @@ const readTech = (nation: Nation): number => {
     return typeof tech === 'number' && Number.isFinite(tech) ? tech : 0;
 };
 
-// 레거시 nation.tech는 MariaDB FLOAT이며 다음 명령 재조회 시 6자리 유효숫자로 양자화된다.
-// Ref stores tech in a MariaDB FLOAT column. FLOAT applies binary32
-// quantization on write; its six-significant-digit text rendering happens
-// only when the value is read, not on every update.
-export const toLegacyStoredTech = toLegacyStoredFloat;
-
-// mysqli renders a MariaDB FLOAT with six significant decimal digits before
-// PHP performs the next command's arithmetic. Model that read boundary, then
-// model the binary32 write boundary separately.
-export const readLegacyStoredTech = readLegacyStoredFloat;
-
-export const addLegacyStoredTech = addLegacyStoredFloat;
+export const addTech = (current: number, delta: number): number => current + delta;
 
 export class ActionDefinition<
     TriggerState extends GeneralTriggerState = GeneralTriggerState,
@@ -143,7 +127,7 @@ export class ActionDefinition<
 
         context.nation.meta = {
             ...context.nation.meta,
-            tech: addLegacyStoredTech(currentTech, techScore / generalCount),
+            tech: addTech(currentTech, techScore / generalCount),
         };
         context.general.gold = Math.max(0, context.general.gold - result.costGold);
         context.general.experience += result.exp;

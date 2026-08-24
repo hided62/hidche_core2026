@@ -392,7 +392,8 @@ describe('monthly event pipeline', () => {
             wall: 81,
             meta: { trade: 100, marker: 1 },
         });
-        expect(damagedCity?.meta.trust).toBe(Math.fround(79.6));
+        expect(damagedCity?.meta.trust).toBe(79.60000000000001);
+        expect(damagedCity?.meta.trust).not.toBe(Math.fround(79.60000000000001));
         expect(world.getGeneralById(1)).toMatchObject({ injury: 0, crew: 99, atmos: 50, train: 51 });
         expect(world.getGeneralById(2)).toMatchObject({ injury: 7, crew: 97, atmos: 49, train: 50 });
         expect(world.getGeneralById(3)).toMatchObject({ injury: 80, crew: 97, atmos: 49, train: 50 });

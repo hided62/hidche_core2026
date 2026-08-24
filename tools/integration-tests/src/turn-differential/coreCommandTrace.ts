@@ -1,12 +1,10 @@
 import { GameClock, LiteHashDRBG, RandUtil, type RNG } from '@sammo-ts/common';
-import { readLegacyStoredFloat } from '@sammo-ts/logic/compat/legacyFloat.js';
 import {
     GENERAL_TURN_COMMAND_KEYS,
     isSelectableGeneralTurnCommandKey,
     LogFormat,
     NATION_TURN_COMMAND_KEYS,
     normalizeScenarioEffect,
-    readLegacyCityTrust,
     sendMessage,
     type MapDefinition,
     type MessageDraft,
@@ -928,10 +926,7 @@ const projectWorld = (
                 conflict: city.conflict ?? {},
                 state: city.state,
                 term: readNumber(city.meta, 'term'),
-                // The reference snapshot observes MariaDB FLOAT through its text
-                // protocol. Project the in-memory binary32 value at that same
-                // read boundary before comparing state deltas.
-                trust: readLegacyCityTrust(readNumber(city.meta, 'trust')),
+                trust: readNumber(city.meta, 'trust'),
                 trade: readNumber(city.meta, 'trade'),
                 officerSet: readNumber(city.meta, 'officer_set'),
             })),
@@ -944,7 +939,7 @@ const projectWorld = (
                 capitalCityId: nation.capitalCityId,
                 gold: toDatabaseInt(nation.gold),
                 rice: toDatabaseInt(nation.rice),
-                tech: readLegacyStoredFloat(readNumber(nation.meta, 'tech')),
+                tech: readNumber(nation.meta, 'tech'),
                 level: nation.level,
                 typeCode: nation.typeCode,
                 generalCount: readNumber(
