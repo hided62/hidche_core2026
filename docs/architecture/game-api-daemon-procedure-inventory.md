@@ -3,12 +3,14 @@
 ## 범위와 판정 기준
 
 `app/game-api/src/router/**`의 mutation에서 직접 또는 router 전용 helper를 거쳐
-`ctx.turnDaemon.requestCommand()`를 호출하는 46개 route를 조사했다. `authedProcedure`,
-`accessAuthedProcedure`, `accessAuthedInputProcedure`는 mutation일 때
-`app/game-api/src/trpc.ts:42-75`의 API `input_event` transaction을 만든다.
-`engineAuthedProcedure`, `accessEngineAuthedProcedure`,
+`ctx.turnDaemon.requestCommand()`를 호출하는 **49개 route**를 조사했다. 하나의 route가
+여러 command를 보내더라도 route는 한 번만 세었다.
+
+`authedProcedure`, `accessAuthedProcedure`, `accessAuthedInputProcedure`는 mutation일 때
+`app/game-api/src/trpc.ts:61-104`, `:168-180`, `:215-221`의 API `input_event`
+transaction을 만든다. `engineAuthedProcedure`, `accessEngineAuthedProcedure`,
 `accessEngineAuthedInputProcedure`는 인증/접속 계측만 수행하며 API outer transaction을
-만들지 않는다(`app/game-api/src/trpc.ts:150-175`).
+만들지 않는다(`app/game-api/src/trpc.ts:182-192`, `:222-227`).
 
 판정은 다음과 같다.
 
@@ -16,48 +18,65 @@
   transaction이 소유하고, ENGINE handler가 mutation 직전 mutable state를 다시 검증한다.
 - **혼합/saga 필요**: API DB write, Redis 원본 상태, 보상 명령 또는 API snapshot에서만
   수행하는 권한/값 합성이 ENGINE 변경과 결합한다. procedure만 바꾸지 않는다.
-- **기존 정상**: 이미 ENGINE procedure이고 API outer input event가 없다.
+- **기존 ENGINE**: 이 inventory의 기존 기준선에서 이미 ENGINE procedure였고 API
+  outer input event가 없었다.
+- **ENGINE 소유 + 불필요한 API outer**: gameplay durable mutation은 ENGINE이 전부
+  소유하지만 route가 아직 API `input_event`/journal transaction에 감싸여 있다.
 
-ENGINE 전환 route의 명시적 `requestId`는 기존 middleware가 만든 child identity
-`<http request id>:<trpc path>:engine:0:<command type>`를 유지한다. 따라서 deploy 전후
-동일 HTTP request identity의 ENGINE event가 달라지지 않는다.
+현재 합계는 **ENGINE 전환 26 + 혼합 13 + 기존 ENGINE 9 + 불필요한 API
+outer 1 = 49**다.
 
-## 이번에 ENGINE procedure로 전환
+ENGINE 전환 route의 explicit `requestId`는 각 route가 기존에 사용하던 HTTP 요청
+또는 user/client-scoped durable identity를 유지한다. `inheritanceAction`은
+`<http request id>:inherit.<action>:engine:0:inheritanceAction`을 사용하고,
+`join.getSelectionPool`은 `select-pool:<user>:<http request id>:reserve`를 사용한다.
+selection-pool create/reselect는 client request ID가 있을 때
+`select-pool:<user>:<client request id>:<operation>`을, 없을 때 HTTP request/path identity를 사용한다
+(`app/game-api/src/router/join/index.ts:75-91`).
 
-| route                                                                                                                                 | 이전 outer transaction | API-side 작업                                                           | ENGINE 소유 근거                                                                                                                                                                                                                                                                                                                                         |
-| ------------------------------------------------------------------------------------------------------------------------------------- | ---------------------- | ----------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `general.vacation`, `general.setMySetting`, `general.dropItem`                                                                        | 있음                   | session-owned general 조회만 수행                                       | route `app/game-api/src/router/general/index.ts:657-706`; ENGINE이 general 존재/현재 설정/보유 item을 다시 검사하고 변경 `app/game-engine/src/turn/worldCommandHandler.ts:1476`, `:1514`, `:1571`                                                                                                                                                        |
-| `nation.appoint`, `nation.changePermission`, `nation.kick`                                                                            | 있음                   | session actor 조회만 수행                                               | route `app/game-api/src/router/nation/endpoints/appoint.ts:7`, `changePermission.ts:7`, `kick.ts:7`; ENGINE이 actor 직위, 국가, 대상/도시를 다시 검사 `app/game-engine/src/turn/worldCommandHandler.ts:1648`, `:1718`, `:1888`                                                                                                                           |
-| `troop.create`, `troop.join`, `troop.exit`, `troop.kick`, `troop.rename`                                                              | 있음                   | actor 및 조기 권한/대상 조회; API DB write 없음                         | route `app/game-api/src/router/troop/index.ts:165-314`; 동일 membership/leader/nation/name 검증과 mutation은 ENGINE `app/game-engine/src/turn/worldCommandHandler.ts:924`, `:1012`, `:1079`, `:1128`, `:1180`                                                                                                                                            |
-| `auction.openBuyRice`, `auction.openSellRice`, `auction.openUnique`, `auction.bidBuyRice`, `auction.bidSellRice`, `auction.bidUnique` | 있음                   | auction/general/world 조기 validation; commit 뒤 Redis timer index 갱신 | route `app/game-api/src/router/auction/index.ts:325-649`; auction open/bid DB mutation과 경합/resource 재검증은 ENGINE transaction `app/game-engine/src/turn/worldCommandHandler.ts:1613`, `app/game-engine/src/auction/bidder.ts:183-550`. Redis zset은 durable auction row에서 재구성 가능한 scheduler index이며 API DB transaction의 일부가 아니었다. |
-| `inherit.openUniqueAuction`                                                                                                           | 있음                   | world/general/minimum bid 조기 validation; inheritance point 차감 없음  | route `app/game-api/src/router/inherit/index.ts:794-835`; 공통 `auctionOpen` ENGINE handler와 Redis timer index만 사용                                                                                                                                                                                                                                   |
+## ENGINE procedure로 전환된 route
 
-합계 18개 route다. 모든 전환은 procedure 변경과 stable ENGINE request ID만 포함하며
-ENGINE handler, DB schema, journal/publisher foundation은 변경하지 않았다.
+| route | 현재 procedure / API-side 작업 | ENGINE 소유 근거 |
+| --- | --- | --- |
+| `general.vacation`, `general.setMySetting`, `general.dropItem` | `engineAuthedProcedure`/`accessEngineAuthedInputProcedure`; session-owned general 조회만 수행 (`app/game-api/src/router/general/index.ts:767-815`) | ENGINE이 general 존재, 현재 설정과 item 보유를 다시 검증하고 변경 (`app/game-engine/src/turn/worldCommandHandler.ts:1712-1841`) |
+| `nation.appoint`, `nation.changePermission`, `nation.kick` | `engineAuthedProcedure`; session actor 조회만 수행 (`app/game-api/src/router/nation/endpoints/appoint.ts:7-32`, `changePermission.ts:7-35`, `kick.ts:7-24`) | ENGINE이 actor 직위, 국가, 대상/도시를 다시 검증 (`app/game-engine/src/turn/worldCommandHandler.ts:1894-2291`) |
+| `troop.create`, `troop.join`, `troop.exit`, `troop.kick`, `troop.rename` | `engineAuthedProcedure`; actor 및 조기 권한/대상 조회, API DB write 없음 (`app/game-api/src/router/troop/index.ts:429-577`) | membership/leader/nation/name 검증과 mutation을 ENGINE이 소유 (`app/game-engine/src/turn/worldCommandHandler.ts:1131-1430`) |
+| `auction.openBuyRice`, `auction.openSellRice`, `auction.openUnique`, `auction.bidBuyRice`, `auction.bidSellRice`, `auction.bidUnique` | `engineAuthedProcedure`; auction/general/world 조기 validation과 commit 뒤 Redis timer index 갱신 (`app/game-api/src/router/auction/index.ts:337-662`) | open/bid DB mutation과 경합/resource 재검증은 ENGINE transaction (`app/game-engine/src/turn/worldCommandHandler.ts:1859-1885`, `app/game-engine/src/auction/bidder.ts`). Redis zset은 durable auction row에서 재구성하는 scheduler index다. |
+| `inherit.openUniqueAuction` | `engineAuthedProcedure`; world/general/minimum bid 조기 validation (`app/game-api/src/router/inherit/index.ts:389-428`) | 공통 `auctionOpen` ENGINE handler가 mutation을 소유하고 API는 Redis timer index만 갱신 (`app/game-api/src/auction/open.ts:22-51`) |
+| `join.getSelectionPool` | `engineAuthedProcedure`; actor와 accepted game time만 전달 (`app/game-api/src/router/join/index.ts:390-406`) | `selectPoolReserve` ENGINE handler가 world/DB 상태에서 예약을 재검증하고 저장 (`app/game-engine/src/turn/worldCommandHandler.ts:401-437`) |
+| `inherit.buyHiddenBuff`, `inherit.setNextSpecialWar`, `inherit.resetSpecialWar`, `inherit.resetTurnTime`, `inherit.resetStat`, `inherit.buyRandomUnique`, `inherit.checkOwner` | 모두 `engineAuthedProcedure`; 인증 user ID와 action 입력만 전달 (`app/game-api/src/router/inherit/index.ts:107-124`, `:301-388`, `:429-445`) | `inheritanceAction` ENGINE handler가 general/user 소유권, 통일 상태, 잔액, 대상, RNG, general patch, inheritance point/log/message를 한 transaction에서 처리 (`app/game-engine/src/turn/worldCommandHandler.ts:807-818`, `app/game-engine/src/turn/inheritanceActionService.ts:313-669`) |
+
+합계 **26개 route**다.
 
 ## 혼합 또는 validation 이관이 먼저 필요한 route
 
-| route                                                                                                                                                    | 현재 procedure / outer transaction                                                                                                                                                                              | 보류 근거                                                                                                                                                                                                                                                                                                      |
-| -------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `messages.respond`                                                                                                                                       | `authedProcedure`, action별 분기 (`app/game-api/src/router/messages/index.ts`)                                                                                                                                  | `scout`와 `raiseInvader`는 stable `messageRespond` ENGINE command가 actor/message를 다시 잠그고 처리한다. `noAggression`/`cancelNA`/`stopWar`는 기존 API transaction의 `respondToDiplomaticMessage`가 처리하므로 route 전체를 ENGINE-owned로 분류하지 않는다. 두 경로 모두 commit journal을 남긴다.            |
-| `inherit.buyHiddenBuff`, `inherit.setNextSpecialWar`, `inherit.resetSpecialWar`, `inherit.resetTurnTime`, `inherit.resetStat`, `inherit.buyRandomUnique` | `authedProcedure`, 있음 (`app/game-api/src/router/inherit/index.ts:343`, `:405`, `:486`, `:542`, `:599`, `:746`)                                                                                                | ENGINE `patchGeneral` 뒤 API transaction이 inheritance point, inheritance log, 일부 user-state를 쓴다(`:388-402`, `:464-483`, `:523-539`, `:581-596`, `:700-742`, `:777-790`). 현재 outer transaction도 먼저 commit된 ENGINE 변경을 rollback하지 못한다. 한 ENGINE command로 합치거나 durable saga가 필요하다. |
-| `nation.setNotice`, `nation.setScoutMsg`, `nation.setSecretLimit`, `nation.setRate`, `nation.setBlockWar`, `nation.setBill`, `nation.setBlockScout`      | `authedProcedure`, 있음 (`app/game-api/src/router/nation/endpoints/setNotice.ts:11`, `setScoutMsg.ts:11`, `setSecretLimit.ts:10`, `setRate.ts:10`, `setBlockWar.ts:10`, `setBill.ts:10`, `setBlockScout.ts:10`) | API가 actor 권한과 nation meta를 읽어 full metadata patch를 합성한다. ENGINE `setNationMeta`는 `_updatedAt` CAS만 검사하고 actor 권한을 알지 못한다(`app/game-engine/src/turn/worldCommandHandler.ts:430-472`). actor/permission을 command와 ENGINE validation으로 옮긴 뒤 전환한다.                           |
-| `npc.setNationPolicy`, `npc.setNationPriority`, `npc.setGeneralPriority`                                                                                 | `accessAuthedInputProcedure`, 있음 (`app/game-api/src/router/npc/index.ts:540`, `:703`, `:756`)                                                                                                                 | API가 nation/general/world를 읽어 권한, unit-set 기반 기본값과 full policy object를 합성한 뒤 같은 `setNationMeta` CAS를 사용한다(`:540-702`, `:703-755`, `:756-807`). ENGINE이 권한/합성 의미를 소유하지 않는다.                                                                                              |
-| `tournament.join`, `tournament.placeBet`                                                                                                                 | `authedProcedure`, 있음 (`app/game-api/src/router/tournament/index.ts:376`, `:523`)                                                                                                                             | PostgreSQL ENGINE resource/meta 명령과 Redis-owned participants/bets를 결합하고 실패 시 보상 ENGINE 명령을 보낸다(`:376-463`, `:523-628`). 하나의 DB transaction이 아니며 durable saga/Redis atomic revision이 필요하다.                                                                                       |
-| `vote.submitVote`                                                                                                                                        | `authedProcedure`, 있음 (`app/game-api/src/router/vote/index.ts:349-528`)                                                                                                                                       | API transaction이 vote row를 insert한 뒤 ENGINE `voteReward`를 기다리고 commit 뒤 front-status publish를 수행한다. vote/reward 단일 소유 command 또는 idempotent saga 없이는 분리할 수 없다. 이 작업에서는 vote journal/publisher를 수정하지 않았다.                                                           |
+| route | 현재 procedure / outer transaction | 보류 근거 |
+| --- | --- | --- |
+| `messages.respond` | `authedProcedure`, action별 분기 (`app/game-api/src/router/messages/index.ts:318-372`) | `scout`/`raiseInvader`는 `messageRespond` ENGINE command가 처리하지만 `noAggression`/`cancelNA`/`stopWar`는 API transaction의 `respondToDiplomaticMessage` 경로가 처리한다. route 전체를 ENGINE-owned로 보지 않는다. |
+| `nation.setNotice`, `nation.setScoutMsg`, `nation.setSecretLimit`, `nation.setRate`, `nation.setBlockWar`, `nation.setBill`, `nation.setBlockScout` | `authedProcedure`, outer 있음 (`app/game-api/src/router/nation/endpoints/setNotice.ts:11`, `setScoutMsg.ts:11`, `setSecretLimit.ts:10`, `setRate.ts:10`, `setBlockWar.ts:10`, `setBill.ts:10`, `setBlockScout.ts:10`) | API가 actor 권한과 nation meta를 읽어 full metadata patch를 합성한다. `setNationMeta`는 `_updatedAt` CAS만 검사하므로 actor/permission과 합성 의미를 ENGINE으로 옮겨야 한다 (`app/game-api/src/router/nation/shared.ts:431-458`, `app/game-engine/src/turn/worldCommandHandler.ts:499-542`). |
+| `npc.setNationPolicy`, `npc.setNationPriority`, `npc.setGeneralPriority` | `accessAuthedInputProcedure`, outer 있음 (`app/game-api/src/router/npc/index.ts:545-812`) | API가 nation/general/world를 읽어 권한, unit-set 기반 기본값과 full policy object를 합성한 뒤 `setNationMeta` CAS를 사용한다. ENGINE은 권한/합성 의미를 소유하지 않는다. |
+| `tournament.join`, `tournament.placeBet` | `authedProcedure`, outer 있음 (`app/game-api/src/router/tournament/index.ts:393-458`, `:515-620`) | PostgreSQL ENGINE resource/meta 명령과 Redis-owned participants/bets를 결합하고 실패 시 보상 ENGINE 명령을 보낸다. 하나의 DB transaction이 아니며 durable saga/Redis atomic revision이 필요하다. |
 
-합계 20개 route다. 특히 inheritance/vote의 현재 outer transaction은 API 절반만
-rollback하므로 “원자적”이라고 간주하면 안 된다.
+합계 **13개 route**다.
 
-## 이미 API outer transaction이 없는 정상 route
+## 기존에 API outer transaction이 없던 ENGINE route
 
-| route                                                                                                                  | 근거                                                                                                                                                                                                     |
-| ---------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `general.adjustIcon`                                                                                                   | `engineAuthedProcedure`; `app/game-api/src/router/general/index.ts:584-610`. helper가 stable account-icon request ID로 ENGINE command를 보냄.                                                            |
-| `general.ensureDieOnPrestartStatus`, `general.dieOnPrestart`, `general.buildNationCandidate`, `general.instantRetreat` | `accessEngineAuthedProcedure`/`accessEngineAuthedInputProcedure`; `app/game-api/src/router/general/index.ts:612-656`. user/general 조회는 outer transaction 밖이고 command마다 stable request ID가 있다. |
-| `join.selectPoolGeneral`, `join.reselectPoolGeneral`, `join.createGeneral`, `join.possessGeneral`                      | `engineAuthedProcedure`; `app/game-api/src/router/join/index.ts:390`, `:434`, `:462`, `:585`. client request ID가 있으면 user-scoped durable ENGINE identity를 사용한다.                                 |
+| route | 근거 |
+| --- | --- |
+| `general.adjustIcon` | `engineAuthedProcedure`; helper가 stable account-icon request ID로 ENGINE command를 보냄 (`app/game-api/src/router/general/index.ts:694-720`, `app/game-api/src/services/accountIconSync.ts:40-75`) |
+| `general.ensureDieOnPrestartStatus`, `general.dieOnPrestart`, `general.buildNationCandidate`, `general.instantRetreat` | `accessEngineAuthedProcedure`/`accessEngineAuthedInputProcedure`; user/general 조회는 outer transaction 밖이고 command마다 stable request ID가 있음 (`app/game-api/src/router/general/index.ts:104-144`, `:722-766`) |
+| `join.selectPoolGeneral`, `join.reselectPoolGeneral`, `join.createGeneral`, `join.possessGeneral` | `engineAuthedProcedure`; client request ID가 있으면 user-scoped durable identity를 사용 (`app/game-api/src/router/join/index.ts:407-564`, `:608-642`) |
 
-합계 9개 route다.
+합계 **9개 route**다.
+
+## ENGINE이 소유하지만 API outer transaction이 남은 route
+
+| route | 현재 상태 | 남은 일 |
+| --- | --- | --- |
+| `vote.submitVote` | `authedProcedure`가 API outer `input_event` transaction을 만든다. API는 poll/actor 조기 validation 후 `voteReward`를 보내고 `front.general` journal을 표시한다 (`app/game-api/src/router/vote/index.ts:294-369`). ENGINE은 poll row lock, 선택 validation, vote insert, reward/idempotency marker, 금·아이템·로그 변경을 한 mutation transaction에서 소유한다 (`app/game-engine/src/turn/worldCommandHandler.ts:2430-2847`). | viewer-specific `front.general` invalidation을 ENGINE commit journal로 옮기고, 현재 middleware가 만드는 `voteReward` child identity를 explicit request ID로 보존한 뒤 ENGINE procedure로 전환한다. |
+
+합계 **1개 route**다. Gameplay DB mutation 소유권 기준으로는 불필요한 outer이지만,
+`front.general` journal이 API에 남아 있으므로 procedure만 바꾸면 실시간 갱신 계약을 잃는다.
 
 ## 검증 계약
 
@@ -68,6 +87,14 @@ rollback하므로 “원자적”이라고 간주하면 안 된다.
 - `app/game-api/test/troopRouter.test.ts`: troop mutation의 동일 계약을 검증한다.
 - `app/game-api/test/auctionRouter.test.ts`: auction mutation이 API transaction 없이
   daemon command와 Redis timer projection을 완료하는 계약을 검증한다.
+- `app/game-api/test/inheritRouter.test.ts`,
+  `app/game-engine/test/inheritanceActionPersistence.integration.test.ts`: 인증 actor, point/log,
+  general/message 변경이 `inheritanceAction` ENGINE transaction에 함께 있는지 검증한다.
+- `app/game-api/test/voteRouter.test.ts`, `app/game-engine/test/voteReward.test.ts`: API 조기
+  validation과 ENGINE의 vote insert/reward/idempotency 경계를 검증한다. API outer/journal
+  제거는 아직 검증 대상이 아니다.
 - raw inventory 재검색: `rg -n "requestCommand\\(" app/game-api/src/router`와
-  `openAuctionWithDaemon`, `patchGeneral`, `updateNationMeta`,
-  `adjustAccountIconForUser` caller 검색을 함께 실행해야 helper 경유 route를 놓치지 않는다.
+  `openAuctionWithDaemon`, `requestInheritanceAction`, `updateNationMeta`,
+  `adjustAccountIconForUser`, `requestImmediateAction`, `requestJoinCreateCommand`,
+  `requestNpcPossessionCommand` caller 검색을 함께 실행해 helper 경유 route를 놓치지
+  않는다.

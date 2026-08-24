@@ -286,4 +286,37 @@ integration('game cancellation transaction', () => {
             generalMode: 'DELETE',
         });
     });
+
+    it('keeps a native inheritance log inside the cancellation boundary under a KST session', async () => {
+        const text = '신규/복귀 생성으로 포인트 1500 지급';
+        await db.inheritanceLog.deleteMany({ where: { userId, text } });
+        const [session] = await db.$queryRaw<Array<{ timeZone: string }>>`
+            SELECT current_setting('TIMEZONE') AS "timeZone"
+        `;
+        expect(session?.timeZone).toBe('Asia/Seoul');
+
+        const createdAfter = Date.now();
+        const log = await db.inheritanceLog.create({
+            data: { userId, serverId, year: 190, month: 7, text },
+        });
+        const createdBefore = Date.now();
+        expect(log.createdAt.getTime()).toBeGreaterThanOrEqual(createdAfter);
+        expect(log.createdAt.getTime()).toBeLessThanOrEqual(createdBefore);
+
+        const result = await cancelGame({
+            cancellationId: 'game-cancellation-kst-default-fixture',
+            databaseUrl: databaseUrl!,
+            cancelledBy: 'admin',
+            reason: 'KST 기본값 경계 검증',
+            historyMode: 'RETAIN_ABANDONED',
+            generalMode: 'RETAIN',
+            earnedPointRetentionPercent: 40,
+            cancelledAt: new Date(createdBefore + 1_000),
+        });
+        expect(result.settlements[userId]).toMatchObject({
+            earnedPoint: 1_790.005,
+            retainedEarnedPoint: 716,
+            finalPoint: 10_716,
+        });
+    });
 });

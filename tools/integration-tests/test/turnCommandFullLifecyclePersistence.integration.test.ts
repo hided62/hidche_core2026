@@ -485,11 +485,33 @@ databaseIntegration('Core PostgreSQL full reserved-turn lifecycle persistence', 
         }
         world.executeGeneralTurn(executableActor);
 
-        const createdIds = world
-            .peekDirtyState()
-            .createdGenerals.map((general) => general.id)
-            .sort((left, right) => left - right);
+        const createdGenerals = world.peekDirtyState().createdGenerals;
+        const createdIds = createdGenerals.map((general) => general.id).sort((left, right) => left - right);
         expect(createdIds).toEqual([102, 103, 104]);
+        const createdVolunteerIdentity = createdGenerals
+            .map((general) => ({
+                id: general.id,
+                affinity: general.affinity,
+                npcState: general.npcState,
+                npcOrg: asRecord(general.meta).npc_org,
+                expLevel: asRecord(general.meta).explevel,
+                dedLevel: asRecord(general.meta).dedlevel,
+            }))
+            .sort((left, right) => left.id - right.id);
+        expect(createdVolunteerIdentity).toEqual(
+            createdIds.map((id) => ({
+                id,
+                affinity: expect.any(Number),
+                npcState: 4,
+                npcOrg: 4,
+                expLevel: 0,
+                dedLevel: 1,
+            }))
+        );
+        for (const volunteer of createdVolunteerIdentity) {
+            expect(volunteer.affinity).toBeGreaterThanOrEqual(1);
+            expect(volunteer.affinity).toBeLessThanOrEqual(150);
+        }
         expect(reservedTurns.peekDirtyState().generalInitializationIds.sort((left, right) => left - right)).toEqual(
             createdIds
         );
@@ -527,6 +549,22 @@ databaseIntegration('Core PostgreSQL full reserved-turn lifecycle persistence', 
             ).toEqual(Array.from({ length: 30 }, (_, turnIdx) => ({ turnIdx, action: '휴식', args: {} })));
         }
 
+        const persistedVolunteerIdentity = (
+            await db.general.findMany({
+                where: { id: { in: createdIds } },
+                select: { id: true, affinity: true, npcState: true, meta: true },
+                orderBy: { id: 'asc' },
+            })
+        ).map((general) => ({
+            id: general.id,
+            affinity: general.affinity,
+            npcState: general.npcState,
+            npcOrg: asRecord(general.meta).npc_org,
+            expLevel: asRecord(general.meta).explevel,
+            dedLevel: asRecord(general.meta).dedlevel,
+        }));
+        expect(persistedVolunteerIdentity).toEqual(createdVolunteerIdentity);
+
         const persistedNation = await db.nation.findUnique({ where: { id: nationId }, select: { meta: true } });
         expect(persistedNation?.meta).toMatchObject({ gennum: 4 });
 
@@ -534,9 +572,16 @@ databaseIntegration('Core PostgreSQL full reserved-turn lifecycle persistence', 
         expect(
             reloaded.snapshot.generals
                 .filter((general) => createdIds.includes(general.id))
-                .map((general) => general.id)
-                .sort((left, right) => left - right)
-        ).toEqual(createdIds);
+                .map((general) => ({
+                    id: general.id,
+                    affinity: general.affinity,
+                    npcState: general.npcState,
+                    npcOrg: asRecord(general.meta).npc_org,
+                    expLevel: asRecord(general.meta).explevel,
+                    dedLevel: asRecord(general.meta).dedlevel,
+                }))
+                .sort((left, right) => left.id - right.id)
+        ).toEqual(createdVolunteerIdentity);
         expect(reloaded.snapshot.nations.find((nation) => nation.id === nationId)?.meta).toMatchObject({ gennum: 4 });
         const reloadedReservedTurns = new InMemoryReservedTurnStore(db, {
             maxGeneralTurns: 30,

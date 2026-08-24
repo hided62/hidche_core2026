@@ -41,7 +41,7 @@ node_tag=$(printf '%s' "${CI_NODE_INDEX:-local}" | tr -cd 'a-zA-Z0-9_' | tr 'A-Z
 run_id=$(date -u +%m%d%H%M%S)_$$_${node_tag}
 export CONDITIONAL_INTEGRATION_RUN_ID=$run_id
 schema_ownership_token="sammo-conditional-integration:$run_id"
-supported_registry_modes="core create_general external_fixture gateway_runtime immediate_action npc_possession read_model_journal reference_full_lifecycle reference_live_sortie reference_npc_possession select_pool web_push_gateway"
+supported_registry_modes="core create_general external_fixture gateway_runtime immediate_action npc_possession read_model_journal reference_command_durable_matrix reference_full_lifecycle reference_live_sortie reference_npc_possession scenario_lifecycle security_transport select_pool web_push_gateway"
 term_grace_seconds=${CONDITIONAL_INTEGRATION_TERM_GRACE_SECONDS:-10}
 case "$term_grace_seconds" in
     ''|*[!0-9]*)
@@ -55,6 +55,7 @@ if [ "$term_grace_seconds" -lt 1 ] || [ "$term_grace_seconds" -gt 60 ]; then
 fi
 integration_schema=${CONDITIONAL_INTEGRATION_SCHEMA:-ci_${run_id}_integration}
 scenario_schema=${SCENARIO_SEED_INTEGRATION_SCHEMA:-ci_${run_id}_scenario_seed}
+scenario_lifecycle_schema=${SCENARIO_LIFECYCLE_INTEGRATION_SCHEMA:-ci_${run_id}_scenario_lifecycle}
 npc_possession_schema=${NPC_POSSESSION_INTEGRATION_SCHEMA:-ci_${run_id}_npc_possession_integration}
 create_general_schema=${CREATE_GENERAL_INTEGRATION_SCHEMA:-ci_${run_id}_create_general_integration}
 select_pool_schema=${SELECT_POOL_INTEGRATION_SCHEMA:-ci_${run_id}_select_pool_integration}
@@ -62,13 +63,16 @@ immediate_action_schema=${IMMEDIATE_ACTION_INTEGRATION_SCHEMA:-ci_${run_id}_imme
 gateway_runtime_schema=${GATEWAY_RUNTIME_INTEGRATION_SCHEMA:-ci_${run_id}_gateway_runtime_integration}
 web_push_gateway_schema=${WEB_PUSH_GATEWAY_INTEGRATION_SCHEMA:-ci_${run_id}_web_push_integration}
 read_model_journal_schema=${READ_MODEL_JOURNAL_INTEGRATION_SCHEMA:-ci_${run_id}_read_model_journal_integration}
+security_transport_schema=${SECURITY_TRANSPORT_SCHEMA:-ci_${run_id}_security_transport}
 npc_possession_differential_schema=${NPC_POSSESSION_DIFFERENTIAL_SCHEMA:-ci_${run_id}_npc_possession_differential}
 live_sortie_schema=${LIVE_SORTIE_PERSISTENCE_SCHEMA:-ci_${run_id}_live_sortie_persistence}
+turn_command_durable_matrix_schema=${TURN_COMMAND_DURABLE_MATRIX_SCHEMA:-ci_${run_id}_turn_command_durable_matrix}
 turn_full_lifecycle_schema=${TURN_FULL_LIFECYCLE_PERSISTENCE_SCHEMA:-ci_${run_id}_turn_full_lifecycle_persistence}
 
 for schema in \
     "$integration_schema" \
     "$scenario_schema" \
+    "$scenario_lifecycle_schema" \
     "$npc_possession_schema" \
     "$create_general_schema" \
     "$select_pool_schema" \
@@ -76,8 +80,10 @@ for schema in \
     "$gateway_runtime_schema" \
     "$web_push_gateway_schema" \
     "$read_model_journal_schema" \
+    "$security_transport_schema" \
     "$npc_possession_differential_schema" \
     "$live_sortie_schema" \
+    "$turn_command_durable_matrix_schema" \
     "$turn_full_lifecycle_schema"; do
     case "$schema" in
         ''|[!a-z_]*|*[!a-z0-9_]*)
@@ -196,6 +202,7 @@ delete_owned_redis_keys() {
             const runId = process.env.CONDITIONAL_INTEGRATION_RUN_ID;
             const patterns = [
                 `sammo:game:*:che:security-http-${runId}:*`,
+                `sammo:che:security-http-${runId}:*`,
                 `sammo:game:*:che:nation-html-${runId}:*`,
                 `sammo:che:battle-sim-e2e-${runId}-*:battle-sim:*`,
             ];
@@ -443,14 +450,14 @@ run_marked_tests() {
 
 run_redis_only_tests() {
     package_dir=app/game-api
-    database_marker=$1
+    database_markers=$1
     test_files=$(
         cd "$workspace_root/$package_dir"
         redis_files=$(rg -l 'process\.env\.REDIS_URL' test -g '*.integration.test.ts' | sort)
         # Files already selected through a database marker run once in that
         # database group, where Redis is also available.
         # shellcheck disable=SC2086
-        rg --files-without-match "$database_marker" $redis_files
+        rg --files-without-match "$database_markers" $redis_files
     )
     if [ -z "$test_files" ]; then
         echo "no Redis-only integration tests found under $package_dir" >&2
@@ -473,11 +480,14 @@ pnpm --filter @sammo-ts/game-engine build
 
 GATEWAY_MIGRATION_TEST_DATABASE_URL=$base_database_url \
     pnpm --filter @sammo-ts/infra verify:migration:account-icon
+GAME_OUTBOX_MIGRATION_TEST_DATABASE_URL=$base_database_url \
+    pnpm --filter @sammo-ts/infra verify:migration:outbox-utc
 
 cleanup_resources_started=1
 create_owned_schema "$integration_schema"
 create_owned_schema "$npc_possession_schema"
 create_owned_schema "$scenario_schema"
+create_owned_schema "$scenario_lifecycle_schema"
 
 database_url=$(build_database_url "$integration_schema")
 export POSTGRES_SCHEMA=$integration_schema
@@ -503,6 +513,17 @@ run_marked_tests app/game-api "$core_database_markers" "game_api_postgresql"
 run_marked_tests app/game-engine "$core_database_markers" "game_engine_postgresql"
 run_marked_tests tools/integration-tests "$core_database_markers" "snapshot_postgresql"
 
+scenario_lifecycle_database_url=$(build_database_url "$scenario_lifecycle_schema")
+(
+    export POSTGRES_SCHEMA=$scenario_lifecycle_schema
+    export DATABASE_URL=$scenario_lifecycle_database_url
+    pnpm --filter @sammo-ts/infra prisma:migrate:deploy:game
+)
+export SCENARIO_LIFECYCLE_DATABASE_URL=$scenario_lifecycle_database_url
+run_marked_tests tools/integration-tests \
+    "$(markers_for_mode scenario_lifecycle)" \
+    "scenario_lifecycle_postgresql"
+
 create_owned_schema "$read_model_journal_schema"
 read_model_journal_database_url=$(build_database_url "$read_model_journal_schema")
 (
@@ -517,6 +538,22 @@ run_marked_tests packages/infra \
 run_marked_tests app/game-engine \
     "$(markers_for_mode read_model_journal)" \
     "read_model_journal_engine_postgresql"
+
+create_owned_schema "$security_transport_schema"
+security_transport_database_url=$(build_database_url "$security_transport_schema")
+(
+    export POSTGRES_SCHEMA=$security_transport_schema
+    export DATABASE_URL=$security_transport_database_url
+    pnpm --filter @sammo-ts/infra prisma:migrate:deploy:game
+)
+export POSTGRES_SCHEMA=$security_transport_schema
+export DATABASE_URL=$security_transport_database_url
+export SECURITY_TRANSPORT_DATABASE_URL=$security_transport_database_url
+run_marked_tests app/game-api \
+    "$(markers_for_mode security_transport)" \
+    "security_transport_postgresql"
+export POSTGRES_SCHEMA=$integration_schema
+export DATABASE_URL=$database_url
 
 create_owned_schema "$create_general_schema"
 create_general_database_url=$(build_database_url "$create_general_schema")
@@ -672,6 +709,20 @@ if [ "${TURN_DIFFERENTIAL_REFERENCE:-}" = "1" ]; then
         "$(markers_for_mode reference_live_sortie)" \
         "live_sortie_postgresql"
 
+    create_owned_schema "$turn_command_durable_matrix_schema"
+    turn_command_durable_matrix_database_url=$(build_database_url "$turn_command_durable_matrix_schema")
+    (
+        export POSTGRES_SCHEMA=$turn_command_durable_matrix_schema
+        export DATABASE_URL=$turn_command_durable_matrix_database_url
+        pnpm --filter @sammo-ts/infra prisma:db:push:game
+    )
+    export POSTGRES_SCHEMA=$turn_command_durable_matrix_schema
+    export DATABASE_URL=$turn_command_durable_matrix_database_url
+    export TURN_COMMAND_DURABLE_MATRIX_DATABASE_URL=$turn_command_durable_matrix_database_url
+    run_marked_tests tools/integration-tests \
+        "$(markers_for_mode reference_command_durable_matrix)" \
+        "turn_command_durable_matrix_postgresql"
+
     create_owned_schema "$turn_full_lifecycle_schema"
     turn_full_lifecycle_database_url=$(build_database_url "$turn_full_lifecycle_schema")
     (
@@ -689,7 +740,8 @@ if [ "${TURN_DIFFERENTIAL_REFERENCE:-}" = "1" ]; then
     export DATABASE_URL=$database_url
 fi
 
-run_redis_only_tests "$core_database_markers"
+all_database_markers=$(cut -f1 "$validated_registry_file" | paste -sd '|' -)
+run_redis_only_tests "$all_database_markers"
 
 scenario_database_url=$(build_database_url "$scenario_schema")
 export POSTGRES_SCHEMA=$scenario_schema

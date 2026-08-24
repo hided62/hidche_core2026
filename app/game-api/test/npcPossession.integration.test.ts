@@ -1,7 +1,13 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
+import { asRecord, LiteHashDRBG, RandUtil } from '@sammo-ts/common';
 import type { GameSessionTokenPayload } from '@sammo-ts/common/auth/gameToken';
-import { createTurnDaemonRuntime, seedScenarioToDatabase, type TurnDaemonRuntime } from '@sammo-ts/game-engine';
+import {
+    buildNpcSelectionTokenSeed,
+    createTurnDaemonRuntime,
+    seedScenarioToDatabase,
+    type TurnDaemonRuntime,
+} from '@sammo-ts/game-engine';
 import {
     acquireGameSchemaAdvisoryXactLock,
     createGamePostgresConnector,
@@ -199,6 +205,32 @@ integration('mode 1 NPC possession through token reservation and the durable dae
         const config = await appRouter.createCaller(buildContext('npc-possession-config')).join.getConfig();
         expect(config.npcPossession).toEqual({ enabled: true });
 
+        const worldState = await db.worldState.findFirstOrThrow();
+        const acceptedGameTick = Number(worldState.clockTick);
+        const hiddenSeed = asRecord(worldState.meta).hiddenSeed;
+        expect(Number.isSafeInteger(acceptedGameTick)).toBe(true);
+        if (typeof hiddenSeed !== 'string' && typeof hiddenSeed !== 'number') {
+            throw new Error('NPC possession integration hidden seed is missing');
+        }
+        const selectable = await db.general.findMany({
+            where: { userId: null, npcState: 2 },
+            orderBy: { id: 'asc' },
+            select: { id: true, leadership: true, strength: true, intel: true },
+        });
+        const weights = Object.fromEntries(
+            selectable.map((candidate) => [
+                String(candidate.id),
+                Math.pow(candidate.leadership + candidate.strength + candidate.intel, 1.5),
+            ])
+        );
+        const rng = new RandUtil(
+            new LiteHashDRBG(buildNpcSelectionTokenSeed(hiddenSeed, 7_701, acceptedGameTick))
+        );
+        const expectedCandidateIds = new Set<number>();
+        while (expectedCandidateIds.size < Math.min(5, selectable.length)) {
+            expectedCandidateIds.add(Number(rng.choiceUsingWeight(weights)));
+        }
+
         const [first, concurrentSameOwner] = await Promise.all([
             appRouter.createCaller(buildContext('npc-possession-token-a')).join.listPossessCandidates({}),
             appRouter.createCaller(buildContext('npc-possession-token-concurrent')).join.listPossessCandidates({}),
@@ -208,6 +240,9 @@ integration('mode 1 NPC possession through token reservation and the durable dae
         expect(first.candidates.length).toBeGreaterThan(0);
         expect(first.candidates.length).toBeLessThanOrEqual(5);
         expect(new Set(first.candidates.map(({ id }) => id)).size).toBe(first.candidates.length);
+        expect(first.candidates.map(({ id }) => id).sort((left, right) => left - right)).toEqual(
+            [...expectedCandidateIds].sort((left, right) => left - right)
+        );
         expect(first.pickMoreSeconds).toBe(0);
         expect(first.candidates.every(({ keepCount }) => keepCount === 3)).toBe(true);
         const rows = await db.general.findMany({

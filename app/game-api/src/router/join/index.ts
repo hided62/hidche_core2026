@@ -590,6 +590,12 @@ export const joinRouter = router({
             }
             try {
                 const gameTime = await loadCurrentGameTime(ctx.db);
+                if (gameTime.tick === null) {
+                    throw new TRPCError({
+                        code: 'PRECONDITION_FAILED',
+                        message: 'Game clock is not initialized.',
+                    });
+                }
                 return await reserveNpcPossessionCandidates({
                     db: ctx.db,
                     worldState,
@@ -598,6 +604,7 @@ export const joinRouter = router({
                     refresh: input.refresh,
                     keepIds: input.keepIds,
                     now: gameTime.now,
+                    acceptedGameTick: gameTime.tick,
                 });
             } catch (error) {
                 if (error instanceof NpcPossessionError) {

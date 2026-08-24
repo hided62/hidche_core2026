@@ -27,10 +27,19 @@ chain을 적용하고 두 번째 실행은 `No pending migrations to apply`여�
 - `world_state`, `nation`, `city`, `general`, `message`, `troop`
 - `general_turn`, `nation_turn`과 revision·lease field
 - `input_event`, `turn_daemon_lease`
-- `read_model_revision`, `read_model_outbox`, `read_model_revision_meta`
+- `read_model_revision`, `read_model_outbox`, `read_model_revision_meta`, `web_push_outbox`
+- 두 outbox의 `available_at`, `locked_at`, `delivered_at`, `created_at`은
+  millisecond 정밀도 `timestamp without time zone`을 유지한다. 이 migration
+  이후 신규 값과 pending/dispatcher 운영 계약은 UTC wall 값으로 통일하되,
+  이미 전달된 과거 행의 표시용 시각 전체를 일괄 재해석하지 않는다.
 - `read_model_revision_meta.id=1`의 `coverage_version=0`
 - `diplomacy`, `event`, `log_entry`, `error_log`
 - auction, board, vote, yearbook, archive와 inheritance table
+- `vote_poll.created_at/updated_at`, `vote.created_at`, `vote_comment.created_at`의
+  신규 raw-SQL fallback은 KST game session에서도 UTC wall 값을 기록한다. 현재
+  writer는 JavaScript `Date`를 명시하고, 이전 writer 형태의 column 생략도 새
+  default로 안전해야 한다. 기존 vote timestamp는 Prisma UTC와 raw KST 출처를
+  구분할 표식이 없어 소급 이동하지 않는다.
 - `nation.chief_general_id`
 - `city.trade` nullable, `city.trust` REAL
 - `auction_bid.meta` JSONB NOT NULL
@@ -41,6 +50,42 @@ chain을 적용하고 두 번째 실행은 `No pending migrations to apply`여�
 
 검증이 끝나면 이름을 직접 확인한 임시 database와 role만 제거합니다. 공유
 database나 Compose volume을 삭제하지 않습니다.
+
+## Game outbox UTC-wall populated upgrade 검증
+
+Git에서 제외된 전용 PostgreSQL URL을 주입해 target 직전 migration chain부터
+실제 data upgrade와 두 번째 deploy no-op까지 검증합니다.
+
+```sh
+GAME_OUTBOX_MIGRATION_TEST_DATABASE_URL=... \
+  pnpm --filter @sammo-ts/infra verify:migration:outbox-utc
+```
+
+검증기는 실행별 소유권 comment가 있는 schema만 만들고 정리합니다. KST DB
+default로 생성된 ReadModel `created_at`의 UTC-wall 변환, 기존 JavaScript UTC
+WebPush `created_at` 보존, 두 pending outbox의 requeue·lease 해제, delivered 행
+보존, target checksum과 이전 DML shape 호환성을 확인합니다. 이전 binary를 별도
+build해 실행하거나 down migration을 제공한다는 뜻은 아닙니다.
+
+운영 release-controller의 게임 migration 명령은 profile runtime URL을 바꾸지
+않고 migration 연결에만 `options=-c TimeZone=Asia/Seoul`을 추가합니다. 이미
+명시된 `DATABASE_URL` option/query, `PGOPTIONS` 또는 `PGTZ`가 다른 timezone을
+요구하면 마지막 옵션으로 덮지 않고 migration 시작 전에 실패합니다. 그 다음
+변경하지 않은 원본 profile URL로 `current_setting('TimeZone')`을 조회해 기존
+writer session이 실제로 `Asia/Seoul`인지 확인한 뒤에만, KST option을 고정한
+별도 URL로 Prisma migration을 실행합니다. 이는 이미 배포된 migration checksum을
+보존하면서 legacy game wall-clock provenance가 다른 과거 시각을 0700 migration이
+잘못 재해석하는 일을 막습니다.
+
+실제 fail-closed 경계는 timezone option이 없는 일회성 UTC-default role URL을
+`PROFILE_MIGRATION_UTC_DATABASE_URL`로 주입하고 다음처럼 재현합니다. 이 URL은
+격리 DB의 disposable role만 사용하며 문서·로그에 값을 남기지 않습니다.
+marker는 `external_fixture`로 등록되어 일반 조건부 runner가 일회성 role을 만들거나
+이 테스트를 실행하지 않으며, 위 URL을 준비한 명시적 실행에서만 활성화됩니다.
+
+```sh
+pnpm --filter @sammo-ts/gateway-api test profileMigrationTimezone.integration.test.ts
+```
 
 ## NPC selection 중복 owner preflight
 

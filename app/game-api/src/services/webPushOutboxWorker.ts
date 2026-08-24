@@ -44,8 +44,11 @@ export class WebPushOutboxWorker {
                 SELECT "id"
                 FROM "web_push_outbox"
                 WHERE "delivered_at" IS NULL
-                  AND "available_at" <= CURRENT_TIMESTAMP
-                  AND ("locked_at" IS NULL OR "locked_at" <= CURRENT_TIMESTAMP - INTERVAL '30 seconds')
+                  AND "available_at" <= (CURRENT_TIMESTAMP AT TIME ZONE 'UTC')
+                  AND (
+                      "locked_at" IS NULL
+                      OR "locked_at" <= (CURRENT_TIMESTAMP AT TIME ZONE 'UTC') - INTERVAL '30 seconds'
+                  )
                 ORDER BY "id"
                 FOR UPDATE SKIP LOCKED
                 LIMIT 50
@@ -116,7 +119,7 @@ export class WebPushOutboxWorker {
                 WITH expired AS (
                     SELECT "id"
                     FROM "web_push_outbox"
-                    WHERE "delivered_at" < CURRENT_TIMESTAMP - INTERVAL '1 day'
+                    WHERE "delivered_at" < (CURRENT_TIMESTAMP AT TIME ZONE 'UTC') - INTERVAL '1 day'
                     ORDER BY "id"
                     LIMIT 500
                 )
