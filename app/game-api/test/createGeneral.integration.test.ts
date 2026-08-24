@@ -24,6 +24,7 @@ const profile = 'hwe:2';
 const userId = 'create-general-integration-user';
 const failureUserId = 'create-general-integration-failure-user';
 const rejectedUserId = 'create-general-integration-rejected-user';
+const customIconId = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
 const schemaName = databaseUrl ? (new URL(databaseUrl).searchParams.get('schema') ?? '') : '';
 
 const assertDedicatedDatabase = (rawUrl: string): void => {
@@ -52,6 +53,14 @@ const buildAuth = (id: string, displayName: string, legacyMemberNo: number): Gam
         imageServer: 2,
         iconUpdatedAt: '2026-07-30T00:00:00.000Z',
         canUseGeneralPicture: true,
+        icons: [
+            {
+                id: customIconId,
+                picture: 'custom-owner.webp',
+                imageServer: 2,
+                createdAt: '2026-07-30T00:00:00.000Z',
+            },
+        ],
     },
     sanctions: {
         legacyPenalty: {
@@ -239,6 +248,7 @@ integration('generic general creation through the durable turn daemon', () => {
             strength: 55,
             intel: 55,
             pic: true,
+            iconId: customIconId,
             character: 'che_안전' as const,
             clientRequestId,
             inheritTurntimeZone: 7,

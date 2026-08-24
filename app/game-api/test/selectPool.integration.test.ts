@@ -241,26 +241,40 @@ integration('scenario 903 select pool through the durable turn daemon', () => {
             },
         });
 
+        const createRequestIds = ['select-pool-create-a', 'select-pool-create-b'] as const;
         const attempts = await Promise.allSettled([
-            appRouter.createCaller(buildContext('select-pool-create-a')).join.selectPoolGeneral({
+            appRouter.createCaller(buildContext(createRequestIds[0])).join.selectPoolGeneral({
                 uniqueName: firstReservation.candidates[0]!.uniqueName,
                 personality: 'che_안전',
             }),
-            appRouter.createCaller(buildContext('select-pool-create-b')).join.selectPoolGeneral({
+            appRouter.createCaller(buildContext(createRequestIds[1])).join.selectPoolGeneral({
                 uniqueName: firstReservation.candidates[1]!.uniqueName,
                 personality: 'che_유지',
             }),
         ]);
         expect(attempts.filter((attempt) => attempt.status === 'fulfilled')).toHaveLength(1);
         expect(attempts.filter((attempt) => attempt.status === 'rejected')).toHaveLength(1);
+        const successfulAttemptIndex = attempts.findIndex((attempt) => attempt.status === 'fulfilled');
+        if (successfulAttemptIndex < 0) {
+            throw new Error('one concurrent selection request must succeed');
+        }
+        const successfulRequestId = createRequestIds[successfulAttemptIndex];
+        if (!successfulRequestId) {
+            throw new Error('successful selection request must have a request ID');
+        }
 
         const initial = await db.general.findFirstOrThrow({ where: { userId } });
         const initialRuntime = runtime!.world.getGeneralById(initial.id);
         const initialAccess = await db.generalAccessLog.findUniqueOrThrow({ where: { generalId: initial.id } });
         expect(initial).toMatchObject({ picture: 'default.jpg', imageServer: 0 });
-        const acceptedEvent = await db.inputEvent.findFirstOrThrow({
-            where: { actorUserId: userId, eventType: 'selectPoolCreate', status: 'SUCCEEDED' },
-            orderBy: { sequence: 'desc' },
+        const acceptedEvent = await db.inputEvent.findUniqueOrThrow({
+            where: { requestId: `${successfulRequestId}:join.selectPoolGeneral` },
+        });
+        expect(acceptedEvent).toMatchObject({
+            actorUserId: userId,
+            eventType: 'selectPoolCreate',
+            status: 'SUCCEEDED',
+            result: { type: 'selectPoolCreate', ok: true, generalId: initial.id },
         });
         if (!initialAccess.lastRefresh) {
             throw new Error('selected general must have an initial access timestamp');
