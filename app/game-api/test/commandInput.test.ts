@@ -99,6 +99,31 @@ describe('turn command argument input', () => {
         await expect(parseReservedTurnArgs('general', 'che_포상', {})).rejects.toThrow('Unknown general turn command');
     });
 
+    it('rejects internal general commands before parsing their arguments or scenario overrides', async () => {
+        await expect(parseReservedTurnArgs('general', 'che_NPC능동', {})).rejects.toThrow(
+            'Unknown general turn command: che_NPC능동'
+        );
+        await expect(parseReservedTurnArgs('general', 'che_방랑', {})).rejects.toThrow(
+            'Unknown general turn command: che_방랑'
+        );
+        await expect(
+            parseReservedTurnArgs('general', 'che_등용수락', { destNationId: 1, destGeneralId: 2 })
+        ).rejects.toThrow('Unknown general turn command: che_등용수락');
+
+        await expect(
+            parseReservedTurnArgs(
+                'general',
+                'che_NPC능동',
+                { optionText: '순간이동', destCityId: 1 },
+                {
+                    availableGeneralCommand: {
+                        내부: ['휴식', 'che_NPC능동'],
+                    },
+                }
+            )
+        ).rejects.toThrow('Unknown scenario general command key: che_NPC능동');
+    });
+
     it('accepts and rejects reserved commands from the real 904/905/910/912 world config', async () => {
         const scenarioConsts = Object.fromEntries(
             await Promise.all(

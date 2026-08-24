@@ -1440,7 +1440,12 @@ describe('appRouter', () => {
         const generalWrites: unknown[] = [];
         const nationWrites: unknown[] = [];
         const caller = appRouter.createCaller(
-            buildContext({ general, generalTurnWrites: generalWrites, nationTurnWrites: nationWrites })
+            buildContext({
+                state: buildWorldState(),
+                general,
+                generalTurnWrites: generalWrites,
+                nationTurnWrites: nationWrites,
+            })
         );
 
         await expect(
@@ -1461,6 +1466,18 @@ describe('appRouter', () => {
                 expectedRevision: 0,
             })
         ).rejects.toMatchObject({ code: 'BAD_REQUEST' });
+        await expect(
+            caller.turns.reserved.setGeneral({
+                generalId: 14,
+                turnIndex: 0,
+                action: 'che_NPC능동',
+                args: {},
+                expectedRevision: 0,
+            })
+        ).rejects.toMatchObject({
+            code: 'BAD_REQUEST',
+            message: 'Unknown general turn command: che_NPC능동',
+        });
 
         expect(generalWrites).toHaveLength(0);
         expect(nationWrites).toHaveLength(0);

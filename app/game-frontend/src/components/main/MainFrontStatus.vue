@@ -3,11 +3,6 @@ import { formatServerDateTime } from '@sammo-ts/common/time/ServerDateTime';
 import { computed, onUnmounted, ref, watch } from 'vue';
 import { resolveTournamentStageName } from '../../utils/tournamentStatus';
 import {
-    GAME_SERVER_ACTIVITY_FRESHNESS_MS,
-    gameServerActivity,
-    isRecentGameServerActivity,
-} from '../../utils/gameServerActivity';
-import {
     millisecondsUntilNextMinute,
     projectServerClock,
     sampleServerClock,
@@ -21,6 +16,7 @@ const props = defineProps<{
     clockMode?: 'realtime' | 'manual';
     clockRunning?: boolean;
     clockStartsAt?: string | null;
+    turnEngineRunning?: boolean | null;
     status: {
         onlineUserCount: number;
         onlineNations: string;
@@ -38,10 +34,12 @@ const props = defineProps<{
 const tournamentStatus = computed(() => resolveTournamentStageName(props.tournamentStage));
 const currentServerTime = ref('기록 없음');
 const hasServerClock = ref(false);
-const serverClockFresh = ref(false);
+const turnEngineStopped = computed(() => props.turnEngineRunning === false);
+const turnEngineStatusUnknown = computed(() => typeof props.turnEngineRunning !== 'boolean');
 const serverClockTitle = computed(() => {
     if (!hasServerClock.value) return '서버 시각을 아직 받지 못했습니다.';
-    if (!serverClockFresh.value) return '최근 45초 동안 서버 통신이 없어 시각 갱신을 멈췄습니다.';
+    if (turnEngineStopped.value) return '턴 엔진이 정지하여 현재 시각 보정을 멈췄습니다.';
+    if (turnEngineStatusUnknown.value) return '턴 엔진 진행 상태를 확인하지 못했습니다.';
     return undefined;
 });
 
@@ -54,7 +52,6 @@ const updateServerClock = () => {
     if (serverClockSample === null) {
         currentServerTime.value = '기록 없음';
         hasServerClock.value = false;
-        serverClockFresh.value = false;
         return;
     }
 
@@ -65,16 +62,14 @@ const updateServerClock = () => {
         fallback: '기록 없음',
     });
     hasServerClock.value = true;
+    if (props.turnEngineRunning !== true) return;
 
-    const lastContactAt = gameServerActivity.lastContactAt.value;
-    serverClockFresh.value = isRecentGameServerActivity(lastContactAt, now);
-    if (!serverClockFresh.value || lastContactAt === null) return;
-
-    const nextDelays = [lastContactAt + GAME_SERVER_ACTIVITY_FRESHNESS_MS - now + 1];
+    const nextDelays: number[] = [];
     if (serverClockSample.clockMode !== 'manual' && serverClockSample.startDelayMs !== null) {
         const untilStartMs = serverClockSample.startDelayMs - projection.clientElapsedMs;
         nextDelays.push(untilStartMs > 0 ? untilStartMs : millisecondsUntilNextMinute(projection.time));
     }
+    if (nextDelays.length === 0) return;
     serverClockTimer = setTimeout(updateServerClock, Math.max(1, Math.min(...nextDelays)));
 };
 
@@ -86,7 +81,7 @@ watch(
     },
     { immediate: true }
 );
-watch(() => gameServerActivity.lastContactAt.value, updateServerClock);
+watch(() => props.turnEngineRunning, updateServerClock);
 
 onUnmounted(() => {
     if (serverClockTimer !== undefined) clearTimeout(serverClockTimer);
@@ -100,7 +95,8 @@ onUnmounted(() => {
                 class="status-row execution-status"
                 :class="{
                     'execution-status--empty': !hasServerClock,
-                    'execution-status--stale': hasServerClock && !serverClockFresh,
+                    'execution-status--stopped': hasServerClock && turnEngineStopped,
+                    'execution-status--unknown': hasServerClock && turnEngineStatusUnknown,
                 }"
                 :title="serverClockTitle"
             >
@@ -195,8 +191,12 @@ onUnmounted(() => {
     color: magenta;
 }
 
-.execution-status--stale {
+.execution-status--stopped {
     color: magenta;
+}
+
+.execution-status--unknown {
+    color: #aaa;
 }
 
 .vote-label {

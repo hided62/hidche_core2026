@@ -1,10 +1,14 @@
-import { GENERAL_TURN_COMMAND_KEYS, isGeneralTurnCommandKey, type GeneralTurnCommandKey } from './general/index.js';
+import {
+    SELECTABLE_GENERAL_TURN_COMMAND_KEYS,
+    isSelectableGeneralTurnCommandKey,
+    type SelectableGeneralTurnCommandKey,
+} from './general/index.js';
 import { NATION_TURN_COMMAND_KEYS, isNationTurnCommandKey, type NationTurnCommandKey } from './nation/index.js';
 import { asStringArray, isRecord } from '@sammo-ts/common';
 import { TurnCommandProfileInputSchema } from '../../resources/turnCommandSchema.js';
 
 export interface TurnCommandProfile {
-    general: GeneralTurnCommandKey[];
+    general: SelectableGeneralTurnCommandKey[];
     nation: NationTurnCommandKey[];
 }
 
@@ -15,7 +19,7 @@ export interface TurnCommandGroup<Key extends string> {
 
 export interface ScenarioTurnCommandProfileResolution {
     profile: TurnCommandProfile;
-    generalGroups: Array<TurnCommandGroup<GeneralTurnCommandKey>> | null;
+    generalGroups: Array<TurnCommandGroup<SelectableGeneralTurnCommandKey>> | null;
     nationGroups: Array<TurnCommandGroup<NationTurnCommandKey>> | null;
 }
 
@@ -49,7 +53,7 @@ const parseKeyList = <T extends string>(options: {
 };
 
 export const DEFAULT_TURN_COMMAND_PROFILE: TurnCommandProfile = {
-    general: [...GENERAL_TURN_COMMAND_KEYS],
+    general: [...SELECTABLE_GENERAL_TURN_COMMAND_KEYS],
     nation: [...NATION_TURN_COMMAND_KEYS],
 };
 
@@ -62,7 +66,7 @@ export const parseTurnCommandProfile = (raw: unknown): TurnCommandProfile => {
     return {
         general: parseKeyList({
             raw: data.general,
-            isKey: isGeneralTurnCommandKey,
+            isKey: isSelectableGeneralTurnCommandKey,
             label: 'general',
         }),
         nation: parseKeyList({
@@ -133,7 +137,7 @@ export const resolveScenarioTurnCommandProfile = (
     const config = isRecord(scenarioConst) ? scenarioConst : {};
     const generalGroups = parseScenarioCommandGroups({
         raw: config.availableGeneralCommand,
-        isKey: isGeneralTurnCommandKey,
+        isKey: isSelectableGeneralTurnCommandKey,
         label: 'general',
     });
     const nationGroups = parseScenarioCommandGroups({
