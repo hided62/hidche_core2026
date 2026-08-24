@@ -111,6 +111,8 @@ export interface ProfileRuntimeSnapshot extends ProfileRuntimeState {
 
 export interface ProfileRuntimeSettingsSnapshot {
     profileName: string;
+    /** Ref game_env.isunited compatibility value. Any non-zero value means unification has begun. */
+    isUnited: number;
     turnTermMinutes: number;
     blockGeneralCreate: 0 | 1 | 2;
     autorunUser: {
@@ -933,6 +935,7 @@ export class GatewayOrchestrator implements GatewayOrchestratorHandle {
                     );
                     return {
                         profileName,
+                        isUnited: Number(meta.isunited ?? meta.isUnited ?? 0),
                         turnTermMinutes: Math.max(1, Math.round(row.tickSeconds / 60)),
                         blockGeneralCreate,
                         autorunUser:

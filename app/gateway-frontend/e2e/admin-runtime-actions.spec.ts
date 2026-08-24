@@ -37,8 +37,10 @@ const installFixture = async (
         initialActions?: RuntimeAction[];
         afterRequestActions?: RuntimeAction[];
         pendingProfileReads?: number;
-        profileStatus?: 'RUNNING' | 'PAUSED' | 'STOPPED';
+        profileStatus?: 'RUNNING' | 'PAUSED' | 'COMPLETED' | 'STOPPED';
         currentScenario?: string | null;
+        gameIsUnited?: number;
+        openerOnly?: boolean;
     } = {}
 ) => {
     let requested = false;
@@ -46,6 +48,7 @@ const installFixture = async (
     let installActive = false;
     let postRequestProfileReads = 0;
     let requestedRuntimeSettings = false;
+    let completedCloseRequested = false;
     const requestBodies: unknown[] = [];
     let releaseRequest = (): void => {};
     const requestGate = options.deferRequest
@@ -67,7 +70,9 @@ const installFixture = async (
         const operations = operationNames(route);
         if (operations.includes('admin.profiles.requestAction')) {
             requested = true;
-            requestedRuntimeSettings = JSON.stringify(body).includes('UPDATE_RUNTIME_SETTINGS');
+            const requestJson = JSON.stringify(body);
+            requestedRuntimeSettings = requestJson.includes('UPDATE_RUNTIME_SETTINGS');
+            completedCloseRequested = requestJson.includes('CLOSE_COMPLETED');
             requestBodies.push(body);
             await requestGate;
         }
@@ -94,7 +99,7 @@ const installFixture = async (
                 return response({ enabled: true });
             }
             if (operation === 'admin.capabilities.list') {
-                return response([
+                const capabilities = [
                     {
                         permission: 'admin.users.manage',
                         label: '사용자·제재 관리',
@@ -134,7 +139,12 @@ const installFixture = async (
                         scope: 'PROFILE',
                         scopes: ['*'],
                     },
-                ]);
+                ];
+                return response(
+                    options.openerOnly
+                        ? capabilities.filter((entry) => entry.permission === 'admin.scenarios.reset')
+                        : capabilities
+                );
             }
             if (operation === 'admin.profiles.listScenarios') {
                 return response([
@@ -170,11 +180,12 @@ const installFixture = async (
                         currentScenario: options.currentScenario === undefined ? '1010' : options.currentScenario,
                         scenario: options.currentScenario ?? 'default',
                         apiPort: 15015,
-                        status: options.profileStatus ?? 'RUNNING',
+                        status: completedCloseRequested ? 'STOPPED' : (options.profileStatus ?? 'RUNNING'),
                         buildStatus: 'SUCCEEDED',
                         meta: {},
                         runtimeSettings: requestedRuntimeSettings
                             ? {
+                                  isUnited: options.gameIsUnited ?? 0,
                                   turnTermMinutes: 20,
                                   blockGeneralCreate: 1,
                                   autorunUser: {
@@ -183,6 +194,7 @@ const installFixture = async (
                                   },
                               }
                             : {
+                                  isUnited: options.gameIsUnited ?? 0,
                                   turnTermMinutes: 10,
                                   blockGeneralCreate: 2,
                                   autorunUser: null,
@@ -382,6 +394,63 @@ test('distinguishes a turn pause from an inaccessible stopped server in operator
     await expect(page.getByRole('button', { name: '턴 재개' })).toBeEnabled();
     await expect(page.getByRole('button', { name: '일시정지' })).toBeDisabled();
     await expect(page.getByRole('button', { name: '중지', exact: true })).toBeEnabled();
+});
+
+test('lets a scenario opener close only a unified server and keeps the control usable on mobile', async ({
+    page,
+}, testInfo) => {
+    const fixture = await installFixture(page, { gameIsUnited: 2, openerOnly: true });
+
+    await page.goto('/gateway/admin/servers/hwe%3Adefault');
+    await expect(page.getByTestId('profile-lifecycle-description')).toContainText('천하통일 완료');
+    await expect(page.getByTestId('runtime-settings')).toHaveCount(0);
+    const cleanup = page.getByTestId('completed-profile-cleanup');
+    await expect(cleanup).toContainText('현재 기수 DB와 완료 기록은 보존');
+    const submit = page.getByTestId('completed-profile-cleanup-submit');
+    const desktopGeometry = await cleanup.evaluate((element) => {
+        const rect = element.getBoundingClientRect();
+        const style = getComputedStyle(element);
+        return {
+            left: rect.left,
+            right: rect.right,
+            viewport: window.innerWidth,
+            fontSize: style.fontSize,
+            color: style.color,
+        };
+    });
+    expect(desktopGeometry.left).toBeGreaterThanOrEqual(0);
+    expect(desktopGeometry.right).toBeLessThanOrEqual(desktopGeometry.viewport);
+    expect(desktopGeometry.fontSize).toBe('14px');
+    expect(desktopGeometry.color).not.toBe('rgba(0, 0, 0, 0)');
+    const buttonBackground = await submit.evaluate((element) => getComputedStyle(element).backgroundColor);
+    await submit.hover();
+    const hoverBackground = await submit.evaluate((element) => getComputedStyle(element).backgroundColor);
+    expect(hoverBackground).not.toBe(buttonBackground);
+    await submit.focus();
+    await expect(submit).toBeFocused();
+    await page.screenshot({ path: testInfo.outputPath('completed-profile-cleanup-desktop.png'), fullPage: true });
+
+    await submit.click();
+    await expect.poll(() => JSON.stringify(fixture.requestBodies)).toContain('CLOSE_COMPLETED');
+    await expect(page.getByTestId('completed-profile-cleanup')).toHaveCount(0);
+    await expect(page.getByTestId('profile-lifecycle-description')).toContainText('게임 접근 불가');
+
+    await page.setViewportSize({ width: 390, height: 844 });
+    const lifecycle = page.getByTestId('profile-lifecycle-description');
+    const geometry = await lifecycle.evaluate((element) => {
+        const rect = element.getBoundingClientRect();
+        return { left: rect.left, right: rect.right, viewport: window.innerWidth };
+    });
+    expect(geometry.left).toBeGreaterThanOrEqual(0);
+    expect(geometry.right).toBeLessThanOrEqual(geometry.viewport);
+    await page.screenshot({ path: testInfo.outputPath('completed-profile-cleanup-mobile.png'), fullPage: true });
+});
+
+test('does not offer completed cleanup to a scenario opener before unification', async ({ page }) => {
+    await installFixture(page, { gameIsUnited: 0, openerOnly: true });
+
+    await page.goto('/gateway/admin/servers/hwe%3Adefault');
+    await expect(page.getByTestId('completed-profile-cleanup')).toHaveCount(0);
 });
 
 test('shows an initialized STOPPED server as inaccessible and only restartable', async ({ page }) => {
