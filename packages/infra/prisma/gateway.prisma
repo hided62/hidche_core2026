@@ -362,8 +362,9 @@ model GatewayRuntimeAction {
 }
 
 model GatewayOperation {
-  /// A partial unique index in the gateway migration chain permits only one
-  /// QUEUED or RUNNING operation per profile.
+  /// Partial unique indexes in the gateway migration chain permit one future
+  /// scheduled RESET beside one immediate queued operation. RUNNING work and
+  /// each queue lane remain unique per profile.
   id                String                 @id @default(uuid())
   profileName       String                 @map("profile_name")
   profile           GatewayProfile         @relation(fields: [profileName], references: [profileName], onDelete: Cascade)

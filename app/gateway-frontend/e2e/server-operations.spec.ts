@@ -10,6 +10,7 @@ type Operation = {
     sourceMode?: 'BRANCH' | 'COMMIT';
     sourceRef?: string;
     resolvedCommitSha?: string;
+    scheduledAt?: string;
     completedAt?: string;
     error?: string;
     payload: Record<string, unknown>;
@@ -382,7 +383,7 @@ const installFixture = async (page: Page, state: FixtureState) => {
                     createdAt: '2026-07-25T02:00:00.000Z',
                     updatedAt: '2026-07-25T02:00:00.000Z',
                 };
-                state.operations = [operation];
+                state.operations = [operation, ...state.operations];
                 return response(operation);
             }
             if (name === 'admin.operations.requestDeploy') {
@@ -398,7 +399,7 @@ const installFixture = async (page: Page, state: FixtureState) => {
                     createdAt: '2026-08-01T01:00:00.000Z',
                     updatedAt: '2026-08-01T01:00:00.000Z',
                 };
-                state.operations = [operation];
+                state.operations = [operation, ...state.operations];
                 return response(operation);
             }
             if (name === 'admin.operations.requestGameCancellation') {
@@ -815,6 +816,67 @@ test('separates DB-preserving profile deployment from DB reset', async ({ page }
     await expect(page.getByTestId('profile-operation-log-status')).toContainText('SUCCEEDED');
     expect(state.requestBodies.some((entry) => entry.operation === 'admin.operations.requestDeploy')).toBe(true);
     expect(state.requestBodies.some((entry) => entry.operation === 'admin.operations.requestReset')).toBe(false);
+});
+
+test('keeps a future scenario reset reserved while submitting one interim DB-preserving deploy', async ({
+    page,
+}, testInfo) => {
+    const scheduledReset: Operation = {
+        id: '99999999-9999-4999-8999-999999999999',
+        profileName: 'che:default',
+        type: 'RESET',
+        status: 'QUEUED',
+        sourceMode: 'BRANCH',
+        sourceRef: 'main',
+        scheduledAt: '2099-08-27T05:00:00.000Z',
+        payload: {},
+        requestedBy: 'admin',
+        createdAt: '2026-08-24T00:00:00.000Z',
+        updatedAt: '2026-08-24T00:00:00.000Z',
+    };
+    const state: FixtureState = {
+        operations: [scheduledReset],
+        gatewayOperations: [],
+        runtimeRunning: true,
+        requestBodies: [],
+    };
+    await installFixture(page, state);
+    const confirmations: string[] = [];
+    page.on('dialog', async (dialog) => {
+        confirmations.push(dialog.message());
+        await dialog.accept();
+    });
+
+    await page.goto('admin/servers/che%3Adefault/version');
+    const notice = page.getByTestId('interim-deploy-notice');
+    await expect(notice).toContainText('예약 초기화 유지');
+    await expect(notice).toContainText('시나리오 초기화 예약은 취소되지 않습니다.');
+    await expect(page.getByTestId('request-deploy')).toBeEnabled();
+    await page.getByTestId('request-deploy').click();
+
+    await expect(page.getByText('DB 보존 배포 작업을 등록했습니다.').first()).toBeVisible();
+    expect(confirmations).toHaveLength(1);
+    expect(confirmations[0]).toContain('예약된 시나리오 초기화');
+    expect(confirmations[0]).toContain('자동 취소됩니다.');
+    expect(state.operations).toHaveLength(2);
+    expect(state.operations).toContainEqual(scheduledReset);
+    expect(state.requestBodies.filter((entry) => entry.operation === 'admin.operations.requestDeploy')).toHaveLength(1);
+    expect(state.requestBodies.some((entry) => entry.operation === 'admin.operations.requestReset')).toBe(false);
+
+    await page.setViewportSize({ width: 390, height: 844 });
+    const mobileGeometry = await notice.evaluate((element) => {
+        const rect = element.getBoundingClientRect();
+        return {
+            left: rect.left,
+            right: rect.right,
+            viewportWidth: document.documentElement.clientWidth,
+            documentScrollWidth: document.documentElement.scrollWidth,
+        };
+    });
+    expect(mobileGeometry.left).toBeGreaterThanOrEqual(0);
+    expect(mobileGeometry.right).toBeLessThanOrEqual(mobileGeometry.viewportWidth);
+    expect(mobileGeometry.documentScrollWidth).toBeLessThanOrEqual(mobileGeometry.viewportWidth);
+    await page.screenshot({ path: testInfo.outputPath('interim-deploy-mobile.png'), fullPage: true });
 });
 
 test('submits a separately authorized destructive game cancellation on desktop and mobile', async ({

@@ -3,6 +3,13 @@ import type { GatewayPrisma, GatewayPrismaClient } from '@sammo-ts/infra';
 
 export const CONTROL_PLANE_OPERATION_CLAIM_LOCK = 'gateway_control_plane_operation_claim';
 
+export class GatewayProfileOperationConflictError extends Error {
+    constructor() {
+        super('This profile already has an incompatible queued or running operation.');
+        this.name = 'GatewayProfileOperationConflictError';
+    }
+}
+
 export { GATEWAY_PROFILE_STATUSES, type GatewayProfileStatus };
 
 export const GATEWAY_BUILD_STATUSES = ['IDLE', 'QUEUED', 'RUNNING', 'FAILED', 'SUCCEEDED'] as const;
@@ -352,6 +359,24 @@ const mapOperationLog = (row: {
     createdAt: row.createdAt.toISOString(),
 });
 
+const canQueueAlongsideActiveOperations = (
+    input: Pick<GatewayOperationCreateInput, 'type' | 'scheduledAt'>,
+    activeOperations: GatewayOperationRow[],
+    now: Date
+): boolean => {
+    if (activeOperations.length === 0) return true;
+    if (input.type !== 'DEPLOY' || input.scheduledAt || activeOperations.length !== 1) return false;
+
+    const [reservedReset] = activeOperations;
+    return Boolean(
+        reservedReset &&
+        reservedReset.type === 'RESET' &&
+        reservedReset.status === 'QUEUED' &&
+        reservedReset.scheduledAt &&
+        reservedReset.scheduledAt.getTime() > now.getTime()
+    );
+};
+
 export const createGatewayProfileRepository = (prisma: GatewayPrismaClient): GatewayProfileRepository => ({
     async listProfiles(): Promise<GatewayProfileRecord[]> {
         const rows = await prisma.gatewayProfile.findMany({
@@ -620,6 +645,21 @@ export const createGatewayProfileRepository = (prisma: GatewayPrismaClient): Gat
     },
     async createOperation(input: GatewayOperationCreateInput): Promise<GatewayOperationRecord> {
         const row = await prisma.$transaction(async (tx) => {
+            await tx.$queryRaw<Array<{ lock_result: string }>>`
+                SELECT pg_advisory_xact_lock(
+                    hashtextextended(${CONTROL_PLANE_OPERATION_CLAIM_LOCK}, 0)
+                )::text AS lock_result
+            `;
+            const activeOperations = await tx.gatewayOperation.findMany({
+                where: {
+                    profileName: input.profileName,
+                    status: { in: ['QUEUED', 'RUNNING'] },
+                },
+                orderBy: [{ createdAt: 'asc' }, { id: 'asc' }],
+            });
+            if (!canQueueAlongsideActiveOperations(input, activeOperations, new Date())) {
+                throw new GatewayProfileOperationConflictError();
+            }
             const operation = await tx.gatewayOperation.create({
                 data: {
                     profileName: input.profileName,
@@ -674,6 +714,37 @@ export const createGatewayProfileRepository = (prisma: GatewayPrismaClient): Gat
             );
             if (running && !runningIsStale) {
                 return null;
+            }
+            const expiredInterimDeploys = await tx.$queryRaw<Array<{ id: string }>>`
+                UPDATE "gateway_operation" AS deploy
+                SET "status" = 'CANCELLED',
+                    "completed_at" = ${now},
+                    "lease_owner" = NULL,
+                    "lease_until" = NULL,
+                    "heartbeat_at" = NULL,
+                    "updated_at" = ${now}
+                WHERE deploy."status" = 'QUEUED'
+                  AND deploy."type" = 'DEPLOY'
+                  AND EXISTS (
+                      SELECT 1
+                      FROM "gateway_operation" AS reset
+                      WHERE reset."profile_name" = deploy."profile_name"
+                        AND reset."status" = 'QUEUED'
+                        AND reset."type" = 'RESET'
+                        AND reset."scheduled_at" IS NOT NULL
+                        AND reset."scheduled_at" <= ${now}
+                  )
+                RETURNING deploy."id"
+            `;
+            if (expiredInterimDeploys.length) {
+                await tx.gatewayOperationLog.createMany({
+                    data: expiredInterimDeploys.map(({ id }) => ({
+                        operationId: id,
+                        level: 'INFO',
+                        phase: 'cancel',
+                        message: '예약 시나리오 초기화 시각이 되어 실행 전 중간 버전 업데이트를 자동 취소했습니다.',
+                    })),
+                });
             }
             const candidate =
                 running ??
@@ -887,9 +958,30 @@ export const createGatewayProfileRepository = (prisma: GatewayPrismaClient): Gat
     },
     async retryOperation(id: string, requestedBy: string): Promise<GatewayOperationRecord | null> {
         const row = await prisma.$transaction(async (tx) => {
+            await tx.$queryRaw<Array<{ lock_result: string }>>`
+                SELECT pg_advisory_xact_lock(
+                    hashtextextended(${CONTROL_PLANE_OPERATION_CLAIM_LOCK}, 0)
+                )::text AS lock_result
+            `;
             const previous = await tx.gatewayOperation.findUnique({ where: { id } });
             if (!previous || (previous.status !== 'FAILED' && previous.status !== 'CANCELLED')) {
                 return null;
+            }
+            const activeOperations = await tx.gatewayOperation.findMany({
+                where: {
+                    profileName: previous.profileName,
+                    status: { in: ['QUEUED', 'RUNNING'] },
+                },
+                orderBy: [{ createdAt: 'asc' }, { id: 'asc' }],
+            });
+            if (
+                !canQueueAlongsideActiveOperations(
+                    { type: previous.type, scheduledAt: undefined },
+                    activeOperations,
+                    new Date()
+                )
+            ) {
+                throw new GatewayProfileOperationConflictError();
             }
             const previousPayload = previous.payload as GatewayPrisma.JsonObject;
             const retrySource = buildRetryOperationSource(previous);

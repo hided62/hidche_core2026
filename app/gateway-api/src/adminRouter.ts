@@ -25,7 +25,11 @@ import {
 } from './adminCapabilities.js';
 import type { GatewayApiContext } from './context.js';
 import { resolveLocalAccountProfilePolicy } from './auth/localAccountPolicy.js';
-import { GATEWAY_BUILD_STATUSES, GATEWAY_PROFILE_STATUSES } from './orchestrator/profileRepository.js';
+import {
+    GATEWAY_BUILD_STATUSES,
+    GATEWAY_PROFILE_STATUSES,
+    GatewayProfileOperationConflictError,
+} from './orchestrator/profileRepository.js';
 import { readProfileReleaseSource } from './orchestrator/profileReleaseSource.js';
 import {
     orderGatewayProfiles,
@@ -468,6 +472,9 @@ const zRuntimeSettings = z
 
 const isUniqueConstraintError = (error: unknown): boolean =>
     Boolean(error && typeof error === 'object' && 'code' in error && error.code === 'P2002');
+
+const isProfileOperationConflictError = (error: unknown): boolean =>
+    error instanceof GatewayProfileOperationConflictError || isUniqueConstraintError(error);
 
 const zInstallOptions = z.object({
     scenarioId: z.number().int().min(0),
@@ -1343,7 +1350,7 @@ export const adminRouter = router({
                     });
                     return operation;
                 } catch (error) {
-                    if (!isUniqueConstraintError(error)) {
+                    if (!isProfileOperationConflictError(error)) {
                         throw error;
                     }
                     throw new TRPCError({
@@ -1399,7 +1406,7 @@ export const adminRouter = router({
                         requestedBy: adminAuth.user.id,
                     });
                 } catch (error) {
-                    if (!isUniqueConstraintError(error)) {
+                    if (!isProfileOperationConflictError(error)) {
                         throw new TRPCError({
                             code: 'BAD_REQUEST',
                             message: 'The active Gateway release commit cannot be resolved for game cancellation.',
@@ -1460,7 +1467,7 @@ export const adminRouter = router({
                         requestedBy: adminAuth.user.id,
                     });
                 } catch (error) {
-                    if (!isUniqueConstraintError(error)) {
+                    if (!isProfileOperationConflictError(error)) {
                         throw error;
                     }
                     throw new TRPCError({
@@ -1505,7 +1512,7 @@ export const adminRouter = router({
                     });
                     return operation;
                 } catch (error) {
-                    if (!isUniqueConstraintError(error)) {
+                    if (!isProfileOperationConflictError(error)) {
                         throw error;
                     }
                     throw new TRPCError({
@@ -1575,7 +1582,7 @@ export const adminRouter = router({
                 if (error instanceof TRPCError) {
                     throw error;
                 }
-                if (!isUniqueConstraintError(error)) {
+                if (!isProfileOperationConflictError(error)) {
                     throw error;
                 }
                 throw new TRPCError({
@@ -2114,7 +2121,7 @@ export const adminRouter = router({
                     });
                     return { ok: true, operationId: operation.id, action: actionRecord };
                 } catch (error) {
-                    if (!isUniqueConstraintError(error)) {
+                    if (!isProfileOperationConflictError(error)) {
                         throw error;
                     }
                     throw new TRPCError({
@@ -2197,7 +2204,7 @@ export const adminRouter = router({
                         message: 'Profile install operation did not complete in time.',
                     });
                 } catch (error) {
-                    if (!isUniqueConstraintError(error)) {
+                    if (!isProfileOperationConflictError(error)) {
                         throw error;
                     }
                     throw new TRPCError({
