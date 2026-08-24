@@ -89,7 +89,6 @@ interface NpcSelectionTokenRow {
     nonce: number;
 }
 
-const LEGACY_TIMEZONE_OFFSET_MS = 9 * 60 * 60 * 1000;
 const VALID_SECONDS = 90;
 const PICK_MORE_SECONDS = 10;
 const KEEP_COUNT = 3;
@@ -103,19 +102,11 @@ const fail = (code: NpcPossessionErrorCode, message: string): never => {
 
 const truncateToSeconds = (value: Date): Date => new Date(Math.floor(value.getTime() / 1000) * 1000);
 
-const formatLegacySeedTime = (value: Date): string => {
-    const pad = (part: number): string => String(part).padStart(2, '0');
-    const koreaTime = new Date(value.getTime() + LEGACY_TIMEZONE_OFFSET_MS);
-    return `${koreaTime.getUTCFullYear()}-${pad(koreaTime.getUTCMonth() + 1)}-${pad(
-        koreaTime.getUTCDate()
-    )} ${pad(koreaTime.getUTCHours())}:${pad(koreaTime.getUTCMinutes())}:${pad(koreaTime.getUTCSeconds())}`;
-};
-
 export const buildNpcSelectionTokenSeed = (
     hiddenSeed: string | number,
     ownerIdentity: string | number,
-    now: Date
-): string => simpleSerialize(hiddenSeed, 'SelectNPCToken', ownerIdentity, formatLegacySeedTime(now));
+    acceptedGameTick: number
+): string => simpleSerialize(hiddenSeed, 'SelectNPCToken', ownerIdentity, acceptedGameTick);
 
 const readHiddenSeed = (worldState: WorldStateRow): string | number => {
     const meta = asRecord(worldState.meta);
@@ -298,11 +289,15 @@ export const reserveNpcPossessionCandidates = async (options: {
     refresh?: boolean;
     keepIds?: number[];
     now?: Date;
+    acceptedGameTick: number;
     selectionObserver?: NpcPossessionSelectionObserver;
 }): Promise<NpcPossessionReservation> => {
     const { db, worldState, userId } = options;
     requireNpcPossessionWorld(worldState);
     const now = truncateToSeconds(options.now ?? new Date());
+    if (!Number.isSafeInteger(options.acceptedGameTick)) {
+        fail('INTERNAL_SERVER_ERROR', 'NPC 빙의 수락 tick이 올바르지 않습니다.');
+    }
     await lockNpcPossession(db, userId);
 
     if (await db.general.findFirst({ where: { userId }, select: { id: true } })) {
@@ -402,7 +397,7 @@ export const reserveNpcPossessionCandidates = async (options: {
         generalRows.map((row) => buildCandidateSnapshot(row, nations.get(row.nationId)))
     );
     const selectionRng = new LiteHashDRBG(
-        buildNpcSelectionTokenSeed(readHiddenSeed(worldState), options.ownerIdentity, now)
+        buildNpcSelectionTokenSeed(readHiddenSeed(worldState), options.ownerIdentity, options.acceptedGameTick)
     );
     const rng = options.selectionObserver?.onRandomDraw
         ? new ObservedRandUtil(selectionRng, options.selectionObserver.onRandomDraw)

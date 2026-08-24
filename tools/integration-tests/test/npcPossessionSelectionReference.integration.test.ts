@@ -174,7 +174,7 @@ class TracingRandUtil extends RandUtil {
     }
 }
 
-const runCoreKernelCase = (fixture: Fixture, testCase: FixtureCase): KernelTrace => {
+const runCoreKernelCase = (fixture: Fixture, testCase: FixtureCase, acceptedGameTick: number): KernelTrace => {
     const reserved = new Set([...testCase.reservedIds, ...(testCase.boundaryReservedIds ?? [])]);
     const candidates = fixture.candidates
         .filter(({ id }) => !reserved.has(id))
@@ -200,7 +200,7 @@ const runCoreKernelCase = (fixture: Fixture, testCase: FixtureCase): KernelTrace
         };
     }
 
-    const seed = buildNpcSelectionTokenSeed(fixture.hiddenSeed, fixture.owner, acceptedAt(fixture));
+    const seed = buildNpcSelectionTokenSeed(fixture.hiddenSeed, fixture.owner, acceptedGameTick);
     const rng = new TracingRandUtil(new LiteHashDRBG(seed));
     const draws: number[] = [];
     const picked = chooseNpcPossessionCandidates(candidates, kept, rng, (selectedId) => {
@@ -225,6 +225,27 @@ const assertDedicatedDatabase = (rawUrl: string): void => {
     if (!/^[a-z0-9_]+$/.test(schema)) {
         throw new Error(`Refusing unsafe schema name: ${schema}`);
     }
+};
+
+const readReferenceAcceptedGameTick = (trace: ReferenceTrace): number => {
+    const ticks = new Set(
+        trace.cases.flatMap(({ seed }) => {
+            if (seed === null) return [];
+            const match = seed.match(/\|int\((-?\d+)\)$/);
+            if (!match) {
+                throw new Error(`Ref SelectNPCToken seed does not end with an integer game tick: ${seed}`);
+            }
+            const tick = Number(match[1]);
+            if (!Number.isSafeInteger(tick)) {
+                throw new Error(`Ref SelectNPCToken tick is outside the safe integer range: ${match[1]}`);
+            }
+            return [tick];
+        })
+    );
+    if (ticks.size !== 1) {
+        throw new Error(`Ref comparison returned ${ticks.size} distinct accepted game ticks`);
+    }
+    return [...ticks][0]!;
 };
 
 integration('NPC possession selector Ref differential', () => {
@@ -317,7 +338,10 @@ integration('NPC possession selector Ref differential', () => {
         await closeDb?.();
     });
 
-    const runCoreReservationCase = async (testCase: FixtureCase): Promise<CoreReservationTrace> =>
+    const runCoreReservationCase = async (
+        testCase: FixtureCase,
+        acceptedGameTick: number
+    ): Promise<CoreReservationTrace> =>
         db.$transaction(async (transaction) => {
             await transaction.npcSelectionToken.deleteMany();
             const validUntil = new Date('2099-12-31T23:59:59.000Z');
@@ -383,6 +407,7 @@ integration('NPC possession selector Ref differential', () => {
                 refresh: hasPreviousToken,
                 keepIds: testCase.keepIds,
                 now: acceptedAt(fixture),
+                acceptedGameTick,
                 selectionObserver: {
                     onRandomDraw: (value) => randomDraws.push(value),
                     onCandidateDraw: (selectedId) => draws.push(Number(selectedId)),
@@ -427,11 +452,18 @@ integration('NPC possession selector Ref differential', () => {
             );
             expect(firstReference.cases).toHaveLength(fixture.cases.length);
 
-            const coreKernelCases = fixture.cases.map((testCase) => runCoreKernelCase(fixture, testCase));
+            // The shared Ref database and disposable Core scenario intentionally have
+            // different clock bases. This selector differential isolates RNG by injecting
+            // the exact safe integer tick observed at the Ref endpoint into both Core paths;
+            // it does not claim clock-base parity between the two fixtures.
+            const referenceAcceptedGameTick = readReferenceAcceptedGameTick(firstReference);
+            const coreKernelCases = fixture.cases.map((testCase) =>
+                runCoreKernelCase(fixture, testCase, referenceAcceptedGameTick)
+            );
             for (const [index, referenceCase] of firstReference.cases.entries()) {
                 const testCase = fixture.cases[index]!;
                 const coreKernel = coreKernelCases[index]!;
-                const coreReservation = await runCoreReservationCase(testCase);
+                const coreReservation = await runCoreReservationCase(testCase, referenceAcceptedGameTick);
                 expect(referenceCase.name).toBe(coreKernel.name);
                 expect(referenceCase.selectionStateUnchanged).toBe(true);
                 expect(referenceCase.cancelled).toBe(coreKernel.cancelled);
