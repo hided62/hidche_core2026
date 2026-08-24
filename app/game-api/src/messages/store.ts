@@ -206,7 +206,12 @@ export const invalidateMessages = async (db: DatabaseClient, ids: number[]): Pro
         where: { id: { in: uniqueIds } },
         data: {
             validUntil: gameTime.now,
-            ...(gameTime.tick === null ? {} : { validUntilTick: BigInt(gameTime.tick) }),
+            // A partially migrated profile can still carry a legacy logical
+            // sentinel even while no authoritative clock exists. Replace it
+            // with an already-expired logical tick when expiring by wall time;
+            // NULL would fall back to the wall timestamp after clock recovery
+            // and could make the handled message visible again.
+            validUntilTick: gameTime.tick === null ? 0n : BigInt(gameTime.tick),
         },
     });
 };

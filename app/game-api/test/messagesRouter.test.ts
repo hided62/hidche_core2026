@@ -987,7 +987,7 @@ describe('messages router missing-flow compatibility', () => {
         );
         expect(setup.messageUpdateMany).toHaveBeenCalledWith({
             where: { id: { in: [31] } },
-            data: { validUntil: expect.any(Date) },
+            data: { validUntil: expect.any(Date), validUntilTick: 0n },
         });
         expect(setup.queryRaw).toHaveBeenCalledTimes(9);
     });

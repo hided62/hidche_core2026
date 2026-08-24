@@ -15,7 +15,7 @@ import { InMemoryFlushStore } from '../src/auth/flushStore.js';
 import { InMemoryBattleSimTransport } from '../src/battleSim/inMemoryTransport.js';
 import type { GameApiContext } from '../src/context.js';
 import { InMemoryTurnDaemonTransport } from '../src/daemon/inMemoryTransport.js';
-import { fetchMessagesFromMailbox } from '../src/messages/store.js';
+import { fetchMessagesFromMailbox, invalidateMessages } from '../src/messages/store.js';
 import { appRouter } from '../src/router.js';
 
 const databaseUrl = process.env.INPUT_EVENT_DATABASE_URL;
@@ -379,7 +379,7 @@ integration('diplomacy document message persistence', () => {
         await expectInputEvent(chainedRequestId, 'sendLetter', fixtureUserId);
     });
 
-    it('keeps permanent messages readable while a profile has no logical clock', async () => {
+    it('keeps permanent messages readable without a clock and does not resurrect them after invalidation', async () => {
         const created = await appRouter
             .createCaller(buildContext('legacy-clock-fallback', fixtureAuth))
             .diplomacy.sendLetter({
@@ -412,6 +412,20 @@ integration('diplomacy document message persistence', () => {
                     text: expect.stringContaining(`#${created.id}`),
                 })
             );
+
+            await invalidateMessages(db, [receiver.id]);
+            await expect(
+                db.message.findUniqueOrThrow({ where: { id: receiver.id }, select: { validUntilTick: true } })
+            ).resolves.toEqual({ validUntilTick: 0n });
+            await expect(
+                fetchMessagesFromMailbox({
+                    db,
+                    mailbox: receiverMailbox,
+                    msgType: 'diplomacy',
+                    limit: 15,
+                    fromSeq: 0,
+                })
+            ).resolves.not.toContainEqual(expect.objectContaining({ id: receiver.id }));
         } finally {
             await db.worldState.update({
                 where: { id: fixtureWorldStateId },
@@ -422,6 +436,16 @@ integration('diplomacy document message persistence', () => {
                 },
             });
         }
+
+        await expect(
+            fetchMessagesFromMailbox({
+                db,
+                mailbox: receiverMailbox,
+                msgType: 'diplomacy',
+                limit: 15,
+                fromSeq: 0,
+            })
+        ).resolves.not.toContainEqual(expect.objectContaining({ id: receiver.id }));
     });
 
     it('stores diplomacy and national copies for both approval and rejection responses', async () => {
