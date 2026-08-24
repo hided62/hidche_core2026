@@ -17,6 +17,8 @@ const writeFixture = async (mode = 0o600): Promise<string> => {
     const directory = await mkdtemp(path.join(os.tmpdir(), 'sammo-legacy-plan-'));
     workDirectories.push(directory);
     await writeFile(path.join(directory, 'mysql-password'), 'secret-value\n', { mode: 0o600 });
+    await writeFile(path.join(directory, 'image-upload-secret'), `${'u'.repeat(32)}\n`, { mode: 0o600 });
+    const iconDirectory = await mkdtemp(path.join(directory, 'icons-'));
     const configPath = path.join(directory, 'migration-plan.json');
     await writeFile(
         configPath,
@@ -29,6 +31,12 @@ const writeFixture = async (mode = 0o600): Promise<string> => {
                     database: 'root_dump',
                     user: 'migration_reader',
                     passwordFile: './mysql-password',
+                },
+                userIcons: {
+                    sourceDirectory: iconDirectory,
+                    uploadBaseUrl: 'https://sam-image.hided.net',
+                    publicBaseUrl: 'https://sam-image.hided.net/icons',
+                    uploadSecretFile: './image-upload-secret',
                 },
                 targetUrlEnv: 'TEST_GATEWAY_DATABASE_URL',
             },
@@ -51,6 +59,11 @@ describe('legacy migration plan config', () => {
         expect(source.username).toBe('migration_reader');
         expect(source.password).toBe('secret-value');
         expect(plan.stages[0]!.sourceIdentity.key).toBe('fixture-cutover:gateway');
+        expect(plan.stages[0]!.userIcons).toMatchObject({
+            uploadBaseUrl: 'https://sam-image.hided.net',
+            publicBaseUrl: 'https://sam-image.hided.net/icons',
+            uploadSecret: 'u'.repeat(32),
+        });
     });
 
     it('rejects a config readable by group or other users', async () => {

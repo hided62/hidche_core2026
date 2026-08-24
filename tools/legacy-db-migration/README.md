@@ -39,6 +39,12 @@ Gateway and each game profile. A password can come from a separate mode-0600
 file (recommended), an environment variable, or directly from the mode-0600
 plan. Target PostgreSQL URLs remain in the named environment variables.
 
+When the Gateway source contains a non-default member icon, `gateway.userIcons`
+is mandatory. Mount Ref's `d_pic` directory read-only as `sourceDirectory`, and
+mount the Core2026 sam-image upload secret as a mode-0600 `uploadSecretFile`.
+The two URL fields normally point to `https://sam-image.hided.net` and its
+`/icons` path. The importer never adds account images to the image Git tree.
+
 ```sh
 mkdir -p tools/legacy-db-migration/secrets
 chmod 700 tools/legacy-db-migration/secrets
@@ -69,7 +75,9 @@ host alias; do not put credentials in the plan.
 
 `check-plan` opens every source and target without writing. Its stage JSON lists
 every included item as `inventory`, including source, target, strategy and the
-information transferred. A configured battle-result source also reports its
+information transferred. Gateway preflight validates every local or already
+uploaded custom icon and reports the source split without issuing a PUT. A
+configured battle-result source also reports its
 season/file/byte counts. `run-plan` also
 preflights every stage before the first import, is a dry-run without `--apply`,
 and stops at the first failed stage. Completed earlier stages remain committed;
@@ -143,7 +151,9 @@ database.
 
 The individual commands also accept `--mode incremental` and `--source-key`.
 Use the ordered plan for production so every configured connection is checked
-before the Gateway stage starts.
+before the Gateway stage starts. The direct `gateway` command intentionally
+fails closed when its source contains custom icons because it has no secure
+structured icon-upload configuration; use `run-plan` for that source.
 
 ### Isolated current-season comparison fixture
 
