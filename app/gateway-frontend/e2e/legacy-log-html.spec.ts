@@ -115,6 +115,13 @@ for (const viewport of [
         await expect(lines.nth(1)).toContainText('<span class="name" onclick=');
         expect(await page.evaluate(() => (globalThis as Record<string, unknown>).__legacyLogXss)).toBeUndefined();
 
+        const pageFontFamily = await page.locator('body').evaluate((element) => getComputedStyle(element).fontFamily);
+        const historyFontFamily = await page
+            .locator('.status-history')
+            .evaluate((element) => getComputedStyle(element).fontFamily);
+        expect(historyFontFamily).toBe(pageFontFamily);
+        expect(historyFontFamily).toContain('Pretendard');
+
         const geometry = await lines.evaluateAll((elements) =>
             elements.map((element) => {
                 const rect = element.getBoundingClientRect();
@@ -144,7 +151,7 @@ for (const viewport of [
             const name = `legacy-log-gateway-${viewport.name}`;
             await writeFile(
                 resolve(artifactRoot, `${name}.json`),
-                `${JSON.stringify({ viewport, geometry }, null, 2)}\n`,
+                `${JSON.stringify({ viewport, pageFontFamily, historyFontFamily, geometry }, null, 2)}\n`,
                 'utf8'
             );
             await page.screenshot({ path: resolve(artifactRoot, `${name}.png`), fullPage: true });
