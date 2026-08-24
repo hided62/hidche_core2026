@@ -100,7 +100,9 @@ const cityCandidates = (level: OfficerLevel): GeneralEntry[] => {
     return candidates;
 };
 const kickCandidates = computed(() =>
-    (data.value?.generals ?? []).filter((general) => general.id !== data.value?.me.id)
+    (data.value?.generals ?? []).filter(
+        (general) => general.id !== data.value?.me.id && general.officerLevel < 5 && general.permission !== 'ambassador'
+    )
 );
 const awardText = (entries: PersonnelResponse['awards']['tigers']): string =>
     entries.map((entry) => `${entry.name}【${entry.value.toLocaleString('ko-KR')}】`).join(', ');

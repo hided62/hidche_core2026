@@ -485,6 +485,13 @@ test('personnel reflows row-level appointments at 500px and 390px without gradie
     expect(rowGeometry.gradientCount).toBe(0);
     await expect(page.getByRole('combobox', { name: '외교권자' })).toHaveCount(0);
     await expect(page.getByRole('combobox', { name: '추방 대상 장수' })).toBeVisible();
+    await expect(page.getByRole('combobox', { name: '추방 대상 장수' }).locator('option')).toHaveText([
+        '장수 선택',
+        '하후돈 (70/70/70)',
+        '곽가 (70/70/70)',
+        '정욱 (70/70/70)',
+        '장료 (70/70/70)',
+    ]);
 
     await page.getByRole('button', { name: '허창 태수 변경하기', exact: true }).click();
     const picker = page.getByTestId('personnel-selection-dialog');
