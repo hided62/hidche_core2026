@@ -257,6 +257,7 @@ integration('scenario 903 select pool through the durable turn daemon', () => {
         const initial = await db.general.findFirstOrThrow({ where: { userId } });
         const initialRuntime = runtime!.world.getGeneralById(initial.id);
         const initialAccess = await db.generalAccessLog.findUniqueOrThrow({ where: { generalId: initial.id } });
+        expect(initial).toMatchObject({ picture: 'default.jpg', imageServer: 0 });
         if (!initialAccess.lastRefresh) {
             throw new Error('selected general must have an initial access timestamp');
         }
@@ -268,7 +269,8 @@ integration('scenario 903 select pool through the durable turn daemon', () => {
             id: initial.id,
             userId,
             name: initial.name,
-            imageServer: initial.imageServer,
+            imageServer: 0,
+            picture: 'default.jpg',
             stats: {
                 leadership: initial.leadership,
                 strength: initial.strength,
@@ -380,15 +382,15 @@ integration('scenario 903 select pool through the durable turn daemon', () => {
             intel: target.intel,
             personalCode: initial.personalCode,
             specialCode: target.specialDomestic,
-            imageServer: target.imageServer,
-            picture: target.picture,
+            imageServer: 0,
+            picture: 'default.jpg',
         });
         expect(runtime!.world.getGeneralById(initial.id)).toMatchObject({
             id: initial.id,
             userId,
             name: target.generalName,
-            imageServer: target.imageServer,
-            picture: target.picture,
+            imageServer: 0,
+            picture: 'default.jpg',
             stats: {
                 leadership: target.leadership,
                 strength: target.strength,

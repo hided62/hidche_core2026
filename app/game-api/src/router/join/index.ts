@@ -14,7 +14,6 @@ import {
     WAR_TRAIT_KEYS,
 } from '@sammo-ts/logic';
 import { readInheritancePoint, resolveInheritConstants } from '../../services/inheritance.js';
-import { loadAuthoritativeAccountIcon } from '../../services/accountIconSync.js';
 import { loadCurrentGameTime } from '../../services/gameClock.js';
 import { getSelectionPoolStatus, resolveSelectionMaxGeneral } from '@sammo-ts/game-engine/turn/selectPoolService.js';
 import {
@@ -515,15 +514,17 @@ export const joinRouter = router({
             if (input.iconId && (!selectedIcon || auth.user.canUseGeneralPicture === false)) {
                 throw new TRPCError({ code: 'FORBIDDEN', message: '사용 가능한 내 전용 아이콘이 아닙니다.' });
             }
-            const accountIcon = input.pic
-                ? selectedIcon
+            // 유저 장수에는 인증 token의 활성 전용 아이콘을 명시적으로 고른 경우만
+            // 그림을 적용한다. Gateway 대표 그림은 shared preset일 수 있으므로
+            // iconId 없는 fallback으로 사용하지 않는다.
+            const accountIcon =
+                input.pic && selectedIcon
                     ? {
                           picture: selectedIcon.picture,
                           imageServer: selectedIcon.imageServer,
                           revision: auth.user.iconUpdatedAt ?? selectedIcon.createdAt,
                       }
-                    : await loadAuthoritativeAccountIcon(ctx, userId)
-                : null;
+                    : null;
             const commandRequestId = resolveJoinCreateRequestId(ctx.requestId, userId, input.clientRequestId);
             const result = await requestJoinCreateCommand(ctx, {
                 type: 'joinCreateGeneral',
@@ -535,7 +536,7 @@ export const joinRouter = router({
                 leadership: input.leadership,
                 strength: input.strength,
                 intel: input.intel,
-                pic: input.pic,
+                pic: accountIcon !== null,
                 character: input.character,
                 profileId: ctx.profile.id,
                 ...(accountIcon

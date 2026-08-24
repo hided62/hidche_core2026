@@ -1981,6 +1981,40 @@ test('장수 생성에서 등록 전콘을 골라 생성 요청에 전달한다'
     expect(state.createGeneralInputs?.[0]).toMatchObject({ pic: true, iconId: secondIconId });
 });
 
+test('활성 전용 아이콘이 없으면 대표 preset을 장수 생성 요청에 전달하지 않는다', async ({ page }) => {
+    const state: FixtureState = {
+        permission: 'member',
+        myset: 1,
+        settingMutations: [],
+        accessPages: [],
+        createGeneralInputs: [],
+        joinConfig: {
+            rules: { stat: { total: 150, min: 30, max: 70 }, allowCustomName: true },
+            user: {
+                id: 'user-1',
+                displayName: '생성장수',
+                canCreateGeneral: true,
+                preferredPicture: '장수/유비.jpg',
+                icons: [],
+            },
+            personalities: [{ key: 'Random', name: '???', info: '무작위 성격' }],
+            nations: [],
+            selectionPool: { enabled: false },
+            npcPossession: { enabled: false },
+            inherit: null,
+        },
+    };
+    await install(page, state);
+    await page.goto('join');
+
+    await expect(page.getByRole('radiogroup', { name: '전용 아이콘 선택' })).toHaveCount(0);
+    await page.getByRole('button', { name: '장수 생성', exact: true }).last().click();
+
+    await expect.poll(() => state.createGeneralInputs?.length ?? 0).toBe(1);
+    expect(state.createGeneralInputs?.[0]).toMatchObject({ pic: false });
+    expect(state.createGeneralInputs?.[0]).not.toHaveProperty('iconId');
+});
+
 test('내 정보 즉시행동은 timeout 재시도 ID를 유지하고 성공 후 새 ID를 만든다', async ({ page }) => {
     const state: FixtureState = {
         permission: 'head',

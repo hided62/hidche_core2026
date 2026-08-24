@@ -40,7 +40,7 @@ export const loadAuthoritativeAccountIcon = async (
 export const adjustAccountIconForUser = async (
     ctx: GameApiContext,
     userId: string,
-    selected?: AccountIconProjection,
+    selected: AccountIconProjection,
     enforceCooldown = true,
     requestKey?: string
 ): Promise<{
@@ -48,10 +48,8 @@ export const adjustAccountIconForUser = async (
     generalId: number | null;
     updated: boolean;
 }> => {
-    const projection = selected ?? (await loadAuthoritativeAccountIcon(ctx, userId));
-    const requestId = selected
-        ? `general:adjustIcon:${userId}:manual:${requestKey ?? `${projection.revision}:${encodeURIComponent(projection.picture)}`}`
-        : `general:adjustIcon:${userId}:${projection.revision}`;
+    const projection = selected;
+    const requestId = `general:adjustIcon:${userId}:manual:${requestKey ?? `${projection.revision}:${encodeURIComponent(projection.picture)}`}`;
     try {
         const result = await ctx.turnDaemon.requestCommand({
             type: 'adjustGeneralIcon',

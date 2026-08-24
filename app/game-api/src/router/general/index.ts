@@ -693,7 +693,13 @@ export const getGeneralContext = async (ctx: GameApiContext) => {
 export const generalRouter = router({
     adjustIcon: engineAuthedProcedure
         .input(
-            z.object({ iconId: z.string().uuid().optional(), clientRequestId: z.string().uuid().optional() }).optional()
+            z
+                .object({
+                    iconId: z.string().uuid().optional(),
+                    resetToDefault: z.literal(true).optional(),
+                    clientRequestId: z.string().uuid().optional(),
+                })
+                .optional()
         )
         .mutation(({ ctx, input }) => {
             const userId = ctx.auth?.user.id;
@@ -701,19 +707,41 @@ export const generalRouter = router({
                 throw new TRPCError({ code: 'UNAUTHORIZED' });
             }
             const selected = input?.iconId ? ctx.auth?.user.icons?.find((icon) => icon.id === input.iconId) : undefined;
-            if (input?.iconId && (!selected || ctx.auth?.user.canUseGeneralPicture === false)) {
+            const resetToDefault = input?.resetToDefault === true;
+            if (resetToDefault && input?.iconId) {
+                throw new TRPCError({ code: 'BAD_REQUEST', message: '아이콘 선택과 기본 아이콘 초기화를 함께 요청할 수 없습니다.' });
+            }
+            if (!resetToDefault && !input?.iconId) {
+                throw new TRPCError({ code: 'BAD_REQUEST', message: '적용할 활성 전용 아이콘을 선택해 주세요.' });
+            }
+            if (
+                resetToDefault &&
+                (ctx.auth?.user.picture !== 'default.jpg' || ctx.auth?.user.imageServer !== 0)
+            ) {
+                throw new TRPCError({ code: 'FORBIDDEN', message: '현재 계정 아이콘이 기본 아이콘이 아닙니다.' });
+            }
+            if (!resetToDefault && (!selected || ctx.auth?.user.canUseGeneralPicture === false)) {
                 throw new TRPCError({ code: 'FORBIDDEN', message: '사용 가능한 내 전용 아이콘이 아닙니다.' });
             }
+            const iconRevision = ctx.auth?.user.iconUpdatedAt ?? (resetToDefault ? undefined : selected!.createdAt);
+            if (!iconRevision) {
+                throw new TRPCError({ code: 'PRECONDITION_FAILED', message: '계정 아이콘 변경 시각을 확인할 수 없습니다.' });
+            }
+            const projection = resetToDefault
+                ? {
+                      picture: 'default.jpg',
+                      imageServer: 0,
+                      revision: iconRevision,
+                  }
+                : {
+                      picture: selected!.picture,
+                      imageServer: selected!.imageServer,
+                      revision: iconRevision,
+                  };
             return adjustAccountIconForUser(
                 ctx,
                 userId,
-                selected
-                    ? {
-                          picture: selected.picture,
-                          imageServer: selected.imageServer,
-                          revision: ctx.auth?.user.iconUpdatedAt ?? selected.createdAt,
-                      }
-                    : undefined,
+                projection,
                 true,
                 input?.clientRequestId ?? ctx.requestId
             );
