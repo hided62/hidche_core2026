@@ -5,6 +5,7 @@ import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } 
 import CompactHelp from '../components/CompactHelp.vue';
 import ServerProfileTabs from '../components/ServerProfileTabs.vue';
 import { useToast } from '../composables/useToast';
+import { loadAdminProfileNavigation, type AdminProfileNavigationItem } from '../composables/useAdminProfileNavigation';
 import AdminConsoleLayout from '../layouts/AdminConsoleLayout.vue';
 import {
     normalizeProfileResetDefaults,
@@ -103,6 +104,28 @@ const gatewayReleaseLogConnection = ref<'idle' | 'connected' | 'reconnecting'>('
 const gatewayReleaseLogViewport = ref<HTMLElement>();
 const gatewayReleaseAvailable = ref(false);
 const selectedProfileName = computed(() => props.profileName ?? '');
+const profileIdentities = ref<AdminProfileNavigationItem[]>([]);
+const profileDisplayName = (profileName: string): string => {
+    const profile = profileIdentities.value.find((candidate) => candidate.profileName === profileName);
+    if (!profile) return '삭제되었거나 접근할 수 없는 서버';
+    if (profile.displayName?.trim()) return profile.displayName.trim();
+    const configuredName = profile.meta?.korName;
+    const baseName =
+        typeof configuredName === 'string' && configuredName.trim() ? configuredName.trim() : profile.profile;
+    return profile.instanceKey === 'default' ? baseName : `${baseName} [${profile.instanceKey}]`;
+};
+const selectedProfileIdentityReady = computed(() =>
+    profileIdentities.value.some((profile) => profile.profileName === selectedProfileName.value)
+);
+const selectedProfileDisplayName = computed(() => {
+    if (!selectedProfileName.value) return '대상 서버';
+    return selectedProfileIdentityReady.value ? profileDisplayName(selectedProfileName.value) : '대상 서버';
+});
+const cancellationConfirmation = computed(() => `${selectedProfileDisplayName.value} 게임 취소`);
+const displayOperationText = (value?: string): string => {
+    if (!value || !selectedProfileName.value) return value ?? '';
+    return value.replaceAll(selectedProfileName.value, selectedProfileDisplayName.value);
+};
 const capabilities = ref<Array<{ permission: string; scopes?: string[] }>>([]);
 const loading = ref(false);
 const catalogLoading = ref(false);
@@ -205,7 +228,7 @@ const profileOperationLogEmptyMessage = computed(() => {
         return '오케스트레이터 로그를 기다리고 있습니다…';
     }
     if (operation.error) {
-        return `이 작업에는 진행 로그가 기록되지 않았습니다. 작업 오류: ${operation.error}`;
+        return `이 작업에는 진행 로그가 기록되지 않았습니다. 작업 오류: ${displayOperationText(operation.error)}`;
     }
     return '이 작업에는 진행 로그가 기록되지 않았습니다. 로그 기능 적용 전 작업일 수 있습니다.';
 });
@@ -229,9 +252,9 @@ const hasCapability = (permission: string): boolean =>
 
 const pageTitle = computed(() => {
     if (props.mode === 'gateway') return 'Gateway 릴리스';
-    if (props.mode === 'cancel') return `${props.profileName ?? ''} 게임 취소`;
-    if (props.mode === 'scenario') return `${props.profileName ?? ''} 시나리오 초기화`;
-    return `${props.profileName ?? ''} 버전 업데이트`;
+    if (props.mode === 'cancel') return `${selectedProfileDisplayName.value} 게임 취소`;
+    if (props.mode === 'scenario') return `${selectedProfileDisplayName.value} 시나리오 초기화`;
+    return `${selectedProfileDisplayName.value} 버전 업데이트`;
 });
 
 const pageDescription = computed(() => {
@@ -342,6 +365,15 @@ const loadResetDefaults = async () => {
     } catch {
         applyResetDefaults(SYSTEM_PROFILE_RESET_DEFAULTS);
         resetDefaultsSource.value = 'SYSTEM';
+    }
+};
+
+const loadProfileIdentities = async () => {
+    if (props.mode === 'gateway') return;
+    try {
+        profileIdentities.value = await loadAdminProfileNavigation();
+    } catch {
+        profileIdentities.value = [];
     }
 };
 
@@ -531,6 +563,7 @@ const requestDeploy = async () => {
     clearStatus();
     if (
         !selectedProfileName.value ||
+        !selectedProfileIdentityReady.value ||
         activeOperation.value ||
         !form.sourceRef.trim() ||
         form.sourceMode === 'CURRENT'
@@ -539,7 +572,7 @@ const requestDeploy = async () => {
     }
     if (
         !window.confirm(
-            `${selectedProfileName.value}의 인게임 DB를 유지하고 ${form.sourceRef.trim()} 버전으로 배포하시겠습니까?`
+            `${selectedProfileDisplayName.value}의 인게임 DB를 유지하고 ${form.sourceRef.trim()} 버전으로 배포하시겠습니까?`
         )
     ) {
         return;
@@ -682,7 +715,7 @@ const selectedAutorunOptions = (): ResetAutorunOption[] => {
 
 const requestReset = async () => {
     clearStatus();
-    if (!selectedProfileName.value || activeOperation.value) {
+    if (!selectedProfileName.value || !selectedProfileIdentityReady.value || activeOperation.value) {
         return;
     }
     if ((form.sourceMode !== 'CURRENT' && !form.sourceRef.trim()) || form.scenarioId === null) {
@@ -698,7 +731,7 @@ const requestReset = async () => {
         form.sourceMode === 'CURRENT' ? '서버 지정 버전' : form.sourceMode === 'BRANCH' ? '브랜치' : '커밋';
     if (
         !window.confirm(
-            `${selectedProfileName.value}의 게임 DB를 초기화합니다.\n${sourceLabel}${form.sourceMode === 'CURRENT' ? '' : `: ${form.sourceRef}`}\n시나리오: ${scenarioId}${form.publishSchedule ? '\n예약 등록 즉시 로비에 오픈 일정을 공개합니다.' : ''}`
+            `${selectedProfileDisplayName.value}의 게임 DB를 초기화합니다.\n${sourceLabel}${form.sourceMode === 'CURRENT' ? '' : `: ${form.sourceRef}`}\n시나리오: ${scenarioId}${form.publishSchedule ? '\n예약 등록 즉시 로비에 오픈 일정을 공개합니다.' : ''}`
         )
     ) {
         return;
@@ -746,13 +779,13 @@ const requestReset = async () => {
 const requestGameCancellation = async () => {
     clearStatus();
     const profileName = selectedProfileName.value;
-    if (!profileName || activeOperation.value) return;
+    if (!profileName || !selectedProfileIdentityReady.value || activeOperation.value) return;
     if (cancellationForm.reason.trim().length < 5) {
         errorMessage.value = '취소 사유를 5자 이상 입력해주세요.';
         return;
     }
-    if (cancellationForm.confirmation.trim() !== profileName) {
-        errorMessage.value = `확인란에 ${profileName}을 정확히 입력해주세요.`;
+    if (cancellationForm.confirmation.trim() !== cancellationConfirmation.value) {
+        errorMessage.value = `확인란에 ${cancellationConfirmation.value}를 정확히 입력해주세요.`;
         return;
     }
     const historyText =
@@ -760,7 +793,7 @@ const requestGameCancellation = async () => {
     const generalText = cancellationForm.generalMode === 'RETAIN' ? '장수 기록 보존' : '장수 기록 삭제';
     if (
         !window.confirm(
-            `${profileName}의 진행 중 게임을 취소합니다.\n${historyText}\n${generalText}\n유산 획득분 ${cancellationForm.earnedPointRetentionPercent}% 보전\n취소 후 시나리오 초기화 전에는 재개할 수 없습니다.`
+            `${selectedProfileDisplayName.value}의 진행 중 게임을 취소합니다.\n${historyText}\n${generalText}\n유산 획득분 ${cancellationForm.earnedPointRetentionPercent}% 보전\n취소 후 시나리오 초기화 전에는 재개할 수 없습니다.`
         )
     ) {
         return;
@@ -853,6 +886,7 @@ onMounted(async () => {
     componentMounted = true;
     await Promise.all([
         loadCapabilities(),
+        loadProfileIdentities(),
         loadState(),
         loadResetDefaults(),
         props.mode === 'scenario' ? loadScenarios() : Promise.resolve(),
@@ -887,6 +921,7 @@ onBeforeUnmount(() => {
             <ServerProfileTabs
                 v-if="mode !== 'gateway' && profileName"
                 :profile-name="profileName"
+                :profile-label="selectedProfileDisplayName"
                 :active-tab="mode === 'scenario' ? 'scenario' : mode === 'cancel' ? 'cancel' : 'version'"
                 :can-deploy="hasCapability('admin.profiles.deploy')"
                 :can-reset="hasCapability('admin.scenarios.reset')"
@@ -977,11 +1012,11 @@ onBeforeUnmount(() => {
                         ></textarea>
                     </label>
                     <label class="block text-sm text-zinc-300">
-                        확인을 위해 <strong>{{ selectedProfileName }}</strong> 입력
+                        확인을 위해 <strong>{{ cancellationConfirmation }}</strong> 입력
                         <input
                             v-model="cancellationForm.confirmation"
                             class="mt-1 w-full rounded border border-red-800 bg-zinc-950 px-3 py-2 font-mono"
-                            :placeholder="selectedProfileName"
+                            :placeholder="cancellationConfirmation"
                             data-testid="cancellation-confirmation"
                         />
                     </label>
@@ -990,9 +1025,10 @@ onBeforeUnmount(() => {
                         class="w-full rounded bg-red-700 px-4 py-3 font-bold text-white hover:bg-red-600 disabled:cursor-not-allowed disabled:opacity-40"
                         :disabled="
                             submitting ||
+                            !selectedProfileIdentityReady ||
                             Boolean(activeOperation) ||
                             cancellationForm.reason.trim().length < 5 ||
-                            cancellationForm.confirmation.trim() !== selectedProfileName
+                            cancellationForm.confirmation.trim() !== cancellationConfirmation
                         "
                         data-testid="request-game-cancellation"
                     >
@@ -1454,7 +1490,12 @@ onBeforeUnmount(() => {
                             v-if="mode === 'version'"
                             type="submit"
                             class="rounded bg-sky-700 px-4 py-3 font-bold text-white hover:bg-sky-600 disabled:cursor-not-allowed disabled:opacity-40"
-                            :disabled="submitting || Boolean(activeOperation) || !form.sourceRef.trim()"
+                            :disabled="
+                                submitting ||
+                                !selectedProfileIdentityReady ||
+                                Boolean(activeOperation) ||
+                                !form.sourceRef.trim()
+                            "
                             data-testid="request-deploy"
                             @click="requestDeploy"
                         >
@@ -1464,7 +1505,12 @@ onBeforeUnmount(() => {
                             v-else
                             type="submit"
                             class="w-full rounded bg-amber-500 px-4 py-3 font-bold text-black hover:bg-amber-400 disabled:cursor-not-allowed disabled:opacity-40"
-                            :disabled="submitting || Boolean(activeOperation) || form.scenarioId === null"
+                            :disabled="
+                                submitting ||
+                                !selectedProfileIdentityReady ||
+                                Boolean(activeOperation) ||
+                                form.scenarioId === null
+                            "
                             data-testid="request-reset"
                         >
                             {{ form.scheduledAt ? '시나리오 초기화 예약' : '시나리오 초기화' }}
@@ -1783,7 +1829,9 @@ onBeforeUnmount(() => {
                     >
                         <span class="text-zinc-600">{{ formatLogTime(entry.createdAt) }}</span>
                         <span class="ml-2 text-violet-300">[{{ entry.phase }}]</span>
-                        <span class="ml-2 whitespace-pre-wrap break-all">{{ entry.message }}</span>
+                        <span class="ml-2 whitespace-pre-wrap break-all">{{
+                            displayOperationText(entry.message)
+                        }}</span>
                     </div>
                 </div>
             </section>
@@ -1903,9 +1951,9 @@ onBeforeUnmount(() => {
                                         >
                                             <dl class="grid grid-cols-1 gap-x-6 gap-y-3 sm:grid-cols-2">
                                                 <div>
-                                                    <dt class="text-[11px] font-semibold text-zinc-500">서버 ID</dt>
-                                                    <dd class="mt-1 break-all font-mono text-xs text-zinc-300">
-                                                        {{ operation.profileName }}
+                                                    <dt class="text-[11px] font-semibold text-zinc-500">서버</dt>
+                                                    <dd class="mt-1 break-all text-xs text-zinc-300">
+                                                        {{ profileDisplayName(operation.profileName) }}
                                                     </dd>
                                                 </div>
                                                 <div>
@@ -1953,7 +2001,7 @@ onBeforeUnmount(() => {
                                                 <div v-if="operation.error" class="sm:col-span-2">
                                                     <dt class="text-[11px] font-semibold text-red-400">오류</dt>
                                                     <dd class="mt-1 whitespace-pre-wrap break-all text-xs text-red-300">
-                                                        {{ operation.error }}
+                                                        {{ displayOperationText(operation.error) }}
                                                     </dd>
                                                 </div>
                                             </dl>

@@ -10,6 +10,8 @@ import {
 import { GatewayPrisma, type GatewayPrismaClient } from '@sammo-ts/infra';
 import webPush from 'web-push';
 
+import { resolveGatewayProfileDisplayName } from '../profileOrder.js';
+
 export interface WebPushCoordinatorConfig {
     enabled: boolean;
     vapidSubject?: string;
@@ -104,7 +106,14 @@ export class WebPushCoordinator {
         const [profiles, preferences, subscriptionCount, currentSubscription] = await Promise.all([
             this.prisma.gatewayProfile.findMany({
                 orderBy: [{ profile: 'asc' }, { instanceKey: 'asc' }],
-                select: { profileName: true, profile: true, currentScenario: true, status: true },
+                select: {
+                    profileName: true,
+                    profile: true,
+                    instanceKey: true,
+                    currentScenario: true,
+                    status: true,
+                    meta: true,
+                },
             }),
             this.prisma.webPushPreference.findMany({
                 where: { userId },
@@ -128,7 +137,15 @@ export class WebPushCoordinator {
             capability: this.getCapability(),
             eventTypes: WEB_PUSH_EVENT_TYPES,
             profiles: profiles.map((profile) => ({
-                ...profile,
+                profileName: profile.profileName,
+                profile: profile.profile,
+                instanceKey: profile.instanceKey,
+                displayName: resolveGatewayProfileDisplayName(
+                    profile.profile,
+                    profile.instanceKey,
+                    (profile.meta as Record<string, unknown> | null)?.korName
+                ),
+                currentScenario: profile.currentScenario,
                 status: String(profile.status),
             })),
             preferences: preferences.filter((preference) => isWebPushEventType(preference.eventType)),
@@ -218,7 +235,7 @@ export class WebPushCoordinator {
         if (!this.configured) return false;
         const profile = await tx.gatewayProfile.findUnique({
             where: { profileName: event.profileName },
-            select: { profile: true, profileName: true },
+            select: { profile: true, profileName: true, instanceKey: true, meta: true },
         });
         if (!profile) return false;
         const receipt = await tx.webPushEventReceipt.createMany({
@@ -258,7 +275,16 @@ export class WebPushCoordinator {
             ids.push(subscription.id);
             subscriptionIdsByUser.set(subscription.userId, ids);
         }
-        const copy = copyFor(event.eventType, profile.profile, event.year, event.month);
+        const copy = copyFor(
+            event.eventType,
+            resolveGatewayProfileDisplayName(
+                profile.profile,
+                profile.instanceKey,
+                (profile.meta as Record<string, unknown> | null)?.korName
+            ),
+            event.year,
+            event.month
+        );
         for (const userId of selectedUserIds) {
             const subscriptionIds = subscriptionIdsByUser.get(userId) ?? [];
             if (subscriptionIds.length === 0) continue;
@@ -395,10 +421,7 @@ export class WebPushCoordinator {
         });
 
         for (const delivery of claimed) {
-            if (
-                delivery.subscription.expirationTime &&
-                delivery.subscription.expirationTime.getTime() <= Date.now()
-            ) {
+            if (delivery.subscription.expirationTime && delivery.subscription.expirationTime.getTime() <= Date.now()) {
                 await this.prisma.$transaction(async (tx) => {
                     await tx.webPushDelivery.updateMany({
                         where: { id: delivery.id, lockOwner: this.owner },
@@ -445,11 +468,15 @@ export class WebPushCoordinator {
                     typeof error === 'object' && error !== null && 'statusCode' in error
                         ? Number((error as { statusCode?: unknown }).statusCode)
                         : 0;
-                const terminal = statusCode === 404 || statusCode === 410 || (statusCode >= 400 && statusCode < 500 && statusCode !== 429);
+                const terminal =
+                    statusCode === 404 ||
+                    statusCode === 410 ||
+                    (statusCode >= 400 && statusCode < 500 && statusCode !== 429);
                 const attempts = delivery.attempts;
                 const exhausted = attempts >= 8;
                 const delaySeconds = Math.min(300, 2 ** Math.min(attempts, 8));
-                const safeError = statusCode > 0 ? `Push service returned HTTP ${statusCode}.` : 'Push service request failed.';
+                const safeError =
+                    statusCode > 0 ? `Push service returned HTTP ${statusCode}.` : 'Push service request failed.';
                 await this.prisma.$transaction(async (tx) => {
                     await tx.webPushDelivery.updateMany({
                         where: { id: delivery.id, lockOwner: this.owner },

@@ -27,7 +27,11 @@ import type { GatewayApiContext } from './context.js';
 import { resolveLocalAccountProfilePolicy } from './auth/localAccountPolicy.js';
 import { GATEWAY_BUILD_STATUSES, GATEWAY_PROFILE_STATUSES } from './orchestrator/profileRepository.js';
 import { readProfileReleaseSource } from './orchestrator/profileReleaseSource.js';
-import { orderGatewayProfiles, resolveGatewayProfileKoreanName } from './profileOrder.js';
+import {
+    orderGatewayProfiles,
+    resolveGatewayProfileDisplayName,
+    resolveGatewayProfileKoreanName,
+} from './profileOrder.js';
 import { purifyGatewayNoticeHtml } from './security/gatewayNoticeHtml.js';
 
 const zProfileStatus = z.enum(GATEWAY_PROFILE_STATUSES);
@@ -650,7 +654,25 @@ export const adminRouter = router({
                     })
                     .optional()
             )
-            .query(({ ctx, input }) => (ctx as GatewayApiContext).adminAudit.list(input)),
+            .query(async ({ ctx, input }) => {
+                const gatewayCtx = ctx as GatewayApiContext;
+                const [events, profiles] = await Promise.all([
+                    gatewayCtx.adminAudit.list(input),
+                    gatewayCtx.profiles.listProfiles(),
+                ]);
+                const displayNames = new Map(
+                    profiles.map((profile) => [
+                        profile.profileName,
+                        resolveGatewayProfileDisplayName(profile.profile, profile.instanceKey, profile.meta.korName),
+                    ])
+                );
+                return events.map((event) => ({
+                    ...event,
+                    ...(event.profileName && displayNames.has(event.profileName)
+                        ? { profileDisplayName: displayNames.get(event.profileName) }
+                        : {}),
+                }));
+            }),
     }),
     system: router({
         getNotice: adminProcedure.query(async ({ ctx }) => {
@@ -760,6 +782,13 @@ export const adminRouter = router({
                     specialAccessGrants,
                     profiles: profiles.map((profile) => ({
                         profileName: profile.profileName,
+                        profile: profile.profile,
+                        instanceKey: profile.instanceKey,
+                        displayName: resolveGatewayProfileDisplayName(
+                            profile.profile,
+                            profile.instanceKey,
+                            profile.meta.korName
+                        ),
                         ...resolveLocalAccountProfilePolicy({
                             profile: profile.profile,
                             profileName: profile.profileName,
@@ -1727,6 +1756,11 @@ export const adminRouter = router({
                     profileName: profile.profileName,
                     profile: profile.profile,
                     instanceKey: profile.instanceKey,
+                    displayName: resolveGatewayProfileDisplayName(
+                        profile.profile,
+                        profile.instanceKey,
+                        profile.meta.korName
+                    ),
                     currentScenario: profile.currentScenario,
                     meta: {
                         korName: resolveGatewayProfileKoreanName(profile.profile, profile.meta.korName),
@@ -1771,6 +1805,11 @@ export const adminRouter = router({
             const runtimeSettingsMap = new Map(runtimeSettings.map((settings) => [settings.profileName, settings]));
             return profiles.map((profile) => ({
                 ...profile,
+                displayName: resolveGatewayProfileDisplayName(
+                    profile.profile,
+                    profile.instanceKey,
+                    profile.meta.korName
+                ),
                 runtimeActions: runtimeActionsByProfile.get(profile.profileName) ?? [],
                 runtimeSettings: runtimeSettingsMap.get(profile.profileName) ?? null,
                 activeOperation: activeOperationByProfile.get(profile.profileName) ?? null,
@@ -1805,7 +1844,7 @@ export const adminRouter = router({
                 if (sourceMode === 'CURRENT') {
                     if (!input?.profileName) {
                         if (!adminAuth.isSuperuser) {
-                            throw new TRPCError({ code: 'BAD_REQUEST', message: 'profileName is required.' });
+                            throw new TRPCError({ code: 'BAD_REQUEST', message: '대상 서버를 선택해야 합니다.' });
                         }
                     } else {
                         assertPermission(adminAuth, ROLE_ADMIN_SCENARIO_RESET, input.profileName);

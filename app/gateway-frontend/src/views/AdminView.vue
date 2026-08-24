@@ -134,6 +134,7 @@ type AdminAuditEvent = {
     targetType?: string;
     targetId?: string;
     profileName?: string;
+    profileDisplayName?: string;
     action: string;
     outcome: 'STARTED' | 'SUCCEEDED' | 'FAILED';
     reason?: string;
@@ -144,6 +145,9 @@ type AdminAuditEvent = {
 
 type KakaoGracePolicy = {
     profileName: string;
+    profile: string;
+    instanceKey: string;
+    displayName: string;
     requiresKakaoVerification: boolean;
     kakaoVerified: boolean;
     accessAllowed: boolean;
@@ -185,6 +189,7 @@ type AdminProfile = {
     profileName: string;
     profile: string;
     instanceKey: string;
+    displayName?: string;
     currentScenario: string | null;
     /** @deprecated Rollback-compatible mirror of currentScenario. */
     scenario: string;
@@ -444,6 +449,14 @@ const visibleProfiles = computed(() =>
     props.profileName ? profiles.value.filter((profile) => profile.profileName === props.profileName) : profiles.value
 );
 
+const adminProfileDisplayName = (profile: AdminProfile): string => {
+    if (profile.displayName?.trim()) return profile.displayName.trim();
+    const configuredName = profile.meta.korName;
+    const baseName =
+        typeof configuredName === 'string' && configuredName.trim() ? configuredName.trim() : profile.profile;
+    return profile.instanceKey === 'default' ? baseName : `${baseName} [${profile.instanceKey}]`;
+};
+
 const runtimeActionPending = (profile: AdminProfile): boolean => {
     return profile.runtimeActions.some((action) => action.status === 'REQUESTED' || action.status === 'PARTIAL');
 };
@@ -566,13 +579,45 @@ const kakaoGraceStatus = ref('');
 const kakaoPolicies = ref<KakaoGracePolicy[]>([]);
 const specialAccessGrants = ref<SpecialAccountAccessGrant[]>([]);
 const specialAccessKind = ref<SpecialAccountAccessGrant['kind']>('RECOVERY');
-const specialAccessProfiles = ref('');
+const specialAccessProfiles = ref<string[]>([]);
 const specialAccessAllowsGeneralCreation = ref(true);
 const specialAccessExpiresAt = ref('');
 const specialAccessStatus = ref('');
 const userHistory = ref<AdminAuditEvent[]>([]);
 const globalAuditHistory = ref<AdminAuditEvent[]>([]);
 const globalAuditStatus = ref('');
+
+const profileScopeLabel = (scope: string): string => {
+    const exact = kakaoPolicies.value.find((policy) => policy.profileName === scope);
+    if (exact) return exact.displayName;
+    const base = kakaoPolicies.value.filter((policy) => policy.profile === scope);
+    if (!base.length) return '삭제되었거나 접근할 수 없는 서버';
+    const baseName = base[0]!.displayName.replace(/ \[[^\]]+\]$/, '');
+    return base.length > 1 ? `${baseName} 전체 인스턴스` : baseName;
+};
+
+const specialAccessScopeOptions = computed(() => {
+    const grouped = new Map<string, KakaoGracePolicy[]>();
+    for (const policy of kakaoPolicies.value) {
+        const bucket = grouped.get(policy.profile) ?? [];
+        bucket.push(policy);
+        grouped.set(policy.profile, bucket);
+    }
+    return [...grouped.entries()].flatMap(([profile, entries]) => {
+        if (entries.length === 1) return [{ value: profile, label: entries[0]!.displayName }];
+        const baseName = entries[0]!.displayName.replace(/ \[[^\]]+\]$/, '');
+        return [
+            { value: profile, label: `${baseName} 전체 인스턴스` },
+            ...entries.map((entry) => ({ value: entry.profileName, label: entry.displayName })),
+        ];
+    });
+});
+
+const auditTargetLabel = (event: AdminAuditEvent): string => {
+    if (event.profileDisplayName) return event.profileDisplayName;
+    if (event.targetType === 'PROFILE' || event.profileName) return '삭제되었거나 접근할 수 없는 서버';
+    return event.targetId ?? '';
+};
 
 const { feedback: showFeedbackToast } = useToast();
 const actionFeedback = [
@@ -1059,7 +1104,7 @@ const applyCapabilitySelection = () => {
     const capability = capabilities.value.find((entry) => entry.permission === selectedCapability.value);
     if (!capability) return;
     if (capability.scope === 'PROFILE' && !capabilityProfile.value.trim()) {
-        rolesStatus.value = 'Profile 범위를 입력하세요.';
+        rolesStatus.value = '대상 서버를 선택하세요.';
         return;
     }
     rolesInput.value =
@@ -1101,10 +1146,7 @@ const grantSpecialAccess = async () => {
         await adminClient.users.grantSpecialAccess.mutate({
             userId: userResult.value.id,
             kind: specialAccessKind.value,
-            profiles: specialAccessProfiles.value
-                .split(',')
-                .map((profile) => profile.trim())
-                .filter(Boolean),
+            profiles: specialAccessProfiles.value,
             allowsGeneralCreation: specialAccessAllowsGeneralCreation.value,
             expiresAt: specialAccessExpiresAt.value
                 ? (serverDateTimeInputToIso(specialAccessExpiresAt.value) ?? null)
@@ -1266,7 +1308,7 @@ const applyRestriction = async () => {
     const reason = requireUserActionReason();
     if (!reason) return;
     if (!restrictionProfile.value.trim()) {
-        restrictionStatus.value = '서버 프로필명을 입력하세요.';
+        restrictionStatus.value = '대상 서버를 선택하세요.';
         return;
     }
     const features = restrictionFeatures.value
@@ -1301,7 +1343,7 @@ const clearRestriction = async () => {
     const reason = requireUserActionReason();
     if (!reason) return;
     if (!restrictionProfile.value.trim()) {
-        restrictionStatus.value = '서버 프로필명을 입력하세요.';
+        restrictionStatus.value = '대상 서버를 선택하세요.';
         return;
     }
     try {
@@ -1706,13 +1748,21 @@ onMounted(() => {
                                     {{ capability.label }} · {{ capability.risk }}
                                 </option>
                             </select>
-                            <input
+                            <select
                                 v-model="capabilityProfile"
-                                type="text"
                                 class="bg-zinc-950 border border-zinc-700 rounded px-3 py-2 text-sm text-white"
-                                placeholder="Profile 범위 (예: che:default)"
-                                :disabled="!hasUser"
-                            />
+                                :disabled="!hasUser || !kakaoPolicies.length"
+                                aria-label="권한 대상 서버"
+                            >
+                                <option value="">대상 서버 선택</option>
+                                <option
+                                    v-for="policy in kakaoPolicies"
+                                    :key="policy.profileName"
+                                    :value="policy.profileName"
+                                >
+                                    {{ policy.displayName }}
+                                </option>
+                            </select>
                             <button
                                 class="bg-zinc-700 hover:bg-zinc-600 px-3 py-2 rounded text-sm"
                                 :disabled="!hasUser"
@@ -1779,13 +1829,22 @@ onMounted(() => {
                                 :disabled="!hasUser"
                                 aria-label="특수 접근 만료 시각"
                             />
-                            <input
-                                v-model="specialAccessProfiles"
-                                type="text"
-                                class="bg-zinc-950 border border-zinc-700 rounded px-3 py-2 text-sm text-white"
-                                placeholder="che 또는 che:2 (쉼표 구분, 비우면 전체)"
-                                :disabled="!hasUser"
-                            />
+                            <fieldset class="rounded border border-zinc-700 bg-zinc-950 px-3 py-2 text-sm text-white">
+                                <legend class="px-1 text-xs text-zinc-400">허용 서버 (비우면 전체)</legend>
+                                <label
+                                    v-for="option in specialAccessScopeOptions"
+                                    :key="option.value"
+                                    class="mr-4 inline-flex items-center gap-2"
+                                >
+                                    <input
+                                        v-model="specialAccessProfiles"
+                                        type="checkbox"
+                                        :value="option.value"
+                                        :disabled="!hasUser"
+                                    />
+                                    {{ option.label }}
+                                </label>
+                            </fieldset>
                             <label class="flex items-center gap-2 text-sm text-zinc-300 px-2">
                                 <input
                                     v-model="specialAccessAllowsGeneralCreation"
@@ -1812,7 +1871,11 @@ onMounted(() => {
                                 <div class="flex flex-wrap items-center justify-between gap-2">
                                     <span class="font-semibold text-amber-200">
                                         {{ grant.kind }} ·
-                                        {{ grant.profiles.length ? grant.profiles.join(', ') : '전체 profile' }}
+                                        {{
+                                            grant.profiles.length
+                                                ? grant.profiles.map(profileScopeLabel).join(', ')
+                                                : '전체 서버'
+                                        }}
                                     </span>
                                     <button
                                         v-if="!grant.revokedAt"
@@ -1871,7 +1934,7 @@ onMounted(() => {
                             <table class="w-full min-w-[620px] text-xs">
                                 <thead class="text-zinc-500">
                                     <tr>
-                                        <th class="p-2 text-left">Profile</th>
+                                        <th class="p-2 text-left">서버</th>
                                         <th>접근</th>
                                         <th>장수 생성</th>
                                         <th>기본 접근 유예</th>
@@ -1885,7 +1948,7 @@ onMounted(() => {
                                         :key="policy.profileName"
                                         class="border-t border-zinc-800"
                                     >
-                                        <td class="p-2">{{ policy.profileName }}</td>
+                                        <td class="p-2">{{ policy.displayName }}</td>
                                         <td class="text-center">{{ policy.accessAllowed ? '허용' : '차단' }}</td>
                                         <td class="text-center">{{ policy.canCreateGeneral ? '허용' : '차단' }}</td>
                                         <td class="text-center">{{ policy.accessGraceDays }}일</td>
@@ -1944,13 +2007,21 @@ onMounted(() => {
                     >
                         <h4 class="text-base font-semibold">서버별 기능 제재 (서버 시간 UTC+9)</h4>
                         <div class="grid gap-2">
-                            <input
+                            <select
                                 v-model="restrictionProfile"
-                                type="text"
                                 class="bg-zinc-950 border border-zinc-700 rounded px-3 py-2 text-sm text-white"
-                                placeholder="profile:scenario"
-                                :disabled="!hasUser"
-                            />
+                                :disabled="!hasUser || !kakaoPolicies.length"
+                                aria-label="제재 대상 서버"
+                            >
+                                <option value="">대상 서버 선택</option>
+                                <option
+                                    v-for="policy in kakaoPolicies"
+                                    :key="policy.profileName"
+                                    :value="policy.profileName"
+                                >
+                                    {{ policy.displayName }}
+                                </option>
+                            </select>
                             <input
                                 v-model="restrictionFeatures"
                                 type="text"
@@ -2115,7 +2186,7 @@ onMounted(() => {
                                 </div>
                                 <div class="text-zinc-400">
                                     {{ event.actorUsername }} · {{ event.targetType ?? '-' }}
-                                    {{ event.targetId ?? event.profileName ?? '' }} · {{ event.reason ?? '사유 없음' }}
+                                    {{ auditTargetLabel(event) }} · {{ event.reason ?? '사유 없음' }}
                                 </div>
                             </div>
                         </div>
@@ -2180,6 +2251,7 @@ onMounted(() => {
                         >
                             <ServerProfileTabs
                                 :profile-name="profile.profileName"
+                                :profile-label="adminProfileDisplayName(profile)"
                                 active-tab="status"
                                 :can-deploy="hasCapability('admin.profiles.deploy', profile.profileName)"
                                 :can-reset="hasCapability('admin.scenarios.reset', profile.profileName)"
@@ -2189,10 +2261,7 @@ onMounted(() => {
                             <div class="flex flex-col md:flex-row md:items-center md:justify-between gap-2">
                                 <div>
                                     <div class="text-base font-semibold">
-                                        {{ profile.meta.korName ?? profile.profile }}
-                                    </div>
-                                    <div class="text-xs text-zinc-500">
-                                        서버 ID: {{ profile.profileName }} · 인스턴스: {{ profile.instanceKey }}
+                                        {{ adminProfileDisplayName(profile) }}
                                     </div>
                                     <div class="text-xs text-zinc-500">
                                         현재 시나리오: {{ profile.currentScenario ?? '미설정' }}
