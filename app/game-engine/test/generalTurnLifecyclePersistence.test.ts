@@ -97,7 +97,14 @@ describe('general lifecycle archive history', () => {
                         history: ['<Y>●</>둘째 기록', '<C>●</>첫 기록'],
                         records: { battleResult: ['둘째 전투 결과', '첫째 전투 결과'] },
                         availability: { battleResultLogs: true },
-                        meta: { killturn: 0, dex1: 1_000, rank_warnum: 2, rank_killnum: 1 },
+                        meta: expect.objectContaining({
+                            killturn: 0,
+                            dex1: 1_000,
+                            rank_warnum: 2,
+                            rank_killnum: 1,
+                            inheritRandomUnique: true,
+                            inheritSpecificSpecialWar: true,
+                        }),
                     }),
                 }),
             })
@@ -106,32 +113,60 @@ describe('general lifecycle archive history', () => {
 
     it('stores the inheritance earned rank in the hall before a rebirth resets ranks', async () => {
         const general = archivedGeneral();
-        const hallCreateMany = vi.fn(async () => ({ count: 1 }));
+        const hallCreate = vi.fn(async () => undefined);
+        general.userId = 'hall-owner';
+        general.meta = {
+            ...general.meta,
+            rank_warnum: 11,
+            inherit_earned: 4_321,
+            dex1: 200,
+            event100_allstar: { granted: { dex1: 80 } },
+        };
+        const postRetirement = {
+            ...general,
+            meta: {
+                ...general.meta,
+                rank_warnum: 0,
+                inherit_earned: 0,
+            },
+        };
+        const rankUpsert = vi.fn(async () => undefined);
         const prisma = {
             generalAccessLog: {
                 updateMany: vi.fn(async () => ({ count: 1 })),
             },
             rankData: {
-                findMany: vi.fn(async () => [{ type: 'inherit_earned', value: 4_321 }]),
-                updateMany: vi.fn(async () => ({ count: 1 })),
+                findMany: vi.fn(async () => [
+                    { type: 'warnum', value: 10 },
+                    { type: 'inherit_earned', value: 123 },
+                ]),
+                upsert: rankUpsert,
             },
             nation: {
                 findUnique: vi.fn(async () => null),
             },
             gameHistory: {
-                count: vi.fn(async () => 2),
+                count: vi.fn(async () => 99),
             },
             hallOfFame: {
-                findUnique: vi.fn(async () => null),
-                createMany: hallCreateMany,
+                findMany: vi.fn(async () => []),
+                create: hallCreate,
                 update: vi.fn(async () => undefined),
             },
+            inheritancePoint: {
+                findMany: vi.fn(async () => [{ key: 'previous', value: 0 }]),
+                upsert: vi.fn(async () => undefined),
+                deleteMany: vi.fn(async () => ({ count: 0 })),
+            },
+            inheritanceResult: { create: vi.fn(async () => undefined) },
+            inheritanceLog: { create: vi.fn(async () => undefined) },
         } as unknown as GamePrisma.TransactionClient;
         const event: GeneralLifecycleEvent = {
             generalId: general.id,
             outcome: 'retired',
             before: general,
-            after: general,
+            after: postRetirement,
+            isUnitedAtEvent: 0,
             year: 200,
             month: 1,
         };
@@ -139,26 +174,39 @@ describe('general lifecycle archive history', () => {
         await persistGeneralLifecycleEvents(
             prisma,
             [event],
-            { serverId: 'hall-fixture', season: 4, scenarioId: 22, isUnited: 0 },
-            {}
+            { serverId: 'hall-fixture', season: 4, scenarioId: 22, isUnited: 2, gameIdx: 7 },
+            {},
+            new Date('0200-02-01T00:00:00.000Z')
         );
 
-        expect(hallCreateMany).toHaveBeenCalledWith({
-            data: [
-                expect.objectContaining({
-                    serverId: 'hall-fixture',
-                    season: 4,
-                    scenario: 22,
-                    generalNo: general.id,
-                    type: 'inherit_earned',
-                    value: 4_321,
-                }),
-            ],
-            skipDuplicates: true,
+        expect(hallCreate).toHaveBeenCalledWith({
+            data: expect.objectContaining({
+                serverId: 'hall-fixture',
+                season: 4,
+                scenario: 22,
+                generalNo: general.id,
+                type: 'inherit_earned',
+                value: 4_321,
+            }),
         });
-        expect(prisma.rankData.updateMany).toHaveBeenCalledWith({
-            where: { generalId: general.id },
-            data: { value: 0 },
+        expect(hallCreate).toHaveBeenCalledWith({
+            data: expect.objectContaining({ type: 'warnum', value: 11 }),
+        });
+        expect(hallCreate).toHaveBeenCalledWith({
+            data: expect.objectContaining({
+                type: 'dex1',
+                value: 120,
+                aux: expect.objectContaining({ serverIdx: 7, unitedTime: '0200-02-01T00:00:00.000Z' }),
+            }),
+        });
+        expect(prisma.gameHistory.count).not.toHaveBeenCalled();
+        expect(prisma.inheritanceLog.create).not.toHaveBeenCalledWith(
+            expect.objectContaining({ data: expect.objectContaining({ text: expect.stringContaining('반환') }) })
+        );
+        expect(rankUpsert).toHaveBeenCalledWith({
+            where: { generalId_type: { generalId: general.id, type: 'warnum' } },
+            update: { nationId: general.nationId, value: 0 },
+            create: { generalId: general.id, nationId: general.nationId, type: 'warnum', value: 0 },
         });
     });
 });

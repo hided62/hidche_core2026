@@ -265,6 +265,42 @@ const zPatchGeneral = z.object({
     }),
 });
 
+const zInheritanceAction = z
+    .object({
+        type: z.literal('inheritanceAction'),
+        requestId: z.string().min(1).optional(),
+        userId: z.string().min(1),
+        input: z.discriminatedUnion('action', [
+            z.object({
+                action: z.literal('buyHiddenBuff'),
+                buffType: z.enum([
+                    'warAvoidRatio',
+                    'warCriticalRatio',
+                    'warMagicTrialProb',
+                    'domesticSuccessProb',
+                    'domesticFailProb',
+                    'warAvoidRatioOppose',
+                    'warCriticalRatioOppose',
+                    'warMagicTrialProbOppose',
+                ]),
+                level: z.number().int().min(1).max(5),
+            }),
+            z.object({ action: z.literal('setNextSpecialWar'), specialKey: z.string().min(1) }),
+            z.object({ action: z.literal('resetSpecialWar') }),
+            z.object({ action: z.literal('resetTurnTime') }),
+            z.object({
+                action: z.literal('resetStat'),
+                leadership: z.number().int(),
+                strength: z.number().int(),
+                intel: z.number().int(),
+                inheritBonusStat: z.tuple([z.number().int(), z.number().int(), z.number().int()]).optional(),
+            }),
+            z.object({ action: z.literal('buyRandomUnique') }),
+            z.object({ action: z.literal('checkOwner'), targetGeneralId: z.number().int().positive() }),
+        ]),
+    })
+    .strict();
+
 const zAdjustGeneralIcon = z
     .object({
         type: z.literal('adjustGeneralIcon'),
@@ -643,6 +679,14 @@ const normalizePatchGeneral: CommandNormalizer<'patchGeneral'> = (envelope) => {
     return { ...command, requestId: envelope.requestId };
 };
 
+const normalizeInheritanceAction: CommandNormalizer<'inheritanceAction'> = (envelope) => {
+    const command = parseWith(zInheritanceAction, envelope.command);
+    if (!command || (command.requestId !== undefined && command.requestId !== envelope.requestId)) {
+        return null;
+    }
+    return { ...command, requestId: envelope.requestId };
+};
+
 const normalizeAdjustGeneralIcon: CommandNormalizer<'adjustGeneralIcon'> = (envelope) => {
     const command = parseWith(zAdjustGeneralIcon, envelope.command);
     if (!command || (command.requestId !== undefined && command.requestId !== envelope.requestId)) {
@@ -764,6 +808,7 @@ const normalizers: CommandNormalizerMap = {
     adjustGeneralMeta: normalizeAdjustGeneralMeta,
     tournamentMatchResult: normalizeTournamentMatchResult,
     patchGeneral: normalizePatchGeneral,
+    inheritanceAction: normalizeInheritanceAction,
     adjustGeneralIcon: normalizeAdjustGeneralIcon,
     joinCreateGeneral: normalizeJoinCreateGeneral,
     npcPossessGeneral: normalizeNpcPossessGeneral,

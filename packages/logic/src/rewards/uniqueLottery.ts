@@ -44,6 +44,12 @@ export type UniqueLotteryInput = {
     inheritRandomUnique?: boolean;
 };
 
+export type UniqueLotteryOutcome =
+    | { status: 'NO_SLOT' }
+    | { status: 'ROLL_FAILED' }
+    | { status: 'NO_SUPPLY' }
+    | { status: 'ACQUIRED'; itemKey: string };
+
 const DEFAULT_MAX_UNIQUE_ITEM_LIMIT: Array<[number, number]> = [
     [-1, 1],
     [3, 2],
@@ -183,7 +189,7 @@ export const buildGenericUniqueSeed = (
 export const buildVoteUniqueSeed = (hiddenSeed: string | number, voteId: number, generalId: number): string =>
     serializeSeed(hiddenSeed, 'voteUnique', voteId, generalId);
 
-export const rollUniqueLottery = (input: UniqueLotteryInput): string | null => {
+export const rollUniqueLotteryDetailed = (input: UniqueLotteryInput): UniqueLotteryOutcome => {
     const {
         rng,
         config,
@@ -203,13 +209,13 @@ export const rollUniqueLottery = (input: UniqueLotteryInput): string | null => {
     const resolvedAcquireType = acquireType ?? '아이템';
 
     if (userCount <= 0) {
-        return null;
+        return { status: 'ROLL_FAILED' };
     }
 
     const itemTypes = Object.keys(config.allItems);
     const itemTypeCnt = itemTypes.length;
     if (itemTypeCnt <= 0) {
-        return null;
+        return { status: 'NO_SLOT' };
     }
 
     const relYear = currentYear - startYear;
@@ -246,7 +252,7 @@ export const rollUniqueLottery = (input: UniqueLotteryInput): string | null => {
     }
 
     if (trialCnt <= 0 || maxCnt <= 0) {
-        return null;
+        return { status: 'NO_SLOT' };
     }
 
     const relMonthByInit = joinYearMonth(currentYear, currentMonth) - joinYearMonth(initYear, initMonth);
@@ -289,7 +295,7 @@ export const rollUniqueLottery = (input: UniqueLotteryInput): string | null => {
     }
 
     if (!success) {
-        return null;
+        return { status: 'ROLL_FAILED' };
     }
 
     const availableUnique: Array<[string, number]> = [];
@@ -315,10 +321,15 @@ export const rollUniqueLottery = (input: UniqueLotteryInput): string | null => {
     }
 
     if (availableUnique.length === 0) {
-        return null;
+        return { status: 'NO_SUPPLY' };
     }
 
-    return rng.choiceUsingWeightPair(availableUnique);
+    return { status: 'ACQUIRED', itemKey: rng.choiceUsingWeightPair(availableUnique) };
+};
+
+export const rollUniqueLottery = (input: UniqueLotteryInput): string | null => {
+    const outcome = rollUniqueLotteryDetailed(input);
+    return outcome.status === 'ACQUIRED' ? outcome.itemKey : null;
 };
 
 const applyUniqueItemGain = <TriggerState extends GeneralTriggerState = GeneralTriggerState>(

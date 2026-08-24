@@ -377,7 +377,11 @@ export const createUpdateNationLevelHandler = (options: {
             const isUnited = readNumber(state.meta.isunited ?? state.meta.isUnited);
             if (chief?.userId && chief.npcState < 2 && isUnited === 0) {
                 const amount = 250 * levelDiff;
-                world.queueInheritancePointAdjustment(chief.userId, 'unifier', amount);
+                // General turns (including rebirth settlement) finish before
+                // monthly actions in the processor. Persist this award after
+                // lifecycle so the retirement result cannot claim a later
+                // promotion as pre-rebirth retained state.
+                world.queueInheritancePointAdjustment(chief.userId, 'unifier', amount, 'after_lifecycle');
                 world.updateGeneral(chief.id, {
                     inheritancePoints: {
                         ...chief.inheritancePoints,

@@ -1,9 +1,23 @@
-import { asRecord, HALL_OF_FAME_TYPES, resolveLegacyTextColor, type HallOfFameType } from '@sammo-ts/common';
+import {
+    asRecord,
+    HALL_OF_FAME_TYPES,
+    RANK_DATA_TYPES,
+    rankDataMetaKey,
+    resolveLegacyTextColor,
+    type HallOfFameType,
+} from '@sammo-ts/common';
 import type { GamePrisma, InputJsonValue } from '@sammo-ts/infra';
 import { LogCategory, LogScope } from '@sammo-ts/logic';
 import { computeInheritanceSettlementBreakdown } from '@sammo-ts/logic/inheritance/pointCalculation.js';
+import {
+    readCentennialRecordableDexterity,
+    type CentennialDexKey,
+} from '@sammo-ts/logic/scenario/centennialAllStar.js';
 
 import type { GeneralLifecycleEvent } from './inMemoryWorld.js';
+import { persistHallOfFameCandidate, resolveOfficialGameIndex } from './hallOfFamePersistence.js';
+import { buildInheritanceSettlementLogTexts } from './inheritanceSettlementLogs.js';
+import { buildPersistedRankRows } from './rankData.js';
 
 const asJson = (value: unknown): InputJsonValue => value as InputJsonValue;
 
@@ -24,12 +38,59 @@ const readWorldNumber = (record: Record<string, unknown>, key: string, fallback:
     return value === 0 && record[key] === undefined ? fallback : Math.floor(value);
 };
 
+type LifecycleRankValues = Map<string, number>;
+
+export interface GeneralLifecycleArchiveLog {
+    generalId: number;
+    category: string;
+    text: string;
+}
+
+const loadLifecycleRankValues = async (
+    prisma: GamePrisma.TransactionClient,
+    event: GeneralLifecycleEvent
+): Promise<LifecycleRankValues> => {
+    const persisted = await prisma.rankData.findMany({
+        where: { generalId: event.generalId },
+        select: { type: true, value: true },
+    });
+    const values = new Map(persisted.map((row) => [row.type, row.value]));
+    const snapshotMeta = asRecord(event.before.meta);
+    for (const row of buildPersistedRankRows(event.before)) {
+        if (
+            row.type === 'experience' ||
+            row.type === 'dedication' ||
+            Object.prototype.hasOwnProperty.call(snapshotMeta, rankDataMetaKey(row.type))
+        ) {
+            values.set(row.type, row.value);
+        }
+    }
+    return values;
+};
+
+const persistPostRetirementRankValues = async (
+    prisma: GamePrisma.TransactionClient,
+    event: GeneralLifecycleEvent
+): Promise<void> => {
+    if (!event.after) {
+        return;
+    }
+    for (const row of buildPersistedRankRows(event.after)) {
+        await prisma.rankData.upsert({
+            where: { generalId_type: { generalId: row.generalId, type: row.type } },
+            update: { nationId: row.nationId, value: row.value },
+            create: row,
+        });
+    }
+};
+
 const settleInheritance = async (
     prisma: GamePrisma.TransactionClient,
     event: GeneralLifecycleEvent,
     worldMeta: Record<string, unknown>,
     isRebirth: boolean,
-    configConst: Record<string, unknown>
+    configConst: Record<string, unknown>,
+    rankValues: ReadonlyMap<string, number>
 ): Promise<void> => {
     const userId = event.before.userId;
     if (!userId || event.before.npcState >= 2 || (isRebirth && event.before.npcState === 1)) {
@@ -53,29 +114,23 @@ const settleInheritance = async (
         }
     }
 
-    const [rows, rankRows] = await Promise.all([
-        prisma.inheritancePoint.findMany({
-            where: { userId },
-            select: { key: true, value: true },
-        }),
-        prisma.rankData.findMany({
-            where: { generalId: event.generalId },
-            select: { type: true, value: true },
-        }),
-    ]);
+    const rows = await prisma.inheritancePoint.findMany({
+        where: { userId },
+        select: { key: true, value: true },
+    });
     const points = new Map(rows.map((row) => [row.key, row.value]));
     const previous = points.get('previous') ?? 0;
-    const randomUniqueRefund = meta.inheritRandomUnique
-        ? readWorldNumber(configConst, 'inheritItemRandomPoint', 3000)
-        : 0;
-    const specificSpecialRefund = meta.inheritSpecificSpecialWar
-        ? readWorldNumber(configConst, 'inheritSpecificSpecialPoint', 4000)
-        : 0;
+    const randomUniqueRefund =
+        !isRebirth && meta.inheritRandomUnique ? readWorldNumber(configConst, 'inheritItemRandomPoint', 3000) : 0;
+    const specificSpecialRefund =
+        !isRebirth && meta.inheritSpecificSpecialWar
+            ? readWorldNumber(configConst, 'inheritSpecificSpecialPoint', 4000)
+            : 0;
     const refund = randomUniqueRefund + specificSpecialRefund;
     const calculationMeta = {
+        ...Object.fromEntries(rankValues),
+        ...Object.fromEntries(RANK_DATA_TYPES.map((type) => [rankDataMetaKey(type), rankValues.get(type) ?? 0])),
         ...meta,
-        ...Object.fromEntries(rankRows.map((row) => [row.type, row.value])),
-        ...Object.fromEntries(rankRows.map((row) => [`rank_${row.type}`, row.value])),
     };
     const settlement = computeInheritanceSettlementBreakdown(
         {
@@ -143,14 +198,22 @@ const settleInheritance = async (
             },
         });
     }
-    await prisma.inheritanceLog.create({
-        data: {
-            userId,
-            year: event.year,
-            month: event.month,
-            text: `${isRebirth ? '은퇴' : '사망'} 정산: ${total.toLocaleString()} 포인트`,
-        },
-    });
+    for (const text of buildInheritanceSettlementLogTexts({
+        previous: previous + refund,
+        points: settlement.earned,
+        storedKeys: new Set([...points.keys(), ...(refund > 0 ? (['previous'] as const) : [])]),
+        total,
+        isRebirth,
+    })) {
+        await prisma.inheritanceLog.create({
+            data: {
+                userId,
+                year: event.year,
+                month: event.month,
+                text,
+            },
+        });
+    }
 };
 
 const computeRate = (numerator: number, denominator: number): number => (denominator > 0 ? numerator / denominator : 0);
@@ -159,26 +222,23 @@ const settleHall = async (
     prisma: GamePrisma.TransactionClient,
     event: GeneralLifecycleEvent,
     worldMeta: Record<string, unknown>,
-    gameNow: Date
+    gameNow: Date,
+    rank: ReadonlyMap<string, number>
 ): Promise<void> => {
-    const isUnited = readWorldNumber(worldMeta, 'isUnited', readWorldNumber(worldMeta, 'isunited', 0));
+    const isUnited =
+        event.isUnitedAtEvent ?? readWorldNumber(worldMeta, 'isUnited', readWorldNumber(worldMeta, 'isunited', 0));
     if (isUnited !== 0) {
         return;
     }
-    const [ranks, nation, historyCount] = await Promise.all([
-        prisma.rankData.findMany({
-            where: { generalId: event.generalId },
-            select: { type: true, value: true },
-        }),
+    const [nation, serverIdx] = await Promise.all([
         event.before.nationId > 0
             ? prisma.nation.findUnique({
                   where: { id: event.before.nationId },
                   select: { name: true, color: true },
               })
             : null,
-        prisma.gameHistory.count(),
+        resolveOfficialGameIndex(prisma, worldMeta),
     ]);
-    const rank = new Map(ranks.map((row) => [row.type, row.value]));
     const value = (key: string): number => rank.get(key) ?? readNumber(asRecord(event.before.meta), key);
     const warnum = value('warnum');
     const tt = value('ttw') + value('ttd') + value('ttl');
@@ -221,12 +281,13 @@ const settleHall = async (
         picture: event.before.picture ?? null,
         imgsvr: event.before.imageServer ?? 0,
         serverID: serverId,
-        serverIdx: historyCount,
+        serverIdx,
         scenarioName,
         serverName: typeof worldMeta.serverName === 'string' ? worldMeta.serverName : '',
     };
 
     for (const type of HALL_OF_FAME_TYPES) {
+        const eventMeta = asRecord(event.before.meta);
         let hallValue =
             type === 'experience'
                 ? event.before.experience
@@ -234,7 +295,9 @@ const settleHall = async (
                   ? event.before.dedication
                   : type.endsWith('rate')
                     ? (calc[type] ?? 0)
-                    : value(type);
+                    : type.startsWith('dex')
+                      ? readCentennialRecordableDexterity(eventMeta, type as CentennialDexKey)
+                      : value(type);
         if ((type === 'winrate' || type === 'killrate') && warnum < 10) continue;
         if (type === 'ttrate' && tt < 50) continue;
         if (type === 'tlrate' && tl < 50) continue;
@@ -244,72 +307,56 @@ const settleHall = async (
         if (!Number.isFinite(hallValue) || hallValue <= 0) continue;
         hallValue = Number(hallValue);
 
-        const existing = await prisma.hallOfFame.findUnique({
-            where: {
-                serverId_type_generalNo: {
-                    serverId,
-                    type: type as HallOfFameType,
-                    generalNo: event.generalId,
-                },
-            },
-        });
-        if (existing) {
-            if (hallValue > existing.value) {
-                await prisma.hallOfFame.update({
-                    where: { id: existing.id },
-                    data: { value: hallValue, aux: asJson(aux) },
-                });
-            }
-            continue;
-        }
-        await prisma.hallOfFame.createMany({
-            data: [
-                {
-                    serverId,
-                    season,
-                    scenario,
-                    generalNo: event.generalId,
-                    type,
-                    value: hallValue,
-                    owner: event.before.userId ?? null,
-                    aux: asJson(aux),
-                },
-            ],
-            skipDuplicates: true,
+        await persistHallOfFameCandidate(prisma, {
+            serverId,
+            season,
+            scenario,
+            generalNo: event.generalId,
+            type: type as HallOfFameType,
+            value: hallValue,
+            owner: event.before.userId ?? null,
+            aux,
         });
     }
 };
 
-const archiveDeletedGeneral = async (
+const archiveGeneral = async (
     prisma: GamePrisma.TransactionClient,
     event: GeneralLifecycleEvent,
-    worldMeta: Record<string, unknown>
+    worldMeta: Record<string, unknown>,
+    rankValues: ReadonlyMap<string, number>,
+    pendingArchiveLogs: readonly GeneralLifecycleArchiveLog[]
 ): Promise<void> => {
     const serverId =
         typeof worldMeta.serverId === 'string' && worldMeta.serverId.trim() ? worldMeta.serverId.trim() : 'default';
-    const [recordRows, rankRows] = await Promise.all([
-        prisma.logEntry.findMany({
-            where: {
-                generalId: event.generalId,
-                scope: LogScope.GENERAL,
-                category: { in: [LogCategory.HISTORY, LogCategory.BATTLE_BRIEF] },
-            },
-            orderBy: { id: 'desc' },
-            select: { category: true, text: true },
-        }),
-        prisma.rankData.findMany({
-            where: { generalId: event.generalId },
-            select: { type: true, value: true },
-        }),
-    ]);
+    const recordRows = await prisma.logEntry.findMany({
+        where: {
+            generalId: event.generalId,
+            scope: LogScope.GENERAL,
+            category: { in: [LogCategory.HISTORY, LogCategory.BATTLE_BRIEF] },
+        },
+        orderBy: { id: 'desc' },
+        select: { category: true, text: true },
+    });
     const archivedMeta = {
         ...asRecord(event.before.meta),
-        ...Object.fromEntries(rankRows.map((row) => [`rank_${row.type}`, row.value])),
+        ...Object.fromEntries(RANK_DATA_TYPES.map((type) => [rankDataMetaKey(type), rankValues.get(type) ?? 0])),
     };
-    delete archivedMeta.inheritRandomUnique;
-    delete archivedMeta.inheritSpecificSpecialWar;
-    const history = recordRows.filter((row) => row.category === LogCategory.HISTORY).map((row) => row.text);
-    const battleResults = recordRows.filter((row) => row.category === LogCategory.BATTLE_BRIEF).map((row) => row.text);
+    const pendingGeneralLogs = pendingArchiveLogs.filter((row) => row.generalId === event.generalId);
+    const history = [
+        ...pendingGeneralLogs
+            .filter((row) => row.category === LogCategory.HISTORY)
+            .map((row) => row.text)
+            .reverse(),
+        ...recordRows.filter((row) => row.category === LogCategory.HISTORY).map((row) => row.text),
+    ];
+    const battleResults = [
+        ...pendingGeneralLogs
+            .filter((row) => row.category === LogCategory.BATTLE_BRIEF)
+            .map((row) => row.text)
+            .reverse(),
+        ...recordRows.filter((row) => row.category === LogCategory.BATTLE_BRIEF).map((row) => row.text),
+    ];
     const data = {
         ...event.before,
         meta: archivedMeta,
@@ -345,7 +392,8 @@ export const persistGeneralLifecycleEvents = async (
     events: GeneralLifecycleEvent[],
     worldMeta: Record<string, unknown>,
     configConst: Record<string, unknown>,
-    gameNow = new Date()
+    gameNow = new Date(),
+    pendingArchiveLogs: readonly GeneralLifecycleArchiveLog[] = []
 ): Promise<void> => {
     if (events.length === 0) {
         return;
@@ -359,17 +407,18 @@ export const persistGeneralLifecycleEvents = async (
         if (event.outcome === 'detached' || event.outcome === 'deleted') {
             await prisma.generalAccessLog.deleteMany({ where: { generalId: event.generalId } });
         }
+        if (event.outcome !== 'deleted' && event.outcome !== 'retired') {
+            continue;
+        }
+        const rankValues = await loadLifecycleRankValues(prisma, event);
         if (event.outcome === 'deleted') {
-            await archiveDeletedGeneral(prisma, event, worldMeta);
-            await settleInheritance(prisma, event, worldMeta, false, configConst);
+            await settleInheritance(prisma, event, worldMeta, false, configConst, rankValues);
+            await archiveGeneral(prisma, event, worldMeta, rankValues, pendingArchiveLogs);
         }
         if (event.outcome === 'retired') {
-            await settleHall(prisma, event, worldMeta, gameNow);
-            await settleInheritance(prisma, event, worldMeta, true, configConst);
-            await prisma.rankData.updateMany({
-                where: { generalId: event.generalId },
-                data: { value: 0 },
-            });
+            await settleHall(prisma, event, worldMeta, gameNow, rankValues);
+            await settleInheritance(prisma, event, worldMeta, true, configConst, rankValues);
+            await persistPostRetirementRankValues(prisma, event);
         }
     }
 };

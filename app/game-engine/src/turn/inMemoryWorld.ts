@@ -83,6 +83,8 @@ export interface GeneralLifecycleEvent {
     outcome: 'active' | 'detached' | 'deleted' | 'retired';
     before: TurnGeneral;
     after?: TurnGeneral;
+    /** World unification state observed when this lifecycle transition occurred. */
+    isUnitedAtEvent?: number;
     year: number;
     month: number;
 }
@@ -123,6 +125,23 @@ export interface InMemoryGameClockState {
     lastTurnTick: number;
 }
 
+export type InheritancePersistencePhase = 'before_lifecycle' | 'after_lifecycle';
+
+export interface PendingInheritancePointAdjustment {
+    userId: string;
+    key: string;
+    amount: number;
+    phase?: InheritancePersistencePhase;
+}
+
+export interface PendingInheritanceLog {
+    userId: string;
+    year: number;
+    month: number;
+    text: string;
+    phase?: InheritancePersistencePhase;
+}
+
 export interface TurnWorldChanges {
     realtimeBacklogShiftTicks: number;
     accessScoreResetGeneralIds: number[];
@@ -145,7 +164,8 @@ export interface TurnWorldChanges {
     deletedEvents: number[];
     lifecycleEvents: GeneralLifecycleEvent[];
     pendingNeutralAuctions: PendingNeutralAuction[];
-    inheritancePointAdjustments: Array<{ userId: string; key: string; amount: number }>;
+    inheritancePointAdjustments: PendingInheritancePointAdjustment[];
+    pendingInheritanceLogs: PendingInheritanceLog[];
     pendingNationBettingOpens: PendingNationBettingOpen[];
     pendingNationBettingFinishes: PendingNationBettingFinish[];
     pendingYearbookSnapshots: PendingYearbookSnapshot[];
@@ -184,7 +204,8 @@ export interface InMemoryTurnWorldStateSnapshot {
     messages: MessageDraft[];
     lifecycleEvents: GeneralLifecycleEvent[];
     pendingNeutralAuctions: PendingNeutralAuction[];
-    inheritancePointAdjustments: Array<{ userId: string; key: string; amount: number }>;
+    inheritancePointAdjustments: PendingInheritancePointAdjustment[];
+    pendingInheritanceLogs: PendingInheritanceLog[];
     pendingNationBettingOpens: PendingNationBettingOpen[];
     pendingNationBettingFinishes: PendingNationBettingFinish[];
     pendingYearbookSnapshots: PendingYearbookSnapshot[];
@@ -487,7 +508,8 @@ export class InMemoryTurnWorld {
     private readonly messages: MessageDraft[] = [];
     private readonly lifecycleEvents: GeneralLifecycleEvent[] = [];
     private readonly pendingNeutralAuctions: PendingNeutralAuction[] = [];
-    private readonly inheritancePointAdjustments: Array<{ userId: string; key: string; amount: number }> = [];
+    private readonly inheritancePointAdjustments: PendingInheritancePointAdjustment[] = [];
+    private readonly pendingInheritanceLogs: PendingInheritanceLog[] = [];
     private readonly pendingNationBettingOpens: PendingNationBettingOpen[] = [];
     private readonly pendingNationBettingFinishes: PendingNationBettingFinish[] = [];
     private readonly pendingYearbookSnapshots: PendingYearbookSnapshot[] = [];
@@ -786,6 +808,7 @@ export class InMemoryTurnWorld {
             lifecycleEvents: this.lifecycleEvents,
             pendingNeutralAuctions: this.pendingNeutralAuctions,
             inheritancePointAdjustments: this.inheritancePointAdjustments,
+            pendingInheritanceLogs: this.pendingInheritanceLogs,
             pendingNationBettingOpens: this.pendingNationBettingOpens,
             pendingNationBettingFinishes: this.pendingNationBettingFinishes,
             pendingYearbookSnapshots: this.pendingYearbookSnapshots,
@@ -831,6 +854,7 @@ export class InMemoryTurnWorld {
         this.replaceArray(this.lifecycleEvents, restored.lifecycleEvents);
         this.replaceArray(this.pendingNeutralAuctions, restored.pendingNeutralAuctions);
         this.replaceArray(this.inheritancePointAdjustments, restored.inheritancePointAdjustments);
+        this.replaceArray(this.pendingInheritanceLogs, restored.pendingInheritanceLogs ?? []);
         this.replaceArray(this.pendingNationBettingOpens, restored.pendingNationBettingOpens);
         this.replaceArray(this.pendingNationBettingFinishes, restored.pendingNationBettingFinishes);
         this.replaceArray(this.pendingYearbookSnapshots, restored.pendingYearbookSnapshots);
@@ -990,11 +1014,23 @@ export class InMemoryTurnWorld {
         });
     }
 
-    queueInheritancePointAdjustment(userId: string, key: string, amount: number): void {
+    queueInheritancePointAdjustment(
+        userId: string,
+        key: string,
+        amount: number,
+        phase?: InheritancePersistencePhase
+    ): void {
         if (!userId || !Number.isFinite(amount) || amount === 0) {
             return;
         }
-        this.inheritancePointAdjustments.push({ userId, key, amount });
+        this.inheritancePointAdjustments.push({ userId, key, amount, ...(phase ? { phase } : {}) });
+    }
+
+    queueInheritanceLog(log: PendingInheritanceLog): void {
+        if (!log.userId || !log.text) {
+            return;
+        }
+        this.pendingInheritanceLogs.push({ ...log });
     }
 
     queueNationBettingOpen(betting: PendingNationBettingOpen): void {
@@ -1271,6 +1307,9 @@ export class InMemoryTurnWorld {
             generalId: id,
             outcome: 'deleted',
             before: structuredClone(general),
+            isUnitedAtEvent: Math.floor(
+                readMetaNumber(this.state.meta, 'isunited') ?? readMetaNumber(this.state.meta, 'isUnited') ?? 0
+            ),
             year,
             month,
         });
@@ -1811,6 +1850,7 @@ export class InMemoryTurnWorld {
             closeAt: new Date(auction.closeAt.getTime()),
         }));
         const inheritancePointAdjustments = this.inheritancePointAdjustments.map((entry) => ({ ...entry }));
+        const pendingInheritanceLogs = this.pendingInheritanceLogs.map((entry) => ({ ...entry }));
         const pendingNationBettingOpens = this.pendingNationBettingOpens.map((entry) => ({
             ...entry,
             candidates: entry.candidates.map((candidate) => ({
@@ -1852,6 +1892,7 @@ export class InMemoryTurnWorld {
             lifecycleEvents,
             pendingNeutralAuctions,
             inheritancePointAdjustments,
+            pendingInheritanceLogs,
             pendingNationBettingOpens,
             pendingNationBettingFinishes,
             pendingYearbookSnapshots,
@@ -1889,6 +1930,7 @@ export class InMemoryTurnWorld {
         this.lifecycleEvents.splice(0, changes.lifecycleEvents.length);
         this.pendingNeutralAuctions.splice(0, changes.pendingNeutralAuctions.length);
         this.inheritancePointAdjustments.splice(0, changes.inheritancePointAdjustments.length);
+        this.pendingInheritanceLogs.splice(0, changes.pendingInheritanceLogs.length);
         this.pendingNationBettingOpens.splice(0, changes.pendingNationBettingOpens.length);
         this.pendingNationBettingFinishes.splice(0, changes.pendingNationBettingFinishes.length);
         this.pendingYearbookSnapshots.splice(0, changes.pendingYearbookSnapshots.length);

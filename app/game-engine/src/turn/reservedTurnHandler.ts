@@ -32,7 +32,7 @@ import {
     loadItemModules,
     resolveUniqueConfig,
     readScenarioGeneralPoolClaim,
-    rollUniqueLottery,
+    rollUniqueLotteryDetailed,
     getNextTurnAt,
     getBillByLevel,
     LEGACY_DEFAULT_MAX_LEVEL,
@@ -479,6 +479,8 @@ const buildUniqueLotteryRunner = (options: {
     seedBase: string;
     itemRegistry: Map<string, ItemModule>;
     uniqueConfig: ReturnType<typeof resolveUniqueConfig>;
+    inheritItemRandomPoint: number;
+    inheritanceWorld?: InMemoryTurnWorld | null;
     getAdditionalOccupiedUniqueItemKeys?: () => Iterable<string | null | undefined>;
 }): UniqueLotteryRunner => {
     if (!options.worldView) {
@@ -523,7 +525,7 @@ const buildUniqueLotteryRunner = (options: {
         const relMonthByInit =
             joinYearMonth(world.currentYear, world.currentMonth) - joinYearMonth(initYear, initMonth);
         const availableBuyUnique = relMonthByInit >= minMonthToAllowInherit;
-        const itemKey = rollUniqueLottery({
+        const outcome = rollUniqueLotteryDetailed({
             rng,
             config: options.uniqueConfig,
             itemRegistry: options.itemRegistry,
@@ -539,13 +541,54 @@ const buildUniqueLotteryRunner = (options: {
             acquireType,
             inheritRandomUnique,
         });
-        if (!itemKey) {
+        if (outcome.status === 'NO_SLOT' || outcome.status === 'NO_SUPPLY') {
+            if (inheritRandomUnique) {
+                const turnGeneral = general as TurnGeneral;
+                const cost = options.inheritItemRandomPoint;
+                const nextMeta = {
+                    ...turnGeneral.meta,
+                    // Explicit retirement resets every rank before this lottery in Ref,
+                    // so a failed pending purchase leaves the post-rebirth delta at -cost.
+                    inherit_spent_dyn:
+                        reason === '은퇴'
+                            ? -cost
+                            : readMetaNumber(asRecord(turnGeneral.meta), 'inherit_spent_dyn', 0) - cost,
+                } as TurnGeneral['meta'];
+                delete nextMeta.inheritRandomUnique;
+                turnGeneral.meta = nextMeta;
+                turnGeneral.inheritancePoints = {
+                    ...turnGeneral.inheritancePoints,
+                    previous: readInheritanceNumber(turnGeneral.inheritancePoints?.previous) + cost,
+                };
+                if (turnGeneral.userId) {
+                    const persistencePhase = reason === '은퇴' ? 'after_lifecycle' : undefined;
+                    options.inheritanceWorld?.queueInheritancePointAdjustment(
+                        turnGeneral.userId,
+                        'previous',
+                        cost,
+                        persistencePhase
+                    );
+                    options.inheritanceWorld?.queueInheritanceLog({
+                        userId: turnGeneral.userId,
+                        year: world.currentYear,
+                        month: world.currentMonth,
+                        text:
+                            outcome.status === 'NO_SLOT'
+                                ? `유니크를 얻을 공간이 없어 ${cost} 포인트 반환`
+                                : `얻을 유니크가 없어 ${cost} 포인트 반환`,
+                        ...(persistencePhase ? { phase: persistencePhase } : {}),
+                    });
+                }
+            }
+            return null;
+        }
+        if (outcome.status === 'ROLL_FAILED') {
             return null;
         }
         if (inheritRandomUnique && availableBuyUnique) {
             delete asRecord(general.meta).inheritRandomUnique;
         }
-        return options.itemRegistry.get(itemKey) ?? null;
+        return options.itemRegistry.get(outcome.itemKey) ?? null;
     };
 };
 
@@ -885,6 +928,11 @@ export const createReservedTurnHandler = async (options: {
     const env = options.commandEnv ?? buildCommandEnv(options.scenarioConfig, options.unitSet);
     const itemRegistry = createItemModuleRegistry(await loadItemModules([...ITEM_KEYS]));
     const uniqueConfig = resolveUniqueConfig(asRecord(options.scenarioConfig.const));
+    const inheritItemRandomPoint = readMetaNumber(
+        asRecord(options.scenarioConfig.const),
+        'inheritItemRandomPoint',
+        3_000
+    );
     if (Object.keys(uniqueConfig.allItems).length === 0) {
         uniqueConfig.allItems = buildLegacyDefaultUniqueItemPool(itemRegistry);
     }
@@ -1133,6 +1181,8 @@ export const createReservedTurnHandler = async (options: {
                     seedBase,
                     itemRegistry,
                     uniqueConfig,
+                    inheritItemRandomPoint,
+                    inheritanceWorld: worldRef,
                     getAdditionalOccupiedUniqueItemKeys: options.getAdditionalOccupiedUniqueItemKeys,
                 });
                 let actionRng = sharedActionRng ?? buildRng(actionKey);
@@ -2086,6 +2136,10 @@ export const createReservedTurnHandler = async (options: {
                 }
                 generalAiState = ai.getDebugState();
             }
+            // che_은퇴 performs the rebirth inside the action, as Ref does. Preserve
+            // the fully accumulated pre-command state so lifecycle persistence can
+            // settle Hall/inheritance before observing that reset.
+            const explicitRetirementSnapshot = cloneTurnGeneral(currentGeneral);
             const generalActionStartedAt = options.onActionProfiled ? process.hrtime.bigint() : 0n;
             const generalResult = isBlocked
                 ? {
@@ -2176,7 +2230,10 @@ export const createReservedTurnHandler = async (options: {
                 delete currentGeneral.meta.nextTurnTimeBase;
             }
 
-            let lifecycleOutcome: 'active' | 'detached' | 'deleted' | 'retired' = 'active';
+            const explicitlyRetired = generalResult.actionKey === 'che_은퇴' && generalResult.completed;
+            let lifecycleOutcome: 'active' | 'detached' | 'deleted' | 'retired' = explicitlyRetired
+                ? 'retired'
+                : 'active';
             let deleteGeneral = false;
             const deletedTroopIds = Array.from(commandDeletedTroopIds);
             const lifecycleSnapshot = cloneTurnGeneral(currentGeneral);
@@ -2353,8 +2410,18 @@ export const createReservedTurnHandler = async (options: {
                 lifecycleEvent: {
                     generalId: currentGeneral.id,
                     outcome: lifecycleOutcome,
-                    before: lifecycleOutcome === 'active' ? lifecycleBefore : lifecycleSnapshot,
+                    before:
+                        lifecycleOutcome === 'active'
+                            ? lifecycleBefore
+                            : explicitlyRetired
+                              ? explicitRetirementSnapshot
+                              : lifecycleSnapshot,
                     ...(deleteGeneral ? {} : { after: currentGeneral }),
+                    isUnitedAtEvent: readMetaNumber(
+                        asRecord(context.world.meta),
+                        'isunited',
+                        readMetaNumber(asRecord(context.world.meta), 'isUnited', 0)
+                    ),
                     year: context.world.currentYear,
                     month: context.world.currentMonth,
                 },
@@ -2418,6 +2485,11 @@ export const createImmediateGeneralActionExecutor = async (options: {
 
     const itemRegistry = createItemModuleRegistry(await loadItemModules([...ITEM_KEYS]));
     const uniqueConfig = resolveUniqueConfig(asRecord(options.world.getScenarioConfig().const));
+    const inheritItemRandomPoint = readMetaNumber(
+        asRecord(options.world.getScenarioConfig().const),
+        'inheritItemRandomPoint',
+        3_000
+    );
     if (Object.keys(uniqueConfig.allItems).length === 0) {
         uniqueConfig.allItems = buildLegacyDefaultUniqueItemPool(itemRegistry);
     }
@@ -2488,6 +2560,8 @@ export const createImmediateGeneralActionExecutor = async (options: {
                 seedBase,
                 itemRegistry,
                 uniqueConfig,
+                inheritItemRandomPoint,
+                inheritanceWorld: options.world,
                 getAdditionalOccupiedUniqueItemKeys: () => additionalOccupiedUniqueItemKeys,
             });
             const startYear = resolveStartYear(state, options.scenarioMeta);

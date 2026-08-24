@@ -62,6 +62,7 @@ import { createGeneralFromJoin, JoinCreateGeneralError } from './joinCreateGener
 import { NpcPossessionError, possessNpcGeneral } from './npcPossessionService.js';
 import { buildPrestartDeleteAfter, formatPrestartDeleteAfter, readPrestartDeleteAfter } from './prestartDeletion.js';
 import { respondToActionableMessage } from './actionableMessageResponse.js';
+import { executeInheritanceAction } from './inheritanceActionService.js';
 
 let itemRegistryPromise: Promise<Map<string, ItemModule>> | null = null;
 
@@ -162,7 +163,8 @@ const resolveCommandAcceptedAt = async (
                 | 'selectPoolReserve'
                 | 'selectPoolCreate'
                 | 'selectPoolReselect'
-                | 'adjustGeneralIcon';
+                | 'adjustGeneralIcon'
+                | 'inheritanceAction';
         }
     >
 ): Promise<Date> => {
@@ -800,6 +802,20 @@ async function handlePatchGeneral(
 
     world.updateGeneral(command.generalId, patch);
     return { type: 'patchGeneral', ok: true, generalId: command.generalId };
+}
+
+async function handleInheritanceAction(
+    ctx: CommandHandlerContext,
+    command: Extract<TurnDaemonCommand, { type: 'inheritanceAction' }>
+): Promise<TurnDaemonCommandResult> {
+    const db = requireCommandDatabase(ctx) as unknown as GamePrisma.TransactionClient;
+    const acceptedAt = await resolveCommandAcceptedAt(db as unknown as DatabaseClient, command);
+    return executeInheritanceAction({
+        db,
+        world: ctx.world,
+        command,
+        gameNow: ctx.world.getGameNow(acceptedAt),
+    });
 }
 
 async function handleAdjustGeneralIcon(
@@ -2936,6 +2952,8 @@ export const createTurnDaemonCommandHandler = (options: {
             handleTournamentMatchResult(ctx, command as Extract<TurnDaemonCommand, { type: 'tournamentMatchResult' }>),
         patchGeneral: (command) =>
             handlePatchGeneral(ctx, command as Extract<TurnDaemonCommand, { type: 'patchGeneral' }>),
+        inheritanceAction: (command) =>
+            handleInheritanceAction(ctx, command as Extract<TurnDaemonCommand, { type: 'inheritanceAction' }>),
         adjustGeneralIcon: (command) =>
             handleAdjustGeneralIcon(ctx, command as Extract<TurnDaemonCommand, { type: 'adjustGeneralIcon' }>),
         joinCreateGeneral: (command) =>

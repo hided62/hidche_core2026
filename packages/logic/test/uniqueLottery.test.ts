@@ -10,6 +10,7 @@ import {
     countOccupiedUniqueItems,
     resolveUniqueConfig,
     rollUniqueLottery,
+    rollUniqueLotteryDetailed,
 } from '../src/rewards/uniqueLottery.js';
 
 const buildItem = (key: string, slot: ItemModule['slot'], buyable = false): ItemModule => ({
@@ -116,6 +117,51 @@ describe('unique lottery', () => {
         });
 
         expect(result).toBe('itemB');
+    });
+
+    it('distinguishes no slot, a failed roll, and exhausted supply', () => {
+        const itemRegistry = buildRegistry();
+        const base = {
+            itemRegistry,
+            scenarioId: 200,
+            userCount: 1,
+            currentYear: 200,
+            currentMonth: 1,
+            startYear: 180,
+            initYear: 180,
+            initMonth: 1,
+        };
+
+        expect(
+            rollUniqueLotteryDetailed({
+                ...base,
+                rng: new RandUtil(LiteHashDRBG.build('no-slot')),
+                config: buildConfig(),
+                generalItems: { horse: null, weapon: 'itemB', book: null, item: null },
+                occupiedUniqueCounts: new Map([['itemB', 1]]),
+            })
+        ).toEqual({ status: 'NO_SLOT' });
+
+        expect(
+            rollUniqueLotteryDetailed({
+                ...base,
+                rng: new RandUtil(LiteHashDRBG.build('roll-failed')),
+                config: buildConfig({ uniqueTrialCoef: 0, maxUniqueTrialProb: 0 }),
+                generalItems: { horse: null, weapon: null, book: null, item: null },
+                occupiedUniqueCounts: new Map(),
+            })
+        ).toEqual({ status: 'ROLL_FAILED' });
+
+        expect(
+            rollUniqueLotteryDetailed({
+                ...base,
+                rng: new RandUtil(LiteHashDRBG.build('no-supply')),
+                config: buildConfig(),
+                generalItems: { horse: null, weapon: null, book: null, item: null },
+                occupiedUniqueCounts: new Map([['itemB', 1]]),
+                acquireType: '건국',
+            })
+        ).toEqual({ status: 'NO_SUPPLY' });
     });
 
     it('counts only non-buyable equipped items', () => {
