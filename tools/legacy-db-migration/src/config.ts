@@ -169,7 +169,11 @@ const resolveUserIcons = async (
     label: string
 ): Promise<LegacyUserIconTransferConfig> => {
     const record = asRecord(value, label);
-    rejectUnknownKeys(record, ['sourceDirectory', 'uploadBaseUrl', 'publicBaseUrl', 'uploadSecretFile'], label);
+    rejectUnknownKeys(
+        record,
+        ['sourceDirectory', 'uploadBaseUrl', 'publicBaseUrl', 'uploadSecretFile', 'excludedMemberNumbers'],
+        label
+    );
     const sourceDirectory = path.resolve(configDirectory, requiredString(record, 'sourceDirectory', label));
     const sourceInfo = await lstat(sourceDirectory);
     if (!sourceInfo.isDirectory() || sourceInfo.isSymbolicLink()) {
@@ -180,7 +184,20 @@ const resolveUserIcons = async (
     const secretPath = path.resolve(configDirectory, requiredString(record, 'uploadSecretFile', label));
     const uploadSecret = (await readSecureText(secretPath, `${label}.uploadSecretFile`)).replace(/\r?\n$/u, '');
     if (uploadSecret.length < 32) throw new Error(`${label}.uploadSecretFile must contain at least 32 characters`);
-    return { sourceDirectory, uploadBaseUrl, publicBaseUrl, uploadSecret };
+    const excludedMemberNumbers = record.excludedMemberNumbers ?? [];
+    if (
+        !Array.isArray(excludedMemberNumbers) ||
+        excludedMemberNumbers.some((value) => !Number.isSafeInteger(value) || Number(value) <= 0)
+    ) {
+        throw new Error(`${label}.excludedMemberNumbers must contain only positive safe integers`);
+    }
+    return {
+        sourceDirectory,
+        uploadBaseUrl,
+        publicBaseUrl,
+        uploadSecret,
+        excludedMemberNumbers: excludedMemberNumbers as number[],
+    };
 };
 
 export const loadMigrationPlan = async (configPathInput: string): Promise<ResolvedMigrationPlan> => {

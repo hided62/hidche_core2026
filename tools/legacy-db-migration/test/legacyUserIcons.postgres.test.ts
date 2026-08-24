@@ -2,7 +2,7 @@ import { Pool } from 'pg';
 import { describe, expect, it } from 'vitest';
 
 import { legacyUserId } from '../src/identity.js';
-import { syncImportedUserIcons, type PreparedLegacyUserIcon } from '../src/legacyUserIcons.js';
+import { syncImportedUserIcons, syncRejectedUserIcons, type PreparedLegacyUserIcon } from '../src/legacyUserIcons.js';
 
 const databaseUrl = process.env.LEGACY_ICON_TEST_DATABASE_URL;
 
@@ -69,6 +69,37 @@ describe.skipIf(!databaseUrl)('legacy user icon PostgreSQL synchronization', () 
             );
             expect(library.rows).toHaveLength(3);
             expect(library.rows.filter((row) => row.retired_at !== null)).toHaveLength(1);
+
+            const rejectedUserId = legacyUserId(700_004);
+            await client.query(
+                `INSERT INTO "app_user"
+                    ("id", "login_id", "display_name", "password_hash", "password_salt",
+                     "updated_at", "picture", "image_server")
+                 VALUES ($1, 'icon-test-rejected', '아이콘테스트-제외', 'hash', 'salt',
+                         CURRENT_TIMESTAMP, 'invalid.gif?=20260809', 1)`,
+                [rejectedUserId]
+            );
+            await expect(
+                syncRejectedUserIcons(
+                    client,
+                    [
+                        {
+                            memberNo: 700_004,
+                            userId: rejectedUserId,
+                            sourcePicture: 'invalid.gif?=20260809',
+                            normalizedSourcePicture: 'invalid.gif',
+                            sourceImageServer: 1,
+                            reason: 'not square',
+                        },
+                    ],
+                    new Date('2026-08-24T00:00:00Z')
+                )
+            ).resolves.toEqual({ currentReset: 1, targetPreserved: 0 });
+            const rejectedAccount = await client.query<{ picture: string; image_server: number }>(
+                `SELECT "picture", "image_server" FROM "app_user" WHERE "id" = $1`,
+                [rejectedUserId]
+            );
+            expect(rejectedAccount.rows[0]).toEqual({ picture: 'default.jpg', image_server: 0 });
         } finally {
             await client.query('ROLLBACK');
             client.release();

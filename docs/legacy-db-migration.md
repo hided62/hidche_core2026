@@ -86,6 +86,14 @@ is not silently resurrected. The original Ref path, `IMGSVR`, returned path and
 byte SHA-256 remain in `legacy_data`. Picture collisions across owners fail the
 transaction.
 
+Historical bytes that violate the Ref validation contract block preflight.
+Operators may list a reviewed member in `excludedMemberNumbers`; the importer
+then proves the file is still invalid and records the reason. It never uploads
+that byte or creates a `user_icon` row. If the target still selects the rejected
+Ref path it moves only that selection to `default.jpg`; a newer Core selection
+is preserved. A stale exclusion whose file has become valid also blocks the
+plan, so this cannot become a general skip-errors switch.
+
 Kakao members retain `oauth_id`, email and metadata. A non-empty provider ID is
 required before an imported row is marked Kakao-verified. A parseable legacy
 `token_valid_until` is copied to `kakao_talk_verified_until`, preserving the
