@@ -287,12 +287,16 @@ integration('generic general creation through the durable turn daemon', () => {
             accountIconUpdatedAt: '2026-07-30T00:00:00.000Z',
         });
         const createdAccess = await db.generalAccessLog.findUniqueOrThrow({ where: { generalId: created.id } });
+        const acceptedEvent = await db.inputEvent.findUniqueOrThrow({
+            where: { requestId: `join-create:${userId}:${clientRequestId}` },
+        });
         if (!createdAccess.lastRefresh) {
             throw new Error('created general must have an initial access timestamp');
         }
+        expect(createdAccess.lastRefresh).toEqual(acceptedEvent.createdAt);
         expect(
             new Date((created.meta as Record<string, unknown>).prestart_delete_after as string).getTime() -
-                createdAccess.lastRefresh.getTime()
+                acceptedEvent.createdAt.getTime()
         ).toBe(2 * 5 * 60 * 1_000);
         expect(runtime!.world.getGeneralById(created.id)).toMatchObject({
             id: created.id,
@@ -354,7 +358,7 @@ integration('generic general creation through the durable turn daemon', () => {
             attempts: 1,
             actorUserId: userId,
         });
-        expect(access.lastRefresh?.getTime()).toBe(runtime!.world.getGameNow(event.createdAt).getTime());
+        expect(access.lastRefresh?.getTime()).toBe(event.createdAt.getTime());
         const turnGridOffsetSeconds =
             ((created.turnTime.getTime() - runtime!.world.getState().lastTurnTime.getTime()) / 1000 + 300) % 300;
         expect(turnGridOffsetSeconds).toBeGreaterThanOrEqual(35);
