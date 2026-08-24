@@ -474,6 +474,12 @@ integration('general turn lifecycle persistence', () => {
             events: [],
             initialEvents: [],
         };
+        const reservedTurns = new InMemoryReservedTurnStore(db, {
+            maxGeneralTurns: 3,
+            maxNationTurns: 3,
+        });
+        reservedTurns.ensureGeneralTurns(general.id);
+        expect(reservedTurns.getQueueCounts().generalQueues).toBe(1);
         const world = new InMemoryTurnWorld(state, snapshot, {
             schedule: { entries: [{ startMinute: 0, tickMinutes: 10 }] },
             generalTurnHandler: {
@@ -517,7 +523,7 @@ integration('general turn lifecycle persistence', () => {
         });
 
         world.executeGeneralTurn(world.getGeneralById(general.id)!);
-        const hooks = await createDatabaseTurnHooks(databaseUrl!, world);
+        const hooks = await createDatabaseTurnHooks(databaseUrl!, world, { reservedTurns });
         try {
             await hooks.hooks.flushChanges?.({
                 lastTurnTime: state.lastTurnTime.toISOString(),
@@ -529,6 +535,10 @@ integration('general turn lifecycle persistence', () => {
         } finally {
             await hooks.close();
         }
+        expect(reservedTurns.getQueueCounts()).toMatchObject({
+            generalQueues: 0,
+            pendingGeneralInitializations: 0,
+        });
 
         const archived = await db.oldGeneral.findUniqueOrThrow({
             where: { by_no: { serverId, generalNo: general.id } },

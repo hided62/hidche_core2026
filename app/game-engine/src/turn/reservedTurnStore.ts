@@ -105,6 +105,17 @@ export interface InMemoryReservedTurnStateSnapshot {
     leasedNationKeys: string[];
 }
 
+export interface ReservedTurnQueueCounts {
+    generalQueues: number;
+    nationQueues: number;
+    dirtyGeneralQueues: number;
+    dirtyNationQueues: number;
+    pendingGeneralInitializations: number;
+    pendingNationInitializations: number;
+    leasedGeneralQueues: number;
+    leasedNationQueues: number;
+}
+
 export class ReservedTurnLeaseConflictError extends Error {
     constructor(readonly queueKey: string) {
         super(`Reserved turn queue lease conflict: ${queueKey}.`);
@@ -187,6 +198,64 @@ export class InMemoryReservedTurnStore {
 
     inspectState(): InMemoryReservedTurnStateSnapshot {
         return this.captureState();
+    }
+
+    getQueueCounts(): ReservedTurnQueueCounts {
+        return {
+            generalQueues: this.generalTurns.size,
+            nationQueues: this.nationTurns.size,
+            dirtyGeneralQueues: this.dirtyGeneralIds.size,
+            dirtyNationQueues: this.dirtyNationKeys.size,
+            pendingGeneralInitializations: this.pendingGeneralInitializationIds.size,
+            pendingNationInitializations: this.pendingNationInitializationKeys.size,
+            leasedGeneralQueues: this.leasedGeneralIds.size,
+            leasedNationQueues: this.leasedNationKeys.size,
+        };
+    }
+
+    /**
+     * Drops queues whose owning rows were deleted by a successful world flush.
+     * The daemon calls this inside EngineStateManager.transaction(), so a later
+     * failure still restores these maps and journals from the transaction savepoint.
+     */
+    pruneDeletedEntityQueues(
+        generalIds: readonly number[],
+        nationIds: readonly number[]
+    ): { generalQueues: number; nationQueues: number } {
+        let generalQueues = 0;
+        for (const generalId of new Set(generalIds)) {
+            if (this.generalTurns.delete(generalId)) {
+                generalQueues += 1;
+            }
+            this.dirtyGeneralIds.delete(generalId);
+            this.pendingGeneralInitializationIds.delete(generalId);
+            this.leasedGeneralIds.delete(generalId);
+        }
+
+        const deletedNations = new Set(nationIds);
+        let nationQueues = 0;
+        const pruneNationKeys = (keys: Iterable<string>, remove: (key: string) => boolean | void): void => {
+            for (const key of keys) {
+                const nationId = Number(key.split(':', 1)[0]);
+                if (deletedNations.has(nationId) && remove(key) !== false) {
+                    nationQueues += 1;
+                }
+            }
+        };
+        pruneNationKeys(Array.from(this.nationTurns.keys()), (key) => this.nationTurns.delete(key));
+        for (const keys of [
+            this.dirtyNationKeys,
+            this.pendingNationInitializationKeys,
+            this.leasedNationKeys,
+        ]) {
+            for (const key of Array.from(keys)) {
+                const nationId = Number(key.split(':', 1)[0]);
+                if (deletedNations.has(nationId)) {
+                    keys.delete(key);
+                }
+            }
+        }
+        return { generalQueues, nationQueues };
     }
 
     inspectGeneralTurnActivity(): Array<[number, boolean]> {

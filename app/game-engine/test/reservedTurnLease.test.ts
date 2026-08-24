@@ -169,6 +169,51 @@ const buildHarness = (initialRevision: RevisionRow | null = null) => {
 };
 
 describe('reserved turn daemon lease', () => {
+    it('prunes deleted general and nation queues together with their journal state', () => {
+        const harness = buildHarness();
+        harness.store.ensureGeneralTurns(7);
+        harness.store.ensureGeneralTurns(8);
+        harness.store.ensureNationTurns(3, 12);
+        harness.store.ensureNationTurns(4, 12);
+
+        expect(harness.store.getQueueCounts()).toMatchObject({
+            generalQueues: 2,
+            nationQueues: 2,
+            pendingGeneralInitializations: 2,
+            pendingNationInitializations: 2,
+        });
+        expect(harness.store.pruneDeletedEntityQueues([7], [3])).toEqual({
+            generalQueues: 1,
+            nationQueues: 1,
+        });
+        expect(harness.store.getQueueCounts()).toMatchObject({
+            generalQueues: 1,
+            nationQueues: 1,
+            pendingGeneralInitializations: 1,
+            pendingNationInitializations: 1,
+        });
+        expect(harness.store.getGeneralTurns(8)).toHaveLength(2);
+        expect(harness.store.getNationTurns(4, 12)).toHaveLength(1);
+    });
+
+    it('restores pruned queues from the transaction savepoint', () => {
+        const harness = buildHarness();
+        harness.store.ensureGeneralTurns(7);
+        harness.store.ensureNationTurns(3, 12);
+        const savepoint = harness.store.captureTransactionState();
+
+        harness.store.pruneDeletedEntityQueues([7], [3]);
+        expect(harness.store.getQueueCounts()).toMatchObject({ generalQueues: 0, nationQueues: 0 });
+
+        harness.store.restoreState(savepoint);
+        expect(harness.store.getQueueCounts()).toMatchObject({
+            generalQueues: 1,
+            nationQueues: 1,
+            pendingGeneralInitializations: 1,
+            pendingNationInitializations: 1,
+        });
+    });
+
     it('holds the queue lease from refresh through shift and releases it with the revision increment', async () => {
         const harness = buildHarness();
 

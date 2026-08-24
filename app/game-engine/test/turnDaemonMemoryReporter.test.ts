@@ -10,6 +10,8 @@ const context = {
     nations: 3,
     troops: 15,
     events: 4,
+    generalTurnQueues: 2461,
+    nationTurnQueues: 18,
     lifecycleState: 'paused',
 };
 
@@ -33,6 +35,7 @@ describe('turn daemon memory reporting', () => {
         expect(result.message).toContain('profile=hwe reason=interval');
         expect(result.message).toContain('heapLimitMiB=3072');
         expect(result.message).toContain('year=214 month=12 generals=2461');
+        expect(result.message).toContain('generalTurnQueues=2461 nationTurnQueues=18');
         expect(result.message).toContain('lifecycle=paused');
     });
 

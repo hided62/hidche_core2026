@@ -245,6 +245,13 @@ Transaction 실패 시 in-memory snapshot을 복원하고 event는 재시도 가
 Checkpoint의 단일 소유자는 `InMemoryTurnWorld`이며 state store는 이를
 위임 조회합니다. 별도 checkpoint 복사본이 snapshot보다 앞서 나가지 않습니다.
 
+DB flush가 성공해 장수·국가 행과 예약 턴 행을 삭제한 뒤에는 같은
+`EngineStateManager` transaction 안에서 해당 in-memory 예약 큐도 제거합니다.
+실패하면 savepoint가 큐를 복원합니다. 5분 memory telemetry의
+`generalTurnQueues`/`nationTurnQueues`와 world entity count로 장기 churn의 queue
+잔존 여부를 확인할 수 있으며, 재현 행렬과 기준 수치는
+[`npc-lifecycle-memory-profile.md`](./npc-lifecycle-memory-profile.md)에 기록합니다.
+
 예약 턴은 revision/CAS와 lease를 사용합니다. API의 편집과 daemon의 실행이
 경합해도 오래된 revision이 새 queue를 덮어쓰지 않게 합니다.
 
