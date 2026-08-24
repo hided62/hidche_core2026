@@ -82,6 +82,11 @@ const calculateNationPower = (
         const killCrew = readNumber(meta.rank_killcrew_person);
         const deathCrew = readNumber(meta.rank_deathcrew_person);
         const ratio = (killCrew + 1000) / (deathCrew + 1000);
+        // Ref boosts the leadership contribution of user generals here. Its
+        // automatic declaration AI later applies 1 / sqrt(nation.power + 1),
+        // so this monthly value is also the indirect lower target priority for
+        // nations with users; the declaration step must not add another ruler
+        // type multiplier on top of it.
         const npcMultiplier = general.npcState < 2 ? 1.2 : 1;
         const leadership = general.stats.leadership;
         const leaderCore = leadership >= 40 ? leadership : 0;

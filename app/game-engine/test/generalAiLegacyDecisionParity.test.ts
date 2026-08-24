@@ -420,11 +420,7 @@ const makePromotionGeneral = (overrides: Partial<TurnGeneral>): TurnGeneral => (
     meta: { ...baseGeneral().meta, belong: 1, ...overrides.meta },
 });
 
-const makeDeclarationAi = (
-    targetNations: Nation[],
-    targetRulers: General[],
-    rng: ScriptedRng
-): GeneralAI => {
+const makeDeclarationAi = (targetNations: Nation[], targetRulers: General[], rng: ScriptedRng): GeneralAI => {
     const actorNation = {
         ...baseNation(),
         meta: { ...baseNation().meta, tech: 2_000 },
@@ -458,8 +454,7 @@ const makeDeclarationAi = (
             listGenerals: () => [actor, ...targetRulers],
             listCities: () => cities,
             getNationById: (id: number) => [actorNation, ...targetNations].find((nation) => nation.id === id) ?? null,
-            getGeneralById: (id: number) =>
-                [actor, ...targetRulers].find((general) => general.id === id) ?? null,
+            getGeneralById: (id: number) => [actor, ...targetRulers].find((general) => general.id === id) ?? null,
             getCityById: (id: number) => cities.find((city) => city.id === id) ?? null,
         },
         map: {
@@ -862,14 +857,14 @@ describe('legacy NPC AI final-decision parity', () => {
         expect(rng.choices).toEqual([0]);
     });
 
-    it('keeps active user and NPC nations equally eligible while excluding the user wandering nation', () => {
+    it('uses monthly power to give an active user nation lower declaration weight while excluding its wandering nation', () => {
         const targets = [
             { id: 2, name: '유저방랑군', level: 0, npcState: 0 },
             { id: 3, name: '정식유저국', level: 1, npcState: 0 },
             { id: 4, name: '정식NPC국', level: 1, npcState: 2 },
         ];
         const nations = targets.map(
-            ({ id, name, level }) =>
+            ({ id, name, level, npcState }) =>
                 ({
                     ...baseNation(),
                     id,
@@ -877,7 +872,11 @@ describe('legacy NPC AI final-decision parity', () => {
                     capitalCityId: id,
                     chiefGeneralId: id,
                     level,
-                    power: 100,
+                    // Ref monthly power for otherwise identical fixtures is
+                    // 64 with a user general and 62 with an NPC general. The
+                    // declaration AI reads that stored result; it does not
+                    // inspect the target ruler type directly.
+                    power: npcState < 2 ? 64 : 62,
                 }) satisfies Nation
         );
         const rulers = targets.map(
@@ -901,10 +900,11 @@ describe('legacy NPC AI final-decision parity', () => {
         });
         expect(userTargetRng.weightedChoices).toEqual([
             {
-                '3': 1 / Math.sqrt(101),
-                '4': 1 / Math.sqrt(101),
+                '3': 1 / Math.sqrt(65),
+                '4': 1 / Math.sqrt(63),
             },
         ]);
+        expect(userTargetRng.weightedChoices[0]?.['3']).toBeLessThan(userTargetRng.weightedChoices[0]?.['4'] ?? 0);
 
         const npcTargetRng = makeRng([true], [1]);
         const npcTargetAi = makeDeclarationAi(nations, rulers, npcTargetRng);

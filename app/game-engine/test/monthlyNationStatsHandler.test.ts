@@ -243,4 +243,81 @@ describe('monthly nation statistics boundary', () => {
             },
         });
     });
+
+    it('raises stored power for an otherwise identical user general before declaration weighting', async () => {
+        const run = async (firstNpcState: number, secondNpcState: number): Promise<number[]> => {
+            const state: TurnWorldState = {
+                id: 1,
+                currentYear: 193,
+                currentMonth: 1,
+                tickSeconds: 600,
+                lastTurnTime: new Date('0193-01-01T00:00:00.000Z'),
+                meta: { hiddenSeed: 'monthly-post-nation-stats-fixture' },
+            };
+            const symmetricGeneral = (id: number, nationId: number, npcState: number): TurnGeneral =>
+                buildGeneral({
+                    id,
+                    nationId,
+                    npcState,
+                    gold: 1_000,
+                    rice: 2_000,
+                    crew: 100,
+                    leadership: 50,
+                    strength: 40,
+                    intelligence: 30,
+                    experience: 100,
+                    dedication: 200,
+                    dexterity: [1_000, 0, 0, 0, 0],
+                    killCrew: 100,
+                    deathCrew: 0,
+                });
+            const snapshot: TurnWorldSnapshot = {
+                scenarioConfig: {
+                    stat: { total: 300, min: 10, max: 100, npcTotal: 150, npcMax: 50, npcMin: 10, chiefMin: 70 },
+                    iconPath: '',
+                    map: {},
+                    const: {},
+                    environment: { mapName: 'test', unitSet: 'default' },
+                },
+                map: { id: 'test', name: 'test', cities: [] },
+                diplomacy: [],
+                events: [],
+                initialEvents: [],
+                generals: [symmetricGeneral(1, 1, firstNpcState), symmetricGeneral(2, 2, secondNpcState)],
+                cities: [buildCity(1, 1, 1), buildCity(2, 2, 1)],
+                nations: [
+                    buildNation(1, {
+                        gold: 10_000,
+                        rice: 20_000,
+                        power: 7,
+                        level: 2,
+                        meta: { tech: 100, gennum: 1 },
+                    }),
+                    buildNation(2, {
+                        gold: 10_000,
+                        rice: 20_000,
+                        power: 8,
+                        level: 2,
+                        meta: { tech: 100, gennum: 1 },
+                    }),
+                ],
+                troops: [],
+            };
+            let world: InMemoryTurnWorld | null = null;
+            world = new InMemoryTurnWorld(state, snapshot, {
+                schedule: { entries: [{ startMinute: 0, tickMinutes: 10 }] },
+                autoAdvanceDiplomacyMonth: false,
+                calendarHandler: createMonthlyNationStatsHandler({ getWorld: () => world }),
+            });
+
+            await world.advanceMonth(new Date('0193-02-01T00:00:00.000Z'));
+
+            return [world.getNationById(1)?.power ?? -1, world.getNationById(2)?.power ?? -1];
+        };
+
+        // Disposable Ref MariaDB produces the same role-swap pairs. Comparing
+        // each nation ID across the swap removes its separate monthly RNG roll.
+        expect(await run(0, 2)).toEqual([64, 62]);
+        expect(await run(2, 0)).toEqual([62, 64]);
+    });
 });
