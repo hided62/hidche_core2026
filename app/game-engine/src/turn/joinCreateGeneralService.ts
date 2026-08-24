@@ -90,6 +90,9 @@ const fail = (code: JoinCreateGeneralErrorCode, message: string): never => {
 const normalizeJoinName = (value: string): string =>
     normalizeTroopName(value).replace(LEGACY_JOIN_REMOVED_CHARACTERS, '');
 
+export const normalizeJoinSpecialityCode = (value: unknown): string | null =>
+    typeof value === 'string' && value !== '' && value !== 'None' ? value : null;
+
 export const resolveLegacyPenalty = (
     rawPenalty: Record<string, unknown> | undefined,
     profileId: string,
@@ -658,8 +661,8 @@ export const createGeneralFromJoin = async (options: {
     const scenarioId = Number(worldMeta.scenarioId ?? worldState.scenarioCode);
     let specialityDomesticAge = resolveSpecialityAge(retirementYear, age, relativeYear, 12);
     let specialityWarAge = resolveSpecialityAge(retirementYear, age, relativeYear, 6);
-    let specialWar = typeof configConst.defaultSpecialWar === 'string' ? configConst.defaultSpecialWar : 'None';
-    let specialWarName = specialWar;
+    let specialWar = normalizeJoinSpecialityCode(configConst.defaultSpecialWar);
+    let specialWarName = specialWar ?? 'None';
     if (genius) {
         specialityWarAge = age;
         if (input.inheritSpecial) {
@@ -677,10 +680,10 @@ export const createGeneralFromJoin = async (options: {
                 ) ?? specialWar;
         }
         const [trait] = await loadWarTraitModules(
-            [specialWar].filter((key) => isWarTraitKey(key)),
+            specialWar && isWarTraitKey(specialWar) ? [specialWar] : [],
             new WarTraitLoader()
         );
-        specialWarName = trait?.name ?? specialWar;
+        specialWarName = trait?.name ?? specialWar ?? 'None';
     }
     if (Number.isFinite(scenarioId) && scenarioId >= 1000) {
         specialityDomesticAge = age + 3;
@@ -762,8 +765,12 @@ export const createGeneralFromJoin = async (options: {
         startAge: age,
         role: {
             personality,
-            specialDomestic:
-                typeof configConst.defaultSpecialDomestic === 'string' ? configConst.defaultSpecialDomestic : 'None',
+            // Ref persists an empty speciality as the sentinel `None`, while
+            // the Core in-memory domain uses null. Keeping the sentinel here
+            // makes a newly joined general differ from the same row after a
+            // daemon reload and prevents the monthly speciality handler from
+            // recognizing the empty slot until that reload.
+            specialDomestic: normalizeJoinSpecialityCode(configConst.defaultSpecialDomestic),
             specialWar,
             items: {
                 horse: null,

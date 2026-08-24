@@ -217,12 +217,16 @@ type AdminProfile = {
     }>;
 };
 
-type ProfileRuntimeSettings = Pick<ProfileResetDefaults, 'turnTermMinutes' | 'blockGeneralCreate' | 'autorunUser'>;
+type ProfileRuntimeSettings = Pick<ProfileResetDefaults, 'turnTermMinutes' | 'blockGeneralCreate' | 'autorunUser'> & {
+    isUnited: number;
+};
+type ProfileRuntimeSettingsUpdate = Omit<ProfileRuntimeSettings, 'isUnited'>;
 
 type AdminAction =
     | 'RESUME'
     | 'PAUSE'
     | 'STOP'
+    | 'CLOSE_COMPLETED'
     | 'ACCELERATE'
     | 'DELAY'
     | 'UPDATE_RUNTIME_SETTINGS'
@@ -366,7 +370,7 @@ type AdminClient = {
                 profileName: string;
                 action: AdminAction;
                 durationMinutes?: number;
-                runtimeSettings?: ProfileRuntimeSettings;
+                runtimeSettings?: ProfileRuntimeSettingsUpdate;
                 scheduledAt?: string;
                 reason?: string;
             }) => Promise<{ ok: boolean; action?: AdminProfile['runtimeActions'][number] }>;
@@ -446,13 +450,15 @@ const runtimeActionPending = (profile: AdminProfile): boolean => {
 
 const profileLifecycleText = (profile: AdminProfile): string => {
     if (profile.currentScenario === null) return 'DB 초기화 전 · 게임 접근 불가';
-    if (profile.status === 'PAUSED') return '턴 일시정지 · 게임 조회와 예약턴 입력 가능 · 운영자 재개 가능';
     if (profile.status === 'STOPPED') return '서버 프로세스 중지 · 게임 접근 불가 · 운영자 서버 재개 가능';
+    if (profile.status === 'CANCELLED') return '취소 게임 · 접근 및 재개 불가 · 새 시나리오 초기화 필요';
+    if (profile.status === 'DISABLED') return '비활성 · 게임 접근 불가';
+    if (Number(profile.runtimeSettings?.isUnited ?? 0) !== 0)
+        return '천하통일 완료 · 종료 기수 조회 가능 · 외부 목록 정리 대기';
+    if (profile.status === 'PAUSED') return '턴 일시정지 · 게임 조회와 예약턴 입력 가능 · 운영자 재개 가능';
     if (profile.status === 'RUNNING') return '서버 운영 및 턴 진행 중';
     if (profile.status === 'PREOPEN') return '서버 접근 가능 · 개장 전 턴 정지';
     if (profile.status === 'COMPLETED') return '종료 기수 조회 가능 · 턴 정지';
-    if (profile.status === 'CANCELLED') return '취소 게임 · 접근 및 재개 불가 · 새 시나리오 초기화 필요';
-    if (profile.status === 'DISABLED') return '비활성 · 게임 접근 불가';
     return '준비 중 · 게임 접근 불가';
 };
 
@@ -460,6 +466,9 @@ const canResumeProfile = (profile: AdminProfile): boolean =>
     profile.currentScenario !== null && gatewayProfileCapabilities(profile.status).operatorResumable;
 const canPauseProfile = (profile: AdminProfile): boolean => profile.status === 'RUNNING';
 const canStopProfile = (profile: AdminProfile): boolean => gatewayProfileCapabilities(profile.status).runtimeExpected;
+const canCloseCompletedProfile = (profile: AdminProfile): boolean =>
+    gatewayProfileCapabilities(profile.status).runtimeExpected &&
+    (profile.status === 'COMPLETED' || Number(profile.runtimeSettings?.isUnited ?? 0) !== 0);
 
 const validDuration = (profileName: string): boolean => {
     const value = Number(profileActions.value[profileName]?.durationMinutes);
@@ -885,7 +894,7 @@ const requestProfileAction = async (profileName: string, action: AdminAction) =>
             ? serverDateTimeInputToIso(actionState.scheduledAt)
             : undefined;
     const reason = actionState?.reason.trim() || undefined;
-    const runtimeSettings: ProfileRuntimeSettings | undefined =
+    const runtimeSettings: ProfileRuntimeSettingsUpdate | undefined =
         action === 'UPDATE_RUNTIME_SETTINGS' && actionState
             ? {
                   turnTermMinutes: actionState.turnTermMinutes,
@@ -2205,6 +2214,29 @@ onMounted(() => {
                             </div>
 
                             <div class="text-xs text-zinc-400">빌드 커밋: {{ profile.buildCommitSha ?? '미지정' }}</div>
+
+                            <div
+                                v-if="
+                                    hasCapability('admin.scenarios.reset', profile.profileName) &&
+                                    canCloseCompletedProfile(profile)
+                                "
+                                class="rounded border border-amber-700/70 bg-amber-950/30 p-3 text-sm text-amber-100"
+                                data-testid="completed-profile-cleanup"
+                            >
+                                <div class="font-semibold">천하통일 서버 정리</div>
+                                <p class="mt-1 text-xs text-amber-200/80">
+                                    서버를 외부 목록에서 닫고 실행 프로세스를 중지합니다. 현재 기수 DB와 완료 기록은
+                                    보존되며, 다음 시나리오 초기화로 다시 열 수 있습니다.
+                                </p>
+                                <button
+                                    class="mt-3 rounded bg-red-700 px-3 py-2 font-semibold text-white hover:bg-red-600 disabled:cursor-not-allowed disabled:opacity-40"
+                                    data-testid="completed-profile-cleanup-submit"
+                                    :disabled="profileActionSubmitting[profile.profileName]"
+                                    @click="requestProfileAction(profile.profileName, 'CLOSE_COMPLETED')"
+                                >
+                                    완료 서버 닫기
+                                </button>
+                            </div>
 
                             <div class="grid md:grid-cols-2 gap-3">
                                 <div

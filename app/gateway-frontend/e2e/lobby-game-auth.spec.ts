@@ -502,7 +502,7 @@ test('does not contact a STOPPED game runtime and labels it inaccessible', async
     await page.screenshot({ path: testInfo.outputPath('gateway-stopped-profile-lobby.png'), fullPage: true });
 });
 
-test('shows a compact upcoming reset announcement without contacting the stopped runtime', async ({
+test('matches the normal preopen copy text and labels an immediate announcement with its build time', async ({
     page,
 }, testInfo) => {
     const gameOperations = await installFixture(page, {
@@ -525,15 +525,15 @@ test('shows a compact upcoming reset announcement without contacting the stopped
                 options: ['develop', 'battle'],
             },
         },
+        includeStoppedProfile: true,
     });
     await page.setViewportSize({ width: 1200, height: 900 });
 
     await page.goto('lobby');
     const row = page.locator('tbody tr').filter({ hasText: '체섭' });
     const announcement = row.getByTestId('upcoming-reset-announcement');
-    const marker = announcement.getByTestId('upcoming-reset-options-marker');
-    const swatch = announcement.getByTestId('upcoming-reset-options-swatch');
-    const tooltip = announcement.getByTestId('upcoming-reset-options-tooltip');
+    const badge = announcement.getByTestId('reserved-announcement-badge');
+    const tooltip = announcement.getByTestId('reserved-announcement-build-tooltip');
     await expect(row.getByTestId('upcoming-reset-phase')).toHaveCount(0);
     await expect(row.getByTestId('upcoming-reset-scheduled-at')).toHaveCount(0);
     await expect(row.getByTestId('upcoming-reset-preopen-at')).toHaveText('- 가오픈 일시 : 2026-08-27 14:30:00 -');
@@ -542,14 +542,15 @@ test('shows a compact upcoming reset announcement without contacting the stopped
     await expect(
         row.getByTestId('upcoming-reset-scenario-announcement').locator(':scope > .text-green-400')
     ).toHaveText('60분 턴 서버');
-    expect(
-        (await announcement.evaluate((element) => (element as HTMLElement).innerText)).replace(/\s+/g, ' ').trim()
-    ).toBe(
-        '- 가오픈 일시 : 2026-08-27 14:30:00 - - 오픈 일시 : 2026-08-27 20:00:00 - 【가상】황건적의 난 60분 턴 서버'
+    await expect(announcement.locator('.profile-announcement-settings')).toHaveText(
+        '(상성 설정:가상), (빙의 여부:가능), (최대 스탯:70), ' +
+            '(기타 설정:랜덤 임관, 자율행동[내정, 출병, 24시간 유효])'
     );
     await expect(tooltip).toBeHidden();
-    await expect(marker).toHaveAttribute('aria-label', '초기화 옵션 보기');
-    await expect(swatch).toHaveCSS('background-color', 'rgb(217, 119, 6)');
+    await expect(badge).toHaveText(/예약 공지/);
+    await expect(badge).toHaveAttribute('aria-label', '예약 공지의 실제 빌드 시작 시각 보기');
+    await expect(badge).toHaveCSS('user-select', 'none');
+    await expect(badge).toHaveCSS('border-top-color', 'rgb(217, 119, 6)');
     await expect(row).not.toContainText('서버 중지 · 접근 불가');
     await expect(row).not.toContainText('정보를 불러오는 중');
     await expect(row.getByRole('button', { name: '입장' })).toHaveCount(0);
@@ -557,39 +558,63 @@ test('shows a compact upcoming reset announcement without contacting the stopped
     expect(gameOperations).toEqual([]);
 
     const desktopGeometry = await announcement.evaluate((element) => {
-        const marker = element.querySelector<HTMLElement>('[data-testid="upcoming-reset-options-marker"]');
-        const swatch = element.querySelector<HTMLElement>('[data-testid="upcoming-reset-options-swatch"]');
-        if (!marker || !swatch) throw new Error('expected upcoming reset option marker');
+        const badge = element.querySelector<HTMLElement>('[data-testid="reserved-announcement-badge"]');
+        if (!badge) throw new Error('expected reserved announcement badge');
         return {
             announcement: element.getBoundingClientRect().toJSON(),
             cell: element.parentElement?.getBoundingClientRect().toJSON(),
-            marker: marker.getBoundingClientRect().toJSON(),
-            swatch: swatch.getBoundingClientRect().toJSON(),
+            badge: badge.getBoundingClientRect().toJSON(),
             documentWidth: document.documentElement.scrollWidth,
             viewportWidth: window.innerWidth,
         };
     });
     expect(desktopGeometry.announcement.left).toBeGreaterThanOrEqual(desktopGeometry.cell?.left ?? 0);
     expect(desktopGeometry.announcement.right).toBeLessThanOrEqual(desktopGeometry.cell?.right ?? 0);
-    expect(desktopGeometry.marker.width).toBe(18);
-    expect(desktopGeometry.marker.height).toBe(18);
-    expect(desktopGeometry.swatch.width).toBe(8);
-    expect(desktopGeometry.swatch.height).toBe(8);
-    await marker.hover();
+    expect(desktopGeometry.badge.width).toBeGreaterThan(40);
+    expect(desktopGeometry.badge.height).toBe(18);
+    const desktopRowDivider = await page
+        .locator('tbody tr')
+        .first()
+        .evaluate((element) => {
+            const style = getComputedStyle(element);
+            return { color: style.borderBottomColor, width: style.borderBottomWidth };
+        });
+    expect(desktopRowDivider).toEqual({ color: 'rgb(82, 82, 91)', width: '1px' });
+    await badge.hover();
     await expect(tooltip).toBeVisible();
-    await expect(tooltip).toContainText('초기화 옵션');
-    await expect(tooltip).toContainText('상성 설정: 가상 · 빙의 여부: 가능 · 최대 스탯: 70');
-    await expect(tooltip).toContainText('기타 설정: 랜덤 임관 · 자율행동: 내정, 출병, 24시간 유효');
-    await expect(tooltip).not.toContainText('초기화 시작');
-    await expect(tooltip).not.toContainText('빌드 대기');
+    await expect(tooltip).toHaveText('실제 빌드 시작 : 2026-08-27 14:00:00');
+    await expect(tooltip).not.toContainText('초기화 옵션');
     const desktopTooltipGeometry = await tooltip.evaluate((element) => element.getBoundingClientRect().toJSON());
     expect(desktopTooltipGeometry.left).toBeGreaterThanOrEqual(8);
     expect(desktopTooltipGeometry.right).toBeLessThanOrEqual(desktopGeometry.viewportWidth - 8);
     expect(desktopTooltipGeometry.top).toBeGreaterThanOrEqual(desktopGeometry.cell?.top ?? 0);
     expect(desktopTooltipGeometry.bottom).toBeLessThanOrEqual(desktopGeometry.cell?.bottom ?? 0);
-    await marker.focus();
-    await expect(marker).toBeFocused();
-    await expect(marker).toHaveCSS('outline-width', '2px');
+    await badge.focus();
+    await expect(badge).toBeFocused();
+    await expect(badge).toHaveCSS('outline-width', '2px');
+
+    await page.mouse.click(8, 8);
+    const selectionStart = await announcement.getByTestId('upcoming-reset-preopen-at').boundingBox();
+    const selectionEnd = await announcement.locator('.profile-announcement-settings').boundingBox();
+    if (!selectionStart || !selectionEnd) throw new Error('expected upcoming announcement selection geometry');
+    await page.mouse.move(selectionStart.x + 1, selectionStart.y + selectionStart.height / 2);
+    await page.mouse.down();
+    await page.mouse.move(selectionEnd.x + selectionEnd.width - 1, selectionEnd.y + selectionEnd.height / 2, {
+        steps: 24,
+    });
+    await page.mouse.up();
+    const compactSelection = (await page.evaluate(() => window.getSelection()?.toString() ?? ''))
+        .replace(/\s+/g, ' ')
+        .trim();
+    expect(compactSelection).toBe(
+        '- 가오픈 일시 : 2026-08-27 14:30:00 - - 오픈 일시 : 2026-08-27 20:00:00 - ' +
+            '【가상】황건적의 난 60분 턴 서버 ' +
+            '(상성 설정:가상), (빙의 여부:가능), (최대 스탯:70), ' +
+            '(기타 설정:랜덤 임관, 자율행동[내정, 출병, 24시간 유효])'
+    );
+    expect(compactSelection).not.toContain('예약 공지');
+    expect(compactSelection).not.toContain('실제 빌드 시작');
+    await page.evaluate(() => window.getSelection()?.removeAllRanges());
     await page.screenshot({ path: testInfo.outputPath('gateway-upcoming-reset-desktop.png'), fullPage: true });
 
     await page.setViewportSize({ width: 390, height: 844 });
@@ -606,7 +631,7 @@ test('shows a compact upcoming reset announcement without contacting the stopped
     expect(mobileGeometry.left).toBeGreaterThanOrEqual(0);
     expect(mobileGeometry.right).toBeLessThanOrEqual(mobileGeometry.viewportWidth);
     expect(mobileGeometry.documentWidth).toBe(mobileGeometry.viewportWidth);
-    await marker.hover();
+    await badge.hover();
     await expect(tooltip).toBeVisible();
     const mobileTooltipGeometry = await tooltip.evaluate((element) => element.getBoundingClientRect().toJSON());
     expect(mobileTooltipGeometry.left).toBeGreaterThanOrEqual(8);
@@ -636,12 +661,14 @@ test('keeps the announcement through the RESERVED handoff after the build comple
 
     await page.goto('lobby');
     const row = page.locator('tbody tr').filter({ hasText: 'hwe섭' });
-    const marker = row.getByTestId('upcoming-reset-options-marker');
+    const badge = row.getByTestId('reserved-announcement-badge');
     await expect(row.getByTestId('upcoming-reset-phase')).toHaveCount(0);
     await expect(row.getByTestId('upcoming-reset-scenario-title')).toHaveText('【가상】황건적의 난');
-    await marker.hover();
-    await expect(row.getByTestId('upcoming-reset-options-tooltip')).toContainText('초기화 옵션');
-    await expect(row.getByTestId('upcoming-reset-options-tooltip')).not.toContainText('오픈 준비 완료');
+    await badge.hover();
+    await expect(row.getByTestId('reserved-announcement-build-tooltip')).toHaveText(
+        '실제 빌드 시작 : 2026-08-27 14:00:00'
+    );
+    await expect(row.getByTestId('reserved-announcement-build-tooltip')).not.toContainText('오픈 준비 완료');
     await expect(row).not.toContainText('준 비 중 · 접근 불가');
     await expect(row.getByRole('button', { name: '입장' })).toHaveCount(0);
     expect(gameOperations).toEqual([]);
@@ -690,6 +717,8 @@ test('uses two-row mobile server cards without horizontal scrolling and keeps re
         const rowRect = row.getBoundingClientRect();
         const buttonRect = button.getBoundingClientRect();
         const style = getComputedStyle(button);
+        const bodyStyle = getComputedStyle(scrollElement.querySelector('tbody')!);
+        const firstRowStyle = getComputedStyle(rows[0]!);
         const rect = (element: Element) => {
             const value = element.getBoundingClientRect();
             return { top: value.top, right: value.right, bottom: value.bottom, left: value.left, width: value.width };
@@ -715,6 +744,10 @@ test('uses two-row mobile server cards without horizontal scrolling and keeps re
             viewportWidth: window.innerWidth,
             outlineStyle: style.outlineStyle,
             outlineWidth: style.outlineWidth,
+            rowGap: bodyStyle.rowGap,
+            dividerBackground: bodyStyle.backgroundColor,
+            firstRowBorderColor: firstRowStyle.borderBottomColor,
+            firstRowBorderWidth: firstRowStyle.borderBottomWidth,
         };
     });
     expect(geometry.pageScrollWidth).toBe(geometry.viewportWidth);
@@ -724,6 +757,10 @@ test('uses two-row mobile server cards without horizontal scrolling and keeps re
     expect(geometry.rows).toHaveLength(2);
     expect(geometry.rows[0]?.bottom).toBeLessThanOrEqual(geometry.rows[1]?.top ?? 0);
     expect(geometry.rows.every((item) => item.width === geometry.scroll.clientWidth)).toBe(true);
+    expect(geometry.rowGap).toBe('2px');
+    expect(geometry.dividerBackground).toBe('rgb(63, 63, 70)');
+    expect(geometry.firstRowBorderColor).toBe('rgb(82, 82, 91)');
+    expect(geometry.firstRowBorderWidth).toBe('1px');
     expect(geometry.button.left).toBeGreaterThanOrEqual(geometry.scroll.left);
     expect(geometry.button.right).toBeLessThanOrEqual(geometry.scroll.right);
     expect(geometry.cells.server.top).toBeCloseTo(geometry.cells.info.top, 0);

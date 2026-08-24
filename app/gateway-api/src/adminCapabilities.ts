@@ -62,7 +62,8 @@ export const ADMIN_CAPABILITIES: readonly AdminCapabilityDefinition[] = [
     {
         permission: 'admin.scenarios.reset',
         label: '시나리오 초기화',
-        description: '지정 profile의 현재 배포 버전으로 게임 DB와 시나리오를 초기화합니다.',
+        description:
+            '지정 profile의 현재 배포 버전으로 게임 DB와 시나리오를 초기화하고, 천하통일 서버를 닫아 정리합니다.',
         risk: 'CRITICAL',
         scope: 'PROFILE',
     },
@@ -123,6 +124,7 @@ export const resolveAdminActionCapability = (path: string, rawInput?: unknown): 
     if (path.endsWith('.profiles.requestAction') && rawInput && typeof rawInput === 'object') {
         const action = (rawInput as { action?: unknown }).action;
         if (action === 'RESET_SCHEDULED') return 'admin.reset.schedule';
+        if (action === 'CLOSE_COMPLETED') return 'admin.scenarios.reset';
         if (action === 'RESUME') return 'admin.resume.when-stopped';
         if (action === 'UPDATE_RUNTIME_SETTINGS') return 'admin.profiles.runtime';
         if (action === 'OPEN_SURVEY') return 'admin.survey.open';

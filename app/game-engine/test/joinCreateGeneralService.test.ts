@@ -4,6 +4,7 @@ import {
     buildJoinCreateGeneralSeed,
     cutJoinTurnTime,
     JOIN_WELCOME_MESSAGE,
+    normalizeJoinSpecialityCode,
     resolveJoinTurnTime,
 } from '../src/turn/joinCreateGeneralService.js';
 
@@ -52,5 +53,12 @@ describe('generic join legacy time contracts', () => {
     it('uses the HiDCHe product name without the legacy PHP runtime label', () => {
         expect(JOIN_WELCOME_MESSAGE).toBe('삼국지 모의전투 HiDCHe의 세계에 오신 것을 환영합니다 ^o^');
         expect(JOIN_WELCOME_MESSAGE).not.toContain('PHP');
+    });
+
+    it('normalizes the Ref empty-speciality sentinel at the join boundary', () => {
+        expect(normalizeJoinSpecialityCode(undefined)).toBeNull();
+        expect(normalizeJoinSpecialityCode('')).toBeNull();
+        expect(normalizeJoinSpecialityCode('None')).toBeNull();
+        expect(normalizeJoinSpecialityCode('che_견고')).toBe('che_견고');
     });
 });
