@@ -1164,6 +1164,19 @@ describe('appRouter', () => {
                 expectedRevision: 0,
             })
         ).rejects.toMatchObject({ code: 'BAD_REQUEST' });
+        await expect(
+            malformedCaller.turns.reserved.setNationBulk({
+                generalId: general.id,
+                entries: [
+                    {
+                        turnList: [0],
+                        action: 'che_포상',
+                        args: { isGold: true, amount: '1', destGeneralId: 7 },
+                    },
+                ],
+                expectedRevision: 0,
+            })
+        ).rejects.toMatchObject({ code: 'BAD_REQUEST' });
         expect(malformedWrites).toHaveLength(0);
         expect(malformedUpdates).toHaveLength(0);
 
