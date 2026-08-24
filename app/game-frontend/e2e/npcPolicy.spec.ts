@@ -375,19 +375,52 @@ test('physical mobile touch reorders NPC priority across active and inactive lis
     }
 });
 
-test('a read-level user sees enabled legacy controls but a forbidden save retains the draft', async ({ page }) => {
-    const state: FixtureState = { permissionLevel: 1, failNextMutation: true, mutations: [] };
+test('a read-level user may edit drafts but cannot reset, revert, or submit them', async ({ page }) => {
+    const state: FixtureState = { permissionLevel: 1, mutations: [] };
     await installFixture(page, state);
     await gotoPolicy(page);
 
     const input = page.getByLabel('국가 권장 금');
     await expect(input).toBeEnabled();
     await input.fill('23456');
-    page.once('dialog', (dialog) => dialog.accept());
-    await page.locator('#container > .control_bar').getByRole('button', { name: '설정' }).click();
-    await expect(page.getByRole('alert')).toContainText('권한이 부족합니다.');
+
+    const nationPanel = page.locator('.priority-panel').first();
+    const activePriority = nationPanel.locator('.priority-column').nth(1).getByText('불가침제의');
+    const inactivePriorityList = nationPanel.locator('.priority-column').first().locator('.priority-list');
+    await activePriority.dragTo(inactivePriorityList);
+    await expect(inactivePriorityList.getByText('불가침제의')).toBeVisible();
+
+    const actionButtons = page.locator('.control_bar button');
+    await expect(actionButtons).toHaveCount(9);
+    for (const button of await actionButtons.all()) {
+        await expect(button).toBeDisabled();
+    }
+
+    const disabledStyle = await actionButtons.first().evaluate((element) => {
+        const style = getComputedStyle(element);
+        return { cursor: style.cursor, opacity: style.opacity, filter: style.filter };
+    });
+    expect(disabledStyle).toEqual({ cursor: 'not-allowed', opacity: '0.55', filter: 'none' });
+
+    // The handler guard is independent of the disabled DOM attribute. This also
+    // protects callers that dispatch a click after permission data has changed.
+    for (const button of await page.locator('#container > .control_bar button').all()) {
+        await button.evaluate((element) => {
+            element.removeAttribute('disabled');
+            (element as HTMLButtonElement).click();
+        });
+    }
+    for (const button of await nationPanel.locator('.control_bar button').all()) {
+        await button.evaluate((element) => {
+            element.removeAttribute('disabled');
+            (element as HTMLButtonElement).click();
+        });
+    }
+
     await expect(input).toHaveValue('23456');
-    expect(state.mutations).toEqual(['npc.setNationPolicy']);
+    await expect(inactivePriorityList.getByText('불가침제의')).toBeVisible();
+    expect(state.mutations).toEqual([]);
+    await screenshot(page, 'core-npc-policy-read-only-controls.png');
 });
 
 test('a user below secret read permission receives a recoverable page error', async ({ page }) => {
