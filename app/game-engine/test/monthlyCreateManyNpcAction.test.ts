@@ -151,6 +151,25 @@ const buildHarness = (
 };
 
 describe('CreateManyNPC monthly action', () => {
+    it('creates exactly 50 ordinary M generals without fill-count expansion', async () => {
+        const { world, reservedTurns, handler, environment } = buildHarness();
+
+        await handler([50, 0], environment, {
+            id: 1,
+            targetCode: 'month',
+            priority: 1,
+            condition: true,
+            action: [],
+            meta: {},
+        });
+
+        const created = world.peekDirtyState().createdGenerals;
+        expect(created).toHaveLength(50);
+        expect(created.every((general) => general.npcState === 3 && general.name.startsWith('ⓜ'))).toBe(true);
+        expect(reservedTurns.peekDirtyState().generalInitializationIds).toHaveLength(50);
+        expect(world.peekDirtyState().logs.map((log) => log.text)).toContain('장수 <C>50</>명이 <S>등장</>하였습니다.');
+    });
+
     it('uses and consumes an available U30 candidate without random-name or random-stat fallback', async () => {
         const info = {
             generalName: '풀장수',

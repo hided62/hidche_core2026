@@ -125,6 +125,16 @@ const scenarios = [
         nations: [],
         isCurrent: false,
     },
+    {
+        id: 916,
+        title: '【공백지】 여명',
+        year: 180,
+        npcCount: 0,
+        npcExCount: 0,
+        npcNeutralCount: 0,
+        nations: [],
+        isCurrent: false,
+    },
 ];
 
 const response = (data: unknown) => ({ result: { data } });
@@ -538,6 +548,7 @@ test('separates branch and commit semantics and submits a reset from the dedicat
     await expect(page.getByTestId('scenario-select')).toHaveValue('2');
     await expect(page.getByTestId('request-reset')).toBeEnabled();
     await expect(page.getByTestId('scenario-select').locator('option:checked')).toContainText('현재 시나리오');
+    await expect(page.getByTestId('scenario-select').locator('option[value="916"]')).toContainText('【공백지】 여명');
     const catalogGeometry = await page.getByTestId('scenario-select').evaluate((select) => {
         const scenarioSelect = select as HTMLSelectElement;
         const rect = select.getBoundingClientRect();
@@ -550,7 +561,7 @@ test('separates branch and commit semantics and submits a reset from the dedicat
             value: scenarioSelect.value,
         };
     });
-    expect(catalogGeometry.optionCount).toBe(3);
+    expect(catalogGeometry.optionCount).toBe(4);
     expect(catalogGeometry.value).toBe('2');
     expect(catalogGeometry.width).toBeGreaterThan(300);
     await page.screenshot({ path: testInfo.outputPath('current-scenario-catalog.png'), fullPage: true });
