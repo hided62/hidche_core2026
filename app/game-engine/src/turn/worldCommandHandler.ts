@@ -296,6 +296,7 @@ async function handleJoinCreateGeneral(
                     ...(command.inheritBonusStat !== undefined ? { inheritBonusStat: command.inheritBonusStat } : {}),
                 },
                 acceptedAt,
+                operationalAcceptedAt,
             })),
         };
     } catch (error) {
@@ -366,7 +367,13 @@ async function handleSelectPoolCreate(
     if (!worldState) {
         throw new Error('Selection-pool world state is missing.');
     }
-    const acceptedAt = await resolveSelectionCommandAcceptedAt(db, ctx.world, command);
+    const operationalAcceptedAt = await resolveCommandAcceptedAt(db, command);
+    const acceptedAt =
+        command.acceptedGameTick !== undefined
+            ? ctx.world.gameTickToDate(command.acceptedGameTick)
+            : command.acceptedGameAt !== undefined
+              ? new Date(command.acceptedGameAt)
+              : ctx.world.getGameNow(operationalAcceptedAt);
     try {
         return {
             type: 'selectPoolCreate',
@@ -383,6 +390,7 @@ async function handleSelectPoolCreate(
                 ...(command.ownerImageServer !== undefined ? { ownerImageServer: command.ownerImageServer } : {}),
                 ...(command.ownerIconRevision ? { ownerIconRevision: command.ownerIconRevision } : {}),
                 now: acceptedAt,
+                operationalAcceptedAt,
             })),
         };
     } catch (error) {
@@ -1779,6 +1787,7 @@ async function handleSetMySetting(
     }
     for (const key of [
         'use_auto_nation_diplomacy',
+        'use_auto_nation_war',
         'use_auto_nation_promotion',
         'use_auto_nation_finance',
         'use_auto_nation_capital',

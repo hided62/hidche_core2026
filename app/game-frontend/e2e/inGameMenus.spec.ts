@@ -276,6 +276,7 @@ const myGeneral = (state: FixtureState) => ({
         use_treatment: 21,
         use_auto_nation_turn: 1,
         use_auto_nation_diplomacy: 0,
+        use_auto_nation_war: 0,
         use_auto_nation_promotion: 0,
         use_auto_nation_finance: 0,
         use_auto_nation_capital: 0,
@@ -1342,11 +1343,18 @@ test('내 정보&설정 keeps desktop density and becomes a 390px horizontal-ide
     ]);
     const rulerAutomation = page.locator('.ruler-automation-settings');
     await expect(rulerAutomation).toBeVisible();
-    const diplomacyAutomation = page.getByRole('checkbox', { name: '자동 외교 (불가침 제의·선전포고)' });
+    const diplomacyAutomation = page.getByRole('checkbox', { name: '자동 외교 (불가침 제의)' });
+    const warAutomation = page.getByRole('checkbox', { name: '자동 선전포고' });
     const promotionAutomation = page.getByRole('checkbox', { name: '자동 수뇌 임명' });
     const financeAutomation = page.getByRole('checkbox', { name: '자동 세율·지급률 조정' });
     const capitalAutomation = page.getByRole('checkbox', { name: '자동 천도' });
-    for (const checkbox of [diplomacyAutomation, promotionAutomation, financeAutomation, capitalAutomation]) {
+    for (const checkbox of [
+        diplomacyAutomation,
+        warAutomation,
+        promotionAutomation,
+        financeAutomation,
+        capitalAutomation,
+    ]) {
         await expect(checkbox).not.toBeChecked();
         await checkbox.check();
     }
@@ -1410,6 +1418,7 @@ test('내 정보&설정 keeps desktop density and becomes a 390px horizontal-ide
     expect(state.settingMutations[0]).not.toHaveProperty('generalId');
     expect(state.settingMutations[0]).toMatchObject({
         use_auto_nation_diplomacy: 1,
+        use_auto_nation_war: 1,
         use_auto_nation_promotion: 1,
         use_auto_nation_finance: 1,
         use_auto_nation_capital: 1,

@@ -56,6 +56,7 @@ const zGeneralSettings = z.object({
     use_treatment: z.number().int().optional(),
     use_auto_nation_turn: z.number().int().optional(),
     use_auto_nation_diplomacy: z.number().int().min(0).max(1).optional(),
+    use_auto_nation_war: z.number().int().min(0).max(1).optional(),
     use_auto_nation_promotion: z.number().int().min(0).max(1).optional(),
     use_auto_nation_finance: z.number().int().min(0).max(1).optional(),
     use_auto_nation_capital: z.number().int().min(0).max(1).optional(),
@@ -218,6 +219,7 @@ const resolveUserSettings = (meta: Record<string, unknown>) => {
         // Ref가 NPC 군주에게만 수행하던 국가 운영은 사용자 군주에게 opt-in이다.
         // 누락된 값은 신규 게임과 기존 장수 모두 안전한 기본값(사용 안함)으로 해석한다.
         use_auto_nation_diplomacy: readNumber(readSetting('use_auto_nation_diplomacy'), 0),
+        use_auto_nation_war: readNumber(readSetting('use_auto_nation_war'), 0),
         use_auto_nation_promotion: readNumber(readSetting('use_auto_nation_promotion'), 0),
         use_auto_nation_finance: readNumber(readSetting('use_auto_nation_finance'), 0),
         use_auto_nation_capital: readNumber(readSetting('use_auto_nation_capital'), 0),

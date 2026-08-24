@@ -61,10 +61,10 @@ const castleFixtures = [
     { id: 2, level: 1, layoutLevel: 8, x: 200, y: 100, width: 16, height: 15 },
     { id: 3, level: 2, layoutLevel: 8, x: 300, y: 100, width: 20, height: 14 },
     { id: 4, level: 3, layoutLevel: 8, x: 400, y: 100, width: 14, height: 14 },
-    { id: 5, level: 4, layoutLevel: 8, x: 100, y: 220, width: 20, height: 15 },
-    { id: 6, level: 5, layoutLevel: 8, x: 200, y: 220, width: 24, height: 16 },
-    { id: 7, level: 6, layoutLevel: 8, x: 300, y: 220, width: 26, height: 18 },
-    { id: 8, level: 7, layoutLevel: 8, x: 400, y: 220, width: 28, height: 20 },
+    { id: 5, name: '남만', level: 4, layoutLevel: 8, x: 80, y: 455, width: 20, height: 15 },
+    { id: 6, name: '교지', level: 5, layoutLevel: 8, x: 130, y: 480, width: 24, height: 16 },
+    { id: 7, name: '남해', level: 6, layoutLevel: 8, x: 245, y: 480, width: 26, height: 18 },
+    { id: 8, name: '대', level: 7, layoutLevel: 8, x: 450, y: 480, width: 28, height: 20 },
 ] as const;
 const map = {
     result: true,
@@ -82,9 +82,9 @@ const map = {
 };
 const layout = {
     mapName: 'che',
-    cityList: castleFixtures.map(({ id, layoutLevel: level, x, y }) => ({
+    cityList: castleFixtures.map(({ id, layoutLevel: level, x, y, ...fixture }) => ({
         id,
-        name: id === 1 ? '업' : `성${id}`,
+        name: id === 1 ? '업' : 'name' in fixture ? fixture.name : `성${id}`,
         level,
         region: 1,
         x,
@@ -550,6 +550,40 @@ test('map keeps desktop hover navigation and lets touch users choose one-tap or 
     await expect(page.locator('.map-toggle-single-tap')).toHaveCount(0);
     await desktopCity.hover();
     await expect(page.locator('.map-tooltip .tooltip-title')).toHaveText('【하북|특】업');
+
+    for (const cityName of ['남만', '교지', '남해', '대']) {
+        await page.getByRole('link', { name: cityName, exact: true }).hover();
+        await expect(page.locator('.map-tooltip')).toBeVisible();
+        const geometry = await page.locator('.map-area').evaluate((mapArea, expectedCityName) => {
+            const cityElement = Array.from(mapArea.querySelectorAll<HTMLElement>('.city-base')).find(
+                (element) => element.getAttribute('aria-label') === expectedCityName
+            );
+            const tooltip = mapArea.querySelector<HTMLElement>('.map-tooltip');
+            if (!cityElement || !tooltip) throw new Error(`Missing bottom-city hover geometry for ${expectedCityName}`);
+            const mapRect = mapArea.getBoundingClientRect();
+            const cityRect = cityElement.getBoundingClientRect();
+            const tooltipRect = tooltip.getBoundingClientRect();
+            const controls = mapArea.querySelector<HTMLElement>('.map-controls');
+            const tooltipStyle = getComputedStyle(tooltip);
+            return {
+                map: { top: mapRect.top, bottom: mapRect.bottom },
+                city: { top: cityRect.top, bottom: cityRect.bottom },
+                tooltip: { top: tooltipRect.top, bottom: tooltipRect.bottom, height: tooltipRect.height },
+                tooltipZIndex: Number(tooltipStyle.zIndex),
+                controlsZIndex: controls ? Number(getComputedStyle(controls).zIndex) : null,
+                pointerEvents: tooltipStyle.pointerEvents,
+            };
+        }, cityName);
+        expect(geometry.tooltip.top).toBeGreaterThanOrEqual(geometry.map.top);
+        expect(geometry.tooltip.bottom).toBeLessThanOrEqual(geometry.map.bottom);
+        expect(geometry.tooltip.bottom).toBeLessThan(geometry.city.top);
+        expect(geometry.tooltip.height).toBeGreaterThanOrEqual(32);
+        expect(geometry.tooltipZIndex).toBeGreaterThan(geometry.controlsZIndex ?? 0);
+        expect(geometry.pointerEvents).toBe('none');
+    }
+    await page.screenshot({ path: testInfo.outputPath('desktop-map-bottom-tooltip.png'), fullPage: true });
+
+    await desktopCity.hover();
     await desktopCity.click();
     await expect(page).toHaveURL(/\/current-city\?cityId=1$/u);
     await page.goBack();
