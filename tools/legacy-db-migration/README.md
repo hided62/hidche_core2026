@@ -44,6 +44,12 @@ is mandatory. Mount Ref's `d_pic` directory read-only as `sourceDirectory`, and
 mount the Core2026 sam-image upload secret as a mode-0600 `uploadSecretFile`.
 The two URL fields normally point to `https://sam-image.hided.net` and its
 `/icons` path. The importer never adds account images to the image Git tree.
+An invalid historical file blocks the plan by default. After byte-level review,
+its member number may be listed in `excludedMemberNumbers`; the exclusion is
+accepted only while that exact member still has invalid image geometry/format.
+A valid file or stale/missing member exclusion fails closed. An unchanged
+invalid Ref selection is reset to the default icon instead of publishing bad
+bytes; a newer Core selection is preserved.
 
 ```sh
 mkdir -p tools/legacy-db-migration/secrets

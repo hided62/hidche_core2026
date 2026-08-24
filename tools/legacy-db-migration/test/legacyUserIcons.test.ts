@@ -11,6 +11,7 @@ import { legacyUserId } from '../src/identity.js';
 import {
     prepareLegacyUserIcons,
     syncImportedUserIcons,
+    syncRejectedUserIcons,
     type LegacyUserIconTransferConfig,
     type PreparedLegacyUserIcon,
 } from '../src/legacyUserIcons.js';
@@ -36,6 +37,7 @@ const createFixture = async (): Promise<{ config: LegacyUserIconTransferConfig; 
             uploadBaseUrl: 'https://upload.test',
             publicBaseUrl: 'https://public.test/icons',
             uploadSecret: 's'.repeat(32),
+            excludedMemberNumbers: [],
         },
         png,
     };
@@ -57,7 +59,13 @@ describe('legacy user icon transfer', () => {
         const first = await prepareLegacyUserIcons([sourceRow()], config, false, { fetchImpl });
         const second = await prepareLegacyUserIcons([sourceRow()], config, false, { fetchImpl });
 
-        expect(first.counts).toEqual({ custom: 1, legacyFiles: 1, existingUploads: 0, uploaded: 0 });
+        expect(first.counts).toEqual({
+            custom: 1,
+            legacyFiles: 1,
+            existingUploads: 0,
+            uploaded: 0,
+            rejected: 0,
+        });
         expect(first.icons.get(7)?.picture).toMatch(/^users\/core2026\/[a-f0-9]{32}\.png$/u);
         expect(second.icons.get(7)?.picture).toBe(first.icons.get(7)?.picture);
         expect(fetchImpl).not.toHaveBeenCalled();
@@ -123,7 +131,13 @@ describe('legacy user icon transfer', () => {
             { fetchImpl }
         );
 
-        expect(result.counts).toEqual({ custom: 1, legacyFiles: 0, existingUploads: 1, uploaded: 0 });
+        expect(result.counts).toEqual({
+            custom: 1,
+            legacyFiles: 0,
+            existingUploads: 1,
+            uploaded: 0,
+            rejected: 0,
+        });
         expect(result.icons.get(7)?.picture).toBe(picture);
         expect(fetchImpl).toHaveBeenCalledTimes(1);
         expect(String(fetchImpl.mock.calls[0]?.[0])).toBe(`https://public.test/icons/${picture}`);
@@ -132,6 +146,40 @@ describe('legacy user icon transfer', () => {
     it('fails closed when custom icons exist without an API transfer configuration', async () => {
         await expect(prepareLegacyUserIcons([sourceRow()], undefined, false)).rejects.toThrow(
             'gateway.userIcons is not configured'
+        );
+    });
+
+    it('permits only an explicitly reviewed member exclusion whose bytes remain invalid', async () => {
+        const { config } = await createFixture();
+        const invalidGif = await sharp({
+            create: { width: 64, height: 65, channels: 4, background: '#336699ff' },
+        })
+            .gif()
+            .toBuffer();
+        await writeFile(path.join(config.sourceDirectory, 'invalid.gif'), invalidGif);
+        config.excludedMemberNumbers = [7];
+
+        const result = await prepareLegacyUserIcons([sourceRow({ PICTURE: 'invalid.gif?=20260809' })], config, true, {
+            fetchImpl: vi.fn<typeof fetch>(),
+        });
+
+        expect(result.counts).toEqual({
+            custom: 1,
+            legacyFiles: 0,
+            existingUploads: 0,
+            uploaded: 0,
+            rejected: 1,
+        });
+        expect(result.rejected.get(7)?.reason).toContain('square image');
+        expect(result.icons.size).toBe(0);
+    });
+
+    it('rejects a stale exclusion when the configured member icon is valid', async () => {
+        const { config } = await createFixture();
+        config.excludedMemberNumbers = [7];
+
+        await expect(prepareLegacyUserIcons([sourceRow()], config, false)).rejects.toThrow(
+            'configured as excluded but its icon is valid'
         );
     });
 
@@ -178,5 +226,31 @@ describe('legacy user icon transfer', () => {
         const inserts = query.mock.calls.filter(([sql]) => String(sql).includes('INSERT INTO "user_icon"'));
         expect(inserts).toHaveLength(3);
         expect(inserts[2]?.[1]?.[3]).toEqual(new Date('2026-08-24T00:00:00Z'));
+    });
+
+    it('resets only the still-selected invalid Ref icon', async () => {
+        const userId = legacyUserId(7);
+        const rejected = {
+            memberNo: 7,
+            userId,
+            sourcePicture: 'invalid.gif?=20260809',
+            normalizedSourcePicture: 'invalid.gif',
+            sourceImageServer: 1,
+            reason: 'not square',
+        };
+        const query = vi.fn(async (sql: string, _parameters?: readonly unknown[]) => {
+            if (sql.includes('FROM "app_user"')) {
+                return {
+                    rows: [{ id: userId, picture: rejected.sourcePicture, image_server: 1 }],
+                    rowCount: 1,
+                } as QueryResult;
+            }
+            return { rows: [], rowCount: 1 } as unknown as QueryResult;
+        });
+
+        await expect(
+            syncRejectedUserIcons({ query } as unknown as PoolClient, [rejected], new Date('2026-08-24T00:00:00Z'))
+        ).resolves.toEqual({ currentReset: 1, targetPreserved: 0 });
+        expect(String(query.mock.calls[1]?.[0])).toContain(`SET "picture" = 'default.jpg'`);
     });
 });

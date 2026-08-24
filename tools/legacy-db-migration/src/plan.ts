@@ -24,7 +24,7 @@ export interface PlanRunSummary {
 interface StagePreflight {
     battleResults?: { seasons: number; files: number; bytes: number };
     battleResultManifests?: readonly BattleResultSeasonManifest[];
-    userIcons?: { custom: number; legacyFiles: number; existingUploads: number };
+    userIcons?: { custom: number; legacyFiles: number; existingUploads: number; rejected: number };
 }
 
 const preflightStage = async (stage: ResolvedMigrationStage): Promise<StagePreflight> => {
@@ -90,6 +90,7 @@ const preflightStage = async (stage: ResolvedMigrationStage): Promise<StagePrefl
                     custom: prepared.counts.custom,
                     legacyFiles: prepared.counts.legacyFiles,
                     existingUploads: prepared.counts.existingUploads,
+                    rejected: prepared.counts.rejected,
                 },
             };
         }

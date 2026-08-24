@@ -27,6 +27,7 @@ export interface LegacyUserIconTransferConfig {
     uploadBaseUrl: string;
     publicBaseUrl: string;
     uploadSecret: string;
+    excludedMemberNumbers: readonly number[];
 }
 
 export interface PreparedLegacyUserIcon {
@@ -44,12 +45,23 @@ export interface PreparedLegacyUserIcon {
 
 export interface LegacyUserIconPreparation {
     icons: Map<number, PreparedLegacyUserIcon>;
+    rejected: Map<number, RejectedLegacyUserIcon>;
     counts: {
         custom: number;
         legacyFiles: number;
         existingUploads: number;
         uploaded: number;
+        rejected: number;
     };
+}
+
+export interface RejectedLegacyUserIcon {
+    memberNo: number;
+    userId: string;
+    sourcePicture: string;
+    normalizedSourcePicture: string;
+    sourceImageServer: number;
+    reason: string;
 }
 
 export interface LegacyUserIconSyncCounts {
@@ -59,12 +71,19 @@ export interface LegacyUserIconSyncCounts {
     targetPreserved: number;
 }
 
+export interface RejectedLegacyUserIconSyncCounts {
+    currentReset: number;
+    targetPreserved: number;
+}
+
 interface ValidatedImage {
     body: Buffer;
     extension: string;
     contentType: string;
     sha256: string;
 }
+
+class LegacyUserIconValidationError extends Error {}
 
 const encodedPicturePath = (picture: string): string => picture.split('/').map(encodeURIComponent).join('/');
 
@@ -82,21 +101,29 @@ const iconCreatedAt = (sourcePicture: string, fallback: Date): Date => {
 
 const validateImage = async (body: Buffer, label: string): Promise<ValidatedImage> => {
     if (body.length === 0 || body.length > MAX_ICON_BYTES) {
-        throw new Error(`${label} must be non-empty and at most 50 KiB`);
+        throw new LegacyUserIconValidationError(`${label} must be non-empty and at most 50 KiB`);
     }
-    let metadata: { mediaType?: string; format?: string; width?: number; height?: number };
+    let metadata: {
+        mediaType?: string;
+        format?: string;
+        width?: number;
+        height?: number;
+        pageHeight?: number;
+        pages?: number;
+    };
     try {
         metadata = await sharp(body, { animated: true }).metadata();
     } catch (error) {
-        throw new Error(`${label} is not a decodable image`, { cause: error });
+        throw new LegacyUserIconValidationError(`${label} is not a decodable image`, { cause: error });
     }
     const detected = metadata.mediaType === 'image/avif' ? 'avif' : metadata.format;
     const extension = detected === 'jpeg' ? 'jpg' : detected;
     if (!extension || !CONTENT_TYPES[extension]) {
-        throw new Error(`${label} must be avif, webp, jpeg, png, or gif`);
+        throw new LegacyUserIconValidationError(`${label} must be avif, webp, jpeg, png, or gif`);
     }
-    if (!metadata.width || metadata.width < 64 || metadata.width > 128 || metadata.height !== metadata.width) {
-        throw new Error(`${label} must be a square image from 64x64 through 128x128`);
+    const frameHeight = metadata.pages && metadata.pages > 1 ? metadata.pageHeight : metadata.height;
+    if (!metadata.width || metadata.width < 64 || metadata.width > 128 || frameHeight !== metadata.width) {
+        throw new LegacyUserIconValidationError(`${label} must be a square image from 64x64 through 128x128`);
     }
     return {
         body,
@@ -119,7 +146,7 @@ const readLegacyIcon = async (directory: string, picture: string, memberNo: numb
         throw new Error(`member.${memberNo}.PICTURE must resolve to a regular non-symlink file`);
     }
     if (info.size === 0 || info.size > MAX_ICON_BYTES) {
-        throw new Error(`member.${memberNo}.PICTURE must be non-empty and at most 50 KiB`);
+        throw new LegacyUserIconValidationError(`member.${memberNo}.PICTURE must be non-empty and at most 50 KiB`);
     }
     const handle = await open(filePath, constants.O_RDONLY | constants.O_NOFOLLOW);
     try {
@@ -248,22 +275,59 @@ export const prepareLegacyUserIcons = async (
         throw new Error('Gateway source has custom icons but gateway.userIcons is not configured');
     }
     if (!config) {
-        return { icons: new Map(), counts: { custom: 0, legacyFiles: 0, existingUploads: 0, uploaded: 0 } };
+        return {
+            icons: new Map(),
+            rejected: new Map(),
+            counts: { custom: 0, legacyFiles: 0, existingUploads: 0, uploaded: 0, rejected: 0 },
+        };
     }
     if (config.uploadSecret.length < 32) {
         throw new Error('gateway.userIcons.uploadSecretFile must contain at least 32 characters');
     }
     const fetchImpl = options.fetchImpl ?? fetch;
     const now = options.now ?? Date.now;
+    const exclusions = new Set(config.excludedMemberNumbers);
+    if (exclusions.size !== config.excludedMemberNumbers.length) {
+        throw new Error('gateway.userIcons.excludedMemberNumbers must not contain duplicates');
+    }
     const validated = await mapWithConcurrency(customRows, options.concurrency ?? 8, async (row) => {
         const memberNo = toNumber(row.NO, 'member.NO');
         const sourcePicture = toStringValue(row.PICTURE, `member.${memberNo}.PICTURE`);
         const normalizedSourcePicture = normalizeLegacyIconPicture(sourcePicture);
         const sourceImageServer = toNumber(row.IMGSVR ?? 0, `member.${memberNo}.IMGSVR`);
         const fallbackCreatedAt = toDate(row.REG_DATE, `member.${memberNo}.REG_DATE`);
-        if (REMOTE_PICTURE.test(normalizedSourcePicture)) {
-            const image = await fetchExistingIcon(config, normalizedSourcePicture, memberNo, fetchImpl);
+        try {
+            if (REMOTE_PICTURE.test(normalizedSourcePicture)) {
+                const image = await fetchExistingIcon(config, normalizedSourcePicture, memberNo, fetchImpl);
+                if (exclusions.has(memberNo)) {
+                    throw new Error(`member.${memberNo} is configured as excluded but its icon is valid`);
+                }
+                return {
+                    kind: 'icon' as const,
+                    base: {
+                        memberNo,
+                        userId: legacyUserId(memberNo),
+                        sourcePicture,
+                        normalizedSourcePicture,
+                        sourceImageServer,
+                        imageServer: 0 as const,
+                        createdAt: iconCreatedAt(sourcePicture, fallbackCreatedAt),
+                        source: 'existing-upload' as const,
+                        sha256: image.sha256,
+                    },
+                    image,
+                    picture: normalizedSourcePicture,
+                };
+            }
+            if (sourceImageServer !== 1) {
+                throw new Error(`member.${memberNo}.PICTURE has an unsupported IMGSVR value`);
+            }
+            const image = await readLegacyIcon(config.sourceDirectory, normalizedSourcePicture, memberNo);
+            if (exclusions.has(memberNo)) {
+                throw new Error(`member.${memberNo} is configured as excluded but its icon is valid`);
+            }
             return {
+                kind: 'icon' as const,
                 base: {
                     memberNo,
                     userId: legacyUserId(memberNo),
@@ -272,42 +336,44 @@ export const prepareLegacyUserIcons = async (
                     sourceImageServer,
                     imageServer: 0 as const,
                     createdAt: iconCreatedAt(sourcePicture, fallbackCreatedAt),
-                    source: 'existing-upload' as const,
+                    source: 'legacy-file' as const,
                     sha256: image.sha256,
                 },
                 image,
-                picture: normalizedSourcePicture,
+                picture: `users/core2026/${deterministicUploadName(memberNo, normalizedSourcePicture, image)}`,
+            };
+        } catch (error) {
+            if (!(error instanceof LegacyUserIconValidationError) || !exclusions.has(memberNo)) throw error;
+            return {
+                kind: 'rejected' as const,
+                rejected: {
+                    memberNo,
+                    userId: legacyUserId(memberNo),
+                    sourcePicture,
+                    normalizedSourcePicture,
+                    sourceImageServer,
+                    reason: error.message,
+                } satisfies RejectedLegacyUserIcon,
             };
         }
-        if (sourceImageServer !== 1) {
-            throw new Error(`member.${memberNo}.PICTURE has an unsupported IMGSVR value`);
-        }
-        const image = await readLegacyIcon(config.sourceDirectory, normalizedSourcePicture, memberNo);
-        return {
-            base: {
-                memberNo,
-                userId: legacyUserId(memberNo),
-                sourcePicture,
-                normalizedSourcePicture,
-                sourceImageServer,
-                imageServer: 0 as const,
-                createdAt: iconCreatedAt(sourcePicture, fallbackCreatedAt),
-                source: 'legacy-file' as const,
-                sha256: image.sha256,
-            },
-            image,
-            picture: `users/core2026/${deterministicUploadName(memberNo, normalizedSourcePicture, image)}`,
-        };
     });
+    const missingExclusions = [...exclusions].filter(
+        (memberNo) => !validated.some((result) => result.kind === 'rejected' && result.rejected.memberNo === memberNo)
+    );
+    if (missingExclusions.length) {
+        throw new Error(`Configured user-icon exclusions were not rejected: ${missingExclusions.join(', ')}`);
+    }
+    const validIcons = validated.filter((result) => result.kind === 'icon');
+    const rejectedIcons = validated.filter((result) => result.kind === 'rejected').map((result) => result.rejected);
     const pictures = new Map<string, number>();
-    for (const icon of validated) {
+    for (const icon of validIcons) {
         const owner = pictures.get(icon.picture);
         if (owner !== undefined && owner !== icon.base.memberNo) {
             throw new Error('Legacy user icon picture is shared by multiple source accounts');
         }
         pictures.set(icon.picture, icon.base.memberNo);
     }
-    const prepared = await mapWithConcurrency(validated, options.concurrency ?? 8, async (icon) => {
+    const prepared = await mapWithConcurrency(validIcons, options.concurrency ?? 8, async (icon) => {
         const picture =
             apply && icon.base.source === 'legacy-file'
                 ? await uploadLegacyIcon(
@@ -323,13 +389,54 @@ export const prepareLegacyUserIcons = async (
     });
     return {
         icons: new Map(prepared.map((icon) => [icon.memberNo, icon])),
+        rejected: new Map(rejectedIcons.map((icon) => [icon.memberNo, icon])),
         counts: {
-            custom: prepared.length,
+            custom: validated.length,
             legacyFiles: prepared.filter((icon) => icon.source === 'legacy-file').length,
             existingUploads: prepared.filter((icon) => icon.source === 'existing-upload').length,
             uploaded: apply ? prepared.filter((icon) => icon.source === 'legacy-file').length : 0,
+            rejected: rejectedIcons.length,
         },
     };
+};
+
+export const syncRejectedUserIcons = async (
+    target: PoolClient,
+    rejected: readonly RejectedLegacyUserIcon[],
+    migratedAt: Date
+): Promise<RejectedLegacyUserIconSyncCounts> => {
+    if (rejected.length === 0) return { currentReset: 0, targetPreserved: 0 };
+    const accounts = await target.query<{ id: string; picture: string; image_server: number }>(
+        `SELECT "id", "picture", "image_server" FROM "app_user" WHERE "id" = ANY($1::text[]) FOR UPDATE`,
+        [rejected.map((icon) => icon.userId)]
+    );
+    const byId = new Map(accounts.rows.map((account) => [account.id, account]));
+    const counts = { currentReset: 0, targetPreserved: 0 };
+    for (const icon of rejected) {
+        const account = byId.get(icon.userId);
+        if (!account) throw new Error(`Imported member account is missing for member.${icon.memberNo}`);
+        const sourceMatchesCurrent =
+            account.picture === icon.sourcePicture || account.picture === icon.normalizedSourcePicture;
+        if (sourceMatchesCurrent) {
+            const reset = await target.query(
+                `UPDATE "app_user"
+                 SET "picture" = 'default.jpg', "image_server" = 0,
+                     "icon_revision" = GREATEST(
+                         COALESCE("icon_revision", "icon_updated_at", "created_at"),
+                         $2::timestamptz
+                     )
+                 WHERE "id" = $1 AND "picture" = $3 AND "image_server" = $4`,
+                [icon.userId, migratedAt, account.picture, account.image_server]
+            );
+            if (reset.rowCount !== 1) {
+                throw new Error(`Target account icon changed concurrently for member.${icon.memberNo}`);
+            }
+            counts.currentReset += 1;
+        } else {
+            counts.targetPreserved += 1;
+        }
+    }
+    return counts;
 };
 
 export const syncImportedUserIcons = async (

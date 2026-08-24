@@ -14,7 +14,8 @@
             "sourceDirectory": "/run/sammo-migration/user-icons",
             "uploadBaseUrl": "https://sam-image.hided.net",
             "publicBaseUrl": "https://sam-image.hided.net/icons",
-            "uploadSecretFile": "/run/secrets/image_upload_core2026_secret"
+            "uploadSecretFile": "/run/secrets/image_upload_core2026_secret",
+            "excludedMemberNumbers": []
         },
         "targetUrlEnv": "GATEWAY_DATABASE_URL"
     },

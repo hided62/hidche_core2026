@@ -31,9 +31,11 @@ import {
     normalizeLegacyIconPicture,
     prepareLegacyUserIcons,
     syncImportedUserIcons,
+    syncRejectedUserIcons,
     type LegacyUserIconPreparation,
     type LegacyUserIconTransferConfig,
     type PreparedLegacyUserIcon,
+    type RejectedLegacyUserIcon,
 } from './legacyUserIcons.js';
 import { mapLegacyRoles, mapLegacySanctions, parseJson, type JsonValue } from './transform.js';
 
@@ -119,7 +121,8 @@ export const mapMember = (
     row: SourceRow,
     migratedAt: Date,
     lastLoginAt: Date | null,
-    importedIcon?: PreparedLegacyUserIcon
+    importedIcon?: PreparedLegacyUserIcon,
+    rejectedIcon?: RejectedLegacyUserIcon
 ): TargetRow => {
     const memberNo = toNumber(row.NO, 'member.NO');
     const grade = toNumber(row.GRADE, `member.${memberNo}.GRADE`);
@@ -139,6 +142,7 @@ export const mapMember = (
         picture: rawPicture,
         imageServer,
         ...(importedIcon ? { importedPicture: importedIcon.picture, importedPictureSha256: importedIcon.sha256 } : {}),
+        ...(rejectedIcon ? { rejectedPictureReason: rejectedIcon.reason } : {}),
         tokenValidUntil: toNullableString(row.token_valid_until),
         regNum: toNumber(row.REG_NUM, `member.${memberNo}.REG_NUM`),
         blockNum: toNumber(row.BLOCK_NUM, `member.${memberNo}.BLOCK_NUM`),
@@ -157,8 +161,8 @@ export const mapMember = (
         oauth_id: oauthId,
         email: toNullableString(row.EMAIL)?.toLowerCase() ?? null,
         oauth_info: jsonParameter(oauthInfo),
-        picture: importedIcon?.picture ?? normalizeLegacyIconPicture(rawPicture),
-        image_server: importedIcon?.imageServer ?? imageServer,
+        picture: importedIcon?.picture ?? (rejectedIcon ? 'default.jpg' : normalizeLegacyIconPicture(rawPicture)),
+        image_server: importedIcon?.imageServer ?? (rejectedIcon ? 0 : imageServer),
         icon_updated_at: null,
         third_party_use: toNumber(row.third_use ?? 0, `member.${memberNo}.third_use`) !== 0,
         terms_accepted_at: null,
@@ -196,21 +200,24 @@ const processMembers = async (
     apply: boolean,
     migratedAt: Date,
     counts: Record<string, number>,
-    preparedIcons: ReadonlyMap<number, PreparedLegacyUserIcon>
+    preparedIcons: ReadonlyMap<number, PreparedLegacyUserIcon>,
+    rejectedIcons: ReadonlyMap<number, RejectedLegacyUserIcon>
 ): Promise<void> => {
     const lastLogins = await loadLastLogins(source);
     for await (const rows of paginateSource(source, 'member', 'NO', batchSize)) {
         const mapped = rows.map((row) => {
             const memberNo = toNumber(row.NO, 'member.NO');
             const importedIcon = preparedIcons.get(memberNo);
+            const rejectedIcon = rejectedIcons.get(memberNo);
             const sourcePicture = toNullableString(row.PICTURE) ?? 'default.jpg';
             if (
-                (sourcePicture !== 'default.jpg' && !importedIcon) ||
-                (importedIcon && importedIcon.sourcePicture !== sourcePicture)
+                (sourcePicture !== 'default.jpg' && !importedIcon && !rejectedIcon) ||
+                (importedIcon && importedIcon.sourcePicture !== sourcePicture) ||
+                (rejectedIcon && rejectedIcon.sourcePicture !== sourcePicture)
             ) {
                 throw new Error(`member.${memberNo}.PICTURE changed after user-icon preflight`);
             }
-            return mapMember(row, migratedAt, lastLogins.get(memberNo) ?? null, importedIcon);
+            return mapMember(row, migratedAt, lastLogins.get(memberNo) ?? null, importedIcon, rejectedIcon);
         });
         if (target) {
             await preflightMemberConflicts(target, mapped);
@@ -228,6 +235,17 @@ const processMembers = async (
             counts.user_icon_library_inserted = (counts.user_icon_library_inserted ?? 0) + synced.libraryInserted;
             counts.user_icon_library_retired = (counts.user_icon_library_retired ?? 0) + synced.libraryRetired;
             counts.user_icon_target_preserved = (counts.user_icon_target_preserved ?? 0) + synced.targetPreserved;
+            const rejected = await syncRejectedUserIcons(
+                target,
+                rows
+                    .map((row) => rejectedIcons.get(toNumber(row.NO, 'member.NO')))
+                    .filter((icon): icon is RejectedLegacyUserIcon => Boolean(icon)),
+                migratedAt
+            );
+            counts.user_icon_rejected_current_reset =
+                (counts.user_icon_rejected_current_reset ?? 0) + rejected.currentReset;
+            counts.user_icon_rejected_target_preserved =
+                (counts.user_icon_rejected_target_preserved ?? 0) + rejected.targetPreserved;
         }
         counts.member = (counts.member ?? 0) + mapped.length;
     }
@@ -351,10 +369,11 @@ export const migrateGateway = async (
             counts.user_icon_legacy_file = prepared.counts.legacyFiles;
             counts.user_icon_existing_upload = prepared.counts.existingUploads;
             counts.user_icon_uploaded = prepared.counts.uploaded;
+            counts.user_icon_rejected = prepared.counts.rejected;
         };
         const run = async (runId: string | null, prepared: LegacyUserIconPreparation): Promise<void> => {
             recordIconCounts(prepared);
-            await processMembers(source, client, apply, migratedAt, counts, prepared.icons);
+            await processMembers(source, client, apply, migratedAt, counts, prepared.icons, prepared.rejected);
             progress.member = {
                 strategy: 'rescan',
                 startAfterId: null,
