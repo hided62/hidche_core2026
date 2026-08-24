@@ -39,8 +39,12 @@ const buildContext = (
             nation: {
                 count: vi.fn(async () => 0),
             },
+            turnDaemonLease: {
+                findUnique: vi.fn(async () => ({ leaseUntil: new Date('2099-01-01T00:00:00.000Z') })),
+            },
         } as unknown as DatabaseClient,
-    }) as GameApiContext;
+        profileStatusSource: { get: vi.fn(async () => 'RUNNING' as const) },
+    }) as unknown as GameApiContext;
 
 describe('lobby season state', () => {
     it.each([0, 1, 2, 3])('returns legacy isunited state %i', async (isunited) => {
@@ -70,7 +74,26 @@ describe('lobby season state', () => {
         expect(result.clockMode).toBe('manual');
         expect(result.clockRunning).toBe(false);
         expect(result.clockStartsAt).toBeNull();
+        expect(result.turnEngineRunning).toBe(true);
         expect(new Date(result.serverWallTime).getTime()).not.toBeNaN();
+    });
+
+    it('projects the explicit Gateway turn-running capability independently of the game clock mode', async () => {
+        const context = buildContext(
+            {},
+            {
+                baseTime: new Date('2026-08-15T00:00:00.000Z'),
+                tick: 72_000_000n,
+                mode: 'realtime',
+                wallAnchor: new Date('2026-08-15T00:00:00.000Z'),
+            }
+        );
+        context.profileStatusSource = { get: vi.fn(async () => 'PAUSED' as const) };
+
+        const result = await appRouter.createCaller(context).lobby.info();
+
+        expect(result.clockRunning).toBe(true);
+        expect(result.turnEngineRunning).toBe(false);
     });
 
     it('exposes the future realtime wall anchor without advancing the preopen clock', async () => {

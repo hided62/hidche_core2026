@@ -81,7 +81,12 @@ export const useMainDashboardStore = defineStore('mainDashboard', () => {
         tournamentType?: TournamentType | null;
     };
     type DashboardTabMessage =
-        { kind: 'patch'; patch: DashboardReadModelPatch } | { kind: 'status'; status: 'idle' | 'connected' };
+        | { kind: 'patch'; patch: DashboardReadModelPatch }
+        | {
+              kind: 'status';
+              status: 'idle' | 'connected';
+              turnEngineRunning?: boolean | null;
+          };
 
     const loading = ref(false);
     const refreshing = ref(false);
@@ -465,6 +470,14 @@ export const useMainDashboardStore = defineStore('mainDashboard', () => {
         } else if (patch.boardAccessSourceRevision !== undefined) {
             boardAccessSourceRevision = patch.boardAccessSourceRevision;
         }
+    };
+
+    const applyTurnEngineRunning = (turnEngineRunning: boolean | null | undefined) => {
+        if (turnEngineRunning === undefined || !lobbyInfo.value) return;
+        lobbyInfo.value = structurallyShare(lobbyInfo.value, {
+            ...lobbyInfo.value,
+            turnEngineRunning,
+        });
     };
 
     const currentDashboardPatch = (): DashboardReadModelPatch => {
@@ -1115,6 +1128,7 @@ export const useMainDashboardStore = defineStore('mainDashboard', () => {
                     return;
                 }
                 realtimeStatus.value = message.status;
+                applyTurnEngineRunning(message.turnEngineRunning);
                 if (message.status === 'connected') markGameServerContact();
             },
         });
@@ -1209,11 +1223,27 @@ export const useMainDashboardStore = defineStore('mainDashboard', () => {
             markGameServerContact();
             void refreshMessages();
         });
-        source.addEventListener('ping', () => {
+        source.addEventListener('ping', (event) => {
+            let turnEngineRunning: boolean | null | undefined;
+            if (event instanceof MessageEvent && typeof event.data === 'string') {
+                try {
+                    const payload = JSON.parse(event.data) as { turnEngineRunning?: unknown };
+                    if (typeof payload.turnEngineRunning === 'boolean' || payload.turnEngineRunning === null) {
+                        turnEngineRunning = payload.turnEngineRunning;
+                    }
+                } catch {
+                    // Older APIs send an empty heartbeat. Keep the last explicit engine state.
+                }
+            }
+            applyTurnEngineRunning(turnEngineRunning);
             markGameServerContact();
             if (realtimeEnabled.value) {
                 realtimeStatus.value = 'connected';
-                realtimeCoordinator?.postFromLeader({ kind: 'status', status: 'connected' });
+                realtimeCoordinator?.postFromLeader({
+                    kind: 'status',
+                    status: 'connected',
+                    ...(turnEngineRunning === undefined ? {} : { turnEngineRunning }),
+                });
             }
         });
     };
