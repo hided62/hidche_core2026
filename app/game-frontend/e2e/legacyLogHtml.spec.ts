@@ -23,6 +23,10 @@ const history = [
             '<span class="war_type war_type_attack">→</span><span class="ev_highlight">강조</span>' +
             '<span class="name" onclick="globalThis.__legacyLogXss=3">오염 이름</span></div>',
     },
+    {
+        id: 3,
+        text: '이번 수입은 금 <C>158</>입니다.',
+    },
 ];
 
 const publicResponse = (operation: string): unknown => {
@@ -59,10 +63,12 @@ for (const viewport of [
         await page.goto('public');
 
         const lines = page.locator('.recent-log-line');
-        await expect(lines).toHaveCount(2);
+        await expect(lines).toHaveCount(3);
         await expect(lines.nth(0).locator('b')).toHaveText('안전 강조');
         await expect(lines.nth(1).locator('.small_war_log .war_type_attack')).toHaveText('→');
         await expect(lines.nth(1).locator('.ev_highlight')).toHaveText('강조');
+        await expect(lines.nth(2)).toHaveText('이번 수입은 금 158입니다.');
+        await expect(lines.nth(2)).not.toContainText('157.5');
         await expect(lines.locator('script, img, svg, a, [onerror], [onclick], [style*="url"]')).toHaveCount(0);
         await expect(lines.nth(0)).toContainText('<img src=x onerror=');
         await expect(lines.nth(1)).toContainText('<span class="name" onclick=');

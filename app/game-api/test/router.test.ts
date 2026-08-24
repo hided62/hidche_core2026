@@ -388,45 +388,56 @@ describe('appRouter', () => {
         });
     });
 
-    it('applies the current Gateway database icon instead of stale token claims', async () => {
+    it('rejects icon adjustment without an explicitly selected active icon', async () => {
         const transport = new InMemoryTurnDaemonTransport();
-        const currentAccountIcon = {
-            revision: '2026-07-31T09:00:00.000Z',
-            picture: 'latest.png',
-            imageServer: 1,
-        };
         const auth = buildAuth();
-        auth.user.picture = 'stale.png';
+        auth.user.picture = '장수/유비.jpg';
         auth.user.imageServer = 0;
         auth.user.iconUpdatedAt = '2026-07-30T09:00:00.000Z';
-        const requestId = `general:adjustIcon:${auth.user.id}:${currentAccountIcon.revision}`;
+        const accountIconGet = vi.fn(async () => ({
+            revision: '2026-07-31T09:00:00.000Z',
+            picture: '장수/유비.jpg',
+            imageServer: 0,
+        }));
+        const caller = appRouter.createCaller(
+            buildContext({
+                auth,
+                transport,
+                accountIconGet,
+            })
+        );
+
+        await expect(caller.general.adjustIcon()).rejects.toMatchObject({ code: 'BAD_REQUEST' });
+        await expect(caller.general.adjustIcon({ resetToDefault: true })).rejects.toMatchObject({ code: 'FORBIDDEN' });
+        expect(accountIconGet).not.toHaveBeenCalled();
+        expect(transport.commands).toHaveLength(0);
+    });
+
+    it('allows an explicit default reset only when the signed account projection is default', async () => {
+        const transport = new InMemoryTurnDaemonTransport();
+        const auth = buildAuth();
+        const revision = '2026-07-31T09:00:00.000Z';
+        auth.user.picture = 'default.jpg';
+        auth.user.imageServer = 0;
+        auth.user.iconUpdatedAt = revision;
+        const requestId = `general:adjustIcon:${auth.user.id}:manual:${revision}:default.jpg`;
         transport.setCommandResult(requestId, {
             type: 'adjustGeneralIcon',
             ok: true,
             generalId: 1,
             updated: true,
         });
-        const caller = appRouter.createCaller(
-            buildContext({
-                auth,
-                transport,
-                currentAccountIcon,
-            })
-        );
+        const caller = appRouter.createCaller(buildContext({ auth, transport }));
 
-        await expect(caller.general.adjustIcon()).resolves.toEqual({
+        await expect(caller.general.adjustIcon({ resetToDefault: true })).resolves.toMatchObject({
             ok: true,
-            generalId: 1,
             updated: true,
         });
-        expect(transport.commands.at(-1)?.command).toEqual({
-            type: 'adjustGeneralIcon',
+        expect(transport.commands.at(-1)?.command).toMatchObject({
             requestId,
-            userId: auth.user.id,
-            picture: 'latest.png',
-            imageServer: 1,
-            iconRevision: currentAccountIcon.revision,
-            enforceCooldown: true,
+            picture: 'default.jpg',
+            imageServer: 0,
+            iconRevision: revision,
         });
     });
 
@@ -461,13 +472,13 @@ describe('appRouter', () => {
         });
     });
 
-    it('rejects icon adjustment without auth or a current Gateway account', async () => {
+    it('rejects icon adjustment without auth or a selected icon', async () => {
         await expect(appRouter.createCaller(buildContext({ auth: null })).general.adjustIcon()).rejects.toMatchObject({
             code: 'UNAUTHORIZED',
         });
         await expect(
             appRouter.createCaller(buildContext({ auth: buildAuth() })).general.adjustIcon()
-        ).rejects.toMatchObject({ code: 'PRECONDITION_FAILED' });
+        ).rejects.toMatchObject({ code: 'BAD_REQUEST' });
     });
 
     it('rejects unauthenticated or game-blocked auth status checks', async () => {
@@ -581,30 +592,30 @@ describe('appRouter', () => {
         expect(transport.commands.at(-1)?.command).not.toHaveProperty('ownerIconRevision');
     });
 
-    it('uses the authoritative projection instead of stale token claims for picture creation', async () => {
+    it('does not apply a shared Gateway representative when no active icon id was selected', async () => {
         const transport = new InMemoryTurnDaemonTransport();
         const clientRequestId = '824454da-d0ab-48d2-a7d5-e2e5aaf83ba4';
         const requestId = `join-create:user-1:${clientRequestId}`;
-        const revision = '2026-07-31T09:00:00.001Z';
         transport.setCommandResult(requestId, {
             type: 'joinCreateGeneral',
             ok: true,
             generalId: 42,
         });
         const auth = buildAuth();
-        auth.user.picture = 'stale.png';
+        auth.user.picture = '장수/유비.jpg';
         auth.user.imageServer = 0;
         auth.user.iconUpdatedAt = '2026-07-30T09:00:00.000Z';
+        const accountIconGet = vi.fn(async () => ({
+            revision: '2026-07-31T09:00:00.001Z',
+            picture: '장수/유비.jpg',
+            imageServer: 0,
+        }));
         const caller = appRouter.createCaller(
             buildContext({
                 state: buildWorldState(),
                 auth,
                 transport,
-                currentAccountIcon: {
-                    revision,
-                    picture: 'latest.png',
-                    imageServer: 1,
-                },
+                accountIconGet,
             })
         );
 
@@ -618,11 +629,11 @@ describe('appRouter', () => {
             clientRequestId,
         });
 
-        expect(transport.commands.at(-1)?.command).toMatchObject({
-            ownerPicture: 'latest.png',
-            ownerImageServer: 1,
-            ownerIconRevision: revision,
-        });
+        expect(accountIconGet).not.toHaveBeenCalled();
+        expect(transport.commands.at(-1)?.command).toMatchObject({ pic: false });
+        expect(transport.commands.at(-1)?.command).not.toHaveProperty('ownerPicture');
+        expect(transport.commands.at(-1)?.command).not.toHaveProperty('ownerImageServer');
+        expect(transport.commands.at(-1)?.command).not.toHaveProperty('ownerIconRevision');
     });
 
     it('creates a general with the selected authenticated icon and rejects another icon id', async () => {

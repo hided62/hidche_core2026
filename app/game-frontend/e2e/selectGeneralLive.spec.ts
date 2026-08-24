@@ -429,6 +429,7 @@ test.describe('scenario 903 live selection pool', () => {
         expect(created.name).toBe(initialName?.trim());
         expect(created.personalCode).toBe('che_안전');
         expect(created.specialCode).toMatch(/^che_event_/);
+        expect(created).toMatchObject({ picture: 'default.jpg', imageServer: 0 });
         const createEvent = await db.inputEvent.findFirstOrThrow({
             where: { actorUserId: userId, eventType: 'selectPoolCreate' },
             orderBy: { sequence: 'desc' },
@@ -508,6 +509,12 @@ test.describe('scenario 903 live selection pool', () => {
         await expect
             .poll(async () => (await db.general.findUniqueOrThrow({ where: { id: created.id } })).name)
             .toBe(targetName);
+        await expect
+            .poll(async () => {
+                const general = await db.general.findUniqueOrThrow({ where: { id: created.id } });
+                return { picture: general.picture, imageServer: general.imageServer };
+            })
+            .toEqual({ picture: 'default.jpg', imageServer: 0 });
         const reselectEvent = await db.inputEvent.findFirstOrThrow({
             where: { actorUserId: userId, eventType: 'selectPoolReselect' },
             orderBy: { sequence: 'desc' },
