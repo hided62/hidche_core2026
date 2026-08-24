@@ -4,7 +4,7 @@ import { GAME_TICKS_PER_TURN } from '@sammo-ts/common';
 import { parseScenarioGeneralPoolCandidate } from '@sammo-ts/logic';
 
 import { InMemoryTurnWorld } from '../src/turn/inMemoryWorld.js';
-import { reserveSelectionPool } from '../src/turn/selectPoolService.js';
+import { reserveSelectionPool, resolveSelectionPoolUserIcon } from '../src/turn/selectPoolService.js';
 import type { TurnGeneralPoolEntry, TurnWorldSnapshot, TurnWorldState } from '../src/turn/types.js';
 
 interface TestPoolRow {
@@ -171,6 +171,27 @@ const worldState = {
 };
 
 describe('selection-pool reservation command state', () => {
+    it('uses only an explicitly selected owner icon for a human general', () => {
+        expect(resolveSelectionPoolUserIcon({ showImgLevel: 3 })).toEqual({
+            picture: 'default.jpg',
+            imageServer: 0,
+        });
+        expect(
+            resolveSelectionPoolUserIcon({
+                showImgLevel: 3,
+                ownerPicture: 'uploaded/user.png',
+                ownerImageServer: 1,
+            })
+        ).toEqual({ picture: 'uploaded/user.png', imageServer: 1 });
+        expect(
+            resolveSelectionPoolUserIcon({
+                showImgLevel: 0,
+                ownerPicture: 'uploaded/user.png',
+                ownerImageServer: 1,
+            })
+        ).toEqual({ picture: 'default.jpg', imageServer: 0 });
+    });
+
     it('excludes current reservations and keeps serialized users disjoint in DB and memory', async () => {
         const rows = buildRows();
         const world = buildWorld(rows);

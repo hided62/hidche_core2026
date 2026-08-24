@@ -373,6 +373,13 @@ describe('core monthly event actions at the real month boundary', () => {
         await world.advanceMonth(new Date('0191-01-01T00:00:00.000Z'));
 
         expect(world.getNationById(1)?.meta.prev_income_gold).toBe(157.5);
+        expect(world.peekDirtyState().logs).toContainEqual(
+            expect.objectContaining({
+                generalId: 1,
+                text: '이번 수입은 금 <C>158</>입니다.',
+            })
+        );
+        expect(world.peekDirtyState().logs.map((entry) => entry.text).join('\n')).not.toContain('157.5');
     });
 
     it('uses the Ref default nation resource floors when scenario const omits them', async () => {
