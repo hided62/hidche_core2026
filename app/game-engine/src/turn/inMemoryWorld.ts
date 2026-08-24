@@ -881,6 +881,22 @@ export class InMemoryTurnWorld {
         return { ...this.state };
     }
 
+    getEntityCounts(): {
+        generals: number;
+        cities: number;
+        nations: number;
+        troops: number;
+        events: number;
+    } {
+        return {
+            generals: this.generals.size,
+            cities: this.cities.size,
+            nations: this.nations.size,
+            troops: this.troops.size,
+            events: this.events.size,
+        };
+    }
+
     updateWorldMeta(patch: Record<string, unknown>): void {
         this.state = {
             ...this.state,
