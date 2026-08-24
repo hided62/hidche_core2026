@@ -7,12 +7,7 @@ import type { InMemoryTurnWorld, TurnCalendarHandler } from './inMemoryWorld.js'
 const MAX_AVAILABLE_WAR_SETTING_COUNT = 10;
 const MONTHLY_AVAILABLE_WAR_SETTING_INCREMENT = 2;
 
-// REF-COMPAT:BEGIN ref-decimal-half-stabilization
-export const roundLegacyNationPowerValue = (value: number): number => {
-    const stabilized = Number(value.toPrecision(15));
-    return stabilized >= 0 ? Math.floor(stabilized + 0.5) : Math.ceil(stabilized - 0.5);
-};
-// REF-COMPAT:END ref-decimal-half-stabilization
+export const roundNationPowerValue = (value: number): number => Math.round(value);
 
 const readNumber = (value: unknown, fallback = 0): number => {
     if (typeof value === 'number' && Number.isFinite(value)) {
@@ -48,7 +43,7 @@ const calculateNationPower = (
     const generals = world.listGenerals().filter((general) => general.nationId === nationId);
     const suppliedCities = world.listCities().filter((city) => city.nationId === nationId && city.supplyState === 1);
     const generalResources = generals.reduce((sum, general) => sum + general.gold + general.rice, 0);
-    const resourcePower = roundLegacyNationPowerValue((nation.gold + nation.rice + generalResources) / 100);
+    const resourcePower = roundNationPowerValue((nation.gold + nation.rice + generalResources) / 100);
     const techPower = readNumber(asRecord(nation.meta).tech);
 
     let cityPower = 0;
@@ -70,7 +65,7 @@ const calculateNationPower = (
                 city.defenceMax,
             0
         );
-        cityPower = maximum > 0 ? roundLegacyNationPowerValue((population * current) / maximum / 100) : 0;
+        cityPower = maximum > 0 ? roundNationPowerValue((population * current) / maximum / 100) : 0;
     }
 
     let generalPower = 0;
@@ -103,13 +98,13 @@ const calculateNationPower = (
         totalCrew += general.crew;
     }
 
-    const power = roundLegacyNationPowerValue(
+    const power = roundNationPowerValue(
         (resourcePower +
             techPower +
             cityPower +
             generalPower +
-            roundLegacyNationPowerValue(dexterityPower / 1000) +
-            roundLegacyNationPowerValue(experiencePower / 100)) /
+            roundNationPowerValue(dexterityPower / 1000) +
+            roundNationPowerValue(experiencePower / 100)) /
             10
     );
     return {
@@ -121,9 +116,9 @@ const calculateNationPower = (
             cityPower,
             generalPower,
             dexterityPowerRaw: dexterityPower / 1000,
-            dexterityPower: roundLegacyNationPowerValue(dexterityPower / 1000),
+            dexterityPower: roundNationPowerValue(dexterityPower / 1000),
             experiencePowerRaw: experiencePower / 100,
-            experiencePower: roundLegacyNationPowerValue(experiencePower / 100),
+            experiencePower: roundNationPowerValue(experiencePower / 100),
         },
     };
 };
@@ -145,7 +140,7 @@ const updateNationPower = (world: InMemoryTurnWorld, rng: RandUtil): number => {
     for (const nation of nations) {
         const calculated = calculateNationPower(world, nation.id);
         const multiplier = rng.nextRange(0.95, 1.05);
-        const power = roundLegacyNationPowerValue(calculated.power * multiplier);
+        const power = roundNationPowerValue(calculated.power * multiplier);
         const traceIds = (process.env.SEED_PARITY_TRACE_NATION_POWER_IDS ?? '')
             .split(',')
             .map((value) => Number(value.trim()))

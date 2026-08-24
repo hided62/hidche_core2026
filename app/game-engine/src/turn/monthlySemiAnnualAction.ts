@@ -7,14 +7,7 @@ import { resolveAppliedNationRate } from './nationTaxRate.js';
 
 type SemiAnnualResource = 'gold' | 'rice';
 
-// REF-COMPAT:BEGIN ref-decimal-half-stabilization
-const roundLegacyIntegerColumn = (value: number): number => {
-    // MariaDB evaluates the decimal rate expression before ROUND(). Binary
-    // arithmetic can instead produce values such as 2029.4999999999998.
-    const stabilized = Number(value.toPrecision(15));
-    return stabilized >= 0 ? Math.floor(stabilized + 0.5) : Math.ceil(stabilized - 0.5);
-};
-// REF-COMPAT:END ref-decimal-half-stabilization
+const roundIntegerState = (value: number): number => Math.round(value);
 
 const parseResource = (args: readonly unknown[]): SemiAnnualResource => {
     const resource = args[0];
@@ -29,11 +22,9 @@ const resolveBasePopulationIncrease = (world: InMemoryTurnWorld): number => {
     return typeof value === 'number' && Number.isFinite(value) ? value : 5_000;
 };
 
-const decayDomesticValue = (value: number): number => roundLegacyIntegerColumn(value * 0.99);
+const decayDomesticValue = (value: number): number => roundIntegerState(value * 0.99);
 
-// REF-COMPAT:BEGIN ref-mariadb-float-boundary
-export const storeLegacySemiAnnualTrust = (value: number): number => Math.fround(Math.max(0, Math.min(100, value)));
-// REF-COMPAT:END ref-mariadb-float-boundary
+export const clampSemiAnnualTrust = (value: number): number => Math.max(0, Math.min(100, value));
 
 const applyResourceMaintenance = (value: number, ratios: readonly [number, number][]): number => {
     if (value <= 1_000) {
@@ -41,10 +32,10 @@ const applyResourceMaintenance = (value: number, ratios: readonly [number, numbe
     }
     for (const [threshold, ratio] of ratios) {
         if (value > threshold) {
-            return roundLegacyIntegerColumn(value * ratio);
+            return roundIntegerState(value * ratio);
         }
     }
-    return roundLegacyIntegerColumn(value * 0.99);
+    return roundIntegerState(value * 0.99);
 };
 
 export const createProcessSemiAnnualHandler = (options: {
@@ -117,22 +108,19 @@ export const createProcessSemiAnnualHandler = (options: {
                         : 1 + populationRatio * (1 - securityRatio);
                 const trust = asNumber(city.meta.trust, 50);
                 world.updateCity(city.id, {
-                    population: roundLegacyIntegerColumn(
+                    population: roundIntegerState(
                         Math.min(city.populationMax, basePopulationIncrease + city.population * populationFactor)
                     ),
-                    agriculture: roundLegacyIntegerColumn(
+                    agriculture: roundIntegerState(
                         Math.min(city.agricultureMax, city.agriculture * (1 + genericRatio))
                     ),
-                    commerce: roundLegacyIntegerColumn(Math.min(city.commerceMax, city.commerce * (1 + genericRatio))),
-                    security: roundLegacyIntegerColumn(Math.min(city.securityMax, city.security * (1 + genericRatio))),
-                    defence: roundLegacyIntegerColumn(Math.min(city.defenceMax, city.defence * (1 + genericRatio))),
-                    wall: roundLegacyIntegerColumn(Math.min(city.wallMax, city.wall * (1 + genericRatio))),
+                    commerce: roundIntegerState(Math.min(city.commerceMax, city.commerce * (1 + genericRatio))),
+                    security: roundIntegerState(Math.min(city.securityMax, city.security * (1 + genericRatio))),
+                    defence: roundIntegerState(Math.min(city.defenceMax, city.defence * (1 + genericRatio))),
+                    wall: roundIntegerState(Math.min(city.wallMax, city.wall * (1 + genericRatio))),
                     meta: {
                         ...city.meta,
-                        // Ref's UPDATE persists trust to a MariaDB FLOAT before
-                        // the next monthly action reads it. Core stores this
-                        // field in JSON, so emulate that binary32 boundary here.
-                        trust: storeLegacySemiAnnualTrust(trust + trustDiff),
+                        trust: clampSemiAnnualTrust(trust + trustDiff),
                     },
                 });
             }

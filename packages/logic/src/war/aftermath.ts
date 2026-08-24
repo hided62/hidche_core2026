@@ -89,14 +89,12 @@ const isAssignedToOfficerCity = <TriggerState extends GeneralTriggerState>(
         (key) => getMetaNumber(general.meta, key, Number.NaN) === cityId
     );
 
-// REF-COMPAT:BEGIN ref-dead-split-int-binding
 const increaseDeadCounter = (city: City, delta: number): void => {
     // Ref binds each `dead + %i` increment as an integer before MariaDB adds
     // it. Truncate each 40/60 percent split independently; rounding the
     // accumulated counter changes monthly recovery and war income.
     city.meta[META_DEAD] = getDeadCounter(city) + Math.trunc(delta);
 };
-// REF-COMPAT:END ref-dead-split-int-binding
 
 const isSupplyCity = (city: City): boolean => {
     const raw = city.meta.supply;
@@ -168,11 +166,7 @@ const applyNationTechGain = <TriggerState extends GeneralTriggerState>(
     const divisor = Math.max(config.initialNationGenLimit, total);
     const currentTech = getMetaNumber(nation.meta, 'tech', 0);
     const delta = gain / divisor;
-    // REF-COMPAT:BEGIN ref-mariadb-float-boundary
-    // Ref executes `tech + delta` inside MariaDB for battle gains, so the
-    // arithmetic starts from the stored binary32 value without a PHP text read.
-    nation.meta.tech = Math.fround(currentTech + delta);
-    // REF-COMPAT:END ref-mariadb-float-boundary
+    nation.meta.tech = currentTech + delta;
     if (input.trace?.isEnabled('WAR_TECH_TRACE', { nationIds: [nation.id] })) {
         input.trace.write('WAR_TECH_TRACE', {
             engine: 'core',

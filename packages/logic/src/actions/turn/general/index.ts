@@ -198,4 +198,4 @@ export const loadGeneralTurnCommandSpecs = async (
     return specs;
 };
 
-export { readLegacyCityTrust } from './legacyCityTrust.js';
+export { adjustCityTrust, resolveCityTrustValue } from './cityTrust.js';
