@@ -53,18 +53,38 @@ recovery dump.
 
 ### Gateway
 
-| Legacy table    | Target                        | Policy                                                                          |
-| --------------- | ----------------------------- | ------------------------------------------------------------------------------- |
-| `member`        | `app_user` plus `legacy_data` | Preserve identity, roles/ACL, sanctions, OAuth metadata, password hash and salt |
-| `member_log`    | `legacy_member_log`           | Preserve complete JSON action history                                           |
-| `banned_member` | `legacy_banned_member`        | Preserve hashed-email ban                                                       |
-| `storage`       | `legacy_root_key_value`       | Preserve raw namespace/key/JSON value                                           |
-| `system`        | `system`                      | Preserve registration/login switches and notice                                 |
-| `login_token`   | none                          | Exclude expired bearer tokens, IP addresses and obsolete PHP sessions           |
+| Legacy table    | Target                                 | Policy                                                                                        |
+| --------------- | -------------------------------------- | --------------------------------------------------------------------------------------------- |
+| `member`        | `app_user`, `user_icon`, `legacy_data` | Preserve identity, account icon, roles/ACL, sanctions, OAuth metadata, password hash and salt |
+| `member_log`    | `legacy_member_log`                    | Preserve complete JSON action history                                                         |
+| `banned_member` | `legacy_banned_member`                 | Preserve hashed-email ban                                                                     |
+| `storage`       | `legacy_root_key_value`                | Preserve raw namespace/key/JSON value                                                         |
+| `system`        | `system`                               | Preserve registration/login switches and notice                                               |
+| `login_token`   | none                                   | Exclude expired bearer tokens, IP addresses and obsolete PHP sessions                         |
 
 Legacy member numbers map to deterministic UUIDs. Existing rows are updated by
 that UUID, so references such as `ng_old_generals.owner` remain stable even
 when an old account was deleted before the dump.
+
+Ref appends `?=YYYYMMDD` to a custom icon filename as an HTTP cache marker; it
+is not part of the stored filename. A Gateway plan with `userIcons` validates
+every referenced byte before any upload. It reads legacy `d_pic` files without
+following symlinks, checks the Ref 50 KiB/64~128px square/format contract, and
+uploads the original bytes through sam-image's signed immutable upload API.
+The deterministic per-account object name makes an interrupted apply safe to
+repeat without putting user data in the image Git repository. Existing
+`users/core/...` upload paths are fetched and validated instead of copied.
+
+Only after every source icon validates and every legacy file upload succeeds
+does the PostgreSQL transaction begin. The returned `icons/users/core2026/...`
+path is checked exactly, stored as `users/core2026/...` with `image_server=0`,
+and connected to an owned `user_icon` row. An unchanged Ref selection is moved
+to that path. A newer Core selection is not overwritten; its imported Ref icon
+is retained as another library entry. If the Core account is currently on the
+default icon, the imported Ref entry is recorded retired so a prior selection
+is not silently resurrected. The original Ref path, `IMGSVR`, returned path and
+byte SHA-256 remain in `legacy_data`. Picture collisions across owners fail the
+transaction.
 
 Kakao members retain `oauth_id`, email and metadata. A non-empty provider ID is
 required before an imported row is marked Kakao-verified. A parseable legacy

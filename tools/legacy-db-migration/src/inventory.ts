@@ -10,9 +10,9 @@ export interface MigrationInventoryItem {
 export const GATEWAY_MIGRATION_INVENTORY: readonly MigrationInventoryItem[] = [
     {
         source: 'member',
-        target: 'app_user + legacy_data',
+        target: 'app_user + user_icon + legacy_data',
         strategy: 'rescan',
-        contents: '계정 식별자, 레거시 역할/제재, OAuth 메타데이터와 비밀번호 복구 자료',
+        contents: '계정 식별자, 전용 아이콘 목록, 레거시 역할/제재, OAuth 메타데이터와 비밀번호 복구 자료',
     },
     {
         source: 'member_log',
