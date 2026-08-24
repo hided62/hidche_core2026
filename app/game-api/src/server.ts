@@ -40,6 +40,7 @@ import {
 } from './realtime/publicEvent.js';
 import { GatewayHttpAccountIconSource } from './auth/accountIconSource.js';
 import { GatewayHttpProfileStatusSource } from './auth/profileStatusSource.js';
+import { CachedTurnEngineStatus } from './services/turnEngineStatus.js';
 import { createAdminProfileIconResetFlushHandler } from './services/accountIconSync.js';
 import { AccountIconResetReconciler } from './services/accountIconResetReconciler.js';
 import { createBestEffortResourceCloser } from './services/bestEffortResourceCloser.js';
@@ -115,6 +116,7 @@ export const createGameApiServer = async () => {
         config.gatewayInternalApiUrl,
         config.gameTokenSecret
     );
+    const turnEngineStatus = new CachedTurnEngineStatus(profileStatusSource, postgres.prisma, config.profileName);
 
     const turnDaemon = new DatabaseTurnDaemonTransport(postgres.prisma, config.daemonRequestTimeoutMs);
     const accountIconResetReconciler = new AccountIconResetReconciler(
@@ -383,13 +385,24 @@ export const createGameApiServer = async () => {
                 });
         });
 
+        let heartbeatPending = false;
         const heartbeat = setInterval(() => {
-            sendFrame(
-                formatSseFrame({
-                    event: 'ping',
-                    data: '{}',
+            if (heartbeatPending) return;
+            heartbeatPending = true;
+            void turnEngineStatus
+                .get()
+                .then((turnEngineRunning) => {
+                    if (closed) return;
+                    sendFrame(
+                        formatSseFrame({
+                            event: 'ping',
+                            data: JSON.stringify({ turnEngineRunning }),
+                        })
+                    );
                 })
-            );
+                .finally(() => {
+                    heartbeatPending = false;
+                });
         }, 15000);
 
         const close = () => {

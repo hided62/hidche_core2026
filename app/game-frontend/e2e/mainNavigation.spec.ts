@@ -42,6 +42,7 @@ type NavigationFixture = {
     clockMode?: 'realtime' | 'manual';
     clockRunning?: boolean;
     clockStartsAt?: string | null;
+    turnEngineRunning?: boolean | null;
     cityDefence?: number;
     cityState?: number;
     nationRate?: number;
@@ -598,6 +599,7 @@ const installFixture = async (page: Page, state: NavigationFixture) => {
                     clockMode: state.clockMode ?? 'realtime',
                     clockRunning: state.clockRunning ?? true,
                     clockStartsAt: state.clockStartsAt ?? null,
+                    turnEngineRunning: state.turnEngineRunning === undefined ? true : state.turnEngineRunning,
                     scenarioTitle: state.scenarioTitle ?? '',
                 });
             }
@@ -2037,7 +2039,7 @@ test('main general card uses local turn time and command clock tracks corrected 
     expect(state.operations).toHaveLength(operationsBeforePreopenBoundary);
 });
 
-test('main header clock follows minute boundaries only while game-server contact is recent', async ({
+test('main header clock follows minute boundaries only while the turn engine is running', async ({
     page,
 }, testInfo) => {
     const state: NavigationFixture = {
@@ -2052,6 +2054,7 @@ test('main header clock follows minute boundaries only while game-server contact
         serverWallTime: '2026-08-13T00:00:00.000Z',
         clockMode: 'realtime',
         clockRunning: true,
+        turnEngineRunning: true,
     };
     await installRealtimeHarness(page);
     await installFixture(page, state);
@@ -2063,37 +2066,42 @@ test('main header clock follows minute boundaries only while game-server contact
     const clock = page.locator('.execution-status');
     const initialRequestCount = state.trpcRequests?.length ?? 0;
     await expect(clock).toHaveText('현재 시각: 08-13 09:00');
-    await expect(clock).not.toHaveClass(/execution-status--stale/u);
+    await expect(clock).not.toHaveClass(/execution-status--stopped/u);
 
     await page.clock.runFor(25_000);
     await expect(clock).toHaveText('현재 시각: 08-13 09:01');
 
-    await page.clock.runFor(21_000);
-    await expect(clock).toHaveClass(/execution-status--stale/u);
-    await expect(clock).toHaveAttribute('title', '최근 45초 동안 서버 통신이 없어 시각 갱신을 멈췄습니다.');
+    await page.evaluate(() => {
+        (window as unknown as { __emitMainRealtime: (type: string, value: unknown) => void }).__emitMainRealtime(
+            'ping',
+            { turnEngineRunning: false }
+        );
+    });
+    await expect(clock).toHaveClass(/execution-status--stopped/u);
+    await expect(clock).toHaveAttribute('title', '턴 엔진이 정지하여 현재 시각 보정을 멈췄습니다.');
     await expect.poll(() => clock.evaluate((element) => getComputedStyle(element).color)).toBe('rgb(255, 0, 255)');
-    const staleDesktopGeometry = await clock.evaluate((element) => ({
+    const stoppedDesktopGeometry = await clock.evaluate((element) => ({
         rect: element.getBoundingClientRect().toJSON(),
         overflow: element.scrollWidth - element.clientWidth,
         color: getComputedStyle(element).color,
         fontSize: getComputedStyle(element).fontSize,
         lineHeight: getComputedStyle(element).lineHeight,
     }));
-    expect(staleDesktopGeometry.rect.width).toBeCloseTo(333.33, 0);
-    expect(staleDesktopGeometry.rect.height).toBeGreaterThanOrEqual(36);
-    expect(staleDesktopGeometry.overflow).toBeLessThanOrEqual(0);
-    await clock.screenshot({ path: testInfo.outputPath('main-header-clock-stale-desktop-1200.png') });
-    await page.clock.runFor(60_000);
+    expect(stoppedDesktopGeometry.rect.width).toBeCloseTo(333.33, 0);
+    expect(stoppedDesktopGeometry.rect.height).toBeGreaterThanOrEqual(36);
+    expect(stoppedDesktopGeometry.overflow).toBeLessThanOrEqual(0);
+    await clock.screenshot({ path: testInfo.outputPath('main-header-clock-stopped-desktop-1200.png') });
+    await page.clock.runFor(81_000);
     await expect(clock).toHaveText('현재 시각: 08-13 09:01');
 
     await page.evaluate(() => {
         (window as unknown as { __emitMainRealtime: (type: string, value: unknown) => void }).__emitMainRealtime(
             'ping',
-            {}
+            { turnEngineRunning: true }
         );
     });
     await expect(clock).toHaveText('현재 시각: 08-13 09:02');
-    await expect(clock).not.toHaveClass(/execution-status--stale/u);
+    await expect(clock).not.toHaveClass(/execution-status--stopped/u);
     await page.clock.runFor(39_000);
     await expect(clock).toHaveText('현재 시각: 08-13 09:03');
     await expect.poll(() => clock.evaluate((element) => getComputedStyle(element).color)).toBe('rgb(0, 255, 255)');
@@ -2114,7 +2122,7 @@ test('main header clock follows minute boundaries only while game-server contact
         clock.screenshot({ path: testInfo.outputPath('main-header-clock-fresh-mobile-500.png') }),
         writeFile(
             testInfo.outputPath('main-header-clock-geometry.json'),
-            `${JSON.stringify({ staleDesktopGeometry, freshMobileGeometry }, null, 2)}\n`
+            `${JSON.stringify({ stoppedDesktopGeometry, freshMobileGeometry }, null, 2)}\n`
         ),
     ]);
     expect(state.trpcRequests?.length ?? 0).toBe(initialRequestCount);

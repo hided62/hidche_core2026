@@ -362,7 +362,7 @@ const handlePasswordReset = async (): Promise<void> => {
     border-top: 1px solid #444;
     padding: 8px 12px;
     color: #ddd;
-    font-family: 'Times New Roman', serif;
+    font-family: inherit;
     font-size: 14px;
     line-height: 1.35;
 }

@@ -5,6 +5,7 @@ import { asNumber, asRecord } from '@sammo-ts/common';
 import { zWorldStateConfig, zWorldStateMeta } from '../../context.js';
 import { isSelectionPoolWorld, resolveSelectionMaxGeneral } from '@sammo-ts/game-engine/turn/selectPoolService.js';
 import { loadCurrentGameTime } from '../../services/gameClock.js';
+import { loadTurnEngineRunning } from '../../services/turnEngineStatus.js';
 import { procedure, router } from '../../trpc.js';
 
 export const lobbyRouter = router({
@@ -35,6 +36,7 @@ export const lobbyRouter = router({
                   .map(([option]) => option)
             : [];
         const gameTime = await loadCurrentGameTime(ctx.db);
+        const turnEngineRunning = await loadTurnEngineRunning(ctx.profileStatusSource, ctx.db, ctx.profile.name);
 
         let myGeneral = null;
         if (ctx.auth?.user.id) {
@@ -72,6 +74,7 @@ export const lobbyRouter = router({
             clockMode: gameTime.mode ?? 'realtime',
             clockRunning: gameTime.running,
             clockStartsAt: gameTime.startsAt?.toISOString() ?? null,
+            turnEngineRunning,
             otherTextInfo: worldState.meta.otherTextInfo ?? '',
             npcMode: worldState.config.npcMode ?? 0,
             defaultStatTotal: asNumber(asRecord(rawConfig.stat).total, 165),

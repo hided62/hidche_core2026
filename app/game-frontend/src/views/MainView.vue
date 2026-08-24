@@ -253,6 +253,7 @@ watch(
                 :clock-mode="lobbyInfo?.clockMode"
                 :clock-running="lobbyInfo?.clockRunning"
                 :clock-starts-at="lobbyInfo?.clockStartsAt"
+                :turn-engine-running="lobbyInfo?.turnEngineRunning"
             />
         </div>
 
