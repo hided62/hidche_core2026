@@ -96,10 +96,17 @@ export const runTurnDaemonCli = async (options: TurnDaemonCliOptions = {}): Prom
         intervalMs: memoryReportIntervalMs,
         getContext: () => {
             const state = runtime.world.getState();
+            const queueCounts = runtime.reservedTurns?.getQueueCounts();
             return {
                 year: state.currentYear,
                 month: state.currentMonth,
                 ...runtime.world.getEntityCounts(),
+                ...(queueCounts
+                    ? {
+                          generalTurnQueues: queueCounts.generalQueues,
+                          nationTurnQueues: queueCounts.nationQueues,
+                      }
+                    : {}),
                 lifecycleState: runtime.lifecycle.getStatus().state,
             };
         },

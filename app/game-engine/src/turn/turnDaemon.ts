@@ -41,7 +41,7 @@ import {
 } from './monthlyNationStatsHandler.js';
 import { createFrontStateHandler } from './frontStateHandler.js';
 import { createReservedTurnHandler } from './reservedTurnHandler.js';
-import { createReservedTurnStore } from './reservedTurnStore.js';
+import { createReservedTurnStore, type InMemoryReservedTurnStore } from './reservedTurnStore.js';
 import { createTurnDaemonCommandHandler } from './worldCommandHandler.js';
 import { loadTurnCommandProfile } from './turnCommandProfile.js';
 import { loadTurnWorldFromDatabase } from './worldLoader.js';
@@ -132,6 +132,7 @@ export interface TurnDaemonRuntime {
     stateStore: InMemoryTurnStateStore;
     stateManager: EngineStateManager;
     processor: InMemoryTurnProcessor;
+    reservedTurns: InMemoryReservedTurnStore | null;
     hooks?: TurnDaemonHooks;
     close(): Promise<void>;
 }
@@ -1012,6 +1013,7 @@ const createTurnDaemonRuntimeWithLease = async (
         stateStore,
         stateManager,
         processor,
+        reservedTurns: reservedTurnStoreHandle?.store ?? null,
         hooks,
         close,
     };

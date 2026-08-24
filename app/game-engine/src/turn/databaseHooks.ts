@@ -1787,6 +1787,7 @@ export const createDatabaseTurnHooks = async (
                 world.acknowledgeDirtyState(changes);
                 if (options?.reservedTurns && reservedTurnChanges) {
                     options.reservedTurns.acknowledgeDirtyState(reservedTurnChanges);
+                    options.reservedTurns.pruneDeletedEntityQueues(deletedGenerals, deletedNations);
                 }
                 applyRealtimeReadModelBaseline(readModelBaseline, changes);
                 worldReadModelBaseline = persisted.worldReadModelSignature;
