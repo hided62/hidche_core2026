@@ -82,10 +82,14 @@ const buildContext = (options: {
     requestId?: string;
     transaction?: ReturnType<typeof vi.fn>;
     clockTick?: number;
+    daemonResult?: Awaited<ReturnType<TurnDaemonTransport['requestCommand']>>;
 }) => {
     const auth = options.auth === undefined ? buildAuth() : options.auth;
     const general = options.general === undefined ? buildGeneral() : options.general;
     const requestCommand = vi.fn(async (command: { type: string }) => {
+        if (options.daemonResult !== undefined) {
+            return options.daemonResult;
+        }
         if (command.type === 'auctionOpen') {
             return {
                 type: 'auctionOpen' as const,
@@ -279,6 +283,38 @@ describe('auction router actor and permission boundaries', () => {
         });
     });
 
+    it('opens a sell-rice auction with only the authenticated actor and a stable ENGINE request identity', async () => {
+        const transaction = vi.fn(async () => {
+            throw new Error('API transaction must not run');
+        });
+        const fixture = buildContext({ requestId: 'http-auction-open-sell', transaction });
+        const input = {
+            amount: 1000,
+            closeTurnCnt: 3,
+            startBidAmount: 500,
+            finishBidAmount: 2000,
+            userId: 'forged-user',
+            generalId: 999,
+        };
+
+        await expect(appRouter.createCaller(fixture.context).auction.openSellRice(input)).resolves.toMatchObject({
+            auctionId: 91,
+        });
+
+        expect(transaction).not.toHaveBeenCalled();
+        expect(fixture.requestCommand).toHaveBeenCalledWith({
+            type: 'auctionOpen',
+            requestId: 'http-auction-open-sell:auction.openSellRice:engine:0:auctionOpen',
+            auctionType: 'SELL_RICE',
+            userId: 'user-1',
+            generalId: 7,
+            amount: 1000,
+            closeTurnCnt: 3,
+            startBidAmount: 500,
+            finishBidAmount: 2000,
+        });
+    });
+
     it('rejects auction mutations after unification before sending a daemon command', async () => {
         const fixture = buildContext({ isUnited: 0, isunited: 2 });
         const caller = appRouter.createCaller(fixture.context);
@@ -425,5 +461,92 @@ describe('auction router actor and permission boundaries', () => {
             appRouter.createCaller(rejected.context).auction.bidBuyRice({ auctionId: 31, amount: 500 })
         ).rejects.toMatchObject({ code: 'BAD_REQUEST', message: '금이 부족합니다.' });
         expect(rejected.requestCommand).not.toHaveBeenCalled();
+    });
+
+    it('bids rice through the authenticated actor and preserves the sell-rice ENGINE request identity', async () => {
+        const queryRaw = async (query: GamePrisma.Sql) => {
+            const text = sqlText(query);
+            if (text.includes('FROM auction') && text.includes('WHERE id =')) {
+                return [
+                    {
+                        id: 31,
+                        type: 'SELL_RICE',
+                        targetCode: '100',
+                        hostGeneralId: 88,
+                        detail: { title: '금 100 경매', amount: 100, startBidAmount: 500, isReverse: false },
+                        status: 'OPEN',
+                        closeAt: new Date('2026-07-27T00:00:00.000Z'),
+                        closeTick: 200n,
+                    },
+                ];
+            }
+            if (text.includes('FROM auction_bid')) {
+                return [];
+            }
+            return [];
+        };
+        const fixture = buildContext({
+            general: buildGeneral({ id: 7, userId: 'user-1', rice: 1_500 }),
+            queryRaw,
+            requestId: 'http-auction-bid-sell',
+            clockTick: 100,
+        });
+        const input = { auctionId: 31, amount: 500, userId: 'forged-user', generalId: 999 };
+
+        await expect(appRouter.createCaller(fixture.context).auction.bidSellRice(input)).resolves.toEqual({ ok: true });
+        expect(fixture.requestCommand).toHaveBeenCalledWith({
+            type: 'auctionBid',
+            requestId: 'http-auction-bid-sell:auction.bidSellRice:engine:0:auctionBid',
+            userId: 'user-1',
+            auctionId: 31,
+            generalId: 7,
+            amount: 500,
+            acceptedGameTick: 100,
+            tryExtendCloseDate: true,
+        });
+    });
+
+    it('maps a rejected sell-rice bid without trusting client actor fields', async () => {
+        const queryRaw = async (query: GamePrisma.Sql) => {
+            const text = sqlText(query);
+            if (text.includes('FROM auction') && text.includes('WHERE id =')) {
+                return [
+                    {
+                        id: 31,
+                        type: 'SELL_RICE',
+                        targetCode: '100',
+                        hostGeneralId: 88,
+                        detail: { amount: 100, startBidAmount: 500, isReverse: false },
+                        status: 'OPEN',
+                        closeAt: new Date('2026-07-27T00:00:00.000Z'),
+                        closeTick: 200n,
+                    },
+                ];
+            }
+            if (text.includes('FROM auction_bid')) {
+                return [];
+            }
+            return [];
+        };
+        const fixture = buildContext({
+            general: buildGeneral({ rice: 1_500 }),
+            queryRaw,
+            clockTick: 100,
+            daemonResult: {
+                type: 'auctionBid',
+                ok: false,
+                auctionId: 31,
+                reason: '입찰이 취소되었습니다.',
+            },
+        });
+        const input = { auctionId: 31, amount: 500, userId: 'forged-user', generalId: 999 };
+
+        await expect(appRouter.createCaller(fixture.context).auction.bidSellRice(input)).rejects.toMatchObject({
+            code: 'CONFLICT',
+            message: '입찰이 취소되었습니다.',
+        });
+        expect(fixture.requestCommand).toHaveBeenCalledWith(
+            expect.objectContaining({ userId: 'user-1', generalId: 7, auctionId: 31 })
+        );
     });
 });

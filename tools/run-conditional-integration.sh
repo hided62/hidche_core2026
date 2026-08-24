@@ -11,6 +11,7 @@ usage() {
 script_dir=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 workspace_root=$(CDPATH= cd -- "$script_dir/.." && pwd)
 registry_file="$script_dir/conditional-integration-registry.tsv"
+file_registry="$script_dir/conditional-integration-file-registry.tsv"
 env_file=${1:-"$workspace_root/.env.ci"}
 
 if [ ! -f "$env_file" ]; then
@@ -19,6 +20,10 @@ if [ ! -f "$env_file" ]; then
 fi
 if [ ! -f "$registry_file" ]; then
     echo "missing integration marker registry: $registry_file" >&2
+    exit 66
+fi
+if [ ! -f "$file_registry" ]; then
+    echo "missing integration file registry: $file_registry" >&2
     exit 66
 fi
 env_file=$(CDPATH= cd -- "$(dirname -- "$env_file")" && pwd)/$(basename -- "$env_file")
@@ -369,6 +374,102 @@ markers_for_mode() {
         paste -sd '|' -
 }
 
+registered_reference_files() {
+    awk -F '\t' '$2 ~ /^reference_/ { print $1 }' "$file_registry"
+}
+
+files_for_requirement() {
+    requirement=$1
+    awk -F '\t' -v requirement="$requirement" '$2 == requirement { print $1 }' "$file_registry"
+}
+
+resolve_stack_relative_path() {
+    candidate_path=$1
+    case "$candidate_path" in
+        /*) printf '%s\n' "$candidate_path" ;;
+        *) printf '%s/%s\n' "$reference_stack" "$candidate_path" ;;
+    esac
+}
+
+require_reference_file() {
+    required_path=$1
+    requirement=$2
+    if [ ! -f "$required_path" ]; then
+        echo "$requirement requires a reference file that is not available: $required_path" >&2
+        exit 69
+    fi
+}
+
+validate_reference_file_requirements() {
+    if [ -n "${REF_COMPARE_SOURCE_ROOT:-}" ]; then
+        reference_source_root=$(
+            cd "$workspace_root/tools/integration-tests"
+            CDPATH= cd -- "$REF_COMPARE_SOURCE_ROOT"
+            pwd
+        )
+    else
+        reference_source_root="$reference_workspace_root/ref/sam"
+    fi
+
+    requirements=$(awk -F '\t' '$2 ~ /^reference_/ { print $2 }' "$file_registry" | sort -u)
+    for requirement in $requirements; do
+        case "$requirement" in
+            reference_command)
+                command_runner=${TURN_DIFFERENTIAL_RUNNER_SCRIPT:-"$reference_source_root/hwe/compare/turn_command_trace.php"}
+                require_reference_file "$(resolve_stack_relative_path "$command_runner")" "$requirement"
+                ;;
+            reference_full_lifecycle)
+                require_reference_file \
+                    "$reference_source_root/hwe/compare/turn_full_lifecycle_trace.php" \
+                    "$requirement"
+                ;;
+            reference_instant_diplomacy)
+                require_reference_file \
+                    "$reference_source_root/hwe/compare/instant_diplomacy_response_trace.php" \
+                    "$requirement"
+                ;;
+            reference_monthly)
+                monthly_runner=${MONTHLY_DIFFERENTIAL_RUNNER_SCRIPT:-"$reference_workspace_root/ref/sam/hwe/compare/monthly_event_trace.php"}
+                require_reference_file "$(resolve_stack_relative_path "$monthly_runner")" "$requirement"
+                ;;
+            reference_snapshot)
+                require_reference_file \
+                    "$reference_workspace_root/ref/sam/hwe/compare/turn_state_snapshot.php" \
+                    "$requirement"
+                ;;
+            *)
+                echo "unsupported reference integration requirement: $requirement" >&2
+                exit 65
+                ;;
+        esac
+    done
+}
+
+run_saved_trace_pair_tests() {
+    reference_trace=${TURN_REFERENCE_TRACE:-}
+    core_trace=${TURN_CORE_TRACE:-}
+    if [ -z "$reference_trace" ] && [ -z "$core_trace" ]; then
+        return
+    fi
+    if [ -z "$reference_trace" ] || [ -z "$core_trace" ]; then
+        echo "TURN_REFERENCE_TRACE and TURN_CORE_TRACE must be provided together" >&2
+        exit 64
+    fi
+    if ! (cd "$workspace_root/tools/integration-tests" && [ -f "$reference_trace" ] && [ -f "$core_trace" ]); then
+        echo "TURN_REFERENCE_TRACE and TURN_CORE_TRACE must both name readable trace files" >&2
+        exit 66
+    fi
+
+    trace_files=$(files_for_requirement saved_trace_pair)
+    if [ -z "$trace_files" ]; then
+        echo "saved_trace_pair has no registered integration test" >&2
+        exit 65
+    fi
+    # Registry paths cannot contain whitespace.
+    # shellcheck disable=SC2086
+    run_vitest tools/integration-tests "saved_trace_pair" $trace_files
+}
+
 record_vitest_result() {
     label=$1
     result_file=$2
@@ -376,21 +477,21 @@ record_vitest_result() {
         import fs from "node:fs";
         const result = JSON.parse(fs.readFileSync(process.argv[1], "utf8"));
         const files = Array.isArray(result.testResults) ? result.testResults : [];
-        const isSkipped = ({ assertionResults = [], status }) =>
-            status === "pending" ||
-            (assertionResults.length > 0 &&
-                assertionResults.every(({ status: assertionStatus }) =>
-                    assertionStatus === "pending" || assertionStatus === "todo"
-                ));
-        const skipped = files.filter(isSkipped).length;
+        const skippedStatuses = new Set(["disabled", "pending", "skipped", "todo"]);
+        const hasSkippedAssertion = ({ assertionResults = [], status }) =>
+            skippedStatuses.has(status) ||
+            assertionResults.some(({ status: assertionStatus }) => skippedStatuses.has(assertionStatus));
+        const skipped = files.filter(hasSkippedAssertion).length;
         const failed = files.filter(({ status }) => status === "failed").length;
-        const passed = files.length - skipped - failed;
+        const passed = files.filter(
+            (file) => file.status !== "failed" && !hasSkippedAssertion(file)
+        ).length;
         process.stdout.write(`${passed}\t${skipped}\t${failed}`);
     ' "$result_file")
     printf '%s\t%s\n' "$label" "$counts" >>"$summary_file"
     skipped=$(printf '%s' "$counts" | cut -f2)
     if [ "$skipped" -ne 0 ]; then
-        echo "$label left $skipped integration test file(s) skipped" >&2
+        echo "$label left $skipped integration test file(s) with skipped assertion(s)" >&2
         return 1
     fi
 }
@@ -469,6 +570,7 @@ run_redis_only_tests() {
 
 export PATH
 cd "$workspace_root"
+node "$script_dir/check-conditional-integration-files.mjs"
 validate_marker_registry
 
 pnpm install --frozen-lockfile
@@ -680,6 +782,18 @@ if [ "${TURN_DIFFERENTIAL_REFERENCE:-}" = "1" ]; then
         exit 69
     fi
 
+    export TURN_DIFFERENTIAL_WORKSPACE_ROOT=$reference_workspace_root
+    export TURN_DIFFERENTIAL_STACK_DIR=$reference_stack
+    validate_reference_file_requirements
+    reference_files=$(registered_reference_files)
+    if [ -z "$reference_files" ]; then
+        echo "no non-database reference integration files are registered" >&2
+        exit 65
+    fi
+    # Registry paths cannot contain whitespace.
+    # shellcheck disable=SC2086
+    run_vitest tools/integration-tests "reference_runtime" $reference_files
+
     create_owned_schema "$npc_possession_differential_schema"
     npc_possession_differential_database_url=$(build_database_url "$npc_possession_differential_schema")
     (
@@ -689,8 +803,6 @@ if [ "${TURN_DIFFERENTIAL_REFERENCE:-}" = "1" ]; then
         pnpm --filter @sammo-ts/infra prisma:db:push:game
     )
     export NPC_POSSESSION_DIFFERENTIAL_DATABASE_URL=$npc_possession_differential_database_url
-    export TURN_DIFFERENTIAL_WORKSPACE_ROOT=$reference_workspace_root
-    export TURN_DIFFERENTIAL_STACK_DIR=$reference_stack
     run_marked_tests tools/integration-tests \
         "$(markers_for_mode reference_npc_possession)" \
         "npc_possession_reference"
@@ -739,6 +851,8 @@ if [ "${TURN_DIFFERENTIAL_REFERENCE:-}" = "1" ]; then
     export POSTGRES_SCHEMA=$integration_schema
     export DATABASE_URL=$database_url
 fi
+
+run_saved_trace_pair_tests
 
 all_database_markers=$(cut -f1 "$validated_registry_file" | paste -sd '|' -)
 run_redis_only_tests "$all_database_markers"

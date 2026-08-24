@@ -1858,7 +1858,9 @@ export const createReservedTurnHandler = async (options: {
                     currentGeneral.crew = 0;
                     currentGeneral.rice = 0;
                     logs.push(
-                        createGeneralActionLog(currentGeneral.id, '군량이 모자라 병사들이 <R>소집해제</>되었습니다!')
+                        createGeneralActionLog(currentGeneral.id, '군량이 모자라 병사들이 <R>소집해제</>되었습니다!', {
+                            format: LogFormat.PLAIN,
+                        })
                     );
                     preTurnContext.skill.activate('pre.소집해제');
                 }

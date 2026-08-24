@@ -4,6 +4,7 @@ import type { GameSessionTokenPayload } from '@sammo-ts/common/auth/gameToken';
 import { z } from 'zod';
 import type { GameApiContext } from '../src/context.js';
 import type { DatabaseClient } from '../src/context.js';
+import { createApiInputPayloadIdentity } from '../src/inputEventBoundary.js';
 
 import {
     accessAuthedProcedure,
@@ -303,13 +304,35 @@ describe('general access tracking', () => {
         const transactionClient = {
             $queryRaw: vi.fn(async (query: unknown) => {
                 const sql = (query as { sql?: string }).sql ?? '';
+                if (sql.includes('FROM input_event')) {
+                    return [
+                        {
+                            target: 'API',
+                            eventType: 'board.writeArticle',
+                            payload: createApiInputPayloadIdentity({ value: 'ok' }),
+                            actorUserId: 'user-7',
+                            status: 'PENDING',
+                            result: null,
+                            attempts: 0,
+                        },
+                    ];
+                }
                 return sql.includes('read_model_revision')
                     ? [{ domain: 'access.general', entityId: 7, revision: 1n, outboxId: 1n }]
                     : [{ id: 41 }];
             }),
-            $executeRaw: vi.fn(async () => 1),
+            $executeRaw: vi.fn(async (query: unknown) => {
+                if (((query as { sql?: string }).sql ?? '').includes('INSERT INTO input_event')) {
+                    events.push('input-event-create');
+                }
+                return 1;
+            }),
+            $executeRawUnsafe: vi.fn(async () => 0),
             inputEvent: {
-                update: vi.fn(async () => ({})),
+                update: vi.fn(async (args: { data: { status: string } }) => {
+                    if (args.data.status === 'FAILED') events.push('input-event-failed');
+                    return {};
+                }),
             },
         };
         const db = {
@@ -337,17 +360,6 @@ describe('general access tracking', () => {
                         lastTurnTime: '2026-07-26T03:00:00.000Z',
                     },
                 })),
-            },
-            inputEvent: {
-                create: vi.fn(async () => {
-                    events.push('input-event-create');
-                    return {};
-                }),
-                update: vi.fn(async () => {
-                    events.push('input-event-failed');
-                    return {};
-                }),
-                updateMany: vi.fn(async () => ({ count: 0 })),
             },
             $transaction: vi.fn(async (callback: (client: typeof transactionClient) => Promise<unknown>) => {
                 transactionCount += 1;
@@ -385,8 +397,8 @@ describe('general access tracking', () => {
         expect(events).toEqual([
             'input-parse',
             'access-transaction',
-            'input-event-create',
             'business-transaction',
+            'input-event-create',
             'resolver',
             'input-event-failed',
         ]);

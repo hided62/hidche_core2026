@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 
+import { MAX_SAFE_GAME_TICK } from '@sammo-ts/common';
 import type { GameSessionTokenPayload } from '@sammo-ts/common/auth/gameToken';
 import type { RedisConnector } from '@sammo-ts/infra';
 
@@ -88,7 +89,10 @@ const storedLetter = {
 
 const buildContext = (officerLevel = 12, letter: Record<string, unknown> = storedLetter) => {
     const create = vi.fn(async () => ({ id: 9 }));
+    let messageId = 100;
+    const queryRaw = vi.fn(async (..._args: unknown[]) => [{ id: messageId++ }]);
     const db = {
+        $queryRaw: queryRaw,
         general: {
             findFirst: vi.fn(async () => buildGeneral(officerLevel)),
             findMany: vi.fn(async () => [
@@ -136,7 +140,7 @@ const buildContext = (officerLevel = 12, letter: Record<string, unknown> = store
         flushStore: new InMemoryFlushStore(),
         gameTokenSecret: 'test-secret',
     };
-    return { caller: appRouter.createCaller(context), create };
+    return { caller: appRouter.createCaller(context), create, queryRaw };
 };
 
 describe('diplomacy HTML API boundary', () => {
@@ -158,6 +162,14 @@ describe('diplomacy HTML API boundary', () => {
                 date: new Date('0185-01-01T00:00:00.000Z'),
             }),
         });
+        expect(fixture.queryRaw).toHaveBeenCalledTimes(2);
+        expect(fixture.queryRaw.mock.calls[0]?.slice(1)).toEqual(
+            expect.arrayContaining([9002, 'diplomacy', 9001, 9002])
+        );
+        expect(fixture.queryRaw.mock.calls[1]?.slice(1)).toEqual(expect.arrayContaining([9001, 'diplomacy']));
+        expect(fixture.queryRaw.mock.calls[0]?.slice(1)).toContain(BigInt(MAX_SAFE_GAME_TICK));
+        expect(fixture.queryRaw.mock.calls[0]?.find((value) => typeof value === 'string' && value.includes('text')))
+            .toContain('새로운 외교 문서 #9가 준비되었습니다. 외교부에서 확인해주세요.');
     });
 
     it('purifies legacy stored rows on every read while preserving secret redaction', async () => {

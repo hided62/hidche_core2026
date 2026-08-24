@@ -324,6 +324,97 @@ describe('troop router permissions and mutations', () => {
         });
     });
 
+    it('joins a troop with the session-owned general and a stable ENGINE request identity', async () => {
+        const transaction = vi.fn(async () => {
+            throw new Error('API transaction must not run');
+        });
+        const fixture = buildContext({
+            me: buildGeneral({ id: 17, userId: 'user-1', troopId: 0 }),
+            requestId: 'http-troop-join',
+            transaction,
+            result: { type: 'troopJoin', ok: true, generalId: 17, troopId: 9 },
+        });
+        const input = { troopId: 9, userId: 'forged-user', generalId: 999 };
+
+        await expect(appRouter.createCaller(fixture.context).troop.join(input)).resolves.toEqual({ ok: true });
+        expect(transaction).not.toHaveBeenCalled();
+        expect(fixture.requestCommand).toHaveBeenCalledWith({
+            type: 'troopJoin',
+            requestId: 'http-troop-join:troop.join:engine:0:troopJoin',
+            userId: 'user-1',
+            generalId: 17,
+            troopId: 9,
+        });
+    });
+
+    it('maps an authoritative troop-join rejection without trusting client actor fields', async () => {
+        const fixture = buildContext({
+            me: buildGeneral({ id: 17, userId: 'user-1', troopId: 0 }),
+            result: {
+                type: 'troopJoin',
+                ok: false,
+                generalId: 17,
+                troopId: 9,
+                reason: '다른 국가의 부대입니다.',
+            },
+        });
+        const input = { troopId: 9, userId: 'forged-user', generalId: 999 };
+
+        await expect(appRouter.createCaller(fixture.context).troop.join(input)).rejects.toMatchObject({
+            code: 'PRECONDITION_FAILED',
+            message: '다른 국가의 부대입니다.',
+        });
+        expect(fixture.requestCommand).toHaveBeenCalledWith(
+            expect.objectContaining({ userId: 'user-1', generalId: 17, troopId: 9 })
+        );
+    });
+
+    it('exits a troop with the session-owned general and a stable ENGINE request identity', async () => {
+        const transaction = vi.fn(async () => {
+            throw new Error('API transaction must not run');
+        });
+        const fixture = buildContext({
+            me: buildGeneral({ id: 17, userId: 'user-1', troopId: 9 }),
+            requestId: 'http-troop-exit',
+            transaction,
+            result: { type: 'troopExit', ok: true, generalId: 17, wasLeader: false },
+        });
+
+        await expect(appRouter.createCaller(fixture.context).troop.exit()).resolves.toEqual({
+            ok: true,
+            wasLeader: false,
+        });
+        expect(transaction).not.toHaveBeenCalled();
+        expect(fixture.requestCommand).toHaveBeenCalledWith({
+            type: 'troopExit',
+            requestId: 'http-troop-exit:troop.exit:engine:0:troopExit',
+            userId: 'user-1',
+            generalId: 17,
+        });
+    });
+
+    it('maps an authoritative troop-exit rejection for the session-owned general', async () => {
+        const fixture = buildContext({
+            me: buildGeneral({ id: 17, userId: 'user-1', troopId: 0 }),
+            result: {
+                type: 'troopExit',
+                ok: false,
+                generalId: 17,
+                reason: '부대에 소속되어 있지 않습니다.',
+            },
+        });
+
+        await expect(appRouter.createCaller(fixture.context).troop.exit()).rejects.toMatchObject({
+            code: 'PRECONDITION_FAILED',
+            message: '부대에 소속되어 있지 않습니다.',
+        });
+        expect(fixture.requestCommand).toHaveBeenCalledWith({
+            type: 'troopExit',
+            userId: 'user-1',
+            generalId: 17,
+        });
+    });
+
     it('maps an ENGINE actor-binding rejection to a forbidden API response', async () => {
         const fixture = buildContext({
             result: {

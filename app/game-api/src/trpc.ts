@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { initTRPC, TRPCError } from '@trpc/server';
+import { middlewareMarker } from '@trpc/server/unstable-core-do-not-import';
 import { ChangeJournal } from '@sammo-ts/common';
 import { isGameAccessBlocked } from '@sammo-ts/common/auth/sanctions';
 import { writeReadModelChangeJournal } from '@sammo-ts/infra';
@@ -58,19 +59,25 @@ const generalActivityMiddleware = t.middleware(async ({ ctx, type, next }) => {
     return result;
 });
 
-const inputEventMiddleware = t.middleware(async ({ ctx, type, path, next }) => {
+export const scopeApiInputEventRequestId = (baseRequestId: string, path: string, batchIndex: number): string =>
+    `${baseRequestId}:${path}${batchIndex === 0 ? '' : `:batch:${batchIndex}`}`;
+
+const inputEventMiddleware = t.middleware(async ({ ctx, type, path, batchIndex, getRawInput, next }) => {
     if (type !== 'mutation' || !ctx.db.$transaction) {
         return next();
     }
 
-    const requestId = `${ctx.requestId ?? randomUUID()}:${path}`;
+    const requestId = scopeApiInputEventRequestId(ctx.requestId ?? randomUUID(), path, batchIndex);
+    const payload = await getRawInput();
     const changeJournal = new ChangeJournal();
     let journalPersisted = false;
+    let executedResult: Awaited<ReturnType<typeof next>> | undefined;
     try {
-        const result = await executeInputEvent({
+        const response = await executeInputEvent({
             db: ctx.db,
             requestId,
             eventType: path,
+            payload,
             actorUserId: ctx.auth?.user.id,
             execute: async (transaction) => {
                 const result = await next({
@@ -85,13 +92,21 @@ const inputEventMiddleware = t.middleware(async ({ ctx, type, path, next }) => {
                     throw result.error;
                 }
                 journalPersisted = Boolean(await writeReadModelChangeJournal(transaction, changeJournal.snapshot()));
-                return result;
+                executedResult = result;
+                return result.data;
             },
         });
         if (journalPersisted) {
             ctx.readModelOutbox?.wake();
         }
-        return result;
+        if (executedResult) {
+            return executedResult;
+        }
+        return {
+            marker: middlewareMarker,
+            ok: true,
+            data: response,
+        };
     } catch (error) {
         if (error instanceof DuplicateInputEventError) {
             throw new TRPCError({

@@ -1,4 +1,4 @@
-import type { MessageTarget } from '@sammo-ts/logic';
+import { resolveMessageTargetIcon, type MessageTarget } from '@sammo-ts/logic';
 
 import type { DatabaseClient, GeneralRow } from '../context.js';
 
@@ -42,5 +42,5 @@ export const buildNationTarget = (nationId: number, nationName: string, color: s
     nationId,
     nationName,
     color,
-    icon: '',
+    icon: resolveMessageTargetIcon(null),
 });

@@ -675,6 +675,7 @@ describe('auction integration flow', () => {
             directTransport.requestCommand(
                 {
                     type: 'auctionBid',
+                    userId: validBidder.userId,
                     auctionId: auction.id,
                     generalId: validBidder.generalId,
                     amount: 400,
@@ -717,6 +718,7 @@ describe('auction integration flow', () => {
             directTransport.requestCommand(
                 {
                     type: 'auctionBid',
+                    userId: spareBidder.userId,
                     auctionId: auction.id,
                     generalId: spareBidder.generalId,
                     amount: 400,

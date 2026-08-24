@@ -225,6 +225,10 @@ describe('typed item lifecycle events', () => {
                 format: LogFormat.MONTH,
             },
         ]);
+        expect(logs.at(-1)).toMatchObject({
+            message: expect.stringContaining('【판매】'),
+            format: LogFormat.YEAR_MONTH,
+        });
         expect(outcome.effects).toContainEqual(
             expect.objectContaining({
                 type: 'general:patch',

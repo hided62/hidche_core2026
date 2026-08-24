@@ -12,6 +12,7 @@ import {
     type GamePrismaClient,
     type RedisConnector,
 } from '@sammo-ts/infra';
+import { MESSAGE_MAILBOX_NATIONAL_BASE } from '@sammo-ts/logic';
 
 import { RedisAccessTokenStore } from '../src/auth/accessTokenStore.js';
 import { createGameApiServer } from '../src/server.js';
@@ -21,8 +22,14 @@ const integration = describe.skipIf(!databaseUrl || !process.env.REDIS_URL);
 const profileId = process.env.POSTGRES_SCHEMA ?? 'public';
 const profileName = `che:diplomacy-html-${process.pid}`;
 const userId = `diplomacy-html-user-${process.pid}`;
-const fixtureId = 920_000 + (process.pid % 50_000);
+// National and diplomacy mailboxes use the Ref-compatible 9000 + nation id
+// address space, so a real nation fixture must stay in 1..998; 999 is public.
+const fixtureId = 861;
 const foreignNationId = fixtureId + 1;
+const fixtureMailboxes = [
+    MESSAGE_MAILBOX_NATIONAL_BASE + fixtureId,
+    MESSAGE_MAILBOX_NATIONAL_BASE + foreignNationId,
+] as const;
 const secret = 'diplomacy-html-http-secret';
 const redisPrefix = `sammo:diplomacy-html:${process.pid}`;
 const envKeys = [
@@ -66,7 +73,22 @@ const deleteProfileRedisKeys = async (): Promise<void> => {
     }
 };
 
+const isFixtureOutboxPayload = (payload: unknown): boolean => {
+    if (!payload || typeof payload !== 'object' || !('changes' in payload)) return false;
+    const changes = (payload as { changes?: unknown }).changes;
+    return (
+        Array.isArray(changes) &&
+        changes.some(
+            (change) =>
+                Array.isArray(change) &&
+                change[0] === 'messages.mailbox' &&
+                fixtureMailboxes.includes(change[1] as (typeof fixtureMailboxes)[number])
+        )
+    );
+};
+
 const cleanup = async (): Promise<void> => {
+    await db.message.deleteMany({ where: { mailbox: { in: [...fixtureMailboxes] } } });
     await db.diplomacyLetter.deleteMany({
         where: {
             OR: [
@@ -77,6 +99,15 @@ const cleanup = async (): Promise<void> => {
             ],
         },
     });
+    await db.inputEvent.deleteMany({ where: { actorUserId: userId } });
+    await db.readModelRevision.deleteMany({
+        where: { domain: 'messages.mailbox', entityId: { in: [...fixtureMailboxes] } },
+    });
+    const outboxes = await db.readModelOutbox.findMany({ select: { id: true, payload: true } });
+    const outboxIds = outboxes.filter(({ payload }) => isFixtureOutboxPayload(payload)).map(({ id }) => id);
+    if (outboxIds.length > 0) {
+        await db.readModelOutbox.deleteMany({ where: { id: { in: outboxIds } } });
+    }
     await db.generalAccessLog.deleteMany({ where: { generalId: fixtureId } });
     await db.general.deleteMany({ where: { id: fixtureId } });
     await db.nation.deleteMany({ where: { id: { in: [fixtureId, foreignNationId] } } });

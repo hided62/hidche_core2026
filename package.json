@@ -13,6 +13,7 @@
         "test:prepare": "pnpm --filter @sammo-ts/infra prisma:generate && pnpm --filter @sammo-ts/common build && pnpm --filter @sammo-ts/logic build && pnpm --filter @sammo-ts/infra build && pnpm --filter @sammo-ts/game-engine build && pnpm --filter @sammo-ts/game-api build && pnpm --filter @sammo-ts/gateway-api build",
         "test:integration": "pnpm --filter @sammo-ts/integration-tests test:integration",
         "test:integration:conditional": "./tools/run-conditional-integration.sh",
+        "test:conditional-integration-registry": "node --test tools/check-conditional-integration-files.test.mjs",
         "build": "turbo build",
         "typecheck": "turbo typecheck",
         "tsc7": "node_modules/@typescript/native/bin/tsc",

@@ -6,6 +6,10 @@ import {
     compareTurnSnapshotDeltas,
     compareTurnSnapshots,
 } from '../src/turn-differential/compare.js';
+import {
+    projectRefFloatRead,
+    projectSnapshotThroughRefFloatRead,
+} from '../src/turn-differential/legacyNumericProjection.js';
 
 const snapshot = (
     engine: 'ref' | 'core2026',
@@ -29,6 +33,23 @@ const snapshot = (
 });
 
 describe('turn snapshot differential comparator', () => {
+    it('projects only explicitly selected Core numeric state through the Ref FLOAT boundary', () => {
+        expect(projectRefFloatRead(1_000.0048)).toBe(1_000);
+        expect(projectRefFloatRead(1_000.009)).toBe(1_000.01);
+        expect(projectRefFloatRead(70.10659591920879)).toBe(70.1066);
+
+        const core = snapshot('core2026', {
+            cities: [{ id: 1, trust: 70.10659591920879, agriculture: 123.456789 }],
+            nations: [{ id: 1, tech: 1_000.009, gold: 123.456789 }],
+        });
+        const projected = projectSnapshotThroughRefFloatRead(core, { cityTrust: true, nationTech: true });
+
+        expect(projected.cities[0]).toEqual({ id: 1, trust: 70.1066, agriculture: 123.456789 });
+        expect(projected.nations[0]).toEqual({ id: 1, tech: 1_000.01, gold: 123.456789 });
+        expect(core.cities[0]?.trust).toBe(70.10659591920879);
+        expect(core.nations[0]?.tech).toBe(1_000.009);
+    });
+
     it('compares entity arrays by semantic identity instead of database row order', () => {
         const reference = snapshot('ref', {
             cities: [
@@ -195,6 +216,116 @@ describe('turn snapshot differential comparator', () => {
         expect(() => compareTurnSnapshots(reference, core)).toThrowError(expectedError);
         expect(() => compareTurnSnapshotDeltas(snapshot('ref'), reference, snapshot('core2026'), core)).toThrowError(
             expectedError
+        );
+    });
+
+    it('keys multiple cooldowns for one owner by owner and action name', () => {
+        const referenceBefore = snapshot('ref', {
+            world: {
+                year: 183,
+                month: 1,
+                tickMinutes: 10,
+                turnTime: '0183-01-01T00:00:00.000Z',
+                isUnited: 0,
+                generalCooldowns: [
+                    { generalId: 1, actionName: '일반 행동', nextAvailableTurn: 0 },
+                    { generalId: 1, actionName: '특수 행동', nextAvailableTurn: 0 },
+                ],
+                nationCooldowns: [
+                    { nationId: 1, actionName: '피장파장', nextAvailableTurn: 0 },
+                    { nationId: 1, actionName: '이호경식', nextAvailableTurn: 0 },
+                ],
+            },
+        });
+        const coreBefore = snapshot('core2026', {
+            world: {
+                year: 183,
+                month: 1,
+                tickMinutes: 10,
+                turnTime: '0183-01-01T00:00:00.000Z',
+                isUnited: 0,
+                generalCooldowns: [
+                    { generalId: 1, actionName: '특수 행동', nextAvailableTurn: 0 },
+                    { generalId: 1, actionName: '일반 행동', nextAvailableTurn: 0 },
+                ],
+                nationCooldowns: [
+                    { nationId: 1, actionName: '이호경식', nextAvailableTurn: 0 },
+                    { nationId: 1, actionName: '피장파장', nextAvailableTurn: 0 },
+                ],
+            },
+        });
+        const reference = snapshot('ref', {
+            world: {
+                year: 183,
+                month: 1,
+                tickMinutes: 10,
+                turnTime: '0183-01-01T00:00:00.000Z',
+                isUnited: 0,
+                generalCooldowns: [
+                    { generalId: 1, actionName: '일반 행동', nextAvailableTurn: 3 },
+                    { generalId: 1, actionName: '특수 행동', nextAvailableTurn: 7 },
+                ],
+                nationCooldowns: [
+                    { nationId: 1, actionName: '피장파장', nextAvailableTurn: 9 },
+                    { nationId: 1, actionName: '이호경식', nextAvailableTurn: 11 },
+                ],
+            },
+        });
+        const core = snapshot('core2026', {
+            world: {
+                year: 183,
+                month: 1,
+                tickMinutes: 10,
+                turnTime: '0183-01-01T00:00:00.000Z',
+                isUnited: 0,
+                generalCooldowns: [
+                    { generalId: 1, actionName: '특수 행동', nextAvailableTurn: 7 },
+                    { generalId: 1, actionName: '일반 행동', nextAvailableTurn: 3 },
+                ],
+                nationCooldowns: [
+                    { nationId: 1, actionName: '이호경식', nextAvailableTurn: 11 },
+                    { nationId: 1, actionName: '피장파장', nextAvailableTurn: 9 },
+                ],
+            },
+        });
+
+        expect(compareTurnSnapshots(reference, core)).toEqual([]);
+        expect(compareTurnSnapshotDeltas(referenceBefore, reference, coreBefore, core)).toEqual([]);
+
+        const mutant = snapshot('core2026', {
+            ...core,
+            world: {
+                ...core.world,
+                nationCooldowns: [
+                    { nationId: 1, actionName: '이호경식', nextAvailableTurn: 11 },
+                    { nationId: 1, actionName: '피장파장', nextAvailableTurn: 10 },
+                ],
+            },
+        });
+        expect(compareTurnSnapshots(reference, mutant)).toContainEqual({
+            path: 'world.nationCooldowns[1:피장파장].nextAvailableTurn',
+            reference: 9,
+            core: 10,
+        });
+        expect(compareTurnSnapshotDeltas(referenceBefore, reference, coreBefore, mutant)).toEqual([
+            {
+                path: 'world.nationCooldowns[1:피장파장].nextAvailableTurn',
+                reference: 9,
+                core: 10,
+            },
+        ]);
+
+        const duplicate = snapshot('ref', {
+            world: {
+                ...reference.world,
+                nationCooldowns: [
+                    { nationId: 1, actionName: '피장파장', nextAvailableTurn: 9 },
+                    { nationId: 1, actionName: '피장파장', nextAvailableTurn: 10 },
+                ],
+            },
+        });
+        expect(() => compareTurnSnapshots(duplicate, core)).toThrowError(
+            'Duplicate semantic entity key "1:피장파장" at "world.nationCooldowns": indexes 0 and 1'
         );
     });
 

@@ -1,8 +1,9 @@
+import { MAX_SAFE_GAME_TICK } from '@sammo-ts/common';
 import { enqueuePrivateMessageWebPush, GamePrisma } from '@sammo-ts/infra';
 import type { MessagePayload, MessageRecordDraft, MessageType } from '@sammo-ts/logic';
 
 import type { DatabaseClient } from '../context.js';
-import { loadCurrentGameTime } from '../services/gameClock.js';
+import { loadCurrentGameTime, type CurrentGameTime } from '../services/gameClock.js';
 
 export interface MessageView {
     id: number;
@@ -47,6 +48,19 @@ const formatMessageTime = (value: Date): string => {
     )} ${pad(value.getHours())}:${pad(value.getMinutes())}:${pad(value.getSeconds())}`;
 };
 
+const messageValidityPredicate = (gameTime: CurrentGameTime) => {
+    if (gameTime.tick === null) {
+        // A legacy or partially migrated profile has no authoritative logical
+        // tick. Rows that already carry a tick still need the wall-time
+        // fallback used by the clock migration.
+        return GamePrisma.sql`valid_until > ${gameTime.now}`;
+    }
+    return GamePrisma.sql`(
+        (valid_until_tick IS NOT NULL AND valid_until_tick > ${BigInt(gameTime.tick)})
+        OR (valid_until_tick IS NULL AND valid_until > ${gameTime.now})
+    )`;
+};
+
 const toMessageView = (row: MessageRow): MessageView => {
     const payload = parsePayload(row.message);
     return {
@@ -63,6 +77,11 @@ const toMessageView = (row: MessageRow): MessageView => {
 export const insertMessage = async (db: DatabaseClient, draft: MessageRecordDraft): Promise<number> => {
     const gameTime = await loadCurrentGameTime(db);
     const toTickOrNull = (date: Date): bigint | null => {
+        // Ref represents its unlimited 9999-12-31 message lifetime with the
+        // largest safe game tick instead of falling back to a wall-clock-only row.
+        if (date.getUTCFullYear() >= 9000) {
+            return BigInt(MAX_SAFE_GAME_TICK);
+        }
         try {
             const tick = gameTime.dateToTick(date);
             return tick === null ? null : BigInt(tick);
@@ -107,10 +126,7 @@ export const fetchMessagesFromMailbox = async (params: {
         FROM message
         WHERE mailbox = ${params.mailbox}
             AND type = ${params.msgType}
-            AND (
-                (valid_until_tick IS NOT NULL AND valid_until_tick > ${gameTime.tick === null ? null : BigInt(gameTime.tick)})
-                OR (valid_until_tick IS NULL AND valid_until > ${gameTime.now})
-            )
+            AND ${messageValidityPredicate(gameTime)}
             AND id >= ${fromSeq}
         ORDER BY id DESC
         LIMIT ${params.limit}
@@ -132,10 +148,7 @@ export const fetchOldMessagesFromMailbox = async (params: {
         FROM message
         WHERE mailbox = ${params.mailbox}
             AND type = ${params.msgType}
-            AND (
-                (valid_until_tick IS NOT NULL AND valid_until_tick > ${gameTime.tick === null ? null : BigInt(gameTime.tick)})
-                OR (valid_until_tick IS NULL AND valid_until > ${gameTime.now})
-            )
+            AND ${messageValidityPredicate(gameTime)}
             AND id < ${params.toSeq}
         ORDER BY id DESC
         LIMIT ${params.limit}
@@ -150,10 +163,7 @@ export const fetchMessageById = async (db: DatabaseClient, id: number): Promise<
         SELECT id, mailbox, type, src, dest, time, valid_until, message
         FROM message
         WHERE id = ${id}
-          AND (
-              (valid_until_tick IS NOT NULL AND valid_until_tick > ${gameTime.tick === null ? null : BigInt(gameTime.tick)})
-              OR (valid_until_tick IS NULL AND valid_until > ${gameTime.now})
-          )
+          AND ${messageValidityPredicate(gameTime)}
         LIMIT 1
     `;
     const row = rows[0];
@@ -173,10 +183,7 @@ export const fetchMessageByIdForUpdate = async (db: DatabaseClient, id: number):
         SELECT id, mailbox, type, src, dest, time, valid_until, message
         FROM message
         WHERE id = ${id}
-          AND (
-              (valid_until_tick IS NOT NULL AND valid_until_tick > ${gameTime.tick === null ? null : BigInt(gameTime.tick)})
-              OR (valid_until_tick IS NULL AND valid_until > ${gameTime.now})
-          )
+          AND ${messageValidityPredicate(gameTime)}
         LIMIT 1
         FOR UPDATE
     `;
@@ -199,7 +206,12 @@ export const invalidateMessages = async (db: DatabaseClient, ids: number[]): Pro
         where: { id: { in: uniqueIds } },
         data: {
             validUntil: gameTime.now,
-            ...(gameTime.tick === null ? {} : { validUntilTick: BigInt(gameTime.tick) }),
+            // A partially migrated profile can still carry a legacy logical
+            // sentinel even while no authoritative clock exists. Replace it
+            // with an already-expired logical tick when expiring by wall time;
+            // NULL would fall back to the wall timestamp after clock recovery
+            // and could make the handled message visible again.
+            validUntilTick: gameTime.tick === null ? 0n : BigInt(gameTime.tick),
         },
     });
 };

@@ -254,7 +254,7 @@ transaction commit 뒤에는 dispatcher wake-up만 시도한다.
 설문의 pre-commit Redis publish는 actor/global front-status journal mark로 바꿨다.
 메시지도 pre-commit `messageCreated`를 제거하고 mailbox outbox 전달 뒤 viewer-safe
 `messagesInvalidated`만 공개한다. 국가 설정, 베팅, 외교 응답과 장수 예약명령 direct writer는
-86개 mutation inventory test가 등록/명시적 비대상 분류를 고정한다.
+실제 `appRouter`에 mount된 87개 mutation inventory test가 등록/명시적 비대상 분류를 고정한다.
 
 현재 일부 `authedProcedure`/`accessAuthedProcedure` mutation은 API interactive
 transaction을 잡은 채 `turnDaemon.requestCommand()`의 별도 ENGINE transaction 완료를

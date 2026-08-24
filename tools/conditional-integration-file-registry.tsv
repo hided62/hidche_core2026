@@ -1,0 +1,11 @@
+# Test file	Environment requirement
+test/instantDiplomacyCoreReference.integration.test.ts	reference_instant_diplomacy
+test/instantDiplomacyReference.integration.test.ts	reference_command
+test/monthlyDisasterCoreReference.integration.test.ts	reference_monthly
+test/turnCommandCoreReference.integration.test.ts	reference_command
+test/turnCommandFullLifecycle.integration.test.ts	reference_full_lifecycle
+test/turnCommandGeneralMatrix.integration.test.ts	reference_command
+test/turnCommandNationMatrix.integration.test.ts	reference_command
+test/turnCommandReference.integration.test.ts	reference_command
+test/turnSnapshotReference.integration.test.ts	reference_snapshot
+test/turnTraceFiles.integration.test.ts	saved_trace_pair

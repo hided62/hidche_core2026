@@ -18,8 +18,9 @@ const databaseUrl = process.env.INPUT_EVENT_DATABASE_URL;
 const persistence = describe.skipIf(!databaseUrl);
 const schedule: TurnSchedule = { entries: [{ startMinute: 0, tickMinutes: 10 }] };
 
-const buildGeneral = (id: number, cityId: number, troopId: number): TurnGeneral => ({
+const buildGeneral = (id: number, cityId: number, troopId: number, userId: string | null = null): TurnGeneral => ({
     id,
+    userId,
     name: `fixture-general-${id}`,
     nationId: 1,
     cityId,
@@ -115,8 +116,10 @@ integration('scenario 911 troop join static event parity', () => {
             lastTurnTime: new Date('0180-01-01T00:00:00Z'),
             meta: { killturn: 24 },
         };
+        const actorUserId = 'troop-static-event-parity-user';
+        const actor = buildGeneral(1, 3, 0, actorUserId);
         const snapshot: TurnWorldSnapshot = {
-            generals: [buildGeneral(1, 3, 0), buildGeneral(2, 70, 2)],
+            generals: [actor, buildGeneral(2, 70, 2)],
             cities: [buildCity(3, '출발지'), buildCity(70, String(destination?.name))],
             nations: [
                 {
@@ -166,7 +169,9 @@ integration('scenario 911 troop join static event parity', () => {
         const world = new InMemoryTurnWorld(state, snapshot, { schedule });
         const handler = createTurnDaemonCommandHandler({ world });
 
-        await expect(handler.handle({ type: 'troopJoin', generalId: 1, troopId: 2 })).resolves.toMatchObject({
+        await expect(
+            handler.handle({ type: 'troopJoin', userId: actorUserId, generalId: 1, troopId: 2 })
+        ).resolves.toMatchObject({
             ok: true,
         });
         expect(world.getGeneralById(1)).toMatchObject({
@@ -233,7 +238,8 @@ persistence('scenario 911 troop join static event persistence', () => {
             },
             environment: { mapName: 'miniche', unitSet: 'che_except_siege' },
         };
-        const actor = buildGeneral(actorId, sourceCityId, 0);
+        const actorUserId = 'troop-static-event-persistence-user';
+        const actor = buildGeneral(actorId, sourceCityId, 0, actorUserId);
         const leader = buildGeneral(leaderId, destinationCityId, leaderId);
         actor.name = '가입장수';
         actor.nationId = nationId;
@@ -285,6 +291,7 @@ persistence('scenario 911 troop join static event persistence', () => {
         await db.general.createMany({
             data: [actor, leader].map((general) => ({
                 id: general.id,
+                userId: general.userId,
                 name: general.name,
                 nationId: general.nationId,
                 cityId: general.cityId,
@@ -366,7 +373,7 @@ persistence('scenario 911 troop join static event persistence', () => {
 
         try {
             await expect(
-                handler.handle({ type: 'troopJoin', generalId: actorId, troopId: leaderId })
+                handler.handle({ type: 'troopJoin', userId: actorUserId, generalId: actorId, troopId: leaderId })
             ).resolves.toMatchObject({
                 ok: true,
             });
@@ -379,6 +386,7 @@ persistence('scenario 911 troop join static event persistence', () => {
             });
 
             expect(await db.general.findUniqueOrThrow({ where: { id: actorId } })).toMatchObject({
+                userId: actorUserId,
                 troopId: leaderId,
                 cityId: destinationCityId,
             });

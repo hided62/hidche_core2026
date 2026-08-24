@@ -3,8 +3,10 @@ import path from 'node:path';
 
 import { describe, expect, it } from 'vitest';
 
-import { compareTurnSnapshotDeltas } from '../src/turn-differential/compare.js';
+import type { CanonicalTurnSnapshot } from '../src/turn-differential/canonical.js';
+import { compareTurnSnapshotDeltas, type SnapshotDifference } from '../src/turn-differential/compare.js';
 import { runCoreTurnCommandTrace, type TurnCommandFixtureRequest } from '../src/turn-differential/coreCommandTrace.js';
+import { projectSnapshotThroughRefFloatRead } from '../src/turn-differential/legacyNumericProjection.js';
 import { orderedSemanticLogStreams } from '../src/turn-differential/logProjection.js';
 import {
     projectSemanticTurnMessages,
@@ -52,6 +54,89 @@ const timestampMillis = (value: unknown): number => {
 };
 
 const semanticLogSignatures = (logs: Array<Record<string, unknown>>): string[] => orderedSemanticLogStreams(logs);
+
+const conquestTechDifferences: SnapshotDifference[] = [
+    {
+        path: 'nations[1].tech',
+        reference: 0.009999999999990905,
+        core: 0.006600000000048567,
+    },
+];
+const defenderTechDifferences: SnapshotDifference[] = [
+    {
+        path: 'nations[1].tech',
+        reference: 3.6200000000000045,
+        core: 3.623399999999947,
+    },
+    {
+        path: 'nations[2].tech',
+        reference: 5.190000000000055,
+        core: 5.19056999999998,
+    },
+];
+const multipleDefendersTechDifferences: SnapshotDifference[] = [
+    {
+        path: 'nations[1].tech',
+        reference: 3.2100000000000364,
+        core: 3.210239999999999,
+    },
+    {
+        path: 'nations[2].tech',
+        reference: 5.110000000000014,
+        core: 5.1083999999999605,
+    },
+];
+const twoNationConquestTechDifferences: SnapshotDifference[] = [
+    ...conquestTechDifferences,
+    {
+        path: 'nations[2].tech',
+        reference: 0.009999999999990905,
+        core: 0.009900000000016007,
+    },
+];
+
+const expectedSortieRawDifferences: Record<string, SnapshotDifference[]> = {
+    'live sortie conquest': conquestTechDifferences,
+    'live sortie collapsed nation conflict cleanup': conquestTechDifferences,
+    'live sortie against a defending general': defenderTechDifferences,
+    'live sortie against multiple defending generals': multipleDefendersTechDifferences,
+    'live sortie supply retreat': [],
+    'live sortie noncapital conquest': twoNationConquestTechDifferences,
+    'live sortie emergency capital': twoNationConquestTechDifferences,
+    'live sortie conflict arbitration': twoNationConquestTechDifferences,
+    'live sortie tied conflict': twoNationConquestTechDifferences,
+    'live sortie outer lifecycle: conquest': conquestTechDifferences,
+    'live sortie outer lifecycle: collapsed nation conflict cleanup': conquestTechDifferences,
+    'live sortie outer lifecycle: defender': defenderTechDifferences,
+    'live sortie outer lifecycle: multiple defenders': multipleDefendersTechDifferences,
+    'live sortie outer lifecycle: supply retreat': [],
+    'live sortie outer lifecycle: noncapital conquest': twoNationConquestTechDifferences,
+    'live sortie outer lifecycle: emergency capital': twoNationConquestTechDifferences,
+    'live sortie outer lifecycle: conflict arbitration': twoNationConquestTechDifferences,
+    'live sortie outer lifecycle: tied conflict': twoNationConquestTechDifferences,
+    'collapse scout positive': conquestTechDifferences,
+};
+
+const expectSortieDeltaParity = (
+    reference: { before: CanonicalTurnSnapshot; after: CanonicalTurnSnapshot },
+    core: { before: CanonicalTurnSnapshot; after: CanonicalTurnSnapshot },
+    ignoredPathPatterns: RegExp[],
+    expectedRawDifferences: SnapshotDifference[]
+): void => {
+    const rawDifferences = compareTurnSnapshotDeltas(reference.before, reference.after, core.before, core.after, {
+        ignoredPathPatterns,
+    });
+    expect(rawDifferences).toEqual(expectedRawDifferences);
+    expect(
+        compareTurnSnapshotDeltas(
+            reference.before,
+            reference.after,
+            projectSnapshotThroughRefFloatRead(core.before, { nationTech: true }),
+            projectSnapshotThroughRefFloatRead(core.after, { nationTech: true }),
+            { ignoredPathPatterns }
+        )
+    ).toEqual([]);
+};
 
 const readFixture = (relativePath: string): TurnCommandFixtureRequest => {
     const stackRoot = path.join(workspaceRoot!, 'docker_compose_files/reference');
@@ -281,16 +366,23 @@ integration('core ↔ legacy command-boundary differential', () => {
                 );
                 expect(semanticLogSignatures(core.after.logs)).toEqual(semanticLogSignatures(referenceAddedLogs));
             }
-            expect(
-                compareTurnSnapshotDeltas(reference.before, reference.after, core.before, core.after, {
-                    ignoredPathPatterns:
-                        request.action === 'che_출병'
-                            ? request.includeLifecycle
-                                ? comparedLifecycleIgnoredPaths
-                                : ignoredLifecyclePaths
-                            : [...ignoredLifecyclePaths, /^generals\[[^\]]+\]\.killTurn(?:\.|$)/],
-                })
-            ).toEqual([]);
+            const ignoredPathPatterns =
+                request.action === 'che_출병'
+                    ? request.includeLifecycle
+                        ? comparedLifecycleIgnoredPaths
+                        : ignoredLifecyclePaths
+                    : [...ignoredLifecyclePaths, /^generals\[[^\]]+\]\.killTurn(?:\.|$)/];
+            if (request.action === 'che_출병') {
+                const expectedRawDifferences = expectedSortieRawDifferences[label];
+                expect(expectedRawDifferences, `missing raw numeric contract for ${label}`).toBeDefined();
+                expectSortieDeltaParity(reference, core, ignoredPathPatterns, expectedRawDifferences!);
+            } else {
+                expect(
+                    compareTurnSnapshotDeltas(reference.before, reference.after, core.before, core.after, {
+                        ignoredPathPatterns,
+                    })
+                ).toEqual([]);
+            }
         },
         120_000
     );
@@ -345,10 +437,11 @@ integration('core ↔ legacy command-boundary differential', () => {
             unreadPrivateDelta: 1,
             hasUnreadMessage: true,
         });
-        expect(
-            compareTurnSnapshotDeltas(reference.before, reference.after, core.before, core.after, {
-                ignoredPathPatterns: ignoredLifecyclePaths,
-            })
-        ).toEqual([]);
+        expectSortieDeltaParity(
+            reference,
+            core,
+            ignoredLifecyclePaths,
+            expectedSortieRawDifferences['collapse scout positive']!
+        );
     }, 120_000);
 });

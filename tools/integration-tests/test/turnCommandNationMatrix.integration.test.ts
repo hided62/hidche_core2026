@@ -205,6 +205,8 @@ const buildRequest = (
             startYear: 180,
             year: 190,
             month: 1,
+            develCost: 18,
+            isUnited: 0,
             hiddenSeed: 'turn-command-nation-matrix-v1',
             freezeClock: true,
             ...fixturePatches.world,
@@ -819,6 +821,7 @@ integration('legacy nation lifecycle comparison guard', () => {
 type NationActiveActionInheritanceCase = {
     name: string;
     request: NationMatrixCase;
+    initialPoint?: number;
     expectedPointDelta: number;
 };
 
@@ -826,6 +829,7 @@ const nationActiveActionInheritanceCases: NationActiveActionInheritanceCase[] = 
     {
         name: 'ordinary award does not count as a legacy active action',
         request: ['che_포상', { isGold: true, amount: 100, destGeneralID: 3 }],
+        initialPoint: 6,
         expectedPointDelta: 0,
     },
     {
@@ -857,8 +861,18 @@ const readNationActorActiveActionPoints = (
 integration('nation active-action inheritance point parity', () => {
     it.each(nationActiveActionInheritanceCases)(
         '$name',
-        async ({ name, request: [action, args, fixturePatches], expectedPointDelta }) => {
-            const request = buildRequest(action, args, fixturePatches);
+        async ({ name, request: [action, args, fixturePatches], initialPoint = 0, expectedPointDelta }) => {
+            const request = buildRequest(action, args, {
+                ...fixturePatches,
+                generals: {
+                    ...fixturePatches?.generals,
+                    1: {
+                        ...fixturePatches?.generals?.[1],
+                        ownerId: 2_000_000_001,
+                        inheritActiveActionPoints: initialPoint,
+                    },
+                },
+            });
             request.setup!.world!.hiddenSeed = `nation-active-action-${name}`;
             const reference = runReferenceTurnCommandTraceRequest(
                 workspaceRoot!,
@@ -871,6 +885,8 @@ integration('nation active-action inheritance point parity', () => {
             const corePointDelta =
                 readNationActorActiveActionPoints(core.after, 1) - readNationActorActiveActionPoints(core.before, 1);
 
+            expect(readNationActorActiveActionPoints(reference.before, 1)).toBe(initialPoint);
+            expect(readNationActorActiveActionPoints(core.before, 1)).toBe(initialPoint);
             expect(reference.execution.outcome).toMatchObject({ completed: true });
             expect(core.execution.outcome).toMatchObject({
                 requestedAction: action,
@@ -1902,7 +1918,7 @@ integration('nation volunteer-recruitment constraints, creation values, RNG, and
                         expect(readNumericField(created, 'killTurn')).toBeGreaterThanOrEqual(64);
                         expect(readNumericField(created, 'killTurn')).toBeLessThanOrEqual(70);
                     }
-                    const addedLogs = snapshot.after.logs.slice(snapshot.before.logs.length);
+                    const addedLogs = addedReferenceLogs(snapshot.before, snapshot.after.logs);
                     expect(addedLogs.map((entry) => entry.text)).toEqual(
                         expect.arrayContaining([expect.stringContaining('의병모집 발동')])
                     );
@@ -2965,7 +2981,7 @@ integration('nation seizure zero target balance parity', () => {
             request as unknown as Record<string, unknown>
         );
         const core = await runCoreTurnCommandTrace(request, reference.before);
-        const referenceLogs = reference.after.logs.slice(reference.before.logs.length);
+        const referenceLogs = addedReferenceLogs(reference.before, reference.after.logs);
 
         expect(reference.execution.outcome).toMatchObject({ completed: true });
         expect(core.execution.outcome).toMatchObject({
@@ -3227,7 +3243,7 @@ integration('nation material aid resource boundaries', () => {
             request as unknown as Record<string, unknown>
         );
         const core = await runCoreTurnCommandTrace(request, reference.before);
-        const referenceLogs = reference.after.logs.slice(reference.before.logs.length);
+        const referenceLogs = addedReferenceLogs(reference.before, reference.after.logs);
 
         expect(referenceLogs.map((entry) => entry.text)).toEqual(
             expect.arrayContaining([expect.stringContaining('쌀<C>0</>를 지원')])
@@ -3394,7 +3410,7 @@ integration('nation material aid accumulated assistance and officer logs', () =>
             request as unknown as Record<string, unknown>
         );
         const core = await runCoreTurnCommandTrace(request, reference.before);
-        const referenceLogs = reference.after.logs.slice(reference.before.logs.length);
+        const referenceLogs = addedReferenceLogs(reference.before, reference.after.logs);
         const sourceOfficerLog = {
             generalId: 3,
             text: expect.stringContaining('<D><b>타국</b></>으로 금<C>100</> 쌀<C>200</>을 지원했습니다.'),
@@ -3574,7 +3590,7 @@ integration('nation population move value and resource boundaries', () => {
             }
             if (amount === 0) {
                 const zeroMoveText = '인구 <C>0</>명을 옮겼습니다.';
-                expect(reference.after.logs.slice(reference.before.logs.length).map((entry) => entry.text)).toEqual(
+                expect(addedReferenceLogs(reference.before, reference.after.logs).map((entry) => entry.text)).toEqual(
                     expect.arrayContaining([expect.stringContaining(zeroMoveText)])
                 );
                 expect(core.after.logs.map((entry) => entry.text)).toEqual(
@@ -4629,7 +4645,7 @@ integration('nation random capital constraints, candidates, RNG, and city reset 
                     readNumericField(readGeneralMeta(coreGeneralBefore), 'inherit_active_action')
                 );
                 const noCandidateText = '이동할 수 있는 도시가 없습니다.';
-                expect(reference.after.logs.slice(reference.before.logs.length).map((entry) => entry.text)).toEqual(
+                expect(addedReferenceLogs(reference.before, reference.after.logs).map((entry) => entry.text)).toEqual(
                     expect.arrayContaining([expect.stringContaining(noCandidateText)])
                 );
                 expect(core.after.logs.map((entry) => entry.text)).toEqual(
@@ -4771,6 +4787,11 @@ integration('nation event research turn, reserve, and duplicate-state boundaries
                         gold: gold ?? requiredGold,
                         rice: rice ?? requiredRice,
                         meta: {
+                            // The Ref CLI decodes an otherwise empty JSON object into a
+                            // PHP array and persists it as `[]`. Keep a semantically inert
+                            // key so this matrix observes the research mutation rather
+                            // than an object-to-array fixture transport artifact.
+                            matrix_fixture: 'research-boundary',
                             ...(setAuxValue ? { [config.auxKey]: auxValue } : {}),
                         },
                         turnLastByOfficerLevel: {
@@ -5055,7 +5076,7 @@ integration('nation mobilize-people target, delay, and city-effect boundaries', 
                     if (expectedWall !== undefined) {
                         expect(readNumericField(cityAfter, 'wall')).toBe(expectedWall);
                     }
-                    const addedLogs = snapshot.after.logs.slice(snapshot.before.logs.length);
+                    const addedLogs = addedReferenceLogs(snapshot.before, snapshot.after.logs);
                     expect(addedLogs.map((entry) => entry.text)).toEqual(
                         expect.arrayContaining([expect.stringContaining('백성동원 발동')])
                     );
@@ -5349,7 +5370,7 @@ integration('nation degrade-relations target, diplomacy, front, and cooldown bou
                     expect(readNumericField(sourceCityAfter, 'frontState')).toBe(expectedSourceFront);
                     expect(readNumericField(destCityAfter, 'frontState')).toBe(expectedDestFront);
 
-                    const addedLogs = snapshot.after.logs.slice(snapshot.before.logs.length);
+                    const addedLogs = addedReferenceLogs(snapshot.before, snapshot.after.logs);
                     expect(addedLogs.map((entry) => entry.text)).toEqual(
                         expect.arrayContaining([expect.stringContaining('이호경식 발동')])
                     );
@@ -5656,7 +5677,7 @@ integration('nation surprise-attack target, diplomacy-term, front, and cooldown 
                     expect(readNumericField(sourceCityAfter, 'frontState')).toBe(expectedSourceFront);
                     expect(readNumericField(destCityAfter, 'frontState')).toBe(expectedDestFront);
 
-                    const addedLogs = snapshot.after.logs.slice(snapshot.before.logs.length);
+                    const addedLogs = addedReferenceLogs(snapshot.before, snapshot.after.logs);
                     expect(addedLogs.map((entry) => entry.text)).toEqual(
                         expect.arrayContaining([expect.stringContaining('급습 발동')])
                     );
@@ -5964,7 +5985,7 @@ integration('nation desperate-survival multistep, diplomacy, effects, and cooldo
                 expect(readNumericField(foreignAfter, 'atmos')).toBe(readNumericField(foreignBefore, 'atmos'));
 
                 if (completed) {
-                    const addedLogs = snapshot.after.logs.slice(snapshot.before.logs.length);
+                    const addedLogs = addedReferenceLogs(snapshot.before, snapshot.after.logs);
                     expect(addedLogs.map((entry) => entry.text)).toEqual(
                         expect.arrayContaining([expect.stringContaining('필사즉생 발동')])
                     );
@@ -6284,7 +6305,7 @@ integration('nation deception target, multistep, movement, RNG, and cooldown bou
                 );
 
                 if (completed) {
-                    const addedLogs = snapshot.after.logs.slice(snapshot.before.logs.length);
+                    const addedLogs = addedReferenceLogs(snapshot.before, snapshot.after.logs);
                     expect(addedLogs.map((entry) => entry.text)).toEqual(
                         expect.arrayContaining([expect.stringContaining('허보 발동')])
                     );
@@ -6735,7 +6756,7 @@ integration('nation scorched-earth constraints, multistep, city values, officers
                 expect(
                     readNumericField(auxAfter, 'did_특성초토화') - readNumericField(auxBefore, 'did_특성초토화')
                 ).toBe(readNumericField(cityBefore, 'level') >= 8 ? 1 : 0);
-                expect(snapshot.after.logs.slice(snapshot.before.logs.length).map((entry) => entry.text)).toEqual(
+                expect(addedReferenceLogs(snapshot.before, snapshot.after.logs).map((entry) => entry.text)).toEqual(
                     expect.arrayContaining([
                         expect.stringContaining('초토화했습니다'),
                         expect.stringContaining('초토화</> 명령'),

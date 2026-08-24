@@ -397,6 +397,111 @@ describe('tournament router permissions and mutations', () => {
         await expect(adminCaller.tournament.getAdminStatus()).resolves.toEqual({ ok: true });
     });
 
+    it('applies the admin role boundary to every tournament mutation', async () => {
+        const redis = new MemoryRedis();
+        const transport = new TournamentTransport();
+        const general = buildGeneral(1, 'user-1');
+        const caller = appRouter.createCaller(
+            buildContext({ redis, transport, generals: [general], userId: 'user-1', roles: ['user'] })
+        );
+        const state = {
+            stage: 1,
+            phase: 0,
+            type: 0,
+            auto: false,
+            openYear: 193,
+            openMonth: 1,
+            termSeconds: 60,
+            nextAt: '2026-07-26T01:00:00.000Z',
+        };
+
+        await expect(caller.tournament.setState(state)).rejects.toMatchObject({ code: 'FORBIDDEN' });
+        await expect(caller.tournament.patchState({ phase: 1 })).rejects.toMatchObject({ code: 'FORBIDDEN' });
+        await expect(caller.tournament.setParticipants([])).rejects.toMatchObject({ code: 'FORBIDDEN' });
+        await expect(caller.tournament.setMatches([])).rejects.toMatchObject({ code: 'FORBIDDEN' });
+        await expect(caller.tournament.setBettingEntries([])).rejects.toMatchObject({ code: 'FORBIDDEN' });
+        await expect(caller.tournament.seedParticipants({ generalIds: [general.id] })).rejects.toMatchObject({
+            code: 'FORBIDDEN',
+        });
+        await expect(caller.tournament.cancel()).rejects.toMatchObject({ code: 'FORBIDDEN' });
+    });
+
+    it('validates and executes every profile-scoped tournament admin mutation', async () => {
+        const redis = new MemoryRedis();
+        const transport = new TournamentTransport();
+        const general = buildGeneral(1, 'user-1');
+        const rival = buildGeneral(2, 'user-2');
+        const caller = appRouter.createCaller(
+            buildContext({
+                redis,
+                transport,
+                generals: [general, rival],
+                userId: 'user-1',
+                roles: ['admin.tournament:che:default'],
+            })
+        );
+        const state = {
+            stage: 6,
+            phase: 0,
+            type: 0,
+            auto: false,
+            openYear: 193,
+            openMonth: 1,
+            termSeconds: 60,
+            nextAt: '2026-07-26T01:00:00.000Z',
+            bettingCloseAt: '2099-01-01T00:00:00.000Z',
+        };
+
+        await expect(caller.tournament.setState(state)).resolves.toEqual({ ok: true });
+        await expect(caller.tournament.patchState({ phase: 2 })).resolves.toEqual({ ok: true });
+        await expect(
+            caller.tournament.setParticipants([
+                {
+                    id: general.id,
+                    name: general.name,
+                    leadership: general.leadership,
+                    strength: general.strength,
+                    intel: general.intel,
+                    level: 5,
+                    groupId: 0,
+                },
+            ])
+        ).resolves.toEqual({ ok: true, count: 1 });
+        await expect(
+            caller.tournament.setMatches([
+                {
+                    id: 1,
+                    stage: 7,
+                    roundIndex: 0,
+                    attackerId: general.id,
+                    defenderId: rival.id,
+                },
+            ])
+        ).resolves.toEqual({ ok: true, count: 1 });
+        await expect(
+            caller.tournament.setBettingEntries([
+                { generalId: general.id, targetId: rival.id, amount: 100 },
+            ])
+        ).resolves.toEqual({ ok: true, count: 1 });
+        await expect(caller.tournament.seedParticipants({ generalIds: [general.id, rival.id] })).resolves.toEqual({
+            ok: true,
+            count: 2,
+        });
+
+        await expect(caller.tournament.cancel()).resolves.toEqual({ ok: true });
+        expect(transport.commands).toContainEqual({
+            type: 'tournamentRefund',
+            refunds: [{ generalId: general.id, amount: 100 }],
+            reason: 'cancel',
+        });
+        await expect(caller.tournament.getState()).resolves.toMatchObject({ stage: 0, phase: 0, auto: false });
+        await expect(caller.tournament.getSnapshot()).resolves.toMatchObject({
+            participants: [],
+            matches: [],
+            betCount: 0,
+        });
+    });
+
     it('returns the legacy tournament rank ordering only to a user who owns a general', async () => {
         const redis = new MemoryRedis();
         const transport = new TournamentTransport();
