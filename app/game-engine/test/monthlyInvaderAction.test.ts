@@ -10,6 +10,7 @@ import {
 import { createMonthlyEventHandler } from '../src/turn/monthlyEventHandler.js';
 import { InMemoryReservedTurnStore } from '../src/turn/reservedTurnStore.js';
 import { buildCommandEnv } from '../src/turn/reservedTurnCommands.js';
+import { createReservedTurnHandler } from '../src/turn/reservedTurnHandler.js';
 import type { TurnEvent, TurnGeneral, TurnWorldSnapshot, TurnWorldState } from '../src/turn/types.js';
 
 const buildCity = (id: number, nationId: number, level: number): City => ({
@@ -313,8 +314,24 @@ describe('invader monthly actions', () => {
             getWorld: () => world,
             reservedTurns: harness.reservedTurns,
         });
+        const reservedTurnHandler = await createReservedTurnHandler({
+            reservedTurns: harness.reservedTurns,
+            scenarioConfig,
+            scenarioMeta: {
+                title: '내부 방랑 실행 fixture',
+                startYear: 190,
+                life: null,
+                fiction: null,
+                history: [],
+                ignoreDefaultEvents: false,
+            },
+            map: harness.snapshot.map,
+            getWorld: () => world,
+            commandProfile: { general: ['휴식'], nation: ['휴식'] },
+        });
         world = new InMemoryTurnWorld(state, harness.snapshot, {
             schedule: { entries: [{ startMinute: 0, tickMinutes: 10 }] },
+            generalTurnHandler: reservedTurnHandler,
             calendarHandler: createMonthlyEventHandler({
                 getWorld: () => world,
                 startYear: 190,
@@ -342,6 +359,17 @@ describe('invader monthly actions', () => {
             Array.from({ length: 30 }, () => ({ action: 'che_방랑', args: {} }))
         );
         expect(harness.reservedTurns.peekDirtyState().generalIds).toEqual([2]);
+
+        const ruler = world.getGeneralById(2);
+        expect(ruler).not.toBeNull();
+        expect(() => world.executeGeneralTurn(ruler!)).not.toThrow();
+        expect(world.getNationById(2)).toMatchObject({
+            name: 'ⓞ도시2대왕',
+            level: 0,
+            capitalCityId: 0,
+            typeCode: 'None',
+        });
+        expect(world.getCityById(2)?.nationId).toBe(0);
     });
 
     it('finishes with the legacy user-win logs and refresh multiplier', async () => {

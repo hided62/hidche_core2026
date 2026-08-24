@@ -60,6 +60,21 @@ export const GENERAL_TURN_COMMAND_KEYS = [
 
 export type GeneralTurnCommandKey = (typeof GENERAL_TURN_COMMAND_KEYS)[number];
 
+/**
+ * 엔진·서신·월간 이벤트만 생성할 수 있고 예약 API의 사용자 입력으로는
+ * 노출하지 않는 명령입니다. 저장된 예약 턴은 문자열 action을 유지하므로,
+ * 입력 경계와 실행 경계를 서로 다른 집합으로 관리합니다.
+ */
+export const INTERNAL_GENERAL_TURN_COMMAND_KEYS = [
+    'che_등용수락',
+    'che_방랑',
+    'che_NPC능동',
+] as const satisfies readonly GeneralTurnCommandKey[];
+
+export type InternalGeneralTurnCommandKey = (typeof INTERNAL_GENERAL_TURN_COMMAND_KEYS)[number];
+
+export type SelectableGeneralTurnCommandKey = Exclude<GeneralTurnCommandKey, InternalGeneralTurnCommandKey>;
+
 export type GeneralTurnCommandSpec = TurnCommandSpecBase<GeneralTurnCommandKey>;
 
 export type GeneralTurnCommandModule = TurnCommandModule<GeneralTurnCommandSpec>;
@@ -126,6 +141,20 @@ const defaultImporters: Record<GeneralTurnCommandKey, GeneralTurnCommandImporter
 
 export const isGeneralTurnCommandKey = (value: string): value is GeneralTurnCommandKey =>
     GENERAL_TURN_COMMAND_KEYS.includes(value as GeneralTurnCommandKey);
+
+const internalGeneralTurnCommandKeySet: ReadonlySet<GeneralTurnCommandKey> = new Set(
+    INTERNAL_GENERAL_TURN_COMMAND_KEYS
+);
+
+export const isInternalGeneralTurnCommandKey = (value: string): value is InternalGeneralTurnCommandKey =>
+    isGeneralTurnCommandKey(value) && internalGeneralTurnCommandKeySet.has(value);
+
+export const isSelectableGeneralTurnCommandKey = (value: string): value is SelectableGeneralTurnCommandKey =>
+    isGeneralTurnCommandKey(value) && !internalGeneralTurnCommandKeySet.has(value);
+
+export const SELECTABLE_GENERAL_TURN_COMMAND_KEYS = GENERAL_TURN_COMMAND_KEYS.filter(
+    (key): key is SelectableGeneralTurnCommandKey => !internalGeneralTurnCommandKeySet.has(key)
+);
 
 export class GeneralTurnCommandLoader {
     private readonly cache = new Map<GeneralTurnCommandKey, Promise<GeneralTurnCommandModule>>();

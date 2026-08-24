@@ -13,9 +13,8 @@ import {
 } from '../../turns/commandTable.js';
 import { loadMapDefinitionByName } from '../../maps/mapDefinition.js';
 import {
-    assertReservedTurnActionAvailable,
     buildEquipmentTradeItemOptions,
-    parseRegisteredTurnArgs,
+    parseReservedTurnArgs,
     TURN_COMMAND_NATION_COLORS,
     type TurnCommandInputOptions,
 } from '../../turns/commandInput.js';
@@ -64,29 +63,21 @@ const buildBulkEntrySchema = (turnList: z.ZodType<number[]>) =>
         args: z.unknown().optional(),
     });
 
-const parseCommandArgs = async (scope: 'general' | 'nation', action: string, args: unknown) => {
+const parseCommandArgs = async (
+    scope: 'general' | 'nation',
+    action: string,
+    args: unknown,
+    worldState: WorldStateRow
+) => {
     try {
-        return await parseRegisteredTurnArgs(scope, action, args);
+        // 사용자 입력은 action별 argument schema보다 먼저 현재 scenario의
+        // 선택 가능 profile을 통과해야 한다. 내부 전용 명령의 parser를 외부
+        // 요청이 직접 호출하지 못하게 하는 첫 경계다.
+        return await parseReservedTurnArgs(scope, action, args, asRecord(worldState.config).const);
     } catch (error) {
         throw new TRPCError({
             code: 'BAD_REQUEST',
             message: error instanceof Error ? error.message : 'Invalid turn command arguments.',
-            cause: error,
-        });
-    }
-};
-
-const assertScenarioCommandAvailable = async (
-    scope: 'general' | 'nation',
-    action: string,
-    worldState: WorldStateRow
-): Promise<void> => {
-    try {
-        await assertReservedTurnActionAvailable(scope, action, asRecord(worldState.config).const);
-    } catch (error) {
-        throw new TRPCError({
-            code: 'BAD_REQUEST',
-            message: error instanceof Error ? error.message : 'Unavailable turn command.',
             cause: error,
         });
     }
@@ -428,9 +419,8 @@ export const turnsRouter = router({
             )
             .mutation(async ({ ctx, input }) => {
                 const general = await getOwnedGeneral(ctx, input.generalId);
-                const args = await parseCommandArgs('general', input.action, input.args);
                 const worldState = await getReservationWorldState(ctx);
-                await assertScenarioCommandAvailable('general', input.action, worldState);
+                const args = await parseCommandArgs('general', input.action, input.args, worldState);
                 await assertReservedTurnPermission(worldState, general, 'general', input.action, args);
 
                 const snapshot = await mutateReservedTurns(() =>
@@ -485,16 +475,15 @@ export const turnsRouter = router({
             )
             .mutation(async ({ ctx, input }) => {
                 const general = await getOwnedGeneral(ctx, input.generalId);
+                const worldState = await getReservationWorldState(ctx);
                 const updates = await Promise.all(
                     input.entries.map(async (entry) => ({
                         turnIndices: expandGeneralTurnIndices(entry.turnList),
                         action: entry.action,
-                        args: await parseCommandArgs('general', entry.action, entry.args),
+                        args: await parseCommandArgs('general', entry.action, entry.args, worldState),
                     }))
                 );
-                const worldState = await getReservationWorldState(ctx);
                 for (const update of updates) {
-                    await assertScenarioCommandAvailable('general', update.action, worldState);
                     await assertReservedTurnPermission(worldState, general, 'general', update.action, update.args);
                 }
                 const snapshot = await mutateReservedTurns(() =>
@@ -532,9 +521,8 @@ export const turnsRouter = router({
                         message: 'General is not an officer.',
                     });
                 }
-                const args = await parseCommandArgs('nation', input.action, input.args);
                 const worldState = await getReservationWorldState(ctx);
-                await assertScenarioCommandAvailable('nation', input.action, worldState);
+                const args = await parseCommandArgs('nation', input.action, input.args, worldState);
                 await assertReservedTurnPermission(worldState, general, 'nation', input.action, args);
 
                 const snapshot = await mutateReservedTurns(() =>
@@ -639,16 +627,15 @@ export const turnsRouter = router({
                         message: 'General is not an officer.',
                     });
                 }
+                const worldState = await getReservationWorldState(ctx);
                 const updates = await Promise.all(
                     input.entries.map(async (entry) => ({
                         turnIndices: entry.turnList,
                         action: entry.action,
-                        args: await parseCommandArgs('nation', entry.action, entry.args),
+                        args: await parseCommandArgs('nation', entry.action, entry.args, worldState),
                     }))
                 );
-                const worldState = await getReservationWorldState(ctx);
                 for (const update of updates) {
-                    await assertScenarioCommandAvailable('nation', update.action, worldState);
                     await assertReservedTurnPermission(worldState, general, 'nation', update.action, update.args);
                 }
                 const snapshot = await mutateReservedTurns(() =>

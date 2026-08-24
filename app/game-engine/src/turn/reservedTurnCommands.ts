@@ -8,6 +8,7 @@ import type {
     UnitSetDefinition,
 } from '@sammo-ts/logic';
 import {
+    INTERNAL_GENERAL_TURN_COMMAND_KEYS,
     LEGACY_RANDOM_GENERAL_FIRST_NAMES,
     LEGACY_RANDOM_GENERAL_LAST_NAMES,
     LEGACY_DEFAULT_MAX_LEVEL,
@@ -173,6 +174,7 @@ export const buildReservedTurnDefinitions = async (options: {
     env: TurnCommandEnv;
     commandProfile: TurnCommandProfile;
     defaultActionKey: GeneralTurnCommandKey & NationTurnCommandKey;
+    internalGeneralCommandKeys?: readonly GeneralTurnCommandKey[];
 }): Promise<{
     general: Map<string, GeneralActionDefinition>;
     nation: Map<string, GeneralActionDefinition>;
@@ -198,7 +200,10 @@ export const buildReservedTurnDefinitions = async (options: {
     options.env.warActionModules ??= moduleBundle.war;
     options.env.nationTraitModules = moduleBundle.nationTraitModules;
 
-    const generalSpecs = await loadGeneralTurnCommandSpecs(options.commandProfile.general);
+    const generalSpecs = await loadGeneralTurnCommandSpecs([
+        ...options.commandProfile.general,
+        ...(options.internalGeneralCommandKeys ?? INTERNAL_GENERAL_TURN_COMMAND_KEYS),
+    ]);
     const nationSpecs = await loadNationTurnCommandSpecs(options.commandProfile.nation);
 
     const general = new Map(generalSpecs.map((spec) => [spec.key, spec.createDefinition(options.env)]));

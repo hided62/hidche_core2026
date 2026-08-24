@@ -2,6 +2,7 @@ import { GameClock, LiteHashDRBG, RandUtil, type RNG } from '@sammo-ts/common';
 import { readLegacyStoredFloat } from '@sammo-ts/logic/compat/legacyFloat.js';
 import {
     GENERAL_TURN_COMMAND_KEYS,
+    isSelectableGeneralTurnCommandKey,
     LogFormat,
     NATION_TURN_COMMAND_KEYS,
     normalizeScenarioEffect,
@@ -12,6 +13,7 @@ import {
     type MessageRecordDraft,
     type Nation,
     type TurnCommandProfile,
+    type SelectableGeneralTurnCommandKey,
     type UnitSetDefinition,
 } from '@sammo-ts/logic';
 import { InMemoryTurnWorld } from '@sammo-ts/game-engine/turn/inMemoryWorld.js';
@@ -239,14 +241,14 @@ export const createCoreTurnCommandProfile = (request: TurnCommandFixtureRequest)
         if (!GENERAL_TURN_COMMAND_KEYS.includes(request.action as (typeof GENERAL_TURN_COMMAND_KEYS)[number])) {
             throw new Error(`Unknown general command: ${request.action}`);
         }
-        const generalActions = [
-            request.action,
-            ...configuredGeneralActions,
+        const generalActions: SelectableGeneralTurnCommandKey[] = [
+            ...(isSelectableGeneralTurnCommandKey(request.action) ? [request.action] : []),
+            ...configuredGeneralActions.filter(isSelectableGeneralTurnCommandKey),
             '휴식',
             'che_인재탐색',
             'che_해산',
             'che_이동',
-        ] as Array<(typeof GENERAL_TURN_COMMAND_KEYS)[number]>;
+        ];
         return {
             general: [...new Set(generalActions)],
             nation: [...new Set(['휴식', ...configuredNationActions])] as Array<
@@ -257,10 +259,12 @@ export const createCoreTurnCommandProfile = (request: TurnCommandFixtureRequest)
     if (!NATION_TURN_COMMAND_KEYS.includes(request.action as (typeof NATION_TURN_COMMAND_KEYS)[number])) {
         throw new Error(`Unknown nation command: ${request.action}`);
     }
+    const generalActions: SelectableGeneralTurnCommandKey[] = [
+        '휴식',
+        ...configuredGeneralActions.filter(isSelectableGeneralTurnCommandKey),
+    ];
     return {
-        general: [...new Set(['휴식', ...configuredGeneralActions])] as Array<
-            (typeof GENERAL_TURN_COMMAND_KEYS)[number]
-        >,
+        general: [...new Set(generalActions)],
         nation: [
             ...new Set([
                 request.action as (typeof NATION_TURN_COMMAND_KEYS)[number],

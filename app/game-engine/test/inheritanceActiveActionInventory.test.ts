@@ -1,5 +1,9 @@
 import { describe, expect, it } from 'vitest';
-import { DEFAULT_TURN_COMMAND_PROFILE, type ScenarioConfig } from '@sammo-ts/logic';
+import {
+    DEFAULT_TURN_COMMAND_PROFILE,
+    INTERNAL_GENERAL_TURN_COMMAND_KEYS,
+    type ScenarioConfig,
+} from '@sammo-ts/logic';
 
 import { buildCommandEnv, buildReservedTurnDefinitions } from '../src/turn/reservedTurnCommands.js';
 
@@ -54,6 +58,7 @@ describe('Ref active-action inheritance inventory', () => {
             env: buildCommandEnv(scenarioConfig),
             commandProfile: DEFAULT_TURN_COMMAND_PROFILE,
             defaultActionKey: '휴식',
+            internalGeneralCommandKeys: INTERNAL_GENERAL_TURN_COMMAND_KEYS,
         });
 
         const generalWithFixedOrContextAmount = [...general.entries()]
@@ -70,5 +75,15 @@ describe('Ref active-action inheritance inventory', () => {
             .map(([key]) => key)
             .sort();
         expect(nationWithPoint).toEqual([...nationCommands].sort());
+    });
+
+    it('loads every internal command without adding it to the selectable profile', async () => {
+        const { general } = await buildReservedTurnDefinitions({
+            env: buildCommandEnv(scenarioConfig),
+            commandProfile: { general: ['휴식'], nation: ['휴식'] },
+            defaultActionKey: '휴식',
+        });
+
+        expect([...general.keys()].sort()).toEqual(['che_NPC능동', 'che_등용수락', 'che_방랑', '휴식'].sort());
     });
 });

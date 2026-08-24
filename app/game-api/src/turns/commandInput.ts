@@ -362,7 +362,7 @@ export const loadTurnCommandSpecs = async (scenarioConst?: unknown) => {
     };
 };
 
-export const parseRegisteredTurnArgs = async (
+const parseRegisteredTurnArgs = async (
     scope: 'general' | 'nation',
     action: string,
     rawArgs: unknown
