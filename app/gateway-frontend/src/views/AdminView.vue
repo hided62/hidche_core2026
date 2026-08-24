@@ -99,6 +99,8 @@ type AdminUser = {
     kakaoVerifiedAt?: string;
     kakaoGraceStartedAt: string;
     kakaoGraceUntil?: string;
+    identityRevision?: string;
+    kakaoReplacementApprovedUntil?: string;
     profileIconResetAt?: string;
     deleteAfter?: string;
     createdAt: string;
@@ -288,6 +290,19 @@ type AdminClient = {
             mutate: (input: { userId: string; until: string | null; reason: string }) => Promise<{
                 kakaoGraceUntil: string | null;
             }>;
+        };
+        setKakaoReplacementApproval: {
+            mutate: (input: { userId: string; until: string | null; reason: string }) => Promise<{
+                kakaoReplacementApprovedUntil: string | null;
+            }>;
+        };
+        updateIdentity: {
+            mutate: (input: {
+                userId: string;
+                username: string;
+                displayName: string;
+                reason: string;
+            }) => Promise<{ username: string; displayName: string; identityRevision?: string }>;
         };
         grantSpecialAccess: {
             mutate: (input: {
@@ -544,6 +559,11 @@ const localAccountForm = ref({
 const passwordInput = ref('');
 const passwordResult = ref('');
 const passwordStatus = ref('');
+const identityUsername = ref('');
+const identityDisplayName = ref('');
+const identityStatus = ref('');
+const kakaoReplacementUntil = ref('');
+const kakaoReplacementStatus = ref('');
 
 const rolesInput = ref('');
 const rolesMode = ref<'set' | 'grant' | 'revoke'>('grant');
@@ -624,6 +644,8 @@ const actionFeedback = [
     noticeStatus,
     userError,
     kakaoGraceStatus,
+    identityStatus,
+    kakaoReplacementStatus,
     specialAccessStatus,
     passwordStatus,
     rolesStatus,
@@ -1025,6 +1047,11 @@ const lookupUser = async () => {
             return;
         }
         userResult.value = result;
+        identityUsername.value = result.username;
+        identityDisplayName.value = result.displayName;
+        kakaoReplacementUntil.value = result.kakaoReplacementApprovedUntil
+            ? toLocalInputValue(result.kakaoReplacementApprovedUntil)
+            : toLocalInputValue(new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString());
         const [grace, history] = await Promise.all([
             adminClient.users.getKakaoGracePolicies.query({ userId: result.id }),
             adminClient.users.listHistory.query({ userId: result.id, limit: 50 }),
@@ -1134,6 +1161,56 @@ const updateKakaoGrace = async (clear = false) => {
         await Promise.all([refreshUserHistory(), loadUserDirectory()]);
     } catch {
         kakaoGraceStatus.value = 'OAuth 유예 변경 실패';
+    }
+};
+
+const updateUserIdentity = async () => {
+    if (!userResult.value) return;
+    const reason = requireUserActionReason();
+    if (!reason) return;
+    identityStatus.value = '';
+    try {
+        const result = await adminClient.users.updateIdentity.mutate({
+            userId: userResult.value.id,
+            username: identityUsername.value,
+            displayName: identityDisplayName.value,
+            reason,
+        });
+        userResult.value = { ...userResult.value, ...result };
+        identityUsername.value = result.username;
+        identityDisplayName.value = result.displayName;
+        identityStatus.value = 'ID와 닉네임을 변경했습니다.';
+        await Promise.all([refreshUserHistory(), loadUserDirectory()]);
+    } catch {
+        identityStatus.value = 'ID 또는 닉네임 변경에 실패했습니다.';
+    }
+};
+
+const setKakaoReplacementApproval = async (clear = false) => {
+    if (!userResult.value) return;
+    const reason = requireUserActionReason();
+    if (!reason) return;
+    const until = clear ? null : (serverDateTimeInputToIso(kakaoReplacementUntil.value) ?? null);
+    if (!clear && !until) {
+        kakaoReplacementStatus.value = '올바른 교체 승인 만료 시각을 입력하세요.';
+        return;
+    }
+    try {
+        const result = await adminClient.users.setKakaoReplacementApproval.mutate({
+            userId: userResult.value.id,
+            until,
+            reason,
+        });
+        userResult.value = {
+            ...userResult.value,
+            kakaoReplacementApprovedUntil: result.kakaoReplacementApprovedUntil ?? undefined,
+        };
+        kakaoReplacementStatus.value = result.kakaoReplacementApprovedUntil
+            ? '새 카카오 계정 교체를 승인했습니다.'
+            : '카카오 계정 교체 승인을 해제했습니다.';
+        await refreshUserHistory();
+    } catch {
+        kakaoReplacementStatus.value = '카카오 계정 교체 승인 변경에 실패했습니다.';
     }
 };
 
@@ -1608,6 +1685,10 @@ onMounted(() => {
                             <div v-if="userResult.kakaoGraceUntil" class="text-xs text-amber-300">
                                 관리자 유예: {{ formatServerDateTime(userResult.kakaoGraceUntil) }}까지
                             </div>
+                            <div v-if="userResult.kakaoReplacementApprovedUntil" class="text-xs text-amber-300">
+                                Kakao 교체 승인:
+                                {{ formatServerDateTime(userResult.kakaoReplacementApprovedUntil) }}까지
+                            </div>
                             <div v-if="userResult.deleteAfter" class="text-xs text-red-300">
                                 탈퇴 예약: {{ formatServerDateTime(userResult.deleteAfter) }}
                             </div>
@@ -1702,6 +1783,75 @@ onMounted(() => {
                         <div v-if="localAccountResult" class="text-xs text-emerald-400">
                             {{ localAccountResult }}
                         </div>
+                    </div>
+
+                    <div
+                        v-if="userWorkspaceSection === 'account' && hasUser"
+                        class="bg-zinc-900 border border-zinc-800 rounded-lg p-5 space-y-4"
+                    >
+                        <h4 class="text-base font-semibold">ID · 닉네임 변경</h4>
+                        <p class="text-xs text-zinc-400">
+                            사용자는 직접 바꿀 수 없습니다. 닉네임은 현재 장수에 반영되며 과거 장수와 명예의 전당의 당시
+                            기록은 유지됩니다.
+                        </p>
+                        <div class="grid gap-2">
+                            <label class="text-xs text-zinc-400" for="admin-identity-username">로그인 ID</label>
+                            <input
+                                id="admin-identity-username"
+                                v-model="identityUsername"
+                                type="text"
+                                class="bg-zinc-950 border border-zinc-700 rounded px-3 py-2 text-sm text-white"
+                            />
+                            <label class="text-xs text-zinc-400" for="admin-identity-display-name">닉네임</label>
+                            <input
+                                id="admin-identity-display-name"
+                                v-model="identityDisplayName"
+                                type="text"
+                                class="bg-zinc-950 border border-zinc-700 rounded px-3 py-2 text-sm text-white"
+                            />
+                            <button
+                                type="button"
+                                class="bg-blue-700 hover:bg-blue-600 text-white font-semibold px-4 py-2 rounded"
+                                @click="updateUserIdentity"
+                            >
+                                ID · 닉네임 변경
+                            </button>
+                        </div>
+                        <div class="text-xs text-zinc-500">{{ identityStatus }}</div>
+                    </div>
+
+                    <div
+                        v-if="userWorkspaceSection === 'account' && hasUser && userResult?.oauthType === 'KAKAO'"
+                        class="bg-zinc-900 border border-red-900/70 rounded-lg p-5 space-y-4"
+                    >
+                        <h4 class="text-base font-semibold">Kakao 계정 영구 교체</h4>
+                        <p class="text-xs text-zinc-400">
+                            승인 뒤 사용자가 계정 관리에서 새 Kakao 계정의 소유권을 직접 증명합니다. 교체가 완료되면
+                            기존 Kakao stable ID는 영구 폐기되어 로그인·재가입·재연결에 쓸 수 없습니다.
+                        </p>
+                        <input
+                            v-model="kakaoReplacementUntil"
+                            type="datetime-local"
+                            class="w-full bg-zinc-950 border border-zinc-700 rounded px-3 py-2 text-sm text-white"
+                            aria-label="Kakao 계정 교체 승인 만료 시각"
+                        />
+                        <div class="flex flex-col gap-2 sm:flex-row">
+                            <button
+                                type="button"
+                                class="flex-1 bg-amber-600 hover:bg-amber-500 text-black font-semibold px-4 py-2 rounded"
+                                @click="setKakaoReplacementApproval(false)"
+                            >
+                                교체 승인
+                            </button>
+                            <button
+                                type="button"
+                                class="flex-1 bg-zinc-700 hover:bg-zinc-600 px-4 py-2 rounded"
+                                @click="setKakaoReplacementApproval(true)"
+                            >
+                                승인 해제
+                            </button>
+                        </div>
+                        <div class="text-xs text-zinc-500">{{ kakaoReplacementStatus }}</div>
                     </div>
 
                     <div

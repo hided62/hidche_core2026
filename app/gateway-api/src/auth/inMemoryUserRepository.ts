@@ -28,6 +28,7 @@ export const createInMemoryUserRepository = (hasher: PasswordHasher = createPass
     const usersByName = new Map<string, UserRecord>();
     const usersByOauthId = new Map<string, UserRecord>();
     const usersByEmail = new Map<string, UserRecord>();
+    const retiredKakaoIds = new Set<string>();
     const iconsById = new Map<string, UserIconRecord>();
     const specialAccessGrantsById = new Map<string, SpecialAccountAccessGrantRecord>();
 
@@ -101,7 +102,8 @@ export const createInMemoryUserRepository = (hasher: PasswordHasher = createPass
             }
             if (
                 input.oauth &&
-                (usersByOauthId.has(`${input.oauth.type}:${input.oauth.id}`) ||
+                (retiredKakaoIds.has(input.oauth.id) ||
+                    usersByOauthId.has(`${input.oauth.type}:${input.oauth.id}`) ||
                     usersByEmail.has(input.oauth.email.toLowerCase()))
             ) {
                 throw new Error('Kakao account already linked.');
@@ -124,6 +126,8 @@ export const createInMemoryUserRepository = (hasher: PasswordHasher = createPass
                 oauthId: input.oauth?.id,
                 email: input.oauth?.email,
                 oauthInfo: input.oauth?.info,
+                identityRevision: now.toISOString(),
+                authRevision: 0,
                 picture: 'default.jpg',
                 imageServer: 0,
                 thirdPartyUse: input.thirdPartyUse ?? false,
@@ -213,7 +217,11 @@ export const createInMemoryUserRepository = (hasher: PasswordHasher = createPass
             const normalizedEmail = input.email.toLowerCase();
             const oauthOwner = usersByOauthId.get(`KAKAO:${input.oauthId}`);
             const emailOwner = usersByEmail.get(normalizedEmail);
-            if ((oauthOwner && oauthOwner.id !== userId) || (emailOwner && emailOwner.id !== userId)) {
+            if (
+                retiredKakaoIds.has(input.oauthId) ||
+                (oauthOwner && oauthOwner.id !== userId) ||
+                (emailOwner && emailOwner.id !== userId)
+            ) {
                 throw new Error('Kakao account already linked.');
             }
             for (const user of usersByName.values()) {
@@ -242,7 +250,11 @@ export const createInMemoryUserRepository = (hasher: PasswordHasher = createPass
             const normalizedEmail = input.email.toLowerCase();
             const oauthOwner = usersByOauthId.get(`KAKAO:${input.oauthId}`);
             const emailOwner = usersByEmail.get(normalizedEmail);
-            if ((oauthOwner && oauthOwner.id !== userId) || emailOwner?.id !== userId) {
+            if (
+                retiredKakaoIds.has(input.oauthId) ||
+                (oauthOwner && oauthOwner.id !== userId) ||
+                emailOwner?.id !== userId
+            ) {
                 throw new Error('Kakao account recovery ownership changed.');
             }
             for (const user of usersByName.values()) {
@@ -261,6 +273,86 @@ export const createInMemoryUserRepository = (hasher: PasswordHasher = createPass
                 return user;
             }
             throw new Error('Kakao account recovery ownership changed.');
+        },
+        async isKakaoIdentityRetired(oauthId: string): Promise<boolean> {
+            return retiredKakaoIds.has(oauthId);
+        },
+        async setKakaoReplacementApproval(userId, input): Promise<UserRecord> {
+            for (const user of usersByName.values()) {
+                if (user.id !== userId) continue;
+                user.kakaoReplacementApprovedUntil = input.until?.toISOString();
+                user.kakaoReplacementApprovedByUserId = input.until ? input.approvedByUserId : undefined;
+                user.kakaoReplacementReason = input.until ? input.reason : undefined;
+                return user;
+            }
+            throw new Error('User not found.');
+        },
+        async replaceKakaoWithApprovedIdentity(userId, input): Promise<UserRecord> {
+            const normalizedEmail = input.email.toLowerCase();
+            const oauthOwner = usersByOauthId.get(`KAKAO:${input.oauthId}`);
+            const emailOwner = usersByEmail.get(normalizedEmail);
+            for (const user of usersByName.values()) {
+                if (user.id !== userId) continue;
+                const approvedUntil = user.kakaoReplacementApprovedUntil
+                    ? new Date(user.kakaoReplacementApprovedUntil)
+                    : null;
+                if (
+                    user.oauthType !== 'KAKAO' ||
+                    !user.oauthId ||
+                    user.oauthId === input.oauthId ||
+                    !approvedUntil ||
+                    approvedUntil < input.verifiedAt ||
+                    !user.kakaoReplacementApprovedByUserId ||
+                    !user.kakaoReplacementReason ||
+                    retiredKakaoIds.has(input.oauthId) ||
+                    (oauthOwner && oauthOwner.id !== userId) ||
+                    (emailOwner && emailOwner.id !== userId)
+                ) {
+                    throw new Error('Kakao account replacement is not approved.');
+                }
+                retiredKakaoIds.add(user.oauthId);
+                usersByOauthId.delete(`KAKAO:${user.oauthId}`);
+                if (user.email) usersByEmail.delete(user.email.toLowerCase());
+                user.oauthId = input.oauthId;
+                user.email = normalizedEmail;
+                user.oauthInfo = input.oauthInfo;
+                user.kakaoVerifiedAt = input.verifiedAt.toISOString();
+                user.kakaoTalkVerifiedUntil = undefined;
+                user.kakaoReplacementApprovedUntil = undefined;
+                user.kakaoReplacementApprovedByUserId = undefined;
+                user.kakaoReplacementReason = undefined;
+                user.sessionRevokedBefore = input.verifiedAt.toISOString();
+                user.authRevision = (user.authRevision ?? 0) + 1;
+                usersByOauthId.set(`KAKAO:${input.oauthId}`, user);
+                usersByEmail.set(normalizedEmail, user);
+                return user;
+            }
+            throw new Error('User not found.');
+        },
+        async updateIdentity(userId, input): Promise<UserRecord> {
+            const usernameOwner = usersByName.get(input.username);
+            const displayNameOwner = [...usersByName.values()].find(
+                (candidate) => candidate.displayName === input.displayName
+            );
+            if (
+                (usernameOwner && usernameOwner.id !== userId) ||
+                (displayNameOwner && displayNameOwner.id !== userId)
+            ) {
+                throw new Error('Account identity already exists.');
+            }
+            for (const [username, user] of usersByName.entries()) {
+                if (user.id !== userId) continue;
+                const nextRevision = new Date(
+                    Math.max(input.changedAt.getTime(), new Date(user.identityRevision ?? user.createdAt).getTime() + 1)
+                ).toISOString();
+                usersByName.delete(username);
+                user.username = input.username;
+                user.displayName = input.displayName;
+                user.identityRevision = nextRevision;
+                usersByName.set(input.username, user);
+                return user;
+            }
+            throw new Error('User not found.');
         },
         async updateRoles(userId: string, roles: string[]): Promise<void> {
             for (const user of usersByName.values()) {

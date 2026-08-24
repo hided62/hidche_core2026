@@ -9,6 +9,7 @@ import { procedure, router } from '../trpc.js';
 import type { UserRecord, UserSanctions } from '../auth/userRepository.js';
 import { openPassword, zPasswordEnvelope } from '../auth/registrationInput.js';
 import { resolveEffectiveAccountIcon } from '../auth/accountIconProjection.js';
+import { isGatewaySessionCurrent } from '../auth/sessionValidity.js';
 import { WEB_PUSH_EVENT_TYPES } from '@sammo-ts/common';
 
 const zSessionToken = z.string().min(1);
@@ -31,7 +32,7 @@ const requireSessionUser = async (ctx: GatewayApiContext, sessionToken: string):
         throw new TRPCError({ code: 'UNAUTHORIZED', message: 'Session is not valid.' });
     }
     const user = await ctx.users.findById(session.userId);
-    if (!user) {
+    if (!user || !isGatewaySessionCurrent(session, user)) {
         throw new TRPCError({ code: 'UNAUTHORIZED', message: 'User no longer exists.' });
     }
     return user;
@@ -205,6 +206,7 @@ export const accountRouter = router({
             displayName: user.displayName,
             roles: user.roles,
             oauthType: user.oauthType,
+            kakaoReplacementApprovedUntil: user.kakaoReplacementApprovedUntil ?? null,
             createdAt: user.createdAt,
             iconUrl: buildIconUrl(ctx, user),
             icons: icons.map((icon) => buildLibraryIcon(ctx, icon)),

@@ -24,6 +24,7 @@ export interface GatewayUserInfo {
     id: string;
     username: string;
     displayName: string;
+    identityRevision?: string;
     roles: string[];
     picture?: string;
     imageServer?: number;
@@ -102,6 +103,8 @@ export const parseGameSessionTokenPayload = (value: unknown): GameSessionTokenPa
         typeof user.id !== 'string' ||
         typeof user.username !== 'string' ||
         typeof user.displayName !== 'string' ||
+        (user.identityRevision !== undefined &&
+            (typeof user.identityRevision !== 'string' || !isCanonicalIsoTimestamp(user.identityRevision))) ||
         !Array.isArray(user.roles) ||
         (user.picture !== undefined && typeof user.picture !== 'string') ||
         (user.imageServer !== undefined && (!Number.isSafeInteger(user.imageServer) || user.imageServer < 0)) ||

@@ -675,6 +675,11 @@ describe('gateway auth flow', () => {
         });
         emailOwner.passwordResetRequired = true;
         await users.markKakaoTalkVerified(emailOwner.id, new Date(Date.now() + 60_000));
+        await users.setKakaoReplacementApproval(emailOwner.id, {
+            until: new Date(Date.now() + 60_000),
+            approvedByUserId: 'admin-user-id',
+            reason: '이메일 보존 계정의 교체 승인',
+        });
         kakaoProfile.id = 'different-kakao-id';
 
         const start = await caller.auth.kakaoStart({ mode: 'login' });
@@ -701,12 +706,13 @@ describe('gateway auth flow', () => {
         expect(passwordSet.status).toBe('otp');
         expect(sentTalkMessages).toHaveLength(1);
         expect(await users.findByOauthId('KAKAO', 'original-kakao-id')).toBeNull();
+        expect(await users.isKakaoIdentityRetired('original-kakao-id')).toBe(true);
         expect(await users.findByOauthId('KAKAO', 'different-kakao-id')).toMatchObject({
             id: emailOwner.id,
             username: 'email-owner',
             email: 'tester@example.com',
         });
-        expect(flushPublisher.publishUserFlush).toHaveBeenCalledWith(emailOwner.id, 'kakao-account-relinked');
+        expect(flushPublisher.publishUserFlush).toHaveBeenCalledWith(emailOwner.id, 'kakao-account-replaced');
         expect(flushPublisher.publishUserFlush).toHaveBeenCalledWith(emailOwner.id, 'password-changed');
     });
 
@@ -878,6 +884,44 @@ describe('gateway auth flow', () => {
             code: 'PRECONDITION_FAILED',
             message: expect.stringContaining('복구 여부를 먼저 선택'),
         });
+    });
+
+    it('replaces an approved Kakao identity, retires the old ID, and invalidates older sessions', async () => {
+        const { caller, users, sessions, kakaoProfile, setSessionHeader } = buildCaller({
+            kakaoId: 'new-kakao-id',
+            kakaoEmail: 'new-kakao@example.com',
+        });
+        const user = await users.createUser({
+            username: 'approved-replacement-user',
+            password: 'replacement-password',
+            oauth: { type: 'KAKAO', id: 'old-kakao-id', email: 'old-kakao@example.com', info: {} },
+        });
+        const oldSession = await sessions.createSession(user);
+        setSessionHeader(oldSession.sessionToken);
+        await users.setKakaoReplacementApproval(user.id, {
+            until: new Date(Date.now() + 60_000),
+            approvedByUserId: 'admin-user-id',
+            reason: '사용자 본인 확인 완료',
+        });
+
+        const start = await caller.auth.kakaoStart({ mode: 'verify', sessionToken: oldSession.sessionToken });
+        const result = await caller.auth.kakaoExchange({ code: 'oauth-code', state: start.state });
+        expect(result).toMatchObject({ status: 'otp', successStatus: 'verified' });
+        expect(await users.findById(user.id)).toMatchObject({
+            oauthId: 'new-kakao-id',
+            email: 'new-kakao@example.com',
+            kakaoReplacementApprovedUntil: undefined,
+            authRevision: 1,
+        });
+        await expect(users.isKakaoIdentityRetired('old-kakao-id')).resolves.toBe(true);
+        await expect(caller.auth.me({ sessionToken: oldSession.sessionToken })).resolves.toBeNull();
+
+        kakaoProfile.id = 'old-kakao-id';
+        kakaoProfile.email = 'old-kakao@example.com';
+        const retiredStart = await caller.auth.kakaoStart({ mode: 'login' });
+        await expect(
+            caller.auth.kakaoExchange({ code: 'oauth-code', state: retiredStart.state })
+        ).rejects.toMatchObject({ code: 'FORBIDDEN', message: expect.stringContaining('영구 폐기') });
     });
 
     it('synchronizes a changed email by stable Kakao ID during Kakao login', async () => {

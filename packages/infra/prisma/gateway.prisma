@@ -79,43 +79,61 @@ enum GatewaySourceMode {
 }
 
 model AppUser {
-  id                     String                      @id @default(uuid())
-  loginId                String                      @unique @map("login_id")
-  displayName            String                      @unique @map("display_name")
-  passwordHash           String                      @map("password_hash")
-  passwordSalt           String                      @map("password_salt")
-  passwordResetRequired  Boolean                     @default(false) @map("password_reset_required")
-  roles                  Json                        @default(dbgenerated("'[]'::jsonb"))
-  sanctions              Json                        @default(dbgenerated("'{}'::jsonb"))
-  oauthType              OAuthType                   @default(NONE) @map("oauth_type")
-  oauthId                String?                     @unique @map("oauth_id")
-  email                  String?                     @unique
-  oauthInfo              Json                        @default(dbgenerated("'{}'::jsonb")) @map("oauth_info")
-  picture                String                      @default("default.jpg")
-  imageServer            Int                         @default(0) @map("image_server")
-  iconUpdatedAt          DateTime?                   @map("icon_updated_at")
-  iconRevision           DateTime?                   @map("icon_revision")
-  profileIconResetAt     DateTime?                   @map("profile_icon_reset_at")
-  iconRetiredAt          DateTime?                   @map("icon_retired_at")
-  thirdPartyUse          Boolean                     @default(true) @map("third_party_use")
-  termsAcceptedAt        DateTime?                   @map("terms_accepted_at")
-  privacyAcceptedAt      DateTime?                   @map("privacy_accepted_at")
-  kakaoVerifiedAt        DateTime?                   @map("kakao_verified_at")
-  kakaoTalkVerifiedUntil DateTime?                   @map("kakao_talk_verified_until")
-  kakaoGraceStartedAt    DateTime                    @default(now()) @map("kakao_grace_started_at")
-  kakaoGraceUntil        DateTime?                   @map("kakao_grace_until")
-  deleteAfter            DateTime?                   @map("delete_after")
-  createdAt              DateTime                    @default(now()) @map("created_at")
-  updatedAt              DateTime                    @updatedAt @map("updated_at")
-  lastLoginAt            DateTime?                   @map("last_login_at")
-  legacyData             Json                        @default(dbgenerated("'{}'::jsonb")) @map("legacy_data")
-  icons                  UserIcon[]
-  specialAccessGrants    SpecialAccountAccessGrant[]
-  webPushSubscriptions   WebPushSubscription[]
-  webPushPreferences     WebPushPreference[]
-  webPushNotifications   WebPushNotification[]
+  id                               String                      @id @default(uuid())
+  loginId                          String                      @unique @map("login_id")
+  displayName                      String                      @unique @map("display_name")
+  passwordHash                     String                      @map("password_hash")
+  passwordSalt                     String                      @map("password_salt")
+  passwordResetRequired            Boolean                     @default(false) @map("password_reset_required")
+  roles                            Json                        @default(dbgenerated("'[]'::jsonb"))
+  sanctions                        Json                        @default(dbgenerated("'{}'::jsonb"))
+  oauthType                        OAuthType                   @default(NONE) @map("oauth_type")
+  oauthId                          String?                     @unique @map("oauth_id")
+  email                            String?                     @unique
+  oauthInfo                        Json                        @default(dbgenerated("'{}'::jsonb")) @map("oauth_info")
+  identityRevision                 DateTime                    @default(now()) @map("identity_revision")
+  authRevision                     Int                         @default(0) @map("auth_revision")
+  sessionRevokedBefore             DateTime?                   @map("session_revoked_before")
+  kakaoReplacementApprovedUntil    DateTime?                   @map("kakao_replacement_approved_until")
+  kakaoReplacementApprovedByUserId String?                     @map("kakao_replacement_approved_by_user_id")
+  kakaoReplacementReason           String?                     @map("kakao_replacement_reason")
+  picture                          String                      @default("default.jpg")
+  imageServer                      Int                         @default(0) @map("image_server")
+  iconUpdatedAt                    DateTime?                   @map("icon_updated_at")
+  iconRevision                     DateTime?                   @map("icon_revision")
+  profileIconResetAt               DateTime?                   @map("profile_icon_reset_at")
+  iconRetiredAt                    DateTime?                   @map("icon_retired_at")
+  thirdPartyUse                    Boolean                     @default(true) @map("third_party_use")
+  termsAcceptedAt                  DateTime?                   @map("terms_accepted_at")
+  privacyAcceptedAt                DateTime?                   @map("privacy_accepted_at")
+  kakaoVerifiedAt                  DateTime?                   @map("kakao_verified_at")
+  kakaoTalkVerifiedUntil           DateTime?                   @map("kakao_talk_verified_until")
+  kakaoGraceStartedAt              DateTime                    @default(now()) @map("kakao_grace_started_at")
+  kakaoGraceUntil                  DateTime?                   @map("kakao_grace_until")
+  deleteAfter                      DateTime?                   @map("delete_after")
+  createdAt                        DateTime                    @default(now()) @map("created_at")
+  updatedAt                        DateTime                    @updatedAt @map("updated_at")
+  lastLoginAt                      DateTime?                   @map("last_login_at")
+  legacyData                       Json                        @default(dbgenerated("'{}'::jsonb")) @map("legacy_data")
+  icons                            UserIcon[]
+  specialAccessGrants              SpecialAccountAccessGrant[]
+  webPushSubscriptions             WebPushSubscription[]
+  webPushPreferences               WebPushPreference[]
+  webPushNotifications             WebPushNotification[]
 
   @@map("app_user")
+}
+
+model RetiredKakaoIdentity {
+  id               String   @id @default(uuid())
+  oauthId          String   @unique @map("oauth_id")
+  formerUserId     String   @map("former_user_id")
+  approvedByUserId String   @map("approved_by_user_id")
+  reason           String
+  retiredAt        DateTime @default(now()) @map("retired_at")
+
+  @@index([formerUserId, retiredAt])
+  @@map("retired_kakao_identity")
 }
 
 model SpecialAccountAccessGrant {
@@ -244,18 +262,18 @@ model GatewayProfile {
 }
 
 model WebPushSubscription {
-  id             String    @id @default(uuid())
-  userId         String    @map("user_id")
-  user           AppUser   @relation(fields: [userId], references: [id], onDelete: Cascade)
-  endpoint       String    @unique @db.Text
-  p256dh         String    @db.Text
-  auth           String    @db.Text
-  expirationTime DateTime? @map("expiration_time")
-  userAgent      String?   @map("user_agent") @db.Text
-  disabledAt     DateTime? @map("disabled_at")
-  lastSeenAt     DateTime  @default(now()) @map("last_seen_at")
-  createdAt      DateTime  @default(now()) @map("created_at")
-  updatedAt      DateTime  @updatedAt @map("updated_at")
+  id             String            @id @default(uuid())
+  userId         String            @map("user_id")
+  user           AppUser           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  endpoint       String            @unique @db.Text
+  p256dh         String            @db.Text
+  auth           String            @db.Text
+  expirationTime DateTime?         @map("expiration_time")
+  userAgent      String?           @map("user_agent") @db.Text
+  disabledAt     DateTime?         @map("disabled_at")
+  lastSeenAt     DateTime          @default(now()) @map("last_seen_at")
+  createdAt      DateTime          @default(now()) @map("created_at")
+  updatedAt      DateTime          @updatedAt @map("updated_at")
   deliveries     WebPushDelivery[]
 
   @@index([userId, disabledAt, updatedAt])
@@ -328,11 +346,11 @@ model WebPushDelivery {
 }
 
 model WebPushProfileCursor {
-  profileName String   @id @map("profile_name")
+  profileName String    @id @map("profile_name")
   status      String
   preopenAt   DateTime? @map("preopen_at")
   openAt      DateTime? @map("open_at")
-  updatedAt   DateTime @updatedAt @map("updated_at")
+  updatedAt   DateTime  @updatedAt @map("updated_at")
 
   @@map("web_push_profile_cursor")
 }

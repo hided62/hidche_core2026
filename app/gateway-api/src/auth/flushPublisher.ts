@@ -3,10 +3,16 @@ export interface GatewayUserFlushEvent {
     flushedAt: string;
     reason?: string;
     iconRevision?: string;
+    displayName?: string;
+    identityRevision?: string;
 }
 
 export interface GatewayFlushPublisher {
-    publishUserFlush(userId: string, reason?: string, metadata?: { iconRevision?: string }): Promise<void>;
+    publishUserFlush(
+        userId: string,
+        reason?: string,
+        metadata?: { iconRevision?: string; displayName?: string; identityRevision?: string }
+    ): Promise<void>;
 }
 
 export class RedisGatewayFlushPublisher implements GatewayFlushPublisher {
@@ -18,12 +24,18 @@ export class RedisGatewayFlushPublisher implements GatewayFlushPublisher {
         this.channel = channel;
     }
 
-    async publishUserFlush(userId: string, reason?: string, metadata?: { iconRevision?: string }): Promise<void> {
+    async publishUserFlush(
+        userId: string,
+        reason?: string,
+        metadata?: { iconRevision?: string; displayName?: string; identityRevision?: string }
+    ): Promise<void> {
         const payload: GatewayUserFlushEvent = {
             userId,
             flushedAt: new Date().toISOString(),
             reason,
             ...(metadata?.iconRevision ? { iconRevision: metadata.iconRevision } : {}),
+            ...(metadata?.displayName ? { displayName: metadata.displayName } : {}),
+            ...(metadata?.identityRevision ? { identityRevision: metadata.identityRevision } : {}),
         };
         await this.client.publish(this.channel, JSON.stringify(payload));
     }

@@ -242,6 +242,7 @@ const resolveCommandAcceptedAt = async (
                 | 'selectPoolCreate'
                 | 'selectPoolReselect'
                 | 'adjustGeneralIcon'
+                | 'adjustGeneralIdentity'
                 | 'inheritanceAction'
                 | 'setNationSetting'
                 | 'setNpcPolicy';
@@ -987,6 +988,62 @@ async function handleAdjustGeneralIcon(
         generalId: general.id,
         updated: true,
     };
+}
+
+async function handleAdjustGeneralIdentity(
+    ctx: CommandHandlerContext,
+    command: Extract<TurnDaemonCommand, { type: 'adjustGeneralIdentity' }>
+): Promise<TurnDaemonCommandResult> {
+    await resolveCommandAcceptedAt(requireCommandDatabase(ctx), command);
+    const general = ctx.world
+        .listGenerals()
+        .find((candidate) => candidate.userId === command.userId && candidate.npcState === 0);
+    if (!general) {
+        return { type: 'adjustGeneralIdentity', ok: true, generalId: null, updated: false };
+    }
+    const currentRevision = general.meta.ownerIdentityRevision;
+    if (currentRevision !== undefined) {
+        if (typeof currentRevision !== 'string' || !isCanonicalIsoTimestamp(currentRevision)) {
+            return {
+                type: 'adjustGeneralIdentity',
+                ok: false,
+                code: 'PRECONDITION_FAILED',
+                reason: '장수의 계정 이름 revision이 올바르지 않습니다.',
+            };
+        }
+        const currentTime = new Date(currentRevision).getTime();
+        const nextTime = new Date(command.identityRevision).getTime();
+        if (nextTime < currentTime) {
+            return {
+                type: 'adjustGeneralIdentity',
+                ok: false,
+                code: 'CONFLICT',
+                reason: '더 최신 계정 이름이 이미 적용되었습니다.',
+            };
+        }
+        if (nextTime === currentTime) {
+            const currentName = general.meta.ownerDisplayName ?? general.meta.ownerName ?? general.meta.owner_name;
+            if (currentName === command.displayName) {
+                return { type: 'adjustGeneralIdentity', ok: true, generalId: general.id, updated: false };
+            }
+            return {
+                type: 'adjustGeneralIdentity',
+                ok: false,
+                code: 'CONFLICT',
+                reason: '같은 revision에 다른 계정 이름이 요청되었습니다.',
+            };
+        }
+    }
+    ctx.world.updateGeneral(general.id, {
+        meta: {
+            ...general.meta,
+            ownerDisplayName: command.displayName,
+            ownerName: command.displayName,
+            owner_name: command.displayName,
+            ownerIdentityRevision: command.identityRevision,
+        },
+    });
+    return { type: 'adjustGeneralIdentity', ok: true, generalId: general.id, updated: true };
 }
 
 async function handleShiftSchedule(
@@ -3120,6 +3177,8 @@ export const createTurnDaemonCommandHandler = (options: {
             handleInheritanceAction(ctx, command as Extract<TurnDaemonCommand, { type: 'inheritanceAction' }>),
         adjustGeneralIcon: (command) =>
             handleAdjustGeneralIcon(ctx, command as Extract<TurnDaemonCommand, { type: 'adjustGeneralIcon' }>),
+        adjustGeneralIdentity: (command) =>
+            handleAdjustGeneralIdentity(ctx, command as Extract<TurnDaemonCommand, { type: 'adjustGeneralIdentity' }>),
         joinCreateGeneral: (command) =>
             handleJoinCreateGeneral(ctx, command as Extract<TurnDaemonCommand, { type: 'joinCreateGeneral' }>),
         npcPossessGeneral: (command) =>

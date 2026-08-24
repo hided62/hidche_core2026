@@ -349,6 +349,13 @@ export type TurnDaemonCommand =
           enforceCooldown?: boolean;
       }
     | {
+          type: 'adjustGeneralIdentity';
+          requestId?: string;
+          userId: string;
+          displayName: string;
+          identityRevision: string;
+      }
+    | {
           type: 'joinCreateGeneral';
           requestId?: string;
           userId: string;
@@ -756,6 +763,18 @@ export type TurnDaemonCommandResult =
           code: 'CONFLICT' | 'PRECONDITION_FAILED' | 'TOO_MANY_REQUESTS';
           reason: string;
           availableAt?: string;
+      }
+    | {
+          type: 'adjustGeneralIdentity';
+          ok: true;
+          generalId: number | null;
+          updated: boolean;
+      }
+    | {
+          type: 'adjustGeneralIdentity';
+          ok: false;
+          code: 'CONFLICT' | 'PRECONDITION_FAILED';
+          reason: string;
       }
     | {
           type: 'joinCreateGeneral';

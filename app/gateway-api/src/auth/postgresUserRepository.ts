@@ -66,6 +66,12 @@ const mapUser = (row: {
     oauthId: string | null;
     email: string | null;
     oauthInfo: GatewayPrisma.JsonValue;
+    identityRevision: Date;
+    authRevision: number;
+    sessionRevokedBefore: Date | null;
+    kakaoReplacementApprovedUntil: Date | null;
+    kakaoReplacementApprovedByUserId: string | null;
+    kakaoReplacementReason: string | null;
     picture: string;
     imageServer: number;
     iconUpdatedAt: Date | null;
@@ -92,6 +98,12 @@ const mapUser = (row: {
     oauthId: row.oauthId ?? undefined,
     email: row.email ?? undefined,
     oauthInfo: readObject<UserOAuthInfo>(row.oauthInfo, {}),
+    identityRevision: row.identityRevision.toISOString(),
+    authRevision: row.authRevision,
+    sessionRevokedBefore: row.sessionRevokedBefore?.toISOString(),
+    kakaoReplacementApprovedUntil: row.kakaoReplacementApprovedUntil?.toISOString(),
+    kakaoReplacementApprovedByUserId: row.kakaoReplacementApprovedByUserId ?? undefined,
+    kakaoReplacementReason: row.kakaoReplacementReason ?? undefined,
     picture: row.picture,
     imageServer: row.imageServer,
     iconUpdatedAt: row.iconUpdatedAt?.toISOString(),
@@ -246,26 +258,39 @@ export const createPostgresUserRepository = (
             const password = await hasher.hash(input.password);
             const oauthType = input.oauth?.type ?? 'NONE';
             const now = new Date();
-            const row = await prisma.appUser.create({
-                data: {
-                    loginId: input.username,
-                    displayName: input.displayName ?? input.username,
-                    passwordHash: password.hash,
-                    passwordSalt: password.salt,
-                    passwordResetRequired: false,
-                    roles: ['user'] satisfies GatewayPrisma.JsonArray,
-                    sanctions: {} satisfies GatewayPrisma.JsonObject,
-                    oauthType,
-                    oauthId: input.oauth?.id,
-                    email: input.oauth?.email?.toLowerCase(),
-                    oauthInfo: (input.oauth?.info ?? {}) as GatewayPrisma.JsonObject,
-                    termsAcceptedAt: input.termsAcceptedAt,
-                    privacyAcceptedAt: input.privacyAcceptedAt,
-                    thirdPartyUse: input.thirdPartyUse ?? false,
-                    kakaoVerifiedAt: input.oauth ? now : undefined,
-                    kakaoGraceStartedAt: now,
-                },
-            });
+            const data: GatewayPrisma.AppUserCreateInput = {
+                loginId: input.username,
+                displayName: input.displayName ?? input.username,
+                passwordHash: password.hash,
+                passwordSalt: password.salt,
+                passwordResetRequired: false,
+                roles: ['user'] satisfies GatewayPrisma.JsonArray,
+                sanctions: {} satisfies GatewayPrisma.JsonObject,
+                oauthType,
+                oauthId: input.oauth?.id,
+                email: input.oauth?.email?.toLowerCase(),
+                oauthInfo: (input.oauth?.info ?? {}) as GatewayPrisma.JsonObject,
+                termsAcceptedAt: input.termsAcceptedAt,
+                privacyAcceptedAt: input.privacyAcceptedAt,
+                thirdPartyUse: input.thirdPartyUse ?? false,
+                kakaoVerifiedAt: input.oauth ? now : undefined,
+                kakaoGraceStartedAt: now,
+            };
+            const row = input.oauth
+                ? await prisma.$transaction(
+                      async (tx) => {
+                          const retired = await tx.retiredKakaoIdentity.findUnique({
+                              where: { oauthId: input.oauth!.id },
+                              select: { id: true },
+                          });
+                          if (retired) {
+                              throw new Error('Kakao identity is permanently retired.');
+                          }
+                          return tx.appUser.create({ data });
+                      },
+                      { isolationLevel: 'Serializable' }
+                  )
+                : await prisma.appUser.create({ data });
             return mapUser(row);
         },
         async verifyPassword(user: UserRecord, password: string): Promise<boolean> {
@@ -323,39 +348,187 @@ export const createPostgresUserRepository = (
             return mapUser(row);
         },
         async linkKakao(userId, input): Promise<UserRecord> {
-            const row = await prisma.appUser.update({
-                where: { id: userId },
-                data: {
-                    oauthType: 'KAKAO',
-                    oauthId: input.oauthId,
-                    email: input.email.toLowerCase(),
-                    oauthInfo: input.oauthInfo as GatewayPrisma.JsonObject,
-                    kakaoVerifiedAt: input.verifiedAt,
-                    kakaoTalkVerifiedUntil: null,
+            return prisma.$transaction(
+                async (tx) => {
+                    const retired = await tx.retiredKakaoIdentity.findUnique({
+                        where: { oauthId: input.oauthId },
+                        select: { id: true },
+                    });
+                    if (retired) {
+                        throw new Error('Kakao identity is permanently retired.');
+                    }
+                    const row = await tx.appUser.update({
+                        where: { id: userId },
+                        data: {
+                            oauthType: 'KAKAO',
+                            oauthId: input.oauthId,
+                            email: input.email.toLowerCase(),
+                            oauthInfo: input.oauthInfo as GatewayPrisma.JsonObject,
+                            kakaoVerifiedAt: input.verifiedAt,
+                            kakaoTalkVerifiedUntil: null,
+                        },
+                    });
+                    return mapUser(row);
                 },
-            });
-            return mapUser(row);
+                { isolationLevel: 'Serializable' }
+            );
         },
         async relinkKakaoByEmail(userId, input): Promise<UserRecord> {
             const normalizedEmail = input.email.toLowerCase();
-            const updated = await prisma.appUser.updateMany({
-                where: {
-                    id: userId,
-                    email: normalizedEmail,
+            return prisma.$transaction(
+                async (tx) => {
+                    const retired = await tx.retiredKakaoIdentity.findUnique({
+                        where: { oauthId: input.oauthId },
+                        select: { id: true },
+                    });
+                    if (retired) {
+                        throw new Error('Kakao identity is permanently retired.');
+                    }
+                    const updated = await tx.appUser.updateMany({
+                        where: {
+                            id: userId,
+                            email: normalizedEmail,
+                        },
+                        data: {
+                            oauthType: 'KAKAO',
+                            oauthId: input.oauthId,
+                            oauthInfo: input.oauthInfo as GatewayPrisma.JsonObject,
+                            kakaoVerifiedAt: input.verifiedAt,
+                            kakaoTalkVerifiedUntil: null,
+                        },
+                    });
+                    if (updated.count !== 1) {
+                        throw new Error('Kakao account recovery ownership changed.');
+                    }
+                    const row = await tx.appUser.findUniqueOrThrow({ where: { id: userId } });
+                    return mapUser(row);
                 },
-                data: {
-                    oauthType: 'KAKAO',
-                    oauthId: input.oauthId,
-                    oauthInfo: input.oauthInfo as GatewayPrisma.JsonObject,
-                    kakaoVerifiedAt: input.verifiedAt,
-                    kakaoTalkVerifiedUntil: null,
-                },
+                { isolationLevel: 'Serializable' }
+            );
+        },
+        async isKakaoIdentityRetired(oauthId: string): Promise<boolean> {
+            return (await prisma.retiredKakaoIdentity.count({ where: { oauthId } })) > 0;
+        },
+        async setKakaoReplacementApproval(userId, input): Promise<UserRecord> {
+            const row = await prisma.appUser.update({
+                where: { id: userId },
+                data: input.until
+                    ? {
+                          kakaoReplacementApprovedUntil: input.until,
+                          kakaoReplacementApprovedByUserId: input.approvedByUserId,
+                          kakaoReplacementReason: input.reason,
+                      }
+                    : {
+                          kakaoReplacementApprovedUntil: null,
+                          kakaoReplacementApprovedByUserId: null,
+                          kakaoReplacementReason: null,
+                      },
             });
-            if (updated.count !== 1) {
-                throw new Error('Kakao account recovery ownership changed.');
-            }
-            const row = await prisma.appUser.findUniqueOrThrow({ where: { id: userId } });
             return mapUser(row);
+        },
+        async replaceKakaoWithApprovedIdentity(userId, input): Promise<UserRecord> {
+            return prisma.$transaction(
+                async (tx) => {
+                    const user = await tx.appUser.findUnique({ where: { id: userId } });
+                    const now = input.verifiedAt;
+                    if (
+                        !user ||
+                        user.oauthType !== 'KAKAO' ||
+                        !user.oauthId ||
+                        user.oauthId === input.oauthId ||
+                        !user.kakaoReplacementApprovedUntil ||
+                        user.kakaoReplacementApprovedUntil < now ||
+                        !user.kakaoReplacementApprovedByUserId ||
+                        !user.kakaoReplacementReason
+                    ) {
+                        throw new Error('Kakao account replacement is not approved.');
+                    }
+                    const normalizedEmail = input.email.toLowerCase();
+                    const [oauthOwner, emailOwner, retired] = await Promise.all([
+                        tx.appUser.findUnique({ where: { oauthId: input.oauthId }, select: { id: true } }),
+                        tx.appUser.findUnique({ where: { email: normalizedEmail }, select: { id: true } }),
+                        tx.retiredKakaoIdentity.findUnique({ where: { oauthId: input.oauthId }, select: { id: true } }),
+                    ]);
+                    if (
+                        retired ||
+                        (oauthOwner && oauthOwner.id !== userId) ||
+                        (emailOwner && emailOwner.id !== userId)
+                    ) {
+                        throw new Error('Kakao account replacement ownership changed.');
+                    }
+                    await tx.retiredKakaoIdentity.create({
+                        data: {
+                            oauthId: user.oauthId,
+                            formerUserId: user.id,
+                            approvedByUserId: user.kakaoReplacementApprovedByUserId,
+                            reason: user.kakaoReplacementReason,
+                            retiredAt: now,
+                        },
+                    });
+                    const updated = await tx.appUser.updateMany({
+                        where: {
+                            id: userId,
+                            oauthType: 'KAKAO',
+                            oauthId: user.oauthId,
+                            kakaoReplacementApprovedUntil: { gte: now },
+                            kakaoReplacementApprovedByUserId: user.kakaoReplacementApprovedByUserId,
+                            kakaoReplacementReason: user.kakaoReplacementReason,
+                        },
+                        data: {
+                            oauthType: 'KAKAO',
+                            oauthId: input.oauthId,
+                            email: normalizedEmail,
+                            oauthInfo: input.oauthInfo as GatewayPrisma.JsonObject,
+                            kakaoVerifiedAt: now,
+                            kakaoTalkVerifiedUntil: null,
+                            kakaoReplacementApprovedUntil: null,
+                            kakaoReplacementApprovedByUserId: null,
+                            kakaoReplacementReason: null,
+                            sessionRevokedBefore: now,
+                            authRevision: { increment: 1 },
+                        },
+                    });
+                    if (updated.count !== 1) {
+                        throw new Error('Kakao account replacement approval changed.');
+                    }
+                    const row = await tx.appUser.findUniqueOrThrow({ where: { id: userId } });
+                    return mapUser(row);
+                },
+                { isolationLevel: 'Serializable' }
+            );
+        },
+        async updateIdentity(userId, input): Promise<UserRecord> {
+            return prisma.$transaction(
+                async (tx) => {
+                    const current = await tx.appUser.findUnique({ where: { id: userId } });
+                    if (!current) {
+                        throw new Error('User not found.');
+                    }
+                    const [usernameOwner, displayNameOwner] = await Promise.all([
+                        tx.appUser.findUnique({ where: { loginId: input.username }, select: { id: true } }),
+                        tx.appUser.findUnique({ where: { displayName: input.displayName }, select: { id: true } }),
+                    ]);
+                    if (
+                        (usernameOwner && usernameOwner.id !== userId) ||
+                        (displayNameOwner && displayNameOwner.id !== userId)
+                    ) {
+                        throw new Error('Account identity already exists.');
+                    }
+                    const nextRevision = new Date(
+                        Math.max(input.changedAt.getTime(), current.identityRevision.getTime() + 1)
+                    );
+                    const row = await tx.appUser.update({
+                        where: { id: userId },
+                        data: {
+                            loginId: input.username,
+                            displayName: input.displayName,
+                            identityRevision: nextRevision,
+                        },
+                    });
+                    return mapUser(row);
+                },
+                { isolationLevel: 'Serializable' }
+            );
         },
         async updateRoles(userId: string, roles: string[]): Promise<void> {
             await prisma.appUser.update({
