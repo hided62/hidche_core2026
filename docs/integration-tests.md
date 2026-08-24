@@ -84,6 +84,14 @@ runner는 test 시작 전에 실패합니다. 지원 mode에 marker가 하나도
 실행 group의 marker 정규식이 비어도 전체 파일로 선택 범위를 넓히지 않고
 실패합니다.
 
+DB marker가 없는 Ref 조건부 suite와 저장 trace 비교 suite는
+`tools/conditional-integration-file-registry.tsv`에서 파일별 환경 요구를 관리합니다.
+Runner는 이 registry를 실제 `describe.skipIf()` gate와 exact-set으로 대조합니다.
+`TURN_DIFFERENTIAL_REFERENCE=1`일 때만 Ref runtime 그룹을 실행하고, 저장 trace 비교는
+`TURN_REFERENCE_TRACE`와 `TURN_CORE_TRACE`가 모두 있을 때만 실행합니다. 한 trace만
+주입한 경우에는 suite를 조용히 skip하지 않고 설정 오류로 실패합니다. DB/Redis marker가
+있는 파일을 이 registry에 중복 등록할 수도 없습니다.
+
 `external_fixture` mode는 격리 빈 schema로 만들 수 없는 명시적 예외입니다.
 현재 `CURRENT_SEASON_FIXTURE_DATABASE_URL`은 별도 Ref 현 시즌 importer가 만든
 read-only snapshot을 요구하므로 조건부 runner의 pass/skip 집계에 포함하지

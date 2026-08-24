@@ -773,6 +773,49 @@ describe('in-game my information ownership', () => {
         });
     });
 
+    it('dispatches vacation for the session-owned general with a stable ENGINE request identity', async () => {
+        const transaction = vi.fn(async () => {
+            throw new Error('API transaction must not run');
+        });
+        const requestCommand = vi.fn(async () => ({
+            type: 'vacation' as const,
+            ok: true as const,
+            generalId: 17,
+        }));
+        const fixture = createContext({
+            me: buildGeneral({ id: 17, userId: 'user-7' }),
+            requestCommand,
+            requestId: 'http-general-vacation',
+            transaction,
+        });
+
+        await expect(appRouter.createCaller(fixture.context).general.vacation()).resolves.toEqual({ ok: true });
+        expect(transaction).not.toHaveBeenCalled();
+        expect(requestCommand).toHaveBeenCalledWith({
+            type: 'vacation',
+            requestId: 'http-general-vacation:general.vacation:engine:0:vacation',
+            userId: 'user-7',
+            generalId: 17,
+        });
+        expect(fixture.db.general.findFirst).toHaveBeenCalledWith({ where: { userId: 'user-7' } });
+    });
+
+    it('maps the authoritative vacation rejection without an API-side mutation', async () => {
+        const requestCommand = vi.fn(async () => ({
+            type: 'vacation' as const,
+            ok: false as const,
+            generalId: 7,
+            reason: '자동 턴 사용 중에는 휴가할 수 없습니다.',
+        }));
+        const fixture = createContext({ requestCommand });
+
+        await expect(appRouter.createCaller(fixture.context).general.vacation()).rejects.toMatchObject({
+            code: 'BAD_REQUEST',
+            message: '자동 턴 사용 중에는 휴가할 수 없습니다.',
+        });
+        expect(fixture.db.general.update).not.toHaveBeenCalled();
+    });
+
     it('gets the server-owned pre-start deletion status without accepting a general id', async () => {
         const requestCommand = vi.fn(async () => ({
             type: 'ensureDieOnPrestartStatus' as const,

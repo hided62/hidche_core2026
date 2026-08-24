@@ -3,17 +3,25 @@ import { fileURLToPath } from 'node:url';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 
+import { appRouter } from '../src/router.js';
+
 const classifications = {
     durableJournal: [
         'betting.bet',
+        'diplomacy.destroyLetter',
+        'diplomacy.respondLetter',
+        'diplomacy.rollbackLetter',
+        'diplomacy.sendLetter',
         'inherit.checkOwner',
         'messages.delete',
         'messages.respond',
         'messages.send',
-        'turns.repeatGeneral',
-        'turns.setGeneral',
-        'turns.setGeneralBulk',
-        'turns.shiftGeneral',
+        'turns.reserved.repeatGeneral',
+        'turns.reserved.setGeneral',
+        'turns.reserved.setGeneralBulk',
+        'turns.reserved.setNation',
+        'turns.reserved.setNationBulk',
+        'turns.reserved.shiftGeneral',
         'vote.closePoll',
         'vote.createPoll',
         'vote.submitVote',
@@ -23,16 +31,10 @@ const classifications = {
     explicitNoRealtimeConsumer: [
         'board.writeArticle',
         'board.writeComment',
-        'diplomacy.destroyLetter',
-        'diplomacy.respondLetter',
-        'diplomacy.rollbackLetter',
-        'diplomacy.sendLetter',
         'join.listPossessCandidates',
         'messages.readLatest',
-        'turns.repeatNation',
-        'turns.setNation',
-        'turns.setNationBulk',
-        'turns.shiftNation',
+        'turns.reserved.repeatNation',
+        'turns.reserved.shiftNation',
         'vote.addComment',
     ],
     engineOwned: [
@@ -109,40 +111,71 @@ const listTypeScriptFiles = (directory: string): string[] =>
         return entry.isFile() && entry.name.endsWith('.ts') ? [target] : [];
     });
 
-const extractMutationNames = (file: string): string[] => {
-    const source = readFileSync(file, 'utf8');
-    const names: string[] = [];
-    for (const mutation of source.matchAll(/\.mutation\s*\(/gu)) {
-        const prefix = source.slice(0, mutation.index);
-        const propertyCandidates = [...prefix.matchAll(/^ {4,8}([A-Za-z][A-Za-z0-9]*):/gmu)];
-        const exportedCandidates = [...prefix.matchAll(/^export const ([A-Za-z][A-Za-z0-9]*)\s*=/gmu)];
-        const property = propertyCandidates.at(-1);
-        const exported = exportedCandidates.at(-1);
-        const propertyIndex = property?.index ?? -1;
-        const exportedIndex = exported?.index ?? -1;
-        const name = propertyIndex > exportedIndex ? property?.[1] : exported?.[1];
-        if (!name) throw new Error(`Could not resolve mutation name in ${file}`);
-        names.push(name);
+const countDeclaredMutations = (file: string): number =>
+    [...readFileSync(file, 'utf8').matchAll(/\.mutation\s*\(/gu)].length;
+
+interface RuntimeProcedureDef {
+    type: string;
+    middlewares: readonly unknown[];
+}
+
+const readRuntimeProcedureDef = (procedure: unknown): RuntimeProcedureDef => {
+    if (typeof procedure !== 'function') {
+        throw new Error('Mounted tRPC procedure is not callable.');
     }
-    return names;
+    const definition: unknown = Reflect.get(procedure, '_def');
+    if (typeof definition !== 'object' || definition === null) {
+        throw new Error('Mounted tRPC procedure has no runtime definition.');
+    }
+    const type: unknown = Reflect.get(definition, 'type');
+    const middlewares: unknown = Reflect.get(definition, 'middlewares');
+    if (typeof type !== 'string' || !Array.isArray(middlewares)) {
+        throw new Error('Mounted tRPC procedure has an unexpected runtime definition.');
+    }
+    return { type, middlewares };
 };
 
-const routePrefix = (file: string): string => {
-    const relative = path.relative(routerRoot, file);
-    const [top] = relative.split(path.sep);
-    if (!top) throw new Error(`Could not resolve router prefix for ${file}`);
-    return top.endsWith('.ts') ? path.basename(top, '.ts') : top;
-};
+const mountedProcedureDefs = new Map(
+    Object.entries(appRouter._def.procedures).map(
+        ([name, procedure]) => [name, readRuntimeProcedureDef(procedure)] as const
+    )
+);
+
+const mountedMutationNames = (): string[] =>
+    [...mountedProcedureDefs]
+        .filter(([, definition]) => definition.type === 'mutation')
+        .map(([name]) => name)
+        .sort();
 
 describe('game-api direct mutation journal inventory', () => {
     it('requires every router mutation to retain an explicit ownership and realtime classification', () => {
-        const actual = listTypeScriptFiles(routerRoot)
-            .flatMap((file) => extractMutationNames(file).map((name) => `${routePrefix(file)}.${name}`))
-            .sort();
+        const actual = mountedMutationNames();
+        const declaredCount = listTypeScriptFiles(routerRoot).reduce(
+            (total, file) => total + countDeclaredMutations(file),
+            0
+        );
         const classified = Object.values(classifications).flat().sort();
 
+        // Runtime router shape is authoritative for the public path. The raw declaration
+        // count independently catches mutations that were added to a router but never mounted.
+        expect(declaredCount).toBe(actual.length);
         expect(new Set(classified).size).toBe(classified.length);
         expect(classified).toHaveLength(87);
         expect(actual).toEqual(classified);
+    });
+
+    it('keeps every mounted mutation authenticated except the two explicit session bootstrap paths', () => {
+        // auth.status is the smallest mounted procedure that carries the shared
+        // requireAuthMiddleware. Composed procedures retain the same middleware identity.
+        const authMiddleware = mountedProcedureDefs.get('auth.status')?.middlewares[0];
+        expect(authMiddleware).toBeDefined();
+
+        const unauthenticated = [...mountedProcedureDefs]
+            .filter(([, definition]) => definition.type === 'mutation')
+            .filter(([, definition]) => !definition.middlewares.includes(authMiddleware))
+            .map(([name]) => name)
+            .sort();
+
+        expect(unauthenticated).toEqual(['auth.exchangeGatewayToken', 'public.recordAccess']);
     });
 });

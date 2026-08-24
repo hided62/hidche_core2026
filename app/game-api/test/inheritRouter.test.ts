@@ -112,6 +112,8 @@ const buildContext = (options: {
     configConst?: Record<string, unknown>;
     configMap?: Record<string, unknown>;
     daemonResult?: TurnDaemonCommandResult;
+    requestId?: string;
+    transaction?: ReturnType<typeof vi.fn>;
 }) => {
     const auth = options.auth === undefined ? buildAuth() : options.auth;
     const general = options.general === undefined ? buildGeneral() : options.general;
@@ -171,6 +173,7 @@ const buildContext = (options: {
         throw new Error(`Unexpected raw query in inherit router fixture: ${sql}`);
     });
     const db = {
+        ...(options.transaction ? { $transaction: options.transaction } : {}),
         $queryRaw: queryRaw,
         worldState: {
             findFirst: vi.fn(async () => activeWorldState),
@@ -228,6 +231,7 @@ const buildContext = (options: {
         battleSim: {} as GameApiContext['battleSim'],
         profile: { id: 'che', scenario: 'default', name: 'che:default' },
         auth,
+        ...(options.requestId ? { requestId: options.requestId } : {}),
         uploadDir: 'uploads',
         uploadPath: '/uploads',
         uploadPublicUrl: null,
@@ -635,6 +639,55 @@ describe('inherit router actor and permission boundaries', () => {
             type: 'inheritanceAction',
             userId: 'user-1',
             input: { action: 'resetTurnTime' },
+        });
+        expect(fixture.pointUpsert).not.toHaveBeenCalled();
+        expect(fixture.logCreate).not.toHaveBeenCalled();
+    });
+
+    it('buys a random unique only for the authenticated owner with a stable ENGINE request identity', async () => {
+        const transaction = vi.fn(async () => {
+            throw new Error('API transaction must not run');
+        });
+        const fixture = buildContext({
+            auth: buildAuth('user-2'),
+            general: buildGeneral({ id: 17, userId: 'user-2' }),
+            requestId: 'http-inherit-random-unique',
+            transaction,
+            daemonResult: {
+                type: 'inheritanceAction',
+                ok: true,
+                action: 'buyRandomUnique',
+                generalId: 17,
+                remainPoint: 9_000,
+            },
+        });
+
+        await expect(appRouter.createCaller(fixture.context).inherit.buyRandomUnique()).resolves.toEqual({ ok: true });
+        expect(transaction).not.toHaveBeenCalled();
+        expect(fixture.requestCommand).toHaveBeenCalledWith({
+            type: 'inheritanceAction',
+            requestId: 'http-inherit-random-unique:inherit.buyRandomUnique:engine:0:inheritanceAction',
+            userId: 'user-2',
+            input: { action: 'buyRandomUnique' },
+        });
+        expect(fixture.pointUpsert).not.toHaveBeenCalled();
+        expect(fixture.logCreate).not.toHaveBeenCalled();
+    });
+
+    it('maps a random-unique daemon rejection without applying API-side inheritance changes', async () => {
+        const fixture = buildContext({
+            daemonResult: {
+                type: 'inheritanceAction',
+                ok: false,
+                action: 'buyRandomUnique',
+                code: 'BAD_REQUEST',
+                reason: '충분한 유산 포인트를 가지고 있지 않습니다.',
+            },
+        });
+
+        await expect(appRouter.createCaller(fixture.context).inherit.buyRandomUnique()).rejects.toMatchObject({
+            code: 'BAD_REQUEST',
+            message: '충분한 유산 포인트를 가지고 있지 않습니다.',
         });
         expect(fixture.pointUpsert).not.toHaveBeenCalled();
         expect(fixture.logCreate).not.toHaveBeenCalled();
