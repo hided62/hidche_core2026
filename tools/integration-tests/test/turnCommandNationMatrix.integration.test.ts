@@ -4787,6 +4787,11 @@ integration('nation event research turn, reserve, and duplicate-state boundaries
                         gold: gold ?? requiredGold,
                         rice: rice ?? requiredRice,
                         meta: {
+                            // The Ref CLI decodes an otherwise empty JSON object into a
+                            // PHP array and persists it as `[]`. Keep a semantically inert
+                            // key so this matrix observes the research mutation rather
+                            // than an object-to-array fixture transport artifact.
+                            matrix_fixture: 'research-boundary',
                             ...(setAuxValue ? { [config.auxKey]: auxValue } : {}),
                         },
                         turnLastByOfficerLevel: {
