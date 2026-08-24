@@ -52,8 +52,36 @@ describe('tracked scenario resources', () => {
 
         expect(scenarioIds).toContain(914);
         expect(scenarioIds).toContain(915);
+        expect(scenarioIds).toContain(916);
         const scenarios = await Promise.all(scenarioIds.map((scenarioId) => loadScenarioDefinitionById(scenarioId)));
         expect(scenarios.every((scenario) => scenario.title.length > 0)).toBe(true);
+    });
+
+    it('keeps scenario 916 equal to ordinary blank land except for its launch modifiers', async () => {
+        const [ordinaryBlank, dawn] = await Promise.all(
+            [0, 916].map((scenarioId) => loadScenarioDefinitionById(scenarioId))
+        );
+        const { uniqueTrialCoef, ...dawnConst } = dawn.config.const;
+
+        expect(dawn.title).toBe('【공백지】 여명');
+        expect(uniqueTrialCoef).toBe(2);
+        expect({ ...dawn.config, const: dawnConst }).toEqual(ordinaryBlank.config);
+        expect(dawn.history).toEqual(ordinaryBlank.history);
+        expect(dawn.events[0]).toEqual([
+            'month',
+            1000,
+            ['or', ['Date', '==', null, 12], ['Date', '==', null, 6]],
+            ['CreateManyNPC', 50, 0],
+            ['DeleteEvent'],
+        ]);
+        expect(dawn.events.slice(1)).toEqual(ordinaryBlank.events.slice(1));
+
+        expect({
+            ...dawn,
+            title: ordinaryBlank.title,
+            events: ordinaryBlank.events,
+            config: ordinaryBlank.config,
+        }).toEqual(ordinaryBlank);
     });
 
     refSourceIt('preserves the Ref scenario 915 S100 pool and event order exactly', async () => {
