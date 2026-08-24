@@ -62,8 +62,7 @@ liveDescribe('auction worker durable recovery', () => {
         await connector.disconnect();
     });
 
-    const createAuction = async (status: 'OPEN' | 'FINALIZING') => {
-        const closeAt = new Date(Date.now() - 60_000);
+    const createAuction = async (status: 'OPEN' | 'FINALIZING', closeAt = new Date(Date.now() - 60_000)) => {
         const auction = await connector.prisma.auction.create({
             data: {
                 type: 'BUY_RICE',
@@ -340,14 +339,14 @@ liveDescribe('auction worker durable recovery', () => {
                 imageServer: 0,
             });
             const host = buildGeneral({
-                id: 992_032,
+                id: 8_032,
                 userId: 'auction-durable-host',
                 name: '경매주최자',
                 gold: 1_000,
                 rice: 900,
             });
             const bidder = buildGeneral({
-                id: 992_033,
+                id: 8_033,
                 userId: 'auction-durable-bidder',
                 name: '경매입찰자',
                 gold: 800,
@@ -366,7 +365,7 @@ liveDescribe('auction worker durable recovery', () => {
                 map,
             };
 
-            const lifecycleGeneralIds = [992_032, 992_033];
+            const lifecycleGeneralIds = [8_032, 8_033];
             await connector.prisma.logEntry.deleteMany({ where: { generalId: { in: lifecycleGeneralIds } } });
             await connector.prisma.general.deleteMany({ where: { id: { in: lifecycleGeneralIds } } });
             await connector.prisma.worldState.deleteMany({ where: { id: worldId } });
@@ -398,7 +397,8 @@ liveDescribe('auction worker durable recovery', () => {
                 });
                 createdGeneralIds.push(general.id);
             }
-            const auction = await createAuction('OPEN');
+            const logicalPastCloseAt = new Date(state.lastTurnTime.getTime() - 60_000);
+            const auction = await createAuction('OPEN', logicalPastCloseAt);
             await connector.prisma.auction.update({
                 where: { id: auction.id },
                 data: { hostGeneralId: host.id, hostName: host.name },
@@ -487,7 +487,7 @@ liveDescribe('auction worker durable recovery', () => {
                         hostName: '(상인)',
                         detail: { remainCloseDateExtensionCnt: 1 },
                         status: 'OPEN',
-                        closeAt: new Date(Date.now() - 60_000),
+                        closeAt: logicalPastCloseAt,
                     },
                 });
                 extensionAuctionId = extensionAuction.id;
@@ -528,8 +528,8 @@ liveDescribe('auction worker durable recovery', () => {
                 expect(reopened).toMatchObject({ status: 'OPEN' });
                 expect(reopened!.closeAt.getTime()).toBeGreaterThan(extensionAuction.closeAt.getTime());
 
-                const secondWallNow = new Date();
-                const secondCloseAt = new Date(secondWallNow.getTime() - 1_000);
+                const secondGameNow = world.getGameNow(new Date());
+                const secondCloseAt = new Date(secondGameNow.getTime() - 1_000);
                 const secondCloseTick = world.dateToGameTick(secondCloseAt);
                 await connector.prisma.auction.update({
                     where: { id: extensionAuction.id },
@@ -546,8 +546,8 @@ liveDescribe('auction worker durable recovery', () => {
                     timerKey: 'timer',
                     historyKey: 'history',
                     id: String(extensionAuction.id),
-                    nowMs: world.getGameNow(secondWallNow).getTime(),
-                    nowTick: world.dateToGameTick(secondWallNow),
+                    nowMs: secondGameNow.getTime(),
+                    nowTick: world.dateToGameTick(secondGameNow),
                 });
 
                 for (let attempt = 0; attempt < 200; attempt += 1) {
@@ -558,6 +558,16 @@ liveDescribe('auction worker durable recovery', () => {
                     if (event?.status === 'SUCCEEDED' && storedAuction?.status === 'CANCELED') break;
                     await delay(25);
                 }
+                const secondExtensionEvent = await connector.prisma.inputEvent.findUniqueOrThrow({
+                    where: { requestId: secondExtensionRequestId },
+                });
+                expect(secondExtensionEvent).toMatchObject({ status: 'SUCCEEDED', error: null });
+                expect(secondExtensionEvent.result).toEqual({
+                    type: 'auctionFinalize',
+                    ok: false,
+                    auctionId: extensionAuction.id,
+                    reason: '아이템 키가 올바르지 않습니다.',
+                });
                 await expect(
                     connector.prisma.auction.findUniqueOrThrow({ where: { id: extensionAuction.id } })
                 ).resolves.toMatchObject({ status: 'CANCELED' });
