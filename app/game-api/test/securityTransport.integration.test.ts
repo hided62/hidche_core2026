@@ -524,26 +524,36 @@ const requestReservedGeneral = (accessToken: string | undefined, idempotencyKey:
         idempotencyKey,
     });
 
-const requestReservedNation = (accessToken: string, idempotencyKey: string, targetGeneralId: number) =>
+const requestReservedNation = (
+    accessToken: string,
+    idempotencyKey: string,
+    targetGeneralId: number,
+    command: { action: string; args: unknown } = { action: '휴식', args: {} }
+) =>
     requestTrpc('turns.reserved.setNation', {
         method: 'POST',
         input: {
             generalId: targetGeneralId,
             turnIndex: 0,
-            action: '휴식',
-            args: {},
+            action: command.action,
+            args: command.args,
             expectedRevision: 0,
         },
         accessToken,
         idempotencyKey,
     });
 
-const requestReservedNationBulk = (accessToken: string, idempotencyKey: string, targetGeneralId: number) =>
+const requestReservedNationBulk = (
+    accessToken: string,
+    idempotencyKey: string,
+    targetGeneralId: number,
+    command: { action: string; args: unknown } = { action: '휴식', args: {} }
+) =>
     requestTrpc('turns.reserved.setNationBulk', {
         method: 'POST',
         input: {
             generalId: targetGeneralId,
-            entries: [{ turnList: [0, 1], action: '휴식', args: {} }],
+            entries: [{ turnList: [0, 1], action: command.action, args: command.args }],
             expectedRevision: 0,
         },
         accessToken,
@@ -559,11 +569,12 @@ const requestNationReservation = (
     kind: NationReservationKind,
     accessToken: string,
     idempotencyKey: string,
-    targetGeneralId = generalId
+    targetGeneralId = generalId,
+    command: { action: string; args: unknown } = { action: '휴식', args: {} }
 ) =>
     kind === 'single'
-        ? requestReservedNation(accessToken, idempotencyKey, targetGeneralId)
-        : requestReservedNationBulk(accessToken, idempotencyKey, targetGeneralId);
+        ? requestReservedNation(accessToken, idempotencyKey, targetGeneralId, command)
+        : requestReservedNationBulk(accessToken, idempotencyKey, targetGeneralId, command);
 
 const ownershipDenialCases = [
     {
@@ -680,7 +691,11 @@ integration('game API security over HTTP transport', () => {
                 },
             ],
         });
-        if ((await db.worldState.count()) === 0) {
+        const existingWorlds = await db.worldState.findMany({
+            select: { id: true, scenarioCode: true },
+            orderBy: { id: 'asc' },
+        });
+        if (existingWorlds.length === 0) {
             await db.worldState.create({
                 data: {
                     id: fixtureWorldId,
@@ -693,11 +708,23 @@ integration('game API security over HTTP transport', () => {
                 },
             });
             createdFixtureWorld = true;
+        } else if (
+            existingWorlds.length === 1 &&
+            existingWorlds[0]?.id === fixtureWorldId &&
+            existingWorlds[0].scenarioCode === 'security-http'
+        ) {
+            // A previously interrupted run may leave our own fixture row. It
+            // remains owned by this suite and is removed during teardown.
+            createdFixtureWorld = true;
+        } else {
+            throw new Error(
+                `security transport fixture requires an empty schema or its owned world row, got ${JSON.stringify(existingWorlds)}`
+            );
         }
         const reservationWorlds = await db.worldState.findMany({ select: { id: true } });
-        if (reservationWorlds.length !== 1 || !reservationWorlds[0]) {
+        if (reservationWorlds.length !== 1 || reservationWorlds[0]?.id !== fixtureWorldId) {
             throw new Error(
-                `security transport fixture requires exactly one world row, got ${reservationWorlds.length}`
+                `security transport fixture requires world ${fixtureWorldId}, got ${JSON.stringify(reservationWorlds)}`
             );
         }
         reservationWorldId = reservationWorlds[0].id;
@@ -1136,7 +1163,10 @@ integration('game API security over HTTP transport', () => {
                 data: { meta: { killturn: 12 } },
             });
 
-            const result = await requestNationReservation(kind, accessToken, idempotencyKey);
+            const result = await requestNationReservation(kind, accessToken, idempotencyKey, generalId, {
+                action: 'che_포상',
+                args: {},
+            });
 
             expect(result.response.status).toBe(412);
             expect(result.body).toMatchObject({

@@ -1,6 +1,7 @@
 import {
     isGeneralTurnCommandKey,
     isNationTurnCommandKey,
+    getLegacyStringWidth,
     loadGeneralTurnCommandSpecs,
     loadNationTurnCommandSpecs,
     type GeneralTurnCommandSpec,
@@ -385,6 +386,188 @@ const parseRegisteredTurnArgs = async (
     return spec.argsSchema.parse(rawArgs);
 };
 
+const LEGACY_REMOVED_TURN_ARG_CHARACTERS = new Set([
+    '"',
+    "'",
+    'ⓝ',
+    'ⓜ',
+    'ⓖ',
+    'ⓞ',
+    'ⓧ',
+    '㉥',
+    '\\',
+    '/',
+    '`',
+    '#',
+    '-',
+    '|',
+]);
+
+const sanitizeLegacyTurnArgString = (value: string): string => {
+    // Ref StringUtil::neutralize() treats the string "0" as empty because of
+    // PHP truthiness, both before and after removeSpecialCharacter().
+    if (value === '' || value === '0') {
+        return '';
+    }
+    const stripped = Array.from(value)
+        .filter((character) => !LEGACY_REMOVED_TURN_ARG_CHARACTERS.has(character))
+        .join('');
+    if (stripped === '' || stripped === '0') {
+        return '';
+    }
+    return stripped
+        .replaceAll('&', '&amp;')
+        .replaceAll('<', '&lt;')
+        .replaceAll('>', '&gt;')
+        .replace(/^[\p{Z}\p{C}]+|[\p{Z}\p{C}]+$/gu, '');
+};
+
+export const sanitizeReservedTurnArgs = (value: unknown): unknown => {
+    if (typeof value === 'string') {
+        return sanitizeLegacyTurnArgString(value);
+    }
+    if (Array.isArray(value)) {
+        return value.map((entry) => sanitizeReservedTurnArgs(entry));
+    }
+    if (value !== null && typeof value === 'object') {
+        return Object.fromEntries(Object.entries(value).map(([key, entry]) => [key, sanitizeReservedTurnArgs(entry)]));
+    }
+    return value;
+};
+
+const LEGACY_INTEGER_TURN_ARG_KEYS = new Set([
+    'crewType',
+    'destGeneralId',
+    'destGeneralID',
+    'destCityId',
+    'destCityID',
+    'destNationId',
+    'destNationID',
+    'amount',
+    'colorType',
+    'srcArmType',
+    'destArmType',
+]);
+const LEGACY_BOOLEAN_TURN_ARG_KEYS = new Set(['isGold', 'buyRice']);
+const LEGACY_INTEGER_ARRAY_TURN_ARG_KEYS = new Set([
+    'destNationIdList',
+    'destNationIDList',
+    'destGeneralIdList',
+    'destGeneralIDList',
+    'amountList',
+]);
+const LEGACY_NUMERIC_PATTERN = /^[\t\n\r\f\v ]*[+-]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?[\t\n\r\f\v ]*$/;
+
+const skipsLegacyOptionalValidation = (value: unknown): boolean => value === null || value === '';
+
+const isLegacyNumeric = (value: unknown): boolean => {
+    if (typeof value === 'number') {
+        return Number.isFinite(value);
+    }
+    if (typeof value !== 'string' || !LEGACY_NUMERIC_PATTERN.test(value)) {
+        return false;
+    }
+    return Number.isFinite(Number(value));
+};
+
+const throwLegacyBasicTurnArgError = (): never => {
+    throw new Error('턴이 입력되지 않았습니다.');
+};
+
+/**
+ * Ref checkCommandArg() only validates common fields that are present. Missing
+ * command-specific fields are deliberately left for command construction, so
+ * nation penalties and officer checks retain their legacy error priority.
+ */
+export const assertReservedTurnArgsPassLegacyBasicValidation = (rawArgs: unknown): void => {
+    const sanitizedArgs = sanitizeReservedTurnArgs(rawArgs);
+    if (sanitizedArgs === null || sanitizedArgs === undefined) {
+        return;
+    }
+    if (typeof sanitizedArgs !== 'object') {
+        throwLegacyBasicTurnArgError();
+    }
+
+    const args = sanitizedArgs as Record<string, unknown>;
+    for (const key of LEGACY_INTEGER_TURN_ARG_KEYS) {
+        if (
+            Object.prototype.hasOwnProperty.call(args, key) &&
+            !skipsLegacyOptionalValidation(args[key]) &&
+            !Number.isInteger(args[key])
+        ) {
+            throwLegacyBasicTurnArgError();
+        }
+    }
+    for (const key of LEGACY_BOOLEAN_TURN_ARG_KEYS) {
+        if (
+            Object.prototype.hasOwnProperty.call(args, key) &&
+            !skipsLegacyOptionalValidation(args[key]) &&
+            typeof args[key] !== 'boolean'
+        ) {
+            throwLegacyBasicTurnArgError();
+        }
+    }
+    for (const key of LEGACY_INTEGER_ARRAY_TURN_ARG_KEYS) {
+        if (!Object.prototype.hasOwnProperty.call(args, key)) {
+            continue;
+        }
+        const value = args[key];
+        if (skipsLegacyOptionalValidation(value)) {
+            continue;
+        }
+        if (!Array.isArray(value) || value.some((entry) => !Number.isInteger(entry))) {
+            throwLegacyBasicTurnArgError();
+        }
+    }
+
+    const month = args.month;
+    if (
+        Object.prototype.hasOwnProperty.call(args, 'month') &&
+        !skipsLegacyOptionalValidation(month) &&
+        (!isLegacyNumeric(month) || Number(month) < 1 || Number(month) > 12)
+    ) {
+        throwLegacyBasicTurnArgError();
+    }
+    const year = args.year;
+    if (
+        Object.prototype.hasOwnProperty.call(args, 'year') &&
+        !skipsLegacyOptionalValidation(year) &&
+        (!isLegacyNumeric(year) || Number(year) < 0)
+    ) {
+        throwLegacyBasicTurnArgError();
+    }
+    for (const [key, minimum] of [
+        ['destGeneralId', 1],
+        ['destGeneralID', 1],
+        ['destCityId', 1],
+        ['destCityID', 1],
+        ['destNationId', 1],
+        ['destNationID', 1],
+        ['amount', 1],
+        ['crewType', 0],
+    ] as const) {
+        if (
+            Object.prototype.hasOwnProperty.call(args, key) &&
+            !skipsLegacyOptionalValidation(args[key]) &&
+            Number(args[key]) < minimum
+        ) {
+            throwLegacyBasicTurnArgError();
+        }
+    }
+
+    if (Object.prototype.hasOwnProperty.call(args, 'nationName')) {
+        const nationName = args.nationName;
+        if (
+            !skipsLegacyOptionalValidation(nationName) &&
+            (typeof nationName !== 'string' ||
+                getLegacyStringWidth(nationName) < 1 ||
+                getLegacyStringWidth(nationName) > 18)
+        ) {
+            throwLegacyBasicTurnArgError();
+        }
+    }
+};
+
 export const assertReservedTurnActionAvailable = async (
     scope: 'general' | 'nation',
     action: string,
@@ -403,5 +586,5 @@ export const parseReservedTurnArgs = async (
     scenarioConst?: unknown
 ): Promise<Record<string, unknown>> => {
     await assertReservedTurnActionAvailable(scope, action, scenarioConst);
-    return parseRegisteredTurnArgs(scope, action, rawArgs);
+    return parseRegisteredTurnArgs(scope, action, sanitizeReservedTurnArgs(rawArgs));
 };

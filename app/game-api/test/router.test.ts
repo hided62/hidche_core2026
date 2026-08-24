@@ -1112,6 +1112,30 @@ describe('appRouter', () => {
         expect(nationWrites).toHaveLength(2);
     });
 
+    it('stores Ref-sanitized nation command strings in the reserved queue', async () => {
+        const general = buildGeneralRow({ id: 19, nationId: 3, officerLevel: 12 });
+        const nationWrites: unknown[] = [];
+        const caller = appRouter.createCaller(
+            buildContext({ state: buildWorldState(), general, nationTurnWrites: nationWrites })
+        );
+
+        const response = await caller.turns.reserved.setNation({
+            generalId: general.id,
+            turnIndex: 0,
+            action: 'che_국호변경',
+            args: { nationName: '  <신-국>#  ' },
+            expectedRevision: 0,
+        });
+
+        expect(response.turns[0]?.args).toEqual({ nationName: '&lt;신국&gt;' });
+        expect(nationWrites).toHaveLength(1);
+        expect(nationWrites[0]).toMatchObject({
+            data: expect.arrayContaining([
+                expect.objectContaining({ turnIdx: 0, arg: { nationName: '&lt;신국&gt;' } }),
+            ]),
+        });
+    });
+
     it('preserves Ref nation-turn penalty key semantics and validation priority', async () => {
         const general = buildGeneralRow({
             id: 22,
@@ -1159,7 +1183,8 @@ describe('appRouter', () => {
             singleCaller.turns.reserved.setNation({
                 generalId: general.id,
                 turnIndex: 0,
-                action: '휴식',
+                action: 'che_포상',
+                args: {},
                 expectedRevision: 0,
             })
         ).rejects.toMatchObject({
@@ -1184,7 +1209,7 @@ describe('appRouter', () => {
             bulkCaller.turns.reserved.setNationBulk({
                 generalId: general.id,
                 entries: [
-                    { turnList: [0], action: '휴식' },
+                    { turnList: [0], action: 'che_포상', args: {} },
                     { turnList: [1], action: 'not-a-command' },
                 ],
                 expectedRevision: 0,
@@ -1195,6 +1220,25 @@ describe('appRouter', () => {
         });
         expect(bulkWrites).toHaveLength(0);
         expect(bulkUpdates).toHaveLength(0);
+
+        const allowedCaller = appRouter.createCaller(
+            buildContext({
+                state: buildWorldState('full', 12),
+                general: buildGeneralRow({
+                    ...general,
+                    penalty: {},
+                }),
+            })
+        );
+        await expect(
+            allowedCaller.turns.reserved.setNation({
+                generalId: general.id,
+                turnIndex: 0,
+                action: 'che_포상',
+                args: {},
+                expectedRevision: 0,
+            })
+        ).rejects.toMatchObject({ code: 'BAD_REQUEST' });
     });
 
     it('refills user killturn after a successful nation reservation and invalidates its readers', async () => {

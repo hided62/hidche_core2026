@@ -8,9 +8,11 @@ import { loadScenarioDefinitionById } from '@sammo-ts/game-engine/scenario/scena
 import { describe, expect, it } from 'vitest';
 
 import {
+    assertReservedTurnArgsPassLegacyBasicValidation,
     buildEquipmentTradeItemOptions,
     buildTurnCommandInputFields,
     parseReservedTurnArgs,
+    sanitizeReservedTurnArgs,
 } from '../src/turns/commandInput.js';
 
 const buildShopItem = (key: string, name: string) => ({
@@ -97,6 +99,46 @@ describe('turn command argument input', () => {
             destGeneralId: 7,
         });
         await expect(parseReservedTurnArgs('general', 'che_포상', {})).rejects.toThrow('Unknown general turn command');
+    });
+
+    it('keeps Ref common validation separate from command-specific required fields', async () => {
+        expect(() => assertReservedTurnArgsPassLegacyBasicValidation({})).not.toThrow();
+        expect(() =>
+            assertReservedTurnArgsPassLegacyBasicValidation({
+                isGold: true,
+                amount: '1',
+                destGeneralId: 7,
+            })
+        ).toThrow('턴이 입력되지 않았습니다.');
+        expect(() => assertReservedTurnArgsPassLegacyBasicValidation({ month: '12', year: 0 })).not.toThrow();
+        expect(() => assertReservedTurnArgsPassLegacyBasicValidation({ nationName: '0' })).not.toThrow();
+        expect(() => assertReservedTurnArgsPassLegacyBasicValidation({ year: '0x10' })).toThrow(
+            '턴이 입력되지 않았습니다.'
+        );
+        await expect(parseReservedTurnArgs('nation', 'che_국호변경', { nationName: '0' })).rejects.toBeDefined();
+    });
+
+    it('recursively sanitizes reserved command strings like Ref before command parsing', async () => {
+        expect(
+            sanitizeReservedTurnArgs({
+                nationName: '  <신-국>#  ',
+                nested: ['A/B', '0'],
+            })
+        ).toEqual({
+            nationName: '&lt;신국&gt;',
+            nested: ['AB', ''],
+        });
+        await expect(
+            parseReservedTurnArgs('nation', 'che_국호변경', {
+                nationName: '  <신-국>#  ',
+            })
+        ).resolves.toEqual({ nationName: '&lt;신국&gt;' });
+        await expect(
+            parseReservedTurnArgs('nation', 'che_피장파장', {
+                destNationId: 2,
+                commandType: 'che_-수몰',
+            })
+        ).resolves.toEqual({ destNationId: 2, commandType: 'che_수몰' });
     });
 
     it('rejects internal general commands before parsing their arguments or scenario overrides', async () => {

@@ -14,6 +14,8 @@ import {
 } from '../../turns/commandTable.js';
 import { loadMapDefinitionByName } from '../../maps/mapDefinition.js';
 import {
+    assertReservedTurnActionAvailable,
+    assertReservedTurnArgsPassLegacyBasicValidation,
     buildEquipmentTradeItemOptions,
     parseReservedTurnArgs,
     TURN_COMMAND_NATION_COLORS,
@@ -76,6 +78,27 @@ const parseCommandArgs = async (
         // 선택 가능 profile을 통과해야 한다. 내부 전용 명령의 parser를 외부
         // 요청이 직접 호출하지 못하게 하는 첫 경계다.
         return await parseReservedTurnArgs(scope, action, args, asRecord(worldState.config).const);
+    } catch (error) {
+        throw new TRPCError({
+            code: 'BAD_REQUEST',
+            message: error instanceof Error ? error.message : 'Invalid turn command arguments.',
+            cause: error,
+        });
+    }
+};
+
+const preflightCommandArgs = async (
+    scope: 'general' | 'nation',
+    action: string,
+    args: unknown,
+    worldState: WorldStateRow
+): Promise<void> => {
+    try {
+        // Ref checks scenario availability and common argument types before
+        // officer/penalty gates. Core keeps actor ownership first, then leaves
+        // required command-specific fields for the later parser.
+        await assertReservedTurnActionAvailable(scope, action, asRecord(worldState.config).const);
+        assertReservedTurnArgsPassLegacyBasicValidation(args);
     } catch (error) {
         throw new TRPCError({
             code: 'BAD_REQUEST',
@@ -484,6 +507,7 @@ export const turnsRouter = router({
             .mutation(async ({ ctx, input }) => {
                 const general = await getOwnedGeneral(ctx, input.generalId);
                 const worldState = await getReservationWorldState(ctx);
+                await preflightCommandArgs('general', input.action, input.args, worldState);
                 const args = await parseCommandArgs('general', input.action, input.args, worldState);
                 await assertReservedTurnPermission(worldState, general, 'general', input.action, args);
 
@@ -540,15 +564,20 @@ export const turnsRouter = router({
             .mutation(async ({ ctx, input }) => {
                 const general = await getOwnedGeneral(ctx, input.generalId);
                 const worldState = await getReservationWorldState(ctx);
-                const updates = await Promise.all(
-                    input.entries.map(async (entry) => ({
+                const firstEntry = input.entries[0];
+                await preflightCommandArgs('general', firstEntry.action, firstEntry.args, worldState);
+                const updates: ReservedTurnUpdate[] = [];
+                for (const [index, entry] of input.entries.entries()) {
+                    if (index > 0) {
+                        await preflightCommandArgs('general', entry.action, entry.args, worldState);
+                    }
+                    const update = {
                         turnIndices: expandGeneralTurnIndices(entry.turnList),
                         action: entry.action,
                         args: await parseCommandArgs('general', entry.action, entry.args, worldState),
-                    }))
-                );
-                for (const update of updates) {
+                    };
                     await assertReservedTurnPermission(worldState, general, 'general', update.action, update.args);
+                    updates.push(update);
                 }
                 const snapshot = await mutateReservedTurns(() =>
                     setGeneralTurns(ctx.db, input.generalId, updates, input.expectedRevision)
@@ -573,6 +602,8 @@ export const turnsRouter = router({
             )
             .mutation(async ({ ctx, input }) => {
                 const general = await getOwnedGeneral(ctx, input.generalId);
+                const worldState = await getReservationWorldState(ctx);
+                await preflightCommandArgs('nation', input.action, input.args, worldState);
                 if (general.nationId <= 0) {
                     throw new TRPCError({
                         code: 'PRECONDITION_FAILED',
@@ -585,9 +616,8 @@ export const turnsRouter = router({
                         message: 'General is not an officer.',
                     });
                 }
-                const worldState = await getReservationWorldState(ctx);
-                const args = await parseCommandArgs('nation', input.action, input.args, worldState);
                 assertNationTurnInputAllowed(general);
+                const args = await parseCommandArgs('nation', input.action, input.args, worldState);
                 await assertReservedTurnPermission(worldState, general, 'nation', input.action, args);
 
                 const snapshot = await mutateReservedTurns(() =>
@@ -684,6 +714,9 @@ export const turnsRouter = router({
             )
             .mutation(async ({ ctx, input }) => {
                 const general = await getOwnedGeneral(ctx, input.generalId);
+                const worldState = await getReservationWorldState(ctx);
+                const firstEntry = input.entries[0];
+                await preflightCommandArgs('nation', firstEntry.action, firstEntry.args, worldState);
                 if (general.nationId <= 0) {
                     throw new TRPCError({
                         code: 'PRECONDITION_FAILED',
@@ -696,15 +729,17 @@ export const turnsRouter = router({
                         message: 'General is not an officer.',
                     });
                 }
-                const worldState = await getReservationWorldState(ctx);
                 const updates: ReservedTurnUpdate[] = [];
-                for (const entry of input.entries) {
+                for (const [index, entry] of input.entries.entries()) {
+                    if (index > 0) {
+                        await preflightCommandArgs('nation', entry.action, entry.args, worldState);
+                    }
+                    assertNationTurnInputAllowed(general);
                     const update = {
                         turnIndices: entry.turnList,
                         action: entry.action,
                         args: await parseCommandArgs('nation', entry.action, entry.args, worldState),
                     };
-                    assertNationTurnInputAllowed(general);
                     await assertReservedTurnPermission(worldState, general, 'nation', update.action, update.args);
                     updates.push(update);
                 }
