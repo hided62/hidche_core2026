@@ -92,6 +92,11 @@ Runner는 이 registry를 실제 `describe.skipIf()` gate와 exact-set으로 대
 주입한 경우에는 suite를 조용히 skip하지 않고 설정 오류로 실패합니다. DB/Redis marker가
 있는 파일을 이 registry에 중복 등록할 수도 없습니다.
 
+조건부 실행 결과는 Vitest의 file status만 세지 않습니다. 한 파일 안의 guard test가
+통과해 file status가 `passed`여도 실제 조건부 assertion 하나가 `skipped`, `pending`,
+`todo` 또는 `disabled`라면 runner가 실패합니다. 따라서 실행 대상으로 등록한 기능 test가
+일부라도 조용히 생략된 mixed file을 0-skip 결과로 보고할 수 없습니다.
+
 `external_fixture` mode는 격리 빈 schema로 만들 수 없는 명시적 예외입니다.
 현재 `CURRENT_SEASON_FIXTURE_DATABASE_URL`은 별도 Ref 현 시즌 importer가 만든
 read-only snapshot을 요구하므로 조건부 runner의 pass/skip 집계에 포함하지
