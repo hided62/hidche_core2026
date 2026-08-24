@@ -153,11 +153,17 @@ export const getPersonnelInfo = accessAuthedProcedure.query(async ({ ctx }) => {
     const canChangePermissions = me.officerLevel === 12;
     const ambassadors = canChangePermissions
         ? permissionCandidates.filter(
-              (candidate) => candidate.permission === 'ambassador' || candidate.maxPermission === 4
+              (candidate) =>
+                  candidate.permission === 'ambassador' ||
+                  (candidate.permission === 'normal' && candidate.maxPermission === 4)
           )
         : [];
     const auditors = canChangePermissions
-        ? permissionCandidates.filter((candidate) => candidate.permission === 'auditor' || candidate.maxPermission >= 3)
+        ? permissionCandidates.filter(
+              (candidate) =>
+                  candidate.permission === 'auditor' ||
+                  (candidate.permission === 'normal' && candidate.maxPermission >= 3)
+          )
         : [];
     const generalNameMap = new Map(mappedGenerals.map((general) => [general.id, general.name]));
     const awards = {

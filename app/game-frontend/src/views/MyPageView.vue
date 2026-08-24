@@ -33,6 +33,7 @@ type SettingForm = {
     use_treatment: number;
     use_auto_nation_turn: number;
     use_auto_nation_diplomacy: number;
+    use_auto_nation_war: number;
     use_auto_nation_promotion: number;
     use_auto_nation_finance: number;
     use_auto_nation_capital: number;
@@ -69,6 +70,7 @@ const form = reactive<SettingForm>({
     use_treatment: 10,
     use_auto_nation_turn: 1,
     use_auto_nation_diplomacy: 0,
+    use_auto_nation_war: 0,
     use_auto_nation_promotion: 0,
     use_auto_nation_finance: 0,
     use_auto_nation_capital: 0,
@@ -432,7 +434,16 @@ onMounted(() => {
                             :true-value="1"
                             :false-value="0"
                         />
-                        자동 외교 (불가침 제의·선전포고)
+                        자동 외교 (불가침 제의)
+                    </label>
+                    <label>
+                        <input
+                            v-model="form.use_auto_nation_war"
+                            type="checkbox"
+                            :true-value="1"
+                            :false-value="0"
+                        />
+                        자동 선전포고
                     </label>
                     <label>
                         <input

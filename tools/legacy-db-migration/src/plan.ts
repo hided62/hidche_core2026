@@ -6,6 +6,7 @@ import { migrateGateway, type MigrationSummary } from './gateway.js';
 import type { MigrationMode } from './incremental.js';
 import type { ResolvedMigrationPlan, ResolvedMigrationStage } from './config.js';
 import { migrationInventoryForStage } from './inventory.js';
+import { prepareLegacyUserIcons } from './legacyUserIcons.js';
 
 export interface PlanRunSummary {
     command: 'run-plan';
@@ -23,6 +24,7 @@ export interface PlanRunSummary {
 interface StagePreflight {
     battleResults?: { seasons: number; files: number; bytes: number };
     battleResultManifests?: readonly BattleResultSeasonManifest[];
+    userIcons?: { custom: number; legacyFiles: number; existingUploads: number; rejected: number };
 }
 
 const preflightStage = async (stage: ResolvedMigrationStage): Promise<StagePreflight> => {
@@ -76,7 +78,23 @@ const preflightStage = async (stage: ResolvedMigrationStage): Promise<StagePrefl
         if (!targetReady.rows[0]?.table_name) {
             throw new Error(`Target migrations are not current for ${stage.name}; missing ${targetDataTable}`);
         }
-        if (stage.kind === 'game' && stage.battleResults) {
+        if (stage.kind === 'gateway') {
+            const iconRows = await querySource(
+                source,
+                `SELECT NO, PICTURE, IMGSVR, REG_DATE
+                 FROM member WHERE PICTURE <> 'default.jpg' ORDER BY NO`
+            );
+            const prepared = await prepareLegacyUserIcons(iconRows, stage.userIcons, false);
+            return {
+                userIcons: {
+                    custom: prepared.counts.custom,
+                    legacyFiles: prepared.counts.legacyFiles,
+                    existingUploads: prepared.counts.existingUploads,
+                    rejected: prepared.counts.rejected,
+                },
+            };
+        }
+        if (stage.battleResults) {
             const battleResultReady = await target.query<{ table_name: string | null }>(
                 'SELECT to_regclass($1) AS table_name',
                 ['legacy_archive.general_battle_result']
@@ -113,6 +131,7 @@ export const checkMigrationPlan = async (plan: ResolvedMigrationPlan): Promise<R
             status: 'READY',
             inventory: migrationInventoryForStage(stage),
             ...(preflight.battleResults ? { battleResults: preflight.battleResults } : {}),
+            ...(preflight.userIcons ? { userIcons: preflight.userIcons } : {}),
         });
     }
     return {
@@ -140,7 +159,7 @@ export const runMigrationPlan = async (
             const execution = { mode, source: stage.sourceIdentity } as const;
             const summary =
                 stage.kind === 'gateway'
-                    ? await migrateGateway(source, target, apply, migratedAt, execution)
+                    ? await migrateGateway(source, target, apply, migratedAt, execution, stage.userIcons)
                     : await migrateGame(source, target, apply, stage.profile!, execution);
             const battleResults =
                 stage.kind === 'game' && stage.battleResults

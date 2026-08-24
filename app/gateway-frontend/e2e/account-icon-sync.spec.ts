@@ -40,6 +40,16 @@ const profileInputAt = (body: string, index: number): string | null => {
     }
 };
 
+const adjustIconInputAt = (body: string, index: number): Record<string, unknown> => {
+    try {
+        const parsed = JSON.parse(body) as Record<string, Record<string, unknown> & { json?: Record<string, unknown> }>;
+        const input = parsed[String(index)];
+        return input?.json ?? input ?? {};
+    } catch {
+        return {};
+    }
+};
+
 type FixtureOptions = {
     failHweAdjustOnce?: boolean;
     delayHweAdjust?: boolean;
@@ -65,6 +75,7 @@ const installFixture = async (page: Page, options: FixtureOptions = {}) => {
     let preferredIconCount = 0;
     let retireIconCount = 0;
     let hweAdjustCount = 0;
+    const adjustIconInputs: Array<Record<string, unknown>> = [];
     const operations = new Map<string, string[]>([
         ['che:903', []],
         ['hwe:903', []],
@@ -199,7 +210,8 @@ const installFixture = async (page: Page, options: FixtureOptions = {}) => {
                 `/${profileName.split(':')[0]}/api/trpc/${operationNames(route).join(',')}`
             );
             const results = [];
-            for (const operation of operationNames(route)) {
+            const body = route.request().postData() ?? '';
+            for (const [index, operation] of operationNames(route).entries()) {
                 if (operation === 'auth.exchangeGatewayToken') {
                     operations.get(profileName)?.push('exchangeGatewayToken');
                     results.push(
@@ -213,6 +225,11 @@ const installFixture = async (page: Page, options: FixtureOptions = {}) => {
                 }
                 if (operation === 'general.adjustIcon') {
                     operations.get(profileName)?.push('adjustIcon');
+                    const input = adjustIconInputAt(body, index);
+                    adjustIconInputs.push(input);
+                    if (input.resetToDefault !== true) {
+                        expect(input.iconId).toBe('3f804277-584f-4f44-b39c-9ecf40d1ed31');
+                    }
                     if (profileName === 'hwe:903') {
                         hweAdjustCount += 1;
                         if (options.delayHweAdjust) {
@@ -242,6 +259,7 @@ const installFixture = async (page: Page, options: FixtureOptions = {}) => {
         deleteIconCount: () => deleteIconCount,
         preferredIconCount: () => preferredIconCount,
         retireIconCount: () => retireIconCount,
+        adjustIconInputs: () => adjustIconInputs,
     };
 };
 
@@ -558,6 +576,9 @@ test('uses the Ref delete confirmation and opens the modal only after acceptance
         .toBe('none');
     await page.keyboard.press('Escape');
     await expect(page.getByTestId('icon-server-modal')).toBeVisible();
+    await apply.click();
+    await expect(page.getByTestId('icon-server-result-hwe:903')).toContainText('적용됨');
+    expect(fixture.adjustIconInputs().at(-1)).toEqual({ resetToDefault: true });
 });
 
 test('contains focus and long failure content inside a 320px viewport', async ({ page }) => {

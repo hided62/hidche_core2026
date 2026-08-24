@@ -19,8 +19,8 @@ import {
     fetchMessagesFromMailbox,
     fetchOldMessagesFromMailbox,
     fetchMessageById,
-    invalidateMessages,
     insertMessage,
+    tombstoneMessages,
     type MessageView,
 } from '../../messages/store.js';
 import { getOwnedGeneral } from '../shared/general.js';
@@ -40,11 +40,7 @@ const redactDiplomacyMessages = (messages: MessageView[], permission: number): M
         }
         return {
             ...message,
-            text: '(외교 메시지입니다)',
-            option: {
-                ...(message.option ?? {}),
-                invalid: true,
-            },
+            text: '조회 권한이 없는 외교 메시지입니다.',
         };
     });
 };
@@ -303,7 +299,7 @@ export const messagesRouter = router({
                 message.id,
                 ...(shouldDeleteReceiverCopy && typeof receiverMessageId === 'number' ? [receiverMessageId] : []),
             ];
-            await invalidateMessages(ctx.db, ids);
+            await tombstoneMessages(ctx.db, ids);
             const receiverMailbox =
                 shouldDeleteReceiverCopy && typeof receiverMessageId === 'number' && message.msgType === 'private'
                     ? message.payload.dest.generalId

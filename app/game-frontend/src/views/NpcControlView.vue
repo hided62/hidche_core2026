@@ -46,6 +46,7 @@ const generalPriority = ref<PriorityListState | null>(null);
 const lastSavedNationPriority = ref<string[]>([]);
 const lastSavedGeneralPriority = ref<string[]>([]);
 const { success: showSuccessToast, error: showErrorToast, info: showInfoToast } = useGameFeedback();
+const canManagePolicy = computed(() => (data.value?.permissionLevel ?? -1) >= 3);
 
 const resolveErrorMessage = (value: unknown): string => {
     if (value instanceof Error) return value.message;
@@ -282,19 +283,19 @@ const priorityPanels = computed<PriorityPanel[]>(() => {
 });
 
 const resetPolicy = () => {
-    if (!data.value || !window.confirm('초기 설정으로 되돌릴까요?')) return;
+    if (!canManagePolicy.value || !data.value || !window.confirm('초기 설정으로 되돌릴까요?')) return;
     policyDraft.value = clonePolicy(data.value.defaultNationPolicy);
     showInfoToast('서버 초깃값을 적용했습니다. 설정 버튼을 누르면 반영됩니다.');
 };
 
 const rollbackPolicy = () => {
-    if (!lastSavedPolicy.value || !window.confirm('이전 설정으로 되돌릴까요?')) return;
+    if (!canManagePolicy.value || !lastSavedPolicy.value || !window.confirm('이전 설정으로 되돌릴까요?')) return;
     policyDraft.value = clonePolicy(lastSavedPolicy.value);
     showInfoToast('이전 설정으로 되돌렸습니다.');
 };
 
 const submitPolicy = async () => {
-    if (!policyDraft.value || !window.confirm('저장할까요?')) return;
+    if (!canManagePolicy.value || !policyDraft.value || !window.confirm('저장할까요?')) return;
     try {
         await trpc.npc.setNationPolicy.mutate(policyDraft.value);
         lastSavedPolicy.value = clonePolicy(policyDraft.value);
@@ -305,7 +306,7 @@ const submitPolicy = async () => {
 };
 
 const resetPriority = (section: PrioritySectionKey) => {
-    if (!data.value || !window.confirm('초기 설정으로 되돌릴까요?')) return;
+    if (!canManagePolicy.value || !data.value || !window.confirm('초기 설정으로 되돌릴까요?')) return;
     if (section === 'nation') {
         nationPriority.value = assignPriorityState(
             data.value.defaultNationPriority,
@@ -321,7 +322,7 @@ const resetPriority = (section: PrioritySectionKey) => {
 };
 
 const rollbackPriority = (section: PrioritySectionKey) => {
-    if (!data.value || !window.confirm('이전 설정으로 되돌릴까요?')) return;
+    if (!canManagePolicy.value || !data.value || !window.confirm('이전 설정으로 되돌릴까요?')) return;
     if (section === 'nation') {
         nationPriority.value = assignPriorityState(
             lastSavedNationPriority.value,
@@ -338,7 +339,7 @@ const rollbackPriority = (section: PrioritySectionKey) => {
 
 const submitPriority = async (section: PrioritySectionKey) => {
     const state = section === 'nation' ? nationPriority.value : generalPriority.value;
-    if (!state || !window.confirm('저장할까요?')) return;
+    if (!canManagePolicy.value || !state || !window.confirm('저장할까요?')) return;
     try {
         if (section === 'nation') {
             await trpc.npc.setNationPriority.mutate(state.active);
@@ -416,10 +417,16 @@ const submitPriority = async (section: PrioritySectionKey) => {
 
             <div class="control_bar">
                 <div class="button-group">
-                    <button class="reset_btn" type="button" @click="resetPolicy">초깃값으로</button>
-                    <button class="revert_btn" type="button" @click="rollbackPolicy">이전값으로</button>
+                    <button class="reset_btn" type="button" :disabled="!canManagePolicy" @click="resetPolicy">
+                        초깃값으로
+                    </button>
+                    <button class="revert_btn" type="button" :disabled="!canManagePolicy" @click="rollbackPolicy">
+                        이전값으로
+                    </button>
                 </div>
-                <button class="submit_btn" type="button" @click="submitPolicy">설정</button>
+                <button class="submit_btn" type="button" :disabled="!canManagePolicy" @click="submitPolicy">
+                    설정
+                </button>
             </div>
 
             <div class="priority-sections">
@@ -498,14 +505,31 @@ const submitPriority = async (section: PrioritySectionKey) => {
                     </div>
                     <div class="control_bar priority-control">
                         <div class="button-group">
-                            <button class="reset_btn" type="button" @click="resetPriority(panel.key)">
+                            <button
+                                class="reset_btn"
+                                type="button"
+                                :disabled="!canManagePolicy"
+                                @click="resetPriority(panel.key)"
+                            >
                                 초깃값으로
                             </button>
-                            <button class="revert_btn" type="button" @click="rollbackPriority(panel.key)">
+                            <button
+                                class="revert_btn"
+                                type="button"
+                                :disabled="!canManagePolicy"
+                                @click="rollbackPriority(panel.key)"
+                            >
                                 이전값으로
                             </button>
                         </div>
-                        <button class="submit_btn" type="button" @click="submitPriority(panel.key)">설정</button>
+                        <button
+                            class="submit_btn"
+                            type="button"
+                            :disabled="!canManagePolicy"
+                            @click="submitPriority(panel.key)"
+                        >
+                            설정
+                        </button>
                     </div>
                 </section>
             </div>
@@ -728,8 +752,14 @@ const submitPriority = async (section: PrioritySectionKey) => {
     border-radius: 4px;
 }
 
-.control_bar button:hover {
+.control_bar button:not(:disabled):hover {
     filter: brightness(1.15);
+}
+
+.control_bar button:disabled {
+    cursor: not-allowed;
+    opacity: 0.55;
+    filter: none;
 }
 
 .control_bar button:focus-visible,

@@ -442,7 +442,16 @@ const syncIconToServer = async (row: IconSyncRow, token: string): Promise<void> 
             gatewayToken: issued.gameToken,
         });
         const gameTrpc = createGameTrpc(row.profile, row.apiPort, exchanged.accessToken);
-        await gameTrpc.general.adjustIcon.mutate();
+        if (!account.value?.iconUrl) {
+            await gameTrpc.general.adjustIcon.mutate({ resetToDefault: true });
+            row.state = 'success';
+            return;
+        }
+        const selectedIconId = account.value?.icons.find(
+            (icon) => icon.picture === account.value?.preferredPicture
+        )?.id;
+        if (!selectedIconId) throw new Error('적용할 활성 전용 아이콘을 찾을 수 없습니다.');
+        await gameTrpc.general.adjustIcon.mutate({ iconId: selectedIconId });
         row.state = 'success';
     } catch (error) {
         row.state = 'error';

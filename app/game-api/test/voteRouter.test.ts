@@ -267,7 +267,7 @@ describe('vote router actor and permission boundaries', () => {
         expect(fixture.redisPublish).not.toHaveBeenCalled();
     });
 
-    it('publishes a global front-status projection after creating a survey', async () => {
+    it('stores the authenticated general name and publishes a global projection after creating a survey', async () => {
         const auth = buildAuth(['admin.survey.open']);
         auth.user.username = 'admin-account';
         auth.user.displayName = '관리자 표시명';
@@ -288,8 +288,9 @@ describe('vote router actor and permission boundaries', () => {
         const insert = fixture.queryRaw.mock.calls
             .map(([query]) => query)
             .find((query) => sqlText(query).includes('INSERT INTO vote_poll'));
-        expect(insert?.values).toContain('admin-account');
-        expect(insert?.values).not.toContain('관리자 장수');
+        expect(insert?.values).toContain('관리자 장수');
+        expect(insert?.values).not.toContain('admin-account');
+        expect(insert?.values).not.toContain('관리자 표시명');
     });
 
     it('binds current operational timestamps in every raw SQL vote writer', async () => {

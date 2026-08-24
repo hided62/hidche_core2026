@@ -433,7 +433,6 @@ export const voteRouter = router({
         )
         .mutation(async ({ ctx, input }) => {
             const general = await getMyGeneral(ctx);
-            const openerName = ctx.auth?.user.username ?? general.name;
             const options = normalizeOptions(input.options);
             if (options.length === 0) {
                 throw new TRPCError({ code: 'BAD_REQUEST', message: '항목이 없습니다.' });
@@ -488,7 +487,7 @@ export const voteRouter = router({
                     ${multipleOptions},
                     ${input.revealMode},
                     ${general.id},
-                    ${openerName},
+                    ${general.name},
                     ${gameTime.now},
                     ${gameTime.tick === null ? null : BigInt(gameTime.tick)},
                     ${endAt},

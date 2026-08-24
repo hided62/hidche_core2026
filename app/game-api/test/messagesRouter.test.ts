@@ -176,13 +176,15 @@ describe('messages router missing-flow compatibility', () => {
 
         expect(recent.permission).toBe(2);
         expect(recent.diplomacy[0]).toMatchObject({
-            text: '(외교 메시지입니다)',
-            option: { action: 'noAggression', invalid: true },
+            text: '조회 권한이 없는 외교 메시지입니다.',
+            option: { action: 'noAggression' },
         });
+        expect(recent.diplomacy[0]?.option).not.toHaveProperty('invalid');
         expect(old.diplomacy[0]).toMatchObject({
-            text: '(외교 메시지입니다)',
-            option: { action: 'noAggression', invalid: true },
+            text: '조회 권한이 없는 외교 메시지입니다.',
+            option: { action: 'noAggression' },
         });
+        expect(old.diplomacy[0]?.option).not.toHaveProperty('invalid');
     });
 
     it('forces a non-diplomat foreign nation target back to the owned nation mailbox', async () => {
@@ -585,15 +587,13 @@ describe('messages router missing-flow compatibility', () => {
             },
         ]);
         const changeJournal = new ChangeJournal();
-        const { caller, updateMany } = buildContext({ $queryRaw: queryRaw }, { changeJournal });
+        const { caller, executeRaw, updateMany } = buildContext({ $queryRaw: queryRaw }, { changeJournal });
 
         const result = await caller.messages.delete({ generalId: general.id, messageId: 21 });
 
         expect(result.deletedIds).toEqual([21, 22]);
-        expect(updateMany).toHaveBeenCalledWith({
-            where: { id: { in: [21, 22] } },
-            data: { validUntil: expect.any(Date) },
-        });
+        expect(executeRaw).toHaveBeenCalledOnce();
+        expect(updateMany).not.toHaveBeenCalled();
         expect(changeJournal.snapshot()).toEqual([
             { domain: 'messages.mailbox', entityId: 7 },
             { domain: 'messages.mailbox', entityId: 8 },
@@ -632,15 +632,13 @@ describe('messages router missing-flow compatibility', () => {
                 },
             },
         ]);
-        const { caller, updateMany } = buildContext({ $queryRaw: queryRaw });
+        const { caller, executeRaw, updateMany } = buildContext({ $queryRaw: queryRaw });
 
         const result = await caller.messages.delete({ generalId: general.id, messageId: 25 });
 
         expect(result.deletedIds).toEqual([25]);
-        expect(updateMany).toHaveBeenCalledWith({
-            where: { id: { in: [25] } },
-            data: { validUntil: expect.any(Date) },
-        });
+        expect(executeRaw).toHaveBeenCalledOnce();
+        expect(updateMany).not.toHaveBeenCalled();
     });
 
     it('rejects deleting another general message', async () => {

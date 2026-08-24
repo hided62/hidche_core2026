@@ -276,6 +276,7 @@ const myGeneral = (state: FixtureState) => ({
         use_treatment: 21,
         use_auto_nation_turn: 1,
         use_auto_nation_diplomacy: 0,
+        use_auto_nation_war: 0,
         use_auto_nation_promotion: 0,
         use_auto_nation_finance: 0,
         use_auto_nation_capital: 0,
@@ -1342,11 +1343,18 @@ test('내 정보&설정 keeps desktop density and becomes a 390px horizontal-ide
     ]);
     const rulerAutomation = page.locator('.ruler-automation-settings');
     await expect(rulerAutomation).toBeVisible();
-    const diplomacyAutomation = page.getByRole('checkbox', { name: '자동 외교 (불가침 제의·선전포고)' });
+    const diplomacyAutomation = page.getByRole('checkbox', { name: '자동 외교 (불가침 제의)' });
+    const warAutomation = page.getByRole('checkbox', { name: '자동 선전포고' });
     const promotionAutomation = page.getByRole('checkbox', { name: '자동 수뇌 임명' });
     const financeAutomation = page.getByRole('checkbox', { name: '자동 세율·지급률 조정' });
     const capitalAutomation = page.getByRole('checkbox', { name: '자동 천도' });
-    for (const checkbox of [diplomacyAutomation, promotionAutomation, financeAutomation, capitalAutomation]) {
+    for (const checkbox of [
+        diplomacyAutomation,
+        warAutomation,
+        promotionAutomation,
+        financeAutomation,
+        capitalAutomation,
+    ]) {
         await expect(checkbox).not.toBeChecked();
         await checkbox.check();
     }
@@ -1410,6 +1418,7 @@ test('내 정보&설정 keeps desktop density and becomes a 390px horizontal-ide
     expect(state.settingMutations[0]).not.toHaveProperty('generalId');
     expect(state.settingMutations[0]).toMatchObject({
         use_auto_nation_diplomacy: 1,
+        use_auto_nation_war: 1,
         use_auto_nation_promotion: 1,
         use_auto_nation_finance: 1,
         use_auto_nation_capital: 1,
@@ -1979,6 +1988,40 @@ test('장수 생성에서 등록 전콘을 골라 생성 요청에 전달한다'
 
     await expect.poll(() => state.createGeneralInputs?.length ?? 0).toBe(1);
     expect(state.createGeneralInputs?.[0]).toMatchObject({ pic: true, iconId: secondIconId });
+});
+
+test('활성 전용 아이콘이 없으면 대표 preset을 장수 생성 요청에 전달하지 않는다', async ({ page }) => {
+    const state: FixtureState = {
+        permission: 'member',
+        myset: 1,
+        settingMutations: [],
+        accessPages: [],
+        createGeneralInputs: [],
+        joinConfig: {
+            rules: { stat: { total: 150, min: 30, max: 70 }, allowCustomName: true },
+            user: {
+                id: 'user-1',
+                displayName: '생성장수',
+                canCreateGeneral: true,
+                preferredPicture: '장수/유비.jpg',
+                icons: [],
+            },
+            personalities: [{ key: 'Random', name: '???', info: '무작위 성격' }],
+            nations: [],
+            selectionPool: { enabled: false },
+            npcPossession: { enabled: false },
+            inherit: null,
+        },
+    };
+    await install(page, state);
+    await page.goto('join');
+
+    await expect(page.getByRole('radiogroup', { name: '전용 아이콘 선택' })).toHaveCount(0);
+    await page.getByRole('button', { name: '장수 생성', exact: true }).last().click();
+
+    await expect.poll(() => state.createGeneralInputs?.length ?? 0).toBe(1);
+    expect(state.createGeneralInputs?.[0]).toMatchObject({ pic: false });
+    expect(state.createGeneralInputs?.[0]).not.toHaveProperty('iconId');
 });
 
 test('내 정보 즉시행동은 timeout 재시도 ID를 유지하고 성공 후 새 ID를 만든다', async ({ page }) => {

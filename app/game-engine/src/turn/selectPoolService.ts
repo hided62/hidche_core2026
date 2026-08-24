@@ -54,6 +54,18 @@ const DEFAULT_CREW_TYPE_ID = 1100;
 const MAX_GENERAL_TURNS = 30;
 const DEFAULT_TURN_ACTION = '휴식';
 
+export const resolveSelectionPoolUserIcon = (options: {
+    showImgLevel: number;
+    ownerPicture?: string;
+    ownerImageServer?: number;
+}): { picture: string; imageServer: number } => {
+    const useOwnerPicture =
+        options.showImgLevel >= 1 && typeof options.ownerPicture === 'string' && options.ownerPicture !== 'default.jpg';
+    return useOwnerPicture
+        ? { picture: options.ownerPicture!, imageServer: options.ownerImageServer ?? 1 }
+        : { picture: 'default.jpg', imageServer: 0 };
+};
+
 const zCandidateInfo = z.object({
     uniqueName: z.string().min(1),
     generalName: z.string().min(1),
@@ -690,6 +702,7 @@ export const createGeneralFromSelectionPool = async (options: {
     uniqueName: string;
     personality: string;
     now?: Date;
+    operationalAcceptedAt: Date;
     seedOwnerIdentity?: string | number;
     ownerPicture?: string;
     ownerImageServer?: number;
@@ -754,12 +767,15 @@ export const createGeneralFromSelectionPool = async (options: {
     const nextChangeAt = new Date(
         now.getTime() + resolveTurnTermMinutes(worldState) * RESELECTION_TURN_MULTIPLIER * 60_000
     );
-    const prestartDeleteAfter = buildPrestartDeleteAfter(now, worldState.tickSeconds, config);
-    const showImgLevel = asNumber(config.showImgLevel, 0);
-    const useOwnerPicture =
-        showImgLevel >= 1 && typeof options.ownerPicture === 'string' && options.ownerPicture !== 'default.jpg';
-    const picture = useOwnerPicture ? options.ownerPicture! : showImgLevel >= 3 ? info.picture : 'default.jpg';
-    const imageServer = useOwnerPicture ? (options.ownerImageServer ?? 1) : info.imgsvr;
+    const prestartDeleteAfter = buildPrestartDeleteAfter(options.operationalAcceptedAt, worldState.tickSeconds, config);
+    // 후보 picture는 NPC용 preset이다. 후보가 사람 장수(npcState=0)가 되는
+    // 순간부터는 명시적으로 선택한 계정 전용 아이콘 또는 기본 아이콘만 허용한다.
+    const { picture, imageServer } = resolveSelectionPoolUserIcon({
+        showImgLevel: asNumber(config.showImgLevel, 0),
+        ownerPicture: options.ownerPicture,
+        ownerImageServer: options.ownerImageServer,
+    });
+    const useOwnerPicture = picture !== 'default.jpg';
     const defaultSpecialWar =
         typeof configConst.defaultSpecialWar === 'string' ? configConst.defaultSpecialWar : 'None';
     const defaultSpecialDomestic =
@@ -893,8 +909,8 @@ export const createGeneralFromSelectionPool = async (options: {
     }
     await db.generalAccessLog.upsert({
         where: { generalId },
-        update: { userId, lastRefresh: now },
-        create: { generalId, userId, lastRefresh: now },
+        update: { userId, lastRefresh: options.operationalAcceptedAt },
+        create: { generalId, userId, lastRefresh: options.operationalAcceptedAt },
     });
     await clearUnusedReservations(db, userId, now, nowTick);
     await synchronizeSelectionPoolWorld(db, world);
@@ -1022,6 +1038,7 @@ export const reselectGeneralFromSelectionPool = async (options: {
             now
         ),
     };
+    const reselectionIcon = resolveSelectionPoolUserIcon({ showImgLevel: 0 });
     const updated = world.updateGeneral(general.id, {
         name: info.generalName,
         stats: centennialGrowth?.stats ?? {
@@ -1035,8 +1052,10 @@ export const reselectGeneralFromSelectionPool = async (options: {
             specialDomestic: info.specialDomestic,
             specialWar: info.specialWar ?? general.role.specialWar,
         },
-        picture: info.picture,
-        imageServer: info.imgsvr,
+        // 재선택 후보의 preset은 유저 장수에 이어 붙이지 않는다. 전용 아이콘을
+        // 다시 고르는 UI가 없는 현재 경로는 안전한 기본 아이콘으로 되돌린다.
+        picture: reselectionIcon.picture,
+        imageServer: reselectionIcon.imageServer,
         meta: updatedMeta,
     });
     if (!updated) {

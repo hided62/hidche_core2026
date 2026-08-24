@@ -27,6 +27,16 @@ import {
     type MigrationExecutionOptions,
     type MigrationProgress,
 } from './incremental.js';
+import {
+    normalizeLegacyIconPicture,
+    prepareLegacyUserIcons,
+    syncImportedUserIcons,
+    syncRejectedUserIcons,
+    type LegacyUserIconPreparation,
+    type LegacyUserIconTransferConfig,
+    type PreparedLegacyUserIcon,
+    type RejectedLegacyUserIcon,
+} from './legacyUserIcons.js';
 import { mapLegacyRoles, mapLegacySanctions, parseJson, type JsonValue } from './transform.js';
 
 export interface MigrationSummary {
@@ -105,7 +115,15 @@ export const preflightMemberConflicts = async (target: PoolClient, rows: readonl
     }
 };
 
-export const mapMember = (row: SourceRow, migratedAt: Date, lastLoginAt: Date | null): TargetRow => {
+export { normalizeLegacyIconPicture } from './legacyUserIcons.js';
+
+export const mapMember = (
+    row: SourceRow,
+    migratedAt: Date,
+    lastLoginAt: Date | null,
+    importedIcon?: PreparedLegacyUserIcon,
+    rejectedIcon?: RejectedLegacyUserIcon
+): TargetRow => {
     const memberNo = toNumber(row.NO, 'member.NO');
     const grade = toNumber(row.GRADE, `member.${memberNo}.GRADE`);
     const acl = parseJson(row.acl, `member.${memberNo}.acl`);
@@ -114,11 +132,17 @@ export const mapMember = (row: SourceRow, migratedAt: Date, lastLoginAt: Date | 
     const oauthType = row.oauth_type === 'KAKAO' ? 'KAKAO' : 'NONE';
     const oauthId = toNullableString(row.oauth_id)?.trim() || null;
     const passwordHash = toStringValue(row.PW, `member.${memberNo}.PW`);
+    const rawPicture = toNullableString(row.PICTURE) ?? 'default.jpg';
+    const imageServer = toNumber(row.IMGSVR ?? 0, `member.${memberNo}.IMGSVR`);
     const legacyData: JsonValue = {
         memberNo,
         grade,
         acl,
         penalty,
+        picture: rawPicture,
+        imageServer,
+        ...(importedIcon ? { importedPicture: importedIcon.picture, importedPictureSha256: importedIcon.sha256 } : {}),
+        ...(rejectedIcon ? { rejectedPictureReason: rejectedIcon.reason } : {}),
         tokenValidUntil: toNullableString(row.token_valid_until),
         regNum: toNumber(row.REG_NUM, `member.${memberNo}.REG_NUM`),
         blockNum: toNumber(row.BLOCK_NUM, `member.${memberNo}.BLOCK_NUM`),
@@ -137,8 +161,8 @@ export const mapMember = (row: SourceRow, migratedAt: Date, lastLoginAt: Date | 
         oauth_id: oauthId,
         email: toNullableString(row.EMAIL)?.toLowerCase() ?? null,
         oauth_info: jsonParameter(oauthInfo),
-        picture: toNullableString(row.PICTURE) ?? 'default.jpg',
-        image_server: toNumber(row.IMGSVR ?? 0, `member.${memberNo}.IMGSVR`),
+        picture: importedIcon?.picture ?? (rejectedIcon ? 'default.jpg' : normalizeLegacyIconPicture(rawPicture)),
+        image_server: importedIcon?.imageServer ?? (rejectedIcon ? 0 : imageServer),
         icon_updated_at: null,
         third_party_use: toNumber(row.third_use ?? 0, `member.${memberNo}.third_use`) !== 0,
         terms_accepted_at: null,
@@ -175,19 +199,53 @@ const processMembers = async (
     target: PoolClient | null,
     apply: boolean,
     migratedAt: Date,
-    counts: Record<string, number>
+    counts: Record<string, number>,
+    preparedIcons: ReadonlyMap<number, PreparedLegacyUserIcon>,
+    rejectedIcons: ReadonlyMap<number, RejectedLegacyUserIcon>
 ): Promise<void> => {
     const lastLogins = await loadLastLogins(source);
     for await (const rows of paginateSource(source, 'member', 'NO', batchSize)) {
         const mapped = rows.map((row) => {
             const memberNo = toNumber(row.NO, 'member.NO');
-            return mapMember(row, migratedAt, lastLogins.get(memberNo) ?? null);
+            const importedIcon = preparedIcons.get(memberNo);
+            const rejectedIcon = rejectedIcons.get(memberNo);
+            const sourcePicture = toNullableString(row.PICTURE) ?? 'default.jpg';
+            if (
+                (sourcePicture !== 'default.jpg' && !importedIcon && !rejectedIcon) ||
+                (importedIcon && importedIcon.sourcePicture !== sourcePicture) ||
+                (rejectedIcon && rejectedIcon.sourcePicture !== sourcePicture)
+            ) {
+                throw new Error(`member.${memberNo}.PICTURE changed after user-icon preflight`);
+            }
+            return mapMember(row, migratedAt, lastLogins.get(memberNo) ?? null, importedIcon, rejectedIcon);
         });
         if (target) {
             await preflightMemberConflicts(target, mapped);
         }
         if (target && apply) {
             await upsertRows(target, 'app_user', mapped, ['id'], { preserveOnConflict: MEMBER_PRESERVED_COLUMNS });
+            const synced = await syncImportedUserIcons(
+                target,
+                rows
+                    .map((row) => preparedIcons.get(toNumber(row.NO, 'member.NO')))
+                    .filter((icon): icon is PreparedLegacyUserIcon => Boolean(icon)),
+                migratedAt
+            );
+            counts.user_icon_current_linked = (counts.user_icon_current_linked ?? 0) + synced.currentLinked;
+            counts.user_icon_library_inserted = (counts.user_icon_library_inserted ?? 0) + synced.libraryInserted;
+            counts.user_icon_library_retired = (counts.user_icon_library_retired ?? 0) + synced.libraryRetired;
+            counts.user_icon_target_preserved = (counts.user_icon_target_preserved ?? 0) + synced.targetPreserved;
+            const rejected = await syncRejectedUserIcons(
+                target,
+                rows
+                    .map((row) => rejectedIcons.get(toNumber(row.NO, 'member.NO')))
+                    .filter((icon): icon is RejectedLegacyUserIcon => Boolean(icon)),
+                migratedAt
+            );
+            counts.user_icon_rejected_current_reset =
+                (counts.user_icon_rejected_current_reset ?? 0) + rejected.currentReset;
+            counts.user_icon_rejected_target_preserved =
+                (counts.user_icon_rejected_target_preserved ?? 0) + rejected.targetPreserved;
         }
         counts.member = (counts.member ?? 0) + mapped.length;
     }
@@ -285,7 +343,8 @@ export const migrateGateway = async (
     targetPool: PgPool | null,
     apply: boolean,
     migratedAt: Date,
-    execution: MigrationExecutionOptions = defaultExecutionOptions('legacy-root')
+    execution: MigrationExecutionOptions = defaultExecutionOptions('legacy-root'),
+    userIconConfig?: LegacyUserIconTransferConfig
 ): Promise<MigrationSummary> => {
     validateSourceIdentity(execution.source);
     if (execution.mode === 'incremental' && !targetPool) {
@@ -300,8 +359,21 @@ export const migrateGateway = async (
     const client = targetPool ? await targetPool.connect() : null;
     let importRunId: string | null = null;
     try {
-        const run = async (runId: string | null): Promise<void> => {
-            await processMembers(source, client, apply, migratedAt, counts);
+        const sourceIconRows = await querySource(
+            source,
+            `SELECT NO, PICTURE, IMGSVR, REG_DATE
+             FROM member WHERE PICTURE <> 'default.jpg' ORDER BY NO`
+        );
+        const recordIconCounts = (prepared: LegacyUserIconPreparation): void => {
+            counts.user_icon_source = prepared.counts.custom;
+            counts.user_icon_legacy_file = prepared.counts.legacyFiles;
+            counts.user_icon_existing_upload = prepared.counts.existingUploads;
+            counts.user_icon_uploaded = prepared.counts.uploaded;
+            counts.user_icon_rejected = prepared.counts.rejected;
+        };
+        const run = async (runId: string | null, prepared: LegacyUserIconPreparation): Promise<void> => {
+            recordIconCounts(prepared);
+            await processMembers(source, client, apply, migratedAt, counts, prepared.icons, prepared.rejected);
             progress.member = {
                 strategy: 'rescan',
                 startAfterId: null,
@@ -365,9 +437,13 @@ export const migrateGateway = async (
                 );
                 importRunId = created.rows[0]?.id ?? null;
                 if (!importRunId) throw new Error('Failed to create legacy gateway import run');
-                await client.query('BEGIN');
+                let transactionStarted = false;
                 try {
-                    await run(importRunId);
+                    const prepared = await prepareLegacyUserIcons(sourceIconRows, userIconConfig, true);
+                    recordIconCounts(prepared);
+                    await client.query('BEGIN');
+                    transactionStarted = true;
+                    await run(importRunId, prepared);
                     await client.query(
                         `UPDATE "legacy_import_run"
                          SET "status" = 'COMPLETED', "finished_at" = CURRENT_TIMESTAMP,
@@ -376,8 +452,9 @@ export const migrateGateway = async (
                         [importRunId, JSON.stringify(counts), JSON.stringify(progress)]
                     );
                     await client.query('COMMIT');
+                    transactionStarted = false;
                 } catch (error) {
-                    await client.query('ROLLBACK');
+                    if (transactionStarted) await client.query('ROLLBACK');
                     const message =
                         error instanceof Error ? error.message.slice(0, 2000) : String(error).slice(0, 2000);
                     await client.query(
@@ -391,7 +468,8 @@ export const migrateGateway = async (
                 }
             });
         } else {
-            await run(null);
+            const prepared = await prepareLegacyUserIcons(sourceIconRows, userIconConfig, false);
+            await run(null, prepared);
         }
     } finally {
         client?.release();

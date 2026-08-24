@@ -14,6 +14,7 @@ type FixtureState = {
     appointedGeneralId?: number;
     appointedCityId?: number;
     appointedOfficerLevel?: number;
+    permissionMutationInput?: { isAmbassador: boolean; targetGeneralIds: number[] };
     noticeMutationInput?: string;
     scoutMutationInput?: string;
     uploadDataUrl?: string;
@@ -101,6 +102,8 @@ const personnelFixture = (state: FixtureState) => {
         general(5, '정욱', 2),
         general(6, '장료', 1),
         general(7, '허저', 1, { permission: 'ambassador' }),
+        general(8, '가후', 1, { permission: 'auditor' }),
+        general(9, '전위', 1),
     ];
     const visibleGenerals =
         state.role === 'member' ? fullGenerals.filter((entry) => entry.officerLevel >= 2) : fullGenerals;
@@ -145,8 +148,13 @@ const personnelFixture = (state: FixtureState) => {
                       ambassadors: [
                           { id: 6, name: '장료', npcState: 0, permission: 'normal', maxPermission: 4 },
                           { id: 7, name: '허저', npcState: 0, permission: 'ambassador', maxPermission: 4 },
+                          { id: 9, name: '전위', npcState: 0, permission: 'normal', maxPermission: 4 },
                       ],
-                      auditors: [{ id: 6, name: '장료', npcState: 0, permission: 'normal', maxPermission: 4 }],
+                      auditors: [
+                          { id: 6, name: '장료', npcState: 0, permission: 'normal', maxPermission: 4 },
+                          { id: 8, name: '가후', npcState: 0, permission: 'auditor', maxPermission: 4 },
+                          { id: 9, name: '전위', npcState: 0, permission: 'normal', maxPermission: 4 },
+                      ],
                   }
                 : { ambassadors: [], auditors: [] },
     };
@@ -238,7 +246,16 @@ const installFixture = async (page: Page, state: FixtureState) => {
                 state.appointedOfficerLevel = Number(jsonInput.officerLevel ?? 0);
                 return response({ ok: true });
             }
-            if (operation === 'nation.kick' || operation === 'nation.changePermission') return response({ ok: true });
+            if (operation === 'nation.changePermission') {
+                state.permissionMutationInput = {
+                    isAmbassador: jsonInput.isAmbassador === true,
+                    targetGeneralIds: Array.isArray(jsonInput.targetGeneralIds)
+                        ? jsonInput.targetGeneralIds.map((id) => Number(id))
+                        : [],
+                };
+                return response({ ok: true });
+            }
+            if (operation === 'nation.kick') return response({ ok: true });
             if (operation === 'nation.setRate') {
                 if (state.failNextRate) {
                     state.failNextRate = false;
@@ -347,6 +364,62 @@ test('personnel keeps the desktop frame while exposing row-level appointment con
     await screenshot(page, 'core-personnel-desktop-leader.png');
 });
 
+test('leader can grant two ambassador and auditor permissions by click or touch without modifier keys', async ({
+    page,
+}) => {
+    const state: FixtureState = { role: 'leader', rate: 20 };
+    await installFixture(page, state);
+    await page.setViewportSize({ width: 390, height: 844 });
+    await gotoOffice(page, 'nation/personnel');
+
+    const ambassadorTrigger = page.locator('.permission-multiselect-trigger').first();
+    await expect(ambassadorTrigger).toHaveAccessibleName('외교권자 선택, 현재 1명');
+    await ambassadorTrigger.click();
+    const ambassadorOptions = page.getByRole('listbox', { name: '외교권자 후보' });
+    await expect(ambassadorOptions).toBeVisible();
+    await expect(ambassadorOptions.getByRole('option', { name: '허저' })).toHaveAttribute('aria-selected', 'true');
+    await ambassadorOptions.getByRole('option', { name: '장료' }).click();
+    await expect(ambassadorOptions.getByRole('option', { name: '장료' })).toHaveAttribute('aria-selected', 'true');
+    await expect(ambassadorTrigger).toHaveAccessibleName('외교권자 선택, 현재 2명');
+
+    await ambassadorOptions.getByRole('option', { name: '전위' }).click();
+    await expect(page.getByTestId('game-toast')).toContainText('최대 2명까지 설정 가능합니다.');
+    await expect(ambassadorOptions.getByRole('option', { name: '전위' })).toHaveAttribute('aria-selected', 'false');
+    const ambassadorGeometry = await ambassadorOptions.evaluate((element) => {
+        const rect = element.getBoundingClientRect();
+        return { left: rect.left, right: rect.right, width: rect.width };
+    });
+    expect(ambassadorGeometry.left).toBeGreaterThanOrEqual(0);
+    expect(ambassadorGeometry.right).toBeLessThanOrEqual(390);
+    expect(ambassadorGeometry.width).toBeGreaterThanOrEqual(100);
+    await screenshot(page, 'core-personnel-mobile-permission-picker-open.png');
+
+    page.once('dialog', async (dialog) => {
+        expect(dialog.message()).toBe('외교권자를 변경할까요?');
+        await dialog.accept();
+    });
+    await page.getByRole('button', { name: '외교권자 임명 반영' }).click();
+    await expect(page.getByTestId('game-toast').filter({ hasText: '권한을 변경했습니다.' })).toBeVisible();
+    await expect.poll(() => state.permissionMutationInput).toEqual({ isAmbassador: true, targetGeneralIds: [7, 6] });
+
+    const auditorTrigger = page.locator('.permission-multiselect-trigger').nth(1);
+    await expect(auditorTrigger).toHaveAccessibleName('조언자 선택, 현재 1명');
+    await auditorTrigger.click();
+    const auditorOptions = page.getByRole('listbox', { name: '조언자 후보' });
+    await expect(auditorOptions.getByRole('option', { name: '허저' })).toHaveCount(0);
+    await auditorOptions.getByRole('option', { name: '장료' }).click();
+    await expect(auditorTrigger).toHaveAccessibleName('조언자 선택, 현재 2명');
+    page.once('dialog', async (dialog) => {
+        expect(dialog.message()).toBe('조언자를 변경할까요?');
+        await dialog.accept();
+    });
+    await page.getByRole('button', { name: '조언자 임명 반영' }).click();
+    await expect(page.getByTestId('game-toast').filter({ hasText: '권한을 변경했습니다.' })).toBeVisible();
+    await expect.poll(() => state.permissionMutationInput).toEqual({ isAmbassador: false, targetGeneralIds: [8, 6] });
+    expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBe(390);
+    await screenshot(page, 'core-personnel-mobile-permission-picker.png');
+});
+
 test('personnel selects an informed general and reports the JosaUtil-composed result in a toast', async ({ page }) => {
     const state: FixtureState = { role: 'head', rate: 20 };
     await installFixture(page, state);
@@ -412,6 +485,13 @@ test('personnel reflows row-level appointments at 500px and 390px without gradie
     expect(rowGeometry.gradientCount).toBe(0);
     await expect(page.getByRole('combobox', { name: '외교권자' })).toHaveCount(0);
     await expect(page.getByRole('combobox', { name: '추방 대상 장수' })).toBeVisible();
+    await expect(page.getByRole('combobox', { name: '추방 대상 장수' }).locator('option')).toHaveText([
+        '장수 선택',
+        '하후돈 (70/70/70)',
+        '곽가 (70/70/70)',
+        '정욱 (70/70/70)',
+        '장료 (70/70/70)',
+    ]);
 
     await page.getByRole('button', { name: '허창 태수 변경하기', exact: true }).click();
     const picker = page.getByTestId('personnel-selection-dialog');
