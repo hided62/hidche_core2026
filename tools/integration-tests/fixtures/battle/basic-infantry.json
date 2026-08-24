@@ -6,7 +6,7 @@
   "repeatCnt": 1,
   "action": "battle",
   "attackerGeneral": {
-    "no": 1, "name": "공격자", "nation": 1, "turntime": "2026-01-01 00:00:00",
+    "no": 1, "name": "공격자", "nation": 1, "city": 1, "turntime": "2026-01-01 00:00:00",
     "personal": "che_안전", "special2": "che_징병", "crew": 1000, "crewtype": 1100,
     "atmos": 100, "train": 100, "intel": 70, "intel_exp": 0, "book": "None",
     "strength": 70, "strength_exp": 0, "weapon": "None", "injury": 0,
@@ -28,7 +28,7 @@
     "name": "공격국", "gold": 1000, "rice": 10000, "gennum": 1
   },
   "defenderGenerals": [{
-    "no": 2, "name": "수비자", "nation": 2, "turntime": "2026-01-01 00:00:00",
+    "no": 2, "name": "수비자", "nation": 2, "city": 2, "turntime": "2026-01-01 00:00:00",
     "personal": "che_안전", "special2": "che_징병", "crew": 1000, "crewtype": 1100,
     "atmos": 100, "train": 100, "intel": 60, "intel_exp": 0, "book": "None",
     "strength": 60, "strength_exp": 0, "weapon": "None", "injury": 0,

@@ -6,8 +6,8 @@ import type { WarTriggerModule } from './types.js';
 
 // 의술: 치료 시도
 export class che_의술시도 extends BaseWarUnitTrigger {
-    constructor(unit: WarUnit) {
-        super(unit, TriggerPriority.Pre + 350);
+    constructor(unit: WarUnit, raiseType = BaseWarUnitTrigger.TYPE_NONE) {
+        super(unit, TriggerPriority.Pre + 350, raiseType);
     }
 
     protected actionWar(
@@ -36,8 +36,8 @@ export class che_의술시도 extends BaseWarUnitTrigger {
 
 // 의술: 치료 발동
 export class che_의술발동 extends BaseWarUnitTrigger {
-    constructor(unit: WarUnit) {
-        super(unit, TriggerPriority.Post + 550);
+    constructor(unit: WarUnit, raiseType = BaseWarUnitTrigger.TYPE_NONE) {
+        super(unit, TriggerPriority.Post + 550, raiseType);
     }
 
     protected actionWar(

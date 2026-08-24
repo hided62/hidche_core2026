@@ -1,9 +1,10 @@
 import { che_진압 } from '@sammo-ts/logic/war/triggers/che_진압.js';
 
-import { WarTriggerCaller } from '@sammo-ts/logic/war/triggers.js';
+import { BaseWarUnitTrigger, WarTriggerCaller } from '@sammo-ts/logic/war/triggers.js';
 import type { ItemModule } from './types.js';
 
 const ITEM_KEY = 'che_진압_박혁론';
+const RAISE_TYPE = BaseWarUnitTrigger.TYPE_NONE;
 
 export const itemModule: ItemModule = {
     key: ITEM_KEY,
@@ -18,6 +19,6 @@ export const itemModule: ItemModule = {
     unique: false,
     getBattlePhaseTriggerList: (context) => {
         if (!context.unit) return null;
-        return new WarTriggerCaller(new che_진압(context.unit));
+        return new WarTriggerCaller(new che_진압(context.unit, RAISE_TYPE));
     },
 };

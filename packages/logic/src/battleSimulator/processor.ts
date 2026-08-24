@@ -21,7 +21,7 @@ import { compileCrewTypeCatalog } from '../crewType/index.js';
 import type { City, General, Nation } from '../domain/entities.js';
 import { createInheritBuffModules } from '../inheritance/inheritBuff.js';
 import { createItemActionModules, createItemModuleRegistry, ITEM_KEYS, loadItemModules } from '../items/index.js';
-import { formatLogText, LogCategory, LogFormat, LogScope } from '../logging/index.js';
+import { formatLogText, LogCategory, LogFormat, LogScope, type ActionLogger } from '../logging/index.js';
 import {
     createCrewTypeWarTriggerRegistry,
     resolveDefenderOrder,
@@ -344,6 +344,10 @@ const resolveDefenderOrderPayload = (payload: BattleSimJobPayload): number[] => 
 export interface BattleSimProcessorOptions {
     trace?: (event: WarBattleTraceEvent) => void;
     rngFactory?: (seed: string) => RandUtil;
+    /** Comparison-only logger instrumentation; production callers omit it. */
+    loggerFactory?: (options: { generalId?: number; nationId?: number }) => ActionLogger;
+    /** Comparison-only observation of the resolved pure battle outcome. */
+    onBattleResolved?: (outcome: WarBattleOutcome) => void;
 }
 
 export const processBattleSimJob = (
@@ -416,8 +420,11 @@ export const processBattleSimJob = (
             })),
             defenderCity,
             defenderNation,
+            ...(options.loggerFactory ? { loggerFactory: options.loggerFactory } : {}),
             ...(options.trace ? { trace: options.trace } : {}),
         });
+
+        options.onBattleResolved?.(outcome);
 
         lastBattle = outcome;
         const attackerReport = outcome.reports.find(

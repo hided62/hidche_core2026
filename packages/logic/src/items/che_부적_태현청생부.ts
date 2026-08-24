@@ -1,11 +1,13 @@
 import type { GeneralActionContext } from '@sammo-ts/logic/triggers/general.js';
 import type { GeneralStatName, WarStatName } from '@sammo-ts/logic/actionModules/types.js';
 import type { WarActionContext } from '@sammo-ts/logic/war/actions.js';
-import { WarTriggerCaller } from '@sammo-ts/logic/war/triggers.js';
+import { BaseWarUnitTrigger, WarTriggerCaller } from '@sammo-ts/logic/war/triggers.js';
 import { che_부적 } from '@sammo-ts/logic/war/triggers/che_부적.js';
+import { che_부상무효 } from '@sammo-ts/logic/war/triggers/che_견고.js';
 import type { ItemModule } from './types.js';
 
 const ITEM_KEY = 'che_부적_태현청생부';
+const RAISE_TYPE = BaseWarUnitTrigger.TYPE_ITEM + BaseWarUnitTrigger.TYPE_DEDUP_TYPE_BASE * 303;
 
 export const itemModule: ItemModule = {
     key: ITEM_KEY,
@@ -28,8 +30,12 @@ export const itemModule: ItemModule = {
         }
         return value;
     } as NonNullable<ItemModule['onCalcStat']>,
+    getBattleInitTriggerList: (context) => {
+        if (!context.unit) return null;
+        return new WarTriggerCaller(new che_부상무효(context.unit, RAISE_TYPE), new che_부적(context.unit, RAISE_TYPE));
+    },
     getBattlePhaseTriggerList: (context) => {
         if (!context.unit) return null;
-        return new WarTriggerCaller(new che_부적(context.unit));
+        return new WarTriggerCaller(new che_부적(context.unit, RAISE_TYPE));
     },
 };

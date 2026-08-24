@@ -58,7 +58,9 @@ export class che_저지 extends BaseWarUnitTrigger {
             self.addDex(self.getCrewType(), calcDamage);
 
             self.addLevelExp(calcDamage / 50);
-            let rice = self.calcRiceConsumption(calcDamage);
+            // Ref calcRiceConsumption() declares an int parameter, so the
+            // fractional 90% counter-damage is truncated before rice cost.
+            let rice = self.calcRiceConsumption(Math.trunc(calcDamage));
             rice *= 0.25;
             const general = self.getGeneral();
             general.rice = Math.max(0, general.rice - rice);

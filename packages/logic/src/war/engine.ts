@@ -1,6 +1,6 @@
 import { JosaUtil, LiteHashDRBG, RandUtil } from '@sammo-ts/common';
 
-import type { City, GeneralTriggerState } from '@sammo-ts/logic/domain/entities.js';
+import type { City, General, GeneralTriggerState } from '@sammo-ts/logic/domain/entities.js';
 import { compileCrewTypeCatalog, isCrewTypeWarActionRouter } from '@sammo-ts/logic/crewType/catalog.js';
 import { ActionLogger } from '@sammo-ts/logic/logging/actionLogger.js';
 import { LogFormat, type LogEntryDraft } from '@sammo-ts/logic/logging/types.js';
@@ -108,6 +108,17 @@ const isSupplyCity = (city: City): boolean => {
         return supply > 0;
     }
     return city.supplyState > 0;
+};
+
+const resolveLegacyTurnHourMinute = (general: General): string => {
+    const raw = general.meta['turnTime'];
+    if (typeof raw === 'string' && raw.length >= 16) {
+        return raw.slice(11, 16);
+    }
+    if (general.turnTime instanceof Date && Number.isFinite(general.turnTime.getTime())) {
+        return general.turnTime.toISOString().slice(11, 16);
+    }
+    return '00:00';
 };
 
 export const computeBattleOrder = <TriggerState extends GeneralTriggerState>(
@@ -390,7 +401,8 @@ export const resolveWarBattle = <TriggerState extends GeneralTriggerState = Gene
     const attackerNationName = (attackerUnit.getNationVar('name') as string | null) ?? 'UNKNOWN';
     const attackerName = attackerUnit.getName();
     const cityName = cityUnit.getName();
-    const seedText = input.seed ? `<span class="hidden_but_copyable">(전투시드: ${input.seed})</span>` : '';
+    const seedText = input.seed ? `<span class='hidden_but_copyable'>(전투시드: ${input.seed})</span>` : '';
+    const turnHourMinute = resolveLegacyTurnHourMinute(attackerUnit.getGeneral());
 
     const josaRo = JosaUtil.pick(cityName, '로');
     const josaYi = JosaUtil.pick(attackerName, '이');
@@ -400,7 +412,7 @@ export const resolveWarBattle = <TriggerState extends GeneralTriggerState = Gene
         LogFormat.MONTH
     );
     attackerLogger.pushGeneralActionLog(
-        `<G><b>${cityName}</b></>${josaRo} <M>진격</>합니다.${seedText}`,
+        `<G><b>${cityName}</b></>${josaRo} <M>진격</>합니다.${seedText} <1>${turnHourMinute}</>`,
         LogFormat.MONTH
     );
 

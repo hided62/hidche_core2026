@@ -22,7 +22,7 @@ import { WarTriggerCaller } from '@sammo-ts/logic/war/triggers.js';
 import type { WarUnit } from '@sammo-ts/logic/war/units.js';
 import type { ItemModule, ItemModuleExport } from './types.js';
 import { listEquippedItemKeys } from './utils.js';
-import { removeEquippedItem } from './inventory.js';
+import { registerLegacyBattleItemIdentity, removeEquippedItem } from './inventory.js';
 
 export const ITEM_KEYS = [
     'che_간파_노군입산부',
@@ -664,12 +664,17 @@ class ItemWarActionRouter<
     private resolveModules(context: WarActionContext<TriggerState>): Array<ItemModule<TriggerState>> {
         const keys = listEquippedItemKeys(context.general);
         const modules: Array<ItemModule<TriggerState>> = [];
+        let itemIdentity = { name: '-', rawName: '-' };
         for (const key of keys) {
             const module = this.registry.get(key);
             if (module) {
                 modules.push(module);
+                if (module.slot === 'item') {
+                    itemIdentity = { name: module.name, rawName: module.rawName };
+                }
             }
         }
+        registerLegacyBattleItemIdentity(context.general, itemIdentity);
         return modules;
     }
 

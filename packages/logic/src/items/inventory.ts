@@ -12,6 +12,27 @@ import type {
 const ITEM_SLOTS: GeneralItemSlot[] = ['horse', 'weapon', 'book', 'item'];
 const INVENTORY_META_KEY = 'itemInventory';
 
+export interface LegacyBattleItemIdentity {
+    name: string;
+    rawName: string;
+}
+
+// Ref's BaseWarUnitTrigger::processConsumableItem() asks General::getItem()
+// for the *item-slot* display name even when a weapon trigger raised the
+// shared item flag. Keep that transient lookup out of persisted General meta.
+const legacyBattleItemIdentities = new WeakMap<object, LegacyBattleItemIdentity>();
+
+export const registerLegacyBattleItemIdentity = <TriggerState extends GeneralTriggerState>(
+    general: General<TriggerState>,
+    identity: LegacyBattleItemIdentity
+): void => {
+    legacyBattleItemIdentities.set(general, identity);
+};
+
+export const getLegacyBattleItemIdentity = <TriggerState extends GeneralTriggerState>(
+    general: General<TriggerState>
+): LegacyBattleItemIdentity => legacyBattleItemIdentities.get(general) ?? { name: '-', rawName: '-' };
+
 const emptyState = (): GeneralItemInstanceState => ({ values: {} });
 
 const cloneState = (state: GeneralItemInstanceState): GeneralItemInstanceState => ({
@@ -57,9 +78,7 @@ const readState = (value: unknown): GeneralItemInstanceState | null => {
         return null;
     }
     const charges =
-        typeof record['charges'] === 'number' && Number.isInteger(record['charges']) && record['charges'] >= 0
-            ? record['charges']
-            : undefined;
+        typeof record['charges'] === 'number' && Number.isInteger(record['charges']) ? record['charges'] : undefined;
     const valuesRecord = asRecord(record['values']) ?? {};
     const values: Record<string, TriggerValue> = {};
     for (const [key, entry] of Object.entries(valuesRecord)) {
