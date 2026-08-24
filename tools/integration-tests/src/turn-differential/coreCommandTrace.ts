@@ -72,6 +72,8 @@ export interface TurnCommandFixtureRequest {
             initMonth?: number;
             year?: number;
             month?: number;
+            develCost?: number;
+            isUnited?: 0 | 1 | 2 | 3;
             hiddenSeed?: string;
             scenarioEffect?: string | null;
             staticEventHandlers?: Record<string, string[]>;
@@ -333,6 +335,9 @@ const buildGeneral = (row: Record<string, unknown>, fallbackTurnTime: Date): Tur
                 : row.hasOwner === true
                   ? 'turn-differential-owner'
                   : null,
+        inheritancePoints: {
+            active_action: readNumber(row, 'inheritActiveActionPoints'),
+        },
         penalty: row.penalty,
         triggerState: { flags: {}, counters: {}, modifiers: {}, meta: {} },
         meta: {
@@ -376,6 +381,7 @@ const buildGeneral = (row: Record<string, unknown>, fallbackTurnTime: Date): Tur
             belong: readNumber(row, 'belong', readNumber(meta, 'belong')),
             permission: readString(row, 'permission', readString(meta, 'permission', 'normal')),
             block: readNumber(row, 'blockState', readNumber(meta, 'block')),
+            inherit_active_action: readNumber(row, 'inheritActiveActionPoints') / 3,
         },
         ...(lastTurn ? { lastTurn } : {}),
         ...(typeof row.turnTick === 'number' ? { turnTick: row.turnTick } : {}),

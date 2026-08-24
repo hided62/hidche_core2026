@@ -136,6 +136,8 @@ const buildRequest = (
             startYear: 180,
             year: 190,
             month: 1,
+            develCost: 18,
+            isUnited: 0,
             hiddenSeed: 'turn-command-general-matrix-v1',
             freezeClock: true,
             ...fixturePatches.world,
@@ -575,6 +577,7 @@ type GeneralActiveActionInheritanceCase = {
     name: string;
     action: string;
     args?: Record<string, unknown>;
+    initialPoint?: number;
     expectedPointDelta?: number;
 };
 
@@ -582,6 +585,7 @@ const generalActiveActionInheritanceCases: GeneralActiveActionInheritanceCase[] 
     {
         name: 'ordinary training does not count as a legacy active action',
         action: 'che_훈련',
+        initialPoint: 6,
         expectedPointDelta: 0,
     },
     {
@@ -616,8 +620,11 @@ const readActiveActionPoints = (snapshot: { generals: Array<Record<string, unkno
 integration('general active-action inheritance point parity', () => {
     it.each(generalActiveActionInheritanceCases)(
         '$name',
-        async ({ name, action, args, expectedPointDelta }) => {
-            const request = buildRequest(action, args);
+        async ({ name, action, args, initialPoint = 0, expectedPointDelta }) => {
+            const request = buildRequest(action, args, {
+                ownerId: 2_000_000_001,
+                inheritActiveActionPoints: initialPoint,
+            });
             request.setup!.world!.hiddenSeed = `general-active-action-${name}`;
             const reference = runReferenceTurnCommandTraceRequest(
                 workspaceRoot!,
@@ -628,6 +635,8 @@ integration('general active-action inheritance point parity', () => {
                 readActiveActionPoints(reference.after, 1) - readActiveActionPoints(reference.before, 1);
             const corePointDelta = readActiveActionPoints(core.after, 1) - readActiveActionPoints(core.before, 1);
 
+            expect(readActiveActionPoints(reference.before, 1)).toBe(initialPoint);
+            expect(readActiveActionPoints(core.before, 1)).toBe(initialPoint);
             expect(reference.execution.outcome).toMatchObject({ completed: true });
             expect(core.execution.outcome).toMatchObject({
                 requestedAction: action,

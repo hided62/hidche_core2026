@@ -28,12 +28,23 @@ interface EntityIdentity {
     semantic: boolean;
 }
 
-const entityIdentity = (value: Record<string, unknown>, index: number): EntityIdentity => {
+const entityIdentity = (value: Record<string, unknown>, index: number, path: string): EntityIdentity => {
     if (
         (typeof value.generalId === 'number' || typeof value.generalId === 'string') &&
         typeof value.type === 'string'
     ) {
         return { key: `${String(value.generalId)}:${value.type}`, semantic: true };
+    }
+    if (
+        (path === 'world.generalCooldowns' || path === 'world.nationCooldowns') &&
+        typeof value.actionName === 'string'
+    ) {
+        for (const key of ['generalId', 'nationId']) {
+            const candidate = value[key];
+            if (typeof candidate === 'number' || typeof candidate === 'string') {
+                return { key: `${String(candidate)}:${value.actionName}`, semantic: true };
+            }
+        }
     }
     for (const key of ['id', 'generalId', 'nationId', 'fromNationId']) {
         const candidate = value[key];
@@ -62,7 +73,7 @@ const flatten = (value: unknown, path: string, output: FlatSnapshot): void => {
                 path === 'logs' || path === 'messages'
                     ? { key: String(index), semantic: false }
                     : typeof entry === 'object' && entry !== null && !Array.isArray(entry)
-                      ? entityIdentity(entry as Record<string, unknown>, index)
+                      ? entityIdentity(entry as Record<string, unknown>, index, path)
                       : { key: String(index), semantic: false };
             if (identity.semantic) {
                 const firstIndex = semanticKeys.get(identity.key);
