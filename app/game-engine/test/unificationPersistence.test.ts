@@ -260,7 +260,12 @@ describe('persistUnificationFinalization', () => {
         expect(hallCreate).toHaveBeenCalledWith(
             expect.objectContaining({
                 data: expect.objectContaining({
-                    aux: expect.objectContaining({ ownerDisplayName: '표시 이름', fgColor: '#000000' }),
+                    aux: expect.objectContaining({
+                        ownerDisplayName: '표시 이름',
+                        fgColor: '#000000',
+                        serverName: '테스트',
+                        serverIdx: 2,
+                    }),
                 }),
             })
         );
@@ -279,7 +284,10 @@ describe('persistUnificationFinalization', () => {
         );
         expect(emperorCreate).toHaveBeenCalledWith(
             expect.objectContaining({
-                data: expect.objectContaining({ aux: { winnerNationId: 1, generationKey: input.generationKey } }),
+                data: expect.objectContaining({
+                    phase: '테스트2기',
+                    aux: { winnerNationId: 1, generationKey: input.generationKey },
+                }),
             })
         );
         const archiveWrite = oldGeneralUpsert.mock.calls[0]?.[0] as {

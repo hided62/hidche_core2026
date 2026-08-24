@@ -54,6 +54,7 @@ export interface ScenarioInstallOptions {
     season?: number;
     firstGameIdx?: number;
     serverId?: string;
+    serverName?: string;
     installOperationId?: string;
     installCommitSha?: string;
 }
@@ -314,6 +315,9 @@ export const seedScenarioToDatabase = async (options: ScenarioSeedOptions): Prom
     }
     if (typeof install?.serverId === 'string' && install.serverId.trim()) {
         worldMeta.serverId = install.serverId.trim();
+    }
+    if (typeof install?.serverName === 'string' && install.serverName.trim()) {
+        worldMeta.serverName = install.serverName.trim();
     }
     if (typeof install?.installOperationId === 'string' && install.installOperationId.trim()) {
         worldMeta.installOperationId = install.installOperationId.trim();

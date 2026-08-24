@@ -367,6 +367,7 @@ describeDb('scenario database seed', () => {
                 },
                 preopenAt: new Date('2030-01-01T01:00:00Z'),
                 openAt: new Date('2030-01-01T02:00:00Z'),
+                serverName: '훼',
             },
         });
 
@@ -400,6 +401,7 @@ describeDb('scenario database seed', () => {
                 (worldState.currentYear - (scenario.startYear ?? worldState.currentYear) + 10) * 2
             );
             expect(meta.killturn).toBe(1600);
+            expect(meta.serverName).toBe('훼');
             const autorun = (meta.autorun_user ?? {}) as Record<string, unknown>;
             const autorunOptions = (autorun.options ?? {}) as Record<string, unknown>;
             expect(autorunOptions.develop).toBe(true);
