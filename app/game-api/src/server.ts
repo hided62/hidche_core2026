@@ -42,6 +42,7 @@ import { GatewayHttpAccountIconSource } from './auth/accountIconSource.js';
 import { GatewayHttpProfileStatusSource } from './auth/profileStatusSource.js';
 import { CachedTurnEngineStatus } from './services/turnEngineStatus.js';
 import { createAdminProfileIconResetFlushHandler } from './services/accountIconSync.js';
+import { createAccountIdentityFlushHandler } from './services/accountIdentitySync.js';
 import { AccountIconResetReconciler } from './services/accountIconResetReconciler.js';
 import { createBestEffortResourceCloser } from './services/bestEffortResourceCloser.js';
 import { RemoteContentImageStore } from './services/remoteContentImageStore.js';
@@ -140,11 +141,15 @@ export const createGameApiServer = async () => {
         await postgres.disconnect();
         throw error;
     }
+    const iconFlushHandler = createAdminProfileIconResetFlushHandler(accountIconSource, turnDaemon);
+    const identityFlushHandler = createAccountIdentityFlushHandler(turnDaemon);
     const flushSubscriber = new RedisGatewayFlushSubscriber(
         flushSubscriberClient,
         config.flushChannel,
         flushStore,
-        createAdminProfileIconResetFlushHandler(accountIconSource, turnDaemon),
+        async (event) => {
+            await Promise.all([iconFlushHandler(event), identityFlushHandler(event)]);
+        },
         (error, event) => {
             app.log.error({ err: error, userId: event.userId, reason: event.reason }, 'gateway flush handler failed');
         }

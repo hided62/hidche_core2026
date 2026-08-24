@@ -9,6 +9,7 @@ export interface GatewaySessionInfo {
     sanctions: UserSanctions;
     createdAt: string;
     issuedAt: string;
+    authRevision?: number;
     legacyMemberNo?: number;
 }
 
@@ -23,6 +24,7 @@ export interface GameSessionInfo {
     sanctions: UserSanctions;
     createdAt: string;
     issuedAt: string;
+    authRevision?: number;
     legacyMemberNo?: number;
 }
 

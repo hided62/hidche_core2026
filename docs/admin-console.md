@@ -11,7 +11,7 @@ Gateway 관리자 콘솔은 `/gateway/admin`에서 시작합니다. 공개 로�
 | 메뉴            | 경로                                           | 책임                                                                      |
 | --------------- | ---------------------------------------------- | ------------------------------------------------------------------------- |
 | 운영 개요       | `/gateway/admin`                               | 현재 권한으로 접근할 수 있는 관리 영역 안내                               |
-| 사용자 관리     | `/gateway/admin/users`                         | 계정 조회·생성, 권한, 특수 접근·OAuth 유예, 제재, 아이콘 복구와 탈퇴 예약 |
+| 사용자 관리     | `/gateway/admin/users`                         | 계정 식별자·Kakao 교체, 권한, 특수 접근·제재, 아이콘 복구와 탈퇴 예약      |
 | 서버 관리       | `/gateway/admin/servers`                       | 접근 가능한 profile 목록                                                  |
 | 서버 상태·설정  | `/gateway/admin/servers/:profileName`          | 해당 profile의 공개 정보, 계정 정책, 실행 상태와 게임 운영 동작           |
 | 버전 업데이트   | `/gateway/admin/servers/:profileName/version`  | 현 DB를 보존하는 profile 코드·migration 배포                              |
@@ -130,6 +130,29 @@ Gateway 관리자 콘솔은 `/gateway/admin`에서 시작합니다. 공개 로�
 `CRITICAL` 권한이며 superuser 또는 명시적으로 범위를 받은 최고관리자만 사용합니다.
 브라우저의 확인 입력과 confirm은 오조작 방지 UI이고, 실제 경계는 Gateway API의
 capability 검사와 orchestrator의 상태·lease 검사입니다.
+
+## 계정 식별자와 Kakao 교체
+
+사용자 설정에서는 로그인 ID와 표시명을 변경할 수 없습니다. `admin.users.manage`
+권한을 가진 관리자는 사용자 관리의 계정 영역에서 두 값을 함께 변경할 수 있습니다.
+변경된 표시명은 실행 중인 각 profile의 현재 인간 장수에 revision 기반 event로
+투영됩니다. 과거 `OldGeneral`, `HallOfFame`, 중앙 archive는 당시 이름을 보존하는
+불변 snapshot이므로 소급 변경하지 않습니다. 변경 후 생성되는 기록만 새 표시명을
+사용합니다.
+
+Kakao 계정 자체를 바꾸는 고객지원 작업은 다음 두 단계로 수행합니다.
+
+1. 관리자가 기존 Kakao 연결 계정에 사유와 7일 이내 만료 시각을 입력해 교체를
+   승인합니다.
+2. 사용자가 계정 설정에서 `새 카카오 계정으로 교체`를 누르고 새 계정으로 Kakao
+   OAuth를 완료합니다.
+
+서버는 callback 시점에 승인 만료와 새 stable ID·verified email의 소유권을 다시
+확인합니다. 성공하면 기존 stable ID를 영구 폐기 목록에 넣고 새 ID를 연결하며,
+모든 기존 Gateway session을 무효화합니다. 폐기된 stable ID는 원 계정이 삭제된
+후에도 로그인·가입·복구·다른 계정 연결에 다시 사용할 수 없습니다. 관리자 화면에서
+새 stable ID를 직접 입력하거나 OAuth 증명을 대신할 수 없습니다. 승인 취소나 만료는
+교체 전에만 효력이 있으며, 완료된 폐기는 되돌리지 않습니다.
 
 ## Kakao 없는 특수 계정 접근
 

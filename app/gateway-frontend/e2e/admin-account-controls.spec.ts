@@ -11,6 +11,9 @@ const installFixture = async (page: Page) => {
     const requests: Array<{ operation: string; body: unknown }> = [];
     let deleteAfter: string | null = null;
     let graceUntil: string | null = null;
+    let username = 'target';
+    let displayName = '대상 사용자';
+    let kakaoReplacementApprovedUntil: string | null = null;
     let specialGrants: Array<Record<string, unknown>> = [];
     const auditHistory = [
         {
@@ -74,10 +77,10 @@ const installFixture = async (page: Page) => {
                     users: [
                         {
                             id: 'target-user',
-                            username: 'target',
-                            displayName: '대상 사용자',
+                            username,
+                            displayName,
                             email: 'target@example.test',
-                            oauthType: 'NONE',
+                            oauthType: 'KAKAO',
                             roles: ['user'],
                             hasActiveSanction: false,
                             deleteAfter,
@@ -111,11 +114,13 @@ const installFixture = async (page: Page) => {
             if (operation === 'admin.users.lookup') {
                 return response({
                     id: 'target-user',
-                    username: 'target',
-                    displayName: '대상 사용자',
+                    username,
+                    displayName,
                     roles: ['user'],
                     sanctions: {},
-                    oauthType: 'NONE',
+                    oauthType: 'KAKAO',
+                    oauthId: 'fixture-kakao-stable-id',
+                    kakaoReplacementApprovedUntil,
                     kakaoGraceStartedAt: '2026-07-20T00:00:00.000Z',
                     kakaoGraceUntil: graceUntil,
                     deleteAfter,
@@ -163,6 +168,27 @@ const installFixture = async (page: Page) => {
                     reason: '본인 확인 처리 중',
                 });
                 return response({ kakaoGraceUntil: graceUntil });
+            }
+            if (operation === 'admin.users.updateIdentity') {
+                username = 'target-renamed';
+                displayName = '변경된 대상';
+                auditHistory.unshift({
+                    ...auditHistory[0],
+                    id: 'audit-identity',
+                    action: 'admin.users.updateIdentity',
+                    reason: '고객 본인 확인 완료',
+                });
+                return response({ username, displayName, identityRevision: '2026-08-24T12:00:00.000Z' });
+            }
+            if (operation === 'admin.users.setKakaoReplacementApproval') {
+                kakaoReplacementApprovedUntil = '2026-08-26T00:00:00.000Z';
+                auditHistory.unshift({
+                    ...auditHistory[0],
+                    id: 'audit-kakao-replacement',
+                    action: 'admin.users.setKakaoReplacementApproval',
+                    reason: '기존 단말 분실 교체',
+                });
+                return response({ kakaoReplacementApprovedUntil });
             }
             if (operation === 'admin.users.grantSpecialAccess') {
                 specialGrants = [
@@ -219,6 +245,18 @@ test('operates OAuth grace and scheduled deletion with reasoned audit history', 
     await expect(page.getByText('Kakao 인증: 미완료')).toBeVisible();
     await expect(page.getByRole('navigation', { name: '사용자 관리 기능' })).toBeVisible();
     await expect(page.getByRole('heading', { name: '비밀번호 리셋' })).toBeHidden();
+    await expect(page.getByRole('heading', { name: 'ID · 닉네임 변경' })).toBeVisible();
+    await page.getByLabel('로그인 ID').fill('target-renamed');
+    await page.getByLabel('닉네임').fill('변경된 대상');
+    await page.getByPlaceholder('권한·제재·복구·탈퇴 조치 사유 (필수)').fill('고객 본인 확인 완료');
+    await page.getByRole('button', { name: 'ID · 닉네임 변경', exact: true }).click();
+    await expect(page.getByText('ID와 닉네임을 변경했습니다.').first()).toBeVisible();
+    await page.getByLabel('Kakao 계정 교체 승인 만료 시각').fill('2026-08-26T00:00');
+    await page.getByPlaceholder('권한·제재·복구·탈퇴 조치 사유 (필수)').fill('기존 단말 분실 교체');
+    await page.getByRole('button', { name: '교체 승인', exact: true }).click();
+    await expect(page.getByText('새 카카오 계정 교체를 승인했습니다.').first()).toBeVisible();
+    expect(requests.some(({ operation }) => operation === 'admin.users.updateIdentity')).toBe(true);
+    expect(requests.some(({ operation }) => operation === 'admin.users.setKakaoReplacementApproval')).toBe(true);
     await page.getByRole('button', { name: /접근 · 권한/ }).click();
     await expect(page.getByRole('option', { name: /Profile 전체 운영/ })).toHaveCount(0);
     await expect(page.getByRole('option', { name: /Profile 실행 관리/ })).toHaveCount(1);

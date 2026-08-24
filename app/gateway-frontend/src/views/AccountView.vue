@@ -86,6 +86,11 @@ const currentProfile = computed(() =>
 const notificationEventTypes = computed(
     () => (notificationState.value?.eventTypes ?? []) as readonly WebPushEventType[]
 );
+const kakaoReplacementApproved = computed(
+    () =>
+        Boolean(account.value?.kakaoReplacementApprovedUntil) &&
+        new Date(account.value!.kakaoReplacementApprovedUntil!).getTime() > Date.now()
+);
 
 const sessionToken = (): string | null => window.localStorage.getItem('sammo-session-token');
 
@@ -309,6 +314,22 @@ const changePassword = async (): Promise<void> => {
         newPassword.value = '';
         newPasswordConfirm.value = '';
         successMessage.value = '비밀번호를 변경했습니다.';
+    });
+};
+
+const startKakaoReplacement = async (): Promise<void> => {
+    if (
+        !window.confirm(
+            '새 카카오 계정 연결이 끝나면 기존 카카오 계정은 영구 폐기되어 다시 가입하거나 연결할 수 없습니다. 계속하시겠습니까?'
+        )
+    ) {
+        return;
+    }
+    await runAction(async () => {
+        const token = sessionToken();
+        if (!token) throw new Error('로그인이 필요합니다.');
+        const result = await trpc.auth.kakaoStart.query({ mode: 'verify', sessionToken: token });
+        window.location.assign(result.authUrl);
     });
 };
 
@@ -639,7 +660,21 @@ onBeforeUnmount(() => {
                     </tr>
                     <tr>
                         <th class="legacy-bg1">인증 방식</th>
-                        <td colspan="5">{{ account.oauthType }}</td>
+                        <td colspan="5">
+                            {{ account.oauthType }}
+                            <template v-if="account.kakaoReplacementApprovedUntil">
+                                · 교체 승인 {{ formatServerDateTime(account.kakaoReplacementApprovedUntil) }}까지
+                            </template>
+                            <button
+                                v-if="kakaoReplacementApproved"
+                                class="skin-button compact"
+                                type="button"
+                                :disabled="busy"
+                                @click="startKakaoReplacement"
+                            >
+                                새 카카오 계정으로 교체
+                            </button>
+                        </td>
                     </tr>
                     <tr>
                         <th class="legacy-bg1"></th>

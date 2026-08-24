@@ -7,6 +7,7 @@ import { z } from 'zod';
 import type { GameSessionTokenPayload } from '@sammo-ts/common/auth/gameToken';
 import { authedProcedure, engineProcedure, router } from '../../trpc.js';
 import { enqueueProfileIconResetForUser } from '../../services/accountIconSync.js';
+import { enqueueAccountIdentityForUser } from '../../services/accountIdentitySync.js';
 
 const parseDate = (value: string): Date | null => {
     const parsed = parseISO(value);
@@ -85,6 +86,14 @@ export const authRouter = router({
                 // 일반 계정 아이콘 변경은 Ref처럼 사용자가 고른 서버에만 적용한다.
                 // 관리자 reset만 다음 인증 경계에서 durable하게 복구한다.
                 await enqueueProfileIconResetForUser(ctx, payload.user.id, payload.user.profileIconResetAt);
+            }
+            if (payload.user.identityRevision) {
+                await enqueueAccountIdentityForUser(
+                    ctx.turnDaemon,
+                    payload.user.id,
+                    payload.user.displayName,
+                    payload.user.identityRevision
+                );
             }
 
             const created = await ctx.accessTokenStore.issueFromGateway(payload);

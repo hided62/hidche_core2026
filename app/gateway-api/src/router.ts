@@ -19,6 +19,7 @@ import {
 } from './auth/localAccountPolicy.js';
 import { openPassword, zDisplayName, zPasswordEnvelope, zRegistrationUsername } from './auth/registrationInput.js';
 import { resolveEffectiveAccountIcon } from './auth/accountIconProjection.js';
+import { isGatewaySessionCurrent } from './auth/sessionValidity.js';
 import { purifyGatewayNoticeHtml } from './security/gatewayNoticeHtml.js';
 import type { GatewayApiContext } from './context.js';
 import { listScenarioPreviews } from './scenario/scenarioCatalog.js';
@@ -144,7 +145,7 @@ export const appRouter = router({
         const session = await ctx.sessions.getSession(sessionToken);
         if (!session) return null;
         const user = await ctx.users.findById(session.userId);
-        return user ? toPublicUser(user) : null;
+        return user && isGatewaySessionCurrent(session, user) ? toPublicUser(user) : null;
     }),
     lobby: router({
         notice: procedure.query(async ({ ctx }) => {
@@ -165,17 +166,18 @@ export const appRouter = router({
                 const sessionToken =
                     (ctx.requestHeaders['x-session-token'] as string | undefined) ?? input?.sessionToken;
                 const session = sessionToken ? await ctx.sessions.getSession(sessionToken) : null;
-                const profileList = await ctx.profileStatus.listLobbyProfiles({
-                    userId: session?.userId,
-                });
                 const user = session ? await ctx.users.findById(session.userId) : null;
-                if (!user) {
+                const currentUser = session && user && isGatewaySessionCurrent(session, user) ? user : null;
+                const profileList = await ctx.profileStatus.listLobbyProfiles({
+                    userId: currentUser?.id,
+                });
+                if (!currentUser) {
                     return profileList.map((profile) => ({
                         ...profile,
                         localAccountPolicy: null,
                     }));
                 }
-                const specialAccessGrants = await ctx.users.listSpecialAccessGrants(user.id);
+                const specialAccessGrants = await ctx.users.listSpecialAccessGrants(currentUser.id);
                 return Promise.all(
                     profileList.map(async (profile) => {
                         const record = await ctx.profiles.getProfile(profile.profileName);
@@ -184,7 +186,7 @@ export const appRouter = router({
                             profileName: profile.profileName,
                             profileMeta: record?.meta,
                             defaultGraceDays: ctx.localAccountGraceDays,
-                            user,
+                            user: currentUser,
                             specialAccessGrants,
                         });
                         return {
@@ -204,7 +206,7 @@ export const appRouter = router({
                 }
                 const session = await ctx.sessions.getSession(sessionToken);
                 const user = session ? await ctx.users.findById(session.userId) : null;
-                if (!session || !user) {
+                if (!session || !user || !isGatewaySessionCurrent(session, user)) {
                     throw new TRPCError({ code: 'UNAUTHORIZED', message: 'Session is not valid.' });
                 }
 
@@ -301,7 +303,8 @@ export const appRouter = router({
                     const sessionToken =
                         (ctx.requestHeaders['x-session-token'] as string | undefined) ?? input?.sessionToken;
                     const session = sessionToken ? await ctx.sessions.getSession(sessionToken) : null;
-                    if (!session) {
+                    const user = session ? await ctx.users.findById(session.userId) : null;
+                    if (!session || !user || !isGatewaySessionCurrent(session, user)) {
                         throw new TRPCError({
                             code: 'UNAUTHORIZED',
                             message: '카카오 인증을 연결하려면 먼저 로그인해야 합니다.',
@@ -351,6 +354,12 @@ export const appRouter = router({
                         return throwKakaoVerificationError(error);
                     }
                 })();
+                if (await ctx.users.isKakaoIdentityRetired(profile.kakaoId)) {
+                    throw new TRPCError({
+                        code: 'FORBIDDEN',
+                        message: '영구 폐기된 카카오 계정은 다시 연결하거나 가입할 수 없습니다.',
+                    });
+                }
                 const [existingById, existingByEmail] = await Promise.all([
                     ctx.users.findByOauthId('KAKAO', profile.kakaoId),
                     ctx.users.findByEmail(profile.email),
@@ -388,15 +397,28 @@ export const appRouter = router({
                             message: '이미 다른 계정에서 사용 중인 카카오 이메일입니다. 관리자에게 문의해 주세요.',
                         });
                     }
-                    if (localUser.oauthType === 'KAKAO' && localUser.oauthId !== profile.kakaoId) {
-                        throw new TRPCError({
-                            code: 'CONFLICT',
-                            message: '이미 다른 카카오 계정에 연결된 사용자입니다.',
-                        });
-                    }
                     const oauthInfo = oauthInfoFromToken(token, tokenIssuedAt, localUser.oauthInfo);
                     let verified: UserRecord;
-                    if (existingById?.id !== localUser.id && localUser.oauthType !== 'KAKAO') {
+                    const replacingKakao =
+                        localUser.oauthType === 'KAKAO' &&
+                        Boolean(localUser.oauthId) &&
+                        localUser.oauthId !== profile.kakaoId;
+                    if (replacingKakao) {
+                        try {
+                            verified = await ctx.users.replaceKakaoWithApprovedIdentity(localUser.id, {
+                                oauthId: profile.kakaoId,
+                                email: profile.email,
+                                oauthInfo,
+                                verifiedAt: new Date(),
+                            });
+                        } catch (error) {
+                            throw new TRPCError({
+                                code: 'PRECONDITION_FAILED',
+                                message: '관리자의 카카오 계정 교체 승인이 없거나 만료되었습니다.',
+                                cause: error,
+                            });
+                        }
+                    } else if (existingById?.id !== localUser.id && localUser.oauthType !== 'KAKAO') {
                         try {
                             verified = await ctx.users.linkKakao(localUser.id, {
                                 oauthId: profile.kakaoId,
@@ -423,7 +445,10 @@ export const appRouter = router({
                         }
                     }
                     const refreshed = (await ctx.users.findById(verified.id)) ?? verified;
-                    await ctx.flushPublisher.publishUserFlush(refreshed.id, 'kakao-verified');
+                    await ctx.flushPublisher.publishUserFlush(
+                        refreshed.id,
+                        replacingKakao ? 'kakao-account-replaced' : 'kakao-verified'
+                    );
                     return finishKakaoLoginOrRequestPasswordSetup(ctx, refreshed, token.accessToken, 'verified');
                 }
 
@@ -624,20 +649,37 @@ export const appRouter = router({
                 };
                 let linked: UserRecord;
                 try {
-                    linked = await ctx.users.relinkKakaoByEmail(targetUser.id, {
-                        oauthId: oauthSession.kakaoId,
-                        email: oauthSession.email,
-                        oauthInfo,
-                        verifiedAt: new Date(),
-                    });
+                    const replacement =
+                        targetUser.oauthType === 'KAKAO' &&
+                        Boolean(targetUser.oauthId) &&
+                        targetUser.oauthId !== oauthSession.kakaoId;
+                    linked = replacement
+                        ? await ctx.users.replaceKakaoWithApprovedIdentity(targetUser.id, {
+                              oauthId: oauthSession.kakaoId,
+                              email: oauthSession.email,
+                              oauthInfo,
+                              verifiedAt: new Date(),
+                          })
+                        : await ctx.users.relinkKakaoByEmail(targetUser.id, {
+                              oauthId: oauthSession.kakaoId,
+                              email: oauthSession.email,
+                              oauthInfo,
+                              verifiedAt: new Date(),
+                          });
                 } catch (error) {
                     throw new TRPCError({
-                        code: 'CONFLICT',
-                        message: '카카오 계정 연결 상태가 변경되었습니다. 처음부터 다시 진행해 주세요.',
+                        code: targetUser.oauthType === 'KAKAO' ? 'PRECONDITION_FAILED' : 'CONFLICT',
+                        message:
+                            targetUser.oauthType === 'KAKAO'
+                                ? '기존 카카오 계정 교체에는 관리자 승인이 필요합니다.'
+                                : '카카오 계정 연결 상태가 변경되었습니다. 처음부터 다시 진행해 주세요.',
                         cause: error,
                     });
                 }
-                await ctx.flushPublisher.publishUserFlush(linked.id, 'kakao-account-relinked');
+                await ctx.flushPublisher.publishUserFlush(
+                    linked.id,
+                    targetUser.oauthType === 'KAKAO' ? 'kakao-account-replaced' : 'kakao-account-relinked'
+                );
                 return finishKakaoLoginOrRequestPasswordSetup(ctx, linked, oauthSession.accessToken, 'login');
             }),
         kakaoSetPassword: procedure
@@ -983,7 +1025,7 @@ export const appRouter = router({
                     return null;
                 }
                 const user = await ctx.users.findById(session.userId);
-                if (!user) {
+                if (!user || !isGatewaySessionCurrent(session, user)) {
                     return null;
                 }
                 return {
@@ -1021,7 +1063,7 @@ export const appRouter = router({
                     });
                 }
                 const user = await ctx.users.findById(gatewaySession.userId);
-                if (!user) {
+                if (!user || !isGatewaySessionCurrent(gatewaySession, user)) {
                     throw new TRPCError({
                         code: 'UNAUTHORIZED',
                         message: 'Session user no longer exists.',
@@ -1069,6 +1111,7 @@ export const appRouter = router({
                         id: user.id,
                         username: user.username,
                         displayName: user.displayName,
+                        ...(user.identityRevision ? { identityRevision: user.identityRevision } : {}),
                         picture: accountIcon.picture,
                         imageServer: accountIcon.imageServer,
                         iconUpdatedAt: accountIcon.revision,

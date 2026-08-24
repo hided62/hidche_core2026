@@ -38,7 +38,7 @@ describe('readReleaseManifest', () => {
 
         await expect(readReleaseManifest(workspaceRoot)).resolves.toMatchObject({
             controllerProtocol: RELEASE_CONTROLLER_PROTOCOL,
-            gatewaySchemaHead: '20260824090000_allow_interim_profile_deploy',
+            gatewaySchemaHead: '20260824120000_add_account_identity_management',
             gameSchemaHead: '20260824080000_vote_utc_wall_timestamps',
         });
     });

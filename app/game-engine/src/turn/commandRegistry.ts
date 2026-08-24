@@ -355,6 +355,16 @@ const zAdjustGeneralIcon = z
     })
     .strict();
 
+const zAdjustGeneralIdentity = z
+    .object({
+        type: z.literal('adjustGeneralIdentity'),
+        requestId: z.string().min(1).optional(),
+        userId: z.string().min(1),
+        displayName: z.string().min(1),
+        identityRevision: z.string().refine(isCanonicalIsoTimestamp),
+    })
+    .strict();
+
 const zJoinCreateGeneral = z
     .object({
         type: z.literal('joinCreateGeneral'),
@@ -745,6 +755,14 @@ const normalizeAdjustGeneralIcon: CommandNormalizer<'adjustGeneralIcon'> = (enve
     return { ...command, requestId: envelope.requestId };
 };
 
+const normalizeAdjustGeneralIdentity: CommandNormalizer<'adjustGeneralIdentity'> = (envelope) => {
+    const command = parseWith(zAdjustGeneralIdentity, envelope.command);
+    if (!command || (command.requestId !== undefined && command.requestId !== envelope.requestId)) {
+        return null;
+    }
+    return { ...command, requestId: envelope.requestId };
+};
+
 const normalizeJoinCreateGeneral: CommandNormalizer<'joinCreateGeneral'> = (envelope) => {
     const command = parseWith(zJoinCreateGeneral, envelope.command);
     if (!command) {
@@ -861,6 +879,7 @@ const normalizers: CommandNormalizerMap = {
     patchGeneral: normalizePatchGeneral,
     inheritanceAction: normalizeInheritanceAction,
     adjustGeneralIcon: normalizeAdjustGeneralIcon,
+    adjustGeneralIdentity: normalizeAdjustGeneralIdentity,
     joinCreateGeneral: normalizeJoinCreateGeneral,
     npcPossessGeneral: normalizeNpcPossessGeneral,
     selectPoolReserve: normalizeSelectPoolReserve,

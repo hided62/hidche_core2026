@@ -77,7 +77,13 @@ const buildCaller = async (
     const operationRecords = new Map<string, Awaited<ReturnType<GatewayProfileRepository['createOperation']>>>();
     if (options.initialOperation) operationRecords.set(options.initialOperation.id, options.initialOperation);
     const createdRuntimeActions: Array<Record<string, unknown>> = [];
-    const flushes: Array<{ userId: string; reason?: string; iconRevision?: string }> = [];
+    const flushes: Array<{
+        userId: string;
+        reason?: string;
+        iconRevision?: string;
+        displayName?: string;
+        identityRevision?: string;
+    }> = [];
     const updatedStatuses: GatewayProfileRecord['status'][] = [];
     const updatedMetas: Record<string, unknown>[] = [];
     const auditEvents: AdminAuditEventRecord[] = [];
@@ -238,6 +244,8 @@ const buildCaller = async (
                         userId,
                         reason,
                         ...(metadata?.iconRevision ? { iconRevision: metadata.iconRevision } : {}),
+                        ...(metadata?.displayName ? { displayName: metadata.displayName } : {}),
+                        ...(metadata?.identityRevision ? { identityRevision: metadata.identityRevision } : {}),
                     });
                 },
             },
@@ -1946,6 +1954,64 @@ describe('Gateway administrator account controls', () => {
         expect(harness.flushes).toContainEqual({ userId: target.id, reason: 'admin-kakao-grace-updated' });
     });
 
+    it('approves a time-bounded Kakao replacement only for an already linked account', async () => {
+        const harness = await buildCaller(unusedCreateOperation);
+        const target = await harness.users.createUser({
+            username: 'kakao-replacement-target',
+            password: 'secretpass',
+            displayName: '교체대상',
+            oauth: { type: 'KAKAO', id: 'former-kakao-id', email: 'former@example.com', info: {} },
+        });
+        const until = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();
+
+        await expect(
+            harness.caller.admin.users.setKakaoReplacementApproval({
+                userId: target.id,
+                until,
+                reason: '새 Kakao 계정 본인 확인 예정',
+            })
+        ).resolves.toEqual({ kakaoReplacementApprovedUntil: until });
+        expect(await harness.users.findById(target.id)).toMatchObject({
+            kakaoReplacementApprovedUntil: until,
+            kakaoReplacementApprovedByUserId: harness.admin.id,
+            kakaoReplacementReason: '새 Kakao 계정 본인 확인 예정',
+        });
+
+        await expect(
+            harness.caller.admin.users.setKakaoReplacementApproval({
+                userId: target.id,
+                until: new Date(Date.now() + 8 * 24 * 60 * 60 * 1000).toISOString(),
+                reason: '기간 상한 검증',
+            })
+        ).rejects.toMatchObject({ code: 'BAD_REQUEST' });
+    });
+
+    it('changes login ID and nickname while publishing a current-general projection', async () => {
+        const harness = await buildCaller(unusedCreateOperation);
+        const target = await harness.users.createUser({
+            username: 'rename-target',
+            password: 'secretpass',
+            displayName: '이전닉네임',
+        });
+
+        const result = await harness.caller.admin.users.updateIdentity({
+            userId: target.id,
+            username: 'renamed-target',
+            displayName: '새닉네임',
+            reason: '사용자 본인 요청 확인',
+        });
+
+        expect(result).toMatchObject({ username: 'renamed-target', displayName: '새닉네임' });
+        expect(await harness.users.findByUsername('rename-target')).toBeNull();
+        expect(await harness.users.findByUsername('renamed-target')).toMatchObject({ displayName: '새닉네임' });
+        expect(harness.flushes.at(-1)).toEqual({
+            userId: target.id,
+            reason: 'admin-account-identity-updated',
+            displayName: '새닉네임',
+            identityRevision: result.identityRevision,
+        });
+    });
+
     it('grants and revokes profile-scoped recovery access with an audit trail', async () => {
         const harness = await buildCaller(unusedCreateOperation);
         const target = await harness.users.createUser({
@@ -2043,6 +2109,8 @@ describe('Gateway administrator account controls', () => {
             displayName: 'Root Target',
         });
         await harness.users.updateRoles(target.id, ['user', 'admin']);
+        target.oauthType = 'KAKAO';
+        target.oauthId = 'protected-root-kakao-id';
 
         await expect(
             harness.caller.admin.users.updateSanctions({
@@ -2051,7 +2119,25 @@ describe('Gateway administrator account controls', () => {
                 reason: '루트 계정 보호 확인',
             })
         ).rejects.toMatchObject({ code: 'FORBIDDEN' });
+        await expect(
+            harness.caller.admin.users.updateIdentity({
+                userId: target.id,
+                username: 'root-target-renamed',
+                displayName: '변경 금지 대상',
+                reason: '루트 계정 보호 확인',
+            })
+        ).rejects.toMatchObject({ code: 'FORBIDDEN' });
+        await expect(
+            harness.caller.admin.users.setKakaoReplacementApproval({
+                userId: target.id,
+                until: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
+                reason: '루트 계정 보호 확인',
+            })
+        ).rejects.toMatchObject({ code: 'FORBIDDEN' });
         expect((await harness.users.findById(target.id))?.sanctions).toEqual({});
+        const protectedUser = await harness.users.findByUsername('root-target');
+        expect(protectedUser).toMatchObject({ displayName: 'Root Target' });
+        expect(protectedUser?.kakaoReplacementApprovedUntil).toBeUndefined();
     });
 
     it('keeps the global audit feed behind its dedicated capability', async () => {

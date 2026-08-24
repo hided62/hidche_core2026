@@ -8,6 +8,12 @@ export interface UserRecord {
     oauthId?: string;
     email?: string;
     oauthInfo?: UserOAuthInfo;
+    identityRevision?: string;
+    authRevision?: number;
+    sessionRevokedBefore?: string;
+    kakaoReplacementApprovedUntil?: string;
+    kakaoReplacementApprovedByUserId?: string;
+    kakaoReplacementReason?: string;
     picture: string;
     imageServer: number;
     iconUpdatedAt?: string;
@@ -180,6 +186,24 @@ export interface UserRepository {
             oauthInfo: UserOAuthInfo;
             verifiedAt: Date;
         }
+    ): Promise<UserRecord>;
+    isKakaoIdentityRetired(oauthId: string): Promise<boolean>;
+    setKakaoReplacementApproval(
+        userId: string,
+        input: { until: Date | null; approvedByUserId: string; reason: string }
+    ): Promise<UserRecord>;
+    replaceKakaoWithApprovedIdentity(
+        userId: string,
+        input: {
+            oauthId: string;
+            email: string;
+            oauthInfo: UserOAuthInfo;
+            verifiedAt: Date;
+        }
+    ): Promise<UserRecord>;
+    updateIdentity(
+        userId: string,
+        input: { username: string; displayName: string; changedAt: Date }
     ): Promise<UserRecord>;
     updateRoles(userId: string, roles: string[]): Promise<void>;
     updateSanctions(userId: string, sanctions: UserSanctions): Promise<void>;

@@ -25,6 +25,7 @@ import {
 } from './adminCapabilities.js';
 import type { GatewayApiContext } from './context.js';
 import { resolveLocalAccountProfilePolicy } from './auth/localAccountPolicy.js';
+import { isGatewaySessionCurrent } from './auth/sessionValidity.js';
 import {
     GATEWAY_BUILD_STATUSES,
     GATEWAY_PROFILE_STATUSES,
@@ -37,6 +38,7 @@ import {
     resolveGatewayProfileKoreanName,
 } from './profileOrder.js';
 import { purifyGatewayNoticeHtml } from './security/gatewayNoticeHtml.js';
+import { zDisplayName, zRegistrationUsername } from './auth/registrationInput.js';
 
 const zProfileStatus = z.enum(GATEWAY_PROFILE_STATUSES);
 const zBuildStatus = z.enum(GATEWAY_BUILD_STATUSES);
@@ -114,7 +116,7 @@ const resolveAdminAuth = async (ctx: GatewayApiContext): Promise<AdminAuthContex
         });
     }
     const user = await ctx.users.findById(session.userId);
-    if (!user) {
+    if (!user || !isGatewaySessionCurrent(session, user)) {
         throw new TRPCError({
             code: 'UNAUTHORIZED',
             message: 'User not found.',
@@ -765,6 +767,8 @@ export const adminRouter = router({
                 oauthType: user.oauthType,
                 oauthId: user.oauthId,
                 email: user.email,
+                identityRevision: user.identityRevision,
+                kakaoReplacementApprovedUntil: user.kakaoReplacementApprovedUntil,
                 kakaoVerifiedAt: user.kakaoVerifiedAt,
                 kakaoGraceStartedAt: user.kakaoGraceStartedAt,
                 kakaoGraceUntil: user.kakaoGraceUntil,
@@ -920,6 +924,83 @@ export const adminRouter = router({
                 await ctx.users.updateKakaoGraceUntil(input.userId, until);
                 await ctx.flushPublisher.publishUserFlush(input.userId, 'admin-kakao-grace-updated');
                 return { kakaoGraceUntil: until?.toISOString() ?? null };
+            }),
+        setKakaoReplacementApproval: userAdminProcedure
+            .input(
+                z.object({
+                    userId: z.string().min(1),
+                    until: z.string().datetime().nullable(),
+                    reason: z.string().trim().min(3).max(200),
+                })
+            )
+            .mutation(async ({ ctx, input }) => {
+                const user = await ctx.users.findById(input.userId);
+                if (!user) {
+                    throw new TRPCError({ code: 'NOT_FOUND', message: 'User not found.' });
+                }
+                const adminAuth = requireAdminAuth(ctx);
+                assertTargetUserManageable(adminAuth, user);
+                const until = input.until ? new Date(input.until) : null;
+                const now = new Date();
+                if (until) {
+                    if (user.oauthType !== 'KAKAO' || !user.oauthId) {
+                        throw new TRPCError({
+                            code: 'PRECONDITION_FAILED',
+                            message: '현재 카카오 계정이 연결된 사용자만 교체를 승인할 수 있습니다.',
+                        });
+                    }
+                    if (until <= now || until.getTime() > now.getTime() + 7 * 24 * 60 * 60 * 1000) {
+                        throw new TRPCError({
+                            code: 'BAD_REQUEST',
+                            message: '교체 승인 만료는 현재부터 7일 이내여야 합니다.',
+                        });
+                    }
+                }
+                const updated = await ctx.users.setKakaoReplacementApproval(input.userId, {
+                    until,
+                    approvedByUserId: adminAuth.user.id,
+                    reason: input.reason,
+                });
+                return { kakaoReplacementApprovedUntil: updated.kakaoReplacementApprovedUntil ?? null };
+            }),
+        updateIdentity: userAdminProcedure
+            .input(
+                z.object({
+                    userId: z.string().min(1),
+                    username: zRegistrationUsername,
+                    displayName: zDisplayName,
+                    reason: z.string().trim().min(3).max(200),
+                })
+            )
+            .mutation(async ({ ctx, input }) => {
+                const user = await ctx.users.findById(input.userId);
+                if (!user) {
+                    throw new TRPCError({ code: 'NOT_FOUND', message: 'User not found.' });
+                }
+                assertTargetUserManageable(requireAdminAuth(ctx), user);
+                let updated;
+                try {
+                    updated = await ctx.users.updateIdentity(input.userId, {
+                        username: input.username,
+                        displayName: input.displayName,
+                        changedAt: new Date(),
+                    });
+                } catch (error) {
+                    throw new TRPCError({
+                        code: 'CONFLICT',
+                        message: '이미 사용 중인 ID 또는 닉네임입니다.',
+                        cause: error,
+                    });
+                }
+                await ctx.flushPublisher.publishUserFlush(input.userId, 'admin-account-identity-updated', {
+                    displayName: updated.displayName,
+                    identityRevision: updated.identityRevision,
+                });
+                return {
+                    username: updated.username,
+                    displayName: updated.displayName,
+                    identityRevision: updated.identityRevision,
+                };
             }),
         listHistory: userAdminProcedure
             .input(z.object({ userId: z.string().min(1), limit: z.number().int().min(1).max(200).optional() }))

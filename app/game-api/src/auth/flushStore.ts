@@ -3,6 +3,8 @@ export interface GatewayUserFlushEvent {
     flushedAt: string;
     reason?: string;
     iconRevision?: string;
+    displayName?: string;
+    identityRevision?: string;
 }
 
 export interface FlushStore {

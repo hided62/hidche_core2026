@@ -100,6 +100,18 @@ const buildCommandDb = (actorUserId = 'user-1', acceptedAt = new Date('2026-07-3
         },
     }) as unknown as GamePrisma.TransactionClient;
 
+const buildIdentityCommandDb = (actorUserId = 'user-1') =>
+    ({
+        inputEvent: {
+            findUnique: vi.fn(async () => ({
+                createdAt: new Date(revision),
+                actorUserId,
+                target: 'ENGINE',
+                eventType: 'adjustGeneralIdentity',
+            })),
+        },
+    }) as unknown as GamePrisma.TransactionClient;
+
 const command = (
     overrides: Partial<{
         requestId: string;
@@ -218,5 +230,45 @@ describe('adjustGeneralIcon ENGINE command', () => {
             picture: 'new.png',
             meta: { generalIconChangedAt: '2026-08-01T08:00:00.000Z' },
         });
+    });
+});
+
+describe('adjustGeneralIdentity ENGINE command', () => {
+    it('updates only the current human general owner-name projection', async () => {
+        const world = buildWorld([
+            buildGeneral({ meta: { killturn: 24, ownerName: '이전닉네임' } }),
+            buildGeneral({ id: 2, npcState: 1, meta: { killturn: 24, ownerName: '이전닉네임' } }),
+        ]);
+        const handler = createTurnDaemonCommandHandler({ world });
+        const identityCommand = {
+            type: 'adjustGeneralIdentity' as const,
+            requestId: `general:adjustIdentity:user-1:${revision}`,
+            userId: 'user-1',
+            displayName: '새닉네임',
+            identityRevision: revision,
+        };
+
+        await expect(handler.handle(identityCommand, { db: buildIdentityCommandDb() })).resolves.toEqual({
+            type: 'adjustGeneralIdentity',
+            ok: true,
+            generalId: 1,
+            updated: true,
+        });
+        expect(world.getGeneralById(1)?.meta).toMatchObject({
+            killturn: 24,
+            ownerDisplayName: '새닉네임',
+            ownerName: '새닉네임',
+            owner_name: '새닉네임',
+            ownerIdentityRevision: revision,
+        });
+        expect(world.getGeneralById(2)?.meta).toMatchObject({ ownerName: '이전닉네임' });
+
+        await expect(handler.handle(identityCommand, { db: buildIdentityCommandDb() })).resolves.toMatchObject({
+            ok: true,
+            updated: false,
+        });
+        await expect(
+            handler.handle({ ...identityCommand, displayName: '충돌닉네임' }, { db: buildIdentityCommandDb() })
+        ).resolves.toMatchObject({ ok: false, code: 'CONFLICT' });
     });
 });
