@@ -299,6 +299,10 @@ integration('generic general creation through the durable turn daemon', () => {
             userId,
             name: created.name,
             cityId: city.id,
+            role: {
+                specialDomestic: null,
+                specialWar: null,
+            },
             inheritancePoints: {
                 previous: 7351,
             },
@@ -363,6 +367,10 @@ integration('generic general creation through the durable turn daemon', () => {
             userId,
             name: created.name,
             cityId: city.id,
+            role: {
+                specialDomestic: null,
+                specialWar: null,
+            },
             inheritancePoints: {
                 previous: 7351,
             },
