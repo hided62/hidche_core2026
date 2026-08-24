@@ -8,7 +8,7 @@ import {
     createMonthlyNationCountHandler,
     createMonthlyNationStatsHandler,
     createMonthlyWarSettingHandler,
-    roundLegacyNationPowerValue,
+    roundNationPowerValue,
 } from '../src/turn/monthlyNationStatsHandler.js';
 import type { TurnGeneral, TurnWorldSnapshot, TurnWorldState } from '../src/turn/types.js';
 
@@ -108,8 +108,8 @@ const buildNation = (
 });
 
 describe('monthly nation statistics boundary', () => {
-    it('stabilizes MariaDB decimal half boundaries before rounding', () => {
-        expect(roundLegacyNationPowerValue(342.49999999999994)).toBe(343);
+    it('uses the native integer boundary for nation power', () => {
+        expect(roundNationPowerValue(342.49999999999994)).toBe(342);
     });
 
     it('matches the fixed legacy power, maxima, war-setting count, and final general cache', async () => {

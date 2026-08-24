@@ -4,9 +4,7 @@ import { LogCategory, LogFormat, LogScope, type MapDefinition } from '@sammo-ts/
 import type { InMemoryTurnWorld } from './inMemoryWorld.js';
 import type { MonthlyEventActionHandler } from './monthlyEventHandler.js';
 
-// REF-COMPAT:BEGIN ref-int-column-write-rounding
-const roundLegacyIntegerColumn = (value: number): number => Math.round(value);
-// REF-COMPAT:END ref-int-column-write-rounding
+const roundIntegerState = (value: number): number => Math.round(value);
 
 const resolveOfficerCity = (meta: Record<string, unknown>): number => {
     const camel = meta.officerCity;
@@ -76,19 +74,15 @@ export const createUpdateCitySupplyHandler = (options: {
             const trust = typeof city.meta.trust === 'number' ? city.meta.trust : 0;
             const damaged = world.updateCity(city.id, {
                 supplyState: 0,
-                population: roundLegacyIntegerColumn(city.population * 0.9),
-                agriculture: roundLegacyIntegerColumn(city.agriculture * 0.9),
-                commerce: roundLegacyIntegerColumn(city.commerce * 0.9),
-                security: roundLegacyIntegerColumn(city.security * 0.9),
-                defence: roundLegacyIntegerColumn(city.defence * 0.9),
-                wall: roundLegacyIntegerColumn(city.wall * 0.9),
+                population: roundIntegerState(city.population * 0.9),
+                agriculture: roundIntegerState(city.agriculture * 0.9),
+                commerce: roundIntegerState(city.commerce * 0.9),
+                security: roundIntegerState(city.security * 0.9),
+                defence: roundIntegerState(city.defence * 0.9),
+                wall: roundIntegerState(city.wall * 0.9),
                 meta: {
                     ...city.meta,
-                    // REF-COMPAT:BEGIN ref-mariadb-float-boundary
-                    // 레거시 FLOAT column에 SQL 곱셈 결과가 먼저 저장된 뒤
-                    // 민심 30 threshold를 판정하므로 float32 양자화를 보존한다.
-                    trust: Math.fround(trust * 0.9),
-                    // REF-COMPAT:END ref-mariadb-float-boundary
+                    trust: trust * 0.9,
                 },
             });
             if (damaged) {
@@ -103,9 +97,9 @@ export const createUpdateCitySupplyHandler = (options: {
                 continue;
             }
             world.updateGeneral(general.id, {
-                crew: roundLegacyIntegerColumn(general.crew * 0.95),
-                atmos: roundLegacyIntegerColumn(general.atmos * 0.95),
-                train: roundLegacyIntegerColumn(general.train * 0.95),
+                crew: roundIntegerState(general.crew * 0.95),
+                atmos: roundIntegerState(general.atmos * 0.95),
+                train: roundIntegerState(general.train * 0.95),
             });
         }
 

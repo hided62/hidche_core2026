@@ -67,9 +67,7 @@ const resolveHiddenSeed = (world: InMemoryTurnWorld): string | number => {
     return typeof rawSeed === 'string' || typeof rawSeed === 'number' ? rawSeed : String(rawSeed);
 };
 
-// REF-COMPAT:BEGIN ref-int-column-write-rounding
-const roundLegacyIntegerColumn = (value: number): number => Math.round(value);
-// REF-COMPAT:END ref-int-column-write-rounding
+const roundIntegerState = (value: number): number => Math.round(value);
 
 export const createRaiseDisasterHandler = (options: {
     getWorld: () => InMemoryTurnWorld | null;
@@ -136,35 +134,31 @@ export const createRaiseDisasterHandler = (options: {
             const securityRatio = clamp(city.security / city.securityMax / 0.8, 0, 1);
             const affectRatio = isGood ? 1.01 + securityRatio * 0.04 : 0.8 + securityRatio * 0.15;
             const trust = typeof city.meta.trust === 'number' ? city.meta.trust : 0;
-            // REF-COMPAT:BEGIN ref-mariadb-float-boundary
-            const storedTrust = Math.fround(isGood ? Math.min(trust * affectRatio, 100) : trust * affectRatio);
-            // REF-COMPAT:END ref-mariadb-float-boundary
+            const storedTrust = isGood ? Math.min(trust * affectRatio, 100) : trust * affectRatio;
             world.updateCity(city.id, {
                 state: picked.stateCode,
-                population: roundLegacyIntegerColumn(
+                population: roundIntegerState(
                     isGood ? Math.min(city.population * affectRatio, city.populationMax) : city.population * affectRatio
                 ),
-                agriculture: roundLegacyIntegerColumn(
+                agriculture: roundIntegerState(
                     isGood
                         ? Math.min(city.agriculture * affectRatio, city.agricultureMax)
                         : city.agriculture * affectRatio
                 ),
-                commerce: roundLegacyIntegerColumn(
+                commerce: roundIntegerState(
                     isGood ? Math.min(city.commerce * affectRatio, city.commerceMax) : city.commerce * affectRatio
                 ),
-                security: roundLegacyIntegerColumn(
+                security: roundIntegerState(
                     isGood ? Math.min(city.security * affectRatio, city.securityMax) : city.security * affectRatio
                 ),
-                defence: roundLegacyIntegerColumn(
+                defence: roundIntegerState(
                     isGood ? Math.min(city.defence * affectRatio, city.defenceMax) : city.defence * affectRatio
                 ),
-                wall: roundLegacyIntegerColumn(
+                wall: roundIntegerState(
                     isGood ? Math.min(city.wall * affectRatio, city.wallMax) : city.wall * affectRatio
                 ),
                 meta: {
                     ...city.meta,
-                    // Ref assigns the SQL expression to a MariaDB FLOAT
-                    // column at each disaster event boundary.
                     trust: storedTrust,
                 },
             });
@@ -209,9 +203,9 @@ export const createRaiseDisasterHandler = (options: {
                 });
                 world.updateGeneral(general.id, {
                     injury: clamp(general.injury + rng.nextRangeInt(1, 16), 0, 80),
-                    crew: roundLegacyIntegerColumn(general.crew * 0.98),
-                    atmos: roundLegacyIntegerColumn(general.atmos * 0.98),
-                    train: roundLegacyIntegerColumn(general.train * 0.98),
+                    crew: roundIntegerState(general.crew * 0.98),
+                    atmos: roundIntegerState(general.atmos * 0.98),
+                    train: roundIntegerState(general.train * 0.98),
                 });
             }
         }

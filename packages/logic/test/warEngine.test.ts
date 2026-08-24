@@ -293,7 +293,7 @@ describe('war triggers', () => {
         expect(unit.getComputedAttack()).toBeCloseTo(608, 12);
     });
 
-    it('normalizes accumulated dexterity to the PHP SQL float precision', () => {
+    it('keeps accumulated dexterity at full precision', () => {
         const general = buildGeneral(80);
         general.meta.dex4 = 14_677.199999999997;
         const wizard = new WarCrewType({
@@ -316,7 +316,7 @@ describe('war triggers', () => {
 
         unit.addDex(wizard, 2047);
 
-        expect(general.meta.dex4).toBe(16_519.5);
+        expect(general.meta.dex4).toBe(16_519.499999999996);
     });
 
     it('preserves the legacy fractional morale gain after a win', () => {
