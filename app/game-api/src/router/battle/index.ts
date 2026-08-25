@@ -109,6 +109,7 @@ export const battleRouter = router({
             config: environment.config,
             unitSet: environment.unitSet,
             scenarioEffect: environment.scenarioEffect,
+            defaultSpecialDomestic: environment.defaultSpecialDomestic,
             nationTypes: traits.nationTypes,
             eventDomesticTraits: traits.eventDomesticTraits,
             warTraits: traits.warTraits,

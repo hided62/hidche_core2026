@@ -52,6 +52,7 @@ export type BattleSimOptions = {
     config: WarEngineConfig;
     unitSet: UnitSetDefinition;
     scenarioEffect: string | null;
+    defaultSpecialDomestic: string;
     nationTypes: Array<{ key: string; name: string; info: string }>;
     eventDomesticTraits: Array<{ key: string; name: string; info: string }>;
     warTraits: Array<{ key: string; name: string; info: string }>;

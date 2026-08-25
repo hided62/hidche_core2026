@@ -31,6 +31,16 @@ const resolveNumber = (record: Record<string, unknown>, keys: string[], fallback
     return fallback;
 };
 
+const resolveOptionalString = (record: Record<string, unknown>, keys: string[]): string | null => {
+    for (const key of keys) {
+        const value = record[key];
+        if (typeof value === 'string' && value.trim().length > 0) {
+            return value;
+        }
+    }
+    return null;
+};
+
 const resolveUnitSetName = (worldState: WorldStateRow, fallback: string): string => {
     const config = asRecord(worldState.config);
     const environment = asRecord(config.environment ?? config.map);
@@ -88,6 +98,7 @@ export interface BattleSimEnvironment {
     config: WarEngineConfig;
     startYear: number;
     scenarioEffect: ScenarioEffectKey | null;
+    defaultSpecialDomestic: string;
 }
 
 export const buildBattleSimSeedBase = (request: Pick<BattleSimRequestPayload, 'seed'>): string | null =>
@@ -133,6 +144,7 @@ export const buildBattleSimEnvironment = async (
         config,
         startYear: resolveStartYear(worldState),
         scenarioEffect: normalizeScenarioEffect(scenarioEnvironment.scenarioEffect),
+        defaultSpecialDomestic: resolveOptionalString(constValues, ['defaultSpecialDomestic']) ?? 'None',
     };
 };
 

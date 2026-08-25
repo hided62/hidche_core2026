@@ -45,6 +45,7 @@ const readImage = async (relative: string): Promise<Buffer> => {
 
 const simulatorFormOptions = {
     world: { startYear: 190, currentYear: 205, currentMonth: 8 },
+    defaultSpecialDomestic: 'None',
     config: {
         maxTrainByWar: 120,
         maxAtmosByWar: 120,
@@ -416,7 +417,8 @@ test('operates independent/game presets, imports my general, and renders battle 
     expect(fixture.prepareResponseBytes).toEqual([expect.any(Number)]);
     expect(fixture.prepareResponseBytes?.every((bytes) => bytes < 128)).toBe(true);
     expect(fixture.preparedPayloads[0]).toMatchObject({
-        attackerGeneral: { special: 'che_event_신산' },
+        attackerGeneral: { special: 'None' },
+        defenderGenerals: [{ special: 'None' }],
     });
 
     const downloadPromise = page.waitForEvent('download');
@@ -437,7 +439,8 @@ test('operates independent/game presets, imports my general, and renders battle 
     await expect.poll(() => fixture.preparedPayloads.length).toBe(2);
     expect(await readBrowserWorkerResult(page, 1)).toEqual(fixture.serverResults[1]);
     expect(fixture.preparedPayloads[1]).toMatchObject({
-        attackerGeneral: { special: 'che_event_신산' },
+        attackerGeneral: { special: 'None' },
+        defenderGenerals: [{ special: 'None' }],
     });
 
     if (artifactRoot) {

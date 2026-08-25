@@ -1929,6 +1929,125 @@ describeWithReference('ref ↔ core2026 battle differential', () => {
         });
     });
 
+    it(
+        'matches the five basic arm-type matrix and wizard probabilities with Ref defaults',
+        { timeout: 180_000 },
+        () => {
+            const unitSet = readJson<UnitSetDefinition>(
+                path.resolve(process.cwd(), '../../resources/unitset/unitset_che.json')
+            );
+            const config: WarEngineConfig = {
+                armPerPhase: 500,
+                maxTrainByCommand: 100,
+                maxAtmosByCommand: 100,
+                maxTrainByWar: 110,
+                maxAtmosByWar: 150,
+                castleCrewTypeId: 1000,
+                armTypes: { footman: 1, archer: 2, cavalry: 3, wizard: 4, siege: 5, misc: 6, castle: 0 },
+            };
+            const basicCrews = [
+                { id: 1100, armType: 1, label: 'footman' },
+                { id: 1200, armType: 2, label: 'archer' },
+                { id: 1300, armType: 3, label: 'cavalry' },
+                { id: 1400, armType: 4, label: 'wizard' },
+                { id: 1501, armType: 5, label: 'siege' },
+            ] as const;
+            for (const expected of basicCrews) {
+                expect(
+                    unitSet.crewTypes?.find(({ id }) => id === expected.id)?.armType,
+                    `${expected.label} arm type`
+                ).toBe(expected.armType);
+            }
+
+            const cases: Array<{
+                attacker: (typeof basicCrews)[number];
+                defender: (typeof basicCrews)[number];
+                fixture: BattleSimRequestPayload & { startYear: number };
+            }> = [];
+            for (const attacker of basicCrews) {
+                for (const defender of basicCrews) {
+                    const fixture = readJson<BattleSimRequestPayload & { startYear: number }>(
+                        path.resolve(process.cwd(), 'fixtures/battle/basic-infantry.json')
+                    );
+                    fixture.seed = `battle-differential-basic-matrix-${attacker.armType}-${defender.armType}`;
+                    fixture.attackerGeneral.crewtype = attacker.id;
+                    fixture.attackerGeneral.crew = 50000;
+                    fixture.attackerGeneral.rice = 1000000;
+                    fixture.attackerGeneral.leadership = 90;
+                    fixture.attackerGeneral.strength = 90;
+                    fixture.attackerGeneral.intel = 90;
+                    fixture.attackerGeneral.personal = 'None';
+                    fixture.attackerGeneral.special = 'None';
+                    fixture.attackerGeneral.special2 = 'None';
+                    fixture.attackerGeneral.dex1 = 12000;
+                    fixture.attackerGeneral.dex2 = 12000;
+                    fixture.attackerGeneral.dex3 = 12000;
+                    fixture.attackerGeneral.dex4 = 12000;
+                    fixture.attackerGeneral.dex5 = 12000;
+
+                    const defenderGeneral = fixture.defenderGenerals[0]!;
+                    defenderGeneral.crewtype = defender.id;
+                    defenderGeneral.crew = 50000;
+                    defenderGeneral.rice = 1000000;
+                    defenderGeneral.leadership = 85;
+                    defenderGeneral.strength = 85;
+                    defenderGeneral.intel = 85;
+                    defenderGeneral.personal = 'None';
+                    defenderGeneral.special = 'None';
+                    defenderGeneral.special2 = 'None';
+                    defenderGeneral.dex1 = 12000;
+                    defenderGeneral.dex2 = 12000;
+                    defenderGeneral.dex3 = 12000;
+                    defenderGeneral.dex4 = 12000;
+                    defenderGeneral.dex5 = 12000;
+                    cases.push({ attacker, defender, fixture });
+                }
+            }
+
+            expect(cases).toHaveLength(25);
+            const references = runReferenceTraceBatch(
+                workspaceRoot!,
+                cases.map(({ fixture }) => JSON.stringify(fixture))
+            );
+            cases.forEach(({ attacker, defender, fixture }, index) => {
+                const coreEvents: WarBattleTraceEvent[] = [];
+                const coreLogs = createCoreLogCapture();
+                let coreRng: TracingRng | null = null;
+                let coreOutcome: WarBattleOutcome | null = null;
+                processBattleSimJob(
+                    {
+                        ...fixture,
+                        unitSet,
+                        config,
+                        time: { year: fixture.year, month: fixture.month, startYear: fixture.startYear },
+                    },
+                    {
+                        trace: (event) => coreEvents.push(event),
+                        loggerFactory: coreLogs.loggerFactory,
+                        onBattleResolved: (outcome) => {
+                            coreOutcome = outcome;
+                        },
+                        rngFactory: (seed) => {
+                            coreRng = new TracingRng(LiteHashDRBG.build(seed));
+                            return coreRng.createRandUtil();
+                        },
+                    }
+                );
+
+                const reference = references[index]!;
+                const label = `basic-matrix.${attacker.label}.${defender.label}`;
+                try {
+                    assertTraceParity(coreEvents, reference, coreRng, coreOutcome);
+                    assertAllLogBucketsParity(coreLogs, reference, fixture, label);
+                } catch (error) {
+                    throw new Error(`${label}: ${error instanceof Error ? error.message : String(error)}`, {
+                        cause: error,
+                    });
+                }
+            });
+        }
+    );
+
     it('matches wizard strategy attempts, outcomes, and RNG consumption', () => {
         const base = readJson<BattleSimRequestPayload & { startYear: number }>(
             path.resolve(process.cwd(), 'fixtures/battle/basic-infantry.json')

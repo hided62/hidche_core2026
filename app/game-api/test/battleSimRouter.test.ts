@@ -319,7 +319,10 @@ describe('battle router orchestration', () => {
             currentYear: 200,
             currentMonth: 1,
             tickSeconds: 600,
-            config: { environment: { scenarioEffect: 'event_MoreEffect' } },
+            config: {
+                environment: { scenarioEffect: 'event_MoreEffect' },
+                const: { defaultSpecialDomestic: 'che_event_신산' },
+            },
             meta: { scenarioMeta: { startYear: 180 } },
             updatedAt: new Date('2026-01-01T00:00:00Z'),
         };
@@ -339,6 +342,7 @@ describe('battle router orchestration', () => {
         expect(context).toMatchObject({
             world: { startYear: 180, currentYear: 200, currentMonth: 1 },
             scenarioEffect: 'event_MoreEffect',
+            defaultSpecialDomestic: 'che_event_신산',
             config: { armPerPhase: 500, maxTrainByWar: 110, maxAtmosByWar: 150 },
         });
         expect(context.unitSet.crewTypes?.[0]).toMatchObject({

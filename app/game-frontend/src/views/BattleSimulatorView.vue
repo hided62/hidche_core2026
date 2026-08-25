@@ -461,7 +461,7 @@ const buildGeneralPayload = (
         personal: general.personal,
         // Ref does not expose the domestic speciality in this form. Battle requests
         // always use the scenario's default domestic speciality instead.
-        special: options.value?.eventDomesticTraits[0]?.key ?? general.special,
+        special: options.value?.defaultSpecialDomestic ?? 'None',
         special2: general.special2,
         crew: general.crew,
         crewtype: general.crewtype,
