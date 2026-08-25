@@ -130,6 +130,18 @@ const generals = [
     },
 ];
 
+const pyaScaleGenerals = Array.from({ length: 845 }, (_, index) => {
+    const source = generals[index % generals.length]!;
+    return {
+        ...source,
+        id: index + 1,
+        name: `성능장수${index + 1}`,
+        ownerName: null,
+        picture: `performance/general-${index + 1}.png`,
+        imageServer: 0,
+    };
+});
+
 const npcGenerals = [
     {
         id: 10,
@@ -187,7 +199,8 @@ const install = async (
     page: Page,
     mode: 'general' | 'no-general' | 'error-after-load' = 'general',
     accessPages: string[] = [],
-    requestedOperations: string[] = []
+    requestedOperations: string[] = [],
+    directoryRows = generals
 ) => {
     let generalDirectoryCalls = 0;
     await page.addInitScript((profile) => {
@@ -260,7 +273,9 @@ const install = async (
                 }
                 const sort = parseSort(route);
                 const rows =
-                    sort === 8 ? [...generals].sort((left, right) => left.killturn - right.killturn) : generals;
+                    sort === 8
+                        ? [...directoryRows].sort((left, right) => left.killturn - right.killturn)
+                        : directoryRows;
                 return response({ sort, generals: rows });
             }
             if (operation === 'public.getNpcList') {
@@ -306,6 +321,48 @@ const installAccessBoundary = async (page: Page, accessPages: string[]) => {
         await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(results) });
     });
 };
+
+test('PYA-scale general directory mounts only the active responsive layout and defers portraits', async (
+    { page },
+    testInfo
+) => {
+    const requestedPortraits = new Set<string>();
+    page.on('request', (request) => {
+        if (request.url().includes('/performance/general-')) {
+            requestedPortraits.add(request.url());
+        }
+    });
+    await page.setViewportSize({ width: 1200, height: 900 });
+    await install(page, 'general', [], [], pyaScaleGenerals);
+    await page.goto('general-list');
+
+    await expect(page.locator('.general-table tbody tr[data-general-id]')).toHaveCount(845);
+    await expect(page.locator('.general-card-list [data-general-card-id]')).toHaveCount(0);
+    await expect(page.locator('.general-icon')).toHaveCount(845);
+    await expect(page.locator('.general-icon').first()).toHaveAttribute('loading', 'lazy');
+    await expect(page.locator('.general-icon').first()).toHaveAttribute('decoding', 'async');
+    await page.waitForTimeout(250);
+    expect(requestedPortraits.size).toBeLessThan(100);
+    const desktopMetrics = await page.evaluate(() => ({
+        domNodes: document.querySelectorAll('*').length,
+        documentHeight: document.documentElement.scrollHeight,
+    }));
+    await writeFile(
+        testInfo.outputPath('pya-scale-desktop-metrics.json'),
+        `${JSON.stringify({ ...desktopMetrics, requestedPortraits: requestedPortraits.size }, null, 2)}\n`
+    );
+    await page.screenshot({ path: testInfo.outputPath('pya-scale-desktop.png') });
+
+    await page.setViewportSize({ width: 500, height: 844 });
+    await expect(page.locator('.general-table')).toHaveCount(0);
+    await expect(page.locator('.general-card-list [data-general-card-id]')).toHaveCount(845);
+    await expect(page.locator('.general-icon')).toHaveCount(845);
+    await page.screenshot({ path: testInfo.outputPath('pya-scale-mobile.png') });
+
+    await page.setViewportSize({ width: 1200, height: 900 });
+    await expect(page.locator('.general-table tbody tr[data-general-id]')).toHaveCount(845);
+    await expect(page.locator('.general-card-list')).toHaveCount(0);
+});
 
 test('nation and general directories preserve the fixed legacy Chromium geometry', async ({ page }) => {
     const accessPages: string[] = [];

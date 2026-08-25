@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { computed, onBeforeUnmount, onMounted, ref } from 'vue';
+
 import { resolveGeneralIconUrl, useDefaultGeneralIcon } from '../../utils/generalIcon';
 import { formatOfficerLevelText } from '../../utils/nationFormat';
 import { getNpcColor } from '../../utils/npcColor';
@@ -28,6 +30,26 @@ const props = withDefaults(
 );
 
 const emit = defineEmits<{ sort: [value: number] }>();
+
+const narrowViewportQuery =
+    typeof window !== 'undefined' && typeof window.matchMedia === 'function'
+        ? window.matchMedia('(max-width: 600px)')
+        : null;
+const narrowViewport = ref(narrowViewportQuery?.matches ?? false);
+const renderCardLayout = computed(() => props.layout === 'card' || narrowViewport.value);
+const updateNarrowViewport = (event: MediaQueryListEvent): void => {
+    narrowViewport.value = event.matches;
+};
+
+onMounted(() => {
+    if (!narrowViewportQuery) return;
+    narrowViewport.value = narrowViewportQuery.matches;
+    narrowViewportQuery.addEventListener('change', updateNarrowViewport);
+});
+
+onBeforeUnmount(() => {
+    narrowViewportQuery?.removeEventListener('change', updateNarrowViewport);
+});
 
 const headers: ReadonlyArray<Header> = [
     { label: '얼 굴' },
@@ -71,7 +93,7 @@ const sortHelp = (header: Header): string =>
 </script>
 
 <template>
-    <table class="directory-table general-table legacy-bg0" :class="{ 'layout-card': layout === 'card' }">
+    <table v-if="!renderCardLayout" class="directory-table general-table legacy-bg0">
         <colgroup>
             <col style="width: 64px" />
             <col style="width: 140px" />
@@ -134,6 +156,8 @@ const sortHelp = (header: Header): string =>
                         class="general-icon"
                         width="64"
                         height="64"
+                        loading="lazy"
+                        decoding="async"
                         :src="resolveGeneralIconUrl(general)"
                         alt=""
                         @error="useDefaultGeneralIcon"
@@ -208,7 +232,7 @@ const sortHelp = (header: Header): string =>
         </tbody>
     </table>
 
-    <div class="general-card-list" :class="{ 'layout-card': layout === 'card' }">
+    <div v-if="renderCardLayout" class="general-card-list" :class="{ 'layout-card': layout === 'card' }">
         <div v-if="loading" class="general-card-loading legacy-bg0">불러오는 중...</div>
         <article
             v-for="general in generals"
@@ -229,6 +253,8 @@ const sortHelp = (header: Header): string =>
                     class="general-icon"
                     width="64"
                     height="64"
+                    loading="lazy"
+                    decoding="async"
                     :src="resolveGeneralIconUrl(general)"
                     alt=""
                     @error="useDefaultGeneralIcon"
