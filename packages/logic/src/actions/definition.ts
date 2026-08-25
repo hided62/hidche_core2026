@@ -16,14 +16,11 @@ export interface GeneralActionDefinition<
     // 커맨드 입력 단계에서 최소 조건만 평가할 때 사용한다.
     buildMinConstraints?(ctx: ConstraintContext, args: Args): Constraint[];
     buildConstraints(ctx: ConstraintContext, args: Args): Constraint[];
-    formatConstraintFailure?(
-        reason: string,
-        ctx: ConstraintContext,
-        args: Args,
-        view: StateView
-    ): string | null;
+    formatConstraintFailure?(reason: string, ctx: ConstraintContext, args: Args, view: StateView): string | null;
     // NationCommand::addTermStack()/setNextAvailable() 호환 실행 메타데이터.
     getPreReqTurn?(context: Context, args: Args): number;
+    // 입력 시점에 대상이 정해져야 소요 턴을 계산할 수 있는 명령의 Ref 표시 문구.
+    getTurnDurationHint?(): string;
     getPostReqTurn?(context: Context, args: Args): number;
     getStackSequence?(context: Context, args: Args): number | null;
     getProgressText?(context: Context, args: Args, term: number, termMax: number): string;
