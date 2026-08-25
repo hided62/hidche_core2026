@@ -78,6 +78,25 @@ export interface GatewayProcessConfig {
     baseEnv?: Record<string, string>;
 }
 
+const PROFILE_BUILD_ENTRYPOINTS = [
+    ['app', 'game-api', 'dist', 'index.js'],
+    ['app', 'gateway-api', 'dist', 'index.js'],
+] as const;
+
+export const hasCompleteProfileBuildArtifacts = async (
+    workspaceRoot: string,
+    access: (target: string) => Promise<unknown> = fs.access
+): Promise<boolean> => {
+    for (const segments of PROFILE_BUILD_ENTRYPOINTS) {
+        try {
+            await access(path.join(workspaceRoot, ...segments));
+        } catch {
+            return false;
+        }
+    }
+    return true;
+};
+
 export interface GatewayOrchestratorOptions {
     repository: GatewayProfileRepository;
     processManager: ProcessManager;
@@ -2386,7 +2405,9 @@ export class GatewayOrchestrator implements GatewayOrchestratorHandle {
         if (operationId) {
             await this.appendOperationLog(operationId, 'workspace', `worktree 준비 완료: ${workspace.root}`);
         }
-        const activeWorkspaceReusable = canReuseActiveProfileWorkspace(profile, commitSha, workspace);
+        const activeWorkspaceReusable =
+            canReuseActiveProfileWorkspace(profile, commitSha, workspace) &&
+            (await hasCompleteProfileBuildArtifacts(workspace.root));
         if (activeWorkspaceReusable) {
             if (operationId) {
                 await this.appendOperationLog(
@@ -2451,6 +2472,12 @@ export class GatewayOrchestrator implements GatewayOrchestratorHandle {
             await fs.access(sourcePath);
         } catch {
             throw new Error(`Selected commit does not provide the profile seed CLI: ${sourcePath}`);
+        }
+        const artifactPath = path.join(workspaceRoot, 'app', 'gateway-api', 'dist', 'index.js');
+        try {
+            await fs.access(artifactPath);
+        } catch {
+            throw new Error(`Selected commit did not build the profile seed CLI artifact: ${artifactPath}`);
         }
     }
 
