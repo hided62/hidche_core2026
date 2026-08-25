@@ -63,6 +63,7 @@ export type CommandInputField = {
 export type CommandAvailability = {
     key: string;
     name: string;
+    turnDurationText?: string;
     reqArg: boolean;
     status: 'available' | 'blocked' | 'needsInput' | 'unknown';
     possible: boolean;

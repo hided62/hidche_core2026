@@ -5,6 +5,7 @@ import SkeletonLines from '../ui/SkeletonLines.vue';
 type CommandAvailability = {
     key: string;
     name: string;
+    turnDurationText?: string;
     reqArg: boolean;
     status: 'available' | 'blocked' | 'needsInput' | 'unknown';
     possible: boolean;
@@ -161,6 +162,9 @@ const commandTitle = (command: CommandAvailability) =>
                     @click="emit('select', command.key)"
                 >
                     <span class="command-name">{{ command.name }}</span>
+                    <small v-if="command.turnDurationText" class="command-duration">
+                        /{{ command.turnDurationText }}
+                    </small>
                 </button>
             </div>
         </div>
@@ -210,6 +214,7 @@ const commandTitle = (command: CommandAvailability) =>
     min-height: 0;
     padding-inline: 5px;
     display: flex;
+    flex-direction: column;
     align-items: center;
     justify-content: center;
     text-align: center;
@@ -234,6 +239,14 @@ const commandTitle = (command: CommandAvailability) =>
 
 .command-name {
     font-weight: 600;
+}
+
+.command-duration {
+    display: block;
+    font-size: 0.875em;
+    font-weight: 400;
+    line-height: 1.1;
+    white-space: nowrap;
 }
 
 .empty {

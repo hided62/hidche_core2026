@@ -39,6 +39,7 @@ type AvailabilityStatus = 'available' | 'blocked' | 'needsInput' | 'unknown';
 export interface TurnCommandAvailability {
     key: string;
     name: string;
+    turnDurationText?: string;
     reqArg: boolean;
     possible: boolean;
     status: AvailabilityStatus;
@@ -699,16 +700,34 @@ const buildEntries = (
     return entries;
 };
 
-const buildGroups = (entries: CommandEntry[], ctx: ConstraintContext, view: StateView): TurnCommandGroup[] => {
+const getTurnDurationText = (definition: GeneralActionDefinition): string | undefined => {
+    const hint = definition.getTurnDurationHint?.();
+    if (hint) return hint;
+
+    const getPreReqTurn = definition.getPreReqTurn;
+    // 인자를 선언한 구현은 천도처럼 대상에 따라 달라지므로 임의 context로 실행하지 않는다.
+    if (!getPreReqTurn || getPreReqTurn.length > 0) return undefined;
+    const preReqTurn = Math.max(0, Math.floor(getPreReqTurn.call(definition, undefined as never, {})));
+    return preReqTurn > 0 ? `${preReqTurn + 1}턴` : undefined;
+};
+
+const buildGroups = (
+    entries: CommandEntry[],
+    ctx: ConstraintContext,
+    view: StateView,
+    includeTurnDuration = false
+): TurnCommandGroup[] => {
     const groups = new Map<string, TurnCommandAvailability[]>();
 
     for (const entry of entries) {
         const availability = entry.evaluate
             ? entry.evaluate(ctx, view)
             : evaluateDefinition(entry.definition, ctx, view, entry.reqArg, entry.availabilityArgs);
+        const turnDurationText = includeTurnDuration ? getTurnDurationText(entry.definition) : undefined;
         const value: TurnCommandAvailability = {
             key: entry.definition.key,
             name: entry.definition.name,
+            ...(turnDurationText ? { turnDurationText } : {}),
             reqArg: entry.reqArg,
             inputFields: entry.inputFields,
             ...availability,
@@ -806,7 +825,12 @@ export const buildTurnCommandTable = async (options: {
             ctx,
             view
         ),
-        nation: buildGroups(projectCommandGroups(nationEntries, nationGroups ?? REF_NATION_COMMAND_GROUPS), ctx, view),
+        nation: buildGroups(
+            projectCommandGroups(nationEntries, nationGroups ?? REF_NATION_COMMAND_GROUPS),
+            ctx,
+            view,
+            true
+        ),
         inputOptions: options.inputOptions ?? {
             cities: [],
             nations: [],

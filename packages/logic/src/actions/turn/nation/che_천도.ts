@@ -179,6 +179,10 @@ export class ActionDefinition<
         return (calcDistance(context.nation.capitalCityId, args.destCityID, context.map, allowedCityIds) ?? 0) * 2;
     }
 
+    getTurnDurationHint(): string {
+        return '1+거리×2턴';
+    }
+
     getStackSequence(context: MoveCapitalResolveContext<TriggerState>): number {
         const value = context.nation?.meta.capset;
         return typeof value === 'number' && Number.isFinite(value) ? Math.floor(value) : 0;

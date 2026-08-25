@@ -190,6 +190,27 @@ describe('buildTurnCommandTable', () => {
             전략: ['필사즉생', '백성동원', '수몰', '허보', '의병모집', '이호경식', '급습', '피장파장'],
             기타: ['국기변경', '국호변경'],
         });
+        expect(
+            Object.fromEntries(
+                table.nation
+                    .flatMap(({ values }) => values)
+                    .filter(({ turnDurationText }) => turnDurationText)
+                    .map(({ key, turnDurationText }) => [key, turnDurationText])
+            )
+        ).toEqual({
+            che_초토화: '3턴',
+            che_천도: '1+거리×2턴',
+            che_증축: '6턴',
+            che_감축: '6턴',
+            che_필사즉생: '3턴',
+            che_수몰: '3턴',
+            che_허보: '2턴',
+            che_의병모집: '3턴',
+            che_피장파장: '2턴',
+        });
+        expect(table.general.flatMap(({ values }) => values)).not.toContainEqual(
+            expect.objectContaining({ turnDurationText: expect.any(String) })
+        );
     });
 
     it('projects scenario-specific command categories instead of the default profile', async () => {
@@ -225,6 +246,14 @@ describe('buildTurnCommandTable', () => {
             'event_대검병연구',
             'event_화륜차연구',
         ]);
+        expect(
+            Object.fromEntries(
+                table.nation.flatMap(({ values }) => values.map(({ key, turnDurationText }) => [key, turnDurationText]))
+            )
+        ).toMatchObject({
+            event_대검병연구: '12턴',
+            event_화륜차연구: '24턴',
+        });
     });
 
     it('projects the real 904/905/910/912 world command profiles into the API table', async () => {

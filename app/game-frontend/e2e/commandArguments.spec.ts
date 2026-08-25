@@ -320,9 +320,10 @@ const buildGeneralCommand = (key: string, name: string) => ({
         { key: 'destGeneralId', label: '대상 장수', kind: 'select', required: true, optionSource: 'generals' },
     ],
 });
-const buildSimpleCommand = (key: string, name: string) => ({
+const buildSimpleCommand = (key: string, name: string, turnDurationText?: string) => ({
     key,
     name,
+    ...(turnDurationText ? { turnDurationText } : {}),
     reqArg: false,
     possible: true,
     status: 'available',
@@ -635,23 +636,23 @@ const refChiefCommandTable = {
         {
             category: '특수',
             values: [
-                buildSimpleCommand('che_초토화', '초토화'),
-                buildSimpleCommand('che_천도', '천도'),
-                buildSimpleCommand('che_증축', '증축'),
-                buildSimpleCommand('che_감축', '감축'),
+                buildSimpleCommand('che_초토화', '초토화', '3턴'),
+                buildSimpleCommand('che_천도', '천도', '1+거리×2턴'),
+                buildSimpleCommand('che_증축', '증축', '6턴'),
+                buildSimpleCommand('che_감축', '감축', '6턴'),
             ],
         },
         {
             category: '전략',
             values: [
-                buildSimpleCommand('che_필사즉생', '필사즉생'),
+                buildSimpleCommand('che_필사즉생', '필사즉생', '3턴'),
                 buildSimpleCommand('che_백성동원', '백성동원'),
-                buildSimpleCommand('che_수몰', '수몰'),
-                buildSimpleCommand('che_허보', '허보'),
-                buildSimpleCommand('che_의병모집', '의병모집'),
+                buildSimpleCommand('che_수몰', '수몰', '3턴'),
+                buildSimpleCommand('che_허보', '허보', '2턴'),
+                buildSimpleCommand('che_의병모집', '의병모집', '3턴'),
                 buildSimpleCommand('che_이호경식', '이호경식'),
                 buildSimpleCommand('che_급습', '급습'),
-                buildSimpleCommand('che_피장파장', '피장파장'),
+                buildSimpleCommand('che_피장파장', '피장파장', '2턴'),
             ],
         },
         {
@@ -1220,8 +1221,24 @@ test('shows every Ref chief command in the exact category and command order', as
     await expect(picker.locator('.category-btn')).toHaveText(Object.keys(expected));
     for (const [category, commands] of Object.entries(expected)) {
         await picker.locator('.category-btn').filter({ hasText: category }).click();
-        await expect(picker.locator('.command-grid .command-item')).toHaveText([...commands]);
+        await expect(picker.locator('.command-grid .command-name')).toHaveText([...commands]);
     }
+    await picker.getByRole('button', { name: '특수', exact: true }).click();
+    await expect(picker.locator('.command-grid .command-item')).toHaveText([
+        '초토화 /3턴',
+        '천도 /1+거리×2턴',
+        '증축 /6턴',
+        '감축 /6턴',
+    ]);
+    const durationGeometry = await picker.locator('.command-grid .command-item').evaluateAll((buttons) =>
+        buttons.map((button) => ({
+            text: button.textContent?.replace(/\s/g, ''),
+            height: button.getBoundingClientRect().height,
+            overflow: button.scrollWidth - button.clientWidth,
+        }))
+    );
+    expect(durationGeometry.every(({ height, overflow }) => height >= 35 && overflow <= 0)).toBe(true);
+    await picker.getByRole('button', { name: '기타', exact: true }).click();
     const rename = picker.getByRole('button', { name: '국호변경', exact: true });
     await rename.hover();
     await rename.focus();
@@ -1242,6 +1259,16 @@ test('shows every Ref chief command in the exact category and command order', as
     expect(mobileGeometry.width).toBeLessThanOrEqual(500);
     expect(mobileGeometry.horizontalOverflow).toBeLessThanOrEqual(0);
     expect(mobileGeometry.categoryColumns.split(' ')).toHaveLength(3);
+    await mobilePicker.getByRole('button', { name: '특수', exact: true }).click();
+    const mobileExpand = mobilePicker.getByRole('button', { name: '증축 /6턴', exact: true });
+    await expect(mobileExpand).toBeVisible();
+    await mobileExpand.hover();
+    await mobileExpand.focus();
+    await expect(mobileExpand).toBeFocused();
+    await mobileExpand.dispatchEvent('pointerdown');
+    await expect(mobileExpand.locator('.command-duration')).toHaveText('/6턴');
+    await mobileExpand.dispatchEvent('pointerup');
+    expect(await mobilePicker.evaluate((element) => element.scrollWidth - element.clientWidth)).toBeLessThanOrEqual(0);
     await mobilePicker.screenshot({ path: test.info().outputPath('ref-chief-command-list-mobile-500.png') });
 });
 
