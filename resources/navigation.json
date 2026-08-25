@@ -12,7 +12,7 @@
             { "id": "report", "label": "신고/문의", "href": "/xe/report", "newTab": true },
             { "id": "faq", "label": "자주 묻는 질문", "href": "/xe/faq", "newTab": true },
             { "id": "patch", "label": "패치 내역", "href": "/wiki/개발/패치_내역", "newTab": true },
-            { "id": "repository", "label": "Git Repo.", "href": "//gitea.hided.net/devsam/core", "newTab": true },
+            { "id": "repository", "label": "Git Repo.", "href": "//gitea.hided.net/devsam/core2026", "newTab": true },
             { "id": "wiki", "label": "위키", "href": "/wiki", "newTab": true },
             { "id": "official-chat", "label": "공식 오픈 톡", "href": "https://open.kakao.com/o/gR82obT", "newTab": true },
             { "id": "casual-chat", "label": "잡담 오픈 톡", "href": "https://open.kakao.com/o/g9ZWe5K", "newTab": true }
