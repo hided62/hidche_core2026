@@ -21,6 +21,8 @@ void describe('nation general Ref-compatible grid state', () => {
         const normal = defaultNationGeneralDisplaySettings.normal;
         assert.equal(normal.columnGroup.find((entry) => entry.groupId === 'stat')?.open, true);
         assert.equal(normal.columnGroup.find((entry) => entry.groupId === 'specials')?.open, false);
+        assert.equal(normal.column.find((entry) => entry.colId === 'age')?.hide, false);
+        assert.equal(normal.column.find((entry) => entry.colId === 'reservedCommand')?.hide, true);
         assert.deepEqual(
             normal.column.filter((entry) => entry.sort).map((entry) => [entry.colId, entry.sort, entry.sortIndex]),
             [['refreshScoreTotal', 'desc', 0]]
@@ -29,6 +31,9 @@ void describe('nation general Ref-compatible grid state', () => {
         assert.equal(war.columnGroup.find((entry) => entry.groupId === 'stat')?.open, false);
         assert.equal(war.column.find((entry) => entry.colId === 'stat_1')?.hide, false);
         assert.equal(war.column.find((entry) => entry.colId === 'leadership')?.hide, false);
+        assert.equal(war.column.find((entry) => entry.colId === 'crewtypeAndCrew_1')?.hide, false);
+        assert.equal(war.column.find((entry) => entry.colId === 'reservedCommand')?.hide, false);
+        assert.equal(war.column.find((entry) => entry.colId === 'turntime')?.sort, 'asc');
     });
 
     void it('round-trips named settings and rejects invalid versions', () => {

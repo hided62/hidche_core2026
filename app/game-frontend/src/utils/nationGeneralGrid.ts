@@ -14,17 +14,43 @@ export type NationGeneralColumnId =
     | 'gold'
     | 'rice'
     | 'city'
+    | 'crewtypeAndCrew_1'
+    | 'crewtype'
     | 'crew'
+    | 'trainAtmos_1'
+    | 'train'
+    | 'atmos'
+    | 'defence_train'
     | 'specials_1'
     | 'personal'
     | 'specialDomestic'
     | 'specialWar'
+    | 'reservedCommandShort_1'
+    | 'reservedCommand'
+    | 'turntime'
+    | 'recent_war'
     | 'years_1'
+    | 'age'
     | 'belong'
     | 'killturnAndRefresh_1'
-    | 'refreshScoreTotal';
+    | 'killturn'
+    | 'refreshScoreTotal'
+    | 'warResults_1'
+    | 'warnum'
+    | 'killnum'
+    | 'killcrew';
 
-export type NationGeneralGroupId = 'expDedLv' | 'stat' | 'goldRice' | 'specials' | 'years' | 'killturnAndRefresh';
+export type NationGeneralGroupId =
+    | 'expDedLv'
+    | 'stat'
+    | 'goldRice'
+    | 'crewtypeAndCrew'
+    | 'trainAtmos'
+    | 'specials'
+    | 'reservedCommandShort'
+    | 'years'
+    | 'killturnAndRefresh'
+    | 'warResults';
 export type SortDirection = 'asc' | 'desc';
 export type NationGeneralViewMode = 'normal' | 'war';
 
@@ -110,19 +136,48 @@ const baseColumns = (): NationGeneralColumnState[] => [
     { colId: 'gold', width: 70, hide: false, sort: null },
     { colId: 'rice', width: 70, hide: false, sort: null },
     { colId: 'city', width: 60, hide: true, sort: null },
+    { colId: 'crewtypeAndCrew_1', width: 80, hide: true, sort: null },
+    { colId: 'crewtype', width: 80, hide: true, sort: null },
     { colId: 'crew', width: 70, hide: true, sort: null },
+    { colId: 'trainAtmos_1', width: 60, hide: true, sort: null },
+    { colId: 'train', width: 70, hide: true, sort: null },
+    { colId: 'atmos', width: 70, hide: true, sort: null },
+    { colId: 'defence_train', width: 50, hide: true, sort: null },
     { colId: 'specials_1', width: 80, hide: false, sort: null },
     { colId: 'personal', width: 60, hide: false, sort: null },
     { colId: 'specialDomestic', width: 60, hide: false, sort: null },
     { colId: 'specialWar', width: 60, hide: false, sort: null },
+    { colId: 'reservedCommandShort_1', width: 70, hide: true, sort: null },
+    { colId: 'reservedCommand', width: 120, hide: true, sort: null },
+    { colId: 'turntime', width: 60, hide: true, sort: null },
+    { colId: 'recent_war', width: 60, hide: true, sort: null },
     { colId: 'years_1', width: 60, hide: false, sort: null },
+    { colId: 'age', width: 60, hide: false, sort: null },
     { colId: 'belong', width: 60, hide: false, sort: null },
     { colId: 'killturnAndRefresh_1', width: 70, hide: false, sort: null },
+    { colId: 'killturn', width: 70, hide: true, sort: null },
     { colId: 'refreshScoreTotal', width: 70, hide: false, sort: null },
+    { colId: 'warResults_1', width: 90, hide: true, sort: null },
+    { colId: 'warnum', width: 60, hide: true, sort: null },
+    { colId: 'killnum', width: 60, hide: true, sort: null },
+    { colId: 'killcrew', width: 60, hide: true, sort: null },
 ];
 
 const groupState = (overrides: Partial<Record<NationGeneralGroupId, boolean>>): NationGeneralGroupState[] =>
-    (['expDedLv', 'stat', 'goldRice', 'specials', 'years', 'killturnAndRefresh'] as const).map((groupId) => ({
+    (
+        [
+            'expDedLv',
+            'stat',
+            'goldRice',
+            'crewtypeAndCrew',
+            'trainAtmos',
+            'specials',
+            'reservedCommandShort',
+            'years',
+            'killturnAndRefresh',
+            'warResults',
+        ] as const
+    ).map((groupId) => ({
         groupId,
         open: overrides[groupId] ?? false,
     }));
@@ -148,9 +203,13 @@ export const defaultNationGeneralDisplaySettings: Record<NationGeneralViewMode, 
             expDedLv: true,
             stat: true,
             goldRice: true,
+            crewtypeAndCrew: false,
+            trainAtmos: false,
             specials: false,
+            reservedCommandShort: false,
             years: false,
             killturnAndRefresh: true,
+            warResults: false,
         }),
     },
     war: {
@@ -163,22 +222,36 @@ export const defaultNationGeneralDisplaySettings: Record<NationGeneralViewMode, 
             troop: { hide: false },
             city: { hide: false },
             crew: { hide: false },
+            crewtypeAndCrew_1: { hide: false },
+            crewtype: { hide: false },
+            trainAtmos_1: { hide: false },
+            train: { hide: false },
+            atmos: { hide: false },
+            defence_train: { hide: false },
             specials_1: { hide: true },
             personal: { hide: true },
             specialDomestic: { hide: true },
             specialWar: { hide: true },
             years_1: { hide: true },
             belong: { hide: true },
+            reservedCommandShort_1: { hide: false },
+            reservedCommand: { hide: false },
+            turntime: { hide: false, sort: 'asc', sortIndex: 0 },
             killturnAndRefresh_1: { hide: true },
+            killturn: { hide: false },
             refreshScoreTotal: { hide: true },
         }),
         columnGroup: groupState({
             expDedLv: false,
             stat: false,
             goldRice: true,
+            crewtypeAndCrew: false,
+            trainAtmos: false,
             specials: false,
+            reservedCommandShort: true,
             years: false,
             killturnAndRefresh: true,
+            warResults: false,
         }),
     },
 };
