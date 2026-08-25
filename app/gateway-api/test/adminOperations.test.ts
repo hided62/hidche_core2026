@@ -1071,6 +1071,30 @@ describe('admin operation API', () => {
         );
         expect(capabilities).not.toContainEqual(expect.objectContaining({ permission: 'admin.profiles.manage' }));
     });
+
+    it('lists only bulk-update targets covered by the authenticated release capabilities', async () => {
+        const profileOperator = await buildCaller(
+            async () => {
+                throw new Error('not used');
+            },
+            { adminRoles: ['admin.profiles.deploy:che:2'], firstUserIsAdmin: false }
+        );
+        await expect(profileOperator.caller.admin.bulkReleases.targets()).resolves.toMatchObject({
+            gateway: false,
+            profiles: [{ profileName: 'che:2' }],
+        });
+
+        const gatewayOperator = await buildCaller(
+            async () => {
+                throw new Error('not used');
+            },
+            { adminRoles: ['admin.releases.manage'], firstUserIsAdmin: false }
+        );
+        await expect(gatewayOperator.caller.admin.bulkReleases.targets()).resolves.toEqual({
+            gateway: true,
+            profiles: [],
+        });
+    });
 });
 
 describe('profile operation progress API', () => {

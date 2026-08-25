@@ -1,4 +1,4 @@
-import { randomBytes } from 'node:crypto';
+import { randomBytes, randomUUID } from 'node:crypto';
 
 import { TRPCError } from '@trpc/server';
 import { z } from 'zod';
@@ -1672,6 +1672,260 @@ export const adminRouter = router({
                 });
             }
         }),
+    }),
+    bulkReleases: router({
+        targets: adminProcedure.query(async ({ ctx }) => {
+            const adminAuth = requireAdminAuth(ctx);
+            const profiles = orderGatewayProfiles(await ctx.profiles.listProfiles()).filter((profile) =>
+                hasScopedPermission(adminAuth, ROLE_ADMIN_PROFILE_DEPLOY, profile.profileName)
+            );
+            const activeOperations = await ctx.profiles.listOperations({
+                statuses: ['QUEUED', 'RUNNING'],
+                limit: 200,
+            });
+            const now = Date.now();
+            const futureResetByProfile = new Map(
+                activeOperations
+                    .filter(
+                        (operation) =>
+                            operation.type === 'RESET' &&
+                            operation.status === 'QUEUED' &&
+                            Boolean(operation.scheduledAt) &&
+                            new Date(operation.scheduledAt ?? '').getTime() > now
+                    )
+                    .map((operation) => [operation.profileName, operation])
+            );
+            const activeByProfile = new Map(
+                activeOperations
+                    .filter((operation) => operation.id !== futureResetByProfile.get(operation.profileName)?.id)
+                    .map((operation) => [operation.profileName, operation])
+            );
+            return {
+                gateway: hasScopedPermission(adminAuth, ROLE_ADMIN_RELEASES),
+                profiles: profiles.map((profile) => ({
+                    profileName: profile.profileName,
+                    displayName: resolveGatewayProfileDisplayName(
+                        profile.profile,
+                        profile.instanceKey,
+                        profile.meta.korName
+                    ),
+                    status: profile.status,
+                    currentScenario: profile.currentScenario,
+                    buildCommitSha: profile.buildCommitSha,
+                    activeOperation: activeByProfile.get(profile.profileName) ?? null,
+                    scheduledResetAt: futureResetByProfile.get(profile.profileName)?.scheduledAt,
+                })),
+            };
+        }),
+        list: adminProcedure
+            .input(z.object({ limit: z.number().int().min(1).max(50).default(20) }).optional())
+            .query(async ({ ctx, input }) => {
+                const adminAuth = requireAdminAuth(ctx);
+                const profileRecords = await ctx.profiles.listProfiles();
+                const profileLabels = new Map(
+                    profileRecords.map((profile) => [
+                        profile.profileName,
+                        resolveGatewayProfileDisplayName(profile.profile, profile.instanceKey, profile.meta.korName),
+                    ])
+                );
+                const batches = await ctx.prisma.gatewayBulkRelease.findMany({
+                    orderBy: { createdAt: 'desc' },
+                    take: input?.limit ?? 20,
+                    include: {
+                        gatewayOperations: true,
+                        profileOperations: true,
+                    },
+                });
+                return batches.flatMap((batch) => {
+                    const targets = [
+                        ...batch.gatewayOperations
+                            .filter(() => hasScopedPermission(adminAuth, ROLE_ADMIN_RELEASES))
+                            .map((operation) => ({
+                                kind: 'GATEWAY' as const,
+                                order: operation.bulkOrder ?? 0,
+                                label: 'Gateway',
+                                operationId: operation.id,
+                                status: operation.status,
+                                error: operation.error ?? undefined,
+                                startedAt: operation.startedAt?.toISOString(),
+                                completedAt: operation.completedAt?.toISOString(),
+                            })),
+                        ...batch.profileOperations
+                            .filter((operation) =>
+                                hasScopedPermission(adminAuth, ROLE_ADMIN_PROFILE_DEPLOY, operation.profileName)
+                            )
+                            .map((operation) => ({
+                                kind: 'PROFILE' as const,
+                                order: operation.bulkOrder ?? 0,
+                                profileName: operation.profileName,
+                                label: profileLabels.get(operation.profileName) ?? '삭제되었거나 접근할 수 없는 서버',
+                                operationId: operation.id,
+                                status: operation.status,
+                                error: operation.error ?? undefined,
+                                startedAt: operation.startedAt?.toISOString(),
+                                completedAt: operation.completedAt?.toISOString(),
+                            })),
+                    ].sort((left, right) => left.order - right.order);
+                    if (!targets.length) return [];
+                    const statuses = targets.map((target) => target.status);
+                    const status = statuses.every((value) => value === 'SUCCEEDED')
+                        ? 'SUCCEEDED'
+                        : statuses.some((value) => value === 'FAILED')
+                          ? 'FAILED'
+                          : statuses.some((value) => value === 'CANCELLED')
+                            ? 'CANCELLED'
+                            : statuses.some((value) => value === 'RUNNING')
+                              ? 'RUNNING'
+                              : 'QUEUED';
+                    return [
+                        {
+                            id: batch.id,
+                            sourceMode: batch.sourceMode,
+                            sourceRef: batch.sourceRef,
+                            resolvedCommitSha: batch.resolvedCommitSha,
+                            reason: batch.reason ?? undefined,
+                            requestedBy: batch.requestedBy,
+                            createdAt: batch.createdAt.toISOString(),
+                            status,
+                            targets,
+                        },
+                    ];
+                });
+            }),
+        request: adminProcedure
+            .input(
+                z
+                    .object({
+                        includeGateway: z.boolean(),
+                        profileNames: z.array(z.string().min(1).max(64)).max(50),
+                        sourceMode: zSourceMode,
+                        sourceRef: z.string().trim().min(1).max(128),
+                        reason: z.string().trim().max(200).optional(),
+                    })
+                    .refine((input) => input.includeGateway || input.profileNames.length > 0, {
+                        message: 'At least one update target is required.',
+                    })
+                    .refine((input) => new Set(input.profileNames).size === input.profileNames.length, {
+                        message: 'Duplicate profile targets are not allowed.',
+                    })
+            )
+            .mutation(async ({ ctx, input }) => {
+                const adminAuth = requireAdminAuth(ctx);
+                if (input.includeGateway) assertPermission(adminAuth, ROLE_ADMIN_RELEASES);
+                input.profileNames.forEach((profileName) =>
+                    assertPermission(adminAuth, ROLE_ADMIN_PROFILE_DEPLOY, profileName)
+                );
+
+                const profiles = orderGatewayProfiles(
+                    (
+                        await Promise.all(input.profileNames.map((profileName) => ctx.profiles.getProfile(profileName)))
+                    ).filter((profile): profile is NonNullable<typeof profile> => profile !== null)
+                );
+                if (profiles.length !== input.profileNames.length) {
+                    throw new TRPCError({ code: 'NOT_FOUND', message: '선택한 서버를 찾을 수 없습니다.' });
+                }
+
+                let resolvedCommitSha: string;
+                try {
+                    resolvedCommitSha =
+                        input.sourceMode === 'BRANCH'
+                            ? await resolveGitBranchCommitSha(input.sourceRef)
+                            : await resolveGitCommitSha(input.sourceRef);
+                    if (profiles.length) {
+                        const scenarios = await listScenarioPreviews({ gitRef: resolvedCommitSha });
+                        const incompatibleProfile = profiles.find(
+                            (profile) =>
+                                profile.currentScenario === null ||
+                                !scenarios.some((scenario) => String(scenario.id) === profile.currentScenario)
+                        );
+                        if (incompatibleProfile) {
+                            throw new TRPCError({
+                                code: 'BAD_REQUEST',
+                                message: `${resolveGatewayProfileDisplayName(incompatibleProfile.profile, incompatibleProfile.instanceKey, incompatibleProfile.meta.korName)}의 현재 시나리오가 대상 버전에 없습니다.`,
+                            });
+                        }
+                    }
+                } catch (error) {
+                    if (error instanceof TRPCError) throw error;
+                    throw new TRPCError({ code: 'BAD_REQUEST', message: '일괄 업데이트 소스가 올바르지 않습니다.' });
+                }
+
+                try {
+                    return await ctx.prisma.$transaction(async (tx) => {
+                        const batchId = randomUUID();
+                        const batch = await tx.gatewayBulkRelease.create({
+                            data: {
+                                id: batchId,
+                                sourceMode: input.sourceMode,
+                                sourceRef: input.sourceRef,
+                                resolvedCommitSha,
+                                reason: input.reason,
+                                requestedBy: adminAuth.user.id,
+                            },
+                        });
+                        let order = 0;
+                        if (input.includeGateway) {
+                            const operation = await tx.gatewayReleaseOperation.create({
+                                data: {
+                                    type: 'DEPLOY',
+                                    sourceMode: 'COMMIT',
+                                    sourceRef: resolvedCommitSha,
+                                    payload: { bulkReleaseId: batchId },
+                                    reason: input.reason,
+                                    requestedBy: adminAuth.user.id,
+                                    bulkReleaseId: batchId,
+                                    bulkOrder: order++,
+                                },
+                            });
+                            await tx.gatewayReleaseLog.create({
+                                data: {
+                                    operationId: operation.id,
+                                    level: 'INFO',
+                                    phase: 'queue',
+                                    message: '일괄 업데이트의 Gateway 작업이 등록되었습니다.',
+                                },
+                            });
+                        }
+                        for (const profile of profiles) {
+                            const operation = await tx.gatewayOperation.create({
+                                data: {
+                                    profileName: profile.profileName,
+                                    type: 'DEPLOY',
+                                    sourceMode: 'COMMIT',
+                                    sourceRef: resolvedCommitSha,
+                                    payload: {
+                                        bulkReleaseId: batchId,
+                                        releaseSource: { mode: 'COMMIT', ref: resolvedCommitSha },
+                                    },
+                                    reason: input.reason,
+                                    requestedBy: adminAuth.user.id,
+                                    bulkReleaseId: batchId,
+                                    bulkOrder: order++,
+                                },
+                            });
+                            await tx.gatewayOperationLog.create({
+                                data: {
+                                    operationId: operation.id,
+                                    level: 'INFO',
+                                    phase: 'queue',
+                                    message: '일괄 업데이트의 DB 보존 버전 업데이트가 등록되었습니다.',
+                                },
+                            });
+                        }
+                        return {
+                            id: batch.id,
+                            resolvedCommitSha,
+                            targetCount: order,
+                        };
+                    });
+                } catch (error) {
+                    if (!isUniqueConstraintError(error)) throw error;
+                    throw new TRPCError({
+                        code: 'CONFLICT',
+                        message: '선택한 대상 중 이미 대기 또는 실행 중인 릴리스 작업이 있습니다.',
+                    });
+                }
+            }),
     }),
     releases: router({
         gatewayState: releaseAdminProcedure.query(({ ctx }) => ctx.releases.getState()),

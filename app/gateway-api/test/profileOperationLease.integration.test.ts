@@ -36,6 +36,7 @@ describeDatabase('gateway operation lease and profile serialization', () => {
         await connector.prisma.gatewayOperation.deleteMany({
             where: { profileName: { in: [profileName, secondProfileName] } },
         });
+        await connector.prisma.gatewayBulkRelease.deleteMany();
         await connector.prisma.gatewayProfile.updateMany({
             where: { profileName: { in: [profileName, secondProfileName] } },
             data: { buildStatus: 'IDLE', buildError: null },
@@ -46,6 +47,7 @@ describeDatabase('gateway operation lease and profile serialization', () => {
         await connector.prisma.gatewayOperation.deleteMany({
             where: { profileName: { in: [profileName, secondProfileName] } },
         });
+        await connector.prisma.gatewayBulkRelease.deleteMany();
         await connector.prisma.gatewayProfile.deleteMany({
             where: { profileName: { in: [profileName, secondProfileName] } },
         });
@@ -268,6 +270,97 @@ describeDatabase('gateway operation lease and profile serialization', () => {
         await expect(
             repository.claimNextOperation(now, { ownerId: 'profile-worker', durationMs: 1_000 })
         ).resolves.toMatchObject({ id: profileOperation.id });
+    });
+
+    it('runs a bulk release in Gateway-first order and pauses later profiles until a failed target retries', async () => {
+        const fixedCommit = 'd'.repeat(40);
+        const created = await connector.prisma.$transaction(async (tx) => {
+            const batch = await tx.gatewayBulkRelease.create({
+                data: {
+                    sourceMode: 'BRANCH',
+                    sourceRef: 'main',
+                    resolvedCommitSha: fixedCommit,
+                    requestedBy: 'bulk-admin',
+                },
+            });
+            const gateway = await tx.gatewayReleaseOperation.create({
+                data: {
+                    type: 'DEPLOY',
+                    sourceMode: 'COMMIT',
+                    sourceRef: fixedCommit,
+                    requestedBy: 'bulk-admin',
+                    bulkReleaseId: batch.id,
+                    bulkOrder: 0,
+                },
+            });
+            const firstProfile = await tx.gatewayOperation.create({
+                data: {
+                    profileName,
+                    type: 'DEPLOY',
+                    sourceMode: 'COMMIT',
+                    sourceRef: fixedCommit,
+                    requestedBy: 'bulk-admin',
+                    bulkReleaseId: batch.id,
+                    bulkOrder: 1,
+                },
+            });
+            const secondProfile = await tx.gatewayOperation.create({
+                data: {
+                    profileName: secondProfileName,
+                    type: 'DEPLOY',
+                    sourceMode: 'COMMIT',
+                    sourceRef: fixedCommit,
+                    requestedBy: 'bulk-admin',
+                    bulkReleaseId: batch.id,
+                    bulkOrder: 2,
+                },
+            });
+            return { gateway, firstProfile, secondProfile };
+        });
+        const now = new Date('2030-01-01T00:00:00.000Z');
+
+        await expect(
+            repository.claimNextOperation(now, { ownerId: 'profile-worker', durationMs: 10_000 })
+        ).resolves.toBeNull();
+        await expect(
+            releaseRepository.claimNextOperation(now, { ownerId: 'release-worker', durationMs: 10_000 })
+        ).resolves.toMatchObject({ id: created.gateway.id, sourceRef: fixedCommit });
+        await releaseRepository.completeOperation(
+            created.gateway.id,
+            'SUCCEEDED',
+            { resolvedCommitSha: fixedCommit, error: null },
+            'release-worker'
+        );
+
+        await expect(
+            repository.claimNextOperation(now, { ownerId: 'profile-worker', durationMs: 10_000 })
+        ).resolves.toMatchObject({ id: created.firstProfile.id, sourceRef: fixedCommit });
+        await repository.completeOperation(
+            created.firstProfile.id,
+            'FAILED',
+            { resolvedCommitSha: fixedCommit, error: 'fixture failure' },
+            'profile-worker'
+        );
+        await expect(
+            repository.claimNextOperation(now, { ownerId: 'profile-worker', durationMs: 10_000 })
+        ).resolves.toBeNull();
+
+        await expect(repository.retryOperation(created.firstProfile.id, 'retry-admin')).resolves.toMatchObject({
+            id: created.firstProfile.id,
+            status: 'QUEUED',
+            sourceMode: 'COMMIT',
+            sourceRef: fixedCommit,
+        });
+        await repository.claimNextOperation(now, { ownerId: 'profile-worker', durationMs: 10_000 });
+        await repository.completeOperation(
+            created.firstProfile.id,
+            'SUCCEEDED',
+            { resolvedCommitSha: fixedCommit, error: null },
+            'profile-worker'
+        );
+        await expect(
+            repository.claimNextOperation(now, { ownerId: 'profile-worker', durationMs: 10_000 })
+        ).resolves.toMatchObject({ id: created.secondProfile.id, sourceRef: fixedCommit });
     });
 
     it('does not let a future queued operation suppress runtime reconciliation early', async () => {
