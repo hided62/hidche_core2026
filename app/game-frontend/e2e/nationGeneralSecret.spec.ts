@@ -49,6 +49,7 @@ const general = {
     dedicationLevel: 1,
     dedicationText: '30품관',
     bill: 600,
+    honorText: '무명',
     injury: 0,
     gold: 1000,
     rice: 2000,
@@ -56,6 +57,9 @@ const general = {
     specialDomestic: null,
     specialWar: null,
     belong: 1,
+    age: 20,
+    killTurn: 7,
+    ownerName: null,
     refreshScoreTotal: 10,
     permission: 'normal',
 };
@@ -76,7 +80,48 @@ const otherGeneral = {
     specialWar: { key: '돌격', name: '돌격', info: '전투 특기' },
     belong: 4,
     refreshScoreTotal: 20,
+    honorText: '신동',
+    age: 24,
+    killTurn: 3,
+    ownerName: '소유자',
 };
+const nationDetailedGenerals = [
+    {
+        ...general,
+        cityName: '업',
+        troopName: null,
+        crew: 300,
+        crewTypeId: 1,
+        crewTypeName: '보병',
+        train: 90,
+        atmos: 80,
+        defenceTrain: 90,
+        defenceTrainText: '☆',
+        turnTime: '2026-01-01T01:02:00.000Z',
+        recentWar: '2026-01-01T00:59:00.000Z',
+        reservedCommands: [
+            { action: 'che_이동', args: { destCityId: 1 } },
+            { action: 'che_징병', args: { crewType: 1, amount: 300 } },
+        ],
+        battleStats: { battles: 12, wins: 7, killCrew: 2400, deathCrew: 1200 },
+    },
+    {
+        ...otherGeneral,
+        cityName: '낙양',
+        troopName: '제1부대',
+        crew: 100,
+        crewTypeId: 2,
+        crewTypeName: '기병',
+        train: 80,
+        atmos: 70,
+        defenceTrain: 80,
+        defenceTrainText: '◎',
+        turnTime: '2026-01-01T02:02:00.000Z',
+        recentWar: null,
+        reservedCommands: [],
+        battleStats: { battles: 5, wins: 2, killCrew: 500, deathCrew: 1000 },
+    },
+];
 const npcColorStates = [0, 1, 2, 4, 5, 6] as const;
 const npcColorGenerals = npcColorStates.map((npcState) => ({
     ...general,
@@ -108,7 +153,7 @@ const npcColorSecretGenerals = npcColorStates.map((npcState) => ({
     turnTime: `2026-01-01T01:0${npcState}:00.000Z`,
     reservedCommands: [],
 }));
-const install = async (page: Page, secretAllowed = true, npcColorFixture = false) => {
+const install = async (page: Page, secretAllowed = true, npcColorFixture = false, nationPermission = 0) => {
     await page.addInitScript((profile) => {
         localStorage.setItem('sammo-game-token', 'ga_general');
         localStorage.setItem('sammo-game-profile', profile);
@@ -121,8 +166,12 @@ const install = async (page: Page, secretAllowed = true, npcColorFixture = false
             if (operation === 'nation.getGeneralList')
                 return response({
                     nation: { id: 1, name: '위', color: '#008000', level: 3 },
-                    viewer: { generalId: 1, permission: 0 },
-                    generals: npcColorFixture ? npcColorGenerals : [general, otherGeneral],
+                    viewer: { generalId: 1, permission: nationPermission },
+                    generals: npcColorFixture
+                        ? npcColorGenerals
+                        : nationPermission >= 1
+                          ? nationDetailedGenerals
+                          : [general, otherGeneral],
                 });
             if (operation === 'nation.getSecretGeneralList') {
                 if (!secretAllowed)
@@ -274,6 +323,45 @@ test('nation generals keeps the 1000px legacy grid and redacted member columns',
     await page.getByRole('button', { name: '보기 모드⌄' }).click();
     await page.getByRole('button', { name: '전투', exact: true }).click();
     await expect(page.locator('#nation-general-list')).toContainText('?');
+});
+
+test('nation generals restores Ref private columns and keeps them reachable through column selection', async ({
+    page,
+}, testInfo) => {
+    await install(page, true, false, 1);
+    await page.setViewportSize({ width: 1200, height: 900 });
+    await page.goto('nation/generals');
+    const table = page.locator('#nation-general-list');
+    await expect(table).toContainText('20세');
+    await expect(table).toContainText('무명');
+
+    await page.getByRole('button', { name: '보기 모드⌄' }).click();
+    await page.getByRole('button', { name: '전투', exact: true }).click();
+    await expect(table).toContainText('보병');
+    await expect(table).toContainText('300명');
+    await expect(table).toContainText('【업】으로 이동');
+    await expect(table).toContainText('90');
+    await expect(table).toContainText('80');
+    await expect(table).toContainText('7턴');
+
+    await page.getByRole('button', { name: '열 선택⌄' }).click();
+    await page.getByLabel('최근전투', { exact: true }).check();
+    await page.getByLabel('전투', { exact: true }).check();
+    await page.getByLabel('승리', { exact: true }).check();
+    await page.getByLabel('살상률', { exact: true }).check();
+    await page.getByRole('button', { name: '열 선택⌄' }).click();
+    await expect(page.getByRole('button', { name: '전과 펼치기' })).toBeVisible();
+    await page.getByRole('button', { name: '전과 펼치기' }).click();
+    await expect(table).toContainText('12전');
+    await expect(table).toContainText('7승');
+    await expect(table).toContainText('200%');
+    await expect(table).toContainText('59:00');
+
+    await page.screenshot({ path: testInfo.outputPath('nation-general-restored-columns-desktop.png'), fullPage: true });
+    await page.setViewportSize({ width: 500, height: 900 });
+    await expect(table).toContainText('【보병】 300명 징병');
+    expect((await table.boundingBox())?.width).toBeGreaterThan(1000);
+    await page.screenshot({ path: testInfo.outputPath('nation-general-restored-columns-mobile.png'), fullPage: true });
 });
 
 test('nation generals top controls share fixed Lumen state geometry on desktop and mobile', async ({

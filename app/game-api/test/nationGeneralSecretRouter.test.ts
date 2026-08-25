@@ -99,6 +99,14 @@ const fixture = (generals: GeneralRow[], userId = 'u1', maxLevel?: number) => {
         generalAccessLog: {
             findMany: vi.fn(async () => generals.map((g) => ({ generalId: g.id, refreshScoreTotal: g.id * 10 }))),
         },
+        rankData: {
+            findMany: vi.fn(async () => [
+                { generalId: 1, type: 'warnum', value: 12 },
+                { generalId: 1, type: 'killnum', value: 7 },
+                { generalId: 1, type: 'killcrew', value: 2400 },
+                { generalId: 1, type: 'deathcrew', value: 1200 },
+            ]),
+        },
     };
     const redis = { get: vi.fn(async () => null), set: vi.fn(async () => null) } as unknown as RedisConnector['client'];
     const context: GameApiContext = {
@@ -132,8 +140,12 @@ describe('nation general and secret office permissions', () => {
             dedicationText: '30품관',
             bill: 600,
             experienceLevel: 120,
+            honorText: '구세주',
+            age: 20,
+            killTurn: 7,
         });
         expect(result.generals[0]).not.toHaveProperty('crew');
+        expect(result.generals[0]).not.toHaveProperty('reservedCommands');
         await expect(caller.nation.getSecretGeneralList()).rejects.toMatchObject({ code: 'FORBIDDEN' });
     });
     it('uses the session-owned general and scopes secret rows to that nation', async () => {
@@ -158,6 +170,15 @@ describe('nation general and secret office permissions', () => {
         expect(result.generals[0]?.reservedCommands).toEqual([
             { action: 'che_징병', args: { crewType: 1, amount: 300 } },
         ]);
+        const directory = await caller.nation.getGeneralList();
+        expect(directory.generals[0]).toMatchObject({
+            crewTypeName: expect.any(String),
+            train: 90,
+            atmos: 90,
+            defenceTrain: 80,
+            reservedCommands: [{ action: 'che_징병', args: { crewType: 1, amount: 300 } }],
+            battleStats: { battles: 12, wins: 7, killCrew: 2400, deathCrew: 1200 },
+        });
         expect(db.generalTurn.findMany).toHaveBeenCalledWith(
             expect.objectContaining({
                 select: { generalId: true, turnIdx: true, actionCode: true, arg: true },

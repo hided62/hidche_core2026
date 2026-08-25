@@ -1,6 +1,9 @@
 <script setup lang="ts">
+import { formatServerDateTime } from '@sammo-ts/common/time/ServerDateTime';
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import { useRouter } from 'vue-router';
+import { formatReservedCommandBrief } from '../components/command/reservedCommandBrief';
+import type { CommandTable } from '../components/command/types';
 import { formatOfficerLevelText } from '../utils/nationFormat';
 import { getNpcColor } from '../utils/npcColor';
 import { resolveGeneralIconUrl } from '../utils/generalIcon';
@@ -80,7 +83,20 @@ const columns: ColumnDefinition[] = [
     { id: 'gold', label: '금', width: 70, groupId: 'goldRice', sortable: true, searchable: 'number' },
     { id: 'rice', label: '쌀', width: 70, groupId: 'goldRice', sortable: true, searchable: 'number' },
     { id: 'city', label: '도시', width: 60, sortable: true, searchable: 'text' },
-    { id: 'crew', label: '병력', width: 70, sortable: true, searchable: 'number' },
+    { id: 'crewtypeAndCrew_1', label: '병종', width: 80, groupId: 'crewtypeAndCrew', summary: true },
+    { id: 'crewtype', label: '병종', width: 80, groupId: 'crewtypeAndCrew', sortable: true, searchable: 'text' },
+    { id: 'crew', label: '병력', width: 70, groupId: 'crewtypeAndCrew', sortable: true, searchable: 'number' },
+    { id: 'trainAtmos_1', label: '훈/사', width: 60, groupId: 'trainAtmos', summary: true },
+    { id: 'train', label: '훈련', width: 70, groupId: 'trainAtmos', sortable: true, searchable: 'number' },
+    { id: 'atmos', label: '사기', width: 70, groupId: 'trainAtmos', sortable: true, searchable: 'number' },
+    {
+        id: 'defence_train',
+        label: '수비',
+        width: 50,
+        groupId: 'trainAtmos',
+        sortable: true,
+        searchable: 'number',
+    },
     { id: 'specials_1', label: '요약', width: 80, groupId: 'specials', summary: true },
     { id: 'personal', label: '성격', width: 60, groupId: 'specials', sortable: true, searchable: 'text' },
     {
@@ -92,9 +108,22 @@ const columns: ColumnDefinition[] = [
         searchable: 'text',
     },
     { id: 'specialWar', label: '전특', width: 60, groupId: 'specials', sortable: true, searchable: 'text' },
+    { id: 'reservedCommandShort_1', label: '단축', width: 70, groupId: 'reservedCommandShort', summary: true },
+    { id: 'reservedCommand', label: '전체', width: 120, groupId: 'reservedCommandShort' },
+    { id: 'turntime', label: '턴', width: 60, sortable: true },
+    { id: 'recent_war', label: '최근전투', width: 60, sortable: true },
     { id: 'years_1', label: '요약', width: 60, groupId: 'years', summary: true },
+    { id: 'age', label: '연령', width: 60, groupId: 'years', sortable: true, searchable: 'number' },
     { id: 'belong', label: '사관', width: 60, groupId: 'years', sortable: true, searchable: 'number' },
-    { id: 'killturnAndRefresh_1', label: '벌점', width: 70, groupId: 'killturnAndRefresh', summary: true },
+    { id: 'killturnAndRefresh_1', label: '삭/벌', width: 70, groupId: 'killturnAndRefresh', summary: true },
+    {
+        id: 'killturn',
+        label: '삭턴',
+        width: 70,
+        groupId: 'killturnAndRefresh',
+        sortable: true,
+        searchable: 'number',
+    },
     {
         id: 'refreshScoreTotal',
         label: '벌점',
@@ -103,6 +132,10 @@ const columns: ColumnDefinition[] = [
         sortable: true,
         searchable: 'number',
     },
+    { id: 'warResults_1', label: '요약', width: 90, groupId: 'warResults', summary: true },
+    { id: 'warnum', label: '전투', width: 60, groupId: 'warResults', sortable: true, searchable: 'number' },
+    { id: 'killnum', label: '승리', width: 60, groupId: 'warResults', sortable: true, searchable: 'number' },
+    { id: 'killcrew', label: '살상률', width: 60, groupId: 'warResults', sortable: true, searchable: 'number' },
 ];
 
 const layout: LayoutItem[] = [
@@ -132,7 +165,20 @@ const layout: LayoutItem[] = [
         children: ['gold', 'rice'],
     },
     { type: 'column', columnId: 'city' },
-    { type: 'column', columnId: 'crew' },
+    {
+        type: 'group',
+        groupId: 'crewtypeAndCrew',
+        label: '보유 병력',
+        summaryId: 'crewtypeAndCrew_1',
+        children: ['crewtype', 'crew'],
+    },
+    {
+        type: 'group',
+        groupId: 'trainAtmos',
+        label: '훈/사',
+        summaryId: 'trainAtmos_1',
+        children: ['train', 'atmos', 'defence_train'],
+    },
     {
         type: 'group',
         groupId: 'specials',
@@ -140,18 +186,35 @@ const layout: LayoutItem[] = [
         summaryId: 'specials_1',
         children: ['personal', 'specialDomestic', 'specialWar'],
     },
-    { type: 'group', groupId: 'years', label: '연도', summaryId: 'years_1', children: ['belong'] },
+    {
+        type: 'group',
+        groupId: 'reservedCommandShort',
+        label: '명령',
+        summaryId: 'reservedCommandShort_1',
+        children: ['reservedCommand'],
+    },
+    { type: 'column', columnId: 'turntime' },
+    { type: 'column', columnId: 'recent_war' },
+    { type: 'group', groupId: 'years', label: '연도', summaryId: 'years_1', children: ['age', 'belong'] },
     {
         type: 'group',
         groupId: 'killturnAndRefresh',
         label: '기타',
         summaryId: 'killturnAndRefresh_1',
-        children: ['refreshScoreTotal'],
+        children: ['killturn', 'refreshScoreTotal'],
+    },
+    {
+        type: 'group',
+        groupId: 'warResults',
+        label: '전과',
+        summaryId: 'warResults_1',
+        children: ['warnum', 'killnum', 'killcrew'],
     },
 ];
 
 const columnById = new Map(columns.map((column) => [column.id, column]));
 const data = ref<Result | null>(null);
+const commandTable = ref<CommandTable | null>(null);
 const router = useRouter();
 const error = ref('');
 const loading = ref(false);
@@ -164,9 +227,13 @@ const groupState = ref<Record<NationGeneralGroupId, boolean>>({
     expDedLv: true,
     stat: true,
     goldRice: true,
+    crewtypeAndCrew: false,
+    trainAtmos: false,
     specials: false,
+    reservedCommandShort: false,
     years: false,
     killturnAndRefresh: true,
+    warResults: false,
 });
 const createFilterCondition = (searchable?: 'text' | 'number'): NationGeneralFilterCondition => ({
     operator: searchable === 'number' ? 'equals' : 'contains',
@@ -250,7 +317,16 @@ const load = async () => {
     loading.value = true;
     error.value = '';
     try {
-        data.value = await trpc.nation.getGeneralList.query();
+        const result = await trpc.nation.getGeneralList.query();
+        data.value = result;
+        commandTable.value = null;
+        if (result.viewer.permission >= 1) {
+            try {
+                commandTable.value = await trpc.turns.getCommandTable.query({ generalId: result.viewer.generalId });
+            } catch {
+                commandTable.value = null;
+            }
+        }
     } catch (cause) {
         error.value = cause instanceof Error ? cause.message : '세력 장수를 불러오지 못했습니다.';
     } finally {
@@ -323,6 +399,37 @@ const officerText = (general: General): string => {
         : title;
 };
 const protectedText = (value: string | null): string => value ?? (data.value?.viewer.permission ? '-' : '?');
+type DetailedGeneralFields = {
+    crewTypeName: string;
+    train: number;
+    atmos: number;
+    defenceTrain: number;
+    defenceTrainText: string;
+    turnTime: string | null;
+    recentWar: string | null;
+    reservedCommands: Array<{ action: string; args: unknown }>;
+    battleStats: { battles: number; wins: number; killCrew: number; deathCrew: number };
+};
+const details = (general: General): Partial<DetailedGeneralFields> =>
+    general as General & Partial<DetailedGeneralFields>;
+const commandShortName = (action: string): string => action.replace(/^(?:che_|cr_|event_)/u, '') || action;
+const commandText = (general: General, short: boolean): string => {
+    const commands = details(general).reservedCommands;
+    if (!commands) return '?';
+    if (general.npcState >= 2) return 'NPC 장수';
+    if (!commands.length) return '-';
+    return commands
+        .map((command) =>
+            short
+                ? commandShortName(command.action)
+                : formatReservedCommandBrief('general', command.action, command.args, commandTable.value)
+        )
+        .join('\n');
+};
+const killRate = (general: General): number | null => {
+    const stats = details(general).battleStats;
+    return stats ? Math.round((stats.killCrew / Math.max(1, stats.deathCrew)) * 100) : null;
+};
 
 const cellValue = (general: General, columnId: NationGeneralColumnId): CellValue => {
     switch (columnId) {
@@ -335,7 +442,7 @@ const cellValue = (general: General, columnId: NationGeneralColumnId): CellValue
         case 'dedlevel':
             return `${general.dedicationText}\n(${general.bill.toLocaleString()})`;
         case 'explevel':
-            return `Lv ${general.experienceLevel}\n(${general.personality?.name ?? '-'})`;
+            return `Lv ${general.experienceLevel}\n(${general.honorText})`;
         case 'stat_1':
             return `${general.stats.leadership}|${general.stats.strength}|${general.stats.intelligence}`;
         case 'leadership':
@@ -354,8 +461,26 @@ const cellValue = (general: General, columnId: NationGeneralColumnId): CellValue
             return general.rice;
         case 'city':
             return protectedText(general.cityName);
+        case 'crewtypeAndCrew_1': {
+            const crewTypeName = details(general).crewTypeName;
+            return crewTypeName === undefined
+                ? '?'
+                : `${crewTypeName}\n${visibleCrew(general)?.toLocaleString() ?? 0}명`;
+        }
+        case 'crewtype':
+            return details(general).crewTypeName ?? '?';
         case 'crew':
             return visibleCrew(general);
+        case 'trainAtmos_1': {
+            const detail = details(general);
+            return detail.train === undefined ? '?' : `${detail.train}\n${detail.atmos}`;
+        }
+        case 'train':
+            return details(general).train ?? null;
+        case 'atmos':
+            return details(general).atmos ?? null;
+        case 'defence_train':
+            return details(general).defenceTrainText ?? '?';
         case 'specials_1':
             return `${general.personality?.name ?? '-'}\n${general.specialDomestic?.name ?? '-'} / ${general.specialWar?.name ?? '-'}`;
         case 'personal':
@@ -364,13 +489,38 @@ const cellValue = (general: General, columnId: NationGeneralColumnId): CellValue
             return general.specialDomestic?.name ?? '-';
         case 'specialWar':
             return general.specialWar?.name ?? '-';
+        case 'reservedCommandShort_1':
+            return commandText(general, true);
+        case 'reservedCommand':
+            return commandText(general, false);
+        case 'turntime':
+            return formatServerDateTime(details(general).turnTime, { format: 'minuteSecond', fallback: '?' });
+        case 'recent_war':
+            return formatServerDateTime(details(general).recentWar, { format: 'minuteSecond', fallback: '-' });
         case 'years_1':
-            return `${general.belong}년`;
+            return `${general.age}세\n${general.belong}년`;
+        case 'age':
+            return general.age;
         case 'belong':
             return general.belong;
         case 'killturnAndRefresh_1':
+            return `${general.killTurn.toLocaleString()}턴\n${general.refreshScoreTotal.toLocaleString()}점`;
+        case 'killturn':
+            return general.killTurn;
         case 'refreshScoreTotal':
             return Number(general.refreshScoreTotal);
+        case 'warResults_1': {
+            const stats = details(general).battleStats;
+            return stats
+                ? `${stats.battles.toLocaleString()}전 ${stats.wins.toLocaleString()}승\n살상: ${killRate(general)}%`
+                : '?';
+        }
+        case 'warnum':
+            return details(general).battleStats?.battles ?? null;
+        case 'killnum':
+            return details(general).battleStats?.wins ?? null;
+        case 'killcrew':
+            return killRate(general);
         case 'icon':
             return null;
     }
@@ -401,6 +551,12 @@ const sortValue = (general: General, columnId: NationGeneralColumnId): CellValue
             return general.experienceLevel;
         case 'goldRice_1':
             return general.gold + general.rice;
+        case 'defence_train':
+            return details(general).defenceTrain ?? null;
+        case 'turntime':
+            return details(general).turnTime ?? null;
+        case 'recent_war':
+            return details(general).recentWar ?? null;
         default:
             return cellValue(general, columnId);
     }
@@ -471,9 +627,20 @@ const toggleGroup = (groupId: NationGeneralGroupId) => {
 };
 
 const toggleColumn = (columnId: NationGeneralColumnId) => {
-    columnState.value = columnState.value.map((column) =>
-        column.colId === columnId ? { ...column, hide: !column.hide } : column
+    const nextVisible = stateById.value.get(columnId)?.hide ?? true;
+    const parent = layout.find(
+        (item): item is Extract<LayoutItem, { type: 'group' }> =>
+            item.type === 'group' && item.children.includes(columnId)
     );
+    columnState.value = columnState.value.map((column) => {
+        if (column.colId === columnId) return { ...column, hide: !nextVisible };
+        if (!parent || column.colId !== parent.summaryId) return column;
+        if (nextVisible) return { ...column, hide: false };
+        const hasOtherVisibleChild = parent.children.some(
+            (childId) => childId !== columnId && isColumnVisible(childId)
+        );
+        return hasOtherVisibleChild ? column : { ...column, hide: true };
+    });
 };
 
 const nextSort = (columnId: NationGeneralColumnId, current: 'asc' | 'desc' | null): 'asc' | 'desc' | null => {
@@ -785,7 +952,7 @@ onBeforeUnmount(() => {
                                 'name-cell': column.id === 'name',
                                 'numeric-cell':
                                     column.searchable === 'number' ||
-                                    ['goldRice_1', 'killturnAndRefresh_1'].includes(column.id),
+                                    ['goldRice_1', 'killturnAndRefresh_1', 'warResults_1'].includes(column.id),
                             }"
                             :title="cellTitle(general, column.id)"
                         >
@@ -804,16 +971,28 @@ onBeforeUnmount(() => {
                                 }}<span v-if="visibleCrew(general) !== null">명</span>
                             </template>
                             <template v-else-if="column.id === 'belong'">{{ general.belong }}년</template>
+                            <template v-else-if="column.id === 'age'">{{ general.age }}세</template>
                             <template v-else-if="column.id === 'name'">
                                 <span data-general-name :style="{ color: getNpcColor(general.npcState) }">{{
                                     general.name
-                                }}</span>
+                                }}</span
+                                ><template v-if="general.ownerName"
+                                    ><br /><small>({{ general.ownerName }})</small></template
+                                >
                             </template>
-                            <template
-                                v-else-if="column.id === 'refreshScoreTotal' || column.id === 'killturnAndRefresh_1'"
-                            >
+                            <template v-else-if="column.id === 'refreshScoreTotal'">
                                 {{ general.refreshScoreTotal.toLocaleString() }}점
                             </template>
+                            <template v-else-if="column.id === 'killturn'">
+                                {{ general.killTurn.toLocaleString() }}턴
+                            </template>
+                            <template v-else-if="column.id === 'warnum'">
+                                {{ details(general).battleStats?.battles.toLocaleString() ?? '?' }}전
+                            </template>
+                            <template v-else-if="column.id === 'killnum'">
+                                {{ details(general).battleStats?.wins.toLocaleString() ?? '?' }}승
+                            </template>
+                            <template v-else-if="column.id === 'killcrew'"> {{ killRate(general) ?? '?' }}% </template>
                             <template v-else>{{ cellValue(general, column.id) }}</template>
                         </td>
                     </tr>
