@@ -43,7 +43,7 @@
                     { "kind": "link", "id": "npc-list", "label": "빙의일람", "to": "/npc-list", "newTab": true, "showWhen": "npc-enabled" },
                     { "kind": "divider", "id": "game-info-reference-divider" },
                     { "kind": "link", "id": "patch", "label": "패치 내역", "href": "/wiki/개발/패치_내역", "newTab": true },
-                    { "kind": "link", "id": "repository", "label": "코드 저장소", "href": "//storage.hided.net/gitea/devsam/core", "newTab": true },
+                    { "kind": "link", "id": "repository", "label": "코드 저장소", "href": "//storage.hided.net/gitea/devsam/core2026", "newTab": true },
                     { "kind": "divider", "id": "game-info-version-divider" },
                     { "kind": "link", "id": "version", "label": "정보", "action": "show-version" }
                 ]
