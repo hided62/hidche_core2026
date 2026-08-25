@@ -9,6 +9,7 @@ import {
     buildProcessDefinitions,
     buildSharedProfileFrontendCommands,
     buildWorkspaceCommands,
+    hasCompleteProfileBuildArtifacts,
     planProfileReconcile,
     resolveProfileArchiveServerName,
     resolveResetLifecycleStatus,
@@ -391,6 +392,26 @@ describe('sanitizeManagedProcessEnv', () => {
 });
 
 describe('buildWorkspaceCommands', () => {
+    it('does not reuse a DB-preserving deploy workspace that lacks the profile seed artifact', async () => {
+        const workspaceRoot = '/srv/sammo/worktrees/0123456789abcdef';
+        const gameApiPath = path.join(workspaceRoot, 'app', 'game-api', 'dist', 'index.js');
+        const gatewayApiPath = path.join(workspaceRoot, 'app', 'gateway-api', 'dist', 'index.js');
+        const deployOnlyArtifacts = new Set([gameApiPath]);
+
+        await expect(
+            hasCompleteProfileBuildArtifacts(workspaceRoot, async (target) => {
+                if (!deployOnlyArtifacts.has(target)) throw new Error('missing');
+            })
+        ).resolves.toBe(false);
+
+        deployOnlyArtifacts.add(gatewayApiPath);
+        await expect(
+            hasCompleteProfileBuildArtifacts(workspaceRoot, async (target) => {
+                if (!deployOnlyArtifacts.has(target)) throw new Error('missing');
+            })
+        ).resolves.toBe(true);
+    });
+
     it('installs and builds runtime dependencies before the profile processes', () => {
         const workspaceRoot = '/srv/sammo/worktrees/0123456789abcdef';
         const commands = buildWorkspaceCommands(workspaceRoot, true, undefined, '/srv/sammo/controller');
