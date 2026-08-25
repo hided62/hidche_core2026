@@ -8,18 +8,19 @@ Gateway 관리자 콘솔은 `/gateway/admin`에서 시작합니다. 공개 로�
 
 좌측 메뉴는 관리 책임을 다음과 같이 분리합니다.
 
-| 메뉴            | 경로                                           | 책임                                                                      |
-| --------------- | ---------------------------------------------- | ------------------------------------------------------------------------- |
-| 운영 개요       | `/gateway/admin`                               | 현재 권한으로 접근할 수 있는 관리 영역 안내                               |
-| 사용자 관리     | `/gateway/admin/users`                         | 계정 식별자·Kakao 교체, 권한, 특수 접근·제재, 아이콘 복구와 탈퇴 예약      |
-| 서버 관리       | `/gateway/admin/servers`                       | 접근 가능한 profile 목록                                                  |
-| 서버 상태·설정  | `/gateway/admin/servers/:profileName`          | 해당 profile의 공개 정보, 계정 정책, 실행 상태와 게임 운영 동작           |
-| 버전 업데이트   | `/gateway/admin/servers/:profileName/version`  | 현 DB를 보존하는 profile 코드·migration 배포                              |
-| 시나리오 초기화 | `/gateway/admin/servers/:profileName/scenario` | 서버 지정 branch 최신 또는 고정 commit으로 현 시즌 DB와 시나리오 교체     |
-| 게임 취소       | `/gateway/admin/servers/:profileName/cancel`   | 잘못 연 게임을 닫고 기록·유산 포인트를 취소 정책에 따라 원자적으로 정산   |
-| Gateway 릴리스  | `/gateway/admin/releases`                      | Gateway control plane 배포와 rollback                                     |
-| 공지 · 접속     | `/gateway/admin/system`                        | 로비 공지와 관리자 세션 연결                                              |
-| 감사 로그       | `/gateway/admin/audit`                         | 관리자 조치 결과, 대상과 사유 조회                                        |
+| 메뉴            | 경로                                           | 책임                                                                    |
+| --------------- | ---------------------------------------------- | ----------------------------------------------------------------------- |
+| 운영 개요       | `/gateway/admin`                               | 현재 권한으로 접근할 수 있는 관리 영역 안내                             |
+| 사용자 관리     | `/gateway/admin/users`                         | 계정 식별자·Kakao 교체, 권한, 특수 접근·제재, 아이콘 복구와 탈퇴 예약   |
+| 서버 관리       | `/gateway/admin/servers`                       | 접근 가능한 profile 목록                                                |
+| 서버 상태·설정  | `/gateway/admin/servers/:profileName`          | 해당 profile의 공개 정보, 계정 정책, 실행 상태와 게임 운영 동작         |
+| 버전 업데이트   | `/gateway/admin/servers/:profileName/version`  | 현 DB를 보존하는 profile 코드·migration 배포                            |
+| 시나리오 초기화 | `/gateway/admin/servers/:profileName/scenario` | 서버 지정 branch 최신 또는 고정 commit으로 현 시즌 DB와 시나리오 교체   |
+| 게임 취소       | `/gateway/admin/servers/:profileName/cancel`   | 잘못 연 게임을 닫고 기록·유산 포인트를 취소 정책에 따라 원자적으로 정산 |
+| 일괄 업데이트   | `/gateway/admin/releases/batch`                | Gateway와 권한 있는 profile을 하나의 고정 commit으로 순차 DB 보존 배포  |
+| Gateway 릴리스  | `/gateway/admin/releases`                      | Gateway control plane 배포와 rollback                                   |
+| 공지 · 접속     | `/gateway/admin/system`                        | 로비 공지와 관리자 세션 연결                                            |
+| 감사 로그       | `/gateway/admin/audit`                         | 관리자 조치 결과, 대상과 사유 조회                                      |
 
 기존 `/gateway/admin/server-operations` 링크는 query string을 보존한 채
 `/gateway/admin/servers`로 이동합니다. 즐겨찾기와 이전 운영 보고서의 링크를
@@ -106,6 +107,12 @@ Gateway 관리자 콘솔은 `/gateway/admin`에서 시작합니다. 공개 로�
   사용하며 외부 release-controller가 실행합니다. 선택한 릴리스 작업의 단계와
   명령 출력을 관리자 화면이 long polling으로 이어 받아 표시하며, 완료된 이력의
   로그도 다시 열 수 있습니다.
+- 일괄 업데이트는 `admin.releases.manage`가 있는 경우에만 Gateway를, 각
+  `admin.profiles.deploy:<name>` 범위 안의 profile만 선택 대상으로 표시합니다.
+  브랜치는 묶음 등록 시 서버에서 한 번 full commit SHA로 해석하며 Gateway를 먼저,
+  profile은 관리자 목록 순서대로 실행합니다. 앞 대상이 실패하거나 중단되면 뒤 대상은
+  `QUEUED`로 유지되고, 실패 대상을 같은 고정 commit으로 재시도하면 이어서 실행합니다.
+  묶음은 원자적 rollback이 아니므로 이미 성공한 대상은 그대로 유지합니다.
 - 브라우저의 메뉴 노출은 편의 기능입니다. 권한 판단의 기준은 서버가 인증
   session에서 해석한 capability입니다.
 

@@ -81,6 +81,14 @@ const navigation = computed(() => [
         label: 'Gateway',
         items: [
             {
+                to: '/admin/releases/batch',
+                label: '일괄 업데이트',
+                icon: '⇈',
+                exact: false,
+                visible: hasCapability('admin.releases.manage') || hasCapability('admin.profiles.deploy'),
+                child: false,
+            },
+            {
                 to: '/admin/releases',
                 label: 'Gateway 릴리스',
                 icon: '↥',
