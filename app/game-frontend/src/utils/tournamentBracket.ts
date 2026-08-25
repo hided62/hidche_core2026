@@ -6,6 +6,7 @@ export interface TournamentBracketParticipant {
     leadership?: number;
     strength?: number;
     intel?: number;
+    npcState?: number;
 }
 
 export interface TournamentBracketMatch {
@@ -26,6 +27,7 @@ export interface TournamentBracketSlot {
     leadership?: number;
     strength?: number;
     intel?: number;
+    npcState?: number;
 }
 
 export interface TournamentCoreStat {
@@ -91,6 +93,7 @@ export const buildTournamentBracket = (
                     leadership: participant?.leadership,
                     strength: participant?.strength,
                     intel: participant?.intel,
+                    npcState: participant?.npcState,
                 };
             })
         );
@@ -113,6 +116,7 @@ export const buildTournamentBracket = (
             leadership: participantOf(resolvedWinnerId)?.leadership,
             strength: participantOf(resolvedWinnerId)?.strength,
             intel: participantOf(resolvedWinnerId)?.intel,
+            npcState: participantOf(resolvedWinnerId)?.npcState,
         },
         final,
         semi: buildRound(9, 4),

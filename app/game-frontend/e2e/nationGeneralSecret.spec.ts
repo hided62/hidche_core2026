@@ -77,7 +77,38 @@ const otherGeneral = {
     belong: 4,
     refreshScoreTotal: 20,
 };
-const install = async (page: Page, secretAllowed = true) => {
+const npcColorStates = [0, 1, 2, 4, 5, 6] as const;
+const npcColorGenerals = npcColorStates.map((npcState) => ({
+    ...general,
+    id: 100 + npcState,
+    name: `색상장수${npcState}`,
+    npcState,
+}));
+const npcColorSecretGenerals = npcColorStates.map((npcState) => ({
+    id: 100 + npcState,
+    name: `색상장수${npcState}`,
+    npcState,
+    injury: 0,
+    stats: { leadership: 70, strength: 60, intelligence: 50 },
+    leadershipBonus: 0,
+    experienceLevel: 9,
+    troopId: 0,
+    troopName: null,
+    gold: 1000,
+    rice: 2000,
+    cityId: 1,
+    cityName: '업',
+    defenceTrain: 90,
+    defenceTrainText: '☆',
+    crewTypeId: 1,
+    crew: 300,
+    train: 90,
+    atmos: 90,
+    killTurn: 7,
+    turnTime: `2026-01-01T01:0${npcState}:00.000Z`,
+    reservedCommands: [],
+}));
+const install = async (page: Page, secretAllowed = true, npcColorFixture = false) => {
     await page.addInitScript((profile) => {
         localStorage.setItem('sammo-game-token', 'ga_general');
         localStorage.setItem('sammo-game-profile', profile);
@@ -91,7 +122,7 @@ const install = async (page: Page, secretAllowed = true) => {
                 return response({
                     nation: { id: 1, name: '위', color: '#008000', level: 3 },
                     viewer: { generalId: 1, permission: 0 },
-                    generals: [general, otherGeneral],
+                    generals: npcColorFixture ? npcColorGenerals : [general, otherGeneral],
                 });
             if (operation === 'nation.getSecretGeneralList') {
                 if (!secretAllowed)
@@ -118,62 +149,64 @@ const install = async (page: Page, secretAllowed = true) => {
                             60: { crew: 300, generals: 1 },
                         },
                     },
-                    generals: [
-                        {
-                            id: 1,
-                            name: '테스트장수',
-                            npcState: 0,
-                            injury: 0,
-                            stats: { leadership: 70, strength: 60, intelligence: 50 },
-                            leadershipBonus: 0,
-                            experienceLevel: 9,
-                            troopId: 0,
-                            troopName: null,
-                            gold: 1000,
-                            rice: 2000,
-                            cityId: 1,
-                            cityName: '업',
-                            defenceTrain: 90,
-                            defenceTrainText: '☆',
-                            crewTypeId: 1,
-                            crew: 300,
-                            train: 90,
-                            atmos: 90,
-                            killTurn: 7,
-                            turnTime: '2026-01-01T01:02:00.000Z',
-                            reservedCommands: [
-                                { action: 'che_이동', args: { destCityId: 1 } },
-                                { action: 'che_징병', args: { crewType: 1, amount: 300 } },
-                                { action: 'che_증여', args: { destGeneralId: 2, isGold: false, amount: 200 } },
-                                { action: 'che_화계', args: { destCityId: 1 } },
-                                { action: '휴식', args: {} },
-                            ],
-                        },
-                        {
-                            id: 2,
-                            name: '부유장수',
-                            npcState: 0,
-                            injury: 0,
-                            stats: { leadership: 60, strength: 50, intelligence: 40 },
-                            leadershipBonus: 0,
-                            experienceLevel: 8,
-                            troopId: 1,
-                            troopName: '제1부대',
-                            gold: 3000,
-                            rice: 1000,
-                            cityId: 2,
-                            cityName: '낙양',
-                            defenceTrain: 80,
-                            defenceTrainText: '◎',
-                            crewTypeId: 2,
-                            crew: 100,
-                            train: 80,
-                            atmos: 80,
-                            killTurn: 3,
-                            turnTime: '2026-01-01T02:02:00.000Z',
-                            reservedCommands: [],
-                        },
-                    ],
+                    generals: npcColorFixture
+                        ? npcColorSecretGenerals
+                        : [
+                              {
+                                  id: 1,
+                                  name: '테스트장수',
+                                  npcState: 0,
+                                  injury: 0,
+                                  stats: { leadership: 70, strength: 60, intelligence: 50 },
+                                  leadershipBonus: 0,
+                                  experienceLevel: 9,
+                                  troopId: 0,
+                                  troopName: null,
+                                  gold: 1000,
+                                  rice: 2000,
+                                  cityId: 1,
+                                  cityName: '업',
+                                  defenceTrain: 90,
+                                  defenceTrainText: '☆',
+                                  crewTypeId: 1,
+                                  crew: 300,
+                                  train: 90,
+                                  atmos: 90,
+                                  killTurn: 7,
+                                  turnTime: '2026-01-01T01:02:00.000Z',
+                                  reservedCommands: [
+                                      { action: 'che_이동', args: { destCityId: 1 } },
+                                      { action: 'che_징병', args: { crewType: 1, amount: 300 } },
+                                      { action: 'che_증여', args: { destGeneralId: 2, isGold: false, amount: 200 } },
+                                      { action: 'che_화계', args: { destCityId: 1 } },
+                                      { action: '휴식', args: {} },
+                                  ],
+                              },
+                              {
+                                  id: 2,
+                                  name: '부유장수',
+                                  npcState: 0,
+                                  injury: 0,
+                                  stats: { leadership: 60, strength: 50, intelligence: 40 },
+                                  leadershipBonus: 0,
+                                  experienceLevel: 8,
+                                  troopId: 1,
+                                  troopName: '제1부대',
+                                  gold: 3000,
+                                  rice: 1000,
+                                  cityId: 2,
+                                  cityName: '낙양',
+                                  defenceTrain: 80,
+                                  defenceTrainText: '◎',
+                                  crewTypeId: 2,
+                                  crew: 100,
+                                  train: 80,
+                                  atmos: 80,
+                                  killTurn: 3,
+                                  turnTime: '2026-01-01T02:02:00.000Z',
+                                  reservedCommands: [],
+                              },
+                          ],
                 });
             }
             if (operation === 'turns.getCommandTable') return response(commandTable);
@@ -182,6 +215,44 @@ const install = async (page: Page, secretAllowed = true) => {
         await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(results) });
     });
 };
+
+test('NPC general names use the complete Ref palette in secret and nation lists on desktop and mobile', async ({
+    page,
+}, testInfo) => {
+    await install(page, true, true);
+    const expectedColors = new Map<number, string>([
+        [1, 'rgb(135, 206, 235)'],
+        [2, 'rgb(0, 255, 255)'],
+        [4, 'rgb(0, 191, 255)'],
+        [5, 'rgb(0, 139, 139)'],
+        [6, 'rgb(102, 205, 170)'],
+    ]);
+
+    for (const viewport of [
+        { width: 1200, height: 900 },
+        { width: 500, height: 900 },
+    ]) {
+        await page.setViewportSize(viewport);
+        for (const path of ['nation/secret', 'nation/generals']) {
+            await page.goto(path);
+            const table = page.locator(path.endsWith('secret') ? '#secret-general-list' : '#nation-general-list');
+            await expect(table).toBeVisible();
+            for (const npcState of npcColorStates) {
+                const name = table.locator(`[data-npc-state="${npcState}"] [data-general-name]`);
+                await expect(name).toBeVisible();
+                if (npcState === 0) {
+                    expect(await name.evaluate((element) => (element as HTMLElement).style.color)).toBe('');
+                } else {
+                    await expect(name).toHaveCSS('color', expectedColors.get(npcState)!);
+                }
+            }
+            await page.screenshot({
+                path: testInfo.outputPath(`npc-colors-${path.replace('/', '-')}-${viewport.width}.png`),
+                fullPage: true,
+            });
+        }
+    }
+});
 
 test('nation generals keeps the 1000px legacy grid and redacted member columns', async ({ page }) => {
     await install(page);

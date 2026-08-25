@@ -4,6 +4,7 @@ import { computed, onMounted, ref } from 'vue';
 import { formatReservedCommandBrief } from '../components/command/reservedCommandBrief';
 import type { CommandTable } from '../components/command/types';
 import LegacySortControls from '../components/ui/LegacySortControls.vue';
+import { getNpcColor } from '../utils/npcColor';
 import { trpc } from '../utils/trpc';
 type Result = Awaited<ReturnType<typeof trpc.nation.getSecretGeneralList.query>>;
 type ReservedCommand = Result['generals'][number]['reservedCommands'][number];
@@ -221,8 +222,18 @@ onMounted(load);
                     </tr>
                 </thead>
                 <tbody>
-                    <tr v-for="general in generals" :key="general.id" :data-general-id="general.id">
-                        <td>{{ displayName(general) }}<br />Lv {{ general.experienceLevel }}</td>
+                    <tr
+                        v-for="general in generals"
+                        :key="general.id"
+                        :data-general-id="general.id"
+                        :data-npc-state="general.npcState"
+                    >
+                        <td>
+                            <span data-general-name :style="{ color: getNpcColor(general.npcState) }">{{
+                                displayName(general)
+                            }}</span
+                            ><br />Lv {{ general.experienceLevel }}
+                        </td>
                         <td>
                             {{ general.stats.leadership
                             }}<span v-if="general.leadershipBonus" class="bonus">+{{ general.leadershipBonus }}</span

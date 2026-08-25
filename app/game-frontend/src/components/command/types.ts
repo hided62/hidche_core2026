@@ -8,6 +8,7 @@ export type CommandOption = {
     rice?: number;
     crew?: number;
     troopId?: number;
+    npcState?: number;
 };
 
 export type CommandAmountPreset = {

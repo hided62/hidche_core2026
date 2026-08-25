@@ -83,6 +83,7 @@ export const buildRefGeneralTargetOptions = (options: {
             ...(entry.rice === undefined ? {} : { rice: entry.rice }),
             ...(entry.crew === undefined ? {} : { crew: entry.crew }),
             ...(entry.troopId === undefined ? {} : { troopId: entry.troopId }),
+            npcState: entry.npcState,
         };
     };
     const project = (predicate: (entry: GeneralTargetSource) => boolean): TurnCommandOption[] =>

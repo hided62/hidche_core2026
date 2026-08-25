@@ -160,7 +160,7 @@ export const tournamentRouter = router({
                 ? []
                 : await ctx.db.general.findMany({
                       where: { id: { in: participantIds } },
-                      select: { id: true, picture: true, imageServer: true },
+                      select: { id: true, picture: true, imageServer: true, npcState: true },
                   });
         const iconsByGeneralId = new Map(iconRows.map((general) => [general.id, general]));
         const publicParticipants = participants.map((participant) => {
@@ -169,6 +169,7 @@ export const tournamentRouter = router({
                 ...participant,
                 picture: icon?.picture ?? null,
                 imageServer: icon?.imageServer ?? 0,
+                npcState: icon?.npcState ?? 0,
             };
         });
         return { state, participants: publicParticipants, matches, betCount: bets.length, sourceRevision };

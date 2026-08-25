@@ -52,6 +52,7 @@ describe('Ref command general targets', () => {
         expect(ids('che_등용')).toEqual([4]);
         expect(ids('che_장수대상임관')).toEqual([2, 3, 4, 5]);
         expect(result.generals.map((entry) => entry.value)).toEqual([1, 2, 4]);
+        expect(result.generalTargets.che_포상?.map((entry) => entry.npcState)).toEqual([0, 0, 2]);
     });
 
     it('adds resource, crew, and troop details and puts actual troop members first for kick orders', () => {

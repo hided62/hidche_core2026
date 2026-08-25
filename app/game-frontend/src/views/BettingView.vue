@@ -167,6 +167,7 @@ const placeBet = async () => {
                     :name="selectedTarget.name"
                     :picture="selectedTarget.picture"
                     :image-server="selectedTarget.imageServer"
+                    :npc-state="selectedTarget.npcState"
                 />
                 <label class="bet-amount-field">
                     <span>베팅 금액</span>
@@ -260,6 +261,7 @@ const placeBet = async () => {
                                 :name="entry.name"
                                 :picture="entry.picture"
                                 :image-server="entry.imageServer"
+                                :npc-state="entry.npcState"
                             />
                         </td>
                         <td>{{ entry.stat }}</td>

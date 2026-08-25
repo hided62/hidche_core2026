@@ -9,6 +9,7 @@ import {
     type CommandArgumentFieldContract,
 } from '../command/commandArgumentDraft';
 import { legacyNationTextColor } from '../../utils/legacyNationColor';
+import { getNpcColor } from '../../utils/npcColor';
 import type {
     CommandInputContext,
     CommandInputField,
@@ -141,11 +142,16 @@ const selectedOptionFor = (field: CommandInputField): CommandOption | undefined 
     optionsFor(field).find((entry) => entry.value === values[field.key]);
 
 const colorOptionStyle = (field: CommandInputField, option?: CommandOption): CSSProperties | undefined => {
-    if (field.optionSource !== 'colors' || !option?.color) return undefined;
-    return {
-        backgroundColor: option.color,
-        color: legacyNationTextColor(option.color),
-    };
+    if (field.optionSource === 'colors' && option?.color) {
+        return {
+            backgroundColor: option.color,
+            color: legacyNationTextColor(option.color),
+        };
+    }
+    if (field.optionSource === 'generals' && option?.npcState !== undefined) {
+        return { color: getNpcColor(option.npcState) };
+    }
+    return undefined;
 };
 
 const cityTargetField = computed(() =>
@@ -561,7 +567,7 @@ watch(
                     @click="setSelectValue(field, String(option.value))"
                 >
                     <span v-if="option.color" class="option-color" :style="{ backgroundColor: option.color }" />
-                    <strong>{{ option.label }}</strong>
+                    <strong :style="colorOptionStyle(field, option)">{{ option.label }}</strong>
                     <span class="target-state">{{
                         option.availableNow === false ? '현재 불가' : option.availableNow ? '우선 대상' : '대상'
                     }}</span>

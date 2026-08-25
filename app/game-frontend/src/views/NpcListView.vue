@@ -2,6 +2,7 @@
 import { onMounted, ref } from 'vue';
 
 import LegacySortControls from '../components/ui/LegacySortControls.vue';
+import { getNpcColor } from '../utils/npcColor';
 import { trpc } from '../utils/trpc';
 
 type NpcList = Awaited<ReturnType<typeof trpc.public.getNpcList.query>>;
@@ -188,7 +189,7 @@ onMounted(() => {
             </thead>
             <tbody>
                 <tr v-for="general in data.generals" :key="general.id" :data-general-id="general.id">
-                    <td :class="{ possessed: general.npcState === 1 }">{{ general.name }}</td>
+                    <td :style="{ color: getNpcColor(general.npcState) }">{{ general.name }}</td>
                     <td>{{ general.ownerName }}</td>
                     <td>Lv {{ general.level }}</td>
                     <td>{{ general.nationName }}</td>
@@ -320,10 +321,6 @@ onMounted(() => {
 .col-experience,
 .col-dedication {
     width: 78px;
-}
-
-.possessed {
-    color: skyblue;
 }
 
 .trait-tooltip {

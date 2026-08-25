@@ -37,6 +37,7 @@ const names = [
     longGeneralName,
     ...Array.from({ length: 48 }, (_, index) => `예선장수${index + 17}`),
 ];
+const tournamentNpcStates = [0, 1, 2, 4, 5, 6] as const;
 const participants = names.map((name, index) => ({
     id: index + 1,
     name,
@@ -46,6 +47,7 @@ const participants = names.map((name, index) => ({
     level: 10,
     picture: 'default.jpg',
     imageServer: 0,
+    npcState: tournamentNpcStates[index % tournamentNpcStates.length],
     groupId: Math.floor(index / 8) < 4 ? 10 + (index % 8) : index % 8,
     groupNo: Math.floor(index / 8),
     win: Math.floor(index / 8) < 4 ? 3 - (index % 2) : 7 - Math.floor(index / 8),
@@ -305,7 +307,7 @@ const installFixture = async (
                             name: participant.name,
                             picture: participant.picture,
                             imageServer: participant.imageServer,
-                            npcState: 0,
+                            npcState: participant.npcState,
                             stat: 240 - index,
                             games: 10,
                             win: 7,
@@ -367,6 +369,48 @@ const openTournament = async (page: Page) => {
     await page.goto('tournament');
     await expect(page.getByLabel('토너먼트 대진표')).toBeVisible();
 };
+
+test('tournament and betting identities preserve Ref NPC name colors on desktop and mobile', async ({
+    page,
+}, testInfo) => {
+    await installFixture(page, { tournamentStage: 7 });
+    const expectedColors = [
+        '',
+        'rgb(135, 206, 235)',
+        'rgb(0, 255, 255)',
+        'rgb(0, 191, 255)',
+        'rgb(0, 139, 139)',
+        'rgb(102, 205, 170)',
+    ];
+
+    for (const viewport of [
+        { width: 1365, height: 900 },
+        { width: 500, height: 900 },
+    ]) {
+        await page.setViewportSize(viewport);
+        await page.goto('tournament');
+        const scope = viewport.width > 800 ? '.desktop-bracket' : '.mobile-bracket';
+        for (let index = 0; index < expectedColors.length; index += 1) {
+            const name = page.locator(`${scope} [data-general-id="${index + 1}"] .general-identity-name`).first();
+            await expect(name).toBeVisible();
+            if (expectedColors[index]) await expect(name).toHaveCSS('color', expectedColors[index]!);
+            else expect(await name.evaluate((element) => (element as HTMLElement).style.color)).toBe('');
+        }
+        await page.screenshot({
+            path: testInfo.outputPath(`tournament-npc-colors-${viewport.width}.png`),
+            fullPage: true,
+        });
+    }
+
+    await page.setViewportSize({ width: 1365, height: 900 });
+    await page.goto('betting');
+    const rankingNames = page.locator('.ranking-general .general-identity-name');
+    for (let index = 0; index < expectedColors.length; index += 1) {
+        if (expectedColors[index]) await expect(rankingNames.nth(index)).toHaveCSS('color', expectedColors[index]!);
+        else expect(await rankingNames.nth(index).evaluate((element) => (element as HTMLElement).style.color)).toBe('');
+    }
+    await page.screenshot({ path: testInfo.outputPath('betting-npc-colors-1365.png'), fullPage: true });
+});
 
 test('desktop bracket connects every real general slot to the next round', async ({ page }, testInfo) => {
     await page.setViewportSize({ width: 1365, height: 900 });

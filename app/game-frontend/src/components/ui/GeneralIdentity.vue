@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed } from 'vue';
 import { resolveGeneralIconUrl, useDefaultGeneralIcon, type GeneralIconSource } from '../../utils/generalIcon';
+import { getNpcColor } from '../../utils/npcColor';
 
 const props = withDefaults(
     defineProps<{
@@ -9,12 +10,14 @@ const props = withDefaults(
         imageServer?: GeneralIconSource['imageServer'];
         hideIcon?: boolean;
         placeholder?: boolean;
+        npcState?: number | null;
     }>(),
     {
         picture: null,
         imageServer: 0,
         hideIcon: false,
         placeholder: false,
+        npcState: null,
     }
 );
 
@@ -42,10 +45,14 @@ const iconUrl = computed(() =>
             aria-hidden="true"
         />
         <span v-if="$slots.details" class="general-identity-copy">
-            <span class="general-identity-name" :title="name">{{ name }}</span>
+            <span class="general-identity-name" :title="name" :style="{ color: getNpcColor(npcState ?? 0) }">{{
+                name
+            }}</span>
             <span class="general-identity-details"><slot name="details" /></span>
         </span>
-        <span v-else class="general-identity-name" :title="name">{{ name }}</span>
+        <span v-else class="general-identity-name" :title="name" :style="{ color: getNpcColor(npcState ?? 0) }">{{
+            name
+        }}</span>
     </span>
 </template>
 

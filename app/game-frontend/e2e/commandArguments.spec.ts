@@ -146,6 +146,7 @@ const inputOptions = {
             {
                 value: 3,
                 label: '여포NPC (아국 · 업)',
+                npcState: 2,
                 gold: 3000,
                 rice: 500,
                 crew: 1500,
@@ -2221,6 +2222,10 @@ test('offers Ref amount presets and rich, command-specific general lists', async
         '여포NPC (아국 · 업)',
         '장수 (아국 · 업)',
     ]);
+    await expect(generalList.locator('.target-option').filter({ hasText: '여포NPC' }).locator('strong')).toHaveCSS(
+        'color',
+        'rgb(0, 255, 255)'
+    );
     await expect(generalList).toContainText('금 100 · 쌀 4,000 · 병력 1,200 · 탑승 부대 청룡대 (부대장)');
     await form.getByRole('button', { name: '쌀', exact: true }).click();
     await expect(generalList.locator('.target-option strong')).toHaveText([

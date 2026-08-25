@@ -134,7 +134,12 @@ const mobilePairs = computed(() => {
                             top: `${slotY(columnIndex, slotIndex)}px`,
                         }"
                     >
-                        <GeneralIdentity :name="slot.name" :picture="slot.picture" :image-server="slot.imageServer" />
+                        <GeneralIdentity
+                            :name="slot.name"
+                            :picture="slot.picture"
+                            :image-server="slot.imageServer"
+                            :npc-state="slot.npcState"
+                        />
                         <button
                             v-if="columnIndex === 0 && bettingOpen && slot.id !== null"
                             type="button"
@@ -182,7 +187,12 @@ const mobilePairs = computed(() => {
                         }"
                         :data-general-id="slot.id ?? undefined"
                     >
-                        <GeneralIdentity :name="slot.name" :picture="slot.picture" :image-server="slot.imageServer" />
+                        <GeneralIdentity
+                            :name="slot.name"
+                            :picture="slot.picture"
+                            :image-server="slot.imageServer"
+                            :npc-state="slot.npcState"
+                        />
                         <button
                             v-if="activeMobileRound === 0 && bettingOpen && slot.id !== null"
                             type="button"

@@ -2,6 +2,7 @@
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import { useRouter } from 'vue-router';
 import { formatOfficerLevelText } from '../utils/nationFormat';
+import { getNpcColor } from '../utils/npcColor';
 import { resolveGeneralIconUrl } from '../utils/generalIcon';
 import {
     DISPLAY_SETTINGS_KEY,
@@ -770,14 +771,18 @@ onBeforeUnmount(() => {
                     </tr>
                 </thead>
                 <tbody>
-                    <tr v-for="(general, index) in generals" :key="general.id" :data-general-id="general.id">
+                    <tr
+                        v-for="(general, index) in generals"
+                        :key="general.id"
+                        :data-general-id="general.id"
+                        :data-npc-state="general.npcState"
+                    >
                         <td
                             v-for="column in activeColumns"
                             :key="column.id"
                             :class="{
                                 'icon-cell': column.id === 'icon',
                                 'name-cell': column.id === 'name',
-                                [`npc-${general.npcState}`]: column.id === 'name',
                                 'numeric-cell':
                                     column.searchable === 'number' ||
                                     ['goldRice_1', 'killturnAndRefresh_1'].includes(column.id),
@@ -799,6 +804,11 @@ onBeforeUnmount(() => {
                                 }}<span v-if="visibleCrew(general) !== null">명</span>
                             </template>
                             <template v-else-if="column.id === 'belong'">{{ general.belong }}년</template>
+                            <template v-else-if="column.id === 'name'">
+                                <span data-general-name :style="{ color: getNpcColor(general.npcState) }">{{
+                                    general.name
+                                }}</span>
+                            </template>
                             <template
                                 v-else-if="column.id === 'refreshScoreTotal' || column.id === 'killturnAndRefresh_1'"
                             >
@@ -1181,16 +1191,6 @@ td {
 }
 .state {
     margin: 40px;
-}
-.npc-0,
-.npc-1 {
-    color: skyblue;
-}
-.npc-2,
-.npc-3,
-.npc-4,
-.npc-5 {
-    color: #aaa;
 }
 .error {
     color: #ff7373;

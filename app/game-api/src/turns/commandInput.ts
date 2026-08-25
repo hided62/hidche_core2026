@@ -26,6 +26,7 @@ export interface TurnCommandOption {
     rice?: number;
     crew?: number;
     troopId?: number;
+    npcState?: number;
 }
 
 export interface TurnCommandAmountPreset {

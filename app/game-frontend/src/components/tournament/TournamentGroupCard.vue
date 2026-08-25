@@ -10,6 +10,7 @@ type StandingParticipant = {
     leadership: number;
     strength: number;
     intel: number;
+    npcState?: number;
     win?: number;
     draw?: number;
     lose?: number;
@@ -55,6 +56,7 @@ const pointsOf = (participant: StandingParticipant): number => (participant.win 
                     :name="slot.participant.name"
                     :picture="slot.participant.picture"
                     :image-server="slot.participant.imageServer"
+                    :npc-state="slot.participant.npcState"
                 >
                     <template #details>
                         <span class="standing-summary">
