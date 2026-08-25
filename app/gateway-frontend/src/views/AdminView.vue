@@ -2384,15 +2384,24 @@ onMounted(() => {
                     </div>
 
                     <div v-if="section === 'servers'" class="space-y-4">
-                        <div class="flex items-center justify-between">
+                        <div class="flex flex-wrap items-center justify-between gap-2">
                             <h3 class="text-lg font-semibold">서버별 관리</h3>
-                            <button
-                                class="bg-zinc-700 hover:bg-zinc-600 text-white text-sm px-3 py-1.5 rounded"
-                                :disabled="profilesLoading"
-                                @click="loadProfiles"
-                            >
-                                새로고침
-                            </button>
+                            <div class="flex items-center gap-2">
+                                <RouterLink
+                                    v-if="hasCapability('admin.profiles.deploy')"
+                                    to="/admin/releases/batch"
+                                    class="rounded bg-sky-700 px-3 py-1.5 text-sm font-semibold text-white hover:bg-sky-600"
+                                >
+                                    일괄 업데이트
+                                </RouterLink>
+                                <button
+                                    class="bg-zinc-700 hover:bg-zinc-600 text-white text-sm px-3 py-1.5 rounded"
+                                    :disabled="profilesLoading"
+                                    @click="loadProfiles"
+                                >
+                                    새로고침
+                                </button>
+                            </div>
                         </div>
                         <div
                             v-for="profile in visibleProfiles"

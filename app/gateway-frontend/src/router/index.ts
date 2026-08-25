@@ -6,6 +6,7 @@ const OpenSuggestionView = () => import('../views/OpenSuggestionView.vue');
 const AdminOverviewView = () => import('../views/AdminOverviewView.vue');
 const AdminView = () => import('../views/AdminView.vue');
 const ServerOperationsView = () => import('../views/ServerOperationsView.vue');
+const BulkReleaseView = () => import('../views/BulkReleaseView.vue');
 const AccountView = () => import('../views/AccountView.vue');
 const OAuthCallbackView = () => import('../views/OAuthCallbackView.vue');
 const SignupView = () => import('../views/SignupView.vue');
@@ -85,6 +86,11 @@ const router = createRouter({
             name: 'admin-audit',
             component: AdminView,
             props: { section: 'audit' },
+        },
+        {
+            path: '/admin/releases/batch',
+            name: 'admin-bulk-releases',
+            component: BulkReleaseView,
         },
         {
             path: '/admin/releases',

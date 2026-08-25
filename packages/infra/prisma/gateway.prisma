@@ -402,6 +402,9 @@ model GatewayOperation {
   leaseUntil        DateTime?              @map("lease_until")
   heartbeatAt       DateTime?              @map("heartbeat_at")
   attempts          Int                    @default(0)
+  bulkReleaseId     String?                @map("bulk_release_id")
+  bulkOrder         Int?                   @map("bulk_order")
+  bulkRelease       GatewayBulkRelease?    @relation(fields: [bulkReleaseId], references: [id], onDelete: SetNull)
   createdAt         DateTime               @default(now()) @map("created_at")
   updatedAt         DateTime               @updatedAt @map("updated_at")
   logs              GatewayOperationLog[]
@@ -409,6 +412,7 @@ model GatewayOperation {
   @@index([status, scheduledAt, createdAt])
   @@index([status, leaseUntil, createdAt])
   @@index([profileName, createdAt])
+  @@index([bulkReleaseId, bulkOrder])
   @@map("gateway_operation")
 }
 
@@ -457,13 +461,33 @@ model GatewayReleaseOperation {
   leaseUntil        DateTime?                   @map("lease_until") @db.Timestamptz(6)
   heartbeatAt       DateTime?                   @map("heartbeat_at") @db.Timestamptz(6)
   attempts          Int                         @default(0)
+  bulkReleaseId     String?                     @map("bulk_release_id")
+  bulkOrder         Int?                        @map("bulk_order")
+  bulkRelease       GatewayBulkRelease?         @relation(fields: [bulkReleaseId], references: [id], onDelete: SetNull)
   createdAt         DateTime                    @default(now()) @map("created_at") @db.Timestamptz(3)
   updatedAt         DateTime                    @updatedAt @map("updated_at") @db.Timestamptz(3)
   logs              GatewayReleaseLog[]
 
   @@index([status, leaseUntil, createdAt])
   @@index([createdAt])
+  @@index([bulkReleaseId, bulkOrder])
   @@map("gateway_release_operation")
+}
+
+model GatewayBulkRelease {
+  id                String                    @id @default(uuid())
+  sourceMode        GatewaySourceMode         @map("source_mode")
+  sourceRef         String                    @map("source_ref")
+  resolvedCommitSha String                    @map("resolved_commit_sha")
+  reason            String?
+  requestedBy       String                    @map("requested_by")
+  createdAt         DateTime                  @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt         DateTime                  @updatedAt @map("updated_at") @db.Timestamptz(3)
+  gatewayOperations GatewayReleaseOperation[]
+  profileOperations GatewayOperation[]
+
+  @@index([createdAt])
+  @@map("gateway_bulk_release")
 }
 
 model GatewayReleaseLog {

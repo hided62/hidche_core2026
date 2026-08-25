@@ -14,11 +14,36 @@ Gateway 전체는 별도 release-controller가 처리합니다.
 
 Profile 화면은 `/gateway/admin/servers/:profileName/version`과
 `/gateway/admin/servers/:profileName/scenario`, Gateway 화면은
-`/gateway/admin/releases`입니다. 이전 `/gateway/admin/server-operations`는
+`/gateway/admin/releases`, 통합 화면은 `/gateway/admin/releases/batch`입니다.
+이전 `/gateway/admin/server-operations`는
 호환성을 위해 서버 목록으로 이동합니다. Profile 작업은 runtime/settings/deploy/reset
 capability로 분리되며 포괄 운영 권한은 사용하지 않습니다. Gateway 전체 릴리스에는
 profile 범위 권한과 별개인 전역 `admin.releases.manage` 권한이 필요합니다.
 일반 사용자와 권한이 없는 관리자는 Gateway 릴리스 영역을 사용할 수 없습니다.
+
+### 일괄 업데이트
+
+일괄 업데이트는 새 종류의 배포 엔진이 아니라 기존 Gateway release와 profile
+`DEPLOY` operation을 `GatewayBulkRelease`로 묶는 durable 실행 계획입니다.
+
+1. 브랜치 또는 commit을 요청 시점에 하나의 full commit SHA로 고정합니다.
+2. 인증 session의 `admin.releases.manage`와 각
+   `admin.profiles.deploy:<profileName>`을 대상별로 다시 검사합니다.
+3. 묶음, Gateway release operation과 profile `DEPLOY` operation을 한 Gateway DB
+   transaction으로 등록합니다. 한 대상이라도 활성 작업과 충돌하면 아무것도
+   등록하지 않습니다.
+4. Gateway가 포함되면 첫 순서로 실행하고, profile은 표시 순서대로 실행합니다.
+   기존 전역 advisory lock은 그대로 사용하므로 동시에 여러 release build를
+   실행하지 않습니다.
+5. 앞 대상이 `FAILED` 또는 `CANCELLED`이면 뒤 대상은 claim하지 않습니다. 실패
+   대상을 재시도하면 새 branch head가 아니라 묶음의 고정 SHA로 같은 operation을
+   다시 queue하고, 성공 후 다음 대상을 진행합니다.
+
+일괄 업데이트는 여러 대상에 대한 원자적 runtime 전환이나 자동 rollback을 약속하지
+않습니다. 이미 성공한 profile의 forward migration을 자동으로 되돌리지 않으며,
+화면은 묶음 전체와 대상별 상태를 함께 표시합니다. 같은 commit의 후속 frontend와
+server build는 기존 Turbo cache를 재사용할 수 있지만, 자원 보호를 위한 기본 build
+동시성 1 계약은 변경하지 않습니다.
 
 운영 전에 다음을 확인해 주세요.
 

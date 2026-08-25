@@ -66,6 +66,23 @@ type FixtureState = {
     scenarioFailuresRemaining?: number;
     resetDefaults?: Record<string, unknown>;
     updateMetaFails?: boolean;
+    bulkBatches?: Array<{
+        id: string;
+        sourceMode: 'BRANCH' | 'COMMIT';
+        sourceRef: string;
+        resolvedCommitSha: string;
+        requestedBy: string;
+        createdAt: string;
+        status: OperationStatus;
+        targets: Array<{
+            kind: 'GATEWAY' | 'PROFILE';
+            order: number;
+            label: string;
+            profileName?: string;
+            operationId: string;
+            status: OperationStatus;
+        }>;
+    }>;
 };
 
 const profile = (runtimeRunning: boolean, resetDefaults?: Record<string, unknown>) => ({
@@ -219,6 +236,66 @@ const installFixture = async (page: Page, state: FixtureState) => {
                         { permission: 'admin.releases.manage', scope: 'GLOBAL', scopes: ['*'] },
                     ]
                 );
+            }
+            if (name === 'admin.bulkReleases.targets') {
+                return response({
+                    gateway: true,
+                    profiles: [
+                        {
+                            profileName: 'che:default',
+                            displayName: '체',
+                            status: 'RUNNING',
+                            currentScenario: '2',
+                            buildCommitSha: '0123456789abcdef0123456789abcdef01234567',
+                            activeOperation: null,
+                        },
+                        {
+                            profileName: 'hwe:default',
+                            displayName: '환상',
+                            status: 'RUNNING',
+                            currentScenario: '1010',
+                            buildCommitSha: 'fedcba9876543210fedcba9876543210fedcba98',
+                            activeOperation: {
+                                id: '99999999-9999-4999-8999-999999999999',
+                                type: 'DEPLOY',
+                                status: 'RUNNING',
+                            },
+                        },
+                    ],
+                });
+            }
+            if (name === 'admin.bulkReleases.list') {
+                return response(state.bulkBatches ?? []);
+            }
+            if (name === 'admin.bulkReleases.request') {
+                const batch = {
+                    id: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+                    sourceMode: 'BRANCH' as const,
+                    sourceRef: 'main',
+                    resolvedCommitSha: '1234567890abcdef1234567890abcdef12345678',
+                    requestedBy: 'admin',
+                    createdAt: '2026-08-25T01:00:00.000Z',
+                    status: 'QUEUED' as const,
+                    targets: [
+                        {
+                            kind: 'GATEWAY' as const,
+                            order: 0,
+                            label: 'Gateway',
+                            operationId: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
+                            status: 'QUEUED' as const,
+                        },
+                        {
+                            kind: 'PROFILE' as const,
+                            order: 1,
+                            label: '체',
+                            profileName: 'che:default',
+                            operationId: 'cccccccc-cccc-4ccc-8ccc-cccccccccccc',
+                            status: 'QUEUED' as const,
+                        },
+                    ],
+                };
+                state.bulkBatches = [batch];
+                return response({ id: batch.id, resolvedCommitSha: batch.resolvedCommitSha, targetCount: 2 });
             }
             if (name === 'admin.operations.list') {
                 return response(state.operations);
@@ -529,6 +606,91 @@ const deferred = () => {
     });
     return { promise, resolve };
 };
+
+test('selects authorized Gateway and profile targets and registers one pinned bulk update', async ({
+    page,
+}, testInfo) => {
+    const state: FixtureState = {
+        operations: [],
+        gatewayOperations: [],
+        runtimeRunning: true,
+        requestBodies: [],
+    };
+    await installFixture(page, state);
+    page.on('dialog', (dialog) => dialog.accept());
+
+    await page.goto('admin/releases/batch');
+    await expect(page.getByRole('heading', { name: '일괄 업데이트', level: 1 })).toBeVisible();
+    await expect(page.getByTestId('bulk-target-gateway')).toBeEnabled();
+    await expect(page.getByTestId('bulk-target-che:default')).toBeEnabled();
+    await expect(page.getByTestId('bulk-target-hwe:default')).toBeDisabled();
+    await page.getByTestId('bulk-target-gateway').check();
+    await page.getByTestId('bulk-target-che:default').check();
+    await page.getByTestId('submit-bulk-release').click();
+
+    await expect(page.getByText('1234567890ab', { exact: true })).toBeVisible();
+    await expect(page.getByText('Gateway', { exact: true }).last()).toBeVisible();
+    await expect(page.getByText('체', { exact: true }).last()).toBeVisible();
+    const request = state.requestBodies.find((entry) => entry.operation === 'admin.bulkReleases.request');
+    expect(JSON.stringify(request?.body)).toContain('che:default');
+    expect(JSON.stringify(request?.body)).toContain('includeGateway');
+
+    const formBox = await page.getByTestId('bulk-release-form').boundingBox();
+    expect(formBox?.width ?? 0).toBeGreaterThan(700);
+    await page.screenshot({ path: testInfo.outputPath('bulk-release-desktop.png'), fullPage: true });
+});
+
+test('keeps bulk target selection and progress readable on a 390px mobile viewport', async ({ page }, testInfo) => {
+    await page.setViewportSize({ width: 390, height: 844 });
+    const state: FixtureState = {
+        operations: [],
+        gatewayOperations: [],
+        runtimeRunning: true,
+        requestBodies: [],
+        bulkBatches: [
+            {
+                id: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+                sourceMode: 'COMMIT',
+                sourceRef: '1234567890abcdef1234567890abcdef12345678',
+                resolvedCommitSha: '1234567890abcdef1234567890abcdef12345678',
+                requestedBy: 'admin',
+                createdAt: '2026-08-25T01:00:00.000Z',
+                status: 'FAILED',
+                targets: [
+                    {
+                        kind: 'GATEWAY',
+                        order: 0,
+                        label: 'Gateway',
+                        operationId: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
+                        status: 'SUCCEEDED',
+                    },
+                    {
+                        kind: 'PROFILE',
+                        order: 1,
+                        label: '체',
+                        profileName: 'che:default',
+                        operationId: 'cccccccc-cccc-4ccc-8ccc-cccccccccccc',
+                        status: 'FAILED',
+                    },
+                ],
+            },
+        ],
+    };
+    await installFixture(page, state);
+    await page.goto('admin/releases/batch');
+    await page.getByText('1234567890ab', { exact: true }).click();
+    await expect(page.getByRole('button', { name: '재시도' })).toBeVisible();
+
+    const metrics = await page.evaluate(() => ({
+        scrollWidth: document.documentElement.scrollWidth,
+        clientWidth: document.documentElement.clientWidth,
+        checkboxSize: getComputedStyle(document.querySelector<HTMLInputElement>('[data-testid="bulk-target-gateway"]')!)
+            .width,
+    }));
+    expect(metrics.scrollWidth).toBeLessThanOrEqual(metrics.clientWidth);
+    expect(Number.parseFloat(metrics.checkboxSize)).toBeGreaterThanOrEqual(18);
+    await page.screenshot({ path: testInfo.outputPath('bulk-release-mobile.png'), fullPage: true });
+});
 
 test('separates branch and commit semantics and submits a reset from the dedicated page', async ({
     page,

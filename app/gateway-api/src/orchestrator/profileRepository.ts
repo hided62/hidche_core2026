@@ -40,6 +40,8 @@ export interface GatewayOperationRecord {
     leaseUntil?: string;
     heartbeatAt?: string;
     attempts?: number;
+    bulkReleaseId?: string;
+    bulkOrder?: number;
     createdAt: string;
     updatedAt: string;
 }
@@ -270,6 +272,8 @@ type GatewayOperationRow = {
     leaseUntil: Date | null;
     heartbeatAt: Date | null;
     attempts: number;
+    bulkReleaseId: string | null;
+    bulkOrder: number | null;
     createdAt: Date;
     updatedAt: Date;
 };
@@ -337,6 +341,8 @@ const mapOperation = (row: GatewayOperationRow): GatewayOperationRecord => ({
     leaseUntil: toIso(row.leaseUntil),
     heartbeatAt: toIso(row.heartbeatAt),
     attempts: row.attempts,
+    bulkReleaseId: row.bulkReleaseId ?? undefined,
+    bulkOrder: row.bulkOrder ?? undefined,
     createdAt: row.createdAt.toISOString(),
     updatedAt: row.updatedAt.toISOString(),
 });
@@ -746,15 +752,43 @@ export const createGatewayProfileRepository = (prisma: GatewayPrismaClient): Gat
                     })),
                 });
             }
-            const candidate =
-                running ??
-                (await tx.gatewayOperation.findFirst({
+            let candidate = running;
+            if (!candidate) {
+                const queuedCandidates = await tx.gatewayOperation.findMany({
                     where: {
                         status: 'QUEUED',
                         OR: [{ scheduledAt: null }, { scheduledAt: { lte: now } }],
                     },
-                    orderBy: { createdAt: 'asc' },
-                }));
+                    orderBy: [{ createdAt: 'asc' }, { bulkOrder: 'asc' }],
+                    take: 200,
+                });
+                for (const queuedCandidate of queuedCandidates) {
+                    if (!queuedCandidate.bulkReleaseId || queuedCandidate.bulkOrder === null) {
+                        candidate = queuedCandidate;
+                        break;
+                    }
+                    const [blockingGatewayTargets, blockingProfileTargets] = await Promise.all([
+                        tx.gatewayReleaseOperation.count({
+                            where: {
+                                bulkReleaseId: queuedCandidate.bulkReleaseId,
+                                bulkOrder: { lt: queuedCandidate.bulkOrder },
+                                status: { not: 'SUCCEEDED' },
+                            },
+                        }),
+                        tx.gatewayOperation.count({
+                            where: {
+                                bulkReleaseId: queuedCandidate.bulkReleaseId,
+                                bulkOrder: { lt: queuedCandidate.bulkOrder },
+                                status: { not: 'SUCCEEDED' },
+                            },
+                        }),
+                    ]);
+                    if (blockingGatewayTargets + blockingProfileTargets === 0) {
+                        candidate = queuedCandidate;
+                        break;
+                    }
+                }
+            }
             if (!candidate) {
                 return null;
             }
@@ -982,6 +1016,37 @@ export const createGatewayProfileRepository = (prisma: GatewayPrismaClient): Gat
                 )
             ) {
                 throw new GatewayProfileOperationConflictError();
+            }
+            if (previous.bulkReleaseId) {
+                const batch = await tx.gatewayBulkRelease.findUniqueOrThrow({
+                    where: { id: previous.bulkReleaseId },
+                    select: { resolvedCommitSha: true },
+                });
+                const operation = await tx.gatewayOperation.update({
+                    where: { id: previous.id },
+                    data: {
+                        status: 'QUEUED',
+                        sourceMode: 'COMMIT',
+                        sourceRef: batch.resolvedCommitSha,
+                        resolvedCommitSha: null,
+                        requestedBy,
+                        startedAt: null,
+                        completedAt: null,
+                        error: null,
+                        leaseOwner: null,
+                        leaseUntil: null,
+                        heartbeatAt: null,
+                    },
+                });
+                await tx.gatewayOperationLog.create({
+                    data: {
+                        operationId: operation.id,
+                        level: 'INFO',
+                        phase: 'queue',
+                        message: '일괄 업데이트의 고정 커밋으로 재시도가 등록되었습니다.',
+                    },
+                });
+                return operation;
             }
             const previousPayload = previous.payload as GatewayPrisma.JsonObject;
             const retrySource = buildRetryOperationSource(previous);

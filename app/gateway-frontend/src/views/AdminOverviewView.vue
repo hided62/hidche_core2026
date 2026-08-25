@@ -36,6 +36,14 @@ const sections = computed(
                 visible: isRootAdmin.value || profileCount.value > 0,
             },
             {
+                to: '/admin/releases/batch',
+                eyebrow: 'Release batch',
+                title: '일괄 업데이트',
+                description: 'Gateway와 권한 있는 서버를 동일한 고정 커밋으로 순차 업데이트합니다.',
+                tone: 'blue',
+                visible: hasCapability('admin.releases.manage') || hasCapability('admin.profiles.deploy'),
+            },
+            {
                 to: '/admin/releases',
                 eyebrow: 'Releases',
                 title: 'Gateway 릴리스',

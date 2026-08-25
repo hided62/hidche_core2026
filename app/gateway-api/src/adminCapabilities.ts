@@ -120,6 +120,13 @@ export const resolveAdminActionCapability = (path: string, rawInput?: unknown): 
     if (path.endsWith('.users.createLocal')) return 'admin.users.create';
     if (path.includes('.users.')) return 'admin.users.manage';
     if (path.includes('.system.')) return 'admin.notice.manage';
+    if (path.endsWith('.bulkReleases.request')) {
+        const includeGateway =
+            rawInput && typeof rawInput === 'object'
+                ? (rawInput as { includeGateway?: unknown }).includeGateway
+                : false;
+        return includeGateway ? 'admin.releases.manage' : 'admin.profiles.deploy';
+    }
     if (path.includes('.releases.')) return 'admin.releases.manage';
     if (path.endsWith('.profiles.requestAction') && rawInput && typeof rawInput === 'object') {
         const action = (rawInput as { action?: unknown }).action;
