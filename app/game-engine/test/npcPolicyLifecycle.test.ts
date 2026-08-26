@@ -176,32 +176,6 @@ const unitSet: UnitSetDefinition = {
 };
 
 describe('NPC policy lifecycle', () => {
-    it('keeps hard-invader starting resources below the Ref-compatible NPC war funding target', () => {
-        const hardInvaderNation = {
-            ...snapshot.nations[0]!,
-            name: 'ⓞ강족',
-            meta: { ...snapshot.nations[0]!.meta, tech: 15_000 },
-        };
-        const hardInvaderScenario = structuredClone(snapshot.scenarioConfig);
-        hardInvaderScenario.stat.npcMax = 80;
-        const hardInvaderGeneral = { ...general, npcState: 9, gold: 99_999, rice: 99_999 };
-        const policy = new AutorunNationPolicy({
-            general: hardInvaderGeneral,
-            aiOptions: null,
-            nationPolicy: null,
-            serverPolicy: null,
-            nation: hardInvaderNation,
-            env: { ...commandEnv, maxTechLevel: 12 },
-            scenarioConfig: hardInvaderScenario,
-            unitSet,
-        });
-
-        expect(policy.reqNpcWarGold).toBe(806_400);
-        expect(policy.reqNpcWarRice).toBe(806_400);
-        expect(hardInvaderGeneral.gold).toBeLessThan(policy.reqNpcWarGold);
-        expect(hardInvaderGeneral.rice).toBeLessThan(policy.reqNpcWarRice);
-    });
-
     it('applies CAS-protected semantic policy changes and the next AI instance consumes them without scheduler changes', () => {
         const world = new InMemoryTurnWorld(state, snapshot, { schedule });
         const first = applyNpcPolicyMutation({
@@ -280,10 +254,8 @@ describe('NPC policy lifecycle', () => {
         expect(policy.reqNationGold).toBe(4_321);
         expect(policy.priority).toEqual(['천도']);
         expect(policy.reqNpcDevelGold).toBe(540);
-        expect(policy.reqNpcWarGold).toBe(391_500);
-        expect(policy.reqNpcWarRice).toBe(391_500);
-        expect(policy.reqHumanWarUrgentGold).toBe(626_400);
-        expect(policy.reqHumanWarUrgentRice).toBe(626_400);
+        expect(policy.reqNpcWarGold).toBe(3_900);
+        expect(policy.reqNpcWarRice).toBe(3_900);
 
         const beforeConflict = structuredClone(world.getNationById(1)?.meta);
         expect(

@@ -290,7 +290,10 @@ const respondToRaiseInvader = async (options: {
             month: state.currentMonth,
             startyear: asNumber(state.meta.startYear, state.currentYear),
             currentEventID: 0,
-            turnTime: now,
+            // Ref uses the frozen game_env.turntime while unification is paused.
+            // `now` is the realtime game projection and can be hours ahead after
+            // a long response wait, delaying every newly summoned invader turn.
+            turnTime: state.lastTurnTime,
         },
         event
     );

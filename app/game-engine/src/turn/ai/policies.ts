@@ -314,10 +314,9 @@ export class AutorunNationPolicy {
         const stat = scenarioConfig.stat;
         if (this.reqNpcWarGold === 0 || this.reqNpcWarRice === 0) {
             const crewType = findCrewTypeById(unitSet, env.defaultCrewTypeId);
-            // Ref costWithTech() receives a troop count, not a leadership value.
-            // The policy funds four complete recruitments at the NPC stat cap.
-            const baseGold = crewType ? crewType.cost * getTechCost(tech, env.maxTechLevel) * stat.npcMax * 100 : 0;
-            const baseRice = crewType ? crewType.rice * getTechCost(tech, env.maxTechLevel) * stat.npcMax * 100 : 0;
+            // Ref costWithTech(tech, stat * 100) divides the troop count by 100.
+            const baseGold = crewType ? crewType.cost * getTechCost(tech, env.maxTechLevel) * stat.npcMax : 0;
+            const baseRice = crewType ? crewType.rice * getTechCost(tech, env.maxTechLevel) * stat.npcMax : 0;
             if (this.reqNpcWarGold === 0) {
                 this.reqNpcWarGold = roundTo(baseGold * 4, -2);
             }
@@ -328,8 +327,8 @@ export class AutorunNationPolicy {
 
         if (this.reqHumanWarUrgentGold === 0 || this.reqHumanWarUrgentRice === 0) {
             const crewType = findCrewTypeById(unitSet, env.defaultCrewTypeId);
-            const baseGold = crewType ? crewType.cost * getTechCost(tech, env.maxTechLevel) * stat.max * 100 : 0;
-            const baseRice = crewType ? crewType.rice * getTechCost(tech, env.maxTechLevel) * stat.max * 100 : 0;
+            const baseGold = crewType ? crewType.cost * getTechCost(tech, env.maxTechLevel) * stat.max : 0;
+            const baseRice = crewType ? crewType.rice * getTechCost(tech, env.maxTechLevel) * stat.max : 0;
             if (this.reqHumanWarUrgentGold === 0) {
                 this.reqHumanWarUrgentGold = roundTo(baseGold * 6, -2);
             }
