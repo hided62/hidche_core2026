@@ -277,6 +277,9 @@ describe('invader monthly actions', () => {
     it('moves a level-4 capital and scales turn times when the general limit requires a longer term', async () => {
         const cities = [buildCity(1, 1, 4), buildCity(2, 1, 3), buildCity(3, 0, 4)];
         const harness = buildHarness({ cities });
+        // A message can be accepted long after the frozen monthly boundary.
+        // The realtime projection must not become the new invaders' first turn.
+        harness.environment.turnTime = new Date('0200-01-01T01:00:00.000Z');
         const handler = createRaiseInvaderHandler({
             getWorld: () => harness.world,
             reservedTurns: harness.reservedTurns,
@@ -290,6 +293,11 @@ describe('invader monthly actions', () => {
         expect(harness.world.getGeneralById(1)?.cityId).toBe(2);
         expect(harness.world.getState().tickSeconds).toBe(30 * 60);
         expect(harness.world.getGeneralById(1)?.turnTime.toISOString()).toBe('0200-01-01T00:15:00.000Z');
+        const invaderTurnTimes = harness.world
+            .peekDirtyState()
+            .createdGenerals.map((general) => general.turnTime.getTime());
+        expect(Math.min(...invaderTurnTimes)).toBeGreaterThanOrEqual(new Date('0200-01-01T00:00:00.000Z').getTime());
+        expect(Math.max(...invaderTurnTimes)).toBeLessThan(new Date('0200-01-01T00:30:00.000Z').getTime());
         expect(harness.world.peekDirtyState().logs[0]?.text).toBe('<R>★</>턴시간이 <C>30분</>으로 변경됩니다.');
     });
 
@@ -418,10 +426,7 @@ describe('invader monthly actions', () => {
             action: [['InvaderEnding']],
             meta: {},
         };
-        const invaderNations = [
-            buildNation(2, 1, 'ⓞ남만족'),
-            buildNation(3, 2, 'ⓞ산월족'),
-        ];
+        const invaderNations = [buildNation(2, 1, 'ⓞ남만족'), buildNation(3, 2, 'ⓞ산월족')];
         const harness = buildHarness({
             cities: [buildCity(1, 2, 4), buildCity(2, 3, 4)],
             nations: [buildNeutralNation(), ...invaderNations],
@@ -464,12 +469,7 @@ describe('invader monthly actions', () => {
         };
         const harness = buildHarness({
             cities: [buildCity(1, 1, 3), buildCity(2, 2, 4), buildCity(3, 3, 4)],
-            nations: [
-                buildNeutralNation(),
-                buildNation(1),
-                buildNation(2, 2, 'ⓞ남만족'),
-                buildNation(3, 3, 'ⓞ산월족'),
-            ],
+            nations: [buildNeutralNation(), buildNation(1), buildNation(2, 2, 'ⓞ남만족'), buildNation(3, 3, 'ⓞ산월족')],
             events: [endingEvent],
             meta: { isunited: 1, refreshLimit: 3 },
         });

@@ -157,6 +157,7 @@ export const createRaiseInvaderHandler = (options: {
 
         world.updateWorldMeta({ isunited: 1, isUnited: 1 });
         const totalGeneralCount = npcEachCount * invaderCities.length + world.listGenerals().length;
+        let creationTurnBase = environment.turnTime;
         const maxGeneralsPerMinute =
             options.maxGeneralsPerMinute ?? readNumber(world.getState().meta.maxGeneralsPerMinute, 1_000);
         const currentTurnMinutes = world.getState().tickSeconds / 60;
@@ -166,6 +167,11 @@ export const createRaiseInvaderHandler = (options: {
             );
             if (nextTerm !== undefined) {
                 world.changeTurnTerm(nextTerm);
+                // Reprojection preserves the frozen monthly boundary by tick but
+                // changes its displayed Date. New generals must join that frozen
+                // boundary, not the realtime game clock that kept advancing while
+                // unification was waiting for a message response.
+                creationTurnBase = world.getState().lastTurnTime;
                 world.pushLog({
                     scope: LogScope.SYSTEM,
                     category: LogCategory.HISTORY,
@@ -348,7 +354,7 @@ export const createRaiseInvaderHandler = (options: {
                 reservedTurns: options.reservedTurns,
                 env: options.env,
                 rng,
-                environment,
+                environment: { ...environment, turnTime: creationTurnBase },
                 rawName: `${city.name}대왕`,
                 nationId,
                 cityId: city.id,
@@ -374,7 +380,7 @@ export const createRaiseInvaderHandler = (options: {
                     reservedTurns: options.reservedTurns,
                     env: options.env,
                     rng,
-                    environment,
+                    environment: { ...environment, turnTime: creationTurnBase },
                     rawName: `${city.name}장수${index}`,
                     nationId,
                     cityId: city.id,
