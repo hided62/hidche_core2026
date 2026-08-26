@@ -167,8 +167,9 @@ const readHiddenSeed = (worldState: WorldStateRow): string | number => {
 export const buildJoinCreateGeneralSeed = (
     hiddenSeed: string | number,
     ownerIdentity: string | number,
-    acceptedTick: number
-): string => simpleSerialize(hiddenSeed, 'MakeGeneral', ownerIdentity, acceptedTick);
+    acceptedTick: number,
+    generalId: number
+): string => simpleSerialize(hiddenSeed, 'MakeGeneral', ownerIdentity, acceptedTick, generalId);
 
 const lockJoinMutation = async (db: DatabaseClient, userId: string): Promise<void> => {
     await acquireGameSchemaAdvisoryXactLock(db, `join-create:user:${userId}`);
@@ -633,12 +634,6 @@ export const createGeneralFromJoin = async (options: {
         fail('PRECONDITION_FAILED', '생성 가능한 도시가 없습니다.');
     }
 
-    const hiddenSeed = readHiddenSeed(worldState);
-    const rng = new RandUtil(
-        new LiteHashDRBG(
-            buildJoinCreateGeneralSeed(hiddenSeed, input.seedOwnerIdentity, world.dateToGameTick(acceptedAt))
-        )
-    );
     const currentGenius = Math.max(
         0,
         Math.floor(asNumber(worldMeta.genius, asNumber(configConst.defaultMaxGenius, DEFAULT_MAX_GENIUS)))
@@ -646,6 +641,23 @@ export const createGeneralFromJoin = async (options: {
     if (input.inheritSpecial !== undefined && currentGenius === 0) {
         fail('PRECONDITION_FAILED', '이미 천재가 모두 나타났습니다. 다시 가입해주세요!');
     }
+
+    // PREOPEN에서는 logical game tick이 멈춰 있으므로 같은 사용자가 삭제 후
+    // 재생성하면 Ref의 wall-clock seed와 달리 완전히 같은 난수가 반복될 수 있다.
+    // 검증을 모두 통과한 생성에만 배정되는 단조 증가 장수 번호를 nonce로 넣어
+    // daemon 재시도는 결정적으로 유지하면서 후속 생성의 seed는 회전시킨다.
+    const hiddenSeed = readHiddenSeed(worldState);
+    const generalId = world.getNextGeneralId();
+    const rng = new RandUtil(
+        new LiteHashDRBG(
+            buildJoinCreateGeneralSeed(
+                hiddenSeed,
+                input.seedOwnerIdentity,
+                world.dateToGameTick(acceptedAt),
+                generalId
+            )
+        )
+    );
     const geniusRequested = input.inheritSpecial !== undefined || rng.nextBool(0.01);
     const genius = geniusRequested && currentGenius > 0;
 
@@ -701,7 +713,6 @@ export const createGeneralFromJoin = async (options: {
     );
     const personality = input.character === 'Random' ? rng.choice([...JOIN_PERSONALITY_TRAIT_KEYS]) : input.character;
     const affinity = rng.nextRangeInt(1, 150);
-    const generalId = world.getNextGeneralId();
     let obfuscatedNamePool = Array.isArray(worldMeta.obfuscatedNamePool)
         ? worldMeta.obfuscatedNamePool.filter((value): value is string => typeof value === 'string')
         : [];
