@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
+import { LiteHashDRBG, RandUtil } from '@sammo-ts/common';
+
 import {
     buildJoinCreateGeneralSeed,
     cutJoinTurnTime,
@@ -8,11 +10,39 @@ import {
     resolveJoinTurnTime,
 } from '../src/turn/joinCreateGeneralService.js';
 
-describe('generic join legacy time contracts', () => {
-    it('builds the Ref MakeGeneral seed from the logical game tick', () => {
-        expect(buildJoinCreateGeneralSeed('seed', 42, 72_000_000)).toBe(
-            'str(4,seed)|str(11,MakeGeneral)|int(42)|int(72000000)'
+describe('generic join deterministic contracts', () => {
+    it('builds a deterministic MakeGeneral seed with the allocated general number', () => {
+        expect(buildJoinCreateGeneralSeed('seed', 42, 72_000_000, 17)).toBe(
+            'str(4,seed)|str(11,MakeGeneral)|int(42)|int(72000000)|int(17)'
         );
+    });
+
+    it('rotates the MakeGeneral seed when the same owner recreates at a frozen logical tick', () => {
+        const first = buildJoinCreateGeneralSeed('seed', 42, 72_000_000, 17);
+        const recreated = buildJoinCreateGeneralSeed('seed', 42, 72_000_000, 18);
+
+        expect(recreated).not.toBe(first);
+        expect(buildJoinCreateGeneralSeed('seed', 42, 72_000_000, 17)).toBe(first);
+    });
+
+    it('produces distinct fixed-seed draw streams for consecutive general numbers', () => {
+        const draw = (generalId: number): number[] => {
+            const rng = new RandUtil(
+                new LiteHashDRBG(buildJoinCreateGeneralSeed('seed', 42, 72_000_000, generalId))
+            );
+            return [
+                rng.nextRangeInt(0, 5),
+                rng.nextRangeInt(3, 5),
+                rng.nextRangeInt(0, 1),
+                rng.nextRangeInt(0, 299),
+                rng.nextRangeInt(0, 999_999),
+                rng.nextRangeInt(1, 150),
+            ];
+        };
+
+        expect(draw(17)).toEqual([4, 5, 0, 153, 734_806, 128]);
+        expect(draw(18)).toEqual([4, 4, 0, 49, 230_491, 44]);
+        expect(draw(17)).toEqual(draw(17));
     });
 
     it('aligns a 120-minute turn from the Ref Asia/Seoul previous-day 01:00 anchor', () => {
