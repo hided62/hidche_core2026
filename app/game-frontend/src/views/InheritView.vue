@@ -203,9 +203,15 @@ const specialNameMap = computed(() => {
     }
     return map;
 });
+const splitLegacyLineBreaks = (value: string): string[] => value.split(/<br\s*\/?\s*>|\r?\n/giu);
 const selectedSpecialWarInfo = computed(
     () => status.value?.availableSpecialWar.find((entry) => entry.key === nextSpecialKey.value)?.info ?? ''
 );
+const selectedSpecialWarInfoLines = computed(() => splitLegacyLineBreaks(selectedSpecialWarInfo.value));
+const selectedUniqueInfo = computed(
+    () => status.value?.availableUnique.find((item) => item.key === uniqueForm.itemId)?.info ?? ''
+);
+const selectedUniqueInfoLines = computed(() => splitLegacyLineBreaks(selectedUniqueInfo.value));
 const availableUniqueGroups = computed(() =>
     uniqueItemSlotOrder
         .map((slot) => ({
@@ -513,9 +519,10 @@ onMounted(() => {
                             </select>
                         </div>
                         <small
-                            ><span v-if="selectedSpecialWarInfo" class="special-description">{{
-                                selectedSpecialWarInfo
-                            }}</span
+                            ><span v-if="selectedSpecialWarInfo" class="special-description"
+                                ><template v-for="(line, index) in selectedSpecialWarInfoLines" :key="index"
+                                    >{{ line
+                                    }}<br v-if="index < selectedSpecialWarInfoLines.length - 1" /></template></span
                             ><br v-if="selectedSpecialWarInfo" />{{ specialNameMap.get(nextSpecialKey) }} 특기를 다음에
                             얻도록 지정합니다.<br /><b
                                 >필요 포인트: {{ status.inheritConst.inheritSpecificSpecialPoint }}</b
@@ -553,10 +560,12 @@ onMounted(() => {
                             />
                         </div>
                         <small
-                            >얻고자 하는 유니크 아이템으로 경매를 시작합니다. 24턴 동안 진행됩니다.<br />{{
-                                status.availableUnique.find((item) => item.key === uniqueForm.itemId)?.info
-                            }}</small
-                        >
+                            >얻고자 하는 유니크 아이템으로 경매를 시작합니다. 24턴 동안 진행됩니다.<br /><span
+                                v-if="selectedUniqueInfo"
+                                class="unique-description"
+                                ><template v-for="(line, index) in selectedUniqueInfoLines" :key="index"
+                                    >{{ line }}<br v-if="index < selectedUniqueInfoLines.length - 1" /></template></span
+                        ></small>
                         <button
                             class="legacy-button legacy-button--primary buy-button"
                             :disabled="isUnited || actionBusy"
