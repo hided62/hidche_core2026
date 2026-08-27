@@ -1158,6 +1158,7 @@ test('scopes the new-survey notice cursor to the reset-specific server ID', asyn
         generalMeCalls: 0,
         operations: [],
     };
+    await installRealtimeHarness(page);
     await installFixture(page, state);
     await page.addInitScript(() => {
         localStorage.setItem('state.che.lastVote', '99');
@@ -1170,6 +1171,14 @@ test('scopes the new-survey notice cursor to the reset-specific server ID', asyn
         .poll(() => page.evaluate(() => localStorage.getItem('state.che_260819_new_season.lastVote')))
         .toBe('1');
     expect(await page.evaluate(() => localStorage.getItem('state.che.lastVote'))).toBe('99');
+
+    await waitForMainRealtime(page);
+    const operationsBeforeDuplicate = state.operations.length;
+    await emitReadModelInvalidation(page, readModelInvalidation({ frontStatus: true }));
+    await expect
+        .poll(() => state.operations.slice(operationsBeforeDuplicate), { timeout: 3_000 })
+        .toEqual(['dashboard.getContextBundleDelta', 'general.getFrontStatus']);
+    await expect(page.locator('.survey-notice')).toContainText('새로운 설문조사가 있습니다.');
 });
 
 test('desktop menus preserve ref columns, prefix-safe routes, and controlled dropdown behavior', async ({

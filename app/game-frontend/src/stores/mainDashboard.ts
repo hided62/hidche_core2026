@@ -306,7 +306,13 @@ export const useMainDashboardStore = defineStore('mainDashboard', () => {
         const storageKey = `state.${serverId}.lastVote`;
         const lastSeenVoteId = Number.parseInt(window.localStorage.getItem(storageKey) ?? '0', 10);
         if (latestVote.id <= (Number.isFinite(lastSeenVoteId) ? lastSeenVoteId : 0)) {
-            surveyNotice.value = null;
+            // Initial mounting, general creation and realtime invalidation can fetch
+            // the same front status in quick succession. The first response records
+            // the cursor; a duplicate response must not immediately dismiss the
+            // notice that response just opened.
+            if (surveyNotice.value?.id !== latestVote.id) {
+                surveyNotice.value = null;
+            }
             return;
         }
         window.localStorage.setItem(storageKey, latestVote.id.toString());
