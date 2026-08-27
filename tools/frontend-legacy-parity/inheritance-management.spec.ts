@@ -79,13 +79,19 @@ const statusFixture = {
     },
     resetCosts: { resetSpecialWar: 1000, resetTurnTime: 1000 },
     resetLevels: { resetSpecialWar: 0, resetTurnTime: 0 },
-    availableSpecialWar: [{ key: 'che_선봉', name: '선봉', info: '공격에 유리합니다.' }],
+    availableSpecialWar: [
+        {
+            key: 'che_선봉',
+            name: '선봉',
+            info: '[군사] 선봉 효과입니다.<br>[전투] 공격에 유리합니다.<br />[기타] 기동력을 보완합니다.',
+        },
+    ],
     availableUnique: [
         {
             key: 'che_명마_07_백마',
             name: '백마(+7)',
             rawName: '백마',
-            info: '기동력을 올려주는 유니크 명마입니다.',
+            info: '기동력을 올려주는 유니크 명마입니다.<br>전투 이동을 돕습니다.',
             slot: 'horse',
         },
         {
@@ -206,6 +212,22 @@ const installFixture = async (
 };
 
 test.describe('inheritance management legacy parity', () => {
+    test('renders legacy description breaks without exposing br markup', async ({ page }) => {
+        await installFixture(page);
+        await page.goto(gameUrl);
+
+        const specialDescription = page.locator('.special-description');
+        const uniqueDescription = page.locator('.unique-description');
+        await expect(specialDescription.locator('br')).toHaveCount(2);
+        await expect(uniqueDescription.locator('br')).toHaveCount(1);
+        expect(await specialDescription.innerText()).toBe(
+            '[군사] 선봉 효과입니다.\n[전투] 공격에 유리합니다.\n[기타] 기동력을 보완합니다.'
+        );
+        expect(await uniqueDescription.innerText()).toBe('기동력을 올려주는 유니크 명마입니다.\n전투 이동을 돕습니다.');
+        await expect(specialDescription).not.toContainText('<br>');
+        await expect(uniqueDescription).not.toContainText('<br>');
+    });
+
     test('confirms and displays the Ref-compatible pending turn-time base', async ({ page }) => {
         const fixture = await installFixture(page);
         await page.setViewportSize({ width: 390, height: 844 });
@@ -383,7 +405,9 @@ test.describe('inheritance management legacy parity', () => {
         expect(
             await page.evaluate(() =>
                 Math.abs(
-                    window.scrollY + window.innerHeight - (document.scrollingElement?.scrollHeight ?? window.innerHeight)
+                    window.scrollY +
+                        window.innerHeight -
+                        (document.scrollingElement?.scrollHeight ?? window.innerHeight)
                 )
             )
         ).toBeLessThanOrEqual(1);
