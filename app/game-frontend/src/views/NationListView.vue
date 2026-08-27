@@ -51,10 +51,6 @@ const displayAmbassadorName = (nation: Nation, name: string) => {
     return general ? displayGeneralName(general) : name;
 };
 
-const roamingCityName = (nation: Nation): string => {
-    const chief = officerName(nation, 12);
-    return nation.cities.find((city) => city.id === chief?.cityId)?.name ?? '-';
-};
 const closeWindow = () => window.close();
 const officerLevelAt = (row: number, column: number, columns: number) => 13 - ((row - 1) * columns + column);
 
@@ -275,7 +271,8 @@ onBeforeUnmount(() => {
                                 </template>
                             </template>
                             <template v-else
-                                >현재 위치 : <span class="roaming-city">{{ roamingCityName(nation) }}</span></template
+                                >현재 위치 :
+                                <span class="roaming-city">{{ nation.rulerCityName ?? '-' }}</span></template
                             >
                         </td>
                     </tr>
