@@ -25,7 +25,7 @@ type PublicAutorunOption = (typeof PUBLIC_AUTORUN_OPTIONS)[number];
 
 export type LobbyUpcomingReset = {
     phase: 'SCHEDULED' | 'PREPARING' | 'READY' | 'DELAYED';
-    scheduledAt: string;
+    scheduledAt: string | null;
     preopenAt: string;
     openAt: string;
     scenarioId: number;
@@ -215,7 +215,7 @@ export const resolveUpcomingResetAnnouncement = (
     if (operation.type !== 'RESET' || !['QUEUED', 'RUNNING', 'SUCCEEDED'].includes(operation.status)) return null;
     const payload = asRecord(operation.payload);
     const announcement = asRecord(payload?.publicAnnouncement);
-    if (!announcement || announcement.enabled !== true) return null;
+    if (!announcement || (announcement.enabled !== true && operation.status !== 'SUCCEEDED')) return null;
 
     const scheduledAt = readDateTime(announcement.scheduledAt);
     const preopenAt = readDateTime(announcement.preopenAt);
@@ -226,7 +226,7 @@ export const resolveUpcomingResetAnnouncement = (
     const defaultStatTotal = readFiniteNumber(announcement.defaultStatTotal);
     const autorunUser = readAutorun(announcement.autorunUser);
     if (
-        !scheduledAt ||
+        (announcement.enabled === true && !scheduledAt) ||
         !preopenAt ||
         !openAt ||
         !Number.isInteger(scenarioId) ||
@@ -248,7 +248,7 @@ export const resolveUpcomingResetAnnouncement = (
             ? 'DELAYED'
             : operation.status === 'SUCCEEDED'
               ? 'READY'
-              : operation.status === 'RUNNING' || nowMs >= new Date(scheduledAt).getTime()
+              : operation.status === 'RUNNING' || (scheduledAt && nowMs >= new Date(scheduledAt).getTime())
                 ? 'PREPARING'
                 : 'SCHEDULED';
     return {
