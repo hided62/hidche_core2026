@@ -1,5 +1,8 @@
 export const SCREEN_MODE_KEY = 'sam.screenMode';
 export const SCREEN_MODE_CHANGE_EVENT = 'tryChangeScreenMode';
+export const SCREEN_MODE_DESKTOP_MIN_WIDTH = 940;
+export const SCREEN_MODE_DESKTOP_MEDIA_QUERY = `(min-width: ${SCREEN_MODE_DESKTOP_MIN_WIDTH}px)`;
+export const SCREEN_MODE_MOBILE_MEDIA_QUERY = `(max-width: ${SCREEN_MODE_DESKTOP_MIN_WIDTH - 0.02}px)`;
 
 export type ScreenMode = 'auto' | '500px' | '1000px';
 

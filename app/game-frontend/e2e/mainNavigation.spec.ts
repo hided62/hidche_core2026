@@ -3083,6 +3083,51 @@ test('main cards and command input stay inside their Ref-sized grid slots', asyn
     await captureProgress('mobile-500');
 });
 
+test('main layout and map use the same mobile/desktop boundary', async ({ page }, testInfo) => {
+    const state: NavigationFixture = {
+        officerLevel: 5,
+        permission: 2,
+        nationLevel: 3,
+        stage: 6,
+        npcMode: 1,
+        scenarioTitle: '모바일 검증 시나리오',
+        lastExecuted: null,
+        latestVote: null,
+        generalMeCalls: 0,
+        operations: [],
+        validMapImages: true,
+    };
+    await installFixture(page, state);
+    await page.setViewportSize({ width: 1000, height: 900 });
+    await waitForMain(page);
+    await expect(page.locator('.layout-desktop [data-main-target="map"] .map-area')).toBeVisible();
+    expect(
+        await page
+            .locator('.layout-desktop [data-main-target="map"] .map-area')
+            .evaluate((element) => element.getBoundingClientRect().width)
+    ).toBe(700);
+    await page.screenshot({ path: testInfo.outputPath('screen-mode-desktop-1000.png'), fullPage: true });
+
+    await page.setViewportSize({ width: 940, height: 900 });
+    await expect(page.locator('.layout-desktop')).toBeVisible();
+    await expect(page.locator('.layout-desktop [data-main-target="map"] .map-area')).toBeVisible();
+    expect(
+        await page
+            .locator('.layout-desktop [data-main-target="map"] .map-area')
+            .evaluate((element) => element.getBoundingClientRect().width)
+    ).toBeGreaterThan(500);
+
+    await page.setViewportSize({ width: 939, height: 900 });
+    await expect(page.locator('.layout-mobile')).toBeVisible();
+    await expect(page.locator('.layout-mobile [data-main-target="map"] .map-area')).toBeVisible();
+    expect(
+        await page
+            .locator('.layout-mobile [data-main-target="map"] .map-area')
+            .evaluate((element) => element.getBoundingClientRect().width)
+    ).toBe(500);
+    await page.screenshot({ path: testInfo.outputPath('screen-mode-mobile-939.png'), fullPage: true });
+});
+
 test('the 939/940 boundary switches to the Ref-style 500px single document', async ({ page }) => {
     const state: NavigationFixture = {
         officerLevel: 5,
@@ -3630,12 +3675,20 @@ test('automatic screen mode switches wide mobile screens to the 1000px layout at
             npcMode: 1,
             generalMeCalls: 0,
             operations: [],
+            validMapImages: true,
         };
         await installFixture(mobilePage, state);
         await waitForMain(mobilePage);
 
         const expectedWideLayout = deviceWidth >= 700;
         await expect(mobilePage.locator(expectedWideLayout ? '.layout-desktop' : '.layout-mobile')).toBeVisible();
+        const activeMap = mobilePage.locator(
+            `${expectedWideLayout ? '.layout-desktop' : '.layout-mobile'} [data-main-target="map"] .map-area`
+        );
+        await expect(activeMap).toBeVisible();
+        expect(await activeMap.evaluate((element) => element.getBoundingClientRect().width)).toBe(
+            expectedWideLayout ? 700 : 500
+        );
         expect(
             await mobilePage.evaluate(() => document.querySelector<HTMLMetaElement>('meta[name="viewport"]')?.content)
         ).toBe(expectedWideLayout ? 'width=1000' : 'width=device-width, initial-scale=1');
@@ -3664,6 +3717,10 @@ test('automatic screen mode switches wide mobile screens to the 1000px layout at
                 document.dispatchEvent(new CustomEvent('tryChangeScreenMode'));
             });
             await expect(mobilePage.locator('.layout-mobile')).toBeVisible();
+            await expect(mobilePage.locator('.layout-mobile [data-main-target="map"] .map-area')).toHaveCSS(
+                'width',
+                '500px'
+            );
             expect(
                 await mobilePage.evaluate(
                     () => document.querySelector<HTMLMetaElement>('meta[name="viewport"]')?.content
@@ -3686,6 +3743,10 @@ test('automatic screen mode switches wide mobile screens to the 1000px layout at
                 document.dispatchEvent(new CustomEvent('tryChangeScreenMode'));
             });
             await expect(mobilePage.locator('.layout-desktop')).toBeVisible();
+            await expect(mobilePage.locator('.layout-desktop [data-main-target="map"] .map-area')).toHaveCSS(
+                'width',
+                '700px'
+            );
             expect(
                 await mobilePage.evaluate(
                     () => document.querySelector<HTMLMetaElement>('meta[name="viewport"]')?.content

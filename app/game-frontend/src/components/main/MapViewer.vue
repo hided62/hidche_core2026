@@ -9,6 +9,7 @@ import { useMapViewerStore } from '../../stores/mapViewer';
 import { buildAssetUrl } from '../../utils/mapAssets';
 import { resolveMapBackgroundPath, resolveMapSeason, resolveNextMapSeason } from '../../utils/mapBackground';
 import { configuredGameAssetUrl } from '../../utils/imageAssets';
+import { SCREEN_MODE_DESKTOP_MEDIA_QUERY } from '../../utils/screenModeViewport';
 
 interface MapSummary {
     year: number;
@@ -133,7 +134,7 @@ const preloadDecodedImage = (url: string): Promise<void> => {
     return pending;
 };
 
-const isWide = useMediaQuery('(min-width: 1024px)');
+const isWide = useMediaQuery(SCREEN_MODE_DESKTOP_MEDIA_QUERY);
 const mapStore = useMapViewerStore();
 const {
     showCityName,

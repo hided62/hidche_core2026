@@ -37,11 +37,12 @@ import {
     MOBILE_MAIN_PANEL_ORDER_STORAGE_KEY,
     type MobileMainPanelId,
 } from '../utils/mobileMainPanelOrder';
+import { SCREEN_MODE_MOBILE_MEDIA_QUERY } from '../utils/screenModeViewport';
 
 const session = useSessionStore();
 const dashboard = useMainDashboardStore();
 const { info: showInfoToast } = useGameFeedback();
-const isMobile = useMediaQuery('(max-width: 939.98px)');
+const isMobile = useMediaQuery(SCREEN_MODE_MOBILE_MEDIA_QUERY);
 
 const npcMode = ref(0);
 const globalNavigation = ref<MainNavigationEntry[]>(defaultGlobalNavigation);

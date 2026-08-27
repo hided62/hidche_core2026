@@ -5,7 +5,16 @@ import {
     normalizeScreenMode,
     resolveAutoViewportContent,
     resolveViewportContent,
+    SCREEN_MODE_DESKTOP_MEDIA_QUERY,
+    SCREEN_MODE_DESKTOP_MIN_WIDTH,
+    SCREEN_MODE_MOBILE_MEDIA_QUERY,
 } from '../src/utils/screenModeViewport.ts';
+
+void test('main and map layouts share one 939/940 screen-mode boundary', () => {
+    assert.equal(SCREEN_MODE_DESKTOP_MIN_WIDTH, 940);
+    assert.equal(SCREEN_MODE_DESKTOP_MEDIA_QUERY, '(min-width: 940px)');
+    assert.equal(SCREEN_MODE_MOBILE_MEDIA_QUERY, '(max-width: 939.98px)');
+});
 
 void test('automatic mode follows the Ref physical-screen thresholds', () => {
     assert.equal(resolveAutoViewportContent({ deviceWidth: 390, viewportHeight: 844 }), 'width=500');
