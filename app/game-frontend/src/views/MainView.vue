@@ -18,6 +18,7 @@ import MainGlobalMenu from '../components/main/MainGlobalMenu.vue';
 import MainNationMenu from '../components/main/MainNationMenu.vue';
 import MainMobileBottomBar from '../components/main/MainMobileBottomBar.vue';
 import MainTurnControls from '../components/main/MainTurnControls.vue';
+import MainAutorunStatus from '../components/main/MainAutorunStatus.vue';
 import {
     defaultGlobalNavigation,
     type MainNavigationEntry,
@@ -257,6 +258,7 @@ watch(
             <span>국가: {{ lobbyInfo.nationCnt }}</span>
             <span>사실/가상: {{ lobbyInfo.fictionMode }}</span>
             <span>{{ lobbyInfo.otherTextInfo || '진행 정보 없음' }}</span>
+            <MainAutorunStatus :autorun="lobbyInfo.autorunUser" />
         </section>
 
         <div v-if="error" class="game-feedback game-feedback--error" role="alert">{{ error }}</div>
@@ -728,11 +730,13 @@ button {
 }
 
 .legacy-game-info {
+    position: relative;
+    z-index: 100;
     display: grid;
     grid-template-columns: repeat(8, minmax(0, 1fr));
     box-sizing: border-box;
     height: 18px;
-    overflow: hidden;
+    overflow: visible;
     border-top: 1px solid #666;
     background: #302016 var(--sammo-texture-walnut);
     color: #fff;
@@ -745,6 +749,10 @@ button {
     overflow: hidden;
     border-right: 1px solid #666;
     white-space: nowrap;
+}
+
+.legacy-game-info > .main-autorun-status {
+    overflow: visible;
 }
 
 .warning {
