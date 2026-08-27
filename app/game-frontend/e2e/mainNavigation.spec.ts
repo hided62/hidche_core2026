@@ -3098,33 +3098,87 @@ test('main layout and map use the same mobile/desktop boundary', async ({ page }
         validMapImages: true,
     };
     await installFixture(page, state);
-    await page.setViewportSize({ width: 1000, height: 900 });
+    const geometryByViewport: Record<string, unknown> = {};
+    await page.setViewportSize({ width: 1023, height: 900 });
     await waitForMain(page);
-    await expect(page.locator('.layout-desktop [data-main-target="map"] .map-area')).toBeVisible();
-    expect(
-        await page
-            .locator('.layout-desktop [data-main-target="map"] .map-area')
-            .evaluate((element) => element.getBoundingClientRect().width)
-    ).toBe(700);
-    await page.screenshot({ path: testInfo.outputPath('screen-mode-desktop-1000.png'), fullPage: true });
+    const inspectMapGeometry = (layout: 'desktop' | 'mobile') =>
+        page.locator(`.layout-${layout} [data-main-target="map"] .map-area`).evaluate((element) => {
+            const rect = element.getBoundingClientRect();
+            const background = element.querySelector<HTMLElement>('.map-background-image')?.getBoundingClientRect();
+            const road = element.querySelector<HTMLElement>('.map-bgroad')?.getBoundingClientRect();
+            const city = element.querySelector<HTMLElement>('.city-base');
+            return {
+                width: rect.width,
+                height: rect.height,
+                backgroundWidth: background?.width ?? 0,
+                backgroundHeight: background?.height ?? 0,
+                roadWidth: road?.width ?? 0,
+                roadHeight: road?.height ?? 0,
+                cityLeft: city ? Number.parseFloat(city.style.left) : 0,
+                cityTop: city ? Number.parseFloat(city.style.top) : 0,
+            };
+        });
+    let expectedCityPositionRatio: { left: number; top: number } | null = null;
 
-    await page.setViewportSize({ width: 940, height: 900 });
-    await expect(page.locator('.layout-desktop')).toBeVisible();
-    await expect(page.locator('.layout-desktop [data-main-target="map"] .map-area')).toBeVisible();
-    expect(
-        await page
-            .locator('.layout-desktop [data-main-target="map"] .map-area')
-            .evaluate((element) => element.getBoundingClientRect().width)
-    ).toBeGreaterThan(500);
+    for (const viewportWidth of [1023, 1000, 960, 940]) {
+        await page.setViewportSize({ width: viewportWidth, height: 900 });
+        await expect(page.locator('.layout-desktop')).toBeVisible();
+        await expect
+            .poll(async () => {
+                const geometry = await inspectMapGeometry('desktop');
+                return {
+                    mapRatioMatches: Math.abs(geometry.width / geometry.height - 7 / 5) < 0.0001,
+                    backgroundMatches:
+                        Math.abs(geometry.backgroundWidth - geometry.width) < 0.01 &&
+                        Math.abs(geometry.backgroundHeight - geometry.height) < 0.01,
+                    roadMatches:
+                        Math.abs(geometry.roadWidth - geometry.width) < 0.01 &&
+                        Math.abs(geometry.roadHeight - geometry.height) < 0.01,
+                };
+            })
+            .toEqual({ mapRatioMatches: true, backgroundMatches: true, roadMatches: true });
+        const measured = await inspectMapGeometry('desktop');
+        expect(measured.width).toBeGreaterThan(500);
+        expect(measured.width).toBeLessThanOrEqual(700);
+        expect(measured.width / measured.height).toBeCloseTo(7 / 5, 4);
+        expect(measured.backgroundWidth).toBeCloseTo(measured.width, 4);
+        expect(measured.backgroundHeight).toBeCloseTo(measured.height, 4);
+        expect(measured.roadWidth).toBeCloseTo(measured.width, 4);
+        expect(measured.roadHeight).toBeCloseTo(measured.height, 4);
+        const cityPositionRatio = {
+            left: measured.cityLeft / measured.width,
+            top: measured.cityTop / measured.height,
+        };
+        if (expectedCityPositionRatio) {
+            expect(cityPositionRatio.left).toBeCloseTo(expectedCityPositionRatio.left, 4);
+            expect(cityPositionRatio.top).toBeCloseTo(expectedCityPositionRatio.top, 4);
+        } else {
+            expectedCityPositionRatio = cityPositionRatio;
+        }
+        geometryByViewport[String(viewportWidth)] = measured;
+        if (viewportWidth === 940 || viewportWidth === 1000) {
+            await page.screenshot({
+                path: testInfo.outputPath(`screen-mode-desktop-${viewportWidth}.png`),
+                fullPage: true,
+            });
+        }
+    }
 
     await page.setViewportSize({ width: 939, height: 900 });
     await expect(page.locator('.layout-mobile')).toBeVisible();
     await expect(page.locator('.layout-mobile [data-main-target="map"] .map-area')).toBeVisible();
-    expect(
-        await page
-            .locator('.layout-mobile [data-main-target="map"] .map-area')
-            .evaluate((element) => element.getBoundingClientRect().width)
-    ).toBe(500);
+    const mobileGeometry = await inspectMapGeometry('mobile');
+    expect(mobileGeometry.width).toBe(500);
+    expect(mobileGeometry.width / mobileGeometry.height).toBeCloseTo(7 / 5, 4);
+    expect(mobileGeometry.backgroundWidth).toBeCloseTo(mobileGeometry.width, 4);
+    expect(mobileGeometry.backgroundHeight).toBeCloseTo(mobileGeometry.height, 4);
+    expect(mobileGeometry.cityLeft / mobileGeometry.width).toBeCloseTo(expectedCityPositionRatio?.left ?? 0, 4);
+    expect(mobileGeometry.cityTop / mobileGeometry.height).toBeCloseTo(expectedCityPositionRatio?.top ?? 0, 4);
+    geometryByViewport['939'] = mobileGeometry;
+    await writeFile(
+        testInfo.outputPath('screen-mode-map-aspect-ratio.json'),
+        `${JSON.stringify(geometryByViewport, null, 2)}\n`
+    );
     await page.screenshot({ path: testInfo.outputPath('screen-mode-mobile-939.png'), fullPage: true });
 });
 

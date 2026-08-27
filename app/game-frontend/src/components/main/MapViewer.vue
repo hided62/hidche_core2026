@@ -200,13 +200,11 @@ const dynamicCityById = computed(() => {
 });
 
 const mapScale = computed(() => {
-    if (isWide.value && !props.fitContainer) {
-        return 1;
-    }
+    const preferredScale = props.fitContainer || isWide.value ? 1 : SMALL_MAP_SCALE;
     if (mapBodyWidth.value <= 0) {
-        return SMALL_MAP_SCALE;
+        return preferredScale;
     }
-    return Math.min(props.fitContainer ? 1 : SMALL_MAP_SCALE, mapBodyWidth.value / BASE_MAP_WIDTH);
+    return Math.min(preferredScale, mapBodyWidth.value / BASE_MAP_WIDTH);
 });
 
 const effectiveDetailMode = computed(() => props.detailMode ?? storeDetailMode.value);
