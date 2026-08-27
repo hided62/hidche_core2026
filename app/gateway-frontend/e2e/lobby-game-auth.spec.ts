@@ -65,7 +65,7 @@ type LobbyFixtureOptions = {
     } | null;
     upcomingReset?: {
         phase: 'SCHEDULED' | 'PREPARING' | 'READY' | 'DELAYED';
-        scheduledAt: string;
+        scheduledAt: string | null;
         preopenAt: string;
         openAt: string;
         scenarioId: number;
@@ -640,12 +640,12 @@ test('matches the normal preopen copy text and labels an immediate announcement 
     await page.screenshot({ path: testInfo.outputPath('gateway-upcoming-reset-mobile.png'), fullPage: true });
 });
 
-test('keeps the announcement through the RESERVED handoff after the build completes', async ({ page }) => {
+test('shows a build-complete RESERVED announcement without the early-publication badge', async ({ page }) => {
     const gameOperations = await installFixture(page, {
         profileStatus: 'RESERVED',
         upcomingReset: {
             phase: 'READY',
-            scheduledAt: '2026-08-27T05:00:00.000Z',
+            scheduledAt: null,
             preopenAt: '2026-08-27T05:30:00.000Z',
             openAt: '2026-08-27T11:00:00.000Z',
             scenarioId: 1010,
@@ -661,14 +661,10 @@ test('keeps the announcement through the RESERVED handoff after the build comple
 
     await page.goto('lobby');
     const row = page.locator('tbody tr').filter({ hasText: 'hwe섭' });
-    const badge = row.getByTestId('reserved-announcement-badge');
     await expect(row.getByTestId('upcoming-reset-phase')).toHaveCount(0);
     await expect(row.getByTestId('upcoming-reset-scenario-title')).toHaveText('【가상】황건적의 난');
-    await badge.hover();
-    await expect(row.getByTestId('reserved-announcement-build-tooltip')).toHaveText(
-        '실제 빌드 시작 : 2026-08-27 14:00:00'
-    );
-    await expect(row.getByTestId('reserved-announcement-build-tooltip')).not.toContainText('오픈 준비 완료');
+    await expect(row.getByTestId('reserved-announcement-badge')).toHaveCount(0);
+    await expect(row.getByTestId('reserved-announcement-build-tooltip')).toHaveCount(0);
     await expect(row).not.toContainText('준 비 중 · 접근 불가');
     await expect(row.getByRole('button', { name: '입장' })).toHaveCount(0);
     expect(gameOperations).toEqual([]);

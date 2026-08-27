@@ -772,6 +772,35 @@ describe('admin operation API', () => {
             },
         });
 
+        await harness.caller.admin.operations.requestReset({
+            profileName: 'che:2',
+            sourceMode: 'COMMIT',
+            sourceRef: 'HEAD',
+            install,
+        });
+
+        expect(harness.createdInputs[1]).toMatchObject({
+            type: 'RESET',
+            scheduledAt: undefined,
+            payload: {
+                install,
+                publicAnnouncement: {
+                    enabled: false,
+                    scenarioId: 1010,
+                    scenarioTitle: expect.any(String),
+                    scheduledAt: null,
+                    preopenAt: install.preopenAt,
+                    openAt: install.openAt,
+                    turnTermMinutes: 60,
+                    fictionMode: '가상',
+                    npcMode: 0,
+                    defaultStatTotal: expect.any(Number),
+                    otherTextInfo: expect.any(String),
+                    autorunUser: null,
+                },
+            },
+        });
+
         await expect(
             harness.caller.admin.operations.requestReset({
                 profileName: 'che:2',

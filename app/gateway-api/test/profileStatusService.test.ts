@@ -96,10 +96,21 @@ describe('resolveUpcomingResetAnnouncement', () => {
         }
     });
 
-    it('fails closed for an unpublished or incomplete snapshot', () => {
+    it('keeps an unpublished snapshot hidden until a completed build is ready', () => {
         const unpublished = buildOperation();
-        unpublished.payload = { publicAnnouncement: { enabled: false } };
+        unpublished.payload = {
+            publicAnnouncement: {
+                ...(unpublished.payload as { publicAnnouncement: Record<string, unknown> }).publicAnnouncement,
+                enabled: false,
+                scheduledAt: null,
+            },
+        };
         expect(resolveUpcomingResetAnnouncement(unpublished, new Date('2026-08-27T04:00:00.000Z'))).toBeNull();
+        unpublished.status = 'SUCCEEDED';
+        expect(resolveUpcomingResetAnnouncement(unpublished, new Date('2026-08-27T04:00:00.000Z'))).toMatchObject({
+            phase: 'READY',
+            scheduledAt: null,
+        });
 
         const incomplete = buildOperation();
         incomplete.payload = { publicAnnouncement: { enabled: true, scenarioTitle: '황건적의 난' } };

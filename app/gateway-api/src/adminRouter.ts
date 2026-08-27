@@ -1406,13 +1406,13 @@ export const adminRouter = router({
                             install: input.install,
                             requestedSource: input.sourceMode,
                             releaseSource: { mode: sourceMode, ref: sourceRef },
-                            ...(input.publishSchedule && selectedScenario
+                            ...(selectedScenario && input.install.preopenAt && input.install.openAt
                                 ? {
                                       publicAnnouncement: {
-                                          enabled: true,
+                                          enabled: input.publishSchedule,
                                           scenarioId: selectedScenario.id,
                                           scenarioTitle: selectedScenario.title,
-                                          scheduledAt: input.scheduledAt,
+                                          scheduledAt: input.scheduledAt ?? null,
                                           preopenAt: input.install.preopenAt,
                                           openAt: input.install.openAt,
                                           turnTermMinutes: input.install.turnTermMinutes,
