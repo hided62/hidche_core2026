@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, reactive, watch, type CSSProperties } from 'vue';
 import MapViewer from './MapViewer.vue';
+import NationColorSelect from './NationColorSelect.vue';
 import { commandArgumentPresentation, resolveCommandArgumentMapTarget } from '../command/commandArgumentPresentation';
 import { commandCityOptions } from '../command/commandArgumentOptions';
 import {
@@ -140,6 +141,11 @@ const setSelectValue = (field: CommandInputField, rawValue: string) => {
 
 const selectedOptionFor = (field: CommandInputField): CommandOption | undefined =>
     optionsFor(field).find((entry) => entry.value === values[field.key]);
+
+const selectedValueFor = (field: CommandInputField): string | number => {
+    const value = values[field.key];
+    return typeof value === 'string' || typeof value === 'number' ? value : '';
+};
 
 const colorOptionStyle = (field: CommandInputField, option?: CommandOption): CSSProperties | undefined => {
     if (field.optionSource === 'colors' && option?.color) {
@@ -478,6 +484,13 @@ watch(
                     </option>
                 </select>
             </div>
+            <NationColorSelect
+                v-else-if="field.kind === 'select' && field.optionSource === 'colors'"
+                :id="`command-arg-${field.key}`"
+                :model-value="selectedValueFor(field)"
+                :options="optionsFor(field)"
+                @update:model-value="setSelectValue(field, String($event))"
+            />
             <select
                 v-else-if="field.kind === 'select'"
                 :id="`command-arg-${field.key}`"
