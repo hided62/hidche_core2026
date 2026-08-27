@@ -53,6 +53,33 @@ const actorBindingDb = (userId = 'user-1') => ({
     },
 });
 
+const buildDefaultUniquePoolSnapshot = (general: TurnGeneral): TurnWorldSnapshot => ({
+    generals: [general] as any,
+    cities: [] as any,
+    nations: [] as any,
+    troops: [],
+    diplomacy: [],
+    events: [],
+    initialEvents: [],
+    map: {
+        id: 'test_map',
+        name: 'TestMap',
+        cities: [],
+        defaults: { trust: 50, trade: 100, supplyState: 1, frontState: 0 },
+    } as any,
+    scenarioConfig: {
+        stat: { total: 300, min: 10, max: 100, npcTotal: 150, npcMax: 50, npcMin: 10, chiefMin: 70 },
+        iconPath: '',
+        map: {},
+        // Ordinary Ref scenarios inherit GameConst::$allItems without writing
+        // an allItems override into the scenario JSON.
+        const: { develCost: 100, uniqueTrialCoef: 1 },
+        environment: { mapName: 'test_map', unitSet: 'default' },
+    },
+    scenarioMeta: { startYear: 180 } as any,
+    unitSet: {} as any,
+});
+
 describe('voteReward command', () => {
     it('keeps the wall-time fallback open at exact deadline equality', () => {
         const deadline = new Date('0180-01-01T00:00:00.000Z');
@@ -415,6 +442,87 @@ describe('voteReward command', () => {
             reason: '설문조사가 종료되었습니다.',
         });
     });
+
+    it.each([
+        ['PREOPEN', new Date('2026-08-27T10:30:00.000Z'), 1, 'preopen-seed'],
+        ['OPEN', new Date('2026-08-27T11:00:05.000Z'), 2, 'open-seed'],
+    ] as const)(
+        'awards a survey unique from the Ref default pool at coefficient 1 during %s',
+        async (_phase, wallNow, voteId, hiddenSeed) => {
+            const general = buildGeneral(1);
+            const state: TurnWorldState = {
+                id: 1,
+                currentYear: 180,
+                currentMonth: 1,
+                tickSeconds: 600,
+                lastTurnTime: new Date('0180-01-01T10:00:00.000Z'),
+                clockBaseTime: new Date('0180-01-01T10:00:00.000Z'),
+                clockTick: 36_000_000,
+                clockMode: 'realtime',
+                clockWallAnchor: new Date('2026-08-27T11:00:00.000Z'),
+                meta: {
+                    hiddenSeed,
+                    scenarioId: 0,
+                    initYear: 180,
+                    initMonth: 1,
+                    scenarioMeta: { startYear: 180 },
+                    preopenAt: '2026-08-27 19:30:00',
+                    opentime: '2026-08-27 20:00:00',
+                },
+            };
+            const world = new InMemoryTurnWorld(state, buildDefaultUniquePoolSnapshot(general), {
+                schedule: { entries: [{ startMinute: 0, tickMinutes: 10 }] },
+            });
+            const acceptedGameTick = world.dateToGameTick(world.getGameNow(wallNow));
+            expect(acceptedGameTick).toBe(_phase === 'PREOPEN' ? 36_000_000 : 36_300_000);
+
+            const commandDb = {
+                ...actorBindingDb(),
+                auction: { findMany: async () => [] },
+                $queryRaw: async (query: { strings: readonly string[] }) =>
+                    query.strings.join(' ').includes('SELECT options')
+                        ? [
+                              {
+                                  options: ['찬성'],
+                                  multipleOptions: 1,
+                                  endAt: null,
+                                  endTick: null,
+                                  closedAt: null,
+                              },
+                          ]
+                        : [{ id: voteId }],
+            };
+            const handler = createTurnDaemonCommandHandler({ world });
+            const result = await handler.handle(
+                {
+                    type: 'voteReward',
+                    requestId: `vote-reward-${_phase.toLowerCase()}`,
+                    userId: 'user-1',
+                    voteId,
+                    generalId: 1,
+                    selection: [0],
+                    acceptedGameTick,
+                },
+                { db: commandDb as any }
+            );
+
+            expect(result).toMatchObject({
+                type: 'voteReward',
+                ok: true,
+                awardedUnique: true,
+            });
+            if (!result || result.type !== 'voteReward' || !result.ok || !result.itemKey) {
+                throw new Error(`${_phase} survey unique reward missing`);
+            }
+            const updated = world.getGeneralById(1);
+            expect(updated?.gold).toBe(1500);
+            expect(Object.values(updated?.role.items ?? {})).toContain(result.itemKey);
+            expect(updated?.meta.voteRewards).toMatchObject({
+                [voteId]: { awarded: true, itemKey: result.itemKey },
+            });
+            expect(world.consumeDirtyState().logs.some((entry) => entry.text.includes('【설문조사】'))).toBe(true);
+        }
+    );
 
     it('treats an active unique auction as occupied when revalidating the lottery', async () => {
         const general = buildGeneral(1);

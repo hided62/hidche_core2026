@@ -30,7 +30,6 @@ import {
     resolveTroopSecretPermission,
     resolveMessageTargetIcon,
     type GeneralActionModule,
-    resolveUniqueConfig,
     rollUniqueLottery,
     type ItemModule,
     type LogEntryDraft,
@@ -39,6 +38,7 @@ import {
     type TriggerValue,
     type TurnCommandProfile,
 } from '@sammo-ts/logic';
+import { resolveLegacyCompatibleUniqueConfig } from '@sammo-ts/logic/rewards/legacyUniqueItemPool.js';
 import { round as roundLegacyInteger, simpleSerialize } from '@sammo-ts/logic/war/utils.js';
 import {
     cloneItemInventory,
@@ -2909,7 +2909,11 @@ async function handleVoteReward(
         ) * 5;
 
     const itemRegistry = await getItemRegistry();
-    const uniqueConfig = resolveUniqueConfig(configConst);
+    // Ref always has GameConst::$allItems even when a scenario omits an
+    // allItems override. Keep survey rewards on the same compatibility path
+    // as rankings, inheritance, and auctions instead of treating that omission
+    // as an empty lottery pool.
+    const uniqueConfig = await resolveLegacyCompatibleUniqueConfig(configConst);
     const generals = world.listGenerals();
     const occupiedUniqueCounts = countOccupiedUniqueItems(
         generals.map((entry) => entry.role.items),
