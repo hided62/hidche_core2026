@@ -66,6 +66,7 @@ type FixtureState = {
     instantRetreatAttempts?: number;
     instantRetreatInputs?: Array<Record<string, unknown>>;
     buildNationCandidateEnabled?: boolean;
+    gameStarted?: boolean;
     buildNationCandidateAttempts?: number;
     buildNationCandidateInputs?: Array<Record<string, unknown>>;
     dieOnPrestartShow?: boolean;
@@ -517,6 +518,9 @@ const install = async (page: Page, state: FixtureState) => {
                     },
                     meta: {
                         turntime: '2026-01-01T00:00:00.000Z',
+                        lastTurnTime: state.gameStarted
+                            ? '2026-03-01T00:00:00.000Z'
+                            : '2026-01-01T00:00:00.000Z',
                         opentime: state.buildNationCandidateEnabled
                             ? '2026-02-01T00:00:00.000Z'
                             : '2025-12-01T00:00:00.000Z',
@@ -2223,6 +2227,53 @@ test('사전 거병은 timeout reload 뒤 같은 ID를 재시도하고 성공 re
     const requestIds = state.buildNationCandidateInputs?.map((input) => input.clientRequestId);
     expect(requestIds?.[1]).toBe(requestIds?.[0]);
     expect(requestIds?.[2]).not.toBe(requestIds?.[1]);
+});
+
+test('게임 시작 뒤에는 구형 turntime이 남아 있어도 사전 거병을 숨긴다', async ({ page }) => {
+    const state: FixtureState = {
+        permission: 'member',
+        myset: 3,
+        buildNationCandidateEnabled: true,
+        gameStarted: true,
+        dieOnPrestartShow: false,
+        settingMutations: [],
+        accessPages: [],
+    };
+    await install(page, state);
+    for (const viewport of [
+        { name: 'desktop', width: 1000, height: 900 },
+        { name: 'mobile', width: 390, height: 900 },
+    ]) {
+        await page.setViewportSize(viewport);
+        await page.goto('my-page');
+        await waitForVisualAssets(page);
+
+        await expect(page.getByRole('button', { name: '장수 삭제' })).toHaveCount(0);
+        await expect(page.getByRole('button', { name: '사전 거병' })).toHaveCount(0);
+        const save = page.getByRole('button', { name: '설정저장' });
+        await expect(save).toBeVisible();
+        await save.focus();
+        await expect(save).toBeFocused();
+        const geometry = await save.evaluate((element) => {
+            const rect = element.getBoundingClientRect();
+            const style = getComputedStyle(element);
+            return {
+                viewportWidth: window.innerWidth,
+                documentScrollWidth: document.documentElement.scrollWidth,
+                rect: { x: rect.x, y: rect.y, width: rect.width, height: rect.height },
+                backgroundColor: style.backgroundColor,
+                fontSize: style.fontSize,
+            };
+        });
+        expect(geometry).toMatchObject({
+            viewportWidth: viewport.width,
+            documentScrollWidth: viewport.width,
+            rect: { width: 160, height: 30 },
+            backgroundColor: 'rgb(34, 85, 0)',
+            fontSize: '14px',
+        });
+        await persistParityArtifact(page, `core-my-page-started-hidden-actions-${viewport.name}`, geometry);
+    }
 });
 
 test('감찰부 keeps the selector interaction and shows the permission error path', async ({ page }) => {

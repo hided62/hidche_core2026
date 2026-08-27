@@ -183,7 +183,10 @@ const actionAvailability = computed(() => {
     const config = world.value?.config ?? {};
     const constConfig = asRecord(config.const);
     const availableInstantAction = asRecord(constConfig.availableInstantAction ?? config.availableInstantAction);
-    const turnTime = meta.turntime ? new Date(String(meta.turntime)) : null;
+    // 엔진은 현재 턴을 lastTurnTime으로 진행하고 호환용 turntime 투영값은 유지할 수 있다.
+    // 장수 삭제와 같은 현재 시계를 사용해야 게임 시작 뒤 가오픈 행동이 다시 노출되지 않는다.
+    const rawTurnTime = meta.lastTurnTime ?? meta.turntime;
+    const turnTime = rawTurnTime ? new Date(String(rawTurnTime)) : null;
     const openTime = meta.opentime ? new Date(String(meta.opentime)) : null;
     const preopen = Boolean(turnTime && openTime && turnTime.getTime() <= openTime.getTime());
     const npcMode = numberValue(config.npcMode ?? config.npcmode, 0);
