@@ -200,7 +200,8 @@ const install = async (
     mode: 'general' | 'no-general' | 'error-after-load' = 'general',
     accessPages: string[] = [],
     requestedOperations: string[] = [],
-    directoryRows = generals
+    directoryRows = generals,
+    nationDirectoryRows = nationDirectory
 ) => {
     let generalDirectoryCalls = 0;
     await page.addInitScript((profile) => {
@@ -249,7 +250,7 @@ const install = async (
                 return response({ myGeneral: mode === 'no-general' ? null : { id: 1, name: '조회자' } });
             }
             if (operation === 'join.getConfig') return response({});
-            if (operation === 'world.getNationDirectory') return response(nationDirectory);
+            if (operation === 'world.getNationDirectory') return response(nationDirectoryRows);
             if (operation === 'public.recordAccess') {
                 const payload = requestBody?.[String(operationIndex)];
                 const pageName = payload?.json?.page ?? payload?.page;
@@ -321,6 +322,31 @@ const installAccessBoundary = async (page: Page, accessPages: string[]) => {
         await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(results) });
     });
 };
+
+test('a level-zero nation shows the ruler current city even without territory there', async ({ page }) => {
+    const roamingNation = {
+        ...nationDirectory[0]!,
+        id: 3,
+        name: '방랑군',
+        level: 0,
+        capitalCityId: 0,
+        cityCount: 0,
+        officers: Array.from({ length: 8 }, (_, index) => ({
+            officerLevel: 12 - index,
+            general: index === 0 ? { id: 40, name: '방랑군주', npcState: 0, cityId: 2 } : null,
+        })),
+        rulerCityName: '성도',
+        cities: [],
+        generals: [{ id: 40, name: '방랑군주', npcState: 0 }],
+    };
+    await install(page, 'general', [], [], generals, [roamingNation]);
+
+    await page.goto('nation-list');
+
+    const table = page.locator('[data-nation-id="3"]');
+    await expect(table).toContainText('현재 위치 : 성도');
+    await expect(table.locator('.roaming-city')).toHaveCSS('color', 'rgb(255, 255, 0)');
+});
 
 test('PYA-scale general directory mounts only the active responsive layout and defers portraits', async (
     { page },

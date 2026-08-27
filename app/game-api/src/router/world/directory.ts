@@ -134,6 +134,7 @@ export const getNationDirectory = authedProcedure.query(async ({ ctx }) => {
         generalsByNation.set(general.nationId, list);
     }
     const citiesByNation = new Map<number, typeof cities>();
+    const cityNameById = new Map(cities.map((city) => [city.id, city.name] as const));
     for (const city of cities) {
         const list = citiesByNation.get(city.nationId) ?? [];
         list.push(city);
@@ -153,6 +154,7 @@ export const getNationDirectory = authedProcedure.query(async ({ ctx }) => {
                         : null,
                 };
             });
+            const ruler = officers.find((officer) => officer.officerLevel === 12)?.general;
             const secretPermissions = nationGenerals.map((general) => ({
                 general,
                 permission: resolveSecretPermission(
@@ -178,6 +180,7 @@ export const getNationDirectory = authedProcedure.query(async ({ ctx }) => {
                 },
                 power: readMetaNumber(nation.meta, 'power'),
                 capitalCityId: nation.capitalCityId ?? 0,
+                rulerCityName: ruler ? (cityNameById.get(ruler.cityId) ?? null) : null,
                 generalCount: readMetaNumber(nation.meta, 'gennum', nationGenerals.length),
                 cityCount: nationCities.length,
                 officers,

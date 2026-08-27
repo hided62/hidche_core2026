@@ -183,6 +183,11 @@ const createContext = (
         auth?: GameSessionTokenPayload | null;
         me?: GeneralRow | null;
         isUnited?: number;
+        directory?: {
+            nations: typeof nationRows;
+            generals: typeof globalGenerals;
+            cities: Array<{ id: number; name: string; nationId: number }>;
+        };
     } = {}
 ): { context: GameApiContext; requestCommand: ReturnType<typeof vi.fn> } => {
     const token = options.auth === undefined ? auth() : options.auth;
@@ -192,17 +197,20 @@ const createContext = (
     const db = {
         general: {
             findFirst: vi.fn(async () => me),
-            findMany: vi.fn(async () => globalGenerals),
+            findMany: vi.fn(async () => options.directory?.generals ?? globalGenerals),
         },
         nation: {
-            findMany: vi.fn(async () => nationRows),
+            findMany: vi.fn(async () => options.directory?.nations ?? nationRows),
         },
         city: {
-            findMany: vi.fn(async () => [
-                { id: 1, name: '허창', nationId: 1 },
-                { id: 2, name: '성도', nationId: 2 },
-                { id: 3, name: '낙양', nationId: 0 },
-            ]),
+            findMany: vi.fn(
+                async () =>
+                    options.directory?.cities ?? [
+                        { id: 1, name: '허창', nationId: 1 },
+                        { id: 2, name: '성도', nationId: 2 },
+                        { id: 3, name: '낙양', nationId: 0 },
+                    ]
+            ),
         },
         generalAccessLog: {
             findMany: vi.fn(async () => [
@@ -305,6 +313,43 @@ describe('legacy global nation/general directories', () => {
             general: { id: 10, name: '군주' },
         });
         expect(result[2]).toMatchObject({ name: '재 야', generalCount: 1, cityCount: 1 });
+    });
+
+    it('projects a level-zero nation location from its ruler city even when that city belongs to another nation', async () => {
+        const roamingNation = {
+            ...nationRows[0]!,
+            id: 3,
+            name: '방랑군',
+            capitalCityId: 0,
+            chiefGeneralId: 40,
+            level: 0,
+            meta: { power: 500 },
+        };
+        const roamingRuler = directoryGeneral({
+            id: 40,
+            name: '방랑군주',
+            nationId: 3,
+            cityId: 2,
+            officerLevel: 12,
+        });
+        const result = await appRouter
+            .createCaller(
+                createContext({
+                    directory: {
+                        nations: [roamingNation],
+                        generals: [roamingRuler],
+                        cities: [{ id: 2, name: '성도', nationId: 2 }],
+                    },
+                }).context
+            )
+            .world.getNationDirectory();
+
+        expect(result[0]).toMatchObject({
+            id: 3,
+            level: 0,
+            cityCount: 0,
+            rulerCityName: '성도',
+        });
     });
 
     it('implements all legacy sort boundaries and never exposes user ids or raw metadata', async () => {
