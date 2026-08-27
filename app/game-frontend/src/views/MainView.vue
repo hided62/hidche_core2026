@@ -334,6 +334,7 @@ watch(
                             :autorun-limit="reservedGeneralAutorunLimit"
                             :map-data="worldMap"
                             :map-layout="mapLayout"
+                            mobile
                             @set-general-turns="reserveGeneralTurns"
                             @shift-general-turns="shiftGeneralTurns"
                             @repeat-general-turns="repeatGeneralTurns"

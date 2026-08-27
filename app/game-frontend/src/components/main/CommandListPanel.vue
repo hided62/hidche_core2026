@@ -29,6 +29,7 @@ const props = defineProps<{
     storageKey?: string;
     mapData?: CommandMapData | null;
     mapLayout?: CommandMapLayout | null;
+    mobile?: boolean;
 }>();
 
 const emit = defineEmits<{
@@ -143,6 +144,7 @@ onUnmounted(() => {
         :map-data="props.mapData"
         :map-layout="props.mapLayout"
         :autonomous-until="autonomousUntil"
+        :mobile="props.mobile"
         @reserve-bulk="emit('set-general-turns', $event)"
         @shift="emit('shift-general-turns', $event)"
         @repeat="emit('repeat-general-turns', $event)"

@@ -2500,6 +2500,24 @@ test('keeps Ref command briefs and autonomous-action state after a turn mutation
     const mobileEditor = mobilePage.locator('[data-command-scope="general"]');
     const mobileFirstRow = mobileEditor.locator('.action-column > div').first();
     await expect(mobileFirstRow).toContainText('휴식(자율 행동)');
+    const mobileRestGeometry = await mobileFirstRow.evaluate((element) => {
+        const label = element.querySelector<HTMLElement>('span');
+        const autonomous = element.querySelector<HTMLElement>('small');
+        if (!label || !autonomous) throw new Error('mobile autonomous rest labels are missing');
+        const labelRect = label.getBoundingClientRect();
+        const autonomousRect = autonomous.getBoundingClientRect();
+        return {
+            display: getComputedStyle(element).display,
+            labelCenterY: labelRect.top + labelRect.height / 2,
+            autonomousCenterY: autonomousRect.top + autonomousRect.height / 2,
+            inlineGap: autonomousRect.left - labelRect.right,
+            rowOverflow: element.scrollWidth - element.clientWidth,
+        };
+    });
+    expect(mobileRestGeometry.display).toBe('flex');
+    expect(mobileRestGeometry.labelCenterY).toBeCloseTo(mobileRestGeometry.autonomousCenterY, 0);
+    expect(Math.abs(mobileRestGeometry.inlineGap)).toBeLessThanOrEqual(1);
+    expect(mobileRestGeometry.rowOverflow).toBeLessThanOrEqual(0);
     await expect(mobileFirstRow).toHaveAttribute('data-autorun-tooltip', /자율 행동: 200年 3月 · .*까지/u);
     await mobileFirstRow.focus();
     await expect

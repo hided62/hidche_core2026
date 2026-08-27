@@ -1047,6 +1047,15 @@ const clickOutsideMenu = (event: Event) => {
     font-size: 0.72em;
     line-height: 1;
 }
+.reserved-command-editor.mobile .action-column > div.autonomous {
+    display: flex;
+    flex-flow: row nowrap;
+    align-items: center;
+    justify-content: center;
+}
+.reserved-command-editor.mobile .action-column > div.autonomous > small {
+    flex: 0 0 auto;
+}
 .edit-column button {
     background: #444;
     cursor: pointer;
