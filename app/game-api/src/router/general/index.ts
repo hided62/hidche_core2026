@@ -15,6 +15,7 @@ import {
 } from '../../trpc.js';
 import { ConflictingTurnDaemonCommandError } from '../../daemon/databaseTransport.js';
 import { resolveAccessWindows } from '../../services/generalAccess.js';
+import { loadCurrentGameTime, type CurrentGameTime } from '../../services/gameClock.js';
 import { adjustAccountIconForUser } from '../../services/accountIconSync.js';
 import {
     loadCrewTypeDisplayDetails,
@@ -43,6 +44,7 @@ import {
     resolveMainNationTech,
     splitNationTraitInfo,
 } from '../../services/mainNationProjection.js';
+
 import {
     resolveGeneralTypeCall,
     resolveLeadershipBonus,
@@ -50,6 +52,29 @@ import {
     resolveRefreshScoreText,
     resolveRemainingMinutes,
 } from '../../services/generalBasicCardProjection.js';
+
+type FrontStatusPoll = {
+    id: number;
+    title: string;
+    startAt: Date;
+    startTick: bigint | null;
+    endAt: Date | null;
+    endTick: bigint | null;
+    closedAt: Date | null;
+};
+
+const isFrontStatusPollActive = (poll: FrontStatusPoll, gameTime: CurrentGameTime): boolean => {
+    if (poll.closedAt) return false;
+    const started =
+        poll.startTick !== null && gameTime.tick !== null
+            ? poll.startTick <= BigInt(gameTime.tick)
+            : poll.startAt.getTime() <= gameTime.now.getTime();
+    const ended =
+        poll.endTick !== null && gameTime.tick !== null
+            ? poll.endTick < BigInt(gameTime.tick)
+            : Boolean(poll.endAt && poll.endAt.getTime() < gameTime.now.getTime());
+    return started && !ended;
+};
 
 const zGeneralSettings = z.object({
     tnmt: z.number().int().optional(),
@@ -965,7 +990,7 @@ export const generalRouter = router({
 
         const now = new Date();
         const { scoreStartedAt } = resolveAccessWindows(now, worldState.tickSeconds, worldState.meta);
-        const [onlineAccess, ownNation, latestVote] = await Promise.all([
+        const [onlineAccess, ownNation, openPolls, gameTime] = await Promise.all([
             ctx.db.generalAccessLog.findMany({
                 where: {
                     lastActionAt: {
@@ -980,19 +1005,29 @@ export const generalRouter = router({
                       select: { meta: true },
                   })
                 : Promise.resolve(null),
-            ctx.db.votePoll.findFirst({
+            ctx.db.votePoll.findMany({
                 where: {
-                    startAt: { lte: now },
                     closedAt: null,
-                    OR: [{ endAt: null }, { endAt: { gte: now } }],
                 },
                 orderBy: { id: 'desc' },
                 select: {
                     id: true,
                     title: true,
+                    startAt: true,
+                    startTick: true,
+                    endAt: true,
+                    endTick: true,
+                    closedAt: true,
                 },
             }),
+            loadCurrentGameTime(ctx.db, now),
         ]);
+        // vote_poll timestamps are logical game-wall values. During PREOPEN the
+        // logical clock is held at the future open anchor, so comparing them with
+        // JavaScript wall time inside a timestamp-without-time-zone predicate can
+        // hide an otherwise active poll. Resolve the same tick-first clock contract
+        // used by voting instead; hasVoted only affects the notice, not activity.
+        const latestVote = openPolls.find((poll) => isFrontStatusPollActive(poll, gameTime)) ?? null;
 
         const onlineGeneralIds = onlineAccess.map((entry) => entry.generalId);
         const onlineGenerals =

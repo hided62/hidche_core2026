@@ -20,7 +20,9 @@ const auth: GameSessionTokenPayload = {
     sanctions: {},
 };
 
-const buildContext = (options: { auth?: GameSessionTokenPayload | null; hasVoted?: boolean } = {}) =>
+const buildContext = (
+    options: { auth?: GameSessionTokenPayload | null; hasVoted?: boolean; preopenClock?: boolean } = {}
+) =>
     ({
         auth: options.auth === undefined ? auth : options.auth,
         db: {
@@ -40,6 +42,14 @@ const buildContext = (options: { auth?: GameSessionTokenPayload | null; hasVoted
             worldState: {
                 findFirst: vi.fn(async () => ({
                     tickSeconds: 3600,
+                    ...(options.preopenClock
+                        ? {
+                              clockBaseTime: new Date('2026-08-27T16:00:00.000Z'),
+                              clockTick: -180_000_000n,
+                              clockMode: 'realtime',
+                              clockWallAnchor: new Date('2026-08-27T11:00:00.000Z'),
+                          }
+                        : {}),
                     meta: {
                         serverId: 'che_260819_front',
                         lastTurnTime: '2026-07-26T10:00:00.000Z',
@@ -61,10 +71,19 @@ const buildContext = (options: { auth?: GameSessionTokenPayload | null; hasVoted
                 ]),
             },
             votePoll: {
-                findFirst: vi.fn(async () => ({
-                    id: 12,
-                    title: '다음 시즌 턴 시간',
-                })),
+                findMany: vi.fn(async () => [
+                    {
+                        id: 12,
+                        title: '다음 시즌 턴 시간',
+                        startAt: new Date(
+                            options.preopenClock ? '2026-08-27T11:00:00.000Z' : '2026-07-26T10:00:00.000Z'
+                        ),
+                        startTick: options.preopenClock ? -180_000_000n : null,
+                        endAt: null,
+                        endTick: null,
+                        closedAt: null,
+                    },
+                ]),
             },
             vote: {
                 findFirst: vi.fn(async () => (options.hasVoted ? { id: 21 } : null)),
@@ -118,6 +137,32 @@ describe('general.getFrontStatus', () => {
             latestVote: {
                 id: 12,
                 hasVoted: true,
+            },
+        });
+    });
+
+    it('keeps a PREOPEN logical-time survey active after the authenticated general voted', async () => {
+        vi.setSystemTime(new Date('2026-08-27T05:56:00.000Z'));
+        const context = buildContext({ hasVoted: true, preopenClock: true });
+
+        await expect(appRouter.createCaller(context).general.getFrontStatus()).resolves.toMatchObject({
+            latestVote: {
+                id: 12,
+                title: '다음 시즌 턴 시간',
+                hasVoted: true,
+            },
+        });
+        expect(context.db.votePoll.findMany).toHaveBeenCalledWith({
+            where: { closedAt: null },
+            orderBy: { id: 'desc' },
+            select: {
+                id: true,
+                title: true,
+                startAt: true,
+                startTick: true,
+                endAt: true,
+                endTick: true,
+                closedAt: true,
             },
         });
     });

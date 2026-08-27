@@ -1181,6 +1181,26 @@ test('scopes the new-survey notice cursor to the reset-specific server ID', asyn
     await expect(page.locator('.survey-notice')).toContainText('새로운 설문조사가 있습니다.');
 });
 
+test('keeps the active survey title after voting without reopening the new-survey notice', async ({ page }) => {
+    const state: NavigationFixture = {
+        officerLevel: 5,
+        permission: 2,
+        nationLevel: 3,
+        stage: 0,
+        npcMode: 1,
+        serverId: 'che_260827_preopen',
+        latestVote: { id: 1, title: '신버전입니다.', hasVoted: true },
+        generalMeCalls: 0,
+        operations: [],
+    };
+    await installFixture(page, state);
+
+    await waitForMain(page);
+
+    await expect(page.locator('.vote-status')).toHaveText('설문: 신버전입니다.');
+    await expect(page.locator('.survey-notice')).toHaveCount(0);
+});
+
 test('desktop menus preserve ref columns, prefix-safe routes, and controlled dropdown behavior', async ({
     page,
 }, testInfo) => {
