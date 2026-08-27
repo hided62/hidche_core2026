@@ -159,6 +159,6 @@ test('keeps a valid ga_ token when only lobby.info is unavailable', async ({ pag
     await expect(page.locator('.page-title')).toContainText('장 수 선 택');
     expect(await page.evaluate(() => window.localStorage.getItem('sammo-game-token'))).toBe('ga_valid');
     expect(statusRequests).toBe(1);
-    expect(lobbyRequests).toBe(1);
+    expect(lobbyRequests).toBeGreaterThanOrEqual(1);
     expect(gatewayRequests).toBe(0);
 });

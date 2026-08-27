@@ -43,6 +43,7 @@ export default defineConfig({
         'npcPossession.spec.ts',
         'joinLayout.spec.ts',
         'deploymentVersionNotice.spec.ts',
+        'connectionRecovery.spec.ts',
     ],
     fullyParallel: false,
     workers: 1,

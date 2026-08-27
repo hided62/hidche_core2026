@@ -6,6 +6,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 
 import { GatewayOrchestrator } from '../src/orchestrator/gatewayOrchestrator.js';
 import type { BuildCommand } from '../src/orchestrator/buildRunner.js';
+import { FrontendArtifactManager } from '../src/orchestrator/frontendArtifactManager.js';
 import type { ProcessManager } from '../src/orchestrator/processManager.js';
 import type {
     GatewayClaimedProfileUpdate,
@@ -62,6 +63,17 @@ afterEach(async () => {
 describe('profile DEPLOY operation', () => {
     it('migrates and atomically switches a static frontend without executing the reset seed path', async () => {
         const workspace = await createReleaseWorkspace();
+        const artifactRoot = path.join(workspace, 'artifact-volume');
+        const oldFrontendRoot = path.join(workspace, 'old-static-frontend');
+        await fs.mkdir(oldFrontendRoot, { recursive: true });
+        await fs.writeFile(path.join(oldFrontendRoot, 'index.html'), '<!doctype html><title>old static profile</title>');
+        const artifactManager = new FrontendArtifactManager(artifactRoot);
+        const oldArtifact = await artifactManager.stage({
+            frontendKey: 'che',
+            sourceRoot: oldFrontendRoot,
+            commitSha: '2222222222222222222222222222222222222222',
+        });
+        await artifactManager.activate('che', oldArtifact.releaseId);
         const profile: GatewayProfileRecord = {
             profileName: 'che:1010',
             profile: 'che',
@@ -149,13 +161,16 @@ describe('profile DEPLOY operation', () => {
         const backendProcessNames = processNames.filter((name) => !name.endsWith(':game-frontend'));
         const running = new Set(processNames);
         const startedDefinitions: Array<Parameters<ProcessManager['start']>[0]> = [];
+        const frontendDuringStop: string[] = [];
         const processManager: ProcessManager = {
             list: async () => [...running].map((name) => ({ name, status: 'online' })),
             start: async (definition) => {
                 startedDefinitions.push(definition);
                 running.add(definition.name);
             },
-            stop: async () => {},
+            stop: async () => {
+                frontendDuringStop.push(await fs.readFile(path.join(artifactRoot, 'che', 'current', 'index.html'), 'utf8'));
+            },
             delete: async (name) => {
                 running.delete(name);
             },
@@ -190,7 +205,7 @@ describe('profile DEPLOY operation', () => {
                 gameTokenSecret: 'test-secret',
                 gatewayInternalApiUrl: 'http://127.0.0.1:15001',
                 frontendServeMode: 'static',
-                frontendArtifactRoot: path.join(workspace, 'artifact-volume'),
+                frontendArtifactRoot: artifactRoot,
                 frontendReadinessOrigin: 'http://caddy',
                 baseEnv: {
                     GATEWAY_DATABASE_URL:
@@ -271,8 +286,10 @@ describe('profile DEPLOY operation', () => {
         expect(logs.map((entry) => entry.message).join('\n')).not.toContain('pass@integration.invalid');
         expect(logs.map((entry) => entry.message).join('\n')).toContain('[REDACTED]');
         expect([...running].sort()).toEqual([...backendProcessNames].sort());
+        expect(frontendDuringStop).toHaveLength(processNames.length);
+        expect(frontendDuringStop.every((html) => html.includes('old static profile'))).toBe(true);
         expect(
-            await fs.readFile(path.join(workspace, 'artifact-volume', 'che', 'current', 'index.html'), 'utf8')
+            await fs.readFile(path.join(artifactRoot, 'che', 'current', 'index.html'), 'utf8')
         ).toContain('/gateway/profile-assets/');
     });
 });

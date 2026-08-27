@@ -22,6 +22,7 @@ import { createBroadcastTabCoordinator, type BroadcastTabCoordinator } from '../
 import { resolveWithReadModelSnapshotFallback } from '../utils/readModelDeltaRecovery';
 import { createRealtimeRequestOptions } from '../utils/realtimeAccessGrant';
 import { markGameServerContact } from '../utils/gameServerActivity';
+import { GAME_SERVER_RECONNECTED_EVENT } from '../utils/gameServerConnection';
 import { gameFrontendRuntimeConfig } from '../config/runtimeConfig';
 
 const REALTIME_FULL_REFRESH_MIN_INTERVAL_MS = 5_000;
@@ -1261,12 +1262,19 @@ export const useMainDashboardStore = defineStore('mainDashboard', () => {
         void refreshQueue.request().finally(() => reconcileRealtimeCoordinator());
     };
 
+    const handleGameServerReconnected = () => {
+        if (!realtimeActive.value || document.visibilityState === 'hidden') return;
+        realtimeRefreshQueue.beginCooldown();
+        void refreshQueue.request().finally(() => reconcileRealtimeCoordinator());
+    };
+
     const startRealtime = () => {
         if (typeof window === 'undefined' || realtimeActive.value) return;
         realtimeActive.value = true;
         realtimeRefreshQueue.beginCooldown();
         if (!visibilityListenerInstalled) {
             document.addEventListener('visibilitychange', handleVisibilityChange);
+            window.addEventListener(GAME_SERVER_RECONNECTED_EVENT, handleGameServerReconnected);
             visibilityListenerInstalled = true;
         }
         reconcileRealtimeCoordinator();
@@ -1279,6 +1287,7 @@ export const useMainDashboardStore = defineStore('mainDashboard', () => {
         closeRealtimeCoordinator();
         if (visibilityListenerInstalled) {
             document.removeEventListener('visibilitychange', handleVisibilityChange);
+            window.removeEventListener(GAME_SERVER_RECONNECTED_EVENT, handleGameServerReconnected);
             visibilityListenerInstalled = false;
         }
         realtimeStatus.value = realtimeEnabled.value ? 'idle' : 'paused';

@@ -5,6 +5,15 @@ import type { AppRouter } from '@sammo-ts/game-api';
 import { gameFrontendRuntimeConfig } from '../config/runtimeConfig';
 import { resolveBatchRealtimeAccessGrant } from './realtimeAccessGrant';
 import { markGameServerContact } from './gameServerActivity';
+import {
+    canConfirmGameServerRecovery,
+    gameServerConnection,
+    isAbortedGameServerRequest,
+    isGameServerRecoveryRequest,
+    isRetryableGameServerStatus,
+    markGameServerConnectionFailure,
+    markGameServerConnectionReady,
+} from './gameServerConnection';
 
 const getGameToken = (): string | null => {
     if (typeof window === 'undefined') {
@@ -20,9 +29,24 @@ export const trpc = createTRPCProxyClient<AppRouter>({
             url: gameFrontendRuntimeConfig.gameApiUrl,
             ...trpcJsonBodyHttpClientOptions,
             async fetch(input, init) {
-                const result = await globalThis.fetch(input, init);
-                markGameServerContact();
-                return result;
+                try {
+                    const result = await globalThis.fetch(input, init);
+                    if (isRetryableGameServerStatus(result.status)) {
+                        markGameServerConnectionFailure();
+                    } else {
+                        markGameServerContact();
+                        if (
+                            gameServerConnection.status.value === 'connected' ||
+                            (isGameServerRecoveryRequest(input) && canConfirmGameServerRecovery(result.status))
+                        ) {
+                            markGameServerConnectionReady();
+                        }
+                    }
+                    return result;
+                } catch (error) {
+                    if (!isAbortedGameServerRequest(error)) markGameServerConnectionFailure();
+                    throw error;
+                }
             },
             headers({ opList }) {
                 const token = getGameToken();
