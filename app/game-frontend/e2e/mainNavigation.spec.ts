@@ -78,6 +78,7 @@ type NavigationFixture = {
     messages?: unknown;
     messageContacts?: unknown;
     autorunLimit?: number | null;
+    autorunUser?: { limitMinutes: number; options: string[] } | null;
     dashboardResponses?: Array<{
         bytes: number;
         contextKind: string | null;
@@ -633,6 +634,7 @@ const installFixture = async (page: Page, state: NavigationFixture) => {
                     clockStartsAt: state.clockStartsAt ?? null,
                     turnEngineRunning: state.turnEngineRunning === undefined ? true : state.turnEngineRunning,
                     scenarioTitle: state.scenarioTitle ?? '',
+                    autorunUser: state.autorunUser ?? null,
                 });
             }
             if (operation === 'dashboard.getContextBundleDelta') {
@@ -1368,6 +1370,62 @@ test('the private-message notice moves a mobile reader to the private section', 
         )
         .toBeLessThan(80);
     expect(await page.evaluate(() => window.scrollY)).toBeGreaterThan(500);
+});
+
+test('main info fills the eighth slot with Ref-compatible autorun status and an accessible detail tooltip', async ({
+    page,
+}, testInfo) => {
+    const state: NavigationFixture = {
+        officerLevel: 5,
+        permission: 2,
+        nationLevel: 3,
+        stage: 0,
+        npcMode: 1,
+        autorunUser: {
+            limitMinutes: 1_440,
+            options: ['chief', 'battle', 'train', 'recruit', 'recruit_high', 'warp', 'develop'],
+        },
+        generalMeCalls: 0,
+        operations: [],
+    };
+    await installFixture(page, state);
+    await page.setViewportSize({ width: 1200, height: 900 });
+    await waitForMain(page);
+
+    const gameInfo = page.locator('.legacy-game-info');
+    const status = page.locator('[data-main-autorun-status]');
+    const tooltip = page.getByRole('tooltip', {
+        name: '내정, 순간이동, 모병, 훈련/사기진작, 출병, 사령턴, 24시간 유효',
+    });
+    await expect(gameInfo.locator(':scope > *')).toHaveCount(8);
+    await expect(status).toHaveText(/기타 설정: 자율행동/u);
+    await expect(status).toHaveAttribute('tabindex', '0');
+    await expect(tooltip).toBeHidden();
+
+    const desktopBefore = await gameInfo.boundingBox();
+    await status.hover();
+    await expect(tooltip).toBeVisible();
+    await expect(tooltip).toHaveText('내정, 순간이동, 모병, 훈련/사기진작, 출병, 사령턴, 24시간 유효');
+    expect(await status.evaluate((element) => getComputedStyle(element).overflow)).toBe('visible');
+    expect(await gameInfo.boundingBox()).toEqual(desktopBefore);
+    await page.screenshot({ path: testInfo.outputPath('main-autorun-hover-desktop-1200.png'), fullPage: false });
+
+    await page.setViewportSize({ width: 500, height: 900 });
+    await status.focus();
+    await expect(tooltip).toBeVisible();
+    expect(await status.evaluate((element) => getComputedStyle(element).overflow)).toBe('visible');
+    const mobileTooltip = await tooltip.boundingBox();
+    expect(mobileTooltip?.x).toBeGreaterThanOrEqual(16);
+    expect(mobileTooltip ? mobileTooltip.x + mobileTooltip.width : Infinity).toBeLessThanOrEqual(484);
+    expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBe(500);
+    await page.screenshot({ path: testInfo.outputPath('main-autorun-focus-mobile-500.png'), fullPage: false });
+
+    state.autorunUser = null;
+    await page.reload();
+    await waitForMain(page);
+    await expect(status).toHaveText('기타 설정: 표준');
+    await expect(status).not.toHaveAttribute('tabindex', '0');
+    await expect(page.getByRole('tooltip')).toHaveCount(0);
 });
 
 test('desktop menus preserve ref columns, prefix-safe routes, and controlled dropdown behavior', async ({
