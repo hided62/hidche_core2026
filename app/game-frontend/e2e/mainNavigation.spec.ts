@@ -155,6 +155,14 @@ const emitReadModelInvalidation = (page: Page, invalidation: ReturnType<typeof r
         );
     }, invalidation);
 
+const emitMessagesInvalidation = (page: Page) =>
+    page.evaluate(() => {
+        (window as unknown as { __emitMainRealtime: (type: string, value: unknown) => void }).__emitMainRealtime(
+            'messagesInvalidated',
+            {}
+        );
+    });
+
 const waitForMainRealtime = (page: Page) =>
     expect
         .poll(() =>
@@ -398,6 +406,30 @@ const emptyMessages = (permission: number) => ({
     hasMore: { private: false, national: false, public: false, diplomacy: false },
     latestRead: { private: 0, national: 0, public: 0, diplomacy: 0 },
     canRespondDiplomacy: false,
+});
+
+const privateMessage = (id: number, srcGeneralId: number) => ({
+    id,
+    msgType: 'private',
+    src: {
+        generalId: srcGeneralId,
+        generalName: srcGeneralId === 7 ? '메뉴검증장수' : '보낸장수',
+        nationId: 1,
+        nationName: '위',
+        color: '#008000',
+        icon: '',
+    },
+    dest: {
+        generalId: srcGeneralId === 7 ? 9 : 7,
+        generalName: srcGeneralId === 7 ? '받는장수' : '메뉴검증장수',
+        nationId: 1,
+        nationName: '위',
+        color: '#008000',
+        icon: '',
+    },
+    text: `개인 메시지 ${id}`,
+    option: null,
+    time: '0185-01-01 00:00:00',
 });
 
 const generalContext = (state: NavigationFixture) => ({
@@ -1199,6 +1231,143 @@ test('keeps the active survey title after voting without reopening the new-surve
 
     await expect(page.locator('.vote-status')).toHaveText('설문: 신버전입니다.');
     await expect(page.locator('.survey-notice')).toHaveCount(0);
+});
+
+test('notifies only for a new incoming private message and marks it read from the notice', async ({
+    page,
+}, testInfo) => {
+    const state: NavigationFixture = {
+        officerLevel: 5,
+        permission: 2,
+        nationLevel: 3,
+        stage: 0,
+        npcMode: 1,
+        latestVote: null,
+        generalMeCalls: 0,
+        operations: [],
+        messages: {
+            ...emptyMessages(2),
+            private: [privateMessage(19, 9)],
+            latestRead: { private: 19, diplomacy: 0 },
+        },
+    };
+    await installRealtimeHarness(page);
+    await installFixture(page, state);
+    await page.setViewportSize({ width: 1200, height: 900 });
+    await waitForMain(page);
+    await waitForMainRealtime(page);
+
+    const initialMessageRefreshes = state.operations.filter((operation) => operation === 'messages.getRecent').length;
+    state.messages = {
+        ...emptyMessages(2),
+        private: [privateMessage(20, 7), privateMessage(19, 9)],
+        latestRead: { private: 19, diplomacy: 0 },
+    };
+    await emitMessagesInvalidation(page);
+    await expect
+        .poll(() => state.operations.filter((operation) => operation === 'messages.getRecent').length)
+        .toBe(initialMessageRefreshes + 1);
+    await expect(page.getByTestId('private-message-notice')).toHaveCount(0);
+
+    state.messages = {
+        ...emptyMessages(2),
+        private: [privateMessage(21, 9), privateMessage(20, 7), privateMessage(19, 9)],
+        latestRead: { private: 19, diplomacy: 0 },
+    };
+    await emitMessagesInvalidation(page);
+    const notice = page.getByTestId('private-message-notice');
+    await expect(notice).toContainText('새로운 개인 메시지');
+    await expect(notice).toContainText('새로운 개인 메시지가 도착했습니다.');
+    await expect(notice.getByRole('button', { name: '보러가기' })).toBeVisible();
+    await expect(notice.getByRole('button', { name: '이미읽음' })).toBeVisible();
+    const desktopNoticeGeometry = await notice.evaluate((element) => {
+        const rect = element.getBoundingClientRect();
+        const style = getComputedStyle(element);
+        return {
+            rect: { x: rect.x, y: rect.y, width: rect.width, height: rect.height },
+            position: style.position,
+            backgroundColor: style.backgroundColor,
+            border: style.border,
+            fontSize: style.fontSize,
+            lineHeight: style.lineHeight,
+        };
+    });
+    expect(desktopNoticeGeometry.position).toBe('fixed');
+    expect(desktopNoticeGeometry.rect.x + desktopNoticeGeometry.rect.width).toBeLessThanOrEqual(1200);
+    await testInfo.attach('desktop-private-message-notice.json', {
+        body: Buffer.from(`${JSON.stringify(desktopNoticeGeometry, null, 2)}\n`),
+        contentType: 'application/json',
+    });
+    await testInfo.attach('desktop-private-message-notice.png', {
+        body: await notice.screenshot(),
+        contentType: 'image/png',
+    });
+
+    await emitMessagesInvalidation(page);
+    await expect(notice).toBeVisible();
+    await expect(notice).toHaveCount(1);
+
+    await notice.getByRole('button', { name: '이미읽음' }).click();
+    await expect(notice).toHaveCount(0);
+    await expect(page.locator('.PrivateTalk .btn-more-small')).toBeDisabled();
+    await expect
+        .poll(() =>
+            state.trpcRequests?.some(
+                ({ operations, body }) =>
+                    operations.includes('messages.readLatest') &&
+                    JSON.stringify(body).includes('"type":"private"') &&
+                    JSON.stringify(body).includes('"messageId":21')
+            )
+        )
+        .toBe(true);
+});
+
+test('the private-message notice moves a mobile reader to the private section', async ({ page }, testInfo) => {
+    const state: NavigationFixture = {
+        officerLevel: 5,
+        permission: 2,
+        nationLevel: 3,
+        stage: 0,
+        npcMode: 1,
+        latestVote: null,
+        generalMeCalls: 0,
+        operations: [],
+        messages: { ...emptyMessages(2), private: [privateMessage(31, 9)] },
+    };
+    await installFixture(page, state);
+    await page.setViewportSize({ width: 500, height: 800 });
+    await waitForMain(page);
+
+    const notice = page.getByTestId('private-message-notice');
+    await expect(notice).toBeVisible();
+    const mobileNoticeGeometry = await notice.evaluate((element) => {
+        const rect = element.getBoundingClientRect();
+        const style = getComputedStyle(element);
+        return {
+            rect: { x: rect.x, y: rect.y, width: rect.width, height: rect.height },
+            position: style.position,
+            fontSize: style.fontSize,
+            lineHeight: style.lineHeight,
+        };
+    });
+    expect(mobileNoticeGeometry.rect.width).toBeLessThanOrEqual(468);
+    await testInfo.attach('mobile-private-message-notice.json', {
+        body: Buffer.from(`${JSON.stringify(mobileNoticeGeometry, null, 2)}\n`),
+        contentType: 'application/json',
+    });
+    await testInfo.attach('mobile-private-message-notice.png', {
+        body: await notice.screenshot(),
+        contentType: 'image/png',
+    });
+    await notice.getByRole('button', { name: '보러가기' }).click();
+
+    await expect(notice).toHaveCount(0);
+    await expect
+        .poll(() =>
+            page.locator('.PrivateTalk > .stickyAnchor').evaluate((element) => element.getBoundingClientRect().top)
+        )
+        .toBeLessThan(80);
+    expect(await page.evaluate(() => window.scrollY)).toBeGreaterThan(500);
 });
 
 test('desktop menus preserve ref columns, prefix-safe routes, and controlled dropdown behavior', async ({

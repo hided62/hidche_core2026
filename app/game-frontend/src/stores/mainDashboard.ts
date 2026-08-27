@@ -45,6 +45,7 @@ export const useMainDashboardStore = defineStore('mainDashboard', () => {
     type MapLayout = Awaited<ReturnType<typeof trpc.world.getMapLayout.query>>;
     type CommandTable = Awaited<ReturnType<typeof trpc.turns.getCommandTable.query>>;
     type MessageBundle = Awaited<ReturnType<typeof trpc.messages.getRecent.query>>;
+    type PrivateMessageNotice = { messageId: number };
     type MessageContacts = Awaited<ReturnType<typeof trpc.messages.getContacts.query>>;
     type BoardAccess = Awaited<ReturnType<typeof trpc.board.getAccess.query>>;
     type ReservedTurnView = Awaited<ReturnType<typeof trpc.turns.reserved.getGeneral.query>>['turns'][number];
@@ -128,6 +129,8 @@ export const useMainDashboardStore = defineStore('mainDashboard', () => {
     const tournamentStage = ref(0);
     const tournamentType = ref<TournamentType | null>(null);
     const surveyNotice = ref<NonNullable<FrontStatus['latestVote']> | null>(null);
+    const privateMessageNotice = ref<PrivateMessageNotice | null>(null);
+    let dismissedPrivateMessageId = 0;
     let lastGeneralRecordId = 0;
     let lastWorldHistoryId = 0;
     let recordGeneralId: number | null = null;
@@ -323,6 +326,31 @@ export const useMainDashboardStore = defineStore('mainDashboard', () => {
         surveyNotice.value = null;
     };
 
+    const reconcilePrivateMessageNotice = (nextMessages: MessageBundle | null) => {
+        const viewerGeneralId = general.value?.id;
+        if (!nextMessages || !viewerGeneralId) {
+            privateMessageNotice.value = null;
+            return;
+        }
+        const newestIncomingId = nextMessages.private
+            .filter((message) => message.src.generalId !== viewerGeneralId)
+            .reduce((latest, message) => Math.max(latest, message.id), 0);
+        const latestReadId = nextMessages.latestRead.private;
+        if (dismissedPrivateMessageId <= latestReadId) dismissedPrivateMessageId = 0;
+        if (newestIncomingId <= latestReadId || newestIncomingId <= dismissedPrivateMessageId) {
+            privateMessageNotice.value = null;
+            return;
+        }
+        if (privateMessageNotice.value?.messageId !== newestIncomingId) {
+            privateMessageNotice.value = { messageId: newestIncomingId };
+        }
+    };
+
+    const dismissPrivateMessageNotice = () => {
+        dismissedPrivateMessageId = Math.max(dismissedPrivateMessageId, privateMessageNotice.value?.messageId ?? 0);
+        privateMessageNotice.value = null;
+    };
+
     const mergeRecentRecords = (current: RecentRecord[], incoming: RecentRecord[]): RecentRecord[] => {
         const merged = new Map(current.map((entry) => [entry.id, entry]));
         for (const entry of incoming) {
@@ -340,6 +368,8 @@ export const useMainDashboardStore = defineStore('mainDashboard', () => {
         recordGeneralId = id;
         frontStatus.value = null;
         surveyNotice.value = null;
+        privateMessageNotice.value = null;
+        dismissedPrivateMessageId = 0;
     };
 
     const applyRecentRecords = (records: Awaited<ReturnType<typeof trpc.general.getRecentRecords.query>>) => {
@@ -415,7 +445,14 @@ export const useMainDashboardStore = defineStore('mainDashboard', () => {
             commandTableSnapshot = patch.commandTable ?? undefined;
             commandTable.value = structurallyShare(commandTable.value, patch.commandTable);
         }
-        if (patch.messages !== undefined) messages.value = structurallyShare(messages.value, patch.messages);
+        if (patch.messages !== undefined) {
+            messages.value = structurallyShare(messages.value, patch.messages);
+            reconcilePrivateMessageNotice(messages.value);
+        } else if (patch.contextSnapshot !== undefined || patch.general !== undefined) {
+            // Main data is fetched concurrently, so the message bundle can arrive
+            // before the authenticated general context needed to identify senders.
+            reconcilePrivateMessageNotice(messages.value);
+        }
         if (patch.messageContacts !== undefined) {
             messageContacts.value = structurallyShare(messageContacts.value, patch.messageContacts);
         }
@@ -650,6 +687,7 @@ export const useMainDashboardStore = defineStore('mainDashboard', () => {
             lobbyInfo.value = structurallyShare(lobbyInfo.value, lobby);
             worldMap.value = structurallyShare(worldMap.value, map);
             messages.value = structurallyShare(messages.value, messageData);
+            reconcilePrivateMessageNotice(messages.value);
             messageContacts.value = structurallyShare(messageContacts.value, contacts);
             reservedGeneralTurns.value = structurallyShare<unknown>(
                 reservedGeneralTurns.value,
@@ -902,10 +940,10 @@ export const useMainDashboardStore = defineStore('mainDashboard', () => {
         }
     };
 
-    const readLatestMessage = async (type: 'private' | 'diplomacy', messageId: number) => {
+    const readLatestMessage = async (type: 'private' | 'diplomacy', messageId: number): Promise<boolean> => {
         const id = generalId.value;
         if (!id || messageId <= 0) {
-            return;
+            return false;
         }
         try {
             await trpc.messages.readLatest.mutate({
@@ -921,10 +959,19 @@ export const useMainDashboardStore = defineStore('mainDashboard', () => {
                         [type]: Math.max(messages.value.latestRead[type], messageId),
                     },
                 };
+                reconcilePrivateMessageNotice(messages.value);
             }
+            return true;
         } catch (err) {
             error.value = resolveErrorMessage(err);
+            return false;
         }
+    };
+
+    const acknowledgePrivateMessageNotice = async (): Promise<boolean> => {
+        const messageId = privateMessageNotice.value?.messageId;
+        if (!messageId) return false;
+        return readLatestMessage('private', messageId);
     };
 
     const deleteMessage = async (messageId: number) => {
@@ -1349,6 +1396,7 @@ export const useMainDashboardStore = defineStore('mainDashboard', () => {
         tournamentStage,
         tournamentType,
         surveyNotice,
+        privateMessageNotice,
         messageDraftText,
         targetMailbox,
         mailboxGroups,
@@ -1358,6 +1406,8 @@ export const useMainDashboardStore = defineStore('mainDashboard', () => {
         startRealtime,
         stopRealtime,
         dismissSurveyNotice,
+        dismissPrivateMessageNotice,
+        acknowledgePrivateMessageNotice,
         loadMainData,
         refreshMessages,
         sendMessage,

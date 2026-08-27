@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { formatServerDateTime } from '@sammo-ts/common/time/ServerDateTime';
 import type { RuntimeNavigationConfig } from '@sammo-ts/common/navigation/menuConfig';
-import { computed, onMounted, onUnmounted, ref, watch } from 'vue';
+import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue';
 import { storeToRefs } from 'pinia';
 import { useMediaQuery } from '@vueuse/core';
 import PanelCard from '../components/ui/PanelCard.vue';
@@ -86,6 +86,7 @@ const {
     tournamentStage,
     tournamentType,
     surveyNotice,
+    privateMessageNotice,
     messageDraftText,
     targetMailbox,
     mailboxGroups,
@@ -128,6 +129,7 @@ const formatRecord = (entry: { text: string; createdAt?: string | Date }, append
 };
 
 let surveyNoticeTimer: ReturnType<typeof setTimeout> | null = null;
+let privateMessageNoticeTimer: ReturnType<typeof setTimeout> | null = null;
 watch(surveyNotice, (notice) => {
     if (surveyNoticeTimer) {
         clearTimeout(surveyNoticeTimer);
@@ -137,9 +139,21 @@ watch(surveyNotice, (notice) => {
         surveyNoticeTimer = setTimeout(() => dashboard.dismissSurveyNotice(), 60_000);
     }
 });
+watch(privateMessageNotice, (notice) => {
+    if (privateMessageNoticeTimer) {
+        clearTimeout(privateMessageNoticeTimer);
+        privateMessageNoticeTimer = null;
+    }
+    if (notice) {
+        privateMessageNoticeTimer = setTimeout(() => dashboard.dismissPrivateMessageNotice(), 10 * 60_000);
+    }
+});
 onUnmounted(() => {
     if (surveyNoticeTimer) {
         clearTimeout(surveyNoticeTimer);
+    }
+    if (privateMessageNoticeTimer) {
+        clearTimeout(privateMessageNoticeTimer);
     }
     dashboard.stopRealtime();
     window.removeEventListener('storage', handleMobilePanelStorage);
@@ -194,6 +208,13 @@ const moveLobby = () => {
 
 const moveQuick = (item: QuickNavigationItem) => {
     document.querySelector(item.selector)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+};
+
+const acknowledgePrivateMessageNotice = async (moveToMessage: boolean) => {
+    if (!(await dashboard.acknowledgePrivateMessageNotice())) return;
+    if (!moveToMessage) return;
+    await nextTick();
+    document.querySelector('.PrivateTalk > .stickyAnchor')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
 };
 
 const handleNavigationAction = (action: NonNullable<MainNavigationLink['action']>) => {
@@ -263,6 +284,31 @@ watch(
                 <button type="button" aria-label="설문조사 알림 닫기" @click="dashboard.dismissSurveyNotice">×</button>
             </div>
             <RouterLink to="/survey">새로운 설문조사가 있습니다.</RouterLink>
+        </aside>
+
+        <aside
+            v-if="privateMessageNotice"
+            class="private-message-notice"
+            role="status"
+            aria-live="polite"
+            data-testid="private-message-notice"
+        >
+            <div class="private-message-notice-title">
+                <strong>새로운 개인 메시지</strong>
+                <button
+                    type="button"
+                    class="private-message-notice-close"
+                    aria-label="개인 메시지 알림 닫기"
+                    @click="dashboard.dismissPrivateMessageNotice"
+                >
+                    ×
+                </button>
+            </div>
+            <p>새로운 개인 메시지가 도착했습니다.</p>
+            <div class="private-message-notice-actions">
+                <button type="button" @click="acknowledgePrivateMessageNotice(true)">보러가기</button>
+                <button type="button" @click="acknowledgePrivateMessageNotice(false)">이미읽음</button>
+            </div>
         </aside>
 
         <section v-if="isMobile" class="layout-mobile">
@@ -751,6 +797,65 @@ button {
     text-decoration: underline;
 }
 
+.private-message-notice {
+    position: fixed;
+    z-index: 1080;
+    top: 16px;
+    right: 16px;
+    box-sizing: border-box;
+    width: min(350px, calc(100vw - 32px));
+    border: 1px solid rgba(91, 145, 207, 0.85);
+    border-radius: 4px;
+    background: rgba(12, 12, 12, 0.96);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.45);
+    color: #fff;
+    font-size: 14px;
+    line-height: 1.3;
+}
+
+.private-message-notice-title {
+    display: flex;
+    min-height: 35px;
+    align-items: center;
+    justify-content: space-between;
+    border-bottom: 1px solid rgba(91, 145, 207, 0.55);
+    padding: 8px 12px;
+    color: #8cb9eb;
+}
+
+.private-message-notice-close {
+    padding: 0 4px;
+    cursor: pointer;
+    font-size: 20px;
+    line-height: 1;
+}
+
+.private-message-notice > p {
+    margin: 0;
+    padding: 12px;
+}
+
+.private-message-notice-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 8px;
+    padding: 0 12px 12px;
+}
+
+.private-message-notice-actions button {
+    border: 1px solid #8cb9eb;
+    border-radius: 3px;
+    padding: 5px 9px;
+    color: #fff;
+    background: rgba(91, 145, 207, 0.18);
+    cursor: pointer;
+}
+
+.private-message-notice-actions button:hover,
+.private-message-notice-actions button:focus-visible {
+    background: rgba(91, 145, 207, 0.38);
+}
+
 .layout-desktop {
     display: grid;
     grid-template-columns: repeat(10, minmax(0, 1fr));
@@ -971,6 +1076,11 @@ button {
     .survey-notice {
         z-index: 90;
         bottom: 16px;
+    }
+
+    .private-message-notice {
+        z-index: 90;
+        top: 16px;
     }
 
     .layout-mobile [data-main-target='world-history'] {
