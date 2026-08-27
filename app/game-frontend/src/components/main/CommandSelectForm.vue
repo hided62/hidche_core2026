@@ -237,6 +237,12 @@ const commandTitle = (command: CommandAvailability) =>
     cursor: pointer;
 }
 
+.command-item.blocked .command-name {
+    color: #e74c3c;
+    text-decoration-line: line-through;
+    text-decoration-color: #e74c3c;
+}
+
 .command-name {
     font-weight: 600;
 }

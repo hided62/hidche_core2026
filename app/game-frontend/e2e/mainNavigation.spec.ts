@@ -2581,6 +2581,45 @@ test('main reserved-turn picker renders the Ref category order and raised button
     await persistArtifact(page, `${basePath.slice(1)}-main-reserved-ref-categories-mobile-500`);
 });
 
+test('main reserved-turn picker marks currently unavailable commands like Ref', async ({ page }) => {
+    const state: NavigationFixture = {
+        officerLevel: 1,
+        permission: 0,
+        nationLevel: 1,
+        stage: 0,
+        npcMode: 1,
+        generalMeCalls: 0,
+        operations: [],
+        largeCommandTable: true,
+        commandBlockedCount: 1,
+        reservedTurns: Array.from({ length: 30 }, (_, index) => ({ index, action: '휴식', args: {} })),
+    };
+    await installFixture(page, state);
+
+    for (const viewport of [
+        { name: 'desktop-1200', width: 1200, height: 900 },
+        { name: 'mobile-500', width: 500, height: 900 },
+    ]) {
+        await page.setViewportSize({ width: viewport.width, height: viewport.height });
+        await waitForMain(page);
+        await page.getByRole('button', { name: '1턴 명령 입력', exact: true }).click();
+
+        const picker = page.getByTestId('command-picker');
+        const blockedCommand = picker.getByRole('button', { name: '주민 선정과 장기 도시 개발', exact: true });
+        const blockedName = blockedCommand.locator('.command-name');
+        await expect(blockedCommand).toBeEnabled();
+        await expect(blockedCommand).toHaveClass(/blocked/);
+        await expect(blockedCommand).toHaveClass(/reservable/);
+        await expect(blockedName).toHaveCSS('color', 'rgb(231, 76, 60)');
+        await expect(blockedName).toHaveCSS('text-decoration-line', 'line-through');
+        await expect(blockedName).toHaveCSS('text-decoration-color', 'rgb(231, 76, 60)');
+        expect(await picker.evaluate((element) => element.scrollWidth - element.clientWidth)).toBeLessThanOrEqual(0);
+        await picker.screenshot({ path: test.info().outputPath(`blocked-command-${viewport.name}.png`) });
+
+        await page.getByRole('button', { name: '명령 입력 닫기', exact: true }).click();
+    }
+});
+
 test('main cards and command input stay inside their Ref-sized grid slots', async ({ page }) => {
     const state: NavigationFixture = {
         officerLevel: 1,
