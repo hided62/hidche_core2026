@@ -185,9 +185,12 @@ Gateway process 전환이 진행 중인 profile migration·seed 실행자를 중
 
 1. 대상 commit의 game API target과 그 transitive engine/worker artifact를 빌드한 뒤,
    profile frontend typecheck와 bundle을 공유 Turbo cache에서 복원하거나 생성합니다.
-2. 기존 profile PM2 process를 정지합니다.
+2. 정적 운영 모드에서는 현재 frontend artifact를 계속 게시한 채 기존 profile PM2
+   process를 정지합니다. Preview 개발 모드와 명시적 STOP/RESET의 frontend 종료 계약은
+   바꾸지 않습니다.
 3. profile game schema에 `prisma migrate deploy`를 실행합니다.
-4. Scenario seed를 실행하지 않고 frontend, API, daemon과 worker를 시작합니다.
+4. Scenario seed를 실행하지 않고 API, daemon과 worker를 시작하고 새 정적 frontend
+   artifact를 원자적으로 활성화합니다.
 5. HTTP와 모든 PM2 role의 readiness가 확인된 뒤 build commit을 게시합니다.
 
 이 모드는 현재 scenario, status와 인게임 DB를 유지합니다. Migration이
@@ -219,6 +222,14 @@ Profile process 전환 중에는 frontend/API port가 잠시 닫힐 수 있습�
 없으면 `서버 응답을 기다리고 있습니다.`와 `지금 다시 확인`을
 표시합니다. 정상 응답을 한 번 받은 profile은 실패한 지도·인증 재확인 중에도
 마지막 상세를 유지합니다.
+
+열린 game frontend도 502/503/504 또는 network failure를 인증 실패와 분리하여 현재
+화면을 유지하고 상단에 연결 복구 안내를 표시합니다. 0.5·1·2·4초 뒤 읽기 전용
+`lobby.info`만 재시도하며 이후에도 4초 상한을 유지합니다. 다른 조회의 우연한 성공은
+복구 완료로 간주하지 않고 이 probe가 성공해야 안내를 닫습니다. Mutation은 자동
+재전송하지 않으며, main dashboard가 열린 경우 복구 직후 기존 bounded refresh queue로
+전체 projection을 한 번 다시 읽습니다. 401/403과 일반 500 제품 오류는 이 배포 복구
+상태로 분류하지 않습니다.
 
 ### 시나리오 초기화
 

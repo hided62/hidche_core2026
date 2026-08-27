@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { RouterView } from 'vue-router';
+import GameServerConnectionNotice from './components/ui/GameServerConnectionNotice.vue';
 import GameFeedbackLayer from './components/ui/GameFeedbackLayer.vue';
 import { useDeploymentVersionNotice } from './composables/useDeploymentVersionNotice';
 
@@ -8,6 +9,7 @@ useDeploymentVersionNotice();
 
 <template>
     <RouterView />
+    <GameServerConnectionNotice />
     <GameFeedbackLayer />
 </template>
 

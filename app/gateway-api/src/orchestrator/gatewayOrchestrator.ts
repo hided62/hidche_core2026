@@ -1857,7 +1857,7 @@ export class GatewayOrchestrator implements GatewayOrchestratorHandle {
 
             await this.appendOperationLog(operationId, 'switch', '기존 profile process를 정지합니다.');
             await assertLease();
-            await this.stopProfile(profile, assertLease);
+            await this.stopProfile(profile, assertLease, { preserveStaticFrontend: true });
             oldRuntimeStopped = true;
             const profileDatabaseUrl = this.resolveProfileDatabaseUrl(profile);
             await this.appendOperationLog(operationId, 'migration', '선택 버전의 game migration을 적용합니다.');
@@ -2821,7 +2821,11 @@ export class GatewayOrchestrator implements GatewayOrchestratorHandle {
         return false;
     }
 
-    private async stopProfile(profile: GatewayProfileRecord, assertLease?: () => Promise<void>): Promise<void> {
+    private async stopProfile(
+        profile: GatewayProfileRecord,
+        assertLease?: () => Promise<void>,
+        options: { preserveStaticFrontend?: boolean } = {}
+    ): Promise<void> {
         const frontendName = buildProcessName(profile.profileName, 'frontend');
         const apiName = buildProcessName(profile.profileName, 'api');
         const daemonName = buildProcessName(profile.profileName, 'daemon');
@@ -2829,7 +2833,9 @@ export class GatewayOrchestrator implements GatewayOrchestratorHandle {
         const battleSimName = buildProcessName(profile.profileName, 'battle-sim');
         const tournamentName = buildProcessName(profile.profileName, 'tournament');
         await assertLease?.();
-        if (this.frontendServeMode === 'static') {
+        // A normal DEPLOY keeps the last immutable page available while its API is replaced.
+        // STOP/RESET still remove the pointer because those operations intentionally close the profile.
+        if (this.frontendServeMode === 'static' && !options.preserveStaticFrontend) {
             await this.artifactManager.deactivate(profile.profile);
         }
         await assertLease?.();
