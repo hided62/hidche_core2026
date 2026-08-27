@@ -1,6 +1,10 @@
 import { describe, expect, it } from 'vitest';
 
-import { resolveUpcomingResetAnnouncement, shouldExposeUpcomingReset } from '../src/lobby/profileStatusService.js';
+import {
+    resolveUpcomingResetAnnouncement,
+    resolveUpcomingResetAnnouncements,
+    shouldExposeUpcomingReset,
+} from '../src/lobby/profileStatusService.js';
 import type { GatewayOperationRecord } from '../src/orchestrator/profileRepository.js';
 
 const buildOperation = (status: GatewayOperationRecord['status'] = 'QUEUED'): GatewayOperationRecord => ({
@@ -100,5 +104,49 @@ describe('resolveUpcomingResetAnnouncement', () => {
         const incomplete = buildOperation();
         incomplete.payload = { publicAnnouncement: { enabled: true, scenarioTitle: '황건적의 난' } };
         expect(resolveUpcomingResetAnnouncement(incomplete, new Date('2026-08-27T04:00:00.000Z'))).toBeNull();
+    });
+
+    it('does not restore an older published notice after a newer reset replaces it', () => {
+        const olderPublished = buildOperation('SUCCEEDED');
+        const newerImmediate = {
+            ...buildOperation('SUCCEEDED'),
+            id: '22222222-2222-4222-8222-222222222222',
+            payload: {
+                install: {
+                    scenarioId: 1011,
+                    preopenAt: '2026-09-01T05:30:00.000Z',
+                    openAt: '2026-09-01T11:00:00.000Z',
+                },
+            },
+            scheduledAt: undefined,
+            createdAt: '2026-08-27T01:00:00.000Z',
+            updatedAt: '2026-08-27T01:00:00.000Z',
+        } satisfies GatewayOperationRecord;
+
+        const result = resolveUpcomingResetAnnouncements(
+            [newerImmediate, olderPublished],
+            new Map([['che:2', 'RESERVED']]),
+            new Date('2026-08-27T04:00:00.000Z')
+        );
+
+        expect(result.has('che:2')).toBe(false);
+    });
+
+    it('treats a newer cancelled reset as the announcement boundary', () => {
+        const olderPublished = buildOperation('SUCCEEDED');
+        const newerCancelled = {
+            ...buildOperation('CANCELLED'),
+            id: '33333333-3333-4333-8333-333333333333',
+            createdAt: '2026-08-27T01:00:00.000Z',
+            updatedAt: '2026-08-27T01:00:00.000Z',
+        } satisfies GatewayOperationRecord;
+
+        const result = resolveUpcomingResetAnnouncements(
+            [newerCancelled, olderPublished],
+            new Map([['che:2', 'RESERVED']]),
+            new Date('2026-08-27T04:00:00.000Z')
+        );
+
+        expect(result.has('che:2')).toBe(false);
     });
 });
