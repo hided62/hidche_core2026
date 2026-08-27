@@ -98,7 +98,6 @@ export class RepositoryProfileStatusService implements GatewayProfileStatusServi
         const [profileRows, recentResetOperations] = await Promise.all([
             this.profiles.listProfiles(),
             this.profiles.listOperations({
-                statuses: ['QUEUED', 'RUNNING', 'SUCCEEDED'],
                 types: ['RESET'],
                 limit: 200,
             }),
@@ -106,15 +105,9 @@ export class RepositoryProfileStatusService implements GatewayProfileStatusServi
         const rows = orderGatewayProfiles(profileRows);
         const runtimeStates = await this.orchestrator.listRuntimeStates(rows.map((profile) => profile.profileName));
         const runtimeMap = new Map(runtimeStates.map((state) => [state.profileName, state]));
-        const announcementMap = new Map<string, LobbyUpcomingReset>();
         const profileStatusMap = new Map(rows.map((row) => [row.profileName, row.status]));
         const now = this.now();
-        for (const operation of recentResetOperations) {
-            if (announcementMap.has(operation.profileName)) continue;
-            if (!shouldExposeUpcomingReset(operation, profileStatusMap.get(operation.profileName))) continue;
-            const announcement = resolveUpcomingResetAnnouncement(operation, now);
-            if (announcement) announcementMap.set(operation.profileName, announcement);
-        }
+        const announcementMap = resolveUpcomingResetAnnouncements(recentResetOperations, profileStatusMap, now);
         return rows.map((row) => this.mapProfile(row, runtimeMap, announcementMap));
     }
 
@@ -197,6 +190,23 @@ export const shouldExposeUpcomingReset = (
     (operation.status === 'QUEUED' ||
         operation.status === 'RUNNING' ||
         (operation.status === 'SUCCEEDED' && profileStatus === 'RESERVED'));
+
+export const resolveUpcomingResetAnnouncements = (
+    operations: GatewayOperationRecord[],
+    profileStatusMap: ReadonlyMap<string, GatewayProfileStatus>,
+    now: Date
+): Map<string, LobbyUpcomingReset> => {
+    const announcements = new Map<string, LobbyUpcomingReset>();
+    const resolvedProfiles = new Set<string>();
+    for (const operation of operations) {
+        if (resolvedProfiles.has(operation.profileName)) continue;
+        resolvedProfiles.add(operation.profileName);
+        if (!shouldExposeUpcomingReset(operation, profileStatusMap.get(operation.profileName))) continue;
+        const announcement = resolveUpcomingResetAnnouncement(operation, now);
+        if (announcement) announcements.set(operation.profileName, announcement);
+    }
+    return announcements;
+};
 
 export const resolveUpcomingResetAnnouncement = (
     operation: GatewayOperationRecord,
