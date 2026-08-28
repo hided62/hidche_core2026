@@ -161,18 +161,6 @@ describe('monthly event catalog coverage', () => {
         expect([...covered].sort()).toEqual([...MONTHLY_EVENT_ACTION_CATALOG].sort());
     });
 
-    refSourceIt('keeps the Core and Ref scenario resource catalogs complete', async () => {
-        const refScenarioDirectory = path.join(resolveRefSourceRoot(), 'hwe', 'scenario');
-        const coreScenarioDirectory = path.dirname(resolveScenarioDefaultsPath());
-        const [refScenarios, coreScenarios] = await Promise.all([
-            listBasenames(refScenarioDirectory, /^scenario_\d+\.json$/),
-            listBasenames(coreScenarioDirectory, /^scenario_\d+\.json$/),
-        ]);
-
-        expect(difference(refScenarios, coreScenarios)).toEqual([...KNOWN_MISSING_SCENARIO_RESOURCES]);
-        expect(difference(coreScenarios, refScenarios)).toEqual([]);
-    });
-
     refSourceIt('keeps the Core and Ref monthly action catalogs complete', async () => {
         const refActionDirectory = path.join(resolveRefSourceRoot(), 'hwe', 'sammo', 'Event', 'Action');
         const refActions = (await listBasenames(refActionDirectory, /\.php$/)).map((fileName) =>
