@@ -1198,6 +1198,13 @@ export class GeneralAI {
                 ) {
                     continue;
                 }
+                const oldChief = this.chiefGenerals[11];
+                if (oldChief && oldChief.id !== candidate.id) {
+                    oldChief.officerLevel = 1;
+                    oldChief.meta = { ...oldChief.meta, officer_city: 0 };
+                    this.promotionPatches.push({ generalId: oldChief.id, officerLevel: 1, officerCity: 0 });
+                    effectiveOfficerLevel.set(oldChief.id, 1);
+                }
                 const permission = penalty.noAmbassador === true ? undefined : 'ambassador';
                 candidate.officerLevel = 11;
                 candidate.meta = {

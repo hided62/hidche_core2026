@@ -568,6 +568,53 @@ describe('legacy NPC user-chief promotion parity', () => {
         });
     });
 
+    it.each([
+        { label: 'inactive user', npcState: 0, killturn: 70, permission: 'auditor' },
+        { label: 'NPC', npcState: 3, killturn: 100, permission: undefined },
+    ])('demotes the existing $label advisor before forcing an active user into the seat', (oldChiefInput) => {
+        const ruler = makePromotionGeneral({
+            id: 1,
+            officerLevel: 12,
+            npcState: 0,
+            meta: { killturn: 100, belong: 2, use_auto_nation_promotion: 1 },
+        });
+        const oldChief = makePromotionGeneral({
+            id: 2,
+            name: '기존참모',
+            officerLevel: 11,
+            npcState: oldChiefInput.npcState,
+            meta: {
+                killturn: oldChiefInput.killturn,
+                belong: 2,
+                ...(oldChiefInput.permission ? { permission: oldChiefInput.permission } : {}),
+            },
+        });
+        const candidate = makePromotionGeneral({
+            id: 3,
+            name: '신규참모',
+            npcState: 0,
+            stats: { leadership: 80, strength: 40, intelligence: 40 },
+            meta: { killturn: 100, belong: 1 },
+        });
+        const ai = makePromotionAi({
+            ruler,
+            generals: [ruler, oldChief, candidate],
+            userGenerals: oldChief.npcState < 2 ? [oldChief, candidate] : [candidate],
+            chiefGenerals: [ruler, oldChief],
+        });
+
+        chooseNpcPromotion(ai);
+
+        expect(ai.consumePromotionPatches()).toEqual({
+            generals: [
+                { generalId: oldChief.id, officerLevel: 1, officerCity: 0 },
+                { generalId: candidate.id, officerLevel: 11, officerCity: 0, permission: 'ambassador' },
+            ],
+            nationMeta: expect.objectContaining({ chief_set: 1 << 11 }),
+        });
+        expect(oldChief).toMatchObject({ officerLevel: 1, meta: expect.objectContaining({ officer_city: 0 }) });
+    });
+
     it('waits for belong 3 before forcing a user over a stronger NPC under an established NPC ruler', () => {
         const run = (belong: number) => {
             const ruler = makePromotionGeneral({
