@@ -1896,7 +1896,6 @@ async function handleSetMySetting(
         nextMeta.use_auto_nation_turn = settings.use_auto_nation_turn === 0 ? 0 : 1;
     }
     for (const key of [
-        'use_auto_nation_diplomacy',
         'use_auto_nation_war',
         'use_auto_nation_promotion',
         'use_auto_nation_finance',

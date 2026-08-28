@@ -826,7 +826,7 @@ describe('legacy NPC user-chief promotion parity', () => {
         expect(run(3, 0, 1)).toEqual([{ generalId: 2, officerLevel: 11, officerCity: 0, permission: 'ambassador' }]);
     });
 
-    it('keeps user-ruler duties individually disabled until each setting is enabled', () => {
+    it('keeps non-aggression proposals NPC-only while user-ruler duties remain opt-in', () => {
         const ruler = makePromotionGeneral({ id: 1, officerLevel: 12, npcState: 0, meta: { killturn: 0 } });
         expect(canUseAutomatedNationAction(ruler, '선전포고')).toBe(false);
         expect(canUseAutomatedNationAction(ruler, '불가침제의')).toBe(false);
@@ -839,18 +839,21 @@ describe('legacy NPC user-chief promotion parity', () => {
             use_auto_nation_capital: 1,
             use_auto_nation_finance: 1,
         };
-        expect(canUseAutomatedNationAction(ruler, '불가침제의')).toBe(true);
+        // 기존 DB에 제거된 플래그가 남아 있어도 사용자 군주에게는 다시 활성화되지 않는다.
+        expect(canUseAutomatedNationAction(ruler, '불가침제의')).toBe(false);
         expect(canUseAutomatedNationAction(ruler, '선전포고')).toBe(false);
         expect(canUseAutomatedNationAction(ruler, '천도')).toBe(true);
         expect(canUseRulerAutomation(ruler, 'finance')).toBe(true);
 
         ruler.meta = {
             ...ruler.meta,
-            use_auto_nation_diplomacy: 0,
             use_auto_nation_war: 1,
         };
         expect(canUseAutomatedNationAction(ruler, '불가침제의')).toBe(false);
         expect(canUseAutomatedNationAction(ruler, '선전포고')).toBe(true);
+
+        const npcRuler = makePromotionGeneral({ id: 2, officerLevel: 12, npcState: 2, meta: { killturn: 0 } });
+        expect(canUseAutomatedNationAction(npcRuler, '불가침제의')).toBe(true);
     });
 
     it('honors the existing automatic nation-turn master switch for user chiefs only', () => {

@@ -98,6 +98,23 @@ describe('authenticated actor-bound command registry and execution', () => {
         ).toBeNull();
     });
 
+    it('rejects the removed automatic diplomacy setting at the daemon boundary', () => {
+        expect(
+            normalizeTurnDaemonCommand({
+                requestId: 'set-my-setting:removed-diplomacy',
+                sentAt: '2026-08-28T00:00:00.000Z',
+                command: {
+                    type: 'setMySetting',
+                    userId: 'user-7',
+                    generalId: 7,
+                    settings: {
+                        use_auto_nation_diplomacy: 1,
+                    },
+                } as unknown as TurnDaemonCommand,
+            })
+        ).toBeNull();
+    });
+
     it('rejects every actor-bound queue payload that omits userId', () => {
         for (const command of buildActorBoundCommands()) {
             const {

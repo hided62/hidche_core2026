@@ -61,10 +61,9 @@ export const AVAILABLE_INSTANT_TURN: Record<string, boolean> = {
     NPC전방발령: true,
 };
 
-export type UserRulerAutomationFeature = 'diplomacy' | 'war' | 'promotion' | 'finance' | 'capital';
+export type UserRulerAutomationFeature = 'war' | 'promotion' | 'finance' | 'capital';
 
 const USER_RULER_AUTOMATION_META_KEY = {
-    diplomacy: 'use_auto_nation_diplomacy',
     war: 'use_auto_nation_war',
     promotion: 'use_auto_nation_promotion',
     finance: 'use_auto_nation_finance',
@@ -72,7 +71,6 @@ const USER_RULER_AUTOMATION_META_KEY = {
 } as const satisfies Record<UserRulerAutomationFeature, string>;
 
 const USER_RULER_ACTION_FEATURE: Readonly<Record<string, UserRulerAutomationFeature>> = {
-    불가침제의: 'diplomacy',
     선전포고: 'war',
     천도: 'capital',
 };

@@ -142,12 +142,11 @@ const zSetMySetting = z.object({
     type: z.literal('setMySetting'),
     userId: z.string().min(1),
     generalId: zFiniteNumber,
-    settings: z.object({
+    settings: z.strictObject({
         tnmt: z.number().int().optional(),
         defence_train: z.number().int().optional(),
         use_treatment: z.number().int().optional(),
         use_auto_nation_turn: z.number().int().optional(),
-        use_auto_nation_diplomacy: z.number().int().optional(),
         use_auto_nation_war: z.number().int().optional(),
         use_auto_nation_promotion: z.number().int().optional(),
         use_auto_nation_finance: z.number().int().optional(),

@@ -584,7 +584,6 @@ describe('in-game my information ownership', () => {
             defence_train: 80,
             use_treatment: 21,
             use_auto_nation_turn: 1,
-            use_auto_nation_diplomacy: 0,
             use_auto_nation_war: 0,
             use_auto_nation_promotion: 0,
             use_auto_nation_finance: 0,
@@ -608,6 +607,18 @@ describe('in-game my information ownership', () => {
 
         await expect(
             appRouter.createCaller(fixture.context).general.setMySetting({ use_auto_nation_war: 2 })
+        ).rejects.toMatchObject({ code: 'BAD_REQUEST' });
+        expect(requestCommand).not.toHaveBeenCalled();
+    });
+
+    it('rejects the removed automatic diplomacy setting before dispatching it to ENGINE', async () => {
+        const requestCommand = vi.fn(async () => ({ type: 'setMySetting', ok: true, generalId: 7 }));
+        const fixture = createContext({ requestCommand });
+
+        await expect(
+            appRouter.createCaller(fixture.context).general.setMySetting({
+                use_auto_nation_diplomacy: 1,
+            } as never)
         ).rejects.toMatchObject({ code: 'BAD_REQUEST' });
         expect(requestCommand).not.toHaveBeenCalled();
     });
