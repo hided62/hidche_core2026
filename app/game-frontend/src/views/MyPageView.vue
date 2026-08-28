@@ -249,7 +249,16 @@ const loadPage = async (resetImmediateActionIds = true) => {
         world.value = state;
         selectionPoolStatus.value = joinConfig.selectionPool;
         if (general) {
-            Object.assign(form, general.settings);
+            Object.assign(form, {
+                tnmt: general.settings.tnmt,
+                defence_train: general.settings.defence_train,
+                use_treatment: general.settings.use_treatment,
+                use_auto_nation_turn: general.settings.use_auto_nation_turn,
+                use_auto_nation_war: general.settings.use_auto_nation_war,
+                use_auto_nation_promotion: general.settings.use_auto_nation_promotion,
+                use_auto_nation_finance: general.settings.use_auto_nation_finance,
+                use_auto_nation_capital: general.settings.use_auto_nation_capital,
+            });
             selectedIconId.value =
                 iconChoices.value.find((icon) => icon.picture === general.general.picture)?.id ??
                 iconChoices.value[0]?.id ??
@@ -283,7 +292,16 @@ const changeGeneralIcon = async () => {
 const saveSettings = async () => {
     if (!canSave.value) return;
     try {
-        await trpc.general.setMySetting.mutate({ ...form });
+        await trpc.general.setMySetting.mutate({
+            tnmt: form.tnmt,
+            defence_train: form.defence_train,
+            use_treatment: form.use_treatment,
+            use_auto_nation_turn: form.use_auto_nation_turn,
+            use_auto_nation_war: form.use_auto_nation_war,
+            use_auto_nation_promotion: form.use_auto_nation_promotion,
+            use_auto_nation_finance: form.use_auto_nation_finance,
+            use_auto_nation_capital: form.use_auto_nation_capital,
+        });
         await loadPage();
     } catch (cause) {
         showErrorToast(`설정 저장에 실패했습니다: ${errorText(cause)}`);

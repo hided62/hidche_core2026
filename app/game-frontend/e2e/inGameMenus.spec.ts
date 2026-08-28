@@ -1418,6 +1418,7 @@ test('내 정보&설정 keeps desktop density and becomes a 390px horizontal-ide
     await page.locator('#set_my_setting').click();
     await expect.poll(() => state.settingMutations.length).toBe(1);
     expect(state.settingMutations[0]).not.toHaveProperty('generalId');
+    expect(state.settingMutations[0]).not.toHaveProperty('myset');
     expect(state.settingMutations[0]).toMatchObject({
         use_auto_nation_war: 1,
         use_auto_nation_promotion: 1,
