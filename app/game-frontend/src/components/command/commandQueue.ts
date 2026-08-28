@@ -95,6 +95,18 @@ export const moveQueueRange = (
     return next.map((entry, index) => ({ turnList: [index], ...entry }));
 };
 
+export const generalTurnEditorModeStorageKey = (profile: string | undefined, appBasePath: string): string => {
+    const runtimeProfile = profile?.trim().split(':', 1)[0];
+    const basePathProfile = appBasePath.split('/').find((segment) => segment.length > 0);
+    const profileId = runtimeProfile || basePathProfile || 'default';
+    return `core2026:profile:${encodeURIComponent(profileId)}:general-turn-editor`;
+};
+
+interface CommandStorageOptions {
+    maxRecent?: number;
+    editModeKey?: string;
+}
+
 export class CommandStorage {
     readonly recent = new Map<string, CommandPatternEntry>();
     readonly templates = new Map<string, CommandPatternEntry[]>();
@@ -102,11 +114,13 @@ export class CommandStorage {
     editMode = false;
     activeCategory = '';
     private readonly key: string;
+    private readonly editModeKey: string;
     private readonly maxRecent: number;
 
-    constructor(key: string, maxRecent = 10) {
+    constructor(key: string, options: CommandStorageOptions = {}) {
         this.key = key;
-        this.maxRecent = maxRecent;
+        this.editModeKey = options.editModeKey ?? key;
+        this.maxRecent = options.maxRecent ?? 10;
         this.load();
     }
 
@@ -126,12 +140,18 @@ export class CommandStorage {
             this.templates.set(name, entries);
         }
         this.clipboard = this.read<CommandPatternEntry[] | undefined>('clipboard', undefined);
-        this.editMode = localStorage.getItem(`${this.key}:editMode`) === '1';
+        const editModeStorageKey = `${this.editModeKey}:editMode`;
+        let storedEditMode = localStorage.getItem(editModeStorageKey);
+        if (storedEditMode === null && this.editModeKey !== this.key) {
+            storedEditMode = localStorage.getItem(`${this.key}:editMode`);
+            if (storedEditMode !== null) localStorage.setItem(editModeStorageKey, storedEditMode);
+        }
+        this.editMode = storedEditMode === '1';
         this.activeCategory = this.read('category', '');
     }
 
     saveState(): void {
-        localStorage.setItem(`${this.key}:editMode`, this.editMode ? '1' : '0');
+        localStorage.setItem(`${this.editModeKey}:editMode`, this.editMode ? '1' : '0');
         localStorage.setItem(`${this.key}:category`, JSON.stringify(this.activeCategory));
     }
 

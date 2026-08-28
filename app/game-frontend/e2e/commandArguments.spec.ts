@@ -763,8 +763,17 @@ const chiefCenter = {
     })),
 };
 
-const install = async (page: Page, rejectGeneral = false, commandTableResponse: unknown = commandTable) => {
+const install = async (
+    page: Page,
+    rejectGeneral = false,
+    commandTableResponse: unknown = commandTable,
+    generalId = 1
+) => {
     const requests: unknown[] = [];
+    const currentGeneralContext = {
+        ...generalContext,
+        general: { ...generalContext.general, id: generalId },
+    };
     const generalTurns = turns(30);
     const nationTurns = turns(12);
     let generalRevision = 0;
@@ -811,7 +820,7 @@ const install = async (page: Page, rejectGeneral = false, commandTableResponse: 
                         ? {
                               kind: 'snapshot',
                               revision: 'AAAAAAAAAAAAAAAAAAAAAA',
-                              data: generalContext,
+                              data: currentGeneralContext,
                           }
                         : { kind: 'unchanged', revision: 'AAAAAAAAAAAAAAAAAAAAAA' },
                     commandTable: initial
@@ -830,7 +839,7 @@ const install = async (page: Page, rejectGeneral = false, commandTableResponse: 
                         : { kind: 'unchanged', revision: 'CCCCCCCCCCCCCCCCCCCCCC' },
                 });
             }
-            if (name === 'general.me') return response(generalContext);
+            if (name === 'general.me') return response(currentGeneralContext);
             if (name === 'world.getMapLayout')
                 return response({
                     mapName: 'che',
@@ -844,7 +853,7 @@ const install = async (page: Page, rejectGeneral = false, commandTableResponse: 
             if (name === 'auth.status') return response({ ok: true });
             if (name === 'lobby.info')
                 return response({
-                    myGeneral: { id: 1, name: '장수' },
+                    myGeneral: { id: generalId, name: '장수' },
                     year: 200,
                     month: 1,
                     turnTerm: 10,
@@ -1374,6 +1383,53 @@ test('keeps general and chief command categories after input and across page rel
     await reloadedChiefPicker.screenshot({
         path: test.info().outputPath('chief-category-after-reload-mobile-500.png'),
     });
+});
+
+test('keeps the general turn editor mode across general recreation within one server profile', async ({
+    page,
+    context,
+}) => {
+    await install(page, false, commandTable, 1);
+    await page.addInitScript(() => {
+        localStorage.setItem('core2026:general:1:editMode', '1');
+    });
+    await page.setViewportSize({ width: 1200, height: 900 });
+    await page.goto('/');
+
+    const profileModeKey = 'core2026:profile:che:general-turn-editor:editMode';
+    const firstEditor = page.locator('[data-command-scope="general"]');
+    await expect(firstEditor.getByRole('button', { name: '일반 모드', exact: true })).toBeVisible();
+    await expect.poll(() => page.evaluate((key) => localStorage.getItem(key), profileModeKey)).toBe('1');
+    await page.evaluate(() => localStorage.removeItem('core2026:general:1:editMode'));
+
+    const recreatedPage = await context.newPage();
+    await install(recreatedPage, false, commandTable, 2);
+    await recreatedPage.setViewportSize({ width: 500, height: 900 });
+    await recreatedPage.goto('/');
+    const recreatedEditor = recreatedPage.locator('[data-command-scope="general"]');
+    await expect(recreatedEditor.getByRole('button', { name: '일반 모드', exact: true })).toBeVisible();
+    await expect
+        .poll(() => recreatedPage.evaluate(() => localStorage.getItem('core2026:general:2:editMode')))
+        .toBeNull();
+    await recreatedEditor.screenshot({
+        path: test.info().outputPath('general-advanced-mode-after-recreation-mobile-500.png'),
+    });
+
+    await recreatedEditor.getByRole('button', { name: '일반 모드', exact: true }).click();
+    await expect(recreatedEditor.getByRole('button', { name: '고급 모드', exact: true })).toBeVisible();
+    await expect.poll(() => recreatedPage.evaluate((key) => localStorage.getItem(key), profileModeKey)).toBe('0');
+
+    const nextGeneralPage = await context.newPage();
+    await install(nextGeneralPage, false, commandTable, 3);
+    await nextGeneralPage.goto('/');
+    await expect(
+        nextGeneralPage.locator('[data-command-scope="general"]').getByRole('button', {
+            name: '고급 모드',
+            exact: true,
+        })
+    ).toBeVisible();
+    await nextGeneralPage.close();
+    await recreatedPage.close();
 });
 
 test('shows all 12 advanced chief turns before the actions and uses the full mobile chief matrix', async ({ page }) => {

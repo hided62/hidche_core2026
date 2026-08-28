@@ -2,8 +2,10 @@
 import { computed, onUnmounted, ref, watch } from 'vue';
 import { addMinutes } from 'date-fns';
 import ReservedCommandEditor from '../command/ReservedCommandEditor.vue';
+import { generalTurnEditorModeStorageKey } from '../command/commandQueue';
 import { formatLocalDateTime, formatLocalTimeSeconds } from '../../utils/legacyDateTime';
 import { projectServerClock, sampleServerClock, type SampledServerClock } from '../../utils/serverClockProjection';
+import { gameFrontendRuntimeConfig } from '../../config/runtimeConfig';
 import type {
     CommandMapData,
     CommandMapLayout,
@@ -37,6 +39,11 @@ const emit = defineEmits<{
     (event: 'shift-general-turns', amount: number): void;
     (event: 'repeat-general-turns', amount: number): void;
 }>();
+
+const editModeStorageKey = generalTurnEditorModeStorageKey(
+    gameFrontendRuntimeConfig.profile,
+    gameFrontendRuntimeConfig.appBasePath
+);
 
 const labelMap = computed(() => {
     const result = new Map<string, string>([['휴식', '휴식']]);
@@ -140,6 +147,7 @@ onUnmounted(() => {
         :command-table="props.commandTable"
         :loading="props.loading"
         :storage-key="props.storageKey ?? `core2026:general:${props.general?.id ?? 0}`"
+        :edit-mode-storage-key="editModeStorageKey"
         :current-time="currentServerTime"
         :map-data="props.mapData"
         :map-layout="props.mapLayout"

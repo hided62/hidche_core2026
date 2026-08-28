@@ -4,10 +4,18 @@ import test from 'node:test';
 import {
     amplifyPattern,
     extractPattern,
+    generalTurnEditorModeStorageKey,
     moveQueueRange,
     normalizedSelection,
     selectStep,
 } from '../src/components/command/commandQueue.ts';
+
+void test('scopes the general turn editor mode to the stable server profile', () => {
+    assert.equal(generalTurnEditorModeStorageKey('che:default', '/che/'), 'core2026:profile:che:general-turn-editor');
+    assert.equal(generalTurnEditorModeStorageKey('che:2601', '/che/'), 'core2026:profile:che:general-turn-editor');
+    assert.equal(generalTurnEditorModeStorageKey('hwe:2601', '/hwe/'), 'core2026:profile:hwe:general-turn-editor');
+    assert.equal(generalTurnEditorModeStorageKey(undefined, '/nya/'), 'core2026:profile:nya:general-turn-editor');
+});
 
 const rows = ['A', 'B', 'A', 'C', '휴식', '휴식'].map((action, index) => ({
     index,

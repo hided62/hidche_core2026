@@ -30,6 +30,7 @@ const props = withDefaults(
         commandTable: CommandTable | null;
         loading: boolean;
         storageKey: string;
+        editModeStorageKey?: string;
         maxPushTurn?: number;
         compact?: boolean;
         mobile?: boolean;
@@ -41,6 +42,7 @@ const props = withDefaults(
         autonomousUntil?: string | null;
     }>(),
     {
+        editModeStorageKey: undefined,
         maxPushTurn: 6,
         compact: false,
         mobile: false,
@@ -82,20 +84,20 @@ const editorElement = ref<HTMLElement | null>(null);
 const pickerElement = ref<HTMLElement | null>(null);
 const collapsedRowCount = 15;
 
-const loadStorage = (key: string) => {
-    storage.value = new CommandStorage(key);
+const loadStorage = (key: string, editModeKey: string | undefined) => {
+    storage.value = new CommandStorage(key, { editModeKey });
     editMode.value = storage.value.editMode;
     activeCategory.value = storage.value.activeCategory;
 };
 
 onMounted(() => {
-    loadStorage(props.storageKey);
+    loadStorage(props.storageKey, props.editModeStorageKey);
 });
 
 watch(
-    () => props.storageKey,
-    (key, previousKey) => {
-        if (key !== previousKey) loadStorage(key);
+    () => [props.storageKey, props.editModeStorageKey] as const,
+    ([key, editModeKey], [previousKey, previousEditModeKey]) => {
+        if (key !== previousKey || editModeKey !== previousEditModeKey) loadStorage(key, editModeKey);
     }
 );
 
