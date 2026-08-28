@@ -11,6 +11,8 @@ import { formatOfficerLevelText } from '../utils/nationFormat';
 import { formatReservedCommandBrief } from '../components/command/reservedCommandBrief';
 import type { CommandMapData, CommandMapLayout, CommandPatternEntry, CommandTable } from '../components/command/types';
 
+type ReservationCompletion = (success: boolean) => void;
+
 type ChiefTurn = {
     index: number;
     action: string;
@@ -284,8 +286,11 @@ const shiftTurns = async (amount: number) => {
     }
 };
 
-const reserveTurns = async (entries: CommandPatternEntry[]) => {
-    if (!data.value || !isEditingAllowed.value) return;
+const reserveTurns = async (entries: CommandPatternEntry[], complete?: ReservationCompletion) => {
+    if (!data.value || !isEditingAllowed.value) {
+        complete?.(false);
+        return;
+    }
     try {
         const result = await trpc.turns.reserved.setNationBulk.mutate({
             generalId: data.value.me.id,
@@ -293,9 +298,11 @@ const reserveTurns = async (entries: CommandPatternEntry[]) => {
             expectedRevision: selectedChief.value?.revision ?? 0,
         });
         updateMyTurns(result.turns, result.revision);
+        complete?.(true);
     } catch (err) {
         await loadChiefCenter();
         error.value = resolveErrorMessage(err);
+        complete?.(false);
     }
 };
 

@@ -56,7 +56,7 @@ const props = withDefaults(
 );
 
 const emit = defineEmits<{
-    (event: 'reserve-bulk', entries: CommandPatternEntry[]): void;
+    (event: 'reserve-bulk', entries: CommandPatternEntry[], complete?: (success: boolean) => void): void;
     (event: 'shift', amount: number): void;
     (event: 'repeat', amount: number): void;
 }>();
@@ -79,7 +79,9 @@ const commandArgs = ref<Record<string, unknown>>({});
 const commandArgsValid = ref(false);
 const expanded = ref(false);
 const menuRevision = ref(0);
-const pendingReservation = ref<CommandPatternEntry | null>(null);
+const pendingReservation = ref<{ requestId: number; entry: CommandPatternEntry } | null>(null);
+let reservationRequestId = 0;
+
 const editorElement = ref<HTMLElement | null>(null);
 const pickerElement = ref<HTMLElement | null>(null);
 const collapsedRowCount = 15;
@@ -108,24 +110,6 @@ watch([editMode, activeCategory], () => {
     storage.value.saveState();
     if (editMode.value) quickTarget.value = null;
 });
-
-watch(
-    () => props.rows,
-    (rows) => {
-        const pending = pendingReservation.value;
-        if (!pending) return;
-        const saved = pending.turnList.every((index) => {
-            const row = rows[index];
-            return row?.action === pending.action && JSON.stringify(row.args ?? {}) === JSON.stringify(pending.args);
-        });
-        if (!saved) return;
-        storage.value?.pushRecent({ ...pending, turnList: [0] });
-        pendingReservation.value = null;
-        releaseSelection();
-        closePicker();
-    },
-    { deep: true }
-);
 
 const scopedTable = computed<CommandTable | null>(() => {
     if (!props.commandTable) return null;
@@ -276,11 +260,23 @@ const selectCommand = (commandKey: string) => {
 };
 const submitCommand = () => {
     const command = selectedCommand.value;
-    if (!command || !commandArgsValid.value) return;
+    if (!command || !commandArgsValid.value || pendingReservation.value) return;
     const turnList = quickTarget.value === null ? selectedIndices() : [quickTarget.value];
     const entry = { turnList, action: command.key, args: { ...commandArgs.value }, label: command.name };
-    emit('reserve-bulk', [entry]);
-    pendingReservation.value = entry;
+    const requestId = ++reservationRequestId;
+    pendingReservation.value = { requestId, entry };
+
+    emit('reserve-bulk', [entry], (success) => {
+        const pending = pendingReservation.value;
+        if (!pending || pending.requestId !== requestId) return;
+
+        pendingReservation.value = null;
+        if (!success) return;
+
+        storage.value?.pushRecent({ ...entry, turnList: [0] });
+        releaseSelection();
+        closePicker();
+    });
 };
 const returnToCommandList = () => {
     selectedCommand.value = null;

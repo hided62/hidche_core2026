@@ -183,8 +183,12 @@ const shiftGeneralTurns = (amount: number) => {
     void dashboard.shiftGeneralTurns(amount);
 };
 
-const reserveGeneralTurns = (entries: CommandPatternEntry[]) => {
-    void dashboard.setGeneralTurns(entries);
+const reserveGeneralTurns = async (
+    entries: CommandPatternEntry[],
+    complete?: (success: boolean) => void
+) => {
+    const success = await dashboard.setGeneralTurns(entries);
+    complete?.(success);
 };
 
 const repeatGeneralTurns = (amount: number) => {

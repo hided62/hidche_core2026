@@ -14,6 +14,8 @@ import type {
     ReservedCommandRow,
 } from '../command/types';
 
+type ReservationCompletion = (success: boolean) => void;
+
 const props = defineProps<{
     commandTable: CommandTable | null;
     loading: boolean;
@@ -35,10 +37,14 @@ const props = defineProps<{
 }>();
 
 const emit = defineEmits<{
-    (event: 'set-general-turns', entries: CommandPatternEntry[]): void;
+    (event: 'set-general-turns', entries: CommandPatternEntry[], complete?: ReservationCompletion): void;
     (event: 'shift-general-turns', amount: number): void;
     (event: 'repeat-general-turns', amount: number): void;
 }>();
+
+const reserveBulk = (entries: CommandPatternEntry[], complete?: ReservationCompletion) => {
+    emit('set-general-turns', entries, complete);
+};
 
 const editModeStorageKey = generalTurnEditorModeStorageKey(
     gameFrontendRuntimeConfig.profile,
@@ -154,7 +160,7 @@ onUnmounted(() => {
         :autonomous-until="autonomousUntil"
         :mobile="props.mobile"
         :max-push-turn="12"
-        @reserve-bulk="emit('set-general-turns', $event)"
+        @reserve-bulk="reserveBulk"
         @shift="emit('shift-general-turns', $event)"
         @repeat="emit('repeat-general-turns', $event)"
     />

@@ -1041,9 +1041,9 @@ export const useMainDashboardStore = defineStore('mainDashboard', () => {
 
     const setGeneralTurns = async (
         entries: Array<{ turnList: number[]; action: string; args: Record<string, unknown> }>
-    ) => {
+    ): Promise<boolean> => {
         const id = generalId.value;
-        if (!id || !entries.length) return;
+        if (!id || !entries.length) return false;
         try {
             const result = await trpc.turns.reserved.setGeneralBulk.mutate({
                 generalId: id,
@@ -1053,6 +1053,7 @@ export const useMainDashboardStore = defineStore('mainDashboard', () => {
             reservedGeneralTurns.value = result.turns;
             reservedGeneralRevision.value = result.revision;
             reservedGeneralAutorunLimit.value = result.autorunLimit ?? null;
+            return true;
         } catch (err) {
             error.value = resolveErrorMessage(err);
             const snapshot = await trpc.turns.reserved.getGeneral.query({ generalId: id }).catch(() => null);
@@ -1061,6 +1062,7 @@ export const useMainDashboardStore = defineStore('mainDashboard', () => {
                 reservedGeneralRevision.value = snapshot.revision;
                 reservedGeneralAutorunLimit.value = snapshot.autorunLimit ?? null;
             }
+            return false;
         }
     };
 

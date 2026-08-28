@@ -2518,10 +2518,13 @@ test('keeps the entered command visible and reports a server validation error', 
     await page.getByRole('button', { name: '1턴 명령 입력', exact: true }).click();
     await page.getByTestId('command-picker').getByRole('button', { name: /화계/ }).click();
     await page.getByTestId('command-argument-form').locator('select').selectOption('2');
-    await page.getByTestId('command-picker').getByRole('button', { name: '입력', exact: true }).click();
+    const submit = page.getByTestId('command-picker').getByRole('button', { name: '입력', exact: true });
+    await submit.click();
 
     await expect(page.getByRole('alert')).toContainText('대상 도시를 선택할 수 없습니다.');
     await expect(page.getByTestId('command-argument-form').locator('select')).toHaveValue('2');
+    await expect(submit).toBeEnabled();
+    await expect(page.getByTestId('command-picker').getByRole('button', { name: '저장 중', exact: true })).toHaveCount(0);
 });
 
 test('keeps Ref command briefs and autonomous-action state after a turn mutation', async ({ page, context }) => {
