@@ -14,6 +14,7 @@
         "test:e2e:troop": "playwright test troop.spec.ts --config e2e/playwright.config.mjs",
         "test:e2e:nation-offices": "playwright test nationOffices.spec.ts --config e2e/playwright.config.mjs",
         "test:e2e:npc-policy": "playwright test npcPolicy.spec.ts --config e2e/playwright.config.mjs",
+        "test:e2e:ios-webkit": "playwright test nationOffices.spec.ts troop.spec.ts npcPolicy.spec.ts --config e2e/playwright.config.mjs --browser=webkit --grep @ios-webkit",
         "test:e2e:board": "playwright test board.spec.ts --config e2e/playwright.config.mjs",
         "test:e2e:directories": "playwright test directoryLists.spec.ts --config e2e/playwright.config.mjs",
         "test:e2e:auction": "playwright test auction.spec.ts --config e2e/playwright.config.mjs",

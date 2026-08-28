@@ -1,15 +1,18 @@
-import { expect, test, type Page, type Route } from '@playwright/test';
+import { devices, expect, test, type Page, type Route } from '@playwright/test';
 import { mkdir, readFile } from 'node:fs/promises';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { gameProfile, gameTrpcRoute } from './gameTestPaths.js';
 import { touchDrag } from './touchDrag.js';
+import { acceptAppConfirmation } from './appConfirmation.js';
 
 type FixtureState = {
     permissionLevel: number;
     failNextMutation?: boolean;
     failLoad?: boolean;
     mutations: string[];
+    nationPriorityInput?: string[];
+    currentNationPriority?: string[];
 };
 
 const repositoryRoot = resolve(dirname(fileURLToPath(import.meta.url)), '../../..');
@@ -124,7 +127,7 @@ const policyFixture = (state: FixtureState) => ({
         reqNPCDevelGold: 540,
     },
     defaultNationPriority: nationPriority,
-    currentNationPriority: nationPriority,
+    currentNationPriority: state.currentNationPriority ?? nationPriority,
     availableNationPriorityItems: nationPriority,
     defaultGeneralActionPriority: generalPriority,
     currentGeneralActionPriority: generalPriority,
@@ -155,7 +158,14 @@ const installFixture = async (page: Page, state: FixtureState) => {
     }
     await page.route(gameTrpcRoute, async (route) => {
         const operations = operationName(route).split(',');
-        const results = operations.map((operation) => {
+        const rawBody: unknown = route.request().postData() ? route.request().postDataJSON() : {};
+        const requestBody = rawBody && typeof rawBody === 'object' ? (rawBody as Record<string, unknown>) : {};
+        const results = operations.map((operation, operationIndex) => {
+            const rawPayload = requestBody[String(operationIndex)] ?? (operations.length === 1 ? requestBody : {});
+            const payload = rawPayload && typeof rawPayload === 'object' ? (rawPayload as Record<string, unknown>) : {};
+            const jsonInput = Array.isArray(rawPayload)
+                ? rawPayload
+                : (payload.json ?? (payload.input as { json?: unknown } | undefined)?.json);
             if (operation === 'auth.status') return response({ ok: true });
             if (operation === 'lobby.info') return response({ myGeneral: { id: 22, name: '정책담당' } });
             if (operation === 'join.getConfig') return response({});
@@ -170,6 +180,9 @@ const installFixture = async (page: Page, state: FixtureState) => {
                 operation === 'npc.setGeneralPriority'
             ) {
                 state.mutations.push(operation);
+                if (operation === 'npc.setNationPriority' && Array.isArray(jsonInput)) {
+                    state.nationPriorityInput = jsonInput.map(String);
+                }
                 if (state.failNextMutation) {
                     state.failNextMutation = false;
                     return errorResponse(operation, '권한이 부족합니다.', 'FORBIDDEN');
@@ -280,13 +293,36 @@ test('desktop geometry, typography, textures, drag, focus, tooltip, and successf
     ).toBeVisible();
 
     await goldInput.fill('12345');
-    page.once('dialog', (dialog) => dialog.accept());
     await page.locator('#container > .control_bar').getByRole('button', { name: '설정' }).click();
+    await acceptAppConfirmation(page, '저장할까요?');
     await expect(page.locator('[data-testid="game-toast"][data-feedback-kind="success"]')).toContainText(
         'NPC 정책이 반영되었습니다.'
     );
     expect(state.mutations).toContain('npc.setNationPolicy');
     await screenshot(page, 'core-npc-policy-desktop.png');
+});
+
+test('@ios-webkit iPhone touch saves the reordered NPC priority', async ({ browser }, testInfo) => {
+    const configuredBaseUrl = testInfo.project.use.baseURL;
+    if (typeof configuredBaseUrl !== 'string') throw new Error('Playwright baseURL is required');
+    const context = await browser.newContext({ ...devices['iPhone 15'], baseURL: configuredBaseUrl });
+    const page = await context.newPage();
+    const reorderedPriority = [nationPriority[1]!, nationPriority[0]!, ...nationPriority.slice(2)];
+    const state: FixtureState = { permissionLevel: 4, mutations: [], currentNationPriority: reorderedPriority };
+    try {
+        await installFixture(page, state);
+        await gotoPolicy(page);
+        const panel = page.locator('.priority-panel').first();
+        const activeList = panel.locator('.priority-column').nth(1).locator('.priority-list');
+        await expect(activeList.locator('.priority_info > span:nth-child(2)').first()).toHaveText('선전포고');
+        await panel.getByRole('button', { name: '설정' }).click();
+        await acceptAppConfirmation(page, '저장할까요?');
+        await expect(page.getByTestId('game-toast')).toContainText('NPC 정책이 반영되었습니다.');
+        expect(state.nationPriorityInput?.[0]).toBe('선전포고');
+        expect(state.nationPriorityInput).toContain('불가침제의');
+    } finally {
+        await context.close();
+    }
 });
 
 test('500px layout stacks policy fields and priority panels like the reference', async ({ page }) => {
@@ -346,19 +382,9 @@ test('physical mobile touch reorders NPC priority across active and inactive lis
         const nationPanel = mobilePage.locator('.priority-panel').first();
         const activeList = nationPanel.locator('.priority-column').nth(1).locator('.priority-list');
         const activeRows = activeList.locator('.priority-item');
-        await touchDrag(
-            mobilePage,
-            activeRows.nth(0),
-            activeRows.nth(3),
-            { targetYRatio: 0.9 }
-        );
+        await touchDrag(mobilePage, activeRows.nth(0), activeRows.nth(3), { targetYRatio: 0.9 });
         await expect
-            .poll(() =>
-                activeList
-                    .locator('.priority-item .priority_info > span:nth-child(2)')
-                    .first()
-                    .textContent()
-            )
+            .poll(() => activeList.locator('.priority-item .priority_info > span:nth-child(2)').first().textContent())
             .toBe('선전포고');
 
         const activeItem = activeList.getByText('불가침제의', { exact: true });
@@ -366,9 +392,7 @@ test('physical mobile touch reorders NPC priority across active and inactive lis
         await touchDrag(mobilePage, activeItem, inactiveList.locator('.inactive-header'));
 
         await expect(inactiveList.getByText('불가침제의', { exact: true })).toBeVisible();
-        await expect(
-            activeList.getByText('불가침제의', { exact: true })
-        ).toHaveCount(0);
+        await expect(activeList.getByText('불가침제의', { exact: true })).toHaveCount(0);
         await mobilePage.screenshot({ path: testInfo.outputPath('npc-priority-mobile-touch.png'), fullPage: true });
     } finally {
         await context.close();

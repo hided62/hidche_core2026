@@ -47,10 +47,32 @@ void test('queues acknowledgement dialogs and resolves each request in order', a
         title: '완료',
         message: '다음 확인',
         acknowledgeLabel: '계속',
+        cancelLabel: null,
     });
 
     feedback.acknowledgeDialog();
     await second;
     assert.equal(secondResolved, true);
+    assert.equal(feedback.dialog.value, null);
+});
+
+void test('confirmation dialogs resolve accept, cancel, and escape-safe cancellation distinctly', async () => {
+    const feedback = createGameFeedbackStore();
+
+    const accepted = feedback.confirm({ message: '저장할까요?', acknowledgeLabel: '저장' });
+    assert.deepEqual(feedback.dialog.value, {
+        id: 1,
+        kind: 'info',
+        title: '확인',
+        message: '저장할까요?',
+        acknowledgeLabel: '저장',
+        cancelLabel: '취소',
+    });
+    feedback.acknowledgeDialog();
+    assert.equal(await accepted, true);
+
+    const cancelled = feedback.confirm('해산할까요?');
+    feedback.cancelDialog();
+    assert.equal(await cancelled, false);
     assert.equal(feedback.dialog.value, null);
 });

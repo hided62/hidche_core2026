@@ -2,9 +2,10 @@
 import { nextTick, onBeforeUnmount, ref, watch } from 'vue';
 import { useGameFeedback, type GameFeedbackKind } from '../../composables/useGameFeedback';
 
-const { toasts, dialog, dismissToast, acknowledgeDialog } = useGameFeedback();
+const { toasts, dialog, dismissToast, acknowledgeDialog, cancelDialog } = useGameFeedback();
 const dialogPanel = ref<HTMLElement | null>(null);
 const acknowledgeButton = ref<HTMLButtonElement | null>(null);
+const cancelButton = ref<HTMLButtonElement | null>(null);
 let returnFocus: HTMLElement | null = null;
 let previousBodyOverflow = '';
 
@@ -37,7 +38,7 @@ watch(
         }
         if (next) {
             await nextTick();
-            acknowledgeButton.value?.focus();
+            (next.cancelLabel ? cancelButton.value : acknowledgeButton.value)?.focus();
             return;
         }
         if (previous) restorePage();
@@ -48,7 +49,8 @@ watch(
 const handleDialogKeydown = (event: KeyboardEvent): void => {
     if (event.key === 'Escape') {
         event.preventDefault();
-        acknowledgeDialog();
+        if (dialog.value?.cancelLabel) cancelDialog();
+        else acknowledgeDialog();
         return;
     }
     if (event.key !== 'Tab' || !dialogPanel.value) return;
@@ -119,6 +121,15 @@ onBeforeUnmount(() => {
                     </header>
                     <p id="game-dialog-message">{{ dialog.message }}</p>
                     <footer>
+                        <button
+                            v-if="dialog.cancelLabel"
+                            ref="cancelButton"
+                            type="button"
+                            class="game-dialog-cancel"
+                            @click="cancelDialog"
+                        >
+                            {{ dialog.cancelLabel }}
+                        </button>
                         <button ref="acknowledgeButton" type="button" @click="acknowledgeDialog">
                             {{ dialog.acknowledgeLabel }}
                         </button>
@@ -277,6 +288,7 @@ onBeforeUnmount(() => {
 
 .game-dialog-panel footer {
     display: flex;
+    gap: 0.5rem;
     justify-content: flex-end;
 }
 
@@ -294,6 +306,12 @@ onBeforeUnmount(() => {
     background: #5a4a2d;
     outline: 2px solid #c8aa68;
     outline-offset: 2px;
+}
+
+.game-dialog-panel footer .game-dialog-cancel {
+    color: #ddd;
+    background: #292929;
+    border-color: #626262;
 }
 
 .game-toast-enter-active,

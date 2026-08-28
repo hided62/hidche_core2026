@@ -45,7 +45,12 @@ const nationPriority = ref<PriorityListState | null>(null);
 const generalPriority = ref<PriorityListState | null>(null);
 const lastSavedNationPriority = ref<string[]>([]);
 const lastSavedGeneralPriority = ref<string[]>([]);
-const { success: showSuccessToast, error: showErrorToast, info: showInfoToast } = useGameFeedback();
+const {
+    success: showSuccessToast,
+    error: showErrorToast,
+    info: showInfoToast,
+    confirm: showConfirm,
+} = useGameFeedback();
 const canManagePolicy = computed(() => (data.value?.permissionLevel ?? -1) >= 3);
 
 const resolveErrorMessage = (value: unknown): string => {
@@ -282,20 +287,20 @@ const priorityPanels = computed<PriorityPanel[]>(() => {
     ];
 });
 
-const resetPolicy = () => {
-    if (!canManagePolicy.value || !data.value || !window.confirm('초기 설정으로 되돌릴까요?')) return;
+const resetPolicy = async () => {
+    if (!canManagePolicy.value || !data.value || !(await showConfirm('초기 설정으로 되돌릴까요?'))) return;
     policyDraft.value = clonePolicy(data.value.defaultNationPolicy);
     showInfoToast('서버 초깃값을 적용했습니다. 설정 버튼을 누르면 반영됩니다.');
 };
 
-const rollbackPolicy = () => {
-    if (!canManagePolicy.value || !lastSavedPolicy.value || !window.confirm('이전 설정으로 되돌릴까요?')) return;
+const rollbackPolicy = async () => {
+    if (!canManagePolicy.value || !lastSavedPolicy.value || !(await showConfirm('이전 설정으로 되돌릴까요?'))) return;
     policyDraft.value = clonePolicy(lastSavedPolicy.value);
     showInfoToast('이전 설정으로 되돌렸습니다.');
 };
 
 const submitPolicy = async () => {
-    if (!canManagePolicy.value || !policyDraft.value || !window.confirm('저장할까요?')) return;
+    if (!canManagePolicy.value || !policyDraft.value || !(await showConfirm('저장할까요?'))) return;
     try {
         await trpc.npc.setNationPolicy.mutate(policyDraft.value);
         lastSavedPolicy.value = clonePolicy(policyDraft.value);
@@ -305,8 +310,8 @@ const submitPolicy = async () => {
     }
 };
 
-const resetPriority = (section: PrioritySectionKey) => {
-    if (!canManagePolicy.value || !data.value || !window.confirm('초기 설정으로 되돌릴까요?')) return;
+const resetPriority = async (section: PrioritySectionKey) => {
+    if (!canManagePolicy.value || !data.value || !(await showConfirm('초기 설정으로 되돌릴까요?'))) return;
     if (section === 'nation') {
         nationPriority.value = assignPriorityState(
             data.value.defaultNationPriority,
@@ -321,8 +326,8 @@ const resetPriority = (section: PrioritySectionKey) => {
     showInfoToast('서버 초깃값을 적용했습니다. 설정 버튼을 누르면 반영됩니다.');
 };
 
-const rollbackPriority = (section: PrioritySectionKey) => {
-    if (!canManagePolicy.value || !data.value || !window.confirm('이전 설정으로 되돌릴까요?')) return;
+const rollbackPriority = async (section: PrioritySectionKey) => {
+    if (!canManagePolicy.value || !data.value || !(await showConfirm('이전 설정으로 되돌릴까요?'))) return;
     if (section === 'nation') {
         nationPriority.value = assignPriorityState(
             lastSavedNationPriority.value,
@@ -339,7 +344,7 @@ const rollbackPriority = (section: PrioritySectionKey) => {
 
 const submitPriority = async (section: PrioritySectionKey) => {
     const state = section === 'nation' ? nationPriority.value : generalPriority.value;
-    if (!canManagePolicy.value || !state || !window.confirm('저장할까요?')) return;
+    if (!canManagePolicy.value || !state || !(await showConfirm('저장할까요?'))) return;
     try {
         if (section === 'nation') {
             await trpc.npc.setNationPriority.mutate(state.active);

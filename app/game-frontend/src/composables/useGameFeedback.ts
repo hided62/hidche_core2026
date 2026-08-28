@@ -14,6 +14,7 @@ export type GameNoticeDialog = {
     title: string;
     message: string;
     acknowledgeLabel: string;
+    cancelLabel: string | null;
 };
 
 export type GameNoticeDialogOptions = {
@@ -23,9 +24,13 @@ export type GameNoticeDialogOptions = {
     acknowledgeLabel?: string;
 };
 
+export type GameConfirmDialogOptions = GameNoticeDialogOptions & {
+    cancelLabel?: string;
+};
+
 type QueuedDialog = {
     dialog: GameNoticeDialog;
-    resolve: () => void;
+    resolve: (confirmed: boolean) => void;
 };
 
 const titleFor = (kind: GameFeedbackKind): string => {
@@ -39,7 +44,7 @@ export const createGameFeedbackStore = () => {
     const activeDialog = ref<GameNoticeDialog | null>(null);
     const dismissTimers = new Map<number, ReturnType<typeof setTimeout>>();
     const dialogQueue: QueuedDialog[] = [];
-    let activeDialogResolve: (() => void) | null = null;
+    let activeDialogResolve: ((confirmed: boolean) => void) | null = null;
     let nextId = 1;
 
     const dismissToast = (id: number): void => {
@@ -61,7 +66,10 @@ export const createGameFeedbackStore = () => {
         const id = nextId++;
         visibleToasts.value = [...visibleToasts.value.slice(-3), { id, kind, message: normalizedMessage }];
         if (durationMs > 0) {
-            dismissTimers.set(id, setTimeout(() => dismissToast(id), durationMs));
+            dismissTimers.set(
+                id,
+                setTimeout(() => dismissToast(id), durationMs)
+            );
         }
         return id;
     };
@@ -89,6 +97,28 @@ export const createGameFeedbackStore = () => {
                     title: options.title?.trim() || titleFor(kind),
                     message,
                     acknowledgeLabel: options.acknowledgeLabel?.trim() || '확인',
+                    cancelLabel: null,
+                },
+                resolve: () => resolve(),
+            });
+            if (!activeDialog.value) activateNextDialog();
+        });
+    };
+
+    const confirm = (options: GameConfirmDialogOptions | string): Promise<boolean> => {
+        const normalizedOptions = typeof options === 'string' ? { message: options } : options;
+        const message = normalizedOptions.message.trim();
+        if (!message) return Promise.resolve(false);
+        const kind = normalizedOptions.kind ?? 'info';
+        return new Promise((resolve) => {
+            dialogQueue.push({
+                dialog: {
+                    id: nextId++,
+                    kind,
+                    title: normalizedOptions.title?.trim() || '확인',
+                    message,
+                    acknowledgeLabel: normalizedOptions.acknowledgeLabel?.trim() || '확인',
+                    cancelLabel: normalizedOptions.cancelLabel?.trim() || '취소',
                 },
                 resolve,
             });
@@ -96,13 +126,16 @@ export const createGameFeedbackStore = () => {
         });
     };
 
-    const acknowledgeDialog = (): void => {
+    const resolveDialog = (confirmed: boolean): void => {
         const resolve = activeDialogResolve;
         activeDialog.value = null;
         activeDialogResolve = null;
-        resolve?.();
+        resolve?.(confirmed);
         activateNextDialog();
     };
+
+    const acknowledgeDialog = (): void => resolveDialog(true);
+    const cancelDialog = (): void => resolveDialog(false);
 
     return {
         toasts: readonly(visibleToasts),
@@ -112,7 +145,9 @@ export const createGameFeedbackStore = () => {
         error: (message: string, durationMs?: number) => showToast(message, 'error', durationMs),
         info: (message: string, durationMs?: number) => showToast(message, 'info', durationMs),
         showDialog,
+        confirm,
         acknowledgeDialog,
+        cancelDialog,
         dismissToast,
     };
 };

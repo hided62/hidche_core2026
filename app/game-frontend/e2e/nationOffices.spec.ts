@@ -1,9 +1,10 @@
-import { expect, test, type Page, type Route } from '@playwright/test';
+import { devices, expect, test, type Page, type Route } from '@playwright/test';
 import { mkdir, readFile } from 'node:fs/promises';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { gameProfile, gameTrpcRoute } from './gameTestPaths.js';
 import { expectLumenButtonStates } from './lumenButton.js';
+import { acceptAppConfirmation } from './appConfirmation.js';
 
 type Role = 'leader' | 'head' | 'member';
 type FixtureState = {
@@ -394,11 +395,8 @@ test('leader can grant two ambassador and auditor permissions by click or touch 
     expect(ambassadorGeometry.width).toBeGreaterThanOrEqual(100);
     await screenshot(page, 'core-personnel-mobile-permission-picker-open.png');
 
-    page.once('dialog', async (dialog) => {
-        expect(dialog.message()).toBe('외교권자를 변경할까요?');
-        await dialog.accept();
-    });
     await page.getByRole('button', { name: '외교권자 임명 반영' }).click();
+    await acceptAppConfirmation(page, '외교권자를 변경할까요?');
     await expect(page.getByTestId('game-toast').filter({ hasText: '권한을 변경했습니다.' })).toBeVisible();
     await expect.poll(() => state.permissionMutationInput).toEqual({ isAmbassador: true, targetGeneralIds: [7, 6] });
 
@@ -409,11 +407,8 @@ test('leader can grant two ambassador and auditor permissions by click or touch 
     await expect(auditorOptions.getByRole('option', { name: '허저' })).toHaveCount(0);
     await auditorOptions.getByRole('option', { name: '장료' }).click();
     await expect(auditorTrigger).toHaveAccessibleName('조언자 선택, 현재 2명');
-    page.once('dialog', async (dialog) => {
-        expect(dialog.message()).toBe('조언자를 변경할까요?');
-        await dialog.accept();
-    });
     await page.getByRole('button', { name: '조언자 임명 반영' }).click();
+    await acceptAppConfirmation(page, '조언자를 변경할까요?');
     await expect(page.getByTestId('game-toast').filter({ hasText: '권한을 변경했습니다.' })).toBeVisible();
     await expect.poll(() => state.permissionMutationInput).toEqual({ isAmbassador: false, targetGeneralIds: [8, 6] });
     expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBe(390);
@@ -441,11 +436,8 @@ test('personnel selects an informed general and reports the JosaUtil-composed re
     await candidate.focus();
     expect(await candidate.evaluate((button) => getComputedStyle(button).outlineStyle)).not.toBe('none');
     await screenshot(page, 'core-personnel-desktop-general-picker.png');
-    page.once('dialog', async (dialog) => {
-        expect(dialog.message()).toBe('장료를 주부직에 임명하시겠습니까?');
-        await dialog.accept();
-    });
     await candidate.click();
+    await acceptAppConfirmation(page, '장료를 주부직에 임명하시겠습니까?');
 
     await expect(page.getByTestId('game-toast')).toContainText('장료를 임명했습니다.');
     expect(state.appointedGeneralId).toBe(6);
@@ -531,11 +523,8 @@ test('personnel reflows row-level appointments at 500px and 390px without gradie
         await picker.getByRole('button', { name: /장료/ }).evaluate((button) => getComputedStyle(button).outlineStyle)
     ).not.toBe('none');
     await screenshot(page, 'core-personnel-mobile-city-picker.png');
-    page.once('dialog', async (dialog) => {
-        expect(dialog.message()).toBe('장료를 허창 태수직에 임명하시겠습니까?');
-        await dialog.accept();
-    });
     await picker.getByRole('button', { name: /장료/ }).click();
+    await acceptAppConfirmation(page, '장료를 허창 태수직에 임명하시겠습니까?');
     await expect(page.getByTestId('game-toast')).toContainText('장료를 임명했습니다.');
     expect(state.appointedGeneralId).toBe(6);
     expect(state.appointedCityId).toBe(1);
@@ -570,6 +559,29 @@ test('personnel reflows row-level appointments at 500px and 390px without gradie
     expect(narrowChiefWidth).toBeGreaterThan(194);
     expect(narrowChiefWidth).toBeLessThan(196);
     await screenshot(page, 'core-personnel-mobile-rows.png');
+});
+
+test('@ios-webkit iPhone touch appoints a city officer after the picker closes', async ({ browser }, testInfo) => {
+    const configuredBaseUrl = testInfo.project.use.baseURL;
+    if (typeof configuredBaseUrl !== 'string') throw new Error('Playwright baseURL is required');
+    const context = await browser.newContext({ ...devices['iPhone 15'], baseURL: configuredBaseUrl });
+    const page = await context.newPage();
+    const state: FixtureState = { role: 'head', rate: 20 };
+    try {
+        await installFixture(page, state);
+        await gotoOffice(page, 'nation/personnel');
+        await page.getByRole('button', { name: '허창 태수 변경하기', exact: true }).click();
+        const picker = page.getByTestId('personnel-selection-dialog');
+        await picker.getByRole('button', { name: /장료/ }).click();
+        await expect(picker).toBeHidden();
+        await acceptAppConfirmation(page, '장료를 허창 태수직에 임명하시겠습니까?');
+        await expect(page.getByTestId('game-toast')).toContainText('장료를 임명했습니다.');
+        expect(state.appointedGeneralId).toBe(6);
+        expect(state.appointedCityId).toBe(1);
+        expect(state.appointedOfficerLevel).toBe(4);
+    } finally {
+        await context.close();
+    }
 });
 
 test('personnel hides every mutation control for an ordinary member and exposes load errors', async ({ page }) => {

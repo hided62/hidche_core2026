@@ -25,7 +25,7 @@ const dialogTroopId = ref(0);
 const popupMember = ref<Member | null>(null);
 const popupTop = ref(0);
 const router = useRouter();
-const { success: showSuccessToast, error: showErrorToast } = useGameFeedback();
+const { success: showSuccessToast, error: showErrorToast, confirm: showConfirm } = useGameFeedback();
 
 const me = computed(() => data.value?.me ?? null);
 
@@ -92,7 +92,7 @@ const joinTroop = async (troop: Troop) => {
 const exitTroop = async (troop: Troop) => {
     const isLeader = me.value?.id === troop.id;
     const prompt = isLeader ? `${troop.name} 부대를 해산하겠습니까?` : `${troop.name} 부대에서 탈퇴하겠습니까?`;
-    if (!window.confirm(prompt)) {
+    if (!(await showConfirm(prompt))) {
         return;
     }
     await runAction(async () => {
@@ -130,7 +130,7 @@ const hasFinalConsonant = (value: string): boolean => {
 const renameTroop = async (troop: Troop) => {
     const troopName = editName.value;
     const particle = hasFinalConsonant(troopName) ? '으로' : '로';
-    if (!window.confirm(`${troop.name} 부대의 이름을 ${troopName}${particle} 바꾸시겠습니까?`)) {
+    if (!(await showConfirm(`${troop.name} 부대의 이름을 ${troopName}${particle} 바꾸시겠습니까?`))) {
         return;
     }
     await runAction(async () => {
@@ -147,7 +147,7 @@ const kickMember = async (troop: Troop) => {
         return;
     }
     const particle = hasFinalConsonant(member.name) ? '을' : '를';
-    if (!window.confirm(`${troop.name} 부대에서 ${member.name}${particle} 추방하시겠습니까?`)) {
+    if (!(await showConfirm(`${troop.name} 부대에서 ${member.name}${particle} 추방하시겠습니까?`))) {
         return;
     }
     await runAction(async () => {

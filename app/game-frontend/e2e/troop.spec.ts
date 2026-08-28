@@ -1,8 +1,9 @@
-import { expect, test, type Page, type Route } from '@playwright/test';
+import { devices, expect, test, type Page, type Route } from '@playwright/test';
 import { readFile } from 'node:fs/promises';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { gameProfile, gameTrpcRoute } from './gameTestPaths.js';
+import { acceptAppConfirmation } from './appConfirmation.js';
 
 const repositoryRoot = resolve(dirname(fileURLToPath(import.meta.url)), '../../..');
 const imageRoots = [
@@ -348,6 +349,11 @@ const installApiFixture = async (page: Page, state: FixtureState) => {
                 state.troops[0]!.members = state.troops[0]!.members.filter((member) => member.id !== 3);
                 return response({ ok: true });
             }
+            if (operation === 'troop.exit') {
+                state.me.troopId = 0;
+                state.troops = state.troops.filter((troop) => troop.id !== state.me.id);
+                return response({ ok: true });
+            }
             return errorResponse(operation, `Unhandled fixture operation: ${operation}`);
         });
         await fulfillJson(route, results);
@@ -555,19 +561,19 @@ test('shows API failure then creates a troop successfully', async ({ page }) => 
     await expect(input).toBeHidden();
 });
 
-test('renames and kicks through confirm dialogs, then refreshes state', async ({ page }) => {
+test('renames and kicks through app confirmation dialogs, then refreshes state', async ({ page }) => {
     const state: FixtureState = {
         me: { id: 1, troopId: 1 },
         permission: 4,
         troops: baseTroops(),
     };
     await installApiFixture(page, state);
-    page.on('dialog', (dialog) => dialog.accept());
     await gotoTroop(page);
 
     await page.getByRole('button', { name: '부대명 변경...' }).first().click();
     await page.getByRole('textbox', { name: '새 부대명' }).fill('백마의종');
     await page.getByRole('button', { name: '변경', exact: true }).click();
+    await acceptAppConfirmation(page, '백마대 부대의 이름을 백마의종으로 바꾸시겠습니까?');
     await expect(page.locator('[data-testid="game-toast"][data-feedback-kind="success"]')).toContainText(
         '부대명을 변경했습니다.'
     );
@@ -576,10 +582,42 @@ test('renames and kicks through confirm dialogs, then refreshes state', async ({
     await page.getByRole('button', { name: '부대원 추방...' }).click();
     await page.getByRole('combobox', { name: '추방할 부대원' }).selectOption('3');
     await page.getByRole('button', { name: '추방', exact: true }).click();
+    await acceptAppConfirmation(page, '백마의종 부대에서 조운을 추방하시겠습니까?');
     await expect(
         page.locator('[data-testid="game-toast"][data-feedback-kind="success"]').filter({ hasText: '조운' })
     ).toContainText('조운을 추방했습니다.');
     await expect(page.locator('.troopMembers').first()).not.toContainText('조운');
+});
+
+test('@ios-webkit iPhone touch renames and disbands a troop through app confirmations', async ({
+    browser,
+}, testInfo) => {
+    const configuredBaseUrl = testInfo.project.use.baseURL;
+    if (typeof configuredBaseUrl !== 'string') throw new Error('Playwright baseURL is required');
+    const context = await browser.newContext({ ...devices['iPhone 15'], baseURL: configuredBaseUrl });
+    const page = await context.newPage();
+    const state: FixtureState = {
+        me: { id: 1, troopId: 1 },
+        permission: 4,
+        troops: baseTroops(),
+    };
+    try {
+        await installApiFixture(page, state);
+        await gotoTroop(page);
+        await page.getByRole('button', { name: '부대명 변경...' }).first().click();
+        await page.getByRole('textbox', { name: '새 부대명' }).fill('백마의종');
+        await page.getByRole('button', { name: '변경', exact: true }).click();
+        await acceptAppConfirmation(page, '백마대 부대의 이름을 백마의종으로 바꾸시겠습니까?');
+        await expect(page.locator('.troopInfo').filter({ hasText: '백마의종' })).toBeVisible();
+
+        await page.getByRole('button', { name: '부대 해산' }).click();
+        await acceptAppConfirmation(page, '백마의종 부대를 해산하겠습니까?');
+        await expect(page.getByTestId('game-toast').filter({ hasText: '부대를 해산했습니다.' })).toBeVisible();
+        expect(state.me.troopId).toBe(0);
+        await expect(page.locator('[data-troop-id="1"]')).toHaveCount(0);
+    } finally {
+        await context.close();
+    }
 });
 
 test('does not render management controls for an unauthorized member', async ({ page }) => {

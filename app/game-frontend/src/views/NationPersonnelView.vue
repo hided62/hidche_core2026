@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, ref, watch } from 'vue';
+import { computed, nextTick, onMounted, ref, watch } from 'vue';
 import { useRouter } from 'vue-router';
 
 import { JosaUtil } from '@sammo-ts/common/util/JosaUtil';
@@ -39,7 +39,7 @@ const kickTargetId = ref(0);
 const ambassadorSelection = ref<number[]>([]);
 const auditorSelection = ref<number[]>([]);
 const router = useRouter();
-const { success: showSuccessToast, error: showErrorToast } = useGameFeedback();
+const { success: showSuccessToast, error: showErrorToast, confirm: showConfirm } = useGameFeedback();
 
 const resolveErrorMessage = (value: unknown): string =>
     value instanceof Error ? value.message : typeof value === 'string' ? value : 'unknown_error';
@@ -135,7 +135,7 @@ const appointChief = async (level: number, targetId: number) => {
     const prompt = target
         ? `${JosaUtil.put(target.name, '을')} ${office}직에 임명하시겠습니까?`
         : `${office}직을 비우시겠습니까?`;
-    if (!window.confirm(prompt)) return;
+    if (!(await showConfirm(prompt))) return;
     await runMutation(
         () => trpc.nation.appoint.mutate({ destGeneralId: targetId, destCityId: 0, officerLevel: level }),
         target ? `${JosaUtil.put(target.name, '을')} 임명했습니다.` : '관직을 비웠습니다.'
@@ -148,7 +148,7 @@ const appointCityOfficer = async (level: OfficerLevel, cityId: number, targetId:
     const prompt = target
         ? `${JosaUtil.put(target.name, '을')} ${city?.name ?? ''} ${officerLabels[level]}직에 임명하시겠습니까?`
         : `${city?.name ?? ''} ${officerLabels[level]}직을 비우시겠습니까?`;
-    if (!window.confirm(prompt)) return;
+    if (!(await showConfirm(prompt))) return;
     await runMutation(
         () =>
             trpc.nation.appoint.mutate({
@@ -248,6 +248,7 @@ const applySelection = async (id: number): Promise<void> => {
     const context = selectionContext.value;
     if (!context) return;
     selectionContext.value = null;
+    await nextTick();
     if (context.kind === 'chief-general') await appointChief(context.level, id);
     else await appointCityOfficer(context.level, context.cityId, id);
 };
@@ -258,7 +259,7 @@ const reportPermissionLimit = () => {
 
 const changePermissions = async (isAmbassador: boolean) => {
     const selection = isAmbassador ? ambassadorSelection.value : auditorSelection.value;
-    if (!window.confirm(`${isAmbassador ? '외교권자' : '조언자'}를 변경할까요?`)) return;
+    if (!(await showConfirm(`${isAmbassador ? '외교권자' : '조언자'}를 변경할까요?`))) return;
     await runMutation(
         () => trpc.nation.changePermission.mutate({ isAmbassador, targetGeneralIds: selection }),
         '권한을 변경했습니다.'
@@ -267,7 +268,7 @@ const changePermissions = async (isAmbassador: boolean) => {
 
 const kickGeneral = async () => {
     const target = generalMap.value.get(kickTargetId.value);
-    if (!target || !window.confirm(`${JosaUtil.put(target.name, '을')} 추방하시겠습니까?`)) return;
+    if (!target || !(await showConfirm(`${JosaUtil.put(target.name, '을')} 추방하시겠습니까?`))) return;
     await runMutation(
         () => trpc.nation.kick.mutate({ destGeneralId: target.id }),
         `${JosaUtil.put(target.name, '을')} 추방했습니다.`
