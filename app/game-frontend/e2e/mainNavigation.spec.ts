@@ -35,6 +35,8 @@ type NavigationFixture = {
     generalMeCalls: number;
     operations: string[];
     generalName?: string;
+    generalPicture?: string | null;
+    generalImageServer?: number;
     generalTurnTime?: string;
     nextTurnMonthOffset?: 0 | 1;
     serverTime?: string;
@@ -446,8 +448,8 @@ const generalContext = (state: NavigationFixture) => ({
         officerCityName: state.officerLevel >= 2 && state.officerLevel <= 4 ? '업' : null,
         generalType: '용장',
         leadershipBonus: state.officerLevel === 12 ? state.nationLevel * 2 : 0,
-        picture: null,
-        imageServer: 0,
+        picture: state.generalPicture ?? null,
+        imageServer: state.generalImageServer ?? 0,
         stats: { leadership: 70, strength: 60, intelligence: 50 },
         gold: 1_000,
         rice: 2_000,
@@ -1428,6 +1430,85 @@ test('main info fills the eighth slot with Ref-compatible autorun status and an 
     await expect(page.getByRole('tooltip')).toHaveCount(0);
 });
 
+test('main user icon keeps transparent pixels clear and only falls back after an image error', async ({
+    page,
+}, testInfo) => {
+    const state: NavigationFixture = {
+        officerLevel: 5,
+        permission: 2,
+        nationLevel: 3,
+        stage: 0,
+        npcMode: 1,
+        generalPicture: 'transparent-main.png',
+        generalImageServer: 1,
+        generalMeCalls: 0,
+        operations: [],
+    };
+    await page.route('**/icons/transparent-main.png', async (route) => {
+        await route.fulfill({
+            status: 200,
+            contentType: 'image/png',
+            body: Buffer.from(
+                'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M/wHwAF/gL+X1N6WQAAAABJRU5ErkJggg==',
+                'base64'
+            ),
+        });
+    });
+    await installFixture(page, state);
+    await page.setViewportSize({ width: 500, height: 900 });
+    await waitForMain(page);
+
+    const icon = page.locator('[data-main-target="general"] .general-icon');
+    await expect(icon).toHaveJSProperty('tagName', 'IMG');
+    await expect(icon).toHaveAttribute('src', /\/icons\/transparent-main\.png$/u);
+    await expect(icon).toHaveCSS('background-image', 'none');
+    await expect(icon).toHaveCSS('object-fit', 'contain');
+    await icon.screenshot({ path: testInfo.outputPath('transparent-main-user-icon.png') });
+});
+
+test('mobile top menu popup stays above the eight-cell game information strip', async ({ page }, testInfo) => {
+    const state: NavigationFixture = {
+        officerLevel: 5,
+        permission: 2,
+        nationLevel: 3,
+        stage: 0,
+        npcMode: 1,
+        generalMeCalls: 0,
+        operations: [],
+    };
+    await installFixture(page, state);
+    await page.setViewportSize({ width: 500, height: 900 });
+    await waitForMain(page);
+
+    const topMenu = page.locator('[data-menu-position="top"]');
+    const gameInfoButton = topMenu.locator('[data-menu-id="game-info"]');
+    await gameInfoButton.click();
+    const popup = topMenu.locator('#global-menu-game-info');
+    await expect(popup).toBeVisible();
+
+    const stacking = await popup.evaluate((element) => {
+        const menu = element.closest<HTMLElement>('.main-global-menu');
+        const gameInfo = document.querySelector<HTMLElement>('.legacy-game-info');
+        if (!menu || !gameInfo) throw new Error('mobile top menu stacking targets are missing');
+        const popupRect = element.getBoundingClientRect();
+        const gameInfoRect = gameInfo.getBoundingClientRect();
+        const left = Math.max(popupRect.left, gameInfoRect.left);
+        const right = Math.min(popupRect.right, gameInfoRect.right);
+        const top = Math.max(popupRect.top, gameInfoRect.top);
+        const bottom = Math.min(popupRect.bottom, gameInfoRect.bottom);
+        if (right <= left || bottom <= top) throw new Error('mobile popup does not overlap the game information strip');
+        const hit = document.elementFromPoint((left + right) / 2, (top + bottom) / 2);
+        return {
+            menuZIndex: Number(getComputedStyle(menu).zIndex),
+            gameInfoZIndex: Number(getComputedStyle(gameInfo).zIndex),
+            hitInsidePopup: hit === element || element.contains(hit),
+        };
+    });
+    expect(stacking.menuZIndex).toBeGreaterThan(stacking.gameInfoZIndex);
+    expect(stacking.hitInsidePopup).toBe(true);
+    await page.screenshot({ path: testInfo.outputPath('mobile-top-menu-game-info-stacking.png') });
+});
+
 test('desktop menus preserve ref columns, prefix-safe routes, and controlled dropdown behavior', async ({
     page,
 }, testInfo) => {
@@ -2024,6 +2105,84 @@ test('the repeated bottom global menu opens upward on the mobile document', asyn
     await versionDialog.screenshot({ path: testInfo.outputPath('mobile-game-version-dialog.png') });
     await page.screenshot({ path: testInfo.outputPath('mobile-game-version-dialog-viewport.png') });
     await persistArtifact(page, `${basePath.slice(1)}-mobile-bottom-dropup`);
+});
+
+test('mobile message content owns its full height and leaves the diplomacy action clear of the bottom bar', async ({
+    page,
+}, testInfo) => {
+    const target = (generalId: number, generalName: string) => ({
+        generalId,
+        generalName,
+        nationId: 1,
+        nationName: '위',
+        color: '#008000',
+        icon: '',
+    });
+    const entries = (type: 'public' | 'national' | 'private' | 'diplomacy', startId: number) =>
+        Array.from({ length: 12 }, (_, index) => ({
+            id: startId + index,
+            text: `${type} 모바일 높이 검증 메시지 ${index + 1}`,
+            time: '2026-08-12 12:00:00',
+            msgType: type,
+            src: target(21, '보낸장수'),
+            dest: type === 'public' ? null : target(7, '메뉴검증장수'),
+            option: {},
+        }));
+    const state: NavigationFixture = {
+        officerLevel: 5,
+        permission: 2,
+        nationLevel: 3,
+        stage: 0,
+        npcMode: 1,
+        generalMeCalls: 0,
+        operations: [],
+        messages: {
+            ...emptyMessages(2),
+            public: entries('public', 100),
+            national: entries('national', 200),
+            private: entries('private', 300),
+            diplomacy: entries('diplomacy', 400),
+        },
+    };
+    await installFixture(page, state);
+    await page.setViewportSize({ width: 500, height: 900 });
+    await waitForMain(page);
+
+    const panel = page.locator('.mobile-message-panel');
+    const diplomacyLoadOlder = panel.locator('.DiplomacyTalk .load-older');
+    await expect(diplomacyLoadOlder).toBeVisible();
+    const flowGeometry = await panel.evaluate((element) => {
+        const repeated = document.querySelector<HTMLElement>('[data-menu-position="bottom"]');
+        const privateTalk = element.querySelector<HTMLElement>('.PrivateTalk');
+        const actions = element.querySelector<HTMLElement>('.DiplomacyTalk .Actions');
+        if (!repeated || !privateTalk || !actions) throw new Error('mobile message flow targets are missing');
+        return {
+            panel: element.getBoundingClientRect().toJSON(),
+            panelClientHeight: element.clientHeight,
+            panelScrollHeight: element.scrollHeight,
+            privateTalk: privateTalk.getBoundingClientRect().toJSON(),
+            actionsColumns: getComputedStyle(actions).gridTemplateColumns,
+            repeatedMenu: repeated.getBoundingClientRect().toJSON(),
+        };
+    });
+    expect(flowGeometry.panelClientHeight).toBeGreaterThanOrEqual(flowGeometry.panelScrollHeight);
+    expect(flowGeometry.repeatedMenu.top).toBeGreaterThanOrEqual(flowGeometry.panel.bottom - 0.5);
+    expect(flowGeometry.repeatedMenu.top).toBeGreaterThanOrEqual(flowGeometry.privateTalk.bottom - 0.5);
+    expect(flowGeometry.actionsColumns.split(' ')).toHaveLength(2);
+
+    await page.evaluate(() => window.scrollTo(0, document.documentElement.scrollHeight));
+    const bottomClearance = await diplomacyLoadOlder.evaluate((button) => {
+        const bottomBar = document.querySelector<HTMLElement>('.main-mobile-bottom');
+        const spacer = document.querySelector<HTMLElement>('.main-mobile-bottom-spacer');
+        if (!bottomBar || !spacer) throw new Error('mobile bottom clearance targets are missing');
+        return {
+            clearance: bottomBar.getBoundingClientRect().top - button.getBoundingClientRect().bottom,
+            spacerHeight: spacer.getBoundingClientRect().height,
+        };
+    });
+    expect(bottomClearance.clearance).toBeGreaterThanOrEqual(12);
+    expect(bottomClearance.spacerHeight).toBeGreaterThanOrEqual(61);
+    await page.screenshot({ path: testInfo.outputPath('mobile-diplomacy-bottom-clearance.png') });
 });
 
 test('first reserved month crosses December only after the general turn has passed', async ({ page }, testInfo) => {

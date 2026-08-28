@@ -1065,7 +1065,7 @@ button {
 
 @media (max-width: 939.98px) {
     .main-mobile-bottom-spacer {
-        height: 45px;
+        height: calc(61px + env(safe-area-inset-bottom));
     }
 
     .main-page {
@@ -1100,7 +1100,6 @@ button {
     }
 
     .mobile-message-panel {
-        height: 1394.5px;
         margin-bottom: -10px;
     }
 }

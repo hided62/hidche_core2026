@@ -6,7 +6,7 @@ import LegacyProgressBar from '../ui/LegacyProgressBar.vue';
 import RichTooltip from '../ui/RichTooltip.vue';
 import { formatLocalTimeSeconds } from '../../utils/legacyDateTime';
 import { legacyExperiencePercent, ratioPercent } from '../../utils/legacyProgress';
-import { DEFAULT_GENERAL_ICON_URL, resolveGeneralIconBackgroundImage } from '../../utils/generalIcon';
+import { DEFAULT_GENERAL_ICON_URL, resolveGeneralIconUrl, useDefaultGeneralIcon } from '../../utils/generalIcon';
 import { configuredGameAssetUrl } from '../../utils/imageAssets';
 import { legacyLuminanceTextColor } from '../../utils/legacyNationColor';
 
@@ -164,7 +164,7 @@ const experiencePercent = computed(() =>
 
 const itemNames = computed<ItemDisplayNames>(() => props.general?.itemNames ?? props.general?.equipmentNames ?? {});
 
-const generalIconBackground = computed(() => resolveGeneralIconBackgroundImage(props.general ?? {}));
+const generalIconUrl = computed(() => resolveGeneralIconUrl(props.general ?? {}));
 
 const crewTypeIconBackground = computed(() => {
     const crewTypeId = props.general?.crewTypeId;
@@ -251,11 +251,11 @@ const specialText = computed(() => {
         <div v-else-if="!props.general" class="empty">장수 정보를 불러오지 못했습니다.</div>
         <template v-else>
             <div class="general-basic-grid general-body">
-                <span
+                <img
                     class="general-image general-icon"
-                    role="img"
-                    :aria-label="`${props.general.name} 초상`"
-                    :style="{ backgroundImage: generalIconBackground }"
+                    :src="generalIconUrl"
+                    :alt="`${props.general.name} 초상`"
+                    @error="useDefaultGeneralIcon"
                 />
                 <div class="general-title battle-general-name" :style="titleStyle">
                     {{ props.general.name }} 【
@@ -505,6 +505,7 @@ const specialText = computed(() => {
     background-position: center;
     background-repeat: no-repeat;
     background-size: contain;
+    object-fit: contain;
     pointer-events: none;
     user-select: none;
     -webkit-user-drag: none;

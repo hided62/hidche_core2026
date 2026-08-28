@@ -173,6 +173,10 @@ const isActive = (link: MainNavigationLinkItem) => link.highlightWhen === 'vote'
     box-shadow: 0 -8px 18px rgb(0 0 0 / 45%);
 }
 
+.main-global-menu[data-menu-position='top'] {
+    z-index: 101;
+}
+
 .main-global-menu[data-menu-position='bottom'] .menu-caret {
     border-top-width: 0;
     border-bottom: 4px solid currentColor;

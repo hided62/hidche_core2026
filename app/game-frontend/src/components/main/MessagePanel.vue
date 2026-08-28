@@ -467,5 +467,9 @@ const forwardResponse = (messageId: number, response: boolean) => {
         z-index: 4;
         top: 62px;
     }
+
+    .Actions {
+        grid-template-columns: 1fr 1fr;
+    }
 }
 </style>
