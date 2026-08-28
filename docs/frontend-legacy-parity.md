@@ -5,6 +5,14 @@ are enforced while the PHP frontend is moved to the Vue applications. The
 workspace-level `docs/ref-core2026-mapping.md` remains the source of truth for
 the end-to-end PHP-to-core2026 mapping.
 
+Ref comparison detects missing information and unintended interaction or layout
+regressions; it does not permanently freeze every Core screen pixel-for-pixel.
+Classify each difference as an inherited contract, an intentional product
+difference, a missing/regressed behavior, or a Core-only feature. Exact visual
+equality applies only where the inherited contract declares it. Intentional UX,
+accessibility, or responsive changes need a documented scope, user impact, and
+Core-owned geometry and interaction assertions instead of a disabled parity test.
+
 ## Canonical browser fixture
 
 `tools/frontend-legacy-parity/fixtures/canonical.ts` contains deterministic,
