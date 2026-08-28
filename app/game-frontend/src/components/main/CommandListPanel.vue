@@ -153,6 +153,7 @@ onUnmounted(() => {
         :map-layout="props.mapLayout"
         :autonomous-until="autonomousUntil"
         :mobile="props.mobile"
+        :max-push-turn="12"
         @reserve-bulk="emit('set-general-turns', $event)"
         @shift="emit('shift-general-turns', $event)"
         @repeat="emit('repeat-general-turns', $event)"

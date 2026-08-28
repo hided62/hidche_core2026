@@ -946,6 +946,47 @@ const install = async (
     return requests;
 };
 
+test('offers the Ref repeat range for general turns while keeping the chief range', async ({ page }) => {
+    await install(page);
+    await page.setViewportSize({ width: 1200, height: 900 });
+    await page.goto('/');
+
+    const generalEditor = page.locator('[data-command-scope="general"]:visible');
+    const generalRepeat = generalEditor.locator('.control-pad > details').filter({ hasText: '반복' });
+    await generalRepeat.locator('summary').click();
+    await expect(generalRepeat.locator('.menu-items > button')).toHaveText(
+        Array.from({ length: 12 }, (_, index) => `${index + 1}턴`)
+    );
+
+    await page.setViewportSize({ width: 500, height: 900 });
+    const mobileGeneralEditor = page.locator('[data-command-scope="general"]:visible');
+    const mobileGeneralRepeat = mobileGeneralEditor.locator('.control-pad > details').filter({ hasText: '반복' });
+    await mobileGeneralRepeat.locator('summary').click();
+    const mobileRepeatItems = mobileGeneralRepeat.locator('.menu-items');
+    await expect(mobileRepeatItems).toBeVisible();
+    await expect(mobileRepeatItems.locator(':scope > button')).toHaveText(
+        Array.from({ length: 12 }, (_, index) => `${index + 1}턴`)
+    );
+    const mobileGeometry = await mobileRepeatItems.evaluate((element) => ({
+        right: element.getBoundingClientRect().right,
+        height: element.getBoundingClientRect().height,
+        viewportWidth: document.documentElement.clientWidth,
+        overflow: element.scrollWidth - element.clientWidth,
+    }));
+    expect(mobileGeometry.right).toBeLessThanOrEqual(mobileGeometry.viewportWidth);
+    expect(mobileGeometry.height).toBeGreaterThan(0);
+    expect(mobileGeometry.overflow).toBeLessThanOrEqual(0);
+    await page.screenshot({ path: test.info().outputPath('general-repeat-12-mobile-500.png'), fullPage: true });
+
+    await page.goto('/che/chief-center');
+    const chiefEditor = page.locator('[data-command-scope="nation"]:visible').first();
+    const chiefRepeat = chiefEditor.locator('.control-pad > details').filter({ hasText: '반복' });
+    await chiefRepeat.locator('summary').click();
+    await expect(chiefRepeat.locator('.menu-items > button')).toHaveText(
+        Array.from({ length: 6 }, (_, index) => `${index + 1}턴`)
+    );
+});
+
 test('renders and accepts every Ref strategy command at mobile width', async ({ page }) => {
     await install(page);
     await page.setViewportSize({ width: 500, height: 900 });
