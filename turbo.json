@@ -47,6 +47,7 @@
             "cache": false
         },
         "test": {
+            "env": ["SAMMO_TEST_REPORTER"],
             "cache": true
         },
         "dev": {

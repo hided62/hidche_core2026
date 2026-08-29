@@ -12,5 +12,6 @@ export default defineConfig({
         // individual tests still create concurrent writers deliberately.
         fileParallelism: false,
         include: ['test/**/*.test.ts'],
+        reporters: [process.env.SAMMO_TEST_REPORTER === 'verbose' ? 'default' : 'minimal'],
     },
 });

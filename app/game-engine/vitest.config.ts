@@ -9,6 +9,7 @@ export default defineConfig({
         globals: true,
         include: ['test/**/*.test.ts'],
         maxWorkers: 4,
+        reporters: [process.env.SAMMO_TEST_REPORTER === 'verbose' ? 'default' : 'minimal'],
         testTimeout: 10_000,
     },
 });

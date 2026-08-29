@@ -5,5 +5,6 @@ export default defineConfig({
         environment: 'node',
         globals: true,
         include: ['test/**/*.test.ts'],
+        reporters: [process.env.SAMMO_TEST_REPORTER === 'verbose' ? 'default' : 'minimal'],
     },
 });

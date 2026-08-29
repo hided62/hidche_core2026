@@ -19,6 +19,14 @@ pnpm test
 pnpm build
 ```
 
+루트 `pnpm test`와 `pnpm build`는 간단 출력이 기본입니다. Turbo는 실패한 task의
+로그를 남기고 성공 task의 본문을 생략하며, Vitest를 package에서 직접 실행할 때도
+`minimal` reporter를 사용합니다. 테스트별 진행과 성공 task 로그까지 필요한 진단은
+각각 `pnpm test-verbose`, `pnpm build-verbose`로 다시 실행합니다. Codex도 일반
+검증에는 간단 출력을 사용하고, 실패 원인에 상세 로그가 필요할 때만 verbose 명령을
+사용합니다. Gateway 서버 빌드 워커의 streaming 로그는 관리자 관찰 계약이므로 이
+로컬 기본값의 영향을 받지 않습니다.
+
 문서만 변경한 경우에도 Markdown link, Prettier, 생성 문서 일치와
 `pnpm docs:build`를 확인합니다. 제품 코드 동작을 바꾸지 않은 문서 작업은
 typecheck·unit·Chromium 검증을 실행한 것으로 설명하지 않습니다.

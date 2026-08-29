@@ -301,6 +301,11 @@ pnpm test
 pnpm build
 ```
 
+루트 `pnpm test`와 `pnpm build`는 간단 출력이 기본입니다. Codex도 일반 검증에는
+이 명령을 사용하고, 실패 진단이나 전체 task 진행이 필요한 경우에만
+`pnpm test-verbose`, `pnpm build-verbose`를 사용해 주세요. 서버 빌드 워커의
+streaming 상세 로그는 관리자 관찰 계약이므로 간단 출력으로 바꾸지 말아 주세요.
+
 - 모든 코드 변경 후 `CI=1 pnpm typecheck`를 실행해 주세요.
 - package import나 파일 위치를 변경한 뒤 `pnpm check:architecture`를 실행해
   주세요. `packages/logic`의 runtime I/O는 `ports/` interface와 app/infra

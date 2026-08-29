@@ -175,6 +175,12 @@ pnpm build
 pnpm test:integration
 ```
 
+루트 `test`와 `build`는 Codex와 일반 개발 검증에서 성공 로그를 줄이는 간단 출력이
+기본입니다. 테스트별 진행과 전체 Turbo task 로그가 필요한 실패 진단에는
+`pnpm test-verbose`, `pnpm build-verbose`를 사용합니다. Gateway 서버 빌드 워커는
+관리자 operation 화면에 진행 상황을 제공하기 위해 별도의 streaming 상세 출력
+정책을 계속 사용합니다.
+
 PostgreSQL·Redis 조건부 suite는 격리된 서비스를 준비한 뒤 실행합니다.
 
 ```sh
