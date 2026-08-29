@@ -96,6 +96,7 @@ export const getNationDirectory = authedProcedure.query(async ({ ctx }) => {
                 npcState: true,
                 nationId: true,
                 cityId: true,
+                crew: true,
                 dedication: true,
                 officerLevel: true,
                 meta: true,
@@ -182,6 +183,7 @@ export const getNationDirectory = authedProcedure.query(async ({ ctx }) => {
                 capitalCityId: nation.capitalCityId ?? 0,
                 rulerCityName: ruler ? (cityNameById.get(ruler.cityId) ?? null) : null,
                 generalCount: readMetaNumber(nation.meta, 'gennum', nationGenerals.length),
+                totalCrew: nationGenerals.reduce((sum, general) => sum + general.crew, 0),
                 cityCount: nationCities.length,
                 officers,
                 ambassadorNames: secretPermissions

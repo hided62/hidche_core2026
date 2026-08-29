@@ -112,6 +112,7 @@ const directoryGeneral = (overrides: Record<string, unknown> = {}) => ({
     leadership: 70,
     strength: 60,
     intel: 50,
+    crew: 100,
     experience: 1_000,
     meta: { killturn: 3 },
     penalty: {},
@@ -303,6 +304,7 @@ describe('legacy global nation/general directories', () => {
         expect(result[1]).toMatchObject({
             id: 1,
             generalCount: 4,
+            totalCrew: 400,
             cityCount: 1,
             ambassadorNames: ['군주', '외교관'],
             auditorCount: 1,
@@ -312,7 +314,7 @@ describe('legacy global nation/general directories', () => {
             officerLevel: 12,
             general: { id: 10, name: '군주' },
         });
-        expect(result[2]).toMatchObject({ name: '재 야', generalCount: 1, cityCount: 1 });
+        expect(result[2]).toMatchObject({ name: '재 야', generalCount: 1, totalCrew: 100, cityCount: 1 });
     });
 
     it('projects a level-zero nation location from its ruler city even when that city belongs to another nation', async () => {

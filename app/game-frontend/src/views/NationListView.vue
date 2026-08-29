@@ -203,6 +203,16 @@ onBeforeUnmount(() => {
                         <td class="label-cell">장수 / 속령</td>
                         <td class="value-wide">{{ nation.generalCount }} / {{ nation.cityCount }}</td>
                     </tr>
+                    <tr class="desktop-only">
+                        <td class="label-cell">총 병사</td>
+                        <td class="value-wide">{{ nation.totalCrew.toLocaleString('ko-KR') }}</td>
+                        <td colspan="6"></td>
+                    </tr>
+                    <tr class="mobile-only">
+                        <td class="label-cell">총 병사</td>
+                        <td class="value-wide">{{ nation.totalCrew.toLocaleString('ko-KR') }}</td>
+                        <td colspan="2"></td>
+                    </tr>
                     <tr v-for="row in 2" :key="`desktop-officers-${row}`" class="desktop-only">
                         <template v-for="column in 4" :key="column">
                             <td class="label-cell">
@@ -315,6 +325,12 @@ onBeforeUnmount(() => {
                         <td class="neutral-value">{{ nation.generalCount }}</td>
                         <td class="neutral-label">속 령</td>
                         <td class="neutral-value">{{ nation.cityCount }}</td>
+                    </tr>
+                    <tr>
+                        <td class="neutral-spacer">&nbsp;</td>
+                        <td class="neutral-label">총 병사</td>
+                        <td class="neutral-value">{{ nation.totalCrew.toLocaleString('ko-KR') }}</td>
+                        <td colspan="2"></td>
                     </tr>
                     <tr>
                         <td colspan="5">

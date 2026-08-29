@@ -19,6 +19,7 @@ const nationDirectory = [
         power: 2000,
         capitalCityId: 2,
         generalCount: 1,
+        totalCrew: 1_200,
         cityCount: 1,
         officers: Array.from({ length: 8 }, (_, index) => ({
             officerLevel: 12 - index,
@@ -38,6 +39,7 @@ const nationDirectory = [
         power: 1000,
         capitalCityId: 1,
         generalCount: 2,
+        totalCrew: 2_500,
         cityCount: 1,
         officers: Array.from({ length: 8 }, (_, index) => ({
             officerLevel: 12 - index,
@@ -60,6 +62,7 @@ const nationDirectory = [
         power: 0,
         capitalCityId: 0,
         generalCount: 1,
+        totalCrew: 0,
         cityCount: 1,
         officers: Array.from({ length: 8 }, (_, index) => ({ officerLevel: 12 - index, general: null })),
         ambassadorNames: [],
@@ -697,6 +700,8 @@ test('nation directory reuses only the public general-directory row on hover and
         await page.waitForLoadState('networkidle');
         await expect(page.getByRole('button', { name: '장수 일람 연동' })).toHaveCount(0);
         await expect(page.locator('[data-general-preview-trigger]')).toHaveCount(4);
+        await expect(page.locator('[data-nation-id="1"]')).toContainText('총 병사');
+        await expect(page.locator('[data-nation-id="1"]')).toContainText('2,500');
         expect(requestedOperations.filter((operation) => operation === 'world.getGeneralDirectory')).toHaveLength(
             viewport.name === 'desktop' ? 0 : 1
         );
