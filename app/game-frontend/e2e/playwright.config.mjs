@@ -33,6 +33,7 @@ export default defineConfig({
         'nationGeneralSecret.spec.ts',
         'npcPolicy.spec.ts',
         'auction.spec.ts',
+        'nationBetting.spec.ts',
         'tournamentBracket.spec.ts',
         'battleSimulator.spec.ts',
         'battleSimulatorRef.spec.ts',

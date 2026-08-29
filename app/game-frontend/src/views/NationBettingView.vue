@@ -274,7 +274,6 @@ const loadDetail = async (bettingId: number, resetSelection = true) => {
         detail.value = await bettingApi.getDetail.query({ bettingId });
         if (resetSelection) {
             selectedCandidates.value = [];
-            amount.value = 0;
         }
     } catch (error) {
         errorMessage.value = getErrorMessage(error);
