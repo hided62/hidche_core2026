@@ -40,6 +40,7 @@ const DETAIL_SIZES: DetailSize[] = [
     { bgWidth: 84, bgHeight: 60, iconWidth: 28, iconHeight: 20, flagRight: -6, flagTop: -4 },
     { bgWidth: 96, bgHeight: 72, iconWidth: 32, iconHeight: 24, flagRight: -6, flagTop: -3 },
 ];
+const CR_GRID_TILE_SIZE = 40.5;
 
 const props = defineProps<{
     city: MapCityView;
@@ -75,6 +76,15 @@ const detailSize = computed(() => {
     };
 });
 
+const cityBackgroundSize = computed(() => {
+    if (props.themeName === 'cr') {
+        const tileSize = CR_GRID_TILE_SIZE * props.mapScale;
+        return { bgWidth: tileSize, bgHeight: tileSize };
+    }
+
+    return detailSize.value;
+});
+
 const baseSize = computed(() => ({
     width: 40 * props.mapScale,
     height: 30 * props.mapScale,
@@ -92,8 +102,8 @@ const cityBgStyle = computed(() => {
         return null;
     }
     const style: Record<string, string> = {
-        width: `${detailSize.value.bgWidth}px`,
-        height: `${detailSize.value.bgHeight}px`,
+        width: `${cityBackgroundSize.value.bgWidth}px`,
+        height: `${cityBackgroundSize.value.bgHeight}px`,
     };
 
     if (props.themeName === 'cr') {
@@ -125,8 +135,8 @@ const capitalIcon = computed(() => buildAssetUrl(props.imageBaseUrl, 'event51.gi
 const cityBgWrapperStyle = computed(() => ({
     left: '50%',
     top: '50%',
-    marginLeft: `${-detailSize.value.bgWidth / 2}px`,
-    marginTop: `${-detailSize.value.bgHeight / 2}px`,
+    marginLeft: `${-cityBackgroundSize.value.bgWidth / 2}px`,
+    marginTop: `${-cityBackgroundSize.value.bgHeight / 2}px`,
 }));
 
 const cityIconStyle = computed(() => ({

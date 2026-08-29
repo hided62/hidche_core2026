@@ -68,6 +68,7 @@ const BASE_MAP_WIDTH = 700;
 const BASE_MAP_HEIGHT = 500;
 const CITY_BASE_WIDTH = 40;
 const CITY_BASE_HEIGHT = 30;
+const CR_GRID_TILE_SIZE = 40.5;
 const TOOLTIP_MIN_WIDTH = 120;
 const TOOLTIP_CURSOR_OFFSET = 10;
 const DETAIL_SIZES: DetailSize[] = [
@@ -211,15 +212,20 @@ const cityBaseStyle = (city: CityPreview) => ({
     width: percentOf(CITY_BASE_WIDTH, BASE_MAP_WIDTH),
     height: percentOf(CITY_BASE_HEIGHT, BASE_MAP_HEIGHT),
 });
-const cityBackgroundStyle = (city: CityPreview) => ({
-    width: percentOf(city.detailSize.bgWidth, CITY_BASE_WIDTH),
-    height: percentOf(city.detailSize.bgHeight, CITY_BASE_HEIGHT),
-    backgroundColor: props.mapLayout.mapName === 'cr' ? city.color : undefined,
-    backgroundImage:
-        props.mapLayout.mapName !== 'cr' && city.colorToken
-            ? `url('${assetUrl(`b${city.colorToken}.png`)}')`
-            : undefined,
-});
+const cityBackgroundStyle = (city: CityPreview) => {
+    const isCrTheme = props.mapLayout.mapName === 'cr';
+    const bgWidth = isCrTheme ? CR_GRID_TILE_SIZE : city.detailSize.bgWidth;
+    const bgHeight = isCrTheme ? CR_GRID_TILE_SIZE : city.detailSize.bgHeight;
+    return {
+        width: percentOf(bgWidth, CITY_BASE_WIDTH),
+        height: percentOf(bgHeight, CITY_BASE_HEIGHT),
+        backgroundColor: isCrTheme ? city.color : undefined,
+        backgroundImage:
+            !isCrTheme && city.colorToken
+                ? `url('${assetUrl(`b${city.colorToken}.png`)}')`
+                : undefined,
+    };
+};
 const cityImageStyle = (city: CityPreview) => ({
     width: percentOf(city.detailSize.iconWidth, CITY_BASE_WIDTH),
     height: percentOf(city.detailSize.iconHeight, CITY_BASE_HEIGHT),
