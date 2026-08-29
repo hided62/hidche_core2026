@@ -40,6 +40,7 @@ import { simpleSerialize } from '@sammo-ts/logic/war/utils.js';
 import type { MapDefinition, UnitSetDefinition } from '@sammo-ts/logic/world/types.js';
 import type { ActionContextBuilder } from '@sammo-ts/logic/actions/turn/actionContext.js';
 import { tryApplyUniqueLottery } from '@sammo-ts/logic/rewards/uniqueLottery.js';
+import { cloneItemInventory } from '@sammo-ts/logic/items/inventory.js';
 import { buildNationFrontStatePatches } from '../../../diplomacy/frontState.js';
 import type { TracePort } from '../../../ports/trace.js';
 import { formatDestCityConstraintFailure } from '../constraintFailure.js';
@@ -343,6 +344,7 @@ const cloneGeneral = <TriggerState extends GeneralTriggerState>(
     general: General<TriggerState>
 ): General<TriggerState> => ({
     ...general,
+    ...(general.itemInventory ? { itemInventory: cloneItemInventory(general.itemInventory) } : {}),
     stats: { ...general.stats },
     role: {
         ...general.role,

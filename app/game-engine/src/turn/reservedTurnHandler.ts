@@ -28,6 +28,7 @@ import {
     addOccupiedUniqueItemKeys,
     buildGenericUniqueSeed,
     countOccupiedUniqueItems,
+    cloneItemInventory,
     createItemModuleRegistry,
     loadItemModules,
     resolveUniqueConfig,
@@ -317,6 +318,7 @@ const readConfigNumber = (config: ScenarioConfig, key: string, fallback: number)
 
 const cloneTurnGeneral = (general: TurnGeneral): TurnGeneral => ({
     ...general,
+    ...(general.itemInventory ? { itemInventory: cloneItemInventory(general.itemInventory) } : {}),
     ...(general.inheritancePoints ? { inheritancePoints: { ...general.inheritancePoints } } : {}),
     stats: { ...general.stats },
     role: {

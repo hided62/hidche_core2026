@@ -38,6 +38,7 @@ const installFixture = async (
         afterRequestActions?: RuntimeAction[];
         pendingProfileReads?: number;
         profileStatus?: 'RUNNING' | 'PAUSED' | 'COMPLETED' | 'STOPPED';
+        pauseReason?: string;
         currentScenario?: string | null;
         gameIsUnited?: number;
         openerOnly?: boolean;
@@ -183,6 +184,7 @@ const installFixture = async (
                         scenario: options.currentScenario ?? 'default',
                         apiPort: 15015,
                         status: completedCloseRequested ? 'STOPPED' : (options.profileStatus ?? 'RUNNING'),
+                        lastError: options.pauseReason,
                         buildStatus: 'SUCCEEDED',
                         meta: {},
                         runtimeSettings: requestedRuntimeSettings
@@ -388,14 +390,31 @@ test('updates live game options from the authoritative database snapshot', async
     await page.screenshot({ path: testInfo.outputPath('runtime-settings-mobile.png'), fullPage: true });
 });
 
-test('distinguishes a turn pause from an inaccessible stopped server in operator controls', async ({ page }) => {
-    await installFixture(page, { profileStatus: 'PAUSED' });
+test('distinguishes a turn pause from an inaccessible stopped server in operator controls', async ({ page }, testInfo) => {
+    await installFixture(page, {
+        profileStatus: 'PAUSED',
+        pauseReason: "Cannot assign to read only property 'charges' of object '#<Object>'",
+    });
 
     await page.goto('/gateway/admin/servers/hwe%3Adefault');
     await expect(page.getByTestId('profile-lifecycle-description')).toContainText('게임 조회와 예약턴 입력 가능');
+    await expect(page.getByTestId('profile-pause-reason')).toContainText('턴 정지 사유');
+    await expect(page.getByTestId('profile-pause-reason')).toContainText("read only property 'charges'");
     await expect(page.getByRole('button', { name: '턴 재개' })).toBeEnabled();
     await expect(page.getByRole('button', { name: '일시정지' })).toBeDisabled();
     await expect(page.getByRole('button', { name: '중지', exact: true })).toBeEnabled();
+    await page.screenshot({ path: testInfo.outputPath('paused-reason-desktop.png'), fullPage: true });
+
+    await page.setViewportSize({ width: 390, height: 844 });
+    const pauseReason = page.getByTestId('profile-pause-reason');
+    await expect(pauseReason).toBeVisible();
+    const mobileReasonGeometry = await pauseReason.evaluate((element) => {
+        const rect = element.getBoundingClientRect();
+        return { left: rect.left, right: rect.right, viewport: window.innerWidth };
+    });
+    expect(mobileReasonGeometry.left).toBeGreaterThanOrEqual(0);
+    expect(mobileReasonGeometry.right).toBeLessThanOrEqual(mobileReasonGeometry.viewport);
+    await page.screenshot({ path: testInfo.outputPath('paused-reason-mobile.png'), fullPage: true });
 });
 
 test('lets a scenario opener close only a unified server and keeps the control usable on mobile', async ({

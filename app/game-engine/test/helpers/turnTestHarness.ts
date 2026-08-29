@@ -75,6 +75,7 @@ export type TurnTestHarnessOptions = {
     onActionResolved?: Parameters<typeof createReservedTurnHandler>[0]['onActionResolved'];
     onActionProfiled?: Parameters<typeof createReservedTurnHandler>[0]['onActionProfiled'];
     commandRngFactory?: Parameters<typeof createReservedTurnHandler>[0]['commandRngFactory'];
+    commandEnv?: Parameters<typeof createReservedTurnHandler>[0]['commandEnv'];
     wrapGeneralTurnHandler?: (handler: GeneralTurnHandler) => GeneralTurnHandler;
     extraCalendarHandlers?: TurnCalendarHandler[];
     collectLogs?: boolean;
@@ -115,6 +116,7 @@ export const createTurnTestHarness = async (options: TurnTestHarnessOptions) => 
         onActionResolved: options.onActionResolved,
         onActionProfiled: options.onActionProfiled,
         commandRngFactory: options.commandRngFactory,
+        commandEnv: options.commandEnv,
     });
 
     const generalTurnHandler = options.wrapGeneralTurnHandler ? options.wrapGeneralTurnHandler(handler) : handler;

@@ -1,6 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import { ConstantRNG, RandUtil } from '@sammo-ts/common';
-import { LogFormat } from '@sammo-ts/logic';
+import {
+    LogFormat,
+    equipNewItem,
+    getEquippedItemInstance,
+    loadActionModuleBundle,
+} from '@sammo-ts/logic';
 import type { TurnSchedule } from '@sammo-ts/logic/turn/calendar.js';
 import type { TurnGeneral, TurnWorldSnapshot, TurnWorldState } from '../src/turn/types.js';
 import { createTurnTestHarness } from './helpers/turnTestHarness.js';
@@ -245,6 +250,29 @@ describe('legacy general-turn execution contract', () => {
             rice: 1_000,
             meta: { killturn: 24, dex4: 101, intel_exp: 30 },
         });
+    });
+
+    it('keeps multi-use item state mutable across consecutive general turns', async () => {
+        const general = makeGeneral({ injury: 30 });
+        equipNewItem(general, 'item', 'che_치료_환약', { charges: 3 });
+        const actionModules = await loadActionModuleBundle();
+        const commandEnv = buildCommandEnv(makeSnapshot(general).scenarioConfig);
+        commandEnv.generalActionModules = actionModules.general;
+        const harness = await createTurnTestHarness({
+            snapshot: makeSnapshot(general),
+            state: makeState(),
+            schedule,
+            map,
+            commandEnv,
+        });
+
+        await harness.runOneTick();
+        expect(getEquippedItemInstance(harness.world.getGeneralById(1)!, 'item')?.state.charges).toBe(2);
+
+        harness.world.updateGeneral(1, { injury: 30 });
+        await harness.runOneTick();
+
+        expect(getEquippedItemInstance(harness.world.getGeneralById(1)!, 'item')?.state.charges).toBe(1);
     });
 
     it('fails closed instead of silently resting on an unknown queued command', async () => {

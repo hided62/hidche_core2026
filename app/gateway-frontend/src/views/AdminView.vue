@@ -205,6 +205,7 @@ type AdminProfile = {
         tournamentRunning: boolean;
     };
     buildCommitSha?: string;
+    lastError?: string;
     activeOperation?: {
         id: string;
         status: 'QUEUED' | 'RUNNING';
@@ -2442,6 +2443,18 @@ onMounted(() => {
                             </div>
 
                             <div class="text-xs text-zinc-400">빌드 커밋: {{ profile.buildCommitSha ?? '미지정' }}</div>
+
+                            <div
+                                v-if="profile.status === 'PAUSED' && profile.lastError"
+                                class="rounded border border-red-700/70 bg-red-950/40 p-3 text-sm text-red-100"
+                                role="alert"
+                                data-testid="profile-pause-reason"
+                            >
+                                <div class="font-semibold">턴 정지 사유</div>
+                                <div class="mt-1 break-words font-mono text-xs text-red-200">
+                                    {{ profile.lastError }}
+                                </div>
+                            </div>
 
                             <div
                                 v-if="

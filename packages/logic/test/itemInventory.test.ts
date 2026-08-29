@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import type { General } from '../src/domain/entities.js';
 import {
+    cloneItemInventory,
     consumeEquippedItemCharge,
     createItemInventoryFromSlots,
     equipNewItem,
@@ -109,5 +110,24 @@ describe('GeneralItemInventory', () => {
         const parsed = parseItemInventory(serializeItemInventory(general.itemInventory!), general.role.items);
 
         expect(getEquippedItemInstance({ ...general, itemInventory: parsed }, 'item')?.state.charges).toBe(-1);
+    });
+
+    it('clones an Immer-frozen inventory into mutable next-turn state', () => {
+        const general = makeGeneral();
+        equipNewItem(general, 'item', 'che_치료_환약', { charges: 3 });
+        const inventory = general.itemInventory!;
+        const instance = getEquippedItemInstance(general, 'item')!;
+        Object.freeze(instance.state);
+        Object.freeze(instance);
+        Object.freeze(inventory.instances);
+        Object.freeze(inventory.equipped);
+        Object.freeze(inventory);
+
+        const cloned = cloneItemInventory(inventory);
+        const nextGeneral = { ...general, itemInventory: cloned };
+
+        expect(consumeEquippedItemCharge(nextGeneral, 'item', 'che_치료_환약')).toBe(false);
+        expect(getEquippedItemInstance(nextGeneral, 'item')?.state.charges).toBe(2);
+        expect(instance.state.charges).toBe(3);
     });
 });
