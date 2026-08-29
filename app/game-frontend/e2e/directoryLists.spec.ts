@@ -19,7 +19,21 @@ const nationDirectory = [
         power: 2000,
         capitalCityId: 2,
         generalCount: 1,
-        totalCrew: 1_200,
+        forceEstimate: {
+            totalGeneralCount: 1,
+            userCombatGeneralCount: 1,
+            userTroops: 8_000,
+            npcCombatGeneralCount: 0,
+            npcTroops: 0,
+            inactiveGeneralCount: 0,
+        },
+        generalGroups: [
+            {
+                type: '만능',
+                label: '만능장',
+                generals: [{ id: 20, name: '유비', npcState: 0, inactive: false, accessGrade: 'normal' }],
+            },
+        ],
         cityCount: 1,
         officers: Array.from({ length: 8 }, (_, index) => ({
             officerLevel: 12 - index,
@@ -39,7 +53,26 @@ const nationDirectory = [
         power: 1000,
         capitalCityId: 1,
         generalCount: 2,
-        totalCrew: 2_500,
+        forceEstimate: {
+            totalGeneralCount: 2,
+            userCombatGeneralCount: 1,
+            userTroops: 9_000,
+            npcCombatGeneralCount: 0,
+            npcTroops: 0,
+            inactiveGeneralCount: 1,
+        },
+        generalGroups: [
+            {
+                type: '무',
+                label: '무장',
+                generals: [{ id: 10, name: '조조', npcState: 0, inactive: false, accessGrade: 'high' }],
+            },
+            {
+                type: '지',
+                label: '지장',
+                generals: [{ id: 11, name: '순욱', npcState: 1, inactive: true, accessGrade: 'medium' }],
+            },
+        ],
         cityCount: 1,
         officers: Array.from({ length: 8 }, (_, index) => ({
             officerLevel: 12 - index,
@@ -62,7 +95,15 @@ const nationDirectory = [
         power: 0,
         capitalCityId: 0,
         generalCount: 1,
-        totalCrew: 0,
+        forceEstimate: {
+            totalGeneralCount: 1,
+            userCombatGeneralCount: 0,
+            userTroops: 0,
+            npcCombatGeneralCount: 1,
+            npcTroops: 7_000,
+            inactiveGeneralCount: 0,
+        },
+        generalGroups: [],
         cityCount: 1,
         officers: Array.from({ length: 8 }, (_, index) => ({ officerLevel: 12 - index, general: null })),
         ambassadorNames: [],
@@ -351,10 +392,9 @@ test('a level-zero nation shows the ruler current city even without territory th
     await expect(table.locator('.roaming-city')).toHaveCSS('color', 'rgb(255, 255, 0)');
 });
 
-test('PYA-scale general directory mounts only the active responsive layout and defers portraits', async (
-    { page },
-    testInfo
-) => {
+test('PYA-scale general directory mounts only the active responsive layout and defers portraits', async ({
+    page,
+}, testInfo) => {
     const requestedPortraits = new Set<string>();
     page.on('request', (request) => {
         if (request.url().includes('/performance/general-')) {
@@ -700,8 +740,16 @@ test('nation directory reuses only the public general-directory row on hover and
         await page.waitForLoadState('networkidle');
         await expect(page.getByRole('button', { name: '장수 일람 연동' })).toHaveCount(0);
         await expect(page.locator('[data-general-preview-trigger]')).toHaveCount(4);
-        await expect(page.locator('[data-nation-id="1"]')).toContainText('총 병사');
-        await expect(page.locator('[data-nation-id="1"]')).toContainText('2,500');
+        const nationAnalysis = page.locator('[data-nation-id="1"] .force-analysis');
+        await expect(nationAnalysis).not.toContainText('총 병사');
+        await expect(nationAnalysis).toContainText('무장(1): 조조');
+        await expect(nationAnalysis).toContainText('지장(1): ⓝ순욱');
+        await expect(nationAnalysis).toContainText('예상 병력 약 9,000명');
+        await expect(nationAnalysis).toContainText('삭턴장(1)');
+        await expect(page.locator('[data-general-preview-trigger="11"]')).toHaveCSS(
+            'text-decoration-line',
+            'line-through'
+        );
         expect(requestedOperations.filter((operation) => operation === 'world.getGeneralDirectory')).toHaveLength(
             viewport.name === 'desktop' ? 0 : 1
         );
@@ -865,9 +913,7 @@ test('nation and general directories rearrange for mobile and keep the tapped pr
         await expect(page.locator('.general-card-list [data-general-card-id]')).toHaveCount(2);
         await expect(page.locator('[data-directory-tooltip="card-special-domestic-10"]')).toContainText('상재');
         await expect(page.locator('[data-directory-tooltip="card-special-war-10"]')).toContainText('귀모');
-        await expect(page.locator('[data-directory-tooltip="card-injury-leadership-10"] > .wounded')).toHaveText(
-            '81'
-        );
+        await expect(page.locator('[data-directory-tooltip="card-injury-leadership-10"] > .wounded')).toHaveText('81');
         await expect(page.locator('[data-general-card-id="10"] .leadership-bonus')).toHaveText('+6');
         const mobileInjury = page.locator('[data-directory-tooltip="card-injury-leadership-10"]');
         await mobileInjury.focus();

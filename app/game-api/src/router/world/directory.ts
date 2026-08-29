@@ -10,6 +10,9 @@ import { resolveSecretPermission } from '../shared/secretPermission.js';
 
 const zDirectorySort = z.number().int().min(1).max(15).default(9);
 
+const directoryGeneralTypes = ['만능', '통', '무', '지', '평범', '무지', '무능'] as const;
+type DirectoryGeneralType = (typeof directoryGeneralTypes)[number];
+
 const readNumber = (value: unknown, fallback = 0): number =>
     typeof value === 'number' && Number.isFinite(value) ? value : fallback;
 
@@ -32,6 +35,28 @@ const compareString = (left: string, right: string): number => {
         return 0;
     }
     return left < right ? -1 : 1;
+};
+
+const resolveDirectoryGeneralType = (leadership: number, strength: number, intel: number): DirectoryGeneralType => {
+    if (leadership < 40) {
+        return strength + intel < 40 ? '무능' : '무지';
+    }
+
+    const maxStat = Math.max(leadership, strength, intel);
+    const lowestPairSum = Math.min(leadership + strength, strength + intel, intel + leadership);
+    if (maxStat >= 70 && lowestPairSum >= maxStat * 1.7) {
+        return '만능';
+    }
+    if (strength >= 60 && intel < strength * 0.8) {
+        return '무';
+    }
+    if (intel >= 60 && strength < intel * 0.8) {
+        return '지';
+    }
+    if (leadership >= 60 && strength + intel < leadership) {
+        return '통';
+    }
+    return '평범';
 };
 
 const resolveExperienceLevel = (experience: number, maxLevel: number): number => {
@@ -77,7 +102,7 @@ const resolveRefreshText = (score: number): string => {
 export const getNationDirectory = authedProcedure.query(async ({ ctx }) => {
     await getMyGeneral(ctx);
 
-    const [nations, generals, cities] = await Promise.all([
+    const [nations, generals, cities, accessLogs, worldState] = await Promise.all([
         ctx.db.nation.findMany({
             select: {
                 id: true,
@@ -96,7 +121,9 @@ export const getNationDirectory = authedProcedure.query(async ({ ctx }) => {
                 npcState: true,
                 nationId: true,
                 cityId: true,
-                crew: true,
+                leadership: true,
+                strength: true,
+                intel: true,
                 dedication: true,
                 officerLevel: true,
                 meta: true,
@@ -107,6 +134,12 @@ export const getNationDirectory = authedProcedure.query(async ({ ctx }) => {
         ctx.db.city.findMany({
             select: { id: true, name: true, nationId: true },
             orderBy: { id: 'asc' },
+        }),
+        ctx.db.generalAccessLog.findMany({
+            select: { generalId: true, refreshScoreTotal: true },
+        }),
+        ctx.db.worldState.findFirst({
+            select: { tickSeconds: true, meta: true },
         }),
     ]);
 
@@ -136,6 +169,15 @@ export const getNationDirectory = authedProcedure.query(async ({ ctx }) => {
     }
     const citiesByNation = new Map<number, typeof cities>();
     const cityNameById = new Map(cities.map((city) => [city.id, city.name] as const));
+    const accessScoreByGeneralId = new Map(
+        accessLogs.map((accessLog) => [accessLog.generalId, accessLog.refreshScoreTotal] as const)
+    );
+    const worldMeta = asRecord(worldState?.meta);
+    const autorunUser = asRecord(worldMeta.autorun_user);
+    const worldKillturn = readNumber(worldMeta.killturn);
+    const turnMinutes = readNumber(worldState?.tickSeconds) / 60;
+    const autorunLimitTurns = turnMinutes > 0 ? readNumber(autorunUser.limit_minutes) / turnMinutes : 0;
+    const activeKillturnThreshold = worldKillturn - autorunLimitTurns;
     for (const city of cities) {
         const list = citiesByNation.get(city.nationId) ?? [];
         list.push(city);
@@ -169,6 +211,40 @@ export const getNationDirectory = authedProcedure.query(async ({ ctx }) => {
                     false
                 ),
             }));
+            const analyzedGenerals = nationGenerals.map((general) => {
+                const killturn = readMetaNumber(general.meta, 'killturn');
+                const inactive = general.npcState < 2 && killturn < activeKillturnThreshold;
+                const accessScore = accessScoreByGeneralId.get(general.id) ?? 0;
+                return {
+                    id: general.id,
+                    name: general.name,
+                    npcState: general.npcState,
+                    leadership: general.leadership,
+                    type: resolveDirectoryGeneralType(general.leadership, general.strength, general.intel),
+                    inactive,
+                    accessGrade: accessScore >= 1_500 ? 'high' : accessScore >= 200 ? 'medium' : 'normal',
+                    killturn,
+                } as const;
+            });
+            const combatGenerals = analyzedGenerals.filter(
+                (general) => general.type !== '무능' && general.type !== '무지'
+            );
+            const userCombatGenerals = combatGenerals.filter((general) => general.npcState < 2 && !general.inactive);
+            const npcCombatGenerals = combatGenerals.filter((general) => general.npcState >= 2 && general.killturn > 5);
+            const generalGroups = directoryGeneralTypes
+                .map((type) => ({
+                    type,
+                    label: `${type}장`,
+                    generals: analyzedGenerals
+                        .filter((general) => general.type === type)
+                        .sort((left, right) => {
+                            const leftScore = accessScoreByGeneralId.get(left.id) ?? 0;
+                            const rightScore = accessScoreByGeneralId.get(right.id) ?? 0;
+                            return rightScore - leftScore || compareString(left.name, right.name) || left.id - right.id;
+                        })
+                        .map(({ leadership: _leadership, killturn: _killturn, type: _type, ...general }) => general),
+                }))
+                .filter((group) => group.generals.length > 0);
 
             return {
                 id: nation.id,
@@ -183,8 +259,16 @@ export const getNationDirectory = authedProcedure.query(async ({ ctx }) => {
                 capitalCityId: nation.capitalCityId ?? 0,
                 rulerCityName: ruler ? (cityNameById.get(ruler.cityId) ?? null) : null,
                 generalCount: readMetaNumber(nation.meta, 'gennum', nationGenerals.length),
-                totalCrew: nationGenerals.reduce((sum, general) => sum + general.crew, 0),
                 cityCount: nationCities.length,
+                forceEstimate: {
+                    totalGeneralCount: analyzedGenerals.length,
+                    userCombatGeneralCount: userCombatGenerals.length,
+                    userTroops: userCombatGenerals.reduce((sum, general) => sum + general.leadership * 100, 0),
+                    npcCombatGeneralCount: npcCombatGenerals.length,
+                    npcTroops: npcCombatGenerals.reduce((sum, general) => sum + general.leadership * 100, 0),
+                    inactiveGeneralCount: analyzedGenerals.filter((general) => general.inactive).length,
+                },
+                generalGroups,
                 officers,
                 ambassadorNames: secretPermissions
                     .filter(({ permission }) => permission === 4)

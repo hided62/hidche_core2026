@@ -46,6 +46,11 @@ const officerName = (nation: Nation, officerLevel: number) =>
     nation.officers.find((officer) => officer.officerLevel === officerLevel)?.general;
 const displayGeneralName = (general: { name: string; npcState: number }) =>
     general.npcState > 0 && !/^[ⓜⓝ㉥]/u.test(general.name) ? `ⓝ${general.name}` : general.name;
+const displayAnalyzedGeneralColor = (general: { npcState: number; accessGrade: 'normal' | 'medium' | 'high' }) => {
+    if (general.accessGrade === 'high') return 'yellow';
+    if (general.accessGrade === 'medium') return 'lightgreen';
+    return getNpcColor(general.npcState);
+};
 const displayAmbassadorName = (nation: Nation, name: string) => {
     const general = nation.generals.find((candidate) => candidate.name === name);
     return general ? displayGeneralName(general) : name;
@@ -203,16 +208,6 @@ onBeforeUnmount(() => {
                         <td class="label-cell">장수 / 속령</td>
                         <td class="value-wide">{{ nation.generalCount }} / {{ nation.cityCount }}</td>
                     </tr>
-                    <tr class="desktop-only">
-                        <td class="label-cell">총 병사</td>
-                        <td class="value-wide">{{ nation.totalCrew.toLocaleString('ko-KR') }}</td>
-                        <td colspan="6"></td>
-                    </tr>
-                    <tr class="mobile-only">
-                        <td class="label-cell">총 병사</td>
-                        <td class="value-wide">{{ nation.totalCrew.toLocaleString('ko-KR') }}</td>
-                        <td colspan="2"></td>
-                    </tr>
                     <tr v-for="row in 2" :key="`desktop-officers-${row}`" class="desktop-only">
                         <template v-for="column in 4" :key="column">
                             <td class="label-cell">
@@ -287,27 +282,41 @@ onBeforeUnmount(() => {
                         </td>
                     </tr>
                     <tr>
-                        <td colspan="8">
-                            장수 일람 :
-                            <template v-for="general in nation.generals" :key="general.id">
-                                <button
-                                    type="button"
-                                    class="general-preview-trigger"
-                                    :data-general-preview-trigger="general.id"
-                                    :style="{ color: getNpcColor(general.npcState) }"
-                                    :aria-expanded="activeGeneralId === general.id"
-                                    :aria-describedby="
-                                        activeGeneralId === general.id ? 'nation-general-preview' : undefined
-                                    "
-                                    @pointerdown="showGeneralDetailsFromTouch($event, general.id)"
-                                    @pointerenter="showGeneralDetails($event, general.id)"
-                                    @pointerleave="hideGeneralDetailsFromPointer($event, general.id)"
-                                    @focus="showGeneralDetails($event, general.id)"
-                                    @blur="hideGeneralDetails(general.id)"
-                                >
-                                    {{ displayGeneralName(general) }}</button
-                                >,
-                            </template>
+                        <td colspan="8" class="force-analysis">
+                            <p class="force-summary">
+                                * 총({{ nation.forceEstimate.totalGeneralCount }}), 전투장({{
+                                    nation.forceEstimate.userCombatGeneralCount
+                                }}, 예상 병력 약 {{ nation.forceEstimate.userTroops.toLocaleString('ko-KR') }}명),
+                                전투N장({{ nation.forceEstimate.npcCombatGeneralCount }}, 예상 병력 약
+                                {{ nation.forceEstimate.npcTroops.toLocaleString('ko-KR') }}명), 삭턴장({{
+                                    nation.forceEstimate.inactiveGeneralCount
+                                }}) *
+                            </p>
+                            <p v-for="group in nation.generalGroups" :key="group.type" class="general-group">
+                                <strong class="general-group-label"
+                                    >{{ group.label }}({{ group.generals.length }})</strong
+                                >:
+                                <template v-for="(general, index) in group.generals" :key="general.id">
+                                    <button
+                                        type="button"
+                                        class="general-preview-trigger"
+                                        :class="{ 'inactive-general': general.inactive }"
+                                        :data-general-preview-trigger="general.id"
+                                        :style="{ color: displayAnalyzedGeneralColor(general) }"
+                                        :aria-expanded="activeGeneralId === general.id"
+                                        :aria-describedby="
+                                            activeGeneralId === general.id ? 'nation-general-preview' : undefined
+                                        "
+                                        @pointerdown="showGeneralDetailsFromTouch($event, general.id)"
+                                        @pointerenter="showGeneralDetails($event, general.id)"
+                                        @pointerleave="hideGeneralDetailsFromPointer($event, general.id)"
+                                        @focus="showGeneralDetails($event, general.id)"
+                                        @blur="hideGeneralDetails(general.id)"
+                                    >
+                                        {{ displayGeneralName(general) }}</button
+                                    ><template v-if="index < group.generals.length - 1">, </template>
+                                </template>
+                            </p>
                         </td>
                     </tr>
                 </tbody>
@@ -325,12 +334,6 @@ onBeforeUnmount(() => {
                         <td class="neutral-value">{{ nation.generalCount }}</td>
                         <td class="neutral-label">속 령</td>
                         <td class="neutral-value">{{ nation.cityCount }}</td>
-                    </tr>
-                    <tr>
-                        <td class="neutral-spacer">&nbsp;</td>
-                        <td class="neutral-label">총 병사</td>
-                        <td class="neutral-value">{{ nation.totalCrew.toLocaleString('ko-KR') }}</td>
-                        <td colspan="2"></td>
                     </tr>
                     <tr>
                         <td colspan="5">
@@ -504,6 +507,28 @@ onBeforeUnmount(() => {
 .general-preview-trigger:focus-visible {
     outline: 1px dashed cyan;
     outline-offset: 1px;
+}
+.force-analysis {
+    padding: 0 0 0 5.8em !important;
+    text-indent: -5.8em;
+}
+.force-summary,
+.general-group {
+    margin: 0;
+}
+.force-summary {
+    color: yellow;
+    font-weight: 700;
+    text-align: center;
+    text-indent: 0;
+}
+.general-group-label {
+    display: inline-block;
+    min-width: 5.3em;
+    text-align: right;
+}
+.inactive-general {
+    text-decoration: line-through;
 }
 .general-hover-preview {
     position: fixed;

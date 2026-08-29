@@ -125,6 +125,9 @@ const globalGenerals = [
         name: '군주',
         dedication: 900,
         officerLevel: 12,
+        leadership: 80,
+        strength: 80,
+        intel: 80,
         meta: { killturn: 4, owner_name: '통일유저' },
         experience: 10_000,
     }),
@@ -133,6 +136,9 @@ const globalGenerals = [
         name: '외교관',
         dedication: 800,
         officerLevel: 1,
+        leadership: 70,
+        strength: 80,
+        intel: 40,
         meta: { killturn: 2, permission: 'ambassador' },
         experience: 5_000,
     }),
@@ -141,6 +147,9 @@ const globalGenerals = [
         name: '제재외교관',
         dedication: 700,
         officerLevel: 1,
+        leadership: 70,
+        strength: 40,
+        intel: 80,
         meta: { killturn: 1, permission: 'ambassador' },
         penalty: { noTopSecret: true },
         experience: 2_000,
@@ -150,6 +159,9 @@ const globalGenerals = [
         name: '조언자',
         dedication: 600,
         officerLevel: 1,
+        leadership: 30,
+        strength: 70,
+        intel: 70,
         meta: { killturn: 5, permission: 'auditor' },
         experience: 1_000,
     }),
@@ -162,6 +174,8 @@ const globalGenerals = [
         dedication: 500,
         officerLevel: 12,
         leadership: 80,
+        strength: 70,
+        intel: 65,
         meta: { killturn: 0 },
         experience: 20_000,
     }),
@@ -222,7 +236,12 @@ const createContext = (
         worldState: {
             findFirst: vi.fn(async () => ({
                 config: { const: { maxLevel: 100, maxDedLevel: 30 } },
-                meta: { isUnited: options.isUnited ?? 0 },
+                meta: {
+                    isUnited: options.isUnited ?? 0,
+                    killturn: 4,
+                    autorun_user: { limit_minutes: 60 },
+                },
+                tickSeconds: 3_600,
             })),
         },
     };
@@ -280,6 +299,20 @@ describe('legacy global nation/general directories', () => {
         );
         expect(results.slice(1)).toEqual([results[0], results[0], results[0]]);
         for (const result of results) {
+            const serializedNationRows = JSON.stringify(result.nations);
+            for (const privateField of [
+                'totalCrew',
+                'crew',
+                'leadership',
+                'strength',
+                'intel',
+                'killturn',
+                'refreshScoreTotal',
+                'meta',
+                'penalty',
+            ]) {
+                expect(serializedNationRows).not.toContain(`"${privateField}"`);
+            }
             const serializedGeneralRows = JSON.stringify(result.generals);
             for (const privateField of [
                 'userId',
@@ -304,17 +337,75 @@ describe('legacy global nation/general directories', () => {
         expect(result[1]).toMatchObject({
             id: 1,
             generalCount: 4,
-            totalCrew: 400,
             cityCount: 1,
+            forceEstimate: {
+                totalGeneralCount: 4,
+                userCombatGeneralCount: 1,
+                userTroops: 8_000,
+                npcCombatGeneralCount: 0,
+                npcTroops: 0,
+                inactiveGeneralCount: 2,
+            },
             ambassadorNames: ['군주', '외교관'],
             auditorCount: 1,
         });
+        expect(result[1]?.generalGroups.map((group) => [group.label, group.generals.map(({ name }) => name)])).toEqual([
+            ['만능장', ['군주']],
+            ['무장', ['외교관']],
+            ['지장', ['제재외교관']],
+            ['무지장', ['조언자']],
+        ]);
         expect(result[1]?.generals.map((general) => general.name)).toEqual(['군주', '외교관', '제재외교관', '조언자']);
         expect(result[1]?.officers[0]).toMatchObject({
             officerLevel: 12,
             general: { id: 10, name: '군주' },
         });
-        expect(result[2]).toMatchObject({ name: '재 야', generalCount: 1, totalCrew: 100, cityCount: 1 });
+        expect(result[2]).toMatchObject({ name: '재 야', generalCount: 1, cityCount: 1 });
+        expect(JSON.stringify(result)).not.toContain('totalCrew');
+    });
+
+    it('matches every Ref general-category boundary and estimates only combat-capable groups', async () => {
+        const categoryStats = [
+            ['만능장', 80, 80, 80],
+            ['통장', 70, 20, 20],
+            ['무장', 70, 80, 40],
+            ['지장', 70, 40, 80],
+            ['평범장', 60, 50, 50],
+            ['무지장', 30, 50, 50],
+            ['무능장', 30, 10, 10],
+        ] as const;
+        const categoryGenerals = categoryStats.map(([name, leadership, strength, intel], index) =>
+            directoryGeneral({
+                id: 101 + index,
+                name,
+                nationId: 1,
+                leadership,
+                strength,
+                intel,
+                meta: { killturn: 4 },
+            })
+        );
+        const [nation] = await appRouter
+            .createCaller(
+                createContext({
+                    directory: {
+                        nations: [nationRows[0]!],
+                        generals: categoryGenerals,
+                        cities: [{ id: 1, name: '허창', nationId: 1 }],
+                    },
+                }).context
+            )
+            .world.getNationDirectory();
+
+        expect(nation?.generalGroups.map((group) => group.label)).toEqual(categoryStats.map(([name]) => name));
+        expect(nation?.forceEstimate).toEqual({
+            totalGeneralCount: 7,
+            userCombatGeneralCount: 5,
+            userTroops: 35_000,
+            npcCombatGeneralCount: 0,
+            npcTroops: 0,
+            inactiveGeneralCount: 0,
+        });
     });
 
     it('projects a level-zero nation location from its ruler city even when that city belongs to another nation', async () => {
