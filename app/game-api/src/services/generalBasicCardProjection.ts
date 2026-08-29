@@ -45,15 +45,10 @@ export const resolveRefreshScoreText = (score: number): string => {
 
 export const resolveRemainingMinutes = (
     turnTime: Date,
-    lastExecuted: Date | null,
-    turnTermSeconds: number
+    currentGameTime: Date | null
 ): number | null => {
-    if (!lastExecuted || !Number.isFinite(lastExecuted.getTime()) || turnTermSeconds <= 0) return null;
-    let nextTurnMillis = turnTime.getTime();
-    if (nextTurnMillis < lastExecuted.getTime()) {
-        nextTurnMillis += turnTermSeconds * 1_000;
-    }
-    return Math.floor(Math.min(999, Math.max(0, (nextTurnMillis - lastExecuted.getTime()) / 60_000)));
+    if (!currentGameTime || !Number.isFinite(currentGameTime.getTime())) return null;
+    return Math.floor(Math.max(0, (turnTime.getTime() - currentGameTime.getTime()) / 60_000));
 };
 
 export interface NextTurnMonthOffsetInput {

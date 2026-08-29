@@ -1840,7 +1840,11 @@ test('tournament split main action follows recruitment, betting, finals, and tou
             const main = nationMenu.locator('[data-navigation-id="tournament"]');
             await expect(main).toHaveText(lifecycle.label);
             await expect(main).toHaveAttribute('href', `${basePath}${lifecycle.route}`);
-            await expect(main).toHaveClass(/highlight/);
+            if (lifecycle.stage === 1 || lifecycle.stage === 6) {
+                await expect(main).toHaveClass(/highlight/);
+            } else {
+                await expect(main).not.toHaveClass(/highlight/);
+            }
 
             const toggle = nationMenu.locator('[data-menu-id="tournament-betting"]');
             await toggle.click();
@@ -1851,8 +1855,11 @@ test('tournament split main action follows recruitment, betting, finals, and tou
             if (lifecycle.stage === 6) {
                 await expect(tournamentItem).not.toHaveClass(/highlight/);
                 await expect(bettingItem).toHaveClass(/highlight/);
-            } else {
+            } else if (lifecycle.stage === 1) {
                 await expect(tournamentItem).toHaveClass(/highlight/);
+                await expect(bettingItem).not.toHaveClass(/highlight/);
+            } else {
+                await expect(tournamentItem).not.toHaveClass(/highlight/);
                 await expect(bettingItem).not.toHaveClass(/highlight/);
             }
             await page.keyboard.press('Escape');
@@ -1865,8 +1872,11 @@ test('tournament split main action follows recruitment, betting, finals, and tou
                 if (lifecycle.stage === 6) {
                     await expect(mobileTournament).not.toHaveClass(/highlight/);
                     await expect(mobileBetting).toHaveClass(/highlight/);
-                } else {
+                } else if (lifecycle.stage === 1) {
                     await expect(mobileTournament).toHaveClass(/highlight/);
+                    await expect(mobileBetting).not.toHaveClass(/highlight/);
+                } else {
+                    await expect(mobileTournament).not.toHaveClass(/highlight/);
                     await expect(mobileBetting).not.toHaveClass(/highlight/);
                 }
                 await page.keyboard.press('Escape');
@@ -2323,6 +2333,12 @@ test('main general card uses local turn time and command clock tracks corrected 
     await expect(generalCard).toContainText('7분 남음');
     await expect(generalCard).toContainText('백마대');
     await expect(generalCard).toContainText('보통 120점(3)');
+    const leadershipProgress = generalCard.locator('[data-rich-tooltip="stat-leadership"]');
+    await leadershipProgress.hover();
+    const statTooltip = page.locator('.tippy-box[data-theme~="sammo-rich"]');
+    await expect(statTooltip).toBeVisible();
+    await expect(statTooltip).toContainText('통솔 성장');
+    await expect(statTooltip).toContainText('5 / 20');
 
     const desktopGeometry = await title.evaluate((element) => {
         const rect = element.getBoundingClientRect();
@@ -4238,6 +4254,18 @@ test('all main Lumen button families share the rounded pressed geometry', async 
         await page.mouse.move(1195, 895);
         await page.mouse.up();
     }
+
+    const generalPullMenu = page.locator('[data-main-target="commands"] .bottom-shift-menu').first();
+    await generalPullMenu.locator('summary').click();
+    await expect(generalPullMenu.locator('.menu-items > button')).toHaveText([
+        '1턴',
+        '2턴',
+        '3턴',
+        '4턴',
+        '5턴',
+        '6턴',
+    ]);
+    await generalPullMenu.locator('summary').click();
 
     state.permission = 0;
     await page.locator('.main-turn-controls').getByRole('button', { name: '갱 신' }).click();

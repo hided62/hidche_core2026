@@ -36,11 +36,12 @@ describe('general basic card Ref projection', () => {
         expect(resolveRefreshScoreText(12_800)).toBe('헐...');
     });
 
-    it('matches the Ref remaining-minute calculation and one-turn rollover', () => {
-        const lastExecuted = new Date('2026-08-13T00:00:00.000Z');
-        expect(resolveRemainingMinutes(new Date('2026-08-13T00:07:06.000Z'), lastExecuted, 3_600)).toBe(7);
-        expect(resolveRemainingMinutes(new Date('2026-08-12T23:59:00.000Z'), lastExecuted, 3_600)).toBe(59);
-        expect(resolveRemainingMinutes(new Date('2026-08-13T00:07:06.000Z'), null, 3_600)).toBeNull();
+    it('matches the Ref remaining-minute calculation against the current game clock', () => {
+        const currentGameTime = new Date('2026-08-13T00:20:00.000Z');
+        expect(resolveRemainingMinutes(new Date('2026-08-13T01:20:00.000Z'), currentGameTime)).toBe(60);
+        expect(resolveRemainingMinutes(new Date('2026-08-13T01:08:59.000Z'), currentGameTime)).toBe(48);
+        expect(resolveRemainingMinutes(new Date('2026-08-13T00:19:00.000Z'), currentGameTime)).toBe(0);
+        expect(resolveRemainingMinutes(new Date('2026-08-13T00:20:00.000Z'), null)).toBeNull();
     });
 
     it('moves the first reserved month only after the general turn bucket has passed', () => {

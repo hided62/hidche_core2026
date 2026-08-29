@@ -85,6 +85,7 @@ const createContext = (options: {
     troopLeaderAction?: string | null;
     refreshScore?: number;
     refreshScoreTotal?: number;
+    gameClockNow?: Date;
     rankRows?: Array<{ generalId?: number; type: string; value: number }>;
     requestId?: string;
     transaction?: ReturnType<typeof vi.fn>;
@@ -164,6 +165,10 @@ const createContext = (options: {
                 currentMonth: 1,
                 tickSeconds: 600,
                 config: { const: { upgradeLimit: 20 } },
+                clockBaseTime: options.gameClockNow ?? null,
+                clockTick: options.gameClockNow ? 0n : null,
+                clockMode: 'manual',
+                clockWallAnchor: options.gameClockNow ?? null,
             })),
         },
         logEntry: {
@@ -485,6 +490,7 @@ describe('in-game my information ownership', () => {
             troopLeaderAction: '휴식',
             refreshScore: 3,
             refreshScoreTotal: 1_141,
+            gameClockNow: new Date('2026-01-01T00:00:00.000Z'),
         });
 
         await expect(appRouter.createCaller(fixture.context).general.me()).resolves.toMatchObject({
@@ -495,7 +501,7 @@ describe('in-game my information ownership', () => {
                 retirementYear: 70,
                 defenceTrain: 80,
                 killTurn: 6,
-                remainingMinutes: null,
+                remainingMinutes: 7,
                 troop: { name: '정밀검증부대', status: 'inactive', leaderCityName: '업' },
                 refreshScore: { current: 3, total: 1_141, text: '열심' },
             },

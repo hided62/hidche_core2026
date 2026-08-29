@@ -23,6 +23,7 @@ import {
     resolveRefreshScoreText,
     resolveRemainingMinutes,
 } from '../../services/generalBasicCardProjection.js';
+import { loadCurrentGameTime } from '../../services/gameClock.js';
 import { loadTraitNames } from '../nation/shared.js';
 import { getAuthenticatedUserId, getMyGeneral } from '../shared/general.js';
 import { throwIfCommandRejected } from '../shared/turnDaemon.js';
@@ -72,7 +73,7 @@ export const troopRouter = router({
             throw new TRPCError({ code: 'PRECONDITION_FAILED', message: '국가에 소속되어 있지 않습니다.' });
         }
 
-        const [nation, troops, generals, cities, worldState] = await Promise.all([
+        const [nation, troops, generals, cities, worldState, gameTime] = await Promise.all([
             ctx.db.nation.findUnique({
                 where: { id: me.nationId },
                 select: { id: true, name: true, color: true, level: true, meta: true },
@@ -121,6 +122,7 @@ export const troopRouter = router({
                 select: { id: true, name: true },
             }),
             ctx.db.worldState.findFirst({ select: { tickSeconds: true, config: true, meta: true } }),
+            loadCurrentGameTime(ctx.db),
         ]);
         if (!nation) {
             throw new TRPCError({ code: 'NOT_FOUND', message: '국가 정보를 찾을 수 없습니다.' });
@@ -214,15 +216,6 @@ export const troopRouter = router({
         const traitName = (code: string, names: Map<string, { name: string }>): string =>
             names.get(code)?.name ?? sanitizeInternalDisplayCode(code);
         const itemName = (code: string): string => itemNames.get(code) ?? sanitizeInternalDisplayCode(code);
-        const worldMeta = asRecord(worldState?.meta);
-        const rawLastExecuted = worldMeta.lastTurnTime ?? worldMeta.turntime;
-        const lastExecuted =
-            rawLastExecuted instanceof Date
-                ? rawLastExecuted
-                : typeof rawLastExecuted === 'string'
-                  ? new Date(rawLastExecuted)
-                  : null;
-
         const mappedTroops = troops
             .map((troop) => {
                 const leader = generalMap.get(troop.troopLeaderId);
@@ -348,8 +341,7 @@ export const troopRouter = router({
                                                   killTurn: readNumber(meta.killturn ?? meta.killTurn),
                                                   remainingMinutes: resolveRemainingMinutes(
                                                       general.turnTime,
-                                                      lastExecuted,
-                                                      worldState?.tickSeconds ?? 0
+                                                      gameTime.now
                                                   ),
                                                   troopId: general.troopId,
                                                   troop: {

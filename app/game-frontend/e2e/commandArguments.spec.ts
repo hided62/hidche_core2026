@@ -946,7 +946,7 @@ const install = async (
     return requests;
 };
 
-test('offers the Ref repeat range for general turns while keeping the chief range', async ({ page }) => {
+test('offers 12 repeat turns and six shift turns for general turns while keeping the chief range', async ({ page }) => {
     await install(page);
     await page.setViewportSize({ width: 1200, height: 900 });
     await page.goto('/');
@@ -956,6 +956,11 @@ test('offers the Ref repeat range for general turns while keeping the chief rang
     await generalRepeat.locator('summary').click();
     await expect(generalRepeat.locator('.menu-items > button')).toHaveText(
         Array.from({ length: 12 }, (_, index) => `${index + 1}턴`)
+    );
+    const generalPull = generalEditor.locator('.bottom-shift-menu').first();
+    await generalPull.locator('summary').click();
+    await expect(generalPull.locator('.menu-items > button')).toHaveText(
+        Array.from({ length: 6 }, (_, index) => `${index + 1}턴`)
     );
 
     await page.setViewportSize({ width: 500, height: 900 });

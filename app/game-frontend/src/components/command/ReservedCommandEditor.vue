@@ -32,6 +32,7 @@ const props = withDefaults(
         storageKey: string;
         editModeStorageKey?: string;
         maxPushTurn?: number;
+        maxShiftTurn?: number;
         compact?: boolean;
         mobile?: boolean;
         title?: string;
@@ -44,6 +45,7 @@ const props = withDefaults(
     {
         editModeStorageKey: undefined,
         maxPushTurn: 6,
+        maxShiftTurn: 6,
         compact: false,
         mobile: false,
         title: '',
@@ -498,7 +500,7 @@ const clickOutsideMenu = (event: Event) => {
                     <summary>당기기</summary>
                     <div class="menu-items">
                         <button
-                            v-for="amount in props.maxPushTurn"
+                            v-for="amount in props.maxShiftTurn"
                             :key="amount"
                             @click="
                                 emit('shift', -amount);
@@ -513,7 +515,7 @@ const clickOutsideMenu = (event: Event) => {
                     <summary>미루기</summary>
                     <div class="menu-items">
                         <button
-                            v-for="amount in props.maxPushTurn"
+                            v-for="amount in props.maxShiftTurn"
                             :key="amount"
                             @click="
                                 emit('shift', amount);
@@ -695,12 +697,38 @@ const clickOutsideMenu = (event: Event) => {
                 </div>
 
                 <div v-if="!props.compact" class="bottom-actions">
-                    <button class="legacy-button legacy-button--secondary" type="button" @click="emit('shift', -1)">
-                        당기기
-                    </button>
-                    <button class="legacy-button legacy-button--secondary" type="button" @click="emit('shift', 1)">
-                        미루기
-                    </button>
+                    <details class="legacy-menu bottom-shift-menu">
+                        <summary class="legacy-button legacy-button--secondary" role="button">당기기</summary>
+                        <div class="menu-items">
+                            <button
+                                v-for="amount in props.maxShiftTurn"
+                                :key="amount"
+                                type="button"
+                                @click="
+                                    emit('shift', -amount);
+                                    clickOutsideMenu($event);
+                                "
+                            >
+                                {{ amount }}턴
+                            </button>
+                        </div>
+                    </details>
+                    <details class="legacy-menu bottom-shift-menu">
+                        <summary class="legacy-button legacy-button--secondary" role="button">미루기</summary>
+                        <div class="menu-items">
+                            <button
+                                v-for="amount in props.maxShiftTurn"
+                                :key="amount"
+                                type="button"
+                                @click="
+                                    emit('shift', amount);
+                                    clickOutsideMenu($event);
+                                "
+                            >
+                                {{ amount }}턴
+                            </button>
+                        </div>
+                    </details>
                     <button class="legacy-button legacy-button--secondary" type="button" @click="expanded = !expanded">
                         {{ expanded ? '접기' : '펼치기' }}
                     </button>
@@ -831,7 +859,8 @@ const clickOutsideMenu = (event: Event) => {
 }
 .control-pad > button,
 .clock,
-.legacy-menu > summary {
+.control-pad > .legacy-menu > summary,
+.advanced-actions .legacy-menu > summary {
     box-sizing: border-box;
     min-height: 34px;
     border: 0;

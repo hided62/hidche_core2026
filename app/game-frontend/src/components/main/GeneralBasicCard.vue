@@ -272,11 +272,19 @@ const specialText = computed(() => {
                     <strong class="stat-value" :style="{ color: injuryInfo.color }">
                         <span>{{ stat.value }}</span>
                         <span v-if="stat.bonus > 0" class="leadership-bonus">+{{ stat.bonus }}</span>
-                        <span class="bar-cell" :data-stat-progress="stat.key">
-                            <LegacyProgressBar
-                                :percent="stat.percent"
-                                :label="`${stat.label} 성장 ${stat.accumulated} / ${stat.limit}`"
-                            />
+                        <span class="bar-cell">
+                            <RichTooltip
+                                :title="`${stat.label} 성장`"
+                                :description="`${stat.accumulated} / ${stat.limit}`"
+                                :test-id="`stat-${stat.key}`"
+                            >
+                                <span :data-stat-progress="stat.key">
+                                    <LegacyProgressBar
+                                        :percent="stat.percent"
+                                        :label="`${stat.label} 성장 ${stat.accumulated} / ${stat.limit}`"
+                                    />
+                                </span>
+                            </RichTooltip>
                         </span>
                     </strong>
                 </template>
@@ -537,6 +545,12 @@ const specialText = computed(() => {
 
 .stat-value > .bar-cell {
     grid-column: 3;
+}
+
+.bar-cell :deep(.rich-tooltip-trigger),
+.bar-cell [data-stat-progress] {
+    display: block;
+    width: 100%;
 }
 
 .bar-cell,

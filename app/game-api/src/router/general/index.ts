@@ -333,6 +333,7 @@ export const getGeneralContext = async (ctx: GameApiContext) => {
         troopLeaderFirstTurn,
         accessLog,
         rankRows,
+        gameTime,
     ] = await Promise.all([
         general.cityId > 0
             ? ctx.db.city.findUnique({
@@ -413,6 +414,7 @@ export const getGeneralContext = async (ctx: GameApiContext) => {
             where: { generalId: general.id, type: { in: [...PERSONAL_RECORD_TYPES] } },
             select: { type: true, value: true },
         }),
+        loadCurrentGameTime(ctx.db),
     ]);
     const nation = queriedNation ?? NEUTRAL_NATION_CONTEXT;
 
@@ -588,8 +590,7 @@ export const getGeneralContext = async (ctx: GameApiContext) => {
             killTurn: readNumber(metaRecord.killturn ?? metaRecord.killTurn, 0),
             remainingMinutes: resolveRemainingMinutes(
                 general.turnTime,
-                parsedLastExecuted,
-                worldState?.tickSeconds ?? 0
+                gameTime.now
             ),
             crewTypeId: general.crewTypeId,
             crewTypeName: crewTypeDetails.get(general.crewTypeId)?.name ?? '-',

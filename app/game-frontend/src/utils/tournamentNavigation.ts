@@ -17,7 +17,7 @@ export const resolveTournamentMainPresentation = (
     tournamentStage: number,
     tournamentType: number | null
 ): TournamentMainPresentation => {
-    const active = tournamentStage > 0 || tournamentType !== null;
+    const active = tournamentStage === 1 || tournamentStage === 6;
     const bettingActive = tournamentStage === 6;
     const tournamentLabel = tournamentType === null ? undefined : tournamentLabels[tournamentType];
     return {

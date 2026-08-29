@@ -3,14 +3,14 @@ import test from 'node:test';
 
 import { resolveTournamentMainPresentation } from '../src/utils/tournamentNavigation.ts';
 
-void test('routes every active tournament stage except betting to its type-specific tournament button', () => {
+void test('routes every non-betting stage to its type-specific tournament button and highlights only registration', () => {
     const expectedLabels = ['전력전', '통솔전', '일기토', '설전'];
     for (const [type, expectedLabel] of expectedLabels.entries()) {
         for (const stage of [1, 2, 3, 4, 5, 7, 8, 9, 10, 0]) {
             const presentation = resolveTournamentMainPresentation(stage, type);
             assert.equal(presentation.compactLabel, expectedLabel);
             assert.equal(presentation.to, '/tournament');
-            assert.equal(presentation.active, true);
+            assert.equal(presentation.active, stage === 1);
         }
     }
 });
