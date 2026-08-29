@@ -4180,6 +4180,8 @@ test('all main Lumen button families share the rounded pressed geometry', async 
             return {
                 top: rect.top,
                 bottom: rect.bottom,
+                width: rect.width,
+                parentWidth: element.parentElement?.getBoundingClientRect().width ?? 0,
                 height: rect.height,
                 marginTop: style.marginTop,
                 borderTop: style.borderTopWidth,
@@ -4212,6 +4214,9 @@ test('all main Lumen button families share the rounded pressed geometry', async 
             radius: expectedGeometry?.radius ?? '5.25px',
             filter: 'none',
         });
+        if (label === '당기기' || label === '미루기') {
+            expect(base.width, `${label} fills its menu column`).toBeCloseTo(base.parentWidth, 2);
+        }
 
         await control.focus();
         await expect(control, `${label} keyboard focus`).toBeFocused();

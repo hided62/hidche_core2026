@@ -1098,6 +1098,9 @@ const clickOutsideMenu = (event: Event) => {
     gap: 4px;
     padding-top: 3px;
 }
+.bottom-shift-menu > summary {
+    width: 100%;
+}
 .command-picker {
     position: absolute;
     z-index: 80;
