@@ -2,7 +2,7 @@ import type { GeneralTriggerState, Nation } from '@sammo-ts/logic/domain/entitie
 import type { Constraint, ConstraintContext, StateView } from '@sammo-ts/logic/constraints/types.js';
 import { allow, compareValues, unknownOrDeny } from '@sammo-ts/logic/constraints/helpers.js';
 import { beChief, occupiedCity, reqNationGold, reqNationRice } from '@sammo-ts/logic/constraints/presets.js';
-import type { GeneralActionDefinition } from '@sammo-ts/logic/actions/definition.js';
+import type { ActionCostHint, GeneralActionDefinition } from '@sammo-ts/logic/actions/definition.js';
 import type { GeneralActionOutcome, GeneralActionResolveContext } from '@sammo-ts/logic/actions/engine.js';
 import { createLogEffect, createNationPatchEffect } from '@sammo-ts/logic/actions/engine.js';
 import { LogCategory, LogFormat, LogScope } from '@sammo-ts/logic/logging/types.js';
@@ -102,6 +102,10 @@ export const createEventResearchCommand = (
 
         getPreReqTurn(): number {
             return PRE_REQ_TURN;
+        }
+
+        getCostHint(): ActionCostHint {
+            return { gold: COST, rice: COST };
         }
 
         resolve(

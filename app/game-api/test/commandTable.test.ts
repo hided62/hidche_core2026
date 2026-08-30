@@ -211,6 +211,29 @@ describe('buildTurnCommandTable', () => {
         expect(table.general.flatMap(({ values }) => values)).not.toContainEqual(
             expect.objectContaining({ turnDurationText: expect.any(String) })
         );
+        const generalCosts = Object.fromEntries(
+            table.general.flatMap(({ values }) => values.map(({ key, costText }) => [key, costText]))
+        );
+        expect(generalCosts).toMatchObject({
+            che_농지개간: '금 100',
+            che_기술연구: '금 100',
+            che_정착장려: '쌀 200',
+            che_주민선정: '쌀 200',
+            che_화계: '금 500 · 쌀 500',
+            che_첩보: '금 300 · 쌀 300',
+            che_사기진작: '금 1',
+            che_출병: '쌀 1',
+            che_이동: '금 100',
+            che_강행: '금 500',
+        });
+        const nationCosts = Object.fromEntries(
+            table.nation.flatMap(({ values }) => values.map(({ key, costText }) => [key, costText]))
+        );
+        expect(nationCosts).toMatchObject({
+            che_천도: '금·쌀 500 × 2^거리',
+            che_증축: '금 110,000 · 쌀 110,000',
+            che_감축: '금 80,000 · 쌀 80,000 회수',
+        });
     });
 
     it('projects scenario-specific command categories instead of the default profile', async () => {
@@ -239,6 +262,13 @@ describe('buildTurnCommandTable', () => {
             'che_물자조달',
             'cr_맹훈련',
         ]);
+        expect(
+            Object.fromEntries(table.nation.flatMap(({ values }) => values.map(({ key, costText }) => [key, costText])))
+        ).toMatchObject({
+            cr_인구이동: '금·쌀 100 × 인구[만]',
+            event_대검병연구: '금 50,000 · 쌀 50,000',
+            event_화륜차연구: '금 100,000 · 쌀 100,000',
+        });
         expect(table.nation.map(({ category }) => category)).toEqual(['휴식', '특수', '연구']);
         expect(table.nation.flatMap(({ values }) => values.map(({ key }) => key))).toEqual([
             '휴식',
@@ -253,6 +283,29 @@ describe('buildTurnCommandTable', () => {
         ).toMatchObject({
             event_대검병연구: '12턴',
             event_화륜차연구: '24턴',
+        });
+    });
+
+    it('projects costs from the current world develcost used by command execution', async () => {
+        const worldState = buildWorldState();
+        (worldState as unknown as { meta: Record<string, unknown> }).meta.develcost = 120;
+        const table = await buildTurnCommandTable({
+            worldState,
+            general: buildGeneral(),
+            city: buildCity(),
+            nation: buildNation(),
+            nationGenerals: null,
+        });
+        const costs = Object.fromEntries(
+            [...table.general, ...table.nation].flatMap(({ values }) =>
+                values.map(({ key, costText }) => [key, costText])
+            )
+        );
+        expect(costs).toMatchObject({
+            che_농지개간: '금 120',
+            che_화계: '금 600 · 쌀 600',
+            che_천도: '금·쌀 600 × 2^거리',
+            che_증축: '금 120,000 · 쌀 120,000',
         });
     });
 

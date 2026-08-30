@@ -21,10 +21,18 @@ export interface GeneralActionDefinition<
     getPreReqTurn?(context: Context, args: Args): number;
     // 입력 시점에 대상이 정해져야 소요 턴을 계산할 수 있는 명령의 Ref 표시 문구.
     getTurnDurationHint?(): string;
+    // Ref getCommandDetailTitle()처럼 예약 목록에 현재 비용 또는 계산식을 투영한다.
+    getCostHint?(ctx: ConstraintContext, view: StateView): ActionCostHint | null;
     getPostReqTurn?(context: Context, args: Args): number;
     getStackSequence?(context: Context, args: Args): number | null;
     getProgressText?(context: Context, args: Args, term: number, termMax: number): string;
     readonly countsAsInheritanceActiveAction?: boolean;
     getInheritanceActiveActionAmount?(context: Context, args: Args): number;
     resolve(context: Context, args: Args): GeneralActionOutcome<TriggerState>;
+}
+
+export interface ActionCostHint {
+    gold?: number;
+    rice?: number;
+    formula?: string;
 }

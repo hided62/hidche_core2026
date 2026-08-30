@@ -65,6 +65,7 @@ export type CommandAvailability = {
     key: string;
     name: string;
     turnDurationText?: string;
+    costText?: string;
     reqArg: boolean;
     status: 'available' | 'blocked' | 'needsInput' | 'unknown';
     possible: boolean;

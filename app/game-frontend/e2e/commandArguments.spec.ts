@@ -320,10 +320,11 @@ const buildGeneralCommand = (key: string, name: string) => ({
         { key: 'destGeneralId', label: '대상 장수', kind: 'select', required: true, optionSource: 'generals' },
     ],
 });
-const buildSimpleCommand = (key: string, name: string, turnDurationText?: string) => ({
+const buildSimpleCommand = (key: string, name: string, turnDurationText?: string, costText?: string) => ({
     key,
     name,
     ...(turnDurationText ? { turnDurationText } : {}),
+    ...(costText ? { costText } : {}),
     reqArg: false,
     possible: true,
     status: 'available',
@@ -662,9 +663,9 @@ const refChiefCommandTable = {
             category: '특수',
             values: [
                 buildSimpleCommand('che_초토화', '초토화', '3턴'),
-                buildSimpleCommand('che_천도', '천도', '1+거리×2턴'),
-                buildSimpleCommand('che_증축', '증축', '6턴'),
-                buildSimpleCommand('che_감축', '감축', '6턴'),
+                buildSimpleCommand('che_천도', '천도', '1+거리×2턴', '금·쌀 500 × 2^거리'),
+                buildSimpleCommand('che_증축', '증축', '6턴', '금 110,000 · 쌀 110,000'),
+                buildSimpleCommand('che_감축', '감축', '6턴', '금 80,000 · 쌀 80,000 회수'),
             ],
         },
         {
@@ -1342,9 +1343,9 @@ test('shows every Ref chief command in the exact category and command order', as
     await picker.getByRole('button', { name: '특수', exact: true }).click();
     await expect(picker.locator('.command-grid .command-item')).toHaveText([
         '초토화 /3턴',
-        '천도 /1+거리×2턴',
-        '증축 /6턴',
-        '감축 /6턴',
+        '천도 /1+거리×2턴금·쌀 500 × 2^거리',
+        '증축 /6턴금 110,000 · 쌀 110,000',
+        '감축 /6턴금 80,000 · 쌀 80,000 회수',
     ]);
     const durationGeometry = await picker.locator('.command-grid .command-item').evaluateAll((buttons) =>
         buttons.map((button) => ({
@@ -1354,6 +1355,7 @@ test('shows every Ref chief command in the exact category and command order', as
         }))
     );
     expect(durationGeometry.every(({ height, overflow }) => height >= 35 && overflow <= 0)).toBe(true);
+    await picker.screenshot({ path: test.info().outputPath('chief-command-costs-desktop-1200.png') });
     await picker.getByRole('button', { name: '기타', exact: true }).click();
     const rename = picker.getByRole('button', { name: '국호변경', exact: true });
     await rename.hover();
@@ -1376,13 +1378,14 @@ test('shows every Ref chief command in the exact category and command order', as
     expect(mobileGeometry.horizontalOverflow).toBeLessThanOrEqual(0);
     expect(mobileGeometry.categoryColumns.split(' ')).toHaveLength(3);
     await mobilePicker.getByRole('button', { name: '특수', exact: true }).click();
-    const mobileExpand = mobilePicker.getByRole('button', { name: '증축 /6턴', exact: true });
+    const mobileExpand = mobilePicker.getByRole('button', { name: '증축 /6턴 금 110,000 · 쌀 110,000', exact: true });
     await expect(mobileExpand).toBeVisible();
     await mobileExpand.hover();
     await mobileExpand.focus();
     await expect(mobileExpand).toBeFocused();
     await mobileExpand.dispatchEvent('pointerdown');
     await expect(mobileExpand.locator('.command-duration')).toHaveText('/6턴');
+    await expect(mobileExpand.locator('.command-cost')).toHaveText('금 110,000 · 쌀 110,000');
     await mobileExpand.dispatchEvent('pointerup');
     expect(await mobilePicker.evaluate((element) => element.scrollWidth - element.clientWidth)).toBeLessThanOrEqual(0);
     await mobilePicker.screenshot({ path: test.info().outputPath('ref-chief-command-list-mobile-500.png') });

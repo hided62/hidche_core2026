@@ -446,6 +446,7 @@ export const getTurnCommandTable = async (ctx: GameApiContext, generalId: number
         nationGenerals,
         realNationCount: nations.filter((entry) => entry.id > 0).length,
         inputOptions,
+        generalActionModules: moduleBundle.general,
     });
 };
 

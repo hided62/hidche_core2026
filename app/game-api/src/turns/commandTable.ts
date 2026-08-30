@@ -40,6 +40,7 @@ export interface TurnCommandAvailability {
     key: string;
     name: string;
     turnDurationText?: string;
+    costText?: string;
     reqArg: boolean;
     possible: boolean;
     status: AvailabilityStatus;
@@ -326,9 +327,12 @@ const resolveMaxNation = (worldState: WorldStateRow): number => {
 const buildCommandEnv = (worldState: WorldStateRow): CommandEnv => {
     const config = asRecord(worldState.config);
     const constValues = asRecord(config.const);
+    const meta = asRecord(worldState.meta);
+    const configuredDevelCost = resolveNumber(constValues, ['develCost', 'develcost', 'develrate'], 0);
 
     return {
-        develCost: resolveNumber(constValues, ['develCost', 'develcost', 'develrate'], 0),
+        // daemon은 월간 변동이 반영된 world.meta.develcost를 실행 직전에 우선한다.
+        develCost: resolveNumber(meta, ['develcost', 'develCost'], configuredDevelCost),
         trainDelta: resolveNumber(constValues, ['trainDelta'], 0),
         atmosDelta: resolveNumber(constValues, ['atmosDelta'], 0),
         trainSideEffectByAtmosTurn: resolveNumber(constValues, ['trainSideEffectByAtmosTurn'], 1),
@@ -726,11 +730,65 @@ const getTurnDurationText = (definition: GeneralActionDefinition): string | unde
     return preReqTurn > 0 ? `${preReqTurn + 1}턴` : undefined;
 };
 
+const formatCost = (gold: number | undefined, rice: number | undefined): string | undefined => {
+    const parts = [
+        gold && gold > 0 ? `금 ${gold.toLocaleString('ko-KR')}` : null,
+        rice && rice > 0 ? `쌀 ${rice.toLocaleString('ko-KR')}` : null,
+    ].filter((part): part is string => part !== null);
+    return parts.length > 0 ? parts.join(' · ') : undefined;
+};
+
+const getCommandCostText = (
+    entry: CommandEntry,
+    ctx: ConstraintContext,
+    view: StateView,
+    env: CommandEnv
+): string | undefined => {
+    const hint = entry.definition.getCostHint?.(ctx, view);
+    if (hint?.formula) return hint.formula;
+    const hintedCost = hint ? formatCost(hint.gold, hint.rice) : undefined;
+    if (hintedCost) return hintedCost;
+
+    const develCost = env.develCost;
+    const general = view.get({ kind: 'general', id: ctx.actorId }) as General | null;
+    switch (entry.definition.key) {
+        case 'che_단련':
+        case 'che_숙련전환':
+            return formatCost(develCost, develCost);
+        case 'che_첩보':
+            return formatCost(develCost * 3, develCost * 3);
+        case 'che_이동':
+        case 'che_인재탐색':
+            return formatCost(develCost, 0);
+        case 'che_강행':
+            return formatCost(develCost * 5, 0);
+        case 'che_사기진작':
+            return formatCost(Math.round((general?.crew ?? 0) / 100), 0);
+        case 'che_출병':
+            return formatCost(0, Math.round((general?.crew ?? 0) / 100));
+        case 'che_천도':
+            return `금·쌀 ${(develCost * 5).toLocaleString('ko-KR')} × 2^거리`;
+        case 'cr_인구이동':
+            return `금·쌀 ${develCost.toLocaleString('ko-KR')} × 인구[만]`;
+        case 'che_증축': {
+            const cost = develCost * 500 + 60_000;
+            return formatCost(cost, cost);
+        }
+        case 'che_감축': {
+            const recovery = develCost * 500 + 30_000;
+            return `금 ${recovery.toLocaleString('ko-KR')} · 쌀 ${recovery.toLocaleString('ko-KR')} 회수`;
+        }
+        default:
+            return undefined;
+    }
+};
+
 const buildGroups = (
     entries: CommandEntry[],
     ctx: ConstraintContext,
     view: StateView,
-    includeTurnDuration = false
+    includeTurnDuration = false,
+    env: CommandEnv
 ): TurnCommandGroup[] => {
     const groups = new Map<string, TurnCommandAvailability[]>();
 
@@ -739,10 +797,12 @@ const buildGroups = (
             ? entry.evaluate(ctx, view)
             : evaluateDefinition(entry.definition, ctx, view, entry.reqArg, entry.availabilityArgs);
         const turnDurationText = includeTurnDuration ? getTurnDurationText(entry.definition) : undefined;
+        const costText = getCommandCostText(entry, ctx, view, env);
         const value: TurnCommandAvailability = {
             key: entry.definition.key,
             name: entry.definition.name,
             ...(turnDurationText ? { turnDurationText } : {}),
+            ...(costText ? { costText } : {}),
             reqArg: entry.reqArg,
             inputFields: entry.inputFields,
             ...availability,
@@ -800,6 +860,7 @@ export const buildTurnCommandTable = async (options: {
     /** Ref's nation-table row count. Core callers must exclude synthetic id=0. */
     realNationCount?: number;
     inputOptions?: TurnCommandInputOptions;
+    generalActionModules?: TurnCommandEnv['generalActionModules'];
 }): Promise<TurnCommandTable> => {
     // 턴 입력 화면에서 쓰는 사전 판단이므로 최소 정보로 가능/불가만 계산한다.
     const general = mapGeneralRow(options.general);
@@ -818,7 +879,10 @@ export const buildTurnCommandTable = async (options: {
         mode: 'precheck',
     };
 
-    const env = buildCommandEnv(options.worldState);
+    const env = {
+        ...buildCommandEnv(options.worldState),
+        ...(options.generalActionModules ? { generalActionModules: options.generalActionModules } : {}),
+    };
     const scenarioConst = asRecord(options.worldState.config).const;
     const {
         general: generalSpecs,
@@ -841,13 +905,16 @@ export const buildTurnCommandTable = async (options: {
         general: buildGroups(
             projectCommandGroups(generalEntries, generalGroups ?? REF_GENERAL_COMMAND_GROUPS),
             ctx,
-            view
+            view,
+            false,
+            env
         ),
         nation: buildGroups(
             projectCommandGroups(nationEntries, nationGroups ?? REF_NATION_COMMAND_GROUPS),
             ctx,
             view,
-            true
+            true,
+            env
         ),
         inputOptions: options.inputOptions ?? {
             cities: [],

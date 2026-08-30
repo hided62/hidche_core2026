@@ -8,7 +8,7 @@ import {
     reqGeneralRice,
     suppliedCity,
 } from '@sammo-ts/logic/constraints/presets.js';
-import type { GeneralActionDefinition } from '@sammo-ts/logic/actions/definition.js';
+import type { ActionCostHint, GeneralActionDefinition } from '@sammo-ts/logic/actions/definition.js';
 import type { GeneralActionOutcome } from '@sammo-ts/logic/actions/engine.js';
 import type {
     ActionContextBase,
@@ -87,6 +87,11 @@ export class ActionDefinition<
             reqGeneralGold(getCost, requirements),
             reqGeneralRice(() => 0, requirements),
         ];
+    }
+
+    getCostHint(ctx: ConstraintContext, view: StateView): ActionCostHint | null {
+        const context = buildDomesticContextFromView<TriggerState>(ctx, view);
+        return context ? this.command.getCost(context) : null;
     }
 
     resolve(context: TechResearchContext<TriggerState>, _args: TechResearchArgs): GeneralActionOutcome<TriggerState> {

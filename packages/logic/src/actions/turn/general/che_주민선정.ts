@@ -8,7 +8,7 @@ import {
     reqGeneralRice,
     suppliedCity,
 } from '@sammo-ts/logic/constraints/presets.js';
-import type { GeneralActionDefinition } from '@sammo-ts/logic/actions/definition.js';
+import type { ActionCostHint, GeneralActionDefinition } from '@sammo-ts/logic/actions/definition.js';
 import type { GeneralActionOutcome, GeneralActionResolveContext } from '@sammo-ts/logic/actions/engine.js';
 import type { TurnCommandEnv } from '@sammo-ts/logic/actions/turn/commandEnv.js';
 import { tryApplyUniqueLottery } from '@sammo-ts/logic/rewards/uniqueLottery.js';
@@ -89,6 +89,12 @@ export class ActionDefinition<
             reqGeneralRice(getRiceCost, requirements),
             remainCityTrust(),
         ];
+    }
+
+    getCostHint(ctx: ConstraintContext, view: StateView): ActionCostHint | null {
+        const context = buildDomesticContextFromView<TriggerState>(ctx, view);
+        const cost = context ? this.command.getCost(context).gold : 0;
+        return context ? { rice: cost } : null;
     }
 
     resolve(

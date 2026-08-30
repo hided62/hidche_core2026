@@ -14,6 +14,7 @@ import {
 import { GeneralActionPipeline, type GeneralActionModule } from '@sammo-ts/logic/actionModules/general.js';
 import type { TriggerDomesticActionType } from '@sammo-ts/logic/actionModules/types.js';
 import type { GeneralActionDefinition } from '@sammo-ts/logic/actions/definition.js';
+import type { ActionCostHint } from '@sammo-ts/logic/actions/definition.js';
 import type {
     GeneralActionOutcome,
     GeneralActionResolver,
@@ -446,6 +447,11 @@ export class ActionDefinition<
             reqGeneralRice(() => 0, requirements),
             remainCityCapacity(this.config.cityKey, this.config.name),
         ];
+    }
+
+    getCostHint(ctx: ConstraintContext, view: StateView): ActionCostHint | null {
+        const context = buildDomesticContextFromView<TriggerState>(ctx, view);
+        return context ? this.command.getCost(context) : null;
     }
 
     resolve(

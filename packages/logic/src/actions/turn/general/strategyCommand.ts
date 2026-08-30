@@ -1,6 +1,7 @@
 import { JosaUtil, type RandomGenerator } from '@sammo-ts/common';
 import { GeneralActionPipeline, type GeneralActionModule } from '@sammo-ts/logic/actionModules/general.js';
 import type { GeneralActionDefinition } from '@sammo-ts/logic/actions/definition.js';
+import type { ActionCostHint } from '@sammo-ts/logic/actions/definition.js';
 import type {
     GeneralActionEffect,
     GeneralActionOutcome,
@@ -389,6 +390,10 @@ export class StrategyActionDefinition<
     buildMinConstraints(_ctx: ConstraintContext, _args: StrategyArgs): Constraint[] {
         const { gold, rice } = this.command.getCost();
         return [notBeNeutral(), occupiedCity(), suppliedCity(), reqGeneralGold(() => gold), reqGeneralRice(() => rice)];
+    }
+
+    getCostHint(): ActionCostHint {
+        return this.command.getCost();
     }
 
     buildConstraints(_ctx: ConstraintContext, _args: StrategyArgs): Constraint[] {

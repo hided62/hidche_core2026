@@ -6,6 +6,7 @@ type CommandAvailability = {
     key: string;
     name: string;
     turnDurationText?: string;
+    costText?: string;
     reqArg: boolean;
     status: 'available' | 'blocked' | 'needsInput' | 'unknown';
     possible: boolean;
@@ -165,6 +166,7 @@ const commandTitle = (command: CommandAvailability) =>
                     <small v-if="command.turnDurationText" class="command-duration">
                         /{{ command.turnDurationText }}
                     </small>
+                    <small v-if="command.costText" class="command-cost">{{ command.costText }}</small>
                 </button>
             </div>
         </div>
@@ -253,6 +255,15 @@ const commandTitle = (command: CommandAvailability) =>
     font-weight: 400;
     line-height: 1.1;
     white-space: nowrap;
+}
+
+.command-cost {
+    display: block;
+    color: #f3d58b;
+    font-size: 0.875em;
+    font-weight: 400;
+    line-height: 1.1;
+    overflow-wrap: anywhere;
 }
 
 .empty {
