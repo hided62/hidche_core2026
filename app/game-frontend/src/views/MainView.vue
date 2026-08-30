@@ -208,10 +208,6 @@ const requestManualRefresh = () => {
     void loadMainData();
 };
 
-const moveLobby = () => {
-    window.location.replace(gameFrontendRuntimeConfig.gatewayWebUrl);
-};
-
 const moveQuick = (item: QuickNavigationItem) => {
     document.querySelector(item.selector)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
 };
@@ -348,7 +344,6 @@ watch(
                             :refreshing="refreshing"
                             @refresh="requestManualRefresh"
                             @toggle-realtime="dashboard.setRealtimeEnabled(!realtimeEnabled)"
-                            @lobby="moveLobby"
                         />
                     </PanelCard>
                 </div>
@@ -524,7 +519,6 @@ watch(
                     :refreshing="refreshing"
                     @refresh="requestManualRefresh"
                     @toggle-realtime="dashboard.setRealtimeEnabled(!realtimeEnabled)"
-                    @lobby="moveLobby"
                 />
             </PanelCard>
             <PanelCard title="도시 정보" data-main-target="city">
@@ -639,7 +633,6 @@ watch(
         :entries="globalNavigation"
         @refresh="requestManualRefresh"
         @toggle-realtime="dashboard.setRealtimeEnabled(!realtimeEnabled)"
-        @lobby="moveLobby"
         @quick="moveQuick"
         @action="handleNavigationAction"
     />

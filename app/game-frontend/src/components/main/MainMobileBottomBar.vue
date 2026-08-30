@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed } from 'vue';
 import { legacyNationTextColor } from '../../utils/legacyNationColor';
+import GatewayLobbyLink from './GatewayLobbyLink.vue';
 import MainNavigationLink from './MainNavigationLink.vue';
 import {
     buildGlobalNavigation,
@@ -29,7 +30,6 @@ const props = defineProps<{
 const emit = defineEmits<{
     refresh: [];
     toggleRealtime: [];
-    lobby: [];
     quick: [item: QuickNavigationItem];
     action: [action: NonNullable<MainNavigationLinkItem['action']>];
 }>();
@@ -212,14 +212,12 @@ const onAction = (action: NonNullable<MainNavigationLinkItem['action']>) => {
                     </li>
                 </template>
                 <li class="bottom-lobby" role="none">
-                    <button
+                    <GatewayLobbyLink
                         class="quick-link lobby-link legacy-button legacy-button--navigation"
-                        type="button"
                         role="menuitem"
-                        @click="emit('lobby')"
                     >
                         로비로
-                    </button>
+                    </GatewayLobbyLink>
                 </li>
             </ul>
         </div>

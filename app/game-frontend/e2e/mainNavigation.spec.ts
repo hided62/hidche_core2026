@@ -4248,7 +4248,7 @@ test('all main Lumen button families share the rounded pressed geometry', async 
             page.locator('.main-turn-controls').getByRole('button', { name: '갱 신' }),
             { radius: '5.25px 0px 0px 5.25px' },
         ],
-        ['로비로', page.locator('.main-turn-controls').getByRole('button', { name: '로비로' })],
+        ['로비로', page.locator('.main-turn-controls').getByRole('link', { name: '로비로' })],
     ];
 
     const measure = (control: Locator) =>
@@ -4531,7 +4531,7 @@ test('mobile main Lumen button families keep the same state geometry without ove
         page.locator('[data-main-target="commands"] .bottom-actions').getByRole('button', { name: '펼치기' }),
         page.locator('.layout-mobile .main-turn-controls').getByRole('button', { name: /자동 갱신/u }),
         page.locator('.layout-mobile .main-turn-controls').getByRole('button', { name: '갱 신' }),
-        page.locator('.layout-mobile .main-turn-controls').getByRole('button', { name: '로비로' }),
+        page.locator('.layout-mobile .main-turn-controls').getByRole('link', { name: '로비로' }),
     ];
     for (const [index, control] of controls.entries()) {
         await expect(control).toBeVisible();
@@ -4571,7 +4571,7 @@ test('mobile main Lumen button families keep the same state geometry without ove
     await persistArtifact(page, `${basePath.slice(1)}-mobile-main-lumen-button-families`);
 });
 
-test('mobile single document refreshes once and preserves tokens on lobby return', async ({ page }) => {
+test('mobile single document refreshes once and preserves tokens on lobby return', async ({ page, context }) => {
     const state: NavigationFixture = {
         officerLevel: 5,
         permission: 2,
@@ -4677,10 +4677,20 @@ test('mobile single document refreshes once and preserves tokens on lobby return
     await page.evaluate(() => {
         localStorage.setItem('sammo-session-token', 'session_navigation');
     });
-    await page.route('**/gateway/', async (route) => {
+    await context.route('**/gateway/', async (route) => {
         await route.fulfill({ status: 200, contentType: 'text/html', body: '<!doctype html><title>gateway</title>' });
     });
-    await Promise.all([page.waitForURL('**/gateway/'), page.getByRole('button', { name: '로비로' }).click()]);
+    const lobbyLink = page.locator('.main-turn-controls__lobby');
+    await expect(lobbyLink).toHaveAttribute('href', /\/gateway\/$/);
+    const sourceUrl = page.url();
+    const popupPromise = context.waitForEvent('page');
+    await lobbyLink.click({ button: 'middle' });
+    const popup = await popupPromise;
+    await popup.waitForURL('**/gateway/');
+    expect(page.url()).toBe(sourceUrl);
+    await popup.close();
+
+    await Promise.all([page.waitForURL('**/gateway/'), lobbyLink.click()]);
     expect(
         await page.evaluate(() => ({
             session: localStorage.getItem('sammo-session-token'),

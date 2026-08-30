@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import GatewayLobbyLink from './GatewayLobbyLink.vue';
+
 defineProps<{
     realtimeEnabled: boolean;
     refreshing: boolean;
@@ -7,7 +9,6 @@ defineProps<{
 const emit = defineEmits<{
     refresh: [];
     toggleRealtime: [];
-    lobby: [];
 }>();
 </script>
 
@@ -34,13 +35,11 @@ const emit = defineEmits<{
                 <strong>{{ realtimeEnabled ? 'ON' : 'OFF' }}</strong>
             </button>
         </div>
-        <button
+        <GatewayLobbyLink
             class="main-turn-controls__lobby legacy-button legacy-button--navigation"
-            type="button"
-            @click="emit('lobby')"
         >
             로비로
-        </button>
+        </GatewayLobbyLink>
     </section>
 </template>
 
