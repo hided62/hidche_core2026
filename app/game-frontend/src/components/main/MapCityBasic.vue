@@ -78,7 +78,12 @@ const touchend = (event: TouchEvent) => {
                 readonly: props.readonly,
             },
         ]"
-        :style="{ left: `${props.city.x}px`, top: `${props.city.y}px` }"
+        :style="{
+            left: `${props.city.x}px`,
+            top: `${props.city.y}px`,
+            width: `${size}px`,
+            height: `${size}px`,
+        }"
         @mouseenter="emit('hover', props.city.id)"
         @mouseleave="emit('leave')"
         @touchstart="touchstart"
@@ -107,10 +112,7 @@ const touchend = (event: TouchEvent) => {
 <style scoped>
 .map-city {
     position: absolute;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    gap: 2px;
+    box-sizing: border-box;
     transform: translate(-50%, -50%);
     font-size: 0.65rem;
     color: rgba(232, 221, 196, 0.8);
@@ -126,7 +128,8 @@ const touchend = (event: TouchEvent) => {
 }
 
 .city-dot {
-    position: relative;
+    position: absolute;
+    inset: 0;
     border: 1px solid rgba(232, 221, 196, 0.6);
     display: flex;
     align-items: center;
@@ -179,6 +182,7 @@ const touchend = (event: TouchEvent) => {
 .city-state {
     position: absolute;
     background: rgba(232, 221, 196, 0.8);
+    pointer-events: none;
 }
 
 .city-state.state-war {
@@ -194,6 +198,11 @@ const touchend = (event: TouchEvent) => {
 }
 
 .city-name {
+    position: absolute;
+    top: calc(100% + 2px);
+    left: 50%;
+    pointer-events: none;
+    transform: translateX(-50%);
     white-space: nowrap;
 }
 </style>

@@ -58,9 +58,9 @@ const city = {
 };
 const castleFixtures = [
     { id: 1, level: 8, layoutLevel: 1, x: 100, y: 100, width: 32, height: 24 },
-    { id: 2, level: 1, layoutLevel: 8, x: 200, y: 100, width: 16, height: 15 },
-    { id: 3, level: 2, layoutLevel: 8, x: 300, y: 100, width: 20, height: 14 },
-    { id: 4, level: 3, layoutLevel: 8, x: 400, y: 100, width: 14, height: 14 },
+    { id: 2, name: '진류', level: 6, layoutLevel: 6, x: 365, y: 185, width: 26, height: 18 },
+    { id: 3, name: '관도', level: 2, layoutLevel: 2, x: 340, y: 165, width: 20, height: 14 },
+    { id: 4, name: '정도', level: 2, layoutLevel: 2, x: 400, y: 210, width: 20, height: 14 },
     { id: 5, name: '남만', level: 4, layoutLevel: 8, x: 80, y: 455, width: 20, height: 15 },
     { id: 6, name: '교지', level: 5, layoutLevel: 8, x: 130, y: 480, width: 24, height: 16 },
     { id: 7, name: '남해', level: 6, layoutLevel: 8, x: 245, y: 480, width: 26, height: 18 },
@@ -551,6 +551,63 @@ test('map keeps desktop hover navigation and lets touch users choose one-tap or 
     await desktopCity.hover();
     await expect(page.locator('.map-tooltip .tooltip-title')).toHaveText('【하북|특】업');
 
+    const cityHitTargets = await page.locator('.map-area .city-base').evaluateAll((cities) =>
+        cities.map((city) => {
+            const icon = city.querySelector<HTMLElement>('.city-icon');
+            const background = city.querySelector<HTMLElement>('.city-bg');
+            if (!icon || !background) throw new Error('Missing city icon or background');
+            const cityRect = city.getBoundingClientRect();
+            const iconRect = icon.getBoundingClientRect();
+            return {
+                city: { left: cityRect.left, top: cityRect.top, width: cityRect.width, height: cityRect.height },
+                icon: { left: iconRect.left, top: iconRect.top, width: iconRect.width, height: iconRect.height },
+                backgroundPointerEvents: getComputedStyle(background).pointerEvents,
+            };
+        })
+    );
+    for (const target of cityHitTargets) {
+        expect(target.city).toEqual(target.icon);
+        expect(target.backgroundPointerEvents).toBe('none');
+    }
+
+    const firstCityBackgroundOnlyPoint = await desktopCity.evaluate((city) => {
+        const iconRect = city.querySelector<HTMLElement>('.city-icon')!.getBoundingClientRect();
+        const backgroundRect = city.querySelector<HTMLElement>('.city-bg')!.getBoundingClientRect();
+        return {
+            x: backgroundRect.left + 2,
+            y: backgroundRect.top + 2,
+            icon: { left: iconRect.left, top: iconRect.top, right: iconRect.right, bottom: iconRect.bottom },
+        };
+    });
+    expect(firstCityBackgroundOnlyPoint.x).toBeLessThan(firstCityBackgroundOnlyPoint.icon.left);
+    expect(firstCityBackgroundOnlyPoint.y).toBeLessThan(firstCityBackgroundOnlyPoint.icon.top);
+    await page.mouse.move(firstCityBackgroundOnlyPoint.x, firstCityBackgroundOnlyPoint.y);
+    await expect(page.locator('.map-tooltip')).toHaveCount(0);
+    await page.mouse.click(firstCityBackgroundOnlyPoint.x, firstCityBackgroundOnlyPoint.y);
+    await expect(page).toHaveURL(/\/global-info$/u);
+
+    const mapRect = await page.locator('.map-area').evaluate((element) => {
+        const rect = element.getBoundingClientRect();
+        return { left: rect.left, top: rect.top };
+    });
+    for (const gap of [
+        { x: 351, y: 174, between: '관도-진류' },
+        { x: 383, y: 198, between: '진류-정도' },
+    ]) {
+        await page.mouse.move(mapRect.left + gap.x, mapRect.top + gap.y);
+        await expect(page.locator('.map-tooltip'), `${gap.between} 아이콘 사이 hover`).toHaveCount(0);
+        await page.mouse.click(mapRect.left + gap.x, mapRect.top + gap.y);
+        await expect(page, `${gap.between} 아이콘 사이 click`).toHaveURL(/\/global-info$/u);
+    }
+
+    const jinliu = page.getByRole('link', { name: '진류', exact: true });
+    await jinliu.hover();
+    await expect(page.locator('.map-tooltip .tooltip-title')).toHaveText('【하북|중】진류');
+    await jinliu.click();
+    await expect(page).toHaveURL(/\/current-city\?cityId=2$/u);
+    await page.goBack();
+    await expect(page).toHaveURL(/\/global-info$/u);
+
     for (const cityName of ['남만', '교지', '남해', '대']) {
         await page.getByRole('link', { name: cityName, exact: true }).hover();
         await expect(page.locator('.map-tooltip')).toBeVisible();
@@ -698,7 +755,7 @@ test('map keeps desktop hover navigation and lets touch users choose one-tap or 
 
         await mobileCities.nth(1).tap();
         await expect(mobilePage).toHaveURL(/\/global-info$/u);
-        await expect(mobilePage.locator('.map-tooltip .tooltip-title')).toHaveText('【하북|수】성2');
+        await expect(mobilePage.locator('.map-tooltip .tooltip-title')).toHaveText('【하북|중】진류');
         await mobilePage.screenshot({ path: testInfo.outputPath('mobile-map-first-tap-tooltip.png'), fullPage: true });
 
         await mobileCities.nth(1).tap();

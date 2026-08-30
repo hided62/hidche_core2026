@@ -85,16 +85,11 @@ const cityBackgroundSize = computed(() => {
     return detailSize.value;
 });
 
-const baseSize = computed(() => ({
-    width: 40 * props.mapScale,
-    height: 30 * props.mapScale,
-}));
-
 const cityBaseStyle = computed(() => ({
     left: `${props.city.x}px`,
     top: `${props.city.y}px`,
-    width: `${baseSize.value.width}px`,
-    height: `${baseSize.value.height}px`,
+    width: `${detailSize.value.iconWidth}px`,
+    height: `${detailSize.value.iconHeight}px`,
 }));
 
 const cityBgStyle = computed(() => {
@@ -251,12 +246,14 @@ const cityStateStyle = computed(() => ({
     background-position: center;
     background-repeat: no-repeat;
     background-size: 100% 100%;
+    pointer-events: none;
 }
 
 .city-img {
     position: absolute;
     left: 50%;
     top: 50%;
+    pointer-events: none;
     transform: translate(-50%, -50%);
 }
 
@@ -317,5 +314,6 @@ const cityStateStyle = computed(() => ({
 .city-state {
     position: absolute;
     left: 0;
+    pointer-events: none;
 }
 </style>

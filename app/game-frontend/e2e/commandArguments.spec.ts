@@ -1732,7 +1732,7 @@ test('enters general and nation command arguments and sends exact values', async
         expect(castle.renderedWidth / castle.naturalWidth).toBeCloseTo(castle.renderedHeight / castle.naturalHeight, 2);
     }
     const layerStyles = await commandMap.evaluate((element) => ({
-        background: getComputedStyle(element.querySelector<HTMLElement>('.map-bglayer1')!).backgroundImage,
+        background: element.querySelector<HTMLImageElement>('.map-bglayer1 .map-background-image')?.src ?? '',
         road: getComputedStyle(element.querySelector<HTMLElement>('.map-bgroad')!).backgroundImage,
     }));
     expect(layerStyles.background).toContain('/game/map/che/bg_spring.jpg');
