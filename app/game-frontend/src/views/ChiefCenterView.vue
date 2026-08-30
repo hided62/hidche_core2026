@@ -3,6 +3,7 @@ import { computed, onMounted, ref, watch } from 'vue';
 import { useMediaQuery } from '@vueuse/core';
 import { addMinutes } from 'date-fns';
 import { useRouter } from 'vue-router';
+import { formatServerDateTime } from '@sammo-ts/common/time/ServerDateTime';
 import SkeletonLines from '../components/ui/SkeletonLines.vue';
 import ChiefTurnCard from '../components/chief/ChiefTurnCard.vue';
 import ChiefCommandEditor from '../components/chief/ChiefCommandEditor.vue';
@@ -219,8 +220,8 @@ const buildTurnRows = (chief: ChiefEntry): TurnRow[] => {
             baseTime && Number.isFinite(turnTermMinutes) ? addMinutes(baseTime, idx * turnTermMinutes) : null;
         const timeLabel = turnDate
             ? turnTermMinutes >= 5
-                ? `${String(turnDate.getUTCHours()).padStart(2, '0')}:${String(turnDate.getUTCMinutes()).padStart(2, '0')}`
-                : `${String(turnDate.getUTCMinutes()).padStart(2, '0')}:${String(turnDate.getUTCSeconds()).padStart(2, '0')}`
+                ? formatServerDateTime(turnDate, { format: 'hourMinute' })
+                : formatServerDateTime(turnDate, { format: 'minuteSecond' })
             : '--:--';
         const actionLabel =
             formatReservedCommandBrief('nation', turn.action, turn.args, commandTable.value) ??

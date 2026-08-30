@@ -751,7 +751,7 @@ const chiefCenter = {
         officerLevel,
         name: officerLevel === 5 ? '장수' : `수뇌${officerLevel}`,
         npcState: officerLevel === 8 ? 2 : 0,
-        turnTime: null,
+        turnTime: '2026-08-30T01:46:47.590Z',
         revision: 0,
         turns:
             officerLevel === 12
@@ -2797,6 +2797,15 @@ test('physical mobile touch drag selects general and nation turns in advanced mo
     } finally {
         await context.close();
     }
+});
+
+test('renders chief turn rows in the fixed UTC+9 server timezone', async ({ page }) => {
+    await install(page);
+    await page.goto('chief-center');
+
+    await expect(page.getByRole('heading', { name: '사령부', exact: true })).toBeVisible();
+    await expect(page.locator('.chief-grid-row').first().locator('.row-time').nth(0)).toHaveText('10:46');
+    await expect(page.locator('.chief-grid-row').first().locator('.row-time').nth(1)).toHaveText('10:56');
 });
 
 test('keeps the shared main and chief shell geometry and interaction states', async ({ page }) => {
