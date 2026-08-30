@@ -1908,7 +1908,12 @@ test('uses a Ref-style full recruitment page without horizontal overflow on desk
     expect(desktopGeometry.bodyOverflow).toBe('hidden');
 
     const infantry = form.getByRole('button', { name: '보병 선택 가능', exact: true });
+    const estimatedGold = infantry.getByRole('status', { name: '보병 예상 자금' });
+    await expect(estimatedGold).toHaveText('673금');
+    await infantry.locator('input[type=number]').fill('100');
+    await expect(estimatedGold).toHaveText('1,035금');
     await infantry.getByRole('button', { name: '절반', exact: true }).click();
+    await expect(estimatedGold).toHaveText('363금');
     await page.screenshot({ path: testInfo.outputPath('recruitment-desktop.png') });
     await picker.getByRole('button', { name: '입력', exact: true }).click();
     await expect(page.locator('[data-command-scope="general"] .action-column > div').first()).toHaveText(

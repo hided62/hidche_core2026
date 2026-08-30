@@ -37,6 +37,10 @@ const filledAmount = (crewType: RecruitmentCrewType | null): number => {
     }
     return Math.max(1, props.info.fullLeadership);
 };
+const displayedAmount = (crewType: RecruitmentCrewType): number =>
+    crewType.id === selectedCrewTypeId.value ? amount.value : filledAmount(crewType);
+const estimatedGoldFor = (crewType: RecruitmentCrewType): number =>
+    Math.ceil(displayedAmount(crewType) * crewType.baseCost * goldCoefficient.value);
 
 const initialize = () => {
     showUnavailable.value = Object.fromEntries(props.info.groups.map((group) => [group.armType, false]));
@@ -246,6 +250,9 @@ watch(
                                 "
                             />
                             <span>00명</span>
+                            <output :aria-label="`${crewType.name} 예상 자금`">
+                                {{ estimatedGoldFor(crewType).toLocaleString() }}금
+                            </output>
                         </label>
                     </span>
                     <span class="crew-action" @click.stop>
@@ -393,13 +400,21 @@ watch(
 }
 .amount-panel label {
     display: grid;
-    grid-template-columns: auto minmax(0, 1fr) auto;
+    grid-template-columns: auto minmax(0, 1fr) auto minmax(76px, auto);
     align-items: center;
 }
 .amount-panel input {
     min-width: 0;
     height: 28px;
     box-sizing: border-box;
+    text-align: right;
+}
+.amount-panel output {
+    box-sizing: border-box;
+    min-width: 0;
+    padding: 4px;
+    background: #ddd;
+    color: #303030;
     text-align: right;
 }
 .crew-action button,
@@ -452,12 +467,7 @@ watch(
         grid-template-columns: auto minmax(0, 1fr) auto 85px;
     }
     .mobile-selected-panel output {
-        box-sizing: border-box;
         min-width: 0;
-        padding: 4px;
-        background: #ddd;
-        color: #303030;
-        text-align: right;
     }
     .crew-grid {
         grid-template-areas:
