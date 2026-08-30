@@ -234,14 +234,19 @@ describe('HWE-shaped unification invader resume', () => {
             loadArchivedNationMaxId: async () => 57,
         });
         const processor = new InMemoryTurnProcessor(world);
+        const clock = new ManualClock(acceptedAt.getTime());
         const run = vi.fn(async (...args: Parameters<InMemoryTurnProcessor['run']>) => {
             const result = await processor.run(...args);
-            queue.enqueue({ type: 'shutdown', reason: 'one resumed monthly boundary verified' });
+            if (world.getState().currentMonth === 4) {
+                queue.enqueue({ type: 'shutdown', reason: 'resumed monthly boundary verified' });
+            } else {
+                clock.advanceMs(2_000);
+            }
             return result;
         });
         const lifecycle = new TurnDaemonLifecycle(
             {
-                clock: new ManualClock(acceptedAt.getTime()),
+                clock,
                 controlQueue: queue,
                 getNextTickTime: (value) => addMinutes(value, 1),
                 stateStore: new InMemoryTurnStateStore(world),
@@ -270,7 +275,11 @@ describe('HWE-shaped unification invader resume', () => {
         });
         expect(world.listNations().filter((entry) => entry.name.startsWith('ⓞ'))).toHaveLength(1);
         expect(world.listGenerals().filter((entry) => entry.npcState === 9)).toHaveLength(10);
-        expect(run).toHaveBeenCalledOnce();
-        expect(lifecycle.getStatus().lastTurnTime).toBe('2026-08-19T21:15:00.000Z');
+        expect(run).toHaveBeenCalledTimes(2);
+        expect(run.mock.calls.map(([targetTime]) => targetTime.toISOString())).toEqual([
+            '2026-08-20T06:24:58.611Z',
+            '2026-08-20T06:25:00.000Z',
+        ]);
+        expect(lifecycle.getStatus().lastTurnTime).toBe('2026-08-20T06:25:00.000Z');
     });
 });

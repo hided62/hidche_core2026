@@ -4,7 +4,6 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 
-import { resolveScenarioDefaultsPath } from '../src/scenario/scenarioLoader.js';
 import { MONTHLY_EVENT_ACTION_CATALOG, type MonthlyEventActionName } from '../src/turn/monthlyEventHandler.js';
 import { hasRefSourceRoot, resolveRefSourceRoot } from './refSourceRoot.js';
 
@@ -136,7 +135,6 @@ const segments = [
     },
 ] as const satisfies readonly CatalogSegment[];
 
-const KNOWN_MISSING_SCENARIO_RESOURCES = [] as const;
 const KNOWN_MISSING_MONTHLY_ACTIONS = [] as const;
 
 const listBasenames = async (directory: string, pattern: RegExp): Promise<string[]> =>
