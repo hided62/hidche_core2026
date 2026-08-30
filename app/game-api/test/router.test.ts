@@ -1462,6 +1462,28 @@ describe('appRouter', () => {
             })
         ).resolves.toMatchObject({ ok: true });
         expect(validTermWrites).toHaveLength(1);
+
+        const excessiveTermWrites: unknown[] = [];
+        const excessiveTermCaller = appRouter.createCaller(
+            buildContext({
+                state: buildWorldState(),
+                general,
+                nationTurnWrites: excessiveTermWrites,
+            })
+        );
+        await expect(
+            excessiveTermCaller.turns.reserved.setNation({
+                generalId: general.id,
+                turnIndex: 0,
+                action: 'che_불가침제의',
+                args: { destNationId: 2, year: 211, month: 1 },
+                expectedRevision: 0,
+            })
+        ).rejects.toMatchObject({
+            code: 'PRECONDITION_FAILED',
+            message: expect.stringContaining('기한은 210년 이하'),
+        });
+        expect(excessiveTermWrites).toHaveLength(0);
     });
 
     it('validates every bulk reservation permission before writing any turn', async () => {

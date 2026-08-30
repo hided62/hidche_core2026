@@ -337,6 +337,27 @@ describe('buildTurnCommandTable', () => {
         }
     });
 
+    it('projects the Ref twenty-year non-aggression end-year window', async () => {
+        const table = await buildTurnCommandTable({
+            worldState: buildWorldState(),
+            general: buildGeneral(),
+            city: buildCity(),
+            nation: buildNation(),
+            nationGenerals: null,
+        });
+        const proposal = table.nation
+            .flatMap((group) => group.values)
+            .find((command) => command.key === 'che_불가침제의');
+
+        expect(proposal?.inputFields.find((field) => field.key === 'year')).toMatchObject({
+            kind: 'number',
+            min: 4,
+            max: 23,
+            defaultValue: 4,
+        });
+        expect(proposal?.inputFields.find((field) => field.key === 'month')).toMatchObject({ defaultValue: 1 });
+    });
+
     it('projects the Ref availability boundaries for force move, retirement, and resignation', async () => {
         const buildTable = (general: GeneralRow, nation: NationRow | null = buildNation()) =>
             buildTurnCommandTable({

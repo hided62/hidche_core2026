@@ -78,6 +78,7 @@ const optionsFor = (field: CommandInputField): CommandOption[] => {
 
 const defaultValue = (field: CommandInputField): unknown => {
     if (field.kind === 'hidden') return field.constValue;
+    if (field.defaultValue !== undefined) return field.defaultValue;
     if (field.kind === 'boolean') return true;
     if (field.kind === 'numberTuple') {
         const value = amountPreset.value?.defaultValue ?? field.min ?? 0;

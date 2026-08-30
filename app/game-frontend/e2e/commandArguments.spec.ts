@@ -504,7 +504,32 @@ const commandTable = {
                         },
                     ],
                 },
-                buildNationCommand('che_불가침제의', '불가침 제의'),
+                {
+                    ...buildNationCommand('che_불가침제의', '불가침 제의'),
+                    inputFields: [
+                        ...buildNationCommand('che_불가침제의', '불가침 제의').inputFields,
+                        {
+                            key: 'year',
+                            label: '기간(년)',
+                            kind: 'number',
+                            required: true,
+                            min: 191,
+                            max: 210,
+                            step: 1,
+                            defaultValue: 191,
+                        },
+                        {
+                            key: 'month',
+                            label: '기간(월)',
+                            kind: 'number',
+                            required: true,
+                            min: 1,
+                            max: 12,
+                            step: 1,
+                            defaultValue: 1,
+                        },
+                    ],
+                },
                 buildNationCommand('che_선전포고', '선전포고'),
                 buildNationCommand('che_종전제의', '종전 제의'),
                 buildNationCommand('che_불가침파기제의', '불가침 파기 제의'),
@@ -2158,6 +2183,42 @@ test('touch command maps select city and nation on the first tap without changin
     }
 });
 
+test('limits non-aggression end years to the Ref twenty-year window on desktop and mobile', async ({
+    browser,
+}, testInfo) => {
+    for (const viewport of [
+        { name: 'desktop', width: 1200, height: 900 },
+        { name: 'mobile', width: 500, height: 900 },
+    ]) {
+        const context = await browser.newContext({ viewport });
+        const page = await context.newPage();
+        try {
+            await install(page);
+            await page.goto('/che/chief-center');
+            await page.getByRole('button', { name: '1턴 명령 입력', exact: true }).click();
+            const picker = page.getByTestId('command-picker');
+            await picker.getByRole('button', { name: /^(?:국가:)?외교$/, exact: true }).click();
+            await picker.getByRole('button', { name: /불가침 제의/ }).click();
+
+            const form = picker.getByTestId('command-argument-form');
+            const yearInput = form.locator('#command-arg-year');
+            await expect(yearInput).toHaveAttribute('min', '191');
+            await expect(yearInput).toHaveAttribute('max', '210');
+            await expect(yearInput).toHaveValue('191');
+
+            const submit = picker.getByRole('button', { name: '입력', exact: true });
+            await yearInput.fill('211');
+            await expect(submit).toBeDisabled();
+            await yearInput.fill('210');
+            await expect(submit).toBeEnabled();
+
+            await picker.screenshot({ path: testInfo.outputPath(`non-aggression-year-limit-${viewport.name}.png`) });
+        } finally {
+            await context.close();
+        }
+    }
+});
+
 test('shows a map and target details for every city or nation argument chief command except assignment', async ({
     page,
 }) => {
@@ -2544,7 +2605,9 @@ test('keeps the entered command visible and reports a server validation error', 
     await expect(page.getByRole('alert')).toContainText('대상 도시를 선택할 수 없습니다.');
     await expect(page.getByTestId('command-argument-form').locator('select')).toHaveValue('2');
     await expect(submit).toBeEnabled();
-    await expect(page.getByTestId('command-picker').getByRole('button', { name: '저장 중', exact: true })).toHaveCount(0);
+    await expect(page.getByTestId('command-picker').getByRole('button', { name: '저장 중', exact: true })).toHaveCount(
+        0
+    );
 });
 
 test('keeps Ref command briefs and autonomous-action state after a turn mutation', async ({ page, context }) => {

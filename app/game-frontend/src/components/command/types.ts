@@ -54,6 +54,7 @@ export type CommandInputField = {
     min?: number;
     max?: number;
     step?: number;
+    defaultValue?: string | number | boolean;
     constValue?: string | number;
     options?: CommandOption[];
     optionSource?: 'cities' | 'nations' | 'generals' | 'crewTypes' | 'armTypes' | 'nationTypes' | 'colors' | 'items';

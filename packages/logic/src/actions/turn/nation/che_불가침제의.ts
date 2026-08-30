@@ -19,6 +19,7 @@ import type { NationTurnCommandSpec } from './index.js';
 import { z } from 'zod';
 import { parseArgsWithSchema } from '../parseArgs.js';
 import { resolveDiplomacyMessageValidMinutes } from '../../../diplomacy/messageValidity.js';
+import { NON_AGGRESSION_MIN_TERM_MONTHS, resolveNonAggressionMaxEndYear } from '../../../diplomacy/treatyTerm.js';
 import { resolveMessageTargetIcon } from '@sammo-ts/logic/messages/message.js';
 
 const ARGS_SCHEMA = z.object({
@@ -38,12 +39,11 @@ interface NonAggressionProposalContext<
 }
 
 const ACTION_NAME = '불가침 제의';
-const MIN_TERM_MONTHS = 6;
 
 const resolveMonthIndex = (year: number, month: number): number => year * 12 + month - 1;
 
-const reqMinimumTreatyTerm = (minMonths: number): Constraint => ({
-    name: 'reqMinimumTreatyTerm',
+const reqTreatyTermRange = (minMonths: number): Constraint => ({
+    name: 'reqTreatyTermRange',
     requires: () => [
         { kind: 'arg', key: 'year' },
         { kind: 'arg', key: 'month' },
@@ -100,6 +100,13 @@ const reqMinimumTreatyTerm = (minMonths: number): Constraint => ({
                 reason: `기한은 ${minMonths}개월 이상이어야 합니다.`,
             };
         }
+        const maxEndYear = resolveNonAggressionMaxEndYear(envYearValue);
+        if (yearValue > maxEndYear) {
+            return {
+                kind: 'deny',
+                reason: `기한은 ${maxEndYear}년 이하여야 합니다.`,
+            };
+        }
         return allow();
     },
 });
@@ -120,7 +127,7 @@ export class ActionDefinition<
     }
 
     buildPermissionConstraints(_ctx: ConstraintContext, _args: NonAggressionProposalArgs): Constraint[] {
-        return [reqMinimumTreatyTerm(MIN_TERM_MONTHS)];
+        return [reqTreatyTermRange(NON_AGGRESSION_MIN_TERM_MONTHS)];
     }
 
     buildMinConstraints(_ctx: ConstraintContext, _args: NonAggressionProposalArgs): Constraint[] {
@@ -133,7 +140,7 @@ export class ActionDefinition<
             notBeNeutral(),
             existsDestNation(),
             differentDestNation(),
-            reqMinimumTreatyTerm(MIN_TERM_MONTHS),
+            reqTreatyTermRange(NON_AGGRESSION_MIN_TERM_MONTHS),
             disallowDiplomacyBetweenStatus({
                 0: '아국과 이미 교전중입니다.',
                 1: '아국과 이미 선포중입니다.',

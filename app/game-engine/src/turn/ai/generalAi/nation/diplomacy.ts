@@ -1,6 +1,6 @@
 import type { GeneralAI } from '../core.js';
 import { asRecord, joinYearMonth, parseYearMonth, readMetaNumber } from '../../aiUtils.js';
-import { resolveDiplomacyMessageValidUntilTick } from '@sammo-ts/logic';
+import { resolveDiplomacyMessageValidUntilTick, resolveNonAggressionMaxEndYear } from '@sammo-ts/logic';
 import { isNeighbor } from '@sammo-ts/logic/world/distance.js';
 import { resolveNationIncome } from './helpers.js';
 
@@ -99,7 +99,8 @@ export const do불가침제의 = (ai: GeneralAI) => {
         return null;
     }
 
-    const [targetYear, targetMonth] = parseYearMonth(Math.floor(yearMonth + diplomatMonth));
+    const maxEndMonth = joinYearMonth(resolveNonAggressionMaxEndYear(ai.world.currentYear), 12);
+    const [targetYear, targetMonth] = parseYearMonth(Math.min(Math.floor(yearMonth + diplomatMonth), maxEndMonth));
     const result = ai.buildNationCandidate(
         'che_불가침제의',
         { destNationId, year: targetYear, month: targetMonth },

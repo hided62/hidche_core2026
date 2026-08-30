@@ -80,6 +80,7 @@ export interface TurnCommandInputField {
     min?: number;
     max?: number;
     step?: number;
+    defaultValue?: TurnCommandOptionValue | boolean;
     constValue?: TurnCommandOptionValue;
     options?: TurnCommandOption[];
     optionSource?: TurnCommandOptionSource;

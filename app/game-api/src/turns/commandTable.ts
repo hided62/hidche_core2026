@@ -18,7 +18,7 @@ import type {
     TriggerValue,
     UnitSetDefinition,
 } from '@sammo-ts/logic';
-import { evaluateConstraints, LEGACY_DEFAULT_MAX_LEVEL } from '@sammo-ts/logic';
+import { evaluateConstraints, LEGACY_DEFAULT_MAX_LEVEL, resolveNonAggressionMaxEndYear } from '@sammo-ts/logic';
 import type { GeneralActionModule } from '@sammo-ts/logic/actionModules/general.js';
 import { CommandResolver as RecruitmentCommandResolver } from '@sammo-ts/logic/actions/turn/general/che_징병.js';
 import { projectItemSlots, readItemInventoryFromMeta } from '@sammo-ts/logic/items/index.js';
@@ -656,18 +656,33 @@ const FOUNDING_COMMAND_KEYS = new Set(['che_건국', 'cr_건국', 'che_무작위
 const buildEntries = (
     env: CommandEnv,
     specs: TurnCommandSpec[],
-    options: { foundingAvailable?: boolean } = {}
+    options: { foundingAvailable?: boolean; currentYear?: number; currentMonth?: number } = {}
 ): CommandEntry[] => {
     const entries: CommandEntry[] = [];
 
     for (const spec of specs) {
         const definition = spec.createDefinition(env);
+        const inputFields = buildTurnCommandInputFields(spec).map((field) => {
+            if (spec.key !== 'che_불가침제의') return field;
+            if (field.key === 'year' && options.currentYear !== undefined) {
+                return {
+                    ...field,
+                    min: options.currentYear + 1,
+                    max: resolveNonAggressionMaxEndYear(options.currentYear),
+                    defaultValue: options.currentYear + 1,
+                };
+            }
+            if (field.key === 'month' && options.currentMonth !== undefined) {
+                return { ...field, defaultValue: options.currentMonth };
+            }
+            return field;
+        });
         const entry: CommandEntry = {
             category: spec.category,
             definition,
             reqArg: spec.reqArg,
             availabilityArgs: spec.reqArg ? spec.availabilityArgs : {},
-            inputFields: buildTurnCommandInputFields(spec),
+            inputFields,
         };
 
         if (spec.key === 'che_포상') {
@@ -817,7 +832,10 @@ export const buildTurnCommandTable = async (options: {
                 ? undefined
                 : options.realNationCount < resolveMaxNation(options.worldState),
     });
-    const nationEntries = buildEntries(env, nationSpecs);
+    const nationEntries = buildEntries(env, nationSpecs, {
+        currentYear: options.worldState.currentYear,
+        currentMonth: options.worldState.currentMonth,
+    });
 
     return {
         general: buildGroups(

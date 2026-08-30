@@ -146,7 +146,7 @@ describe('legacy reservation permission constraints', () => {
         ).toEqual({ kind: 'allow' });
     });
 
-    it('checks only the six-month minimum when reserving a non-aggression proposal', () => {
+    it('keeps non-aggression proposals between the six-month minimum and Ref twenty-year limit', () => {
         const definition = new NonAggressionProposalAction();
         const shortArgs = { destNationId: 2, year: 190, month: 6 };
         expect(
@@ -161,6 +161,24 @@ describe('legacy reservation permission constraints', () => {
             evaluatePermission(definition.buildPermissionConstraints(permissionContext, validArgs), validArgs)
         ).toEqual({
             kind: 'allow',
+        });
+
+        const maxTermArgs = { destNationId: 2, year: 210, month: 12 };
+        expect(
+            evaluatePermission(definition.buildPermissionConstraints(permissionContext, maxTermArgs), maxTermArgs)
+        ).toEqual({
+            kind: 'allow',
+        });
+
+        const excessiveTermArgs = { destNationId: 2, year: 211, month: 1 };
+        expect(
+            evaluatePermission(
+                definition.buildPermissionConstraints(permissionContext, excessiveTermArgs),
+                excessiveTermArgs
+            )
+        ).toMatchObject({
+            kind: 'deny',
+            reason: '기한은 210년 이하여야 합니다.',
         });
     });
 });

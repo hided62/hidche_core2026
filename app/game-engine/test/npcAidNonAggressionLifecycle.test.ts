@@ -144,6 +144,7 @@ describe('NPC 원조 기반 불가침 제의 lifecycle', () => {
             .peekDirtyState()
             .messages.filter((message) => message.msgType === 'diplomacy' && message.option?.action === 'noAggression');
         expect(firstMessages).toHaveLength(1);
+        expect(firstMessages[0]?.option).toMatchObject({ year: 210, month: 12 });
         const tryEntry = (world.getNationById(1)!.meta.resp_assist_try as Record<string, number[]>).n2!;
         expect(tryEntry).toHaveLength(3);
         const validUntilTick = tryEntry[2]!;
