@@ -46,7 +46,7 @@ const loadDirectory = async () => {
 const officerName = (nation: Nation, officerLevel: number) =>
     nation.officers.find((officer) => officer.officerLevel === officerLevel)?.general;
 const displayGeneralName = (general: { name: string; npcState: number }) =>
-    general.npcState > 0 && !/^[ⓜⓝ㉥]/u.test(general.name) ? `ⓝ${general.name}` : general.name;
+    general.npcState > 0 && !/^[ⓜⓝⓖ㉥ⓤⓞⓧ]/u.test(general.name) ? `ⓝ${general.name}` : general.name;
 const orderedNationGenerals = (nation: Nation) => sortGeneralsByTypeThenName(nation.generals);
 const displayAnalyzedGeneralColor = (general: { npcState: number; accessGrade: 'normal' | 'medium' | 'high' }) => {
     if (general.accessGrade === 'high') return 'yellow';
