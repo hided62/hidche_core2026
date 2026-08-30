@@ -2161,6 +2161,7 @@ test('touch command maps select city and nation on the first tap without changin
 test('shows a map and target details for every city or nation argument chief command except assignment', async ({
     page,
 }) => {
+    test.setTimeout(60_000);
     await install(page);
     await page.setViewportSize({ width: 1200, height: 900 });
     const cases = [
@@ -2206,6 +2207,20 @@ test('shows a map and target details for every city or nation argument chief com
     }
 
     await page.screenshot({ path: test.info().outputPath('chief-command-target-map-details.png'), fullPage: true });
+
+    const targetMapPickerWidth = await page
+        .getByTestId('command-picker')
+        .evaluate((element) => element.getBoundingClientRect().width);
+    await page.goto('/che/chief-center');
+    await page.getByRole('button', { name: '1턴 명령 입력', exact: true }).click();
+    const capitalPicker = page.getByTestId('command-picker');
+    await capitalPicker.getByRole('button', { name: /^(?:국가:)?특수$/ }).click();
+    await capitalPicker.getByRole('button', { name: /증축/ }).click();
+    await expect(capitalPicker.getByTestId('command-argument-map')).toBeVisible();
+    const capitalMapPickerWidth = await capitalPicker.evaluate((element) => element.getBoundingClientRect().width);
+    expect(capitalMapPickerWidth).toBe(targetMapPickerWidth);
+    expect(capitalMapPickerWidth).toBeGreaterThanOrEqual(700);
+    await capitalPicker.screenshot({ path: test.info().outputPath('chief-capital-map-expanded-desktop.png') });
 
     await page.setViewportSize({ width: 500, height: 900 });
     await page.goto('/che/chief-center');

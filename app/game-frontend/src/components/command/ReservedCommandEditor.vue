@@ -2,7 +2,7 @@
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, shallowRef, watch } from 'vue';
 import CommandArgumentForm from '../main/CommandArgumentForm.vue';
 import CommandSelectForm from '../main/CommandSelectForm.vue';
-import { commandArgumentPresentation } from './commandArgumentPresentation';
+import { commandArgumentPresentation, resolveCommandArgumentMapTarget } from './commandArgumentPresentation';
 import DragSelect from './DragSelect.vue';
 import RecruitmentCommandForm from './RecruitmentCommandForm.vue';
 import {
@@ -134,6 +134,15 @@ const quickPickerTop = ref('38px');
 const isRecruitmentCommand = computed(
     () => selectedCommand.value?.key === 'che_징병' || selectedCommand.value?.key === 'che_모병'
 );
+const isArgumentPickerExpanded = computed(() => {
+    const command = selectedCommand.value;
+    if (!command) return false;
+    const presentation = commandArgumentPresentation(command.key);
+    return Boolean(
+        (command.reqArg && presentation.lines.length) ||
+        resolveCommandArgumentMapTarget(command.key, command.inputFields)
+    );
+});
 const isRecruitmentOverlayOpen = computed(() => pickerOpen.value && isRecruitmentCommand.value);
 const commandBrief = (entry: { action: string; args: unknown; label?: string }): string =>
     formatReservedCommandBrief(props.scope, entry.action, entry.args, props.commandTable) ||
@@ -361,9 +370,7 @@ const clickOutsideMenu = (event: Event) => {
             mobile: props.mobile,
             'edit-mode': editMode,
             'picker-open': pickerOpen,
-            'argument-expanded': Boolean(
-                selectedCommand?.reqArg && commandArgumentPresentation(selectedCommand.key).lines.length
-            ),
+            'argument-expanded': isArgumentPickerExpanded,
         }"
         :data-command-scope="props.scope"
     >
