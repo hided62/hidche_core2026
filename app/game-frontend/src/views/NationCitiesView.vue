@@ -8,6 +8,7 @@ import type { CommandTable } from '../components/command/types';
 import LegacySortControls from '../components/ui/LegacySortControls.vue';
 import { useGameFeedback } from '../composables/useGameFeedback';
 import { getNpcColor } from '../utils/npcColor';
+import { sortGeneralsByTypeThenName } from '../utils/generalOrder';
 import { legacyNationTextColor } from '../utils/legacyNationColor';
 import { cityLevelMap, regionMap } from '../utils/nationFormat';
 import { trpc } from '../utils/trpc';
@@ -62,9 +63,10 @@ const sortOptions = [
 const officerLabels: Record<OfficerLevel, string> = { 4: '태수', 3: '군사', 2: '종사' };
 const appointmentDescription = (city: City, general: SecretGeneral, level: OfficerLevel): string =>
     `${JosaUtil.put(general.name, '을')} ${city.name} ${JosaUtil.put(officerLabels[level], '으로')} 임명`;
-const generalsForCity = (cityId: number) => data.value?.generals.filter((general) => general.cityId === cityId) ?? [];
+const generalsForCity = (cityId: number) =>
+    sortGeneralsByTypeThenName(data.value?.generals.filter((general) => general.cityId === cityId) ?? []);
 const secretGeneralsForCity = (cityId: number) =>
-    secretData.value?.generals.filter((general) => general.cityId === cityId) ?? [];
+    sortGeneralsByTypeThenName(secretData.value?.generals.filter((general) => general.cityId === cityId) ?? []);
 const displayGeneralName = (general: Result['generals'][number]) =>
     general.npcState > 0 && !/^[ⓜⓝ]/u.test(general.name) ? `ⓝ${general.name}` : general.name;
 const displaySecretGeneralName = (general: SecretGeneral) =>

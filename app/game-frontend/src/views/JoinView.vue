@@ -6,6 +6,7 @@ import PanelCard from '../components/ui/PanelCard.vue';
 import SkeletonLines from '../components/ui/SkeletonLines.vue';
 import MapViewer from '../components/main/MapViewer.vue';
 import { trpc } from '../utils/trpc';
+import { sortGeneralsByTypeThenName } from '../utils/generalOrder';
 import { useSessionStore } from '../stores/session';
 import { cityLevelMap, formatOfficerLevelText, regionMap } from '../utils/nationFormat';
 import { getNpcColor } from '../utils/npcColor';
@@ -247,14 +248,14 @@ const npcGeneralRows = computed<NpcGeneralRow[]>(() => {
 const visibleNpcGeneralRows = computed(() => npcGeneralRows.value.slice(0, npcGeneralListVisibleCount.value));
 const filteredPublicGenerals = computed(() => {
     const keyword = publicGeneralFilter.value.trim().toLocaleLowerCase('ko-KR');
-    if (!keyword) {
-        return publicGenerals.value;
-    }
-    return publicGenerals.value.filter(
-        (general) =>
-            general.name.toLocaleLowerCase('ko-KR').includes(keyword) ||
-            general.nationName.toLocaleLowerCase('ko-KR').includes(keyword)
-    );
+    const filtered = keyword
+        ? publicGenerals.value.filter(
+              (general) =>
+                  general.name.toLocaleLowerCase('ko-KR').includes(keyword) ||
+                  general.nationName.toLocaleLowerCase('ko-KR').includes(keyword)
+          )
+        : publicGenerals.value;
+    return sortGeneralsByTypeThenName(filtered);
 });
 const npcValidColor = computed(() => {
     const remaining = npcValidUntilMs.value - nowMs.value;

@@ -109,14 +109,14 @@ const installFixture = async (page: Page, state: FixtureState): Promise<void> =>
                 state.generalRequests += 1;
                 return response([
                     {
-                        id: 1,
-                        name: '유비',
-                        npcState: 0,
-                        nationId: 1,
-                        nationName: '촉',
-                        leadership: 72,
-                        strength: 67,
-                        intelligence: 76,
+                        id: 3,
+                        name: '황건장수',
+                        npcState: 2,
+                        nationId: 0,
+                        nationName: '무주',
+                        leadership: 55,
+                        strength: 65,
+                        intelligence: 45,
                     },
                     {
                         id: 2,
@@ -129,14 +129,14 @@ const installFixture = async (page: Page, state: FixtureState): Promise<void> =>
                         intelligence: 80,
                     },
                     {
-                        id: 3,
-                        name: '황건장수',
-                        npcState: 2,
-                        nationId: 0,
-                        nationName: '무주',
-                        leadership: 55,
-                        strength: 65,
-                        intelligence: 45,
+                        id: 1,
+                        name: '유비',
+                        npcState: 0,
+                        nationId: 1,
+                        nationName: '촉',
+                        leadership: 72,
+                        strength: 67,
+                        intelligence: 76,
                     },
                 ]);
             }
@@ -336,7 +336,11 @@ test('prioritizes core general fields and keeps context and inheritance progress
 
     const generalTab = page.getByRole('tab', { name: '장수 목록' });
     await generalTab.click();
-    await expect(page.locator('.context-general-table tbody tr')).toHaveCount(3);
+    const generalRows = page.locator('.context-general-table tbody tr');
+    await expect(generalRows).toHaveCount(3);
+    await expect(generalRows.nth(0)).toContainText('유비');
+    await expect(generalRows.nth(1)).toContainText('조조');
+    await expect(generalRows.nth(2)).toContainText('황건장수');
     expect(state.generalRequests).toBe(1);
     await page.getByPlaceholder('장수명 또는 국가 검색').fill('촉');
     await expect(page.locator('.context-general-table tbody tr')).toHaveCount(1);
@@ -386,6 +390,11 @@ test('keeps the primary creation flow readable without horizontal overflow on mo
     expect(mobileStatButtons).toHaveLength(4);
     expect(mobileStatButtons.every(({ width, height }) => width >= 160 && height === 40)).toBe(true);
     await expect(page.locator('.advanced-options')).not.toHaveAttribute('open');
+    await page.getByRole('tab', { name: '장수 목록' }).click();
+    const mobileGeneralRows = page.locator('.context-general-table tbody tr');
+    await expect(mobileGeneralRows.nth(0)).toContainText('유비');
+    await expect(mobileGeneralRows.nth(1)).toContainText('조조');
+    await expect(mobileGeneralRows.nth(2)).toContainText('황건장수');
     await page.getByRole('tab', { name: '임관 권유' }).focus();
     await expect(page.getByRole('tab', { name: '임관 권유' })).toBeFocused();
     await page.screenshot({ path: testInfo.outputPath('join-layout-mobile.png'), fullPage: true });

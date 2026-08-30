@@ -6,6 +6,7 @@ import { formatReservedCommandBrief } from '../components/command/reservedComman
 import type { CommandTable } from '../components/command/types';
 import { formatOfficerLevelText } from '../utils/nationFormat';
 import { getNpcColor } from '../utils/npcColor';
+import { compareGeneralTypeThenName } from '../utils/generalOrder';
 import { resolveGeneralIconUrl } from '../utils/generalIcon';
 import {
     DISPLAY_SETTINGS_KEY,
@@ -587,7 +588,7 @@ const generals = computed(() => {
             const compared = compareGridValues(sortValue(left, sort.colId), sortValue(right, sort.colId));
             if (compared) return sort.sort === 'asc' ? compared : -compared;
         }
-        return left.id - right.id;
+        return compareGeneralTypeThenName(left, right);
     });
 });
 

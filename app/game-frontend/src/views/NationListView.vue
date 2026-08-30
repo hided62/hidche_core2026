@@ -3,6 +3,7 @@ import { computed, nextTick, onBeforeUnmount, onMounted, ref } from 'vue';
 
 import GeneralDirectoryTable from '../components/directory/GeneralDirectoryTable.vue';
 import type { GeneralDirectoryGeneral } from '../types/directory';
+import { sortGeneralsByTypeThenName } from '../utils/generalOrder';
 import { formatNationLevelText, formatOfficerLevelText } from '../utils/nationFormat';
 import { getNpcColor } from '../utils/npcColor';
 import { legacyNationTextColor } from '../utils/legacyNationColor';
@@ -46,6 +47,7 @@ const officerName = (nation: Nation, officerLevel: number) =>
     nation.officers.find((officer) => officer.officerLevel === officerLevel)?.general;
 const displayGeneralName = (general: { name: string; npcState: number }) =>
     general.npcState > 0 && !/^[ⓜⓝ㉥]/u.test(general.name) ? `ⓝ${general.name}` : general.name;
+const orderedNationGenerals = (nation: Nation) => sortGeneralsByTypeThenName(nation.generals);
 const displayAnalyzedGeneralColor = (general: { npcState: number; accessGrade: 'normal' | 'medium' | 'high' }) => {
     if (general.accessGrade === 'high') return 'yellow';
     if (general.accessGrade === 'medium') return 'lightgreen';
@@ -344,7 +346,7 @@ onBeforeUnmount(() => {
                     <tr>
                         <td colspan="5">
                             장수 일람 :
-                            <template v-for="general in nation.generals" :key="general.id">
+                            <template v-for="general in orderedNationGenerals(nation)" :key="general.id">
                                 <button
                                     type="button"
                                     class="general-preview-trigger"

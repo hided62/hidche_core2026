@@ -7,6 +7,7 @@ import BattleGeneralCard from '../components/battle/BattleGeneralCard.vue';
 import { useGameFeedback } from '../composables/useGameFeedback';
 import { trpc } from '../utils/trpc';
 import { getNpcColor } from '../utils/npcColor';
+import { compareGeneralTypeThenName } from '../utils/generalOrder';
 import type { BattleSimOptions, GeneralDraft, InheritBuff } from '../utils/battleSimulatorTypes';
 import { BattleSimulatorWorkerClient } from '../utils/battleSimulatorWorkerClient';
 import { formatSeoulDateTime } from '../utils/legacyDateTime';
@@ -953,12 +954,7 @@ const generalGroups = computed(() => {
         .map((nationId) => {
             const nation = nationMap.get(nationId) ?? { id: nationId, name: '재야', color: '#000000' };
             const generals = [...(generalList.value?.generalsByNation[nationId] ?? [])];
-            generals.sort((lhs, rhs) => {
-                if (lhs.npcState !== rhs.npcState) {
-                    return lhs.npcState - rhs.npcState;
-                }
-                return lhs.name.localeCompare(rhs.name);
-            });
+            generals.sort(compareGeneralTypeThenName);
             return { nation, generals };
         });
 });

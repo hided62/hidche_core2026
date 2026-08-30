@@ -6,6 +6,7 @@ import SkeletonLines from '../components/ui/SkeletonLines.vue';
 import MapViewer from '../components/main/MapViewer.vue';
 import RecentLogList from '../components/main/RecentLogList.vue';
 import { trpc } from '../utils/trpc';
+import { sortGeneralsByTypeThenName } from '../utils/generalOrder';
 import { useSessionStore } from '../stores/session';
 
 type MapData = Awaited<ReturnType<typeof trpc.public.getCachedMap.query>>;
@@ -30,15 +31,12 @@ const generalFilter = ref('');
 
 const filteredGenerals = computed(() => {
     const keyword = generalFilter.value.trim().toLowerCase();
-    if (!keyword) {
-        return generalList.value;
-    }
-    return generalList.value.filter((general) => {
-        return (
-            general.name.toLowerCase().includes(keyword) ||
-            general.nationName.toLowerCase().includes(keyword)
-        );
-    });
+    const filtered = keyword
+        ? generalList.value.filter((general) => {
+              return general.name.toLowerCase().includes(keyword) || general.nationName.toLowerCase().includes(keyword);
+          })
+        : generalList.value;
+    return sortGeneralsByTypeThenName(filtered);
 });
 
 const resolveErrorMessage = (value: unknown): string => {
