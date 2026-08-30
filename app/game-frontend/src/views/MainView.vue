@@ -398,6 +398,7 @@ watch(
                             :map-layout="mapLayout"
                             :loading="loading"
                             :show-selection-border="false"
+                            show-title-tooltip
                         />
                     </PanelCard>
                 </div>
@@ -494,6 +495,7 @@ watch(
                     :map-layout="mapLayout"
                     :loading="loading"
                     :show-selection-border="false"
+                    show-title-tooltip
                 />
             </PanelCard>
             <PanelCard title="명령 목록" aria-label="명령 목록" data-main-target="commands">
@@ -882,7 +884,7 @@ button {
     grid-column: 1 / 8;
     grid-row: 1;
     height: 520px;
-    overflow: hidden;
+    overflow: visible;
 }
 
 .layout-desktop > [data-main-target='commands'] {
@@ -1052,7 +1054,7 @@ button {
 
 .layout-mobile [data-main-target='map'] {
     height: 377px;
-    overflow: hidden;
+    overflow: visible;
 }
 
 .layout-mobile .record-zone-mobile {

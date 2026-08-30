@@ -3415,6 +3415,84 @@ test('main layout and map use the same mobile/desktop boundary', async ({ page }
     await page.screenshot({ path: testInfo.outputPath('screen-mode-mobile-939.png'), fullPage: true });
 });
 
+test('main map year exposes the Ref restriction and technology limit on desktop and mobile', async ({
+    page,
+}, testInfo) => {
+    const state: NavigationFixture = {
+        officerLevel: 5,
+        permission: 2,
+        nationLevel: 3,
+        stage: 6,
+        npcMode: 1,
+        currentYear: 182,
+        currentMonth: 1,
+        generalMeCalls: 0,
+        operations: [],
+        validMapImages: true,
+    };
+    await installFixture(page, state);
+    await page.setViewportSize({ width: 1200, height: 900 });
+    await waitForMain(page);
+
+    const assertTitleTooltip = async (layout: 'desktop' | 'mobile') => {
+        const mapPanel = page.locator(`.layout-${layout} [data-main-target="map"]`);
+        const title = mapPanel.locator('.map-title');
+        const tooltip = mapPanel.getByRole('tooltip');
+        await expect(title).toHaveText(/182年 1月/u);
+        await expect(title).toHaveCSS('color', 'rgb(255, 255, 0)');
+        await expect(title).toHaveAttribute('tabindex', '0');
+        await expect(tooltip).toBeHidden();
+        await title.hover();
+        await expect(tooltip).toBeVisible();
+        await expect(tooltip).toHaveText('초반제한 기간 : 0년 12개월 (183년)기술등급 제한 : 1등급 (185년 해제)');
+        const geometry = await mapPanel.evaluate((panel) => {
+            const panelRect = panel.getBoundingClientRect();
+            const titleRect = panel.querySelector('.map-title')?.getBoundingClientRect();
+            const tooltipRect = panel.querySelector('.map-title-tooltip')?.getBoundingClientRect();
+            const titleStyle = titleRect ? getComputedStyle(panel.querySelector('.map-title')!) : null;
+            return {
+                panelOverflow: getComputedStyle(panel).overflow,
+                title: titleRect ? { top: titleRect.top, width: titleRect.width, height: titleRect.height } : null,
+                tooltip: tooltipRect
+                    ? { top: tooltipRect.top, bottom: tooltipRect.bottom, width: tooltipRect.width }
+                    : null,
+                textDecorationLine: titleStyle?.textDecorationLine ?? null,
+                viewportWidth: document.documentElement.scrollWidth,
+                panelLeft: panelRect.left,
+                panelRight: panelRect.right,
+            };
+        });
+        expect(geometry.panelOverflow).toBe('visible');
+        expect(geometry.title?.width).toBe(160);
+        expect(geometry.title?.height).toBe(20);
+        expect(geometry.tooltip?.width).toBe(220);
+        expect(geometry.tooltip?.bottom).toBeLessThanOrEqual(geometry.title?.top ?? 0);
+        expect(geometry.textDecorationLine).toBe('none');
+        return geometry;
+    };
+
+    const desktopGeometry = await assertTitleTooltip('desktop');
+    await testInfo.attach('main-map-year-tooltip-desktop.png', {
+        body: await page.screenshot({ fullPage: false }),
+        contentType: 'image/png',
+    });
+
+    await page.setViewportSize({ width: 500, height: 900 });
+    await expect(page.locator('.layout-mobile')).toBeVisible();
+    const mobileGeometry = await assertTitleTooltip('mobile');
+    expect(mobileGeometry.viewportWidth).toBe(500);
+    await page.locator('.layout-mobile [data-main-target="map"] .map-title').focus();
+    await expect(page.locator('.layout-mobile [data-main-target="map"] .map-title-tooltip')).toBeVisible();
+    await testInfo.attach('main-map-year-tooltip-mobile.png', {
+        body: await page.screenshot({ fullPage: false }),
+        contentType: 'image/png',
+    });
+    await testInfo.attach('main-map-year-tooltip-geometry.json', {
+        body: Buffer.from(`${JSON.stringify({ desktop: desktopGeometry, mobile: mobileGeometry }, null, 2)}\n`),
+        contentType: 'application/json',
+    });
+});
+
 test('the 939/940 boundary switches to the Ref-style 500px single document', async ({ page }) => {
     const state: NavigationFixture = {
         officerLevel: 5,

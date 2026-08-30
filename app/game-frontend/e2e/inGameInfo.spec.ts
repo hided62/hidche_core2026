@@ -742,24 +742,19 @@ test('global-info renders the ref nation summary columns beside the map', async 
     const titleTextBackground = await mapTitle.evaluate((element) => getComputedStyle(element).backgroundImage);
     expect(titleTextBackground).toContain('ad.gif');
     expect(titleTextBackground).toContain('spring.gif');
-    await mapTitle.hover();
     const titleTooltip = page.locator('.map-title-tooltip');
-    await expect(titleTooltip).toBeVisible();
-    await expect(titleTooltip).toContainText('기술등급 제한 : 5등급 (205년 해제)');
+    await expect(titleTooltip).toHaveCount(0);
     const titleGeometry = await page.locator('.map-top').evaluate((element) => {
         const band = element.getBoundingClientRect();
         const title = element.querySelector('.map-title')?.getBoundingClientRect();
-        const tooltip = element.querySelector('.map-title-tooltip')?.getBoundingClientRect();
         return {
             band: { width: band.width, height: band.height },
             title: title ? { width: title.width, height: title.height } : null,
-            tooltip: tooltip ? { width: tooltip.width, height: tooltip.height } : null,
         };
     });
     expect(titleGeometry).toEqual({
         band: { width: 700, height: 20 },
         title: { width: 160, height: 20 },
-        tooltip: { width: 220, height: 28 },
     });
     if (artifactRoot) {
         await mkdir(artifactRoot, { recursive: true });
@@ -938,19 +933,14 @@ test('global-info renders the ref nation summary columns beside the map', async 
     expect(mobileGeometry.map?.width).toBe(500);
     expect(mobileGeometry.summary?.width).toBe(500);
     expect(mobileGeometry.summary?.y).toBe(mobileGeometry.map?.bottom);
-    await mapTitle.hover();
-    await expect(titleTooltip).toBeVisible();
     const mobileTitleGeometry = await page.locator('.map-top').evaluate((element) => {
         const band = element.getBoundingClientRect();
-        const tooltip = element.querySelector('.map-title-tooltip')?.getBoundingClientRect();
         return {
             band: { width: band.width, height: band.height },
-            tooltip: tooltip ? { x: tooltip.x, width: tooltip.width } : null,
             documentWidth: document.documentElement.scrollWidth,
         };
     });
     expect(mobileTitleGeometry.band).toEqual({ width: 500, height: 20 });
-    expect(mobileTitleGeometry.tooltip?.width).toBe(220);
     expect(mobileTitleGeometry.documentWidth).toBe(500);
     await hoveredCastle.hover();
     await expect(cityTooltip).toBeVisible();
@@ -964,17 +954,17 @@ test('global-info renders the ref nation summary columns beside the map', async 
     }
 });
 
-test('map title keeps the ref early-game restriction boundary and color', async ({ page }) => {
+test('non-main map title keeps the ref early-game color without the main-only restriction tooltip', async ({
+    page,
+}) => {
     await install(page, 'member', 100, 2, { ...map, startYear: 198 });
     await page.setViewportSize({ width: 1200, height: 900 });
     await go(page, 'global-info');
 
     const mapTitle = page.locator('.map-title');
     await expect(mapTitle).toHaveCSS('color', 'rgb(255, 255, 0)');
-    await mapTitle.hover();
-    await expect(page.locator('.map-title-tooltip')).toHaveText(
-        '초반제한 기간 : 0년 12개월 (201년)기술등급 제한 : 1등급 (203년 해제)'
-    );
+    await expect(mapTitle).not.toHaveAttribute('tabindex');
+    await expect(page.locator('.map-title-tooltip')).toHaveCount(0);
 });
 
 test('global-info diplomacy height follows the active nation count', async ({ page }) => {

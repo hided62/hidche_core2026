@@ -75,6 +75,7 @@ const props = withDefaults(
         fitContainer?: boolean;
         showCurrentCityMarker?: boolean;
         showSelectionBorder?: boolean;
+        showTitleTooltip?: boolean;
         readonly?: boolean;
     }>(),
     {
@@ -82,6 +83,7 @@ const props = withDefaults(
         detailMode: undefined,
         selectedCityId: undefined,
         showSelectionBorder: true,
+        showTitleTooltip: false,
     }
 );
 
@@ -152,6 +154,7 @@ const mapControls = ref<HTMLElement | null>(null);
 const tooltipElement = ref<HTMLElement | null>(null);
 const mapOptionsOpen = ref(false);
 const mapOptionsMenuId = `map-options-${useId()}`;
+const mapTitleTooltipId = `map-title-tooltip-${useId()}`;
 const { width: mapBodyWidth } = useElementSize(mapBody);
 const { elementX, elementY } = useMouseInElement(mapArea);
 
@@ -630,9 +633,14 @@ const selectCity = (cityId: number) => {
 <template>
     <div class="map-viewer">
         <div class="map-top" :style="titleBandStyle">
-            <div class="map-title" tabindex="0" :style="titleTextStyle">
+            <div
+                class="map-title"
+                :tabindex="props.showTitleTooltip ? 0 : undefined"
+                :aria-describedby="props.showTitleTooltip ? mapTitleTooltipId : undefined"
+                :style="titleTextStyle"
+            >
                 {{ mapSummary }}
-                <div class="map-title-tooltip" role="tooltip">
+                <div v-if="props.showTitleTooltip" :id="mapTitleTooltipId" class="map-title-tooltip" role="tooltip">
                     <div v-for="line in titleTooltipLines" :key="line">{{ line }}</div>
                 </div>
             </div>
