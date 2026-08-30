@@ -2,6 +2,8 @@ import { randomInt } from 'node:crypto';
 
 import { addDays, addSeconds, isAfter, isValid, parseISO } from 'date-fns';
 
+import { formatServerDateTime } from '@sammo-ts/common/time/ServerDateTime';
+
 import type { KakaoOAuthClient, KakaoOAuthToken, KakaoUserInfo } from './kakaoClient.js';
 import type { OAuthSessionStore } from './oauthSessionStore.js';
 import type { UserOAuthInfo, UserRecord, UserRepository } from './userRepository.js';
@@ -221,7 +223,7 @@ export const requireKakaoTalkProof = async (options: {
     try {
         await options.kakaoClient.sendTalkMessage(
             options.accessToken,
-            `인증 코드는 ${challenge.code} 입니다. ${challenge.expiresAt} 이내에 입력해 주세요.`,
+            `인증 코드는 ${challenge.code} 입니다. ${formatServerDateTime(challenge.expiresAt)} (한국 시간) 이내에 입력해 주세요.`,
             options.publicBaseUrl
         );
     } catch (error) {
@@ -253,7 +255,7 @@ export const verifyKakaoTalkChallenge = async (options: {
     if (result.status === 'locked') {
         throw new KakaoVerificationError(
             'IDENTITY_MISMATCH',
-            `인증 실패 횟수를 초과했습니다. ${result.expiresAt}까지 기다려 주세요.`
+            `인증 실패 횟수를 초과했습니다. ${formatServerDateTime(result.expiresAt)} (한국 시간)까지 기다려 주세요.`
         );
     }
     if (result.status === 'mismatch') {

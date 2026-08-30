@@ -14,6 +14,7 @@ import { InMemoryProfileStatusService } from '../src/lobby/profileStatusService.
 import { appRouter } from '../src/router.js';
 import type { GatewayPrismaClient } from '@sammo-ts/infra';
 import { decryptGameSessionToken, type UserSanctions } from '@sammo-ts/common/auth/gameToken';
+import { formatServerDateTime } from '@sammo-ts/common/time/ServerDateTime';
 import { createPasswordEnvelopeService } from '../src/auth/passwordEnvelope.js';
 import type { GatewayProfileRepository } from '../src/orchestrator/profileRepository.js';
 
@@ -987,6 +988,9 @@ describe('gateway auth flow', () => {
         });
         const code = sentTalkMessages[0]?.match(/인증 코드는 (\d{4})/)?.[1];
         expect(code).toBeTruthy();
+        expect(sentTalkMessages[0]).toBe(
+            `인증 코드는 ${code} 입니다. ${formatServerDateTime(login.expiresAt)} (한국 시간) 이내에 입력해 주세요.`
+        );
         const completed = await caller.auth.kakaoOtp({ challengeId: login.challengeId, code: code! });
         expect(completed.validUntil).toBeTruthy();
         expect((await users.findById(user.id))?.kakaoTalkVerifiedUntil).toBe(completed.validUntil);
