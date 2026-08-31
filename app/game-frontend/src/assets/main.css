@@ -121,6 +121,15 @@ input[inputmode='search'] {
     font-size: 0;
 }
 
+/*
+ * Domestic command logs keep Ref's semantic failure marker instead of a
+ * legacy color tag. Give that shared marker the Core command-result failure
+ * color so it stays distinct from skyblue success and neutral output.
+ */
+.ev_failed {
+    color: magenta;
+}
+
 .small_war_log .war_type_attack {
     color: cyan;
 }

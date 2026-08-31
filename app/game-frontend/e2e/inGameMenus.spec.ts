@@ -1076,6 +1076,62 @@ test('개인턴·수뇌턴 실패 사유를 메인 개인 기록에 표시한다
     await persistParityArtifact(page, 'core-main-turn-failure-personal-records-mobile', mobile);
 });
 
+test('커맨드 실행 결과의 성공·실패·일반 색상을 메인 기록에 구분한다', async ({ page }) => {
+    const state: FixtureState = {
+        permission: 'head',
+        myset: 3,
+        settingMutations: [],
+        accessPages: [],
+        recentRecords: {
+            global: [],
+            general: [
+                {
+                    id: 19103,
+                    text: "<C>●</>1월:상업 투자를 <span class='ev_failed'>실패</span>하여 <C>10</> 상승했습니다.",
+                },
+                {
+                    id: 19102,
+                    text: '<C>●</>1월:상업 투자를 <S>성공</>하여 <C>30</> 상승했습니다.',
+                },
+                {
+                    id: 19101,
+                    text: '<C>●</>1월:상업 투자를 하여 <C>20</> 상승했습니다.',
+                },
+            ],
+            history: [],
+        },
+    };
+    await install(page, state);
+
+    const inspectResultColors = async (selector: string) => {
+        const lines = page.locator(selector);
+        await expect(lines).toHaveCount(3);
+        const failure = lines.nth(0).locator('.ev_failed');
+        const success = lines.nth(1).locator('span', { hasText: '성공' });
+        const normal = lines.nth(2);
+        await expect(failure).toHaveCSS('color', 'rgb(255, 0, 255)');
+        await expect(success).toHaveCSS('color', 'rgb(135, 206, 235)');
+        await expect(normal).toHaveCSS('color', 'rgb(255, 255, 255)');
+        return {
+            failure: await failure.evaluate((element) => getComputedStyle(element).color),
+            success: await success.evaluate((element) => getComputedStyle(element).color),
+            normal: await normal.evaluate((element) => getComputedStyle(element).color),
+        };
+    };
+
+    for (const viewport of [
+        { name: 'desktop', width: 1200, height: 900, selector: '.record-zone' },
+        { name: 'mobile', width: 500, height: 900, selector: '.record-zone-mobile' },
+    ]) {
+        await page.setViewportSize(viewport);
+        await page.goto('');
+        const colors = await inspectResultColors(
+            `${viewport.selector} [data-record-bucket="general"] .record-line`
+        );
+        await persistParityArtifact(page, `core-main-command-result-colors-${viewport.name}`, colors);
+    }
+});
+
 test('전투시드는 메인·내 정보·감찰부에서 숨긴 채 선택할 수 있다', async ({ page }) => {
     const seedText = '(전투시드: 0123456789abcdef)';
     const logText =
