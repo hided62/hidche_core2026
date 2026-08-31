@@ -102,6 +102,9 @@ const buildNation = (): NationRow =>
     }) as unknown as NationRow;
 
 describe('buildTurnCommandTable', () => {
+    const findCommand = (table: Awaited<ReturnType<typeof buildTurnCommandTable>>, key: string) =>
+        [...table.general, ...table.nation].flatMap(({ values }) => values).find((command) => command.key === key);
+
     it('projects the general and chief reserved-turn categories and command order from Ref', async () => {
         const table = await buildTurnCommandTable({
             worldState: buildWorldState(),
@@ -283,6 +286,80 @@ describe('buildTurnCommandTable', () => {
         ).toMatchObject({
             event_대검병연구: '12턴',
             event_화륜차연구: '24턴',
+        });
+    });
+
+    it('blocks both speciality resets while their cooldown remains and opens them at the boundary month', async () => {
+        const cooldownGeneral = {
+            ...buildGeneral(),
+            specialCode: 'che_상재',
+            special2Code: 'che_신산',
+            meta: {
+                killturn: 24,
+                'next_execute_내정 특기 초기화': 36,
+                'next_execute_전투 특기 초기화': '37',
+            },
+        } as GeneralRow;
+        const table = await buildTurnCommandTable({
+            worldState: buildWorldState(),
+            general: cooldownGeneral,
+            city: buildCity(),
+            nation: buildNation(),
+            nationGenerals: null,
+        });
+
+        expect(findCommand(table, 'che_내정특기초기화')).toMatchObject({
+            possible: true,
+            status: 'available',
+        });
+        expect(findCommand(table, 'che_전투특기초기화')).toMatchObject({
+            possible: false,
+            status: 'blocked',
+            reason: '1턴 더 기다려야 합니다',
+        });
+    });
+
+    it('keeps the missing-speciality reason ahead of a remaining reset cooldown', async () => {
+        const table = await buildTurnCommandTable({
+            worldState: buildWorldState(),
+            general: {
+                ...buildGeneral(),
+                meta: {
+                    killturn: 24,
+                    'next_execute_내정 특기 초기화': 37,
+                    'next_execute_전투 특기 초기화': 37,
+                },
+            } as GeneralRow,
+            city: buildCity(),
+            nation: buildNation(),
+            nationGenerals: null,
+        });
+
+        for (const key of ['che_내정특기초기화', 'che_전투특기초기화']) {
+            expect(findCommand(table, key)).toMatchObject({
+                possible: false,
+                status: 'blocked',
+                reason: '특기가 없습니다.',
+            });
+        }
+    });
+
+    it('projects a multi-turn nation command cooldown before target input', async () => {
+        const table = await buildTurnCommandTable({
+            worldState: buildWorldState(),
+            general: buildGeneral(),
+            city: buildCity(),
+            nation: {
+                ...buildNation(),
+                meta: { next_execute_피장파장: 37 },
+            } as NationRow,
+            nationGenerals: null,
+        });
+
+        expect(findCommand(table, 'che_피장파장')).toMatchObject({
+            possible: false,
+            status: 'blocked',
+            reason: '1턴 더 기다려야 합니다',
         });
     });
 

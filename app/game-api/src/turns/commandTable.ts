@@ -650,6 +650,40 @@ const evaluateDefinition = (
     return evaluateAvailability(constraints, ctx, view, reqArg);
 };
 
+const readNextAvailableTurn = (meta: Readonly<Record<string, unknown>>, actionName: string): number | null => {
+    const raw = meta[`next_execute_${actionName}`];
+    if (typeof raw === 'number' && Number.isFinite(raw)) return Math.floor(raw);
+    if (typeof raw === 'string') {
+        const parsed = Number(raw);
+        return Number.isFinite(parsed) ? Math.floor(parsed) : null;
+    }
+    return null;
+};
+
+const evaluateCooldown = (
+    definition: GeneralActionDefinition,
+    scope: 'general' | 'nation',
+    ctx: ConstraintContext,
+    view: StateView,
+    currentYearMonth: number
+): AvailabilityCore | null => {
+    const owner =
+        scope === 'general'
+            ? (view.get({ kind: 'general', id: ctx.actorId }) as General | null)
+            : ctx.nationId === undefined
+              ? null
+              : (view.get({ kind: 'nation', id: ctx.nationId }) as Nation | null);
+    if (!owner) return null;
+
+    const nextAvailableTurn = readNextAvailableTurn(owner.meta, definition.name);
+    if (nextAvailableTurn === null || currentYearMonth >= nextAvailableTurn) return null;
+    return {
+        possible: false,
+        status: 'blocked',
+        reason: `${nextAvailableTurn - currentYearMonth}턴 더 기다려야 합니다`,
+    };
+};
+
 const pickAvailability = (lhs: AvailabilityCore, rhs: AvailabilityCore): AvailabilityCore =>
     AVAILABILITY_PRIORITY[lhs.status] >= AVAILABILITY_PRIORITY[rhs.status] ? lhs : rhs;
 
@@ -788,14 +822,20 @@ const buildGroups = (
     ctx: ConstraintContext,
     view: StateView,
     includeTurnDuration = false,
-    env: CommandEnv
+    env: CommandEnv,
+    scope: 'general' | 'nation',
+    currentYearMonth: number
 ): TurnCommandGroup[] => {
     const groups = new Map<string, TurnCommandAvailability[]>();
 
     for (const entry of entries) {
-        const availability = entry.evaluate
+        const baseAvailability = entry.evaluate
             ? entry.evaluate(ctx, view)
             : evaluateDefinition(entry.definition, ctx, view, entry.reqArg, entry.availabilityArgs);
+        const availability =
+            baseAvailability.status === 'blocked' || baseAvailability.status === 'unknown'
+                ? baseAvailability
+                : (evaluateCooldown(entry.definition, scope, ctx, view, currentYearMonth) ?? baseAvailability);
         const turnDurationText = includeTurnDuration ? getTurnDurationText(entry.definition) : undefined;
         const costText = getCommandCostText(entry, ctx, view, env);
         const value: TurnCommandAvailability = {
@@ -900,6 +940,7 @@ export const buildTurnCommandTable = async (options: {
         currentYear: options.worldState.currentYear,
         currentMonth: options.worldState.currentMonth,
     });
+    const currentYearMonth = options.worldState.currentYear * 12 + options.worldState.currentMonth - 1;
 
     return {
         general: buildGroups(
@@ -907,14 +948,18 @@ export const buildTurnCommandTable = async (options: {
             ctx,
             view,
             false,
-            env
+            env,
+            'general',
+            currentYearMonth
         ),
         nation: buildGroups(
             projectCommandGroups(nationEntries, nationGroups ?? REF_NATION_COMMAND_GROUPS),
             ctx,
             view,
             true,
-            env
+            env,
+            'nation',
+            currentYearMonth
         ),
         inputOptions: options.inputOptions ?? {
             cities: [],

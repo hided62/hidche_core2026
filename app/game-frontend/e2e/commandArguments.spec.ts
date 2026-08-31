@@ -1207,7 +1207,7 @@ test('defaults founding to a Ref-selectable nation trait and opens colored optio
     await expect.poll(() => JSON.stringify(requests)).toContain('"colorType":15');
 });
 
-test('reserves force move, retirement, and resignation from the user command picker', async ({ page }) => {
+test('shows speciality reset cooldowns and reserves special user commands from the picker', async ({ page }) => {
     const specialCommandTable = {
         general: [
             {
@@ -1220,6 +1220,24 @@ test('reserves force move, retirement, and resignation from the user command pic
                         possible: false,
                         status: 'blocked',
                         reason: '나이가 60세 이상이어야 합니다.',
+                        inputFields: [],
+                    },
+                    {
+                        key: 'che_내정특기초기화',
+                        name: '내정 특기 초기화',
+                        reqArg: false,
+                        possible: false,
+                        status: 'blocked',
+                        reason: '12턴 더 기다려야 합니다',
+                        inputFields: [],
+                    },
+                    {
+                        key: 'che_전투특기초기화',
+                        name: '전투 특기 초기화',
+                        reqArg: false,
+                        possible: false,
+                        status: 'blocked',
+                        reason: '24턴 더 기다려야 합니다',
                         inputFields: [],
                     },
                 ],
@@ -1273,6 +1291,12 @@ test('reserves force move, retirement, and resignation from the user command pic
     const retirement = picker.getByRole('button', { name: '은퇴', exact: true });
     await expect(retirement).toHaveClass(/blocked/);
     await expect(retirement).toHaveAttribute('title', '나이가 60세 이상이어야 합니다.');
+    const domesticReset = picker.getByRole('button', { name: '내정 특기 초기화', exact: true });
+    const warReset = picker.getByRole('button', { name: '전투 특기 초기화', exact: true });
+    await expect(domesticReset).toHaveClass(/blocked/);
+    await expect(domesticReset).toHaveAttribute('title', '12턴 더 기다려야 합니다');
+    await expect(warReset).toHaveClass(/blocked/);
+    await expect(warReset).toHaveAttribute('title', '24턴 더 기다려야 합니다');
     await retirement.hover();
     await retirement.focus();
     await expect(retirement).toBeFocused();
@@ -1315,6 +1339,8 @@ test('reserves force move, retirement, and resignation from the user command pic
     expect(mobileGeometry.categoryColumns.split(' ')).toHaveLength(3);
     await picker.getByRole('button', { name: '개인', exact: true }).click();
     await expect(picker.getByRole('button', { name: '은퇴', exact: true })).toBeVisible();
+    await expect(picker.getByRole('button', { name: '내정 특기 초기화', exact: true })).toHaveClass(/blocked/);
+    await expect(picker.getByRole('button', { name: '전투 특기 초기화', exact: true })).toHaveClass(/blocked/);
     await picker.screenshot({ path: test.info().outputPath('special-user-commands-mobile-500.png') });
 });
 

@@ -429,6 +429,38 @@ describe('legacy general-turn execution contract', () => {
         expect(updated.meta.prev_types_special2).toEqual(['che_격노']);
     });
 
+    it('rejects a speciality reset cooldown before accumulating its first preparation turn', async () => {
+        const general = makeGeneral({
+            role: {
+                personality: null,
+                specialDomestic: null,
+                specialWar: 'che_격노',
+                items: { horse: null, weapon: null, book: null, item: null },
+            },
+            meta: { killturn: 24, 'next_execute_전투 특기 초기화': 2460 },
+        });
+        const harness = await createTurnTestHarness({
+            snapshot: makeSnapshot(general),
+            state: makeState(),
+            schedule,
+            map,
+            collectLogs: true,
+        });
+        harness.reservedTurnStore.getGeneralTurns(1)[0] = { action: 'che_전투특기초기화', args: {} };
+
+        await harness.runOneTick();
+
+        const updated = harness.world.getGeneralById(1)!;
+        expect(updated.role.specialWar).toBe('che_격노');
+        expect(updated.lastTurn).not.toEqual({ command: '전투 특기 초기화', term: 1 });
+        expect(harness.getCollectedLogs()).toContainEqual(
+            expect.objectContaining({ text: expect.stringContaining('60턴 더 기다려야 합니다') })
+        );
+        expect(harness.getCollectedLogs()).not.toContainEqual(
+            expect.objectContaining({ text: expect.stringContaining('새로운 적성을 찾는 중') })
+        );
+    });
+
     it('preserves the legacy battle-readiness term reset instead of making its reward reachable', async () => {
         const general = makeGeneral({ crew: 1_000, train: 40, atmos: 40 });
         const harness = await createTurnTestHarness({
