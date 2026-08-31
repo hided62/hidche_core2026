@@ -5,8 +5,8 @@
     "version": "0.0.0",
     "packageManager": "pnpm@11.21.0",
     "scripts": {
-        "lint": "turbo lint",
-        "lint:fix": "turbo lint:fix",
+        "lint": "NODE_OPTIONS=--max-old-space-size=1024 turbo lint --concurrency=1",
+        "lint:fix": "NODE_OPTIONS=--max-old-space-size=1024 turbo lint:fix --concurrency=1",
         "format": "prettier --write .",
         "test": "turbo test --ui=stream --output-logs=errors-only",
         "test-verbose": "SAMMO_TEST_REPORTER=verbose turbo test --ui=stream --output-logs=full",

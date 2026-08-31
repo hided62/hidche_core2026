@@ -6,6 +6,15 @@ import prettierConfig from 'eslint-config-prettier';
 import prettierPlugin from 'eslint-plugin-prettier';
 import globals from 'globals';
 
+// projectService reloads every TS project when this value changes between TS and Vue files.
+const extraFileExtensions = ['.vue'];
+const typedParserOptions = {
+    extraFileExtensions,
+    jsDocParsingMode: 'none',
+    projectService: true,
+    tsconfigRootDir: import.meta.dirname,
+};
+
 export default tseslint.config(
     {
         ignores: [
@@ -39,11 +48,9 @@ export default tseslint.config(
         languageOptions: {
             parser: vueParser,
             parserOptions: {
+                ...typedParserOptions,
                 parser: tseslint.parser,
-                extraFileExtensions: ['.vue'],
                 sourceType: 'module',
-                projectService: true,
-                tsconfigRootDir: import.meta.dirname,
             },
         },
         rules: {
@@ -55,10 +62,7 @@ export default tseslint.config(
         files: ['**/*.ts', '**/*.tsx'],
         languageOptions: {
             parser: tseslint.parser,
-            parserOptions: {
-                projectService: true,
-                tsconfigRootDir: import.meta.dirname,
-            },
+            parserOptions: typedParserOptions,
         },
     },
     {
