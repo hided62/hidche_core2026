@@ -310,10 +310,10 @@ const commandBrief = (command: ReservedCommand): string =>
                                     >{{ index + 1 }} : {{ commandBrief(turn) }}</span
                                 >
                             </template>
-                            <template v-else-if="general.npcState > 1">NPC 장수</template>
                             <template v-else-if="general.nationId !== data.me.nationId">
                                 {{ general.nationId === 0 ? '재 야' : `【${general.nationName}】 장수` }}
                             </template>
+                            <template v-else-if="general.npcState > 1">NPC 장수</template>
                         </td>
                     </tr>
                 </tbody>

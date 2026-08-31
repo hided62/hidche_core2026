@@ -221,6 +221,9 @@ instead. The Ref row contract still applies to commands: only a non-NPC
 general's reserved turns use `general_turn_text`/`x-small`; `NPC 장수`, foreign
 nation, and wanderer labels stay at the table's normal font size. The summary
 general-name cell must remain wrappable when many generals share a city.
+The row ownership check precedes the NPC check: an NPC belonging to the viewer's
+nation is labeled `NPC 장수`, while a foreign NPC is labeled with its nation as
+`【국가명】 장수` so its allegiance is not hidden.
 
 징병·모병의 Ref 화면은 다음 collector로 1000/500px DOM, 이미지 natural size,
 불가능 병종 toggle과 hover/focus를 수집합니다. 기본 모드는 현재 Ref session을

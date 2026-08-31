@@ -419,28 +419,52 @@ const install = async (
                                           : [{ action: 'che_징병', args: { crewType: 1, amount: 300 } }],
                                   },
                                   ...(denseCurrentCity
-                                      ? Array.from({ length: 12 }, (_, index) => ({
-                                            id: index + 2,
-                                            name: `NPC장수이름이긴${index + 1}`,
-                                            npcState: 2,
-                                            picture: null,
-                                            imageServer: 0,
-                                            nationId: 1,
-                                            nationName: '아국',
-                                            leadership: 60,
-                                            strength: 60,
-                                            intelligence: 60,
-                                            injury: 0,
-                                            officerLevel: 1,
-                                            leadershipBonus: 0,
-                                            defenceTrain: 80,
-                                            crewTypeId: 1,
-                                            crewTypeName: '보병',
-                                            crew: 500,
-                                            train: 90,
-                                            atmos: 90,
-                                            turns: [],
-                                        }))
+                                      ? [
+                                            ...Array.from({ length: 12 }, (_, index) => ({
+                                                id: index + 2,
+                                                name: `NPC장수이름이긴${index + 1}`,
+                                                npcState: 2,
+                                                picture: null,
+                                                imageServer: 0,
+                                                nationId: 1,
+                                                nationName: '아국',
+                                                leadership: 60,
+                                                strength: 60,
+                                                intelligence: 60,
+                                                injury: 0,
+                                                officerLevel: 1,
+                                                leadershipBonus: 0,
+                                                defenceTrain: 80,
+                                                crewTypeId: 1,
+                                                crewTypeName: '보병',
+                                                crew: 500,
+                                                train: 90,
+                                                atmos: 90,
+                                                turns: [],
+                                            })),
+                                            {
+                                                id: 14,
+                                                name: '적국NPC',
+                                                npcState: 2,
+                                                picture: null,
+                                                imageServer: 0,
+                                                nationId: 2,
+                                                nationName: '적국',
+                                                leadership: 60,
+                                                strength: 60,
+                                                intelligence: 60,
+                                                injury: 0,
+                                                officerLevel: 1,
+                                                leadershipBonus: 0,
+                                                defenceTrain: null,
+                                                crewTypeId: null,
+                                                crewTypeName: null,
+                                                crew: 500,
+                                                train: null,
+                                                atmos: null,
+                                                turns: [],
+                                            },
+                                        ]
                                       : []),
                               ],
                     forceSummary: {
@@ -1213,6 +1237,7 @@ test('current-city wraps dense general names and only shrinks reserved turns', a
         const rows = page.locator('.generals tbody tr');
         const reservedTurns = rows.nth(0).locator('.turns');
         const npcTurns = rows.nth(1).locator('.turns');
+        const enemyNpcTurns = rows.nth(13).locator('.turns');
         await expect(reservedTurns).toContainText('1 : 【보병】 300명 징병');
         await expect(reservedTurns).toContainText('2 : 【업】에 화계실행');
         await expect(reservedTurns.locator('.turn-line').nth(0)).toHaveAttribute('title', '【보병】 300명 징병');
@@ -1220,6 +1245,8 @@ test('current-city wraps dense general names and only shrinks reserved turns', a
         await expect(reservedTurns).toHaveClass(/turns--reserved/);
         await expect(npcTurns).toHaveText('NPC 장수');
         await expect(npcTurns).not.toHaveClass(/turns--reserved/);
+        await expect(enemyNpcTurns).toHaveText('【적국】 장수');
+        await expect(enemyNpcTurns).not.toHaveClass(/turns--reserved/);
 
         const turnFontSizes = await Promise.all([
             reservedTurns.evaluate((element) => getComputedStyle(element).fontSize),
