@@ -1269,9 +1269,9 @@ const clickOutsideMenu = (event: Event) => {
 }
 
 .mobile.compact .editor-layout {
-    min-height: 370px;
+    min-height: 420px;
     display: grid;
-    grid-template-columns: 109px 391px;
+    grid-template-columns: 125px 375px;
     grid-template-rows: auto auto;
 }
 .mobile.compact .control-pad {

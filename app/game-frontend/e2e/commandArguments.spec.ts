@@ -3084,3 +3084,50 @@ test('keeps the chief footer return button the same size as the top return butto
     const mobile = await measure();
     expect(mobile.bottom).toEqual(mobile.top);
 });
+
+test('keeps the chief editor aligned to the 500px document without nested page scroll', async ({ page }) => {
+    await install(page);
+    await page.setViewportSize({ width: 500, height: 700 });
+    await page.goto('/che/chief-center');
+
+    const geometry = await page.locator('[data-command-scope="nation"]:visible').evaluate((editor) => {
+        const layout = editor.querySelector<HTMLElement>('.editor-layout')!;
+        const controls = editor.querySelector<HTMLElement>('.control-pad')!;
+        const queue = editor.querySelector<HTMLElement>('.queue-area')!;
+        const overview = document.querySelector<HTMLElement>('.chief-overview-frame')!;
+        const editorRect = editor.getBoundingClientRect();
+        const layoutRect = layout.getBoundingClientRect();
+        const controlsRect = controls.getBoundingClientRect();
+        const queueRect = queue.getBoundingClientRect();
+        const overviewRect = overview.getBoundingClientRect();
+        const scrollingElement = document.scrollingElement!;
+
+        return {
+            documentWidth: document.documentElement.clientWidth,
+            documentOverflow: scrollingElement.scrollWidth - scrollingElement.clientWidth,
+            editor: { left: editorRect.left, width: editorRect.width, height: editorRect.height },
+            layout: { left: layoutRect.left, width: layoutRect.width, height: layoutRect.height },
+            controls: { left: controlsRect.left, width: controlsRect.width },
+            queue: { left: queueRect.left, width: queueRect.width },
+            overviewTop: overviewRect.top,
+            editorBottom: editorRect.bottom,
+            editorOverflowX: getComputedStyle(editor).overflowX,
+            layoutOverflowX: getComputedStyle(layout).overflowX,
+        };
+    });
+
+    expect(geometry).toEqual({
+        documentWidth: 500,
+        documentOverflow: 0,
+        editor: { left: 0, width: 500, height: 420 },
+        layout: { left: 0, width: 500, height: 420 },
+        controls: { left: 0, width: 125 },
+        queue: { left: 125, width: 375 },
+        overviewTop: geometry.editorBottom,
+        editorBottom: geometry.editorBottom,
+        editorOverflowX: 'visible',
+        layoutOverflowX: 'visible',
+    });
+
+    await page.screenshot({ path: test.info().outputPath('chief-center-mobile-500.png'), fullPage: true });
+});
