@@ -191,10 +191,6 @@ const mapSelectedCityId = computed<number | null>(() => {
             null
         );
     }
-    if (mapTarget.value === 'capital') {
-        const myNation = props.mapData.myNation;
-        return props.mapData.nationList.find((entry) => entry[0] === myNation)?.[3] ?? null;
-    }
     return null;
 });
 
@@ -214,11 +210,6 @@ const selectedMapTargetName = computed(() => {
         const nationId = values[nationTargetField.value.key];
         if (typeof nationId !== 'number') return '-';
         return props.mapData?.nationList.find((nation) => nation[0] === nationId)?.[1] ?? '-';
-    }
-    if (mapTarget.value === 'capital') {
-        const cityId = mapSelectedCityId.value;
-        if (!cityId) return '-';
-        return props.mapLayout?.cityList.find((city) => city.id === cityId)?.name ?? '-';
     }
     return '-';
 });
@@ -271,14 +262,6 @@ const mapTargetSummary = computed(() => {
         const capital = props.mapLayout.cityList.find((entry) => entry.id === nation[3]);
         const cityCount = props.mapData.cityList.filter((entry) => entry[3] === value).length;
         return `${nation[1]} · 수도 ${capital?.name ?? '-'} · 도시 ${cityCount.toLocaleString()}개`;
-    }
-    if (mapTarget.value === 'capital' && mapSelectedCityId.value) {
-        const city = props.mapLayout.cityList.find((entry) => entry.id === mapSelectedCityId.value);
-        const dynamic = props.mapData.cityList.find((entry) => entry[0] === mapSelectedCityId.value);
-        if (!city) return '';
-        return `${city.name} · ${props.mapLayout.regionMap[dynamic?.[4] ?? city.region]} · ${
-            props.mapLayout.levelMap[dynamic?.[1] ?? city.level]
-        } · 현재 수도`;
     }
     return '';
 });
@@ -424,21 +407,17 @@ watch(
                 :detail-mode="true"
                 :fit-container="true"
                 :show-current-city-marker="true"
-                :readonly="mapTarget === 'capital'"
                 @select-city="selectMapCity"
             />
-            <small v-if="mapTarget === 'capital'">현재 명령이 적용될 수도를 지도에서 확인하세요.</small>
-            <small v-else>지도에서 도시를 클릭하거나 아래 목록에서 대상을 선택하세요.</small>
+            <small>지도에서 도시를 클릭하거나 아래 목록에서 대상을 선택하세요.</small>
             <div class="map-selection-status" aria-live="polite" data-testid="command-map-selection-status">
-                <span v-if="mapTarget !== 'capital'" class="current-city-status">
+                <span class="current-city-status">
                     <span class="status-key">현재 도시</span>
                     <strong>{{ currentCityName }}</strong>
                 </span>
-                <span v-if="mapTarget !== 'capital'" aria-hidden="true">→</span>
+                <span aria-hidden="true">→</span>
                 <span class="selected-target-status">
-                    <span class="status-key">{{
-                        mapTarget === 'nation' ? '선택 국가' : mapTarget === 'capital' ? '현재 수도' : '선택 도시'
-                    }}</span>
+                    <span class="status-key">{{ mapTarget === 'nation' ? '선택 국가' : '선택 도시' }}</span>
                     <strong>{{ selectedMapTargetName }}</strong>
                 </span>
             </div>

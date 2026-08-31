@@ -2227,6 +2227,39 @@ test('limits non-aggression end years to the Ref twenty-year window on desktop a
     }
 });
 
+test('reserves argument-free expansion and reduction immediately on desktop and mobile', async ({
+    browser,
+}, testInfo) => {
+    for (const viewport of [
+        { name: 'desktop', width: 1200, height: 900 },
+        { name: 'mobile', width: 500, height: 900 },
+    ]) {
+        const context = await browser.newContext({ viewport });
+        const page = await context.newPage();
+        try {
+            const requests = await install(page);
+            await page.goto('/che/chief-center');
+            const editor = page.locator('[data-command-scope="nation"]');
+
+            for (const [turn, action] of ['증축', '감축'].entries()) {
+                await editor.getByRole('button', { name: `${turn + 1}턴 명령 입력`, exact: true }).click();
+                const picker = editor.getByTestId('command-picker');
+                await picker.getByRole('button', { name: /^(?:국가:)?특수$/ }).click();
+                await picker.getByRole('button', { name: new RegExp(action) }).click();
+                await expect(picker).toBeHidden();
+                await expect(editor.locator('.action-column > div').nth(turn)).toContainText(action);
+            }
+
+            const serialized = JSON.stringify(requests);
+            expect(serialized).toContain('"action":"che_증축","args":{}');
+            expect(serialized).toContain('"action":"che_감축","args":{}');
+            await page.screenshot({ path: testInfo.outputPath(`chief-capital-commands-${viewport.name}.png`) });
+        } finally {
+            await context.close();
+        }
+    }
+});
+
 test('shows a map and target details for every city or nation argument chief command except assignment', async ({
     page,
 }) => {
@@ -2276,20 +2309,6 @@ test('shows a map and target details for every city or nation argument chief com
     }
 
     await page.screenshot({ path: test.info().outputPath('chief-command-target-map-details.png'), fullPage: true });
-
-    const targetMapPickerWidth = await page
-        .getByTestId('command-picker')
-        .evaluate((element) => element.getBoundingClientRect().width);
-    await page.goto('/che/chief-center');
-    await page.getByRole('button', { name: '1턴 명령 입력', exact: true }).click();
-    const capitalPicker = page.getByTestId('command-picker');
-    await capitalPicker.getByRole('button', { name: /^(?:국가:)?특수$/ }).click();
-    await capitalPicker.getByRole('button', { name: /증축/ }).click();
-    await expect(capitalPicker.getByTestId('command-argument-map')).toBeVisible();
-    const capitalMapPickerWidth = await capitalPicker.evaluate((element) => element.getBoundingClientRect().width);
-    expect(capitalMapPickerWidth).toBe(targetMapPickerWidth);
-    expect(capitalMapPickerWidth).toBeGreaterThanOrEqual(700);
-    await capitalPicker.screenshot({ path: test.info().outputPath('chief-capital-map-expanded-desktop.png') });
 
     await page.setViewportSize({ width: 500, height: 900 });
     await page.goto('/che/chief-center');

@@ -250,9 +250,7 @@ const togglePicker = (turnIndex?: number) => {
 };
 const selectCommand = (commandKey: string) => {
     const table = props.commandTable;
-    const command = table?.[props.scope]
-        .flatMap((group) => group.values)
-        .find((entry) => entry.key === commandKey);
+    const command = table?.[props.scope].flatMap((group) => group.values).find((entry) => entry.key === commandKey);
     if (!table || !command) return;
     selectedCommand.value = command;
     // Ref opens argument commands on a separate processing page. Keep the same
@@ -266,8 +264,7 @@ const selectCommand = (commandKey: string) => {
     };
     commandArgs.value = {};
     commandArgsValid.value = !command.reqArg;
-    const needsInformationalConfirmation = commandArgumentPresentation(command.key).mapTarget === 'capital';
-    if (!command.reqArg && !needsInformationalConfirmation) submitCommand();
+    if (!command.reqArg) submitCommand();
 };
 const submitCommand = () => {
     const command = selectedCommand.value;
@@ -799,11 +796,7 @@ const clickOutsideMenu = (event: Event) => {
                         @submit="submitCommand"
                     />
                     <CommandArgumentForm
-                        v-else-if="
-                            commandInputSnapshot &&
-                            (selectedCommand.reqArg ||
-                                commandArgumentPresentation(selectedCommand.key).mapTarget === 'capital')
-                        "
+                        v-else-if="commandInputSnapshot && selectedCommand.reqArg"
                         :command-key="selectedCommand.key"
                         :fields="selectedCommand.inputFields"
                         :options="commandInputSnapshot.options"
