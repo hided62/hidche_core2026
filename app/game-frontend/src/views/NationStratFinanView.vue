@@ -719,8 +719,8 @@ textarea {
 @media (max-width: 939.98px) {
     .page-finance {
         width: 500px;
-        margin: 0;
-        overflow-x: hidden;
+        margin: 0 auto;
+        overflow-x: clip;
     }
     .top-back-bar,
     .bottom-bar {

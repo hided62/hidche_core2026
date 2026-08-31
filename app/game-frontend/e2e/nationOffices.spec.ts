@@ -737,6 +737,61 @@ test('finance matches the reference 1000px and 500px computed DOM contracts', as
     await screenshot(page, 'core-finance-mobile-head.png');
 });
 
+test('finance centers its 500px mobile document without a nested horizontal scroller', async ({ page }) => {
+    await installFixture(page, { role: 'head', rate: 20 });
+    await page.setViewportSize({ width: 800, height: 900 });
+    await gotoOffice(page, 'nation/finance');
+    await expect(page.getByText('외교관계')).toBeVisible();
+
+    const centeredMobile = await page.locator('#finance-container').evaluate((container) => {
+        const rect = container.getBoundingClientRect();
+        const style = getComputedStyle(container);
+        const scrollingElement = document.scrollingElement!;
+        return {
+            viewportWidth: document.documentElement.clientWidth,
+            documentScrollWidth: scrollingElement.scrollWidth,
+            left: rect.left,
+            right: rect.right,
+            width: rect.width,
+            overflowX: style.overflowX,
+            overflowY: style.overflowY,
+            containerScrollLeft: container.scrollLeft,
+        };
+    });
+    expect(centeredMobile).toEqual({
+        viewportWidth: 800,
+        documentScrollWidth: 800,
+        left: 150,
+        right: 650,
+        width: 500,
+        overflowX: 'clip',
+        overflowY: 'visible',
+        containerScrollLeft: 0,
+    });
+    await page.locator('#finance-container').evaluate((container) => container.scrollTo({ left: 200 }));
+    expect(await page.locator('#finance-container').evaluate((container) => container.scrollLeft)).toBe(0);
+
+    await page.setViewportSize({ width: 500, height: 900 });
+    const exactMobile = await page.locator('#finance-container').evaluate((container) => {
+        const rect = container.getBoundingClientRect();
+        return {
+            viewportWidth: document.documentElement.clientWidth,
+            documentScrollWidth: document.scrollingElement!.scrollWidth,
+            left: rect.left,
+            right: rect.right,
+            width: rect.width,
+        };
+    });
+    expect(exactMobile).toEqual({
+        viewportWidth: 500,
+        documentScrollWidth: 500,
+        left: 0,
+        right: 500,
+        width: 500,
+    });
+    await screenshot(page, 'core-finance-mobile-centered-500.png');
+});
+
 test('finance enforces edit permissions and preserves the old value across an API failure', async ({ page }) => {
     const state: FixtureState = { role: 'head', rate: 20, failNextRate: true };
     await installFixture(page, state);
