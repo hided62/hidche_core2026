@@ -12,7 +12,7 @@ import { trpc } from '../utils/trpc';
 import { resolveTournamentSectionVisibility, resolveTournamentStageName } from '../utils/tournamentStatus';
 
 const tournamentPages = useTournamentPagesStore();
-const { snapshot, betting, loading, error } = storeToRefs(tournamentPages);
+const { snapshot, loading, error } = storeToRefs(tournamentPages);
 type Snapshot = NonNullable<typeof snapshot.value>;
 const myGeneralId = ref(0);
 const adminEnabled = ref(false);
@@ -54,12 +54,9 @@ const matchesAt = (stage: number) =>
         .filter((match) => match.stage === stage)
         .sort((a, b) => a.roundIndex - b.roundIndex);
 const nameOf = (id?: number) => (id ? (participantsById.value.get(id)?.name ?? `#${id}`) : '-');
-const totalBet = computed(() => betting.value?.totalAmount ?? 0);
 const openingTime = computed(() =>
     formatServerDateTime(snapshot.value?.state?.nextAt, { format: 'hourMinute', fallback: '--:--' })
 );
-const betTotals = computed(() => betting.value?.totals as Record<number, number> | undefined);
-const myBetTotals = computed(() => betting.value?.myTotals as Record<number, number> | undefined);
 const isParticipant = computed(() =>
     (snapshot.value?.participants ?? []).some((participant) => participant.id === myGeneralId.value)
 );
@@ -230,9 +227,6 @@ const start = async () => {
                 :participants="snapshot?.participants ?? []"
                 :matches="snapshot?.matches ?? []"
                 :winner-id="snapshot?.state?.winnerId"
-                :bet-totals="betTotals"
-                :my-bet-totals="myBetTotals"
-                :total-bet="totalBet"
                 :tournament-type="snapshot?.state?.type ?? 0"
             />
 

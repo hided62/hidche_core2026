@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue';
 import GeneralIdentity from '../ui/GeneralIdentity.vue';
+import RichTooltip from '../ui/RichTooltip.vue';
 import {
     buildTournamentBracket,
     resolveTournamentCoreStat,
@@ -9,17 +10,28 @@ import {
     type TournamentBracketSlot,
 } from '../../utils/tournamentBracket';
 
-const props = defineProps<{
-    participants: TournamentBracketParticipant[];
-    matches: TournamentBracketMatch[];
-    winnerId?: number;
-    betTotals?: Record<number, number>;
-    myBetTotals?: Record<number, number>;
-    totalBet: number;
-    tournamentType?: number;
-    showLegend?: boolean;
-    bettingOpen?: boolean;
-}>();
+const props = withDefaults(
+    defineProps<{
+        participants: TournamentBracketParticipant[];
+        matches: TournamentBracketMatch[];
+        winnerId?: number;
+        betTotals?: Record<number, number>;
+        myBetTotals?: Record<number, number>;
+        totalBet?: number;
+        tournamentType?: number;
+        showLegend?: boolean;
+        bettingOpen?: boolean;
+        bettingMode?: boolean;
+    }>(),
+    {
+        winnerId: undefined,
+        betTotals: undefined,
+        myBetTotals: undefined,
+        totalBet: 0,
+        tournamentType: undefined,
+        bettingMode: false,
+    }
+);
 
 const emit = defineEmits<{
     requestBet: [slot: TournamentBracketSlot];
@@ -37,10 +49,10 @@ const roundColumns = computed(() => [
 ]);
 const desktopX = [110, 355, 600, 845, 1090];
 const cardWidth = 190;
-const desktopSlotHeight = 88;
-const desktopCanvasHeight = desktopSlotHeight * 16;
+const desktopSlotHeight = computed(() => (props.bettingMode ? 100 : 88));
+const desktopCanvasHeight = computed(() => desktopSlotHeight.value * 16);
 const slotY = (columnIndex: number, slotIndex: number) => {
-    const slotHeight = desktopSlotHeight * 2 ** columnIndex;
+    const slotHeight = desktopSlotHeight.value * 2 ** columnIndex;
     return slotHeight / 2 + slotIndex * slotHeight;
 };
 const connections = computed(() =>
@@ -76,6 +88,18 @@ const odds = (id: number | null) => {
     return (props.totalBet / amount).toFixed(2);
 };
 const myBet = (id: number | null) => (id === null ? 0 : (props.myBetTotals?.[id] ?? 0));
+const myExpectedReturn = (id: number | null): number | null => {
+    if (id === null) return null;
+    const invested = myBet(id);
+    const targetTotal = props.betTotals?.[id] ?? 0;
+    if (invested <= 0 || targetTotal <= 0) return null;
+    return Math.round((invested * props.totalBet) / targetTotal);
+};
+const myExpectedReturnDescription = (id: number | null): string | null => {
+    const expectedReturn = myExpectedReturn(id);
+    if (id === null || expectedReturn === null) return null;
+    return `현재 배당 ${odds(id)} × 내 투자 금${myBet(id).toLocaleString('ko-KR')} = 금${expectedReturn.toLocaleString('ko-KR')}`;
+};
 const coreStat = (slot: (typeof bracket.value.top16.slots)[number]) =>
     resolveTournamentCoreStat(slot, props.tournamentType ?? 0);
 const requestBet = (slot: TournamentBracketSlot) => {
@@ -127,6 +151,7 @@ const mobilePairs = computed(() => {
                         :class="{
                             advanced: slot.advanced,
                             'betting-target': columnIndex === 0 && bettingOpen && slot.id !== null,
+                            'betting-candidate': columnIndex === 0 && bettingMode,
                         }"
                         :data-general-id="slot.id ?? undefined"
                         :style="{
@@ -134,7 +159,24 @@ const mobilePairs = computed(() => {
                             top: `${slotY(columnIndex, slotIndex)}px`,
                         }"
                     >
+                        <span
+                            v-if="columnIndex === 0 && bettingMode && slot.id !== null"
+                            class="bracket-candidate-identity"
+                        >
+                            <RichTooltip placement="right" :max-width="180" :test-id="`candidate-icon-${slot.id}`">
+                                <GeneralIdentity :name="slot.name" :hide-icon="true" :npc-state="slot.npcState" />
+                                <template #content>
+                                    <GeneralIdentity
+                                        :name="slot.name"
+                                        :picture="slot.picture"
+                                        :image-server="slot.imageServer"
+                                        :npc-state="slot.npcState"
+                                    />
+                                </template>
+                            </RichTooltip>
+                        </span>
                         <GeneralIdentity
+                            v-else
                             :name="slot.name"
                             :picture="slot.picture"
                             :image-server="slot.imageServer"
@@ -149,12 +191,24 @@ const mobilePairs = computed(() => {
                         >
                             베팅하기
                         </button>
-                        <div v-if="columnIndex === 0" class="bracket-bet-summary">
+                        <div v-if="columnIndex === 0 && bettingMode" class="bracket-bet-summary">
                             <small v-if="coreStat(slot)" class="bracket-core-stat">
                                 {{ coreStat(slot)?.label }} {{ coreStat(slot)?.value }}
                             </small>
                             <small class="bracket-odds">배당 {{ odds(slot.id) }}</small>
-                            <small class="bracket-my-bet">내 투자 금{{ myBet(slot.id) }}</small>
+                            <span class="bracket-my-bet-tooltip">
+                                <RichTooltip
+                                    title="현재 배당 기준 예상 환수금"
+                                    :description="myExpectedReturnDescription(slot.id)"
+                                    placement="bottom"
+                                    :max-width="260"
+                                    :test-id="slot.id === null ? undefined : `candidate-return-${slot.id}`"
+                                >
+                                    <small class="bracket-my-bet"
+                                        >내 투자 금{{ myBet(slot.id).toLocaleString('ko-KR') }}</small
+                                    >
+                                </RichTooltip>
+                            </span>
                         </div>
                     </article>
                 </template>
@@ -184,10 +238,32 @@ const mobilePairs = computed(() => {
                         :class="{
                             advanced: slot.advanced,
                             'betting-target': activeMobileRound === 0 && bettingOpen && slot.id !== null,
+                            'betting-candidate': activeMobileRound === 0 && bettingMode,
                         }"
                         :data-general-id="slot.id ?? undefined"
                     >
+                        <span
+                            v-if="activeMobileRound === 0 && bettingMode && slot.id !== null"
+                            class="bracket-candidate-identity"
+                        >
+                            <RichTooltip
+                                placement="bottom"
+                                :max-width="180"
+                                :test-id="`mobile-candidate-icon-${slot.id}`"
+                            >
+                                <GeneralIdentity :name="slot.name" :hide-icon="true" :npc-state="slot.npcState" />
+                                <template #content>
+                                    <GeneralIdentity
+                                        :name="slot.name"
+                                        :picture="slot.picture"
+                                        :image-server="slot.imageServer"
+                                        :npc-state="slot.npcState"
+                                    />
+                                </template>
+                            </RichTooltip>
+                        </span>
                         <GeneralIdentity
+                            v-else
                             :name="slot.name"
                             :picture="slot.picture"
                             :image-server="slot.imageServer"
@@ -202,12 +278,24 @@ const mobilePairs = computed(() => {
                         >
                             베팅하기
                         </button>
-                        <div v-if="activeMobileRound === 0" class="bracket-bet-summary">
+                        <div v-if="activeMobileRound === 0 && bettingMode" class="bracket-bet-summary">
                             <small v-if="coreStat(slot)" class="bracket-core-stat">
                                 {{ coreStat(slot)?.label }} {{ coreStat(slot)?.value }}
                             </small>
                             <small class="bracket-odds">배당 {{ odds(slot.id) }}</small>
-                            <small class="bracket-my-bet">내 투자 금{{ myBet(slot.id) }}</small>
+                            <span class="bracket-my-bet-tooltip">
+                                <RichTooltip
+                                    title="현재 배당 기준 예상 환수금"
+                                    :description="myExpectedReturnDescription(slot.id)"
+                                    placement="bottom"
+                                    :max-width="260"
+                                    :test-id="slot.id === null ? undefined : `mobile-candidate-return-${slot.id}`"
+                                >
+                                    <small class="bracket-my-bet"
+                                        >내 투자 금{{ myBet(slot.id).toLocaleString('ko-KR') }}</small
+                                    >
+                                </RichTooltip>
+                            </span>
                         </div>
                     </div>
                     <strong v-if="pair.length === 2" class="versus" aria-hidden="true">VS</strong>
@@ -272,6 +360,13 @@ const mobilePairs = computed(() => {
     color: #fff;
     padding: 1px 3px;
 }
+.desktop-bracket-name.betting-candidate {
+    width: clamp(150px, 18vw, 216px);
+    min-height: 92px;
+    align-content: center;
+    gap: 5px;
+    padding: 5px 6px;
+}
 .betting-target {
     position: absolute;
 }
@@ -312,12 +407,30 @@ const mobilePairs = computed(() => {
     width: 100%;
     justify-content: flex-start;
 }
-.bracket-bet-summary {
+.bracket-candidate-identity {
     display: flex;
     min-width: 0;
+    min-height: 24px;
     align-items: center;
-    justify-content: space-between;
-    gap: 4px;
+    padding-right: 62px;
+    text-align: left;
+}
+.bracket-candidate-identity :deep(.rich-tooltip-trigger) {
+    display: block;
+    min-width: 0;
+}
+.betting-candidate .bracket-candidate-identity :deep(.general-identity-name) {
+    overflow: visible;
+    text-overflow: clip;
+    white-space: normal;
+    overflow-wrap: anywhere;
+}
+.bracket-bet-summary {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    min-width: 0;
+    align-items: center;
+    gap: 3px 7px;
     white-space: nowrap;
 }
 .bracket-core-stat,
@@ -331,11 +444,20 @@ const mobilePairs = computed(() => {
 }
 .bracket-core-stat {
     color: #fff;
+    text-align: left;
+}
+.bracket-odds {
+    text-align: right;
+}
+.bracket-my-bet-tooltip {
+    grid-column: 1 / -1;
+    min-width: 0;
+    color: orange;
+    text-align: left;
 }
 .bracket-my-bet {
-    overflow: hidden;
     color: orange;
-    text-overflow: ellipsis;
+    font-variant-numeric: tabular-nums;
 }
 .mobile-bracket {
     display: none;
@@ -381,6 +503,10 @@ const mobilePairs = computed(() => {
     border: 1px solid #555;
     background: rgb(58 33 24 / 94%);
     padding: 1px 3px;
+}
+.mobile-bracket-name.betting-candidate {
+    min-height: 92px;
+    padding: 5px 6px;
 }
 .versus {
     position: absolute;

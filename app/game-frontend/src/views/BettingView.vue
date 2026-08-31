@@ -12,7 +12,7 @@ import { trpc } from '../utils/trpc';
 
 const tournamentPages = useTournamentPagesStore();
 const { snapshot, betting: summary, rankings, loading, error } = storeToRefs(tournamentPages);
-const amounts = ref<Record<number, number>>({});
+const selectedAmount = ref(10);
 const selectedTarget = ref<TournamentBracketSlot | null>(null);
 const betDialog = ref<HTMLDialogElement | null>(null);
 const betAmountSelect = ref<HTMLSelectElement | null>(null);
@@ -55,17 +55,6 @@ const ratio = (id: number) => {
 const openingTime = computed(() =>
     formatServerDateTime(snapshot.value?.state?.nextAt, { format: 'hourMinute', fallback: '--:--' })
 );
-const selectedAmount = computed({
-    get: () => {
-        const targetId = selectedTarget.value?.id;
-        return targetId === null || targetId === undefined ? 10 : (amounts.value[targetId] ?? 10);
-    },
-    set: (amount: number) => {
-        const targetId = selectedTarget.value?.id;
-        if (targetId === null || targetId === undefined) return;
-        amounts.value[targetId] = amount;
-    },
-});
 const selectedRatio = computed(() => {
     const targetId = selectedTarget.value?.id;
     return targetId === null || targetId === undefined ? '0' : ratio(targetId);
@@ -85,7 +74,6 @@ const openBetDialog = async (target: TournamentBracketSlot) => {
     if (target.id === null || !bettingOpen.value) return;
     selectedTarget.value = target;
     betError.value = null;
-    if (amounts.value[target.id] === undefined) amounts.value[target.id] = 10;
     await nextTick();
     betDialog.value?.showModal();
     betAmountSelect.value?.focus();
@@ -147,6 +135,7 @@ const placeBet = async () => {
             :tournament-type="snapshot?.state?.type ?? 0"
             :show-legend="false"
             :betting-open="bettingOpen"
+            :betting-mode="true"
             @request-bet="openBetDialog"
         />
 
