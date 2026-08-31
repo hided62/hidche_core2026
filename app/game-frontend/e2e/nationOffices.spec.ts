@@ -15,6 +15,7 @@ type FixtureState = {
     appointedGeneralId?: number;
     appointedCityId?: number;
     appointedOfficerLevel?: number;
+    kickedGeneralId?: number;
     permissionMutationInput?: { isAmbassador: boolean; targetGeneralIds: number[] };
     noticeMutationInput?: string;
     scoutMutationInput?: string;
@@ -101,7 +102,7 @@ const personnelFixture = (state: FixtureState) => {
         general(3, '하후돈', 4),
         general(4, '곽가', 3),
         general(5, '정욱', 2),
-        general(6, '장료', 1),
+        general(6, '장료', 1, { npcState: 2 }),
         general(7, '허저', 1, { permission: 'ambassador' }),
         general(8, '가후', 1, { permission: 'auditor' }),
         general(9, '전위', 1),
@@ -256,7 +257,10 @@ const installFixture = async (page: Page, state: FixtureState) => {
                 };
                 return response({ ok: true });
             }
-            if (operation === 'nation.kick') return response({ ok: true });
+            if (operation === 'nation.kick') {
+                state.kickedGeneralId = Number(jsonInput.destGeneralId ?? 0);
+                return response({ ok: true });
+            }
             if (operation === 'nation.setRate') {
                 if (state.failNextRate) {
                     state.failNextRate = false;
@@ -425,6 +429,16 @@ test('personnel selects an informed general and reports the JosaUtil-composed re
     const picker = page.getByTestId('personnel-selection-dialog');
     await expect(picker).toBeVisible();
     await expect(picker.getByRole('heading', { name: '주부 임명 대상 선택' })).toBeVisible();
+    await expect(picker.locator('.personnel-picker-card:not(.vacancy-card)')).toHaveText([
+        /가후/,
+        /곽가/,
+        /순욱/,
+        /전위/,
+        /정욱/,
+        /하후돈/,
+        /허저/,
+        /장료/,
+    ]);
     await picker.getByPlaceholder('장수명·도시·관직·특성 검색').fill('장료');
     const candidate = picker.getByRole('button', { name: /장료/ });
     await expect(candidate).toContainText('허창 · 일반 장수');
@@ -476,14 +490,7 @@ test('personnel reflows row-level appointments at 500px and 390px without gradie
     expect(rowGeometry.officerWidth).toBeLessThan(141);
     expect(rowGeometry.gradientCount).toBe(0);
     await expect(page.getByRole('combobox', { name: '외교권자' })).toHaveCount(0);
-    await expect(page.getByRole('combobox', { name: '추방 대상 장수' })).toBeVisible();
-    await expect(page.getByRole('combobox', { name: '추방 대상 장수' }).locator('option')).toHaveText([
-        '장수 선택',
-        '하후돈 (70/70/70)',
-        '곽가 (70/70/70)',
-        '정욱 (70/70/70)',
-        '장료 (70/70/70)',
-    ]);
+    await expect(page.getByRole('button', { name: '추방 대상 선택하기' })).toBeVisible();
 
     await page.getByRole('button', { name: '허창 태수 변경하기', exact: true }).click();
     const picker = page.getByTestId('personnel-selection-dialog');
@@ -561,6 +568,53 @@ test('personnel reflows row-level appointments at 500px and 390px without gradie
     await screenshot(page, 'core-personnel-mobile-rows.png');
 });
 
+test('personnel chooses a kick target in the informed picker and double-confirms a user general', async ({ page }) => {
+    const state: FixtureState = { role: 'head', rate: 20 };
+    await installFixture(page, state);
+    await page.setViewportSize({ width: 390, height: 844 });
+    await gotoOffice(page, 'nation/personnel');
+
+    const kickLabel = page.locator('.kick-label');
+    await expect(kickLabel).toHaveText('대상 장수');
+    expect(await kickLabel.evaluate((element) => getComputedStyle(element).whiteSpace)).toBe('nowrap');
+
+    await page.getByRole('button', { name: '추방 대상 선택하기' }).click();
+    const picker = page.getByTestId('personnel-selection-dialog');
+    await expect(picker.getByRole('heading', { name: '추방 대상 선택' })).toBeVisible();
+    await expect(picker.locator('.vacancy-card')).toHaveCount(0);
+    await expect(picker.locator('.personnel-picker-card')).toHaveText([
+        /가후/,
+        /곽가/,
+        /전위/,
+        /정욱/,
+        /하후돈/,
+        /장료/,
+    ]);
+    await picker.getByRole('button', { name: /정욱/ }).click();
+    await expect(picker).toBeHidden();
+    await expect(page.getByRole('button', { name: '정욱', exact: true })).toBeVisible();
+
+    await page.getByRole('button', { name: '추방', exact: true }).click();
+    const confirmation = page.getByTestId('game-notice-dialog');
+    await expect(confirmation).toContainText('정욱을 추방하시겠습니까?');
+    await confirmation.getByRole('button', { name: '확인', exact: true }).click();
+    await expect(confirmation).toContainText('정욱은 유저장입니다. 그래도 추방하시겠습니까?');
+    await confirmation.getByRole('button', { name: '취소', exact: true }).click();
+    await expect(confirmation).toBeHidden();
+    expect(state.kickedGeneralId).toBeUndefined();
+
+    await page.getByRole('button', { name: '추방', exact: true }).click();
+    await expect(confirmation).toContainText('정욱을 추방하시겠습니까?');
+    await confirmation.getByRole('button', { name: '확인', exact: true }).click();
+    await expect(confirmation).toContainText('정욱은 유저장입니다. 그래도 추방하시겠습니까?');
+    await confirmation.getByRole('button', { name: '확인', exact: true }).click();
+    await expect(confirmation).toBeHidden();
+    await expect(page.getByTestId('game-toast')).toContainText('정욱을 추방했습니다.');
+    expect(state.kickedGeneralId).toBe(5);
+    expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBe(390);
+    await screenshot(page, 'core-personnel-mobile-kick-picker.png');
+});
+
 test('@ios-webkit iPhone touch appoints a city officer after the picker closes', async ({ browser }, testInfo) => {
     const configuredBaseUrl = testInfo.project.use.baseURL;
     if (typeof configuredBaseUrl !== 'string') throw new Error('Playwright baseURL is required');
@@ -589,7 +643,7 @@ test('personnel hides every mutation control for an ordinary member and exposes 
     await gotoOffice(page, 'nation/personnel');
     await expect(page.getByRole('button', { name: /변경하기/ })).toHaveCount(0);
     await expect(page.getByText('외 교 권 자 임 명')).toHaveCount(0);
-    await expect(page.getByRole('combobox', { name: '추방 대상 장수' })).toHaveCount(0);
+    await expect(page.getByRole('button', { name: '추방 대상 선택하기' })).toHaveCount(0);
     await expect(page.getByRole('button', { name: '추방', exact: true })).toHaveCount(0);
     const auditorCell = page.locator('.city-officer-cell').filter({ hasText: '곽가' });
     await expect(auditorCell).toContainText('10년 · 허창');

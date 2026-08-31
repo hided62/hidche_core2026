@@ -8,6 +8,7 @@ import PermissionMultiSelect from '../components/personnel/PermissionMultiSelect
 import PersonnelSelectionDialog from '../components/personnel/PersonnelSelectionDialog.vue';
 import { useGameFeedback } from '../composables/useGameFeedback';
 import { resolveGeneralIconBackgroundImage } from '../utils/generalIcon';
+import { sortGeneralsByTypeThenName } from '../utils/generalOrder';
 import { trpc } from '../utils/trpc';
 import { cityLevelMap, formatOfficerLevelText, getNationChiefLevel, regionMap } from '../utils/nationFormat';
 import { legacyNationTextColor } from '../utils/legacyNationColor';
@@ -27,7 +28,9 @@ type SelectionDialogItem = {
     details: Array<{ label: string; value: string }>;
 };
 type SelectionContext =
-    { kind: 'chief-general'; level: number } | { kind: 'city-general'; level: OfficerLevel; cityId: number };
+    | { kind: 'chief-general'; level: number }
+    | { kind: 'city-general'; level: OfficerLevel; cityId: number }
+    | { kind: 'kick-general' };
 
 const officerLabels: Record<OfficerLevel, string> = { 4: '태수', 3: '군사', 2: '종사' };
 const cityOfficerLevels: OfficerLevel[] = [4, 3, 2];
@@ -88,20 +91,26 @@ const currentOfficeText = (general: GeneralEntry): string => {
 const chiefCandidates = (level: number): GeneralEntry[] => {
     const minimum = data.value?.chiefStatMin ?? 0;
     const candidates = (data.value?.generals ?? []).filter((general) => general.officerLevel !== 12);
-    if (level === 11) return candidates;
-    if (level % 2 === 0) return candidates.filter((general) => general.stats.strength >= minimum);
-    return candidates.filter((general) => general.stats.intelligence >= minimum);
+    if (level === 11) return sortGeneralsByTypeThenName(candidates);
+    if (level % 2 === 0)
+        return sortGeneralsByTypeThenName(candidates.filter((general) => general.stats.strength >= minimum));
+    return sortGeneralsByTypeThenName(candidates.filter((general) => general.stats.intelligence >= minimum));
 };
 const cityCandidates = (level: OfficerLevel): GeneralEntry[] => {
     const minimum = data.value?.chiefStatMin ?? 0;
     const candidates = (data.value?.generals ?? []).filter((general) => general.officerLevel !== 12);
-    if (level === 4) return candidates.filter((general) => general.stats.strength >= minimum);
-    if (level === 3) return candidates.filter((general) => general.stats.intelligence >= minimum);
-    return candidates;
+    if (level === 4)
+        return sortGeneralsByTypeThenName(candidates.filter((general) => general.stats.strength >= minimum));
+    if (level === 3)
+        return sortGeneralsByTypeThenName(candidates.filter((general) => general.stats.intelligence >= minimum));
+    return sortGeneralsByTypeThenName(candidates);
 };
 const kickCandidates = computed(() =>
-    (data.value?.generals ?? []).filter(
-        (general) => general.id !== data.value?.me.id && general.officerLevel < 5 && general.permission !== 'ambassador'
+    sortGeneralsByTypeThenName(
+        (data.value?.generals ?? []).filter(
+            (general) =>
+                general.id !== data.value?.me.id && general.officerLevel < 5 && general.permission !== 'ambassador'
+        )
     )
 );
 const awardText = (entries: PersonnelResponse['awards']['tigers']): string =>
@@ -208,6 +217,7 @@ const selectionTitle = computed(() => {
     if (context.kind === 'chief-general') {
         return `${formatOfficerLevelText(context.level, nationLevel.value)} 임명 대상 선택`;
     }
+    if (context.kind === 'kick-general') return '추방 대상 선택';
     const city = data.value?.cityAssignments.find((entry) => entry.id === context.cityId);
     return `${city?.name ?? ''} ${officerLabels[context.level]} 변경`;
 });
@@ -218,6 +228,9 @@ const selectionDescription = computed(() => {
         if (context.level === 11) return '군주를 제외한 장수 중에서 임명할 수 있습니다.';
         const stat = context.level % 2 === 0 ? '무력' : '지력';
         return `${stat} ${data.value?.chiefStatMin ?? 0} 이상인 장수만 표시합니다. 현재 관직과 주요 능력치를 함께 확인하세요.`;
+    }
+    if (context.kind === 'kick-general') {
+        return '현재 관직과 소재지, 장수 유형을 확인한 뒤 추방할 장수를 선택하세요.';
     }
     if (context.level === 4) {
         return `무력 ${data.value?.chiefStatMin ?? 0} 이상인 장수만 표시합니다. 현재 관직과 소재지를 함께 확인하세요.`;
@@ -234,6 +247,9 @@ const selectionItems = computed<SelectionDialogItem[]>(() => {
         const currentGeneralId = chiefAssignments.value[context.level]?.id ?? 0;
         return chiefCandidates(context.level).map((general) => generalSelectionItem(general, currentGeneralId));
     }
+    if (context.kind === 'kick-general') {
+        return kickCandidates.value.map((general) => generalSelectionItem(general, kickTargetId.value));
+    }
     const city = data.value?.cityAssignments.find((entry) => entry.id === context.cityId);
     const currentGeneralId = city?.officers[context.level]?.id ?? 0;
     return cityCandidates(context.level).map((general) => generalSelectionItem(general, currentGeneralId));
@@ -242,6 +258,7 @@ const selectionId = computed(() => {
     const context = selectionContext.value;
     if (!context) return 0;
     if (context.kind === 'chief-general') return chiefAssignments.value[context.level]?.id ?? 0;
+    if (context.kind === 'kick-general') return kickTargetId.value;
     return data.value?.cityAssignments.find((entry) => entry.id === context.cityId)?.officers[context.level]?.id ?? 0;
 });
 const applySelection = async (id: number): Promise<void> => {
@@ -250,7 +267,8 @@ const applySelection = async (id: number): Promise<void> => {
     selectionContext.value = null;
     await nextTick();
     if (context.kind === 'chief-general') await appointChief(context.level, id);
-    else await appointCityOfficer(context.level, context.cityId, id);
+    else if (context.kind === 'city-general') await appointCityOfficer(context.level, context.cityId, id);
+    else kickTargetId.value = id;
 };
 
 const reportPermissionLimit = () => {
@@ -269,6 +287,12 @@ const changePermissions = async (isAmbassador: boolean) => {
 const kickGeneral = async () => {
     const target = generalMap.value.get(kickTargetId.value);
     if (!target || !(await showConfirm(`${JosaUtil.put(target.name, '을')} 추방하시겠습니까?`))) return;
+    if (
+        target.npcState === 0 &&
+        !(await showConfirm(`${JosaUtil.put(target.name, '은')} 유저장입니다. 그래도 추방하시겠습니까?`))
+    ) {
+        return;
+    }
     await runMutation(
         () => trpc.nation.kick.mutate({ destGeneralId: target.id }),
         `${JosaUtil.put(target.name, '을')} 추방했습니다.`
@@ -520,18 +544,13 @@ onMounted(() => void loadPersonnel());
                         <td class="green-cell kick-label">대상 장수</td>
                         <td>
                             <template v-if="canKick">
-                                <select v-model.number="kickTargetId" aria-label="추방 대상 장수">
-                                    <option :value="0">장수 선택</option>
-                                    <option
-                                        v-for="candidate in kickCandidates"
-                                        :key="candidate.id"
-                                        :value="candidate.id"
-                                    >
-                                        {{ candidate.name }} ({{ candidate.stats.leadership }}/{{
-                                            candidate.stats.strength
-                                        }}/{{ candidate.stats.intelligence }})
-                                    </option>
-                                </select>
+                                <button
+                                    class="legacy-button kick-select-button"
+                                    type="button"
+                                    @click="selectionContext = { kind: 'kick-general' }"
+                                >
+                                    {{ generalMap.get(kickTargetId)?.name ?? '추방 대상 선택하기' }}
+                                </button>
                                 <button
                                     class="legacy-button legacy-button--danger"
                                     type="button"
@@ -580,7 +599,7 @@ onMounted(() => void loadPersonnel());
         :items="selectionItems"
         :selected-id="selectionId"
         search-placeholder="장수명·도시·관직·특성 검색"
-        vacancy-label="공석으로 두기"
+        :vacancy-label="selectionContext?.kind === 'kick-general' ? null : '공석으로 두기'"
         @cancel="selectionContext = null"
         @select="applySelection"
     />
@@ -862,6 +881,15 @@ select {
 .kick-label {
     width: 498px;
     text-align: right;
+    white-space: nowrap;
+}
+.kick-select-button {
+    min-width: 150px;
+    max-width: calc(100% - 52px);
+    overflow: hidden;
+    vertical-align: middle;
+    text-overflow: ellipsis;
+    white-space: nowrap;
 }
 .footer-table {
     margin-top: 18px;
