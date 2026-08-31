@@ -496,12 +496,7 @@ onMounted(() => {
 }
 
 .bottom-bar .back-button {
-    --legacy-button-height: 35.5px;
-    display: inline-block;
-    width: 71px;
-    margin: 0;
-    padding-right: 6px;
-    padding-left: 6px;
+    width: 88px;
     white-space: nowrap;
 }
 

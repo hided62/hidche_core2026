@@ -406,7 +406,11 @@ onMounted(() => {
         </div>
 
         <footer class="bottom_bar bg0">
-            <button class="legacy-button legacy-button--navigation back_btn" type="button" @click="router.push('/')">
+            <button
+                class="legacy-button legacy-button--navigation legacy-button--fixed-height back_btn"
+                type="button"
+                @click="router.push('/')"
+            >
                 창 닫기
             </button>
         </footer>
@@ -594,7 +598,7 @@ onMounted(() => {
 
 .bottom_bar .back_btn {
     display: inline-block;
-    width: auto;
+    width: 88px;
 }
 
 .vote-notice {

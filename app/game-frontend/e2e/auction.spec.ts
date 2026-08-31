@@ -270,6 +270,8 @@ test('resource auction preserves the legacy desktop structure, geometry, and int
         return {
             container: { x: containerRect.x, width: containerRect.width },
             topBar: box('.top-back-bar'),
+            topClose: box('.top-back-bar .close-button'),
+            bottomClose: box('.bottom-bar .close-button'),
             row: { width: rowRect.width, height: rowRect.height },
             cells,
             button: {
@@ -282,6 +284,7 @@ test('resource auction preserves the legacy desktop structure, geometry, and int
     });
     expect(geometry.container).toEqual({ x: 0, width: 1000 });
     expect(geometry.topBar).toMatchObject({ x: 0, width: 1000, height: 32 });
+    expect(geometry.bottomClose).toMatchObject({ width: geometry.topClose.width, height: geometry.topClose.height });
     expect(geometry.row).toEqual({ width: 1000, height: 22 });
     expect(geometry.cells[0]).toBeCloseTo(66.66, 1);
     expect(geometry.cells[1]).toBeCloseTo(133.34, 1);

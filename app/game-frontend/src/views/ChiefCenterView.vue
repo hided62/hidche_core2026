@@ -461,7 +461,11 @@ const repeatTurns = async (amount: number) => {
             </template>
         </div>
         <footer class="chief-footer legacy-bg0">
-            <button class="legacy-button legacy-button--navigation chief-nav" type="button" @click="router.push('/')">
+            <button
+                class="legacy-button legacy-button--navigation legacy-button--fixed-height chief-nav"
+                type="button"
+                @click="router.push('/')"
+            >
                 돌아가기
             </button>
         </footer>
@@ -679,7 +683,7 @@ const repeatTurns = async (amount: number) => {
     padding-top: 20px;
 }
 .chief-footer .chief-nav {
-    width: 70px;
+    width: 88px;
 }
 
 @media (max-width: 1024px) {
@@ -689,6 +693,9 @@ const repeatTurns = async (amount: number) => {
     }
     .chief-top {
         grid-template-columns: 89px 89px 1fr 0 0;
+    }
+    .chief-footer .chief-nav {
+        width: 87px;
     }
 }
 

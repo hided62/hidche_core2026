@@ -317,7 +317,11 @@ onMounted(() => {
         </section>
         <footer class="battle-footer legacy-bg0">
             <RouterLink v-slot="{ navigate }" custom to="/">
-                <button class="legacy-button legacy-button--navigation battle-nav" type="button" @click="navigate">
+                <button
+                    class="legacy-button legacy-button--navigation legacy-button--fixed-height battle-nav"
+                    type="button"
+                    @click="navigate"
+                >
                     창 닫기
                 </button>
             </RouterLink>
@@ -443,7 +447,7 @@ onMounted(() => {
     padding-top: 20px;
 }
 .battle-footer .battle-nav {
-    width: 60px;
+    width: 88px;
 }
 @media (max-width: 991px) {
     .battle-page {
@@ -451,6 +455,9 @@ onMounted(() => {
     }
     .battle-top {
         grid-template-columns: 89px 89px 1fr 0 0;
+    }
+    .battle-footer .battle-nav {
+        width: 87px;
     }
 }
 </style>

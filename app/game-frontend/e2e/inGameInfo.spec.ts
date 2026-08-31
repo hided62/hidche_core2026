@@ -1111,6 +1111,13 @@ test('current-city hides values and general rows for a wandering user', async ({
     await expect(page.locator('.generals')).toHaveCount(0);
 });
 
+test('current-city keeps only the top and footer return buttons', async ({ page }) => {
+    await install(page, 'admin');
+    await go(page, 'current-city');
+    await expect(page.locator('.city-page .back-link')).toHaveCount(2);
+    await expect(page.locator('.city-page .back-row')).toHaveCount(0);
+});
+
 test('current-city exposes own general details to a member and admin fixture', async ({ page }) => {
     await install(page, 'admin');
     await page.setViewportSize({ width: 1200, height: 900 });
@@ -1138,8 +1145,8 @@ test('current-city exposes own general details to a member and admin fixture', a
         };
     });
     expect(legacyGeometry.selector).toMatchObject({ width: 400, height: 19 });
-    expect(legacyGeometry.stats).toEqual({ x: 100, y: 165.375, width: 1000, height: 106.9375 });
-    expect(legacyGeometry.generals).toMatchObject({ x: 88, y: 290.3125, width: 1024 });
+    expect(legacyGeometry.stats).toEqual({ x: 100, y: 130.875, width: 1000, height: 106.9375 });
+    expect(legacyGeometry.generals).toMatchObject({ x: 100, y: 255.8125, width: 1000 });
     expect(legacyGeometry.titleAlign).toBe('start');
     expect(legacyGeometry.icon).toMatchObject({ width: 64, height: 64, naturalWidth: 64, naturalHeight: 64 });
     if (artifactRoot) {

@@ -494,7 +494,11 @@ onMounted(() => {
         </section>
 
         <footer class="bottom-bar bg0">
-            <button class="legacy-button legacy-button--navigation close-button" type="button" @click="closeWindow">
+            <button
+                class="legacy-button legacy-button--navigation legacy-button--fixed-height close-button"
+                type="button"
+                @click="closeWindow"
+            >
                 창 닫기
             </button>
         </footer>
@@ -761,6 +765,10 @@ input:focus-visible {
 }
 .bottom-bar {
     padding-top: 20px;
+}
+.bottom-bar .close-button {
+    --legacy-button-height: 32px;
+    width: 88px;
 }
 @media (max-width: 991px) {
     .legacy-auction-page {

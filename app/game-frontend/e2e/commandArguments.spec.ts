@@ -3062,3 +3062,25 @@ test('keeps the shared main and chief shell geometry and interaction states', as
     }));
     expect(chiefMobile).toEqual({ width: 500, padding: '0px', headerWidth: 500 });
 });
+
+test('keeps the chief footer return button the same size as the top return button', async ({ page }) => {
+    await install(page);
+    const measure = () =>
+        page.locator('.chief-page').evaluate((element) => {
+            const top = element.querySelector<HTMLElement>('.chief-top .chief-nav')!.getBoundingClientRect();
+            const bottom = element.querySelector<HTMLElement>('.chief-footer .chief-nav')!.getBoundingClientRect();
+            return {
+                top: { width: top.width, height: top.height },
+                bottom: { width: bottom.width, height: bottom.height },
+            };
+        });
+
+    await page.setViewportSize({ width: 1200, height: 900 });
+    await page.goto('/che/chief-center');
+    const desktop = await measure();
+    expect(desktop.bottom).toEqual(desktop.top);
+
+    await page.setViewportSize({ width: 500, height: 900 });
+    const mobile = await measure();
+    expect(mobile.bottom).toEqual(mobile.top);
+});

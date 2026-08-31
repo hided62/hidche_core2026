@@ -1237,6 +1237,32 @@ test('keeps the active survey title after voting without reopening the new-surve
     await expect(page.locator('.survey-notice')).toHaveCount(0);
 });
 
+test('keeps the survey footer close button the same size as the top close button', async ({ page }) => {
+    const state: NavigationFixture = {
+        officerLevel: 0,
+        permission: 0,
+        nationLevel: 0,
+        stage: 0,
+        npcMode: 1,
+        generalMeCalls: 0,
+        operations: [],
+    };
+    await installFixture(page, state);
+    await page.goto(`${basePath}/survey`);
+    for (const width of [1000, 500]) {
+        await page.setViewportSize({ width, height: 900 });
+        const geometry = await page.locator('.pageVote').evaluate((element) => {
+            const top = element.querySelector<HTMLElement>('.back_bar .back_btn')!.getBoundingClientRect();
+            const bottom = element.querySelector<HTMLElement>('.bottom_bar .back_btn')!.getBoundingClientRect();
+            return {
+                top: { width: top.width, height: top.height },
+                bottom: { width: bottom.width, height: bottom.height },
+            };
+        });
+        expect(geometry.bottom).toEqual(geometry.top);
+    }
+});
+
 test('notifies only for a new incoming private message and marks it read from the notice', async ({
     page,
 }, testInfo) => {

@@ -2454,3 +2454,27 @@ test('감찰부 keeps the selector interaction and shows the permission error pa
     await page.reload();
     await expect(page.getByRole('alert')).toContainText('권한이 부족합니다.');
 });
+
+test('감찰부 하단 창 닫기 버튼은 상단 버튼과 같은 크기를 유지한다', async ({ page }) => {
+    const head: FixtureState = { permission: 'head', myset: 3, settingMutations: [], accessPages: [] };
+    await install(page, head);
+    const measure = () =>
+        page.locator('.battle-page').evaluate((element) => {
+            const top = element.querySelector<HTMLElement>('.battle-top .battle-nav')!.getBoundingClientRect();
+            const bottom = element.querySelector<HTMLElement>('.battle-footer .battle-nav')!.getBoundingClientRect();
+            return {
+                top: { width: top.width, height: top.height },
+                bottom: { width: bottom.width, height: bottom.height },
+            };
+        });
+
+    await page.setViewportSize({ width: 1000, height: 900 });
+    await page.goto('battle-center');
+    await expect(page.getByRole('heading', { name: '감찰부' })).toBeVisible();
+    const desktop = await measure();
+    expect(desktop.bottom).toEqual(desktop.top);
+
+    await page.setViewportSize({ width: 500, height: 900 });
+    const mobile = await measure();
+    expect(mobile.bottom).toEqual(mobile.top);
+});

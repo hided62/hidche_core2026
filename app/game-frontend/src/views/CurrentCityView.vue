@@ -130,21 +130,6 @@ const commandBrief = (command: ReservedCommand): string =>
         </table>
         <p v-if="error" class="error" role="alert">{{ error }}</p>
         <template v-if="data && city">
-            <table class="legacy-table legacy-bg0 back-row">
-                <tbody>
-                    <tr>
-                        <td>
-                            <button
-                                class="legacy-button legacy-button--navigation back-link"
-                                type="button"
-                                @click="router.push('/')"
-                            >
-                                돌아가기
-                            </button>
-                        </td>
-                    </tr>
-                </tbody>
-            </table>
             <table class="legacy-table legacy-bg2 stats">
                 <colgroup>
                     <col class="label-col" />
@@ -387,9 +372,6 @@ const commandBrief = (command: ReservedCommand): string =>
 }
 .selector p {
     margin: 1em 0;
-}
-.back-row {
-    margin-top: 16px;
 }
 .stats {
     margin-top: 0;

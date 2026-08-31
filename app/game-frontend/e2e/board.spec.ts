@@ -294,6 +294,7 @@ test('matches the ref meeting-room geometry, typography, textures, and controls'
         return {
             container: rect('#container'),
             topBar: rect('.top-back-bar'),
+            topButton: rect('.top-back-bar .back-button'),
             titleLabel: rect('.form-label'),
             submitArticle: rect('#submitArticle'),
             articleAuthor: rect('.article-header .author-name'),
@@ -319,7 +320,7 @@ test('matches the ref meeting-room geometry, typography, textures, and controls'
         };
     });
 
-    expect(geometry.container).toMatchObject({ width: 1000, height: 397.3125 });
+    expect(geometry.container).toMatchObject({ width: 1000, height: 393.8125 });
     expect(geometry.topBar.height).toBe(32);
     expect(geometry.titleLabel.width).toBeCloseTo(83.33, 1);
     expect(geometry.titleLabel).toMatchObject({ y: 64.1875, height: 22.1875 });
@@ -333,7 +334,12 @@ test('matches the ref meeting-room geometry, typography, textures, and controls'
     expect(geometry.commentAuthor.width).toBe(120);
     expect(geometry.commentAuthor).toMatchObject({ y: 271.25, height: 20.1875 });
     expect(geometry.submitComment).toMatchObject({ y: 292.4375, height: 29.375 });
-    expect(geometry.bottomButton).toMatchObject({ x: 0, y: 361.8125, width: 71, height: 35.5 });
+    expect(geometry.bottomButton).toMatchObject({
+        x: 0,
+        y: 361.8125,
+        width: geometry.topButton.width,
+        height: geometry.topButton.height,
+    });
     expect(geometry.font.family).toContain('Pretendard');
     expect(geometry.font).toMatchObject({ size: '14px', lineHeight: '18.2px' });
     expect(geometry.whiteSpace).toBe('pre');
