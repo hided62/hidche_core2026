@@ -4,6 +4,7 @@ import MapViewer from './MapViewer.vue';
 import NationColorSelect from './NationColorSelect.vue';
 import { commandArgumentPresentation, resolveCommandArgumentMapTarget } from '../command/commandArgumentPresentation';
 import { commandCityOptions } from '../command/commandArgumentOptions';
+import { sortCommandGeneralOptions } from '../command/commandGeneralOptions';
 import {
     commandArgumentFieldContract,
     shouldPreserveCommandArgumentValue,
@@ -44,18 +45,7 @@ const visibleFields = computed(() => props.fields.filter((entry) => entry.kind !
 const amountPreset = computed(() => props.options.amountPresets?.[props.commandKey]);
 
 const sortGeneralOptions = (options: CommandOption[]): CommandOption[] => {
-    const result = [...options];
-    const resourceKey = values.isGold === false ? 'rice' : 'gold';
-    if (props.commandKey === 'che_포상') {
-        return result.sort((left, right) => (left[resourceKey] ?? 0) - (right[resourceKey] ?? 0));
-    }
-    if (props.commandKey === 'che_몰수') {
-        return result.sort((left, right) => (right[resourceKey] ?? 0) - (left[resourceKey] ?? 0));
-    }
-    if (props.commandKey === 'che_부대탈퇴지시') {
-        return result.sort((left, right) => Number(right.availableNow) - Number(left.availableNow));
-    }
-    return result;
+    return sortCommandGeneralOptions(props.commandKey, options, values.isGold !== false);
 };
 
 const optionsFor = (field: CommandInputField): CommandOption[] => {

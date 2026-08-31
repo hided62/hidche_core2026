@@ -175,6 +175,7 @@ const inputOptions = {
             {
                 value: 3,
                 label: '여포NPC (업)',
+                npcState: 2,
                 gold: 3000,
                 rice: 500,
                 crew: 1500,
@@ -199,6 +200,7 @@ const inputOptions = {
             {
                 value: 3,
                 label: '여포NPC (청룡대 · 업)',
+                npcState: 2,
                 crew: 1500,
                 troopId: 2,
                 description: '금 3,000 · 쌀 500 · 병력 1,500',
@@ -208,6 +210,7 @@ const inputOptions = {
             {
                 value: 3,
                 label: '여포NPC (아국 · 업)',
+                npcState: 2,
                 availableNow: true,
                 crew: 1500,
                 troopId: 2,
@@ -2513,10 +2516,10 @@ test('offers Ref amount presets and rich, command-specific general lists', async
     let generalList = form.getByTestId('general-target-list');
     await expect(form.locator('#command-arg-destGeneralId option')).toHaveText([
         '관우 (업)',
-        '여포NPC (업)',
         '장수 (업)',
+        '여포NPC (업)',
     ]);
-    await expect(generalList.locator('.target-option strong')).toHaveText(['관우 (업)', '여포NPC (업)', '장수 (업)']);
+    await expect(generalList.locator('.target-option strong')).toHaveText(['관우 (업)', '장수 (업)', '여포NPC (업)']);
     await expect(generalList.locator('.target-option').filter({ hasText: '여포NPC' }).locator('strong')).toHaveCSS(
         'color',
         'rgb(0, 255, 255)'
@@ -2525,7 +2528,7 @@ test('offers Ref amount presets and rich, command-specific general lists', async
     await expect(generalList).not.toContainText('아국');
     await expect(generalList).not.toContainText('탑승 부대');
     await form.getByRole('button', { name: '쌀', exact: true }).click();
-    await expect(generalList.locator('.target-option strong')).toHaveText(['장수 (업)', '여포NPC (업)', '관우 (업)']);
+    await expect(generalList.locator('.target-option strong')).toHaveText(['장수 (업)', '관우 (업)', '여포NPC (업)']);
     await generalList.locator('.target-option').filter({ hasText: '여포NPC' }).click();
     const awardResponse = page.waitForResponse((response) => response.url().includes('turns.reserved.setNationBulk'));
     await picker.getByRole('button', { name: '입력', exact: true }).click();
@@ -2540,10 +2543,10 @@ test('offers Ref amount presets and rich, command-specific general lists', async
     generalList = form.getByTestId('general-target-list');
     await expect(form.locator('#command-arg-destGeneralId option')).toHaveText([
         '장수 (업)',
-        '여포NPC (업)',
         '관우 (업)',
+        '여포NPC (업)',
     ]);
-    await expect(generalList.locator('.target-option strong')).toHaveText(['장수 (업)', '여포NPC (업)', '관우 (업)']);
+    await expect(generalList.locator('.target-option strong')).toHaveText(['장수 (업)', '관우 (업)', '여포NPC (업)']);
     await expect(generalList).not.toContainText('아국');
     await expect(generalList).not.toContainText('탑승 부대');
     await page.goto('/che/chief-center');
@@ -2574,9 +2577,13 @@ test('offers Ref amount presets and rich, command-specific general lists', async
     await picker.getByRole('button', { name: /부대 탈퇴 지시/ }).click();
     form = picker.getByTestId('command-argument-form');
     generalList = form.getByTestId('general-target-list');
-    await expect(generalList.locator('.target-option strong').first()).toHaveText('여포NPC (아국 · 업)');
-    await expect(generalList.locator('.target-option').first().locator('.target-state')).toHaveText('우선 대상');
-    await expect(generalList.locator('.target-option').nth(1).locator('.target-state')).toHaveText('현재 불가');
+    await expect(generalList.locator('.target-option strong')).toHaveText([
+        '장수 (아국 · 업)',
+        '관우 (아국 · 업)',
+        '여포NPC (아국 · 업)',
+    ]);
+    await expect(generalList.locator('.target-option').first().locator('.target-state')).toHaveText('현재 불가');
+    await expect(generalList.locator('.target-option').nth(2).locator('.target-state')).toHaveText('우선 대상');
 
     await page.goto('/che/chief-center');
     await page.getByRole('button', { name: '5턴 명령 입력', exact: true }).click();
@@ -2603,8 +2610,8 @@ test('offers Ref amount presets and rich, command-specific general lists', async
 
     await page.setViewportSize({ width: 500, height: 900 });
     const mobilePersonnelCases = [
-        { turn: 5, command: '포상', labels: ['관우 (업)', '여포NPC (업)', '장수 (업)'] },
-        { turn: 6, command: '몰수', labels: ['장수 (업)', '여포NPC (업)', '관우 (업)'] },
+        { turn: 5, command: '포상', labels: ['관우 (업)', '장수 (업)', '여포NPC (업)'] },
+        { turn: 6, command: '몰수', labels: ['장수 (업)', '관우 (업)', '여포NPC (업)'] },
         {
             turn: 7,
             command: '발령',
