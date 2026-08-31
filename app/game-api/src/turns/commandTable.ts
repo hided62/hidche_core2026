@@ -26,6 +26,7 @@ import { getTechAbility, getTechLevel, isCrewTypeAvailable } from '@sammo-ts/log
 import { asRecord, isRecord } from '@sammo-ts/common';
 
 import type { CityRow, GeneralRow, NationRow, WorldStateRow } from '../context.js';
+import { formatCrewTypeRequirement } from '../services/gameDisplayNames.js';
 import {
     buildTurnCommandInputFields,
     loadTurnCommandSpecs,
@@ -558,7 +559,10 @@ export const buildRecruitmentCommandInfo = (options: {
                     avoid: crewType.avoid,
                     baseCost: displayCost.gold,
                     baseRice: displayCost.rice,
-                    info: [...crewType.info],
+                    info: [
+                        ...crewType.info,
+                        ...crewType.requirements.map(formatCrewTypeRequirement).filter(Boolean),
+                    ],
                 };
             }),
     }));

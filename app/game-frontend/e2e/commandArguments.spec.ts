@@ -277,7 +277,12 @@ const inputOptions = {
                         avoid: 20,
                         baseCost: 13.8,
                         baseRice: 11.5,
-                        info: ['강력하지만 기술이 필요합니다.'],
+                        info: [
+                            '강력하지만 기술이 필요합니다.',
+                            '기술력 2000 이상 필요',
+                            '중원 지역 소유시 가능',
+                            '저 소유시 가능',
+                        ],
                     },
                 ],
             },
@@ -1905,6 +1910,9 @@ test('uses a Ref-style full recruitment page without horizontal overflow on desk
     const unavailable = form.getByRole('button', { name: '정예병 선택 불가', exact: true });
     await expect(unavailable).toBeVisible();
     await expect(unavailable.locator('.crew-name')).toHaveCSS('background-color', 'rgb(201, 0, 0)');
+    await expect(unavailable.locator('.crew-info')).toHaveText(
+        '강력하지만 기술이 필요합니다.기술력 2000 이상 필요중원 지역 소유시 가능저 소유시 가능'
+    );
 
     const desktopGeometry = await form.evaluate(async (element) => {
         const row = element.querySelector('.crew-row');

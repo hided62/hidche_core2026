@@ -676,7 +676,11 @@ describe('buildTurnCommandTable', () => {
                     magicCoef: 0,
                     cost: 12,
                     rice: 10,
-                    requirements: [{ type: 'ReqTech', tech: 2000 }],
+                    requirements: [
+                        { type: 'ReqTech', tech: 2000 },
+                        { type: 'ReqRegions', regions: ['중원'] },
+                        { type: 'ReqCities', cities: ['TestCity'] },
+                    ],
                     attackCoef: {},
                     defenceCoef: {},
                     info: ['강력하지만 기술이 필요합니다.'],
@@ -734,7 +738,12 @@ describe('buildTurnCommandTable', () => {
             special: true,
             attack: 175,
             defence: 225,
-            info: ['강력하지만 기술이 필요합니다.'],
+            info: [
+                '강력하지만 기술이 필요합니다.',
+                '기술력 2000 이상 필요',
+                '중원 지역 소유시 가능',
+                'TestCity 소유시 가능',
+            ],
         });
     });
 });
