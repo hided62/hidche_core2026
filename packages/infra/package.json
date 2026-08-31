@@ -8,8 +8,8 @@
     "scripts": {
         "build": "tsdown -c ../../tsdown.config.ts -F @sammo-ts/infra",
         "dev": "tsdown -c ../../tsdown.config.ts -F @sammo-ts/infra --watch",
-        "lint": "eslint .",
-        "lint:fix": "eslint . --fix",
+        "lint": "pnpm -w lint:target packages/infra",
+        "lint:fix": "pnpm -w lint:target:fix packages/infra",
         "test": "vitest run --config vitest.config.ts",
         "prisma:generate": "pnpm prisma:generate:game && pnpm prisma:generate:gateway",
         "typecheck": "pnpm -w tsc7 -b packages/infra/tsconfig.json",

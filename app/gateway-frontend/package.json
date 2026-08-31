@@ -13,8 +13,8 @@
         "build:release": "vite build",
         "typecheck:release": "vue-tsc --noEmit",
         "preview": "vite preview",
-        "lint": "eslint .",
-        "lint:fix": "eslint . --fix",
+        "lint": "pnpm -w lint:target app/gateway-frontend",
+        "lint:fix": "pnpm -w lint:target:fix app/gateway-frontend",
         "typecheck": "vue-tsc --noEmit"
     },
     "dependencies": {

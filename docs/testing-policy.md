@@ -19,6 +19,11 @@ pnpm test
 pnpm build
 ```
 
+루트 lint는 ESLint의 일반 규칙과 Vue 규칙을 먼저 실행하고, type-aware Promise
+규칙은 TypeScript 파일에 Oxlint, Vue SFC에 ESLint를 사용합니다. 전체 cold 경로를
+확인할 때는 `pnpm lint:uncached`, package 하나는
+`pnpm --filter <package-name> lint`를 사용합니다.
+
 루트 `pnpm test`와 `pnpm build`는 간단 출력이 기본입니다. Turbo는 실패한 task의
 로그를 남기고 성공 task의 본문을 생략하며, Vitest를 package에서 직접 실행할 때도
 `minimal` reporter를 사용합니다. 테스트별 진행과 성공 task 로그까지 필요한 진단은

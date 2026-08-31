@@ -15,8 +15,8 @@
     "scripts": {
         "build": "tsdown -c ../../tsdown.config.ts -F @sammo-ts/logic",
         "dev": "tsdown -c ../../tsdown.config.ts -F @sammo-ts/logic --watch",
-        "lint": "eslint .",
-        "lint:fix": "eslint . --fix",
+        "lint": "pnpm -w lint:target packages/logic",
+        "lint:fix": "pnpm -w lint:target:fix packages/logic",
         "test": "vitest run --config vitest.config.ts",
         "typecheck": "pnpm -w tsc7 -b packages/logic/tsconfig.json"
     },

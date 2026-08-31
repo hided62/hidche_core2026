@@ -1,0 +1,36 @@
+{
+    "$schema": "./node_modules/oxlint/configuration_schema.json",
+    "categories": {
+        "correctness": "off"
+    },
+    "plugins": ["typescript"],
+    "options": {
+        "typeAware": true,
+        "respectEslintDisableDirectives": true
+    },
+    "rules": {
+        "@typescript-eslint/no-floating-promises": "error",
+        "@typescript-eslint/no-misused-promises": [
+            "error",
+            {
+                "checksVoidReturn": {
+                    "arguments": false,
+                    "attributes": false
+                }
+            }
+        ]
+    },
+    "ignorePatterns": [
+        "**/dist/**",
+        "**/node_modules/**",
+        "**/*.d.ts",
+        "**/*.js",
+        "**/*.mjs",
+        "**/*.cjs",
+        "**/*.vue",
+        "legacy/**",
+        "packages/infra/prisma/client/**",
+        "**/generated/**",
+        ".pnpm-store/**"
+    ]
+}

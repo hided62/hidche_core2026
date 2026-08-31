@@ -8,12 +8,15 @@ import globals from 'globals';
 
 // projectService reloads every TS project when this value changes between TS and Vue files.
 const extraFileExtensions = ['.vue'];
-const typedParserOptions = {
-    extraFileExtensions,
-    jsDocParsingMode: 'none',
-    projectService: true,
-    tsconfigRootDir: import.meta.dirname,
-};
+const typeAware = process.env.ESLINT_TYPE_AWARE !== '0';
+const typedParserOptions = typeAware
+    ? {
+          extraFileExtensions,
+          jsDocParsingMode: 'none',
+          projectService: true,
+          tsconfigRootDir: import.meta.dirname,
+      }
+    : {};
 
 export default tseslint.config(
     {
@@ -68,6 +71,8 @@ export default tseslint.config(
     {
         files: ['**/*.{ts,tsx,vue}'],
         rules: {
+            // TypeScript resolves ambient and imported names more accurately than ESLint's base rule.
+            'no-undef': 'off',
             '@typescript-eslint/no-unused-vars': [
                 'error',
                 {
@@ -84,9 +89,9 @@ export default tseslint.config(
                     fixStyle: 'separate-type-imports',
                 },
             ],
-            '@typescript-eslint/no-floating-promises': 'error',
+            '@typescript-eslint/no-floating-promises': typeAware ? 'error' : 'off',
             '@typescript-eslint/no-misused-promises': [
-                'error',
+                typeAware ? 'error' : 'off',
                 {
                     checksVoidReturn: {
                         arguments: false,
@@ -110,8 +115,7 @@ export default tseslint.config(
                 {
                     object: 'Math',
                     property: 'random',
-                    message:
-                        'Authoritative game state must use an explicitly seeded RandUtil/LiteHashDRBG stream.',
+                    message: 'Authoritative game state must use an explicitly seeded RandUtil/LiteHashDRBG stream.',
                 },
             ],
         },

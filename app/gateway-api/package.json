@@ -18,8 +18,8 @@
         "build": "tsdown -c ../../tsdown.config.ts -F @sammo-ts/gateway-api",
         "dev": "tsdown -c ../../tsdown.config.ts -F @sammo-ts/gateway-api --watch",
         "orchestrator": "GATEWAY_ROLE=orchestrator node dist/index.js",
-        "lint": "eslint .",
-        "lint:fix": "eslint . --fix",
+        "lint": "pnpm -w lint:target app/gateway-api",
+        "lint:fix": "pnpm -w lint:target:fix app/gateway-api",
         "test": "vitest run --config vitest.config.ts",
         "typecheck": "pnpm -w tsc7 -b app/gateway-api/tsconfig.json"
     },

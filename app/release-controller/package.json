@@ -11,8 +11,8 @@
         "run-once": "node dist/index.js run-once",
         "status": "node dist/index.js status",
         "self-upgrade": "node dist/index.js self-upgrade",
-        "lint": "eslint .",
-        "lint:fix": "eslint . --fix",
+        "lint": "pnpm -w lint:target app/release-controller",
+        "lint:fix": "pnpm -w lint:target:fix app/release-controller",
         "test": "vitest run --config vitest.config.ts",
         "typecheck": "pnpm -w tsc7 -b app/release-controller/tsconfig.json"
     },

@@ -28,8 +28,8 @@
         "test:e2e:npc-possession-live": "pnpm --filter @sammo-ts/infra prisma:generate && pnpm --filter @sammo-ts/common build && pnpm --filter @sammo-ts/logic build && pnpm --filter @sammo-ts/infra build && pnpm --filter @sammo-ts/game-engine build && pnpm --filter @sammo-ts/game-api build && playwright test --config e2e/npcPossession.live.playwright.config.mjs --tsconfig e2e/playwright.live.tsconfig.json",
         "test:e2e:die-on-prestart-live": "pnpm --filter @sammo-ts/infra prisma:generate && pnpm --filter @sammo-ts/common build && pnpm --filter @sammo-ts/logic build && pnpm --filter @sammo-ts/infra build && pnpm --filter @sammo-ts/game-engine build && pnpm --filter @sammo-ts/game-api build && playwright test --config e2e/dieOnPrestart.live.playwright.config.mjs --tsconfig e2e/playwright.live.tsconfig.json",
         "test:e2e:default-recruit-commands-live": "pnpm --filter @sammo-ts/infra prisma:generate && pnpm --filter @sammo-ts/common build && pnpm --filter @sammo-ts/logic build && pnpm --filter @sammo-ts/infra build && pnpm --filter @sammo-ts/game-engine build && pnpm --filter @sammo-ts/game-api build && playwright test --config e2e/defaultRecruitCommands.live.playwright.config.mjs --tsconfig e2e/playwright.live.tsconfig.json",
-        "lint": "eslint .",
-        "lint:fix": "eslint . --fix",
+        "lint": "pnpm -w lint:target app/game-frontend",
+        "lint:fix": "pnpm -w lint:target:fix app/game-frontend",
         "typecheck": "vue-tsc --noEmit"
     },
     "dependencies": {

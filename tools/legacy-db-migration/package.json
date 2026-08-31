@@ -8,8 +8,8 @@
     },
     "scripts": {
         "build": "tsdown src/cli.ts --no-config --format esm --out-dir dist --dts --sourcemap --target node22 --platform node",
-        "lint": "eslint .",
-        "lint:fix": "eslint . --fix",
+        "lint": "pnpm -w lint:target tools/legacy-db-migration",
+        "lint:fix": "pnpm -w lint:target:fix tools/legacy-db-migration",
         "test": "vitest run --config vitest.config.ts",
         "typecheck": "pnpm -w tsc7 -b tools/legacy-db-migration/tsconfig.json",
         "migrate": "tsx src/cli.ts"

@@ -175,6 +175,11 @@ pnpm build
 pnpm test:integration
 ```
 
+`pnpm lint`는 ESLint의 일반 TypeScript/Vue 검사, Oxlint의 type-aware TypeScript
+Promise 검사, ESLint의 type-aware Vue Promise 검사를 메모리 경계에 맞게 나누어
+실행합니다. cache를 제외한 전체 검증은 `pnpm lint:uncached`, package 하나만
+검사할 때는 기존처럼 `pnpm --filter <package-name> lint`를 사용합니다.
+
 루트 `test`와 `build`는 Codex와 일반 개발 검증에서 성공 로그를 줄이는 간단 출력이
 기본입니다. 테스트별 진행과 전체 Turbo task 로그가 필요한 실패 진단에는
 `pnpm test-verbose`, `pnpm build-verbose`를 사용합니다. Gateway 서버 빌드 워커는

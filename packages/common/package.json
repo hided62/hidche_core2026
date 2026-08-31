@@ -62,8 +62,8 @@
     "scripts": {
         "build": "tsdown -c ./tsdown.config.ts",
         "dev": "tsdown -c ./tsdown.config.ts --watch",
-        "lint": "eslint .",
-        "lint:fix": "eslint . --fix",
+        "lint": "pnpm -w lint:target packages/common",
+        "lint:fix": "pnpm -w lint:target:fix packages/common",
         "test": "vitest run --config vitest.config.ts",
         "typecheck": "pnpm -w tsc7 -b packages/common/tsconfig.json"
     },
