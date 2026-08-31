@@ -729,9 +729,6 @@ onUnmounted(() => {
                     </div>
 
                     <div class="stat-actions" role="group" aria-label="능력치 빠른 설정">
-                        <button class="legacy-button legacy-button--navigation" type="button" @click="applyRandomStats">
-                            랜덤형
-                        </button>
                         <button
                             class="legacy-button legacy-button--navigation"
                             type="button"
@@ -748,6 +745,9 @@ onUnmounted(() => {
                         </button>
                         <button class="legacy-button legacy-button--navigation" type="button" @click="applyPowintStats">
                             무력지력형
+                        </button>
+                        <button class="legacy-button legacy-button--navigation" type="button" @click="applyRandomStats">
+                            랜덤형
                         </button>
                     </div>
 
@@ -1404,14 +1404,14 @@ onUnmounted(() => {
 }
 
 .stat-actions {
-    display: flex;
-    flex-wrap: wrap;
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
     gap: 8px;
     margin-top: 12px;
 }
 
 .stat-actions button {
-    flex: 1 1 140px;
+    width: 100%;
     height: 40px;
     min-height: 40px;
     padding: 8px 14px;

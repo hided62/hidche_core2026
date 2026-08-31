@@ -179,7 +179,19 @@ test('prioritizes core general fields and keeps context and inheritance progress
     await expect(page.getByLabel('성격')).toBeVisible();
     await expect(page.locator('.create-form').getByLabel('통솔')).toHaveValue('55');
     const statActions = page.getByRole('group', { name: '능력치 빠른 설정' });
-    await expect(statActions.getByRole('button')).toHaveText(['랜덤형', '통솔무력형', '통솔지력형', '무력지력형']);
+    await expect(statActions.getByRole('button')).toHaveText(['통솔무력형', '통솔지력형', '무력지력형', '랜덤형']);
+    const desktopStatButtonBoxes = await statActions.getByRole('button').evaluateAll((buttons) =>
+        buttons.map((button) => {
+            const rect = button.getBoundingClientRect();
+            return { left: rect.left, top: rect.top, width: rect.width, height: rect.height };
+        })
+    );
+    expect(desktopStatButtonBoxes).toHaveLength(4);
+    expect(desktopStatButtonBoxes[0]?.top).toBe(desktopStatButtonBoxes[1]?.top);
+    expect(desktopStatButtonBoxes[2]?.top).toBe(desktopStatButtonBoxes[3]?.top);
+    expect(desktopStatButtonBoxes[2]?.top).toBeGreaterThan(desktopStatButtonBoxes[0]?.top ?? 0);
+    expect(desktopStatButtonBoxes[0]?.left).toBe(desktopStatButtonBoxes[2]?.left);
+    expect(desktopStatButtonBoxes[1]?.left).toBe(desktopStatButtonBoxes[3]?.left);
     const randomButton = statActions.getByRole('button', { name: '랜덤형', exact: true });
     const defaultButtonStyle = await randomButton.evaluate((element) => {
         const rect = element.getBoundingClientRect();
@@ -384,11 +396,16 @@ test('keeps the primary creation flow readable without horizontal overflow on mo
         .evaluateAll((buttons) =>
             buttons.map((button) => {
                 const rect = button.getBoundingClientRect();
-                return { width: rect.width, height: rect.height };
+                return { left: rect.left, top: rect.top, width: rect.width, height: rect.height };
             })
         );
     expect(mobileStatButtons).toHaveLength(4);
     expect(mobileStatButtons.every(({ width, height }) => width >= 160 && height === 40)).toBe(true);
+    expect(mobileStatButtons[0]?.top).toBe(mobileStatButtons[1]?.top);
+    expect(mobileStatButtons[2]?.top).toBe(mobileStatButtons[3]?.top);
+    expect(mobileStatButtons[2]?.top).toBeGreaterThan(mobileStatButtons[0]?.top ?? 0);
+    expect(mobileStatButtons[0]?.left).toBe(mobileStatButtons[2]?.left);
+    expect(mobileStatButtons[1]?.left).toBe(mobileStatButtons[3]?.left);
     await expect(page.locator('.advanced-options')).not.toHaveAttribute('open');
     await page.getByRole('tab', { name: '장수 목록' }).click();
     const mobileGeneralRows = page.locator('.context-general-table tbody tr');
