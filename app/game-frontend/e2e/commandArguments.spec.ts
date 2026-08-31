@@ -128,80 +128,80 @@ const inputOptions = {
         che_포상: [
             {
                 value: 1,
-                label: '장수 (아국 · 업)',
+                label: '장수 (업)',
                 gold: 5000,
                 rice: 400,
                 crew: 500,
-                description: '금 5,000 · 쌀 400 · 병력 500 · 탑승 부대 없음',
+                description: '금 5,000 · 쌀 400 · 병력 500',
             },
             {
                 value: 2,
-                label: '관우 (아국 · 업)',
+                label: '관우 (업)',
                 gold: 100,
                 rice: 4000,
                 crew: 1200,
                 troopId: 2,
-                description: '금 100 · 쌀 4,000 · 병력 1,200 · 탑승 부대 청룡대 (부대장)',
+                description: '금 100 · 쌀 4,000 · 병력 1,200',
             },
             {
                 value: 3,
-                label: '여포NPC (아국 · 업)',
+                label: '여포NPC (업)',
                 npcState: 2,
                 gold: 3000,
                 rice: 500,
                 crew: 1500,
                 troopId: 2,
-                description: '금 3,000 · 쌀 500 · 병력 1,500 · 탑승 부대 청룡대',
+                description: '금 3,000 · 쌀 500 · 병력 1,500',
             },
         ],
         che_몰수: [
             {
                 value: 1,
-                label: '장수 (아국 · 업)',
+                label: '장수 (업)',
                 gold: 5000,
                 rice: 400,
                 crew: 500,
-                description: '금 5,000 · 쌀 400 · 병력 500 · 탑승 부대 없음',
+                description: '금 5,000 · 쌀 400 · 병력 500',
             },
             {
                 value: 2,
-                label: '관우 (아국 · 업)',
+                label: '관우 (업)',
                 gold: 100,
                 rice: 4000,
                 crew: 1200,
                 troopId: 2,
-                description: '금 100 · 쌀 4,000 · 병력 1,200 · 탑승 부대 청룡대 (부대장)',
+                description: '금 100 · 쌀 4,000 · 병력 1,200',
             },
             {
                 value: 3,
-                label: '여포NPC (아국 · 업)',
+                label: '여포NPC (업)',
                 gold: 3000,
                 rice: 500,
                 crew: 1500,
                 troopId: 2,
-                description: '금 3,000 · 쌀 500 · 병력 1,500 · 탑승 부대 청룡대',
+                description: '금 3,000 · 쌀 500 · 병력 1,500',
             },
         ],
         che_발령: [
             {
                 value: 1,
-                label: '장수 (아국 · 업)',
+                label: '장수 (부대 없음 · 업)',
                 crew: 500,
-                description: '금 5,000 · 쌀 400 · 병력 500 · 탑승 부대 없음',
+                description: '금 5,000 · 쌀 400 · 병력 500',
             },
             {
                 value: 2,
-                label: '관우 (아국 · 업)',
+                label: '관우 (청룡대 (부대장) · 업)',
                 crew: 1200,
                 troopId: 2,
-                description: '금 100 · 쌀 4,000 · 병력 1,200 · 탑승 부대 청룡대 (부대장)',
+                description: '금 100 · 쌀 4,000 · 병력 1,200',
             },
             {
                 value: 3,
-                label: '여포NPC (아국 · 업)',
+                label: '여포NPC (청룡대 · 업)',
                 crew: 1500,
                 troopId: 2,
-                description: '금 3,000 · 쌀 500 · 병력 1,500 · 탑승 부대 청룡대',
+                description: '금 3,000 · 쌀 500 · 병력 1,500',
             },
         ],
         che_부대탈퇴지시: [
@@ -2485,22 +2485,21 @@ test('offers Ref amount presets and rich, command-specific general lists', async
     await expect(amount).toHaveValue('1375');
 
     let generalList = form.getByTestId('general-target-list');
-    await expect(generalList.locator('.target-option strong')).toHaveText([
-        '관우 (아국 · 업)',
-        '여포NPC (아국 · 업)',
-        '장수 (아국 · 업)',
+    await expect(form.locator('#command-arg-destGeneralId option')).toHaveText([
+        '관우 (업)',
+        '여포NPC (업)',
+        '장수 (업)',
     ]);
+    await expect(generalList.locator('.target-option strong')).toHaveText(['관우 (업)', '여포NPC (업)', '장수 (업)']);
     await expect(generalList.locator('.target-option').filter({ hasText: '여포NPC' }).locator('strong')).toHaveCSS(
         'color',
         'rgb(0, 255, 255)'
     );
-    await expect(generalList).toContainText('금 100 · 쌀 4,000 · 병력 1,200 · 탑승 부대 청룡대 (부대장)');
+    await expect(generalList).toContainText('금 100 · 쌀 4,000 · 병력 1,200');
+    await expect(generalList).not.toContainText('아국');
+    await expect(generalList).not.toContainText('탑승 부대');
     await form.getByRole('button', { name: '쌀', exact: true }).click();
-    await expect(generalList.locator('.target-option strong')).toHaveText([
-        '장수 (아국 · 업)',
-        '여포NPC (아국 · 업)',
-        '관우 (아국 · 업)',
-    ]);
+    await expect(generalList.locator('.target-option strong')).toHaveText(['장수 (업)', '여포NPC (업)', '관우 (업)']);
     await generalList.locator('.target-option').filter({ hasText: '여포NPC' }).click();
     const awardResponse = page.waitForResponse((response) => response.url().includes('turns.reserved.setNationBulk'));
     await picker.getByRole('button', { name: '입력', exact: true }).click();
@@ -2513,19 +2512,34 @@ test('offers Ref amount presets and rich, command-specific general lists', async
     await picker.getByRole('button', { name: /몰수/ }).click();
     form = picker.getByTestId('command-argument-form');
     generalList = form.getByTestId('general-target-list');
-    await expect(generalList.locator('.target-option strong')).toHaveText([
-        '장수 (아국 · 업)',
-        '여포NPC (아국 · 업)',
-        '관우 (아국 · 업)',
+    await expect(form.locator('#command-arg-destGeneralId option')).toHaveText([
+        '장수 (업)',
+        '여포NPC (업)',
+        '관우 (업)',
     ]);
-
+    await expect(generalList.locator('.target-option strong')).toHaveText(['장수 (업)', '여포NPC (업)', '관우 (업)']);
+    await expect(generalList).not.toContainText('아국');
+    await expect(generalList).not.toContainText('탑승 부대');
     await page.goto('/che/chief-center');
     await page.getByRole('button', { name: '3턴 명령 입력', exact: true }).click();
     picker = page.getByTestId('command-picker');
     await picker.getByRole('button', { name: /^(?:국가:)?인사$/, exact: true }).click();
     await picker.getByRole('button', { name: /발령/ }).click();
     form = picker.getByTestId('command-argument-form');
-    await expect(form.getByTestId('general-target-list')).toContainText('병력 1,200 · 탑승 부대 청룡대 (부대장)');
+    generalList = form.getByTestId('general-target-list');
+    await expect(form.locator('#command-arg-destGeneralId option')).toHaveText([
+        '장수 (부대 없음 · 업)',
+        '관우 (청룡대 (부대장) · 업)',
+        '여포NPC (청룡대 · 업)',
+    ]);
+    await expect(generalList.locator('.target-option strong')).toHaveText([
+        '장수 (부대 없음 · 업)',
+        '관우 (청룡대 (부대장) · 업)',
+        '여포NPC (청룡대 · 업)',
+    ]);
+    await expect(generalList).not.toContainText('아국');
+    await expect(generalList).not.toContainText('탑승 부대');
+    await picker.screenshot({ path: test.info().outputPath('chief-assignment-option-format-desktop.png') });
 
     await page.goto('/che/chief-center');
     await page.getByRole('button', { name: '4턴 명령 입력', exact: true }).click();
@@ -2560,6 +2574,34 @@ test('offers Ref amount presets and rich, command-specific general lists', async
     expect(serialized).toContain('"destGeneralId":3');
     expect(serialized).toContain('"amountList":[20000,1370]');
     await page.screenshot({ path: test.info().outputPath('chief-ref-guidance-controls.png'), fullPage: true });
+
+    await page.setViewportSize({ width: 500, height: 900 });
+    const mobilePersonnelCases = [
+        { turn: 5, command: '포상', labels: ['관우 (업)', '여포NPC (업)', '장수 (업)'] },
+        { turn: 6, command: '몰수', labels: ['장수 (업)', '여포NPC (업)', '관우 (업)'] },
+        {
+            turn: 7,
+            command: '발령',
+            labels: ['장수 (부대 없음 · 업)', '관우 (청룡대 (부대장) · 업)', '여포NPC (청룡대 · 업)'],
+        },
+    ];
+    for (const entry of mobilePersonnelCases) {
+        await page.goto('/che/chief-center');
+        await page.getByRole('button', { name: `${entry.turn + 1}턴 명령 입력`, exact: true }).click();
+        picker = page.getByTestId('command-picker');
+        await picker.getByRole('button', { name: /^(?:국가:)?인사$/, exact: true }).click();
+        await picker.getByRole('button', { name: new RegExp(entry.command) }).click();
+        form = picker.getByTestId('command-argument-form');
+        await expect(form.locator('#command-arg-destGeneralId option')).toHaveText(entry.labels);
+        await expect(form.getByTestId('general-target-list')).not.toContainText('아국');
+    }
+    const mobileGeometry = await picker.evaluate((element) => ({
+        pickerWidth: element.getBoundingClientRect().width,
+        pickerOverflow: element.scrollWidth - element.clientWidth,
+        documentOverflow: document.documentElement.scrollWidth - document.documentElement.clientWidth,
+    }));
+    expect(mobileGeometry).toEqual({ pickerWidth: 500, pickerOverflow: 0, documentOverflow: 0 });
+    await page.screenshot({ path: test.info().outputPath('chief-personnel-option-format-mobile.png'), fullPage: true });
 });
 
 test('fits the city map option window inside the Ref-compatible 500px mobile page', async ({ page }) => {

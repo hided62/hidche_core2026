@@ -56,27 +56,36 @@ export const buildRefGeneralTargetOptions = (options: {
 }): RefGeneralTargetOptions => {
     const toOption = (entry: GeneralTargetSource, action?: string): TurnCommandOption => {
         const troopName = entry.troopId ? options.troopNames?.get(entry.troopId) : undefined;
+        const cityName = options.cityNames.get(entry.cityId) ?? '재야';
+        const troopLabel = entry.troopId
+            ? `${troopName ?? `#${entry.troopId}`}${entry.troopId === entry.id ? ' (부대장)' : ''}`
+            : '부대 없음';
         const isTroopMember = Boolean(entry.troopId && entry.troopId !== entry.id);
         const isTroopExit = action === 'che_부대탈퇴지시';
         const availableNow = isTroopExit ? isTroopMember && entry.id !== options.actorId : undefined;
+        const label = (() => {
+            if (action === 'che_발령') return `${entry.name} (${troopLabel} · ${cityName})`;
+            if (action === 'che_포상' || action === 'che_몰수') return `${entry.name} (${cityName})`;
+            return `${entry.name} (${options.nationNames.get(entry.nationId) ?? '무소속'} · ${cityName})`;
+        })();
         const details = [
             entry.gold === undefined ? null : `금 ${entry.gold.toLocaleString()}`,
             entry.rice === undefined ? null : `쌀 ${entry.rice.toLocaleString()}`,
             entry.crew === undefined ? null : `병력 ${entry.crew.toLocaleString()}`,
             entry.train === undefined ? null : `훈련 ${entry.train.toLocaleString()}`,
             entry.atmos === undefined ? null : `사기 ${entry.atmos.toLocaleString()}`,
-            entry.troopId
-                ? `탑승 부대 ${troopName ?? `#${entry.troopId}`}${entry.troopId === entry.id ? ' (부대장)' : ''}`
-                : '탑승 부대 없음',
+            action === 'che_발령' || action === 'che_포상' || action === 'che_몰수'
+                ? null
+                : entry.troopId
+                  ? `탑승 부대 ${troopLabel}`
+                  : '탑승 부대 없음',
         ].filter((value): value is string => Boolean(value));
         if (isTroopExit) {
             details.unshift(availableNow ? '현재 탈퇴 지시 가능' : '현재 탈퇴 지시 불가');
         }
         return {
             value: entry.id,
-            label: `${entry.name} (${options.nationNames.get(entry.nationId) ?? '무소속'} · ${
-                options.cityNames.get(entry.cityId) ?? '재야'
-            })`,
+            label,
             description: details.join(' · '),
             ...(availableNow === undefined ? {} : { availableNow }),
             ...(entry.gold === undefined ? {} : { gold: entry.gold }),
