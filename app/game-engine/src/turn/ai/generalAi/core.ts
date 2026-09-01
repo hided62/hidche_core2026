@@ -488,6 +488,23 @@ export class GeneralAI {
         return message;
     }
 
+    syncGeneralAfterNationAction(general: TurnGeneral): void {
+        const meta = { ...general.meta } as Record<string, unknown>;
+        for (const key of [
+            'fullLeadership',
+            'fullStrength',
+            'fullIntelligence',
+            'effectiveLeadership',
+            'effectiveStrength',
+            'effectiveIntelligence',
+        ]) {
+            if (Object.prototype.hasOwnProperty.call(this.general.meta, key)) {
+                meta[key] = this.general.meta[key];
+            }
+        }
+        this.general = { ...general, meta: meta as TurnGeneral['meta'] };
+    }
+
     chooseGeneralTurn(reservedTurn: ReservedTurnEntry): AiCommandCandidate | null {
         this.updateInstance();
         if (!this.worldRef) {

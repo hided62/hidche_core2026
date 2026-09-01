@@ -1994,6 +1994,10 @@ export const createReservedTurnHandler = async (options: {
                 // The following general command therefore observes and adds to
                 // those fractions before the turn's final persistence boundary.
                 worldOverlay?.syncGeneral(currentGeneral);
+                // Ref keeps one mutable General object across nation/general AI
+                // selection. Core uses immutable patches, so carry the executed
+                // nation action back into the shared AI without resetting its RNG.
+                sharedAi?.syncGeneralAfterNationAction(currentGeneral);
                 if (
                     worldView &&
                     (process.env.CORE_AI_TRACE_GENERAL_IDS?.split(',') ?? []).includes(String(currentGeneral.id))
