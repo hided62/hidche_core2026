@@ -268,12 +268,13 @@ export const applyLegacyGeneralProgression = (
 const resolveConstraintEnv = (
     world: TurnWorldState,
     scenarioMeta: ScenarioMeta | undefined,
-    env: TurnCommandEnv
+    env: TurnCommandEnv,
+    worldConfig: Record<string, unknown>
 ): Record<string, unknown> => {
     const worldMeta = asRecord(world.meta);
     const startYear = typeof scenarioMeta?.startYear === 'number' ? scenarioMeta.startYear : undefined;
     const relYear = typeof startYear === 'number' ? world.currentYear - startYear : undefined;
-    const joinModeRaw = worldMeta.join_mode ?? worldMeta.joinMode;
+    const joinModeRaw = worldConfig.join_mode ?? worldConfig.joinMode ?? worldMeta.join_mode ?? worldMeta.joinMode;
     const joinMode = joinModeRaw === 'onlyRandom' ? 'onlyRandom' : 'full';
     const killturnRaw = worldMeta.killturn;
     const killturn =
@@ -1037,7 +1038,12 @@ export const createReservedTurnHandler = async (options: {
             const worldOverlay = worldRef ? createWorldOverlay(worldRef) : null;
             const worldView = worldOverlay?.view ?? worldRef;
             const baseConstraintEnv = {
-                ...resolveConstraintEnv(context.world, options.scenarioMeta, env),
+                ...resolveConstraintEnv(
+                    context.world,
+                    options.scenarioMeta,
+                    env,
+                    options.getWorld()?.getWorldConfig() ?? asRecord(options.scenarioConfig)
+                ),
                 ...(options.map ? { map: options.map } : {}),
                 ...(options.unitSet ? { unitSet: options.unitSet } : {}),
             };
@@ -2522,7 +2528,7 @@ export const createImmediateGeneralActionExecutor = async (options: {
 
             const state = options.world.getState();
             const constraintEnv = {
-                ...resolveConstraintEnv(state, options.scenarioMeta, env),
+                ...resolveConstraintEnv(state, options.scenarioMeta, env, options.world.getWorldConfig()),
                 ...(options.map ? { map: options.map } : {}),
                 ...(options.world.getUnitSet() ? { unitSet: options.world.getUnitSet() } : {}),
                 cities: options.world.listCities(),

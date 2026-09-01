@@ -595,15 +595,17 @@ describe('buildTurnCommandTable', () => {
             nationGenerals: null,
         });
 
-        const appointment = table.general
-            .flatMap((group) => group.values)
-            .find((command) => command.key === 'che_임관');
+        for (const commandKey of ['che_임관', 'che_등용']) {
+            const command = table.general
+                .flatMap((group) => group.values)
+                .find((candidate) => candidate.key === commandKey);
 
-        expect(appointment).toMatchObject({
-            possible: false,
-            status: 'blocked',
-            reason: '랜덤 임관만 가능합니다',
-        });
+            expect(command).toMatchObject({
+                possible: false,
+                status: 'blocked',
+                reason: '랜덤 임관만 가능합니다',
+            });
+        }
     });
 
     it('hides founding at the Ref maxnation boundary without counting Core id=0', async () => {

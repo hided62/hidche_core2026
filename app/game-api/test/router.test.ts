@@ -1418,6 +1418,20 @@ describe('appRouter', () => {
             message: expect.stringContaining('랜덤 임관만 가능합니다'),
         });
         expect(randomOnlyWrites).toHaveLength(0);
+
+        await expect(
+            randomOnlyCaller.turns.reserved.setGeneral({
+                generalId: general.id,
+                turnIndex: 0,
+                action: 'che_등용',
+                args: { destGeneralId: 2 },
+                expectedRevision: 0,
+            })
+        ).rejects.toMatchObject({
+            code: 'PRECONDITION_FAILED',
+            message: expect.stringContaining('랜덤 임관만 가능합니다'),
+        });
+        expect(randomOnlyWrites).toHaveLength(0);
     });
 
     it('checks nation treaty-term reservation permission but not full diplomacy state', async () => {
