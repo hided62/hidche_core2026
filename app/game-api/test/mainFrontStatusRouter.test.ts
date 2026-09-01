@@ -44,8 +44,8 @@ const buildContext = (
                     tickSeconds: 3600,
                     ...(options.preopenClock
                         ? {
-                              clockBaseTime: new Date('2026-08-27T16:00:00.000Z'),
-                              clockTick: -180_000_000n,
+                              clockBaseTime: new Date('2026-08-27T11:00:00.000Z'),
+                              clockTick: 0n,
                               clockMode: 'realtime',
                               clockWallAnchor: new Date('2026-08-27T11:00:00.000Z'),
                           }
@@ -142,7 +142,7 @@ describe('general.getFrontStatus', () => {
     });
 
     it('keeps a PREOPEN logical-time survey active after the authenticated general voted', async () => {
-        vi.setSystemTime(new Date('2026-08-27T05:56:00.000Z'));
+        vi.setSystemTime(new Date('2026-08-27T10:56:00.000Z'));
         const context = buildContext({ hasVoted: true, preopenClock: true });
 
         await expect(appRouter.createCaller(context).general.getFrontStatus()).resolves.toMatchObject({

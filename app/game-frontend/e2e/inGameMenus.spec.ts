@@ -2007,7 +2007,11 @@ test('장수 생성에서 등록 전콘을 골라 생성 요청에 전달한다'
         accessPages: [],
         createGeneralInputs: [],
         joinConfig: {
-            rules: { stat: { total: 150, min: 30, max: 70 }, allowCustomName: true },
+            rules: {
+                stat: { total: 150, min: 30, max: 70 },
+                allowDirectCreation: true,
+                allowCustomName: true,
+            },
             user: {
                 id: 'user-1',
                 displayName: '생성장수',
@@ -2056,7 +2060,11 @@ test('활성 전용 아이콘이 없으면 대표 preset을 장수 생성 요청
         accessPages: [],
         createGeneralInputs: [],
         joinConfig: {
-            rules: { stat: { total: 150, min: 30, max: 70 }, allowCustomName: true },
+            rules: {
+                stat: { total: 150, min: 30, max: 70 },
+                allowDirectCreation: true,
+                allowCustomName: true,
+            },
             user: {
                 id: 'user-1',
                 displayName: '생성장수',

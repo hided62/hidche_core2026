@@ -35,16 +35,17 @@ describe('GameClock', () => {
         expect(clock.tickToDate(tick).getTime() - baseTime.getTime()).toBe(jumped.getTime() - wallAnchor.getTime());
     });
 
-    it('does not rewind game time after a backward wall-clock correction', () => {
+    it('projects a negative tick before a future realtime anchor', () => {
         const clock = new GameClock({
             baseTime,
-            tick: GAME_TICKS_PER_TURN * 10,
+            tick: 0,
             mode: 'realtime',
-            wallAnchor: new Date('2026-01-02T00:00:00.000Z'),
+            wallAnchor: new Date('2026-01-01T01:00:00.000Z'),
             turnSeconds: 3_600,
         });
 
-        expect(clock.nowTick(new Date('2025-01-01T00:00:00.000Z'))).toBe(GAME_TICKS_PER_TURN * 10);
+        expect(clock.nowTick(new Date('2026-01-01T00:30:00.000Z'))).toBe(-GAME_TICKS_PER_TURN / 2);
+        expect(clock.nowTick(new Date('2026-01-01T01:00:00.000Z'))).toBe(0);
     });
 
     it('projects near the safe tick boundary without unsafe intermediate multiplication', () => {

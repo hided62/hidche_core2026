@@ -44,6 +44,7 @@ type LobbyFixtureOptions = {
         imageServer: number;
     } | null;
     selectionPoolEnabled?: boolean;
+    directGeneralCreationEnabled?: boolean;
     npcPossessionEnabled?: boolean;
     userCnt?: number;
     maxUserCnt?: number;
@@ -99,6 +100,7 @@ const installFixture = async (page: Page, options: LobbyFixtureOptions = {}) => 
             imageServer: 1,
         },
         selectionPoolEnabled = true,
+        directGeneralCreationEnabled = true,
         npcPossessionEnabled = false,
         userCnt = 1,
         maxUserCnt = 500,
@@ -275,6 +277,7 @@ const installFixture = async (page: Page, options: LobbyFixtureOptions = {}) => 
                     autorunUser,
                     isUnited,
                     selectionPoolEnabled,
+                    directGeneralCreationEnabled,
                     npcPossessionEnabled,
                     myGeneral,
                 });
@@ -906,6 +909,7 @@ test('opens the mode-1 possession route with a fresh gateway game token outside 
     await installFixture(page, {
         myGeneral: null,
         selectionPoolEnabled: false,
+        directGeneralCreationEnabled: false,
         npcPossessionEnabled: true,
     });
     await page.route('**/hwe/join?**', async (route) => {
@@ -918,6 +922,7 @@ test('opens the mode-1 possession route with a fresh gateway game token outside 
 
     await page.goto('lobby');
     const row = page.locator('tbody tr').filter({ hasText: 'hwe섭' });
+    await expect(row.getByRole('button', { name: '장수생성' })).toHaveCount(0);
     await expect(row.getByRole('button', { name: '장수빙의' })).toBeEnabled();
     await row.getByRole('button', { name: '장수빙의' }).click();
 

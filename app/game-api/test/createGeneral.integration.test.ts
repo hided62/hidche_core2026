@@ -238,6 +238,7 @@ integration('generic general creation through the durable turn daemon', () => {
     it('commits one complete ref-shaped general and survives a daemon reload', async () => {
         const auth = buildAuth(userId, '생성사용자', 4242);
         const config = await appRouter.createCaller(buildContext('create-general-config', auth)).join.getConfig();
+        expect(config.rules.allowDirectCreation).toBe(true);
         expect(config.personalities.map(({ key }) => key)).not.toContain('che_은둔');
         expect(config.inherit.turnTimeZones[1]).toBe('00:05.000 ~ 00:09.999');
         const city = await db.city.findFirstOrThrow({ orderBy: { id: 'asc' } });

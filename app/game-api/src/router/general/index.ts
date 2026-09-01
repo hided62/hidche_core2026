@@ -1022,10 +1022,10 @@ export const generalRouter = router({
             loadCurrentGameTime(ctx.db, now),
         ]);
         // vote_poll timestamps are logical game-wall values. During PREOPEN the
-        // logical clock is held at the future open anchor, so comparing them with
-        // JavaScript wall time inside a timestamp-without-time-zone predicate can
-        // hide an otherwise active poll. Resolve the same tick-first clock contract
-        // used by voting instead; hasVoted only affects the notice, not activity.
+        // logical clock advances through negative ticks before the opening anchor,
+        // so comparing them with JavaScript wall time inside a timestamp-without-time-zone
+        // predicate can hide an otherwise active poll. Resolve the same tick-first
+        // clock contract used by voting; hasVoted only affects the notice, not activity.
         const latestVote = openPolls.find((poll) => isFrontStatusPollActive(poll, gameTime)) ?? null;
 
         const onlineGeneralIds = onlineAccess.map((entry) => entry.generalId);

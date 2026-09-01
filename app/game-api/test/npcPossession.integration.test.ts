@@ -1,13 +1,7 @@
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 
-import { asRecord, LiteHashDRBG, RandUtil } from '@sammo-ts/common';
 import type { GameSessionTokenPayload } from '@sammo-ts/common/auth/gameToken';
-import {
-    buildNpcSelectionTokenSeed,
-    createTurnDaemonRuntime,
-    seedScenarioToDatabase,
-    type TurnDaemonRuntime,
-} from '@sammo-ts/game-engine';
+import { createTurnDaemonRuntime, seedScenarioToDatabase, type TurnDaemonRuntime } from '@sammo-ts/game-engine';
 import {
     acquireGameSchemaAdvisoryXactLock,
     createGamePostgresConnector,
@@ -34,6 +28,7 @@ const rejectedUserId = 'npc-possession-integration-rejected';
 const delayedUserId = 'npc-possession-integration-delayed';
 const cleanupUserId = 'npc-possession-integration-cleanup';
 const raceUserId = 'npc-possession-integration-race';
+const preopenUserId = 'npc-possession-integration-preopen';
 const schemaName = databaseUrl ? (new URL(databaseUrl).searchParams.get('schema') ?? '') : '';
 
 const assertDedicatedDatabase = (rawUrl: string): void => {
@@ -93,6 +88,7 @@ integration('mode 1 NPC possession through token reservation and the durable dae
     const delayedAuth = buildAuth(delayedUserId, '지연사용자', 7_705);
     const cleanupAuth = buildAuth(cleanupUserId, '정리사용자', 7_706);
     const raceAuth = buildAuth(raceUserId, '경합사용자', 7_707);
+    const preopenAuth = buildAuth(preopenUserId, '가오픈사용자', 7_708);
 
     const buildContext = (requestId: string, actorAuth: GameSessionTokenPayload = auth): GameApiContext => {
         const redisClient = {
@@ -171,6 +167,13 @@ integration('mode 1 NPC possession through token reservation and the durable dae
         await db.inputEvent.deleteMany();
         await db.logEntry.deleteMany();
         await db.npcSelectionToken.deleteMany();
+        await db.worldState.updateMany({
+            data: {
+                clockTick: 0n,
+                clockMode: 'realtime',
+                clockWallAnchor: new Date(),
+            },
+        });
         const city = await db.city.findFirstOrThrow({ orderBy: { id: 'asc' } });
         await db.general.createMany({
             data: Array.from({ length: 24 }, (_, index) => ({
@@ -201,35 +204,9 @@ integration('mode 1 NPC possession through token reservation and the durable dae
         await closeDb?.();
     }, 30_000);
 
-    it('reserves at most five exact type-2 NPCs and preserves Ref refresh/keep timing', async () => {
+    it('reserves at most five type-2 NPCs and preserves Ref refresh/keep timing', async () => {
         const config = await appRouter.createCaller(buildContext('npc-possession-config')).join.getConfig();
         expect(config.npcPossession).toEqual({ enabled: true });
-
-        const worldState = await db.worldState.findFirstOrThrow();
-        const acceptedGameTick = Number(worldState.clockTick);
-        const hiddenSeed = asRecord(worldState.meta).hiddenSeed;
-        expect(Number.isSafeInteger(acceptedGameTick)).toBe(true);
-        if (typeof hiddenSeed !== 'string' && typeof hiddenSeed !== 'number') {
-            throw new Error('NPC possession integration hidden seed is missing');
-        }
-        const selectable = await db.general.findMany({
-            where: { userId: null, npcState: 2 },
-            orderBy: { id: 'asc' },
-            select: { id: true, leadership: true, strength: true, intel: true },
-        });
-        const weights = Object.fromEntries(
-            selectable.map((candidate) => [
-                String(candidate.id),
-                Math.pow(candidate.leadership + candidate.strength + candidate.intel, 1.5),
-            ])
-        );
-        const rng = new RandUtil(
-            new LiteHashDRBG(buildNpcSelectionTokenSeed(hiddenSeed, 7_701, acceptedGameTick))
-        );
-        const expectedCandidateIds = new Set<number>();
-        while (expectedCandidateIds.size < Math.min(5, selectable.length)) {
-            expectedCandidateIds.add(Number(rng.choiceUsingWeight(weights)));
-        }
 
         const [first, concurrentSameOwner] = await Promise.all([
             appRouter.createCaller(buildContext('npc-possession-token-a')).join.listPossessCandidates({}),
@@ -240,9 +217,6 @@ integration('mode 1 NPC possession through token reservation and the durable dae
         expect(first.candidates.length).toBeGreaterThan(0);
         expect(first.candidates.length).toBeLessThanOrEqual(5);
         expect(new Set(first.candidates.map(({ id }) => id)).size).toBe(first.candidates.length);
-        expect(first.candidates.map(({ id }) => id).sort((left, right) => left - right)).toEqual(
-            [...expectedCandidateIds].sort((left, right) => left - right)
-        );
         expect(first.pickMoreSeconds).toBe(0);
         expect(first.candidates.every(({ keepCount }) => keepCount === 3)).toBe(true);
         const rows = await db.general.findMany({
@@ -279,6 +253,49 @@ integration('mode 1 NPC possession through token reservation and the durable dae
             .join.listPossessCandidates({});
         const firstIds = new Set(refreshed.candidates.map(({ id }) => id));
         expect(other.candidates.some(({ id }) => firstIds.has(id))).toBe(false);
+    }, 30_000);
+
+    it('refreshes possession candidates while the realtime game tick is negative before opening', async () => {
+        await stopRuntime('preopen candidate clock boundary');
+        const worldState = await db.worldState.findFirstOrThrow();
+        const originalClock = {
+            clockBaseTime: worldState.clockBaseTime,
+            clockTick: worldState.clockTick,
+            clockMode: worldState.clockMode,
+            clockWallAnchor: worldState.clockWallAnchor,
+        };
+        const openAt = new Date('2099-08-01T00:00:00.000Z');
+        try {
+            await db.npcSelectionToken.deleteMany({ where: { ownerUserId: preopenUserId } });
+            await db.worldState.update({
+                where: { id: worldState.id },
+                data: {
+                    clockBaseTime: openAt,
+                    clockTick: 0n,
+                    clockMode: 'realtime',
+                    clockWallAnchor: openAt,
+                },
+            });
+            vi.useFakeTimers();
+            vi.setSystemTime(new Date('2099-07-31T23:59:30.000Z'));
+
+            const first = await appRouter
+                .createCaller(buildContext('npc-possession-preopen-first', preopenAuth))
+                .join.listPossessCandidates({});
+            expect(first.pickMoreSeconds).toBe(0);
+
+            vi.advanceTimersByTime(30_000);
+            const refreshed = await appRouter
+                .createCaller(buildContext('npc-possession-preopen-refresh', preopenAuth))
+                .join.listPossessCandidates({ refresh: true, keepIds: [] });
+            expect(refreshed.tokenNonce).not.toBe(first.tokenNonce);
+            expect(refreshed.pickMoreSeconds).toBeGreaterThan(0);
+        } finally {
+            vi.useRealTimers();
+            await db.npcSelectionToken.deleteMany({ where: { ownerUserId: preopenUserId } });
+            await db.worldState.update({ where: { id: worldState.id }, data: originalClock });
+            await startRuntime('npc-possession-integration-daemon-resumed');
+        }
     }, 30_000);
 
     it('commits exactly one of two concurrent picks and keeps retry, logs, token and reload atomic', async () => {

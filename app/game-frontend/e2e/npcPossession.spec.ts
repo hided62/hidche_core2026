@@ -141,9 +141,16 @@ const installFixture = async (page: Page, state: FixtureState): Promise<void> =>
                 return response({
                     rules: {
                         stat: { total: 165, min: 15, max: 80, bonusMin: 3, bonusMax: 5 },
+                        allowDirectCreation: false,
                         allowCustomName: true,
                     },
-                    user: { id: 'npc-user', displayName: '빙의사용자', canCreateGeneral: true },
+                    user: {
+                        id: 'npc-user',
+                        displayName: '빙의사용자',
+                        canCreateGeneral: true,
+                        icons: [],
+                        preferredPicture: null,
+                    },
                     personalities: [{ key: 'Random', name: '???', info: '' }],
                     warSpecials: [],
                     nations: [],
@@ -225,6 +232,83 @@ const installFixture = async (page: Page, state: FixtureState): Promise<void> =>
     });
 };
 
+test('shows only possession and keeps every candidate reachable from the left on mobile', async ({
+    page,
+}, testInfo) => {
+    const state: FixtureState = {
+        reservationCalls: 0,
+        reservationInputs: [],
+        rawBodies: [],
+        possessInputs: [],
+        hasGeneral: false,
+        injectTimeout: false,
+    };
+    await installFixture(page, state);
+    await page.setViewportSize({ width: 390, height: 844 });
+    await page.goto('join');
+
+    await expect(page.getByRole('heading', { name: '장수 빙의', exact: true, level: 1 })).toBeVisible();
+    await expect(page.getByRole('button', { name: '장수 생성', exact: true })).toHaveCount(0);
+    await expect(page.locator('.npc-card')).toHaveCount(5);
+
+    const candidateGeometry = await page.locator('.npc-possession-section').evaluate((section) => {
+        const sectionRect = section.getBoundingClientRect();
+        const holder = section.querySelector<HTMLElement>('.npc-card-holder')!;
+        const holderRect = holder.getBoundingClientRect();
+        const cards = [...holder.querySelectorAll<HTMLElement>('.npc-card')];
+        return {
+            viewportWidth: window.innerWidth,
+            documentWidth: document.documentElement.scrollWidth,
+            sectionLeft: sectionRect.left,
+            sectionRight: sectionRect.right,
+            holderLeft: holderRect.left,
+            firstCardLeft: cards[0]!.getBoundingClientRect().left,
+            lastCardRight: cards.at(-1)!.getBoundingClientRect().right,
+            holderClientWidth: holder.clientWidth,
+            holderScrollWidth: holder.scrollWidth,
+            holderScrollLeft: holder.scrollLeft,
+        };
+    });
+    expect(candidateGeometry.viewportWidth).toBe(390);
+    expect(candidateGeometry.documentWidth).toBe(390);
+    expect(candidateGeometry.sectionLeft).toBeGreaterThanOrEqual(0);
+    expect(candidateGeometry.sectionRight).toBeLessThanOrEqual(390);
+    expect(candidateGeometry.firstCardLeft).toBeGreaterThanOrEqual(candidateGeometry.holderLeft);
+    expect(candidateGeometry.lastCardRight).toBeGreaterThan(candidateGeometry.sectionRight);
+    expect(candidateGeometry.holderScrollWidth).toBeGreaterThan(candidateGeometry.holderClientWidth);
+    expect(candidateGeometry.holderScrollLeft).toBe(0);
+
+    const refreshButton = page.locator('#btn-pick-more');
+    await expect(refreshButton).toBeEnabled();
+    const refreshStyle = await refreshButton.evaluate((element) => {
+        const style = getComputedStyle(element);
+        return {
+            backgroundColor: style.backgroundColor,
+            borderBottomWidth: style.borderBottomWidth,
+            opacity: style.opacity,
+            cursor: style.cursor,
+        };
+    });
+    expect(refreshStyle.backgroundColor).not.toBe('rgba(0, 0, 0, 0)');
+    expect(refreshStyle).toMatchObject({ borderBottomWidth: '4px', opacity: '1', cursor: 'pointer' });
+    await page.screenshot({ path: testInfo.outputPath('npc-possession-mobile-active.png'), fullPage: true });
+
+    const dialogs: string[] = [];
+    page.on('dialog', async (dialog) => {
+        dialogs.push(dialog.message());
+        await dialog.dismiss();
+    });
+    await page.locator('.npc-action').last().click();
+    expect(dialogs).toContain('빙의할까요? : 빙의후보5');
+    await expect
+        .poll(() => page.locator('.npc-card-holder').evaluate((holder) => (holder as HTMLElement).scrollLeft))
+        .toBeGreaterThan(0);
+
+    await refreshButton.click();
+    await expect.poll(() => state.reservationCalls).toBe(2);
+    expect(state.reservationInputs.at(-1)).toMatchObject({ refresh: true, keepIds: [] });
+});
+
 test('renders Ref-shaped token cards, preserves keep cooldown and retries possession with one ID', async ({
     page,
 }, testInfo) => {
@@ -239,6 +323,8 @@ test('renders Ref-shaped token cards, preserves keep cooldown and retries posses
     await installFixture(page, state);
     await page.setViewportSize({ width: 1024, height: 900 });
     await page.goto('join?tab=possess');
+    await expect(page.getByRole('heading', { name: '장수 빙의', exact: true, level: 1 })).toBeVisible();
+    await expect(page.getByRole('button', { name: '장수 생성', exact: true })).toHaveCount(0);
     await expect(page.getByRole('button', { name: 'NPC 빙의' })).toHaveClass(/active/);
 
     await expect(page.locator('.npc-card')).toHaveCount(5);

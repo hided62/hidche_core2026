@@ -7,8 +7,8 @@ const buildDatabase = (mode: 'realtime' | 'manual' = 'realtime'): DatabaseClient
     ({
         worldState: {
             findFirst: vi.fn(async () => ({
-                clockBaseTime: new Date('2026-08-21T09:50:00.000Z'),
-                clockTick: 36_000_000n,
+                clockBaseTime: new Date('2026-08-21T11:00:00.000Z'),
+                clockTick: 0n,
                 clockMode: mode,
                 clockWallAnchor: new Date('2026-08-21T11:00:00.000Z'),
                 tickSeconds: 600,
@@ -17,14 +17,14 @@ const buildDatabase = (mode: 'realtime' | 'manual' = 'realtime'): DatabaseClient
     }) as unknown as DatabaseClient;
 
 describe('current game time projection', () => {
-    it('holds a realtime clock at its persisted tick until the future wall anchor', async () => {
+    it('projects negative realtime ticks until the future opening anchor', async () => {
         const db = buildDatabase();
 
         const preopen = await loadCurrentGameTime(db, new Date('2026-08-21T10:30:00.000Z'));
         expect(preopen).toMatchObject({
-            now: new Date('2026-08-21T10:00:00.000Z'),
+            now: new Date('2026-08-21T10:30:00.000Z'),
             wallNow: new Date('2026-08-21T10:30:00.000Z'),
-            tick: 36_000_000,
+            tick: -108_000_000,
             mode: 'realtime',
             running: false,
             startsAt: new Date('2026-08-21T11:00:00.000Z'),
@@ -32,8 +32,8 @@ describe('current game time projection', () => {
 
         const opened = await loadCurrentGameTime(db, new Date('2026-08-21T11:00:05.000Z'));
         expect(opened).toMatchObject({
-            now: new Date('2026-08-21T10:00:05.000Z'),
-            tick: 36_300_000,
+            now: new Date('2026-08-21T11:00:05.000Z'),
+            tick: 300_000,
             running: true,
             startsAt: null,
         });
@@ -43,8 +43,8 @@ describe('current game time projection', () => {
         const result = await loadCurrentGameTime(buildDatabase('manual'), new Date('2026-08-21T12:00:00.000Z'));
 
         expect(result).toMatchObject({
-            now: new Date('2026-08-21T10:00:00.000Z'),
-            tick: 36_000_000,
+            now: new Date('2026-08-21T11:00:00.000Z'),
+            tick: 0,
             running: false,
             startsAt: null,
         });

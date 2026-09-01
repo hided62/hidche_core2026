@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import type { DatabaseClient, GameApiContext } from '../src/context.js';
 import { appRouter } from '../src/router.js';
@@ -47,6 +47,10 @@ const buildContext = (
     }) as unknown as GameApiContext;
 
 describe('lobby season state', () => {
+    afterEach(() => {
+        vi.useRealTimers();
+    });
+
     it.each([0, 1, 2, 3])('returns legacy isunited state %i', async (isunited) => {
         const result = await appRouter
             .createCaller(buildContext({ isUnited: isunited === 0 ? 2 : 0, isunited }))
@@ -96,15 +100,18 @@ describe('lobby season state', () => {
         expect(result.turnEngineRunning).toBe(false);
     });
 
-    it('exposes the future realtime wall anchor without advancing the preopen clock', async () => {
+    it('exposes the future realtime wall anchor with a negative preopen tick', async () => {
         const wallAnchor = new Date('2099-08-21T11:00:00.000Z');
+        const wallNow = new Date('2099-08-21T10:30:00.000Z');
+        vi.useFakeTimers();
+        vi.setSystemTime(wallNow);
         const result = await appRouter
             .createCaller(
                 buildContext(
                     {},
                     {
-                        baseTime: new Date('2026-08-21T09:00:00.000Z'),
-                        tick: 36_000_000n,
+                        baseTime: wallAnchor,
+                        tick: 0n,
                         mode: 'realtime',
                         wallAnchor,
                     }
@@ -112,11 +119,20 @@ describe('lobby season state', () => {
             )
             .lobby.info();
 
-        expect(result.serverTime).toBe('2026-08-21T10:00:00.000Z');
+        expect(result.serverTime).toBe(wallNow.toISOString());
         expect(result.clockMode).toBe('realtime');
         expect(result.clockRunning).toBe(false);
         expect(result.clockStartsAt).toBe(wallAnchor.toISOString());
         expect(new Date(result.serverWallTime).getTime()).toBeLessThan(wallAnchor.getTime());
+    });
+
+    it('reports direct creation and possession as independent acquisition modes', async () => {
+        const result = await appRouter
+            .createCaller(buildContext({}, {}, { blockGeneralCreate: 1, npcMode: 1 }))
+            .lobby.info();
+
+        expect(result.directGeneralCreationEnabled).toBe(false);
+        expect(result.npcPossessionEnabled).toBe(true);
     });
 
     it('preserves zero as the first official game index', async () => {

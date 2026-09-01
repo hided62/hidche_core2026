@@ -87,6 +87,7 @@ export const lobbyRouter = router({
                     : null,
             isUnited: worldState.meta.isunited ?? worldState.meta.isUnited ?? 0,
             selectionPoolEnabled: isSelectionPoolWorld(rawWorldState),
+            directGeneralCreationEnabled: (Math.floor(asNumber(rawConfig.blockGeneralCreate, 0)) & 1) === 0,
             npcPossessionEnabled: worldState.config.npcMode === 1,
             scenarioTitle: typeof scenarioTitle === 'string' ? scenarioTitle : '',
             myGeneral,

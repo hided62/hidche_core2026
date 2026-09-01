@@ -53,6 +53,8 @@ const submitting = ref(false);
 
 const joinConfig = ref<JoinConfig | null>(null);
 const accountIcons = computed(() => joinConfig.value?.user.icons ?? []);
+const directCreationEnabled = computed(() => joinConfig.value?.rules.allowDirectCreation === true);
+const possessionOnly = computed(() => !directCreationEnabled.value && joinConfig.value?.npcPossession.enabled === true);
 const activeTab = ref<'create' | 'possess'>('create');
 const contextTab = ref<'invitation' | 'map' | 'generals'>('invitation');
 const inheritOpen = ref(false);
@@ -429,7 +431,11 @@ const loadConfig = async () => {
         joinConfig.value = config;
         const storedPossession = readPendingPossess();
         pendingPossessAction.value = storedPossession?.ownerUserId === config.user.id ? storedPossession : null;
-        if (route.query.tab === 'possess' && config.npcPossession.enabled && config.user.canCreateGeneral) {
+        if (
+            config.npcPossession.enabled &&
+            config.user.canCreateGeneral &&
+            (!config.rules.allowDirectCreation || route.query.tab === 'possess')
+        ) {
             activeTab.value = 'possess';
         }
         const pending = readPendingJoin();
@@ -658,13 +664,14 @@ onUnmounted(() => {
     <main class="join-page">
         <header class="join-header">
             <div>
-                <h1 class="join-title">장수 생성/빙의</h1>
+                <h1 class="join-title">{{ possessionOnly ? '장수 빙의' : '장수 생성/빙의' }}</h1>
                 <p class="join-subtitle">로그인 완료, 아직 장수가 없는 상태입니다.</p>
             </div>
             <div class="join-tabs">
                 <RouterLink class="simulator-link" to="/past-plays">내 지난 플레이</RouterLink>
                 <RouterLink class="simulator-link" to="/battle-simulator">전투 시뮬레이터</RouterLink>
                 <button
+                    v-if="directCreationEnabled"
                     :class="{ active: activeTab === 'create' }"
                     :disabled="joinConfig?.user.canCreateGeneral === false"
                     @click="activeTab = 'create'"
@@ -1099,7 +1106,7 @@ onUnmounted(() => {
                 <div class="npc-footer">
                     <button
                         id="btn-pick-more"
-                        class="ghost"
+                        class="legacy-button legacy-button--secondary"
                         type="button"
                         :disabled="npcLoading || npcPickMoreSeconds > 0 || submitting || hasPendingPossession"
                         @click="loadNpcCandidates(true)"
@@ -1683,6 +1690,7 @@ onUnmounted(() => {
 
 .npc-possession-section {
     width: 1000px;
+    min-width: 0;
     align-self: center;
 }
 
@@ -1807,7 +1815,7 @@ onUnmounted(() => {
 }
 
 .npc-general-list-wrap {
-    width: 970px;
+    width: min(100%, 970px);
     margin: 0 auto 20px;
     overflow-x: auto;
 }
@@ -1928,6 +1936,24 @@ onUnmounted(() => {
 
     .context-general-table {
         min-width: 520px;
+    }
+
+    .npc-possession-section {
+        width: 100%;
+    }
+
+    .npc-card-holder {
+        display: flex;
+        max-width: 100%;
+        justify-content: flex-start;
+        overflow-x: auto;
+        padding-bottom: 8px;
+        overscroll-behavior-x: contain;
+        -webkit-overflow-scrolling: touch;
+    }
+
+    .npc-card {
+        flex: 0 0 125px;
     }
 }
 </style>

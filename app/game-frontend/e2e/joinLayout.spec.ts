@@ -41,6 +41,7 @@ const installFixture = async (page: Page, state: FixtureState): Promise<void> =>
                 return response({
                     rules: {
                         stat: { total: 165, min: 15, max: 80, bonusMin: 3, bonusMax: 5 },
+                        allowDirectCreation: true,
                         allowCustomName: true,
                     },
                     user: {

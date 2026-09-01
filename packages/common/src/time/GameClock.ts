@@ -79,9 +79,11 @@ export class GameClock {
         if (this.mode === 'manual') {
             return this.tick;
         }
-        // A wall-clock correction must never rewind already-observed gameplay.
         const elapsedTicks = this.ticksBetween(this.wallAnchor, wallNow);
-        return elapsedTicks <= 0 ? this.tick : this.addTicks(this.tick, elapsedTicks);
+        // A future realtime anchor represents the formal opening at anchor tick.
+        // Before that instant Ref exposes the elapsed offset as a negative tick,
+        // which lets PREOPEN-only actions keep their logical cooldowns moving.
+        return this.addTicks(this.tick, elapsedTicks);
     }
 
     now(wallNow: Date): Date {

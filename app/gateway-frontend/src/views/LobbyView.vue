@@ -674,6 +674,10 @@ const handleEnter = async (profile: LobbyProfile, targetPath: string) => {
                                             </button>
                                             <template v-else>
                                                 <button
+                                                    v-if="
+                                                        profileDetails[profile.profileName]
+                                                            ?.directGeneralCreationEnabled
+                                                    "
                                                     class="w-full bg-zinc-700 hover:bg-zinc-600 text-white py-1.5 rounded text-sm transition-colors"
                                                     :disabled="
                                                         entryLoading[profile.profileName] ||

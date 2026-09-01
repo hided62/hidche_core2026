@@ -302,6 +302,7 @@ export const joinRouter = router({
         }
 
         const config = asRecord(worldState.config);
+        const blockGeneralCreate = Math.floor(asNumber(config.blockGeneralCreate, 0));
         const configConst = asRecord(config.const);
         const availableSpecialWar = asStringArray(configConst.availableSpecialWar);
         const warKeys = availableSpecialWar.length > 0 ? availableSpecialWar : [...WAR_TRAIT_KEYS];
@@ -348,7 +349,8 @@ export const joinRouter = router({
         return {
             rules: {
                 stat: resolveJoinStat(worldState),
-                allowCustomName: (Math.floor(asNumber(config.blockGeneralCreate, 0)) & 2) === 0,
+                allowDirectCreation: (blockGeneralCreate & 1) === 0,
+                allowCustomName: (blockGeneralCreate & 2) === 0,
             },
             user: {
                 id: ctx.auth?.user.id ?? '',
