@@ -2,6 +2,7 @@
 import { onMounted, ref, watch } from 'vue';
 import { useRouter } from 'vue-router';
 
+import RichTooltip from '../components/ui/RichTooltip.vue';
 import { resolveGeneralIconUrl, useDefaultGeneralIcon } from '../utils/generalIcon';
 import { trpc } from '../utils/trpc';
 
@@ -138,7 +139,14 @@ watch(viewMode, () => {
                 <h2 class="rankType legacy-bg1">{{ section.title }}</h2>
                 <ul>
                     <li v-for="(entry, index) in section.entries" :key="`${entry.itemKey}:${index}`" class="no-value">
-                        <div class="hall-rank legacy-bg2 item-name" :title="entry.itemInfo">{{ entry.itemName }}</div>
+                        <div class="hall-rank legacy-bg2 item-name">
+                            <RichTooltip
+                                :description="entry.itemInfo"
+                                :test-id="`best-general-item-${section.slot}-${entry.itemKey}-${index}`"
+                            >
+                                <span class="item-name-label">{{ entry.itemName }}</span>
+                            </RichTooltip>
+                        </div>
                         <div class="hall-img">
                             <img
                                 class="generalIcon"
@@ -318,6 +326,12 @@ watch(viewMode, () => {
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
+}
+
+.hall-rank.item-name :deep(.rich-tooltip-trigger) {
+    display: block;
+    overflow: hidden;
+    text-overflow: ellipsis;
 }
 
 .hall-img {

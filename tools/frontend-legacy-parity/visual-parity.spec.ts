@@ -778,7 +778,18 @@ test.describe('best general legacy parity', () => {
 
             const itemName = page.locator('.item-name').first();
             await itemName.hover();
-            await expect(itemName).toHaveAttribute('title', '최고의 명마');
+            const itemTooltip = page.locator('.tippy-box[data-theme~="sammo-rich"]:visible');
+            await expect(itemTooltip).toContainText('최고의 명마');
+            await expect(itemName.locator('[data-rich-tooltip^="best-general-item-"]')).toHaveAttribute(
+                'tabindex',
+                '0'
+            );
+            if (artifactRoot) {
+                await page.screenshot({
+                    path: resolve(artifactRoot, `best-general-item-tooltip-${viewport.name}.png`),
+                    animations: 'disabled',
+                });
+            }
         });
     }
 
