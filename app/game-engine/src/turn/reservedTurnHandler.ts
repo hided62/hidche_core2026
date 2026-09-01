@@ -1403,14 +1403,19 @@ export const createReservedTurnHandler = async (options: {
                         progressionLogs
                     );
                 }
-                logs.push(
-                    ...orderLegacyCommandLogs(
-                        actionKey,
-                        resolution.logs,
-                        progressionLogs,
-                        resolution.postProgressionLogs
-                    )
-                );
+                // A failed requested command already emitted its specific failure above.
+                // The internal rest definition only preserves the existing turn-result
+                // lifecycle; it must not add a second "아무것도 실행하지 않았습니다" log.
+                if (!usedFallback) {
+                    logs.push(
+                        ...orderLegacyCommandLogs(
+                            actionKey,
+                            resolution.logs,
+                            progressionLogs,
+                            resolution.postProgressionLogs
+                        )
+                    );
+                }
                 if (
                     !resolution.alternative &&
                     kind === 'nation' &&

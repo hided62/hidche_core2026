@@ -342,7 +342,7 @@ describe('Reserved Turn Execution Integration', () => {
         // Turns should indeed be empty/default now.
     });
 
-    it('should fall back to rest when args are invalid', async () => {
+    it('should log invalid argument failures without appending rest', async () => {
         const invalidSnapshot: TurnWorldSnapshot = {
             generals: [
                 {
@@ -503,10 +503,13 @@ describe('Reserved Turn Execution Integration', () => {
                 finalizeLogEntry(log, { year: invalidState.currentYear, month: invalidState.currentMonth })
             )
         ).not.toContain(null);
-        expect(dirty.logs.some((log) => log.text.includes('아무것도 실행하지 않았습니다.'))).toBe(true);
+        expect(dirty.logs.some((log) => log.text.includes('아무것도 실행하지 않았습니다.'))).toBe(false);
     });
 
-    it('should fall back to rest when constraints fail', async () => {
+    it.each([
+        { label: 'a directly entered turn', npcState: 0 },
+        { label: 'an NPC autonomous turn', npcState: 2 },
+    ])('should log a full-agriculture failure once for $label', async ({ npcState }) => {
         const invalidSnapshot: TurnWorldSnapshot = {
             generals: [
                 {
@@ -536,7 +539,7 @@ describe('Reserved Turn Execution Integration', () => {
                     train: 0,
                     atmos: 0,
                     age: 30,
-                    npcState: 0,
+                    npcState,
                 } as TurnGeneral,
             ],
             cities: [
@@ -545,7 +548,7 @@ describe('Reserved Turn Execution Integration', () => {
                     name: 'City_1',
                     nationId: 1,
                     viewName: 'City_1',
-                    agriculture: 100,
+                    agriculture: 2000,
                     agricultureMax: 2000,
                     commerce: 100,
                     commerceMax: 2000,
@@ -629,7 +632,7 @@ describe('Reserved Turn Execution Integration', () => {
             meta: {},
         };
 
-        const invalidRows = [{ generalId: 1, turnIdx: 0, actionCode: 'che_이동', arg: { destCityId: 1 } }];
+        const invalidRows = [{ generalId: 1, turnIdx: 0, actionCode: 'che_농지개간', arg: {} }];
 
         const mockPrisma = createMockPrisma(invalidRows);
         const reservedTurnStore = new InMemoryReservedTurnStore(mockPrisma as any, {
@@ -639,6 +642,12 @@ describe('Reserved Turn Execution Integration', () => {
         await reservedTurnStore.loadAll();
 
         const wrapper = { world: null as InMemoryTurnWorld | null };
+        const outcomes: Array<{
+            requestedAction: string;
+            actionKey: string;
+            usedFallback: boolean;
+            completed?: boolean;
+        }> = [];
         const handler = await createReservedTurnHandler({
             reservedTurns: reservedTurnStore,
             scenarioConfig: invalidSnapshot.scenarioConfig,
@@ -646,6 +655,11 @@ describe('Reserved Turn Execution Integration', () => {
             map: MINIMAL_MAP,
             unitSet: invalidSnapshot.unitSet,
             getWorld: () => wrapper.world,
+            onActionResolved: (outcome) => {
+                if (outcome.kind === 'general') {
+                    outcomes.push(outcome);
+                }
+            },
         });
 
         const world = new InMemoryTurnWorld(invalidState, invalidSnapshot, {
@@ -662,12 +676,19 @@ describe('Reserved Turn Execution Integration', () => {
         });
 
         const dirty = world.consumeDirtyState();
-        expect(world.getGeneralById(1)!.cityId).toBe(1);
-        const denyLog = dirty.logs.find((log) => log.text.includes('같은 도시입니다.'));
-        expect(denyLog?.text).toContain('이동 실패.');
-        expect(denyLog?.meta?.constraintName).toBe('notSameDestCity');
+        expect(world.getCityById(1)!.agriculture).toBe(2000);
+        const denyLog = dirty.logs.find((log) => log.text.includes('농지 개간이 충분합니다.'));
+        expect(denyLog?.text).toContain('농지 개간 실패.');
+        expect(denyLog?.meta?.constraintName).toBe('remainCityCapacity');
         expect(denyLog?.generalId).toBe(1);
-        expect(dirty.logs.some((log) => log.text.includes('아무것도 실행하지 않았습니다.'))).toBe(true);
+        expect(dirty.logs.some((log) => log.text.includes('아무것도 실행하지 않았습니다.'))).toBe(false);
+        expect(outcomes).toContainEqual(
+            expect.objectContaining({
+                requestedAction: 'che_농지개간',
+                actionKey: '휴식',
+                usedFallback: true,
+            })
+        );
     });
 
     describe('Uprising and Founding Execution', () => {
