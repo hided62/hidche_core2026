@@ -81,6 +81,7 @@ const UNIT_SET: UnitSetDefinition = {
             attackCoef: {},
             defenceCoef: {},
             info: [],
+            iActionList: null,
             initSkillTrigger: null,
             phaseSkillTrigger: null,
         },
