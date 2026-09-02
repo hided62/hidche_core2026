@@ -583,6 +583,11 @@ export class ActionDefinition<
         const defenderGenerals = orderDefenderGenerals(
             generals.filter(
                 (general) =>
+                    // nationId 0는 "국가가 없음"을 뜻한다. 공백지(defenderCity.nationId
+                    // === 0)에 머물러 있는 재야 장수는 0 === 0으로 맞아떨어져도 그
+                    // 도시의 수비 세력이 아니다(war/aftermath.ts의 수비국 장수 조건과
+                    // 같은 의미다).
+                    general.nationId !== 0 &&
                     general.cityId === defenderCity.id &&
                     general.nationId === defenderCity.nationId &&
                     general.crew > 0 &&

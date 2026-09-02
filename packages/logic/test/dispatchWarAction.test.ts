@@ -341,6 +341,162 @@ describe('che_출병', () => {
         expect(ordered.at(-1)?.text).toBe(outerProgressionLog.text);
     });
 
+    it('keeps a ronin general in a neutral city out of the defence even with full combat stats', () => {
+        const attackerNation = buildNation(1);
+        const attackerCity = buildCity(1, attackerNation.id);
+        const targetCity = buildCity(2, 0);
+        targetCity.defence = 0;
+        targetCity.wall = 0;
+        const attacker = buildGeneral(1, attackerNation.id, attackerCity.id);
+        // The ronin must be combat-capable: crew/train/atmos/rice/crewType all
+        // satisfy the defender selection criteria, so only nationId === 0 can
+        // keep it out of defenderGenerals.
+        const ronin = buildGeneral(2, 0, targetCity.id);
+        expect(ronin.crew).toBeGreaterThan(0);
+
+        const mapCity = (id: number, connections: number[]) => ({
+            id,
+            name: `City${id}`,
+            level: 2,
+            region: 1,
+            position: { x: id, y: 0 },
+            connections,
+            max: {
+                population: 1,
+                agriculture: 1,
+                commerce: 1,
+                security: 1,
+                defence: 1,
+                wall: 1,
+            },
+            initial: {
+                population: 1,
+                agriculture: 1,
+                commerce: 1,
+                security: 1,
+                defence: 1,
+                wall: 1,
+            },
+        });
+        const context: Omit<DispatchResolveContext, 'addLog'> = {
+            general: attacker,
+            city: attackerCity,
+            nation: attackerNation,
+            rng,
+            destCity: targetCity,
+            destNation: null,
+            cities: [attackerCity, targetCity],
+            nations: [attackerNation],
+            generals: [attacker, ronin],
+            unitSet,
+            map: {
+                id: 'neutral-ronin',
+                name: 'neutral-ronin',
+                cities: [mapCity(1, [2]), mapCity(2, [1])],
+            },
+            diplomacy: [],
+            time: { year: 200, month: 1, startYear: 180 },
+            seedBase: 'neutral-ronin-seed',
+            warConfig,
+            aftermathConfig,
+            messageTime: new Date('2000-01-01T00:00:00.000Z'),
+        };
+
+        const resolution = resolveGeneralAction(
+            new ActionDefinition(),
+            context,
+            { now: new Date('2000-01-01T00:00:00Z'), schedule },
+            { destCityId: targetCity.id }
+        );
+
+        // The sortie must still run the siege against the empty city.
+        expect(resolution.completed).toBe(true);
+        // The ronin never enters defenderGenerals, so it takes no battle
+        // damage and receives no general patch.
+        expect(resolution.patches?.generals.some((patch) => patch.id === ronin.id)).toBe(false);
+        expect(ronin.crew).toBe(1500);
+        // The neutral city is still conquered by the attacker as before.
+        const targetPatch = resolution.patches?.cities.find((patch) => patch.id === targetCity.id);
+        expect(targetPatch?.patch.nationId).toBe(attackerNation.id);
+    });
+
+    it('lets a crewed general of the owning nation defend its city', () => {
+        const attackerNation = buildNation(1);
+        const defenderNation = buildNation(2);
+        const attackerCity = buildCity(1, attackerNation.id);
+        const defenderCity = buildCity(2, defenderNation.id);
+        defenderCity.defence = 0;
+        defenderCity.wall = 0;
+        const attacker = buildGeneral(1, attackerNation.id, attackerCity.id);
+        const defender = buildGeneral(2, defenderNation.id, defenderCity.id);
+
+        const mapCity = (id: number, connections: number[]) => ({
+            id,
+            name: `City${id}`,
+            level: 2,
+            region: 1,
+            position: { x: id, y: 0 },
+            connections,
+            max: {
+                population: 1,
+                agriculture: 1,
+                commerce: 1,
+                security: 1,
+                defence: 1,
+                wall: 1,
+            },
+            initial: {
+                population: 1,
+                agriculture: 1,
+                commerce: 1,
+                security: 1,
+                defence: 1,
+                wall: 1,
+            },
+        });
+        const context: Omit<DispatchResolveContext, 'addLog'> = {
+            general: attacker,
+            city: attackerCity,
+            nation: attackerNation,
+            rng,
+            destCity: defenderCity,
+            destNation: defenderNation,
+            cities: [attackerCity, defenderCity],
+            nations: [attackerNation, defenderNation],
+            generals: [attacker, defender],
+            unitSet,
+            map: {
+                id: 'national-defender',
+                name: 'national-defender',
+                cities: [mapCity(1, [2]), mapCity(2, [1])],
+            },
+            diplomacy: [
+                { fromNationId: attackerNation.id, toNationId: defenderNation.id, state: 0, term: 0 },
+                { fromNationId: defenderNation.id, toNationId: attackerNation.id, state: 0, term: 0 },
+            ],
+            time: { year: 200, month: 1, startYear: 180 },
+            seedBase: 'national-defender-seed',
+            warConfig,
+            aftermathConfig,
+            messageTime: new Date('2000-01-01T00:00:00.000Z'),
+        };
+
+        const resolution = resolveGeneralAction(
+            new ActionDefinition(),
+            context,
+            { now: new Date('2000-01-01T00:00:00Z'), schedule },
+            { destCityId: defenderCity.id }
+        );
+
+        expect(resolution.completed).toBe(true);
+        // The defender fought the battle: it entered defenderGenerals and
+        // takes a patch with reduced crew (the city has no officerCity
+        // assignment, so the aftermath alone would not patch it).
+        const defenderPatch = resolution.patches?.generals.find((patch) => patch.id === defender.id);
+        expect(defenderPatch).toBeDefined();
+        expect((defenderPatch?.patch.crew ?? defender.crew)).toBeLessThan(1500);
+    });
+
     it('orders equal-priority defender inputs by general number before the stable battle sort', () => {
         const defender2 = buildGeneral(2, 2, 2);
         const defender3 = buildGeneral(3, 2, 2);
